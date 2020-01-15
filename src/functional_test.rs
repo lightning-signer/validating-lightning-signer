@@ -1,8 +1,8 @@
 use crate::test::functional_test_utils::{create_network, create_announced_chan_between_nodes, send_payment};
-use lightning::ln::msgs::LocalFeatures;
+use lightning::ln::features::InitFeatures;
 
-fn make_features() -> LocalFeatures {
-    LocalFeatures::new()
+fn make_features() -> InitFeatures {
+    InitFeatures::supported()
 }
 
 #[test]

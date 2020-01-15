@@ -8,8 +8,7 @@ use chain::transaction::OutPoint;
 use chain::keysinterface;
 use ln::channelmonitor;
 use ln::msgs;
-use ln::msgs::LocalFeatures;
-use ln::msgs::{LightningError};
+use ln::msgs::LightningError;
 use ln::channelmonitor::HTLCUpdate;
 use util::events;
 use util::logger::{Logger, Level, Record};
@@ -27,6 +26,7 @@ use std::sync::{Arc,Mutex};
 use std::{mem};
 use std::collections::HashMap;
 use lightning::chain::keysinterface::InMemoryChannelKeys;
+use lightning::ln::features::InitFeatures;
 
 pub struct TestVecWriter(pub Vec<u8>);
 impl Writer for TestVecWriter {
@@ -103,8 +103,8 @@ impl TestChannelMessageHandler {
 }
 
 impl msgs::ChannelMessageHandler for TestChannelMessageHandler {
-	fn handle_open_channel(&self, _their_node_id: &PublicKey, _their_local_features: LocalFeatures, _msg: &msgs::OpenChannel) {}
-	fn handle_accept_channel(&self, _their_node_id: &PublicKey, _their_local_features: LocalFeatures, _msg: &msgs::AcceptChannel) {}
+	fn handle_open_channel(&self, _their_node_id: &PublicKey, _their_local_features: InitFeatures, _msg: &msgs::OpenChannel) {}
+	fn handle_accept_channel(&self, _their_node_id: &PublicKey, _their_local_features: InitFeatures, _msg: &msgs::AcceptChannel) {}
 	fn handle_funding_created(&self, _their_node_id: &PublicKey, _msg: &msgs::FundingCreated) {}
 	fn handle_funding_signed(&self, _their_node_id: &PublicKey, _msg: &msgs::FundingSigned) {}
 	fn handle_funding_locked(&self, _their_node_id: &PublicKey, _msg: &msgs::FundingLocked) {}
