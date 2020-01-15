@@ -1,0 +1,20 @@
+[package]
+name = "rust-lightning-signer"
+version = "0.1.0"
+authors = ["Devrandom <c1.devrandom@niftybox.net>"]
+edition = "2018"
+
+[dependencies]
+bitcoin = "0.21"
+bitcoin_hashes = "0.7"
+secp256k1 = "0.15"
+hex = "0.3"
+rand = "0.4"
+
+[dependencies.lightning]
+path = "../rust-lightning/lightning"
+version = "0.0.10"
+
+[dev-dependencies.bitcoin]
+version = "0.21"
+features = ["bitcoinconsensus"]
