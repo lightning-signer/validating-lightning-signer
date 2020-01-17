@@ -8,7 +8,7 @@ use lightning::util;
 use chain::chaininterface;
 use chain::transaction::OutPoint;
 use chain::keysinterface::KeysInterface;
-use ln::channelmanager::{ChannelManager, PaymentPreimage, PaymentHash, RAACommitmentOrder};
+use ln::channelmanager::{ChannelManager, PaymentPreimage, PaymentHash};
 use ln::router::{Route, Router};
 use ln::msgs;
 use ln::msgs::{ChannelMessageHandler, RoutingMessageHandler};
@@ -239,7 +239,7 @@ pub fn create_chan_between_nodes_with_value_confirm_second(node_recv: &Node, nod
 	assert_eq!(events_6.len(), 2);
 	((match events_6[0] {
 		MessageSendEvent::SendFundingLocked { ref node_id, ref msg } => {
-			channel_id = msg.channel_id().clone();
+			channel_id = msg.channel_id.clone();
 			assert_eq!(*node_id, node_recv.node.get_our_node_id());
 			msg.clone()
 		},
@@ -1036,24 +1036,20 @@ macro_rules! handle_chan_reestablish_msgs {
 
 			let mut revoke_and_ack = None;
 			let mut commitment_update = None;
-			let order = if let Some(ev) = msg_events.get(idx) {
+			if let Some(ev) = msg_events.get(idx) {
 				idx += 1;
 				match ev {
 					&MessageSendEvent::SendRevokeAndACK { ref node_id, ref msg } => {
 						assert_eq!(*node_id, $dst_node.node.get_our_node_id());
 						revoke_and_ack = Some(msg.clone());
-						RAACommitmentOrder::RevokeAndACKFirst
 					},
 					&MessageSendEvent::UpdateHTLCs { ref node_id, ref updates } => {
 						assert_eq!(*node_id, $dst_node.node.get_our_node_id());
 						commitment_update = Some(updates.clone());
-						RAACommitmentOrder::CommitmentFirst
 					},
 					_ => panic!("Unexpected event"),
 				}
-			} else {
-				RAACommitmentOrder::CommitmentFirst
-			};
+			}
 
 			if let Some(ev) = msg_events.get(idx) {
 				match ev {
@@ -1071,7 +1067,7 @@ macro_rules! handle_chan_reestablish_msgs {
 				}
 			}
 
-			(funding_locked, revoke_and_ack, commitment_update, order)
+			(funding_locked, revoke_and_ack, commitment_update)
 		}
 	}
 }
