@@ -1,0 +1,274 @@
+syntax = "proto3";
+
+package signer;
+
+
+service Signer {
+  rpc Ping (PingRequest) returns (PingReply);
+
+  rpc Init (InitRequest) returns (InitReply);
+
+  rpc ECDH (ECDHRequest) returns (ECDHReply);
+
+  rpc NewChannel (NewChannelRequest) returns (NewChannelReply);
+
+  rpc GetPerCommitmentPoint (GetPerCommitmentPointRequest) returns (GetPerCommitmentPointReply);
+
+  rpc SignFundingTx (SignFundingTxRequest) returns (SignFundingTxReply);
+
+  rpc SignRemoteCommitmentTx (SignRemoteCommitmentTxRequest) returns (SignRemoteCommitmentTxReply);
+
+  rpc SignRemoteHTLCTx (SignRemoteHTLCTxRequest) returns (SignRemoteHTLCTxReply);
+
+  rpc SignMutualCloseTx (SignMutualCloseTxRequest) returns (SignMutualCloseTxReply);
+}
+
+
+service VersionService {
+  rpc Version (VersionRequestuest) returns (VersionResponse);
+}
+
+message VersionRequestuest {
+}
+
+message VersionResponse {
+  string version_string = 1;
+  uint32 major = 2;
+  uint32 minor = 3;
+  uint32 patch = 4;
+  string prerelease = 5;
+  string build_metadata = 6;
+}
+
+message PingRequest {
+  string message = 1;
+}
+
+message PingReply {
+  string message = 1;
+}
+
+message InitRequest {
+  BIP32KeyVersion key_version = 1;
+
+  ChainParams chainparams = 2;
+
+  // HACK: send the secret instead of generating.
+  bytes hsm_secret = 100;
+}
+
+message InitReply {
+  bytes self_node_id = 1;
+}
+
+message ECDHRequest {
+  bytes self_node_id = 1;
+
+  bytes point = 2; // 64 bytes, uncompressed x,y, little-endian
+}
+
+message ECDHReply {
+  bytes shared_secret = 1; // 32 bytes
+}
+
+// TODO rename
+message NewChannelRequest {
+  bytes self_node_id = 1;
+
+  bytes channel_nonce = 2;
+
+  uint64 capabilities = 3;
+}
+
+// TODO rename
+message NewChannelReply {
+}
+
+message GetPerCommitmentPointRequest {
+  bytes self_node_id = 1;
+
+  bytes channel_nonce = 2;
+
+  uint64 n = 3;
+}
+
+message GetPerCommitmentPointReply {
+  bytes per_commitment_point = 1;
+
+  bytes old_secret = 2;
+}
+
+message SignFundingTxRequest {
+  bytes self_node_id = 1;
+
+  bytes channel_nonce = 2;
+
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 3;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 4;
+
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 5;
+}
+
+message Signature {
+  // witness stack item
+  repeated bytes item = 1;
+}
+
+message SignFundingTxReply {
+  // A set of signatures realized in a fixed 64-byte format ordered
+  // in ascending input order.
+  repeated Signature sigs = 1;
+}
+
+message SignRemoteCommitmentTxRequest {
+  bytes self_node_id = 1;
+
+  bytes channel_nonce = 2;
+
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 3;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 4;
+
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 5;
+
+  bytes remote_funding_pubkey = 6;
+
+  bytes remote_percommit_point = 7;
+
+  repeated bytes output_witscripts = 8;
+
+  bool option_static_remotekey = 9;
+}
+
+message SignRemoteCommitmentTxReply {
+  // A set of signatures realized in a fixed 64-byte format ordered
+  // in ascending input order.
+  repeated Signature sigs = 1;
+}
+
+message SignRemoteHTLCTxRequest {
+  bytes self_node_id = 1;
+
+  bytes channel_nonce = 2;
+
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 3;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 4;
+
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 5;
+
+  bytes remote_per_commit_point = 6;
+
+  bytes wscript = 7;
+}
+
+message SignRemoteHTLCTxReply {
+  // A set of signatures realized in a fixed 64-byte format ordered
+  // in ascending input order.
+  repeated Signature sigs = 1;
+}
+
+message SignMutualCloseTxRequest {
+  bytes self_node_id = 1;
+
+  bytes channel_nonce = 2;
+
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 3;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 4;
+
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 5;
+
+  bytes remote_funding_pubkey = 6;
+}
+
+message SignMutualCloseTxReply {
+  // A set of signatures realized in a fixed 64-byte format ordered
+  // in ascending input order.
+  repeated Signature sigs = 1;
+}
+
+// ----------------------------------------------------------------
+
+message BIP32KeyVersion {
+  uint32 pubkey_version = 1;
+  uint32 privkey_version = 2;
+}
+
+message ChainParams {
+  string network_name = 1;
+  string bip173_name = 2;
+  string bip70_name = 3;
+  bytes genesis_blockhash = 4;
+  int32 rpc_port = 5;
+  string cli = 6;
+  string cli_args = 7;
+  uint64 cli_min_supported_version = 8;
+  uint64 dust_limit_sat = 9;
+  uint64 max_funding_sat = 10;
+  uint64 max_payment_msat = 11;
+  uint32 when_lightning_became_cool = 12;
+  uint32 p2pkh_version = 13;
+  uint32 p2sh_version = 14;
+  bool testnet = 15;
+  BIP32KeyVersion bip32_key_version = 16;
+  bool is_elements = 17;
+  bytes fee_asset_tag = 18;
+}
+
+message KeyLocator {
+  /// The index of the key being identified.
+  int32 key_index = 2;
+}
+
+message TxOut {
+  /// The value of the output being spent.
+  int64 value = 1;
+
+  /// The script of the output being spent.
+  bytes pk_script = 2;
+}
+
+message SignDescriptor {
+  /**
+  A descriptor that precisely describes *which* key to use for signing. This
+  may provide the raw public key directly, or Requestuire the Signer to re-derive
+  the key according to the populated derivation path.
+  */
+  KeyLocator key_loc = 1;
+
+  /**
+  A description of the output being spent. The value and script MUST be provided.
+  */
+  TxOut output = 5;
+}
+
+
+message InputScript {
+  /// The serializes witness stack for the specified input.
+  repeated bytes witness = 1;
+
+  /**
+  The optional sig script for the specified witness that will only be set if
+  the input specified is a nested p2sh witness program.
+  */
+  bytes sig_script = 2;
+}
+
+message InputScriptResp {
+  /// The set of fully valid input scripts Requestuested.
+  repeated InputScript input_scripts = 1;
+}
