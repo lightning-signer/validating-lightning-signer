@@ -10,6 +10,9 @@ bitcoin_hashes = "0.7"
 secp256k1 = "0.15"
 hex = "0.3"
 rand = "0.4"
+tonic = "0.1.1"
+prost = "0.6"
+tokio = { version = "0.2", features = ["macros"] }
 
 [dependencies.lightning]
 path = "../rust-lightning/lightning"
@@ -18,3 +21,14 @@ version = "0.0.10"
 [dev-dependencies.bitcoin]
 version = "0.21"
 features = ["bitcoinconsensus"]
+
+[[bin]] # Bin to run the HelloWorld gRPC server
+name = "server"
+path = "src/server/server.rs"
+
+[[bin]] # Bin to run the HelloWorld gRPC client
+name = "client"
+path = "src/client/client.rs"
+
+[build-dependencies]
+tonic-build = "0.1.0"
