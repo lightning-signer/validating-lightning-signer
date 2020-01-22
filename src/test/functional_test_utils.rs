@@ -1,43 +1,39 @@
 //! A bunch of useful utilities for building networks of nodes and exchanging messages between
 //! nodes for functional tests.
 
-use lightning::chain;
-use lightning::ln;
-use lightning::util;
+use std::cell::RefCell;
+use std::mem;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
-use chain::chaininterface;
-use chain::transaction::OutPoint;
-use chain::keysinterface::KeysInterface;
-use ln::channelmanager::{ChannelManager, PaymentPreimage, PaymentHash};
-use ln::router::{Route, Router};
-use ln::msgs;
-use ln::msgs::{ChannelMessageHandler, RoutingMessageHandler};
-use util::events::{Event, EventsProvider, MessageSendEvent, MessageSendEventsProvider};
-use util::errors::APIError;
-use util::logger::Logger;
-use util::config::UserConfig;
-
-use bitcoin::util::hash::BitcoinHash;
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::transaction::{Transaction, TxOut};
 use bitcoin::network::constants::Network;
-
+use bitcoin::util::hash::BitcoinHash;
+use bitcoin_hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::sha256d::Hash as Sha256d;
-use bitcoin_hashes::Hash;
-
-use secp256k1::Secp256k1;
-use secp256k1::key::PublicKey;
-
-use rand::{thread_rng,Rng};
-
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-use std::mem;
-use crate::test::test_utils;
-use lightning::chain::keysinterface::{ChannelKeys, InMemoryChannelKeys};
+use chain::chaininterface;
+use chain::keysinterface::KeysInterface;
+use chain::transaction::OutPoint;
+use lightning::chain;
+use lightning::chain::keysinterface::InMemoryChannelKeys;
+use lightning::ln;
 use lightning::ln::features::InitFeatures;
+use lightning::util;
+use ln::channelmanager::{ChannelManager, PaymentHash, PaymentPreimage};
+use ln::msgs;
+use ln::msgs::{ChannelMessageHandler, RoutingMessageHandler};
+use ln::router::{Route, Router};
+use rand::{Rng, thread_rng};
+use secp256k1::key::PublicKey;
+use secp256k1::Secp256k1;
+use util::config::UserConfig;
+use util::errors::APIError;
+use util::events::{Event, EventsProvider, MessageSendEvent, MessageSendEventsProvider};
+use util::logger::Logger;
+
+use crate::test::test_utils;
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 100;
 pub fn confirm_transaction(notifier: &chaininterface::BlockNotifier, chain: &chaininterface::ChainWatchInterfaceUtil, tx: &Transaction, chan_id: u32) {
@@ -133,32 +129,6 @@ macro_rules! get_event_msg {
 				},
 				_ => panic!("Unexpected event"),
 			}
-		}
-	}
-}
-
-macro_rules! get_htlc_update_msgs {
-	($node: expr, $node_id: expr) => {
-		{
-			let events = $node.node.get_and_clear_pending_msg_events();
-			assert_eq!(events.len(), 1);
-			match events[0] {
-				MessageSendEvent::UpdateHTLCs { ref node_id, ref updates } => {
-					assert_eq!(*node_id, $node_id);
-					(*updates).clone()
-				},
-				_ => panic!("Unexpected event"),
-			}
-		}
-	}
-}
-
-macro_rules! get_feerate {
-	($node: expr, $channel_id: expr) => {
-		{
-			let chan_lock = $node.node.channel_state.lock().unwrap();
-			let chan = chan_lock.by_id.get(&$channel_id).unwrap();
-			chan.get_feerate()
 		}
 	}
 }
@@ -344,27 +314,6 @@ macro_rules! get_closing_signed_broadcast {
 			} else { None })
 		}
 	}
-}
-
-macro_rules! check_closed_broadcast {
-	($node: expr, $with_error_msg: expr) => {{
-		let events = $node.node.get_and_clear_pending_msg_events();
-		assert_eq!(events.len(), if $with_error_msg { 2 } else { 1 });
-		match events[0] {
-			MessageSendEvent::BroadcastChannelUpdate { ref msg } => {
-			},
-			_ => panic!("Unexpected event"),
-		}
-		if $with_error_msg {
-			match events[1] {
-				MessageSendEvent::HandleError { action: ErrorAction::SendErrorMessage { ref msg }, node_id: _ } => {
-					// TODO: Check node_id
-					Some(msg.clone())
-				},
-				_ => panic!("Unexpected event"),
-			}
-		} else { None }
-	}}
 }
 
 pub fn close_channel(outbound_node: &Node, inbound_node: &Node, channel_id: &[u8; 32], funding_tx: Transaction, close_inbound_first: bool) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, Transaction) {
@@ -567,20 +516,6 @@ macro_rules! expect_pending_htlcs_forwardable {
 		};
 		$node.node.process_pending_htlc_forwards();
 	}}
-}
-
-macro_rules! expect_payment_received {
-	($node: expr, $expected_payment_hash: expr, $expected_recv_value: expr) => {
-		let events = $node.node.get_and_clear_pending_events();
-		assert_eq!(events.len(), 1);
-		match events[0] {
-			Event::PaymentReceived { ref payment_hash, amt } => {
-				assert_eq!($expected_payment_hash, *payment_hash);
-				assert_eq!($expected_recv_value, amt);
-			},
-			_ => panic!("Unexpected event"),
-		}
-	}
 }
 
 macro_rules! expect_payment_sent {

@@ -1,32 +1,28 @@
-use lightning::chain;
-use lightning::ln;
-use lightning::util;
+use std::collections::HashMap;
+use std::mem;
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use bitcoin::blockdata::script::Script;
+use bitcoin::blockdata::transaction::Transaction;
+use bitcoin::network::constants::Network;
 use chain::chaininterface;
 use chain::chaininterface::ConfirmationTarget;
-use chain::transaction::OutPoint;
 use chain::keysinterface;
+use chain::transaction::OutPoint;
+use lightning::chain;
+use lightning::chain::keysinterface::InMemoryChannelKeys;
+use lightning::ln;
+use lightning::ln::features::InitFeatures;
+use lightning::util;
 use ln::channelmonitor;
+use ln::channelmonitor::HTLCUpdate;
 use ln::msgs;
 use ln::msgs::LightningError;
-use ln::channelmonitor::HTLCUpdate;
+use secp256k1::{PublicKey, SecretKey};
 use util::events;
-use util::logger::{Logger, Level, Record};
-use util::ser::{ReadableArgs, Writer};
-
-use bitcoin::blockdata::transaction::Transaction;
-use bitcoin::blockdata::script::Script;
-use bitcoin_hashes::sha256d::Hash as Sha256dHash;
-use bitcoin::network::constants::Network;
-
-use secp256k1::{SecretKey, PublicKey};
-
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::sync::{Arc,Mutex};
-use std::{mem};
-use std::collections::HashMap;
-use lightning::chain::keysinterface::InMemoryChannelKeys;
-use lightning::ln::features::InitFeatures;
+use util::logger::{Level, Logger, Record};
+use util::ser::Writer;
 
 pub struct TestVecWriter(pub Vec<u8>);
 impl Writer for TestVecWriter {

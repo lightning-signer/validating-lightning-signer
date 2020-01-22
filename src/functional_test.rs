@@ -1,5 +1,6 @@
-use crate::test::functional_test_utils::{create_network, create_announced_chan_between_nodes, send_payment};
 use lightning::ln::features::InitFeatures;
+
+use crate::test::functional_test_utils::{create_announced_chan_between_nodes, create_network, send_payment};
 
 fn make_features() -> InitFeatures {
     InitFeatures::supported()

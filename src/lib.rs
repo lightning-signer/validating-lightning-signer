@@ -10,6 +10,6 @@ extern crate secp256k1;
 extern crate tonic;
 
 pub mod test;
-pub mod functional_test;
+#[allow(unused_imports)] pub mod functional_test;
 mod server;
 mod client;
