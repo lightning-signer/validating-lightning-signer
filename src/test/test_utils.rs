@@ -120,7 +120,7 @@ impl msgs::ChannelMessageHandler for TestChannelMessageHandler {
 	fn handle_announcement_signatures(&self, _their_node_id: &PublicKey, _msg: &msgs::AnnouncementSignatures) {}
 	fn handle_channel_reestablish(&self, _their_node_id: &PublicKey, _msg: &msgs::ChannelReestablish) {}
 	fn peer_disconnected(&self, _their_node_id: &PublicKey, _no_connection_possible: bool) {}
-	fn peer_connected(&self, _their_node_id: &PublicKey) {}
+	fn peer_connected(&self, _their_node_id: &PublicKey, _msg: &msgs::Init) {}
 	fn handle_error(&self, _their_node_id: &PublicKey, _msg: &msgs::ErrorMessage) {}
 }
 
@@ -206,7 +206,9 @@ impl keysinterface::KeysInterface for TestKeysInterface {
 	fn get_node_secret(&self) -> SecretKey { self.backing.get_node_secret() }
 	fn get_destination_script(&self) -> Script { self.backing.get_destination_script() }
 	fn get_shutdown_pubkey(&self) -> PublicKey { self.backing.get_shutdown_pubkey() }
-	fn get_channel_keys(&self, inbound: bool) -> InMemoryChannelKeys { self.backing.get_channel_keys(inbound) }
+	fn get_channel_keys(&self, inbound: bool, channel_value_satoshis: u64) -> InMemoryChannelKeys {
+		self.backing.get_channel_keys(inbound, channel_value_satoshis)
+	}
 
 	fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
 		match *self.override_session_priv.lock().unwrap() {
