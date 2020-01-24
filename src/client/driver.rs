@@ -6,7 +6,7 @@ pub mod signer {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = SignerClient::connect("http://[::1]:50051").await?;
 
     let request = tonic::Request::new(PingRequest {
