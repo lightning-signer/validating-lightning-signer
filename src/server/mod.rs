@@ -1,1 +1,1 @@
-mod server;
+pub mod signer;

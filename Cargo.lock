@@ -340,6 +340,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightning-signer"
+version = "0.1.0"
+dependencies = [
+ "bitcoin 0.21.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bitcoin_hashes 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hex 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lightning 0.0.10 (git+https://github.com/lightning-signer/rust-lightning.git?branch=channel-value)",
+ "prost 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "secp256k1 0.15.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tonic 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tonic-build 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "log"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -679,22 +695,6 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "winapi 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "rust-lightning-signer"
-version = "0.1.0"
-dependencies = [
- "bitcoin 0.21.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "bitcoin_hashes 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "hex 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "lightning 0.0.10 (git+https://github.com/lightning-signer/rust-lightning.git?branch=channel-value)",
- "prost 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "secp256k1 0.15.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "tokio 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
- "tonic 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "tonic-build 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

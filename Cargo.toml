@@ -1,5 +1,5 @@
 [package]
-name = "rust-lightning-signer"
+name = "lightning-signer"
 version = "0.1.0"
 authors = ["Devrandom <c1.devrandom@niftybox.net>"]
 edition = "2018"
@@ -21,14 +21,6 @@ branch = "channel-value"
 [dev-dependencies.bitcoin]
 version = "0.21"
 features = ["bitcoinconsensus"]
-
-[[bin]] # Bin to run the HelloWorld gRPC server
-name = "server"
-path = "src/server/server.rs"
-
-[[bin]] # Bin to run the HelloWorld gRPC client
-name = "client"
-path = "src/client/client.rs"
 
 [build-dependencies]
 tonic-build = "0.1.0"
