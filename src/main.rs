@@ -15,7 +15,9 @@ extern crate tonic;
 pub mod util;
 pub mod test;
 #[allow(unused_imports)] pub mod functional_test;
-#[macro_use]
 mod server;
 mod client;
 
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    server::signer::start()
+}

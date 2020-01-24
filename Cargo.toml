@@ -22,13 +22,5 @@ branch = "channel-value"
 version = "0.21"
 features = ["bitcoinconsensus"]
 
-[[bin]] # Bin to run the HelloWorld gRPC server
-name = "server"
-path = "src/server/signer_server.rs"
-
-[[bin]] # Bin to run the HelloWorld gRPC client
-name = "client"
-path = "src/client/client.rs"
-
 [build-dependencies]
 tonic-build = "0.1.0"

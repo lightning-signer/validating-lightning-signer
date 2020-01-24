@@ -5,12 +5,10 @@ use bitcoin::Network;
 use lightning::chain::keysinterface::KeysManager;
 use tonic::{Request, Response, Status, transport::Server};
 
-use crate::util;
-use util::test_utils::TestLogger;
-
 use signer::*;
 use signer::signer_server::{Signer, SignerServer};
 use lightning::util::logger::Logger;
+use crate::util::test_utils::TestLogger;
 
 
 pub mod signer {
@@ -24,7 +22,7 @@ pub struct MySigner {
 }
 
 impl MySigner {
-    fn new() -> MySigner {
+    pub fn new() -> MySigner {
         let network = Network::Testnet;
         let seed = [0; 32];
         let test_logger = Arc::new(TestLogger::with_id("server".to_owned()));
@@ -85,7 +83,7 @@ impl Signer for MySigner {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse()?;
     let signer = MySigner::new();
 
