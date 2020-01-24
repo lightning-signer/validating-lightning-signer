@@ -14,6 +14,5 @@ extern crate tonic;
 #[macro_use]
 pub mod util;
 pub mod test;
-#[allow(unused_imports)] pub mod functional_test;
 pub mod server;
 pub mod client;
