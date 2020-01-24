@@ -1,20 +1,48 @@
-use tonic::{transport::Server, Request, Response, Status};
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use bitcoin::Network;
+use lightning::chain::keysinterface::KeysManager;
+use tonic::{Request, Response, Status, transport::Server};
+
+use crate::util;
+use util::test_utils::TestLogger;
 
 use signer::*;
 use signer::signer_server::{Signer, SignerServer};
+use lightning::util::logger::Logger;
+
 
 pub mod signer {
     // The string specified here must match the proto package name
     tonic::include_proto!("signer");
 }
 
-#[derive(Debug, Default)]
-pub struct MySigner {}
+pub struct MySigner {
+    keys_manager: KeysManager,
+    logger: Arc<Logger>,
+}
+
+impl MySigner {
+    fn new() -> MySigner {
+        let network = Network::Testnet;
+        let seed = [0; 32];
+        let test_logger = Arc::new(TestLogger::with_id("server".to_owned()));
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards");
+        let logger = Arc::clone(&test_logger) as Arc<Logger>;
+        let signer = MySigner {
+            keys_manager: KeysManager::new(&seed, network, logger, now.as_secs(), now.subsec_nanos()),
+            logger: test_logger,
+        };
+        log_info!(signer, "new MySigner");
+        signer
+    }
+}
 
 #[tonic::async_trait]
 impl Signer for MySigner {
     async fn ping(&self, request: Request<PingRequest>) -> Result<Response<PingReply>, Status> {
-        println!("Got a request: {:?}", request);
+        log_info!(self, "Got a request: {:?}", request);
 
         let reply = signer::PingReply {
             message: format!("Hello {}!", request.into_inner().message).into(), // We must use .into_inner() as the fields of gRPC requests and responses are private
@@ -59,7 +87,7 @@ impl Signer for MySigner {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse()?;
-    let signer = MySigner::default();
+    let signer = MySigner::new();
 
     Server::builder()
         .add_service(SignerServer::new(signer))

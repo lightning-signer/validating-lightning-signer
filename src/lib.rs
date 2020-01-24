@@ -1,3 +1,5 @@
+#![crate_name = "lightning_signer"]
+
 #![forbid(unsafe_code)]
 #![allow(bare_trait_objects)]
 #![allow(ellipsis_inclusive_range_patterns)]
@@ -9,7 +11,11 @@ extern crate rand;
 extern crate secp256k1;
 extern crate tonic;
 
+#[macro_use]
+pub mod util;
 pub mod test;
 #[allow(unused_imports)] pub mod functional_test;
+#[macro_use]
 mod server;
 mod client;
+

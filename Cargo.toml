@@ -1,5 +1,5 @@
 [package]
-name = "rust-lightning-signer"
+name = "lightning-signer"
 version = "0.1.0"
 authors = ["Devrandom <c1.devrandom@niftybox.net>"]
 edition = "2018"
@@ -24,7 +24,7 @@ features = ["bitcoinconsensus"]
 
 [[bin]] # Bin to run the HelloWorld gRPC server
 name = "server"
-path = "src/server/server.rs"
+path = "src/server/signer_server.rs"
 
 [[bin]] # Bin to run the HelloWorld gRPC client
 name = "client"

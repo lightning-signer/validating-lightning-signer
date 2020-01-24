@@ -2,7 +2,6 @@
 //! nodes for functional tests.
 
 use std::cell::RefCell;
-use std::mem;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -33,7 +32,7 @@ use util::errors::APIError;
 use util::events::{Event, EventsProvider, MessageSendEvent, MessageSendEventsProvider};
 use util::logger::Logger;
 
-use crate::test::test_utils;
+use crate::util::test_utils;
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 100;
 pub fn confirm_transaction(notifier: &chaininterface::BlockNotifier, chain: &chaininterface::ChainWatchInterfaceUtil, tx: &Transaction, chan_id: u32) {
@@ -163,7 +162,6 @@ pub fn create_chan_between_nodes_with_value_init(node_a: &Node, node_b: &Node, c
 	{
 		node_a.node.funding_transaction_generated(&temporary_channel_id, funding_output);
 		let mut added_monitors = node_a.chan_monitor.added_monitors.lock().unwrap();
-		let l = added_monitors.len();
 		assert_eq!(added_monitors.len(), 1);
 		assert_eq!(added_monitors[0].0, funding_output);
 		added_monitors.clear();

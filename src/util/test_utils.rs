@@ -14,15 +14,15 @@ use lightning::chain;
 use lightning::chain::keysinterface::InMemoryChannelKeys;
 use lightning::ln;
 use lightning::ln::features::InitFeatures;
-use lightning::util;
+use lightning::util::events;
+use lightning::util::ser::Writer;
 use ln::channelmonitor;
 use ln::channelmonitor::HTLCUpdate;
 use ln::msgs;
 use ln::msgs::LightningError;
 use secp256k1::{PublicKey, SecretKey};
-use util::events;
-use util::logger::{Level, Logger, Record};
-use util::ser::Writer;
+
+use lightning::util::logger::{Level, Logger, Record};
 
 pub struct TestVecWriter(pub Vec<u8>);
 impl Writer for TestVecWriter {
