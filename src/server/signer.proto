@@ -71,16 +71,16 @@ message ECDHReply {
   bytes shared_secret = 1; // 32 bytes
 }
 
-// TODO rename
 message NewChannelRequest {
   bytes self_node_id = 1;
 
   bytes channel_nonce = 2;
 
   uint64 capabilities = 3;
+
+
 }
 
-// TODO rename
 message NewChannelReply {
 }
 
