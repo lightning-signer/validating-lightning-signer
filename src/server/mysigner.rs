@@ -1,8 +1,11 @@
+use core::fmt;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bitcoin::Network;
+use bitcoin_hashes::core::fmt::Formatter;
 use lightning::chain::keysinterface::{InMemoryChannelKeys, KeysInterface, KeysManager};
 use lightning::util::logger::Logger;
 use secp256k1::{PublicKey, Secp256k1};
@@ -15,9 +18,21 @@ pub struct Channel {
     keys: InMemoryChannelKeys,
 }
 
+impl Debug for Channel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("channel")
+    }
+}
+
 pub struct Node {
     keys_manager: KeysManager,
     channels: Mutex<HashMap<ChannelId, Channel>>,
+}
+
+impl Debug for Node {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("node")
+    }
 }
 
 pub struct MySigner {
@@ -59,7 +74,7 @@ impl MySigner {
             Some(n) => n,
             None => {
                 log_error!(self, "no such node {}", node_id);
-                return Err(())
+                return Err(());
             }
         };
         let mut channels = node.channels.lock().unwrap();
@@ -67,7 +82,7 @@ impl MySigner {
         let channel_id = keys_manager.get_channel_id();
         if channels.contains_key(&channel_id) {
             log_error!(self, "already have channel ID {}", hex::encode(channel_id));
-            return Err(())
+            return Err(());
         }
         let unused_inbound_flag = false;
         let chan_keys = keys_manager.get_channel_keys(unused_inbound_flag, channel_value_satoshi);
@@ -76,6 +91,24 @@ impl MySigner {
         };
         channels.insert(channel_id, channel);
         Ok(channel_id)
+    }
+
+    fn with_node<F: Sized, T, E>(&self, node_id: &PublicKey, f: F) -> Result<T, E>
+        where F: Fn(Option<&Node>) -> Result<T, E> {
+        let nodes = self.nodes.lock().unwrap();
+        let node = nodes.get(node_id);
+        f(node)
+    }
+
+    fn with_channel<F: Sized, T, E>(&self, node_id: &PublicKey,
+                                    channel_id: &ChannelId,
+                                    f: F) -> Result<T, E>
+        where F: Fn(Option<&Channel>) -> Result<T, E> {
+        let nodes = self.nodes.lock().unwrap();
+        let node = nodes.get(node_id);
+        node.map_or(f(None), |n| {
+            f(n.channels.lock().unwrap().get(channel_id))
+        })
     }
 }
 
@@ -89,7 +122,41 @@ mod tests {
     fn new_channel_test() -> Result<(), ()> {
         let signer = MySigner::new();
         let node_id = signer.new_node();
-        assert(signer.new_channel(&node_id, 1000))?;
+        let channel_id = signer.new_channel(&node_id, 1000)?;
+        signer.with_node(&node_id, |node| {
+            assert(node.ok_or(()))
+        })?;
+        signer.with_channel(&node_id, &channel_id, |chan| {
+            assert(chan.ok_or(()))
+        })?;
+        Ok(())
+    }
+
+    #[test]
+    fn bad_channel_lookup_test() -> Result<(), ()> {
+        let signer = MySigner::new();
+        let node_id = signer.new_node();
+        let channel_id = [1; 32];
+        signer.with_channel(&node_id, &channel_id, |chan| {
+            assert_not(chan.ok_or(()))
+        })?;
+        Ok(())
+    }
+
+    #[test]
+    fn bad_node_lookup_test() -> Result<(), ()> {
+        let secp_ctx = Secp256k1::signing_only();
+        let signer = MySigner::new();
+        let node_id = pubkey_from_secret_hex("0101010101010101010101010101010101010101010101010101010101010101", &secp_ctx);
+
+        let channel_id = [1; 32];
+        signer.with_channel(&node_id, &channel_id, |chan| {
+            assert_not(chan.ok_or(()))
+        })?;
+
+        signer.with_node(&node_id, |node| {
+            assert_not(node.ok_or(()))
+        })?;
         Ok(())
     }
 
