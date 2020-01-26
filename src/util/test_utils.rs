@@ -238,19 +238,6 @@ impl TestKeysInterface {
     }
 }
 
-// erase the return type of the result
-pub fn assert<T>(res: Result<T, ()>) -> Result<(), ()> {
-    res.map(|_| ())
-}
-
-// invert the result
-pub fn assert_not<T>(res: Result<T, ()>) -> Result<(), ()> {
-    match res {
-        Ok(_) => Err(()),
-        Err(()) => Ok(())
-    }
-}
-
 pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> PublicKey {
     PublicKey::from_secret_key(secp_ctx, &SecretKey::from_slice(&hex::decode(h).unwrap()[..]).unwrap())
 }
