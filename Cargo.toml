@@ -20,7 +20,7 @@ tokio = { version = "0.2", features = ["macros"] }
 
 [dependencies.lightning]
 git = "https://github.com/lightning-signer/rust-lightning.git"
-branch = "channel-value"
+branch = "txcreationkeys"
 
 [dev-dependencies.bitcoin]
 version = "0.21"

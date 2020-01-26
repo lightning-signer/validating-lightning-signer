@@ -6,16 +6,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use bitcoin::Network;
 use bitcoin_hashes::core::fmt::Formatter;
-use lightning::chain::keysinterface::{InMemoryChannelKeys, KeysInterface, KeysManager};
+use lightning::chain::keysinterface::{KeysInterface, KeysManager};
 use lightning::util::logger::Logger;
 use secp256k1::{PublicKey, Secp256k1};
 
+use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::test_utils::TestLogger;
 
 type ChannelId = [u8; 32];
 
 pub struct Channel {
-    keys: InMemoryChannelKeys,
+    keys: EnforcingChannelKeys,
 }
 
 impl Debug for Channel {
@@ -85,7 +86,8 @@ impl MySigner {
             return Err(());
         }
         let unused_inbound_flag = false;
-        let chan_keys = keys_manager.get_channel_keys(unused_inbound_flag, channel_value_satoshi);
+        let chan_keys =
+            EnforcingChannelKeys::new(keys_manager.get_channel_keys(unused_inbound_flag, channel_value_satoshi));
         let channel = Channel {
             keys: chan_keys
         };

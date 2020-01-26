@@ -11,7 +11,6 @@ use chain::chaininterface::ConfirmationTarget;
 use chain::keysinterface;
 use chain::transaction::OutPoint;
 use lightning::chain;
-use lightning::chain::keysinterface::InMemoryChannelKeys;
 use lightning::ln;
 use lightning::ln::features::InitFeatures;
 use lightning::util::events;
@@ -22,6 +21,8 @@ use ln::channelmonitor::HTLCUpdate;
 use ln::msgs;
 use ln::msgs::LightningError;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
+
+use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 
 pub struct TestVecWriter(pub Vec<u8>);
 
@@ -47,7 +48,7 @@ impl chaininterface::FeeEstimator for TestFeeEstimator {
 
 pub struct TestChannelMonitor {
     pub added_monitors: Mutex<Vec<(OutPoint, channelmonitor::ChannelMonitor)>>,
-    pub simple_monitor: Arc<channelmonitor::SimpleManyChannelMonitor<OutPoint>>,
+    pub simple_monitor: channelmonitor::SimpleManyChannelMonitor<OutPoint>,
     pub update_ret: Mutex<Result<(), channelmonitor::ChannelMonitorUpdateErr>>,
 }
 
@@ -202,13 +203,13 @@ pub struct TestKeysInterface {
 }
 
 impl keysinterface::KeysInterface for TestKeysInterface {
-    type ChanKeySigner = InMemoryChannelKeys;
+    type ChanKeySigner = EnforcingChannelKeys;
 
     fn get_node_secret(&self) -> SecretKey { self.backing.get_node_secret() }
     fn get_destination_script(&self) -> Script { self.backing.get_destination_script() }
     fn get_shutdown_pubkey(&self) -> PublicKey { self.backing.get_shutdown_pubkey() }
-    fn get_channel_keys(&self, inbound: bool, channel_value_satoshis: u64) -> InMemoryChannelKeys {
-        self.backing.get_channel_keys(inbound, channel_value_satoshis)
+    fn get_channel_keys(&self, inbound: bool, channel_value_satoshis: u64) -> EnforcingChannelKeys {
+        EnforcingChannelKeys::new(self.backing.get_channel_keys(inbound, channel_value_satoshis))
     }
 
     fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
