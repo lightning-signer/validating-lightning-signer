@@ -19,7 +19,7 @@ pub struct LoopbackChannelSigner {
     pub channel_id: ChannelId,
     pub signer: Arc<MySigner>,
 
-    // TODO below are caches of secret keys that should go away
+    // TODO leaking secrets
     pub keys: InMemoryChannelKeys,
 }
 
@@ -44,22 +44,27 @@ impl ChannelKeys for LoopbackChannelSigner {
         self.keys.funding_key()
     }
 
+    // TODO leaking secret key
     fn revocation_base_key(&self) -> &SecretKey {
         self.keys.revocation_base_key()
     }
 
+    // TODO leaking secret key
     fn payment_base_key(&self) -> &SecretKey {
         self.keys.payment_base_key()
     }
 
+    // TODO leaking secret key
     fn delayed_payment_base_key(&self) -> &SecretKey {
         self.keys.delayed_payment_base_key()
     }
 
+    // TODO leaking secret key
     fn htlc_base_key(&self) -> &SecretKey {
         self.keys.htlc_base_key()
     }
 
+    // TODO leaking secret key
     fn commitment_seed(&self) -> &[u8; 32] {
         self.keys.commitment_seed()
     }
@@ -107,13 +112,13 @@ impl KeysInterface for LoopbackSignerKeysInterface {
 
     fn get_destination_script(&self) -> Script {
         self.signer.with_node(&self.node_id, |node_opt| {
-            node_opt.map_or(Err(()), |n| Ok(n.keys_manager.get_destination_script()))
+            node_opt.map_or(Err(()), |n| Ok(n.get_destination_script()))
         }).unwrap()
     }
 
     fn get_shutdown_pubkey(&self) -> PublicKey {
         self.signer.with_node(&self.node_id, |node_opt| {
-            node_opt.map_or(Err(()), |n| Ok(n.keys_manager.get_shutdown_pubkey()))
+            node_opt.map_or(Err(()), |n| Ok(n.get_shutdown_pubkey()))
         }).unwrap()
     }
 
@@ -132,13 +137,13 @@ impl KeysInterface for LoopbackSignerKeysInterface {
     // TODO secret key leaking
     fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
         self.signer.with_node(&self.node_id, |node_opt| {
-            node_opt.map_or(Err(()), |n| Ok(n.keys_manager.get_onion_rand()))
+            node_opt.map_or(Err(()), |n| Ok(n.get_onion_rand()))
         }).unwrap()
     }
 
     fn get_channel_id(&self) -> [u8; 32] {
         self.signer.with_node(&self.node_id, |node_opt| {
-            node_opt.map_or(Err(()), |n| Ok(n.keys_manager.get_channel_id()))
+            node_opt.map_or(Err(()), |n| Ok(n.get_channel_id()))
         }).unwrap()
     }
 }

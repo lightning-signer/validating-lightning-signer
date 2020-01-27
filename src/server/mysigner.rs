@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bitcoin::{Network, Transaction};
+use bitcoin::{Network, Script, Transaction};
 use bitcoin_hashes::core::fmt::{Error, Formatter};
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface, KeysManager};
 use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys};
@@ -71,13 +71,36 @@ impl Channel {
 }
 
 pub struct Node {
-    pub keys_manager: KeysManager,
+    keys_manager: KeysManager,
     channels: Mutex<HashMap<ChannelId, Channel>>,
 }
 
 impl Node {
+    /// TODO leaking secret
     pub fn get_node_secret(&self) -> SecretKey {
         self.keys_manager.get_node_secret()
+    }
+
+    /// TODO leaking secret
+    pub fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
+        self.keys_manager.get_onion_rand()
+    }
+
+    /// Get destination redeemScript to encumber static protocol exit points.
+    pub fn get_destination_script(&self) -> Script {
+        self.keys_manager.get_destination_script()
+    }
+
+    /// Get shutdown_pubkey to use as PublicKey at channel closure
+    pub fn get_shutdown_pubkey(&self) -> PublicKey {
+        self.keys_manager.get_shutdown_pubkey()
+    }
+
+    /// Get a unique temporary channel id. Channels will be referred to by this until the funding
+    /// transaction is created, at which point they will use the outpoint in the funding
+    /// transaction.
+    pub fn get_channel_id(&self) -> [u8; 32] {
+        self.keys_manager.get_channel_id()
     }
 }
 
@@ -95,7 +118,6 @@ pub struct MySigner {
 impl MySigner {
     pub fn new() -> MySigner {
         let test_logger = Arc::new(TestLogger::with_id("server".to_owned()));
-        let logger = Arc::clone(&test_logger) as Arc<Logger>;
         let signer = MySigner {
             logger: test_logger,
             nodes: Mutex::new(HashMap::new()),
