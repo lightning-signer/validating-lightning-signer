@@ -332,7 +332,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "lightning"
 version = "0.0.10"
-source = "git+https://github.com/lightning-signer/rust-lightning.git?branch=txcreationkeys#aee8b1bc45bc0f2a4d95ffca69488fe222efadff"
+source = "git+https://github.com/lightning-signer/rust-lightning.git?branch=txcreationkeys#e83a2e7ea29a92df6ef1773c243eb0cb9b037da4"
 dependencies = [
  "bitcoin 0.21.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitcoin_hashes 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
