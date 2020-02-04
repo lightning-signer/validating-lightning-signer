@@ -1,35 +1,37 @@
-use secp256k1::key::PublicKey;
-
 use std;
 
+use secp256k1::key::PublicKey;
+
 pub(crate) struct DebugPubKey<'a>(pub &'a PublicKey);
+
 impl<'a> std::fmt::Display for DebugPubKey<'a> {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
-		for i in self.0.serialize().iter() {
-			write!(f, "{:02x}", i)?;
-		}
-		Ok(())
-	}
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        for i in self.0.serialize().iter() {
+            write!(f, "{:02x}", i)?;
+        }
+        Ok(())
+    }
 }
 macro_rules! log_pubkey {
-	($obj: expr) => {
-		::util::macro_logger::DebugPubKey(&$obj)
-	}
+    ($obj: expr) => {
+        ::util::macro_logger::DebugPubKey(&$obj)
+    };
 }
 
 pub(crate) struct DebugBytes<'a>(pub &'a [u8]);
+
 impl<'a> std::fmt::Display for DebugBytes<'a> {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
-		for i in self.0 {
-			write!(f, "{:02x}", i)?;
-		}
-		Ok(())
-	}
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        for i in self.0 {
+            write!(f, "{:02x}", i)?;
+        }
+        Ok(())
+    }
 }
 macro_rules! log_bytes {
-	($obj: expr) => {
-		::util::macro_logger::DebugBytes(&$obj)
-	}
+    ($obj: expr) => {
+        ::util::macro_logger::DebugBytes(&$obj)
+    };
 }
 
 macro_rules! log_internal {

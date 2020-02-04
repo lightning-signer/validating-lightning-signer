@@ -1,7 +1,7 @@
-use bitcoin::Network;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
-use bitcoin_hashes::{Hash, HashEngine};
+use bitcoin::Network;
 use bitcoin_hashes::sha256::Hash as Sha256Bitcoin;
+use bitcoin_hashes::Hash;
 use crypto::hkdf::{hkdf_expand, hkdf_extract};
 use crypto::sha2::Sha256;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
@@ -35,11 +35,18 @@ pub fn node_keys(secp_ctx: &Secp256k1<SignOnly>, node_seed: &[u8]) -> (PublicKey
     (node_id, node_secret_key)
 }
 
-fn bip32_key(secp_ctx: &Secp256k1<SignOnly>, network: Network, node_seed: &[u8]) -> ExtendedPrivKey {
+fn bip32_key(
+    secp_ctx: &Secp256k1<SignOnly>,
+    network: Network,
+    node_seed: &[u8],
+) -> ExtendedPrivKey {
     let bip32_seed = hkdf_sha256(node_seed, "bip32 seed".as_bytes(), &[]);
     let master = ExtendedPrivKey::new_master(network.clone(), &bip32_seed).unwrap();
-    master.ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(0).unwrap())
-        .unwrap().ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(0).unwrap()).unwrap()
+    master
+        .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(0).unwrap())
+        .unwrap()
+        .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(0).unwrap())
+        .unwrap()
 }
 
 /// idx should start at INITIAL_COMMITMENT_NUMBER and count backwards
@@ -64,14 +71,20 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let (node_id, _) = node_keys(&secp_ctx, &[0u8; 32]);
         let node_id_bytes = node_id.serialize().to_vec();
-        assert!(hex::encode(&node_id_bytes) == "02058e8b6c2ad363ec59aa136429256d745164c2bdc87f98f0a68690ec2c5c9b0b");
+        assert!(
+            hex::encode(&node_id_bytes)
+                == "02058e8b6c2ad363ec59aa136429256d745164c2bdc87f98f0a68690ec2c5c9b0b"
+        );
         Ok(())
     }
 
     #[test]
     fn channels_seed_test() -> Result<(), ()> {
         let seed = channels_seed(&[0u8; 32]);
-        assert!(hex::encode(&seed) == "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53");
+        assert!(
+            hex::encode(&seed)
+                == "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53"
+        );
         Ok(())
     }
 
