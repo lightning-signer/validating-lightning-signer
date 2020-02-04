@@ -1,18 +1,18 @@
 use std::convert::TryInto;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
+use bitcoin::{Network, Script};
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::{Network, Script};
+use bitcoin_hashes::{Hash, HashEngine};
 use bitcoin_hashes::hash160::Hash as Hash160;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::sha256::HashEngine as Sha256State;
-use bitcoin_hashes::{Hash, HashEngine};
 use lightning::chain::keysinterface::{InMemoryChannelKeys, KeysInterface};
 use lightning::util::logger::Logger;
-use secp256k1::{PublicKey, Secp256k1, SecretKey};
+use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 
 use crate::util::byte_utils;
 use crate::util::crypto_utils::{
@@ -119,12 +119,12 @@ impl MyKeysManager {
         }
     }
 
-    pub fn per_commitment_secret(&self, keys: &InMemoryChannelKeys, idx: u64) -> SecretKey {
-        build_commitment_secret(&keys.commitment_seed, INITIAL_COMMITMENT_NUMBER - idx)
+    pub fn per_commitment_secret(commitment_seed: &[u8; 32], idx: u64) -> SecretKey {
+        build_commitment_secret(commitment_seed, INITIAL_COMMITMENT_NUMBER - idx)
     }
 
-    pub fn per_commitment_point(&self, keys: &InMemoryChannelKeys, idx: u64) -> PublicKey {
-        PublicKey::from_secret_key(&self.secp_ctx, &self.per_commitment_secret(keys, idx))
+    pub fn per_commitment_point(secp_ctx: &Secp256k1<SignOnly>, commitment_seed: &[u8; 32], idx: u64) -> PublicKey {
+        PublicKey::from_secret_key(secp_ctx, &MyKeysManager::per_commitment_secret(commitment_seed, idx))
     }
 }
 
@@ -275,7 +275,9 @@ mod tests {
             hex::encode(&keys.commitment_seed)
                 == "9fc48da6bc75058283b860d5989ffb802b6395ca28c4c3bb9d1da02df6bb0cb3"
         );
-        let per_commit_point = manager.per_commitment_point(&keys, 3);
+
+        let secp_ctx = Secp256k1::signing_only();
+        let per_commit_point = MyKeysManager::per_commitment_point(&secp_ctx, keys.commitment_seed(), 3);
         assert!(
             hex::encode(per_commit_point.serialize().to_vec())
                 == "03b5497ca60ff3165908c521ea145e742c25dedd14f5602f3f502d1296c39618a5"

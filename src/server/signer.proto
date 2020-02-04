@@ -25,10 +25,10 @@ service Signer {
 
 
 service VersionService {
-  rpc Version (VersionRequestuest) returns (VersionResponse);
+  rpc Version (VersionRequest) returns (VersionResponse);
 }
 
-message VersionRequestuest {
+message VersionRequest {
 }
 
 message VersionResponse {
@@ -77,7 +77,10 @@ message NewChannelRequest {
   // optional
   bytes channel_nonce = 2;
 
-  uint64 capabilities = 3;
+  // in satoshis
+  uint64 channel_value = 3;
+
+  uint64 capabilities = 4;
 }
 
 message NewChannelReply {

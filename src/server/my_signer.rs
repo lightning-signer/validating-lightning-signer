@@ -18,7 +18,7 @@ use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::test_utils::TestLogger;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub struct ChannelId([u8; 32]);
+pub struct ChannelId(pub [u8; 32]);
 
 impl Debug for ChannelId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -159,10 +159,12 @@ impl MySigner {
             channels: Mutex::new(HashMap::new()),
         };
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
+        let mut nodes = self.nodes.lock().unwrap();
+        nodes.insert(node_id, node);
         node_id
     }
 
-    pub fn new_channel(&self, node_id: &PublicKey, channel_value_satoshi: u64, opt_channel_id: Option<[u8; 32]>) -> Result<ChannelId, ()> {
+    pub fn new_channel(&self, node_id: &PublicKey, channel_value_satoshi: u64, opt_channel_id: Option<ChannelId>) -> Result<ChannelId, ()> {
         let nodes = self.nodes.lock().unwrap();
         let node = match nodes.get(node_id) {
             Some(n) => n,
@@ -173,8 +175,7 @@ impl MySigner {
         };
         let mut channels = node.channels.lock().unwrap();
         let keys_manager = &node.keys_manager;
-        let opt_channel_id = opt_channel_id.or_else(|| Some(keys_manager.get_channel_id()));
-        let channel_id = ChannelId(opt_channel_id.unwrap());
+        let channel_id = opt_channel_id.unwrap_or_else(|| ChannelId(keys_manager.get_channel_id()));
         if channels.contains_key(&channel_id) {
             log_error!(self, "already have channel ID {:?}", channel_id);
             return Err(());
