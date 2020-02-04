@@ -6,7 +6,7 @@ use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCre
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 
-use crate::server::mysigner::{Channel, ChannelId, MySigner};
+use crate::server::my_signer::{Channel, ChannelId, MySigner};
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -122,8 +122,8 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         }).unwrap()
     }
 
-    fn get_channel_keys(&self, _inbound: bool, channel_value_satoshis: u64) -> Self::ChanKeySigner {
-        let channel_id = self.signer.new_channel(&self.node_id, channel_value_satoshis).unwrap();
+    fn get_channel_keys(&self, channel_id: [u8; 32], _inbound: bool, channel_value_satoshis: u64) -> Self::ChanKeySigner {
+        let channel_id = self.signer.new_channel(&self.node_id, channel_value_satoshis, None).unwrap();
         self.signer.with_channel(&self.node_id, &channel_id, |channel_opt| {
             channel_opt.map_or(Err(()), |c| Ok(LoopbackChannelSigner::new(
                 &self.node_id,

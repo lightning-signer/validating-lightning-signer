@@ -17,10 +17,11 @@ rand = "0.4"
 tonic = "0.1.1"
 prost = "0.6"
 tokio = { version = "0.2", features = ["macros"] }
+rust-crypto = "0.2.36"
 
 [dependencies.lightning]
 git = "https://github.com/lightning-signer/rust-lightning.git"
-branch = "txcreationkeys"
+rev = "90249bbb7977df7050c1e9b02b38ef4abea03f48"  # compat branch
 
 [dev-dependencies.bitcoin]
 version = "0.21"

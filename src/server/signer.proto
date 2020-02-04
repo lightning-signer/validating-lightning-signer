@@ -74,14 +74,14 @@ message ECDHReply {
 message NewChannelRequest {
   bytes self_node_id = 1;
 
+  // optional
   bytes channel_nonce = 2;
 
   uint64 capabilities = 3;
-
-
 }
 
 message NewChannelReply {
+  bytes channel_nonce = 1;
 }
 
 message GetPerCommitmentPointRequest {

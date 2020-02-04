@@ -7,7 +7,7 @@ use lightning::ln::features::InitFeatures;
 use lightning::util::logger::Logger;
 use secp256k1::PublicKey;
 
-use crate::server::mysigner::MySigner;
+use crate::server::my_signer::MySigner;
 use crate::test::functional_test_utils::{create_announced_chan_between_nodes, create_network, create_node_cfgs, create_node_chanmgrs, NodeCfg, send_payment};
 use crate::test::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;

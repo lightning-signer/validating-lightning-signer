@@ -1,9 +1,11 @@
+use std::convert::TryInto;
+
 use tonic::{Request, Response, Status, transport::Server};
 
 use signer::*;
 use signer::signer_server::{Signer, SignerServer};
 
-use crate::server::mysigner::MySigner;
+use crate::server::my_signer::MySigner;
 
 pub mod signer {
     // The string specified here must match the proto package name
@@ -22,8 +24,16 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn init(&self, _request: Request<InitRequest>) -> Result<Response<InitReply>, Status> {
-        panic!("not implemented")
+    async fn init(&self, request: Request<InitRequest>) -> Result<Response<InitReply>, Status> {
+        let hsm_secret_vec: Vec<u8> = request.into_inner().hsm_secret;
+        let hsm_secret = hsm_secret_vec.as_slice().try_into().expect("secret length != 32");
+
+        let node_id = self.new_node_from_seed(hsm_secret);
+
+        let reply = signer::InitReply {
+            self_node_id: node_id.serialize().to_vec()
+        };
+        Ok(Response::new(reply))
     }
 
     async fn ecdh(&self, _request: Request<EcdhRequest>) -> Result<Response<EcdhReply>, Status> {

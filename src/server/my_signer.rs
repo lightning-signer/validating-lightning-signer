@@ -6,13 +6,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use bitcoin::{Network, Script, Transaction};
 use bitcoin_hashes::core::fmt::{Error, Formatter};
-use lightning::chain::keysinterface::{ChannelKeys, KeysInterface, KeysManager};
+use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::util::logger::Logger;
 use rand::{Rng, thread_rng};
 use secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 
+use crate::server::my_keys_manager::MyKeysManager;
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::test_utils::TestLogger;
 
@@ -71,7 +72,7 @@ impl Channel {
 }
 
 pub struct Node {
-    keys_manager: KeysManager,
+    keys_manager: MyKeysManager,
     channels: Mutex<HashMap<ChannelId, Channel>>,
 }
 
@@ -137,7 +138,7 @@ impl MySigner {
         let logger = Arc::clone(&self.logger);
         let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards");
         let node = Node {
-            keys_manager: KeysManager::new(&seed, network, logger, now.as_secs(), now.subsec_nanos()),
+            keys_manager: MyKeysManager::new(&seed, network, logger, now.as_secs(), now.subsec_nanos()),
             channels: Mutex::new(HashMap::new()),
         };
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
@@ -146,7 +147,22 @@ impl MySigner {
         node_id
     }
 
-    pub fn new_channel(&self, node_id: &PublicKey, channel_value_satoshi: u64) -> Result<ChannelId, ()> {
+    pub fn new_node_from_seed(&self, seed: &[u8; 32]) -> PublicKey {
+        let secp_ctx = Secp256k1::signing_only();
+        let network = Network::Testnet;
+
+        let logger = Arc::clone(&self.logger);
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards");
+
+        let node = Node {
+            keys_manager: MyKeysManager::new(seed, network, logger, now.as_secs(), now.subsec_nanos()),
+            channels: Mutex::new(HashMap::new()),
+        };
+        let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
+        node_id
+    }
+
+    pub fn new_channel(&self, node_id: &PublicKey, channel_value_satoshi: u64, opt_channel_id: Option<[u8; 32]>) -> Result<ChannelId, ()> {
         let nodes = self.nodes.lock().unwrap();
         let node = match nodes.get(node_id) {
             Some(n) => n,
@@ -157,14 +173,15 @@ impl MySigner {
         };
         let mut channels = node.channels.lock().unwrap();
         let keys_manager = &node.keys_manager;
-        let channel_id = ChannelId(keys_manager.get_channel_id());
+        let opt_channel_id = opt_channel_id.or_else(|| Some(keys_manager.get_channel_id()));
+        let channel_id = ChannelId(opt_channel_id.unwrap());
         if channels.contains_key(&channel_id) {
             log_error!(self, "already have channel ID {:?}", channel_id);
             return Err(());
         }
         let unused_inbound_flag = false;
         let chan_keys =
-            EnforcingChannelKeys::new(keys_manager.get_channel_keys(unused_inbound_flag, channel_value_satoshi));
+            EnforcingChannelKeys::new(keys_manager.get_channel_keys(channel_id.0, unused_inbound_flag, channel_value_satoshi));
         let channel = Channel {
             keys: chan_keys,
             secp_ctx: Secp256k1::new(),
@@ -213,7 +230,7 @@ mod tests {
     fn new_channel_test() -> Result<(), ()> {
         let signer = MySigner::new();
         let node_id = signer.new_node();
-        let channel_id = signer.new_channel(&node_id, 1000)?;
+        let channel_id = signer.new_channel(&node_id, 1000, None)?;
         signer.with_node(&node_id, |node| {
             assert!(node.is_some());
             Ok(())
@@ -261,7 +278,7 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MySigner::new();
         let node_id = pubkey_from_secret_hex("0101010101010101010101010101010101010101010101010101010101010101", &secp_ctx);
-        assert!(signer.new_channel(&node_id, 1000).is_err());
+        assert!(signer.new_channel(&node_id, 1000, None).is_err());
         Ok(())
     }
 }

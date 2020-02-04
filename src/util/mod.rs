@@ -1,3 +1,5 @@
+pub mod crypto_utils;
+pub mod byte_utils;
 #[macro_use]
 #[allow(unused_macros)]
 pub mod macro_logger;
