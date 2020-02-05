@@ -39,20 +39,18 @@ impl Debug for Channel {
 
 impl Channel {
     fn make_tx_keys(&self, per_commitment_point: &PublicKey) -> TxCreationKeys {
-        let inner = &self.keys.inner;
-        let revocation_base = PublicKey::from_secret_key(&self.secp_ctx, &inner.revocation_base_key);
-        let payment_base = PublicKey::from_secret_key(&self.secp_ctx, &inner.payment_base_key);
-        let htlc_base = PublicKey::from_secret_key(&self.secp_ctx, &inner.htlc_base_key);
+        let keys = &self.keys.inner;
+        let pubkeys = keys.pubkeys();
 
-        let remote_points = inner.remote_channel_pubkeys.as_ref().unwrap();
+        let remote_points = keys.remote_pubkeys().as_ref().unwrap();
 
         TxCreationKeys::new(&self.secp_ctx,
                             &per_commitment_point,
                             &remote_points.delayed_payment_basepoint,
                             &remote_points.htlc_basepoint,
-                            &revocation_base,
-                            &payment_base,
-                            &htlc_base).unwrap()
+                            &pubkeys.revocation_basepoint,
+                            &pubkeys.payment_basepoint,
+                            &pubkeys.htlc_basepoint).unwrap()
     }
 
     pub fn sign_remote_commitment(&self, feerate_per_kw: u64, commitment_tx: &Transaction,

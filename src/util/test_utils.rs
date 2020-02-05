@@ -11,6 +11,7 @@ use chain::chaininterface::ConfirmationTarget;
 use chain::keysinterface;
 use chain::transaction::OutPoint;
 use lightning::chain;
+use lightning::chain::keysinterface::ChannelKeys;
 use lightning::ln;
 use lightning::ln::features::InitFeatures;
 use lightning::util::events;
@@ -46,13 +47,13 @@ impl chaininterface::FeeEstimator for TestFeeEstimator {
     }
 }
 
-pub struct TestChannelMonitor {
-    pub added_monitors: Mutex<Vec<(OutPoint, channelmonitor::ChannelMonitor)>>,
-    pub simple_monitor: channelmonitor::SimpleManyChannelMonitor<OutPoint>,
+pub struct TestChannelMonitor<ChanSigner: ChannelKeys> {
+    pub added_monitors: Mutex<Vec<(OutPoint, channelmonitor::ChannelMonitor<ChanSigner>)>>,
+    pub simple_monitor: channelmonitor::SimpleManyChannelMonitor<OutPoint, ChanSigner>,
     pub update_ret: Mutex<Result<(), channelmonitor::ChannelMonitorUpdateErr>>,
 }
 
-impl TestChannelMonitor {
+impl<ChanSigner: ChannelKeys> TestChannelMonitor<ChanSigner> {
     pub fn new(chain_monitor: Arc<chaininterface::ChainWatchInterface>, broadcaster: Arc<chaininterface::BroadcasterInterface>, logger: Arc<Logger>, fee_estimator: Arc<chaininterface::FeeEstimator>) -> Self {
         Self {
             added_monitors: Mutex::new(Vec::new()),
@@ -62,14 +63,8 @@ impl TestChannelMonitor {
     }
 }
 
-impl channelmonitor::ManyChannelMonitor for TestChannelMonitor {
-    fn add_update_monitor(&self, funding_txo: OutPoint, monitor: channelmonitor::ChannelMonitor) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
-        // At every point where we get a monitor update, we should be able to send a useful monitor
-        // to a watchtower and disk...
-        let mut w = TestVecWriter(Vec::new());
-        monitor.write_for_disk(&mut w).unwrap();
-        w.0.clear();
-        monitor.write_for_watchtower(&mut w).unwrap(); // This at least shouldn't crash...
+impl<ChanSigner: ChannelKeys> channelmonitor::ManyChannelMonitor<ChanSigner> for TestChannelMonitor<ChanSigner> {
+    fn add_update_monitor(&self, funding_txo: OutPoint, monitor: channelmonitor::ChannelMonitor<ChanSigner>) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
         self.added_monitors.lock().unwrap().push((funding_txo, monitor.clone()));
         assert!(self.simple_monitor.add_update_monitor(funding_txo, monitor).is_ok());
 

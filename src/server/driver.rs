@@ -80,8 +80,10 @@ impl Signer for MySigner {
         let point = self.with_channel(&node_id, &channel_id, |opt_chan| {
             match opt_chan {
                 None => Err(Status::invalid_argument("channel not found")),
-                Some(chan) =>
-                    Ok(MyKeysManager::per_commitment_point(&secp_ctx, chan.keys.commitment_seed(), msg.n)),
+                Some(chan) => {
+                    let seed = chan.keys.commitment_seed();
+                    Ok(MyKeysManager::per_commitment_point(&secp_ctx, seed, msg.n))
+                },
             }
         })?;
         let reply = GetPerCommitmentPointReply {

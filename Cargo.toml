@@ -21,7 +21,7 @@ rust-crypto = "0.2.36"
 
 [dependencies.lightning]
 git = "https://github.com/lightning-signer/rust-lightning.git"
-rev = "90249bbb7977df7050c1e9b02b38ef4abea03f48"  # compat branch
+rev = "89d2b80b739987a674b5871589aa35001ecc4ee4"  # compat branch
 
 [dev-dependencies.bitcoin]
 version = "0.21"

@@ -14,6 +14,7 @@ pub struct LoopbackSignerKeysInterface {
     pub signer: Arc<MySigner>,
 }
 
+#[derive(Clone)]
 pub struct LoopbackChannelSigner {
     pub node_id: PublicKey,
     pub channel_id: ChannelId,
@@ -68,6 +69,10 @@ impl ChannelKeys for LoopbackChannelSigner {
     fn commitment_seed(&self) -> &[u8; 32] {
         self.keys.commitment_seed()
     }
+
+    fn pubkeys(&self) -> &ChannelPublicKeys { self.keys.pubkeys() }
+
+    fn remote_pubkeys(&self) -> &Option<ChannelPublicKeys> { self.keys.remote_pubkeys() }
 
     fn sign_remote_commitment<T: secp256k1::Signing + secp256k1::Verification>(&self, feerate_per_kw: u64, commitment_tx: &Transaction, keys: &TxCreationKeys, htlcs: &[&HTLCOutputInCommitment], to_self_delay: u16, _secp_ctx: &Secp256k1<T>) -> Result<(Signature, Vec<Signature>), ()> {
         let signer = &self.signer;

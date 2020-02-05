@@ -167,17 +167,18 @@ impl KeysInterface for MyKeysManager {
         let delayed_payment_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
         let commitment_seed = keys_buf[ndx..ndx + 32].try_into().unwrap();
+        let secp_ctx = Secp256k1::signing_only();
 
-        InMemoryChannelKeys {
+        InMemoryChannelKeys::new(
+            &secp_ctx,
             funding_key,
             revocation_base_key,
             payment_base_key,
             delayed_payment_base_key,
             htlc_base_key,
             commitment_seed,
-            remote_channel_pubkeys: None,
             channel_value_satoshis,
-        }
+        )
     }
 
     fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
@@ -224,6 +225,8 @@ impl KeysInterface for MyKeysManager {
 
 #[cfg(test)]
 mod tests {
+    use lightning::chain::keysinterface::ChannelKeys;
+
     use crate::util::test_utils::TestLogger;
 
     use super::*;
@@ -243,23 +246,23 @@ mod tests {
         channel_id[0] = 1u8;
         let keys = manager.get_channel_keys(channel_id, false, 0);
         assert!(
-            hex::encode(&keys.funding_key[..])
+            hex::encode(&keys.funding_key()[..])
                 == "bf36bee09cc5dd64c8f19e10b258efb1f606722e9ff6fe3267b63e2dbe33dcfc"
         );
         assert!(
-            hex::encode(&keys.revocation_base_key[..])
+            hex::encode(&keys.revocation_base_key()[..])
                 == "203612ab8275bab7916b8bf895d45b9dbb639b43d904b34d6449214e9855d345"
         );
         assert!(
-            hex::encode(&keys.htlc_base_key[..])
+            hex::encode(&keys.htlc_base_key()[..])
                 == "517c009452b4baa9df42d6c8cddc966e017d49606524ce7728681b593a5659c1"
         );
         assert!(
-            hex::encode(&keys.payment_base_key[..])
+            hex::encode(&keys.payment_base_key()[..])
                 == "54ce3b75dcc2731604f3db55ecd1520d797a154cc757d6d98c3ffd1e90a9a25a"
         );
         assert!(
-            hex::encode(&keys.delayed_payment_base_key[..])
+            hex::encode(&keys.delayed_payment_base_key()[..])
                 == "9f5c122778b12ad35f555437d88b76b726ae4e472897af33e22616fb0d0b0a44"
         );
         Ok(())
@@ -272,7 +275,7 @@ mod tests {
         channel_id[0] = 1u8;
         let keys = manager.get_channel_keys(channel_id, false, 0);
         assert!(
-            hex::encode(&keys.commitment_seed)
+            hex::encode(&keys.commitment_seed())
                 == "9fc48da6bc75058283b860d5989ffb802b6395ca28c4c3bb9d1da02df6bb0cb3"
         );
 

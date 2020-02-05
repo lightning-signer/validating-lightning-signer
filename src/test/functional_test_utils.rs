@@ -7,11 +7,11 @@ use std::sync::{Arc, Mutex};
 
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::transaction::{Transaction, TxOut};
-use bitcoin::util::hash::BitcoinHash;
 use bitcoin::Network;
+use bitcoin::util::hash::BitcoinHash;
+use bitcoin_hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::sha256d::Hash as Sha256d;
-use bitcoin_hashes::Hash;
 use chain::chaininterface;
 use chain::keysinterface::KeysInterface;
 use chain::transaction::OutPoint;
@@ -25,7 +25,7 @@ use ln::features::InitFeatures;
 use ln::msgs;
 use ln::msgs::{ChannelMessageHandler, RoutingMessageHandler};
 use ln::router::{Route, Router};
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use secp256k1::key::PublicKey;
 use secp256k1::Secp256k1;
 use util::errors::APIError;
@@ -101,11 +101,11 @@ pub fn connect_blocks<'a, 'b>(
     header.bitcoin_hash()
 }
 
-pub struct NodeCfg<S> {
+pub struct NodeCfg<S: ChannelKeys> {
     pub chain_monitor: Arc<chaininterface::ChainWatchInterfaceUtil>,
     pub tx_broadcaster: Arc<test_utils::TestBroadcaster>,
     pub fee_estimator: Arc<test_utils::TestFeeEstimator>,
-    pub chan_monitor: test_utils::TestChannelMonitor,
+    pub chan_monitor: test_utils::TestChannelMonitor<S>,
     pub keys_manager: Arc<KeysInterface<ChanKeySigner = S>>,
     pub logger: Arc<test_utils::TestLogger>,
 }
@@ -114,8 +114,8 @@ pub struct Node<'a, 'b: 'a, S: ChannelKeys> {
     pub block_notifier: chaininterface::BlockNotifierRef<'b>,
     pub chain_monitor: Arc<chaininterface::ChainWatchInterfaceUtil>,
     pub tx_broadcaster: Arc<test_utils::TestBroadcaster>,
-    pub chan_monitor: &'b test_utils::TestChannelMonitor,
-    pub node: &'a ChannelManager<S, &'b TestChannelMonitor>,
+    pub chan_monitor: &'b test_utils::TestChannelMonitor<S>,
+    pub node: &'a ChannelManager<S, &'b TestChannelMonitor<S>>,
     pub router: Router,
     pub network_payment_count: Rc<RefCell<u8>>,
     pub network_chan_count: Rc<RefCell<u32>>,
@@ -1181,7 +1181,7 @@ pub fn create_node_chanmgrs<'a, 'b, S: ChannelKeys>(
     node_count: usize,
     cfgs: &'a Vec<NodeCfg<S>>,
     node_config: &[Option<UserConfig>],
-) -> Vec<ChannelManager<S, &'a TestChannelMonitor>> {
+) -> Vec<ChannelManager<S, &'a TestChannelMonitor<S>>> {
     let mut chanmgrs = Vec::new();
     for i in 0..node_count {
         let mut default_config = UserConfig::default();
@@ -1213,7 +1213,7 @@ pub fn create_node_chanmgrs<'a, 'b, S: ChannelKeys>(
 pub fn create_network<'a, 'b, S: ChannelKeys>(
     node_count: usize,
     cfgs: &'a Vec<NodeCfg<S>>,
-    chan_mgrs: &'b Vec<ChannelManager<S, &'a TestChannelMonitor>>,
+    chan_mgrs: &'b Vec<ChannelManager<S, &'a TestChannelMonitor<S>>>,
 ) -> Vec<Node<'a, 'b, S>> {
     let secp_ctx = Secp256k1::new();
     let mut nodes = Vec::new();

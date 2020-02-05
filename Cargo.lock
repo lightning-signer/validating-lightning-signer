@@ -337,7 +337,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "lightning"
 version = "0.0.10"
-source = "git+https://github.com/lightning-signer/rust-lightning.git?rev=90249bbb7977df7050c1e9b02b38ef4abea03f48#90249bbb7977df7050c1e9b02b38ef4abea03f48"
+source = "git+https://github.com/lightning-signer/rust-lightning.git?rev=89d2b80b739987a674b5871589aa35001ecc4ee4#89d2b80b739987a674b5871589aa35001ecc4ee4"
 dependencies = [
  "bitcoin 0.21.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitcoin_hashes 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -351,7 +351,7 @@ dependencies = [
  "bitcoin 0.21.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitcoin_hashes 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "hex 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "lightning 0.0.10 (git+https://github.com/lightning-signer/rust-lightning.git?rev=90249bbb7977df7050c1e9b02b38ef4abea03f48)",
+ "lightning 0.0.10 (git+https://github.com/lightning-signer/rust-lightning.git?rev=89d2b80b739987a674b5871589aa35001ecc4ee4)",
  "prost 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rust-crypto 0.2.36 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1175,7 +1175,7 @@ dependencies = [
 "checksum kernel32-sys 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "7507624b29483431c0ba2d82aece8ca6cdba9382bff4ddd0f7490560c056098d"
 "checksum lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 "checksum libc 0.2.66 (registry+https://github.com/rust-lang/crates.io-index)" = "d515b1f41455adea1313a4a2ac8a8a477634fbae63cc6100e3aebb207ce61558"
-"checksum lightning 0.0.10 (git+https://github.com/lightning-signer/rust-lightning.git?rev=90249bbb7977df7050c1e9b02b38ef4abea03f48)" = "<none>"
+"checksum lightning 0.0.10 (git+https://github.com/lightning-signer/rust-lightning.git?rev=89d2b80b739987a674b5871589aa35001ecc4ee4)" = "<none>"
 "checksum log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)" = "14b6052be84e6b71ab17edffc2eeabf5c2c3ae1fdb464aae35ac50c67a44e1f7"
 "checksum memchr 2.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "3197e20c7edb283f87c071ddfc7a2cca8f8e0b888c242959846a6fce03c72223"
 "checksum mio 0.6.21 (registry+https://github.com/rust-lang/crates.io-index)" = "302dec22bcf6bae6dfb69c647187f4b4d0fb6f535521f7bc022430ce8e12008f"
