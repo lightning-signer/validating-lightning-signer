@@ -1,0 +1,531 @@
+syntax = "proto3";
+
+package remotesigner;
+
+service Signer {
+  rpc Ping(PingRequest)
+    returns (PingReply);
+
+  rpc Init (InitRequest)
+    returns (InitReply);
+
+  // BOLT #2 - Peer Protocol
+  rpc NewChannel (NewChannelRequest)
+    returns (NewChannelReply);
+
+  // BOLT #2 - Channel Close
+  rpc SignMutualCloseTx (SignMutualCloseTxRequest)
+    returns (SignMutualCloseTxReply);
+
+  // BOLT #2 - Message Retransmission
+  rpc CheckFutureSecret (CheckFutureSecretRequest)
+    returns (CheckFutureSecretReply);
+  
+  // BOLT #3 - Key Derivation
+  rpc GetChannelBasepoints (GetChannelBasepointsRequest)
+    returns (GetChannelBasepointsReply);
+    
+  // BOLT #3 - Per-commitment Secret Requirements
+  rpc GetPerCommitmentPoint (GetPerCommitmentPointRequest)
+    returns (GetPerCommitmentPointReply);
+
+  // BOLT #3 - Funding Transaction
+  rpc SignFundingTx (SignFundingTxRequest)
+    returns (SignFundingTxReply);
+    
+  // BOLT #3 - Commitment Transaction
+  rpc SignRemoteCommitmentTx (SignRemoteCommitmentTxRequest)
+    returns (SignRemoteCommitmentTxReply);
+
+  // BOLT #3 - Commitment Transaction
+  rpc SignCommitmentTx (SignCommitmentTxRequest)
+    returns (SignCommitmentTxReply);
+    
+  // BOLT #3 - HTLC Outputs
+  rpc SignLocalHTLCTx (SignLocalHTLCTxRequest)
+    returns (SignLocalHTLCTxReply);
+    
+  // BOLT #5 - Unilateral Close Handling
+  rpc SignDelayedPaymentToUs (SignDelayedPaymentToUsRequest)
+    returns (SignDelayedPaymentToUsReply);
+    
+  // BOLT #3 - HTLC Outputs
+  rpc SignRemoteHTLCTx (SignRemoteHTLCTxRequest)
+    returns (SignRemoteHTLCTxReply);
+
+  // BOLT #3 - HTLC Outputs
+  rpc SignRemoteHTLCToUs (SignRemoteHTLCToUsRequest)
+    returns (SignRemoteHTLCToUsReply);
+    
+  // BOLT #5 - Unilateral Close Handling
+  rpc SignPenaltyToUs (SignPenaltyToUsRequest)
+    returns (SignPenaltyToUsReply);
+
+  // BOLT #7 - channel_announcement
+  rpc ChannelAnnouncementSig (ChannelAnnouncementSigRequest)
+    returns (ChannelAnnouncementSigReply);
+
+  // BOLT #7 - node_announcement
+  rpc NodeAnnouncementSig (NodeAnnouncementSigRequest)
+    returns (NodeAnnouncementSigReply);
+
+  // BOLT #7 - channel_update
+  rpc ChannelUpdateSig (ChannelUpdateSigRequest)
+    returns (ChannelUpdateSigReply);
+
+  // BOLT #8 - Authenticated Key Agreement Handshake
+  rpc ECDH (ECDHRequest)
+    returns (ECDHReply);
+
+  // BOLT #11 - Invoice Protocol
+  rpc SignInvoice (SignInvoiceRequest)
+    returns (SignInvoiceReply);
+}
+
+service Version {
+  rpc Version (VersionRequest) returns (VersionReply);
+}
+
+// ----------------------------------------------------------------
+
+message PingRequest {
+  string message = 1;
+}
+
+message PingReply {
+  string message = 1;
+}
+
+message InitRequest {
+  BIP32KeyVersion key_version = 1;
+    
+  ChainParams chainparams = 2;
+
+  // HACK: send the secret instead of generating.
+  bytes hsm_secret = 100;
+}
+
+message InitReply {
+  bytes self_node_id = 1;
+}
+
+message NewChannelRequest {
+  bytes self_node_id = 1;
+
+  // optional
+  bytes channel_nonce = 2;
+
+  // in satoshis
+  uint64 channel_value = 3;
+
+  uint64 capabilities = 4;
+}
+
+message NewChannelReply {
+  bytes channel_nonce = 1;
+}
+
+message SignMutualCloseTxRequest {
+  bytes self_node_id = 1;
+    
+  bytes channel_nonce = 2;
+  
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 3;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 4;
+  
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 5;
+
+  bytes remote_funding_pubkey = 6;
+}
+
+message SignMutualCloseTxReply {
+  // A set of signatures realized in a fixed 64-byte format ordered
+  // in ascending input order.
+  repeated Signature sigs = 1;
+}
+
+message CheckFutureSecretRequest {
+  bytes self_node_id = 1;
+
+  bytes channel_nonce = 2;
+
+  uint64 n = 3;
+
+  bytes suggested = 4;
+}
+
+message CheckFutureSecretReply {
+  bool correct = 1;
+}
+
+message GetChannelBasepointsRequest {
+  bytes self_node_id = 1;
+    
+  bytes channel_nonce = 2;
+}
+
+message GetChannelBasepointsReply {
+  Basepoints basepoints = 1;
+
+  bytes remote_funding_pubkey = 2;
+}
+
+message GetPerCommitmentPointRequest {
+  bytes self_node_id = 1;
+    
+  bytes channel_nonce = 2;
+    
+  uint64 n = 3;
+}
+
+message GetPerCommitmentPointReply {
+  bytes per_commitment_point = 1;
+    
+  bytes old_secret = 2;
+}
+
+message SignFundingTxRequest {
+  bytes self_node_id = 1;
+  
+  bytes channel_nonce = 2;
+    
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 3;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 4;
+  
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 5;
+}
+
+message SignFundingTxReply {
+  // A set of signatures realized in a fixed 64-byte format ordered
+  // in ascending input order.
+  repeated Signature sigs = 1;
+}
+
+message SignRemoteCommitmentTxRequest {
+  bytes self_node_id = 1;
+  
+  bytes channel_nonce = 2;
+    
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 3;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 4;
+  
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 5;
+
+  bytes remote_funding_pubkey = 6;
+
+  // FIXME - shouldn't this be remote_per_commit_point?
+  bytes remote_percommit_point = 7;
+
+  repeated bytes output_witscripts = 8;
+
+  bool option_static_remotekey = 9;
+}
+
+message SignRemoteCommitmentTxReply {
+  // A set of signatures realized in a fixed 64-byte format ordered
+  // in ascending input order.
+  repeated Signature sigs = 1;
+}
+
+message SignCommitmentTxRequest {
+  bytes self_node_id = 1;
+  
+  bytes channel_nonce = 2;
+    
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 3;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 4;
+  
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 5;
+
+  bytes remote_funding_pubkey = 6;
+}
+
+message SignCommitmentTxReply {
+  // A set of signatures realized in a fixed 64-byte format ordered
+  // in ascending input order.
+  repeated Signature sigs = 1;
+}
+
+message SignLocalHTLCTxRequest {
+  bytes self_node_id = 1;
+
+  bytes channel_nonce = 2;
+
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 3;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 4;
+  
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 5;
+
+  uint64 commit_num = 6;
+  
+  bytes wscript = 7;	// FIXME - find a better name
+}
+
+message SignLocalHTLCTxReply {
+  bytes sig = 1;
+}
+
+message SignDelayedPaymentToUsRequest {
+  bytes self_node_id = 1;
+    
+  bytes channel_nonce = 2;
+
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 3;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 4;
+  
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 5;
+
+  uint64 commit_num = 6;
+  
+  bytes wscript = 7;	// FIXME - find a better name
+}
+
+message SignDelayedPaymentToUsReply {
+  bytes sig = 1;
+}
+
+message SignRemoteHTLCTxRequest {
+  bytes self_node_id = 1;
+
+  bytes channel_nonce = 2;
+
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 3;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 4;
+  
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 5;
+
+  bytes remote_per_commit_point = 6;
+
+  bytes wscript = 7;
+}
+
+message SignRemoteHTLCTxReply {
+  bytes sig = 1;
+}
+
+message SignRemoteHTLCToUsRequest {
+  bytes self_node_id = 1;
+
+  bytes channel_nonce = 2;
+
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 3;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 4;
+  
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 5;
+
+  bytes remote_per_commit_point = 6;
+
+  bytes wscript = 7;
+}
+
+message SignRemoteHTLCToUsReply {
+  bytes sig = 1;
+}
+
+message SignPenaltyToUsRequest {
+  bytes self_node_id = 1;
+    
+  bytes channel_nonce = 2;
+
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 3;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 4;
+  
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 5;
+
+  bytes revocation_secret = 6;	// FIXME - is this remembered instead of passed?
+
+  bytes wscript = 7;	// FIXME - find a better name
+}
+
+message SignPenaltyToUsReply {
+  bytes sig = 1;
+}
+
+message ChannelAnnouncementSigRequest {
+  bytes self_node_id = 1;
+  
+  bytes channel_nonce = 2;
+
+  bytes channel_announcement = 3;
+}
+
+message ChannelAnnouncementSigReply {
+  bytes node_signature = 1;
+
+  bytes bitcoin_signature = 2;
+}
+
+message NodeAnnouncementSigRequest {
+  bytes self_node_id = 1;
+  
+  bytes node_announcement = 2;
+}
+
+message NodeAnnouncementSigReply {
+  bytes signature = 1;
+}
+
+message ChannelUpdateSigRequest {
+  bytes self_node_id = 1;
+
+  bytes chain_hash = 2;
+
+  uint64 short_channel_id = 3;
+
+  uint32 timestamp = 4;
+
+  uint32 message_flags = 5;	// uint8
+
+  uint32 channel_flags = 6;	// uint8
+
+  uint32 cltv_expiry_delta = 7;	// uint16
+
+  uint64 htlc_minimum = 8;
+
+  uint32 fee_base_msat = 9;
+
+  uint32 fee_proportional_mill = 10;
+
+  uint64 htlc_maximum = 11;
+}
+
+message ChannelUpdateSigReply {
+  bytes sig = 1;
+}
+
+message ECDHRequest {
+  bytes self_node_id = 1;
+    
+  bytes point = 2;    // 64 bytes, uncompressed x,y, little-endian
+}
+
+message ECDHReply {
+  bytes shared_secret = 1; // 32 bytes
+}
+
+message SignInvoiceRequest {
+  bytes self_node_id = 1;
+
+  bytes data_part = 2;
+
+  string human_readable_part = 3;
+}
+
+message SignInvoiceReply {
+  bytes sig = 1;
+}
+
+message VersionRequest {
+}
+
+message VersionReply {
+  string version_string = 1;
+  uint32 major = 2;
+  uint32 minor = 3;
+  uint32 patch = 4;
+  string prerelease = 5;
+  string build_metadata = 6;
+}
+
+// ----------------------------------------------------------------
+
+message BIP32KeyVersion {
+  uint32 pubkey_version = 1;
+  uint32 privkey_version = 2;
+}
+
+message ChainParams {
+  string network_name = 1;
+  string bip173_name = 2;
+  string bip70_name = 3;
+  bytes genesis_blockhash = 4;
+  int32 rpc_port = 5;
+  string cli = 6;
+  string cli_args = 7;
+  uint64 cli_min_supported_version = 8;
+  uint64 dust_limit_sat = 9;
+  uint64 max_funding_sat = 10;
+  uint64 max_payment_msat = 11;
+  uint32 when_lightning_became_cool = 12;
+  uint32 p2pkh_version = 13;
+  uint32 p2sh_version = 14;
+  bool testnet = 15;
+  BIP32KeyVersion bip32_key_version = 16;
+  bool is_elements = 17;
+  bytes fee_asset_tag = 18;
+}
+
+message Signature {
+  // witness stack item
+  repeated bytes item = 1;
+}
+
+message KeyLocator {
+  /// The index of the key being identified.
+  int32 key_index = 2;
+}
+
+message TxOut {
+  /// The value of the output being spent.
+  int64 value = 1;
+
+  /// The script of the output being spent.
+  bytes pk_script = 2;
+}
+
+message SignDescriptor {
+  /**
+     A descriptor that precisely describes *which* key to use for signing. This
+     may provide the raw public key directly, or require the Signer to re-derive
+     the key according to the populated derivation path.
+  */
+  KeyLocator key_loc = 1;
+
+  /**
+     A description of the output being spent. The value and script MUST be provided.
+  */
+  TxOut output = 5;
+}
+
+message Basepoints {
+  bytes revocation = 1;
+  bytes payment = 2;
+  bytes htlc = 3;
+  bytes delayed_payment = 4;
+}

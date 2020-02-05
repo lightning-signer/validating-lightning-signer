@@ -1,9 +1,9 @@
 use tonic::Request;
 
-use signer::*;
-use signer::signer_client::SignerClient;
+use remotesigner::*;
+use remotesigner::signer_client::SignerClient;
 
-use crate::server::signer;
+use crate::server::remotesigner;
 
 #[tokio::main]
 pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {

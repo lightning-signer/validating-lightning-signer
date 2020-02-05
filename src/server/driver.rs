@@ -5,12 +5,12 @@ use bitcoin::consensus::{deserialize, encode};
 use secp256k1::{PublicKey, Secp256k1};
 use tonic::{Request, Response, Status, transport::Server};
 
-use signer::*;
-use signer::signer_server::{Signer, SignerServer};
+use remotesigner::*;
+use remotesigner::signer_server::{Signer, SignerServer};
 
 use crate::server::my_signer::{ChannelId, MySigner};
 
-use super::signer;
+use super::remotesigner;
 
 impl MySigner {
     fn node_id(node_id: &Vec<u8>) -> Result<PublicKey, Status> {
@@ -33,7 +33,7 @@ impl Signer for MySigner {
         log_info!(self, "Got a request: {:?}", request);
         let msg = request.into_inner();
 
-        let reply = signer::PingReply {
+        let reply = remotesigner::PingReply {
             message: format!("Hello {}!", msg.message).into(), // We must use .into_inner() as the fields of gRPC requests and responses are private
         };
 
@@ -47,14 +47,10 @@ impl Signer for MySigner {
 
         let node_id = self.new_node_from_seed(hsm_secret);
 
-        let reply = signer::InitReply {
+        let reply = remotesigner::InitReply {
             self_node_id: node_id.serialize().to_vec(),
         };
         Ok(Response::new(reply))
-    }
-
-    async fn ecdh(&self, _request: Request<EcdhRequest>) -> Result<Response<EcdhReply>, Status> {
-        panic!("not implemented")
     }
 
     async fn new_channel(&self, request: Request<NewChannelRequest>) -> Result<Response<NewChannelReply>, Status> {
@@ -70,6 +66,18 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
+    async fn sign_mutual_close_tx(&self, _request: Request<SignMutualCloseTxRequest>) -> Result<Response<SignMutualCloseTxReply>, Status> {
+        panic!("not implemented")
+    }
+    
+    async fn check_future_secret(&self, _request: Request<CheckFutureSecretRequest>) -> Result<Response<CheckFutureSecretReply>, Status> {
+        panic!("not implemented")
+    }
+
+    async fn get_channel_basepoints(&self, _request: Request<GetChannelBasepointsRequest>) -> Result<Response<GetChannelBasepointsReply>, Status> {
+        panic!("not implemented")
+    }
+    
     async fn get_per_commitment_point(&self, request: Request<GetPerCommitmentPointRequest>) -> Result<Response<GetPerCommitmentPointReply>, Status> {
         log_info!(self, "Got a request: {:?}", request);
         let msg = request.into_inner();
@@ -128,11 +136,47 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
+    async fn sign_commitment_tx(&self, _request: Request<SignCommitmentTxRequest>) -> Result<Response<SignCommitmentTxReply>, Status> {
+        panic!("not implemented")
+    }
+    
+    async fn sign_local_htlc_tx(&self, _request: Request<SignLocalHtlcTxRequest>) -> Result<Response<SignLocalHtlcTxReply>, Status> {
+        panic!("not implemented")
+    }
+    
+    async fn sign_delayed_payment_to_us(&self, _request: Request<SignDelayedPaymentToUsRequest>) -> Result<Response<SignDelayedPaymentToUsReply>, Status> {
+        panic!("not implemented")
+    }
+    
     async fn sign_remote_htlc_tx(&self, _request: Request<SignRemoteHtlcTxRequest>) -> Result<Response<SignRemoteHtlcTxReply>, Status> {
         panic!("not implemented")
     }
 
-    async fn sign_mutual_close_tx(&self, _request: Request<SignMutualCloseTxRequest>) -> Result<Response<SignMutualCloseTxReply>, Status> {
+    async fn sign_remote_htlc_to_us(&self, _request: Request<SignRemoteHtlcToUsRequest>) -> Result<Response<SignRemoteHtlcToUsReply>, Status> {
+        panic!("not implemented")
+    }
+    
+    async fn sign_penalty_to_us(&self, _request: Request<SignPenaltyToUsRequest>) -> Result<Response<SignPenaltyToUsReply>, Status> {
+        panic!("not implemented")
+    }
+    
+    async fn channel_announcement_sig(&self, _request: Request<ChannelAnnouncementSigRequest>) -> Result<Response<ChannelAnnouncementSigReply>, Status> {
+        panic!("not implemented")
+    }
+    
+    async fn node_announcement_sig(&self, _request: Request<NodeAnnouncementSigRequest>) -> Result<Response<NodeAnnouncementSigReply>, Status> {
+        panic!("not implemented")
+    }
+    
+    async fn channel_update_sig(&self, _request: Request<ChannelUpdateSigRequest>) -> Result<Response<ChannelUpdateSigReply>, Status> {
+        panic!("not implemented")
+    }
+    
+    async fn ecdh(&self, _request: Request<EcdhRequest>) -> Result<Response<EcdhReply>, Status> {
+        panic!("not implemented")
+    }
+
+    async fn sign_invoice(&self, _request: Request<SignInvoiceRequest>) -> Result<Response<SignInvoiceReply>, Status> {
         panic!("not implemented")
     }
 }
