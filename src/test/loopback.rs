@@ -83,7 +83,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         )
     }
 
-    fn sign_closing_transaction<T: secp256k1::Signing>(&self, closing_tx: &Transaction, _secp_ctx: &Secp256k1<T>) -> Result<Signature, ()> {
+    fn sign_closing_transaction<T: secp256k1::Signing>(&self, _closing_tx: &Transaction, _secp_ctx: &Secp256k1<T>) -> Result<Signature, ()> {
         unimplemented!()
     }
 

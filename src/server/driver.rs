@@ -1,13 +1,13 @@
 use std::convert::TryInto;
 
-use lightning::chain::keysinterface::ChannelKeys;
+use bitcoin::blockdata::transaction::Transaction;
+use bitcoin::consensus::{deserialize, encode};
 use secp256k1::{PublicKey, Secp256k1};
 use tonic::{Request, Response, Status, transport::Server};
 
 use signer::*;
 use signer::signer_server::{Signer, SignerServer};
 
-use crate::server::my_keys_manager::MyKeysManager;
 use crate::server::my_signer::{ChannelId, MySigner};
 
 use super::signer;
@@ -76,25 +76,43 @@ impl Signer for MySigner {
         let node_id = MySigner::node_id(&msg.self_node_id)?;
         let channel_id = MySigner::channel_id(&msg.channel_nonce).expect("must provide channel ID");
         let secp_ctx = Secp256k1::signing_only();
+        let commitment_number = msg.n;
 
-        let point = self.with_channel(&node_id, &channel_id, |opt_chan| {
-            match opt_chan {
-                None => Err(Status::invalid_argument("channel not found")),
-                Some(chan) => {
-                    let seed = chan.keys.commitment_seed();
-                    Ok(MyKeysManager::per_commitment_point(&secp_ctx, seed, msg.n))
-                },
-            }
-        })?;
+        let point = self.get_per_commitment_point(&node_id, &channel_id, &secp_ctx, commitment_number);
         let reply = GetPerCommitmentPointReply {
-            per_commitment_point: point.serialize().to_vec(),
+            per_commitment_point: (point?).serialize().to_vec(),
             old_secret: vec![], // TODO
         };
         Ok(Response::new(reply))
     }
 
-    async fn sign_funding_tx(&self, _request: Request<SignFundingTxRequest>) -> Result<Response<SignFundingTxReply>, Status> {
-        panic!("not implemented")
+    async fn sign_funding_tx(&self, request: Request<SignFundingTxRequest>) -> Result<Response<SignFundingTxReply>, Status> {
+        log_info!(self, "Got a request: {:?}", request);
+        let msg = request.into_inner();
+        let node_id = MySigner::node_id(&msg.self_node_id)?;
+        // We'll use this for policy checks in the future
+        let channel_id = MySigner::channel_id(&msg.channel_nonce).expect("must provide channel ID");
+        let tx_res: Result<Transaction, encode::Error> = deserialize(msg.raw_tx_bytes.as_slice());
+        let tx = tx_res.map_err(|_| Status::invalid_argument("could not deserialize tx"))?;
+        let mut indices = Vec::new();
+        let mut values = Vec::new();
+        let mut iswits = Vec::new();
+
+        for idx in 0..tx.output.len() {
+            let child_index = msg.input_descs[idx].key_loc.as_ref().ok_or(Status::invalid_argument("missing key_loc desc"))?.key_index as u32;
+            indices.push(child_index);
+            let value = msg.input_descs[idx].output.as_ref().ok_or(Status::invalid_argument("missing output desc"))?.value as u64;
+            values.push(value);
+            iswits.push(true);
+        }
+
+        let sigs = self.sign_funding_tx(&node_id, &channel_id, &tx, &indices, &values, &iswits)?;
+        let sigs = sigs.into_iter().map(|s| Signature { item: s }).collect();
+
+        let reply = SignFundingTxReply {
+            sigs,
+        };
+        Ok(Response::new(reply))
     }
 
     async fn sign_remote_commitment_tx(&self, _request: Request<SignRemoteCommitmentTxRequest>) -> Result<Response<SignRemoteCommitmentTxReply>, Status> {
@@ -109,6 +127,7 @@ impl Signer for MySigner {
         panic!("not implemented")
     }
 }
+
 
 #[tokio::main]
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {

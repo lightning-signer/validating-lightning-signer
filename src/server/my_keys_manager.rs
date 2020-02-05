@@ -15,9 +15,7 @@ use lightning::util::logger::Logger;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 
 use crate::util::byte_utils;
-use crate::util::crypto_utils::{
-    build_commitment_secret, channels_seed, hkdf_sha256, hkdf_sha256_keys,
-};
+use crate::util::crypto_utils::{bip32_key, build_commitment_secret, channels_seed, hkdf_sha256, hkdf_sha256_keys};
 
 const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;
 
@@ -25,6 +23,7 @@ pub struct MyKeysManager {
     secp_ctx: Secp256k1<secp256k1::SignOnly>,
     node_secret: SecretKey,
     channel_seed_base: [u8; 32],
+    bip32_key: ExtendedPrivKey,
     destination_script: Script,
     shutdown_pubkey: PublicKey,
     channel_master_key: ExtendedPrivKey,
@@ -97,11 +96,13 @@ impl MyKeysManager {
                 unique_start.input(seed);
 
                 let channel_seed_base = channels_seed(seed);
+                let bip32_key = bip32_key(&secp_ctx, network, seed);
 
                 MyKeysManager {
                     secp_ctx,
                     node_secret,
                     channel_seed_base,
+                    bip32_key,
                     destination_script,
                     shutdown_pubkey,
                     channel_master_key,
@@ -117,6 +118,10 @@ impl MyKeysManager {
             }
             Err(_) => panic!("Your rng is busted"),
         }
+    }
+
+    pub fn get_bip32_key(&self) -> &ExtendedPrivKey {
+        &self.bip32_key
     }
 
     pub fn per_commitment_secret(commitment_seed: &[u8; 32], idx: u64) -> SecretKey {
@@ -143,8 +148,7 @@ impl KeysInterface for MyKeysManager {
         self.shutdown_pubkey.clone()
     }
 
-    fn get_channel_keys(
-        &self,
+    fn get_channel_keys(&self,
         channel_id: [u8; 32],
         _inbound: bool,
         channel_value_satoshis: u64,

@@ -3,5 +3,5 @@ pub mod loopback;
 pub mod functional_test_utils;
 #[cfg(test)]
 #[allow(unused_imports)]
-#[warn(dead_code)]
+#[allow(dead_code)]
 pub mod functional_test;
