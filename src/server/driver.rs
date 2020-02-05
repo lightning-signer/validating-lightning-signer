@@ -90,10 +90,9 @@ impl Signer for MySigner {
         log_info!(self, "Got a request: {:?}", request);
         let msg = request.into_inner();
         let node_id = MySigner::node_id(&msg.self_node_id)?;
-        // We'll use this for policy checks in the future
-        let channel_id = MySigner::channel_id(&msg.channel_nonce).expect("must provide channel ID");
+        let channel_id = MySigner::channel_id(&msg.channel_nonce)?;
         let tx_res: Result<Transaction, encode::Error> = deserialize(msg.raw_tx_bytes.as_slice());
-        let tx = tx_res.map_err(|_| Status::invalid_argument("could not deserialize tx"))?;
+        let tx = tx_res.map_err(|e| Status::invalid_argument(format!("could not deserialize tx - {}", e)))?;
         let mut indices = Vec::new();
         let mut values = Vec::new();
         let mut iswits = Vec::new();
@@ -109,14 +108,24 @@ impl Signer for MySigner {
         let sigs = self.sign_funding_tx(&node_id, &channel_id, &tx, &indices, &values, &iswits)?;
         let sigs = sigs.into_iter().map(|s| Signature { item: s }).collect();
 
-        let reply = SignFundingTxReply {
-            sigs,
-        };
+        let reply = SignFundingTxReply { sigs };
         Ok(Response::new(reply))
     }
 
-    async fn sign_remote_commitment_tx(&self, _request: Request<SignRemoteCommitmentTxRequest>) -> Result<Response<SignRemoteCommitmentTxReply>, Status> {
-        panic!("not implemented")
+    async fn sign_remote_commitment_tx(&self, request: Request<SignRemoteCommitmentTxRequest>) -> Result<Response<SignRemoteCommitmentTxReply>, Status> {
+        log_info!(self, "Got a request: {:?}", request);
+        let msg = request.into_inner();
+        let node_id = MySigner::node_id(&msg.self_node_id)?;
+        let channel_id = MySigner::channel_id(&msg.channel_nonce)?;
+        let tx_res: Result<Transaction, encode::Error> = deserialize(msg.raw_tx_bytes.as_slice());
+        let tx = tx_res.map_err(|e| Status::invalid_argument(format!("could not deserialize tx - {}", e)))?;
+        let per_commitment_point =
+            PublicKey::from_slice(msg.remote_percommit_point.as_slice())
+                .map_err(|_| Status::invalid_argument("could not decode remote_percommit_point"))?;
+        let sigs = self.sign_remote_commitment_tx(&node_id, &channel_id, &tx, &per_commitment_point)?;
+        let sigs = sigs.into_iter().map(|s| Signature { item: s }).collect();
+        let reply = SignRemoteCommitmentTxReply { sigs };
+        Ok(Response::new(reply))
     }
 
     async fn sign_remote_htlc_tx(&self, _request: Request<SignRemoteHtlcTxRequest>) -> Result<Response<SignRemoteHtlcTxReply>, Status> {
