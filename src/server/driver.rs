@@ -107,16 +107,17 @@ impl Signer for MySigner {
         let msg = request.into_inner();
         let node_id = MySigner::node_id(&msg.self_node_id)?;
         let channel_id = MySigner::channel_id(&msg.channel_nonce)?;
-        let tx_res: Result<Transaction, encode::Error> = deserialize(msg.raw_tx_bytes.as_slice());
+        let reqtx = msg.tx.expect("missing tx");
+        let tx_res: Result<Transaction, encode::Error> = deserialize(reqtx.raw_tx_bytes.as_slice());
         let tx = tx_res.map_err(|e| Status::invalid_argument(format!("could not deserialize tx - {}", e)))?;
         let mut indices = Vec::new();
         let mut values = Vec::new();
         let mut iswits = Vec::new();
 
         for idx in 0..tx.output.len() {
-            let child_index = msg.input_descs[idx].key_loc.as_ref().ok_or(Status::invalid_argument("missing key_loc desc"))?.key_index as u32;
+            let child_index = reqtx.input_descs[idx].key_loc.as_ref().ok_or(Status::invalid_argument("missing key_loc desc"))?.key_index as u32;
             indices.push(child_index);
-            let value = msg.input_descs[idx].output.as_ref().ok_or(Status::invalid_argument("missing output desc"))?.value as u64;
+            let value = reqtx.input_descs[idx].output.as_ref().ok_or(Status::invalid_argument("missing output desc"))?.value as u64;
             values.push(value);
             iswits.push(true);
         }
@@ -133,7 +134,8 @@ impl Signer for MySigner {
         let msg = request.into_inner();
         let node_id = MySigner::node_id(&msg.self_node_id)?;
         let channel_id = MySigner::channel_id(&msg.channel_nonce)?;
-        let tx_res: Result<Transaction, encode::Error> = deserialize(msg.raw_tx_bytes.as_slice());
+        let reqtx = msg.tx.expect("missing tx");
+        let tx_res: Result<Transaction, encode::Error> = deserialize(reqtx.raw_tx_bytes.as_slice());
         let tx = tx_res.map_err(|e| Status::invalid_argument(format!("could not deserialize tx - {}", e)))?;
         let per_commitment_point =
             PublicKey::from_slice(msg.remote_percommit_point.as_slice())

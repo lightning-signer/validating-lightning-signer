@@ -129,17 +129,10 @@ message SignMutualCloseTxRequest {
   bytes self_node_id = 1;
     
   bytes channel_nonce = 2;
-  
-  /// The raw bytes of the transaction to be signed.
-  bytes raw_tx_bytes = 3;
 
-  /// A set of sign descriptors, for each input to be signed.
-  repeated SignDescriptor input_descs = 4;
+  Transaction tx = 3;
   
-  /// A set of sign descriptors, for each output.
-  repeated SignDescriptor output_descs = 5;
-
-  bytes remote_funding_pubkey = 6;
+  bytes remote_funding_pubkey = 4;
 }
 
 message SignMutualCloseTxReply {
@@ -192,15 +185,8 @@ message SignFundingTxRequest {
   bytes self_node_id = 1;
   
   bytes channel_nonce = 2;
-    
-  /// The raw bytes of the transaction to be signed.
-  bytes raw_tx_bytes = 3;
 
-  /// A set of sign descriptors, for each input to be signed.
-  repeated SignDescriptor input_descs = 4;
-  
-  /// A set of sign descriptors, for each output.
-  repeated SignDescriptor output_descs = 5;
+  Transaction tx = 3;
 }
 
 message SignFundingTxReply {
@@ -214,23 +200,16 @@ message SignRemoteCommitmentTxRequest {
   
   bytes channel_nonce = 2;
     
-  /// The raw bytes of the transaction to be signed.
-  bytes raw_tx_bytes = 3;
-
-  /// A set of sign descriptors, for each input to be signed.
-  repeated SignDescriptor input_descs = 4;
+  Transaction tx = 3;
   
-  /// A set of sign descriptors, for each output.
-  repeated SignDescriptor output_descs = 5;
-
-  bytes remote_funding_pubkey = 6;
+  bytes remote_funding_pubkey = 4;
 
   // FIXME - shouldn't this be remote_per_commit_point?
-  bytes remote_percommit_point = 7;
+  bytes remote_percommit_point = 5;
 
-  repeated bytes output_witscripts = 8;
+  repeated bytes output_witscripts = 6;
 
-  bool option_static_remotekey = 9;
+  bool option_static_remotekey = 7;
 }
 
 message SignRemoteCommitmentTxReply {
@@ -244,16 +223,9 @@ message SignCommitmentTxRequest {
   
   bytes channel_nonce = 2;
     
-  /// The raw bytes of the transaction to be signed.
-  bytes raw_tx_bytes = 3;
-
-  /// A set of sign descriptors, for each input to be signed.
-  repeated SignDescriptor input_descs = 4;
+  Transaction tx = 3;
   
-  /// A set of sign descriptors, for each output.
-  repeated SignDescriptor output_descs = 5;
-
-  bytes remote_funding_pubkey = 6;
+  bytes remote_funding_pubkey = 4;
 }
 
 message SignCommitmentTxReply {
@@ -267,18 +239,11 @@ message SignLocalHTLCTxRequest {
 
   bytes channel_nonce = 2;
 
-  /// The raw bytes of the transaction to be signed.
-  bytes raw_tx_bytes = 3;
+  Transaction tx = 3;
 
-  /// A set of sign descriptors, for each input to be signed.
-  repeated SignDescriptor input_descs = 4;
+  uint64 commit_num = 4;
   
-  /// A set of sign descriptors, for each output.
-  repeated SignDescriptor output_descs = 5;
-
-  uint64 commit_num = 6;
-  
-  bytes wscript = 7;	// FIXME - find a better name
+  bytes wscript = 5;	// FIXME - find a better name
 }
 
 message SignLocalHTLCTxReply {
@@ -290,18 +255,11 @@ message SignDelayedPaymentToUsRequest {
     
   bytes channel_nonce = 2;
 
-  /// The raw bytes of the transaction to be signed.
-  bytes raw_tx_bytes = 3;
-
-  /// A set of sign descriptors, for each input to be signed.
-  repeated SignDescriptor input_descs = 4;
+  Transaction tx = 3;
   
-  /// A set of sign descriptors, for each output.
-  repeated SignDescriptor output_descs = 5;
-
-  uint64 commit_num = 6;
+  uint64 commit_num = 4;
   
-  bytes wscript = 7;	// FIXME - find a better name
+  bytes wscript = 5;	// FIXME - find a better name
 }
 
 message SignDelayedPaymentToUsReply {
@@ -313,18 +271,11 @@ message SignRemoteHTLCTxRequest {
 
   bytes channel_nonce = 2;
 
-  /// The raw bytes of the transaction to be signed.
-  bytes raw_tx_bytes = 3;
+  Transaction tx = 3;
 
-  /// A set of sign descriptors, for each input to be signed.
-  repeated SignDescriptor input_descs = 4;
-  
-  /// A set of sign descriptors, for each output.
-  repeated SignDescriptor output_descs = 5;
+  bytes remote_per_commit_point = 4;
 
-  bytes remote_per_commit_point = 6;
-
-  bytes wscript = 7;
+  bytes wscript = 5;
 }
 
 message SignRemoteHTLCTxReply {
@@ -336,18 +287,11 @@ message SignRemoteHTLCToUsRequest {
 
   bytes channel_nonce = 2;
 
-  /// The raw bytes of the transaction to be signed.
-  bytes raw_tx_bytes = 3;
+  Transaction tx = 3;
 
-  /// A set of sign descriptors, for each input to be signed.
-  repeated SignDescriptor input_descs = 4;
-  
-  /// A set of sign descriptors, for each output.
-  repeated SignDescriptor output_descs = 5;
+  bytes remote_per_commit_point = 4;
 
-  bytes remote_per_commit_point = 6;
-
-  bytes wscript = 7;
+  bytes wscript = 5;
 }
 
 message SignRemoteHTLCToUsReply {
@@ -359,18 +303,11 @@ message SignPenaltyToUsRequest {
     
   bytes channel_nonce = 2;
 
-  /// The raw bytes of the transaction to be signed.
-  bytes raw_tx_bytes = 3;
+  Transaction tx = 3;
 
-  /// A set of sign descriptors, for each input to be signed.
-  repeated SignDescriptor input_descs = 4;
-  
-  /// A set of sign descriptors, for each output.
-  repeated SignDescriptor output_descs = 5;
+  bytes revocation_secret = 4;	// FIXME - is this remembered instead of passed?
 
-  bytes revocation_secret = 6;	// FIXME - is this remembered instead of passed?
-
-  bytes wscript = 7;	// FIXME - find a better name
+  bytes wscript = 5;	// FIXME - find a better name
 }
 
 message SignPenaltyToUsReply {
@@ -521,6 +458,17 @@ message SignDescriptor {
      A description of the output being spent. The value and script MUST be provided.
   */
   TxOut output = 5;
+}
+
+message Transaction {
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 1;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 2;
+  
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 3;
 }
 
 message Basepoints {
