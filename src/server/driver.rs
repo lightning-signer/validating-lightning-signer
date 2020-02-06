@@ -2,6 +2,8 @@ use std::convert::TryInto;
 
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::{deserialize, encode};
+use crypto::digest::Digest;
+use crypto::sha2::Sha256;
 use secp256k1::{PublicKey, Secp256k1};
 use tonic::{Request, Response, Status, transport::Server};
 
@@ -22,7 +24,13 @@ impl MySigner {
         if channel_nonce.is_empty() {
             Err(Status::invalid_argument("channel ID"))
         } else {
-            Ok(ChannelId(channel_nonce.as_slice().try_into().expect("channel_id length != 32")))
+            // Impedance mismatch - we want a 32 byte channel ID for internal use
+            // Hash the client supplied channel nonce
+            let mut digest = Sha256::new();
+            digest.input(channel_nonce.as_slice());
+            let mut result = [0u8; 32];
+            digest.result(&mut result);
+            Ok(ChannelId(result))
         }
     }
 }

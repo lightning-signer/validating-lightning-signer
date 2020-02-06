@@ -247,8 +247,8 @@ impl MySigner {
         let sigs: Result<Vec<Vec<u8>>, Status> =
             self.with_channel(node_id, channel_id, |opt_chan| {
             let chan = opt_chan.ok_or(Status::invalid_argument("no such node/channel"))?;
-            let to_self_delay = 5;
-            let feerate = 1000;
+            let to_self_delay = 0;
+            let feerate = 0;
             let htlcs = vec![];
             let chan_keys = &chan.keys;
             let pubkeys = chan_keys.pubkeys();
