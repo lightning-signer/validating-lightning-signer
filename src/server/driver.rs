@@ -33,7 +33,7 @@ impl Signer for MySigner {
         log_info!(self, "Got a request: {:?}", request);
         let msg = request.into_inner();
 
-        let reply = remotesigner::PingReply {
+        let reply = PingReply {
             message: format!("Hello {}!", msg.message).into(), // We must use .into_inner() as the fields of gRPC requests and responses are private
         };
 
@@ -47,7 +47,7 @@ impl Signer for MySigner {
 
         let node_id = self.new_node_from_seed(hsm_secret);
 
-        let reply = remotesigner::InitReply {
+        let reply = InitReply {
             self_node_id: node_id.serialize().to_vec(),
         };
         Ok(Response::new(reply))
