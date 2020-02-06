@@ -30,6 +30,13 @@ impl Debug for ChannelId {
     }
 }
 
+impl fmt::Display for ChannelId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(hex::encode(self.0).as_str())
+    }
+}
+
+
 pub struct Channel {
     pub keys: EnforcingChannelKeys,
     pub secp_ctx: Secp256k1<All>,
@@ -171,6 +178,7 @@ impl MySigner {
     }
 
     pub fn new_channel(&self, node_id: &PublicKey, channel_value_satoshi: u64, opt_channel_id: Option<ChannelId>) -> Result<ChannelId, ()> {
+        log_info!(self, "new channel {}/{:?}", node_id, opt_channel_id);
         let nodes = self.nodes.lock().unwrap();
         let node = match nodes.get(node_id) {
             Some(n) => n,
@@ -183,8 +191,8 @@ impl MySigner {
         let keys_manager = &node.keys_manager;
         let channel_id = opt_channel_id.unwrap_or_else(|| ChannelId(keys_manager.get_channel_id()));
         if channels.contains_key(&channel_id) {
-            log_error!(self, "already have channel ID {:?}", channel_id);
-            return Err(());
+            log_info!(self, "already have channel ID {}", channel_id);
+            return Ok(channel_id);
         }
         let unused_inbound_flag = false;
         let chan_keys =

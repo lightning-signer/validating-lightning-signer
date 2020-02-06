@@ -38,7 +38,7 @@ impl MySigner {
 #[tonic::async_trait]
 impl Signer for MySigner {
     async fn ping(&self, request: Request<PingRequest>) -> Result<Response<PingReply>, Status> {
-        log_info!(self, "Got a request: {:?}", request);
+        log_info!(self, "Got a ping request: {:?}", request);
         let msg = request.into_inner();
 
         let reply = PingReply {
@@ -49,7 +49,7 @@ impl Signer for MySigner {
     }
 
     async fn init(&self, request: Request<InitRequest>) -> Result<Response<InitReply>, Status> {
-        log_info!(self, "Got a request: {:?}", request);
+        log_info!(self, "Got an init request: {:?}", request);
         let msg = request.into_inner();
         let hsm_secret = msg.hsm_secret.as_slice().try_into().expect("secret length != 32");
 
@@ -62,7 +62,7 @@ impl Signer for MySigner {
     }
 
     async fn new_channel(&self, request: Request<NewChannelRequest>) -> Result<Response<NewChannelReply>, Status> {
-        log_info!(self, "Got a request: {:?}", request);
+        log_info!(self, "Got a new_channel request: {:?}", request);
         let msg: NewChannelRequest = request.into_inner();
         let node_id = MySigner::node_id(&msg.self_node_id)?;
         let channel_id = MySigner::channel_id(&msg.channel_nonce).ok();
@@ -87,7 +87,7 @@ impl Signer for MySigner {
     }
     
     async fn get_per_commitment_point(&self, request: Request<GetPerCommitmentPointRequest>) -> Result<Response<GetPerCommitmentPointReply>, Status> {
-        log_info!(self, "Got a request: {:?}", request);
+        log_info!(self, "Got a get_per_commitment_point request: {:?}", request);
         let msg = request.into_inner();
         let node_id = MySigner::node_id(&msg.self_node_id)?;
         let channel_id = MySigner::channel_id(&msg.channel_nonce).expect("must provide channel ID");
@@ -103,7 +103,7 @@ impl Signer for MySigner {
     }
 
     async fn sign_funding_tx(&self, request: Request<SignFundingTxRequest>) -> Result<Response<SignFundingTxReply>, Status> {
-        log_info!(self, "Got a request: {:?}", request);
+        log_info!(self, "Got a sign_funding_tx request: {:?}", request);
         let msg = request.into_inner();
         let node_id = MySigner::node_id(&msg.self_node_id)?;
         let channel_id = MySigner::channel_id(&msg.channel_nonce)?;
@@ -130,7 +130,7 @@ impl Signer for MySigner {
     }
 
     async fn sign_remote_commitment_tx(&self, request: Request<SignRemoteCommitmentTxRequest>) -> Result<Response<SignRemoteCommitmentTxReply>, Status> {
-        log_info!(self, "Got a request: {:?}", request);
+        log_info!(self, "Got a sign_remote_commitment_tx request: {:?}", request);
         let msg = request.into_inner();
         let node_id = MySigner::node_id(&msg.self_node_id)?;
         let channel_id = MySigner::channel_id(&msg.channel_nonce)?;
