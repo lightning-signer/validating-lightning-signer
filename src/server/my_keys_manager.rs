@@ -15,7 +15,7 @@ use lightning::util::logger::Logger;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 
 use crate::util::byte_utils;
-use crate::util::crypto_utils::{bip32_key, build_commitment_secret, channels_seed, hkdf_sha256, hkdf_sha256_keys};
+use crate::util::crypto_utils::{bip32_key, build_commitment_secret, channels_seed, hkdf_sha256, hkdf_sha256_keys, node_keys};
 
 const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;
 
@@ -48,11 +48,7 @@ impl MyKeysManager {
         let secp_ctx = Secp256k1::signing_only();
         match ExtendedPrivKey::new_master(network.clone(), seed) {
             Ok(master_key) => {
-                let node_secret = master_key
-                    .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(0).unwrap())
-                    .expect("Your RNG is busted")
-                    .private_key
-                    .key;
+                let (_, node_secret) = node_keys(&secp_ctx, seed);
                 let destination_script = match master_key
                     .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(1).unwrap())
                 {

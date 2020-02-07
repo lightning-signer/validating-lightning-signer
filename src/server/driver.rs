@@ -58,10 +58,11 @@ impl Signer for MySigner {
         let msg = request.into_inner();
         let hsm_secret = msg.hsm_secret.as_slice().try_into().expect("secret length != 32");
 
-        let node_id = self.new_node_from_seed(hsm_secret);
+        let node_id = self.new_node_from_seed(hsm_secret).serialize().to_vec();
+        log_info!(self, "{}", hex::encode(&node_id));
 
         let reply = InitReply {
-            self_node_id: node_id.serialize().to_vec(),
+            self_node_id: node_id,
         };
         Ok(Response::new(reply))
     }
