@@ -15,6 +15,7 @@ use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::util::logger::Logger;
 use rand::{Rng, thread_rng};
 use secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signature, SignOnly};
+use secp256k1::ecdh::SharedSecret;
 use tonic::Status;
 
 use crate::server::my_keys_manager::MyKeysManager;
@@ -308,6 +309,16 @@ impl MySigner {
         }
         Ok(sigs)
     }
+
+    pub fn ecdh(&self, node_id: &PublicKey, other_key: &PublicKey) -> Result<Vec<u8>, Status> {
+        self.with_node(&node_id, |opt_node| {
+            let node = opt_node.ok_or(Status::invalid_argument("no such node"))?;
+            let our_key = node.keys_manager.get_node_secret();
+    		let ss = SharedSecret::new(&other_key, &our_key);
+            let res = ss[..].to_vec();
+            Ok(res)
+        })
+    }
 }
 
 #[cfg(test)]
@@ -318,6 +329,7 @@ mod tests {
     use bitcoin::consensus::deserialize;
     use bitcoin::hashes::{Hash, sha256d};
 
+    use crate::util::crypto_utils::public_key_from_raw;
     use crate::util::test_utils::*;
 
     use super::*;
@@ -582,5 +594,17 @@ mod tests {
 
         let sighash = &SighashComponents::new(&tx).sighash_all(&tx.input[1], &script_code, value)[..];
         assert_eq!(hex::encode(sighash), "c37af31116d1b27caf68aae9e3ac82f1477929014d5b917657d0eb49478cb670");
+    }
+
+    #[test]
+    fn test_deser_raw() {
+        let secp_ctx = Secp256k1::signing_only();
+        let raw: [u8; 64] = [158, 156, 70, 5, 38, 221, 32, 73, 180, 87, 57, 36, 5, 47, 168, 160, 245, 209, 189, 150, 120, 71, 89, 121, 242, 226, 118, 91, 240, 36, 16, 253, 43, 220, 178, 191, 181, 152, 246, 154, 176, 43, 194, 95, 165, 0, 61, 9, 214, 95, 90, 144, 62, 135, 181, 82, 32, 196, 138, 80, 167, 249, 29, 143];
+        let point = public_key_from_raw(&raw).unwrap();
+        let secret = SecretKey::from_slice(hex::decode("7f4fa93708cb666f507f35ae9967c23f75976ab721cbcf5352bb49c50c8b7458")
+            .unwrap().as_slice()).unwrap();
+        let ss = SharedSecret::new(&point, &secret);
+        assert_eq!(hex::encode(ss[..].to_vec()), "08e9c2ce6d882fd3c8166c9c26e748ff3def2c75b717b7709556ec9688515dc9");
+        assert_eq!(hex::encode(point.serialize().to_vec()), "03fd1024f05b76e2f27959477896bdd1f5a0a82f05243957b44920dd2605469c9e");
     }
 }

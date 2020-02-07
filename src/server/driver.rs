@@ -11,13 +11,18 @@ use remotesigner::*;
 use remotesigner::signer_server::{Signer, SignerServer};
 
 use crate::server::my_signer::{ChannelId, MySigner};
+use crate::util::crypto_utils::public_key_from_raw;
 
 use super::remotesigner;
 
 impl MySigner {
-    fn node_id(node_id: &Vec<u8>) -> Result<PublicKey, Status> {
-        node_id.as_slice().try_into().map_err(|_| Status::invalid_argument("node ID"))
+    fn node_id(der_vec: &Vec<u8>) -> Result<PublicKey, Status> {
+        der_vec.as_slice().try_into().map_err(|_| Status::invalid_argument("node ID"))
             .map(|node_id| PublicKey::from_slice(node_id).unwrap())
+    }
+
+    fn raw_point(raw_vec: &Vec<u8>) -> Result<PublicKey, Status> {
+        public_key_from_raw(raw_vec.as_slice()).map_err(|_| Status::invalid_argument("raw point"))
     }
 
     fn channel_id(channel_nonce: &Vec<u8>) -> Result<ChannelId, Status> {
@@ -182,8 +187,15 @@ impl Signer for MySigner {
         panic!("not implemented")
     }
     
-    async fn ecdh(&self, _request: Request<EcdhRequest>) -> Result<Response<EcdhReply>, Status> {
-        panic!("not implemented")
+    async fn ecdh(&self, request: Request<EcdhRequest>) -> Result<Response<EcdhReply>, Status> {
+        log_info!(self, "Got a ecdh request: {:?}", request);
+        let msg = request.into_inner();
+        let node_id = MySigner::node_id(&msg.self_node_id)?;
+        let other_key = MySigner::raw_point(&msg.point)?;
+        let reply = EcdhReply {
+            shared_secret: self.ecdh(&node_id, &other_key)?,
+        };
+        Ok(Response::new(reply))
     }
 
     async fn sign_invoice(&self, _request: Request<SignInvoiceRequest>) -> Result<Response<SignInvoiceReply>, Status> {
