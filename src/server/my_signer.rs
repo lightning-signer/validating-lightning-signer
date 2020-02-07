@@ -178,7 +178,8 @@ impl MySigner {
         node_id
     }
 
-    pub fn new_channel(&self, node_id: &PublicKey, channel_value_satoshi: u64, opt_channel_id: Option<ChannelId>) -> Result<ChannelId, ()> {
+    pub fn new_channel(&self, node_id: &PublicKey, channel_value_satoshi: u64,
+                       opt_channel_nonce: Option<&[u8]>, opt_channel_id: Option<ChannelId>) -> Result<ChannelId, ()> {
         log_info!(self, "new channel {}/{:?}", node_id, opt_channel_id);
         let nodes = self.nodes.lock().unwrap();
         let node = match nodes.get(node_id) {
@@ -191,13 +192,15 @@ impl MySigner {
         let mut channels = node.channels.lock().unwrap();
         let keys_manager = &node.keys_manager;
         let channel_id = opt_channel_id.unwrap_or_else(|| ChannelId(keys_manager.get_channel_id()));
+        let channel_nonce = opt_channel_nonce.unwrap_or_else(|| &channel_id.0);
         if channels.contains_key(&channel_id) {
             log_info!(self, "already have channel ID {}", channel_id);
             return Ok(channel_id);
         }
-        let unused_inbound_flag = false;
+        let inmem_keys =
+            keys_manager.get_channel_keys_with_nonce(channel_nonce, channel_value_satoshi, "c-lightning");
         let chan_keys =
-            EnforcingChannelKeys::new(keys_manager.get_channel_keys(channel_id.0, unused_inbound_flag, channel_value_satoshi));
+            EnforcingChannelKeys::new(inmem_keys);
         let channel = Channel {
             keys: chan_keys,
             secp_ctx: Secp256k1::new(),
@@ -250,19 +253,30 @@ impl MySigner {
             Ok(node.get_bip32_key().clone())
         })
     }
+
     pub fn sign_remote_commitment_tx(&self, node_id: &PublicKey, channel_id: &ChannelId,
                                      tx: &Transaction,
-                                     remote_per_commitment_point: &PublicKey) -> Result<Vec<u8>, Status> {
-        let sig: Result<Vec<u8>, Status> =
-            self.with_channel(node_id, channel_id, |opt_chan| {
+                                     remote_per_commitment_point: &PublicKey,
+                                     remote_funding_pubkey: &PublicKey) -> Result<Vec<u8>, Status> {
+        let sig: Result<Vec<u8>, Status> = self.with_channel(node_id, channel_id, |opt_chan| {
             let chan = opt_chan.ok_or(Status::invalid_argument("no such node/channel"))?;
             let to_self_delay = 0;
             let feerate = 0;
             let htlcs = vec![];
-            let chan_keys = &chan.keys;
-            let pubkeys = chan_keys.pubkeys();
+            if chan.keys.remote_pubkeys().is_none() {
+                // FIXME this hack goes away once we have a channel accept API call
+                let remote_points = ChannelPublicKeys {
+                    funding_pubkey: remote_funding_pubkey.clone(),
+                    revocation_basepoint: remote_funding_pubkey.clone(),
+                    payment_basepoint: remote_funding_pubkey.clone(),
+                    delayed_payment_basepoint: remote_funding_pubkey.clone(),
+                    htlc_basepoint: remote_funding_pubkey.clone(),
+                };
+                chan.keys.set_remote_channel_pubkeys(&remote_points);
+            }
             let remote_points =
-                chan_keys.remote_pubkeys().as_ref().ok_or(Status::aborted("channel not accepted yet"))?;
+                chan.keys.remote_pubkeys().as_ref().ok_or(Status::aborted("channel not accepted yet"))?;
+            let pubkeys = chan.keys.pubkeys();
             let secp_ctx = &chan.secp_ctx;
             let tx_keys = TxCreationKeys::new(secp_ctx,
                                               &remote_per_commitment_point,
@@ -272,10 +286,12 @@ impl MySigner {
                                               &pubkeys.payment_basepoint,
                                               &pubkeys.htlc_basepoint).unwrap();
 
-            let sig = chan_keys.sign_remote_commitment(feerate, tx, &tx_keys,
+            let sig = chan.keys.sign_remote_commitment(feerate, tx, &tx_keys,
                                                   &htlcs, to_self_delay, secp_ctx);
             let sigs = sig.map_err(|_| Status::aborted("could not sign"))?;
             let mut sig = sigs.0.serialize_der().to_vec();
+            println!("FUND {}", pubkeys.funding_pubkey);
+
             Ok(sig)
         });
         sig
@@ -335,7 +351,7 @@ mod tests {
     fn new_channel_test() -> Result<(), ()> {
         let signer = MySigner::new();
         let node_id = signer.new_node();
-        let channel_id = signer.new_channel(&node_id, 1000, None)?;
+        let channel_id = signer.new_channel(&node_id, 1000, None, None)?;
         signer.with_node(&node_id, |node| {
             assert!(node.is_some());
             Ok(())
@@ -383,7 +399,7 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MySigner::new();
         let node_id = pubkey_from_secret_hex("0101010101010101010101010101010101010101010101010101010101010101", &secp_ctx);
-        assert!(signer.new_channel(&node_id, 1000, None).is_err());
+        assert!(signer.new_channel(&node_id, 1000, None, None).is_err());
         Ok(())
     }
 

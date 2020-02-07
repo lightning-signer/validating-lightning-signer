@@ -128,7 +128,7 @@ impl KeysInterface for LoopbackSignerKeysInterface {
     }
 
     fn get_channel_keys(&self, channel_id: [u8; 32], _inbound: bool, channel_value_satoshis: u64) -> Self::ChanKeySigner {
-        let channel_id = self.signer.new_channel(&self.node_id, channel_value_satoshis, Some(ChannelId(channel_id))).unwrap();
+        let channel_id = self.signer.new_channel(&self.node_id, channel_value_satoshis, None, Some(ChannelId(channel_id))).unwrap();
         self.signer.with_channel(&self.node_id, &channel_id, |channel_opt| {
             channel_opt.map_or(Err(()), |c| Ok(LoopbackChannelSigner::new(
                 &self.node_id,

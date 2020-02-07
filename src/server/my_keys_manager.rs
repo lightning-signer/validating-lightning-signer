@@ -127,34 +127,16 @@ impl MyKeysManager {
     pub fn per_commitment_point(secp_ctx: &Secp256k1<SignOnly>, commitment_seed: &[u8; 32], idx: u64) -> PublicKey {
         PublicKey::from_secret_key(secp_ctx, &MyKeysManager::per_commitment_secret(commitment_seed, idx))
     }
-}
 
-impl KeysInterface for MyKeysManager {
-    type ChanKeySigner = InMemoryChannelKeys;
-
-    fn get_node_secret(&self) -> SecretKey {
-        self.node_secret.clone()
-    }
-
-    fn get_destination_script(&self) -> Script {
-        self.destination_script.clone()
-    }
-
-    fn get_shutdown_pubkey(&self) -> PublicKey {
-        self.shutdown_pubkey.clone()
-    }
-
-    fn get_channel_keys(&self,
-        channel_id: [u8; 32],
-        _inbound: bool,
-        channel_value_satoshis: u64,
-    ) -> InMemoryChannelKeys {
+    pub(crate) fn get_channel_keys_with_nonce(&self, channel_nonce: &[u8],
+                                              channel_value_satoshis: u64,
+                                              hkdf_info: &str) -> InMemoryChannelKeys {
         let channel_seed = hkdf_sha256(
             &self.channel_seed_base,
             "per-peer seed".as_bytes(),
-            &channel_id,
+            channel_nonce,
         );
-        let keys_buf = hkdf_sha256_keys(&channel_seed, "c-lightning".as_bytes(), &[]);
+        let keys_buf = hkdf_sha256_keys(&channel_seed, hkdf_info.as_bytes(), &[]);
         let mut ndx = 0;
         let funding_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
@@ -179,6 +161,27 @@ impl KeysInterface for MyKeysManager {
             commitment_seed,
             channel_value_satoshis,
         )
+    }
+}
+
+impl KeysInterface for MyKeysManager {
+    type ChanKeySigner = InMemoryChannelKeys;
+
+    fn get_node_secret(&self) -> SecretKey {
+        self.node_secret.clone()
+    }
+
+    fn get_destination_script(&self) -> Script {
+        self.destination_script.clone()
+    }
+
+    fn get_shutdown_pubkey(&self) -> PublicKey {
+        self.shutdown_pubkey.clone()
+    }
+
+    fn get_channel_keys(&self, channel_id: [u8; 32],
+                        _inbound: bool, channel_value_satoshis: u64) -> InMemoryChannelKeys {
+        self.get_channel_keys_with_nonce(&channel_id, channel_value_satoshis, "rust-lightning-signer")
     }
 
     fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
@@ -244,7 +247,7 @@ mod tests {
         );
         let mut channel_id = [0u8; 32];
         channel_id[0] = 1u8;
-        let keys = manager.get_channel_keys(channel_id, false, 0);
+        let keys = manager.get_channel_keys_with_nonce(&channel_id, 0, "c-lightning");
         assert!(
             hex::encode(&keys.funding_key()[..])
                 == "bf36bee09cc5dd64c8f19e10b258efb1f606722e9ff6fe3267b63e2dbe33dcfc"
@@ -273,7 +276,7 @@ mod tests {
         let manager = MyKeysManager::new(&[0u8; 32], Network::Testnet, logger(), 0, 0);
         let mut channel_id = [0u8; 32];
         channel_id[0] = 1u8;
-        let keys = manager.get_channel_keys(channel_id, false, 0);
+        let keys = manager.get_channel_keys_with_nonce(&channel_id, 0, "c-lightning");
         assert!(
             hex::encode(&keys.commitment_seed())
                 == "9fc48da6bc75058283b860d5989ffb802b6395ca28c4c3bb9d1da02df6bb0cb3"
