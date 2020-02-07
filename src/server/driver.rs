@@ -129,9 +129,9 @@ impl Signer for MySigner {
         }
 
         let sigs = self.sign_funding_tx(&node_id, &channel_id, &tx, &indices, &values, &iswits)?;
-        let sigs = sigs.into_iter().map(|s| Signature { item: s }).collect();
+        let witnesses = sigs.into_iter().map(|s| WitnessStack { item: s }).collect();
 
-        let reply = SignFundingTxReply { sigs };
+        let reply = SignFundingTxReply { witnesses };
         Ok(Response::new(reply))
     }
 
@@ -146,9 +146,9 @@ impl Signer for MySigner {
         let per_commitment_point =
             PublicKey::from_slice(msg.remote_percommit_point.as_slice())
                 .map_err(|_| Status::invalid_argument("could not decode remote_percommit_point"))?;
-        let sigs = self.sign_remote_commitment_tx(&node_id, &channel_id, &tx, &per_commitment_point)?;
-        let sigs = sigs.into_iter().map(|s| Signature { item: s }).collect();
-        let reply = SignRemoteCommitmentTxReply { sigs };
+        let data = self.sign_remote_commitment_tx(&node_id, &channel_id, &tx, &per_commitment_point)?;
+        // let signature = sigs.into_iter().map(|s| WitnessStack { item: s }).collect();
+        let reply = SignRemoteCommitmentTxReply { signature };
         Ok(Response::new(reply))
     }
 

@@ -136,9 +136,7 @@ message SignMutualCloseTxRequest {
 }
 
 message SignMutualCloseTxReply {
-  // A set of signatures realized in a fixed 64-byte format ordered
-  // in ascending input order.
-  repeated Signature sigs = 1;
+  BitcoinSignature signature = 1;
 }
 
 message CheckFutureSecretRequest {
@@ -190,9 +188,7 @@ message SignFundingTxRequest {
 }
 
 message SignFundingTxReply {
-  // A set of signatures realized in a fixed 64-byte format ordered
-  // in ascending input order.
-  repeated Signature sigs = 1;
+  repeated WitnessStack witnesses = 1;
 }
 
 message SignRemoteCommitmentTxRequest {
@@ -213,9 +209,7 @@ message SignRemoteCommitmentTxRequest {
 }
 
 message SignRemoteCommitmentTxReply {
-  // A set of signatures realized in a fixed 64-byte format ordered
-  // in ascending input order.
-  repeated Signature sigs = 1;
+  BitcoinSignature signature = 1;
 }
 
 message SignCommitmentTxRequest {
@@ -229,9 +223,7 @@ message SignCommitmentTxRequest {
 }
 
 message SignCommitmentTxReply {
-  // A set of signatures realized in a fixed 64-byte format ordered
-  // in ascending input order.
-  repeated Signature sigs = 1;
+  BitcoinSignature signature = 1;
 }
 
 message SignLocalHTLCTxRequest {
@@ -263,7 +255,7 @@ message SignDelayedPaymentToUsRequest {
 }
 
 message SignDelayedPaymentToUsReply {
-  bytes sig = 1;
+  BitcoinSignature signature = 1;
 }
 
 message SignRemoteHTLCTxRequest {
@@ -279,7 +271,7 @@ message SignRemoteHTLCTxRequest {
 }
 
 message SignRemoteHTLCTxReply {
-  bytes sig = 1;
+  BitcoinSignature signature = 1;
 }
 
 message SignRemoteHTLCToUsRequest {
@@ -295,7 +287,7 @@ message SignRemoteHTLCToUsRequest {
 }
 
 message SignRemoteHTLCToUsReply {
-  bytes sig = 1;
+  BitcoinSignature signature = 1;
 }
 
 message SignPenaltyToUsRequest {
@@ -311,7 +303,7 @@ message SignPenaltyToUsRequest {
 }
 
 message SignPenaltyToUsReply {
-  bytes sig = 1;
+  BitcoinSignature signature = 1;
 }
 
 message ChannelAnnouncementSigRequest {
@@ -323,9 +315,9 @@ message ChannelAnnouncementSigRequest {
 }
 
 message ChannelAnnouncementSigReply {
-  bytes node_signature = 1;
+  ECDSASignature node_signature = 1;
 
-  bytes bitcoin_signature = 2;
+  ECDSASignature bitcoin_signature = 2;
 }
 
 message NodeAnnouncementSigRequest {
@@ -335,7 +327,7 @@ message NodeAnnouncementSigRequest {
 }
 
 message NodeAnnouncementSigReply {
-  bytes signature = 1;
+  ECDSASignature signature = 1;
 }
 
 message ChannelUpdateSigRequest {
@@ -363,7 +355,7 @@ message ChannelUpdateSigRequest {
 }
 
 message ChannelUpdateSigReply {
-  bytes sig = 1;
+  ECDSASignature signature = 1;
 }
 
 message ECDHRequest {
@@ -385,7 +377,7 @@ message SignInvoiceRequest {
 }
 
 message SignInvoiceReply {
-  bytes sig = 1;
+  ECDSARecoverableSignature signature = 1;
 }
 
 message VersionRequest {
@@ -428,7 +420,22 @@ message ChainParams {
   bytes fee_asset_tag = 18;
 }
 
-message Signature {
+message ECDSASignature {
+  // DER encoded SECP256K1_ECDSA Signature
+  bytes data = 1;
+}
+
+message ECDSARecoverableSignature {
+  // Compact ECDSA signature (64 bytes) + recovery id (1 byte) = 65 bytes
+  bytes data = 1;
+}
+
+message BitcoinSignature {
+  // DER encoded Bitcoin Signature
+  bytes data = 1;
+}
+
+message WitnessStack {
   // witness stack item
   repeated bytes item = 1;
 }

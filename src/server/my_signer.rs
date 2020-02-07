@@ -252,8 +252,8 @@ impl MySigner {
     }
     pub fn sign_remote_commitment_tx(&self, node_id: &PublicKey, channel_id: &ChannelId,
                                      tx: &Transaction,
-                                     remote_per_commitment_point: &PublicKey) -> Result<Vec<Vec<Vec<u8>>>, Status> {
-        let sigs: Result<Vec<Vec<u8>>, Status> =
+                                     remote_per_commitment_point: &PublicKey) -> Result<Vec<u8>, Status> {
+        let sig: Result<Vec<u8>, Status> =
             self.with_channel(node_id, channel_id, |opt_chan| {
             let chan = opt_chan.ok_or(Status::invalid_argument("no such node/channel"))?;
             let to_self_delay = 0;
@@ -276,12 +276,9 @@ impl MySigner {
                                                   &htlcs, to_self_delay, secp_ctx);
             let sigs = sig.map_err(|_| Status::aborted("could not sign"))?;
             let mut sig = sigs.0.serialize_der().to_vec();
-            sig.push(SigHashType::All as u8);
-            let redeemscript = make_funding_redeemscript(&pubkeys.funding_pubkey,
-                                                         &remote_points.funding_pubkey);
-            Ok(vec![sig, redeemscript.serialize().to_vec()])
+            Ok(sig)
         });
-        Ok(vec![sigs?])
+        sig
     }
 
     pub fn sign_funding_tx(&self, node_id: &PublicKey, _channel_id: &ChannelId, tx: &Transaction,
