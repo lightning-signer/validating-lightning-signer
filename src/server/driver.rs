@@ -168,42 +168,97 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_commitment_tx(&self, _request: Request<SignCommitmentTxRequest>) -> Result<Response<SignCommitmentTxReply>, Status> {
-        panic!("not implemented")
+    async fn sign_commitment_tx(&self, request: Request<SignCommitmentTxRequest>) -> Result<Response<SignCommitmentTxReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = MySigner::node_id(msg.self_node_id)?;
+        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let reply = SignCommitmentTxReply {
+            signature: None
+        };
+        Ok(Response::new(reply))
     }
     
-    async fn sign_local_htlc_tx(&self, _request: Request<SignLocalHtlcTxRequest>) -> Result<Response<SignLocalHtlcTxReply>, Status> {
-        panic!("not implemented")
+    async fn sign_local_htlc_tx(&self, request: Request<SignLocalHtlcTxRequest>) -> Result<Response<SignLocalHtlcTxReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = MySigner::node_id(msg.self_node_id)?;
+        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let reply = SignLocalHtlcTxReply {
+            signature: None
+        };
+        Ok(Response::new(reply))
     }
     
-    async fn sign_delayed_payment_to_us(&self, _request: Request<SignDelayedPaymentToUsRequest>) -> Result<Response<SignDelayedPaymentToUsReply>, Status> {
-        panic!("not implemented")
+    async fn sign_delayed_payment_to_us(&self, request: Request<SignDelayedPaymentToUsRequest>) -> Result<Response<SignDelayedPaymentToUsReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = MySigner::node_id(msg.self_node_id)?;
+        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let reply = SignDelayedPaymentToUsReply {
+            signature: None
+        };
+        Ok(Response::new(reply))
     }
     
-    async fn sign_remote_htlc_tx(&self, _request: Request<SignRemoteHtlcTxRequest>) -> Result<Response<SignRemoteHtlcTxReply>, Status> {
-        panic!("not implemented")
+    async fn sign_remote_htlc_tx(&self, request: Request<SignRemoteHtlcTxRequest>) -> Result<Response<SignRemoteHtlcTxReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = MySigner::node_id(msg.self_node_id)?;
+        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let reply = SignRemoteHtlcTxReply {
+            signature: None
+        };
+        Ok(Response::new(reply))
     }
 
-    async fn sign_remote_htlc_to_us(&self, _request: Request<SignRemoteHtlcToUsRequest>) -> Result<Response<SignRemoteHtlcToUsReply>, Status> {
-        panic!("not implemented")
+    async fn sign_remote_htlc_to_us(&self, request: Request<SignRemoteHtlcToUsRequest>) -> Result<Response<SignRemoteHtlcToUsReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = MySigner::node_id(msg.self_node_id)?;
+        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let reply = SignRemoteHtlcToUsReply {
+            signature: None
+        };
+        Ok(Response::new(reply))
     }
     
-    async fn sign_penalty_to_us(&self, _request: Request<SignPenaltyToUsRequest>) -> Result<Response<SignPenaltyToUsReply>, Status> {
-        panic!("not implemented")
+    async fn sign_penalty_to_us(&self, request: Request<SignPenaltyToUsRequest>) -> Result<Response<SignPenaltyToUsReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = MySigner::node_id(msg.self_node_id)?;
+        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let reply = SignPenaltyToUsReply {
+            signature: None
+        };
+        Ok(Response::new(reply))
     }
     
-    async fn channel_announcement_sig(&self, _request: Request<ChannelAnnouncementSigRequest>) -> Result<Response<ChannelAnnouncementSigReply>, Status> {
-        panic!("not implemented")
+    async fn channel_announcement_sig(&self, request: Request<ChannelAnnouncementSigRequest>) -> Result<Response<ChannelAnnouncementSigReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = MySigner::node_id(msg.self_node_id)?;
+        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let reply = ChannelAnnouncementSigReply {
+            node_signature: None,
+            bitcoin_signature: None
+        };
+        Ok(Response::new(reply))
     }
     
-    async fn node_announcement_sig(&self, _request: Request<NodeAnnouncementSigRequest>) -> Result<Response<NodeAnnouncementSigReply>, Status> {
-        panic!("not implemented")
+    async fn node_announcement_sig(&self, request: Request<NodeAnnouncementSigRequest>) -> Result<Response<NodeAnnouncementSigReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = MySigner::node_id(msg.self_node_id)?;
+        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let reply = NodeAnnouncementSigReply {
+            signature: None
+        };
+        Ok(Response::new(reply))
     }
     
-    async fn channel_update_sig(&self, _request: Request<ChannelUpdateSigRequest>) -> Result<Response<ChannelUpdateSigReply>, Status> {
-        panic!("not implemented")
+    async fn channel_update_sig(&self, request: Request<ChannelUpdateSigRequest>) -> Result<Response<ChannelUpdateSigReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = MySigner::node_id(msg.self_node_id)?;
+        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let reply = ChannelUpdateSigReply {
+            signature: None
+        };
+        Ok(Response::new(reply))
     }
-    
+
     async fn ecdh(&self, request: Request<EcdhRequest>) -> Result<Response<EcdhReply>, Status> {
         let msg = request.into_inner();
         let node_id = MySigner::node_id(msg.self_node_id)?;
@@ -215,8 +270,14 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_invoice(&self, _request: Request<SignInvoiceRequest>) -> Result<Response<SignInvoiceReply>, Status> {
-        panic!("not implemented")
+    async fn sign_invoice(&self, request: Request<SignInvoiceRequest>) -> Result<Response<SignInvoiceReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = MySigner::node_id(msg.self_node_id)?;
+        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let reply = SignInvoiceReply {
+            signature: None
+        };
+        Ok(Response::new(reply))
     }
 }
 
