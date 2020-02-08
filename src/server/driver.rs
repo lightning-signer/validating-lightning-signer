@@ -125,7 +125,7 @@ impl Signer for MySigner {
         let mut values = Vec::new();
         let mut iswits = Vec::new();
 
-        for idx in 0..tx.output.len() {
+        for idx in 0..tx.input.len() {
             let child_index = reqtx.input_descs[idx].key_loc.as_ref().ok_or(Status::invalid_argument("missing key_loc desc"))?.key_index as u32;
             indices.push(child_index);
             let value = reqtx.input_descs[idx].output.as_ref().ok_or(Status::invalid_argument("missing output desc"))?.value as u64;
@@ -154,8 +154,9 @@ impl Signer for MySigner {
         let per_commitment_point =
             public_key_from_raw(msg.remote_percommit_point.as_slice())
                 .map_err(|_| Status::invalid_argument("could not decode remote_percommit_point"))?;
+        let channel_value_satoshis = reqtx.input_descs[0].output.as_ref().unwrap().value as u64;
         let sig_data =
-            self.sign_remote_commitment_tx(&node_id, &channel_id, &tx, &per_commitment_point, &remote_funding_pubkey)?;
+            self.sign_remote_commitment_tx(&node_id, &channel_id, &tx, &per_commitment_point, &remote_funding_pubkey, channel_value_satoshis)?;
         let reply = SignRemoteCommitmentTxReply { signature: Some(BitcoinSignature { data: sig_data }) };
         Ok(Response::new(reply))
     }

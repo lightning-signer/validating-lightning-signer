@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bitcoin::{Address, Network, Script, SigHashType, Transaction};
+use bitcoin::util::bip143;
 use bitcoin::util::bip143::SighashComponents;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
 use bitcoin::util::psbt::serialize::Serialize;
@@ -41,6 +42,7 @@ impl fmt::Display for ChannelId {
 pub struct Channel {
     pub keys: EnforcingChannelKeys,
     pub secp_ctx: Secp256k1<All>,
+    pub channel_value_satoshi: u64,
 }
 
 impl Debug for Channel {
@@ -204,6 +206,7 @@ impl MySigner {
         let channel = Channel {
             keys: chan_keys,
             secp_ctx: Secp256k1::new(),
+            channel_value_satoshi,
         };
         channels.insert(channel_id, channel);
         Ok(channel_id)
@@ -257,40 +260,23 @@ impl MySigner {
     pub fn sign_remote_commitment_tx(&self, node_id: &PublicKey, channel_id: &ChannelId,
                                      tx: &Transaction,
                                      remote_per_commitment_point: &PublicKey,
-                                     remote_funding_pubkey: &PublicKey) -> Result<Vec<u8>, Status> {
+                                     remote_funding_pubkey: &PublicKey,
+                                     channel_value_satoshis: u64) -> Result<Vec<u8>, Status> {
         let sig: Result<Vec<u8>, Status> = self.with_channel(node_id, channel_id, |opt_chan| {
             let chan = opt_chan.ok_or(Status::invalid_argument("no such node/channel"))?;
-            let to_self_delay = 0;
-            let feerate = 0;
-            let htlcs = vec![];
-            if chan.keys.remote_pubkeys().is_none() {
-                // FIXME this hack goes away once we have a channel accept API call
-                let remote_points = ChannelPublicKeys {
-                    funding_pubkey: remote_funding_pubkey.clone(),
-                    revocation_basepoint: remote_funding_pubkey.clone(),
-                    payment_basepoint: remote_funding_pubkey.clone(),
-                    delayed_payment_basepoint: remote_funding_pubkey.clone(),
-                    htlc_basepoint: remote_funding_pubkey.clone(),
-                };
-                chan.keys.set_remote_channel_pubkeys(&remote_points);
-            }
-            let remote_points =
-                chan.keys.remote_pubkeys().as_ref().ok_or(Status::aborted("channel not accepted yet"))?;
-            let pubkeys = chan.keys.pubkeys();
-            let secp_ctx = &chan.secp_ctx;
-            let tx_keys = TxCreationKeys::new(secp_ctx,
-                                              &remote_per_commitment_point,
-                                              &remote_points.delayed_payment_basepoint,
-                                              &remote_points.htlc_basepoint,
-                                              &pubkeys.revocation_basepoint,
-                                              &pubkeys.payment_basepoint,
-                                              &pubkeys.htlc_basepoint).unwrap();
 
-            let sig = chan.keys.sign_remote_commitment(feerate, tx, &tx_keys,
-                                                  &htlcs, to_self_delay, secp_ctx);
-            let sigs = sig.map_err(|_| Status::aborted("could not sign"))?;
-            let mut sig = sigs.0.serialize_der().to_vec();
-            println!("FUND {}", pubkeys.funding_pubkey);
+            let secp_ctx = &chan.secp_ctx;
+            let funding_key = chan.keys.funding_key();
+            let funding_pubkey = chan.keys.pubkeys().funding_pubkey;
+            let channel_funding_redeemscript = make_funding_redeemscript(&funding_pubkey, &remote_funding_pubkey);
+
+            let commitment_sighash =
+                Message::from_slice(&bip143::SighashComponents::new(&tx)
+                    .sighash_all(&tx.input[0], &channel_funding_redeemscript, channel_value_satoshis)[..])
+                .map_err(|_| Status::internal("could not hash"))?;
+            let commitment_sig = secp_ctx.sign(&commitment_sighash, funding_key);
+            let mut sig = commitment_sig.serialize_der().to_vec();
+            sig.push(SigHashType::All as u8);
 
             Ok(sig)
         });
