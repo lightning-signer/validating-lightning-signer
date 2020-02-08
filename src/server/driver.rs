@@ -17,13 +17,16 @@ use super::remotesigner;
 
 impl MySigner {
     fn node_id(arg: Option<NodeId>) -> Result<PublicKey, Status> {
-        let der_vec = &arg.expect("missing self_node_id").data;
-        der_vec.as_slice().try_into().map_err(|_| Status::invalid_argument("node ID"))
-            .map(|node_id| PublicKey::from_slice(node_id).unwrap())
+        let der_vec = &arg.ok_or(Status::invalid_argument("missing node ID"))?.data;
+        let slice: &[u8] = der_vec.as_slice().try_into().map_err(|_| Status::invalid_argument("node ID wrong length"))?;
+        PublicKey::from_slice(slice)
+            .map_err(|e| Status::invalid_argument(format!("could not deserialize remote_funding_pubkey - {}", e)))
     }
 
-    fn raw_point(raw_vec: &Vec<u8>) -> Result<PublicKey, Status> {
-        public_key_from_raw(raw_vec.as_slice()).map_err(|_| Status::invalid_argument("raw point"))
+    fn public_key(arg: Option<PubKey>) -> Result<PublicKey, Status> {
+        let pubkey = arg.ok_or(Status::invalid_argument("missing pubkey"))?;
+        public_key_from_raw(pubkey.data.as_slice())
+            .map_err(|e| Status::invalid_argument(format!("could not deserialize pubkey - {}", e)))
     }
 
     fn channel_id(channel_nonce: &Vec<u8>) -> Result<ChannelId, Status> {
@@ -57,8 +60,9 @@ impl Signer for MySigner {
     async fn init(&self, request: Request<InitRequest>) -> Result<Response<InitReply>, Status> {
         let msg = request.into_inner();
         log_info!(self, "ENTER init");
-        let hsm_secret = msg.hsm_secret.expect("missing hsm_secret").data;
-        let hsm_secret = hsm_secret.as_slice().try_into().expect("secret length != 32");
+        let hsm_secret = msg.hsm_secret.ok_or(Status::invalid_argument("missing hsm_secret"))?.data;
+        let hsm_secret = hsm_secret.as_slice().try_into()
+            .map_err(|_| Status::invalid_argument("secret length != 32"))?;
 
         let node_id = self.new_node_from_seed(hsm_secret).serialize().to_vec();
         log_info!(self, "DONE init {}", hex::encode(&node_id));
@@ -94,7 +98,7 @@ impl Signer for MySigner {
     async fn get_channel_basepoints(&self, request: Request<GetChannelBasepointsRequest>) -> Result<Response<GetChannelBasepointsReply>, Status> {
         let msg = request.into_inner();
         let node_id = MySigner::node_id(msg.self_node_id)?;
-        let channel_id = MySigner::channel_id(&msg.channel_nonce).expect("must provide channel ID");
+        let channel_id = MySigner::channel_id(&msg.channel_nonce)?;
         log_error!(self, "NOT IMPLEMENTED get_channel_basepoints({}/{})", node_id, channel_id);
         Ok(Response::new(GetChannelBasepointsReply {
             basepoints: None,
@@ -105,7 +109,7 @@ impl Signer for MySigner {
     async fn get_per_commitment_point(&self, request: Request<GetPerCommitmentPointRequest>) -> Result<Response<GetPerCommitmentPointReply>, Status> {
         let msg = request.into_inner();
         let node_id = MySigner::node_id(msg.self_node_id)?;
-        let channel_id = MySigner::channel_id(&msg.channel_nonce).expect("must provide channel ID");
+        let channel_id = MySigner::channel_id(&msg.channel_nonce)?;
         log_info!(self, "ENTER get_per_commitment_point({}/{})", node_id, channel_id);
         let secp_ctx = Secp256k1::signing_only();
         let commitment_number = msg.n;
@@ -125,7 +129,7 @@ impl Signer for MySigner {
         let node_id = MySigner::node_id(msg.self_node_id)?;
         let channel_id = MySigner::channel_id(&msg.channel_nonce)?;
         log_info!(self, "ENTER sign_remote_commitment_tx({}/{})", node_id, channel_id);
-        let reqtx = msg.tx.expect("missing tx");
+        let reqtx = msg.tx.ok_or(Status::invalid_argument("missing tx"))?;
         let tx_res: Result<Transaction, encode::Error> = deserialize(reqtx.raw_tx_bytes.as_slice());
         let tx = tx_res.map_err(|e| Status::invalid_argument(format!("could not deserialize tx - {}", e)))?;
         let mut indices = Vec::new();
@@ -152,15 +156,11 @@ impl Signer for MySigner {
         let node_id = MySigner::node_id(msg.self_node_id)?;
         let channel_id = MySigner::channel_id(&msg.channel_nonce)?;
         log_info!(self, "ENTER sign_remote_commitment_tx({}/{})", node_id, channel_id);
-        let reqtx = msg.tx.expect("missing tx");
+        let reqtx = msg.tx.ok_or(Status::invalid_argument("missing tx"))?;
         let tx_res: Result<Transaction, encode::Error> = deserialize(reqtx.raw_tx_bytes.as_slice());
         let tx = tx_res.map_err(|e| Status::invalid_argument(format!("could not deserialize tx - {}", e)))?;
-        let remote_funding_pubkey =
-            public_key_from_raw(msg.remote_funding_pubkey.expect("missing remote_funding_pubkey").data.as_slice())
-                .map_err(|e| Status::invalid_argument(format!("could not deserialize remote_funding_pubkey - {}", e)))?;
-        let per_commitment_point =
-            public_key_from_raw(msg.remote_per_commit_point.expect("missing remote_per_commit_point").data.as_slice())
-                .map_err(|_| Status::invalid_argument("could not decode remote_percommit_point"))?;
+        let remote_funding_pubkey = MySigner::public_key(msg.remote_funding_pubkey)?;
+        let per_commitment_point = MySigner::public_key(msg.remote_per_commit_point)?;
         let channel_value_satoshis = reqtx.input_descs[0].output.as_ref().unwrap().value as u64;
         let sig_data =
             self.sign_remote_commitment_tx(&node_id, &channel_id, &tx, &per_commitment_point, &remote_funding_pubkey, channel_value_satoshis)?;
@@ -207,7 +207,7 @@ impl Signer for MySigner {
     async fn ecdh(&self, request: Request<EcdhRequest>) -> Result<Response<EcdhReply>, Status> {
         let msg = request.into_inner();
         let node_id = MySigner::node_id(msg.self_node_id)?;
-        let other_key = MySigner::raw_point(&msg.point.expect("missing point").data)?;
+        let other_key = MySigner::public_key(msg.point)?;
         log_info!(self, "ENTER ecdh({} + {})", node_id, other_key);
         let reply = EcdhReply {
             shared_secret: Some(Secret{data: self.ecdh(&node_id, &other_key)?}),
