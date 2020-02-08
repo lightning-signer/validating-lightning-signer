@@ -102,15 +102,15 @@ message InitRequest {
   ChainParams chainparams = 2;
 
   // HACK: send the secret instead of generating.
-  bytes hsm_secret = 100;
+  Secret hsm_secret = 100;
 }
 
 message InitReply {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
 }
 
 message NewChannelRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
 
   // optional
   bytes channel_nonce = 2;
@@ -126,13 +126,13 @@ message NewChannelReply {
 }
 
 message SignMutualCloseTxRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
     
   bytes channel_nonce = 2;
 
   Transaction tx = 3;
   
-  bytes remote_funding_pubkey = 4;
+  PubKey remote_funding_pubkey = 4;
 }
 
 message SignMutualCloseTxReply {
@@ -140,13 +140,13 @@ message SignMutualCloseTxReply {
 }
 
 message CheckFutureSecretRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
 
   bytes channel_nonce = 2;
 
   uint64 n = 3;
 
-  bytes suggested = 4;
+  Secret suggested = 4;
 }
 
 message CheckFutureSecretReply {
@@ -154,7 +154,7 @@ message CheckFutureSecretReply {
 }
 
 message GetChannelBasepointsRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
     
   bytes channel_nonce = 2;
 }
@@ -162,11 +162,11 @@ message GetChannelBasepointsRequest {
 message GetChannelBasepointsReply {
   Basepoints basepoints = 1;
 
-  bytes remote_funding_pubkey = 2;
+  PubKey remote_funding_pubkey = 2;
 }
 
 message GetPerCommitmentPointRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
     
   bytes channel_nonce = 2;
     
@@ -174,13 +174,13 @@ message GetPerCommitmentPointRequest {
 }
 
 message GetPerCommitmentPointReply {
-  bytes per_commitment_point = 1;
+  PubKey per_commitment_point = 1;
     
-  bytes old_secret = 2;
+  Secret old_secret = 2;
 }
 
 message SignFundingTxRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
   
   bytes channel_nonce = 2;
 
@@ -192,16 +192,15 @@ message SignFundingTxReply {
 }
 
 message SignRemoteCommitmentTxRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
   
   bytes channel_nonce = 2;
     
   Transaction tx = 3;
   
-  bytes remote_funding_pubkey = 4;
+  PubKey remote_funding_pubkey = 4;
 
-  // FIXME - shouldn't this be remote_per_commit_point?
-  bytes remote_percommit_point = 5;
+  PubKey remote_per_commit_point = 5;
 
   repeated bytes output_witscripts = 6;
 
@@ -213,13 +212,13 @@ message SignRemoteCommitmentTxReply {
 }
 
 message SignCommitmentTxRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
   
   bytes channel_nonce = 2;
     
   Transaction tx = 3;
   
-  bytes remote_funding_pubkey = 4;
+  PubKey remote_funding_pubkey = 4;
 }
 
 message SignCommitmentTxReply {
@@ -227,7 +226,7 @@ message SignCommitmentTxReply {
 }
 
 message SignLocalHTLCTxRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
 
   bytes channel_nonce = 2;
 
@@ -239,11 +238,11 @@ message SignLocalHTLCTxRequest {
 }
 
 message SignLocalHTLCTxReply {
-  bytes sig = 1;
+  BitcoinSignature signature = 1;
 }
 
 message SignDelayedPaymentToUsRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
     
   bytes channel_nonce = 2;
 
@@ -259,13 +258,13 @@ message SignDelayedPaymentToUsReply {
 }
 
 message SignRemoteHTLCTxRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
 
   bytes channel_nonce = 2;
 
   Transaction tx = 3;
 
-  bytes remote_per_commit_point = 4;
+  PubKey remote_per_commit_point = 4;
 
   bytes wscript = 5;
 }
@@ -275,13 +274,13 @@ message SignRemoteHTLCTxReply {
 }
 
 message SignRemoteHTLCToUsRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
 
   bytes channel_nonce = 2;
 
   Transaction tx = 3;
 
-  bytes remote_per_commit_point = 4;
+  PubKey remote_per_commit_point = 4;
 
   bytes wscript = 5;
 }
@@ -291,13 +290,13 @@ message SignRemoteHTLCToUsReply {
 }
 
 message SignPenaltyToUsRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
     
   bytes channel_nonce = 2;
 
   Transaction tx = 3;
 
-  bytes revocation_secret = 4;	// FIXME - is this remembered instead of passed?
+  Secret revocation_secret = 4;	// FIXME - is this remembered instead of passed?
 
   bytes wscript = 5;	// FIXME - find a better name
 }
@@ -307,7 +306,7 @@ message SignPenaltyToUsReply {
 }
 
 message ChannelAnnouncementSigRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
   
   bytes channel_nonce = 2;
 
@@ -321,7 +320,7 @@ message ChannelAnnouncementSigReply {
 }
 
 message NodeAnnouncementSigRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
   
   bytes node_announcement = 2;
 }
@@ -331,7 +330,7 @@ message NodeAnnouncementSigReply {
 }
 
 message ChannelUpdateSigRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
 
   bytes chain_hash = 2;
 
@@ -359,17 +358,17 @@ message ChannelUpdateSigReply {
 }
 
 message ECDHRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
     
-  bytes point = 2;    // 64 bytes, uncompressed x,y, little-endian
+  PubKey point = 2;
 }
 
 message ECDHReply {
-  bytes shared_secret = 1; // 32 bytes
+  Secret shared_secret = 1; // 32 bytes
 }
 
 message SignInvoiceRequest {
-  bytes self_node_id = 1;
+  NodeId self_node_id = 1;
 
   bytes data_part = 2;
 
@@ -420,6 +419,39 @@ message ChainParams {
   bytes fee_asset_tag = 18;
 }
 
+message NodeId {
+  // 33 bytes
+  bytes data = 1;
+}
+
+message PubKey {
+  // ECDSA PubKey, Compressed, 33 bytes
+  bytes data = 1;
+}
+
+message Secret {
+  // 256-bit Secret, 32 bytes
+  bytes data = 1;
+}
+
+message Transaction {
+  /// The raw bytes of the transaction to be signed.
+  bytes raw_tx_bytes = 1;
+
+  /// A set of sign descriptors, for each input to be signed.
+  repeated SignDescriptor input_descs = 2;
+  
+  /// A set of sign descriptors, for each output.
+  repeated SignDescriptor output_descs = 3;
+}
+
+message Basepoints {
+  PubKey revocation = 1;
+  PubKey payment = 2;
+  PubKey htlc = 3;
+  PubKey delayed_payment = 4;
+}
+
 message ECDSASignature {
   // DER encoded SECP256K1_ECDSA Signature
   bytes data = 1;
@@ -439,6 +471,8 @@ message WitnessStack {
   // witness stack item
   repeated bytes item = 1;
 }
+
+// ----------------------------------------------------------------
 
 message KeyLocator {
   /// The index of the key being identified.
@@ -467,20 +501,3 @@ message SignDescriptor {
   TxOut output = 5;
 }
 
-message Transaction {
-  /// The raw bytes of the transaction to be signed.
-  bytes raw_tx_bytes = 1;
-
-  /// A set of sign descriptors, for each input to be signed.
-  repeated SignDescriptor input_descs = 2;
-  
-  /// A set of sign descriptors, for each output.
-  repeated SignDescriptor output_descs = 3;
-}
-
-message Basepoints {
-  bytes revocation = 1;
-  bytes payment = 2;
-  bytes htlc = 3;
-  bytes delayed_payment = 4;
-}
