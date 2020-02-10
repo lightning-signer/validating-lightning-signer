@@ -291,6 +291,16 @@ impl Signer for MySigner {
         };
         Ok(Response::new(reply))
     }
+
+    async fn sign_message(&self, request: Request<SignMessageRequest>) -> Result<Response<SignMessageReply>, Status> {
+        let _msg = request.into_inner();
+//        let node_id = self.node_id(msg.self_node_id)?;
+        log_error!(self, "NOT IMPLEMENTED sign_message");
+        let reply = SignMessageReply {
+            signature: None
+        };
+        Ok(Response::new(reply))
+    }
 }
 
 

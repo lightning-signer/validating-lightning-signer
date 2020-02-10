@@ -80,6 +80,10 @@ service Signer {
   // BOLT #11 - Invoice Protocol
   rpc SignInvoice (SignInvoiceRequest)
     returns (SignInvoiceReply);
+
+  // BOLT #?? - Sign Message
+  rpc SignMessage (SignMessageRequest)
+    returns (SignMessageReply);
 }
 
 service Version {
@@ -376,6 +380,16 @@ message SignInvoiceRequest {
 }
 
 message SignInvoiceReply {
+  ECDSARecoverableSignature signature = 1;
+}
+
+message SignMessageRequest {
+  NodeId self_node_id = 1;
+
+  bytes message = 2;
+}
+
+message SignMessageReply {
   ECDSARecoverableSignature signature = 1;
 }
 
