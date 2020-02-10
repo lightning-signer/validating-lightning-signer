@@ -99,12 +99,24 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_mutual_close_tx(&self, _request: Request<SignMutualCloseTxRequest>) -> Result<Response<SignMutualCloseTxReply>, Status> {
-        panic!("not implemented")
+    async fn sign_mutual_close_tx(&self, request: Request<SignMutualCloseTxRequest>) -> Result<Response<SignMutualCloseTxReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = self.node_id(msg.self_node_id)?;
+        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let reply = SignMutualCloseTxReply {
+            signature: None
+        };
+        Ok(Response::new(reply))
     }
     
-    async fn check_future_secret(&self, _request: Request<CheckFutureSecretRequest>) -> Result<Response<CheckFutureSecretReply>, Status> {
-        panic!("not implemented")
+    async fn check_future_secret(&self, request: Request<CheckFutureSecretRequest>) -> Result<Response<CheckFutureSecretReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = self.node_id(msg.self_node_id)?;
+        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let reply = CheckFutureSecretReply {
+            correct: false
+        };
+        Ok(Response::new(reply))
     }
 
     async fn get_channel_basepoints(&self, request: Request<GetChannelBasepointsRequest>) -> Result<Response<GetChannelBasepointsReply>, Status> {
