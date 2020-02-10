@@ -34,9 +34,20 @@ macro_rules! log_bytes {
     };
 }
 
+macro_rules! function {
+    () => {{
+        fn _f() {}
+        fn _type_name_of<T>(_: T) -> &'static str {
+            std::any::type_name::<T>()
+        }
+        let name = _type_name_of(_f);
+        &name[..name.len() - 3]
+    }}
+}
+
 macro_rules! log_internal {
 	($self: ident, $lvl:expr, $($arg:tt)+) => (
-		&$self.logger.log(&lightning::util::logger::Record::new($lvl, format_args!($($arg)+), module_path!(), file!(), line!()));
+		&$self.logger.log(&lightning::util::logger::Record::new($lvl, format_args!($($arg)+), function!(), file!(), line!()));
 	);
 }
 
