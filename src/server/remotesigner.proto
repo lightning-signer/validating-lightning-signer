@@ -62,16 +62,16 @@ service Signer {
     returns (SignPenaltyToUsReply);
 
   // BOLT #7 - channel_announcement
-  rpc ChannelAnnouncementSig (ChannelAnnouncementSigRequest)
-    returns (ChannelAnnouncementSigReply);
+  rpc SignChannelAnnouncement (SignChannelAnnouncementRequest)
+    returns (SignChannelAnnouncementReply);
 
   // BOLT #7 - node_announcement
-  rpc NodeAnnouncementSig (NodeAnnouncementSigRequest)
-    returns (NodeAnnouncementSigReply);
+  rpc SignNodeAnnouncement (SignNodeAnnouncementRequest)
+    returns (SignNodeAnnouncementReply);
 
   // BOLT #7 - channel_update
-  rpc ChannelUpdateSig (ChannelUpdateSigRequest)
-    returns (ChannelUpdateSigReply);
+  rpc SignChannelUpdate (SignChannelUpdateRequest)
+    returns (SignChannelUpdateReply);
 
   // BOLT #8 - Authenticated Key Agreement Handshake
   rpc ECDH (ECDHRequest)
@@ -309,7 +309,7 @@ message SignPenaltyToUsReply {
   BitcoinSignature signature = 1;
 }
 
-message ChannelAnnouncementSigRequest {
+message SignChannelAnnouncementRequest {
   NodeId self_node_id = 1;
   
   bytes channel_nonce = 2;
@@ -317,23 +317,23 @@ message ChannelAnnouncementSigRequest {
   bytes channel_announcement = 3;
 }
 
-message ChannelAnnouncementSigReply {
+message SignChannelAnnouncementReply {
   ECDSASignature node_signature = 1;
 
   ECDSASignature bitcoin_signature = 2;
 }
 
-message NodeAnnouncementSigRequest {
+message SignNodeAnnouncementRequest {
   NodeId self_node_id = 1;
   
   bytes node_announcement = 2;
 }
 
-message NodeAnnouncementSigReply {
+message SignNodeAnnouncementReply {
   ECDSASignature signature = 1;
 }
 
-message ChannelUpdateSigRequest {
+message SignChannelUpdateRequest {
   NodeId self_node_id = 1;
 
   bytes chain_hash = 2;
@@ -357,7 +357,7 @@ message ChannelUpdateSigRequest {
   uint64 htlc_maximum = 11;
 }
 
-message ChannelUpdateSigReply {
+message SignChannelUpdateReply {
   ECDSASignature signature = 1;
 }
 

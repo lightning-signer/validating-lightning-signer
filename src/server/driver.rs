@@ -240,32 +240,32 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
     
-    async fn channel_announcement_sig(&self, request: Request<ChannelAnnouncementSigRequest>) -> Result<Response<ChannelAnnouncementSigReply>, Status> {
+    async fn sign_channel_announcement(&self, request: Request<SignChannelAnnouncementRequest>) -> Result<Response<SignChannelAnnouncementReply>, Status> {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.self_node_id)?;
         log_error!(self, "NOT IMPLEMENTED {}", node_id);
-        let reply = ChannelAnnouncementSigReply {
+        let reply = SignChannelAnnouncementReply {
             node_signature: None,
             bitcoin_signature: None
         };
         Ok(Response::new(reply))
     }
     
-    async fn node_announcement_sig(&self, request: Request<NodeAnnouncementSigRequest>) -> Result<Response<NodeAnnouncementSigReply>, Status> {
+    async fn sign_node_announcement(&self, request: Request<SignNodeAnnouncementRequest>) -> Result<Response<SignNodeAnnouncementReply>, Status> {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.self_node_id)?;
         log_error!(self, "NOT IMPLEMENTED {}", node_id);
-        let reply = NodeAnnouncementSigReply {
+        let reply = SignNodeAnnouncementReply {
             signature: None
         };
         Ok(Response::new(reply))
     }
     
-    async fn channel_update_sig(&self, request: Request<ChannelUpdateSigRequest>) -> Result<Response<ChannelUpdateSigReply>, Status> {
+    async fn sign_channel_update(&self, request: Request<SignChannelUpdateRequest>) -> Result<Response<SignChannelUpdateReply>, Status> {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.self_node_id)?;
         log_error!(self, "NOT IMPLEMENTED channel_update_sig {}", node_id);
-        let reply = ChannelUpdateSigReply {
+        let reply = SignChannelUpdateReply {
             signature: None
         };
         Ok(Response::new(reply))
