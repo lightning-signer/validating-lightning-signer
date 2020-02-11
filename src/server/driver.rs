@@ -191,7 +191,7 @@ impl Signer for MySigner {
         let per_commitment_point = self.public_key(msg.remote_per_commit_point)?;
         let channel_value_satoshis = reqtx.input_descs[0].output.as_ref().unwrap().value as u64;
         let sig_data =
-            self.sign_remote_commitment_tx(&node_id, &channel_id, &tx, &per_commitment_point, &remote_funding_pubkey, channel_value_satoshis)?;
+            self.sign_remote_commitment_tx(&node_id, &channel_id, &tx, msg.output_witscripts, &per_commitment_point, &remote_funding_pubkey, channel_value_satoshis)?;
         let reply = SignRemoteCommitmentTxReply { signature: Some(BitcoinSignature { data: sig_data }) };
         log_info!(self, "REPLY sign_remote_commitment_tx({}/{})", node_id, channel_id);
         Ok(Response::new(reply))
