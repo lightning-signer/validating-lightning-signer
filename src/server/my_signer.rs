@@ -22,6 +22,7 @@ use secp256k1::ecdh::SharedSecret;
 use tonic::Status;
 
 use crate::server::my_keys_manager::MyKeysManager;
+use crate::server::script::CommitmentInfo;
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::test_utils::TestLogger;
 
@@ -272,13 +273,24 @@ impl MySigner {
     }
 
     pub fn sign_remote_commitment_tx(&self, node_id: &PublicKey, channel_id: &ChannelId,
-                                     tx: &Transaction,
+                                     tx: &Transaction, output_witscripts: Vec<Vec<u8>>,
                                      _remote_per_commitment_point: &PublicKey,
                                      remote_funding_pubkey: &PublicKey,
                                      channel_value_satoshis: u64) -> Result<Vec<u8>, Status> {
         let sig: Result<Vec<u8>, Status> = self.with_channel(node_id, channel_id, |opt_chan| {
             let chan = opt_chan.ok_or(Status::invalid_argument("no such node/channel"))?;
 
+            if tx.output.len() != output_witscripts.len() {
+                return Err(Status::invalid_argument("len(tx.output) != len(witscripts)"))
+            }
+            let mut info = CommitmentInfo::new();
+            for ind in 0..tx.output.len() {
+                let res = info.handle_output(&tx.output[ind], output_witscripts[ind].as_slice())
+                    .map_err(|ve| Status::invalid_argument(ve));
+                if res.is_err() {
+                    log_error!(self, "validation error {}", res.unwrap_err());
+                }
+            }
             let secp_ctx = &chan.secp_ctx;
             let funding_key = chan.keys.funding_key();
             let funding_pubkey = chan.keys.pubkeys().funding_pubkey;
