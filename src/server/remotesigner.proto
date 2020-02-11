@@ -334,27 +334,13 @@ message SignNodeAnnouncementReply {
 }
 
 message SignChannelUpdateRequest {
+  // https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#the-channel_update-message
+  
   NodeId self_node_id = 1;
 
-  bytes chain_hash = 2;
-
-  uint64 short_channel_id = 3;
-
-  uint32 timestamp = 4;
-
-  uint32 message_flags = 5;	// uint8
-
-  uint32 channel_flags = 6;	// uint8
-
-  uint32 cltv_expiry_delta = 7;	// uint16
-
-  uint64 htlc_minimum = 8;
-
-  uint32 fee_base_msat = 9;
-
-  uint32 fee_proportional_mill = 10;
-
-  uint64 htlc_maximum = 11;
+  // Portion of the channel_update message which requires signing
+  // (skip the message type and the signature field, 66 byte offset).
+  bytes channel_update = 2;
 }
 
 message SignChannelUpdateReply {

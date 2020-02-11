@@ -41,6 +41,8 @@ impl MySigner {
             .map_err(|e| self.invalid_argument(format!("could not deserialize pubkey - {}", e)))
     }
 
+    // NOTE - this "channel_id" does *not* correspond to the
+    // channel_id defined in BOLT #2.
     fn channel_id(&self, channel_nonce: &Vec<u8>) -> Result<ChannelId, Status> {
         if channel_nonce.is_empty() {
             Err(self.invalid_argument("channel ID"))
@@ -75,7 +77,6 @@ impl Signer for MySigner {
         let hsm_secret = msg.hsm_secret.ok_or_else(|| self.invalid_argument("missing hsm_secret"))?.data;
         let hsm_secret = hsm_secret.as_slice().try_into()
             .map_err(|_| self.invalid_argument("secret length != 32"))?;
-
         let node_id = self.new_node_from_seed(hsm_secret).serialize().to_vec();
         log_info!(self, "DONE init {}", hex::encode(&node_id));
 
@@ -152,7 +153,7 @@ impl Signer for MySigner {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.self_node_id)?;
         let channel_id = self.channel_id(&msg.channel_nonce)?;
-        log_info!(self, "ENTER sign_remote_commitment_tx({}/{})", node_id, channel_id);
+        log_info!(self, "ENTER ({}/{})", node_id, channel_id);
         let reqtx = msg.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
         let tx_res: Result<Transaction, encode::Error> = deserialize(reqtx.raw_tx_bytes.as_slice());
         let tx = tx_res.map_err(|e| self.invalid_argument(format!("could not deserialize tx - {}", e)))?;
@@ -276,10 +277,13 @@ impl Signer for MySigner {
     async fn sign_channel_update(&self, request: Request<SignChannelUpdateRequest>) -> Result<Response<SignChannelUpdateReply>, Status> {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.self_node_id)?;
-        log_error!(self, "NOT IMPLEMENTED channel_update_sig {}", node_id);
+        let cu = msg.channel_update;
+        log_info!(self, "ENTER ({}) cu={}", node_id, hex::encode(&cu).as_str());
+        let sig_data = self.sign_channel_update(&node_id, &cu)?;
         let reply = SignChannelUpdateReply {
-            signature: None
+            signature: Some(EcdsaSignature{data: sig_data}),
         };
+        log_info!(self, "REPLY ({}) {:x?}", node_id, reply);
         Ok(Response::new(reply))
     }
 
