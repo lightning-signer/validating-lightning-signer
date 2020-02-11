@@ -30,6 +30,7 @@ impl EnforcingChannelKeys {
 }
 
 impl EnforcingChannelKeys {
+    #[allow(dead_code)]
     fn check_keys<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         secp_ctx: &Secp256k1<T>,

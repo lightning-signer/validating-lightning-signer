@@ -26,7 +26,9 @@ pub struct MyKeysManager {
     bip32_key: ExtendedPrivKey,
     destination_script: Script,
     shutdown_pubkey: PublicKey,
+    #[allow(dead_code)]
     channel_master_key: ExtendedPrivKey,
+    #[allow(dead_code)]
     channel_child_index: AtomicUsize,
     session_master_key: ExtendedPrivKey,
     session_child_index: AtomicUsize,
@@ -34,6 +36,7 @@ pub struct MyKeysManager {
     channel_id_child_index: AtomicUsize,
 
     unique_start: Sha256State,
+    #[allow(dead_code)]
     logger: Arc<Logger>,
 }
 

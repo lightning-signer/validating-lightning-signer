@@ -273,7 +273,7 @@ impl MySigner {
 
     pub fn sign_remote_commitment_tx(&self, node_id: &PublicKey, channel_id: &ChannelId,
                                      tx: &Transaction,
-                                     remote_per_commitment_point: &PublicKey,
+                                     _remote_per_commitment_point: &PublicKey,
                                      remote_funding_pubkey: &PublicKey,
                                      channel_value_satoshis: u64) -> Result<Vec<u8>, Status> {
         let sig: Result<Vec<u8>, Status> = self.with_channel(node_id, channel_id, |opt_chan| {

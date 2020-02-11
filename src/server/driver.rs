@@ -22,6 +22,7 @@ impl MySigner {
         Status::invalid_argument(s)
     }
 
+    #[allow(dead_code)]
     fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "internal error {}", &s);
