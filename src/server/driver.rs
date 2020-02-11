@@ -78,7 +78,7 @@ impl Signer for MySigner {
         let hsm_secret = hsm_secret.as_slice().try_into()
             .map_err(|_| self.invalid_argument("secret length != 32"))?;
         let node_id = self.new_node_from_seed(hsm_secret).serialize().to_vec();
-        log_info!(self, "DONE init {}", hex::encode(&node_id));
+        log_info!(self, "REPLY init {}", hex::encode(&node_id));
 
         let reply = InitReply {
             self_node_id: Some(NodeId { data: node_id })
@@ -97,6 +97,7 @@ impl Signer for MySigner {
         let reply = NewChannelReply {
             channel_nonce: channel_id_result.0.to_vec(),
         };
+        log_info!(self, "REPLY new_channel request({}/{:?})", node_id, channel_id);
         Ok(Response::new(reply))
     }
 
@@ -146,6 +147,7 @@ impl Signer for MySigner {
             }),
             old_secret: Some(Secret{ data: vec![] }), // TODO
         };
+        log_info!(self, "REPLY get_per_commitment_point({}/{})", node_id, channel_id);
         Ok(Response::new(reply))
     }
 
@@ -153,7 +155,7 @@ impl Signer for MySigner {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.self_node_id)?;
         let channel_id = self.channel_id(&msg.channel_nonce)?;
-        log_info!(self, "ENTER ({}/{})", node_id, channel_id);
+        log_info!(self, "ENTER sign_funding_tx({}/{})", node_id, channel_id);
         let reqtx = msg.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
         let tx_res: Result<Transaction, encode::Error> = deserialize(reqtx.raw_tx_bytes.as_slice());
         let tx = tx_res.map_err(|e| self.invalid_argument(format!("could not deserialize tx - {}", e)))?;
@@ -173,6 +175,7 @@ impl Signer for MySigner {
         let witnesses = sigs.into_iter().map(|s| WitnessStack { item: s }).collect();
 
         let reply = SignFundingTxReply { witnesses };
+        log_info!(self, "REPLY sign_funding_tx({}/{})", node_id, channel_id);
         Ok(Response::new(reply))
     }
 
@@ -190,6 +193,7 @@ impl Signer for MySigner {
         let sig_data =
             self.sign_remote_commitment_tx(&node_id, &channel_id, &tx, &per_commitment_point, &remote_funding_pubkey, channel_value_satoshis)?;
         let reply = SignRemoteCommitmentTxReply { signature: Some(BitcoinSignature { data: sig_data }) };
+        log_info!(self, "REPLY sign_remote_commitment_tx({}/{})", node_id, channel_id);
         Ok(Response::new(reply))
     }
 
@@ -278,12 +282,12 @@ impl Signer for MySigner {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.self_node_id)?;
         let cu = msg.channel_update;
-        log_info!(self, "ENTER ({}) cu={}", node_id, hex::encode(&cu).as_str());
+        log_info!(self, "ENTER sign_channel_update({}) cu={}", node_id, hex::encode(&cu).as_str());
         let sig_data = self.sign_channel_update(&node_id, &cu)?;
         let reply = SignChannelUpdateReply {
             signature: Some(EcdsaSignature{data: sig_data}),
         };
-        log_info!(self, "REPLY ({}) {:x?}", node_id, reply);
+        log_info!(self, "REPLY sign_channel_update({}) {:x?}", node_id, reply);
         Ok(Response::new(reply))
     }
 
@@ -295,6 +299,7 @@ impl Signer for MySigner {
         let reply = EcdhReply {
             shared_secret: Some(Secret{data: self.ecdh(&node_id, &other_key)?}),
         };
+        log_info!(self, "REPLY ecdh({} + {})", node_id, other_key);
         Ok(Response::new(reply))
     }
 

@@ -47,7 +47,7 @@ macro_rules! function {
 
 macro_rules! log_internal {
 	($self: ident, $lvl:expr, $($arg:tt)+) => (
-		&$self.logger.log(&lightning::util::logger::Record::new($lvl, format_args!($($arg)+), function!(), file!(), line!()));
+		&$self.logger.log(&lightning::util::logger::Record::new($lvl, format_args!($($arg)+), module_path!(), file!(), line!()));
 	);
 }
 
