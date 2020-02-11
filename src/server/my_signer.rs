@@ -582,7 +582,6 @@ mod tests {
 
     #[test]
     fn sign_channel_update_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::signing_only();
         let signer = MySigner::new();
         let mut seed = [0; 32];
         seed.copy_from_slice(hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000").unwrap().as_slice());

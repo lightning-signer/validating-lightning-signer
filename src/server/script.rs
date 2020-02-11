@@ -85,6 +85,7 @@ fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, ValidationError> {
     }
 }
 
+#[allow(dead_code)]
 pub struct CommitmentInfo {
     to_remote_address: Option<Payload>,
     to_remote_value: u64,
