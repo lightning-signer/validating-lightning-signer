@@ -18,31 +18,28 @@ pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
     println!("RESPONSE={:?}", response);
 
     let init_request = Request::new(InitRequest {
-        key_version: None,
         chainparams: None,
         hsm_secret: Some(Secret{data: vec![0u8; 32]}),
     });
 
     let response = client.init(init_request).await?;
-    let node_id = response.into_inner().self_node_id.expect("missing node_id").data;
+    let node_id = response.into_inner().node_id.expect("missing node_id").data;
 
     println!("new node {}", hex::encode(&node_id));
 
     let mut channel_id = [0u8; 32];
     channel_id[0] = 1u8;
     let new_chan_request = Request::new(NewChannelRequest {
-        self_node_id: Some(NodeId{data: node_id.clone()}),
-        channel_nonce: channel_id.to_vec(),
+        node_id: Some(NodeId{data: node_id.clone()}),
+        channel_nonce: Some(ChannelNonce { data: channel_id.to_vec() }),
         channel_value: 123,
-        capabilities: 0
     });
     let response = client.new_channel(new_chan_request).await?;
 
     let channel_id = response.into_inner().channel_nonce;
-    println!("new channel {}", hex::encode(&channel_id));
 
     let per_commit_request = Request::new(GetPerCommitmentPointRequest {
-        self_node_id: Some(NodeId{data: node_id.clone()}),
+        node_id: Some(NodeId{data: node_id.clone()}),
         channel_nonce: channel_id.clone(),
         n: 3
     });

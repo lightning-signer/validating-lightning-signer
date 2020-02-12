@@ -100,42 +100,44 @@ message PingReply {
   string message = 1;
 }
 
+// Initialize a new Lightning node
 message InitRequest {
-  BIP32KeyVersion key_version = 1;
-    
-  ChainParams chainparams = 2;
+  ChainParams chainparams = 1;
 
-  // HACK: send the secret instead of generating.
+  // Developer field: set the HSM secret rather than generate it on the signer side.
+  // Only allowed if this is using a non-production network.
   Secret hsm_secret = 100;
 }
 
 message InitReply {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
 }
 
+// Initialize a new channel
+// TODO provide remote keys and basepoints in a new ChannelAcceptedRequest call
 message NewChannelRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
 
-  // optional
-  bytes channel_nonce = 2;
+  // optional, will be pseudo-randomly generated if missing
+  ChannelNonce channel_nonce = 2;
 
   // in satoshis
   uint64 channel_value = 3;
-
-  uint64 capabilities = 4;
 }
 
 message NewChannelReply {
-  bytes channel_nonce = 1;
+  ChannelNonce channel_nonce = 1;
 }
 
+// Sign a happy path mutual close transaction
 message SignMutualCloseTxRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
     
-  bytes channel_nonce = 2;
+  ChannelNonce channel_nonce = 2;
 
   Transaction tx = 3;
-  
+
+  // Deprecated, should be provided in NewChannelRequest
   PubKey remote_funding_pubkey = 4;
 }
 
@@ -143,13 +145,19 @@ message SignMutualCloseTxReply {
   BitcoinSignature signature = 1;
 }
 
+// Check if the remote really knows a secret that we haven't generated since being
+// restored from backup.  This proves to us that the state of the channel is at least
+// at commitment number `n + 1`
 message CheckFutureSecretRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
 
-  bytes channel_nonce = 2;
+  ChannelNonce channel_nonce = 2;
 
+  // commitment number
   uint64 n = 3;
 
+  // our secret that we haven't generated since being restored from backup, but the remote claims
+  // is part of our shachain
   Secret suggested = 4;
 }
 
@@ -157,56 +165,66 @@ message CheckFutureSecretReply {
   bool correct = 1;
 }
 
+// Get the basepoints and public keys specific to an accepted channel
 message GetChannelBasepointsRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
     
-  bytes channel_nonce = 2;
+  ChannelNonce channel_nonce = 2;
 }
 
 message GetChannelBasepointsReply {
   Basepoints basepoints = 1;
-
-  PubKey remote_funding_pubkey = 2;
 }
 
+// Get the per-commitment point for a specific commitment number
 message GetPerCommitmentPointRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
     
-  bytes channel_nonce = 2;
-    
+  ChannelNonce channel_nonce = 2;
+
+  // commitment number
   uint64 n = 3;
 }
 
 message GetPerCommitmentPointReply {
   PubKey per_commitment_point = 1;
-    
+
+  // The revocation of the secret of the n-2 commitment, or None if n < 2
   Secret old_secret = 2;
 }
 
+// Sign a funding tx for this channel
+// The channel must have been accepted
 message SignFundingTxRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
   
-  bytes channel_nonce = 2;
+  ChannelNonce channel_nonce = 2;
 
   Transaction tx = 3;
 }
 
 message SignFundingTxReply {
+  // A witness stack for each of our inputs.  For inputs that are not ours, the element is None.
   repeated WitnessStack witnesses = 1;
 }
 
+// Sign the remote commitment
 message SignRemoteCommitmentTxRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
   
-  bytes channel_nonce = 2;
-    
+  ChannelNonce channel_nonce = 2;
+
+  // TODO deprecate these two and move to specifying all the information that is required to rebuild the tx
   Transaction tx = 3;
-  
+
+  // one per transaction output.  empty array for p2pkh.
+  // TODO consider moving this inside Transaction
+  repeated bytes output_witscripts = 6;
+
+  // TODO deprecated the next three fields and move to ChannelAccepted
   PubKey remote_funding_pubkey = 4;
 
   PubKey remote_per_commit_point = 5;
-
-  repeated bytes output_witscripts = 6;
 
   bool option_static_remotekey = 7;
 }
@@ -215,10 +233,11 @@ message SignRemoteCommitmentTxReply {
   BitcoinSignature signature = 1;
 }
 
+// Force close a channel by signing a local commitment tx.  The channel moves to closing state.
 message SignCommitmentTxRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
   
-  bytes channel_nonce = 2;
+  ChannelNonce channel_nonce = 2;
     
   Transaction tx = 3;
   
@@ -229,91 +248,98 @@ message SignCommitmentTxReply {
   BitcoinSignature signature = 1;
 }
 
+// As part of a force close, sweep a local HTLC output hanging off the commitment tx
 message SignLocalHTLCTxRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
 
-  bytes channel_nonce = 2;
+  ChannelNonce channel_nonce = 2;
 
   Transaction tx = 3;
 
-  uint64 commit_num = 4;
+  uint64 n = 4;
   
-  bytes wscript = 5;	// FIXME - find a better name
+  bytes witscript = 5;	// FIXME - find a better name
 }
 
 message SignLocalHTLCTxReply {
   BitcoinSignature signature = 1;
 }
 
+// As part of a force close, sweep the delayed to local output hanging off the commitment tx
 message SignDelayedPaymentToUsRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
     
-  bytes channel_nonce = 2;
+  ChannelNonce channel_nonce = 2;
 
   Transaction tx = 3;
   
-  uint64 commit_num = 4;
+  uint64 n = 4;
   
-  bytes wscript = 5;	// FIXME - find a better name
+  bytes witscript = 5;	// FIXME - find a better name
 }
 
 message SignDelayedPaymentToUsReply {
   BitcoinSignature signature = 1;
 }
 
+// Sign a remote HTLC tx hanging off the remote commitment tx
 message SignRemoteHTLCTxRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
 
-  bytes channel_nonce = 2;
+  ChannelNonce channel_nonce = 2;
 
   Transaction tx = 3;
 
   PubKey remote_per_commit_point = 4;
 
-  bytes wscript = 5;
+  bytes witscript = 5;
 }
 
 message SignRemoteHTLCTxReply {
   BitcoinSignature signature = 1;
 }
 
+// Sweep a remote HTLC to us
 message SignRemoteHTLCToUsRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
 
-  bytes channel_nonce = 2;
+  ChannelNonce channel_nonce = 2;
 
   Transaction tx = 3;
 
   PubKey remote_per_commit_point = 4;
 
-  bytes wscript = 5;
+  bytes witscript = 5;
 }
 
 message SignRemoteHTLCToUsReply {
   BitcoinSignature signature = 1;
 }
 
+// Sign a penalty sweep of a remote to_local the peer has revoked
 message SignPenaltyToUsRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
     
-  bytes channel_nonce = 2;
+  ChannelNonce channel_nonce = 2;
 
   Transaction tx = 3;
 
   Secret revocation_secret = 4;	// FIXME - is this remembered instead of passed?
 
-  bytes wscript = 5;	// FIXME - find a better name
+  bytes witscript = 5;	// FIXME - find a better name
 }
 
 message SignPenaltyToUsReply {
   BitcoinSignature signature = 1;
 }
 
+// Sign a channel announcement
 message SignChannelAnnouncementRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
   
-  bytes channel_nonce = 2;
+  ChannelNonce channel_nonce = 2;
 
+  // Channel announcement message in BOLT-7 serialization
   bytes channel_announcement = 3;
 }
 
@@ -323,9 +349,11 @@ message SignChannelAnnouncementReply {
   ECDSASignature bitcoin_signature = 2;
 }
 
+// Sign node announcement message
 message SignNodeAnnouncementRequest {
-  NodeId self_node_id = 1;
-  
+  NodeId node_id = 1;
+
+  // announcement message in BOLT-7 format
   bytes node_announcement = 2;
 }
 
@@ -333,13 +361,15 @@ message SignNodeAnnouncementReply {
   ECDSASignature signature = 1;
 }
 
+// Sign channel update message
 message SignChannelUpdateRequest {
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#the-channel_update-message
   
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
 
   // Portion of the channel_update message which requires signing
   // (skip the message type and the signature field, 66 byte offset).
+  // In BOLT-7 format
   bytes channel_update = 2;
 }
 
@@ -347,9 +377,11 @@ message SignChannelUpdateReply {
   ECDSASignature signature = 1;
 }
 
+// Perform ECDH for p2p communication purposes
 message ECDHRequest {
-  NodeId self_node_id = 1;
-    
+  NodeId node_id = 1;
+
+  // The ephemeral pubkey of the peer
   PubKey point = 2;
 }
 
@@ -357,8 +389,9 @@ message ECDHReply {
   Secret shared_secret = 1; // 32 bytes
 }
 
+// Sign an invoice with the node secret key
 message SignInvoiceRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
 
   bytes data_part = 2;
 
@@ -369,8 +402,9 @@ message SignInvoiceReply {
   ECDSARecoverableSignature signature = 1;
 }
 
+// Sign an ad-hoc message with the node secret key
 message SignMessageRequest {
-  NodeId self_node_id = 1;
+  NodeId node_id = 1;
 
   bytes message = 2;
 }
@@ -393,82 +427,71 @@ message VersionReply {
 
 // ----------------------------------------------------------------
 
-message BIP32KeyVersion {
-  uint32 pubkey_version = 1;
-  uint32 privkey_version = 2;
-}
-
+// Specify the network (e.g. testnet, mainnet)
 message ChainParams {
   string network_name = 1;
-  string bip173_name = 2;
-  string bip70_name = 3;
-  bytes genesis_blockhash = 4;
-  int32 rpc_port = 5;
-  string cli = 6;
-  string cli_args = 7;
-  uint64 cli_min_supported_version = 8;
-  uint64 dust_limit_sat = 9;
-  uint64 max_funding_sat = 10;
-  uint64 max_payment_msat = 11;
-  uint32 when_lightning_became_cool = 12;
-  uint32 p2pkh_version = 13;
-  uint32 p2sh_version = 14;
-  bool testnet = 15;
-  BIP32KeyVersion bip32_key_version = 16;
-  bool is_elements = 17;
-  bytes fee_asset_tag = 18;
 }
 
+// Compressed ECDSA public key in DER format derived from the node secret
 message NodeId {
-  // 33 bytes
   bytes data = 1;
 }
 
+// A client-side unique ID for the channel, not necessarily related to the BOLT temporary/permanent node ID
+message ChannelNonce {
+  bytes data = 1;
+}
+
+// Compressed ECDSA public key in DER format
 message PubKey {
-  // ECDSA PubKey, Compressed, 33 bytes
   bytes data = 1;
 }
 
+// 256-bit Secret, 32 bytes
+// Can be used for revocation hash pre-image, shared secrets, etc.
 message Secret {
-  // 256-bit Secret, 32 bytes
   bytes data = 1;
 }
 
+// A Bitcoin serialized transaction with additional metadata if needed for signing and validation
 message Transaction {
-  /// The raw bytes of the transaction to be signed.
+  // The raw bytes of the transaction to be signed.
   bytes raw_tx_bytes = 1;
 
-  /// A set of sign descriptors, for each input to be signed.
+  // A set of sign descriptors, for each input to be signed.
+  // TODO the input amount for the commitment tx should be specified in NewChannel instead of here
   repeated SignDescriptor input_descs = 2;
   
-  /// A set of sign descriptors, for each output.
+  // A set of sign descriptors, for each output.
   repeated SignDescriptor output_descs = 3;
 }
 
+// Basepoints and funding pubkey for one side of a channel
 message Basepoints {
   PubKey revocation = 1;
   PubKey payment = 2;
   PubKey htlc = 3;
   PubKey delayed_payment = 4;
+  PubKey funding_pubkey = 5;
 }
 
+// DER encoded SECP256K1_ECDSA Signature
 message ECDSASignature {
-  // DER encoded SECP256K1_ECDSA Signature
   bytes data = 1;
 }
 
+// Compact ECDSA signature (64 bytes) + recovery id (1 byte) = 65 bytes
 message ECDSARecoverableSignature {
-  // Compact ECDSA signature (64 bytes) + recovery id (1 byte) = 65 bytes
   bytes data = 1;
 }
 
+// DER encoded Bitcoin Signature
 message BitcoinSignature {
-  // DER encoded Bitcoin Signature
   bytes data = 1;
 }
 
+// Witness stack item, for signing a segwit transaction
 message WitnessStack {
-  // witness stack item
   repeated bytes item = 1;
 }
 
@@ -479,6 +502,7 @@ message KeyLocator {
   int32 key_index = 2;
 }
 
+// A Bitcoin transaction output
 message TxOut {
   /// The value of the output being spent.
   int64 value = 1;
@@ -495,9 +519,7 @@ message SignDescriptor {
   */
   KeyLocator key_loc = 1;
 
-  /**
-     A description of the output being spent. The value and script MUST be provided.
-  */
+  // A description of the output being spent. The value and script MUST be provided.
   TxOut output = 5;
 }
 

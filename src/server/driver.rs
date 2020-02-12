@@ -11,6 +11,7 @@ use remotesigner::*;
 use remotesigner::signer_server::{Signer, SignerServer};
 
 use crate::server::my_signer::{ChannelId, MySigner};
+use crate::server::remotesigner::version_server::Version;
 use crate::util::crypto_utils::public_key_from_raw;
 
 use super::remotesigner;
@@ -44,18 +45,32 @@ impl MySigner {
 
     // NOTE - this "channel_id" does *not* correspond to the
     // channel_id defined in BOLT #2.
-    fn channel_id(&self, channel_nonce: &Vec<u8>) -> Result<ChannelId, Status> {
-        if channel_nonce.is_empty() {
-            Err(self.invalid_argument("channel ID"))
-        } else {
-            // Impedance mismatch - we want a 32 byte channel ID for internal use
-            // Hash the client supplied channel nonce
-            let mut digest = Sha256::new();
-            digest.input(channel_nonce.as_slice());
-            let mut result = [0u8; 32];
-            digest.result(&mut result);
-            Ok(ChannelId(result))
-        }
+    fn channel_id(&self, channel_nonce: &Option<ChannelNonce>) -> Result<ChannelId, Status> {
+        let nonce = channel_nonce.as_ref()
+            .ok_or_else(|| self.invalid_argument("missing channel nonce"))?
+            .data.clone();
+        // Impedance mismatch - we want a 32 byte channel ID for internal use
+        // Hash the client supplied channel nonce
+        let mut digest = Sha256::new();
+        digest.input(nonce.as_slice());
+        let mut result = [0u8; 32];
+        digest.result(&mut result);
+        Ok(ChannelId(result))
+    }
+}
+
+#[tonic::async_trait]
+impl Version for MySigner {
+    async fn version(&self, _request: Request<VersionRequest>) -> Result<Response<VersionReply>, Status> {
+        // TODO git commit
+        Ok(Response::new(VersionReply {
+            version_string: "0.1.0".to_string(),
+            major: 0,
+            minor: 1,
+            patch: 0,
+            prerelease: "pre".to_string(),
+            build_metadata: "".to_string()
+        }))
     }
 }
 
@@ -82,21 +97,26 @@ impl Signer for MySigner {
         log_info!(self, "REPLY init {}", hex::encode(&node_id));
 
         let reply = InitReply {
-            self_node_id: Some(NodeId { data: node_id })
+            node_id: Some(NodeId { data: node_id })
         };
         Ok(Response::new(reply))
     }
 
     async fn new_channel(&self, request: Request<NewChannelRequest>) -> Result<Response<NewChannelReply>, Status> {
         let msg: NewChannelRequest = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         let channel_id = self.channel_id(&msg.channel_nonce).ok();
-        let opt_channel_nonce = if msg.channel_nonce.is_empty() { None } else { Some(msg.channel_nonce.as_slice()) };
+        let opt_channel_nonce =
+            if msg.channel_nonce.is_none() {
+                None
+            } else {
+                Some(msg.channel_nonce.unwrap().data)
+            };
         log_info!(self, "ENTER new_channel request({}/{:?})", node_id, channel_id);
 
         let channel_id_result = self.new_channel(&node_id, msg.channel_value, opt_channel_nonce, channel_id).unwrap();
         let reply = NewChannelReply {
-            channel_nonce: channel_id_result.0.to_vec(),
+            channel_nonce: Some(ChannelNonce { data: channel_id_result.0.to_vec() })
         };
         log_info!(self, "REPLY new_channel request({}/{:?})", node_id, channel_id);
         Ok(Response::new(reply))
@@ -104,7 +124,7 @@ impl Signer for MySigner {
 
     async fn sign_mutual_close_tx(&self, request: Request<SignMutualCloseTxRequest>) -> Result<Response<SignMutualCloseTxReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         log_error!(self, "NOT IMPLEMENTED {}", node_id);
         let reply = SignMutualCloseTxReply {
             signature: None
@@ -114,7 +134,7 @@ impl Signer for MySigner {
     
     async fn check_future_secret(&self, request: Request<CheckFutureSecretRequest>) -> Result<Response<CheckFutureSecretReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         log_error!(self, "NOT IMPLEMENTED {}", node_id);
         let reply = CheckFutureSecretReply {
             correct: false
@@ -124,18 +144,17 @@ impl Signer for MySigner {
 
     async fn get_channel_basepoints(&self, request: Request<GetChannelBasepointsRequest>) -> Result<Response<GetChannelBasepointsReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         let channel_id = self.channel_id(&msg.channel_nonce)?;
         log_error!(self, "NOT IMPLEMENTED get_channel_basepoints({}/{})", node_id, channel_id);
         Ok(Response::new(GetChannelBasepointsReply {
             basepoints: None,
-            remote_funding_pubkey: Some(PubKey { data: vec![] })
         }))
     }
     
     async fn get_per_commitment_point(&self, request: Request<GetPerCommitmentPointRequest>) -> Result<Response<GetPerCommitmentPointReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         let channel_id = self.channel_id(&msg.channel_nonce)?;
         log_info!(self, "ENTER get_per_commitment_point({}/{})", node_id, channel_id);
         let secp_ctx = Secp256k1::signing_only();
@@ -154,7 +173,7 @@ impl Signer for MySigner {
 
     async fn sign_funding_tx(&self, request: Request<SignFundingTxRequest>) -> Result<Response<SignFundingTxReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         let channel_id = self.channel_id(&msg.channel_nonce)?;
         log_info!(self, "ENTER sign_funding_tx({}/{})", node_id, channel_id);
         let reqtx = msg.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
@@ -182,7 +201,7 @@ impl Signer for MySigner {
 
     async fn sign_remote_commitment_tx(&self, request: Request<SignRemoteCommitmentTxRequest>) -> Result<Response<SignRemoteCommitmentTxReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         let channel_id = self.channel_id(&msg.channel_nonce)?;
         log_info!(self, "ENTER sign_remote_commitment_tx({}/{})", node_id, channel_id);
         let reqtx = msg.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
@@ -200,7 +219,7 @@ impl Signer for MySigner {
 
     async fn sign_commitment_tx(&self, request: Request<SignCommitmentTxRequest>) -> Result<Response<SignCommitmentTxReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         log_error!(self, "NOT IMPLEMENTED {}", node_id);
         let reply = SignCommitmentTxReply {
             signature: None
@@ -210,7 +229,7 @@ impl Signer for MySigner {
     
     async fn sign_local_htlc_tx(&self, request: Request<SignLocalHtlcTxRequest>) -> Result<Response<SignLocalHtlcTxReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         log_error!(self, "NOT IMPLEMENTED {}", node_id);
         let reply = SignLocalHtlcTxReply {
             signature: None
@@ -220,7 +239,7 @@ impl Signer for MySigner {
     
     async fn sign_delayed_payment_to_us(&self, request: Request<SignDelayedPaymentToUsRequest>) -> Result<Response<SignDelayedPaymentToUsReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         log_error!(self, "NOT IMPLEMENTED {}", node_id);
         let reply = SignDelayedPaymentToUsReply {
             signature: None
@@ -230,7 +249,7 @@ impl Signer for MySigner {
     
     async fn sign_remote_htlc_tx(&self, request: Request<SignRemoteHtlcTxRequest>) -> Result<Response<SignRemoteHtlcTxReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         log_error!(self, "NOT IMPLEMENTED {}", node_id);
         let reply = SignRemoteHtlcTxReply {
             signature: None
@@ -240,7 +259,7 @@ impl Signer for MySigner {
 
     async fn sign_remote_htlc_to_us(&self, request: Request<SignRemoteHtlcToUsRequest>) -> Result<Response<SignRemoteHtlcToUsReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         log_error!(self, "NOT IMPLEMENTED {}", node_id);
         let reply = SignRemoteHtlcToUsReply {
             signature: None
@@ -250,7 +269,7 @@ impl Signer for MySigner {
     
     async fn sign_penalty_to_us(&self, request: Request<SignPenaltyToUsRequest>) -> Result<Response<SignPenaltyToUsReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         log_error!(self, "NOT IMPLEMENTED {}", node_id);
         let reply = SignPenaltyToUsReply {
             signature: None
@@ -260,7 +279,7 @@ impl Signer for MySigner {
     
     async fn sign_channel_announcement(&self, request: Request<SignChannelAnnouncementRequest>) -> Result<Response<SignChannelAnnouncementReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         log_error!(self, "NOT IMPLEMENTED {}", node_id);
         let reply = SignChannelAnnouncementReply {
             node_signature: None,
@@ -271,7 +290,7 @@ impl Signer for MySigner {
     
     async fn sign_node_announcement(&self, request: Request<SignNodeAnnouncementRequest>) -> Result<Response<SignNodeAnnouncementReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         log_error!(self, "NOT IMPLEMENTED {}", node_id);
         let reply = SignNodeAnnouncementReply {
             signature: None
@@ -281,7 +300,7 @@ impl Signer for MySigner {
     
     async fn sign_channel_update(&self, request: Request<SignChannelUpdateRequest>) -> Result<Response<SignChannelUpdateReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         let cu = msg.channel_update;
         log_info!(self, "ENTER sign_channel_update({}) cu={}", node_id, hex::encode(&cu).as_str());
         let sig_data = self.sign_channel_update(&node_id, &cu)?;
@@ -294,7 +313,7 @@ impl Signer for MySigner {
 
     async fn ecdh(&self, request: Request<EcdhRequest>) -> Result<Response<EcdhReply>, Status> {
         let msg = request.into_inner();
-        let node_id = self.node_id(msg.self_node_id)?;
+        let node_id = self.node_id(msg.node_id)?;
         let other_key = self.public_key(msg.point)?;
         log_info!(self, "ENTER ecdh({} + {})", node_id, other_key);
         let reply = EcdhReply {
@@ -306,7 +325,7 @@ impl Signer for MySigner {
 
     async fn sign_invoice(&self, request: Request<SignInvoiceRequest>) -> Result<Response<SignInvoiceReply>, Status> {
         let _msg = request.into_inner();
-//        let node_id = self.node_id(msg.self_node_id)?;
+//        let node_id = self.node_id(msg.node_id)?;
         log_error!(self, "NOT IMPLEMENTED sign_invoice");
         let reply = SignInvoiceReply {
             signature: None
@@ -316,7 +335,7 @@ impl Signer for MySigner {
 
     async fn sign_message(&self, request: Request<SignMessageRequest>) -> Result<Response<SignMessageReply>, Status> {
         let _msg = request.into_inner();
-//        let node_id = self.node_id(msg.self_node_id)?;
+//        let node_id = self.node_id(msg.node_id)?;
         log_error!(self, "NOT IMPLEMENTED sign_message");
         let reply = SignMessageReply {
             signature: None

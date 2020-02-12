@@ -196,7 +196,7 @@ impl MySigner {
     }
 
     pub fn new_channel(&self, node_id: &PublicKey, channel_value_satoshi: u64,
-                       opt_channel_nonce: Option<&[u8]>, opt_channel_id: Option<ChannelId>) -> Result<ChannelId, ()> {
+                       opt_channel_nonce: Option<Vec<u8>>, opt_channel_id: Option<ChannelId>) -> Result<ChannelId, ()> {
         log_info!(self, "new channel {}/{:?}", node_id, opt_channel_id);
         let nodes = self.nodes.lock().unwrap();
         let node = match nodes.get(node_id) {
@@ -209,13 +209,14 @@ impl MySigner {
         let mut channels = node.channels.lock().unwrap();
         let keys_manager = &node.keys_manager;
         let channel_id = opt_channel_id.unwrap_or_else(|| ChannelId(keys_manager.get_channel_id()));
-        let channel_nonce = opt_channel_nonce.unwrap_or_else(|| &channel_id.0);
+        let channel_nonce = opt_channel_nonce
+            .unwrap_or_else(|| channel_id.0.to_vec());
         if channels.contains_key(&channel_id) {
             log_info!(self, "already have channel ID {}", channel_id);
             return Ok(channel_id);
         }
         let inmem_keys =
-            keys_manager.get_channel_keys_with_nonce(channel_nonce, channel_value_satoshi, "c-lightning");
+            keys_manager.get_channel_keys_with_nonce(channel_nonce.as_slice(), channel_value_satoshi, "c-lightning");
         let chan_keys =
             EnforcingChannelKeys::new(inmem_keys);
         let channel = Channel {
