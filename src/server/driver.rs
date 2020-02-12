@@ -288,13 +288,18 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
     
-    async fn sign_node_announcement(&self, request: Request<SignNodeAnnouncementRequest>) -> Result<Response<SignNodeAnnouncementReply>, Status> {
+    async fn sign_node_announcement(
+        &self, request: Request<SignNodeAnnouncementRequest>)
+        -> Result<Response<SignNodeAnnouncementReply>, Status> {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.node_id)?;
-        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let na = msg.node_announcement;
+        log_info!(self, "ENTER sign_node_announcement({}) node_announcement={}", node_id, hex::encode(&na).as_str());
+        let sig_data = self.sign_node_announcement(&node_id, &na)?;
         let reply = SignNodeAnnouncementReply {
-            signature: None
+            signature: Some(EcdsaSignature{data: sig_data}),
         };
+        log_info!(self, "REPLY sign_node_announcement({}) {:x?}", node_id, reply);
         Ok(Response::new(reply))
     }
     

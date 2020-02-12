@@ -125,6 +125,16 @@ impl Node {
         self.keys_manager.get_bip32_key()
     }
 
+    pub fn sign_node_announcement(&self, na: &Vec<u8>)
+                                  -> Result<Vec<u8>, Status> {
+        let secp_ctx = Secp256k1::signing_only();
+        let na_hash = Sha256dHash::hash(na);
+        let encmsg = ::secp256k1::Message::from_slice(&na_hash[..]).unwrap();
+        let sig = secp_ctx.sign(&encmsg, &self.get_node_secret());
+        let res = sig.serialize_der().to_vec();
+        Ok(res)
+    }
+
     pub fn sign_channel_update(&self, cu: &Vec<u8>) -> Result<Vec<u8>, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let cu_hash = Sha256dHash::hash(cu);
@@ -133,7 +143,6 @@ impl Node {
         let res = sig.serialize_der().to_vec();
         Ok(res)
     }
-
 }
 
 impl Debug for Node {
@@ -346,7 +355,18 @@ impl MySigner {
         })
     }
     
-    pub fn sign_channel_update(&self, node_id: &PublicKey, cu: &Vec<u8>) -> Result<Vec<u8>, Status> {
+    pub fn sign_node_announcement(&self, node_id: &PublicKey, na: &Vec<u8>)
+                               -> Result<Vec<u8>, Status> {
+        self.with_node(&node_id, |opt_node| {
+            let node =
+                opt_node.ok_or(Status::invalid_argument("no such node"))?;
+            let sig = node.sign_channel_update(na)?;
+            Ok(sig)
+        })
+    }
+
+    pub fn sign_channel_update(&self, node_id: &PublicKey, cu: &Vec<u8>)
+                               -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
             let node =
                 opt_node.ok_or(Status::invalid_argument("no such node"))?;
@@ -581,6 +601,18 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn sign_node_announcement_test() -> Result<(), ()> {
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000").unwrap().as_slice());
+        let node_id = signer.new_node_from_seed(&seed);
+        let ann = hex::decode("000302aaa25e445fef0265b6ab5ec860cd257865d61ef0bbf5b3339c36cbda8b26b74e7f1dca490b65180265b64c4f554450484f544f2d2e302d3139392d67613237336639642d6d6f646465640000").unwrap();
+        let sigvec = signer.sign_channel_update(&node_id, &ann).unwrap();
+        assert_eq!(sigvec, hex::decode("30450221008ef1109b95f127a7deec63b190b72180f0c2692984eaf501c44b6bfc5c4e915502207a6fa2f250c5327694967be95ff42a94a9c3d00b7fa0fbf7daa854ceb872e439").unwrap());
+        Ok(())
+    }
+    
     #[test]
     fn sign_channel_update_test() -> Result<(), ()> {
         let signer = MySigner::new();
