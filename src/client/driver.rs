@@ -33,6 +33,8 @@ pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
         node_id: Some(NodeId{data: node_id.clone()}),
         channel_nonce: Some(ChannelNonce { data: channel_id.to_vec() }),
         channel_value: 123,
+        to_self_delay: 0,
+        shutdown_script: vec![0u8; 0],
     });
     let response = client.new_channel(new_chan_request).await?;
 
