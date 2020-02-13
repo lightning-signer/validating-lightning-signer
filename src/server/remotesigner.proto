@@ -2,10 +2,21 @@ syntax = "proto3";
 
 package remotesigner;
 
+// Phase 1 API
+// -----------
+//
+// In this phase, transactions are provided in serialized form to the signer.  There is also a somewhat
+// redundant passing of channel-constant values into specific signing requests.
+//
+// In phase 2, transactions will be constructed on the signer from detailed information, such as amounts,
+// to_self_delay, etc. .  See the Phase 2 section near the end of this file for a sketch.
+
 service Signer {
+  // Trivial call to test connectivity
   rpc Ping(PingRequest)
     returns (PingReply);
 
+  // Provision a signer for a new node
   rpc Init (InitRequest)
     returns (InitReply);
 
@@ -87,6 +98,7 @@ service Signer {
 }
 
 service Version {
+  // Get detailed version information
   rpc Version (VersionRequest) returns (VersionReply);
 }
 
@@ -115,7 +127,7 @@ message InitReply {
 }
 
 // Initialize a new channel
-// TODO provide remote keys and basepoints in a new ChannelAcceptedRequest call
+// TODO provide remote keys and basepoints in a new ChannelAccepted call
 message NewChannelRequest {
   NodeId node_id = 1;
 
@@ -125,7 +137,9 @@ message NewChannelRequest {
   // in satoshis
   uint64 channel_value = 3;
 
+  // Local to_self_delay
   uint32 to_self_delay = 4;
+  // Local shutdown Bitcoin script used when closing the channel
   bytes shutdown_script = 5;
 }
 
@@ -141,7 +155,7 @@ message SignMutualCloseTxRequest {
 
   Transaction tx = 3;
 
-  // Deprecated, should be provided in NewChannelRequest
+  // Deprecated, should be provided in ChannelAcceptedRequest
   PubKey remote_funding_pubkey = 4;
 }
 
