@@ -5,11 +5,13 @@ package remotesigner;
 // Phase 1 API
 // -----------
 //
-// In this phase, transactions are provided in serialized form to the signer.  There is also a somewhat
-// redundant passing of channel-constant values into specific signing requests.
+// In this phase, transactions are provided in serialized form to the
+// signer.  There is also a somewhat redundant passing of
+// channel-constant values into specific signing requests.
 //
-// In phase 2, transactions will be constructed on the signer from detailed information, such as amounts,
-// to_self_delay, etc. .  See the Phase 2 section near the end of this file for a sketch.
+// In phase 2, transactions will be constructed on the signer from
+// detailed information, such as amounts, to_self_delay, etc. .  See
+// the Phase 2 section near the end of this file for a sketch.
 
 service Signer {
   // Trivial call to test connectivity
@@ -493,12 +495,10 @@ message TxOut {
 }
 
 message SignDescriptor {
-  /**
-     A descriptor that precisely describes *which* key to use for
-     signing. This may provide the raw public key directly, or require
-     the Signer to re-derive the key according to the populated
-     derivation path.
-  */
+  // A descriptor that precisely describes *which* key to use for
+  // signing. This may provide the raw public key directly, or require
+  // the Signer to re-derive the key according to the populated
+  // derivation path.
   KeyLocator key_loc = 1;
 
   // A description of the output being spent. The value and script
