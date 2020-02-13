@@ -72,14 +72,22 @@ impl Channel {
                             &pubkeys.htlc_basepoint).unwrap()
     }
 
-    pub fn sign_remote_commitment(&self, feerate_per_kw: u64, commitment_tx: &Transaction,
-                                  per_commitment_point: &PublicKey, htlcs: &[&HTLCOutputInCommitment],
-                                  to_self_delay: u16) -> Result<(Signature, Vec<Signature>), ()> {
+    pub fn sign_remote_commitment(&self,
+                                  feerate_per_kw: u64,
+                                  commitment_tx: &Transaction,
+                                  per_commitment_point: &PublicKey,
+                                  htlcs: &[&HTLCOutputInCommitment],
+                                  to_self_delay: u16)
+                                  -> Result<(Signature, Vec<Signature>), ()> {
         let tx_keys = self.make_tx_keys(per_commitment_point);
-        self.keys.sign_remote_commitment(feerate_per_kw, commitment_tx, &tx_keys, htlcs, to_self_delay, &self.secp_ctx)
+        self.keys.sign_remote_commitment(feerate_per_kw, commitment_tx,
+                                         &tx_keys, htlcs, to_self_delay,
+                                         &self.secp_ctx)
     }
 
-    pub fn sign_channel_announcement(&self, msg: &UnsignedChannelAnnouncement) -> Result<Signature, ()> {
+    pub fn sign_channel_announcement(&self,
+                                     msg: &UnsignedChannelAnnouncement)
+                                     -> Result<Signature, ()> {
         self.keys.sign_channel_announcement(msg, &self.secp_ctx)
     }
 
@@ -237,7 +245,8 @@ impl MySigner {
         Ok(channel_id)
     }
 
-    pub fn with_node<F: Sized, T, E>(&self, node_id: &PublicKey, f: F) -> Result<T, E>
+    pub fn with_node<F: Sized, T, E>(&self, node_id: &PublicKey,
+                                     f: F) -> Result<T, E>
         where F: Fn(Option<&Node>) -> Result<T, E> {
         let nodes = self.nodes.lock().unwrap();
         let node = nodes.get(node_id);
@@ -277,45 +286,111 @@ impl MySigner {
 
     pub fn xkey(&self, node_id: &PublicKey) -> Result<ExtendedPrivKey, Status> {
         self.with_node(&node_id, |opt_node| {
-            let node = opt_node.ok_or(Status::invalid_argument("no such node"))?;
+            let node = opt_node.ok_or(
+                Status::invalid_argument("no such node"))?;
             Ok(node.get_bip32_key().clone())
         })
     }
 
-    pub fn sign_remote_commitment_tx(&self, node_id: &PublicKey, channel_id: &ChannelId,
-                                     tx: &Transaction, output_witscripts: Vec<Vec<u8>>,
+    pub fn sign_remote_commitment_tx(&self,
+                                     node_id: &PublicKey,
+                                     channel_id: &ChannelId,
+                                     tx: &Transaction,
+                                     output_witscripts: Vec<Vec<u8>>,
                                      _remote_per_commitment_point: &PublicKey,
                                      remote_funding_pubkey: &PublicKey,
-                                     channel_value_satoshis: u64) -> Result<Vec<u8>, Status> {
-        let sig: Result<Vec<u8>, Status> = self.with_channel(node_id, channel_id, |opt_chan| {
-            let chan = opt_chan.ok_or(Status::invalid_argument("no such node/channel"))?;
-
-            if tx.output.len() != output_witscripts.len() {
-                return Err(Status::invalid_argument("len(tx.output) != len(witscripts)"))
-            }
-            let mut info = CommitmentInfo::new();
-            for ind in 0..tx.output.len() {
-                let res = info.handle_output(&tx.output[ind], output_witscripts[ind].as_slice())
-                    .map_err(|ve| Status::invalid_argument(ve));
-                if res.is_err() {
-                    log_error!(self, "validation error {}", res.unwrap_err());
+                                     channel_value_satoshis: u64)
+                                     -> Result<Vec<u8>, Status> {
+        let sig: Result<Vec<u8>, Status> =
+            self.with_channel(node_id, channel_id, |opt_chan| {
+                let chan = opt_chan.ok_or(
+                    Status::invalid_argument("no such node/channel"))?;
+                if tx.output.len() != output_witscripts.len() {
+                    return Err(Status::invalid_argument(
+                        "len(tx.output) != len(witscripts)"))
                 }
-            }
-            let secp_ctx = &chan.secp_ctx;
-            let funding_key = chan.keys.funding_key();
-            let funding_pubkey = chan.keys.pubkeys().funding_pubkey;
-            let channel_funding_redeemscript = make_funding_redeemscript(&funding_pubkey, &remote_funding_pubkey);
+                let mut info = CommitmentInfo::new();
+                for ind in 0..tx.output.len() {
+                    let res = info.handle_output(
+                        &tx.output[ind], output_witscripts[ind].as_slice())
+                        .map_err(|ve| Status::invalid_argument(ve));
+                    if res.is_err() {
+                        log_error!(self, "validation error {}",
+                                   res.unwrap_err());
+                    }
+                }
+                let secp_ctx = &chan.secp_ctx;
+                let funding_key = chan.keys.funding_key();
+                let funding_pubkey = chan.keys.pubkeys().funding_pubkey;
+                let channel_funding_redeemscript =
+                    make_funding_redeemscript(
+                        &funding_pubkey, &remote_funding_pubkey);
 
-            let commitment_sighash =
-                Message::from_slice(&bip143::SighashComponents::new(&tx)
-                    .sighash_all(&tx.input[0], &channel_funding_redeemscript, channel_value_satoshis)[..])
-                .map_err(|_| Status::internal("could not hash"))?;
-            let commitment_sig = secp_ctx.sign(&commitment_sighash, funding_key);
-            let mut sig = commitment_sig.serialize_der().to_vec();
-            sig.push(SigHashType::All as u8);
+                let commitment_sighash =
+                    Message::from_slice(
+                        &bip143::SighashComponents::new(&tx)
+                            .sighash_all(
+                                &tx.input[0], &channel_funding_redeemscript,
+                                channel_value_satoshis)[..])
+                    .map_err(|_| Status::internal("could not hash"))?;
+                let commitment_sig =
+                    secp_ctx.sign(&commitment_sighash, funding_key);
+                let mut sig = commitment_sig.serialize_der().to_vec();
+                sig.push(SigHashType::All as u8);
 
-            Ok(sig)
-        });
+                Ok(sig)
+            });
+        sig
+    }
+
+    pub fn sign_remote_htlc_tx(&self,
+                               node_id: &PublicKey,
+                               channel_id: &ChannelId,
+                               tx: &Transaction,
+                               output_witscripts: Vec<Vec<u8>>,
+                               _remote_per_commitment_point: &PublicKey)
+                               -> Result<Vec<u8>, Status> {
+        let sig: Result<Vec<u8>, Status> =
+            self.with_channel(node_id, channel_id, |opt_chan| {
+                let _chan = opt_chan.ok_or(
+                    Status::invalid_argument("no such node/channel"))?;
+                if tx.output.len() != output_witscripts.len() {
+                    return Err(Status::invalid_argument(
+                        "len(tx.output) != len(witscripts)"))
+                }
+                let mut info = CommitmentInfo::new();
+                for ind in 0..tx.output.len() {
+                    let res = info.handle_output(
+                        &tx.output[ind], output_witscripts[ind].as_slice())
+                        .map_err(|ve| Status::invalid_argument(ve));
+                    if res.is_err() {
+                        log_error!(self, "validation error {}",
+                                   res.unwrap_err());
+                    }
+                }
+                /*
+                let secp_ctx = &chan.secp_ctx;
+                let funding_key = chan.keys.funding_key();
+                let funding_pubkey = chan.keys.pubkeys().funding_pubkey;
+                let channel_funding_redeemscript =
+                    make_funding_redeemscript(
+                        &funding_pubkey, &remote_funding_pubkey);
+
+                let commitment_sighash =
+                    Message::from_slice(
+                        &bip143::SighashComponents::new(&tx)
+                            .sighash_all(
+                                &tx.input[0], &channel_funding_redeemscript,
+                                channel_value_satoshis)[..])
+                    .map_err(|_| Status::internal("could not hash"))?;
+                let commitment_sig =
+                    secp_ctx.sign(&commitment_sighash, funding_key);
+                let mut sig = commitment_sig.serialize_der().to_vec();
+                sig.push(SigHashType::All as u8);
+                Ok(sig)
+                 */
+                Err(Status::internal("NYI"))
+            });
         sig
     }
 
