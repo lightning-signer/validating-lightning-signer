@@ -4,8 +4,7 @@ use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bitcoin::{Address, Network, Script, SigHashType, Transaction};
-use bitcoin::util::bip143;
+use bitcoin::{Address, Network, OutPoint, Script, SigHashType, Transaction};
 use bitcoin::util::bip143::SighashComponents;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
 use bitcoin::util::psbt::serialize::Serialize;
@@ -13,7 +12,7 @@ use bitcoin_hashes::core::fmt::{Error, Formatter};
 use bitcoin_hashes::Hash;
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, make_funding_redeemscript, TxCreationKeys};
+use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::util::logger::Logger;
 use rand::{Rng, thread_rng};
@@ -21,8 +20,8 @@ use secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signature, SignOn
 use secp256k1::ecdh::SharedSecret;
 use tonic::Status;
 
-use crate::server::my_keys_manager::MyKeysManager;
-use crate::server::script::CommitmentInfo;
+use crate::server::my_keys_manager::{INITIAL_COMMITMENT_NUMBER, MyKeysManager};
+use crate::tx::tx::{build_commitment_tx, CommitmentInfo, CommitmentInfo2, get_commitment_transaction_number_obscure_factor, sign_commitment};
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::test_utils::TestLogger;
 
@@ -43,11 +42,18 @@ impl fmt::Display for ChannelId {
     }
 }
 
+pub struct RemoteChannelConfig {
+    pub to_self_delay: u16,
+    pub shutdown_script: Vec<u8>,
+    pub funding_outpoint: OutPoint,
+}
 
 pub struct Channel {
     pub keys: EnforcingChannelKeys,
     pub secp_ctx: Secp256k1<All>,
     pub channel_value_satoshi: u64,
+    pub is_outbound: bool,
+    pub remote_config: Option<RemoteChannelConfig>,
 }
 
 impl Debug for Channel {
@@ -57,19 +63,20 @@ impl Debug for Channel {
 }
 
 impl Channel {
-    fn make_tx_keys(&self, per_commitment_point: &PublicKey) -> TxCreationKeys {
+    fn make_tx_keys(&self, per_commitment_point: &PublicKey) -> Result<TxCreationKeys, Status> {
         let keys = &self.keys.inner;
         let pubkeys = keys.pubkeys();
 
-        let remote_points = keys.remote_pubkeys().as_ref().unwrap();
+        let remote_points = keys.remote_pubkeys().as_ref()
+            .ok_or_else(|| Status::invalid_argument("channel must be accepted"))?;
 
-        TxCreationKeys::new(&self.secp_ctx,
+        Ok(TxCreationKeys::new(&self.secp_ctx,
                             &per_commitment_point,
                             &remote_points.delayed_payment_basepoint,
                             &remote_points.htlc_basepoint,
                             &pubkeys.revocation_basepoint,
                             &pubkeys.payment_basepoint,
-                            &pubkeys.htlc_basepoint).unwrap()
+                            &pubkeys.htlc_basepoint).expect("failed to derive keys"))
     }
 
     pub fn sign_remote_commitment(&self,
@@ -78,11 +85,12 @@ impl Channel {
                                   per_commitment_point: &PublicKey,
                                   htlcs: &[&HTLCOutputInCommitment],
                                   to_self_delay: u16)
-                                  -> Result<(Signature, Vec<Signature>), ()> {
-        let tx_keys = self.make_tx_keys(per_commitment_point);
+                                  -> Result<(Signature, Vec<Signature>), Status> {
+        let tx_keys = self.make_tx_keys(per_commitment_point)?;
         self.keys.sign_remote_commitment(feerate_per_kw, commitment_tx,
                                          &tx_keys, htlcs, to_self_delay,
                                          &self.secp_ctx)
+            .map_err(|_| Status::internal("failed to sign"))
     }
 
     pub fn sign_channel_announcement(&self,
@@ -91,8 +99,26 @@ impl Channel {
         self.keys.sign_channel_announcement(msg, &self.secp_ctx)
     }
 
-    pub fn accept(&mut self, channel_points: &ChannelPublicKeys) {
+    pub fn accept_remote_points(&mut self, channel_points: &ChannelPublicKeys) {
         self.keys.set_remote_channel_pubkeys(channel_points);
+    }
+
+    pub fn accept_remote_config(&mut self, remote_to_self_delay: u16,
+                                funding_outpoint: OutPoint) {
+        self.remote_config = Some(RemoteChannelConfig {
+            to_self_delay: remote_to_self_delay,
+            shutdown_script: vec![],
+            funding_outpoint: funding_outpoint
+        });
+    }
+
+    fn get_commitment_transaction_number_obscure_factor(&self) -> u64 {
+        get_commitment_transaction_number_obscure_factor(
+            &self.secp_ctx,
+            self.keys.payment_base_key(),
+            &self.keys.remote_pubkeys().as_ref().expect("channel must be accepted").payment_basepoint,
+            self.is_outbound
+        )
     }
 }
 
@@ -213,7 +239,8 @@ impl MySigner {
     }
 
     pub fn new_channel(&self, node_id: &PublicKey, channel_value_satoshi: u64,
-                       opt_channel_nonce: Option<Vec<u8>>, opt_channel_id: Option<ChannelId>) -> Result<ChannelId, ()> {
+                       opt_channel_nonce: Option<Vec<u8>>, opt_channel_id: Option<ChannelId>,
+                       is_outbound: bool) -> Result<ChannelId, ()> {
         log_info!(self, "new channel {}/{:?}", node_id, opt_channel_id);
         let nodes = self.nodes.lock().unwrap();
         let node = match nodes.get(node_id) {
@@ -240,6 +267,8 @@ impl MySigner {
             keys: chan_keys,
             secp_ctx: Secp256k1::new(),
             channel_value_satoshi,
+            remote_config: None,
+            is_outbound,
         };
         channels.insert(channel_id, channel);
         Ok(channel_id)
@@ -292,6 +321,77 @@ impl MySigner {
         })
     }
 
+    pub fn accept_channel(&self,
+                          node_id: &PublicKey, channel_id: &ChannelId,
+                          channel_points: &ChannelPublicKeys,
+                          remote_to_self_delay: u16,
+                          funding_outpoint: OutPoint) -> Result<(), Status> {
+        self.with_channel(node_id, channel_id, |opt_chan| {
+            let chan = opt_chan.ok_or(Status::invalid_argument("no such node/channel"))?;
+            chan.accept_remote_points(channel_points);
+            chan.accept_remote_config(remote_to_self_delay, funding_outpoint);
+            Ok(())
+        })
+    }
+
+    pub fn build_commitment_tx(&self,
+                               node_id: &PublicKey, channel_id: &ChannelId,
+                               remote_per_commitment_point: &PublicKey,
+                               commitment_number: u64,
+                               info: &CommitmentInfo2)
+        -> Result<(Transaction, Vec<Script>, Vec<HTLCOutputInCommitment>), Status> {
+        self.with_channel(node_id, channel_id, |opt_chan| {
+            let chan = opt_chan.ok_or(Status::invalid_argument("no such node/channel"))?;
+            let keys = chan.make_tx_keys(remote_per_commitment_point)?;
+            let obscured_commitment_transaction_number =
+                chan.get_commitment_transaction_number_obscure_factor() ^
+                    (INITIAL_COMMITMENT_NUMBER - commitment_number);
+            let remote_config = chan.remote_config.as_ref()
+                .ok_or_else(|| Status::invalid_argument("channel not accepted yet"))?;
+            Ok(build_commitment_tx(&keys, info,
+                                   obscured_commitment_transaction_number,
+                                   remote_config.funding_outpoint))
+        })
+    }
+
+    pub fn sign_remote_commitment_tx_phase2(&self,
+                                            node_id: &PublicKey, channel_id: &ChannelId,
+                                            remote_per_commitment_point: &PublicKey,
+                                            commitment_number: u64,
+                                            feerate_per_kw: u64,
+                                            info: &CommitmentInfo2)
+        -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+        let (tx, _scripts, htlcs)
+            = self.build_commitment_tx(node_id, channel_id,
+                                       remote_per_commitment_point,
+                                       commitment_number, info)?;
+        self.with_channel(node_id, channel_id, |opt_chan| {
+            let chan = opt_chan.ok_or(Status::invalid_argument("no such node/channel"))?;
+            let keys = chan.make_tx_keys(remote_per_commitment_point)?;
+            let mut htlc_refs = Vec::new();
+            for htlc in htlcs.iter() {
+                htlc_refs.push(htlc);
+            }
+            let remote_config = chan.remote_config.as_ref()
+                .ok_or_else(|| Status::invalid_argument("channel not accepted yet"))?;
+            let sigs = chan.keys.sign_remote_commitment(feerate_per_kw,
+                                                        &tx, &keys, htlc_refs.as_slice(),
+                                                        remote_config.to_self_delay,
+                                                        &chan.secp_ctx)
+                .map_err(|_| Status::internal("failed to sign"))?;
+            let mut sig = sigs.0.serialize_der().to_vec();
+            sig.push(SigHashType::All as u8);
+            let mut htlc_sigs = Vec::new();
+            for htlc_signature in sigs.1 {
+                let mut htlc_sig = htlc_signature.serialize_der().to_vec();
+                htlc_sig.push(SigHashType::All as u8);
+                htlc_sigs.push(htlc_sig);
+            }
+            Ok((sig, htlc_sigs))
+        })
+    }
+
+    // Note: chan.channel_value_satoshi is uninitialized in phase 1, so we get it from caller instead
     pub fn sign_remote_commitment_tx(&self,
                                      node_id: &PublicKey,
                                      channel_id: &ChannelId,
@@ -299,48 +399,33 @@ impl MySigner {
                                      output_witscripts: Vec<Vec<u8>>,
                                      _remote_per_commitment_point: &PublicKey,
                                      remote_funding_pubkey: &PublicKey,
-                                     channel_value_satoshis: u64)
+                                     channel_value_satoshi: u64)
                                      -> Result<Vec<u8>, Status> {
-        let sig: Result<Vec<u8>, Status> =
-            self.with_channel(node_id, channel_id, |opt_chan| {
-                let chan = opt_chan.ok_or(
-                    Status::invalid_argument("no such node/channel"))?;
-                if tx.output.len() != output_witscripts.len() {
-                    return Err(Status::invalid_argument(
-                        "len(tx.output) != len(witscripts)"))
+        self.with_channel(node_id, channel_id, |opt_chan| {
+            let chan = opt_chan.ok_or(
+                Status::invalid_argument("no such node/channel"))?;
+            if tx.output.len() != output_witscripts.len() {
+                return Err(Status::invalid_argument("len(tx.output) != len(witscripts)"))
+            }
+            let mut info = CommitmentInfo::new();
+            for ind in 0..tx.output.len() {
+                let res = info.handle_output(&tx.output[ind], output_witscripts[ind].as_slice())
+                    .map_err(|ve| Status::invalid_argument(ve));
+                if res.is_err() {
+                    log_error!(self, "validation error {}", res.unwrap_err());
                 }
-                let mut info = CommitmentInfo::new();
-                for ind in 0..tx.output.len() {
-                    let res = info.handle_output(
-                        &tx.output[ind], output_witscripts[ind].as_slice())
-                        .map_err(|ve| Status::invalid_argument(ve));
-                    if res.is_err() {
-                        log_error!(self, "validation error {}",
-                                   res.unwrap_err());
-                    }
-                }
-                let secp_ctx = &chan.secp_ctx;
-                let funding_key = chan.keys.funding_key();
-                let funding_pubkey = chan.keys.pubkeys().funding_pubkey;
-                let channel_funding_redeemscript =
-                    make_funding_redeemscript(
-                        &funding_pubkey, &remote_funding_pubkey);
+            }
 
-                let commitment_sighash =
-                    Message::from_slice(
-                        &bip143::SighashComponents::new(&tx)
-                            .sighash_all(
-                                &tx.input[0], &channel_funding_redeemscript,
-                                channel_value_satoshis)[..])
-                    .map_err(|_| Status::internal("could not hash"))?;
-                let commitment_sig =
-                    secp_ctx.sign(&commitment_sighash, funding_key);
-                let mut sig = commitment_sig.serialize_der().to_vec();
-                sig.push(SigHashType::All as u8);
+            let commitment_sig =
+                sign_commitment(&chan.secp_ctx, &chan.keys, &remote_funding_pubkey,
 
-                Ok(sig)
-            });
-        sig
+                                &tx, channel_value_satoshi)
+                    .map_err(|_| Status::internal("failed to sign"))?;
+
+            let mut sig = commitment_sig.serialize_der().to_vec();
+            sig.push(SigHashType::All as u8);
+            Ok(sig)
+        })
     }
 
     pub fn sign_remote_htlc_tx(&self,
@@ -458,6 +543,8 @@ mod tests {
     use bitcoin::blockdata::script::Builder;
     use bitcoin::consensus::deserialize;
     use bitcoin::hashes::{Hash, sha256d};
+    use bitcoin::util::bip143;
+    use lightning::ln::chan_utils::make_funding_redeemscript;
 
     use crate::util::crypto_utils::public_key_from_raw;
     use crate::util::test_utils::*;
@@ -465,10 +552,93 @@ mod tests {
     use super::*;
 
     #[test]
+    fn sign_remote_commitment_tx_test() {
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000").unwrap().as_slice());
+        let node_id = signer.new_node_from_seed(&seed);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_id = signer.new_channel(&node_id, 1000, Some(channel_nonce), None, true)
+            .expect("new_channel");
+        let remote_percommitment_point = make_test_pubkey(10);
+        let to_remote_pubkey = make_test_bitcoin_pubkey(1);
+        let revocation_pubkey = make_test_pubkey(2);
+        let to_local_delayed_pubkey = make_test_pubkey(3);
+        let remote_funding_pubkey = make_test_pubkey(4);
+        let funding_txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let funding_outpoint = OutPoint { txid: funding_txid, vout: 0 };
+        let to_remote_address =  Some(Address::p2wpkh(&to_remote_pubkey, Network::Testnet).payload);
+        let info = CommitmentInfo2 {
+            to_remote_address,
+            to_remote_value: 100,
+            revocation_key: Some(revocation_pubkey),
+            to_local_delayed_key: Some(to_local_delayed_pubkey),
+            to_local_value: 200,
+            to_local_delay: 6,
+            offered_htlcs: vec![],
+            received_htlcs: vec![]
+        };
+        let keys = ChannelPublicKeys {
+            funding_pubkey: remote_funding_pubkey,
+            revocation_basepoint: make_test_pubkey(100),
+            payment_basepoint: make_test_pubkey(101),
+            delayed_payment_basepoint: make_test_pubkey(102),
+            htlc_basepoint: make_test_pubkey(103),
+        };
+        signer.accept_channel(&node_id, &channel_id,
+                              &keys, 5u16, funding_outpoint).expect("accept");
+        let (tx, output_scripts, _) =
+            signer.build_commitment_tx(&node_id, &channel_id,
+                                       &remote_percommitment_point,
+                                       23,
+                                       &info)
+                .expect("build_commitment_tx");
+        let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
+        let ser_signature =
+            signer.sign_remote_commitment_tx(&node_id, &channel_id,
+                                             &tx, output_witscripts,
+                                             &remote_percommitment_point,
+                                             &remote_funding_pubkey, 300u64)
+            .expect("sign");
+        assert_eq!(hex::encode(tx.txid()),
+                   "6867b2d5ddff80cc3f52d3206ad7601bc5fb9f0baf2ec8e9a0ddc29ae50fb1c9");
+
+        let funding_pubkey = get_channel_funding_pubkey(signer, &node_id, &channel_id);
+        let channel_funding_redeemscript = make_funding_redeemscript(&funding_pubkey, &remote_funding_pubkey);
+
+        check_signature(&tx, 0, ser_signature, &funding_pubkey, 300u64, &channel_funding_redeemscript);
+    }
+
+    fn get_channel_funding_pubkey(signer: MySigner, node_id: &PublicKey, channel_id: &ChannelId) -> PublicKey {
+        let res: Result<PublicKey, ()> = signer.with_channel(&node_id, &channel_id, |opt_chan| {
+            let chan = opt_chan.unwrap();
+            Ok(chan.keys.pubkeys().funding_pubkey)
+        });
+        res.unwrap()
+    }
+
+    fn check_signature(tx: &Transaction, input_idx: usize,
+                       ser_signature: Vec<u8>, pubkey: &PublicKey,
+                       input_value: u64,
+                       redeemscript: &Script) {
+        let sighash =
+            Message::from_slice(&bip143::SighashComponents::new(&tx)
+                .sighash_all(&tx.input[input_idx], &redeemscript, input_value)[..])
+                .expect("sighash");
+        let mut der_signature = ser_signature.clone();
+        der_signature.pop(); // Pop the sighash type byte
+        let signature = Signature::from_der(&der_signature)
+            .expect("from_der");
+        let secp_ctx = Secp256k1::new();
+        secp_ctx.verify(&sighash, &signature, &pubkey)
+            .expect("verify");
+    }
+
+    #[test]
     fn new_channel_test() -> Result<(), ()> {
         let signer = MySigner::new();
         let node_id = signer.new_node();
-        let channel_id = signer.new_channel(&node_id, 1000, None, None)?;
+        let channel_id = signer.new_channel(&node_id, 1000, None, None, true)?;
         signer.with_node(&node_id, |node| {
             assert!(node.is_some());
             Ok(())
@@ -516,7 +686,7 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MySigner::new();
         let node_id = pubkey_from_secret_hex("0101010101010101010101010101010101010101010101010101010101010101", &secp_ctx);
-        assert!(signer.new_channel(&node_id, 1000, None, None).is_err());
+        assert!(signer.new_channel(&node_id, 1000, None, None, true).is_err());
         Ok(())
     }
 

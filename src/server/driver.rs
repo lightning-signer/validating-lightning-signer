@@ -114,12 +114,20 @@ impl Signer for MySigner {
             };
         log_info!(self, "ENTER new_channel request({}/{:?})", node_id, channel_id);
 
-        let channel_id_result = self.new_channel(&node_id, msg.channel_value, opt_channel_nonce, channel_id).unwrap();
+        let channel_id_result =
+            self.new_channel(&node_id, msg.channel_value,
+                             opt_channel_nonce, channel_id,
+                             msg.is_outbound).unwrap();
         let reply = NewChannelReply {
             channel_nonce: Some(ChannelNonce { data: channel_id_result.0.to_vec() })
         };
         log_info!(self, "REPLY new_channel request({}/{:?})", node_id, channel_id);
         Ok(Response::new(reply))
+    }
+
+    async fn channel_accepted(&self, _request: Request<ChannelAcceptedRequest>)
+                              -> Result<Response<ChannelAcceptedReply>, Status> {
+        unimplemented!()
     }
 
     async fn sign_mutual_close_tx(&self, request: Request<SignMutualCloseTxRequest>) -> Result<Response<SignatureReply>, Status> {
