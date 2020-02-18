@@ -17,7 +17,7 @@ use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 use crate::util::byte_utils;
 use crate::util::crypto_utils::{bip32_key, build_commitment_secret, channels_seed, hkdf_sha256, hkdf_sha256_keys, node_keys};
 
-const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;
+pub const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;
 
 pub struct MyKeysManager {
     secp_ctx: Secp256k1<secp256k1::SignOnly>,

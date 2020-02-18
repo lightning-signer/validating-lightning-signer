@@ -22,9 +22,13 @@ service Signer {
   rpc Init (InitRequest)
     returns (InitReply);
 
-  // BOLT #2 - Peer Protocol
+  // BOLT #2 - Peer Protocol - allocate a new channel
   rpc NewChannel (NewChannelRequest)
     returns (NewChannelReply);
+
+  // BOLT #2 - Peer Protocol - memorize remote basepoints
+  rpc ChannelAccepted (ChannelAcceptedRequest)
+    returns (ChannelAcceptedReply);
 
   // BOLT #2 - Channel Close
   rpc SignMutualCloseTx (SignMutualCloseTxRequest)
@@ -141,8 +145,12 @@ message NewChannelRequest {
 
   // Local to_self_delay
   uint32 to_self_delay = 4;
+
   // Local shutdown Bitcoin script used when closing the channel
   bytes shutdown_script = 5;
+
+  // Whether we initiated the channel
+  bool is_outbound = 6;
 }
 
 message NewChannelReply {
@@ -532,9 +540,19 @@ message CommitmentInfo {
   repeated HTLCInfo received_htlcs = 11;
 }
 
-// Provide information from the remote peer
+message Outpoint {
+  bytes txid = 1;
+  uint32 index = 2;
+}
+
+// Provide information from the remote peer and funding outpoint
+// This is provided to signer at the point that the funding transaction was created
 message ChannelAcceptedRequest {
   Basepoints basepoints = 1;
   uint32 to_self_delay = 2;
   bytes shutdown_script = 3;
+  Outpoint funding_outpoint = 10;
+}
+
+message ChannelAcceptedReply {
 }

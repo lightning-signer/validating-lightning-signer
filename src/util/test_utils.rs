@@ -3,6 +3,7 @@ use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use bitcoin;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::network::constants::Network;
@@ -237,3 +238,27 @@ pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> Public
     PublicKey::from_secret_key(secp_ctx, &SecretKey::from_slice(&hex::decode(h).unwrap()[..]).unwrap())
 }
 
+pub fn make_test_bitcoin_key(i: u8) -> (bitcoin::PublicKey, bitcoin::PrivateKey) {
+    let secp_ctx = Secp256k1::signing_only();
+    let secret_key = SecretKey::from_slice(&[i; 32]).unwrap();
+    let private_key = bitcoin::PrivateKey {
+        compressed: true,
+        network: Network::Testnet,
+        key: secret_key,
+    };
+    return (private_key.public_key(&secp_ctx), private_key);
+}
+
+pub fn make_test_bitcoin_pubkey(i: u8) -> bitcoin::PublicKey {
+    make_test_bitcoin_key(i).0
+}
+
+pub fn make_test_key(i: u8) -> (PublicKey, SecretKey) {
+    let secp_ctx = Secp256k1::signing_only();
+    let secret_key = SecretKey::from_slice(&[i; 32]).unwrap();
+    return (PublicKey::from_secret_key(&secp_ctx, &secret_key), secret_key);
+}
+
+pub fn make_test_pubkey(i: u8) -> PublicKey {
+    make_test_key(i).0
+}

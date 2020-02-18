@@ -95,7 +95,8 @@ impl ChannelKeys for LoopbackChannelSigner {
             |c| c.expect("missing node/channel")
                 .sign_remote_commitment(
                     feerate_per_kw, commitment_tx, &keys.per_commitment_point,
-                    htlcs, to_self_delay),
+                    htlcs, to_self_delay)
+                .map_err(|_| ())
         )
     }
 
@@ -116,7 +117,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         let signer = &self.signer;
         log_info!(signer, "set_remote_channel_keys {:?} {:?}", self.node_id, self.channel_id);
         self.signer.with_channel_do(&self.node_id, &self.channel_id, |c| {
-            c.expect("missing node/channel").accept(channel_points)
+            c.expect("missing node/channel").accept_remote_points(channel_points)
         });
     }
 }
@@ -143,8 +144,9 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         }).unwrap()
     }
 
-    fn get_channel_keys(&self, channel_id: [u8; 32], _inbound: bool, channel_value_satoshis: u64) -> Self::ChanKeySigner {
-        let channel_id = self.signer.new_channel(&self.node_id, channel_value_satoshis, None, Some(ChannelId(channel_id))).unwrap();
+    fn get_channel_keys(&self, channel_id: [u8; 32], inbound: bool, channel_value_satoshis: u64) -> Self::ChanKeySigner {
+        let channel_id = self.signer.new_channel(&self.node_id, channel_value_satoshis,
+                                                 None, Some(ChannelId(channel_id)), !inbound).unwrap();
         self.signer.with_channel(&self.node_id, &channel_id, |channel_opt| {
             channel_opt.map_or(Err(()), |c| Ok(LoopbackChannelSigner::new(
                 &self.node_id,
