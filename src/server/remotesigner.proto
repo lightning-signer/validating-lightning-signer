@@ -26,9 +26,10 @@ service Signer {
   rpc NewChannel (NewChannelRequest)
     returns (NewChannelReply);
 
-  // BOLT #2 - Peer Protocol - memorize remote basepoints
-  rpc ChannelAccepted (ChannelAcceptedRequest)
-    returns (ChannelAcceptedReply);
+  // BOLT #2 - Peer Protocol - memorize remote basepoints and funding outpoint
+  // Signatures can only be requested after this call.
+  rpc ReadyChannel (ReadyChannelRequest)
+    returns (ReadyChannelReply);
 
   // BOLT #2 - Channel Close
   rpc SignMutualCloseTx (SignMutualCloseTxRequest)
@@ -133,7 +134,7 @@ message InitReply {
 }
 
 // Initialize a new channel
-// TODO provide remote keys and basepoints in a new ChannelAccepted call
+// In phase 2, the node will also provide remote keys and basepoints in the ReadyChannel call
 message NewChannelRequest {
   NodeId node_id = 1;
 
@@ -193,7 +194,7 @@ message CheckFutureSecretReply {
   bool correct = 1;
 }
 
-// Get the basepoints and public keys specific to an accepted channel
+// Get the basepoints and public keys specific to a channel
 message GetChannelBasepointsRequest {
   NodeId node_id = 1;
     
@@ -222,7 +223,7 @@ message GetPerCommitmentPointReply {
 }
 
 // Sign a funding tx for this channel
-// The channel must have been accepted
+// The channel must have been readied
 message SignFundingTxRequest {
   NodeId node_id = 1;
   
@@ -247,7 +248,7 @@ message SignRemoteCommitmentTxRequest {
   // information that is required to rebuild the tx
   Transaction tx = 3;
 
-  // TODO deprecate the next three fields and move to ChannelAccepted
+  // TODO deprecate the next three fields and move to ReadyChannel
   PubKey remote_funding_pubkey = 4;
 
   PubKey remote_per_commit_point = 5;
@@ -264,7 +265,7 @@ message SignCommitmentTxRequest {
     
   Transaction tx = 3;
   
-  // TODO deprecate and move to ChannelAccepted
+  // TODO deprecate and move to ReadyChannel
   PubKey remote_funding_pubkey = 4;
 }
 
@@ -545,14 +546,19 @@ message Outpoint {
   uint32 index = 2;
 }
 
-// Provide information from the remote peer and funding outpoint
+// Provide the funding outpoint and information from the remote peer
 // This is provided to signer at the point that the funding transaction was created
-message ChannelAcceptedRequest {
-  Basepoints basepoints = 1;
-  uint32 to_self_delay = 2;
-  bytes shutdown_script = 3;
+message ReadyChannelRequest {
+  NodeId node_id = 1;
+
+  ChannelNonce channel_nonce = 2;
+
+  Basepoints basepoints = 3;
+  // Remote to_self_delay
+  uint32 to_self_delay = 4;
+  bytes shutdown_script = 5;
   Outpoint funding_outpoint = 10;
 }
 
-message ChannelAcceptedReply {
+message ReadyChannelReply {
 }

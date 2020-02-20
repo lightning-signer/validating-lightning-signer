@@ -2,8 +2,11 @@ use std::convert::TryInto;
 
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::{deserialize, encode};
+use bitcoin::OutPoint;
+use bitcoin_hashes::{Hash, sha256d};
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
+use lightning::ln::chan_utils::ChannelPublicKeys;
 use secp256k1::{PublicKey, Secp256k1};
 use tonic::{Request, Response, Status, transport::Server};
 
@@ -125,9 +128,30 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn channel_accepted(&self, _request: Request<ChannelAcceptedRequest>)
-                              -> Result<Response<ChannelAcceptedReply>, Status> {
-        unimplemented!()
+    async fn ready_channel(&self, request: Request<ReadyChannelRequest>)
+                           -> Result<Response<ReadyChannelReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = self.node_id(msg.node_id)?;
+        let channel_id = self.channel_id(&msg.channel_nonce)?;
+        let basepoints =
+            msg.basepoints.ok_or_else(|| self.invalid_argument("missing basepoints"))?;
+        let keys = ChannelPublicKeys {
+            funding_pubkey: self.public_key(basepoints.funding_pubkey)?,
+            revocation_basepoint: self.public_key(basepoints.revocation)?,
+            payment_basepoint: self.public_key(basepoints.payment)?,
+            delayed_payment_basepoint: self.public_key(basepoints.delayed_payment)?,
+            htlc_basepoint: self.public_key(basepoints.htlc)?,
+        };
+        let msg_outpoint =
+            msg.funding_outpoint.ok_or_else(|| self.invalid_argument("missing funding outpoint"))?;
+        let txid = sha256d::Hash::from_slice(&msg_outpoint.txid)
+            .map_err(|_| self.invalid_argument("cannot decode funding outpoint txid"))?;
+        let funding_outpoint = OutPoint {
+            txid,
+            vout: msg_outpoint.index,
+        };
+        self.ready_channel(&node_id, &channel_id, &keys, msg.to_self_delay as u16, &msg.shutdown_script, funding_outpoint)?;
+        Ok(Response::new(ReadyChannelReply {}))
     }
 
     async fn sign_mutual_close_tx(&self, request: Request<SignMutualCloseTxRequest>) -> Result<Response<SignatureReply>, Status> {

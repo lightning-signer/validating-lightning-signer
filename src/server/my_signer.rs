@@ -321,10 +321,11 @@ impl MySigner {
         })
     }
 
-    pub fn accept_channel(&self,
+    pub fn ready_channel(&self,
                           node_id: &PublicKey, channel_id: &ChannelId,
                           channel_points: &ChannelPublicKeys,
                           remote_to_self_delay: u16,
+                          _shutdown_script: &Vec<u8>,
                           funding_outpoint: OutPoint) -> Result<(), Status> {
         self.with_channel(node_id, channel_id, |opt_chan| {
             let chan = opt_chan.ok_or(Status::invalid_argument("no such node/channel"))?;
@@ -558,7 +559,8 @@ mod tests {
         seed.copy_from_slice(hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000").unwrap().as_slice());
         let node_id = signer.new_node_from_seed(&seed);
         let channel_nonce = "nonce1".as_bytes().to_vec();
-        let channel_id = signer.new_channel(&node_id, 1000, Some(channel_nonce), None, true)
+        let channel_value = 300;
+        let channel_id = signer.new_channel(&node_id, channel_value, Some(channel_nonce), None, true)
             .expect("new_channel");
         let remote_percommitment_point = make_test_pubkey(10);
         let to_remote_pubkey = make_test_bitcoin_pubkey(1);
@@ -585,8 +587,10 @@ mod tests {
             delayed_payment_basepoint: make_test_pubkey(102),
             htlc_basepoint: make_test_pubkey(103),
         };
-        signer.accept_channel(&node_id, &channel_id,
-                              &keys, 5u16, funding_outpoint).expect("accept");
+        signer.ready_channel(&node_id, &channel_id,
+                             &keys, 5u16,
+                             &vec! [],
+                             funding_outpoint).expect("accept");
         let (tx, output_scripts, _) =
             signer.build_commitment_tx(&node_id, &channel_id,
                                        &remote_percommitment_point,
@@ -598,7 +602,7 @@ mod tests {
             signer.sign_remote_commitment_tx(&node_id, &channel_id,
                                              &tx, output_witscripts,
                                              &remote_percommitment_point,
-                                             &remote_funding_pubkey, 300u64)
+                                             &remote_funding_pubkey, channel_value)
             .expect("sign");
         assert_eq!(hex::encode(tx.txid()),
                    "6867b2d5ddff80cc3f52d3206ad7601bc5fb9f0baf2ec8e9a0ddc29ae50fb1c9");
@@ -606,7 +610,69 @@ mod tests {
         let funding_pubkey = get_channel_funding_pubkey(signer, &node_id, &channel_id);
         let channel_funding_redeemscript = make_funding_redeemscript(&funding_pubkey, &remote_funding_pubkey);
 
-        check_signature(&tx, 0, ser_signature, &funding_pubkey, 300u64, &channel_funding_redeemscript);
+        check_signature(&tx, 0, ser_signature, &funding_pubkey, channel_value, &channel_funding_redeemscript);
+    }
+
+    #[test]
+    fn sign_remote_commitment_tx_phase2_test() {
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000").unwrap().as_slice());
+        let node_id = signer.new_node_from_seed(&seed);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_value = 300;
+
+        let channel_id = signer.new_channel(&node_id, channel_value, Some(channel_nonce), None, true)
+            .expect("new_channel");
+        let remote_percommitment_point = make_test_pubkey(10);
+        let to_remote_pubkey = make_test_bitcoin_pubkey(1);
+        let revocation_pubkey = make_test_pubkey(2);
+        let to_local_delayed_pubkey = make_test_pubkey(3);
+        let remote_funding_pubkey = make_test_pubkey(4);
+        let funding_txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let funding_outpoint = OutPoint { txid: funding_txid, vout: 0 };
+        let to_remote_address =  Some(Address::p2wpkh(&to_remote_pubkey, Network::Testnet).payload);
+        let info = CommitmentInfo2 {
+            to_remote_address,
+            to_remote_value: 100,
+            revocation_key: Some(revocation_pubkey),
+            to_local_delayed_key: Some(to_local_delayed_pubkey),
+            to_local_value: 200,
+            to_local_delay: 6,
+            offered_htlcs: vec![],
+            received_htlcs: vec![]
+        };
+        let keys = ChannelPublicKeys {
+            funding_pubkey: remote_funding_pubkey,
+            revocation_basepoint: make_test_pubkey(100),
+            payment_basepoint: make_test_pubkey(101),
+            delayed_payment_basepoint: make_test_pubkey(102),
+            htlc_basepoint: make_test_pubkey(103),
+        };
+        signer.ready_channel(&node_id, &channel_id,
+                             &keys, 5u16,
+                             &vec! [],
+                             funding_outpoint).expect("accept");
+        let (tx, _, _) =
+            signer.build_commitment_tx(&node_id, &channel_id,
+                                       &remote_percommitment_point,
+                                       23,
+                                       &info)
+                .expect("build_commitment_tx");
+        let (ser_signature, _) =
+            signer.sign_remote_commitment_tx_phase2(&node_id, &channel_id,
+                                                    &remote_percommitment_point,
+                                                    23,
+                                                    0,  // feerate not used
+                                                    &info)
+                .expect("sign");
+        assert_eq!(hex::encode(tx.txid()),
+                   "6867b2d5ddff80cc3f52d3206ad7601bc5fb9f0baf2ec8e9a0ddc29ae50fb1c9");
+
+        let funding_pubkey = get_channel_funding_pubkey(signer, &node_id, &channel_id);
+        let channel_funding_redeemscript = make_funding_redeemscript(&funding_pubkey, &remote_funding_pubkey);
+
+        check_signature(&tx, 0, ser_signature, &funding_pubkey, channel_value, &channel_funding_redeemscript);
     }
 
     fn get_channel_funding_pubkey(signer: MySigner, node_id: &PublicKey, channel_id: &ChannelId) -> PublicKey {
@@ -749,7 +815,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_funding_tx_test1() -> Result<(), ()> {
+    fn sign_funding_tx_1_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MySigner::new();
         let node_id = signer.new_node();
@@ -869,9 +935,10 @@ mod tests {
         assert_eq!(sigvec, hex::decode("3045022100be9840696c868b161aaa997f9fa91a899e921ea06c8083b2e1ea32b8b511948d0220352eec7a74554f97c2aed26950b8538ca7d7d7568b42fd8c6f195bd749763fa5").unwrap());
         Ok(())
     }
-    
+
+    // TODO move this elsewhere
     #[test]
-    fn test_transaction_verify () {
+    fn transaction_verify_test() {
         use hex::decode as hex_decode;
         // a random recent segwit transaction from blockchain using both old and segwit inputs
         let spending: Transaction = deserialize(hex_decode("020000000001031cfbc8f54fbfa4a33a30068841371f80dbfe166211242213188428f437445c91000000006a47304402206fbcec8d2d2e740d824d3d36cc345b37d9f65d665a99f5bd5c9e8d42270a03a8022013959632492332200c2908459547bf8dbf97c65ab1a28dec377d6f1d41d3d63e012103d7279dfb90ce17fe139ba60a7c41ddf605b25e1c07a4ddcb9dfef4e7d6710f48feffffff476222484f5e35b3f0e43f65fc76e21d8be7818dd6a989c160b1e5039b7835fc00000000171600140914414d3c94af70ac7e25407b0689e0baa10c77feffffffa83d954a62568bbc99cc644c62eb7383d7c2a2563041a0aeb891a6a4055895570000000017160014795d04cc2d4f31480d9a3710993fbd80d04301dffeffffff06fef72f000000000017a91476fd7035cd26f1a32a5ab979e056713aac25796887a5000f00000000001976a914b8332d502a529571c6af4be66399cd33379071c588ac3fda0500000000001976a914fc1d692f8de10ae33295f090bea5fe49527d975c88ac522e1b00000000001976a914808406b54d1044c429ac54c0e189b0d8061667e088ac6eb68501000000001976a914dfab6085f3a8fb3e6710206a5a959313c5618f4d88acbba20000000000001976a914eb3026552d7e3f3073457d0bee5d4757de48160d88ac0002483045022100bee24b63212939d33d513e767bc79300051f7a0d433c3fcf1e0e3bf03b9eb1d70220588dc45a9ce3a939103b4459ce47500b64e23ab118dfc03c9caa7d6bfc32b9c601210354fd80328da0f9ae6eef2b3a81f74f9a6f66761fadf96f1d1d22b1fd6845876402483045022100e29c7e3a5efc10da6269e5fc20b6a1cb8beb92130cc52c67e46ef40aaa5cac5f0220644dd1b049727d991aece98a105563416e10a5ac4221abac7d16931842d5c322012103960b87412d6e169f30e12106bdf70122aabb9eb61f455518322a18b920a4dfa887d30700")
@@ -903,8 +970,9 @@ mod tests {
         }).unwrap();
     }
 
+    // TODO move this elsewhere
     #[test]
-    fn test_bip143_p2wpkh() {
+    fn bip143_p2wpkh_test() {
         let tx: Transaction = deserialize(hex::decode("0100000002fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f0000000000eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac11000000")
             .unwrap().as_slice()).unwrap();
         let secp_ctx = Secp256k1::signing_only();
@@ -920,8 +988,9 @@ mod tests {
         assert_eq!(hex::encode(sighash), "c37af31116d1b27caf68aae9e3ac82f1477929014d5b917657d0eb49478cb670");
     }
 
+    // TODO move this elsewhere
     #[test]
-    fn test_deser_raw() {
+    fn deser_raw_test() {
         let raw: [u8; 64] = [158, 156, 70, 5, 38, 221, 32, 73, 180, 87, 57, 36, 5, 47, 168, 160, 245, 209, 189, 150, 120, 71, 89, 121, 242, 226, 118, 91, 240, 36, 16, 253, 43, 220, 178, 191, 181, 152, 246, 154, 176, 43, 194, 95, 165, 0, 61, 9, 214, 95, 90, 144, 62, 135, 181, 82, 32, 196, 138, 80, 167, 249, 29, 143];
         let point = public_key_from_raw(&raw).unwrap();
         let secret = SecretKey::from_slice(hex::decode("7f4fa93708cb666f507f35ae9967c23f75976ab721cbcf5352bb49c50c8b7458")
