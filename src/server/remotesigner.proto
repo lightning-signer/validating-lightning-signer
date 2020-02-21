@@ -380,6 +380,8 @@ message ECDHReply {
 
 // Sign an invoice with the node secret key
 message SignInvoiceRequest {
+  // https://github.com/lightningnetwork/lightning-rfc/blob/master/11-payment-encoding.md
+
   NodeId node_id = 1;
 
   bytes data_part = 2;
