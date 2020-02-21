@@ -64,29 +64,23 @@ pub fn build_commitment_tx(keys: &TxCreationKeys, info: &CommitmentInfo2,
 
     let mut txouts: Vec<(TxOut, (Script, Option<HTLCOutputInCommitment>))> = Vec::new();
 
-    match &info.to_remote_address {
-        Some(address) => {
-            let script = address.script_pubkey();
-            txouts.push((TxOut {
-                script_pubkey: script.clone(),
-                value: info.to_remote_value as u64,
-            }, (script, None)))
-        },
-        None => {}
+    if info.to_remote_value > 0 {
+        let script = info.to_remote_address.script_pubkey();
+        txouts.push((TxOut {
+            script_pubkey: script.clone(),
+            value: info.to_remote_value as u64,
+        }, (script, None)))
     }
 
-    match &info.to_local_delayed_key {
-        Some(delayed_key) => {
-            let redeem_script =
-                get_revokeable_redeemscript(&info.revocation_key.expect("missing revocation key"),
-                                            info.to_local_delay,
-                                            delayed_key);
-            txouts.push((TxOut {
-                script_pubkey: redeem_script.to_v0_p2wsh(),
-                value: info.to_local_value as u64,
-            }, (redeem_script, None)))
-        }
-        None => {}
+    if info.to_local_value > 0 {
+        let redeem_script =
+            get_revokeable_redeemscript(&info.revocation_key,
+                                        info.to_local_delay,
+                                        &info.to_local_delayed_key);
+        txouts.push((TxOut {
+            script_pubkey: redeem_script.to_v0_p2wsh(),
+            value: info.to_local_value as u64,
+        }, (redeem_script, None)))
     }
 
     for out in &info.offered_htlcs {
@@ -172,7 +166,7 @@ pub fn sort_outputs<T, C: Fn(&T, &T) -> Ordering>(outputs: &mut Vec<(TxOut, T)>,
     });
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HTLCInfo {
     pub value: u64,
     pub payment_hash: PaymentHash,
@@ -181,10 +175,10 @@ pub struct HTLCInfo {
 
 #[derive(Debug)]
 pub struct CommitmentInfo2 {
-    pub to_remote_address: Option<Payload>,
+    pub to_remote_address: Payload,
     pub to_remote_value: u64,
-    pub revocation_key: Option<PublicKey>,
-    pub to_local_delayed_key: Option<PublicKey>,
+    pub revocation_key: PublicKey,
+    pub to_local_delayed_key: PublicKey,
     pub to_local_value: u64,
     pub to_local_delay: u16,
     pub offered_htlcs: Vec<HTLCInfo>,

@@ -51,31 +51,35 @@ service Signer {
   rpc SignFundingTx (SignFundingTxRequest)
     returns (SignFundingTxReply);
     
-  // BOLT #3 - Commitment Transaction
+  // BOLT #3 - Commitment Transaction, phase 1
   rpc SignRemoteCommitmentTx (SignRemoteCommitmentTxRequest)
     returns (SignatureReply);
 
-  // BOLT #3 - Commitment Transaction
+  // BOLT #3 - Commitment Transaction and attached HTLCs, phase 1
+  rpc SignRemoteCommitmentTxPhase2 (SignRemoteCommitmentTxPhase2Request)
+    returns (CommitmentTxSignatureReply);
+
+  // BOLT #3 - Commitment Transaction, phase 1
   rpc SignCommitmentTx (SignCommitmentTxRequest)
     returns (SignatureReply);
     
-  // BOLT #3 - HTLC Outputs
+  // BOLT #3 - HTLC Outputs, phase 1
   rpc SignLocalHTLCTx (SignLocalHTLCTxRequest)
     returns (SignatureReply);
     
-  // BOLT #5 - Unilateral Close Handling
+  // BOLT #5 - Unilateral Close Handling, phase 1
   rpc SignDelayedPaymentToUs (SignDelayedPaymentToUsRequest)
     returns (SignatureReply);
     
-  // BOLT #3 - HTLC Outputs
+  // BOLT #3 - HTLC Outputs, phase 1
   rpc SignRemoteHTLCTx (SignRemoteHTLCTxRequest)
     returns (SignatureReply);
 
-  // BOLT #3 - HTLC Outputs
+  // BOLT #3 - HTLC Outputs, phase 1
   rpc SignRemoteHTLCToUs (SignRemoteHTLCToUsRequest)
     returns (SignatureReply);
     
-  // BOLT #5 - Unilateral Close Handling
+  // BOLT #5 - Unilateral Close Handling, phase 1
   rpc SignPenaltyToUs (SignPenaltyToUsRequest)
     returns (SignatureReply);
 
@@ -524,6 +528,20 @@ message SignDescriptor {
 // signs the commitment and HTLC transactions from elementary info,
 // rather than sending the serialized transaction on the wire.
 
+// Sign the remote commitment
+message SignRemoteCommitmentTxPhase2Request {
+  NodeId node_id = 1;
+
+  ChannelNonce channel_nonce = 2;
+
+  CommitmentInfo commitment_info = 4;
+}
+
+message CommitmentTxSignatureReply {
+  BitcoinSignature signature = 1;
+  repeated BitcoinSignature htlc_signatures = 2;
+}
+
 // Information required to create HTLC output and a follow-up HTLC transaction
 message HTLCInfo {
   uint64 value = 1;
@@ -535,14 +553,14 @@ message HTLCInfo {
 message CommitmentInfo {
   uint32 feerate_per_kw = 1;
   uint64 n = 2;
-  uint64 dust_limit = 3;
-  uint64 value_to_local = 4;
-  uint64 value_to_remote = 5;
+  uint64 to_local_value = 4;
+  uint64 to_remote_value = 5;
   PubKey per_commitment_point = 6;
   repeated HTLCInfo offered_htlcs = 10;
   repeated HTLCInfo received_htlcs = 11;
 }
 
+// A Bitcoin outpoint, used for the funding output
 message Outpoint {
   bytes txid = 1;
   uint32 index = 2;
