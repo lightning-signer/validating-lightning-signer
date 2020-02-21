@@ -5,8 +5,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use bitcoin;
 use bitcoin::blockdata::block::BlockHeader;
-use bitcoin::blockdata::transaction::{Transaction, TxOut};
 use bitcoin::Network;
 use bitcoin::util::hash::BitcoinHash;
 use bitcoin_hashes::Hash;
@@ -41,7 +41,7 @@ pub const CHAN_CONFIRM_DEPTH: u32 = 100;
 pub fn confirm_transaction<'a, 'b: 'a>(
     notifier: &'a chaininterface::BlockNotifierRef<'b>,
     chain: &chaininterface::ChainWatchInterfaceUtil,
-    tx: &Transaction,
+    tx: &bitcoin::Transaction,
     chan_id: u32,
 ) {
     assert!(chain.does_match_tx(tx));
@@ -143,7 +143,7 @@ pub fn create_chan_between_nodes<'a, 'b, 'c, S: ChannelKeys>(
     msgs::ChannelUpdate,
     msgs::ChannelUpdate,
     [u8; 32],
-    Transaction,
+    bitcoin::Transaction,
 ) {
     create_chan_between_nodes_with_value(node_a, node_b, 100000, 10001, a_flags, b_flags)
 }
@@ -160,7 +160,7 @@ pub fn create_chan_between_nodes_with_value<'a, 'b, 'c, S: ChannelKeys>(
     msgs::ChannelUpdate,
     msgs::ChannelUpdate,
     [u8; 32],
-    Transaction,
+    bitcoin::Transaction,
 ) {
     let (funding_locked, channel_id, tx) = create_chan_between_nodes_with_value_a(
         node_a,
@@ -230,7 +230,7 @@ pub fn create_funding_transaction<S: ChannelKeys>(
     node: &Node<S>,
     expected_chan_value: u64,
     expected_user_chan_id: u64,
-) -> ([u8; 32], Transaction, OutPoint) {
+) -> ([u8; 32], bitcoin::Transaction, OutPoint) {
     let chan_id = *node.network_chan_count.borrow();
 
     let events = node.node.get_and_clear_pending_events();
@@ -245,11 +245,11 @@ pub fn create_funding_transaction<S: ChannelKeys>(
             assert_eq!(*channel_value_satoshis, expected_chan_value);
             assert_eq!(user_channel_id, expected_user_chan_id);
 
-            let tx = Transaction {
+            let tx = bitcoin::Transaction {
                 version: chan_id as u32,
                 lock_time: 0,
                 input: Vec::new(),
-                output: vec![TxOut {
+                output: vec![bitcoin::TxOut {
                     value: *channel_value_satoshis,
                     script_pubkey: output_script.clone(),
                 }],
@@ -268,7 +268,7 @@ pub fn create_chan_between_nodes_with_value_init<S: ChannelKeys>(
     push_msat: u64,
     a_flags: InitFeatures,
     b_flags: InitFeatures,
-) -> Transaction {
+) -> bitcoin::Transaction {
     node_a
         .node
         .create_channel(node_b.node.get_our_node_id(), channel_value, push_msat, 42)
@@ -354,7 +354,7 @@ pub fn create_chan_between_nodes_with_value_init<S: ChannelKeys>(
 pub fn create_chan_between_nodes_with_value_confirm_first<S: ChannelKeys>(
     node_recv: &Node<S>,
     node_conf: &Node<S>,
-    tx: &Transaction,
+    tx: &bitcoin::Transaction,
 ) {
     confirm_transaction(
         &node_conf.block_notifier,
@@ -413,7 +413,7 @@ pub fn create_chan_between_nodes_with_value_confirm_second<S: ChannelKeys>(
 pub fn create_chan_between_nodes_with_value_confirm<S: ChannelKeys>(
     node_a: &Node<S>,
     node_b: &Node<S>,
-    tx: &Transaction,
+    tx: &bitcoin::Transaction,
 ) -> (
     (msgs::FundingLocked, msgs::AnnouncementSignatures),
     [u8; 32],
@@ -438,7 +438,7 @@ pub fn create_chan_between_nodes_with_value_a<S: ChannelKeys>(
 ) -> (
     (msgs::FundingLocked, msgs::AnnouncementSignatures),
     [u8; 32],
-    Transaction,
+    bitcoin::Transaction,
 ) {
     let tx = create_chan_between_nodes_with_value_init(
         node_a,
@@ -518,7 +518,7 @@ pub fn create_announced_chan_between_nodes<S: ChannelKeys>(
     msgs::ChannelUpdate,
     msgs::ChannelUpdate,
     [u8; 32],
-    Transaction,
+    bitcoin::Transaction,
 ) {
     create_announced_chan_between_nodes_with_value(nodes, a, b, 100000, 10001, a_flags, b_flags)
 }
@@ -535,7 +535,7 @@ pub fn create_announced_chan_between_nodes_with_value<S: ChannelKeys>(
     msgs::ChannelUpdate,
     msgs::ChannelUpdate,
     [u8; 32],
-    Transaction,
+    bitcoin::Transaction,
 ) {
     let chan_announcement = create_chan_between_nodes_with_value(
         &nodes[a],
@@ -609,9 +609,9 @@ pub fn close_channel<'a, 'b, S: ChannelKeys>(
     outbound_node: &Node<'a, 'b, S>,
     inbound_node: &Node<'a, 'b, S>,
     channel_id: &[u8; 32],
-    funding_tx: Transaction,
+    funding_tx: bitcoin::Transaction,
     close_inbound_first: bool,
-) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, Transaction) {
+) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, bitcoin::Transaction) {
     let (node_a, broadcaster_a, struct_a) = if close_inbound_first {
         (
             &inbound_node.node,

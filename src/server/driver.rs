@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use bitcoin::blockdata::transaction::Transaction;
+use bitcoin;
 use bitcoin::consensus::{deserialize, encode};
 use bitcoin::OutPoint;
 use bitcoin_hashes::{Hash, sha256d};
@@ -209,7 +209,7 @@ impl Signer for MySigner {
         let channel_id = self.channel_id(&msg.channel_nonce)?;
         log_info!(self, "ENTER sign_funding_tx({}/{})", node_id, channel_id);
         let reqtx = msg.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
-        let tx_res: Result<Transaction, encode::Error> = deserialize(reqtx.raw_tx_bytes.as_slice());
+        let tx_res: Result<bitcoin::Transaction, encode::Error> = deserialize(reqtx.raw_tx_bytes.as_slice());
         let tx = tx_res.map_err(|e| self.invalid_argument(format!("could not deserialize tx - {}", e)))?;
         let mut indices = Vec::new();
         let mut values = Vec::new();
@@ -241,7 +241,7 @@ impl Signer for MySigner {
                   node_id, channel_id);
 
         let reqtx = msg.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
-        let tx_res: Result<Transaction, encode::Error> =
+        let tx_res: Result<bitcoin::Transaction, encode::Error> =
             deserialize(reqtx.raw_tx_bytes.as_slice());
         let tx = tx_res.map_err(
             |e| self.invalid_argument(format!("deserialize tx fail: {}", e)))?;
@@ -307,7 +307,7 @@ impl Signer for MySigner {
                   node_id, channel_id);
         let reqtx = msg.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
 
-        let tx_res: Result<Transaction, encode::Error> =
+        let tx_res: Result<bitcoin::Transaction, encode::Error> =
             deserialize(reqtx.raw_tx_bytes.as_slice());
         let tx = tx_res.map_err(
             |e| self.invalid_argument(format!("deserialize tx fail: {}", e)))?;
@@ -315,10 +315,21 @@ impl Signer for MySigner {
         let remote_per_commitment_point =
             self.public_key(msg.remote_per_commit_point)?;
 
+        let htlc_amount =
+            match reqtx.input_descs[0].output.as_ref() {
+                Some(out) => out.value as u64,
+                None => return Err(Status::internal("missing input_desc[0]")),
+            };
+
         let sig_data =
             self.sign_remote_htlc_tx(
-                &node_id, &channel_id, &tx, reqtx.output_witscripts,
-                &remote_per_commitment_point)?;
+                &node_id,
+                &channel_id,
+                &tx,
+                reqtx.output_witscripts,
+                &remote_per_commitment_point,
+                htlc_amount,
+            )?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature { data: sig_data }),
@@ -396,12 +407,22 @@ impl Signer for MySigner {
     }
 
     async fn sign_invoice(&self, request: Request<SignInvoiceRequest>) -> Result<Response<RecoverableNodeSignatureReply>, Status> {
-        let _msg = request.into_inner();
-//        let node_id = self.node_id(msg.node_id)?;
-        log_error!(self, "NOT IMPLEMENTED sign_invoice");
+        let msg = request.into_inner();
+        let node_id = self.node_id(msg.node_id)?;
+        let data_part = msg.data_part;
+        let human_readable_part = msg.human_readable_part;
+        log_info!(self,
+                  "ENTER sign_invoice({}) data_part={} human_readable_part={}",
+                  node_id,
+                  hex::encode(&data_part).as_str(),
+                  human_readable_part);
+        let sig_data = self.sign_invoice(&node_id, &data_part,
+                                         &human_readable_part)?;
         let reply = RecoverableNodeSignatureReply {
-            signature: None
+            signature: Some(EcdsaRecoverableSignature{data: sig_data}),
         };
+        log_info!(self, "REPLY sign_invoice({}) rsig={}", node_id,
+                  hex::encode(&reply.signature.as_ref().unwrap().data));
         Ok(Response::new(reply))
     }
 

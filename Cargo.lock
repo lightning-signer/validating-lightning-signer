@@ -348,6 +348,7 @@ dependencies = [
 name = "lightning-signer"
 version = "0.1.0"
 dependencies = [
+ "bech32 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitcoin 0.21.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitcoin_hashes 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "hex 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",

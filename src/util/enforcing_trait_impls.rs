@@ -12,8 +12,9 @@ use secp256k1;
 use secp256k1::{Secp256k1, Signature};
 use secp256k1::key::{PublicKey, SecretKey};
 
-/// Enforces some rules on ChannelKeys calls. Eventually we will probably want to expose a variant
-/// of this which would essentially be what you'd want to run on a hardware wallet.
+/// Enforces some rules on ChannelKeys calls. Eventually we will
+/// probably want to expose a variant of this which would essentially
+/// be what you'd want to run on a hardware wallet.
 #[derive(Clone)]
 pub struct EnforcingChannelKeys {
     pub inner: InMemoryChannelKeys,
