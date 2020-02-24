@@ -1026,7 +1026,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_remote_htlc_tx_test() -> Result<(), ()> {
+    fn sign_remote_htlc_tx_test() {
         let signer = MySigner::new();
         let mut seed = [0; 32];
         seed.copy_from_slice(hex::decode(
@@ -1117,7 +1117,6 @@ mod tests {
                         &htlc_pubkey,
                         htlc_amount,
                         &htlc_redeemscript);
-        Ok(())
     }
 
     #[test]
