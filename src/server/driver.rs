@@ -7,6 +7,7 @@ use bitcoin_hashes::{Hash, sha256d};
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use lightning::ln::chan_utils::ChannelPublicKeys;
+use lightning::ln::channelmanager::PaymentHash;
 use secp256k1::{PublicKey, Secp256k1};
 use tonic::{Request, Response, Status, transport::Server};
 
@@ -15,6 +16,7 @@ use remotesigner::signer_server::{Signer, SignerServer};
 
 use crate::server::my_signer::{ChannelId, MySigner};
 use crate::server::remotesigner::version_server::Version;
+use crate::tx::tx::HTLCInfo;
 use crate::util::crypto_utils::public_key_from_raw;
 
 use super::remotesigner;
@@ -59,6 +61,16 @@ impl MySigner {
         let mut result = [0u8; 32];
         digest.result(&mut result);
         Ok(ChannelId(result))
+    }
+
+    fn convert_htlcs(&self, msg_htlcs: &Vec<HtlcInfo>) -> Result<Vec<HTLCInfo>, Status> {
+        let mut htlcs = Vec::new();
+        for h in msg_htlcs.iter() {
+            let hash = h.payment_hash.as_slice().try_into()
+                .map_err(|_| self.invalid_argument("could not decode payment hash"))?;
+            htlcs.push(HTLCInfo { value: h.value, payment_hash: PaymentHash(hash), cltv_expiry: h.cltv_expiry });
+        }
+        Ok(htlcs)
     }
 }
 
@@ -432,6 +444,34 @@ impl Signer for MySigner {
         log_error!(self, "NOT IMPLEMENTED sign_message");
         let reply = RecoverableNodeSignatureReply {
             signature: None
+        };
+        Ok(Response::new(reply))
+    }
+
+    async fn sign_remote_commitment_tx_phase2(&self, request: Request<SignRemoteCommitmentTxPhase2Request>)
+                                              -> Result<Response<CommitmentTxSignatureReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = self.node_id(msg.node_id)?;
+        let channel_id = self.channel_id(&msg.channel_nonce)?;
+        let msg_info = msg.commitment_info
+            .ok_or_else(|| self.invalid_argument("missing commitment info"))?;
+        let remote_per_commitment_point = self.public_key(msg_info.per_commitment_point)?;
+
+        let offered_htlcs = self.convert_htlcs(&msg_info.offered_htlcs)?;
+        let received_htlcs = self.convert_htlcs(&msg_info.received_htlcs)?;
+
+        let (sig, htlc_sigs) = self.sign_remote_commitment_tx_phase2(
+            &node_id, &channel_id, &remote_per_commitment_point, msg_info.n,
+            msg_info.feerate_per_kw as u64,
+            msg_info.to_local_value, msg_info.to_remote_value,
+            offered_htlcs, received_htlcs
+        )?;
+
+        let htlc_bitcoin_sigs = htlc_sigs.iter()
+            .map(|s| BitcoinSignature { data: s.clone() }).collect();
+        let reply = CommitmentTxSignatureReply {
+            signature: Some(BitcoinSignature { data: sig }),
+            htlc_signatures: htlc_bitcoin_sigs,
         };
         Ok(Response::new(reply))
     }
