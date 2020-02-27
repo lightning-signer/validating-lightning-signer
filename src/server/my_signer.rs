@@ -334,6 +334,13 @@ impl MySigner {
         })
     }
 
+    pub fn channel_exists(&self, node_id: &PublicKey, channel_id: &ChannelId)
+                          -> bool {
+        self.with_channel_do(node_id, channel_id, |opt_chan| {
+            return !opt_chan.is_none()
+        })
+    }
+
     pub fn get_per_commitment_point(&self, node_id: &PublicKey, channel_id: &ChannelId, secp_ctx: &Secp256k1<SignOnly>, commitment_number: u64) -> Result<PublicKey, Status> {
         let point: Result<PublicKey, Status> = self.with_channel(&node_id, &channel_id, |opt_chan| {
             let chan = opt_chan.ok_or(Status::invalid_argument("no such channel"))?;
@@ -349,6 +356,34 @@ impl MySigner {
                 Status::invalid_argument("no such node"))?;
             Ok(node.get_bip32_key().clone())
         })
+    }
+
+    pub fn get_channel_basepoints(&self,
+                                  node_id: &PublicKey,
+                                  channel_id: &ChannelId,
+                                  channel_nonce: &Vec<u8>)
+                                  -> Result<ChannelPublicKeys, Status> {
+        // WORKAROUND - c-lightning calls get_channel_basepoints
+        // before new_channel.  Work around this by synthesizing a
+        // new_channel call if we don't already have a channel created
+        // for this channel_id.
+        if !self.channel_exists(node_id, channel_id) {
+            let channel_value: u64 = 0;
+            self.new_channel(node_id,
+                             channel_value,
+                             Some(channel_nonce.clone()),
+                             Some(channel_id.clone()),
+                                false)
+                .map_err(|_| Status::invalid_argument("failed to create channel"))?;
+        }
+
+        let retval: Result<ChannelPublicKeys, Status> =
+            self.with_channel(node_id, channel_id, |opt_chan| {
+                let chan = opt_chan.ok_or_else(
+                    || Status::invalid_argument("no such node/channel"))?;
+                Ok(chan.keys.pubkeys().clone())
+            });
+        retval
     }
 
     pub fn ready_channel(&self,
@@ -639,6 +674,7 @@ mod tests {
 
     use crate::util::crypto_utils::public_key_from_raw;
     use crate::util::test_utils::*;
+    use crate::server::driver::channel_nonce_to_id;
 
     use super::*;
 
@@ -858,6 +894,79 @@ mod tests {
         let node_id = pubkey_from_secret_hex("0101010101010101010101010101010101010101010101010101010101010101", &secp_ctx);
         assert!(signer.new_channel(&node_id, 1000, None, None, true).is_err());
         Ok(())
+    }
+
+    fn check_basepoints(basepoints: &ChannelPublicKeys) {
+        assert_eq!(
+            hex::encode(basepoints.funding_pubkey.serialize().to_vec()),
+            "02868b7bc9b6d307509ed97758636d2d3628970bbd3bd36d279f8d3cde8ccd45ae");
+        assert_eq!(
+            hex::encode(basepoints.revocation_basepoint.serialize().to_vec()),
+            "02982b69bb2d70b083921cbc862c0bcf7761b55d7485769ddf81c2947155b1afe4");
+        assert_eq!(
+            hex::encode(basepoints.payment_basepoint.serialize().to_vec()),
+            "026bb6655b5e0b5ff80d078d548819f57796013b09de8085ddc04b49854ae1e483");
+        assert_eq!(
+            hex::encode(basepoints.delayed_payment_basepoint.serialize().to_vec()),
+            "0291dfb201bc87a2da8c7ffe0a7cf9691962170896535a7fd00d8ee4406a405e98");
+        assert_eq!(
+            hex::encode(basepoints.htlc_basepoint.serialize().to_vec()),
+            "02c0c8ff7278e50bd07d7b80c109621d44f895e216400a7e95b09f544eb3fafee2");
+    }
+
+    #[test]
+    fn get_channel_basepoints_test() {
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(hex::decode(
+            "6c696768746e696e672d32000000000000000000000000000000000000000000")
+                             .unwrap().as_slice());
+        let node_id = signer.new_node_from_seed(&seed);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_value = 10 * 1000 * 1000;
+
+        let channel_id =
+            signer.new_channel(
+                &node_id,
+                channel_value,
+                Some((&channel_nonce).clone()),
+                None,
+                true)
+            .expect("new_channel");
+
+        let basepoints =
+            signer.get_channel_basepoints(
+                &node_id,
+                &channel_id,
+                &channel_nonce)
+            .unwrap();
+
+        check_basepoints(&basepoints);
+    }
+
+    #[test]
+    fn get_channel_basepoints_with_new_channel_workaround_test() {
+        // use remotesigner::ChannelNonce;
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(hex::decode(
+            "6c696768746e696e672d32000000000000000000000000000000000000000000")
+                             .unwrap().as_slice());
+        let node_id = signer.new_node_from_seed(&seed);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_id = channel_nonce_to_id(&channel_nonce);
+
+        // WORKAROUND - Call get_channel_basepoints without first
+        // creating the channel.  Channel will get created implicitly.
+
+        let basepoints =
+            signer.get_channel_basepoints(
+                &node_id,
+                &channel_id,
+                &channel_nonce)
+            .unwrap();
+
+        check_basepoints(&basepoints);
     }
 
     #[test]

@@ -43,9 +43,16 @@ impl MySigner {
     }
 
     fn public_key(&self, arg: Option<PubKey>) -> Result<PublicKey, Status> {
-        let pubkey = arg.ok_or_else(|| self.invalid_argument("missing pubkey"))?;
+        let pubkey = arg.ok_or_else(
+            || self.invalid_argument("missing pubkey"))?;
         public_key_from_raw(pubkey.data.as_slice())
-            .map_err(|e| self.invalid_argument(format!("could not deserialize pubkey - {}", e)))
+            .map_err(|e| self.invalid_argument(
+                format!("could not deserialize pubkey - {}", e)))
+    }
+
+    // Converts secp256k1::PublicKey into remotesigner::PubKey
+    fn to_pubkey(&self, arg: PublicKey) -> PubKey {
+        PubKey { data: arg.serialize().to_vec() }
     }
 
     // NOTE - this "channel_id" does *not* correspond to the
@@ -54,24 +61,30 @@ impl MySigner {
         let nonce = channel_nonce.as_ref()
             .ok_or_else(|| self.invalid_argument("missing channel nonce"))?
             .data.clone();
-        // Impedance mismatch - we want a 32 byte channel ID for internal use
-        // Hash the client supplied channel nonce
-        let mut digest = Sha256::new();
-        digest.input(nonce.as_slice());
-        let mut result = [0u8; 32];
-        digest.result(&mut result);
-        Ok(ChannelId(result))
+        let res = channel_nonce_to_id(&nonce);
+        Ok(res)
     }
 
     fn convert_htlcs(&self, msg_htlcs: &Vec<HtlcInfo>) -> Result<Vec<HTLCInfo>, Status> {
         let mut htlcs = Vec::new();
         for h in msg_htlcs.iter() {
             let hash = h.payment_hash.as_slice().try_into()
-                .map_err(|_| self.invalid_argument("could not decode payment hash"))?;
+                .map_err(|_| self.invalid_argument(
+                    "could not decode payment hash"))?;
             htlcs.push(HTLCInfo { value: h.value, payment_hash: PaymentHash(hash), cltv_expiry: h.cltv_expiry });
         }
         Ok(htlcs)
     }
+}
+
+pub fn channel_nonce_to_id(nonce: &Vec<u8>) -> ChannelId {
+    // Impedance mismatch - we want a 32 byte channel ID for internal use
+    // Hash the client supplied channel nonce
+    let mut digest = Sha256::new();
+    digest.input(nonce.as_slice());
+    let mut result = [0u8; 32];
+    digest.result(&mut result);
+    ChannelId(result)
 }
 
 #[tonic::async_trait]
@@ -140,6 +153,42 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
+    async fn get_channel_basepoints(
+        &self, request: Request<GetChannelBasepointsRequest>)
+        -> Result<Response<GetChannelBasepointsReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = self.node_id(msg.node_id)?;
+        let channel_id = self.channel_id(&msg.channel_nonce)?;
+        log_info!(self, "ENTER get_channel_basepoints({}/{})",
+                  node_id, channel_id);
+
+        // WORKAROUND - We need to derive and pass the channel_nonce
+        // in case this call needs to create the channel.
+        let channel_nonce = msg.channel_nonce
+            .ok_or_else(|| self.invalid_argument("missing channel_nonce"))?
+            .data;
+
+        let bps =
+            self.get_channel_basepoints(&node_id,
+                                        &channel_id,
+                                        &channel_nonce)?;
+
+        let basepoints = Basepoints {
+            revocation: Some(self.to_pubkey(bps.revocation_basepoint)),
+            payment: Some(self.to_pubkey(bps.payment_basepoint)),
+            htlc: Some(self.to_pubkey(bps.htlc_basepoint)),
+            delayed_payment: Some(
+                self.to_pubkey(bps.delayed_payment_basepoint)),
+            funding_pubkey: Some(self.to_pubkey(bps.funding_pubkey)),
+        };
+
+        log_info!(self, "REPLY get_channel_basepoints({}/{}) basepoints={:?}",
+                  node_id, channel_id, &basepoints);
+        Ok(Response::new(GetChannelBasepointsReply {
+            basepoints: Some(basepoints),
+        }))
+    }
+
     async fn ready_channel(&self, request: Request<ReadyChannelRequest>)
                            -> Result<Response<ReadyChannelReply>, Status> {
         let msg = request.into_inner();
@@ -184,16 +233,6 @@ impl Signer for MySigner {
             correct: false
         };
         Ok(Response::new(reply))
-    }
-
-    async fn get_channel_basepoints(&self, request: Request<GetChannelBasepointsRequest>) -> Result<Response<GetChannelBasepointsReply>, Status> {
-        let msg = request.into_inner();
-        let node_id = self.node_id(msg.node_id)?;
-        let channel_id = self.channel_id(&msg.channel_nonce)?;
-        log_error!(self, "NOT IMPLEMENTED get_channel_basepoints({}/{})", node_id, channel_id);
-        Ok(Response::new(GetChannelBasepointsReply {
-            basepoints: None,
-        }))
     }
 
     async fn get_per_commitment_point(&self, request: Request<GetPerCommitmentPointRequest>) -> Result<Response<GetPerCommitmentPointReply>, Status> {
@@ -346,6 +385,7 @@ impl Signer for MySigner {
         let reply = SignatureReply {
             signature: Some(BitcoinSignature { data: sig_data }),
         };
+        // TODO - need REPLY log here.
         Ok(Response::new(reply))
     }
 

@@ -139,17 +139,24 @@ impl MyKeysManager {
             "per-peer seed".as_bytes(),
             channel_nonce,
         );
-        let keys_buf = hkdf_sha256_keys(&channel_seed, hkdf_info.as_bytes(), &[]);
+
+        let keys_buf =
+            hkdf_sha256_keys(&channel_seed, hkdf_info.as_bytes(), &[]);
         let mut ndx = 0;
-        let funding_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
+        let funding_key =
+            SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
-        let revocation_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
+        let revocation_base_key =
+            SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
-        let htlc_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
+        let htlc_base_key =
+            SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
-        let payment_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
+        let payment_base_key =
+            SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
-        let delayed_payment_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
+        let delayed_payment_base_key =
+            SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
         let commitment_seed = keys_buf[ndx..ndx + 32].try_into().unwrap();
         let secp_ctx = Secp256k1::signing_only();
