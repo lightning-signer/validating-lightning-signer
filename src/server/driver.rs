@@ -235,22 +235,44 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn get_per_commitment_point(&self, request: Request<GetPerCommitmentPointRequest>) -> Result<Response<GetPerCommitmentPointReply>, Status> {
+    async fn get_per_commitment_point(
+        &self,
+        request: Request<GetPerCommitmentPointRequest>)
+        -> Result<Response<GetPerCommitmentPointReply>, Status> {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.node_id)?;
         let channel_id = self.channel_id(&msg.channel_nonce)?;
-        log_info!(self, "ENTER get_per_commitment_point({}/{})", node_id, channel_id);
+        log_info!(self, "ENTER get_per_commitment_point({}/{})",
+                  node_id, channel_id);
         let secp_ctx = Secp256k1::signing_only();
         let commitment_number = msg.n;
 
-        let point = self.get_per_commitment_point(&node_id, &channel_id, &secp_ctx, commitment_number);
+        let pointdata =
+            self.get_per_commitment_point(
+                &node_id, &channel_id, &secp_ctx, commitment_number)
+            .map_err(|_| self.invalid_argument(
+                "get_per_commitment_point failed"))?
+            .serialize().to_vec();
+
+        let mut secretdata: Vec<u8> = vec![];
+        if commitment_number >= 2 {
+            secretdata =
+                self.get_per_commitment_secret(
+                    &node_id, &channel_id, &secp_ctx, commitment_number - 2)
+            .map_err(|_| self.invalid_argument(
+                "get_per_commitment_secret failed"))?
+                [..].to_vec();
+        }
+
         let reply = GetPerCommitmentPointReply {
-            per_commitment_point: Some(PubKey{
-                data: (point?).serialize().to_vec()
-            }),
-            old_secret: Some(Secret{ data: vec![] }), // TODO
+            per_commitment_point: Some(PubKey { data: pointdata.clone(), }),
+            old_secret: Some(Secret{ data: secretdata.clone() }), // TODO
         };
-        log_info!(self, "REPLY get_per_commitment_point({}/{})", node_id, channel_id);
+        log_info!(self,
+                  "REPLY get_per_commitment_point({}/{}) point={} oldsecret={}",
+                  node_id, channel_id,
+                  hex::encode(&pointdata),
+                  hex::encode(&secretdata));
         Ok(Response::new(reply))
     }
 
