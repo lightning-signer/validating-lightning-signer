@@ -31,18 +31,22 @@ service Signer {
   rpc ReadyChannel (ReadyChannelRequest)
     returns (ReadyChannelReply);
 
-  // BOLT #2 - Channel Close
+  // BOLT #2 - Channel Close - phase 1
   rpc SignMutualCloseTx (SignMutualCloseTxRequest)
     returns (SignatureReply);
+
+  // BOLT #2 - Channel Close - phase 2
+  rpc SignMutualCloseTxPhase2 (SignMutualCloseTxPhase2Request)
+  returns (CloseTxSignatureReply);
 
   // BOLT #2 - Message Retransmission
   rpc CheckFutureSecret (CheckFutureSecretRequest)
     returns (CheckFutureSecretReply);
-  
+
   // BOLT #3 - Key Derivation
   rpc GetChannelBasepoints (GetChannelBasepointsRequest)
     returns (GetChannelBasepointsReply);
-    
+
   // BOLT #3 - Per-commitment Secret Requirements
   rpc GetPerCommitmentPoint (GetPerCommitmentPointRequest)
     returns (GetPerCommitmentPointReply);
@@ -50,27 +54,27 @@ service Signer {
   // BOLT #3 - Funding Transaction
   rpc SignFundingTx (SignFundingTxRequest)
     returns (SignFundingTxReply);
-    
+
   // BOLT #3 - Commitment Transaction, phase 1
   rpc SignRemoteCommitmentTx (SignRemoteCommitmentTxRequest)
     returns (SignatureReply);
 
-  // BOLT #3 - Commitment Transaction and attached HTLCs, phase 1
+  // BOLT #3 - Commitment Transaction and attached HTLCs, phase 2
   rpc SignRemoteCommitmentTxPhase2 (SignRemoteCommitmentTxPhase2Request)
     returns (CommitmentTxSignatureReply);
 
   // BOLT #3 - Commitment Transaction, phase 1
   rpc SignCommitmentTx (SignCommitmentTxRequest)
     returns (SignatureReply);
-    
+
   // BOLT #3 - HTLC Outputs, phase 1
   rpc SignLocalHTLCTx (SignLocalHTLCTxRequest)
     returns (SignatureReply);
-    
+
   // BOLT #5 - Unilateral Close Handling, phase 1
   rpc SignDelayedPaymentToUs (SignDelayedPaymentToUsRequest)
     returns (SignatureReply);
-    
+
   // BOLT #3 - HTLC Outputs, phase 1
   rpc SignRemoteHTLCTx (SignRemoteHTLCTxRequest)
     returns (SignatureReply);
@@ -78,7 +82,7 @@ service Signer {
   // BOLT #3 - HTLC Outputs, phase 1
   rpc SignRemoteHTLCToUs (SignRemoteHTLCToUsRequest)
     returns (SignatureReply);
-    
+
   // BOLT #5 - Unilateral Close Handling, phase 1
   rpc SignPenaltyToUs (SignPenaltyToUsRequest)
     returns (SignatureReply);
@@ -542,21 +546,55 @@ message CommitmentTxSignatureReply {
   repeated BitcoinSignature htlc_signatures = 2;
 }
 
+message SignMutualCloseTxPhase2Request {
+  NodeId node_id = 1;
+
+  ChannelNonce channel_nonce = 2;
+
+  // Value to us in satoshi, may be zero if dust
+  uint64 to_local_value = 3;
+
+  // Value to them in satoshi, may be zero if dust
+  uint64 to_remote_value = 4;
+}
+
+message CloseTxSignatureReply {
+  BitcoinSignature signature = 1;
+}
+
+
 // Information required to create HTLC output and a follow-up HTLC transaction
 message HTLCInfo {
+  // The value in satoshis
   uint64 value = 1;
   bytes payment_hash = 2;
   uint32 cltv_expiry = 3;
 }
 
-// Information required to construct a commitment transaction
+// Information required to construct a commitment transaction.
+//
+// The notions of "local" "remote", "offered" and "received" are from the point of view of the transaction.
+// For example, when signing a remote commitment tx, "local" is the remote peer.
 message CommitmentInfo {
+  // Feerate, for building HTLC transactions
   uint32 feerate_per_kw = 1;
+
+  // Commitment number
   uint64 n = 2;
+
+  // Value to local in satoshi
   uint64 to_local_value = 4;
+
+  // Value to remote in satoshi
   uint64 to_remote_value = 5;
+
+  // Per-commitment point local to the transaction
   PubKey per_commitment_point = 6;
+
+  // Offered HTLC info
   repeated HTLCInfo offered_htlcs = 10;
+
+  // Received HTLC info
   repeated HTLCInfo received_htlcs = 11;
 }
 
