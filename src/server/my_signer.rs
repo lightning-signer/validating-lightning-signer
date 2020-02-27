@@ -743,21 +743,35 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn sign_remote_commitment_tx_test() {
-        let signer = MySigner::new();
+    fn make_channel_pubkeys() -> ChannelPublicKeys {
+        ChannelPublicKeys {
+            funding_pubkey: make_test_pubkey(104),
+            revocation_basepoint: make_test_pubkey(100),
+            payment_basepoint: make_test_pubkey(101),
+            delayed_payment_basepoint: make_test_pubkey(102),
+            htlc_basepoint: make_test_pubkey(103),
+        }
+    }
+
+    fn init_node_and_channel(signer: &MySigner, channel_value: u64) -> (PublicKey, ChannelId) {
         let mut seed = [0; 32];
         seed.copy_from_slice(hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000").unwrap().as_slice());
         let node_id = signer.new_node_from_seed(&seed);
         let channel_nonce = "nonce1".as_bytes().to_vec();
+        (node_id, signer.new_channel(&node_id, channel_value, Some(channel_nonce), None, true)
+            .expect("new_channel"))
+    }
+
+    #[test]
+    fn sign_remote_commitment_tx_test() {
+        let signer = MySigner::new();
         let channel_value = 300;
-        let channel_id = signer.new_channel(&node_id, channel_value, Some(channel_nonce), None, true)
-            .expect("new_channel");
+        let (node_id, channel_id) = init_node_and_channel(&signer, channel_value);
+
         let remote_percommitment_point = make_test_pubkey(10);
         let to_remote_pubkey = make_test_pubkey(1);
         let revocation_key = make_test_pubkey(2);
         let to_local_delayed_key = make_test_pubkey(3);
-        let remote_funding_pubkey = make_test_pubkey(4);
         let funding_txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
         let funding_outpoint = OutPoint { txid: funding_txid, vout: 0 };
         let to_remote_address = payload_for_p2wpkh(&to_remote_pubkey);
@@ -771,15 +785,9 @@ mod tests {
             offered_htlcs: vec![],
             received_htlcs: vec![]
         };
-        let keys = ChannelPublicKeys {
-            funding_pubkey: remote_funding_pubkey,
-            revocation_basepoint: make_test_pubkey(100),
-            payment_basepoint: make_test_pubkey(101),
-            delayed_payment_basepoint: make_test_pubkey(102),
-            htlc_basepoint: make_test_pubkey(103),
-        };
+        let remote_keys = make_channel_pubkeys();
         signer.ready_channel(&node_id, &channel_id,
-                             &keys, 5u16,
+                             &remote_keys, 5u16,
                              &vec! [],
                              funding_outpoint).expect("accept");
         let (tx, output_scripts, _) =
@@ -795,13 +803,14 @@ mod tests {
             signer.sign_remote_commitment_tx(&node_id, &channel_id,
                                              &tx, output_witscripts,
                                              &remote_percommitment_point,
-                                             &remote_funding_pubkey, channel_value)
+                                             &remote_keys.funding_pubkey, channel_value)
             .expect("sign");
         assert_eq!(hex::encode(tx.txid()),
                    "6867b2d5ddff80cc3f52d3206ad7601bc5fb9f0baf2ec8e9a0ddc29ae50fb1c9");
 
         let funding_pubkey = get_channel_funding_pubkey(signer, &node_id, &channel_id);
-        let channel_funding_redeemscript = make_funding_redeemscript(&funding_pubkey, &remote_funding_pubkey);
+        let channel_funding_redeemscript =
+            make_funding_redeemscript(&funding_pubkey, &remote_keys.funding_pubkey);
 
         check_signature(&tx, 0, ser_signature, &funding_pubkey, channel_value, &channel_funding_redeemscript);
     }
@@ -809,27 +818,16 @@ mod tests {
     #[test]
     fn sign_remote_commitment_tx_phase2_test() {
         let signer = MySigner::new();
-        let mut seed = [0; 32];
-        seed.copy_from_slice(hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000").unwrap().as_slice());
-        let node_id = signer.new_node_from_seed(&seed);
-        let channel_nonce = "nonce1".as_bytes().to_vec();
         let channel_value = 300;
+        let (node_id, channel_id) = init_node_and_channel(&signer, channel_value);
 
-        let channel_id = signer.new_channel(&node_id, channel_value, Some(channel_nonce), None, true)
-            .expect("new_channel");
         let remote_percommitment_point = make_test_pubkey(10);
-        let remote_funding_pubkey = make_test_pubkey(4);
         let funding_txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
         let funding_outpoint = OutPoint { txid: funding_txid, vout: 0 };
-        let keys = ChannelPublicKeys {
-            funding_pubkey: remote_funding_pubkey,
-            revocation_basepoint: make_test_pubkey(100),
-            payment_basepoint: make_test_pubkey(101),
-            delayed_payment_basepoint: make_test_pubkey(102),
-            htlc_basepoint: make_test_pubkey(103),
-        };
+        let remote_keys = make_channel_pubkeys();
+
         signer.ready_channel(&node_id, &channel_id,
-                             &keys, 5u16,
+                             &remote_keys, 5u16,
                              &vec! [],
                              funding_outpoint).expect("accept");
         let (tx, _, _) =
@@ -856,7 +854,8 @@ mod tests {
                    "f65952efef66e5927e75d21740e6b67cdd64bb23f88aa41fa7853c3e071d6897");
 
         let funding_pubkey = get_channel_funding_pubkey(signer, &node_id, &channel_id);
-        let channel_funding_redeemscript = make_funding_redeemscript(&funding_pubkey, &remote_funding_pubkey);
+        let channel_funding_redeemscript =
+            make_funding_redeemscript(&funding_pubkey, &remote_keys.funding_pubkey);
 
         check_signature(&tx, 0, ser_signature, &funding_pubkey, channel_value, &channel_funding_redeemscript);
     }
@@ -864,28 +863,17 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_phase2_test() {
         let signer = MySigner::new();
-        let mut seed = [0; 32];
-        seed.copy_from_slice(hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000").unwrap().as_slice());
-        let node_id = signer.new_node_from_seed(&seed);
-        let channel_nonce = "nonce1".as_bytes().to_vec();
         let channel_value = 300;
+        let (node_id, channel_id) = init_node_and_channel(&signer, channel_value);
 
-        let channel_id = signer.new_channel(&node_id, channel_value, Some(channel_nonce), None, true)
-            .expect("new_channel");
-        let remote_funding_pubkey = make_test_pubkey(4);
         let funding_txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
         let funding_outpoint = OutPoint { txid: funding_txid, vout: 0 };
-        let keys = ChannelPublicKeys {
-            funding_pubkey: remote_funding_pubkey,
-            revocation_basepoint: make_test_pubkey(100),
-            payment_basepoint: make_test_pubkey(101),
-            delayed_payment_basepoint: make_test_pubkey(102),
-            htlc_basepoint: make_test_pubkey(103),
-        };
+        let remote_keys = make_channel_pubkeys();
+
         let remote_shutdown_script =
             payload_for_p2wpkh(&make_test_pubkey(11)).script_pubkey();
         signer.ready_channel(&node_id, &channel_id,
-                             &keys, 5u16,
+                             &remote_keys, 5u16,
                              &remote_shutdown_script.to_bytes(),
                              funding_outpoint).expect("accept");
         let tx =
@@ -904,7 +892,8 @@ mod tests {
                    "7d1618688e8a9a4cc09c94f5385a05c92a8b6662ac6e7e77eeb19a0e19070a56");
 
         let funding_pubkey = get_channel_funding_pubkey(signer, &node_id, &channel_id);
-        let channel_funding_redeemscript = make_funding_redeemscript(&funding_pubkey, &remote_funding_pubkey);
+        let channel_funding_redeemscript =
+            make_funding_redeemscript(&funding_pubkey, &remote_keys.funding_pubkey);
 
         check_signature(&tx, 0, ser_signature, &funding_pubkey, channel_value, &channel_funding_redeemscript);
     }
