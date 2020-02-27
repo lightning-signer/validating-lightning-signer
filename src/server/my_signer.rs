@@ -599,6 +599,64 @@ impl MySigner {
         })
     }
 
+    pub fn sign_local_htlc_tx(&self,
+                              node_id: &PublicKey,
+                              channel_id: &ChannelId,
+                              tx: &bitcoin::Transaction,
+                              n: u64,
+                              output_witscripts: Vec<Vec<u8>>,
+                              htlc_amount: u64)
+                              -> Result<Vec<u8>, Status> {
+        let sigvec: Result<Vec<u8>, Status> =
+            self.with_channel(node_id, channel_id, |opt_chan| {
+                let chan = opt_chan
+                    .ok_or(Status::invalid_argument("no such node/channel"))?;
+                if tx.input.len() != 1 {
+                    return Err(self.invalid_argument("tx.input.len() != 1"))
+                }
+                if tx.output.len() != 1 {
+                    return Err(self.invalid_argument("tx.output.len() != 1"))
+                }
+                if output_witscripts.len() != 1 {
+                    return Err(
+                        self.invalid_argument("output_witscripts.len() != 1"))
+                }
+
+                let secp_ctx = Secp256k1::signing_only();
+
+                let per_commitment_point =
+                    MyKeysManager::per_commitment_point(
+                        &secp_ctx,
+                        chan.keys.commitment_seed(),
+                        n);
+
+                let htlc_redeemscript =
+                    Script::from((&output_witscripts[0]).to_vec());
+
+                let htlc_sighash =
+                    Message::from_slice(
+                        &bip143::SighashComponents::new(&tx)
+                            .sighash_all(&tx.input[0],
+                                         &htlc_redeemscript,
+                                         htlc_amount)[..])
+                    .map_err(|_| self.internal_error("htlc_sighash failed"))?;
+
+                let htlc_privkey =
+                    derive_private_key(
+                        &secp_ctx,
+                        &per_commitment_point,
+                        &chan.keys.inner.htlc_base_key())
+                    .map_err(|_| self.internal_error("derive privkey failed"))?;
+
+                let mut sigvec =
+                    secp_ctx.sign(&htlc_sighash, &htlc_privkey)
+                    .serialize_der().to_vec();
+                sigvec.push(SigHashType::All as u8);
+                Ok(sigvec)
+            });
+        sigvec
+    }
+
     pub fn sign_remote_htlc_tx(&self,
                                node_id: &PublicKey,
                                channel_id: &ChannelId,
@@ -642,7 +700,7 @@ impl MySigner {
                         &secp_ctx,
                         &remote_per_commitment_point,
                         &chan.keys.inner.htlc_base_key())
-                    .expect("derive_private_key failed");
+                    .expect("derive_private_key failed"); // FIXME - use map_err
 
                 let sigobj = secp_ctx.sign(&htlc_sighash, &our_htlc_key);
                 let mut sig = sigobj.serialize_der().to_vec();
@@ -1265,6 +1323,108 @@ mod tests {
     }
 
     #[test]
+    fn sign_local_htlc_tx_test() {
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(hex::decode(
+            "6c696768746e696e672d32000000000000000000000000000000000000000000")
+                             .unwrap().as_slice());
+        let node_id = signer.new_node_from_seed(&seed);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_value = 10 * 1000 * 1000;
+        let channel_id = signer.new_channel(
+            &node_id, channel_value, Some(channel_nonce), None, true)
+            .expect("new_channel");
+
+        let commitment_txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let feerate_per_kw = 1000;
+        let to_self_delay = 32;
+        let htlc = HTLCOutputInCommitment {
+            offered: true,
+            amount_msat: 1 * 1000 * 1000,
+            cltv_expiry: 2 << 16,
+            payment_hash: PaymentHash([1; 32]),
+            transaction_output_index: Some(0),
+        };
+
+        let secp_ctx_all = Secp256k1::new();
+        let secp_ctx_signonly = Secp256k1::signing_only();
+
+        let n: u64 = 1;
+
+        let per_commitment_point =
+            signer.get_per_commitment_point(
+                &node_id,
+                &channel_id,
+                &secp_ctx_signonly,
+                n)
+            .expect("point");
+
+        let a_delayed_payment_base = make_test_pubkey(2);
+        let b_revocation_base = make_test_pubkey(3);
+
+        let keys =
+            TxCreationKeys::new(
+                &secp_ctx_all,
+                &per_commitment_point,
+                &a_delayed_payment_base,
+                &make_test_pubkey(4),		// a_htlc_base
+                &b_revocation_base,
+                &make_test_pubkey(5),		// b_payment_base
+                &make_test_pubkey(6))		// b_htlc_base
+            .expect("new TxCreationKeys");
+
+        let a_delayed_payment_key =
+            derive_public_key(
+                &secp_ctx_all,
+                &per_commitment_point,
+                &a_delayed_payment_base)
+            .expect("a_delayed_payment_key");
+
+        let revocation_key =
+            derive_public_revocation_key(
+                &secp_ctx_all,
+                &per_commitment_point,
+                &b_revocation_base)
+            .expect("revocation_key");
+
+        let htlc_tx =
+            build_htlc_transaction(
+                &commitment_txid,
+                feerate_per_kw,
+                to_self_delay,
+                &htlc,
+                &a_delayed_payment_key,
+                &revocation_key);
+
+        let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
+
+        let htlc_amount = 10 * 1000;
+        let output_witscripts = vec![htlc_redeemscript.to_bytes()];
+
+        let sigvec =
+            signer.sign_local_htlc_tx(
+                &node_id,
+                &channel_id,
+                &htlc_tx,
+                n,
+                output_witscripts,
+                htlc_amount)
+            .unwrap();
+
+        let htlc_pubkey =
+            get_channel_htlc_pubkey(
+                signer, &node_id, &channel_id, &per_commitment_point);
+
+        check_signature(&htlc_tx,
+                        0,
+                        sigvec,
+                        &htlc_pubkey,
+                        htlc_amount,
+                        &htlc_redeemscript);
+    }
+
+    #[test]
     fn sign_remote_htlc_tx_test() {
         let signer = MySigner::new();
         let mut seed = [0; 32];
@@ -1282,11 +1442,11 @@ mod tests {
         let feerate_per_kw = 1000;
         let to_self_delay = 32;
         let htlc = HTLCOutputInCommitment {
-			offered: true,
-			amount_msat: 1 * 1000 * 1000,
-			cltv_expiry: 2 << 16,
-			payment_hash: PaymentHash([1; 32]),
-			transaction_output_index: Some(0),
+            offered: true,
+            amount_msat: 1 * 1000 * 1000,
+            cltv_expiry: 2 << 16,
+            payment_hash: PaymentHash([1; 32]),
+            transaction_output_index: Some(0),
         };
 
         let remote_per_commitment_point = make_test_pubkey(10);
@@ -1315,7 +1475,7 @@ mod tests {
                 &a_delayed_payment_base)
             .expect("a_delayed_payment_key");
 
-		let revocation_key =
+        let revocation_key =
             derive_public_revocation_key(
                 &secp_ctx,
                 &per_commitment_point,
@@ -1331,7 +1491,7 @@ mod tests {
                 &a_delayed_payment_key,
                 &revocation_key);
 
-		let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
+        let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
 
         let htlc_amount = 10 * 1000;
         let output_witscripts = vec![htlc_redeemscript.to_bytes()];
