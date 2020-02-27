@@ -22,14 +22,14 @@ use crate::util::crypto_utils::public_key_from_raw;
 use super::remotesigner;
 
 impl MySigner {
-    fn invalid_argument(&self, msg: impl Into<String>) -> Status {
+    pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "invalid argument {}", &s);
         Status::invalid_argument(s)
     }
 
     #[allow(dead_code)]
-    fn internal_error(&self, msg: impl Into<String>) -> Status {
+    pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "internal error {}", &s);
         Status::internal(s)
@@ -365,13 +365,36 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_local_htlc_tx(&self, request: Request<SignLocalHtlcTxRequest>) -> Result<Response<SignatureReply>, Status> {
+    async fn sign_local_htlc_tx(&self, request: Request<SignLocalHtlcTxRequest>)
+                                -> Result<Response<SignatureReply>, Status> {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.node_id)?;
-        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let channel_id = self.channel_id(&msg.channel_nonce)?;
+        log_info!(self, "ENTER sign_local_htlc_tx({}/{})", node_id, channel_id);
+        let reqtx = msg.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
+
+        let tx: bitcoin::Transaction =
+            deserialize(reqtx.raw_tx_bytes.as_slice())
+            .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
+
+        let htlc_amount = reqtx.input_descs[0].output.as_ref()
+            .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
+            .value as u64;
+
+        let sigvec =
+            self.sign_local_htlc_tx(&node_id,
+                                    &channel_id,
+                                    &tx,
+                                    msg.n,
+                                    reqtx.output_witscripts,
+                                    htlc_amount)?;
+
         let reply = SignatureReply {
-            signature: None
+            signature: Some(BitcoinSignature { data: sigvec.clone() })
         };
+        log_info!(self,
+                  "REPLY sign_local_htlc_tx({}/{}) sig={}",
+                  node_id, channel_id, hex::encode(&sigvec));
         Ok(Response::new(reply))
     }
 
@@ -393,7 +416,8 @@ impl Signer for MySigner {
         let channel_id = self.channel_id(&msg.channel_nonce)?;
         log_info!(self, "ENTER sign_remote_htlc_tx({}/{})",
                   node_id, channel_id);
-        let reqtx = msg.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
+        let reqtx = msg.tx
+            .ok_or_else(|| self.invalid_argument("missing tx"))?;
 
         let tx_res: Result<bitcoin::Transaction, encode::Error> =
             deserialize(reqtx.raw_tx_bytes.as_slice());
