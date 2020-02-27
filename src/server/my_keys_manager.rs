@@ -15,7 +15,14 @@ use lightning::util::logger::Logger;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 
 use crate::util::byte_utils;
-use crate::util::crypto_utils::{bip32_key, build_commitment_secret, channels_seed, hkdf_sha256, hkdf_sha256_keys, node_keys};
+use crate::util::crypto_utils::{
+    bip32_key,
+    build_commitment_secret,
+    channels_seed,
+    hkdf_sha256,
+    hkdf_sha256_keys,
+    node_keys,
+};
 
 pub const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;
 
@@ -123,12 +130,18 @@ impl MyKeysManager {
         &self.bip32_key
     }
 
-    pub fn per_commitment_secret(commitment_seed: &[u8; 32], idx: u64) -> SecretKey {
-        build_commitment_secret(commitment_seed, INITIAL_COMMITMENT_NUMBER - idx)
+    pub fn per_commitment_secret(commitment_seed: &[u8; 32], idx: u64)
+                                 -> SecretKey {
+        build_commitment_secret(commitment_seed,
+                                INITIAL_COMMITMENT_NUMBER - idx)
     }
 
-    pub fn per_commitment_point(secp_ctx: &Secp256k1<SignOnly>, commitment_seed: &[u8; 32], idx: u64) -> PublicKey {
-        PublicKey::from_secret_key(secp_ctx, &MyKeysManager::per_commitment_secret(commitment_seed, idx))
+    pub fn per_commitment_point(secp_ctx: &Secp256k1<SignOnly>,
+                                commitment_seed: &[u8; 32],
+                                idx: u64) -> PublicKey {
+        PublicKey::from_secret_key(
+            secp_ctx,
+            &MyKeysManager::per_commitment_secret(commitment_seed, idx))
     }
 
     pub(crate) fn get_channel_keys_with_nonce(&self, channel_nonce: &[u8],

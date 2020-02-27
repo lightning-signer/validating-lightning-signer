@@ -341,13 +341,38 @@ impl MySigner {
         })
     }
 
-    pub fn get_per_commitment_point(&self, node_id: &PublicKey, channel_id: &ChannelId, secp_ctx: &Secp256k1<SignOnly>, commitment_number: u64) -> Result<PublicKey, Status> {
-        let point: Result<PublicKey, Status> = self.with_channel(&node_id, &channel_id, |opt_chan| {
-            let chan = opt_chan.ok_or(Status::invalid_argument("no such channel"))?;
-            let seed = chan.keys.commitment_seed();
-            Ok(MyKeysManager::per_commitment_point(&secp_ctx, seed, commitment_number))
-        });
+    pub fn get_per_commitment_point(&self,
+                                    node_id: &PublicKey,
+                                    channel_id: &ChannelId,
+                                    secp_ctx: &Secp256k1<SignOnly>,
+                                    commitment_number: u64)
+                                    -> Result<PublicKey, Status> {
+        let point: Result<PublicKey, Status> =
+            self.with_channel(&node_id, &channel_id, |opt_chan| {
+                let chan = opt_chan
+                    .ok_or(Status::invalid_argument("no such channel"))?;
+                let seed = chan.keys.commitment_seed();
+                Ok(MyKeysManager::per_commitment_point(
+                    &secp_ctx, seed, commitment_number))
+            });
         point
+    }
+
+    pub fn get_per_commitment_secret(&self,
+                                     node_id: &PublicKey,
+                                     channel_id: &ChannelId,
+                                     _secp_ctx: &Secp256k1<SignOnly>,
+                                     commitment_number: u64)
+                                     -> Result<SecretKey, Status> {
+        let secret: Result<SecretKey, Status> =
+            self.with_channel(&node_id, &channel_id, |opt_chan| {
+                let chan = opt_chan
+                    .ok_or(Status::invalid_argument("no such channel"))?;
+                let seed = chan.keys.commitment_seed();
+                Ok(MyKeysManager::per_commitment_secret(
+                    seed, commitment_number))
+            });
+        secret
     }
 
     pub fn xkey(&self, node_id: &PublicKey) -> Result<ExtendedPrivKey, Status> {
@@ -967,6 +992,43 @@ mod tests {
             .unwrap();
 
         check_basepoints(&basepoints);
+    }
+
+    #[test]
+    fn get_per_commitment_point_and_secret_test() {
+        let secp_ctx = Secp256k1::signing_only();
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(hex::decode(
+            "6c696768746e696e672d32000000000000000000000000000000000000000000")
+                             .unwrap().as_slice());
+        let node_id = signer.new_node_from_seed(&seed);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_value = 10 * 1000 * 1000;
+        let channel_id = signer.new_channel(
+            &node_id, channel_value, Some(channel_nonce), None, true)
+            .expect("new_channel");
+
+        let point =
+            signer.get_per_commitment_point(
+                &node_id,
+                &channel_id,
+                &secp_ctx,
+                1)
+            .expect("point");
+
+        let secret =
+            signer.get_per_commitment_secret(
+                &node_id,
+                &channel_id,
+                &secp_ctx,
+                1)
+            .expect("secret");
+
+        let derived_point =
+            PublicKey::from_secret_key(&Secp256k1::new(), &secret);
+
+        assert_eq!(point, derived_point);
     }
 
     #[test]
