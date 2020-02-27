@@ -9,7 +9,7 @@ use bitcoin::{Address, Network, OutPoint, Script, SigHashType};
 use bitcoin::util::bip143;
 use bitcoin::util::bip143::SighashComponents;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
-use bitcoin::util::psbt::serialize::Serialize;
+use bitcoin::util::psbt::serialize::{Deserialize, Serialize};
 use bitcoin_hashes::core::fmt::{Error, Formatter};
 use bitcoin_hashes::Hash;
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
@@ -23,7 +23,7 @@ use secp256k1::ecdh::SharedSecret;
 use tonic::Status;
 
 use crate::server::my_keys_manager::{INITIAL_COMMITMENT_NUMBER, MyKeysManager};
-use crate::tx::tx::{build_commitment_tx, CommitmentInfo, CommitmentInfo2, get_commitment_transaction_number_obscure_factor, HTLCInfo, sign_commitment};
+use crate::tx::tx::{build_close_tx, build_commitment_tx, CommitmentInfo, CommitmentInfo2, get_commitment_transaction_number_obscure_factor, HTLCInfo, sign_commitment};
 use crate::util::crypto_utils::{derive_public_key, derive_public_revocation_key, payload_for_p2wpkh};
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::invoice_utils;
@@ -48,7 +48,7 @@ impl fmt::Display for ChannelId {
 
 pub struct RemoteChannelConfig {
     pub to_self_delay: u16,
-    pub shutdown_script: Vec<u8>,
+    pub shutdown_script: Script,
     pub funding_outpoint: OutPoint,
 }
 
@@ -110,11 +110,12 @@ impl Channel {
     }
 
     pub fn accept_remote_config(&mut self, remote_to_self_delay: u16,
+                                shutdown_script: Script,
                                 funding_outpoint: OutPoint) {
         self.remote_config = Some(RemoteChannelConfig {
             to_self_delay: remote_to_self_delay,
-            shutdown_script: vec![],
-            funding_outpoint: funding_outpoint
+            shutdown_script,
+            funding_outpoint
         });
     }
 
@@ -415,12 +416,16 @@ impl MySigner {
                           node_id: &PublicKey, channel_id: &ChannelId,
                           channel_points: &ChannelPublicKeys,
                           remote_to_self_delay: u16,
-                          _shutdown_script: &Vec<u8>,
+                          shutdown_script_bytes: &Vec<u8>,
                           funding_outpoint: OutPoint) -> Result<(), Status> {
         self.with_channel(node_id, channel_id, |opt_chan| {
             let chan = opt_chan.ok_or(Status::invalid_argument("no such node/channel"))?;
             chan.accept_remote_points(channel_points);
-            chan.accept_remote_config(remote_to_self_delay, funding_outpoint);
+            let shutdown_script =
+                Script::deserialize(shutdown_script_bytes.as_slice())
+                    .map_err(|_| Status::invalid_argument("could not deserialize remote shutdown script"))?;
+
+            chan.accept_remote_config(remote_to_self_delay, shutdown_script, funding_outpoint);
             Ok(())
         })
     }
@@ -517,6 +522,41 @@ impl MySigner {
                 htlc_sigs.push(htlc_sig);
             }
             Ok((sig, htlc_sigs))
+        })
+    }
+
+    pub fn get_shutdown_pubkey(&self, node_id: &PublicKey) -> Result<PublicKey, Status> {
+        self.with_node(node_id, |opt_node| {
+            let node = opt_node.ok_or_else(|| Status::invalid_argument("no such node"))?;
+            Ok(node.keys_manager.get_shutdown_pubkey())
+        })
+    }
+
+    pub fn sign_mutual_close_tx_phase2(&self,
+                                       node_id: &PublicKey, channel_id: &ChannelId,
+                                       to_local_value: u64,
+                                       to_remote_value: u64)
+                                       -> Result<Vec<u8>, Status> {
+        let shutdown_pubkey = self.get_shutdown_pubkey(node_id)?;
+
+        self.with_channel(node_id, channel_id, |opt_chan| {
+            let chan = opt_chan.ok_or_else(|| Status::invalid_argument("no such node/channel"))?;
+            let remote_config = chan.remote_config.as_ref()
+                .ok_or_else(|| Status::invalid_argument("channel not accepted yet"))?;
+            // FIXME deserialize script when provided by remote instead of here
+            let local_shutdown_script =
+                payload_for_p2wpkh(&shutdown_pubkey).script_pubkey();
+            let tx = build_close_tx(to_local_value, to_remote_value,
+                                    &local_shutdown_script,
+                                    &remote_config.shutdown_script,
+                                    remote_config.funding_outpoint);
+
+            let sig = chan.keys.sign_closing_transaction(&tx, &chan.secp_ctx)
+                .map_err(|_| Status::internal("could not sign closing tx"))?;
+            let mut bitcoin_sig = sig.serialize_der().to_vec();
+            bitcoin_sig.push(SigHashType::All as u8);
+
+            Ok(bitcoin_sig)
         })
     }
 
@@ -697,9 +737,9 @@ mod tests {
     };
     use lightning::ln::channelmanager::PaymentHash;
 
+    use crate::server::driver::channel_nonce_to_id;
     use crate::util::crypto_utils::public_key_from_raw;
     use crate::util::test_utils::*;
-    use crate::server::driver::channel_nonce_to_id;
 
     use super::*;
 
@@ -814,6 +854,54 @@ mod tests {
                 .expect("sign");
         assert_eq!(hex::encode(tx.txid()),
                    "f65952efef66e5927e75d21740e6b67cdd64bb23f88aa41fa7853c3e071d6897");
+
+        let funding_pubkey = get_channel_funding_pubkey(signer, &node_id, &channel_id);
+        let channel_funding_redeemscript = make_funding_redeemscript(&funding_pubkey, &remote_funding_pubkey);
+
+        check_signature(&tx, 0, ser_signature, &funding_pubkey, channel_value, &channel_funding_redeemscript);
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_phase2_test() {
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000").unwrap().as_slice());
+        let node_id = signer.new_node_from_seed(&seed);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_value = 300;
+
+        let channel_id = signer.new_channel(&node_id, channel_value, Some(channel_nonce), None, true)
+            .expect("new_channel");
+        let remote_funding_pubkey = make_test_pubkey(4);
+        let funding_txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let funding_outpoint = OutPoint { txid: funding_txid, vout: 0 };
+        let keys = ChannelPublicKeys {
+            funding_pubkey: remote_funding_pubkey,
+            revocation_basepoint: make_test_pubkey(100),
+            payment_basepoint: make_test_pubkey(101),
+            delayed_payment_basepoint: make_test_pubkey(102),
+            htlc_basepoint: make_test_pubkey(103),
+        };
+        let remote_shutdown_script =
+            payload_for_p2wpkh(&make_test_pubkey(11)).script_pubkey();
+        signer.ready_channel(&node_id, &channel_id,
+                             &keys, 5u16,
+                             &remote_shutdown_script.to_bytes(),
+                             funding_outpoint).expect("accept");
+        let tx =
+            {
+                let shutdown_pubkey = signer.get_shutdown_pubkey(&node_id).unwrap();
+                let local_shutdown_script =
+                    payload_for_p2wpkh(&shutdown_pubkey).script_pubkey();
+                build_close_tx(100, 200,
+                               &local_shutdown_script, &remote_shutdown_script,
+                               funding_outpoint)
+            };
+        let ser_signature =
+            signer.sign_mutual_close_tx_phase2(&node_id, &channel_id, 100, 200)
+                .expect("sign");
+        assert_eq!(hex::encode(tx.txid()),
+                   "7d1618688e8a9a4cc09c94f5385a05c92a8b6662ac6e7e77eeb19a0e19070a56");
 
         let funding_pubkey = get_channel_funding_pubkey(signer, &node_id, &channel_id);
         let channel_funding_redeemscript = make_funding_redeemscript(&funding_pubkey, &remote_funding_pubkey);

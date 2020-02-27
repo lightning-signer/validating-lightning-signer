@@ -47,6 +47,53 @@ pub fn get_commitment_transaction_number_obscure_factor(
         ((res[31] as u64) << 0*8)
 }
 
+pub fn build_close_tx(to_local_value: u64,
+                      to_remote_value: u64,
+                      local_shutdown_script: &Script,
+                      remote_shutdown_script: &Script,
+                      outpoint: OutPoint) -> Transaction {
+    let txins = {
+        let mut ins: Vec<TxIn> = Vec::new();
+        ins.push(TxIn {
+            previous_output: outpoint,
+            script_sig: Script::new(),
+            sequence: 0xffffffff,
+            witness: Vec::new(),
+        });
+        ins
+    };
+
+    let mut txouts: Vec<(TxOut, ())> = Vec::new();
+
+    if to_remote_value > 0 {
+        txouts.push((TxOut {
+            script_pubkey: remote_shutdown_script.clone(),
+            value: to_remote_value
+        }, ()));
+    }
+
+    if to_local_value > 0 {
+        txouts.push((TxOut {
+            script_pubkey: local_shutdown_script.clone(),
+            value: to_local_value
+        }, ()));
+    }
+
+    sort_outputs(&mut txouts, |_, _| { cmp::Ordering::Equal }); // Ordering doesnt matter if they used our pubkey...
+
+    let mut outputs: Vec<TxOut> = Vec::new();
+    for out in txouts.drain(..) {
+        outputs.push(out.0);
+    }
+
+    Transaction {
+        version: 2,
+        lock_time: 0,
+        input: txins,
+        output: outputs,
+    }
+}
+
 pub fn build_commitment_tx(keys: &TxCreationKeys, info: &CommitmentInfo2,
                            obscured_commitment_transaction_number: u64,
                            outpoint: OutPoint)

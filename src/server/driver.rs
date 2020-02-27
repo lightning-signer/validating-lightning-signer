@@ -225,6 +225,21 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
+    async fn sign_mutual_close_tx_phase2(&self, request: Request<SignMutualCloseTxPhase2Request>)
+                                         -> Result<Response<CloseTxSignatureReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = self.node_id(msg.node_id)?;
+        let channel_id = self.channel_id(&msg.channel_nonce)?;
+        log_info!(self, "ENTER sign_mutual_tx_phase2({}/{})", node_id, channel_id);
+
+        let sig_data =
+            self.sign_mutual_close_tx_phase2(&node_id, &channel_id,
+                                             msg.to_local_value, msg.to_remote_value)?;
+        let reply = CloseTxSignatureReply {
+            signature: Some(BitcoinSignature { data: sig_data })
+        };
+        Ok(Response::new(reply))
+    }
     async fn check_future_secret(&self, request: Request<CheckFutureSecretRequest>) -> Result<Response<CheckFutureSecretReply>, Status> {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.node_id)?;
