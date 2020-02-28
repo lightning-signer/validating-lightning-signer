@@ -331,7 +331,7 @@ message SignPenaltyToUsRequest {
 
   Transaction tx = 3;
 
-  Secret revocation_secret = 4;	// FIXME - is this remembered instead of passed?
+  Secret revocation_secret = 4;	// FIXME - should this be remembered instead?
 }
 
 // Sign a channel announcement
