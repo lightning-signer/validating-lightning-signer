@@ -8,7 +8,7 @@ use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::channelmanager::PaymentHash;
-use secp256k1::{PublicKey, Secp256k1};
+use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use tonic::{Request, Response, Status, transport::Server};
 
 use remotesigner::*;
@@ -48,6 +48,14 @@ impl MySigner {
         public_key_from_raw(pubkey.data.as_slice())
             .map_err(|e| self.invalid_argument(
                 format!("could not deserialize pubkey - {}", e)))
+    }
+
+    fn secret_key(&self, arg: Option<Secret>) -> Result<SecretKey, Status> {
+        return SecretKey::from_slice(
+            arg.ok_or_else(|| self.invalid_argument("missing secret"))?
+                .data.as_slice())
+            .map_err(|e| self.invalid_argument(
+                format!("could not deserialize secret - {}", e)));
     }
 
     // Converts secp256k1::PublicKey into remotesigner::PubKey
@@ -431,7 +439,6 @@ impl Signer for MySigner {
         log_info!(self,
                   "REPLY sign_delayed_payment_to_us({}/{}) sig={}",
                   node_id, channel_id, hex::encode(&sigvec));
-
         Ok(Response::new(reply))
     }
 
@@ -516,13 +523,41 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_penalty_to_us(&self, request: Request<SignPenaltyToUsRequest>) -> Result<Response<SignatureReply>, Status> {
+    async fn sign_penalty_to_us(
+        &self,
+        request: Request<SignPenaltyToUsRequest>)
+        -> Result<Response<SignatureReply>, Status> {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.node_id)?;
-        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let channel_id = self.channel_id(&msg.channel_nonce)?;
+        log_info!(self, "ENTER sign_penalty_to_us({}/{})",
+                  node_id, channel_id);
+        let reqtx = msg.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
+
+        let tx: bitcoin::Transaction =
+            deserialize(reqtx.raw_tx_bytes.as_slice())
+            .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
+
+        let htlc_amount = reqtx.input_descs[0].output.as_ref()
+            .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
+            .value as u64;
+
+        let revocation_secret = self.secret_key(msg.revocation_secret)?;
+
+        let sigvec =
+            self.sign_penalty_to_us(&node_id,
+                                    &channel_id,
+                                    &tx,
+                                    &revocation_secret,
+                                    reqtx.output_witscripts,
+                                    htlc_amount)?;
+
         let reply = SignatureReply {
-            signature: None
+            signature: Some(BitcoinSignature { data: sigvec.clone() }),
         };
+        log_info!(self,
+                  "REPLY sign_penalty_to_us({}/{}) sig={}",
+                  node_id, channel_id, hex::encode(&sigvec));
         Ok(Response::new(reply))
     }
 

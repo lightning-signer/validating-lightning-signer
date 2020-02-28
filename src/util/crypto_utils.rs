@@ -72,6 +72,7 @@ pub fn derive_public_key<T: secp256k1::Signing>(secp_ctx: &Secp256k1<T>, per_com
     base_point.combine(&hashkey)
 }
 
+// FIXME - copied from chan_utils, lobby to increase visibility.
 pub fn derive_public_revocation_key<T: secp256k1::Verification>(secp_ctx: &Secp256k1<T>, per_commitment_point: &PublicKey, revocation_base_point: &PublicKey) -> Result<PublicKey, secp256k1::Error> {
     let rev_append_commit_hash_key = {
         let mut sha = BitcoinSha256::engine();
@@ -93,6 +94,34 @@ pub fn derive_public_revocation_key<T: secp256k1::Verification>(secp_ctx: &Secp2
     let mut part_b = per_commitment_point.clone();
     part_b.mul_assign(&secp_ctx, &commit_append_rev_hash_key)?;
     part_a.combine(&part_b)
+}
+
+// FIXME - copied from chan_utils, lobby to increase visibility.
+pub fn derive_private_revocation_key<T: secp256k1::Signing>(secp_ctx: &Secp256k1<T>, per_commitment_secret: &SecretKey, revocation_base_secret: &SecretKey) -> Result<SecretKey, secp256k1::Error> {
+    let revocation_base_point = PublicKey::from_secret_key(&secp_ctx, &revocation_base_secret);
+    let per_commitment_point = PublicKey::from_secret_key(&secp_ctx, &per_commitment_secret);
+
+    let rev_append_commit_hash_key = {
+        let mut sha = BitcoinSha256::engine();
+        sha.input(&revocation_base_point.serialize());
+        sha.input(&per_commitment_point.serialize());
+
+        BitcoinSha256::from_engine(sha).into_inner()
+    };
+    let commit_append_rev_hash_key = {
+        let mut sha = BitcoinSha256::engine();
+        sha.input(&per_commitment_point.serialize());
+        sha.input(&revocation_base_point.serialize());
+
+        BitcoinSha256::from_engine(sha).into_inner()
+    };
+
+    let mut part_a = revocation_base_secret.clone();
+    part_a.mul_assign(&rev_append_commit_hash_key)?;
+    let mut part_b = per_commitment_secret.clone();
+    part_b.mul_assign(&commit_append_rev_hash_key)?;
+    part_a.add_assign(&part_b[..])?;
+    Ok(part_a)
 }
 
 pub fn payload_for_p2wpkh(key: &PublicKey) -> Payload {
