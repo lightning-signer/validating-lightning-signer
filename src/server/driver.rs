@@ -450,13 +450,42 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_remote_htlc_to_us(&self, request: Request<SignRemoteHtlcToUsRequest>) -> Result<Response<SignatureReply>, Status> {
+    async fn sign_remote_htlc_to_us(
+        &self,
+        request: Request<SignRemoteHtlcToUsRequest>)
+        -> Result<Response<SignatureReply>, Status> {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.node_id)?;
-        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let channel_id = self.channel_id(&msg.channel_nonce)?;
+        log_info!(self, "ENTER sign_remote_htlc_to_us({}/{})",
+                  node_id, channel_id);
+        let reqtx = msg.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
+
+        let tx: bitcoin::Transaction =
+            deserialize(reqtx.raw_tx_bytes.as_slice())
+            .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
+
+        let htlc_amount = reqtx.input_descs[0].output.as_ref()
+            .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
+            .value as u64;
+
+        let remote_per_commitment_point =
+            self.public_key(msg.remote_per_commit_point)?;
+
+        let sigvec =
+            self.sign_remote_htlc_to_us(&node_id,
+                                        &channel_id,
+                                        &tx,
+                                        reqtx.output_witscripts,
+                                        &remote_per_commitment_point,
+                                        htlc_amount)?;
+
         let reply = SignatureReply {
-            signature: None
+            signature: Some(BitcoinSignature { data: sigvec.clone() }),
         };
+        log_info!(self,
+                  "REPLY sign_remote_htlc_to_us({}/{}) sig={}",
+                  node_id, channel_id, hex::encode(&sigvec));
         Ok(Response::new(reply))
     }
 
