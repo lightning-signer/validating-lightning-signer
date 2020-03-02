@@ -24,7 +24,12 @@ use tonic::Status;
 
 use crate::server::my_keys_manager::{INITIAL_COMMITMENT_NUMBER, MyKeysManager};
 use crate::tx::tx::{build_close_tx, build_commitment_tx, CommitmentInfo, CommitmentInfo2, get_commitment_transaction_number_obscure_factor, HTLCInfo, sign_commitment};
-use crate::util::crypto_utils::{derive_public_key, derive_public_revocation_key, payload_for_p2wpkh};
+use crate::util::crypto_utils::{
+    derive_private_revocation_key,
+    derive_public_key,
+    derive_public_revocation_key,
+    payload_for_p2wpkh
+};
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::invoice_utils;
 use crate::util::test_utils::TestLogger;
@@ -819,6 +824,58 @@ impl MySigner {
         retval
     }
 
+    pub fn sign_penalty_to_us(&self,
+                              node_id: &PublicKey,
+                              channel_id: &ChannelId,
+                              tx: &bitcoin::Transaction,
+                              revocation_secret: &SecretKey,
+                              output_witscripts: Vec<Vec<u8>>,
+                              htlc_amount: u64)
+                              -> Result<Vec<u8>, Status> {
+        let sigvec: Result<Vec<u8>, Status> =
+            self.with_channel(node_id, channel_id, |opt_chan| {
+                let chan = opt_chan
+                    .ok_or(Status::invalid_argument("no such node/channel"))?;
+                if tx.input.len() != 1 {
+                    return Err(self.invalid_argument("tx.input.len() != 1"))
+                }
+                if tx.output.len() != 1 {
+                    return Err(self.invalid_argument("tx.output.len() != 1"))
+                }
+                if output_witscripts.len() != 1 {
+                    return Err(
+                        self.invalid_argument("output_witscripts.len() != 1"))
+                }
+
+                let secp_ctx = &chan.secp_ctx;
+
+                let redeemscript =
+                    Script::from((&output_witscripts[0]).to_vec());
+
+                let sighash =
+                    Message::from_slice(
+                        &bip143::SighashComponents::new(&tx)
+                            .sighash_all(&tx.input[0],
+                                         &redeemscript,
+                                         htlc_amount)[..])
+                    .map_err(|_| self.internal_error("htlc_sighash failed"))?;
+
+                let privkey =
+                    derive_private_revocation_key(
+                        secp_ctx,
+                        revocation_secret,
+                        chan.keys.revocation_base_key())
+                    .map_err(|_| self.internal_error("derive privkey failed"))?;
+
+                let mut sigvec =
+                    secp_ctx.sign(&sighash, &privkey)
+                    .serialize_der().to_vec();
+                sigvec.push(SigHashType::All as u8);
+                Ok(sigvec)
+            });
+        sigvec
+    }
+
     pub fn sign_funding_tx(&self, node_id: &PublicKey, _channel_id: &ChannelId, tx: &bitcoin::Transaction,
                            indices: &Vec<u32>, values: &Vec<u64>, iswit: &Vec<bool>) -> Result<Vec<Vec<Vec<u8>>>, Status> {
         let secp_ctx = Secp256k1::signing_only();
@@ -907,6 +964,7 @@ mod tests {
     use crate::server::driver::channel_nonce_to_id;
     use crate::util::crypto_utils::public_key_from_raw;
     use crate::util::test_utils::*;
+    use crate::tx::script::get_revokeable_redeemscript;
 
     use super::*;
 
@@ -1112,14 +1170,37 @@ mod tests {
         res.unwrap()
     }
 
+    fn get_channel_revocation_pubkey(
+        signer: MySigner,
+        node_id: &PublicKey,
+        channel_id: &ChannelId,
+        revocation_point: &PublicKey)
+        -> PublicKey {
+        let res: Result<PublicKey, ()> =
+            signer.with_channel(&node_id, &channel_id, |opt_chan| {
+                let chan = opt_chan.unwrap();
+                let secp_ctx = &chan.secp_ctx;
+                let pubkey = derive_public_revocation_key(
+                    secp_ctx,
+                    revocation_point,	// matches revocation_secret
+                    &chan.keys.inner.pubkeys().revocation_basepoint
+                ).unwrap();
+                Ok(pubkey)
+        });
+        res.unwrap()
+    }
+
     fn check_signature(tx: &bitcoin::Transaction, input_idx: usize,
                        ser_signature: Vec<u8>, pubkey: &PublicKey,
                        input_value: u64,
                        redeemscript: &Script) {
         let sighash =
-            Message::from_slice(&bip143::SighashComponents::new(&tx)
-                .sighash_all(&tx.input[input_idx], &redeemscript, input_value)[..])
-                .expect("sighash");
+            Message::from_slice(
+                &bip143::SighashComponents::new(&tx)
+                    .sighash_all(&tx.input[input_idx],
+                                 &redeemscript,
+                                 input_value)[..])
+            .expect("sighash");
         let mut der_signature = ser_signature.clone();
         der_signature.pop(); // Pop the sighash type byte
         let signature = Signature::from_der(&der_signature)
@@ -1553,20 +1634,6 @@ mod tests {
                         &htlc_redeemscript);
     }
 
-    // FIXME - this is copied from lightning::ln::chan_utils
-    fn get_revokeable_redeemscript(revocation_key: &PublicKey, to_self_delay: u16, delayed_payment_key: &PublicKey) -> Script {
-        Builder::new().push_opcode(opcodes::all::OP_IF)
-            .push_slice(&revocation_key.serialize())
-            .push_opcode(opcodes::all::OP_ELSE)
-            .push_int(to_self_delay as i64)
-            .push_opcode(opcodes::all::OP_CSV)
-            .push_opcode(opcodes::all::OP_DROP)
-            .push_slice(&delayed_payment_key.serialize())
-            .push_opcode(opcodes::all::OP_ENDIF)
-            .push_opcode(opcodes::all::OP_CHECKSIG)
-            .into_script()
-    }
-
     #[test]
     fn sign_delayed_payment_to_us_test() {
         let signer = MySigner::new();
@@ -1615,12 +1682,12 @@ mod tests {
                 &a_delayed_payment_base)
             .expect("a_delayed_payment_key");
 
-        let revocation_key =
+        let revocation_pubkey =
             derive_public_revocation_key(
                 &secp_ctx_all,
                 &per_commitment_point,
                 &b_revocation_base)
-            .expect("revocation_key");
+            .expect("revocation_pubkey");
 
         let htlc_tx =
             build_htlc_transaction(
@@ -1629,11 +1696,11 @@ mod tests {
                 to_self_delay,
                 &htlc,
                 &a_delayed_payment_key,
-                &revocation_key);
+                &revocation_pubkey);
 
         let redeemscript =
             get_revokeable_redeemscript(
-                &revocation_key,
+                &revocation_pubkey,
                 to_self_delay,
                 &a_delayed_payment_key);
 
@@ -1652,7 +1719,10 @@ mod tests {
 
         let htlc_pubkey =
             get_channel_delayed_payment_pubkey(
-                signer, &node_id, &channel_id, &per_commitment_point);
+                signer,
+                &node_id,
+                &channel_id,
+                &per_commitment_point);
 
         check_signature(&htlc_tx,
                         0,
@@ -1848,6 +1918,125 @@ mod tests {
                         &htlc_pubkey,
                         htlc_amount,
                         &htlc_redeemscript);
+    }
+
+    #[test]
+    fn sign_penalty_to_us_test() {
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(hex::decode(
+            "6c696768746e696e672d32000000000000000000000000000000000000000000")
+                             .unwrap().as_slice());
+        let node_id = signer.new_node_from_seed(&seed);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_value = 10 * 1000 * 1000;
+        let channel_id = signer.new_channel(
+            &node_id, channel_value, Some(channel_nonce), None, true)
+            .expect("new_channel");
+
+        let commitment_txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let feerate_per_kw = 1000;
+        let to_self_delay = 32;
+        let htlc = HTLCOutputInCommitment {
+            offered: true,
+            amount_msat: 1 * 1000 * 1000,
+            cltv_expiry: 2 << 16,
+            payment_hash: PaymentHash([1; 32]),
+            transaction_output_index: Some(0),
+        };
+
+        let secp_ctx = Secp256k1::new();
+        let secp_ctx_signonly = Secp256k1::signing_only();
+
+        let n: u64 = 1;
+
+        let per_commitment_point =
+            signer.get_per_commitment_point(
+                &node_id,
+                &channel_id,
+                &secp_ctx_signonly,
+                n)
+            .expect("point");
+
+        let per_commitment_secret =
+            signer.get_per_commitment_secret(
+                &node_id,
+                &channel_id,
+                &secp_ctx_signonly,
+                n)
+            .expect("point");
+
+        let a_delayed_payment_base = make_test_pubkey(2);
+
+        let a_delayed_payment_key =
+            derive_public_key(
+                &secp_ctx,
+                &per_commitment_point,
+                &a_delayed_payment_base)
+            .expect("a_delayed_payment_key");
+
+        let (b_revocation_base_point, b_revocation_base_secret) =
+            make_test_key(42);
+
+        let revocation_pubkey =
+            derive_public_revocation_key(
+                &secp_ctx,
+                &per_commitment_point,
+                &b_revocation_base_point)
+            .expect("revocation_pubkey");
+
+        let htlc_tx =
+            build_htlc_transaction(
+                &commitment_txid,
+                feerate_per_kw,
+                to_self_delay,
+                &htlc,
+                &a_delayed_payment_key,
+                &revocation_pubkey);
+
+        let redeemscript =
+            get_revokeable_redeemscript(
+                &revocation_pubkey,
+                to_self_delay,
+                &a_delayed_payment_key);
+
+        let htlc_amount = 10 * 1000;
+        let output_witscripts = vec![redeemscript.to_bytes()];
+
+        let revocation_secret =
+            derive_private_revocation_key(
+                &secp_ctx,
+                &per_commitment_secret,
+                &b_revocation_base_secret)
+            .expect("revocation_secret");
+
+        let revocation_point =
+            PublicKey::from_secret_key(&secp_ctx, &revocation_secret);
+
+        let sigvec =
+            signer.sign_penalty_to_us(
+                &node_id,
+                &channel_id,
+                &htlc_tx,
+                &revocation_secret,
+                output_witscripts,
+                htlc_amount)
+            .unwrap();
+
+        let pubkey =
+            get_channel_revocation_pubkey(
+                signer,
+                &node_id,
+                &channel_id,
+                &revocation_point
+            );
+
+        check_signature(&htlc_tx,
+                        0,
+                        sigvec,
+                        &pubkey,
+                        htlc_amount,
+                        &redeemscript);
     }
 
     #[test]
