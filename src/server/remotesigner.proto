@@ -40,50 +40,64 @@ service Signer {
   returns (CloseTxSignatureReply);
 
   // BOLT #2 - Message Retransmission
+  // Used to recover from local data loss by checking that our secret provided by the peer is correct.
   rpc CheckFutureSecret (CheckFutureSecretRequest)
     returns (CheckFutureSecretReply);
 
   // BOLT #3 - Key Derivation
+  // Get our channel basepoints and funding pubkey
   rpc GetChannelBasepoints (GetChannelBasepointsRequest)
     returns (GetChannelBasepointsReply);
 
   // BOLT #3 - Per-commitment Secret Requirements
+  // Get our current per-commitment point and the secret for the point at commitment n-2
   rpc GetPerCommitmentPoint (GetPerCommitmentPointRequest)
     returns (GetPerCommitmentPointReply);
 
   // BOLT #3 - Funding Transaction
+  // Sign the funding transaction
+  // TODO this must be done after we know the remote signature on the commitment tx - need an API call that provides this to the signer.
   rpc SignFundingTx (SignFundingTxRequest)
     returns (SignFundingTxReply);
 
   // BOLT #3 - Commitment Transaction, phase 1
+  // Sign the remote commitment tx, at commitment time
   rpc SignRemoteCommitmentTx (SignRemoteCommitmentTxRequest)
     returns (SignatureReply);
 
   // BOLT #3 - Commitment Transaction and attached HTLCs, phase 2
+  // Sign the remote commitment tx and attached HTLCs, at commitment time
   rpc SignRemoteCommitmentTxPhase2 (SignRemoteCommitmentTxPhase2Request)
     returns (CommitmentTxSignatureReply);
 
-  // BOLT #3 - Commitment Transaction, phase 1
+  // BOLT #3 - Commitment Transaction, , phase 1
+  // Sign the local commitment tx, at force-close time
   rpc SignCommitmentTx (SignCommitmentTxRequest)
     returns (SignatureReply);
 
   // BOLT #3 - HTLC Outputs, phase 1
+  // Sign an htlc-success tx spending a local HTLC output, assuming we know the preimage, at force-close time
   rpc SignLocalHTLCTx (SignLocalHTLCTxRequest)
     returns (SignatureReply);
 
   // BOLT #5 - Unilateral Close Handling, phase 1
+  // Sign a delayed to-local output - either from the commitment tx or from an HTLC, at force-close time
   rpc SignDelayedPaymentToUs (SignDelayedPaymentToUsRequest)
     returns (SignatureReply);
 
   // BOLT #3 - HTLC Outputs, phase 1
+  // Sign a remote HTLC tx, at commitment time
   rpc SignRemoteHTLCTx (SignRemoteHTLCTxRequest)
     returns (SignatureReply);
 
   // BOLT #3 - HTLC Outputs, phase 1
+  // Sign an htlc-success tx on a remote HTLC output offered to us, assuming we know the preimage, at force-close time
   rpc SignRemoteHTLCToUs (SignRemoteHTLCToUsRequest)
     returns (SignatureReply);
 
   // BOLT #5 - Unilateral Close Handling, phase 1
+  // Sign a penalty tx to us - either sweeping the to-local commitment tx output
+  // or sweeping an HTLC tx output, after the remote broadcast a revoked commitment transaction.
   rpc SignPenaltyToUs (SignPenaltyToUsRequest)
     returns (SignatureReply);
 
@@ -589,6 +603,7 @@ message CommitmentInfo {
   uint64 to_remote_value = 5;
 
   // Per-commitment point local to the transaction
+  // Omitted if this is a local transaction, because the signer can compute it.
   PubKey per_commitment_point = 6;
 
   // Offered HTLC info
