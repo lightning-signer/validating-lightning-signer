@@ -8,7 +8,7 @@ use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::channelmanager::PaymentHash;
-use secp256k1::{PublicKey, Secp256k1, SecretKey};
+use secp256k1::{PublicKey, SecretKey};
 use tonic::{Request, Response, Status, transport::Server};
 
 use remotesigner::*;
@@ -153,6 +153,7 @@ impl Signer for MySigner {
         let channel_id_result =
             self.new_channel(&node_id, msg.channel_value,
                              opt_channel_nonce, channel_id,
+                             msg.to_self_delay as u16,
                              msg.is_outbound).unwrap();
         let reply = NewChannelReply {
             channel_nonce: Some(ChannelNonce { data: channel_id_result.0.to_vec() })
@@ -293,12 +294,11 @@ impl Signer for MySigner {
         let channel_id = self.channel_id(&msg.channel_nonce)?;
         log_info!(self, "ENTER get_per_commitment_point({}/{})",
                   node_id, channel_id);
-        let secp_ctx = Secp256k1::signing_only();
         let commitment_number = msg.n;
 
         let pointdata =
             self.get_per_commitment_point(
-                &node_id, &channel_id, &secp_ctx, commitment_number)
+                &node_id, &channel_id, commitment_number)
             .map_err(|_| self.invalid_argument(
                 "get_per_commitment_point failed"))?
             .serialize().to_vec();
@@ -307,7 +307,7 @@ impl Signer for MySigner {
         if commitment_number >= 2 {
             secretdata =
                 self.get_per_commitment_secret(
-                    &node_id, &channel_id, &secp_ctx, commitment_number - 2)
+                    &node_id, &channel_id, commitment_number - 2)
             .map_err(|_| self.invalid_argument(
                 "get_per_commitment_secret failed"))?
                 [..].to_vec();
@@ -718,6 +718,37 @@ impl Signer for MySigner {
         };
         Ok(Response::new(reply))
     }
+
+    async fn sign_local_commitment_tx_phase2(&self, request: Request<SignLocalCommitmentTxPhase2Request>)
+                                             -> Result<Response<CommitmentTxSignatureReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = self.node_id(msg.node_id)?;
+        let channel_id = self.channel_id(&msg.channel_nonce)?;
+        let msg_info = msg.commitment_info
+            .ok_or_else(|| self.invalid_argument("missing commitment info"))?;
+        if msg_info.per_commitment_point.is_some() {
+            return Err(self.invalid_argument("per-commitment point must not be provided for local txs"));
+        }
+
+        let offered_htlcs = self.convert_htlcs(&msg_info.offered_htlcs)?;
+        let received_htlcs = self.convert_htlcs(&msg_info.received_htlcs)?;
+
+        let (sig, htlc_sigs) = self.sign_local_commitment_tx_phase2(
+            &node_id, &channel_id, msg_info.n,
+            msg_info.feerate_per_kw as u64,
+            msg_info.to_local_value, msg_info.to_remote_value,
+            offered_htlcs, received_htlcs
+        )?;
+
+        let htlc_bitcoin_sigs = htlc_sigs.iter()
+            .map(|s| BitcoinSignature { data: s.clone() }).collect();
+        let reply = CommitmentTxSignatureReply {
+            signature: Some(BitcoinSignature { data: sig }),
+            htlc_signatures: htlc_bitcoin_sigs,
+        };
+        Ok(Response::new(reply))
+    }
+
 }
 
 

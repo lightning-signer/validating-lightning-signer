@@ -12,7 +12,7 @@ use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::sha256::HashEngine as Sha256State;
 use lightning::chain::keysinterface::{InMemoryChannelKeys, KeysInterface};
 use lightning::util::logger::Logger;
-use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
+use secp256k1::{PublicKey, Secp256k1, SecretKey, Signing};
 
 use crate::util::byte_utils;
 use crate::util::crypto_utils::{
@@ -136,9 +136,9 @@ impl MyKeysManager {
                                 INITIAL_COMMITMENT_NUMBER - idx)
     }
 
-    pub fn per_commitment_point(secp_ctx: &Secp256k1<SignOnly>,
-                                commitment_seed: &[u8; 32],
-                                idx: u64) -> PublicKey {
+    pub fn per_commitment_point<X: Signing>(secp_ctx: &Secp256k1<X>,
+                                            commitment_seed: &[u8; 32],
+                                            idx: u64) -> PublicKey {
         PublicKey::from_secret_key(
             secp_ctx,
             &MyKeysManager::per_commitment_secret(commitment_seed, idx))
