@@ -37,7 +37,7 @@ service Signer {
 
   // BOLT #2 - Channel Close - phase 2
   rpc SignMutualCloseTxPhase2 (SignMutualCloseTxPhase2Request)
-  returns (CloseTxSignatureReply);
+    returns (CloseTxSignatureReply);
 
   // BOLT #2 - Message Retransmission
   // Used to recover from local data loss by checking that our secret provided by the peer is correct.
@@ -74,6 +74,13 @@ service Signer {
   // Sign the local commitment tx, at force-close time
   rpc SignCommitmentTx (SignCommitmentTxRequest)
     returns (SignatureReply);
+
+  // BOLT #3 - Commitment Transaction and attached HTLCs, phase 2
+  // Sign the local commitment tx and attached HTLCs, at force-close time.
+  // No further commitments can be signed on this channel.
+  rpc SignLocalCommitmentTxPhase2 (SignLocalCommitmentTxPhase2Request)
+    returns (CommitmentTxSignatureReply);
+
 
   // BOLT #3 - HTLC Outputs, phase 1
   // Sign an htlc-success tx spending a local HTLC output, assuming we know the preimage, at force-close time
@@ -552,6 +559,16 @@ message SignRemoteCommitmentTxPhase2Request {
 
   ChannelNonce channel_nonce = 2;
 
+  CommitmentInfo commitment_info = 4;
+}
+
+// Sign the local commitment
+message SignLocalCommitmentTxPhase2Request {
+  NodeId node_id = 1;
+
+  ChannelNonce channel_nonce = 2;
+
+  // per_commitment_point will not be populated
   CommitmentInfo commitment_info = 4;
 }
 
