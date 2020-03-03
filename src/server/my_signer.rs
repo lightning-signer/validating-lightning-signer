@@ -373,8 +373,8 @@ impl MySigner {
                                     -> Result<PublicKey, Status> {
         let point: Result<PublicKey, Status> =
             self.with_channel(&node_id, &channel_id, |opt_chan| {
-                let chan = opt_chan
-                    .ok_or(Status::invalid_argument("no such channel"))?;
+                let chan = opt_chan.ok_or_else(
+                    || self.invalid_argument("no such node/channel"))?;
                 let seed = chan.keys.commitment_seed();
                 Ok(MyKeysManager::per_commitment_point(
                     &chan.secp_ctx, seed, commitment_number))
@@ -389,8 +389,8 @@ impl MySigner {
                                      -> Result<SecretKey, Status> {
         let secret: Result<SecretKey, Status> =
             self.with_channel(&node_id, &channel_id, |opt_chan| {
-                let chan = opt_chan
-                    .ok_or(Status::invalid_argument("no such channel"))?;
+                let chan = opt_chan.ok_or_else(
+                    || self.invalid_argument("no such node/channel"))?;
                 let seed = chan.keys.commitment_seed();
                 Ok(MyKeysManager::per_commitment_secret(
                     seed, commitment_number))
@@ -828,6 +828,20 @@ impl MySigner {
                 Ok(sigvec)
             });
         sigvec
+    }
+
+    pub fn check_future_secret(&self,
+                               node_id: &PublicKey,
+                               channel_id: &ChannelId,
+                               n: u64,
+                               suggested: &SecretKey)
+                               -> Result<bool, Status> {
+        let secret =
+            self.get_per_commitment_secret(
+                &node_id,
+                &channel_id,
+                n)?;
+        Ok(suggested[..] == secret[..])
     }
 
     pub fn sign_delayed_payment_to_us(&self,
@@ -1585,6 +1599,50 @@ mod tests {
             PublicKey::from_secret_key(&Secp256k1::new(), &secret);
 
         assert_eq!(point, derived_point);
+    }
+
+    #[test]
+    fn get_check_future_secret_test() {
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(hex::decode(
+            "6c696768746e696e672d32000000000000000000000000000000000000000000")
+                             .unwrap().as_slice());
+        let node_id = signer.new_node_from_seed(&seed);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_value = 10 * 1000 * 1000;
+        let to_self_delay = 0u16;
+        let channel_id = signer.new_channel(
+            &node_id, channel_value, Some(channel_nonce), None,
+            to_self_delay, true)
+            .expect("new_channel");
+
+        let n: u64 = 10;
+
+        let suggested =
+            SecretKey::from_slice(hex::decode(
+                "4220531d6c8b15d66953c46b5c4d67c921943431452d5543d8805b9903c6b858")
+                                  .unwrap().as_slice()).unwrap();
+
+        let correct =
+            signer.check_future_secret(
+                &node_id,
+                &channel_id,
+                n,
+                &suggested
+            )
+            .expect("correct");
+        assert_eq!(correct, true);
+
+        let notcorrect =
+            signer.check_future_secret(
+                &node_id,
+                &channel_id,
+                n + 1,
+                &suggested
+            )
+            .expect("notcorrect");
+        assert_eq!(notcorrect, false);
     }
 
     #[test]
