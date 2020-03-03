@@ -275,13 +275,31 @@ impl Signer for MySigner {
         };
         Ok(Response::new(reply))
     }
-    async fn check_future_secret(&self, request: Request<CheckFutureSecretRequest>) -> Result<Response<CheckFutureSecretReply>, Status> {
+
+    async fn check_future_secret(
+        &self,
+        request: Request<CheckFutureSecretRequest>)
+        -> Result<Response<CheckFutureSecretReply>, Status> {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.node_id)?;
-        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let channel_id = self.channel_id(&msg.channel_nonce)?;
+        log_info!(self, "ENTER check_future_secret({}/{})",
+                  node_id, channel_id);
+        let commitment_number = msg.n;
+        let suggested = self.secret_key(msg.suggested)?;
+
+        let correct =
+            self.check_future_secret(&node_id,
+                                     &channel_id,
+                                     commitment_number,
+                                     &suggested)?;
+
         let reply = CheckFutureSecretReply {
-            correct: false
+            correct: correct
         };
+        log_info!(self,
+                  "REPLY check_future_secret({}/{}) correct={:?}",
+                  node_id, channel_id, correct);
         Ok(Response::new(reply))
     }
 
