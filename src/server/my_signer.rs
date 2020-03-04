@@ -58,6 +58,7 @@ pub struct RemoteChannelConfig {
 }
 
 pub struct Channel {
+    pub node: Arc<Node>,
     pub keys: EnforcingChannelKeys,
     pub secp_ctx: Secp256k1<All>,
     pub channel_value_satoshi: u64,
@@ -237,7 +238,7 @@ impl Debug for Node {
 
 pub struct MySigner {
     pub logger: Arc<Logger>,
-    nodes: Mutex<HashMap<PublicKey, Node>>,
+    nodes: Mutex<HashMap<PublicKey, Arc<Node>>>,
 }
 
 impl MySigner {
@@ -267,7 +268,7 @@ impl MySigner {
         };
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
-        nodes.insert(node_id, node);
+        nodes.insert(node_id, Arc::new(node));
         node_id
     }
 
@@ -284,7 +285,7 @@ impl MySigner {
         };
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
-        nodes.insert(node_id, node);
+        nodes.insert(node_id, Arc::new(node));
         node_id
     }
 
@@ -318,6 +319,7 @@ impl MySigner {
         let chan_keys =
             EnforcingChannelKeys::new(inmem_keys);
         let channel = Channel {
+            node: Arc::clone(node),
             keys: chan_keys,
             secp_ctx: Secp256k1::new(),
             channel_value_satoshi,
@@ -334,7 +336,7 @@ impl MySigner {
         where F: Fn(Option<&Node>) -> Result<T, E> {
         let nodes = self.nodes.lock().unwrap();
         let node = nodes.get(node_id);
-        f(node)
+        f(node.map(|an| an.as_ref()))
     }
 
     pub fn with_channel<F: Sized, T, E>(&self, node_id: &PublicKey,
@@ -642,10 +644,9 @@ impl MySigner {
                                        to_local_value: u64,
                                        to_remote_value: u64)
                                        -> Result<Vec<u8>, Status> {
-        let shutdown_pubkey = self.get_shutdown_pubkey(node_id)?;
-
         self.with_channel(node_id, channel_id, |opt_chan| {
             let chan = opt_chan.ok_or_else(|| Status::invalid_argument("no such node/channel"))?;
+            let shutdown_pubkey = chan.node.keys_manager.get_shutdown_pubkey();
             let remote_config = chan.remote_config.as_ref()
                 .ok_or_else(|| Status::invalid_argument("channel not accepted yet"))?;
             // FIXME deserialize script when provided by remote instead of here
