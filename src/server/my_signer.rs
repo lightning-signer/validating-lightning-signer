@@ -193,7 +193,8 @@ impl Node {
                                   -> Result<Vec<u8>, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let na_hash = Sha256dHash::hash(na);
-        let encmsg = ::secp256k1::Message::from_slice(&na_hash[..]).unwrap();
+        let encmsg = ::secp256k1::Message::from_slice(&na_hash[..])
+            .map_err(|_| Status::internal("encmsg"))?;
         let sig = secp_ctx.sign(&encmsg, &self.get_node_secret());
         let res = sig.serialize_der().to_vec();
         Ok(res)
@@ -202,7 +203,8 @@ impl Node {
     pub fn sign_channel_update(&self, cu: &Vec<u8>) -> Result<Vec<u8>, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let cu_hash = Sha256dHash::hash(cu);
-        let encmsg = ::secp256k1::Message::from_slice(&cu_hash[..]).unwrap();
+        let encmsg = ::secp256k1::Message::from_slice(&cu_hash[..])
+            .map_err(|_| Status::internal("encmsg"))?;
         let sig = secp_ctx.sign(&encmsg, &self.get_node_secret());
         let res = sig.serialize_der().to_vec();
         Ok(res)
@@ -221,7 +223,7 @@ impl Node {
 
         let secp_ctx = Secp256k1::signing_only();
         let encmsg = ::secp256k1::Message::from_slice(&hash[..])
-            .expect("Hash is 32 bytes long, same as MESSAGE_SIZE");
+            .map_err(|_| Status::internal("encmsg"))?;
         let sig = secp_ctx.sign_recoverable(&encmsg, &self.get_node_secret());
         let (rid, sig) = sig.serialize_compact();
         let mut res = sig.to_vec();
@@ -237,7 +239,7 @@ impl Node {
         let secp_ctx = Secp256k1::signing_only();
         let hash = Sha256dHash::hash(&buffer);
         let encmsg = ::secp256k1::Message::from_slice(&hash[..])
-            .map_err(|_| Status::invalid_argument("encmsg"))?;
+            .map_err(|_| Status::internal("encmsg"))?;
         let sig = secp_ctx.sign_recoverable(&encmsg, &self.get_node_secret());
         let (rid, sig) = sig.serialize_compact();
         let mut res = sig.to_vec();
@@ -1103,7 +1105,7 @@ impl MySigner {
 
     pub fn ecdh(&self, node_id: &PublicKey, other_key: &PublicKey) -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
-            let node = opt_node.ok_or(Status::invalid_argument("no such node"))?;
+            let node = opt_node.ok_or(self.invalid_argument("no such node"))?;
             let our_key = node.keys_manager.get_node_secret();
             let ss = SharedSecret::new(&other_key, &our_key);
             let res = ss[..].to_vec();
@@ -1115,7 +1117,7 @@ impl MySigner {
                                -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
             let node =
-                opt_node.ok_or(Status::invalid_argument("no such node"))?;
+                opt_node.ok_or(self.invalid_argument("no such node"))?;
             let sig = node.sign_channel_update(na)?;
             Ok(sig)
         })
@@ -1125,7 +1127,7 @@ impl MySigner {
                                -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
             let node =
-                opt_node.ok_or(Status::invalid_argument("no such node"))?;
+                opt_node.ok_or(self.invalid_argument("no such node"))?;
             let sig = node.sign_channel_update(cu)?;
             Ok(sig)
         })
@@ -1138,7 +1140,7 @@ impl MySigner {
                         -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
             let node =
-                opt_node.ok_or(Status::invalid_argument("no such node"))?;
+                opt_node.ok_or(self.invalid_argument("no such node"))?;
             let sig = node.sign_invoice(data_part, human_readable_part)?;
             Ok(sig)
         })
@@ -1150,7 +1152,7 @@ impl MySigner {
                         -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
             let node =
-                opt_node.ok_or(Status::invalid_argument("no such node"))?;
+                opt_node.ok_or(self.invalid_argument("no such node"))?;
             let sig = node.sign_message(message)?;
             Ok(sig)
         })
