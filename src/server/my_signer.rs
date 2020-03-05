@@ -1113,11 +1113,33 @@ impl MySigner {
         })
     }
 
+    pub fn sign_channel_announcement(&self,
+                                     node_id: &PublicKey,
+                                     channel_id: &ChannelId,
+                                     ca: &Vec<u8>)
+                               -> Result<(Vec<u8>, Vec<u8>), Status> {
+        let secp_ctx = Secp256k1::signing_only();
+        let ca_hash = Sha256dHash::hash(ca);
+        let encmsg = ::secp256k1::Message::from_slice(&ca_hash[..])
+            .map_err(|_| self.internal_error("encmsg"))?;
+        self.with_channel(&node_id, &channel_id, |opt_chan| {
+            let chan = opt_chan.ok_or_else(
+                || self.invalid_argument("no such node/channel"))?;
+            let nsigvec = secp_ctx.sign(&encmsg,
+                                        &chan.node.get_node_secret())
+                .serialize_der().to_vec();
+            let bsigvec = secp_ctx.sign(&encmsg,
+                                        &chan.keys.inner.funding_key())
+                .serialize_der().to_vec();
+            Ok((nsigvec, bsigvec))
+        })
+    }
+
     pub fn sign_node_announcement(&self, node_id: &PublicKey, na: &Vec<u8>)
                                -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
-            let node =
-                opt_node.ok_or(self.invalid_argument("no such node"))?;
+            let node = opt_node
+                .ok_or_else(|| self.invalid_argument("no such node"))?;
             let sig = node.sign_channel_update(na)?;
             Ok(sig)
         })
@@ -1126,8 +1148,8 @@ impl MySigner {
     pub fn sign_channel_update(&self, node_id: &PublicKey, cu: &Vec<u8>)
                                -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
-            let node =
-                opt_node.ok_or(self.invalid_argument("no such node"))?;
+            let node = opt_node
+                .ok_or_else(|| self.invalid_argument("no such node"))?;
             let sig = node.sign_channel_update(cu)?;
             Ok(sig)
         })
@@ -1139,8 +1161,8 @@ impl MySigner {
                         human_readable_part: &String)
                         -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
-            let node =
-                opt_node.ok_or(self.invalid_argument("no such node"))?;
+            let node = opt_node
+                .ok_or_else(|| self.invalid_argument("no such node"))?;
             let sig = node.sign_invoice(data_part, human_readable_part)?;
             Ok(sig)
         })
@@ -1151,8 +1173,8 @@ impl MySigner {
                         message: &Vec<u8>)
                         -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
-            let node =
-                opt_node.ok_or(self.invalid_argument("no such node"))?;
+            let node = opt_node
+                .ok_or_else(|| self.invalid_argument("no such node"))?;
             let sig = node.sign_message(message)?;
             Ok(sig)
         })
@@ -2495,13 +2517,47 @@ mod tests {
     }
 
     #[test]
+    fn sign_channel_announcement_test() {
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000").unwrap().as_slice());
+        let node_id = signer.new_node_from_seed(&seed);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_value = 10 * 1000 * 1000;
+        let channel_id = signer.new_channel(
+            &node_id, channel_value, Some(channel_nonce), None, 5, true)
+            .expect("new_channel");
+        let ann = hex::decode("0123456789abcdef").unwrap();
+        let (nsigvec, bsigvec) = signer.sign_channel_announcement(
+            &node_id, &channel_id, &ann).unwrap();
+        let ca_hash = Sha256dHash::hash(&ann);
+        let encmsg = ::secp256k1::Message::from_slice(&ca_hash[..])
+            .expect("encmsg");
+        let secp_ctx = Secp256k1::new();
+        let nsig = Signature::from_der(&nsigvec).expect("nsig");
+        secp_ctx.verify(&encmsg, &nsig, &node_id)
+            .expect("verify nsig");
+        let bsig = Signature::from_der(&bsigvec).expect("bsig");
+        let _res: Result<(), Status> =
+            signer.with_channel(&node_id, &channel_id, |opt_chan| {
+                let chan = opt_chan.ok_or_else(
+                    || signer.invalid_argument("no such channel"))?;
+                let funding_pubkey =
+                    PublicKey::from_secret_key(&secp_ctx,
+                                               &chan.keys.inner.funding_key());
+                Ok(secp_ctx.verify(&encmsg, &bsig, &funding_pubkey)
+                   .expect("verify bsig"))
+            });
+    }
+
+    #[test]
     fn sign_node_announcement_test() -> Result<(), ()> {
         let signer = MySigner::new();
         let mut seed = [0; 32];
         seed.copy_from_slice(hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000").unwrap().as_slice());
         let node_id = signer.new_node_from_seed(&seed);
         let ann = hex::decode("000302aaa25e445fef0265b6ab5ec860cd257865d61ef0bbf5b3339c36cbda8b26b74e7f1dca490b65180265b64c4f554450484f544f2d2e302d3139392d67613237336639642d6d6f646465640000").unwrap();
-        let sigvec = signer.sign_channel_update(&node_id, &ann).unwrap();
+        let sigvec = signer.sign_node_announcement(&node_id, &ann).unwrap();
         assert_eq!(sigvec, hex::decode("30450221008ef1109b95f127a7deec63b190b72180f0c2692984eaf501c44b6bfc5c4e915502207a6fa2f250c5327694967be95ff42a94a9c3d00b7fa0fbf7daa854ceb872e439").unwrap());
         Ok(())
     }

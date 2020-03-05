@@ -630,14 +630,29 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_channel_announcement(&self, request: Request<SignChannelAnnouncementRequest>) -> Result<Response<SignChannelAnnouncementReply>, Status> {
+    async fn sign_channel_announcement(
+        &self,
+        request: Request<SignChannelAnnouncementRequest>)
+        -> Result<Response<SignChannelAnnouncementReply>, Status> {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.node_id)?;
-        log_error!(self, "NOT IMPLEMENTED {}", node_id);
+        let channel_id = self.channel_id(&msg.channel_nonce)?;
+        let ca = msg.channel_announcement;
+        log_info!(self, "ENTER sign_channel_announcement({}/{})",
+                  node_id, channel_id);
+
+        let (nsigvec, bsigvec) =
+            self.sign_channel_announcement(&node_id, &channel_id, &ca)?;
+
         let reply = SignChannelAnnouncementReply {
-            node_signature: None,
-            bitcoin_signature: None
+            node_signature: Some(EcdsaSignature { data: nsigvec.clone() }),
+            bitcoin_signature: Some(EcdsaSignature { data: bsigvec.clone() }),
         };
+        log_info!(self,
+                  "REPLY sign_channel_announcement({}/{}) nsig={} bsig={}",
+                  node_id, channel_id,
+                  hex::encode(&nsigvec),
+                  hex::encode(&bsigvec));
         Ok(Response::new(reply))
     }
 

@@ -361,7 +361,8 @@ message SignChannelAnnouncementRequest {
   
   ChannelNonce channel_nonce = 2;
 
-  // Channel announcement message in BOLT-7 serialization
+  // Bytes [258:] of the channel_announcement message in BOLT-7 format
+  // (skips the the message type and signature fields)
   bytes channel_announcement = 3;
 }
 
@@ -375,7 +376,8 @@ message SignChannelAnnouncementReply {
 message SignNodeAnnouncementRequest {
   NodeId node_id = 1;
 
-  // announcement message in BOLT-7 format
+  // Bytes [66:] of the node_announcement message in BOLT-7 format
+  // (skips the the message type and signature field)
   bytes node_announcement = 2;
 }
 
@@ -389,9 +391,8 @@ message SignChannelUpdateRequest {
   
   NodeId node_id = 1;
 
-  // Portion of the channel_update message which requires signing
-  // (skip the message type and the signature field, 66 byte offset).
-  // In BOLT-7 format
+  // Bytes [66:] of the channel_update message in BOLT-7 format (skips
+  // the the message type and signature field)
   bytes channel_update = 2;
 }
 
