@@ -228,6 +228,22 @@ impl Node {
         res.push(rid.to_i32() as u8);
         Ok(res)
     }
+
+    pub fn sign_message(&self,
+                        message: &Vec<u8>)
+                        -> Result<Vec<u8>, Status> {
+        let mut buffer = String::from("Lightning Signed Message:").into_bytes();
+        buffer.extend(message);
+        let secp_ctx = Secp256k1::signing_only();
+        let hash = Sha256dHash::hash(&buffer);
+        let encmsg = ::secp256k1::Message::from_slice(&hash[..])
+            .map_err(|_| Status::invalid_argument("encmsg"))?;
+        let sig = secp_ctx.sign_recoverable(&encmsg, &self.get_node_secret());
+        let (rid, sig) = sig.serialize_compact();
+        let mut res = sig.to_vec();
+        res.push(rid.to_i32() as u8);
+        Ok(res)
+    }
 }
 
 impl Debug for Node {
@@ -1127,10 +1143,24 @@ impl MySigner {
             Ok(sig)
         })
     }
+
+    pub fn sign_message(&self,
+                        node_id: &PublicKey,
+                        message: &Vec<u8>)
+                        -> Result<Vec<u8>, Status> {
+        self.with_node(&node_id, |opt_node| {
+            let node =
+                opt_node.ok_or(Status::invalid_argument("no such node"))?;
+            let sig = node.sign_message(message)?;
+            Ok(sig)
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use secp256k1::recovery::{RecoverableSignature, RecoveryId};
+
     use bitcoin::{OutPoint, TxIn, TxOut};
     use bitcoin::blockdata::opcodes;
     use bitcoin::blockdata::script::Builder;
@@ -2499,6 +2529,31 @@ mod tests {
             .unwrap();
         assert_eq!(rsig, hex::decode("739ffb91aa7c0b3d3c92de1600f7a9afccedc5597977095228232ee4458685531516451b84deb35efad27a311ea99175d10c6cdb458cd27ce2ed104eb6cf806400").unwrap());
         Ok(())
+    }
+
+    #[test]
+    fn sign_message_test() {
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000").unwrap().as_slice());
+        let node_id = signer.new_node_from_seed(&seed);
+        let message = String::from("Testing 1 2 3").into_bytes();
+        let mut rsigvec =
+            signer.sign_message(&node_id, &message)
+            .unwrap();
+        let rid = rsigvec.pop().unwrap() as i32;
+        let rsig =
+            RecoverableSignature::from_compact(
+                &rsigvec[..], RecoveryId::from_i32(rid).unwrap()).unwrap();
+        let secp_ctx = Secp256k1::new();
+        let mut buffer = String::from("Lightning Signed Message:").into_bytes();
+        buffer.extend(message);
+        let hash = Sha256dHash::hash(&buffer);
+        let encmsg = ::secp256k1::Message::from_slice(&hash[..]).unwrap();
+        let sig = rsig.to_standard();
+        let pubkey = secp_ctx.recover(&encmsg, &rsig).unwrap();
+        assert!(secp_ctx.verify(&encmsg, &sig, &pubkey).is_ok());
+        assert!(pubkey == node_id);
     }
 
     // TODO move this elsewhere

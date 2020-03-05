@@ -699,13 +699,21 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_message(&self, request: Request<SignMessageRequest>) -> Result<Response<RecoverableNodeSignatureReply>, Status> {
-        let _msg = request.into_inner();
-//        let node_id = self.node_id(msg.node_id)?;
-        log_error!(self, "NOT IMPLEMENTED sign_message");
+    async fn sign_message(&self,
+                          request: Request<SignMessageRequest>)
+                          -> Result<Response<RecoverableNodeSignatureReply>, Status> {
+        let msg = request.into_inner();
+        let node_id = self.node_id(msg.node_id)?;
+        let message = msg.message;
+        log_info!(self, "ENTER sign_message({}) message={}",
+                  node_id, hex::encode(&message).as_str());
+        let rsigvec = self.sign_message(&node_id, &message)?;
         let reply = RecoverableNodeSignatureReply {
-            signature: None
+            signature: Some(EcdsaRecoverableSignature{data: rsigvec.clone()}),
+
         };
+        log_info!(self, "REPLY sign_message({}) rsig={}",
+                  node_id, hex::encode(&rsigvec));
         Ok(Response::new(reply))
     }
 
