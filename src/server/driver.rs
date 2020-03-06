@@ -1,8 +1,9 @@
 use std::convert::TryInto;
 
 use bitcoin;
+use bitcoin::{OutPoint, Script};
 use bitcoin::consensus::{deserialize, encode};
-use bitcoin::OutPoint;
+use bitcoin::util::psbt::serialize::Deserialize;
 use bitcoin_hashes::{Hash, sha256d};
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
@@ -220,8 +221,17 @@ impl Signer for MySigner {
             txid,
             vout: msg_outpoint.index,
         };
-        self.ready_channel(&node_id, &channel_id, &keys, msg.to_self_delay as u16, &msg.shutdown_script, funding_outpoint)?;
-        Ok(Response::new(ReadyChannelReply {}))
+        let script = Script::deserialize(&msg.shutdown_script.as_slice())
+            .map_err(|_| self.invalid_argument("could not parse script"))?;
+        let to_self_delay = msg.to_self_delay as u16;
+        self.with_existing_channel(&node_id, &channel_id, |chan| {
+            if chan.is_ready() {
+                return Err(self.invalid_argument("channel already ready"))
+            }
+            chan.ready(&keys, to_self_delay, script.clone(),
+                       funding_outpoint);
+            Ok(Response::new(ReadyChannelReply {}))
+        })
     }
 
     async fn sign_mutual_close_tx(
@@ -295,7 +305,7 @@ impl Signer for MySigner {
                                      &suggested)?;
 
         let reply = CheckFutureSecretReply {
-            correct: correct
+            correct
         };
         log_info!(self,
                   "REPLY check_future_secret({}/{}) correct={:?}",
@@ -314,32 +324,35 @@ impl Signer for MySigner {
                   node_id, channel_id);
         let commitment_number = msg.n;
 
-        let pointdata =
-            self.get_per_commitment_point(
-                &node_id, &channel_id, commitment_number)
-            .map_err(|_| self.invalid_argument(
-                "get_per_commitment_point failed"))?
-            .serialize().to_vec();
+        let (point, old_secret) =
+            self.with_existing_channel(&node_id, &channel_id, |chan| {
+                let point = chan.get_per_commitment_point(commitment_number);
+                let secret = if commitment_number > 2 {
+                    Some(chan.get_per_commitment_secret(commitment_number - 2))
+                } else {
+                    None
+                };
+                Ok((point, secret))
+            })?;
 
-        let mut secretdata: Vec<u8> = vec![];
-        if commitment_number >= 2 {
-            secretdata =
-                self.get_per_commitment_secret(
-                    &node_id, &channel_id, commitment_number - 2)
-            .map_err(|_| self.invalid_argument(
-                "get_per_commitment_secret failed"))?
-                [..].to_vec();
-        }
+        let pointdata = point.serialize().to_vec();
+
+        let old_secret_data: Option<Vec<u8>> =
+            old_secret.map(|s| s[..].to_vec());
+
+        let old_secret_reply =
+            old_secret_data.clone()
+                .map(|s| Secret { data: s.clone() });
 
         let reply = GetPerCommitmentPointReply {
-            per_commitment_point: Some(PubKey { data: pointdata.clone(), }),
-            old_secret: Some(Secret{ data: secretdata.clone() }), // TODO
+            per_commitment_point: Some(PubKey { data: pointdata.clone() }),
+            old_secret: old_secret_reply,
         };
         log_info!(self,
-                  "REPLY get_per_commitment_point({}/{}) point={} oldsecret={}",
+                  "REPLY get_per_commitment_point({}/{}) point={} oldsecret={:?}",
                   node_id, channel_id,
                   hex::encode(&pointdata),
-                  hex::encode(&secretdata));
+                  old_secret_data.map(|s| hex::encode(s.as_slice())));
         Ok(Response::new(reply))
     }
 
@@ -739,17 +752,19 @@ impl Signer for MySigner {
         let channel_id = self.channel_id(&msg.channel_nonce)?;
         let msg_info = msg.commitment_info
             .ok_or_else(|| self.invalid_argument("missing commitment info"))?;
-        let remote_per_commitment_point = self.public_key(msg_info.per_commitment_point)?;
+        let remote_per_commitment_point =
+            self.public_key(msg_info.per_commitment_point.clone())?;
 
-        let offered_htlcs = self.convert_htlcs(&msg_info.offered_htlcs)?;
-        let received_htlcs = self.convert_htlcs(&msg_info.received_htlcs)?;
-
-        let (sig, htlc_sigs) = self.sign_remote_commitment_tx_phase2(
-            &node_id, &channel_id, &remote_per_commitment_point, msg_info.n,
-            msg_info.feerate_per_kw as u64,
-            msg_info.to_local_value, msg_info.to_remote_value,
-            offered_htlcs, received_htlcs
-        )?;
+        let (sig, htlc_sigs) =
+            self.with_existing_channel(&node_id, &channel_id, |chan| {
+                let offered_htlcs = self.convert_htlcs(&msg_info.offered_htlcs)?;
+                let received_htlcs = self.convert_htlcs(&msg_info.received_htlcs)?;
+                chan.sign_remote_commitment_tx_phase2(
+                    &remote_per_commitment_point, msg_info.n,
+                    msg_info.feerate_per_kw as u64,
+                    msg_info.to_local_value, msg_info.to_remote_value,
+                    offered_htlcs, received_htlcs)
+            })?;
 
         let htlc_bitcoin_sigs = htlc_sigs.iter()
             .map(|s| BitcoinSignature { data: s.clone() }).collect();
