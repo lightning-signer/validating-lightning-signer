@@ -327,7 +327,7 @@ impl Signer for MySigner {
         let (point, old_secret) =
             self.with_existing_channel(&node_id, &channel_id, |chan| {
                 let point = chan.get_per_commitment_point(commitment_number);
-                let secret = if commitment_number > 2 {
+                let secret = if commitment_number >= 2 {
                     Some(chan.get_per_commitment_secret(commitment_number - 2))
                 } else {
                     None
