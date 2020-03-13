@@ -9,7 +9,6 @@ use bitcoin::{Address, Network, OutPoint, Script, SigHashType};
 use bitcoin::util::bip143;
 use bitcoin::util::bip143::SighashComponents;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
-use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin_hashes::core::fmt::{Error, Formatter};
 use bitcoin_hashes::Hash;
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
@@ -33,6 +32,8 @@ use crate::util::crypto_utils::{
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::invoice_utils;
 use crate::util::test_utils::TestLogger;
+
+use super::remotesigner::SpendType;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
@@ -1057,28 +1058,46 @@ impl MySigner {
         sigvec
     }
 
-    pub fn sign_funding_tx(&self, node_id: &PublicKey, _channel_id: &ChannelId, tx: &bitcoin::Transaction,
-                           indices: &Vec<u32>, values: &Vec<u64>, iswit: &Vec<bool>) -> Result<Vec<Vec<Vec<u8>>>, Status> {
+    pub fn sign_funding_tx(&self,
+                           node_id: &PublicKey,
+                           _channel_id: &ChannelId,
+                           tx: &bitcoin::Transaction,
+                           indices: &Vec<u32>,
+                           values: &Vec<u64>,
+                           spendtypes: &Vec<SpendType>)
+                           -> Result<Vec<Vec<u8>>, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let xkey = self.xkey(node_id)?;
 
-        let mut sigs: Vec<Vec<Vec<u8>>> = Vec::new();
+        let mut sigs: Vec<Vec<u8>> = Vec::new();
         for idx in 0..tx.input.len() {
             let child_index = indices[idx];
             let value = values[idx];
-            let privkey = xkey.ckd_priv(&secp_ctx, ChildNumber::from(child_index)).unwrap().private_key;
+            let privkey =
+                xkey.ckd_priv(&secp_ctx, ChildNumber::from(child_index))
+                .unwrap().private_key;
             let pubkey = privkey.public_key(&secp_ctx);
-            let script_code = Address::p2pkh(&pubkey, privkey.network).script_pubkey();
-            let sighash = if iswit[idx] {
-                Message::from_slice(&SighashComponents::new(&tx).sighash_all(&tx.input[idx], &script_code, value)[..])
-                    .unwrap()
-            } else {
-                Message::from_slice(&tx.signature_hash(0, &script_code, 0x01)[..]).unwrap()
-            };
-            let mut sig = secp_ctx.sign(&sighash, &privkey.key).serialize_der().to_vec();
+            let script_code =
+                Address::p2pkh(&pubkey, privkey.network).script_pubkey();
+            let sighash = match spendtypes[idx] {
+                SpendType::P2pkh =>
+                    Message::from_slice(
+                        &tx.signature_hash(0, &script_code, 0x01)[..])
+                    .map_err(|_| Status::internal("p2pkh sighash failed")),
+                SpendType::P2wpkh =>
+                    Message::from_slice(
+                        &SighashComponents::new(&tx)
+                            .sighash_all(&tx.input[idx],
+                                         &script_code, value)[..])
+                    .map_err(|_| Status::internal("p2wpkh sighash failed")),
+                _ => Err(self.invalid_argument(
+                    format!("unsupported spend_type: {}",
+                            spendtypes[idx] as i32)))
+            }?;
+            let mut sig =
+                secp_ctx.sign(&sighash, &privkey.key).serialize_der().to_vec();
             sig.push(SigHashType::All as u8);
-            let stack = vec![sig, pubkey.serialize()];
-            sigs.push(stack);
+            sigs.push(sig);
         }
         Ok(sigs)
     }
@@ -1163,12 +1182,13 @@ impl MySigner {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{OutPoint, TxIn, TxOut};
     use bitcoin::blockdata::opcodes;
     use bitcoin::blockdata::script::Builder;
     use bitcoin::consensus::deserialize;
     use bitcoin::hashes::{Hash, sha256d};
     use bitcoin::util::bip143;
+    use bitcoin::util::psbt::serialize::Serialize;
+    use bitcoin::{OutPoint, TxIn, TxOut};
     use lightning::ln::chan_utils::{
         build_htlc_transaction,
         get_htlc_redeemscript,
@@ -1176,6 +1196,7 @@ mod tests {
     };
     use lightning::ln::channelmanager::PaymentHash;
     use secp256k1::recovery::{RecoverableSignature, RecoveryId};
+    use secp256k1::SignOnly;
 
     use crate::server::driver::channel_nonce_to_id;
     use crate::tx::script::get_revokeable_redeemscript;
@@ -1463,6 +1484,14 @@ mod tests {
             .expect("verify");
     }
 
+    fn input_pubkey(secp_ctx: &Secp256k1<SignOnly>,
+                    xkey: ExtendedPrivKey,
+                    n: u32) -> Vec<u8> {
+        xkey.ckd_priv(secp_ctx, ChildNumber::from(n))
+            .unwrap().private_key.public_key(&secp_ctx)
+            .serialize()
+    }
+
     #[test]
     fn new_channel_test() -> Result<(), ()> {
         let signer = MySigner::new();
@@ -1664,7 +1693,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_funding_tx_test() -> Result<(), ()> {
+    fn sign_funding_tx_p2wpkh_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MySigner::new();
         let node_id = signer.new_node();
@@ -1694,21 +1723,24 @@ mod tests {
                 value: 300,
             }]
         };
-        let iswits = vec! [true, true];
+        let spendtypes = vec! [SpendType::P2wpkh, SpendType::P2wpkh];
 
-        let sigs = signer.sign_funding_tx(&node_id, &channel_id, &tx, &indices, &values, &iswits)
+        let sigs = signer.sign_funding_tx(&node_id, &channel_id, &tx, &indices, &values, &spendtypes)
             .expect("good sigs");
         assert_eq!(sigs.len(), 2);
-        assert_eq!(sigs[0].len(), 2);
-        assert_eq!(sigs[1].len(), 2);
+        assert!(sigs[0].len() > 0);
+        assert!(sigs[1].len() > 0);
 
         let address = |n: u32| {
             Address::p2wpkh(&xkey.ckd_priv(&secp_ctx, ChildNumber::from(n)).unwrap().private_key.public_key(&secp_ctx),
                             Network::Testnet)
         };
 
-        tx.input[0].witness = sigs[0].clone();
-        tx.input[1].witness = sigs[1].clone();
+        tx.input[0].witness = vec![sigs[0].clone(),
+                                   input_pubkey(&secp_ctx, xkey, indices[0])];
+        tx.input[1].witness = vec![sigs[1].clone(),
+                                   input_pubkey(&secp_ctx, xkey, indices[1])];
+
         let outs = vec! [
             TxOut { value: 100, script_pubkey: address(0).script_pubkey() },
             TxOut { value: 200, script_pubkey: address(1).script_pubkey() },
@@ -1722,7 +1754,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_funding_tx_1_test() -> Result<(), ()> {
+    fn sign_funding_tx_p2wpkh_test1() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MySigner::new();
         let node_id = signer.new_node();
@@ -1747,17 +1779,18 @@ mod tests {
                 value: 100,
             }]
         };
-        let sigs = signer.sign_funding_tx(&node_id, &channel_id, &tx, &indices, &values, &vec![true])
+        let sigs = signer.sign_funding_tx(&node_id, &channel_id, &tx, &indices, &values, &vec![SpendType::P2wpkh])
             .expect("good sigs");
         assert_eq!(sigs.len(), 1);
-        assert_eq!(sigs[0].len(), 2);
+        assert!(sigs[0].len() > 0);
 
         let address = |n: u32| {
             Address::p2wpkh(&xkey.ckd_priv(&secp_ctx, ChildNumber::from(n)).unwrap().private_key.public_key(&secp_ctx),
                             Network::Testnet)
         };
 
-        tx.input[0].witness = sigs[0].clone();
+        tx.input[0].witness = vec![sigs[0].clone(),
+                                   input_pubkey(&secp_ctx, xkey, indices[0])];
 
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec! [
@@ -1772,7 +1805,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_funding_tx_test1_nonwit() -> Result<(), ()> {
+    fn sign_funding_tx_p2pkh_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MySigner::new();
         let node_id = signer.new_node();
@@ -1797,17 +1830,21 @@ mod tests {
                 value: 100,
             }]
         };
-        let sigs = signer.sign_funding_tx(&node_id, &channel_id, &tx, &indices, &values, &vec![false])
+        let sigs = signer.sign_funding_tx(&node_id, &channel_id, &tx, &indices, &values, &vec![SpendType::P2pkh])
             .expect("good sigs");
         assert_eq!(sigs.len(), 1);
-        assert_eq!(sigs[0].len(), 2);
+        assert!(sigs[0].len() > 0);
 
         let address = |n: u32| {
             Address::p2pkh(&xkey.ckd_priv(&secp_ctx, ChildNumber::from(n)).unwrap().private_key.public_key(&secp_ctx),
                             Network::Testnet)
         };
 
-        tx.input[0].script_sig = Builder::new().push_slice(sigs[0][0].as_slice()).push_slice(sigs[0][1].as_slice()).into_script();
+        tx.input[0].script_sig =
+            Builder::new()
+            .push_slice(sigs[0].as_slice())
+            .push_slice(input_pubkey(&secp_ctx, xkey, indices[0]).as_slice())
+            .into_script();
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec! [
             TxOut { value: 100, script_pubkey: address(0).script_pubkey() },
