@@ -262,9 +262,9 @@ message SignFundingTxRequest {
 }
 
 message SignFundingTxReply {
-  // A witness stack for each of our inputs.  For inputs that are not
-  // ours, the element is None.
-  repeated WitnessStack witnesses = 1;
+  // A bitcoin signature for each of our inputs.  For inputs that
+  // are not ours, the element is None.
+  repeated BitcoinSignature signatures = 1;
 }
 
 // Sign the remote commitment
@@ -477,17 +477,13 @@ message Transaction {
   // The raw bytes of the transaction to be signed.
   bytes raw_tx_bytes = 1;
 
-  // Inner witness program for each output.
-  // Empty for p2pkh outputs.
-  repeated bytes output_witscripts = 6;
-
   // A set of sign descriptors, for each input to be signed.
   // TODO the input amount for the commitment tx should be specified
   // in NewChannel instead of here
-  repeated SignDescriptor input_descs = 2;
+  repeated InputDescriptor input_descs = 2;
   
   // A set of sign descriptors, for each output.
-  repeated SignDescriptor output_descs = 3;
+  repeated OutputDescriptor output_descs = 3;
 }
 
 // Basepoints and funding pubkey for one side of a channel
@@ -514,11 +510,6 @@ message BitcoinSignature {
   bytes data = 1;
 }
 
-// Witness stack item, for signing a segwit transaction
-message WitnessStack {
-  repeated bytes item = 1;
-}
-
 // ----------------------------------------------------------------
 
 message KeyLocator {
@@ -535,18 +526,30 @@ message TxOut {
   bytes pk_script = 2;
 }
 
-message SignDescriptor {
-  // A descriptor that precisely describes *which* key to use for
-  // signing. This may provide the raw public key directly, or require
-  // the Signer to re-derive the key according to the populated
-  // derivation path.
-  KeyLocator key_loc = 1;
-
-  // A description of the output being spent. The value and script
-  // MUST be provided.
-  TxOut output = 5;
+enum SpendType {
+  INVALID = 0;
+  P2PKH = 1;
+  P2WPKH = 3;
+  P2SH_P2WPKH = 4;
 }
 
+message InputDescriptor {
+  KeyLocator key_loc = 1;
+
+  // A description of the utxo being spent. The value and script
+  // MUST be provided.
+  TxOut prev_output = 2;
+
+  SpendType spend_type = 3;
+}
+
+message OutputDescriptor {
+  KeyLocator key_loc = 1;
+
+  // Empty for p2pkh outputs.
+  bytes witscript = 2;
+}
+  
 // PHASE 2 messages
 // ----------------
 

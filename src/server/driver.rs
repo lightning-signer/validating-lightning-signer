@@ -96,6 +96,11 @@ pub fn channel_nonce_to_id(nonce: &Vec<u8>) -> ChannelId {
     ChannelId(result)
 }
 
+pub fn collect_output_witscripts(output_descs: &Vec<OutputDescriptor>)
+                             -> Vec<Vec<u8>> {
+    output_descs.iter().map(|odsc| odsc.witscript.clone()).collect()
+}
+
 #[tonic::async_trait]
 impl Version for MySigner {
     async fn version(&self, _request: Request<VersionRequest>) -> Result<Response<VersionReply>, Status> {
@@ -252,7 +257,7 @@ impl Signer for MySigner {
         let remote_funding_pubkey =
             self.public_key(msg.remote_funding_pubkey)?;
 
-        let funding_amount = reqtx.input_descs[0].output.as_ref()
+        let funding_amount = reqtx.input_descs[0].prev_output.as_ref()
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
             .value as u64;
 
@@ -366,20 +371,26 @@ impl Signer for MySigner {
         let tx = tx_res.map_err(|e| self.invalid_argument(format!("could not deserialize tx - {}", e)))?;
         let mut indices = Vec::new();
         let mut values = Vec::new();
-        let mut iswits = Vec::new();
+        let mut spendtypes: Vec<SpendType> = Vec::new();
 
         for idx in 0..tx.input.len() {
             let child_index = reqtx.input_descs[idx].key_loc.as_ref().ok_or_else(|| self.invalid_argument("missing key_loc desc"))?.key_index as u32;
             indices.push(child_index);
-            let value = reqtx.input_descs[idx].output.as_ref().ok_or_else(|| self.invalid_argument("missing output desc"))?.value as u64;
+            let value = reqtx.input_descs[idx].prev_output.as_ref().ok_or_else(|| self.invalid_argument("missing output desc"))?.value as u64;
             values.push(value);
-            iswits.push(true);
+            spendtypes.push(
+                SpendType::from_i32(reqtx.input_descs[idx].spend_type)
+                    .ok_or_else(|| self.invalid_argument("bad spend_type"))?
+            );
         }
 
-        let sigs = self.sign_funding_tx(&node_id, &channel_id, &tx, &indices, &values, &iswits)?;
-        let witnesses = sigs.into_iter().map(|s| WitnessStack { item: s }).collect();
+        let sigvecs = self.sign_funding_tx(
+            &node_id, &channel_id, &tx, &indices, &values, &spendtypes)?;
 
-        let reply = SignFundingTxReply { witnesses };
+        let sigs = sigvecs.into_iter().map(
+            |sigvec| BitcoinSignature { data: sigvec }).collect();
+
+        let reply = SignFundingTxReply { signatures: sigs };
         log_info!(self, "REPLY sign_funding_tx({}/{})", node_id, channel_id);
         Ok(Response::new(reply))
     }
@@ -404,11 +415,14 @@ impl Signer for MySigner {
         let remote_per_commitment_point =
             self.public_key(msg.remote_per_commit_point)?;
         let channel_value_satoshis =
-            reqtx.input_descs[0].output.as_ref().unwrap().value as u64;
+            reqtx.input_descs[0].prev_output.as_ref().unwrap().value as u64;
+        let witscripts =
+            reqtx.output_descs.iter()
+            .map(|odsc| odsc.witscript.clone()).collect();
 
         let sig_data =
             self.sign_remote_commitment_tx(
-                &node_id, &channel_id, &tx, reqtx.output_witscripts,
+                &node_id, &channel_id, &tx, witscripts,
                 &remote_per_commitment_point, &remote_funding_pubkey,
                 channel_value_satoshis)?;
 
@@ -437,7 +451,7 @@ impl Signer for MySigner {
         let remote_funding_pubkey =
             self.public_key(msg.remote_funding_pubkey)?;
 
-        let funding_amount = reqtx.input_descs[0].output.as_ref()
+        let funding_amount = reqtx.input_descs[0].prev_output.as_ref()
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
             .value as u64;
 
@@ -467,16 +481,18 @@ impl Signer for MySigner {
             deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
-        let htlc_amount = reqtx.input_descs[0].output.as_ref()
+        let htlc_amount = reqtx.input_descs[0].prev_output.as_ref()
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
             .value as u64;
+
+        let witscripts = collect_output_witscripts(&reqtx.output_descs);
 
         let sigvec =
             self.sign_local_htlc_tx(&node_id,
                                     &channel_id,
                                     &tx,
                                     msg.n,
-                                    reqtx.output_witscripts,
+                                    witscripts,
                                     htlc_amount)?;
 
         let reply = SignatureReply {
@@ -503,16 +519,18 @@ impl Signer for MySigner {
             deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
-        let htlc_amount = reqtx.input_descs[0].output.as_ref()
+        let htlc_amount = reqtx.input_descs[0].prev_output.as_ref()
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
             .value as u64;
+
+        let witscripts = collect_output_witscripts(&reqtx.output_descs);
 
         let sigvec =
             self.sign_delayed_payment_to_us(&node_id,
                                             &channel_id,
                                             &tx,
                                             msg.n,
-                                            reqtx.output_witscripts,
+                                            witscripts,
                                             htlc_amount)?;
 
         let reply = SignatureReply {
@@ -544,17 +562,19 @@ impl Signer for MySigner {
             self.public_key(msg.remote_per_commit_point)?;
 
         let htlc_amount =
-            match reqtx.input_descs[0].output.as_ref() {
+            match reqtx.input_descs[0].prev_output.as_ref() {
                 Some(out) => out.value as u64,
                 None => return Err(Status::internal("missing input_desc[0]")),
             };
+
+        let witscripts = collect_output_witscripts(&reqtx.output_descs);
 
         let sig_data =
             self.sign_remote_htlc_tx(
                 &node_id,
                 &channel_id,
                 &tx,
-                reqtx.output_witscripts,
+                witscripts,
                 &remote_per_commitment_point,
                 htlc_amount,
             )?;
@@ -581,18 +601,20 @@ impl Signer for MySigner {
             deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
-        let htlc_amount = reqtx.input_descs[0].output.as_ref()
+        let htlc_amount = reqtx.input_descs[0].prev_output.as_ref()
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
             .value as u64;
 
         let remote_per_commitment_point =
             self.public_key(msg.remote_per_commit_point)?;
 
+        let witscripts = collect_output_witscripts(&reqtx.output_descs);
+
         let sigvec =
             self.sign_remote_htlc_to_us(&node_id,
                                         &channel_id,
                                         &tx,
-                                        reqtx.output_witscripts,
+                                        witscripts,
                                         &remote_per_commitment_point,
                                         htlc_amount)?;
 
@@ -620,18 +642,20 @@ impl Signer for MySigner {
             deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
-        let htlc_amount = reqtx.input_descs[0].output.as_ref()
+        let htlc_amount = reqtx.input_descs[0].prev_output.as_ref()
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
             .value as u64;
 
         let revocation_secret = self.secret_key(msg.revocation_secret)?;
+
+        let witscripts = collect_output_witscripts(&reqtx.output_descs);
 
         let sigvec =
             self.sign_penalty_to_us(&node_id,
                                     &channel_id,
                                     &tx,
                                     &revocation_secret,
-                                    reqtx.output_witscripts,
+                                    witscripts,
                                     htlc_amount)?;
 
         let reply = SignatureReply {
