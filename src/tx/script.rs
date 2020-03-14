@@ -79,6 +79,7 @@ pub fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, ValidationError> 
     }
 }
 
+// FIXME - This is copied from chan_utils.
 pub fn get_revokeable_redeemscript(revocation_key: &PublicKey, to_self_delay: u16, delayed_payment_key: &PublicKey) -> Script {
 	Builder::new().push_opcode(opcodes::all::OP_IF)
 	              .push_slice(&revocation_key.serialize())
