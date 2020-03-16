@@ -361,36 +361,70 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_funding_tx(&self, request: Request<SignFundingTxRequest>) -> Result<Response<SignFundingTxReply>, Status> {
+    async fn sign_funding_tx(&self,
+                             request: Request<SignFundingTxRequest>)
+                             -> Result<Response<SignFundingTxReply>, Status> {
         let msg = request.into_inner();
         let node_id = self.node_id(msg.node_id)?;
         let channel_id = self.channel_id(&msg.channel_nonce)?;
         log_info!(self, "ENTER sign_funding_tx({}/{})", node_id, channel_id);
         let reqtx = msg.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
-        let tx_res: Result<bitcoin::Transaction, encode::Error> = deserialize(reqtx.raw_tx_bytes.as_slice());
-        let tx = tx_res.map_err(|e| self.invalid_argument(format!("could not deserialize tx - {}", e)))?;
+        let tx_res: Result<bitcoin::Transaction, encode::Error> =
+            deserialize(reqtx.raw_tx_bytes.as_slice());
+        let tx = tx_res
+            .map_err(|e| self.invalid_argument(
+                format!("could not deserialize tx - {}", e)))?;
         let mut indices = Vec::new();
         let mut values = Vec::new();
         let mut spendtypes: Vec<SpendType> = Vec::new();
+        let mut uniclosekeys: Vec<Option<SecretKey>> = Vec::new();
 
         for idx in 0..tx.input.len() {
-            let child_index = reqtx.input_descs[idx].key_loc.as_ref().ok_or_else(|| self.invalid_argument("missing key_loc desc"))?.key_index as u32;
+            let child_index = reqtx.input_descs[idx].key_loc.as_ref()
+                .ok_or_else(|| self.invalid_argument("missing key_loc desc"))?
+                .key_index as u32;
             indices.push(child_index);
-            let value = reqtx.input_descs[idx].prev_output.as_ref().ok_or_else(|| self.invalid_argument("missing output desc"))?.value as u64;
+            let value = reqtx.input_descs[idx].prev_output.as_ref()
+                .ok_or_else(|| self.invalid_argument("missing output desc"))?
+                .value as u64;
             values.push(value);
             spendtypes.push(
                 SpendType::from_i32(reqtx.input_descs[idx].spend_type)
                     .ok_or_else(|| self.invalid_argument("bad spend_type"))?
             );
+            let closeinfo = reqtx.input_descs[idx].close_info.as_ref();
+            let uck = match closeinfo {
+                // Normal case, no unilateral_close_info present.
+                None => None,
+                // Handling a peer unilateral close from old channel.
+                Some(ci) => {
+                    let old_chan_id = self.channel_id(&ci.channel_nonce)?;
+                    // Is there a commitment_point provided?
+                    let commitment_point = match &ci.commitment_point {
+                        // No, option_static_remotekey in effect.
+                        None => None,
+                        // Yes, commitment_point provided.
+                        Some(cpoint) =>
+                            Some(self.public_key(Some(cpoint.clone()))?),
+                    };
+                    Some(self.get_unilateral_close_key(
+                        &node_id, &old_chan_id, &commitment_point)?)
+                },
+            };
+            uniclosekeys.push(uck);
         }
 
-        let sigvecs = self.sign_funding_tx(
-            &node_id, &channel_id, &tx, &indices, &values, &spendtypes)?;
+        let witvec = self.sign_funding_tx(
+            &node_id, &channel_id, &tx, &indices,
+            &values, &spendtypes, &uniclosekeys)?;
 
-        let sigs = sigvecs.into_iter().map(
-            |sigvec| BitcoinSignature { data: sigvec }).collect();
+        let wits = witvec.into_iter().map(
+            |(sigdata, pubkeydata)| Witness {
+                signature: Some(BitcoinSignature { data: sigdata }),
+                pubkey: Some(PubKey { data: pubkeydata }),
+            }).collect();
 
-        let reply = SignFundingTxReply { signatures: sigs };
+        let reply = SignFundingTxReply { witnesses: wits };
         log_info!(self, "REPLY sign_funding_tx({}/{})", node_id, channel_id);
         Ok(Response::new(reply))
     }

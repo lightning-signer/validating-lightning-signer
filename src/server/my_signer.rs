@@ -560,6 +560,30 @@ impl MySigner {
         })
     }
 
+    pub fn get_unilateral_close_key(&self,
+                                    node_id: &PublicKey,
+                                    channel_id: &ChannelId,
+                                    opt_commitment_point: &Option<PublicKey>)
+                                    -> Result<SecretKey, Status> {
+        self.with_existing_channel(&node_id, &channel_id, |chan| {
+            let secret_key = match opt_commitment_point {
+                Some(commitment_point) => {
+                    derive_private_key(
+                        &chan.secp_ctx,
+                        &commitment_point,
+                        &chan.keys.payment_base_key())
+                    .map_err(|_| self.internal_error(
+                        "derive_private_key failed"))?
+                },
+                None => {
+                    // option_static_remotekey in effect
+                    chan.keys.payment_base_key().clone()
+                },
+            };
+            Ok(secret_key)
+        })
+    }
+
     pub fn get_channel_basepoints(&self,
                                   node_id: &PublicKey,
                                   channel_id: &ChannelId,
@@ -1064,18 +1088,26 @@ impl MySigner {
                            tx: &bitcoin::Transaction,
                            indices: &Vec<u32>,
                            values: &Vec<u64>,
-                           spendtypes: &Vec<SpendType>)
-                           -> Result<Vec<Vec<u8>>, Status> {
+                           spendtypes: &Vec<SpendType>,
+                           uniclosekeys: &Vec<Option<SecretKey>>)
+                           -> Result<Vec<(Vec<u8>, Vec<u8>)>, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let xkey = self.xkey(node_id)?;
 
-        let mut sigs: Vec<Vec<u8>> = Vec::new();
+        let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for idx in 0..tx.input.len() {
             let child_index = indices[idx];
             let value = values[idx];
-            let privkey =
-                xkey.ckd_priv(&secp_ctx, ChildNumber::from(child_index))
-                .unwrap().private_key;
+            let privkey = match uniclosekeys[idx] {
+                // There was a unilateral_close_key.
+                Some(sk) => bitcoin::PrivateKey {
+                    compressed: true,
+                    network: Network::Testnet,
+                    key: sk },
+                // Derive the HD key.
+                None => xkey.ckd_priv(&secp_ctx, ChildNumber::from(child_index))
+                    .unwrap().private_key
+            };
             let pubkey = privkey.public_key(&secp_ctx);
             let script_code =
                 Address::p2pkh(&pubkey, privkey.network).script_pubkey();
@@ -1096,9 +1128,9 @@ impl MySigner {
             let mut sig = secp_ctx.sign(&sighash, &privkey.key)
                 .serialize_der().to_vec();
             sig.push(SigHashType::All as u8);
-            sigs.push(sig);
+            witvec.push((sig, pubkey.key.serialize().to_vec()));
         }
-        Ok(sigs)
+        Ok(witvec)
     }
 
     pub fn ecdh(&self, node_id: &PublicKey, other_key: &PublicKey) -> Result<Vec<u8>, Status> {
@@ -1196,7 +1228,6 @@ mod tests {
     };
     use lightning::ln::channelmanager::PaymentHash;
     use secp256k1::recovery::{RecoverableSignature, RecoveryId};
-    use secp256k1::SignOnly;
 
     use crate::server::driver::channel_nonce_to_id;
     use crate::tx::script::get_revokeable_redeemscript;
@@ -1484,14 +1515,6 @@ mod tests {
             .expect("verify");
     }
 
-    fn input_pubkey(secp_ctx: &Secp256k1<SignOnly>,
-                    xkey: ExtendedPrivKey,
-                    n: u32) -> Vec<u8> {
-        xkey.ckd_priv(secp_ctx, ChildNumber::from(n))
-            .unwrap().private_key.public_key(&secp_ctx)
-            .serialize()
-    }
-
     #[test]
     fn new_channel_test() -> Result<(), ()> {
         let signer = MySigner::new();
@@ -1726,13 +1749,13 @@ mod tests {
             }]
         };
         let spendtypes = vec! [SpendType::P2wpkh, SpendType::P2wpkh];
+        let uniclosekeys = vec![None, None];
 
-        let sigs = signer.sign_funding_tx(
-            &node_id, &channel_id, &tx, &indices, &values, &spendtypes)
+        let witvec = signer.sign_funding_tx(
+            &node_id, &channel_id, &tx, &indices,
+            &values, &spendtypes, &uniclosekeys)
             .expect("good sigs");
-        assert_eq!(sigs.len(), 2);
-        assert!(sigs[0].len() > 0);
-        assert!(sigs[1].len() > 0);
+        assert_eq!(witvec.len(), 2);
 
         let address = |n: u32| {
             Address::p2wpkh(&xkey.ckd_priv(&secp_ctx, ChildNumber::from(n))
@@ -1740,10 +1763,8 @@ mod tests {
                             .public_key(&secp_ctx), Network::Testnet)
         };
 
-        tx.input[0].witness = vec![sigs[0].clone(),
-                                   input_pubkey(&secp_ctx, xkey, indices[0])];
-        tx.input[1].witness = vec![sigs[1].clone(),
-                                   input_pubkey(&secp_ctx, xkey, indices[1])];
+        tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
+        tx.input[1].witness = vec![witvec[1].0.clone(), witvec[1].1.clone()];
 
         let outs = vec! [
             TxOut { value: 100, script_pubkey: address(0).script_pubkey() },
@@ -1786,12 +1807,13 @@ mod tests {
             }]
         };
         let spendtypes = vec! [SpendType::P2wpkh];
+        let uniclosekeys = vec![None];
 
-        let sigs = signer.sign_funding_tx(
-            &node_id, &channel_id, &tx, &indices, &values, &spendtypes)
+        let witvec = signer.sign_funding_tx(
+            &node_id, &channel_id, &tx, &indices,
+            &values, &spendtypes, &uniclosekeys)
             .expect("good sigs");
-        assert_eq!(sigs.len(), 1);
-        assert!(sigs[0].len() > 0);
+        assert_eq!(witvec.len(), 1);
 
         let address = |n: u32| {
             Address::p2wpkh(&xkey.ckd_priv(&secp_ctx, ChildNumber::from(n))
@@ -1799,12 +1821,74 @@ mod tests {
                             .public_key(&secp_ctx),Network::Testnet)
         };
 
-        tx.input[0].witness = vec![sigs[0].clone(),
-                                   input_pubkey(&secp_ctx, xkey, indices[0])];
+        tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
 
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec! [
             TxOut { value: 100, script_pubkey: address(0).script_pubkey() },
+        ];
+        println!("{:?}", &outs[0].script_pubkey);
+        let verify_result = tx.verify(|p| Some(outs[p.vout as usize].clone()));
+
+        assert!(verify_result.is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn sign_funding_tx_unilateral_close_info_test() -> Result<(), ()> {
+        let secp_ctx = Secp256k1::signing_only();
+        let signer = MySigner::new();
+        let node_id = signer.new_node();
+        let channel_id = ChannelId([1; 32]);
+        let txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let indices = vec![0u32];
+        let values = vec![100u64];
+
+        let input1 = TxIn {
+            previous_output: OutPoint { txid, vout: 0 },
+            script_sig: Script::new(),
+            sequence: 0,
+            witness: vec![]
+        };
+
+        let mut tx = bitcoin::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![input1],
+            output: vec![TxOut {
+                script_pubkey: Builder::new()
+                    .push_opcode(opcodes::all::OP_RETURN).into_script(),
+                value: 100,
+            }]
+        };
+        let spendtypes = vec! [SpendType::P2wpkh];
+
+        let uniclosekey =
+            SecretKey::from_slice(
+                hex::decode(
+                    "4220531d6c8b15d66953c46b5c4d67c921943431452d5543d8805b9903c6b858")
+                    .unwrap().as_slice()).unwrap();
+        let uniclosepubkey =
+            bitcoin::PublicKey::from_slice(&PublicKey::from_secret_key(
+                &secp_ctx, &uniclosekey).serialize()[..]).unwrap();
+        let uniclosekeys = vec![Some(uniclosekey)];
+
+        let witvec = signer.sign_funding_tx(
+            &node_id, &channel_id, &tx, &indices,
+            &values, &spendtypes, &uniclosekeys)
+            .expect("good sigs");
+        assert_eq!(witvec.len(), 1);
+
+        assert_eq!(witvec[0].1, uniclosepubkey.serialize());
+
+        let address =
+            Address::p2wpkh(&uniclosepubkey, Network::Testnet);
+
+        tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
+        println!("{:?}", tx.input[0].script_sig);
+        let outs = vec! [
+            TxOut { value: 100, script_pubkey: address.script_pubkey() },
         ];
         println!("{:?}", &outs[0].script_pubkey);
         let verify_result = tx.verify(|p| Some(outs[p.vout as usize].clone()));
@@ -1843,12 +1927,13 @@ mod tests {
             }]
         };
         let spendtypes = vec! [SpendType::P2pkh];
+        let uniclosekeys = vec![None];
 
-        let sigs = signer.sign_funding_tx(
-            &node_id, &channel_id, &tx, &indices, &values, &spendtypes)
+        let witvec = signer.sign_funding_tx(
+            &node_id, &channel_id, &tx, &indices,
+            &values, &spendtypes, &uniclosekeys)
             .expect("good sigs");
-        assert_eq!(sigs.len(), 1);
-        assert!(sigs[0].len() > 0);
+        assert_eq!(witvec.len(), 1);
 
         let address = |n: u32| {
             Address::p2pkh(&xkey.ckd_priv(&secp_ctx, ChildNumber::from(n))
@@ -1858,8 +1943,8 @@ mod tests {
 
         tx.input[0].script_sig =
             Builder::new()
-            .push_slice(sigs[0].as_slice())
-            .push_slice(input_pubkey(&secp_ctx, xkey, indices[0]).as_slice())
+            .push_slice(witvec[0].0.as_slice())
+            .push_slice(witvec[0].1.as_slice())
             .into_script();
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec! [
@@ -1901,12 +1986,13 @@ mod tests {
             }]
         };
         let spendtypes = vec! [SpendType::P2shP2wpkh];
+        let uniclosekeys = vec![None];
 
-        let sigs = signer.sign_funding_tx(
-            &node_id, &channel_id, &tx, &indices, &values, &spendtypes)
+        let witvec = signer.sign_funding_tx(
+            &node_id, &channel_id, &tx, &indices,
+            &values, &spendtypes, &uniclosekeys)
             .expect("good sigs");
-        assert_eq!(sigs.len(), 1);
-        assert!(sigs[0].len() > 0);
+        assert_eq!(witvec.len(), 1);
 
         let address = |n: u32| {
             Address::p2shwpkh(&xkey.ckd_priv(&secp_ctx, ChildNumber::from(n))
@@ -1929,9 +2015,7 @@ mod tests {
                     .into_script().as_bytes()
             ).into_script();
 
-        tx.input[0].witness =
-            vec![sigs[0].clone(),
-                 input_pubkey(&secp_ctx, xkey, indices[0])];
+        tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
 
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec! [
