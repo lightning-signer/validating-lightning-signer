@@ -262,9 +262,9 @@ message SignFundingTxRequest {
 }
 
 message SignFundingTxReply {
-  // A bitcoin signature for each of our inputs.  For inputs that
-  // are not ours, the element is None.
-  repeated BitcoinSignature signatures = 1;
+  // Witnesses for each of our inputs.  For inputs that are not
+  // ours the elements will be None.
+  repeated Witness witnesses = 1;
 }
 
 // Sign the remote commitment
@@ -533,6 +533,14 @@ enum SpendType {
   P2SH_P2WPKH = 4;
 }
 
+message UnilateralCloseInfo {
+  // Identifies the old channel closed unilaterally by the peer.
+  ChannelNonce channel_nonce = 1;
+
+  // Will be None if this is a option_static_remotekey commitment.
+  PubKey commitment_point = 2;
+}
+
 message InputDescriptor {
   KeyLocator key_loc = 1;
 
@@ -541,6 +549,9 @@ message InputDescriptor {
   TxOut prev_output = 2;
 
   SpendType spend_type = 3;
+
+  // Only provided if input from unilateral close by peer on old channel.
+  UnilateralCloseInfo close_info = 4;
 }
 
 message OutputDescriptor {
@@ -548,6 +559,12 @@ message OutputDescriptor {
 
   // Empty for p2pkh outputs.
   bytes witscript = 2;
+}
+
+message Witness {
+  BitcoinSignature signature = 1;
+
+  PubKey pubkey = 2;
 }
   
 // PHASE 2 messages
