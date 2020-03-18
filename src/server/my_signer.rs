@@ -1317,7 +1317,7 @@ impl MySigner {
     ) -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
             let node = opt_node.ok_or_else(|| self.invalid_argument("no such node"))?;
-            let sig = node.sign_channel_update(na)?;
+            let sig = node.sign_node_announcement(na)?;
             Ok(sig)
         })
     }
