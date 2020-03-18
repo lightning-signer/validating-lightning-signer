@@ -1,10 +1,10 @@
 use std::i16;
 
-use bitcoin::{blockdata, Script};
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::opcodes::Class;
-use bitcoin::blockdata::script::{Builder, Instructions};
 use bitcoin::blockdata::script::Instruction::PushBytes;
+use bitcoin::blockdata::script::{Builder, Instructions};
+use bitcoin::{blockdata, Script};
 use secp256k1::PublicKey;
 
 use crate::tx::script::ValidationError::{Mismatch, ScriptFormat, TransactionFormat};
@@ -29,23 +29,29 @@ impl Into<String> for ValidationError {
 #[inline]
 pub fn expect_op(iter: &mut Instructions, op: opcodes::All) -> Result<(), ValidationError> {
     match iter.next() {
-        Some(blockdata::script::Instruction::Op(o)) =>
-            if o == op { Ok(()) } else { Err(Mismatch()) },
-        _ => Err(Mismatch())
+        Some(blockdata::script::Instruction::Op(o)) => {
+            if o == op {
+                Ok(())
+            } else {
+                Err(Mismatch())
+            }
+        }
+        _ => Err(Mismatch()),
     }
 }
 
 #[inline]
 pub fn expect_number(iter: &mut Instructions) -> Result<i16, ValidationError> {
     match iter.next() {
-        Some(blockdata::script::Instruction::Op(op)) => {
-            match op.classify() {
-                Class::PushNum(i) => {
-                    if i < i16::MIN as i32 || i > i16::MAX as i32 { Err(Mismatch()) }
-                    else { Ok(i as i16) }
-                },
-                _ => Err(Mismatch())
+        Some(blockdata::script::Instruction::Op(op)) => match op.classify() {
+            Class::PushNum(i) => {
+                if i < i16::MIN as i32 || i > i16::MAX as i32 {
+                    Err(Mismatch())
+                } else {
+                    Ok(i as i16)
+                }
             }
+            _ => Err(Mismatch()),
         },
         Some(PushBytes(d)) => {
             if d.len() == 0 {
@@ -57,8 +63,8 @@ pub fn expect_number(iter: &mut Instructions) -> Result<i16, ValidationError> {
             } else {
                 Err(Mismatch())
             }
-        },
-        _ => Err(Mismatch())
+        }
+        _ => Err(Mismatch()),
     }
 }
 
@@ -75,20 +81,25 @@ pub fn expect_script_end(iter: &mut Instructions) -> Result<(), ValidationError>
 pub fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, ValidationError> {
     match iter.next() {
         Some(PushBytes(d)) => Ok(d.to_vec()),
-        _ => return Err(Mismatch())
+        _ => return Err(Mismatch()),
     }
 }
 
 // FIXME - This is copied from chan_utils.
-pub fn get_revokeable_redeemscript(revocation_key: &PublicKey, to_self_delay: u16, delayed_payment_key: &PublicKey) -> Script {
-	Builder::new().push_opcode(opcodes::all::OP_IF)
-	              .push_slice(&revocation_key.serialize())
-	              .push_opcode(opcodes::all::OP_ELSE)
-	              .push_int(to_self_delay as i64)
-	              .push_opcode(opcodes::all::OP_CSV)
-	              .push_opcode(opcodes::all::OP_DROP)
-	              .push_slice(&delayed_payment_key.serialize())
-	              .push_opcode(opcodes::all::OP_ENDIF)
-	              .push_opcode(opcodes::all::OP_CHECKSIG)
-	              .into_script()
+pub fn get_revokeable_redeemscript(
+    revocation_key: &PublicKey,
+    to_self_delay: u16,
+    delayed_payment_key: &PublicKey,
+) -> Script {
+    Builder::new()
+        .push_opcode(opcodes::all::OP_IF)
+        .push_slice(&revocation_key.serialize())
+        .push_opcode(opcodes::all::OP_ELSE)
+        .push_int(to_self_delay as i64)
+        .push_opcode(opcodes::all::OP_CSV)
+        .push_opcode(opcodes::all::OP_DROP)
+        .push_slice(&delayed_payment_key.serialize())
+        .push_opcode(opcodes::all::OP_ENDIF)
+        .push_opcode(opcodes::all::OP_CHECKSIG)
+        .into_script()
 }

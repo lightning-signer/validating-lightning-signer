@@ -1,27 +1,22 @@
 use std::convert::TryInto;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
-use bitcoin::{Network, Script};
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin_hashes::{Hash, HashEngine};
+use bitcoin::{Network, Script};
 use bitcoin_hashes::hash160::Hash as Hash160;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::sha256::HashEngine as Sha256State;
+use bitcoin_hashes::{Hash, HashEngine};
 use lightning::chain::keysinterface::{InMemoryChannelKeys, KeysInterface};
 use lightning::util::logger::Logger;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Signing};
 
 use crate::util::byte_utils;
 use crate::util::crypto_utils::{
-    bip32_key,
-    build_commitment_secret,
-    channels_seed,
-    hkdf_sha256,
-    hkdf_sha256_keys,
-    node_keys,
+    bip32_key, build_commitment_secret, channels_seed, hkdf_sha256, hkdf_sha256_keys, node_keys,
 };
 
 pub const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;
@@ -130,46 +125,44 @@ impl MyKeysManager {
         &self.bip32_key
     }
 
-    pub fn per_commitment_secret(commitment_seed: &[u8; 32], idx: u64)
-                                 -> SecretKey {
-        build_commitment_secret(commitment_seed,
-                                INITIAL_COMMITMENT_NUMBER - idx)
+    pub fn per_commitment_secret(commitment_seed: &[u8; 32], idx: u64) -> SecretKey {
+        build_commitment_secret(commitment_seed, INITIAL_COMMITMENT_NUMBER - idx)
     }
 
-    pub fn per_commitment_point<X: Signing>(secp_ctx: &Secp256k1<X>,
-                                            commitment_seed: &[u8; 32],
-                                            idx: u64) -> PublicKey {
+    pub fn per_commitment_point<X: Signing>(
+        secp_ctx: &Secp256k1<X>,
+        commitment_seed: &[u8; 32],
+        idx: u64,
+    ) -> PublicKey {
         PublicKey::from_secret_key(
             secp_ctx,
-            &MyKeysManager::per_commitment_secret(commitment_seed, idx))
+            &MyKeysManager::per_commitment_secret(commitment_seed, idx),
+        )
     }
 
-    pub(crate) fn get_channel_keys_with_nonce(&self, channel_nonce: &[u8],
-                                              channel_value_satoshis: u64,
-                                              hkdf_info: &str) -> InMemoryChannelKeys {
+    pub(crate) fn get_channel_keys_with_nonce(
+        &self,
+        channel_nonce: &[u8],
+        channel_value_satoshis: u64,
+        hkdf_info: &str,
+    ) -> InMemoryChannelKeys {
         let channel_seed = hkdf_sha256(
             &self.channel_seed_base,
             "per-peer seed".as_bytes(),
             channel_nonce,
         );
 
-        let keys_buf =
-            hkdf_sha256_keys(&channel_seed, hkdf_info.as_bytes(), &[]);
+        let keys_buf = hkdf_sha256_keys(&channel_seed, hkdf_info.as_bytes(), &[]);
         let mut ndx = 0;
-        let funding_key =
-            SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
+        let funding_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
-        let revocation_base_key =
-            SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
+        let revocation_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
-        let htlc_base_key =
-            SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
+        let htlc_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
-        let payment_base_key =
-            SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
+        let payment_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
-        let delayed_payment_base_key =
-            SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
+        let delayed_payment_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
         let commitment_seed = keys_buf[ndx..ndx + 32].try_into().unwrap();
         let secp_ctx = Secp256k1::signing_only();
@@ -202,9 +195,17 @@ impl KeysInterface for MyKeysManager {
         self.shutdown_pubkey.clone()
     }
 
-    fn get_channel_keys(&self, channel_id: [u8; 32],
-                        _inbound: bool, channel_value_satoshis: u64) -> InMemoryChannelKeys {
-        self.get_channel_keys_with_nonce(&channel_id, channel_value_satoshis, "rust-lightning-signer")
+    fn get_channel_keys(
+        &self,
+        channel_id: [u8; 32],
+        _inbound: bool,
+        channel_value_satoshis: u64,
+    ) -> InMemoryChannelKeys {
+        self.get_channel_keys_with_nonce(
+            &channel_id,
+            channel_value_satoshis,
+            "rust-lightning-signer",
+        )
     }
 
     fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
@@ -306,7 +307,8 @@ mod tests {
         );
 
         let secp_ctx = Secp256k1::signing_only();
-        let per_commit_point = MyKeysManager::per_commitment_point(&secp_ctx, keys.commitment_seed(), 3);
+        let per_commit_point =
+            MyKeysManager::per_commitment_point(&secp_ctx, keys.commitment_seed(), 3);
         assert!(
             hex::encode(per_commit_point.serialize().to_vec())
                 == "03b5497ca60ff3165908c521ea145e742c25dedd14f5602f3f502d1296c39618a5"

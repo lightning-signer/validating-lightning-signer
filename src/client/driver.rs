@@ -1,7 +1,7 @@
 use tonic::Request;
 
-use remotesigner::*;
 use remotesigner::signer_client::SignerClient;
+use remotesigner::*;
 
 use crate::server::remotesigner;
 
@@ -19,7 +19,9 @@ pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
 
     let init_request = Request::new(InitRequest {
         chainparams: None,
-        hsm_secret: Some(Secret{data: vec![0u8; 32]}),
+        hsm_secret: Some(Secret {
+            data: vec![0u8; 32],
+        }),
     });
 
     let response = client.init(init_request).await?;
@@ -30,8 +32,12 @@ pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
     let mut channel_id = [0u8; 32];
     channel_id[0] = 1u8;
     let new_chan_request = Request::new(NewChannelRequest {
-        node_id: Some(NodeId{data: node_id.clone()}),
-        channel_nonce: Some(ChannelNonce { data: channel_id.to_vec() }),
+        node_id: Some(NodeId {
+            data: node_id.clone(),
+        }),
+        channel_nonce: Some(ChannelNonce {
+            data: channel_id.to_vec(),
+        }),
         channel_value: 123,
         to_self_delay: 0,
         shutdown_script: vec![0u8; 0],
@@ -42,15 +48,24 @@ pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
     let channel_id = response.into_inner().channel_nonce;
 
     let per_commit_request = Request::new(GetPerCommitmentPointRequest {
-        node_id: Some(NodeId{data: node_id.clone()}),
+        node_id: Some(NodeId {
+            data: node_id.clone(),
+        }),
         channel_nonce: channel_id.clone(),
-        n: 3
+        n: 3,
     });
 
     let response = client.get_per_commitment_point(per_commit_request).await?;
-    let per_commit = response.into_inner().per_commitment_point.expect("missing per_commit").data;
+    let per_commit = response
+        .into_inner()
+        .per_commitment_point
+        .expect("missing per_commit")
+        .data;
     println!("per commit 3 {}", hex::encode(&per_commit));
-    assert!(hex::encode(&per_commit) == "03b5497ca60ff3165908c521ea145e742c25dedd14f5602f3f502d1296c39618a5");
+    assert!(
+        hex::encode(&per_commit)
+            == "03b5497ca60ff3165908c521ea145e742c25dedd14f5602f3f502d1296c39618a5"
+    );
 
     Ok(())
 }

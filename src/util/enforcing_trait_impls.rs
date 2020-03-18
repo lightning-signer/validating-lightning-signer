@@ -9,8 +9,8 @@ use lightning::ln::chan_utils::TxCreationKeys;
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 use ln::msgs;
 use secp256k1;
-use secp256k1::{Secp256k1, Signature};
 use secp256k1::key::{PublicKey, SecretKey};
+use secp256k1::{Secp256k1, Signature};
 
 /// Enforces some rules on ChannelKeys calls. Eventually we will
 /// probably want to expose a variant of this which would essentially
@@ -37,7 +37,8 @@ impl EnforcingChannelKeys {
         secp_ctx: &Secp256k1<T>,
         keys: &TxCreationKeys,
     ) {
-        let revocation_base = PublicKey::from_secret_key(secp_ctx, &self.inner.revocation_base_key());
+        let revocation_base =
+            PublicKey::from_secret_key(secp_ctx, &self.inner.revocation_base_key());
         let payment_base = PublicKey::from_secret_key(secp_ctx, &self.inner.payment_base_key());
         let htlc_base = PublicKey::from_secret_key(secp_ctx, &self.inner.htlc_base_key());
 
@@ -75,9 +76,15 @@ impl ChannelKeys for EnforcingChannelKeys {
     fn htlc_base_key(&self) -> &SecretKey {
         self.inner.htlc_base_key()
     }
-    fn commitment_seed(&self) -> &[u8; 32] { self.inner.commitment_seed() }
-	fn pubkeys(&self) -> &ChannelPublicKeys { self.inner.pubkeys() }
-    fn remote_pubkeys(&self) -> &Option<ChannelPublicKeys> { self.inner.remote_pubkeys() }
+    fn commitment_seed(&self) -> &[u8; 32] {
+        self.inner.commitment_seed()
+    }
+    fn pubkeys(&self) -> &ChannelPublicKeys {
+        self.inner.pubkeys()
+    }
+    fn remote_pubkeys(&self) -> &Option<ChannelPublicKeys> {
+        self.inner.remote_pubkeys()
+    }
 
     fn sign_remote_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,

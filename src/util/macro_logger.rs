@@ -42,7 +42,7 @@ macro_rules! function {
         }
         let name = _type_name_of(_f);
         &name[..name.len() - 3]
-    }}
+    }};
 }
 
 macro_rules! log_internal {

@@ -7,11 +7,11 @@ use std::sync::{Arc, Mutex};
 
 use bitcoin;
 use bitcoin::blockdata::block::BlockHeader;
-use bitcoin::Network;
 use bitcoin::util::hash::BitcoinHash;
-use bitcoin_hashes::Hash;
+use bitcoin::Network;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::sha256d::Hash as Sha256d;
+use bitcoin_hashes::Hash;
 use chain::chaininterface;
 use chain::keysinterface::KeysInterface;
 use chain::transaction::OutPoint;
@@ -25,7 +25,7 @@ use ln::features::InitFeatures;
 use ln::msgs;
 use ln::msgs::{ChannelMessageHandler, RoutingMessageHandler};
 use ln::router::{Route, Router};
-use rand::{Rng, thread_rng};
+use rand::{thread_rng, Rng};
 use secp256k1::key::PublicKey;
 use secp256k1::Secp256k1;
 use util::errors::APIError;
@@ -611,7 +611,11 @@ pub fn close_channel<'a, 'b, S: ChannelKeys>(
     channel_id: &[u8; 32],
     funding_tx: bitcoin::Transaction,
     close_inbound_first: bool,
-) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, bitcoin::Transaction) {
+) -> (
+    msgs::ChannelUpdate,
+    msgs::ChannelUpdate,
+    bitcoin::Transaction,
+) {
     let (node_a, broadcaster_a, struct_a) = if close_inbound_first {
         (
             &inbound_node.node,

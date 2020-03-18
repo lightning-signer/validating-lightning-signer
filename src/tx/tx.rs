@@ -1,31 +1,38 @@
 use std::cmp;
 use std::cmp::Ordering;
 
-use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut};
-use bitcoin::blockdata::opcodes::all::{OP_CHECKMULTISIG, OP_CHECKSIG, OP_CLTV, OP_CSV, OP_DROP, OP_DUP, OP_ELSE,
-                                       OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHNUM_2,
-                                       OP_SIZE, OP_SWAP};
+use bitcoin::blockdata::opcodes::all::{
+    OP_CHECKMULTISIG, OP_CHECKSIG, OP_CLTV, OP_CSV, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL,
+    OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHNUM_2, OP_SIZE, OP_SWAP,
+};
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip143;
-use bitcoin_hashes::{Hash, HashEngine};
+use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut};
 use bitcoin_hashes::sha256::Hash as Sha256;
+use bitcoin_hashes::{Hash, HashEngine};
 use lightning::chain::keysinterface::ChannelKeys;
-use lightning::ln::chan_utils::{HTLCOutputInCommitment, make_funding_redeemscript, TxCreationKeys};
 use lightning::ln::chan_utils;
+use lightning::ln::chan_utils::{
+    make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
+};
 use lightning::ln::channelmanager::PaymentHash;
 use secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signature};
 
-use crate::tx::script::{expect_data, expect_number,
-                        expect_op, expect_script_end, get_revokeable_redeemscript, ValidationError};
 use crate::tx::script::ValidationError::{Mismatch, ScriptFormat, TransactionFormat};
+use crate::tx::script::{
+    expect_data, expect_number, expect_op, expect_script_end, get_revokeable_redeemscript,
+    ValidationError,
+};
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 
 const MAX_DELAY: i16 = 1000;
 
 pub fn get_commitment_transaction_number_obscure_factor(
     secp_ctx: &Secp256k1<All>,
-    local_payment_base_key: &SecretKey, remote_payment_basepoint: &PublicKey,
-    outbound: bool) -> u64 {
+    local_payment_base_key: &SecretKey,
+    remote_payment_basepoint: &PublicKey,
+    outbound: bool,
+) -> u64 {
     let mut sha = Sha256::engine();
     let our_payment_basepoint = PublicKey::from_secret_key(secp_ctx, local_payment_base_key);
 
@@ -39,19 +46,21 @@ pub fn get_commitment_transaction_number_obscure_factor(
     }
     let res = Sha256::from_engine(sha).into_inner();
 
-    ((res[26] as u64) << 5*8) |
-        ((res[27] as u64) << 4*8) |
-        ((res[28] as u64) << 3*8) |
-        ((res[29] as u64) << 2*8) |
-        ((res[30] as u64) << 1*8) |
-        ((res[31] as u64) << 0*8)
+    ((res[26] as u64) << 5 * 8)
+        | ((res[27] as u64) << 4 * 8)
+        | ((res[28] as u64) << 3 * 8)
+        | ((res[29] as u64) << 2 * 8)
+        | ((res[30] as u64) << 1 * 8)
+        | ((res[31] as u64) << 0 * 8)
 }
 
-pub fn build_close_tx(to_local_value: u64,
-                      to_remote_value: u64,
-                      local_shutdown_script: &Script,
-                      remote_shutdown_script: &Script,
-                      outpoint: OutPoint) -> Transaction {
+pub fn build_close_tx(
+    to_local_value: u64,
+    to_remote_value: u64,
+    local_shutdown_script: &Script,
+    remote_shutdown_script: &Script,
+    outpoint: OutPoint,
+) -> Transaction {
     let txins = {
         let mut ins: Vec<TxIn> = Vec::new();
         ins.push(TxIn {
@@ -66,20 +75,26 @@ pub fn build_close_tx(to_local_value: u64,
     let mut txouts: Vec<(TxOut, ())> = Vec::new();
 
     if to_remote_value > 0 {
-        txouts.push((TxOut {
-            script_pubkey: remote_shutdown_script.clone(),
-            value: to_remote_value
-        }, ()));
+        txouts.push((
+            TxOut {
+                script_pubkey: remote_shutdown_script.clone(),
+                value: to_remote_value,
+            },
+            (),
+        ));
     }
 
     if to_local_value > 0 {
-        txouts.push((TxOut {
-            script_pubkey: local_shutdown_script.clone(),
-            value: to_local_value
-        }, ()));
+        txouts.push((
+            TxOut {
+                script_pubkey: local_shutdown_script.clone(),
+                value: to_local_value,
+            },
+            (),
+        ));
     }
 
-    sort_outputs(&mut txouts, |_, _| { cmp::Ordering::Equal }); // Ordering doesnt matter if they used our pubkey...
+    sort_outputs(&mut txouts, |_, _| cmp::Ordering::Equal); // Ordering doesnt matter if they used our pubkey...
 
     let mut outputs: Vec<TxOut> = Vec::new();
     for out in txouts.drain(..) {
@@ -94,16 +109,19 @@ pub fn build_close_tx(to_local_value: u64,
     }
 }
 
-pub fn build_commitment_tx(keys: &TxCreationKeys, info: &CommitmentInfo2,
-                           obscured_commitment_transaction_number: u64,
-                           outpoint: OutPoint)
-    -> (Transaction, Vec<Script>, Vec<HTLCOutputInCommitment>) {
+pub fn build_commitment_tx(
+    keys: &TxCreationKeys,
+    info: &CommitmentInfo2,
+    obscured_commitment_transaction_number: u64,
+    outpoint: OutPoint,
+) -> (Transaction, Vec<Script>, Vec<HTLCOutputInCommitment>) {
     let txins = {
         let mut ins: Vec<TxIn> = Vec::new();
         ins.push(TxIn {
             previous_output: outpoint,
             script_sig: Script::new(),
-            sequence: ((0x80 as u32) << 8 * 3) | ((obscured_commitment_transaction_number >> 3 * 8) as u32),
+            sequence: ((0x80 as u32) << 8 * 3)
+                | ((obscured_commitment_transaction_number >> 3 * 8) as u32),
             witness: Vec::new(),
         });
         ins
@@ -113,21 +131,28 @@ pub fn build_commitment_tx(keys: &TxCreationKeys, info: &CommitmentInfo2,
 
     if info.to_remote_value > 0 {
         let script = info.to_remote_address.script_pubkey();
-        txouts.push((TxOut {
-            script_pubkey: script.clone(),
-            value: info.to_remote_value as u64,
-        }, (script, None)))
+        txouts.push((
+            TxOut {
+                script_pubkey: script.clone(),
+                value: info.to_remote_value as u64,
+            },
+            (script, None),
+        ))
     }
 
     if info.to_local_value > 0 {
-        let redeem_script =
-            get_revokeable_redeemscript(&info.revocation_key,
-                                        info.to_local_delay,
-                                        &info.to_local_delayed_key);
-        txouts.push((TxOut {
-            script_pubkey: redeem_script.to_v0_p2wsh(),
-            value: info.to_local_value as u64,
-        }, (redeem_script, None)))
+        let redeem_script = get_revokeable_redeemscript(
+            &info.revocation_key,
+            info.to_local_delay,
+            &info.to_local_delayed_key,
+        );
+        txouts.push((
+            TxOut {
+                script_pubkey: redeem_script.to_v0_p2wsh(),
+                value: info.to_local_value as u64,
+            },
+            (redeem_script, None),
+        ))
     }
 
     for out in &info.offered_htlcs {
@@ -165,8 +190,12 @@ pub fn build_commitment_tx(keys: &TxCreationKeys, info: &CommitmentInfo2,
         if let &(_, Some(ref a_htlcout)) = a {
             if let &(_, Some(ref b_htlcout)) = b {
                 a_htlcout.cltv_expiry.cmp(&b_htlcout.cltv_expiry)
-            } else { cmp::Ordering::Equal }
-        } else { cmp::Ordering::Equal }
+            } else {
+                cmp::Ordering::Equal
+            }
+        } else {
+            cmp::Ordering::Equal
+        }
     });
     let mut outputs = Vec::with_capacity(txouts.len());
     let mut scripts = Vec::with_capacity(txouts.len());
@@ -180,35 +209,47 @@ pub fn build_commitment_tx(keys: &TxCreationKeys, info: &CommitmentInfo2,
         }
     }
 
-    (Transaction {
-        version: 2,
-        lock_time: ((0x20 as u32) << 8 * 3) | ((obscured_commitment_transaction_number & 0xffffffu64) as u32),
-        input: txins,
-        output: outputs,
-    }, scripts, htlcs)
+    (
+        Transaction {
+            version: 2,
+            lock_time: ((0x20 as u32) << 8 * 3)
+                | ((obscured_commitment_transaction_number & 0xffffffu64) as u32),
+            input: txins,
+            output: outputs,
+        },
+        scripts,
+        htlcs,
+    )
 }
 
-pub fn sign_commitment(secp_ctx: &Secp256k1<All>,
-                       keys: &EnforcingChannelKeys,
-                       remote_funding_pubkey: &PublicKey,
-                       tx: &Transaction,
-                       channel_value_satoshi: u64) -> Result<Signature, secp256k1::Error> {
+pub fn sign_commitment(
+    secp_ctx: &Secp256k1<All>,
+    keys: &EnforcingChannelKeys,
+    remote_funding_pubkey: &PublicKey,
+    tx: &Transaction,
+    channel_value_satoshi: u64,
+) -> Result<Signature, secp256k1::Error> {
     let funding_key = keys.funding_key();
     let funding_pubkey = keys.pubkeys().funding_pubkey;
-    let channel_funding_redeemscript = make_funding_redeemscript(&funding_pubkey, &remote_funding_pubkey);
+    let channel_funding_redeemscript =
+        make_funding_redeemscript(&funding_pubkey, &remote_funding_pubkey);
 
-    let commitment_sighash =
-        Message::from_slice(&bip143::SighashComponents::new(&tx)
-            .sighash_all(&tx.input[0], &channel_funding_redeemscript, channel_value_satoshi)[..])?;
+    let commitment_sighash = Message::from_slice(
+        &bip143::SighashComponents::new(&tx).sighash_all(
+            &tx.input[0],
+            &channel_funding_redeemscript,
+            channel_value_satoshi,
+        )[..],
+    )?;
     Ok(secp_ctx.sign(&commitment_sighash, funding_key))
 }
 
 pub fn sort_outputs<T, C: Fn(&T, &T) -> Ordering>(outputs: &mut Vec<(TxOut, T)>, tie_breaker: C) {
     outputs.sort_unstable_by(|a, b| {
         a.0.value.cmp(&b.0.value).then_with(|| {
-            a.0.script_pubkey[..].cmp(&b.0.script_pubkey[..]).then_with(|| {
-                tie_breaker(&a.1, &b.1)
-            })
+            a.0.script_pubkey[..]
+                .cmp(&b.0.script_pubkey[..])
+                .then_with(|| tie_breaker(&a.1, &b.1))
         })
     });
 }
@@ -231,7 +272,6 @@ pub struct CommitmentInfo2 {
     pub offered_htlcs: Vec<HTLCInfo>,
     pub received_htlcs: Vec<HTLCInfo>,
 }
-
 
 #[allow(dead_code)]
 pub struct CommitmentInfo {
@@ -268,7 +308,11 @@ impl CommitmentInfo {
         self.to_remote_address.is_some()
     }
 
-    fn handle_to_local_script(&mut self, _out: &TxOut, script: &Script) -> Result<(), ValidationError> {
+    fn handle_to_local_script(
+        &mut self,
+        _out: &TxOut,
+        script: &Script,
+    ) -> Result<(), ValidationError> {
         let iter = &mut script.iter(true);
         expect_op(iter, OP_IF)?;
         let revocation_key = expect_data(iter)?;
@@ -281,21 +325,31 @@ impl CommitmentInfo {
         expect_op(iter, OP_CHECKSIG)?;
         expect_script_end(iter)?;
 
-        if self.has_to_local() { return Err(TransactionFormat("already have to local".to_string())); }
-        if delay < 0 { return Err(ScriptFormat("negative delay".to_string())); }
-        if delay > MAX_DELAY { return Err(ScriptFormat("delay too large".to_string())); }
+        if self.has_to_local() {
+            return Err(TransactionFormat("already have to local".to_string()));
+        }
+        if delay < 0 {
+            return Err(ScriptFormat("negative delay".to_string()));
+        }
+        if delay > MAX_DELAY {
+            return Err(ScriptFormat("delay too large".to_string()));
+        }
 
         // This is safe because we checked for negative
         self.to_local_delay = delay as u16;
-        self.to_local_delayed_key = Some(PublicKey::from_slice(to_local_delayed_key.as_slice())
-            .map_err(|_| Mismatch())?);
-        self.revocation_key = Some(PublicKey::from_slice(revocation_key.as_slice())
-            .map_err(|_| Mismatch())?);
+        self.to_local_delayed_key =
+            Some(PublicKey::from_slice(to_local_delayed_key.as_slice()).map_err(|_| Mismatch())?);
+        self.revocation_key =
+            Some(PublicKey::from_slice(revocation_key.as_slice()).map_err(|_| Mismatch())?);
 
         Ok(())
     }
 
-    fn handle_received_htlc_script(&mut self, out: &TxOut, script: &Script) -> Result<(), ValidationError> {
+    fn handle_received_htlc_script(
+        &mut self,
+        out: &TxOut,
+        script: &Script,
+    ) -> Result<(), ValidationError> {
         let iter = &mut script.iter(true);
         expect_op(iter, OP_DUP)?;
         expect_op(iter, OP_HASH160)?;
@@ -308,7 +362,9 @@ impl CommitmentInfo {
         expect_op(iter, OP_SWAP)?;
         expect_op(iter, OP_SIZE)?;
         let thirty_two = expect_number(iter)?;
-        if thirty_two != 32 { return Err(Mismatch()); }
+        if thirty_two != 32 {
+            return Err(Mismatch());
+        }
         expect_op(iter, OP_EQUAL)?;
         expect_op(iter, OP_IF)?;
         expect_op(iter, OP_HASH160)?;
@@ -333,7 +389,11 @@ impl CommitmentInfo {
         Ok(())
     }
 
-    fn handle_offered_htlc_script(&mut self, out: &TxOut, script: &Script) -> Result<(), ValidationError> {
+    fn handle_offered_htlc_script(
+        &mut self,
+        out: &TxOut,
+        script: &Script,
+    ) -> Result<(), ValidationError> {
         let iter = &mut script.iter(true);
         expect_op(iter, OP_DUP)?;
         expect_op(iter, OP_HASH160)?;
@@ -346,7 +406,9 @@ impl CommitmentInfo {
         expect_op(iter, OP_SWAP)?;
         expect_op(iter, OP_SIZE)?;
         let thirty_two = expect_number(iter)?;
-        if thirty_two != 32 { return Err(Mismatch()); }
+        if thirty_two != 32 {
+            return Err(Mismatch());
+        }
         expect_op(iter, OP_EQUAL)?;
         expect_op(iter, OP_NOTIF)?;
         expect_op(iter, OP_DROP)?;
@@ -368,7 +430,11 @@ impl CommitmentInfo {
         Ok(())
     }
 
-    pub fn handle_output(&mut self, out: &TxOut, script_bytes: &[u8]) -> Result<(), ValidationError> {
+    pub fn handle_output(
+        &mut self,
+        out: &TxOut,
+        script_bytes: &[u8],
+    ) -> Result<(), ValidationError> {
         if out.script_pubkey.is_v0_p2wpkh() {
             if self.has_to_remote() {
                 return Err(TransactionFormat("more than one to remote".to_string()));
@@ -381,7 +447,9 @@ impl CommitmentInfo {
             }
             let script = Script::from(script_bytes.to_vec());
             if out.script_pubkey != script.to_v0_p2wsh() {
-                return Err(TransactionFormat("script pubkey doesn't match inner script".to_string()));
+                return Err(TransactionFormat(
+                    "script pubkey doesn't match inner script".to_string(),
+                ));
             }
             let res = self.handle_to_local_script(out, &script);
             if res.is_ok() {
@@ -415,9 +483,11 @@ mod tests {
     #[test]
     fn parse_test_err() {
         let mut info = CommitmentInfo::new();
-        let out = TxOut { value: 0, script_pubkey: Default::default() };
-        let script = Builder::new()
-            .into_script();
+        let out = TxOut {
+            value: 0,
+            script_pubkey: Default::default(),
+        };
+        let script = Builder::new().into_script();
         let err = info.handle_to_local_script(&out, &script);
         assert!(err.is_err());
     }
@@ -426,9 +496,14 @@ mod tests {
     fn parse_test() {
         let secp_ctx = Secp256k1::signing_only();
         let mut info = CommitmentInfo::new();
-        let out = TxOut { value: 0, script_pubkey: Default::default() };
-        let revocation_key = PublicKey::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[4u8; 32]).unwrap());
-        let delayed_key = PublicKey::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[3u8; 32]).unwrap());
+        let out = TxOut {
+            value: 0,
+            script_pubkey: Default::default(),
+        };
+        let revocation_key =
+            PublicKey::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[4u8; 32]).unwrap());
+        let delayed_key =
+            PublicKey::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[3u8; 32]).unwrap());
         let script = get_revokeable_redeemscript(&revocation_key, 5, &delayed_key);
         let res = info.handle_to_local_script(&out, &script);
         assert!(res.is_ok());
@@ -439,6 +514,9 @@ mod tests {
         assert_eq!(info.to_local_delay, 5);
         let res = info.handle_to_local_script(&out, &script);
         assert!(res.is_err());
-        assert!(TransactionFormat("already have to local".to_string()) == res.expect_err("expecting err"));
+        assert!(
+            TransactionFormat("already have to local".to_string())
+                == res.expect_err("expecting err")
+        );
     }
 }
