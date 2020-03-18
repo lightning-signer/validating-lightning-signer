@@ -1,11 +1,11 @@
 use std::io::Write;
 
-use bitcoin::Network;
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
-use bitcoin_hashes::{Hash, HashEngine};
+use bitcoin::Network;
 use bitcoin_hashes::hash160::Hash as BitcoinHash160;
 use bitcoin_hashes::sha256::Hash as BitcoinSha256;
+use bitcoin_hashes::{Hash, HashEngine};
 use crypto::hkdf::{hkdf_expand, hkdf_extract};
 use crypto::sha2::Sha256;
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
@@ -39,10 +39,15 @@ pub fn node_keys(secp_ctx: &Secp256k1<SignOnly>, node_seed: &[u8]) -> (PublicKey
     (node_id, node_secret_key)
 }
 
-pub fn bip32_key(secp_ctx: &Secp256k1<SignOnly>, network: Network, node_seed: &[u8]) -> ExtendedPrivKey {
+pub fn bip32_key(
+    secp_ctx: &Secp256k1<SignOnly>,
+    network: Network,
+    node_seed: &[u8],
+) -> ExtendedPrivKey {
     let bip32_seed = hkdf_sha256(node_seed, "bip32 seed".as_bytes(), &[]);
     let master = ExtendedPrivKey::new_master(network.clone(), &bip32_seed).unwrap();
-    master.ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(0).unwrap())
+    master
+        .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(0).unwrap())
         .unwrap()
         .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(0).unwrap())
         .unwrap()
@@ -61,8 +66,11 @@ pub fn build_commitment_secret(commitment_seed: &[u8; 32], idx: u64) -> SecretKe
     SecretKey::from_slice(&res).unwrap()
 }
 
-
-pub fn derive_public_key<T: secp256k1::Signing>(secp_ctx: &Secp256k1<T>, per_commitment_point: &PublicKey, base_point: &PublicKey) -> Result<PublicKey, secp256k1::Error> {
+pub fn derive_public_key<T: secp256k1::Signing>(
+    secp_ctx: &Secp256k1<T>,
+    per_commitment_point: &PublicKey,
+    base_point: &PublicKey,
+) -> Result<PublicKey, secp256k1::Error> {
     let mut sha = BitcoinSha256::engine();
     sha.input(&per_commitment_point.serialize());
     sha.input(&base_point.serialize());
@@ -73,7 +81,11 @@ pub fn derive_public_key<T: secp256k1::Signing>(secp_ctx: &Secp256k1<T>, per_com
 }
 
 // FIXME - copied from chan_utils, lobby to increase visibility.
-pub fn derive_public_revocation_key<T: secp256k1::Verification>(secp_ctx: &Secp256k1<T>, per_commitment_point: &PublicKey, revocation_base_point: &PublicKey) -> Result<PublicKey, secp256k1::Error> {
+pub fn derive_public_revocation_key<T: secp256k1::Verification>(
+    secp_ctx: &Secp256k1<T>,
+    per_commitment_point: &PublicKey,
+    revocation_base_point: &PublicKey,
+) -> Result<PublicKey, secp256k1::Error> {
     let rev_append_commit_hash_key = {
         let mut sha = BitcoinSha256::engine();
         sha.input(&revocation_base_point.serialize());
@@ -97,7 +109,11 @@ pub fn derive_public_revocation_key<T: secp256k1::Verification>(secp_ctx: &Secp2
 }
 
 // FIXME - copied from chan_utils, lobby to increase visibility.
-pub fn derive_private_revocation_key<T: secp256k1::Signing>(secp_ctx: &Secp256k1<T>, per_commitment_secret: &SecretKey, revocation_base_secret: &SecretKey) -> Result<SecretKey, secp256k1::Error> {
+pub fn derive_private_revocation_key<T: secp256k1::Signing>(
+    secp_ctx: &Secp256k1<T>,
+    per_commitment_secret: &SecretKey,
+    revocation_base_secret: &SecretKey,
+) -> Result<SecretKey, secp256k1::Error> {
     let revocation_base_point = PublicKey::from_secret_key(&secp_ctx, &revocation_base_secret);
     let per_commitment_point = PublicKey::from_secret_key(&secp_ctx, &per_commitment_secret);
 
@@ -126,7 +142,9 @@ pub fn derive_private_revocation_key<T: secp256k1::Signing>(secp_ctx: &Secp256k1
 
 pub fn payload_for_p2wpkh(key: &PublicKey) -> Payload {
     let mut hash_engine = BitcoinHash160::engine();
-    hash_engine.write_all(&key.serialize()).expect("failed to serialize pubkey");
+    hash_engine
+        .write_all(&key.serialize())
+        .expect("failed to serialize pubkey");
     Payload::WitnessProgram {
         version: bech32::u5::try_from_u8(0).expect("0<32"),
         program: BitcoinHash160::from_engine(hash_engine)[..].to_vec(),

@@ -1,5 +1,4 @@
 #![crate_name = "lightning_signer"]
-
 #![forbid(unsafe_code)]
 #![allow(bare_trait_objects)]
 #![allow(ellipsis_inclusive_range_patterns)]
@@ -14,6 +13,6 @@ extern crate tonic;
 pub mod tx;
 #[macro_use]
 pub mod util;
-pub mod test;
-pub mod server;
 pub mod client;
+pub mod server;
+pub mod test;

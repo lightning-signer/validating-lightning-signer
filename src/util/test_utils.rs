@@ -55,19 +55,41 @@ pub struct TestChannelMonitor<ChanSigner: ChannelKeys> {
 }
 
 impl<ChanSigner: ChannelKeys> TestChannelMonitor<ChanSigner> {
-    pub fn new(chain_monitor: Arc<chaininterface::ChainWatchInterface>, broadcaster: Arc<chaininterface::BroadcasterInterface>, logger: Arc<Logger>, fee_estimator: Arc<chaininterface::FeeEstimator>) -> Self {
+    pub fn new(
+        chain_monitor: Arc<chaininterface::ChainWatchInterface>,
+        broadcaster: Arc<chaininterface::BroadcasterInterface>,
+        logger: Arc<Logger>,
+        fee_estimator: Arc<chaininterface::FeeEstimator>,
+    ) -> Self {
         Self {
             added_monitors: Mutex::new(Vec::new()),
-            simple_monitor: channelmonitor::SimpleManyChannelMonitor::new(chain_monitor, broadcaster, logger, fee_estimator),
+            simple_monitor: channelmonitor::SimpleManyChannelMonitor::new(
+                chain_monitor,
+                broadcaster,
+                logger,
+                fee_estimator,
+            ),
             update_ret: Mutex::new(Ok(())),
         }
     }
 }
 
-impl<ChanSigner: ChannelKeys> channelmonitor::ManyChannelMonitor<ChanSigner> for TestChannelMonitor<ChanSigner> {
-    fn add_update_monitor(&self, funding_txo: OutPoint, monitor: channelmonitor::ChannelMonitor<ChanSigner>) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
-        self.added_monitors.lock().unwrap().push((funding_txo, monitor.clone()));
-        assert!(self.simple_monitor.add_update_monitor(funding_txo, monitor).is_ok());
+impl<ChanSigner: ChannelKeys> channelmonitor::ManyChannelMonitor<ChanSigner>
+    for TestChannelMonitor<ChanSigner>
+{
+    fn add_update_monitor(
+        &self,
+        funding_txo: OutPoint,
+        monitor: channelmonitor::ChannelMonitor<ChanSigner>,
+    ) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
+        self.added_monitors
+            .lock()
+            .unwrap()
+            .push((funding_txo, monitor.clone()));
+        assert!(self
+            .simple_monitor
+            .add_update_monitor(funding_txo, monitor)
+            .is_ok());
 
         self.update_ret.lock().unwrap().clone()
     }
@@ -100,22 +122,54 @@ impl TestChannelMessageHandler {
 }
 
 impl msgs::ChannelMessageHandler for TestChannelMessageHandler {
-    fn handle_open_channel(&self, _their_node_id: &PublicKey, _their_local_features: InitFeatures, _msg: &msgs::OpenChannel) {}
-    fn handle_accept_channel(&self, _their_node_id: &PublicKey, _their_local_features: InitFeatures, _msg: &msgs::AcceptChannel) {}
+    fn handle_open_channel(
+        &self,
+        _their_node_id: &PublicKey,
+        _their_local_features: InitFeatures,
+        _msg: &msgs::OpenChannel,
+    ) {
+    }
+    fn handle_accept_channel(
+        &self,
+        _their_node_id: &PublicKey,
+        _their_local_features: InitFeatures,
+        _msg: &msgs::AcceptChannel,
+    ) {
+    }
     fn handle_funding_created(&self, _their_node_id: &PublicKey, _msg: &msgs::FundingCreated) {}
     fn handle_funding_signed(&self, _their_node_id: &PublicKey, _msg: &msgs::FundingSigned) {}
     fn handle_funding_locked(&self, _their_node_id: &PublicKey, _msg: &msgs::FundingLocked) {}
     fn handle_shutdown(&self, _their_node_id: &PublicKey, _msg: &msgs::Shutdown) {}
     fn handle_closing_signed(&self, _their_node_id: &PublicKey, _msg: &msgs::ClosingSigned) {}
     fn handle_update_add_htlc(&self, _their_node_id: &PublicKey, _msg: &msgs::UpdateAddHTLC) {}
-    fn handle_update_fulfill_htlc(&self, _their_node_id: &PublicKey, _msg: &msgs::UpdateFulfillHTLC) {}
+    fn handle_update_fulfill_htlc(
+        &self,
+        _their_node_id: &PublicKey,
+        _msg: &msgs::UpdateFulfillHTLC,
+    ) {
+    }
     fn handle_update_fail_htlc(&self, _their_node_id: &PublicKey, _msg: &msgs::UpdateFailHTLC) {}
-    fn handle_update_fail_malformed_htlc(&self, _their_node_id: &PublicKey, _msg: &msgs::UpdateFailMalformedHTLC) {}
+    fn handle_update_fail_malformed_htlc(
+        &self,
+        _their_node_id: &PublicKey,
+        _msg: &msgs::UpdateFailMalformedHTLC,
+    ) {
+    }
     fn handle_commitment_signed(&self, _their_node_id: &PublicKey, _msg: &msgs::CommitmentSigned) {}
     fn handle_revoke_and_ack(&self, _their_node_id: &PublicKey, _msg: &msgs::RevokeAndACK) {}
     fn handle_update_fee(&self, _their_node_id: &PublicKey, _msg: &msgs::UpdateFee) {}
-    fn handle_announcement_signatures(&self, _their_node_id: &PublicKey, _msg: &msgs::AnnouncementSignatures) {}
-    fn handle_channel_reestablish(&self, _their_node_id: &PublicKey, _msg: &msgs::ChannelReestablish) {}
+    fn handle_announcement_signatures(
+        &self,
+        _their_node_id: &PublicKey,
+        _msg: &msgs::AnnouncementSignatures,
+    ) {
+    }
+    fn handle_channel_reestablish(
+        &self,
+        _their_node_id: &PublicKey,
+        _msg: &msgs::ChannelReestablish,
+    ) {
+    }
     fn peer_disconnected(&self, _their_node_id: &PublicKey, _no_connection_possible: bool) {}
     fn peer_connected(&self, _their_node_id: &PublicKey, _msg: &msgs::Init) {}
     fn handle_error(&self, _their_node_id: &PublicKey, _msg: &msgs::ErrorMessage) {}
@@ -139,20 +193,47 @@ impl TestRoutingMessageHandler {
 }
 
 impl msgs::RoutingMessageHandler for TestRoutingMessageHandler {
-    fn handle_node_announcement(&self, _msg: &msgs::NodeAnnouncement) -> Result<bool, LightningError> {
-        Err(LightningError { err: "", action: msgs::ErrorAction::IgnoreError })
+    fn handle_node_announcement(
+        &self,
+        _msg: &msgs::NodeAnnouncement,
+    ) -> Result<bool, LightningError> {
+        Err(LightningError {
+            err: "",
+            action: msgs::ErrorAction::IgnoreError,
+        })
     }
-    fn handle_channel_announcement(&self, _msg: &msgs::ChannelAnnouncement) -> Result<bool, LightningError> {
-        Err(LightningError { err: "", action: msgs::ErrorAction::IgnoreError })
+    fn handle_channel_announcement(
+        &self,
+        _msg: &msgs::ChannelAnnouncement,
+    ) -> Result<bool, LightningError> {
+        Err(LightningError {
+            err: "",
+            action: msgs::ErrorAction::IgnoreError,
+        })
     }
     fn handle_channel_update(&self, _msg: &msgs::ChannelUpdate) -> Result<bool, LightningError> {
-        Err(LightningError { err: "", action: msgs::ErrorAction::IgnoreError })
+        Err(LightningError {
+            err: "",
+            action: msgs::ErrorAction::IgnoreError,
+        })
     }
     fn handle_htlc_fail_channel_update(&self, _update: &msgs::HTLCFailChannelUpdate) {}
-    fn get_next_channel_announcements(&self, _starting_point: u64, _batch_amount: u8) -> Vec<(msgs::ChannelAnnouncement, msgs::ChannelUpdate, msgs::ChannelUpdate)> {
+    fn get_next_channel_announcements(
+        &self,
+        _starting_point: u64,
+        _batch_amount: u8,
+    ) -> Vec<(
+        msgs::ChannelAnnouncement,
+        msgs::ChannelUpdate,
+        msgs::ChannelUpdate,
+    )> {
         Vec::new()
     }
-    fn get_next_node_announcements(&self, _starting_point: Option<&PublicKey>, _batch_amount: u8) -> Vec<msgs::NodeAnnouncement> {
+    fn get_next_node_announcements(
+        &self,
+        _starting_point: Option<&PublicKey>,
+        _batch_amount: u8,
+    ) -> Vec<msgs::NodeAnnouncement> {
         Vec::new()
     }
 }
@@ -185,9 +266,22 @@ impl TestLogger {
 
 impl Logger for TestLogger {
     fn log(&self, record: &Record) {
-        *self.lines.lock().unwrap().entry((record.module_path.to_string(), format!("{}", record.args))).or_insert(0) += 1;
+        *self
+            .lines
+            .lock()
+            .unwrap()
+            .entry((record.module_path.to_string(), format!("{}", record.args)))
+            .or_insert(0) += 1;
         if self.level >= record.level {
-            println!("{:<5} {} [{} : {}, {}] {}", record.level.to_string(), self.id, record.module_path, record.file, record.line, record.args);
+            println!(
+                "{:<5} {} [{} : {}, {}] {}",
+                record.level.to_string(),
+                self.id,
+                record.module_path,
+                record.file,
+                record.line,
+                record.args
+            );
         }
     }
 }
@@ -201,33 +295,56 @@ pub struct TestKeysInterface {
 impl keysinterface::KeysInterface for TestKeysInterface {
     type ChanKeySigner = EnforcingChannelKeys;
 
-    fn get_node_secret(&self) -> SecretKey { self.backing.get_node_secret() }
-    fn get_destination_script(&self) -> Script { self.backing.get_destination_script() }
-    fn get_shutdown_pubkey(&self) -> PublicKey { self.backing.get_shutdown_pubkey() }
-    fn get_channel_keys(&self, channel_id: [u8; 32], inbound: bool, channel_value_satoshis: u64) -> EnforcingChannelKeys {
-        EnforcingChannelKeys::new(self.backing.get_channel_keys(channel_id, inbound, channel_value_satoshis))
+    fn get_node_secret(&self) -> SecretKey {
+        self.backing.get_node_secret()
+    }
+    fn get_destination_script(&self) -> Script {
+        self.backing.get_destination_script()
+    }
+    fn get_shutdown_pubkey(&self) -> PublicKey {
+        self.backing.get_shutdown_pubkey()
+    }
+    fn get_channel_keys(
+        &self,
+        channel_id: [u8; 32],
+        inbound: bool,
+        channel_value_satoshis: u64,
+    ) -> EnforcingChannelKeys {
+        EnforcingChannelKeys::new(self.backing.get_channel_keys(
+            channel_id,
+            inbound,
+            channel_value_satoshis,
+        ))
     }
 
     fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
         match *self.override_session_priv.lock().unwrap() {
             Some(key) => (key.clone(), [0; 32]),
-            None => self.backing.get_onion_rand()
+            None => self.backing.get_onion_rand(),
         }
     }
 
     fn get_channel_id(&self) -> [u8; 32] {
         match *self.override_channel_id_priv.lock().unwrap() {
             Some(key) => key.clone(),
-            None => self.backing.get_channel_id()
+            None => self.backing.get_channel_id(),
         }
     }
 }
 
 impl TestKeysInterface {
     pub fn new(seed: &[u8; 32], network: Network, logger: Arc<Logger>) -> Self {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards");
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards");
         Self {
-            backing: keysinterface::KeysManager::new(seed, network, logger, now.as_secs(), now.subsec_nanos()),
+            backing: keysinterface::KeysManager::new(
+                seed,
+                network,
+                logger,
+                now.as_secs(),
+                now.subsec_nanos(),
+            ),
             override_session_priv: Mutex::new(None),
             override_channel_id_priv: Mutex::new(None),
         }
@@ -235,7 +352,10 @@ impl TestKeysInterface {
 }
 
 pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> PublicKey {
-    PublicKey::from_secret_key(secp_ctx, &SecretKey::from_slice(&hex::decode(h).unwrap()[..]).unwrap())
+    PublicKey::from_secret_key(
+        secp_ctx,
+        &SecretKey::from_slice(&hex::decode(h).unwrap()[..]).unwrap(),
+    )
 }
 
 pub fn make_test_bitcoin_key(i: u8) -> (bitcoin::PublicKey, bitcoin::PrivateKey) {
@@ -256,7 +376,10 @@ pub fn make_test_bitcoin_pubkey(i: u8) -> bitcoin::PublicKey {
 pub fn make_test_key(i: u8) -> (PublicKey, SecretKey) {
     let secp_ctx = Secp256k1::signing_only();
     let secret_key = SecretKey::from_slice(&[i; 32]).unwrap();
-    return (PublicKey::from_secret_key(&secp_ctx, &secret_key), secret_key);
+    return (
+        PublicKey::from_secret_key(&secp_ctx, &secret_key),
+        secret_key,
+    );
 }
 
 pub fn make_test_pubkey(i: u8) -> PublicKey {

@@ -3,8 +3,7 @@ use bitcoin_hashes::sha256;
 use bitcoin_hashes::Hash;
 
 // from rust-lightning-invoice
-pub fn hash_from_parts(hrp_bytes: &[u8], data_without_signature: &[u5])
-                       -> [u8; 32] {
+pub fn hash_from_parts(hrp_bytes: &[u8], data_without_signature: &[u5]) -> [u8; 32] {
     use bech32::FromBase32;
 
     let mut preimage = Vec::<u8>::from(hrp_bytes);
@@ -23,10 +22,10 @@ pub fn hash_from_parts(hrp_bytes: &[u8], data_without_signature: &[u5])
 
     preimage.extend_from_slice(
         &Vec::<u8>::from_base32(&data_part)
-            .expect("No padding error may occur due to appended zero above."));
+            .expect("No padding error may occur due to appended zero above."),
+    );
 
     let mut hash: [u8; 32] = Default::default();
     hash.copy_from_slice(&sha256::Hash::hash(&preimage)[..]);
     hash
 }
-
