@@ -202,15 +202,13 @@ impl KeysInterface for LoopbackSignerKeysInterface {
             )
             .unwrap();
         self.signer
-            .with_channel(&self.node_id, &channel_id, |channel_opt| {
-                channel_opt.map_or(Err(()), |c| {
-                    Ok(LoopbackChannelSigner::new(
-                        &self.node_id,
-                        &channel_id,
-                        &c,
-                        Arc::clone(&self.signer),
-                    ))
-                })
+            .with_existing_channel(&self.node_id, &channel_id, |chan| {
+                Ok(LoopbackChannelSigner::new(
+                    &self.node_id,
+                    &channel_id,
+                    &chan,
+                    Arc::clone(&self.signer),
+                ))
             })
             .unwrap()
     }
