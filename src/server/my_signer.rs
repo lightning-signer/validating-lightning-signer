@@ -569,16 +569,12 @@ impl MySigner {
         opt_channel_id: Option<ChannelId>,
         local_to_self_delay: u16,
         is_outbound: bool,
-    ) -> Result<ChannelId, ()> {
+    ) -> Result<ChannelId, Status> {
         log_info!(self, "new channel {}/{:?}", node_id, opt_channel_id);
         let nodes = self.nodes.lock().unwrap();
-        let node = match nodes.get(node_id) {
-            Some(n) => n,
-            None => {
-                log_error!(self, "no such node {}", node_id);
-                return Err(());
-            }
-        };
+        let node = nodes
+            .get(node_id)
+            .ok_or_else(|| self.internal_error(format!("no such node {}", node_id)))?;
         let mut channels = node.channels.lock().unwrap();
         let keys_manager = &node.keys_manager;
         let channel_id = opt_channel_id.unwrap_or_else(|| ChannelId(keys_manager.get_channel_id()));
@@ -609,6 +605,15 @@ impl MySigner {
     pub fn with_node<F: Sized, T, E>(&self, node_id: &PublicKey, f: F) -> Result<T, E>
     where
         F: Fn(Option<&Node>) -> Result<T, E>,
+    {
+        let nodes = self.nodes.lock().unwrap();
+        let node = nodes.get(node_id);
+        f(node.map(|an| an.as_ref()))
+    }
+
+    pub fn with_node_do<F: Sized, T>(&self, node_id: &PublicKey, f: F) -> T
+    where
+        F: Fn(Option<&Node>) -> T,
     {
         let nodes = self.nodes.lock().unwrap();
         let node = nodes.get(node_id);
@@ -857,12 +862,9 @@ impl MySigner {
             // assertions.
             let mut info = CommitmentInfo::new();
             for ind in 0..tx.output.len() {
-                let res = info
+                let _res = info
                     .handle_output(&tx.output[ind], output_witscripts[ind].as_slice())
-                    .map_err(|ve| Status::invalid_argument(ve));
-                if res.is_err() {
-                    log_error!(self, "validation error {}", res.unwrap_err());
-                }
+                    .map_err(|ve| self.invalid_argument(ve))?;
             }
 
             let commitment_sig = sign_commitment(
@@ -1241,7 +1243,7 @@ impl MySigner {
                 // Derive the HD key.
                 None => {
                     xkey.ckd_priv(&secp_ctx, ChildNumber::from(child_index))
-                        .unwrap()
+                        .map_err(|err| self.internal_error(format!("ckd_priv failed: {}", err)))?
                         .private_key
                 }
             };
@@ -1278,7 +1280,7 @@ impl MySigner {
 
     pub fn ecdh(&self, node_id: &PublicKey, other_key: &PublicKey) -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
-            let node = opt_node.ok_or(self.invalid_argument("no such node"))?;
+            let node = opt_node.ok_or_else(|| self.invalid_argument("no such node"))?;
             let our_key = node.keys_manager.get_node_secret();
             let ss = SharedSecret::new(&other_key, &our_key);
             let res = ss[..].to_vec();
@@ -1745,19 +1747,18 @@ mod tests {
     }
 
     #[test]
-    fn new_channel_test() -> Result<(), ()> {
+    fn new_channel_test() {
         let signer = MySigner::new();
         let node_id = signer.new_node();
-        let channel_id = signer.new_channel(&node_id, 1000, None, None, 5, true)?;
-        signer.with_node(&node_id, |node| {
+        let channel_id = signer
+            .new_channel(&node_id, 1000, None, None, 5, true)
+            .unwrap();
+        signer.with_node_do(&node_id, |node| {
             assert!(node.is_some());
-            Ok(())
-        })?;
-        signer.with_channel(&node_id, &channel_id, |chan| {
+        });
+        signer.with_channel_do(&node_id, &channel_id, |chan| {
             assert!(chan.is_some());
-            Ok(())
-        })?;
-        Ok(())
+        });
     }
 
     #[test]

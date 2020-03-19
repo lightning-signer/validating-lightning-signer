@@ -178,39 +178,35 @@ impl Signer for MySigner {
     ) -> Result<Response<NewChannelReply>, Status> {
         let msg: NewChannelRequest = request.into_inner();
         let node_id = self.node_id(msg.node_id)?;
-        let channel_id = self.channel_id(&msg.channel_nonce).ok();
-        let opt_channel_nonce = if msg.channel_nonce.is_none() {
-            None
-        } else {
-            Some(msg.channel_nonce.unwrap().data)
-        };
+        let opt_channel_id = self.channel_id(&msg.channel_nonce).ok();
+        let opt_channel_nonce = msg.channel_nonce.map(|cn| cn.data);
         log_info!(
             self,
             "ENTER new_channel request({}/{:?})",
             node_id,
-            channel_id
+            opt_channel_id,
         );
 
-        let channel_id_result = self
+        let channel_id = self
             .new_channel(
                 &node_id,
                 msg.channel_value,
                 opt_channel_nonce,
-                channel_id,
+                opt_channel_id,
                 msg.to_self_delay as u16,
                 msg.is_outbound,
-            )
-            .unwrap();
+            )?;
+
         let reply = NewChannelReply {
             channel_nonce: Some(ChannelNonce {
-                data: channel_id_result.0.to_vec(),
+                data: channel_id.0.to_vec(),
             }),
         };
         log_info!(
             self,
             "REPLY new_channel request({}/{:?})",
             node_id,
-            channel_id
+            channel_id,
         );
         Ok(Response::new(reply))
     }
@@ -546,15 +542,15 @@ impl Signer for MySigner {
         );
 
         let reqtx = msg.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
-        let tx_res: Result<bitcoin::Transaction, encode::Error> =
-            deserialize(reqtx.raw_tx_bytes.as_slice());
-        let tx =
-            tx_res.map_err(|e| self.invalid_argument(format!("deserialize tx fail: {}", e)))?;
 
+        let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
+            .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
         let remote_funding_pubkey = self.public_key(msg.remote_funding_pubkey)?;
         let remote_per_commitment_point = self.public_key(msg.remote_per_commit_point)?;
         let channel_value_satoshis =
-            reqtx.input_descs[0].prev_output.as_ref().unwrap().value as u64;
+            reqtx.input_descs[0].prev_output.as_ref()
+            .ok_or_else(|| self.invalid_argument("missing prev_output"))?
+            .value as u64;
         let witscripts = reqtx
             .output_descs
             .iter()
@@ -974,13 +970,13 @@ impl Signer for MySigner {
         );
         let sig_data = self.sign_invoice(&node_id, &data_part, &human_readable_part)?;
         let reply = RecoverableNodeSignatureReply {
-            signature: Some(EcdsaRecoverableSignature { data: sig_data }),
+            signature: Some(EcdsaRecoverableSignature { data: sig_data.clone() }),
         };
         log_info!(
             self,
             "REPLY sign_invoice({}) rsig={}",
             node_id,
-            hex::encode(&reply.signature.as_ref().unwrap().data)
+            hex::encode(&sig_data)
         );
         Ok(Response::new(reply))
     }

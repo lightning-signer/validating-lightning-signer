@@ -32,6 +32,8 @@ pub fn channels_seed(node_seed: &[u8]) -> [u8; 32] {
     hkdf_sha256(node_seed, "peer seed".as_bytes(), &[])
 }
 
+// This function will panic if the SecretKey::from_slice fails.  Only
+// use where appropriate.
 pub fn node_keys(secp_ctx: &Secp256k1<SignOnly>, node_seed: &[u8]) -> (PublicKey, SecretKey) {
     let node_private_bytes = hkdf_sha256(node_seed, "nodeid".as_bytes(), &[]);
     let node_secret_key = SecretKey::from_slice(&node_private_bytes).unwrap();
@@ -39,6 +41,8 @@ pub fn node_keys(secp_ctx: &Secp256k1<SignOnly>, node_seed: &[u8]) -> (PublicKey
     (node_id, node_secret_key)
 }
 
+// This function will panic if the ExtendedPrivKey::new_master fails.  Only
+// use where appropriate.
 pub fn bip32_key(
     secp_ctx: &Secp256k1<SignOnly>,
     network: Network,
