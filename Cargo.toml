@@ -9,6 +9,7 @@ name = "lightning_signer"
 path = "src/lib.rs"
 
 [dependencies]
+backtrace = "0.3"
 bitcoin = "0.21"
 bitcoin_hashes = "0.7"
 secp256k1 = "0.15"
