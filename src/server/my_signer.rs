@@ -771,8 +771,7 @@ impl MySigner {
         }
 
         let retval: Result<ChannelPublicKeys, Status> =
-            self.with_channel(node_id, channel_id, |opt_chan| {
-                let chan = opt_chan.ok_or_else(|| self.invalid_argument("no such node/channel"))?;
+            self.with_existing_channel(&node_id, &channel_id, |chan| {
                 Ok(chan.keys.pubkeys().clone())
             });
         retval
@@ -789,8 +788,7 @@ impl MySigner {
         offered_htlcs: Vec<HTLCInfo>,
         received_htlcs: Vec<HTLCInfo>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
-        self.with_channel(node_id, channel_id, |opt_chan| {
-            let chan = opt_chan.ok_or_else(|| self.invalid_argument("no such node/channel"))?;
+        self.with_existing_channel(&node_id, &channel_id, |chan| {
             let per_commitment_point = chan.get_per_commitment_point(commitment_number);
             let info = chan.build_local_commitment_info(
                 &per_commitment_point,
@@ -845,8 +843,7 @@ impl MySigner {
         to_local_value: u64,
         to_remote_value: u64,
     ) -> Result<Vec<u8>, Status> {
-        self.with_channel(node_id, channel_id, |opt_chan| {
-            let chan = opt_chan.ok_or_else(|| self.invalid_argument("no such node/channel"))?;
+        self.with_existing_channel(&node_id, &channel_id, |chan| {
             let shutdown_pubkey = chan.node.keys_manager.get_shutdown_pubkey();
             let remote_config = chan
                 .remote_config
@@ -884,8 +881,7 @@ impl MySigner {
         remote_funding_pubkey: &PublicKey,
         channel_value_satoshi: u64,
     ) -> Result<Vec<u8>, Status> {
-        self.with_channel(node_id, channel_id, |opt_chan| {
-            let chan = opt_chan.ok_or(self.invalid_argument("no such node/channel"))?;
+        self.with_existing_channel(&node_id, &channel_id, |chan| {
             if tx.output.len() != output_witscripts.len() {
                 return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
             }
@@ -921,28 +917,28 @@ impl MySigner {
         remote_funding_pubkey: &PublicKey,
         funding_amount: u64,
     ) -> Result<Vec<u8>, Status> {
-        let sigvec: Result<Vec<u8>, Status> = self.with_channel(node_id, channel_id, |opt_chan| {
-            let chan = opt_chan.ok_or_else(|| self.invalid_argument("no such node/channel"))?;
-            if tx.input.len() != 1 {
-                return Err(self.invalid_argument("tx.input.len() != 1"));
-            }
-            if tx.output.len() == 0 {
-                return Err(self.invalid_argument("tx.output.len() == 0"));
-            }
+        let sigvec: Result<Vec<u8>, Status> =
+            self.with_existing_channel(&node_id, &channel_id, |chan| {
+                if tx.input.len() != 1 {
+                    return Err(self.invalid_argument("tx.input.len() != 1"));
+                }
+                if tx.output.len() == 0 {
+                    return Err(self.invalid_argument("tx.output.len() == 0"));
+                }
 
-            let commitment_sig = sign_commitment(
-                &chan.secp_ctx,
-                &chan.keys,
-                &remote_funding_pubkey,
-                &tx,
-                funding_amount,
-            )
-            .map_err(|err| self.internal_error(format!("sign_commitment failed: {}", err)))?;
+                let commitment_sig = sign_commitment(
+                    &chan.secp_ctx,
+                    &chan.keys,
+                    &remote_funding_pubkey,
+                    &tx,
+                    funding_amount,
+                )
+                .map_err(|err| self.internal_error(format!("sign_commitment failed: {}", err)))?;
 
-            let mut sigvec = commitment_sig.serialize_der().to_vec();
-            sigvec.push(SigHashType::All as u8);
-            Ok(sigvec)
-        });
+                let mut sigvec = commitment_sig.serialize_der().to_vec();
+                sigvec.push(SigHashType::All as u8);
+                Ok(sigvec)
+            });
         sigvec
     }
 
@@ -954,28 +950,28 @@ impl MySigner {
         remote_funding_pubkey: &PublicKey,
         funding_amount: u64,
     ) -> Result<Vec<u8>, Status> {
-        let sigvec: Result<Vec<u8>, Status> = self.with_channel(node_id, channel_id, |opt_chan| {
-            let chan = opt_chan.ok_or_else(|| self.invalid_argument("no such node/channel"))?;
-            if tx.input.len() != 1 {
-                return Err(self.invalid_argument("tx.input.len() != 1"));
-            }
-            if tx.output.len() == 0 {
-                return Err(self.invalid_argument("tx.output.len() == 0"));
-            }
+        let sigvec: Result<Vec<u8>, Status> =
+            self.with_existing_channel(&node_id, &channel_id, |chan| {
+                if tx.input.len() != 1 {
+                    return Err(self.invalid_argument("tx.input.len() != 1"));
+                }
+                if tx.output.len() == 0 {
+                    return Err(self.invalid_argument("tx.output.len() == 0"));
+                }
 
-            let commitment_sig = sign_commitment(
-                &chan.secp_ctx,
-                &chan.keys,
-                &remote_funding_pubkey,
-                &tx,
-                funding_amount,
-            )
-            .map_err(|err| self.internal_error(format!("sign_commitment failed: {}", err)))?;
+                let commitment_sig = sign_commitment(
+                    &chan.secp_ctx,
+                    &chan.keys,
+                    &remote_funding_pubkey,
+                    &tx,
+                    funding_amount,
+                )
+                .map_err(|err| self.internal_error(format!("sign_commitment failed: {}", err)))?;
 
-            let mut sigvec = commitment_sig.serialize_der().to_vec();
-            sigvec.push(SigHashType::All as u8);
-            Ok(sigvec)
-        });
+                let mut sigvec = commitment_sig.serialize_der().to_vec();
+                sigvec.push(SigHashType::All as u8);
+                Ok(sigvec)
+            });
         sigvec
     }
 
@@ -988,48 +984,50 @@ impl MySigner {
         output_witscripts: Vec<Vec<u8>>,
         htlc_amount: u64,
     ) -> Result<Vec<u8>, Status> {
-        let sigvec: Result<Vec<u8>, Status> = self.with_channel(node_id, channel_id, |opt_chan| {
-            let chan = opt_chan.ok_or(self.invalid_argument("no such node/channel"))?;
-            if tx.input.len() != 1 {
-                return Err(self.invalid_argument("tx.input.len() != 1"));
-            }
-            if tx.output.len() != 1 {
-                return Err(self.invalid_argument("tx.output.len() != 1"));
-            }
-            if output_witscripts.len() != 1 {
-                return Err(self.invalid_argument("output_witscripts.len() != 1"));
-            }
+        let sigvec: Result<Vec<u8>, Status> =
+            self.with_existing_channel(&node_id, &channel_id, |chan| {
+                if tx.input.len() != 1 {
+                    return Err(self.invalid_argument("tx.input.len() != 1"));
+                }
+                if tx.output.len() != 1 {
+                    return Err(self.invalid_argument("tx.output.len() != 1"));
+                }
+                if output_witscripts.len() != 1 {
+                    return Err(self.invalid_argument("output_witscripts.len() != 1"));
+                }
 
-            let secp_ctx = Secp256k1::signing_only();
+                let secp_ctx = Secp256k1::signing_only();
 
-            let per_commitment_point =
-                MyKeysManager::per_commitment_point(&secp_ctx, chan.keys.commitment_seed(), n);
+                let per_commitment_point =
+                    MyKeysManager::per_commitment_point(&secp_ctx, chan.keys.commitment_seed(), n);
 
-            let htlc_redeemscript = Script::from((&output_witscripts[0]).to_vec());
+                let htlc_redeemscript = Script::from((&output_witscripts[0]).to_vec());
 
-            let htlc_sighash = Message::from_slice(
-                &bip143::SighashComponents::new(&tx).sighash_all(
-                    &tx.input[0],
-                    &htlc_redeemscript,
-                    htlc_amount,
-                )[..],
-            )
-            .map_err(|err| self.internal_error(format!("htlc_sighash failed:{}", err)))?;
+                let htlc_sighash = Message::from_slice(
+                    &bip143::SighashComponents::new(&tx).sighash_all(
+                        &tx.input[0],
+                        &htlc_redeemscript,
+                        htlc_amount,
+                    )[..],
+                )
+                .map_err(|err| self.internal_error(format!("htlc_sighash failed:{}", err)))?;
 
-            let htlc_privkey = derive_private_key(
-                &secp_ctx,
-                &per_commitment_point,
-                &chan.keys.inner.htlc_base_key(),
-            )
-            .map_err(|err| self.internal_error(format!("derive htlc_privkey failed: {}", err)))?;
+                let htlc_privkey = derive_private_key(
+                    &secp_ctx,
+                    &per_commitment_point,
+                    &chan.keys.inner.htlc_base_key(),
+                )
+                .map_err(|err| {
+                    self.internal_error(format!("derive htlc_privkey failed: {}", err))
+                })?;
 
-            let mut sigvec = secp_ctx
-                .sign(&htlc_sighash, &htlc_privkey)
-                .serialize_der()
-                .to_vec();
-            sigvec.push(SigHashType::All as u8);
-            Ok(sigvec)
-        });
+                let mut sigvec = secp_ctx
+                    .sign(&htlc_sighash, &htlc_privkey)
+                    .serialize_der()
+                    .to_vec();
+                sigvec.push(SigHashType::All as u8);
+                Ok(sigvec)
+            });
         sigvec
     }
 
@@ -1055,48 +1053,50 @@ impl MySigner {
         output_witscripts: Vec<Vec<u8>>,
         htlc_amount: u64,
     ) -> Result<Vec<u8>, Status> {
-        let sigvec: Result<Vec<u8>, Status> = self.with_channel(node_id, channel_id, |opt_chan| {
-            let chan = opt_chan.ok_or(self.invalid_argument("no such node/channel"))?;
-            if tx.input.len() != 1 {
-                return Err(self.invalid_argument("tx.input.len() != 1"));
-            }
-            if tx.output.len() != 1 {
-                return Err(self.invalid_argument("tx.output.len() != 1"));
-            }
-            if output_witscripts.len() != 1 {
-                return Err(self.invalid_argument("output_witscripts.len() != 1"));
-            }
+        let sigvec: Result<Vec<u8>, Status> =
+            self.with_existing_channel(&node_id, &channel_id, |chan| {
+                if tx.input.len() != 1 {
+                    return Err(self.invalid_argument("tx.input.len() != 1"));
+                }
+                if tx.output.len() != 1 {
+                    return Err(self.invalid_argument("tx.output.len() != 1"));
+                }
+                if output_witscripts.len() != 1 {
+                    return Err(self.invalid_argument("output_witscripts.len() != 1"));
+                }
 
-            let secp_ctx = Secp256k1::signing_only();
+                let secp_ctx = Secp256k1::signing_only();
 
-            let per_commitment_point =
-                MyKeysManager::per_commitment_point(&secp_ctx, chan.keys.commitment_seed(), n);
+                let per_commitment_point =
+                    MyKeysManager::per_commitment_point(&secp_ctx, chan.keys.commitment_seed(), n);
 
-            let htlc_redeemscript = Script::from((&output_witscripts[0]).to_vec());
+                let htlc_redeemscript = Script::from((&output_witscripts[0]).to_vec());
 
-            let htlc_sighash = Message::from_slice(
-                &bip143::SighashComponents::new(&tx).sighash_all(
-                    &tx.input[0],
-                    &htlc_redeemscript,
-                    htlc_amount,
-                )[..],
-            )
-            .map_err(|err| self.internal_error(format!("htlc_sighash failed: {}", err)))?;
+                let htlc_sighash = Message::from_slice(
+                    &bip143::SighashComponents::new(&tx).sighash_all(
+                        &tx.input[0],
+                        &htlc_redeemscript,
+                        htlc_amount,
+                    )[..],
+                )
+                .map_err(|err| self.internal_error(format!("htlc_sighash failed: {}", err)))?;
 
-            let htlc_privkey = derive_private_key(
-                &secp_ctx,
-                &per_commitment_point,
-                &chan.keys.inner.delayed_payment_base_key(),
-            )
-            .map_err(|err| self.internal_error(format!("derive htlc_privkey failed: {}", err)))?;
+                let htlc_privkey = derive_private_key(
+                    &secp_ctx,
+                    &per_commitment_point,
+                    &chan.keys.inner.delayed_payment_base_key(),
+                )
+                .map_err(|err| {
+                    self.internal_error(format!("derive htlc_privkey failed: {}", err))
+                })?;
 
-            let mut sigvec = secp_ctx
-                .sign(&htlc_sighash, &htlc_privkey)
-                .serialize_der()
-                .to_vec();
-            sigvec.push(SigHashType::All as u8);
-            Ok(sigvec)
-        });
+                let mut sigvec = secp_ctx
+                    .sign(&htlc_sighash, &htlc_privkey)
+                    .serialize_der()
+                    .to_vec();
+                sigvec.push(SigHashType::All as u8);
+                Ok(sigvec)
+            });
         sigvec
     }
 
@@ -1109,43 +1109,45 @@ impl MySigner {
         remote_per_commitment_point: &PublicKey,
         htlc_amount: u64,
     ) -> Result<Vec<u8>, Status> {
-        let sig: Result<Vec<u8>, Status> = self.with_channel(node_id, channel_id, |opt_chan| {
-            let chan = opt_chan.ok_or(self.invalid_argument("no such node/channel"))?;
-            if tx.output.len() != output_witscripts.len() {
-                return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
-            }
-            if tx.input.len() != 1 {
-                return Err(self.invalid_argument("len(tx.input) != 1"));
-            }
-            if tx.output.len() != 1 {
-                return Err(self.invalid_argument("len(tx.output) != 1"));
-            }
+        let sig: Result<Vec<u8>, Status> =
+            self.with_existing_channel(&node_id, &channel_id, |chan| {
+                if tx.output.len() != output_witscripts.len() {
+                    return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
+                }
+                if tx.input.len() != 1 {
+                    return Err(self.invalid_argument("len(tx.input) != 1"));
+                }
+                if tx.output.len() != 1 {
+                    return Err(self.invalid_argument("len(tx.output) != 1"));
+                }
 
-            let secp_ctx = &chan.secp_ctx;
+                let secp_ctx = &chan.secp_ctx;
 
-            let htlc_redeemscript = Script::from((&output_witscripts[0]).to_vec());
+                let htlc_redeemscript = Script::from((&output_witscripts[0]).to_vec());
 
-            let htlc_sighash = Message::from_slice(
-                &bip143::SighashComponents::new(&tx).sighash_all(
-                    &tx.input[0],
-                    &htlc_redeemscript,
-                    htlc_amount,
-                )[..],
-            )
-            .map_err(|err| self.internal_error(format!("htlc_sighash failed: {}", err)))?;
+                let htlc_sighash = Message::from_slice(
+                    &bip143::SighashComponents::new(&tx).sighash_all(
+                        &tx.input[0],
+                        &htlc_redeemscript,
+                        htlc_amount,
+                    )[..],
+                )
+                .map_err(|err| self.internal_error(format!("htlc_sighash failed: {}", err)))?;
 
-            let our_htlc_key = derive_private_key(
-                &secp_ctx,
-                &remote_per_commitment_point,
-                &chan.keys.inner.htlc_base_key(),
-            )
-            .map_err(|err| self.internal_error(format!("derive our_htlc_key failed: {}", err)))?;
+                let our_htlc_key = derive_private_key(
+                    &secp_ctx,
+                    &remote_per_commitment_point,
+                    &chan.keys.inner.htlc_base_key(),
+                )
+                .map_err(|err| {
+                    self.internal_error(format!("derive our_htlc_key failed: {}", err))
+                })?;
 
-            let sigobj = secp_ctx.sign(&htlc_sighash, &our_htlc_key);
-            let mut sig = sigobj.serialize_der().to_vec();
-            sig.push(SigHashType::All as u8);
-            Ok(sig)
-        });
+                let sigobj = secp_ctx.sign(&htlc_sighash, &our_htlc_key);
+                let mut sig = sigobj.serialize_der().to_vec();
+                sig.push(SigHashType::All as u8);
+                Ok(sig)
+            });
         sig
     }
 
@@ -1158,42 +1160,42 @@ impl MySigner {
         remote_per_commitment_point: &PublicKey,
         htlc_amount: u64,
     ) -> Result<Vec<u8>, Status> {
-        let retval: Result<Vec<u8>, Status> = self.with_channel(node_id, channel_id, |opt_chan| {
-            let chan = opt_chan.ok_or(self.invalid_argument("no such node/channel"))?;
-            if tx.input.len() != 1 {
-                return Err(self.invalid_argument("tx.input.len() != 1"));
-            }
-            if tx.output.len() != 1 {
-                return Err(self.invalid_argument("tx.output.len() != 1"));
-            }
-            if output_witscripts.len() != 1 {
-                return Err(self.invalid_argument("output_witscripts.len() != 1"));
-            }
+        let retval: Result<Vec<u8>, Status> =
+            self.with_existing_channel(&node_id, &channel_id, |chan| {
+                if tx.input.len() != 1 {
+                    return Err(self.invalid_argument("tx.input.len() != 1"));
+                }
+                if tx.output.len() != 1 {
+                    return Err(self.invalid_argument("tx.output.len() != 1"));
+                }
+                if output_witscripts.len() != 1 {
+                    return Err(self.invalid_argument("output_witscripts.len() != 1"));
+                }
 
-            let secp_ctx = &chan.secp_ctx;
+                let secp_ctx = &chan.secp_ctx;
 
-            let redeemscript = Script::from((&output_witscripts[0]).to_vec());
+                let redeemscript = Script::from((&output_witscripts[0]).to_vec());
 
-            let sighash = Message::from_slice(
-                &bip143::SighashComponents::new(&tx).sighash_all(
-                    &tx.input[0],
-                    &redeemscript,
-                    htlc_amount,
-                )[..],
-            )
-            .map_err(|err| self.internal_error(format!("sighash failed: {}", err)))?;
+                let sighash = Message::from_slice(
+                    &bip143::SighashComponents::new(&tx).sighash_all(
+                        &tx.input[0],
+                        &redeemscript,
+                        htlc_amount,
+                    )[..],
+                )
+                .map_err(|err| self.internal_error(format!("sighash failed: {}", err)))?;
 
-            let privkey = derive_private_key(
-                &secp_ctx,
-                &remote_per_commitment_point,
-                &chan.keys.inner.htlc_base_key(),
-            )
-            .map_err(|err| self.internal_error(format!("derive privkey failed: {}", err)))?;
+                let privkey = derive_private_key(
+                    &secp_ctx,
+                    &remote_per_commitment_point,
+                    &chan.keys.inner.htlc_base_key(),
+                )
+                .map_err(|err| self.internal_error(format!("derive privkey failed: {}", err)))?;
 
-            let mut sigvec = secp_ctx.sign(&sighash, &privkey).serialize_der().to_vec();
-            sigvec.push(SigHashType::All as u8);
-            Ok(sigvec)
-        });
+                let mut sigvec = secp_ctx.sign(&sighash, &privkey).serialize_der().to_vec();
+                sigvec.push(SigHashType::All as u8);
+                Ok(sigvec)
+            });
         retval
     }
 
@@ -1206,42 +1208,42 @@ impl MySigner {
         output_witscripts: Vec<Vec<u8>>,
         htlc_amount: u64,
     ) -> Result<Vec<u8>, Status> {
-        let sigvec: Result<Vec<u8>, Status> = self.with_channel(node_id, channel_id, |opt_chan| {
-            let chan = opt_chan.ok_or(self.invalid_argument("no such node/channel"))?;
-            if tx.input.len() != 1 {
-                return Err(self.invalid_argument("tx.input.len() != 1"));
-            }
-            if tx.output.len() != 1 {
-                return Err(self.invalid_argument("tx.output.len() != 1"));
-            }
-            if output_witscripts.len() != 1 {
-                return Err(self.invalid_argument("output_witscripts.len() != 1"));
-            }
+        let sigvec: Result<Vec<u8>, Status> =
+            self.with_existing_channel(&node_id, &channel_id, |chan| {
+                if tx.input.len() != 1 {
+                    return Err(self.invalid_argument("tx.input.len() != 1"));
+                }
+                if tx.output.len() != 1 {
+                    return Err(self.invalid_argument("tx.output.len() != 1"));
+                }
+                if output_witscripts.len() != 1 {
+                    return Err(self.invalid_argument("output_witscripts.len() != 1"));
+                }
 
-            let secp_ctx = &chan.secp_ctx;
+                let secp_ctx = &chan.secp_ctx;
 
-            let redeemscript = Script::from((&output_witscripts[0]).to_vec());
+                let redeemscript = Script::from((&output_witscripts[0]).to_vec());
 
-            let sighash = Message::from_slice(
-                &bip143::SighashComponents::new(&tx).sighash_all(
-                    &tx.input[0],
-                    &redeemscript,
-                    htlc_amount,
-                )[..],
-            )
-            .map_err(|err| self.internal_error(format!("sighash failed: {}", err)))?;
+                let sighash = Message::from_slice(
+                    &bip143::SighashComponents::new(&tx).sighash_all(
+                        &tx.input[0],
+                        &redeemscript,
+                        htlc_amount,
+                    )[..],
+                )
+                .map_err(|err| self.internal_error(format!("sighash failed: {}", err)))?;
 
-            let privkey = derive_private_revocation_key(
-                secp_ctx,
-                revocation_secret,
-                chan.keys.revocation_base_key(),
-            )
-            .map_err(|err| self.internal_error(format!("derive privkey failed: {}", err)))?;
+                let privkey = derive_private_revocation_key(
+                    secp_ctx,
+                    revocation_secret,
+                    chan.keys.revocation_base_key(),
+                )
+                .map_err(|err| self.internal_error(format!("derive privkey failed: {}", err)))?;
 
-            let mut sigvec = secp_ctx.sign(&sighash, &privkey).serialize_der().to_vec();
-            sigvec.push(SigHashType::All as u8);
-            Ok(sigvec)
-        });
+                let mut sigvec = secp_ctx.sign(&sighash, &privkey).serialize_der().to_vec();
+                sigvec.push(SigHashType::All as u8);
+                Ok(sigvec)
+            });
         sigvec
     }
 
@@ -1327,8 +1329,7 @@ impl MySigner {
         let ca_hash = Sha256dHash::hash(ca);
         let encmsg = ::secp256k1::Message::from_slice(&ca_hash[..])
             .map_err(|err| self.internal_error(format!("encmsg failed: {}", err)))?;
-        self.with_channel(&node_id, &channel_id, |opt_chan| {
-            let chan = opt_chan.ok_or_else(|| self.invalid_argument("no such node/channel"))?;
+        self.with_existing_channel(&node_id, &channel_id, |chan| {
             let nsigvec = secp_ctx
                 .sign(&encmsg, &chan.node.get_node_secret())
                 .serialize_der()
@@ -1465,8 +1466,7 @@ mod tests {
         };
         let remote_keys = make_channel_pubkeys();
         let (tx, output_scripts, _) = signer
-            .with_channel(&node_id, &channel_id, |opt_chan| {
-                let chan = opt_chan.ok_or(Status::invalid_argument("no such channel"))?;
+            .with_existing_channel(&node_id, &channel_id, |chan| {
                 chan.ready(&remote_keys, 5u16, Script::new(), funding_outpoint);
                 chan.build_commitment_tx(&remote_percommitment_point, 23, &info)
             })
@@ -1574,8 +1574,7 @@ mod tests {
         let remote_keys = make_channel_pubkeys();
 
         let (tx, _, _) = signer
-            .with_channel(&node_id, &channel_id, |opt_chan| {
-                let chan = opt_chan.ok_or(Status::invalid_argument("no such channel"))?;
+            .with_existing_channel(&node_id, &channel_id, |chan| {
                 chan.ready(&remote_keys, 5u16, Script::new(), funding_outpoint);
                 let per_commitment_point = chan.get_per_commitment_point(23);
                 let info = chan.build_local_commitment_info(
@@ -1683,10 +1682,10 @@ mod tests {
         node_id: &PublicKey,
         channel_id: &ChannelId,
     ) -> PublicKey {
-        let res: Result<PublicKey, ()> = signer.with_channel(&node_id, &channel_id, |opt_chan| {
-            let chan = opt_chan.unwrap();
-            Ok(chan.keys.pubkeys().funding_pubkey)
-        });
+        let res: Result<PublicKey, Status> =
+            signer.with_existing_channel(&node_id, &channel_id, |chan| {
+                Ok(chan.keys.pubkeys().funding_pubkey)
+            });
         res.unwrap()
     }
 
@@ -1696,17 +1695,17 @@ mod tests {
         channel_id: &ChannelId,
         remote_per_commitment_point: &PublicKey,
     ) -> PublicKey {
-        let res: Result<PublicKey, ()> = signer.with_channel(&node_id, &channel_id, |opt_chan| {
-            let chan = opt_chan.unwrap();
-            let secp_ctx = &chan.secp_ctx;
-            let pubkey = derive_public_key(
-                &secp_ctx,
-                &remote_per_commitment_point,
-                &chan.keys.inner.pubkeys().htlc_basepoint,
-            )
-            .unwrap();
-            Ok(pubkey)
-        });
+        let res: Result<PublicKey, Status> =
+            signer.with_existing_channel(&node_id, &channel_id, |chan| {
+                let secp_ctx = &chan.secp_ctx;
+                let pubkey = derive_public_key(
+                    &secp_ctx,
+                    &remote_per_commitment_point,
+                    &chan.keys.inner.pubkeys().htlc_basepoint,
+                )
+                .unwrap();
+                Ok(pubkey)
+            });
         res.unwrap()
     }
 
@@ -1716,17 +1715,17 @@ mod tests {
         channel_id: &ChannelId,
         remote_per_commitment_point: &PublicKey,
     ) -> PublicKey {
-        let res: Result<PublicKey, ()> = signer.with_channel(&node_id, &channel_id, |opt_chan| {
-            let chan = opt_chan.unwrap();
-            let secp_ctx = &chan.secp_ctx;
-            let pubkey = derive_public_key(
-                &secp_ctx,
-                &remote_per_commitment_point,
-                &chan.keys.inner.pubkeys().delayed_payment_basepoint,
-            )
-            .unwrap();
-            Ok(pubkey)
-        });
+        let res: Result<PublicKey, Status> =
+            signer.with_existing_channel(&node_id, &channel_id, |chan| {
+                let secp_ctx = &chan.secp_ctx;
+                let pubkey = derive_public_key(
+                    &secp_ctx,
+                    &remote_per_commitment_point,
+                    &chan.keys.inner.pubkeys().delayed_payment_basepoint,
+                )
+                .unwrap();
+                Ok(pubkey)
+            });
         res.unwrap()
     }
 
@@ -1736,17 +1735,17 @@ mod tests {
         channel_id: &ChannelId,
         revocation_point: &PublicKey,
     ) -> PublicKey {
-        let res: Result<PublicKey, ()> = signer.with_channel(&node_id, &channel_id, |opt_chan| {
-            let chan = opt_chan.unwrap();
-            let secp_ctx = &chan.secp_ctx;
-            let pubkey = derive_public_revocation_key(
-                secp_ctx,
-                revocation_point, // matches revocation_secret
-                &chan.keys.inner.pubkeys().revocation_basepoint,
-            )
-            .unwrap();
-            Ok(pubkey)
-        });
+        let res: Result<PublicKey, Status> =
+            signer.with_existing_channel(&node_id, &channel_id, |chan| {
+                let secp_ctx = &chan.secp_ctx;
+                let pubkey = derive_public_revocation_key(
+                    secp_ctx,
+                    revocation_point, // matches revocation_secret
+                    &chan.keys.inner.pubkeys().revocation_basepoint,
+                )
+                .unwrap();
+                Ok(pubkey)
+            });
         res.unwrap()
     }
 
@@ -2814,10 +2813,8 @@ mod tests {
         };
 
         let (tx, _, _) = signer
-            .with_channel(&node_id, &channel_id, |opt_chan| {
-                let chan = opt_chan.ok_or_else(|| signer.invalid_argument("no such channel"))?;
+            .with_existing_channel(&node_id, &channel_id, |chan| {
                 chan.ready(&remote_keys, to_self_delay, Script::new(), funding_outpoint);
-
                 chan.build_commitment_tx(&remote_per_commitment_point, n, &info)
             })
             .expect("tx");
@@ -2900,10 +2897,8 @@ mod tests {
         };
 
         let (tx, _, _) = signer
-            .with_channel(&node_id, &channel_id, |opt_chan| {
-                let chan = opt_chan.ok_or_else(|| signer.invalid_argument("no such channel"))?;
+            .with_existing_channel(&node_id, &channel_id, |chan| {
                 chan.ready(&remote_keys, to_self_delay, Script::new(), funding_outpoint);
-
                 chan.build_commitment_tx(&remote_per_commitment_point, n, &info)
             })
             .expect("tx");
@@ -3056,14 +3051,14 @@ mod tests {
             .verify(&encmsg, &nsig, &node_id)
             .expect("verify nsig");
         let bsig = Signature::from_der(&bsigvec).expect("bsig");
-        let _res: Result<(), Status> = signer.with_channel(&node_id, &channel_id, |opt_chan| {
-            let chan = opt_chan.ok_or_else(|| signer.invalid_argument("no such channel"))?;
-            let funding_pubkey =
-                PublicKey::from_secret_key(&secp_ctx, &chan.keys.inner.funding_key());
-            Ok(secp_ctx
-                .verify(&encmsg, &bsig, &funding_pubkey)
-                .expect("verify bsig"))
-        });
+        let _res: Result<(), Status> =
+            signer.with_existing_channel(&node_id, &channel_id, |chan| {
+                let funding_pubkey =
+                    PublicKey::from_secret_key(&secp_ctx, &chan.keys.inner.funding_key());
+                Ok(secp_ctx
+                    .verify(&encmsg, &bsig, &funding_pubkey)
+                    .expect("verify bsig"))
+            });
     }
 
     #[test]
