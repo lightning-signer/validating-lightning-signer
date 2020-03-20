@@ -715,7 +715,9 @@ impl MySigner {
 
     pub fn xkey(&self, node_id: &PublicKey) -> Result<ExtendedPrivKey, Status> {
         self.with_node(&node_id, |opt_node| {
-            let node = opt_node.ok_or(self.invalid_argument("no such node"))?;
+            let node = opt_node.ok_or_else(|| {
+                self.invalid_argument(format!("xkey: node_id not found: {}", node_id))
+            })?;
             Ok(node.get_bip32_key().clone())
         })
     }
