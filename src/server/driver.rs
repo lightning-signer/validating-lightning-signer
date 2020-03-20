@@ -43,19 +43,15 @@ impl MySigner {
         let slice: &[u8] = der_vec
             .as_slice()
             .try_into()
-            .map_err(|_| self.invalid_argument("node ID wrong length"))?;
-        PublicKey::from_slice(slice).map_err(|e| {
-            self.invalid_argument(format!(
-                "could not deserialize remote_funding_pubkey - {}",
-                e
-            ))
-        })
+            .map_err(|err| self.invalid_argument(format!("node ID wrong length: {}", err)))?;
+        PublicKey::from_slice(slice)
+            .map_err(|err| self.invalid_argument(format!("could not deserialize nodeid: {}", err)))
     }
 
     fn public_key(&self, arg: Option<PubKey>) -> Result<PublicKey, Status> {
         let pubkey = arg.ok_or_else(|| self.invalid_argument("missing pubkey"))?;
         public_key_from_raw(pubkey.data.as_slice())
-            .map_err(|e| self.invalid_argument(format!("could not deserialize pubkey - {}", e)))
+            .map_err(|err| self.invalid_argument(format!("could not deserialize pubkey: {}", err)))
     }
 
     fn secret_key(&self, arg: Option<Secret>) -> Result<SecretKey, Status> {
@@ -64,7 +60,7 @@ impl MySigner {
                 .data
                 .as_slice(),
         )
-        .map_err(|e| self.invalid_argument(format!("could not deserialize secret - {}", e)));
+        .map_err(|err| self.invalid_argument(format!("could not deserialize secret: {}", err)));
     }
 
     // Converts secp256k1::PublicKey into remotesigner::PubKey
@@ -89,11 +85,9 @@ impl MySigner {
     fn convert_htlcs(&self, msg_htlcs: &Vec<HtlcInfo>) -> Result<Vec<HTLCInfo>, Status> {
         let mut htlcs = Vec::new();
         for h in msg_htlcs.iter() {
-            let hash = h
-                .payment_hash
-                .as_slice()
-                .try_into()
-                .map_err(|_| self.invalid_argument("could not decode payment hash"))?;
+            let hash = h.payment_hash.as_slice().try_into().map_err(|err| {
+                self.invalid_argument(format!("could not decode payment hash: {}", err))
+            })?;
             htlcs.push(HTLCInfo {
                 value: h.value,
                 payment_hash: PaymentHash(hash),
@@ -162,7 +156,7 @@ impl Signer for MySigner {
         let hsm_secret = hsm_secret
             .as_slice()
             .try_into()
-            .map_err(|_| self.invalid_argument("secret length != 32"))?;
+            .map_err(|err| self.invalid_argument(format!("secret length != 32: {}", err)))?;
         let node_id = self.new_node_from_seed(hsm_secret).serialize().to_vec();
         log_info!(self, "REPLY init {}", hex::encode(&node_id));
 
@@ -187,15 +181,14 @@ impl Signer for MySigner {
             opt_channel_id,
         );
 
-        let channel_id = self
-            .new_channel(
-                &node_id,
-                msg.channel_value,
-                opt_channel_nonce,
-                opt_channel_id,
-                msg.to_self_delay as u16,
-                msg.is_outbound,
-            )?;
+        let channel_id = self.new_channel(
+            &node_id,
+            msg.channel_value,
+            opt_channel_nonce,
+            opt_channel_id,
+            msg.to_self_delay as u16,
+            msg.is_outbound,
+        )?;
 
         let reply = NewChannelReply {
             channel_nonce: Some(ChannelNonce {
@@ -274,14 +267,15 @@ impl Signer for MySigner {
         let msg_outpoint = msg
             .funding_outpoint
             .ok_or_else(|| self.invalid_argument("missing funding outpoint"))?;
-        let txid = sha256d::Hash::from_slice(&msg_outpoint.txid)
-            .map_err(|_| self.invalid_argument("cannot decode funding outpoint txid"))?;
+        let txid = sha256d::Hash::from_slice(&msg_outpoint.txid).map_err(|err| {
+            self.invalid_argument(format!("cannot decode funding outpoint txid: {}", err))
+        })?;
         let funding_outpoint = OutPoint {
             txid,
             vout: msg_outpoint.index,
         };
         let script = Script::deserialize(&msg.shutdown_script.as_slice())
-            .map_err(|_| self.invalid_argument("could not parse script"))?;
+            .map_err(|err| self.invalid_argument(format!("could not parse script: {}", err)))?;
         let to_self_delay = msg.to_self_delay as u16;
         self.with_existing_channel(&node_id, &channel_id, |chan| {
             if chan.is_ready() {
@@ -547,8 +541,9 @@ impl Signer for MySigner {
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
         let remote_funding_pubkey = self.public_key(msg.remote_funding_pubkey)?;
         let remote_per_commitment_point = self.public_key(msg.remote_per_commit_point)?;
-        let channel_value_satoshis =
-            reqtx.input_descs[0].prev_output.as_ref()
+        let channel_value_satoshis = reqtx.input_descs[0]
+            .prev_output
+            .as_ref()
             .ok_or_else(|| self.invalid_argument("missing prev_output"))?
             .value as u64;
         let witscripts = reqtx
@@ -736,7 +731,7 @@ impl Signer for MySigner {
 
         let htlc_amount = match reqtx.input_descs[0].prev_output.as_ref() {
             Some(out) => out.value as u64,
-            None => return Err(Status::internal("missing input_desc[0]")),
+            None => return Err(self.internal_error("missing input_desc[0]")),
         };
 
         let witscripts = collect_output_witscripts(&reqtx.output_descs);
@@ -970,7 +965,9 @@ impl Signer for MySigner {
         );
         let sig_data = self.sign_invoice(&node_id, &data_part, &human_readable_part)?;
         let reply = RecoverableNodeSignatureReply {
-            signature: Some(EcdsaRecoverableSignature { data: sig_data.clone() }),
+            signature: Some(EcdsaRecoverableSignature {
+                data: sig_data.clone(),
+            }),
         };
         log_info!(
             self,

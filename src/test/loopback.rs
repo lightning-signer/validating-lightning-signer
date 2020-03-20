@@ -80,6 +80,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         self.keys.remote_pubkeys()
     }
 
+    // FIXME - Couldn't this return a declared error signature?
     fn sign_remote_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         feerate_per_kw: u64,
@@ -110,6 +111,7 @@ impl ChannelKeys for LoopbackChannelSigner {
             })
     }
 
+    // FIXME - Couldn't this return a declared error signature?
     fn sign_closing_transaction<T: secp256k1::Signing>(
         &self,
         _closing_tx: &Transaction,
