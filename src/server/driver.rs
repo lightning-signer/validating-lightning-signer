@@ -20,19 +20,23 @@ use crate::server::remotesigner::version_server::Version;
 use crate::tx::tx::HTLCInfo;
 use crate::util::crypto_utils::public_key_from_raw;
 
+use backtrace::Backtrace;
+
 use super::remotesigner;
 
 impl MySigner {
     pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
-        log_error!(self, "invalid argument {}", &s);
+        log_error!(self, "INVALID ARGUMENT: {}", &s);
+        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
 
     #[allow(dead_code)]
     pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
-        log_error!(self, "internal error {}", &s);
+        log_error!(self, "INTERNAL ERROR: {}", &s);
+        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
     }
 

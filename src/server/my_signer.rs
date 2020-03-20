@@ -36,6 +36,8 @@ use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::invoice_utils;
 use crate::util::test_utils::TestLogger;
 
+use backtrace::Backtrace;
+
 use super::remotesigner::SpendType;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -81,13 +83,15 @@ impl Debug for Channel {
 impl Channel {
     pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
-        log_error!(self, "invalid argument {}", &s);
+        log_error!(self, "INVALID ARGUMENT: {}", &s);
+        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
 
     pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
-        log_error!(self, "internal error {}", &s);
+        log_error!(self, "INTERNAL ERROR: {}", &s);
+        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
     }
 
@@ -419,13 +423,15 @@ impl Node {
     #[allow(dead_code)]
     pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
-        log_error!(self, "invalid argument {}", &s);
+        log_error!(self, "INVALID ARGUMENT: {}", &s);
+        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
 
     pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
-        log_error!(self, "internal error {}", &s);
+        log_error!(self, "INTERNAL ERROR: {}", &s);
+        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
     }
 
