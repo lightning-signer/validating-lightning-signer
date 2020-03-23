@@ -15,7 +15,7 @@ package remotesigner;
 
 service Signer {
   // Trivial call to test connectivity
-  rpc Ping(PingRequest)
+  rpc Ping (PingRequest)
     returns (PingReply);
 
   // Provision a signer for a new node
@@ -40,7 +40,8 @@ service Signer {
     returns (CloseTxSignatureReply);
 
   // BOLT #2 - Message Retransmission
-  // Used to recover from local data loss by checking that our secret provided by the peer is correct.
+  // Used to recover from local data loss by checking that our secret
+  // provided by the peer is correct.
   rpc CheckFutureSecret (CheckFutureSecretRequest)
     returns (CheckFutureSecretReply);
 
@@ -50,13 +51,16 @@ service Signer {
     returns (GetChannelBasepointsReply);
 
   // BOLT #3 - Per-commitment Secret Requirements
-  // Get our current per-commitment point and the secret for the point at commitment n-2
+  // Get our current per-commitment point and the secret for the point
+  // at commitment n-2
   rpc GetPerCommitmentPoint (GetPerCommitmentPointRequest)
     returns (GetPerCommitmentPointReply);
 
   // BOLT #3 - Funding Transaction
   // Sign the funding transaction
-  // TODO this must be done after we know the remote signature on the commitment tx - need an API call that provides this to the signer.
+  // TODO this must be done after we know the remote signature on the
+  // commitment tx - need an API call that provides this to the
+  // signer.
   rpc SignFundingTx (SignFundingTxRequest)
     returns (SignFundingTxReply);
 
@@ -83,12 +87,14 @@ service Signer {
 
 
   // BOLT #3 - HTLC Outputs, phase 1
-  // Sign an htlc-success tx spending a local HTLC output, assuming we know the preimage, at force-close time
+  // Sign an htlc-success tx spending a local HTLC output, assuming we
+  // know the preimage, at force-close time
   rpc SignLocalHTLCTx (SignLocalHTLCTxRequest)
     returns (SignatureReply);
 
   // BOLT #5 - Unilateral Close Handling, phase 1
-  // Sign a delayed to-local output - either from the commitment tx or from an HTLC, at force-close time
+  // Sign a delayed to-local output - either from the commitment tx or
+  // from an HTLC, at force-close time
   rpc SignDelayedPaymentToUs (SignDelayedPaymentToUsRequest)
     returns (SignatureReply);
 
@@ -97,14 +103,16 @@ service Signer {
   rpc SignRemoteHTLCTx (SignRemoteHTLCTxRequest)
     returns (SignatureReply);
 
-  // BOLT #3 - HTLC Outputs, phase 1
-  // Sign an htlc-success tx on a remote HTLC output offered to us, assuming we know the preimage, at force-close time
+  // BOLT #3 - HTLC Outputs, phase 1 Sign an htlc-success tx on a
+  // remote HTLC output offered to us, assuming we know the preimage,
+  // at force-close time
   rpc SignRemoteHTLCToUs (SignRemoteHTLCToUsRequest)
     returns (SignatureReply);
 
   // BOLT #5 - Unilateral Close Handling, phase 1
-  // Sign a penalty tx to us - either sweeping the to-local commitment tx output
-  // or sweeping an HTLC tx output, after the remote broadcast a revoked commitment transaction.
+  // Sign a penalty tx to us - either sweeping the to-local commitment
+  // tx output or sweeping an HTLC tx output, after the remote
+  // broadcast a revoked commitment transaction.
   rpc SignPenaltyToUs (SignPenaltyToUsRequest)
     returns (SignatureReply);
 
@@ -163,7 +171,8 @@ message InitReply {
 }
 
 // Initialize a new channel
-// In phase 2, the node will also provide remote keys and basepoints in the ReadyChannel call
+// In phase 2, the node will also provide remote keys and basepoints
+// in the ReadyChannel call
 message NewChannelRequest {
   NodeId node_id = 1;
 
@@ -625,8 +634,9 @@ message HTLCInfo {
 
 // Information required to construct a commitment transaction.
 //
-// The notions of "local" "remote", "offered" and "received" are from the point of view of the transaction.
-// For example, when signing a remote commitment tx, "local" is the remote peer.
+// The notions of "local" "remote", "offered" and "received" are from
+// the point of view of the transaction.  For example, when signing a
+// remote commitment tx, "local" is the remote peer.
 message CommitmentInfo {
   // Feerate, for building HTLC transactions
   uint32 feerate_per_kw = 1;
