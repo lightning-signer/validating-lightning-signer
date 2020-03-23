@@ -2,6 +2,15 @@ use std;
 
 use secp256k1::key::PublicKey;
 
+use serde::Serializer;
+
+pub fn as_hex<S>(buf: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&hex::encode(&buf))
+}
+
 pub(crate) struct DebugPubKey<'a>(pub &'a PublicKey);
 
 impl<'a> std::fmt::Display for DebugPubKey<'a> {
