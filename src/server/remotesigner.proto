@@ -22,6 +22,10 @@ service Signer {
   rpc Init (InitRequest)
     returns (InitReply);
 
+  // Get signing XPUB for a node.
+  rpc GetExtPubKey (GetExtPubKeyRequest)
+    returns (GetExtPubKeyReply);
+  
   // BOLT #2 - Peer Protocol - allocate a new channel
   rpc NewChannel (NewChannelRequest)
     returns (NewChannelReply);
@@ -168,6 +172,19 @@ message InitRequest {
 
 message InitReply {
   NodeId node_id = 1;
+}
+
+// This interface is enough to support c-lightning, not sure if it will
+// cover all needed implementations..
+message GetExtPubKeyRequest {
+  NodeId node_id = 1;
+
+  // The desired derivation path for the requested XPUB (ex: "m/0'/1").
+  string derivation_path = 2;
+}
+
+message GetExtPubKeyReply {
+  ExtPubKey xpub = 1;
 }
 
 // Initialize a new channel
@@ -517,6 +534,11 @@ message ECDSARecoverableSignature {
 // DER encoded Bitcoin Signature
 message BitcoinSignature {
   bytes data = 1;
+}
+
+// BIP-32 Extended Public Key (base58 encoded, up to 112 chars)
+message ExtPubKey {
+  string encoded = 1;
 }
 
 // ----------------------------------------------------------------
