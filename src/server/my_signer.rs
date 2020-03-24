@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use bitcoin;
 use bitcoin::util::bip143;
 use bitcoin::util::bip143::SighashComponents;
-use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
+use bitcoin::util::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{Address, Network, OutPoint, Script, SigHashType};
 use bitcoin_hashes::core::fmt::{Error, Formatter};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
@@ -834,6 +834,26 @@ impl MySigner {
                 htlc_sigs.push(htlc_sig);
             }
             Ok((sig, htlc_sigs))
+        })
+    }
+
+    pub fn get_ext_pub_key(
+        &self,
+        node_id: &PublicKey,
+        derivpathstr: &String,
+    ) -> Result<ExtendedPubKey, Status> {
+        use std::str::FromStr;
+        self.with_node(node_id, |opt_node| {
+            let secp_ctx = Secp256k1::signing_only();
+            let node = opt_node.ok_or_else(|| self.invalid_argument("no such node"))?;
+            let derivpath = DerivationPath::from_str(derivpathstr)
+                .map_err(|err| self.invalid_argument(format!("derive path failed: {}", err)))?;
+            let extprivkey = node
+                .get_bip32_key()
+                .derive_priv(&secp_ctx, &derivpath)
+                .map_err(|err| self.invalid_argument(format!("derive failed: {}", err)))?;
+            let extpubkey = ExtendedPubKey::from_private(&secp_ctx, &extprivkey);
+            Ok(extpubkey)
         })
     }
 
@@ -3118,6 +3138,27 @@ mod tests {
             .unwrap();
         assert_eq!(rsig, hex::decode("739ffb91aa7c0b3d3c92de1600f7a9afccedc5597977095228232ee4458685531516451b84deb35efad27a311ea99175d10c6cdb458cd27ce2ed104eb6cf806400").unwrap());
         Ok(())
+    }
+
+    #[test]
+    fn get_ext_pub_key_test() {
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(
+            hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000")
+                .unwrap()
+                .as_slice(),
+        );
+        let node_id = signer.new_node_from_seed(&seed);
+        let xpub = signer
+            .get_ext_pub_key(&node_id, &String::from("m"))
+            .unwrap();
+        assert_eq!(format!("{}", xpub), "tpubDAu312RD7nE6R9qyB4xJk9QAMyi3ppq3UJ4MMUGpB9frr6eNDd8FJVPw27zTVvWAfYFVUtJamgfh5ZLwT23EcymYgLx7MHsU8zZxc9L3GKk");
+
+        let xpub = signer
+            .get_ext_pub_key(&node_id, &String::from("m/0'/1"))
+            .unwrap();
+        assert_eq!(format!("{}", xpub), "tpubDDvNnzPcnHTVAe2SGs6mfcZKckaAKrfCWqnDvYps9wgbxsRDDmaBGGAo3qS28jbpem8oYd9RNyNVf4KQio6myhXbyBE6BKmVa1576xbgUJB");
     }
 
     #[test]

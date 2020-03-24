@@ -174,6 +174,25 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
+    async fn get_ext_pub_key(
+        &self,
+        request: Request<GetExtPubKeyRequest>,
+    ) -> Result<Response<GetExtPubKeyReply>, Status> {
+        let req = request.into_inner();
+        let reqstr = json!(&req);
+        let node_id = self.node_id(req.node_id)?;
+        log_info!(self, "ENTER get_ext_pub_key({})", node_id);
+        log_debug!(self, "req={}", reqstr);
+        let derivpath = req.derivation_path;
+        let extpubkey = self.get_ext_pub_key(&node_id, &derivpath)?;
+        let reply = GetExtPubKeyReply {
+            xpub: Some(ExtPubKey{ encoded: format!("{}", extpubkey) }),
+        };
+        log_info!(self, "REPLY get_ext_pub_key({})", node_id);
+        log_debug!(self, "reply={}", json!(&reply));
+        Ok(Response::new(reply))
+    }
+
     async fn new_channel(
         &self,
         request: Request<NewChannelRequest>,
