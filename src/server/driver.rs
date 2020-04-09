@@ -183,8 +183,7 @@ impl Signer for MySigner {
         let node_id = self.node_id(req.node_id)?;
         log_info!(self, "ENTER get_ext_pub_key({})", node_id);
         log_debug!(self, "req={}", reqstr);
-        let derivpath = req.derivation_path;
-        let extpubkey = self.get_ext_pub_key(&node_id, &derivpath)?;
+        let extpubkey = self.get_ext_pub_key(&node_id)?;
         let reply = GetExtPubKeyReply {
             xpub: Some(ExtPubKey{ encoded: format!("{}", extpubkey) }),
         };

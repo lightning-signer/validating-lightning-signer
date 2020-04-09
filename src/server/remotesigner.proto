@@ -174,13 +174,10 @@ message InitReply {
   NodeId node_id = 1;
 }
 
-// This interface is enough to support c-lightning, not sure if it will
-// cover all needed implementations..
+// FIXME - This interface is specific to c-lightning, it returns the
+// XPUB associated with "m/0/0" which won't work for anything else.
 message GetExtPubKeyRequest {
   NodeId node_id = 1;
-
-  // The desired derivation path for the requested XPUB (ex: "m/0'/1").
-  string derivation_path = 2;
 }
 
 message GetExtPubKeyReply {
