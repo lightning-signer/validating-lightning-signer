@@ -1,18 +1,22 @@
+use std::i16;
+
+use bitcoin::{blockdata, Script};
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::opcodes::Class;
 use bitcoin::blockdata::script::read_scriptint;
 use bitcoin::blockdata::script::Instruction::PushBytes;
 use bitcoin::blockdata::script::{Builder, Instructions};
-use bitcoin::{blockdata, Script};
+use bitcoin::blockdata::script::Instruction::PushBytes;
 use secp256k1::PublicKey;
 
-use crate::tx::script::ValidationError::{Mismatch, ScriptFormat, TransactionFormat};
+use crate::tx::script::ValidationError::{Mismatch, Policy, ScriptFormat, TransactionFormat};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Debug)]
 pub enum ValidationError {
     TransactionFormat(String),
-    ScriptFormat(String), // NOT TESTED
     Mismatch(String),     // NOT TESTED
+    ScriptFormat(String), // NOT TESTED
+    Policy(String),
 }
 
 // BEGIN NOT TESTED
@@ -30,6 +34,7 @@ impl Into<String> for ValidationError {
             TransactionFormat(s) => "transaction format ".to_string() + &s,
             ScriptFormat(s) => "script format ".to_string() + &s,
             Mismatch(s) => "script template mismatch ".to_string() + &s,
+            Policy(s) => "policy failure ".to_string() + &s,
         }
     }
 }

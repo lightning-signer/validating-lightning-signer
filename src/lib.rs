@@ -15,5 +15,6 @@ pub mod tx;
 pub mod util;
 pub mod client;
 pub mod node;
+pub mod policy;
 pub mod server;
 pub mod test;
