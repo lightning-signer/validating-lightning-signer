@@ -186,7 +186,9 @@ impl Signer for MySigner {
         log_debug!(self, "req={}", reqstr);
         let extpubkey = self.get_ext_pub_key(&node_id)?;
         let reply = GetExtPubKeyReply {
-            xpub: Some(ExtPubKey{ encoded: format!("{}", extpubkey) }),
+            xpub: Some(ExtPubKey {
+                encoded: format!("{}", extpubkey),
+            }),
         };
         log_info!(self, "REPLY get_ext_pub_key({})", node_id);
         log_debug!(self, "reply={}", json!(&reply));
@@ -232,7 +234,12 @@ impl Signer for MySigner {
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER get_channel_basepoints({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "ENTER get_channel_basepoints({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "req={}", reqstr);
 
         // WORKAROUND - We need to derive and pass the channel_nonce
@@ -255,7 +262,12 @@ impl Signer for MySigner {
         let reply = GetChannelBasepointsReply {
             basepoints: Some(basepoints),
         };
-        log_info!(self, "REPLY get_channel_basepoints({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "REPLY get_channel_basepoints({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -313,7 +325,12 @@ impl Signer for MySigner {
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_mutual_close_tx({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "ENTER sign_mutual_close_tx({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "req={}", reqstr);
         let reqtx = req.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
 
@@ -341,7 +358,12 @@ impl Signer for MySigner {
                 data: sigvec.clone(),
             }),
         };
-        log_info!(self, "REPLY sign_mutual_close_tx({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "REPLY sign_mutual_close_tx({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -354,7 +376,12 @@ impl Signer for MySigner {
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_mutual_tx_phase2({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "ENTER sign_mutual_tx_phase2({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "req={}", reqstr);
 
         let sig_data = self.sign_mutual_close_tx_phase2(
@@ -366,7 +393,12 @@ impl Signer for MySigner {
         let reply = CloseTxSignatureReply {
             signature: Some(BitcoinSignature { data: sig_data }),
         };
-        log_info!(self, "REPLY sign_mutual_close_tx_phase2({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "REPLY sign_mutual_close_tx_phase2({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -379,7 +411,12 @@ impl Signer for MySigner {
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER check_future_secret({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "ENTER check_future_secret({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "req={}", reqstr);
         let commitment_number = req.n;
         let suggested = self.secret_key(req.suggested)?;
@@ -388,7 +425,12 @@ impl Signer for MySigner {
             self.check_future_secret(&node_id, &channel_id, commitment_number, &suggested)?;
 
         let reply = CheckFutureSecretReply { correct };
-        log_info!(self, "REPLY check_future_secret({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "REPLY check_future_secret({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -401,7 +443,12 @@ impl Signer for MySigner {
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER get_per_commitment_point({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "ENTER get_per_commitment_point({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "req={}", reqstr);
         let commitment_number = req.n;
 
@@ -427,7 +474,12 @@ impl Signer for MySigner {
             }),
             old_secret: old_secret_reply,
         };
-        log_info!(self, "REPLY get_per_commitment_point({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "REPLY get_per_commitment_point({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -525,7 +577,12 @@ impl Signer for MySigner {
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_remote_commitment_tx({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "ENTER sign_remote_commitment_tx({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "req={}", reqstr);
 
         let reqtx = req.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
@@ -558,7 +615,12 @@ impl Signer for MySigner {
         let reply = SignatureReply {
             signature: Some(BitcoinSignature { data: sig_data }),
         };
-        log_info!(self, "REPLY sign_remote_commitment_tx({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "REPLY sign_remote_commitment_tx({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -648,7 +710,12 @@ impl Signer for MySigner {
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_delayed_payment_to_us({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "ENTER sign_delayed_payment_to_us({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "req={}", reqstr);
         let reqtx = req.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
 
@@ -677,7 +744,12 @@ impl Signer for MySigner {
                 data: sigvec.clone(),
             }),
         };
-        log_info!(self, "REPLY sign_delayed_payment_to_us({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "REPLY sign_delayed_payment_to_us({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -690,7 +762,12 @@ impl Signer for MySigner {
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_remote_htlc_tx({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "ENTER sign_remote_htlc_tx({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "req={}", reqstr);
         let reqtx = req.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
 
@@ -720,7 +797,12 @@ impl Signer for MySigner {
         let reply = SignatureReply {
             signature: Some(BitcoinSignature { data: sig_data }),
         };
-        log_info!(self, "REPLY sign_remote_htlc_tx({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "REPLY sign_remote_htlc_tx({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -733,7 +815,12 @@ impl Signer for MySigner {
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_remote_htlc_to_us({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "ENTER sign_remote_htlc_to_us({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "req={}", reqstr);
         let reqtx = req.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
 
@@ -764,7 +851,12 @@ impl Signer for MySigner {
                 data: sigvec.clone(),
             }),
         };
-        log_info!(self, "REPLY sign_remote_htlc_to_us({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "REPLY sign_remote_htlc_to_us({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -822,7 +914,12 @@ impl Signer for MySigner {
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
         let ca = req.channel_announcement;
-        log_info!(self, "ENTER sign_channel_announcement({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "ENTER sign_channel_announcement({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "req={}", reqstr);
 
         let (nsigvec, bsigvec) = self.sign_channel_announcement(&node_id, &channel_id, &ca)?;
@@ -835,7 +932,12 @@ impl Signer for MySigner {
                 data: bsigvec.clone(),
             }),
         };
-        log_info!(self, "REPLY sign_channel_announcement({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "REPLY sign_channel_announcement({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -946,7 +1048,12 @@ impl Signer for MySigner {
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_remote_commitment_tx_phase2({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "ENTER sign_remote_commitment_tx_phase2({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "req={}", reqstr);
         let req_info = req
             .commitment_info
@@ -975,7 +1082,12 @@ impl Signer for MySigner {
             signature: Some(BitcoinSignature { data: sig }),
             htlc_signatures: htlc_bitcoin_sigs,
         };
-        log_info!(self, "REPLY sign_remote_commitment_tx_phase2({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "REPLY sign_remote_commitment_tx_phase2({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -988,7 +1100,12 @@ impl Signer for MySigner {
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_local_commitment_tx_phase2({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "ENTER sign_local_commitment_tx_phase2({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "req={}", reqstr);
         let req_info = req
             .commitment_info
@@ -1021,7 +1138,12 @@ impl Signer for MySigner {
             signature: Some(BitcoinSignature { data: sig }),
             htlc_signatures: htlc_bitcoin_sigs,
         };
-        log_info!(self, "REPLY sign_local_commitment_tx_phase2({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "REPLY sign_local_commitment_tx_phase2({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }

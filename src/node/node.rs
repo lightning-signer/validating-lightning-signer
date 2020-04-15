@@ -5,14 +5,12 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use bitcoin;
 use bitcoin::util::bip32::ExtendedPrivKey;
-use bitcoin::{OutPoint, Script, SigHashType, Network};
+use bitcoin::{Network, OutPoint, Script, SigHashType};
 use bitcoin_hashes::core::fmt::{Error, Formatter};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{
-    ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys,
-};
+use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::util::logger::Logger;
 use secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
@@ -20,12 +18,11 @@ use tonic::Status;
 
 use crate::server::my_keys_manager::{MyKeysManager, INITIAL_COMMITMENT_NUMBER};
 use crate::tx::tx::{
-    build_commitment_tx, get_commitment_transaction_number_obscure_factor,
-    CommitmentInfo2, HTLCInfo,
+    build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
+    HTLCInfo,
 };
 use crate::util::crypto_utils::{
-    derive_public_key, derive_public_revocation_key,
-    payload_for_p2wpkh,
+    derive_public_key, derive_public_revocation_key, payload_for_p2wpkh,
 };
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::invoice_utils;

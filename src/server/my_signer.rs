@@ -2,30 +2,24 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use bitcoin;
-use bitcoin::{Address, Network, Script, SigHashType};
 use bitcoin::util::bip143;
 use bitcoin::util::bip143::SighashComponents;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin_hashes::Hash;
+use bitcoin::{Address, Network, Script, SigHashType};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
+use bitcoin_hashes::Hash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{
-    ChannelPublicKeys, derive_private_key
-};
+use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys};
 use lightning::util::logger::Logger;
-use rand::{Rng, thread_rng};
-use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
+use rand::{thread_rng, Rng};
 use secp256k1::ecdh::SharedSecret;
+use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use tonic::Status;
 
 use crate::node::node::{Channel, ChannelId, Node};
 use crate::server::my_keys_manager::MyKeysManager;
-use crate::tx::tx::{
-    build_close_tx, CommitmentInfo, HTLCInfo, sign_commitment,
-};
-use crate::util::crypto_utils::{
-    derive_private_revocation_key, payload_for_p2wpkh,
-};
+use crate::tx::tx::{build_close_tx, sign_commitment, CommitmentInfo, HTLCInfo};
+use crate::util::crypto_utils::{derive_private_revocation_key, payload_for_p2wpkh};
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::test_utils::TestLogger;
 
@@ -144,10 +138,7 @@ impl MySigner {
     {
         let nodes = self.nodes.lock().unwrap();
         let node = nodes.get(node_id);
-        node.map_or_else(
-            || f(None),
-            |n| f(n.channels().get_mut(channel_id)),
-        )
+        node.map_or_else(|| f(None), |n| f(n.channels().get_mut(channel_id)))
     }
 
     pub fn with_existing_channel<F: Sized, T>(
@@ -184,10 +175,7 @@ impl MySigner {
     {
         let nodes = self.nodes.lock().unwrap();
         let node = nodes.get(node_id);
-        node.map_or_else(
-            || f(None),
-            |n| f(n.channels().get_mut(channel_id)),
-        )
+        node.map_or_else(|| f(None), |n| f(n.channels().get_mut(channel_id)))
     }
 
     pub fn channel_exists(&self, node_id: &PublicKey, channel_id: &ChannelId) -> bool {
@@ -882,26 +870,31 @@ impl MySigner {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{OutPoint, TxIn, TxOut};
     use bitcoin::blockdata::opcodes;
     use bitcoin::blockdata::script::Builder;
     use bitcoin::consensus::deserialize;
-    use bitcoin::hashes::{Hash, sha256d};
+    use bitcoin::hashes::{sha256d, Hash};
     use bitcoin::util::bip143;
     use bitcoin::util::psbt::serialize::Serialize;
+    use bitcoin::{OutPoint, TxIn, TxOut};
     use bitcoin_hashes::hash160::Hash as Hash160;
-    use lightning::ln::chan_utils::{build_htlc_transaction, get_htlc_redeemscript, make_funding_redeemscript, TxCreationKeys, HTLCOutputInCommitment};
+    use lightning::ln::chan_utils::{
+        build_htlc_transaction, get_htlc_redeemscript, make_funding_redeemscript,
+        HTLCOutputInCommitment, TxCreationKeys,
+    };
     use lightning::ln::channelmanager::PaymentHash;
     use secp256k1::recovery::{RecoverableSignature, RecoveryId};
 
     use crate::server::driver::channel_nonce_to_id;
     use crate::tx::script::get_revokeable_redeemscript;
-    use crate::util::crypto_utils::{public_key_from_raw, derive_public_key, derive_public_revocation_key};
+    use crate::util::crypto_utils::{
+        derive_public_key, derive_public_revocation_key, public_key_from_raw,
+    };
     use crate::util::test_utils::*;
 
     use super::*;
-    use secp256k1::Signature;
     use crate::tx::tx::CommitmentInfo2;
+    use secp256k1::Signature;
 
     fn make_channel_pubkeys() -> ChannelPublicKeys {
         ChannelPublicKeys {
