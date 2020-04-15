@@ -15,7 +15,7 @@ use tonic::{transport::Server, Request, Response, Status};
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
 
-use crate::server::my_signer::{ChannelId, MySigner};
+use crate::server::my_signer::MySigner;
 use crate::server::remotesigner::version_server::Version;
 use crate::tx::tx::HTLCInfo;
 use crate::util::crypto_utils::public_key_from_raw;
@@ -24,6 +24,7 @@ use backtrace::Backtrace;
 use serde_json::json;
 
 use super::remotesigner;
+use crate::node::node::ChannelId;
 
 impl MySigner {
     pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {

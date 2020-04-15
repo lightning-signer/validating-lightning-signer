@@ -6,7 +6,8 @@ use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCre
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 
-use crate::server::my_signer::{Channel, ChannelId, MySigner};
+use crate::server::my_signer::MySigner;
+use crate::node::node::{ChannelId, Channel};
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {

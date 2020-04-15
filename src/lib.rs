@@ -13,6 +13,7 @@ extern crate tonic;
 pub mod tx;
 #[macro_use]
 pub mod util;
+pub mod node;
 pub mod client;
 pub mod server;
 pub mod test;
