@@ -73,13 +73,17 @@ impl ChannelKeys for LoopbackChannelSigner {
         self.keys.commitment_seed()
     }
 
+    // BEGIN NOT TESTED
     fn pubkeys(&self) -> &ChannelPublicKeys {
         self.keys.pubkeys()
     }
+    // END NOT TESTED
 
+    // BEGIN NOT TESTED
     fn remote_pubkeys(&self) -> &Option<ChannelPublicKeys> {
         self.keys.remote_pubkeys()
     }
+    // END NOT TESTED
 
     // FIXME - Couldn't this return a declared error signature?
     fn sign_remote_commitment<T: secp256k1::Signing + secp256k1::Verification>(
@@ -108,11 +112,12 @@ impl ChannelKeys for LoopbackChannelSigner {
                         htlcs,
                         to_self_delay,
                     )
-                    .map_err(|_| ())
+                    .map_err(|_| ()) // NOT TESTED
             })
     }
 
     // FIXME - Couldn't this return a declared error signature?
+    // BEGIN NOT TESTED
     fn sign_closing_transaction<T: secp256k1::Signing>(
         &self,
         _closing_tx: &Transaction,
@@ -120,6 +125,7 @@ impl ChannelKeys for LoopbackChannelSigner {
     ) -> Result<Signature, ()> {
         unimplemented!()
     }
+    // END NOT TESTED
 
     fn sign_channel_announcement<T: secp256k1::Signing>(
         &self,
@@ -190,7 +196,7 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         inbound: bool,
         channel_value_satoshis: u64,
     ) -> Self::ChanKeySigner {
-        let local_to_self_delay = 5u16; // FIXME
+        let local_to_self_delay = 5u16; // FIXME // NOT TESTED
         let channel_id = self
             .signer
             .new_channel(

@@ -1,0 +1,10 @@
+[test_config]
+exclude-files = ["remotesigner.rs"]
+debug = true
+verbose = true
+ignore-panics = true
+force-clean = true
+
+[report]
+out = ["Html", "Xml"]
+

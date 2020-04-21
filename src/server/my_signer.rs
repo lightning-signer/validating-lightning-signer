@@ -86,8 +86,8 @@ impl MySigner {
         let channel_id = opt_channel_id.unwrap_or_else(|| ChannelId(keys_manager.get_channel_id()));
         let channel_nonce = opt_channel_nonce.unwrap_or_else(|| channel_id.0.to_vec());
         if channels.contains_key(&channel_id) {
-            log_info!(self, "already have channel ID {}", channel_id);
-            return Ok(channel_id);
+            log_info!(self, "already have channel ID {}", channel_id); // NOT TESTED
+            return Ok(channel_id); // NOT TESTED
         }
         let inmem_keys = keys_manager.get_channel_keys_with_nonce(
             channel_nonce.as_slice(),
@@ -185,12 +185,15 @@ impl MySigner {
     pub fn xkey(&self, node_id: &PublicKey) -> Result<ExtendedPrivKey, Status> {
         self.with_node(&node_id, |opt_node| {
             let node = opt_node.ok_or_else(|| {
+                // BEGIN NOT TESTED
                 self.invalid_argument(format!("xkey: node_id not found: {}", node_id))
+                // END NOT TESTED
             })?;
             Ok(node.get_bip32_key().clone())
         })
     }
 
+    // BEGIN NOT TESTED
     pub fn get_unilateral_close_key(
         &self,
         node_id: &PublicKey,
@@ -215,6 +218,7 @@ impl MySigner {
             Ok(secret_key)
         })
     }
+    // END NOT TESTED
 
     pub fn get_channel_basepoints(
         &self,
@@ -274,7 +278,7 @@ impl MySigner {
 
             let mut htlc_refs = Vec::new();
             for htlc in htlcs.iter() {
-                htlc_refs.push(htlc);
+                htlc_refs.push(htlc); // NOT TESTED
             }
             // Although this method has "remote" in the name, it works for local too
             let sigs = chan
@@ -292,9 +296,11 @@ impl MySigner {
             sig.push(SigHashType::All as u8);
             let mut htlc_sigs = Vec::new();
             for htlc_signature in sigs.1 {
+                // BEGIN NOT TESTED
                 let mut htlc_sig = htlc_signature.serialize_der().to_vec();
                 htlc_sig.push(SigHashType::All as u8);
                 htlc_sigs.push(htlc_sig);
+                // END NOT TESTED
             }
             Ok((sig, htlc_sigs))
         })
@@ -363,7 +369,9 @@ impl MySigner {
     ) -> Result<Vec<u8>, Status> {
         self.with_existing_channel(&node_id, &channel_id, |chan| {
             if tx.output.len() != output_witscripts.len() {
+                // BEGIN NOT TESTED
                 return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
+                // END NOT TESTED
             }
             // The CommitmentInfo will be used to check policy
             // assertions.
@@ -400,10 +408,10 @@ impl MySigner {
         let sigvec: Result<Vec<u8>, Status> =
             self.with_existing_channel(&node_id, &channel_id, |chan| {
                 if tx.input.len() != 1 {
-                    return Err(self.invalid_argument("tx.input.len() != 1"));
+                    return Err(self.invalid_argument("tx.input.len() != 1")); // NOT TESTED
                 }
                 if tx.output.len() == 0 {
-                    return Err(self.invalid_argument("tx.output.len() == 0"));
+                    return Err(self.invalid_argument("tx.output.len() == 0")); // NOT TESTED
                 }
 
                 let commitment_sig = sign_commitment(
@@ -433,10 +441,10 @@ impl MySigner {
         let sigvec: Result<Vec<u8>, Status> =
             self.with_existing_channel(&node_id, &channel_id, |chan| {
                 if tx.input.len() != 1 {
-                    return Err(self.invalid_argument("tx.input.len() != 1"));
+                    return Err(self.invalid_argument("tx.input.len() != 1")); // NOT TESTED
                 }
                 if tx.output.len() == 0 {
-                    return Err(self.invalid_argument("tx.output.len() == 0"));
+                    return Err(self.invalid_argument("tx.output.len() == 0")); // NOT TESTED
                 }
 
                 let commitment_sig = sign_commitment(
@@ -467,13 +475,15 @@ impl MySigner {
         let sigvec: Result<Vec<u8>, Status> =
             self.with_existing_channel(&node_id, &channel_id, |chan| {
                 if tx.input.len() != 1 {
-                    return Err(self.invalid_argument("tx.input.len() != 1"));
+                    return Err(self.invalid_argument("tx.input.len() != 1")); // NOT TESTED
                 }
                 if tx.output.len() != 1 {
-                    return Err(self.invalid_argument("tx.output.len() != 1"));
+                    return Err(self.invalid_argument("tx.output.len() != 1")); // NOT TESTED
                 }
                 if output_witscripts.len() != 1 {
+                    // BEGIN NOT TESTED
                     return Err(self.invalid_argument("output_witscripts.len() != 1"));
+                    // END NOT TESTED
                 }
 
                 let secp_ctx = Secp256k1::signing_only();
@@ -536,13 +546,15 @@ impl MySigner {
         let sigvec: Result<Vec<u8>, Status> =
             self.with_existing_channel(&node_id, &channel_id, |chan| {
                 if tx.input.len() != 1 {
-                    return Err(self.invalid_argument("tx.input.len() != 1"));
+                    return Err(self.invalid_argument("tx.input.len() != 1")); // NOT TESTED
                 }
                 if tx.output.len() != 1 {
-                    return Err(self.invalid_argument("tx.output.len() != 1"));
+                    return Err(self.invalid_argument("tx.output.len() != 1")); // NOT TESTED
                 }
                 if output_witscripts.len() != 1 {
+                    // BEGIN NOT TESTED
                     return Err(self.invalid_argument("output_witscripts.len() != 1"));
+                    // END NOT TESTED
                 }
 
                 let secp_ctx = Secp256k1::signing_only();
@@ -567,7 +579,9 @@ impl MySigner {
                     &chan.keys.inner.delayed_payment_base_key(),
                 )
                 .map_err(|err| {
+                    // BEGIN NOT TESTED
                     self.internal_error(format!("derive htlc_privkey failed: {}", err))
+                    // END NOT TESTED
                 })?;
 
                 let mut sigvec = secp_ctx
@@ -592,13 +606,15 @@ impl MySigner {
         let sig: Result<Vec<u8>, Status> =
             self.with_existing_channel(&node_id, &channel_id, |chan| {
                 if tx.output.len() != output_witscripts.len() {
+                    // BEGIN NOT TESTED
                     return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
+                    // END NOT TESTED
                 }
                 if tx.input.len() != 1 {
-                    return Err(self.invalid_argument("len(tx.input) != 1"));
+                    return Err(self.invalid_argument("len(tx.input) != 1")); // NOT TESTED
                 }
                 if tx.output.len() != 1 {
-                    return Err(self.invalid_argument("len(tx.output) != 1"));
+                    return Err(self.invalid_argument("len(tx.output) != 1")); // NOT TESTED
                 }
 
                 let secp_ctx = &chan.secp_ctx;
@@ -620,7 +636,9 @@ impl MySigner {
                     &chan.keys.inner.htlc_base_key(),
                 )
                 .map_err(|err| {
+                    // BEGIN NOT TESTED
                     self.internal_error(format!("derive our_htlc_key failed: {}", err))
+                    // END NOT TESTED
                 })?;
 
                 let sigobj = secp_ctx.sign(&htlc_sighash, &our_htlc_key);
@@ -643,13 +661,15 @@ impl MySigner {
         let retval: Result<Vec<u8>, Status> =
             self.with_existing_channel(&node_id, &channel_id, |chan| {
                 if tx.input.len() != 1 {
-                    return Err(self.invalid_argument("tx.input.len() != 1"));
+                    return Err(self.invalid_argument("tx.input.len() != 1")); // NOT TESTED
                 }
                 if tx.output.len() != 1 {
-                    return Err(self.invalid_argument("tx.output.len() != 1"));
+                    return Err(self.invalid_argument("tx.output.len() != 1")); // NOT TESTED
                 }
                 if output_witscripts.len() != 1 {
+                    // BEGIN NOT TESTED
                     return Err(self.invalid_argument("output_witscripts.len() != 1"));
+                    // END NOT TESTED
                 }
 
                 let secp_ctx = &chan.secp_ctx;
@@ -691,13 +711,15 @@ impl MySigner {
         let sigvec: Result<Vec<u8>, Status> =
             self.with_existing_channel(&node_id, &channel_id, |chan| {
                 if tx.input.len() != 1 {
-                    return Err(self.invalid_argument("tx.input.len() != 1"));
+                    return Err(self.invalid_argument("tx.input.len() != 1")); // NOT TESTED
                 }
                 if tx.output.len() != 1 {
-                    return Err(self.invalid_argument("tx.output.len() != 1"));
+                    return Err(self.invalid_argument("tx.output.len() != 1")); // NOT TESTED
                 }
                 if output_witscripts.len() != 1 {
+                    // BEGIN NOT TESTED
                     return Err(self.invalid_argument("output_witscripts.len() != 1"));
+                    // END NOT TESTED
                 }
 
                 let secp_ctx = &chan.secp_ctx;
@@ -774,10 +796,12 @@ impl MySigner {
                         )[..],
                     )
                     .map_err(|err| self.internal_error(format!("p2wpkh sighash failed: {}", err))),
+                    // BEGIN NOT TESTED
                     _ => Err(self.invalid_argument(format!(
                         "unsupported spend_type: {}",
                         spendtypes[idx] as i32
                     ))),
+                    // END NOT TESTED
                 }?;
             let mut sig = secp_ctx
                 .sign(&sighash, &privkey.key)
@@ -789,6 +813,7 @@ impl MySigner {
         Ok(witvec)
     }
 
+    // BEGIN NOT TESTED
     pub fn ecdh(&self, node_id: &PublicKey, other_key: &PublicKey) -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
             let node = opt_node.ok_or_else(|| self.invalid_argument("no such node"))?;
@@ -798,6 +823,7 @@ impl MySigner {
             Ok(res)
         })
     }
+    // END NOT TESTED
 
     pub fn sign_channel_announcement(
         &self,
@@ -2669,7 +2695,7 @@ mod tests {
                 if let Some(tx) = spent.remove(&point.txid) {
                     return tx.output.get(point.vout as usize).cloned();
                 }
-                None
+                None // NOT TESTED
             })
             .unwrap();
     }

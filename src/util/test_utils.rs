@@ -28,6 +28,7 @@ use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 
 pub struct TestVecWriter(pub Vec<u8>);
 
+// BEGIN NOT TESTED
 impl Writer for TestVecWriter {
     fn write_all(&mut self, buf: &[u8]) -> Result<(), ::std::io::Error> {
         self.0.extend_from_slice(buf);
@@ -37,6 +38,7 @@ impl Writer for TestVecWriter {
         self.0.reserve_exact(size);
     }
 }
+// END NOT TESTED
 
 pub struct TestFeeEstimator {
     pub sat_per_kw: u64,
@@ -104,15 +106,18 @@ pub struct TestBroadcaster {
 }
 
 impl chaininterface::BroadcasterInterface for TestBroadcaster {
+    // BEGIN NOT TESTED
     fn broadcast_transaction(&self, tx: &Transaction) {
         self.txn_broadcasted.lock().unwrap().push(tx.clone());
     }
+    // END NOT TESTED
 }
 
 pub struct TestChannelMessageHandler {
     pub pending_events: Mutex<Vec<events::MessageSendEvent>>,
 }
 
+// BEGIN NOT TESTED
 impl TestChannelMessageHandler {
     pub fn new() -> Self {
         TestChannelMessageHandler {
@@ -120,7 +125,9 @@ impl TestChannelMessageHandler {
         }
     }
 }
+// END NOT TESTED
 
+// BEGIN NOT TESTED
 impl msgs::ChannelMessageHandler for TestChannelMessageHandler {
     fn handle_open_channel(
         &self,
@@ -174,6 +181,7 @@ impl msgs::ChannelMessageHandler for TestChannelMessageHandler {
     fn peer_connected(&self, _their_node_id: &PublicKey, _msg: &msgs::Init) {}
     fn handle_error(&self, _their_node_id: &PublicKey, _msg: &msgs::ErrorMessage) {}
 }
+// END NOT TESTED
 
 impl events::MessageSendEventsProvider for TestChannelMessageHandler {
     fn get_and_clear_pending_msg_events(&self) -> Vec<events::MessageSendEvent> {
@@ -187,11 +195,14 @@ impl events::MessageSendEventsProvider for TestChannelMessageHandler {
 pub struct TestRoutingMessageHandler {}
 
 impl TestRoutingMessageHandler {
+    // BEGIN NOT TESTED
     pub fn new() -> Self {
         TestRoutingMessageHandler {}
     }
+    // END NOT TESTED
 }
 
+// BEGIN NOT TESTED
 impl msgs::RoutingMessageHandler for TestRoutingMessageHandler {
     fn handle_node_announcement(
         &self,
@@ -237,6 +248,7 @@ impl msgs::RoutingMessageHandler for TestRoutingMessageHandler {
         Vec::new()
     }
 }
+// END NOT TESTED
 
 pub struct TestLogger {
     level: Level,
@@ -245,9 +257,11 @@ pub struct TestLogger {
 }
 
 impl TestLogger {
+    // BEGIN NOT TESTED
     pub fn new() -> TestLogger {
         Self::with_id("".to_owned())
     }
+    // END NOT TESTED
     pub fn with_id(id: String) -> TestLogger {
         TestLogger {
             level: Level::Trace,
@@ -358,6 +372,7 @@ pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> Public
     )
 }
 
+// BEGIN NOT TESTED
 pub fn make_test_bitcoin_key(i: u8) -> (bitcoin::PublicKey, bitcoin::PrivateKey) {
     let secp_ctx = Secp256k1::signing_only();
     let secret_key = SecretKey::from_slice(&[i; 32]).unwrap();
@@ -368,10 +383,13 @@ pub fn make_test_bitcoin_key(i: u8) -> (bitcoin::PublicKey, bitcoin::PrivateKey)
     };
     return (private_key.public_key(&secp_ctx), private_key);
 }
+// END NOT TESTED
 
+// BEGIN NOT TESTED
 pub fn make_test_bitcoin_pubkey(i: u8) -> bitcoin::PublicKey {
     make_test_bitcoin_key(i).0
 }
+// END NOT TESTED
 
 pub fn make_test_key(i: u8) -> (PublicKey, SecretKey) {
     let secp_ctx = Secp256k1::signing_only();

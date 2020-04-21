@@ -195,6 +195,7 @@ impl KeysInterface for MyKeysManager {
         self.shutdown_pubkey.clone()
     }
 
+    // BEGIN NOT TESTED
     fn get_channel_keys(
         &self,
         channel_id: [u8; 32],
@@ -207,6 +208,7 @@ impl KeysInterface for MyKeysManager {
             "rust-lightning-signer",
         )
     }
+    // END NOT TESTED
 
     fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
         let mut sha = self.unique_start.clone();
