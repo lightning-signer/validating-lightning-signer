@@ -1,0 +1,130 @@
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:157: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:194: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:195: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:196: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:197: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:198: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:245: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:248: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:249: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:252: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:269: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:270: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:273: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:274: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:275: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:325: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:326: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:327: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:385: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:393: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:394: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:397: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:398: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:400: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:401: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/node/node.rs:430: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/driver.rs:108: wrong NOT TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/driver.rs:111: wrong NOT TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/driver.rs:112: wrong NOT TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/driver.rs:113: wrong NOT TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/driver.rs:114: wrong NOT TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/driver.rs:115: wrong NOT TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/driver.rs:39: wrong NOT TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/driver.rs:40: wrong NOT TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/driver.rs:41: wrong NOT TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/driver.rs:42: wrong NOT TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/driver.rs:43: wrong NOT TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_keys_manager.rs:171: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_keys_manager.rs:218: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_keys_manager.rs:233: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_keys_manager.rs:243: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_keys_manager.rs:314: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_keys_manager.rs:63: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_keys_manager.rs:64: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_keys_manager.rs:65: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_keys_manager.rs:79: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_keys_manager.rs:80: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:242: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:243: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:249: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:269: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:285: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:286: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:288: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:289: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:335: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:336: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:343: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:349: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:409: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:442: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:476: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:491: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:499: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:501: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:506: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:507: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:511: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:515: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:516: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:517: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:547: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:562: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:570: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:572: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:577: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:578: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:588: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:589: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:590: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:607: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:627: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:629: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:662: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:682: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:684: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:712: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:732: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:734: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:777: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:780: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:786: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:794: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:796: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:841: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:842: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:845: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/server/my_signer.rs:846: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/test/functional_test_utils.rs:398: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/test/functional_test_utils.rs:408: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/test/functional_test_utils.rs:744: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/test/loopback.rs:100: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/test/loopback.rs:108: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/test/loopback.rs:137: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/test/loopback.rs:152: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/test/loopback.rs:199: wrong NOT TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/test/loopback.rs:201: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/enforcing_trait_impls.rs:115: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/enforcing_trait_impls.rs:124: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/enforcing_trait_impls.rs:125: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/enforcing_trait_impls.rs:133: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/enforcing_trait_impls.rs:142: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/enforcing_trait_impls.rs:144: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:187: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:188: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:189: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:190: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:191: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:272: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:273: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:275: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:276: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:277: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:284: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:285: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:286: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:297: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:352: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:92: wrong TESTED coverage annotation
+/home/user/lightning-signer/rust-lightning-signer/src/util/test_utils.rs:94: wrong TESTED coverage annotation

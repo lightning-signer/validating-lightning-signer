@@ -16,7 +16,7 @@ pub fn hash_from_parts(hrp_bytes: &[u8], data_without_signature: &[u5]) -> [u8; 
 
         // if overhang is in (1..3) we need to add u5(0) padding two times
         if overhang < 3 {
-            data_part.push(u5::try_from_u8(0).unwrap());
+            data_part.push(u5::try_from_u8(0).unwrap()); // NOT TESTED
         }
     }
 

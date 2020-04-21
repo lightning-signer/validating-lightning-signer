@@ -1,3 +1,6 @@
-/target
 **/*.rs.bk
+/cobertura.xml
+/coverage.txt
 /src/server/remotesigner.rs
+/target
+/tarpaulin-report.html

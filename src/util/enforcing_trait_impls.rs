@@ -31,6 +31,7 @@ impl EnforcingChannelKeys {
 }
 
 impl EnforcingChannelKeys {
+    // BEGIN NOT TESTED
     #[allow(dead_code)]
     fn check_keys<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
@@ -58,6 +59,7 @@ impl EnforcingChannelKeys {
             panic!("derived different per-tx keys")
         }
     }
+    // END NOT TESTED
 }
 
 impl ChannelKeys for EnforcingChannelKeys {

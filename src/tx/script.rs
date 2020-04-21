@@ -16,6 +16,7 @@ pub enum ValidationError {
     Mismatch(),
 }
 
+// BEGIN NOT TESTED
 impl Into<String> for ValidationError {
     fn into(self) -> String {
         match self {
@@ -25,6 +26,7 @@ impl Into<String> for ValidationError {
         }
     }
 }
+// END NOT TESTED
 
 #[inline]
 pub fn expect_op(iter: &mut Instructions, op: opcodes::All) -> Result<(), ValidationError> {
@@ -33,7 +35,7 @@ pub fn expect_op(iter: &mut Instructions, op: opcodes::All) -> Result<(), Valida
             if o == op {
                 Ok(())
             } else {
-                Err(Mismatch())
+                Err(Mismatch()) // NOT TESTED
             }
         }
         _ => Err(Mismatch()),
@@ -46,13 +48,14 @@ pub fn expect_number(iter: &mut Instructions) -> Result<i16, ValidationError> {
         Some(blockdata::script::Instruction::Op(op)) => match op.classify() {
             Class::PushNum(i) => {
                 if i < i16::MIN as i32 || i > i16::MAX as i32 {
-                    Err(Mismatch())
+                    Err(Mismatch()) // NOT TESTED
                 } else {
                     Ok(i as i16)
                 }
             }
-            _ => Err(Mismatch()),
+            _ => Err(Mismatch()), // NOT TESTED
         },
+        // BEGIN NOT TESTED
         Some(PushBytes(d)) => {
             if d.len() == 0 {
                 Ok(0)
@@ -65,6 +68,7 @@ pub fn expect_number(iter: &mut Instructions) -> Result<i16, ValidationError> {
             }
         }
         _ => Err(Mismatch()),
+        // END NOT TESTED
     }
 }
 
@@ -73,7 +77,7 @@ pub fn expect_script_end(iter: &mut Instructions) -> Result<(), ValidationError>
     if iter.next() == None {
         Ok(())
     } else {
-        Err(Mismatch())
+        Err(Mismatch()) // NOT TESTED
     }
 }
 
@@ -81,7 +85,7 @@ pub fn expect_script_end(iter: &mut Instructions) -> Result<(), ValidationError>
 pub fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, ValidationError> {
     match iter.next() {
         Some(PushBytes(d)) => Ok(d.to_vec()),
-        _ => return Err(Mismatch()),
+        _ => return Err(Mismatch()), // NOT TESTED
     }
 }
 

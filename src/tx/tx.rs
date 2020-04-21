@@ -41,8 +41,8 @@ pub fn get_commitment_transaction_number_obscure_factor(
         sha.input(&our_payment_basepoint.serialize());
         sha.input(&their_payment_basepoint);
     } else {
-        sha.input(&their_payment_basepoint);
-        sha.input(&our_payment_basepoint.serialize());
+        sha.input(&their_payment_basepoint); // NOT TESTED
+        sha.input(&our_payment_basepoint.serialize()); // NOT TESTED
     }
     let res = Sha256::from_engine(sha).into_inner();
 
@@ -156,6 +156,7 @@ pub fn build_commitment_tx(
     }
 
     for out in &info.offered_htlcs {
+        // BEGIN NOT TESTED
         let htlc_in_tx = HTLCOutputInCommitment {
             offered: true,
             amount_msat: out.value * 1000,
@@ -169,9 +170,11 @@ pub fn build_commitment_tx(
             value: out.value,
         };
         txouts.push((txout, (script, Some(htlc_in_tx))));
+        // END NOT TESTED
     }
 
     for out in &info.received_htlcs {
+        // BEGIN NOT TESTED
         let htlc_in_tx = HTLCOutputInCommitment {
             offered: false,
             amount_msat: out.value * 1000,
@@ -185,8 +188,10 @@ pub fn build_commitment_tx(
             value: out.value,
         };
         txouts.push((txout, (script, Some(htlc_in_tx))));
+        // END NOT TESTED
     }
     sort_outputs(&mut txouts, |a, b| {
+        // BEGIN NOT TESTED
         if let &(_, Some(ref a_htlcout)) = a {
             if let &(_, Some(ref b_htlcout)) = b {
                 a_htlcout.cltv_expiry.cmp(&b_htlcout.cltv_expiry)
@@ -196,6 +201,7 @@ pub fn build_commitment_tx(
         } else {
             cmp::Ordering::Equal
         }
+        // END NOT TESTED
     });
     let mut outputs = Vec::with_capacity(txouts.len());
     let mut scripts = Vec::with_capacity(txouts.len());
@@ -204,8 +210,10 @@ pub fn build_commitment_tx(
         outputs.push(out.0);
         scripts.push((out.1).0.clone());
         if let Some(mut htlc) = (out.1).1.take() {
+            // BEGIN NOT TESTED
             htlc.transaction_output_index = Some(idx as u32);
             htlcs.push(htlc);
+            // END NOT TESTED
         }
     }
 
@@ -247,9 +255,11 @@ pub fn sign_commitment(
 pub fn sort_outputs<T, C: Fn(&T, &T) -> Ordering>(outputs: &mut Vec<(TxOut, T)>, tie_breaker: C) {
     outputs.sort_unstable_by(|a, b| {
         a.0.value.cmp(&b.0.value).then_with(|| {
+            // BEGIN NOT TESTED
             a.0.script_pubkey[..]
                 .cmp(&b.0.script_pubkey[..])
                 .then_with(|| tie_breaker(&a.1, &b.1))
+            // END NOT TESTED
         })
     });
 }
@@ -329,10 +339,10 @@ impl CommitmentInfo {
             return Err(TransactionFormat("already have to local".to_string()));
         }
         if delay < 0 {
-            return Err(ScriptFormat("negative delay".to_string()));
+            return Err(ScriptFormat("negative delay".to_string())); // NOT TESTED
         }
         if delay > MAX_DELAY {
-            return Err(ScriptFormat("delay too large".to_string()));
+            return Err(ScriptFormat("delay too large".to_string())); // NOT TESTED
         }
 
         // This is safe because we checked for negative
@@ -345,6 +355,7 @@ impl CommitmentInfo {
         Ok(())
     }
 
+    // BEGIN NOT TESTED
     fn handle_received_htlc_script(
         &mut self,
         out: &TxOut,
@@ -388,7 +399,9 @@ impl CommitmentInfo {
         self.received_htlcs.push(out.clone());
         Ok(())
     }
+    // END NOT TESTED
 
+    // BEGIN NOT TESTED
     fn handle_offered_htlc_script(
         &mut self,
         out: &TxOut,
@@ -429,6 +442,7 @@ impl CommitmentInfo {
         self.offered_htlcs.push(out.clone());
         Ok(())
     }
+    // END NOT TESTED
 
     pub fn handle_output(
         &mut self,
@@ -437,24 +451,29 @@ impl CommitmentInfo {
     ) -> Result<(), ValidationError> {
         if out.script_pubkey.is_v0_p2wpkh() {
             if self.has_to_remote() {
+                // BEGIN NOT TESTED
                 return Err(TransactionFormat("more than one to remote".to_string()));
+                // END NOT TESTED
             }
             self.to_remote_address = Payload::from_script(&out.script_pubkey);
             self.to_remote_value = out.value;
         } else if out.script_pubkey.is_v0_p2wsh() {
             if script_bytes.is_empty() {
+                // BEGIN NOT TESTED
                 return Err(TransactionFormat("missing witscript for p2wsh".to_string()));
+                // END NOT TESTED
             }
             let script = Script::from(script_bytes.to_vec());
             if out.script_pubkey != script.to_v0_p2wsh() {
                 return Err(TransactionFormat(
-                    "script pubkey doesn't match inner script".to_string(),
+                    "script pubkey doesn't match inner script".to_string(), // NOT TESTED
                 ));
             }
             let res = self.handle_to_local_script(out, &script);
             if res.is_ok() {
                 return Ok(());
             }
+            // BEGIN NOT TESTED
             let res = self.handle_received_htlc_script(out, &script);
             if res.is_ok() {
                 return Ok(());
@@ -464,8 +483,9 @@ impl CommitmentInfo {
                 return Ok(());
             }
             return Err(TransactionFormat("unknown format p2wsh".to_string()));
+        // END NOT TESTED
         } else {
-            return Err(TransactionFormat("unknown output type".to_string()));
+            return Err(TransactionFormat("unknown output type".to_string())); // NOT TESTED
         }
         Ok(())
     }
@@ -514,7 +534,8 @@ mod tests {
         assert_eq!(info.to_local_delay, 5);
         let res = info.handle_to_local_script(&out, &script);
         assert!(res.is_err());
-        assert!(
+        #[rustfmt::skip]
+        assert!( // NOT TESTED
             TransactionFormat("already have to local".to_string())
                 == res.expect_err("expecting err")
         );

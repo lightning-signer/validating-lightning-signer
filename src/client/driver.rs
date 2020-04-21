@@ -5,6 +5,7 @@ use remotesigner::*;
 
 use crate::server::remotesigner;
 
+// BEGIN NOT TESTED
 #[tokio::main]
 pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = SignerClient::connect("http://[::1]:50051").await?;
@@ -69,3 +70,4 @@ pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+// END NOT TESTED

@@ -26,6 +26,7 @@ use serde_json::json;
 use super::remotesigner;
 use crate::node::node::ChannelId;
 
+// BEGIN NOT TESTED
 impl MySigner {
     pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
@@ -1148,7 +1149,9 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 }
+// END NOT TESTED
 
+// BEGIN NOT TESTED
 #[tokio::main]
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse()?;
@@ -1161,3 +1164,4 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+// END NOT TESTED

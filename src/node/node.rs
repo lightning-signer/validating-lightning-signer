@@ -42,9 +42,11 @@ impl Debug for ChannelId {
 }
 
 impl fmt::Display for ChannelId {
+    // BEGIN NOT TESTED
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(hex::encode(self.0).as_str())
     }
+    // END NOT TESTED
 }
 
 pub struct RemoteChannelConfig {
@@ -65,25 +67,31 @@ pub struct Channel {
 }
 
 impl Debug for Channel {
+    // BEGIN NOT TESTED
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str("channel")
     }
+    // END NOT TESTED
 }
 
 impl Channel {
+    // BEGIN NOT TESTED
     pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INVALID ARGUMENT: {}", &s);
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
+    // END NOT TESTED
 
+    // BEGIN NOT TESTED
     pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INTERNAL ERROR: {}", &s);
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
     }
+    // END NOT TESTED
 
     // Phase 2
     fn make_remote_tx_keys(
@@ -93,9 +101,8 @@ impl Channel {
         let keys = &self.keys.inner;
         let local_pubkeys = keys.pubkeys();
 
-        let remote_pubkeys = keys
-            .remote_pubkeys()
-            .as_ref()
+        #[rustfmt::skip]
+        let remote_pubkeys = keys.remote_pubkeys().as_ref()
             .ok_or_else(|| self.invalid_argument("channel must be accepted"))?;
 
         Ok(self.make_tx_keys(per_commitment_point, remote_pubkeys, local_pubkeys))
@@ -108,9 +115,8 @@ impl Channel {
         let keys = &self.keys.inner;
         let local_pubkeys = keys.pubkeys();
 
-        let remote_pubkeys = keys
-            .remote_pubkeys()
-            .as_ref()
+        #[rustfmt::skip]
+        let remote_pubkeys = keys.remote_pubkeys().as_ref()
             .ok_or_else(|| self.invalid_argument("channel must be accepted"))?;
 
         Ok(self.make_tx_keys(per_commitment_point, local_pubkeys, remote_pubkeys))
@@ -215,9 +221,11 @@ impl Channel {
         self.accept_remote_config(remote_to_self_delay, shutdown_script, funding_outpoint);
     }
 
+    // BEGIN NOT TESTED
     pub fn is_ready(&self) -> bool {
         self.remote_config.is_some()
     }
+    // END NOT TESTED
 
     pub fn build_commitment_tx(
         &self,
@@ -275,7 +283,9 @@ impl Channel {
             &remote_pubkeys.delayed_payment_basepoint,
         )
         .map_err(|err| {
+            // BEGIN NOT TESTED
             self.internal_error(format!("could not derive to_local_delayed_key: {}", err))
+            // END NOT TESTED
         })?;
         let remote_key = derive_public_key(
             secp_ctx,
@@ -324,7 +334,9 @@ impl Channel {
             &local_pubkeys.delayed_payment_basepoint,
         )
         .map_err(|err| {
+            // BEGIN NOT TESTED
             self.internal_error(format!("could not derive to_local_delayed_key: {}", err))
+            // END NOT TESTED
         })?;
         let remote_key = derive_public_key(
             secp_ctx,
@@ -368,13 +380,14 @@ impl Channel {
             offered_htlcs.clone(),
             received_htlcs.clone(),
         )?;
+
         let (tx, _scripts, htlcs) =
             self.build_commitment_tx(remote_per_commitment_point, commitment_number, &info)?;
         let keys = self.make_remote_tx_keys(remote_per_commitment_point)?;
 
         let mut htlc_refs = Vec::new();
         for htlc in htlcs.iter() {
-            htlc_refs.push(htlc);
+            htlc_refs.push(htlc); // NOT TESTED
         }
         let remote_config = self
             .remote_config
@@ -395,9 +408,11 @@ impl Channel {
         sig.push(SigHashType::All as u8);
         let mut htlc_sigs = Vec::new();
         for htlc_signature in sigs.1 {
+            // BEGIN NOT TESTED
             let mut htlc_sig = htlc_signature.serialize_der().to_vec();
             htlc_sig.push(SigHashType::All as u8);
             htlc_sigs.push(htlc_sig);
+            // END NOT TESTED
         }
         Ok((sig, htlc_sigs))
     }
@@ -429,19 +444,23 @@ impl Node {
     }
 
     #[allow(dead_code)]
+    // BEGIN NOT TESTED
     pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INVALID ARGUMENT: {}", &s);
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
+    // END NOT TESTED
 
+    // BEGIN NOT TESTED
     pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INTERNAL ERROR: {}", &s);
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
     }
+    // END NOT TESTED
 
     /// TODO leaking secret
     pub fn get_node_secret(&self) -> SecretKey {
@@ -536,7 +555,9 @@ impl Node {
 }
 
 impl Debug for Node {
+    // BEGIN NOT TESTED
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str("node")
     }
+    // END NOT TESTED
 }

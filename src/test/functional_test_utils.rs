@@ -67,6 +67,7 @@ pub fn confirm_transaction<'a, 'b: 'a>(
     }
 }
 
+// BEGIN NOT TESTED
 pub fn connect_blocks<'a, 'b>(
     notifier: &'a chaininterface::BlockNotifierRef<'b>,
     depth: u32,
@@ -100,6 +101,7 @@ pub fn connect_blocks<'a, 'b>(
     }
     header.bitcoin_hash()
 }
+// END NOT TESTED
 
 pub struct NodeCfg<S: ChannelKeys> {
     pub chain_monitor: Arc<chaininterface::ChainWatchInterfaceUtil>,
@@ -747,11 +749,13 @@ impl SendEvent {
         }
     }
 
+    // BEGIN NOT TESTED
     pub fn from_node<S: ChannelKeys>(node: &Node<S>) -> SendEvent {
         let mut events = node.node.get_and_clear_pending_msg_events();
         assert_eq!(events.len(), 1);
         SendEvent::from_event(events.pop().unwrap())
     }
+    // END NOT TESTED
 }
 
 macro_rules! check_added_monitors {
@@ -799,7 +803,7 @@ macro_rules! commitment_signed_dance {
                     }
                     _ => panic!("Unexpected event"),
                 },
-                events.get(1).map(|e| e.clone()),
+                events.get(1).map(|e| e.clone()), // NOT TESTED
             )
         };
         check_added_monitors!($node_b, 1);
@@ -1038,7 +1042,7 @@ pub fn claim_payment_along_route<'a, 'b, S: ChannelKeys>(
         } else if update_next_msgs {
             next_msgs = get_next_msgs!(node);
         } else {
-            assert!(node.node.get_and_clear_pending_msg_events().is_empty());
+            assert!(node.node.get_and_clear_pending_msg_events().is_empty()); // NOT TESTED
         }
         if !skip_last && idx == expected_route.len() - 1 {
             assert_eq!(expected_next_node, origin_node.node.get_our_node_id());
@@ -1201,7 +1205,7 @@ pub fn create_node_chanmgrs<'a, 'b, S: ChannelKeys>(
             cfgs[i].logger.clone(),
             cfgs[i].keys_manager.clone(),
             if node_config[i].is_some() {
-                node_config[i].clone().unwrap()
+                node_config[i].clone().unwrap() // NOT TESTED
             } else {
                 default_config
             },
