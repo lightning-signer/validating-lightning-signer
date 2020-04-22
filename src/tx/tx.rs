@@ -1,27 +1,27 @@
 use std::cmp;
 use std::cmp::Ordering;
 
+use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut};
 use bitcoin::blockdata::opcodes::all::{
     OP_CHECKMULTISIG, OP_CHECKSIG, OP_CLTV, OP_CSV, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL,
     OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHNUM_2, OP_SIZE, OP_SWAP,
 };
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip143;
-use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut};
-use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::{Hash, HashEngine};
+use bitcoin_hashes::sha256::Hash as Sha256;
 use lightning::chain::keysinterface::ChannelKeys;
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
-    make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
+    HTLCOutputInCommitment, make_funding_redeemscript, TxCreationKeys,
 };
 use lightning::ln::channelmanager::PaymentHash;
 use secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signature};
 
-use crate::tx::script::ValidationError::{Mismatch, ScriptFormat, TransactionFormat};
+use crate::policy::error::ValidationError::{Mismatch, ScriptFormat, TransactionFormat};
+use crate::policy::error::ValidationError;
 use crate::tx::script::{
     expect_data, expect_number, expect_op, expect_script_end, get_revokeable_redeemscript,
-    ValidationError,
 };
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 
@@ -268,7 +268,7 @@ pub struct HTLCInfo {
 // END NOT TESTED
 
 // BEGIN NOT TESTED
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CommitmentInfo2 {
     pub to_remote_address: Payload,
     pub to_remote_value: u64,

@@ -2,13 +2,15 @@ use core::fmt;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use backtrace::Backtrace;
 use bitcoin;
-use bitcoin::util::bip32::ExtendedPrivKey;
 use bitcoin::{Network, OutPoint, Script, SigHashType};
+use bitcoin::util::bip32::ExtendedPrivKey;
 use bitcoin_hashes::core::fmt::{Error, Formatter};
-use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
+use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
@@ -16,19 +18,15 @@ use lightning::util::logger::Logger;
 use secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use tonic::Status;
 
-use crate::server::my_keys_manager::{MyKeysManager, INITIAL_COMMITMENT_NUMBER};
-use crate::tx::tx::{
-    build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
-    HTLCInfo,
-};
+use crate::policy::error::ValidationError;
+use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
+use crate::server::my_keys_manager::{INITIAL_COMMITMENT_NUMBER, MyKeysManager};
+use crate::tx::tx::{build_commitment_tx, CommitmentInfo, CommitmentInfo2, get_commitment_transaction_number_obscure_factor, HTLCInfo, sign_commitment};
 use crate::util::crypto_utils::{
     derive_public_key, derive_public_revocation_key, payload_for_p2wpkh,
 };
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::invoice_utils;
-
-use backtrace::Backtrace;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
@@ -89,6 +87,12 @@ impl Channel {
         Status::internal(s)
     }
 
+    pub(crate) fn validation_error(&self, ve: ValidationError) -> Status {
+        let s: String = ve.into();
+        log_error!(self, "VALIDATION ERROR: {}", &s);
+        Status::invalid_argument(s)
+    }
+
     // Phase 2
     fn make_remote_tx_keys(
         &self,
@@ -136,6 +140,62 @@ impl Channel {
         .expect("failed to derive keys")
     }
 
+    /// Phase 1
+    pub fn sign_remote_commitment_tx(&self,
+        tx: &bitcoin::Transaction,
+        output_witscripts: &Vec<Vec<u8>>,
+        remote_per_commitment_point: &PublicKey,
+        remote_funding_pubkey: &PublicKey,
+        channel_value_satoshi: u64,
+    ) -> Result<Vec<u8>, Status> {
+        if tx.output.len() != output_witscripts.len() {
+            // BEGIN NOT TESTED
+            return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
+            // END NOT TESTED
+        }
+
+        // The CommitmentInfo will be used to check policy
+        // assertions.
+        let mut info = CommitmentInfo::new();
+        for ind in 0..tx.output.len() {
+            info.handle_output(&tx.output[ind], output_witscripts[ind].as_slice())
+                .map_err(|ve| self.invalid_argument(format!("output[{}]: {}", ind, ve)))?;
+        }
+
+        // TODO(devrandom) - fill in the HTLCs (and obtain current_height) so that
+        // we can validate them too
+
+        let local_pubkeys = self.keys.pubkeys();
+        // Our key (remote from the point of view of the tx)
+        let remote_key = derive_public_key(
+            &self.secp_ctx,
+            &remote_per_commitment_point,
+            &local_pubkeys.payment_basepoint,
+        )
+        .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?;
+
+        let validator =
+            self.node.validator_factory.make_validator_phase1(self, channel_value_satoshi);
+        // since we didn't have the value at the real open, validate it now
+        validator.validate_channel_open()
+            .map_err(|ve| self.validation_error(ve))?;
+
+        let state = ValidatorState { current_height: 0 };
+        validator.validate_remote_tx_phase1(&state, &info, payload_for_p2wpkh(&remote_key))
+            .map_err(|ve| self.validation_error(ve))?;
+
+        let commitment_sig = sign_commitment(
+            &self.secp_ctx,
+            &self.keys,
+            &remote_funding_pubkey,
+            &tx,
+            channel_value_satoshi,
+        ).map_err(|err| self.internal_error(format!("sign_commitment failed: {}", err)))?;
+
+            let mut sig = commitment_sig.serialize_der().to_vec();
+            sig.push(SigHashType::All as u8);
+        Ok(sig)
+    }
     // TODO phase 2
     pub fn sign_remote_commitment(
         &self,
@@ -412,12 +472,18 @@ impl Channel {
         }
         Ok((sig, htlc_sigs))
     }
+
+    pub fn network(&self) -> Network {
+        self.node.network
+    }
 }
 
 pub struct Node {
     pub logger: Arc<Logger>,
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<HashMap<ChannelId, Channel>>,
+    pub network: Network,
+    validator_factory: Box<dyn ValidatorFactory>,
 }
 
 impl Node {
@@ -436,6 +502,8 @@ impl Node {
                 now.subsec_nanos(),
             ),
             channels: Mutex::new(HashMap::new()),
+            network,
+            validator_factory: Box::new(SimpleValidatorFactory {}),
         }
     }
 
@@ -452,6 +520,42 @@ impl Node {
         log_error!(self, "INTERNAL ERROR: {}", &s);
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
+    }
+
+    pub fn new_channel(&self, channel_id: ChannelId,
+                       channel_nonce: Vec<u8>,
+                       channel_value_satoshi: u64,
+                       local_to_self_delay: u16,
+                       is_outbound: bool,
+                       arc_self: &Arc<Node>,
+    ) -> Result<(), Status> {
+        let mut channels = self.channels.lock().unwrap();
+        if channels.contains_key(&channel_id) {
+            log_info!(self, "already have channel ID {}", channel_id); // NOT TESTED
+            return Ok(()); // NOT TESTED
+        }
+        let inmem_keys = self.keys_manager.get_channel_keys_with_nonce(
+            channel_nonce.as_slice(),
+            channel_value_satoshi,
+            "c-lightning",
+        );
+        let chan_keys = EnforcingChannelKeys::new(inmem_keys);
+        let channel = Channel {
+            node: Arc::clone(arc_self),
+            logger: Arc::clone(&self.logger),
+            keys: chan_keys,
+            secp_ctx: Secp256k1::new(),
+            channel_value_satoshi,
+            local_to_self_delay,
+            remote_config: None,
+            is_outbound,
+        };
+
+        let validator = self.validator_factory.make_validator(&channel);
+        validator.validate_channel_open()
+            .map_err(|ve| channel.validation_error(ve))?;
+        channels.insert(channel_id, channel);
+        Ok(())
     }
 
     /// TODO leaking secret

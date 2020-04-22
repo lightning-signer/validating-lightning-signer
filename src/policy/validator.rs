@@ -1,20 +1,57 @@
 use bitcoin::Network;
+use bitcoin::util::address::Payload;
+use secp256k1::{PublicKey, Secp256k1};
+use secp256k1::key::ONE_KEY;
 
-use crate::tx::script::ValidationError;
-use crate::tx::script::ValidationError::{Policy, TransactionFormat};
+use crate::node::node::Channel;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
+
+use super::error::ValidationError::{Policy, TransactionFormat};
+use super::error::ValidationError;
 
 pub trait Validator {
     /// Phase 1 remote tx validation
-    fn validate_remote_tx_phase1(&self, state: &ValidatorState, info: &CommitmentInfo, info2: &CommitmentInfo2) -> Result<(), ValidationError>;
+    fn validate_remote_tx_phase1(&self, state: &ValidatorState, info: &CommitmentInfo,
+                                 our_address: Payload) -> Result<(), ValidationError>;
     /// Phase 2 remote tx validation
-    fn validate_remote_tx(&self, state: &ValidatorState, info2: &CommitmentInfo2) -> Result<(), ValidationError>;
+    fn validate_remote_tx(&self, state: &ValidatorState,
+                          info2: &CommitmentInfo2) -> Result<(), ValidationError>;
     /// Validate channel open
     fn validate_channel_open(&self) -> Result<(), ValidationError>;
 }
 
 pub struct ValidatorState {
     pub current_height: u32,
+}
+
+pub trait ValidatorFactory: Send + Sync {
+    fn make_validator(&self, channel: &Channel) -> Box<dyn Validator>;
+    fn make_validator_phase1(&self, channel: &Channel,
+                             channel_value_satoshi: u64) -> Box<dyn Validator>;
+}
+
+pub struct SimpleValidatorFactory {
+}
+
+fn simple_validator(network: Network, channel_value_satoshi: u64) -> SimpleValidator {
+    SimpleValidator {
+            policy: make_simple_policy(network),
+            channel_value_satoshi,
+            dummy_public_key: PublicKey::from_secret_key(&Secp256k1::signing_only(), &ONE_KEY),
+        }
+}
+
+impl ValidatorFactory for SimpleValidatorFactory {
+    fn make_validator(&self, channel: &Channel) -> Box<dyn Validator> {
+        Box::new(simple_validator(channel.network(), channel.channel_value_satoshi))
+    }
+
+    /// In phase 1 we don't have the channel value populated in the Channel object,
+    /// so supply it separately
+    fn make_validator_phase1(&self, channel: &Channel,
+                             channel_value_satoshi: u64) -> Box<dyn Validator> {
+        Box::new(simple_validator(channel.network(), channel_value_satoshi))
+    }
 }
 
 #[derive(Clone)]
@@ -36,6 +73,7 @@ pub struct SimplePolicy {
 pub struct SimpleValidator {
     pub policy: SimplePolicy,
     pub channel_value_satoshi: u64,
+    dummy_public_key: PublicKey,
 }
 
 /// A validator
@@ -97,24 +135,28 @@ impl SimpleValidator {
 }
 
 impl Validator for SimpleValidator {
-    fn validate_remote_tx_phase1(&self, state: &ValidatorState, info: &CommitmentInfo, info2: &CommitmentInfo2) -> Result<(), ValidationError> {
-        if info.to_local_value != info2.to_local_value {
-            return Err(TransactionFormat("to_local value mismatch".to_string()));
-        }
-        if info.to_remote_value != info2.to_remote_value {
-            return Err(TransactionFormat("to_remote value mismatch".to_string()));
-        }
-        if info.to_remote_address.as_ref().unwrap_or(&info2.to_remote_address) != &info2.to_remote_address {
+    fn validate_remote_tx_phase1(&self, state: &ValidatorState, info: &CommitmentInfo,
+                                 our_address: Payload) -> Result<(), ValidationError> {
+        if info.to_remote_address.as_ref().unwrap_or(&our_address) != &our_address {
             return Err(TransactionFormat("to_remote address mismatch".to_string()));
-        }
-        if info.to_local_delayed_key.unwrap_or(info2.to_local_delayed_key) != info2.to_local_delayed_key {
-            return Err(TransactionFormat("to_remote address mismatch".to_string()));
-        }
-        if info.to_local_delay != info2.to_local_delay {
-            return Err(TransactionFormat("to_local delay mismatch".to_string()));
         }
 
-        self.validate_remote_tx(state, info2)
+        let to_local_delay =
+            if info.to_local_delayed_key.is_some() { info.to_local_delay }
+            else { self.policy.min_delay }; // default if there's no to_local output
+
+        let info2 = CommitmentInfo2 {
+            to_remote_address: our_address,
+            to_remote_value: info.to_remote_value,
+            revocation_key: self.dummy_public_key,
+            to_local_delayed_key: self.dummy_public_key,
+            to_local_value: info.to_local_value,
+            to_local_delay,
+            offered_htlcs: vec![],
+            received_htlcs: vec![]
+        };
+
+        self.validate_remote_tx(state, &info2)
     }
 
     fn validate_remote_tx(&self, state: &ValidatorState, info: &CommitmentInfo2) -> Result<(), ValidationError> {
@@ -171,7 +213,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
         }
     } else {
         SimplePolicy {
-            min_delay: 6,
+            min_delay: 5,
             max_delay: 1440,
             max_channel_size: 100_000_000,
             epsilon: 10_000,
@@ -193,10 +235,9 @@ mod tests {
 
     #[test]
     fn validate_channel_open_test() {
-        let policy = make_simple_policy(Network::Testnet);
-        let validator = SimpleValidator { policy: policy.clone(), channel_value_satoshi: 100_000_000 };
+        let validator = simple_validator(Network::Testnet, 100_000_000);
         assert!(validator.validate_channel_open().is_ok());
-        let validator_large = SimpleValidator { policy: policy.clone(), channel_value_satoshi: 100_000_001 };
+        let validator_large = simple_validator(Network::Testnet, 100_000_001);
         assert!(validator_large.validate_channel_open().is_err());
     }
 
@@ -221,8 +262,7 @@ mod tests {
     }
 
     fn make_validator() -> SimpleValidator {
-        let policy = make_simple_policy(Network::Testnet);
-        SimpleValidator { policy: policy.clone(), channel_value_satoshi: 100_000_000 }
+        simple_validator(Network::Testnet, 100_000_000)
     }
 
     fn make_htlc_info(expiry: u32) -> HTLCInfo {
@@ -283,13 +323,13 @@ mod tests {
         let validator = make_validator();
         let state = ValidatorState { current_height: 1000 };
         let info_good =
-            make_info(99_000_000, 990_000, 6, vec![], vec! [make_htlc_info(1006)]);
+            make_info(99_000_000, 990_000, 6, vec![], vec! [make_htlc_info(1005)]);
         assert!(validator.validate_remote_tx(&state, &info_good).is_ok());
         let info_good =
             make_info(99_000_000, 990_000, 6, vec![], vec! [make_htlc_info(2440)]);
         assert!(validator.validate_remote_tx(&state, &info_good).is_ok());
         let info_bad =
-            make_info(99_000_000, 990_000, 6, vec![], vec! [make_htlc_info(1005)]);
+            make_info(99_000_000, 990_000, 6, vec![], vec! [make_htlc_info(1004)]);
         assert_policy_error(validator.validate_remote_tx(&state, &info_bad),
                             "received HTLC delay too small");
         let info_bad =
