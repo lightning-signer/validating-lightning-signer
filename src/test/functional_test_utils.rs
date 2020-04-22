@@ -69,37 +69,41 @@ pub fn confirm_transaction<'a, 'b: 'a>(
 
 // BEGIN NOT TESTED
 pub fn connect_blocks<'a, 'b>(
-    notifier: &'a chaininterface::BlockNotifierRef<'b>,
-    depth: u32,
-    height: u32,
-    parent: bool,
-    prev_blockhash: Sha256d,
+    _notifier: &'a chaininterface::BlockNotifierRef<'b>,
+    _depth: u32,
+    _height: u32,
+    _parent: bool,
+    _prev_blockhash: Sha256d,
 ) -> Sha256d {
-    let mut header = BlockHeader {
-        version: 0x2000000,
-        prev_blockhash: if parent {
-            prev_blockhash
-        } else {
-            Default::default()
-        },
-        merkle_root: Default::default(),
-        time: 42,
-        bits: 42,
-        nonce: 42,
-    };
-    notifier.block_connected_checked(&header, height + 1, &Vec::new(), &Vec::new());
-    for i in 2..depth + 1 {
-        header = BlockHeader {
-            version: 0x20000000,
-            prev_blockhash: header.bitcoin_hash(),
+    unimplemented!(); // TODO - Remove when tested.
+    #[allow(unreachable_code)]
+    {
+        let mut header = BlockHeader {
+            version: 0x2000000,
+            prev_blockhash: if _parent {
+                _prev_blockhash
+            } else {
+                Default::default()
+            },
             merkle_root: Default::default(),
             time: 42,
             bits: 42,
             nonce: 42,
         };
-        notifier.block_connected_checked(&header, height + i, &Vec::new(), &Vec::new());
+        _notifier.block_connected_checked(&header, _height + 1, &Vec::new(), &Vec::new());
+        for i in 2.._depth + 1 {
+            header = BlockHeader {
+                version: 0x20000000,
+                prev_blockhash: header.bitcoin_hash(),
+                merkle_root: Default::default(),
+                time: 42,
+                bits: 42,
+                nonce: 42,
+            };
+            _notifier.block_connected_checked(&header, _height + i, &Vec::new(), &Vec::new());
+        }
+        header.bitcoin_hash()
     }
-    header.bitcoin_hash()
 }
 // END NOT TESTED
 
@@ -750,10 +754,14 @@ impl SendEvent {
     }
 
     // BEGIN NOT TESTED
-    pub fn from_node<S: ChannelKeys>(node: &Node<S>) -> SendEvent {
-        let mut events = node.node.get_and_clear_pending_msg_events();
-        assert_eq!(events.len(), 1);
-        SendEvent::from_event(events.pop().unwrap())
+    pub fn from_node<S: ChannelKeys>(_node: &Node<S>) -> SendEvent {
+        unimplemented!(); // TODO - Remove when tested.
+        #[allow(unreachable_code)]
+        {
+            let mut events = _node.node.get_and_clear_pending_msg_events();
+            assert_eq!(events.len(), 1);
+            SendEvent::from_event(events.pop().unwrap())
+        }
     }
     // END NOT TESTED
 }

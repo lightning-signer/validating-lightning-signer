@@ -911,6 +911,8 @@ mod tests {
     use lightning::ln::channelmanager::PaymentHash;
     use secp256k1::recovery::{RecoverableSignature, RecoveryId};
 
+    use tonic::Code;
+
     use crate::server::driver::channel_nonce_to_id;
     use crate::tx::script::get_revokeable_redeemscript;
     use crate::util::crypto_utils::{
@@ -947,6 +949,66 @@ mod tests {
                 .new_channel(&node_id, channel_value, Some(channel_nonce), None, 5, true)
                 .expect("new_channel"),
         )
+    }
+
+    #[test]
+    fn channel_invalid_argument_test() {
+        let signer = MySigner::new();
+        let channel_value = 300;
+        let (node_id, channel_id) = init_node_and_channel(&signer, channel_value);
+        let status: Result<(), Status> =
+            signer.with_existing_channel(&node_id, &channel_id, |chan| {
+                Err(chan.invalid_argument("testing invalid_argument"))
+            });
+        assert!(status.is_err());
+        let err = status.unwrap_err();
+        assert_eq!(err.code(), Code::InvalidArgument);
+        assert_eq!(err.message(), "testing invalid_argument");
+    }
+
+    #[test]
+    fn channel_internal_error_test() {
+        let signer = MySigner::new();
+        let channel_value = 300;
+        let (node_id, channel_id) = init_node_and_channel(&signer, channel_value);
+        let status: Result<(), Status> =
+            signer.with_existing_channel(&node_id, &channel_id, |chan| {
+                Err(chan.internal_error("testing internal_error"))
+            });
+        assert!(status.is_err());
+        let err = status.unwrap_err();
+        assert_eq!(err.code(), Code::Internal);
+        assert_eq!(err.message(), "testing internal_error");
+    }
+
+    #[test]
+    fn node_invalid_argument_test() {
+        let signer = MySigner::new();
+        let channel_value = 300;
+        let (node_id, _channel_id) = init_node_and_channel(&signer, channel_value);
+        let status: Result<(), Status> = signer.with_node(&node_id, |opt_node| {
+            Err(opt_node
+                .unwrap()
+                .invalid_argument("testing invalid_argument"))
+        });
+        assert!(status.is_err());
+        let err = status.unwrap_err();
+        assert_eq!(err.code(), Code::InvalidArgument);
+        assert_eq!(err.message(), "testing invalid_argument");
+    }
+
+    #[test]
+    fn node_internal_error_test() {
+        let signer = MySigner::new();
+        let channel_value = 300;
+        let (node_id, _channel_id) = init_node_and_channel(&signer, channel_value);
+        let status: Result<(), Status> = signer.with_node(&node_id, |opt_node| {
+            Err(opt_node.unwrap().internal_error("testing internal_error"))
+        });
+        assert!(status.is_err());
+        let err = status.unwrap_err();
+        assert_eq!(err.code(), Code::Internal);
+        assert_eq!(err.message(), "testing internal_error");
     }
 
     #[test]

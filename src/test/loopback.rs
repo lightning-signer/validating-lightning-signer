@@ -196,7 +196,7 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         inbound: bool,
         channel_value_satoshis: u64,
     ) -> Self::ChanKeySigner {
-        let local_to_self_delay = 5u16; // FIXME // NOT TESTED
+        let local_to_self_delay = 5u16; // FIXME
         let channel_id = self
             .signer
             .new_channel(

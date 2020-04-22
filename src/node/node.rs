@@ -75,23 +75,19 @@ impl Debug for Channel {
 }
 
 impl Channel {
-    // BEGIN NOT TESTED
-    pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
+    pub(crate) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INVALID ARGUMENT: {}", &s);
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
-    // END NOT TESTED
 
-    // BEGIN NOT TESTED
-    pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
+    pub(crate) fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INTERNAL ERROR: {}", &s);
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
     }
-    // END NOT TESTED
 
     // Phase 2
     fn make_remote_tx_keys(
@@ -444,23 +440,19 @@ impl Node {
     }
 
     #[allow(dead_code)]
-    // BEGIN NOT TESTED
-    pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
+    pub(crate) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INVALID ARGUMENT: {}", &s);
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
-    // END NOT TESTED
 
-    // BEGIN NOT TESTED
-    pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
+    pub(crate) fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INTERNAL ERROR: {}", &s);
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
     }
-    // END NOT TESTED
 
     /// TODO leaking secret
     pub fn get_node_secret(&self) -> SecretKey {

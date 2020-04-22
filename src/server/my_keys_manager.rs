@@ -198,13 +198,15 @@ impl KeysInterface for MyKeysManager {
     // BEGIN NOT TESTED
     fn get_channel_keys(
         &self,
-        channel_id: [u8; 32],
+        _channel_id: [u8; 32],
         _inbound: bool,
-        channel_value_satoshis: u64,
+        _channel_value_satoshis: u64,
     ) -> InMemoryChannelKeys {
+        unimplemented!();
+        #[allow(unreachable_code)]
         self.get_channel_keys_with_nonce(
-            &channel_id,
-            channel_value_satoshis,
+            &_channel_id,
+            _channel_value_satoshis,
             "rust-lightning-signer",
         )
     }
@@ -248,7 +250,7 @@ impl KeysInterface for MyKeysManager {
             .expect("Your RNG is busted");
         sha.input(&child_privkey.private_key.key[..]);
 
-        (Sha256::from_engine(sha).into_inner())
+        Sha256::from_engine(sha).into_inner()
     }
 }
 
