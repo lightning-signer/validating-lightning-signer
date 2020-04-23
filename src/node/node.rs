@@ -142,11 +142,12 @@ impl Channel {
 
     /// Phase 1
     pub fn sign_remote_commitment_tx(&self,
-        tx: &bitcoin::Transaction,
-        output_witscripts: &Vec<Vec<u8>>,
-        remote_per_commitment_point: &PublicKey,
-        remote_funding_pubkey: &PublicKey,
-        channel_value_satoshi: u64,
+                                     tx: &bitcoin::Transaction,
+                                     output_witscripts: &Vec<Vec<u8>>,
+                                     remote_per_commitment_point: &PublicKey,
+                                     remote_funding_pubkey: &PublicKey,
+                                     channel_value_satoshi: u64,
+                                     option_static_remotekey: bool,
     ) -> Result<Vec<u8>, Status> {
         if tx.output.len() != output_witscripts.len() {
             // BEGIN NOT TESTED
@@ -158,6 +159,7 @@ impl Channel {
         // assertions.
         let mut info = CommitmentInfo::new();
         for ind in 0..tx.output.len() {
+            log_debug!(self, "script {:?}", tx.output[ind].script_pubkey);
             info.handle_output(&tx.output[ind], output_witscripts[ind].as_slice())
                 .map_err(|ve| self.invalid_argument(format!("output[{}]: {}", ind, ve)))?;
         }
@@ -167,12 +169,15 @@ impl Channel {
 
         let local_pubkeys = self.keys.pubkeys();
         // Our key (remote from the point of view of the tx)
-        let remote_key = derive_public_key(
-            &self.secp_ctx,
-            &remote_per_commitment_point,
-            &local_pubkeys.payment_basepoint,
-        )
-        .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?;
+        let remote_key =
+            if option_static_remotekey { local_pubkeys.payment_basepoint }
+            else {
+                derive_public_key(
+                    &self.secp_ctx,
+                    &remote_per_commitment_point,
+                    &local_pubkeys.payment_basepoint,
+                ).map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
+            };
 
         let validator =
             self.node.validator_factory.make_validator_phase1(self, channel_value_satoshi);
@@ -196,6 +201,7 @@ impl Channel {
             sig.push(SigHashType::All as u8);
         Ok(sig)
     }
+
     // TODO phase 2
     pub fn sign_remote_commitment(
         &self,

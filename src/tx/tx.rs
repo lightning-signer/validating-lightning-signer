@@ -318,7 +318,7 @@ impl CommitmentInfo {
 
     fn handle_to_local_script(
         &mut self,
-        _out: &TxOut,
+        out: &TxOut,
         script: &Script,
     ) -> Result<(), ValidationError> {
         let iter = &mut script.iter(true);
@@ -345,6 +345,7 @@ impl CommitmentInfo {
 
         // This is safe because we checked for negative
         self.to_local_delay = delay as u16;
+        self.to_local_value = out.value;
         self.to_local_delayed_key = Some(
             PublicKey::from_slice(to_local_delayed_key.as_slice())
                 .map_err(|err| Mismatch(format!("to_local_delayed_key mismatch: {}", err)))?,
@@ -513,7 +514,7 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let mut info = CommitmentInfo::new();
         let out = TxOut {
-            value: 0,
+            value: 123,
             script_pubkey: Default::default(),
         };
         let revocation_key =
@@ -528,6 +529,7 @@ mod tests {
         assert_eq!(info.revocation_key.unwrap(), revocation_key);
         assert_eq!(info.to_local_delayed_key.unwrap(), delayed_key);
         assert_eq!(info.to_local_delay, 5);
+        assert_eq!(info.to_local_value, 123);
         let res = info.handle_to_local_script(&out, &script);
         assert!(res.is_err());
         #[rustfmt::skip]

@@ -348,12 +348,14 @@ impl MySigner {
         remote_per_commitment_point: &PublicKey,
         remote_funding_pubkey: &PublicKey,
         channel_value_satoshi: u64,
+        option_static_remotekey: bool,
     ) -> Result<Vec<u8>, Status> {
         self.with_existing_channel(&node_id, &channel_id, |chan| {
             chan.sign_remote_commitment_tx(tx, &output_witscripts,
                                            remote_per_commitment_point,
                                            remote_funding_pubkey,
-                                           channel_value_satoshi)
+                                           channel_value_satoshi,
+                                           option_static_remotekey)
         })
     }
 
@@ -998,7 +1000,7 @@ mod tests {
                     &output_witscripts,
                     &remote_percommitment_point,
                     &remote_keys.funding_pubkey,
-                    channel_value).expect("sign");
+                    channel_value, false).expect("sign");
                 Ok((ser_signature, tx))
             })
             .expect("build_commitment_tx");

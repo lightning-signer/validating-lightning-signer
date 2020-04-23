@@ -207,7 +207,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             min_delay: 60,
             max_delay: 1440,
             max_channel_size: 100_000_000,
-            epsilon: 10_000,
+            epsilon: 100_000,
             max_htlcs: 1000,
             max_htlc_value_satoshi: 10_000_000,
         }
@@ -216,7 +216,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             min_delay: 5,
             max_delay: 1440,
             max_channel_size: 100_000_000,
-            epsilon: 10_000,
+            epsilon: 100_000,
             max_htlcs: 1000,
             max_htlc_value_satoshi: 10_000_000,
         }
@@ -281,7 +281,7 @@ mod tests {
     fn validate_remote_tx_test() {
         let validator = make_validator();
         let state = ValidatorState { current_height: 1000 };
-        let info = make_info(99_000_000, 990_000, 6, vec![], vec![]);
+        let info = make_info(99_000_000, 900_000, 6, vec![], vec![]);
         assert!(validator.validate_remote_tx(&state, &info).is_ok());
     }
 
@@ -289,9 +289,9 @@ mod tests {
     fn validate_remote_tx_shortage_test() {
         let validator = make_validator();
         let state = ValidatorState { current_height: 1000 };
-        let info_bad = make_info(99_000_000, 990_000 - 1, 6, vec![], vec![]);
+        let info_bad = make_info(99_000_000, 900_000 - 1, 6, vec![], vec![]);
         assert_policy_error(validator.validate_remote_tx(&state, &info_bad),
-                            "channel value short by 10001 > 10000");
+                            "channel value short by 100001 > 100000");
     }
 
     #[test]
@@ -299,7 +299,7 @@ mod tests {
         let validator = make_validator();
         let state = ValidatorState { current_height: 1000 };
         let htlcs = (0..1001).map(|_| make_htlc_info(1100)).collect();
-        let info_bad = make_info(99_000_000, 990_000, 6, vec![], htlcs);
+        let info_bad = make_info(99_000_000, 900_000, 6, vec![], htlcs);
         assert_policy_error(validator.validate_remote_tx(&state, &info_bad),
                             "too many HTLCs");
     }
@@ -313,7 +313,7 @@ mod tests {
             payment_hash: PaymentHash([0;32]),
             cltv_expiry: 1100
         }).collect();
-        let info_bad = make_info(99_000_000, 990_000, 6, vec![], htlcs);
+        let info_bad = make_info(99_000_000, 900_000, 6, vec![], htlcs);
         assert_policy_error(validator.validate_remote_tx(&state, &info_bad),
                             "sum of HTLC values 10001000 too large");
     }
