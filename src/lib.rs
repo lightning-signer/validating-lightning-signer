@@ -10,9 +10,9 @@ extern crate rand;
 extern crate secp256k1;
 extern crate tonic;
 
-pub mod tx;
 #[macro_use]
 pub mod util;
+pub mod tx;
 pub mod client;
 pub mod node;
 pub mod policy;

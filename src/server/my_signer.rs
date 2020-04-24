@@ -18,7 +18,7 @@ use tonic::Status;
 
 use crate::node::node::{Channel, ChannelId, Node};
 use crate::server::my_keys_manager::MyKeysManager;
-use crate::tx::tx::{build_close_tx, HTLCInfo, sign_commitment};
+use crate::tx::tx::{build_close_tx, HTLCInfo2, sign_commitment};
 use crate::util::crypto_utils::{derive_private_revocation_key, payload_for_p2wpkh};
 use crate::util::test_utils::TestLogger;
 
@@ -242,8 +242,8 @@ impl MySigner {
         feerate_per_kw: u64,
         to_local_value: u64,
         to_remote_value: u64,
-        offered_htlcs: Vec<HTLCInfo>,
-        received_htlcs: Vec<HTLCInfo>,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
         self.with_existing_channel(&node_id, &channel_id, |chan| {
             let per_commitment_point = chan.get_per_commitment_point(commitment_number);
@@ -1037,14 +1037,14 @@ mod tests {
         };
         let remote_keys = make_channel_pubkeys();
 
-        let htlc1 = HTLCInfo {
-            value: 1 * 1000 * 1000,
+        let htlc1 = HTLCInfo2 {
+            value: 1,
             payment_hash: PaymentHash([1; 32]),
             cltv_expiry: 2 << 16,
         };
 
-        let htlc2 = HTLCInfo {
-            value: 2 * 1000 * 1000,
+        let htlc2 = HTLCInfo2 {
+            value: 2,
             payment_hash: PaymentHash([3; 32]),
             cltv_expiry: 3 << 16,
         };
@@ -1054,7 +1054,7 @@ mod tests {
                 chan.ready(&remote_keys, 5u16, Script::new(), funding_outpoint);
                 let info =
                     chan.build_remote_commitment_info(&remote_percommitment_point,
-                                                      200, 100,
+                                                      197, 100,
                                                       vec![htlc1.clone()],
                                                       vec![htlc2.clone()])?;
                 let (tx, output_scripts, _) =
@@ -1066,14 +1066,14 @@ mod tests {
                     &output_witscripts,
                     &remote_percommitment_point,
                     &remote_keys.funding_pubkey,
-                    channel_value).expect("sign");
+                    channel_value, false).expect("sign");
                 Ok((ser_signature, tx))
             })
             .expect("build_commitment_tx");
 
         assert_eq!(
             hex::encode(tx.txid()),
-            "5c019526d4c32f33aeeeab112196f2cf619f3b3391b6a6c61869573d7eb70c3e"
+            "4508952220fa773d58c5fa624a50919c7be9a20dff323d33ecc815299803a627"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);

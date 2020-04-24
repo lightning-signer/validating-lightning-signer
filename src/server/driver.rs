@@ -20,7 +20,7 @@ use remotesigner::signer_server::{Signer, SignerServer};
 use crate::node::node::ChannelId;
 use crate::server::my_signer::MySigner;
 use crate::server::remotesigner::version_server::Version;
-use crate::tx::tx::HTLCInfo;
+use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::public_key_from_raw;
 
 use super::remotesigner;
@@ -91,13 +91,13 @@ impl MySigner {
         Ok(res)
     }
 
-    fn convert_htlcs(&self, msg_htlcs: &Vec<HtlcInfo>) -> Result<Vec<HTLCInfo>, Status> {
+    fn convert_htlcs(&self, msg_htlcs: &Vec<HtlcInfo>) -> Result<Vec<HTLCInfo2>, Status> {
         let mut htlcs = Vec::new();
         for h in msg_htlcs.iter() {
             let hash = h.payment_hash.as_slice().try_into().map_err(|err| {
                 self.invalid_argument(format!("could not decode payment hash: {}", err))
             })?;
-            htlcs.push(HTLCInfo {
+            htlcs.push(HTLCInfo2 {
                 value: h.value,
                 payment_hash: PaymentHash(hash),
                 cltv_expiry: h.cltv_expiry,

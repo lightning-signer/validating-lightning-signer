@@ -21,7 +21,7 @@ use tonic::Status;
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
 use crate::server::my_keys_manager::{INITIAL_COMMITMENT_NUMBER, MyKeysManager};
-use crate::tx::tx::{build_commitment_tx, CommitmentInfo, CommitmentInfo2, get_commitment_transaction_number_obscure_factor, HTLCInfo, sign_commitment};
+use crate::tx::tx::{build_commitment_tx, CommitmentInfo, CommitmentInfo2, get_commitment_transaction_number_obscure_factor, HTLCInfo2, sign_commitment};
 use crate::util::crypto_utils::{
     derive_public_key, derive_public_revocation_key, payload_for_p2wpkh,
 };
@@ -164,9 +164,6 @@ impl Channel {
                 .map_err(|ve| self.invalid_argument(format!("output[{}]: {}", ind, ve)))?;
         }
 
-        // TODO(devrandom) - fill in the HTLCs (and obtain current_height) so that
-        // we can validate them too
-
         let local_pubkeys = self.keys.pubkeys();
         // Our key (remote from the point of view of the tx)
         let remote_key =
@@ -185,7 +182,9 @@ impl Channel {
         validator.validate_channel_open()
             .map_err(|ve| self.validation_error(ve))?;
 
+        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let state = ValidatorState { current_height: 0 };
+        
         validator.validate_remote_tx_phase1(&state, &info, payload_for_p2wpkh(&remote_key))
             .map_err(|ve| self.validation_error(ve))?;
 
@@ -323,8 +322,8 @@ impl Channel {
         remote_per_commitment_point: &PublicKey,
         to_local_value: u64,
         to_remote_value: u64,
-        offered_htlcs: Vec<HTLCInfo>,
-        received_htlcs: Vec<HTLCInfo>,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<CommitmentInfo2, Status> {
         let local_pubkeys = self.keys.pubkeys();
         let remote_config = self
@@ -379,8 +378,8 @@ impl Channel {
         per_commitment_point: &PublicKey,
         to_local_value: u64,
         to_remote_value: u64,
-        offered_htlcs: Vec<HTLCInfo>,
-        received_htlcs: Vec<HTLCInfo>,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<CommitmentInfo2, Status> {
         let local_pubkeys = self.keys.pubkeys();
         let remote_pubkeys = self
@@ -432,8 +431,8 @@ impl Channel {
         feerate_per_kw: u64,
         to_local_value: u64,
         to_remote_value: u64,
-        offered_htlcs: Vec<HTLCInfo>,
-        received_htlcs: Vec<HTLCInfo>,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
         let info = self.build_remote_commitment_info(
             remote_per_commitment_point,

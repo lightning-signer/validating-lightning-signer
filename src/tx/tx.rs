@@ -1,5 +1,6 @@
 use std::cmp;
 use std::cmp::Ordering;
+use std::convert::TryInto;
 
 use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut};
 use bitcoin::blockdata::opcodes::all::{
@@ -258,11 +259,23 @@ pub fn sort_outputs<T, C: Fn(&T, &T) -> Ordering>(outputs: &mut Vec<(TxOut, T)>,
     });
 }
 
+/// Phase 1 HTLC info
 // BEGIN NOT TESTED
 #[derive(Debug, Clone)]
 pub struct HTLCInfo {
     pub value: u64,
+    /// RIPEMD160 of 32 bytes hash
+    pub payment_hash_hash: [u8;20],
+    /// This is zero (unknown) for offered HTLCs in phase 1
+    pub cltv_expiry: u32,
+}
+
+/// Phase 2 HTLC info
+#[derive(Debug, Clone)]
+pub struct HTLCInfo2 {
+    pub value: u64,
     pub payment_hash: PaymentHash,
+    /// This is zero for offered HTLCs in phase 1
     pub cltv_expiry: u32,
 }
 // END NOT TESTED
@@ -276,8 +289,8 @@ pub struct CommitmentInfo2 {
     pub to_local_delayed_key: PublicKey,
     pub to_local_value: u64,
     pub to_local_delay: u16,
-    pub offered_htlcs: Vec<HTLCInfo>,
-    pub received_htlcs: Vec<HTLCInfo>,
+    pub offered_htlcs: Vec<HTLCInfo2>,
+    pub received_htlcs: Vec<HTLCInfo2>,
 }
 // END NOT TESTED
 
@@ -289,9 +302,8 @@ pub struct CommitmentInfo {
     pub to_local_delayed_key: Option<PublicKey>,
     pub to_local_value: u64,
     pub to_local_delay: u16,
-    // TODO fine-grained HTLC info
-    pub offered_htlcs: Vec<TxOut>,
-    pub received_htlcs: Vec<TxOut>,
+    pub offered_htlcs: Vec<HTLCInfo>,
+    pub received_htlcs: Vec<HTLCInfo>,
 }
 
 impl CommitmentInfo {
@@ -336,6 +348,7 @@ impl CommitmentInfo {
         if self.has_to_local() {
             return Err(TransactionFormat("already have to local".to_string()));
         }
+
         if delay < 0 {
             return Err(ScriptFormat("negative delay".to_string())); // NOT TESTED
         }
@@ -381,7 +394,7 @@ impl CommitmentInfo {
         expect_op(iter, OP_EQUAL)?;
         expect_op(iter, OP_IF)?;
         expect_op(iter, OP_HASH160)?;
-        let _payment_hash = expect_data(iter)?;
+        let payment_hash_vec = expect_data(iter)?;
         expect_op(iter, OP_EQUALVERIFY)?;
         expect_op(iter, OP_PUSHNUM_2)?;
         expect_op(iter, OP_SWAP)?;
@@ -390,7 +403,7 @@ impl CommitmentInfo {
         expect_op(iter, OP_CHECKMULTISIG)?;
         expect_op(iter, OP_ELSE)?;
         expect_op(iter, OP_DROP)?;
-        let _delay = expect_number(iter)?;
+        let cltv_expiry = expect_number(iter)?;
         expect_op(iter, OP_CLTV)?;
         expect_op(iter, OP_DROP)?;
         expect_op(iter, OP_CHECKSIG)?;
@@ -398,7 +411,22 @@ impl CommitmentInfo {
         expect_op(iter, OP_ENDIF)?;
         expect_script_end(iter)?;
 
-        self.received_htlcs.push(out.clone());
+        let payment_hash_hash =
+            payment_hash_vec.as_slice().try_into()
+                .map_err(|_| Mismatch("payment hash RIPEMD160 must be length 20".to_string()))?;
+
+        if cltv_expiry < 0 {
+            return Err(ScriptFormat("negative CLTV".to_string())); // NOT TESTED
+        }
+
+        let cltv_expiry = cltv_expiry as u32;
+
+        let htlc = HTLCInfo {
+            value: out.value,
+            payment_hash_hash,
+            cltv_expiry,
+        };
+        self.received_htlcs.push(htlc);
         Ok(())
     }
 
@@ -432,14 +460,23 @@ impl CommitmentInfo {
         expect_op(iter, OP_CHECKMULTISIG)?;
         expect_op(iter, OP_ELSE)?;
         expect_op(iter, OP_HASH160)?;
-        let _payment_hash = expect_data(iter)?;
+        let payment_hash_vec = expect_data(iter)?;
         expect_op(iter, OP_EQUALVERIFY)?;
         expect_op(iter, OP_CHECKSIG)?;
         expect_op(iter, OP_ENDIF)?;
         expect_op(iter, OP_ENDIF)?;
         expect_script_end(iter)?;
 
-        self.offered_htlcs.push(out.clone());
+        let payment_hash_hash =
+            payment_hash_vec.as_slice().try_into()
+                .map_err(|_| Mismatch("payment hash RIPEMD160 must be length 20".to_string()))?;
+
+        let htlc = HTLCInfo {
+            value: out.value,
+            payment_hash_hash,
+            cltv_expiry: 0,
+        };
+        self.offered_htlcs.push(htlc);
         Ok(())
     }
 
@@ -480,7 +517,8 @@ impl CommitmentInfo {
             if res.is_ok() {
                 return Ok(());
             }
-            return Err(TransactionFormat("unknown p2wsh format".to_string())); // NOT TESTED
+            println!("unknown script {:?}", script);
+            return Err(TransactionFormat("unknown p2wsh script".to_string()));
         } else {
             return Err(TransactionFormat("unknown output type".to_string())); // NOT TESTED
         }
