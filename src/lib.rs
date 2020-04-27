@@ -10,8 +10,6 @@ extern crate rand;
 extern crate secp256k1;
 extern crate tonic;
 
-// FILE NOT TESTED
-
 pub mod tx;
 #[macro_use]
 pub mod util;

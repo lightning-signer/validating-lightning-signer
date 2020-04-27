@@ -12,7 +12,7 @@ use crate::tx::script::ValidationError::{Mismatch, ScriptFormat, TransactionForm
 #[derive(PartialEq)]
 pub enum ValidationError {
     TransactionFormat(String),
-    ScriptFormat(String),
+    ScriptFormat(String), // NOT TESTED
     Mismatch(),
 }
 

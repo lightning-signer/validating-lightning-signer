@@ -264,13 +264,16 @@ pub fn sort_outputs<T, C: Fn(&T, &T) -> Ordering>(outputs: &mut Vec<(TxOut, T)>,
     });
 }
 
+// BEGIN NOT TESTED
 #[derive(Debug, Clone)]
 pub struct HTLCInfo {
     pub value: u64,
     pub payment_hash: PaymentHash,
     pub cltv_expiry: u32,
 }
+// END NOT TESTED
 
+// BEGIN NOT TESTED
 #[derive(Debug)]
 pub struct CommitmentInfo2 {
     pub to_remote_address: Payload,
@@ -282,6 +285,7 @@ pub struct CommitmentInfo2 {
     pub offered_htlcs: Vec<HTLCInfo>,
     pub received_htlcs: Vec<HTLCInfo>,
 }
+// END NOT TESTED
 
 #[allow(dead_code)]
 pub struct CommitmentInfo {

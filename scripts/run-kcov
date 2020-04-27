@@ -1,0 +1,6 @@
+#!/usr/bin/bash
+
+CARGO_TARGET_DIR=target/kcov \
+cargo kcov -- \
+  --verify \
+  --exclude-pattern=/home/user/.cargo,/usr/include,/usr/src/debug

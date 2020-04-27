@@ -183,6 +183,7 @@ impl msgs::ChannelMessageHandler for TestChannelMessageHandler {
 }
 // END NOT TESTED
 
+// BEGIN NOT TESTED
 impl events::MessageSendEventsProvider for TestChannelMessageHandler {
     fn get_and_clear_pending_msg_events(&self) -> Vec<events::MessageSendEvent> {
         let mut pending_events = self.pending_events.lock().unwrap();
@@ -191,16 +192,17 @@ impl events::MessageSendEventsProvider for TestChannelMessageHandler {
         ret
     }
 }
+// END NOT TESTED
 
 pub struct TestRoutingMessageHandler {}
 
+// BEGIN NOT TESTED
 impl TestRoutingMessageHandler {
-    // BEGIN NOT TESTED
     pub fn new() -> Self {
         TestRoutingMessageHandler {}
     }
-    // END NOT TESTED
 }
+// END NOT TESTED
 
 // BEGIN NOT TESTED
 impl msgs::RoutingMessageHandler for TestRoutingMessageHandler {
@@ -269,6 +271,7 @@ impl TestLogger {
             lines: Mutex::new(HashMap::new()),
         }
     }
+    // BEGIN NOT TESTED
     pub fn enable(&mut self, level: Level) {
         self.level = level;
     }
@@ -276,6 +279,7 @@ impl TestLogger {
         let log_entries = self.lines.lock().unwrap();
         assert_eq!(log_entries.get(&(module, line)), Some(&count));
     }
+    // END NOT TESTED
 }
 
 impl Logger for TestLogger {

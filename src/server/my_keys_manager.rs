@@ -69,7 +69,7 @@ impl MyKeysManager {
                             .push_slice(&pubkey_hash160.into_inner())
                             .into_script()
                     }
-                    Err(_) => panic!("Your RNG is busted"),
+                    Err(_) => panic!("Your RNG is busted"), // NOT TESTED
                 };
                 let shutdown_pubkey = match master_key
                     .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(2).unwrap())
@@ -79,7 +79,7 @@ impl MyKeysManager {
                             .public_key
                             .key
                     }
-                    Err(_) => panic!("Your RNG is busted"),
+                    Err(_) => panic!("Your RNG is busted"), // NOT TESTED
                 };
                 let channel_master_key = master_key
                     .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(3).unwrap())
@@ -117,7 +117,7 @@ impl MyKeysManager {
                     logger,
                 }
             }
-            Err(_) => panic!("Your rng is busted"),
+            Err(_) => panic!("Your rng is busted"), // NOT TESTED
         }
     }
 
@@ -313,7 +313,8 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let per_commit_point =
             MyKeysManager::per_commitment_point(&secp_ctx, keys.commitment_seed(), 3);
-        assert!(
+        #[rustfmt::skip]
+        assert!(	// NOT TESTED
             hex::encode(per_commit_point.serialize().to_vec())
                 == "03b5497ca60ff3165908c521ea145e742c25dedd14f5602f3f502d1296c39618a5"
         );

@@ -98,7 +98,7 @@ impl ChannelKeys for EnforcingChannelKeys {
         secp_ctx: &Secp256k1<T>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
         if commitment_tx.input.len() != 1 {
-            panic!("lightning commitment transactions have a single input");
+            panic!("lightning commitment transactions have a single input"); // NOT TESTED
         }
         // FIXME bypass while integrating with c-lightning
         // self.check_keys(secp_ctx, keys);

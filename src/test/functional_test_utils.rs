@@ -263,7 +263,7 @@ pub fn create_funding_transaction<S: ChannelKeys>(
             let funding_outpoint = OutPoint::new(tx.txid(), 0);
             (*temporary_channel_id, tx, funding_outpoint)
         }
-        _ => panic!("Unexpected event"),
+        _ => panic!("Unexpected event"), // NOT TESTED
     }
 }
 
@@ -351,7 +351,7 @@ pub fn create_chan_between_nodes_with_value_init<S: ChannelKeys>(
             assert_eq!(user_channel_id, 42);
             assert_eq!(*funding_txo, funding_output);
         }
-        _ => panic!("Unexpected event"),
+        _ => panic!("Unexpected event"), // NOT TESTED
     };
 
     tx
@@ -399,7 +399,7 @@ pub fn create_chan_between_nodes_with_value_confirm_second<S: ChannelKeys>(
                     assert_eq!(*node_id, node_recv.node.get_our_node_id());
                     msg.clone()
                 }
-                _ => panic!("Unexpected event"),
+                _ => panic!("Unexpected event"), // NOT TESTED
             },
             match events_6[1] {
                 MessageSendEvent::SendAnnouncementSignatures {
@@ -409,7 +409,7 @@ pub fn create_chan_between_nodes_with_value_confirm_second<S: ChannelKeys>(
                     assert_eq!(*node_id, node_recv.node.get_our_node_id());
                     msg.clone()
                 }
-                _ => panic!("Unexpected event"),
+                _ => panic!("Unexpected event"), // NOT TESTED
             },
         ),
         channel_id,
@@ -486,7 +486,7 @@ pub fn create_chan_between_nodes_with_value_b<S: ChannelKeys>(
             ref msg,
             ref update_msg,
         } => (msg, update_msg),
-        _ => panic!("Unexpected event"),
+        _ => panic!("Unexpected event"), // NOT TESTED
     };
 
     node_a
@@ -502,7 +502,7 @@ pub fn create_chan_between_nodes_with_value_b<S: ChannelKeys>(
             assert!(*announcement == *msg);
             update_msg
         }
-        _ => panic!("Unexpected event"),
+        _ => panic!("Unexpected event"), // NOT TESTED
     };
 
     *node_a.network_chan_count.borrow_mut() += 1;
@@ -511,7 +511,7 @@ pub fn create_chan_between_nodes_with_value_b<S: ChannelKeys>(
         (*announcement).clone(),
         (*as_update).clone(),
         (*bs_update).clone(),
-    )
+    ) // NOT TESTED
 }
 
 pub fn create_announced_chan_between_nodes<S: ChannelKeys>(
@@ -749,7 +749,7 @@ impl SendEvent {
             MessageSendEvent::UpdateHTLCs { node_id, updates } => {
                 SendEvent::from_commitment_update(node_id, updates)
             }
-            _ => panic!("Unexpected event type!"),
+            _ => panic!("Unexpected event type!"), // NOT TESTED
         }
     }
 
@@ -935,7 +935,7 @@ pub fn send_along_route_with_hash<'a, 'b, S: ChannelKeys>(
                     assert_eq!(our_payment_hash, *payment_hash);
                     assert_eq!(amt, recv_value);
                 }
-                _ => panic!("Unexpected event"),
+                _ => panic!("Unexpected event"), // NOT TESTED
             }
         } else {
             let mut events_2 = node.node.get_and_clear_pending_msg_events();
