@@ -8,23 +8,9 @@
 
 Can we get coverage from c-lightning integration tests?
 
-Marked Unimplemented:
-
 Need Real Unit Test:
 
 * MySigner::get_unilateral_close_key
-
-Need Blob Unit Test:
-
-* MySigner::ecdh
-
-Maybe Can Tweak/Clone Existing Test:
-
-* invoice_utils::hash_from_parts "overhang case"
-
-Get Somewhere Else, or Borrow Their Tests Too?:
-
-* byte_utils.rs::slice_{to_{be16, ...}
 
 Needs Further Thought:
 
@@ -36,3 +22,8 @@ Needs Further Thought:
 * tx/tx.rs build_commitment_tx {info.offered_htlcs, info.received_htlcs, sort txouts}
 * tx/tx.rs (handle_received_htlc_script, handle_offered_htlc_script}
 * node/node.rs Channel::sign_remote_commitment_tx_phase2 htlc_signature in sigs
+
+#### Appeal to rust-lightning to expose:
+
+* lightning::util::byte_utils;
+* lightning::util::test_utils;

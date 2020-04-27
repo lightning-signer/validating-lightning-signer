@@ -152,7 +152,7 @@ service Version {
 
 // ----------------------------------------------------------------
 
-// FILE NOT TESTED
+// BEGIN NOT TESTED
 
 message PingRequest {
   string message = 1;
@@ -704,3 +704,5 @@ message ReadyChannelRequest {
 
 message ReadyChannelReply {
 }
+
+// END NOT TESTED

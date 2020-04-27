@@ -193,7 +193,6 @@ impl MySigner {
         })
     }
 
-    // BEGIN NOT TESTED
     pub fn get_unilateral_close_key(
         &self,
         node_id: &PublicKey,
@@ -203,6 +202,7 @@ impl MySigner {
         self.with_existing_channel(&node_id, &channel_id, |chan| {
             let secret_key = match opt_commitment_point {
                 Some(commitment_point) => derive_private_key(
+                    // BEGIN NOT TESTED
                     &chan.secp_ctx,
                     &commitment_point,
                     &chan.keys.payment_base_key(),
@@ -210,6 +210,7 @@ impl MySigner {
                 .map_err(|err| {
                     self.internal_error(format!("derive_private_key failed: {}", err))
                 })?,
+                // END NOT TESTED
                 None => {
                     // option_static_remotekey in effect
                     chan.keys.payment_base_key().clone()
@@ -218,7 +219,6 @@ impl MySigner {
             Ok(secret_key)
         })
     }
-    // END NOT TESTED
 
     pub fn get_channel_basepoints(
         &self,
@@ -508,7 +508,9 @@ impl MySigner {
                     &chan.keys.inner.htlc_base_key(),
                 )
                 .map_err(|err| {
+                    // BEGIN NOT TESTED
                     self.internal_error(format!("derive htlc_privkey failed: {}", err))
+                    // END NOT TESTED
                 })?;
 
                 let mut sigvec = secp_ctx
@@ -813,7 +815,6 @@ impl MySigner {
         Ok(witvec)
     }
 
-    // BEGIN NOT TESTED
     pub fn ecdh(&self, node_id: &PublicKey, other_key: &PublicKey) -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
             let node = opt_node.ok_or_else(|| self.invalid_argument("no such node"))?;
@@ -823,7 +824,6 @@ impl MySigner {
             Ok(res)
         })
     }
-    // END NOT TESTED
 
     pub fn sign_channel_announcement(
         &self,
@@ -1712,7 +1712,7 @@ mod tests {
         let outs = vec![TxOut {
             value: 100,
             script_pubkey: address(0).script_pubkey(),
-        }];
+        }]; // NOT TESTED
         println!("{:?}", &outs[0].script_pubkey);
         let verify_result = tx.verify(|p| Some(outs[p.vout as usize].clone()));
 
@@ -1858,7 +1858,7 @@ mod tests {
         let outs = vec![TxOut {
             value: 100,
             script_pubkey: address(0).script_pubkey(),
-        }];
+        }]; // NOT TESTED
         println!("{:?}", &outs[0].script_pubkey);
         let verify_result = tx.verify(|p| Some(outs[p.vout as usize].clone()));
         assert!(verify_result.is_ok());
@@ -1946,7 +1946,7 @@ mod tests {
         let outs = vec![TxOut {
             value: 100,
             script_pubkey: address(0).script_pubkey(),
-        }];
+        }]; // NOT TESTED
         println!("{:?}", &outs[0].script_pubkey);
         let verify_result = tx.verify(|p| Some(outs[p.vout as usize].clone()));
 
@@ -2683,6 +2683,79 @@ mod tests {
             .unwrap();
         assert_eq!(rsig, hex::decode("739ffb91aa7c0b3d3c92de1600f7a9afccedc5597977095228232ee4458685531516451b84deb35efad27a311ea99175d10c6cdb458cd27ce2ed104eb6cf806400").unwrap());
         Ok(())
+    }
+
+    #[test]
+    fn sign_invoice_with_overhang_test() -> Result<(), ()> {
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(
+            hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000")
+                .unwrap()
+                .as_slice(),
+        );
+        let node_id = signer.new_node_from_seed(&seed);
+        let human_readable_part = String::from("lnbcrt2m");
+        let data_part = hex::decode("010f0a001d051e0101140c0c000006140009160c09051a0d1a190708020d17141106171f0f07131616111f1910070b0d0e150c0c0c0d010d1a01181c15100d010009181a06101a0a0309181b040a111a0a06111705100c0b18091909030e151b14060004120e14001800010510011419080f1307000a0a0517021c171410101a1e101605050a08180d0d110e13150409051d02091d181502020f050e1a1f161a09130005000405001000").unwrap();
+        // The data_part is 170 bytes.
+        // overhang = (data_part.len() * 5) % 8 = 2
+        // looking for a verified invoice where overhang is in 1..3
+        let rsig = signer
+            .sign_invoice(&node_id, &data_part, &human_readable_part)
+            .unwrap();
+        assert_eq!(rsig, hex::decode("f278cdba3fd4a37abf982cee5a66f52e142090631ef57763226f1232eead78b43da7962fcfe29ffae9bd918c588df71d6d7b92a4787de72801594b22f0e7e62a00").unwrap());
+        Ok(())
+    }
+
+    #[test]
+    fn ecdh_test() {
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(
+            hex::decode("6c696768746e696e672d32000000000000000000000000000000000000000000")
+                .unwrap()
+                .as_slice(),
+        );
+        let node_id = signer.new_node_from_seed(&seed);
+        let pointvec = hex::decode("79da12a8be2228292c9cd6e234aac8b7169ede47af7b181acd967d517f5ef0782fad295c1e8f23e2b90ff84e692458b866a6e93e716ad37accf88cb9dec6e3fc").unwrap();
+        let other_key = public_key_from_raw(pointvec.as_slice()).unwrap();
+
+        let ssvec = signer.ecdh(&node_id, &other_key).unwrap();
+        assert_eq!(
+            ssvec,
+            hex::decode("73d43a67933ac7cb104d7df12eb46e4b8e474abd2e79c268dcd93f3aba07a059")
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn get_unilateral_close_key_test() {
+        let signer = MySigner::new();
+        let mut seed = [0; 32];
+        seed.copy_from_slice(
+            hex::decode("6c696768746e696e672d31000000000000000000000000000000000000000000")
+                .unwrap()
+                .as_slice(),
+        );
+        let node_id = signer.new_node_from_seed(&seed);
+        let channel_nonce = hex::decode(
+            "022d223620a359a47ff7f7ac447c85c46c923da53389221a0054c11c1e3ca31d590100000000000000",
+        )
+        .unwrap();
+        let channel_id = signer
+            .new_channel(&node_id, 1000, Some(channel_nonce), None, 0, false)
+            .unwrap();
+        let uck = signer
+            .get_unilateral_close_key(&node_id, &channel_id, &None)
+            .unwrap();
+        assert_eq!(
+            uck,
+            SecretKey::from_slice(
+                &hex::decode("d5f8a9fdd0e4be18c33656944b91dc1f6f2c38ce2a4bbd0ef330ffe4e106127c")
+                    .unwrap()[..]
+            )
+            .unwrap()
+        );
     }
 
     #[test]

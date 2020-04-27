@@ -26,14 +26,15 @@ use serde_json::json;
 use super::remotesigner;
 use crate::node::node::ChannelId;
 
-// BEGIN NOT TESTED
 impl MySigner {
+    // BEGIN NOT TESTED
     pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INVALID ARGUMENT: {}", &s);
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
+    // END NOT TESTED
 
     #[allow(dead_code)]
     pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
@@ -42,6 +43,8 @@ impl MySigner {
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
     }
+
+    // BEGIN NOT TESTED
 
     fn node_id(&self, arg: Option<NodeId>) -> Result<PublicKey, Status> {
         let der_vec = &arg
@@ -103,6 +106,8 @@ impl MySigner {
         }
         Ok(htlcs)
     }
+
+    // END NOT TESTED
 }
 
 pub fn channel_nonce_to_id(nonce: &Vec<u8>) -> ChannelId {
@@ -114,6 +119,8 @@ pub fn channel_nonce_to_id(nonce: &Vec<u8>) -> ChannelId {
     digest.result(&mut result);
     ChannelId(result)
 }
+
+// BEGIN NOT TESTED
 
 pub fn collect_output_witscripts(output_descs: &Vec<OutputDescriptor>) -> Vec<Vec<u8>> {
     output_descs

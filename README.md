@@ -31,3 +31,29 @@ Check coverage annotations in source files:
     cargo tarpaulin
     cargo coverage-annotations |& sort > coverage.txt
     diff coverage-false-positives.txt coverage.txt
+
+### Using [kcov](https://github.com/SimonKagstrom/kcov) for Code Coverage
+
+Dependencies:
+
+    sudo dnf install -y elfutils-devel
+    sudo dnf install -y curl-devel
+    sudo dnf install -y binutils-devel
+
+Build v38 of kcov from git@github.com:SimonKagstrom/kcov.git .
+
+More dependencies:
+
+    cargo install cargo-kcov
+    
+Run coverage:
+
+    ./scripts/run-kcov
+        
+View Coverage Report:
+
+    [target/kcov/cov/index.html](target/kcov/cov/index.html)
+
+Check coverage annotations in source files:
+
+    cargo coverage-annotations
