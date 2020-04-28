@@ -25,7 +25,7 @@ use crate::tx::script::{
 };
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 
-const MAX_DELAY: i16 = 1000;
+const MAX_DELAY: i64 = 1000;
 
 pub fn get_commitment_transaction_number_obscure_factor(
     secp_ctx: &Secp256k1<All>,
@@ -156,7 +156,6 @@ pub fn build_commitment_tx(
     }
 
     for out in &info.offered_htlcs {
-        // BEGIN NOT TESTED
         let htlc_in_tx = HTLCOutputInCommitment {
             offered: true,
             amount_msat: out.value * 1000,
@@ -170,11 +169,9 @@ pub fn build_commitment_tx(
             value: out.value,
         };
         txouts.push((txout, (script, Some(htlc_in_tx))));
-        // END NOT TESTED
     }
 
     for out in &info.received_htlcs {
-        // BEGIN NOT TESTED
         let htlc_in_tx = HTLCOutputInCommitment {
             offered: false,
             amount_msat: out.value * 1000,
@@ -188,7 +185,6 @@ pub fn build_commitment_tx(
             value: out.value,
         };
         txouts.push((txout, (script, Some(htlc_in_tx))));
-        // END NOT TESTED
     }
     sort_outputs(&mut txouts, |a, b| {
         // BEGIN NOT TESTED
@@ -210,10 +206,8 @@ pub fn build_commitment_tx(
         outputs.push(out.0);
         scripts.push((out.1).0.clone());
         if let Some(mut htlc) = (out.1).1.take() {
-            // BEGIN NOT TESTED
             htlc.transaction_output_index = Some(idx as u32);
             htlcs.push(htlc);
-            // END NOT TESTED
         }
     }
 
@@ -351,15 +345,18 @@ impl CommitmentInfo {
 
         // This is safe because we checked for negative
         self.to_local_delay = delay as u16;
-        self.to_local_delayed_key =
-            Some(PublicKey::from_slice(to_local_delayed_key.as_slice()).map_err(|_| Mismatch())?);
-        self.revocation_key =
-            Some(PublicKey::from_slice(revocation_key.as_slice()).map_err(|_| Mismatch())?);
+        self.to_local_delayed_key = Some(
+            PublicKey::from_slice(to_local_delayed_key.as_slice())
+                .map_err(|err| Mismatch(format!("to_local_delayed_key mismatch: {}", err)))?,
+        );
+        self.revocation_key = Some(
+            PublicKey::from_slice(revocation_key.as_slice())
+                .map_err(|err| Mismatch(format!("revocation_key mismatch: {}", err)))?,
+        );
 
         Ok(())
     }
 
-    // BEGIN NOT TESTED
     fn handle_received_htlc_script(
         &mut self,
         out: &TxOut,
@@ -378,7 +375,7 @@ impl CommitmentInfo {
         expect_op(iter, OP_SIZE)?;
         let thirty_two = expect_number(iter)?;
         if thirty_two != 32 {
-            return Err(Mismatch());
+            return Err(Mismatch(format!("expected 32, saw {}", thirty_two))); // NOT TESTED
         }
         expect_op(iter, OP_EQUAL)?;
         expect_op(iter, OP_IF)?;
@@ -403,9 +400,7 @@ impl CommitmentInfo {
         self.received_htlcs.push(out.clone());
         Ok(())
     }
-    // END NOT TESTED
 
-    // BEGIN NOT TESTED
     fn handle_offered_htlc_script(
         &mut self,
         out: &TxOut,
@@ -424,7 +419,7 @@ impl CommitmentInfo {
         expect_op(iter, OP_SIZE)?;
         let thirty_two = expect_number(iter)?;
         if thirty_two != 32 {
-            return Err(Mismatch());
+            return Err(Mismatch(format!("expected 32, saw {}", thirty_two))); // NOT TESTED
         }
         expect_op(iter, OP_EQUAL)?;
         expect_op(iter, OP_NOTIF)?;
@@ -446,7 +441,6 @@ impl CommitmentInfo {
         self.offered_htlcs.push(out.clone());
         Ok(())
     }
-    // END NOT TESTED
 
     pub fn handle_output(
         &mut self,
@@ -477,7 +471,6 @@ impl CommitmentInfo {
             if res.is_ok() {
                 return Ok(());
             }
-            // BEGIN NOT TESTED
             let res = self.handle_received_htlc_script(out, &script);
             if res.is_ok() {
                 return Ok(());
@@ -486,8 +479,7 @@ impl CommitmentInfo {
             if res.is_ok() {
                 return Ok(());
             }
-            return Err(TransactionFormat("unknown format p2wsh".to_string()));
-        // END NOT TESTED
+            return Err(TransactionFormat("unknown p2wsh format".to_string())); // NOT TESTED
         } else {
             return Err(TransactionFormat("unknown output type".to_string())); // NOT TESTED
         }
