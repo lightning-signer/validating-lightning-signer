@@ -1,30 +1,29 @@
 use std::convert::TryInto;
 
+use backtrace::Backtrace;
 use bitcoin;
+use bitcoin::{OutPoint, Script};
 use bitcoin::consensus::{deserialize, encode};
 use bitcoin::util::psbt::serialize::Deserialize;
-use bitcoin::{OutPoint, Script};
-use bitcoin_hashes::{sha256d, Hash};
+use bitcoin_hashes::{Hash, sha256d};
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::channelmanager::PaymentHash;
 use secp256k1::{PublicKey, SecretKey};
-use tonic::{transport::Server, Request, Response, Status};
+use serde_json::json;
+use tonic::{Request, Response, Status, transport::Server};
 
-use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
+use remotesigner::signer_server::{Signer, SignerServer};
 
+use crate::node::node::ChannelId;
 use crate::server::my_signer::MySigner;
 use crate::server::remotesigner::version_server::Version;
-use crate::tx::tx::HTLCInfo;
+use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::public_key_from_raw;
 
-use backtrace::Backtrace;
-use serde_json::json;
-
 use super::remotesigner;
-use crate::node::node::ChannelId;
 
 impl MySigner {
     // BEGIN NOT TESTED
@@ -92,13 +91,13 @@ impl MySigner {
         Ok(res)
     }
 
-    fn convert_htlcs(&self, msg_htlcs: &Vec<HtlcInfo>) -> Result<Vec<HTLCInfo>, Status> {
+    fn convert_htlcs(&self, msg_htlcs: &Vec<HtlcInfo>) -> Result<Vec<HTLCInfo2>, Status> {
         let mut htlcs = Vec::new();
         for h in msg_htlcs.iter() {
             let hash = h.payment_hash.as_slice().try_into().map_err(|err| {
                 self.invalid_argument(format!("could not decode payment hash: {}", err))
             })?;
-            htlcs.push(HTLCInfo {
+            htlcs.push(HTLCInfo2 {
                 value: h.value,
                 payment_hash: PaymentHash(hash),
                 cltv_expiry: h.cltv_expiry,
@@ -618,6 +617,7 @@ impl Signer for MySigner {
             &remote_per_commitment_point,
             &remote_funding_pubkey,
             channel_value_satoshis,
+            req.option_static_remotekey,
         )?;
 
         let reply = SignatureReply {

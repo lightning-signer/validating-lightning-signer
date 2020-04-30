@@ -1,39 +1,13 @@
+use bitcoin::{blockdata, Script};
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::opcodes::Class;
-use bitcoin::blockdata::script::read_scriptint;
-use bitcoin::blockdata::script::Instruction::PushBytes;
 use bitcoin::blockdata::script::{Builder, Instructions};
-use bitcoin::{blockdata, Script};
+use bitcoin::blockdata::script::Instruction::PushBytes;
+use bitcoin::blockdata::script::read_scriptint;
 use secp256k1::PublicKey;
 
-use crate::tx::script::ValidationError::{Mismatch, ScriptFormat, TransactionFormat};
-
-#[derive(Debug, PartialEq)]
-pub enum ValidationError {
-    TransactionFormat(String),
-    ScriptFormat(String), // NOT TESTED
-    Mismatch(String),     // NOT TESTED
-}
-
-// BEGIN NOT TESTED
-impl std::fmt::Display for ValidationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-// END NOT TESTED
-
-// BEGIN NOT TESTED
-impl Into<String> for ValidationError {
-    fn into(self) -> String {
-        match self {
-            TransactionFormat(s) => "transaction format ".to_string() + &s,
-            ScriptFormat(s) => "script format ".to_string() + &s,
-            Mismatch(s) => "script template mismatch ".to_string() + &s,
-        }
-    }
-}
-// END NOT TESTED
+use crate::policy::error::ValidationError;
+use crate::policy::error::ValidationError::Mismatch;
 
 #[inline]
 pub fn expect_op(iter: &mut Instructions, op: opcodes::All) -> Result<(), ValidationError> {
@@ -107,8 +81,9 @@ pub fn get_revokeable_redeemscript(
 }
 #[cfg(test)]
 mod tests {
-    use bitcoin::blockdata::script::Builder;
     use std::{i16, i32, i8, u16, u8};
+
+    use bitcoin::blockdata::script::Builder;
 
     use super::*;
 
