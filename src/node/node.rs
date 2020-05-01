@@ -6,11 +6,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use backtrace::Backtrace;
 use bitcoin;
-use bitcoin::{Network, OutPoint, Script, SigHashType};
 use bitcoin::util::bip32::ExtendedPrivKey;
+use bitcoin::{Network, OutPoint, Script, SigHashType};
 use bitcoin_hashes::core::fmt::{Error, Formatter};
-use bitcoin_hashes::Hash;
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
+use bitcoin_hashes::Hash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
@@ -20,8 +20,11 @@ use tonic::Status;
 
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
-use crate::server::my_keys_manager::{INITIAL_COMMITMENT_NUMBER, MyKeysManager};
-use crate::tx::tx::{build_commitment_tx, CommitmentInfo, CommitmentInfo2, get_commitment_transaction_number_obscure_factor, HTLCInfo2, sign_commitment};
+use crate::server::my_keys_manager::{MyKeysManager, INITIAL_COMMITMENT_NUMBER};
+use crate::tx::tx::{
+    build_commitment_tx, get_commitment_transaction_number_obscure_factor, sign_commitment,
+    CommitmentInfo, CommitmentInfo2, HTLCInfo2,
+};
 use crate::util::crypto_utils::{
     derive_public_key, derive_public_revocation_key, payload_for_p2wpkh,
 };
@@ -65,11 +68,9 @@ pub struct Channel {
 }
 
 impl Debug for Channel {
-    // BEGIN NOT TESTED
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str("channel")
     }
-    // END NOT TESTED
 }
 
 impl Channel {
@@ -141,13 +142,14 @@ impl Channel {
     }
 
     /// Phase 1
-    pub fn sign_remote_commitment_tx(&self,
-                                     tx: &bitcoin::Transaction,
-                                     output_witscripts: &Vec<Vec<u8>>,
-                                     remote_per_commitment_point: &PublicKey,
-                                     remote_funding_pubkey: &PublicKey,
-                                     channel_value_satoshi: u64,
-                                     option_static_remotekey: bool,
+    pub fn sign_remote_commitment_tx(
+        &self,
+        tx: &bitcoin::Transaction,
+        output_witscripts: &Vec<Vec<u8>>,
+        remote_per_commitment_point: &PublicKey,
+        remote_funding_pubkey: &PublicKey,
+        channel_value_satoshi: u64,
+        option_static_remotekey: bool,
     ) -> Result<Vec<u8>, Status> {
         if tx.output.len() != output_witscripts.len() {
             // BEGIN NOT TESTED
@@ -166,26 +168,31 @@ impl Channel {
 
         let local_pubkeys = self.keys.pubkeys();
         // Our key (remote from the point of view of the tx)
-        let remote_key =
-            if option_static_remotekey { local_pubkeys.payment_basepoint }
-            else {
-                derive_public_key(
-                    &self.secp_ctx,
-                    &remote_per_commitment_point,
-                    &local_pubkeys.payment_basepoint,
-                ).map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
-            };
+        let remote_key = if option_static_remotekey {
+            local_pubkeys.payment_basepoint // NOT TESTED
+        } else {
+            derive_public_key(
+                &self.secp_ctx,
+                &remote_per_commitment_point,
+                &local_pubkeys.payment_basepoint,
+            )
+            .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
+        };
 
-        let validator =
-            self.node.validator_factory.make_validator_phase1(self, channel_value_satoshi);
+        let validator = self
+            .node
+            .validator_factory
+            .make_validator_phase1(self, channel_value_satoshi);
         // since we didn't have the value at the real open, validate it now
-        validator.validate_channel_open()
+        validator
+            .validate_channel_open()
             .map_err(|ve| self.validation_error(ve))?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let state = ValidatorState { current_height: 0 };
-        
-        validator.validate_remote_tx_phase1(&state, &info, payload_for_p2wpkh(&remote_key))
+
+        validator
+            .validate_remote_tx_phase1(&state, &info, payload_for_p2wpkh(&remote_key))
             .map_err(|ve| self.validation_error(ve))?;
 
         let commitment_sig = sign_commitment(
@@ -194,10 +201,11 @@ impl Channel {
             &remote_funding_pubkey,
             &tx,
             channel_value_satoshi,
-        ).map_err(|err| self.internal_error(format!("sign_commitment failed: {}", err)))?;
+        )
+        .map_err(|err| self.internal_error(format!("sign_commitment failed: {}", err)))?;
 
-            let mut sig = commitment_sig.serialize_der().to_vec();
-            sig.push(SigHashType::All as u8);
+        let mut sig = commitment_sig.serialize_der().to_vec();
+        sig.push(SigHashType::All as u8);
         Ok(sig)
     }
 
@@ -527,12 +535,14 @@ impl Node {
         Status::internal(s)
     }
 
-    pub fn new_channel(&self, channel_id: ChannelId,
-                       channel_nonce: Vec<u8>,
-                       channel_value_satoshi: u64,
-                       local_to_self_delay: u16,
-                       is_outbound: bool,
-                       arc_self: &Arc<Node>,
+    pub fn new_channel(
+        &self,
+        channel_id: ChannelId,
+        channel_nonce: Vec<u8>,
+        channel_value_satoshi: u64,
+        local_to_self_delay: u16,
+        is_outbound: bool,
+        arc_self: &Arc<Node>,
     ) -> Result<(), Status> {
         let mut channels = self.channels.lock().unwrap();
         if channels.contains_key(&channel_id) {
@@ -557,7 +567,8 @@ impl Node {
         };
 
         let validator = self.validator_factory.make_validator(&channel);
-        validator.validate_channel_open()
+        validator
+            .validate_channel_open()
             .map_err(|ve| channel.validation_error(ve))?;
         channels.insert(channel_id, channel);
         Ok(())
@@ -656,9 +667,7 @@ impl Node {
 }
 
 impl Debug for Node {
-    // BEGIN NOT TESTED
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str("node")
     }
-    // END NOT TESTED
 }
