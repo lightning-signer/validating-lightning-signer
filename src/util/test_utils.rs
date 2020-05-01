@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,31 +13,14 @@ use chain::transaction::OutPoint;
 use lightning::chain;
 use lightning::chain::keysinterface::ChannelKeys;
 use lightning::ln;
-use lightning::ln::features::InitFeatures;
-use lightning::util::events;
 use lightning::util::logger::{Level, Logger, Record};
-use lightning::util::ser::Writer;
 use ln::channelmonitor;
 use ln::channelmonitor::HTLCUpdate;
-use ln::msgs;
-use ln::msgs::LightningError;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 
 pub struct TestVecWriter(pub Vec<u8>);
-
-// BEGIN NOT TESTED
-impl Writer for TestVecWriter {
-    fn write_all(&mut self, buf: &[u8]) -> Result<(), ::std::io::Error> {
-        self.0.extend_from_slice(buf);
-        Ok(())
-    }
-    fn size_hint(&mut self, size: usize) {
-        self.0.reserve_exact(size);
-    }
-}
-// END NOT TESTED
 
 pub struct TestFeeEstimator {
     pub sat_per_kw: u64,
@@ -112,145 +94,6 @@ impl chaininterface::BroadcasterInterface for TestBroadcaster {
     }
     // END NOT TESTED
 }
-
-pub struct TestChannelMessageHandler {
-    pub pending_events: Mutex<Vec<events::MessageSendEvent>>,
-}
-
-// BEGIN NOT TESTED
-impl TestChannelMessageHandler {
-    pub fn new() -> Self {
-        TestChannelMessageHandler {
-            pending_events: Mutex::new(Vec::new()),
-        }
-    }
-}
-// END NOT TESTED
-
-// BEGIN NOT TESTED
-impl msgs::ChannelMessageHandler for TestChannelMessageHandler {
-    fn handle_open_channel(
-        &self,
-        _their_node_id: &PublicKey,
-        _their_local_features: InitFeatures,
-        _msg: &msgs::OpenChannel,
-    ) {
-    }
-    fn handle_accept_channel(
-        &self,
-        _their_node_id: &PublicKey,
-        _their_local_features: InitFeatures,
-        _msg: &msgs::AcceptChannel,
-    ) {
-    }
-    fn handle_funding_created(&self, _their_node_id: &PublicKey, _msg: &msgs::FundingCreated) {}
-    fn handle_funding_signed(&self, _their_node_id: &PublicKey, _msg: &msgs::FundingSigned) {}
-    fn handle_funding_locked(&self, _their_node_id: &PublicKey, _msg: &msgs::FundingLocked) {}
-    fn handle_shutdown(&self, _their_node_id: &PublicKey, _msg: &msgs::Shutdown) {}
-    fn handle_closing_signed(&self, _their_node_id: &PublicKey, _msg: &msgs::ClosingSigned) {}
-    fn handle_update_add_htlc(&self, _their_node_id: &PublicKey, _msg: &msgs::UpdateAddHTLC) {}
-    fn handle_update_fulfill_htlc(
-        &self,
-        _their_node_id: &PublicKey,
-        _msg: &msgs::UpdateFulfillHTLC,
-    ) {
-    }
-    fn handle_update_fail_htlc(&self, _their_node_id: &PublicKey, _msg: &msgs::UpdateFailHTLC) {}
-    fn handle_update_fail_malformed_htlc(
-        &self,
-        _their_node_id: &PublicKey,
-        _msg: &msgs::UpdateFailMalformedHTLC,
-    ) {
-    }
-    fn handle_commitment_signed(&self, _their_node_id: &PublicKey, _msg: &msgs::CommitmentSigned) {}
-    fn handle_revoke_and_ack(&self, _their_node_id: &PublicKey, _msg: &msgs::RevokeAndACK) {}
-    fn handle_update_fee(&self, _their_node_id: &PublicKey, _msg: &msgs::UpdateFee) {}
-    fn handle_announcement_signatures(
-        &self,
-        _their_node_id: &PublicKey,
-        _msg: &msgs::AnnouncementSignatures,
-    ) {
-    }
-    fn handle_channel_reestablish(
-        &self,
-        _their_node_id: &PublicKey,
-        _msg: &msgs::ChannelReestablish,
-    ) {
-    }
-    fn peer_disconnected(&self, _their_node_id: &PublicKey, _no_connection_possible: bool) {}
-    fn peer_connected(&self, _their_node_id: &PublicKey, _msg: &msgs::Init) {}
-    fn handle_error(&self, _their_node_id: &PublicKey, _msg: &msgs::ErrorMessage) {}
-}
-// END NOT TESTED
-
-// BEGIN NOT TESTED
-impl events::MessageSendEventsProvider for TestChannelMessageHandler {
-    fn get_and_clear_pending_msg_events(&self) -> Vec<events::MessageSendEvent> {
-        let mut pending_events = self.pending_events.lock().unwrap();
-        let mut ret = Vec::new();
-        mem::swap(&mut ret, &mut *pending_events);
-        ret
-    }
-}
-// END NOT TESTED
-
-pub struct TestRoutingMessageHandler {}
-
-// BEGIN NOT TESTED
-impl TestRoutingMessageHandler {
-    pub fn new() -> Self {
-        TestRoutingMessageHandler {}
-    }
-}
-// END NOT TESTED
-
-// BEGIN NOT TESTED
-impl msgs::RoutingMessageHandler for TestRoutingMessageHandler {
-    fn handle_node_announcement(
-        &self,
-        _msg: &msgs::NodeAnnouncement,
-    ) -> Result<bool, LightningError> {
-        Err(LightningError {
-            err: "",
-            action: msgs::ErrorAction::IgnoreError,
-        })
-    }
-    fn handle_channel_announcement(
-        &self,
-        _msg: &msgs::ChannelAnnouncement,
-    ) -> Result<bool, LightningError> {
-        Err(LightningError {
-            err: "",
-            action: msgs::ErrorAction::IgnoreError,
-        })
-    }
-    fn handle_channel_update(&self, _msg: &msgs::ChannelUpdate) -> Result<bool, LightningError> {
-        Err(LightningError {
-            err: "",
-            action: msgs::ErrorAction::IgnoreError,
-        })
-    }
-    fn handle_htlc_fail_channel_update(&self, _update: &msgs::HTLCFailChannelUpdate) {}
-    fn get_next_channel_announcements(
-        &self,
-        _starting_point: u64,
-        _batch_amount: u8,
-    ) -> Vec<(
-        msgs::ChannelAnnouncement,
-        msgs::ChannelUpdate,
-        msgs::ChannelUpdate,
-    )> {
-        Vec::new()
-    }
-    fn get_next_node_announcements(
-        &self,
-        _starting_point: Option<&PublicKey>,
-        _batch_amount: u8,
-    ) -> Vec<msgs::NodeAnnouncement> {
-        Vec::new()
-    }
-}
-// END NOT TESTED
 
 pub struct TestLogger {
     level: Level,

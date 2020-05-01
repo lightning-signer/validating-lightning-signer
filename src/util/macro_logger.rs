@@ -1,7 +1,3 @@
-use std;
-
-use secp256k1::key::PublicKey;
-
 use serde::Serializer;
 
 // BEGIN NOT TESTED
@@ -12,42 +8,6 @@ where
     serializer.serialize_str(&hex::encode(&buf))
 }
 // END NOT TESTED
-
-pub(crate) struct DebugPubKey<'a>(pub &'a PublicKey);
-
-impl<'a> std::fmt::Display for DebugPubKey<'a> {
-    // BEGIN NOT TESTED
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
-        for i in self.0.serialize().iter() {
-            write!(f, "{:02x}", i)?;
-        }
-        Ok(())
-    }
-    // END NOT TESTED
-}
-macro_rules! log_pubkey {
-    ($obj: expr) => {
-        ::util::macro_logger::DebugPubKey(&$obj)
-    };
-}
-
-pub(crate) struct DebugBytes<'a>(pub &'a [u8]);
-
-// BEGIN NOT TESTED
-impl<'a> std::fmt::Display for DebugBytes<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
-        for i in self.0 {
-            write!(f, "{:02x}", i)?;
-        }
-        Ok(())
-    }
-}
-// END NOT TESTED
-macro_rules! log_bytes {
-    ($obj: expr) => {
-        ::util::macro_logger::DebugBytes(&$obj)
-    };
-}
 
 macro_rules! function {
     () => {{

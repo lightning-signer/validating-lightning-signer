@@ -1,19 +1,26 @@
-use bitcoin::Network;
 use bitcoin::util::address::Payload;
+use bitcoin::Network;
 
 use crate::node::node::Channel;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
 
-use super::error::ValidationError::{Policy, TransactionFormat};
 use super::error::ValidationError;
+use super::error::ValidationError::{Policy, TransactionFormat};
 
 pub trait Validator {
     /// Phase 1 remote tx validation
-    fn validate_remote_tx_phase1(&self, state: &ValidatorState, info: &CommitmentInfo,
-                                 our_address: Payload) -> Result<(), ValidationError>;
+    fn validate_remote_tx_phase1(
+        &self,
+        state: &ValidatorState,
+        info: &CommitmentInfo,
+        our_address: Payload,
+    ) -> Result<(), ValidationError>;
     /// Phase 2 remote tx validation
-    fn validate_remote_tx(&self, state: &ValidatorState,
-                          info2: &CommitmentInfo2) -> Result<(), ValidationError>;
+    fn validate_remote_tx(
+        &self,
+        state: &ValidatorState,
+        info2: &CommitmentInfo2,
+    ) -> Result<(), ValidationError>;
     /// Validate channel open
     fn validate_channel_open(&self) -> Result<(), ValidationError>;
 }
@@ -24,12 +31,14 @@ pub struct ValidatorState {
 
 pub trait ValidatorFactory: Send + Sync {
     fn make_validator(&self, channel: &Channel) -> Box<dyn Validator>;
-    fn make_validator_phase1(&self, channel: &Channel,
-                             channel_value_satoshi: u64) -> Box<dyn Validator>;
+    fn make_validator_phase1(
+        &self,
+        channel: &Channel,
+        channel_value_satoshi: u64,
+    ) -> Box<dyn Validator>;
 }
 
-pub struct SimpleValidatorFactory {
-}
+pub struct SimpleValidatorFactory {}
 
 fn simple_validator(network: Network, channel_value_satoshi: u64) -> SimpleValidator {
     SimpleValidator {
@@ -40,17 +49,24 @@ fn simple_validator(network: Network, channel_value_satoshi: u64) -> SimpleValid
 
 impl ValidatorFactory for SimpleValidatorFactory {
     fn make_validator(&self, channel: &Channel) -> Box<dyn Validator> {
-        Box::new(simple_validator(channel.network(), channel.channel_value_satoshi))
+        Box::new(simple_validator(
+            channel.network(),
+            channel.channel_value_satoshi,
+        ))
     }
 
     /// In phase 1 we don't have the channel value populated in the Channel object,
     /// so supply it separately
-    fn make_validator_phase1(&self, channel: &Channel,
-                             channel_value_satoshi: u64) -> Box<dyn Validator> {
+    fn make_validator_phase1(
+        &self,
+        channel: &Channel,
+        channel_value_satoshi: u64,
+    ) -> Box<dyn Validator> {
         Box::new(simple_validator(channel.network(), channel_value_satoshi))
     }
 }
 
+// BEGIN NOT TESTED
 #[derive(Clone)]
 pub struct SimplePolicy {
     /// Minimum delay in blocks
@@ -68,6 +84,7 @@ pub struct SimplePolicy {
     /// Whether to use knowledge of chain state (e.g. current_height)
     pub use_chain_state: bool,
 }
+// END NOT TESTED
 
 pub struct SimpleValidator {
     pub policy: SimplePolicy,
@@ -122,17 +139,21 @@ impl SimpleValidator {
         let policy = &self.policy;
 
         if delay < policy.min_delay as u32 {
-            return Err(Policy(format!("{} delay too small", name)));
+            return Err(Policy(format!("{} delay too small", name))); // NOT TESTED
         }
         if delay > policy.max_delay as u32 {
-            return Err(Policy(format!("{} delay too large", name)));
+            return Err(Policy(format!("{} delay too large", name))); // NOT TESTED
         }
 
         Ok(())
     }
 
-    fn validate_expiry(&self, name: &str, expiry: u32,
-                     current_height: u32) -> Result<(), ValidationError> {
+    fn validate_expiry(
+        &self,
+        name: &str,
+        expiry: u32,
+        current_height: u32,
+    ) -> Result<(), ValidationError> {
         let policy = &self.policy;
 
         if policy.use_chain_state {
@@ -149,12 +170,18 @@ impl SimpleValidator {
 }
 
 impl Validator for SimpleValidator {
-    fn validate_remote_tx_phase1(&self, state: &ValidatorState, info: &CommitmentInfo,
-                                 our_address: Payload) -> Result<(), ValidationError> {
+    fn validate_remote_tx_phase1(
+        &self,
+        state: &ValidatorState,
+        info: &CommitmentInfo,
+        our_address: Payload,
+    ) -> Result<(), ValidationError> {
         let policy = &self.policy;
 
         if info.to_remote_address.as_ref().unwrap_or(&our_address) != &our_address {
+            // BEGIN NOT TESTED
             return Err(TransactionFormat("to_remote address mismatch".to_string()));
+            // END NOT TESTED
         }
 
         if info.to_local_delayed_key.is_some() {
@@ -162,7 +189,7 @@ impl Validator for SimpleValidator {
         }
 
         if info.offered_htlcs.len() + info.received_htlcs.len() > policy.max_htlcs {
-            return Err(Policy("too many HTLCs".to_string()));
+            return Err(Policy("too many HTLCs".to_string())); // NOT TESTED
         }
 
         let mut htlc_value = 0;
@@ -177,22 +204,41 @@ impl Validator for SimpleValidator {
         }
 
         if htlc_value > policy.max_htlc_value_satoshi {
-            return Err(Policy(format!("sum of HTLC values {} too large", htlc_value)))
+            // BEGIN NOT TESTED
+            return Err(Policy(format!(
+                "sum of HTLC values {} too large",
+                htlc_value
+            )));
+            // END NOT TESTED
         }
 
         let value = info.to_local_value + info.to_remote_value + htlc_value;
         if self.channel_value_satoshi < value {
-            return Err(Policy(format!("channel value greater than funding {} > {}", value, self.channel_value_satoshi)))
+            // BEGIN NOT TESTED
+            return Err(Policy(format!(
+                "channel value greater than funding {} > {}",
+                value, self.channel_value_satoshi
+            )));
+            // END NOT TESTED
         }
         let shortage = self.channel_value_satoshi - value;
         if shortage > policy.epsilon {
-            return Err(Policy(format!("channel value short by {} > {}", shortage, policy.epsilon)));
+            // BEGIN NOT TESTED
+            return Err(Policy(format!(
+                "channel value short by {} > {}",
+                shortage, policy.epsilon
+            )));
+            // END NOT TESTED
         }
 
         Ok(())
     }
 
-    fn validate_remote_tx(&self, state: &ValidatorState, info: &CommitmentInfo2) -> Result<(), ValidationError> {
+    fn validate_remote_tx(
+        &self,
+        state: &ValidatorState,
+        info: &CommitmentInfo2,
+    ) -> Result<(), ValidationError> {
         let policy = &self.policy;
 
         self.validate_delay("to_local", info.to_local_delay as u32)?;
@@ -214,13 +260,19 @@ impl Validator for SimpleValidator {
         }
 
         if htlc_value > policy.max_htlc_value_satoshi {
-            return Err(Policy(format!("sum of HTLC values {} too large", htlc_value)))
+            return Err(Policy(format!(
+                "sum of HTLC values {} too large",
+                htlc_value
+            )));
         }
 
-        let shortage = self.channel_value_satoshi -
-            (info.to_local_value + info.to_remote_value + htlc_value);
+        let shortage =
+            self.channel_value_satoshi - (info.to_local_value + info.to_remote_value + htlc_value);
         if shortage > policy.epsilon {
-            return Err(Policy(format!("channel value short by {} > {}", shortage, policy.epsilon)));
+            return Err(Policy(format!(
+                "channel value short by {} > {}",
+                shortage, policy.epsilon
+            )));
         }
 
         Ok(())
@@ -236,6 +288,7 @@ impl Validator for SimpleValidator {
 
 pub fn make_simple_policy(network: Network) -> SimplePolicy {
     if network == Network::Bitcoin {
+        // BEGIN NOT TESTED
         SimplePolicy {
             min_delay: 60,
             max_delay: 1440,
@@ -245,6 +298,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_htlc_value_satoshi: 10_000_000,
             use_chain_state: false,
         }
+    // END NOT TESTED
     } else {
         SimplePolicy {
             min_delay: 5,
@@ -293,10 +347,13 @@ mod tests {
         assert!(validator_large.validate_channel_open().is_err());
     }
 
-    fn make_info(to_local_value: u64, to_remote_value: u64,
-                 to_local_delay: u16,
-                 offered_htlcs: Vec<HTLCInfo2>,
-                 received_htlcs: Vec<HTLCInfo2>) -> CommitmentInfo2 {
+    fn make_info(
+        to_local_value: u64,
+        to_remote_value: u64,
+        to_local_delay: u16,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
+    ) -> CommitmentInfo2 {
         let to_remote_pubkey = make_test_pubkey(1);
         let revocation_key = make_test_pubkey(2);
         let to_local_delayed_key = make_test_pubkey(3);
@@ -320,8 +377,8 @@ mod tests {
     fn make_htlc_info(expiry: u32) -> HTLCInfo2 {
         HTLCInfo2 {
             value: 10,
-            payment_hash: PaymentHash([0;32]),
-            cltv_expiry: expiry
+            payment_hash: PaymentHash([0; 32]),
+            cltv_expiry: expiry,
         }
     }
 
@@ -332,7 +389,9 @@ mod tests {
     #[test]
     fn validate_remote_tx_test() {
         let validator = make_validator();
-        let state = ValidatorState { current_height: 1000 };
+        let state = ValidatorState {
+            current_height: 1000,
+        };
         let info = make_info(99_000_000, 900_000, 6, vec![], vec![]);
         assert!(validator.validate_remote_tx(&state, &info).is_ok());
     }
@@ -340,10 +399,14 @@ mod tests {
     #[test]
     fn validate_remote_tx_shortage_test() {
         let validator = make_validator();
-        let state = ValidatorState { current_height: 1000 };
+        let state = ValidatorState {
+            current_height: 1000,
+        };
         let info_bad = make_info(99_000_000, 900_000 - 1, 6, vec![], vec![]);
-        assert_policy_error(validator.validate_remote_tx(&state, &info_bad),
-                            "channel value short by 100001 > 100000");
+        assert_policy_error(
+            validator.validate_remote_tx(&state, &info_bad),
+            "channel value short by 100001 > 100000",
+        );
     }
 
     #[test]
@@ -352,59 +415,73 @@ mod tests {
         let htlc = HTLCInfo2 {
             value: 100_000,
             payment_hash: PaymentHash([0; 32]),
-            cltv_expiry: 1005
+            cltv_expiry: 1005,
         };
-        let state = ValidatorState { current_height: 1000 };
-        let info = make_info(99_000_000, 800_000, 6,
-                             vec![htlc.clone()], vec![]);
+        let state = ValidatorState {
+            current_height: 1000,
+        };
+        let info = make_info(99_000_000, 800_000, 6, vec![htlc.clone()], vec![]);
         assert!(validator.validate_remote_tx(&state, &info).is_ok());
-        let info_bad = make_info(99_000_000, 800_000 - 1, 6,
-                                 vec![htlc.clone()], vec![]);
-        assert_policy_error(validator.validate_remote_tx(&state, &info_bad),
-                            "channel value short by 100001 > 100000");
+        let info_bad = make_info(99_000_000, 800_000 - 1, 6, vec![htlc.clone()], vec![]);
+        assert_policy_error(
+            validator.validate_remote_tx(&state, &info_bad),
+            "channel value short by 100001 > 100000",
+        );
     }
 
     #[test]
     fn validate_remote_tx_htlc_count_test() {
         let validator = make_validator();
-        let state = ValidatorState { current_height: 1000 };
+        let state = ValidatorState {
+            current_height: 1000,
+        };
         let htlcs = (0..1001).map(|_| make_htlc_info(1100)).collect();
         let info_bad = make_info(99_000_000, 900_000, 6, vec![], htlcs);
-        assert_policy_error(validator.validate_remote_tx(&state, &info_bad),
-                            "too many HTLCs");
+        assert_policy_error(
+            validator.validate_remote_tx(&state, &info_bad),
+            "too many HTLCs",
+        );
     }
 
     #[test]
     fn validate_remote_tx_htlc_value_test() {
         let validator = make_validator();
-        let state = ValidatorState { current_height: 1000 };
-        let htlcs = (0..1000).map(|_| HTLCInfo2 {
-            value: 10001,
-            payment_hash: PaymentHash([0;32]),
-            cltv_expiry: 1100
-        }).collect();
+        let state = ValidatorState {
+            current_height: 1000,
+        };
+        let htlcs = (0..1000)
+            .map(|_| HTLCInfo2 {
+                value: 10001,
+                payment_hash: PaymentHash([0; 32]),
+                cltv_expiry: 1100,
+            })
+            .collect();
         let info_bad = make_info(99_000_000, 900_000, 6, vec![], htlcs);
-        assert_policy_error(validator.validate_remote_tx(&state, &info_bad),
-                            "sum of HTLC values 10001000 too large");
+        assert_policy_error(
+            validator.validate_remote_tx(&state, &info_bad),
+            "sum of HTLC values 10001000 too large",
+        );
     }
 
     #[test]
     fn validate_remote_tx_htlc_delay_test() {
         let validator = make_validator();
-        let state = ValidatorState { current_height: 1000 };
-        let info_good =
-            make_info(99_000_000, 990_000, 6, vec![], vec! [make_htlc_info(1005)]);
+        let state = ValidatorState {
+            current_height: 1000,
+        };
+        let info_good = make_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info(1005)]);
         assert!(validator.validate_remote_tx(&state, &info_good).is_ok());
-        let info_good =
-            make_info(99_000_000, 990_000, 6, vec![], vec! [make_htlc_info(2440)]);
+        let info_good = make_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info(2440)]);
         assert!(validator.validate_remote_tx(&state, &info_good).is_ok());
-        let info_bad =
-            make_info(99_000_000, 990_000, 6, vec![], vec! [make_htlc_info(1004)]);
-        assert_policy_error(validator.validate_remote_tx(&state, &info_bad),
-                            "received HTLC expiry too early");
-        let info_bad =
-            make_info(99_000_000, 990_000, 6, vec![], vec! [make_htlc_info(2441)]);
-        assert_policy_error(validator.validate_remote_tx(&state, &info_bad),
-                            "received HTLC expiry too late");
+        let info_bad = make_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info(1004)]);
+        assert_policy_error(
+            validator.validate_remote_tx(&state, &info_bad),
+            "received HTLC expiry too early",
+        );
+        let info_bad = make_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info(2441)]);
+        assert_policy_error(
+            validator.validate_remote_tx(&state, &info_bad),
+            "received HTLC expiry too late",
+        );
     }
 }

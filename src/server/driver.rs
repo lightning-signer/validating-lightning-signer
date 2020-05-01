@@ -2,20 +2,20 @@ use std::convert::TryInto;
 
 use backtrace::Backtrace;
 use bitcoin;
-use bitcoin::{OutPoint, Script};
 use bitcoin::consensus::{deserialize, encode};
 use bitcoin::util::psbt::serialize::Deserialize;
-use bitcoin_hashes::{Hash, sha256d};
+use bitcoin::{OutPoint, Script};
+use bitcoin_hashes::{sha256d, Hash};
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::channelmanager::PaymentHash;
 use secp256k1::{PublicKey, SecretKey};
 use serde_json::json;
-use tonic::{Request, Response, Status, transport::Server};
+use tonic::{transport::Server, Request, Response, Status};
 
-use remotesigner::*;
 use remotesigner::signer_server::{Signer, SignerServer};
+use remotesigner::*;
 
 use crate::node::node::ChannelId;
 use crate::server::my_signer::MySigner;

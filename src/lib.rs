@@ -12,9 +12,9 @@ extern crate tonic;
 
 #[macro_use]
 pub mod util;
-pub mod tx;
 pub mod client;
 pub mod node;
 pub mod policy;
 pub mod server;
 pub mod test;
+pub mod tx;

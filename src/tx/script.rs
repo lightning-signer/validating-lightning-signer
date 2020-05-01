@@ -1,9 +1,9 @@
-use bitcoin::{blockdata, Script};
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::opcodes::Class;
-use bitcoin::blockdata::script::{Builder, Instructions};
-use bitcoin::blockdata::script::Instruction::PushBytes;
 use bitcoin::blockdata::script::read_scriptint;
+use bitcoin::blockdata::script::Instruction::PushBytes;
+use bitcoin::blockdata::script::{Builder, Instructions};
+use bitcoin::{blockdata, Script};
 use secp256k1::PublicKey;
 
 use crate::policy::error::ValidationError;
