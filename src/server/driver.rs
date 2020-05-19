@@ -17,7 +17,7 @@ use tonic::{transport::Server, Request, Response, Status};
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
 
-use crate::node::node::ChannelId;
+use crate::node::node::{ChannelId, ChannelSetup};
 use crate::server::my_signer::MySigner;
 use crate::server::remotesigner::version_server::Version;
 use crate::tx::tx::HTLCInfo2;
@@ -26,14 +26,12 @@ use crate::util::crypto_utils::public_key_from_raw;
 use super::remotesigner;
 
 impl MySigner {
-    // BEGIN NOT TESTED
     pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INVALID ARGUMENT: {}", &s);
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
-    // END NOT TESTED
 
     #[allow(dead_code)]
     pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
@@ -98,7 +96,7 @@ impl MySigner {
                 self.invalid_argument(format!("could not decode payment hash: {}", err))
             })?;
             htlcs.push(HTLCInfo2 {
-                value: h.value,
+                value_sat: h.value_sat,
                 payment_hash: PaymentHash(hash),
                 cltv_expiry: h.cltv_expiry,
             });
@@ -120,7 +118,6 @@ pub fn channel_nonce_to_id(nonce: &Vec<u8>) -> ChannelId {
 }
 
 // BEGIN NOT TESTED
-
 pub fn collect_output_witscripts(output_descs: &Vec<OutputDescriptor>) -> Vec<Vec<u8>> {
     output_descs
         .iter()
@@ -173,7 +170,13 @@ impl Signer for MySigner {
             .as_slice()
             .try_into()
             .map_err(|err| self.invalid_argument(format!("secret length != 32: {}", err)))?;
-        let node_id = self.new_node_from_seed(hsm_secret).serialize().to_vec();
+        let node_id = if req.coldstart {
+            Ok(self.new_node_from_seed(hsm_secret))
+        } else {
+            self.warmstart_with_seed(hsm_secret)
+        }?
+        .serialize()
+        .to_vec();
         let reply = InitReply {
             node_id: Some(NodeId { data: node_id }),
         };
@@ -209,19 +212,13 @@ impl Signer for MySigner {
         let req = request.into_inner();
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
+        // req.channel_nonce is optional, will be generated if missing.
         let opt_channel_id = self.channel_id(&req.channel_nonce).ok();
         let opt_channel_nonce = req.channel_nonce.map(|cn| cn.data);
         log_info!(self, "ENTER new_channel({}/{:?})", node_id, opt_channel_id);
         log_debug!(self, "req={}", reqstr);
 
-        let channel_id = self.new_channel(
-            &node_id,
-            req.channel_value,
-            opt_channel_nonce,
-            opt_channel_id,
-            req.to_self_delay as u16,
-            req.is_outbound,
-        )?;
+        let channel_id = self.new_channel(&node_id, opt_channel_nonce, opt_channel_id)?;
 
         let reply = NewChannelReply {
             channel_nonce: Some(ChannelNonce {
@@ -249,14 +246,7 @@ impl Signer for MySigner {
         );
         log_debug!(self, "req={}", reqstr);
 
-        // WORKAROUND - We need to derive and pass the channel_nonce
-        // in case this call needs to create the channel.
-        let channel_nonce = req
-            .channel_nonce
-            .ok_or_else(|| self.invalid_argument("missing channel_nonce"))?
-            .data;
-
-        let bps = self.get_channel_basepoints(&node_id, &channel_id, &channel_nonce)?;
+        let bps = self.get_channel_basepoints(&node_id, &channel_id)?;
 
         let basepoints = Basepoints {
             revocation: Some(self.to_pubkey(bps.revocation_basepoint)),
@@ -289,16 +279,7 @@ impl Signer for MySigner {
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(self, "ENTER ready_channel({}/{})", node_id, channel_id);
         log_debug!(self, "req={}", reqstr);
-        let basepoints = req
-            .basepoints
-            .ok_or_else(|| self.invalid_argument("missing basepoints"))?;
-        let keys = ChannelPublicKeys {
-            funding_pubkey: self.public_key(basepoints.funding_pubkey)?,
-            revocation_basepoint: self.public_key(basepoints.revocation)?,
-            payment_basepoint: self.public_key(basepoints.payment)?,
-            delayed_payment_basepoint: self.public_key(basepoints.delayed_payment)?,
-            htlc_basepoint: self.public_key(basepoints.htlc)?,
-        };
+
         let req_outpoint = req
             .funding_outpoint
             .ok_or_else(|| self.invalid_argument("missing funding outpoint"))?;
@@ -309,19 +290,47 @@ impl Signer for MySigner {
             txid,
             vout: req_outpoint.index,
         };
-        let script = Script::deserialize(&req.shutdown_script.as_slice())
-            .map_err(|err| self.invalid_argument(format!("could not parse script: {}", err)))?;
-        let to_self_delay = req.to_self_delay as u16;
-        self.with_existing_channel(&node_id, &channel_id, |chan| {
-            if chan.is_ready() {
-                return Err(self.invalid_argument("channel already ready"));
-            }
-            chan.ready(&keys, to_self_delay, script.clone(), funding_outpoint);
-            let reply = ReadyChannelReply {};
-            log_info!(self, "REPLY ready_channel({}/{})", node_id, channel_id);
-            log_debug!(self, "reply={}", json!(reply));
-            Ok(Response::new(reply))
-        })
+
+        let local_shutdown_script = Script::deserialize(&req.local_shutdown_script.as_slice())
+            .map_err(|err| {
+                self.invalid_argument(format!("could not parse local_shutdown_script: {}", err))
+            })?;
+
+        let remote_points = req
+            .remote_basepoints
+            .ok_or_else(|| self.invalid_argument("missing remote_basepoints"))?;
+        let remote_points = ChannelPublicKeys {
+            funding_pubkey: self.public_key(remote_points.funding_pubkey)?,
+            revocation_basepoint: self.public_key(remote_points.revocation)?,
+            payment_basepoint: self.public_key(remote_points.payment)?,
+            delayed_payment_basepoint: self.public_key(remote_points.delayed_payment)?,
+            htlc_basepoint: self.public_key(remote_points.htlc)?,
+        };
+
+        let remote_shutdown_script = Script::deserialize(&req.remote_shutdown_script.as_slice())
+            .map_err(|err| {
+                self.invalid_argument(format!("could not parse remote_shutdown_script: {}", err))
+            })?;
+
+        self.ready_channel(
+            &node_id,
+            channel_id,
+            ChannelSetup {
+                is_outbound: req.is_outbound,
+                channel_value_sat: req.channel_value_sat,
+                funding_outpoint: funding_outpoint,
+                local_to_self_delay: req.local_to_self_delay as u16,
+                local_shutdown_script: local_shutdown_script.clone(),
+                remote_points: remote_points,
+                remote_to_self_delay: req.remote_to_self_delay as u16,
+                remote_shutdown_script: remote_shutdown_script.clone(),
+                option_static_remotekey: req.option_static_remotekey,
+            },
+        )?;
+        let reply = ReadyChannelReply {};
+        log_info!(self, "REPLY ready_channel({}/{})", node_id, channel_id);
+        log_debug!(self, "reply={}", json!(reply));
+        Ok(Response::new(reply))
     }
 
     async fn sign_mutual_close_tx(
@@ -344,21 +353,13 @@ impl Signer for MySigner {
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
-        let remote_funding_pubkey = self.public_key(req.remote_funding_pubkey)?;
-
-        let funding_amount = reqtx.input_descs[0]
+        let funding_amount_sat = reqtx.input_descs[0]
             .prev_output
             .as_ref()
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
-            .value as u64;
+            .value_sat as u64;
 
-        let sigvec = self.sign_mutual_close_tx(
-            &node_id,
-            &channel_id,
-            &tx,
-            &remote_funding_pubkey,
-            funding_amount,
-        )?;
+        let sigvec = self.sign_mutual_close_tx(&node_id, &channel_id, &tx, funding_amount_sat)?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
@@ -394,8 +395,8 @@ impl Signer for MySigner {
         let sig_data = self.sign_mutual_close_tx_phase2(
             &node_id,
             &channel_id,
-            req.to_local_value,
-            req.to_remote_value,
+            req.to_local_value_sat,
+            req.to_remote_value_sat,
         )?;
         let reply = CloseTxSignatureReply {
             signature: Some(BitcoinSignature { data: sig_data }),
@@ -459,15 +460,19 @@ impl Signer for MySigner {
         log_debug!(self, "req={}", reqstr);
         let commitment_number = req.n;
 
-        let (point, old_secret) = self.with_existing_channel(&node_id, &channel_id, |chan| {
-            let point = chan.get_per_commitment_point(commitment_number);
-            let secret = if commitment_number >= 2 {
-                Some(chan.get_per_commitment_secret(commitment_number - 2))
-            } else {
-                None
-            };
-            Ok((point, secret))
-        })?;
+        // This API call can be made on a channel stub as well as a ready channel.
+        let res: Result<(PublicKey, Option<SecretKey>), Status> =
+            self.with_channel_base(&node_id, &channel_id, |base| {
+                let point = base.get_per_commitment_point(commitment_number);
+                let secret = if commitment_number >= 2 {
+                    Some(base.get_per_commitment_secret(commitment_number - 2))
+                } else {
+                    None
+                };
+                Ok((point, secret))
+            });
+
+        let (point, old_secret) = res?;
 
         let pointdata = point.serialize().to_vec();
 
@@ -507,7 +512,7 @@ impl Signer for MySigner {
         let tx = tx_res
             .map_err(|e| self.invalid_argument(format!("could not deserialize tx - {}", e)))?;
         let mut indices = Vec::new();
-        let mut values = Vec::new();
+        let mut values_sat = Vec::new();
         let mut spendtypes: Vec<SpendType> = Vec::new();
         let mut uniclosekeys: Vec<Option<SecretKey>> = Vec::new();
 
@@ -518,12 +523,12 @@ impl Signer for MySigner {
                 .ok_or_else(|| self.invalid_argument("missing key_loc desc"))?
                 .key_index as u32;
             indices.push(child_index);
-            let value = reqtx.input_descs[idx]
+            let value_sat = reqtx.input_descs[idx]
                 .prev_output
                 .as_ref()
                 .ok_or_else(|| self.invalid_argument("missing output desc"))?
-                .value as u64;
-            values.push(value);
+                .value_sat as u64;
+            values_sat.push(value_sat);
             spendtypes.push(
                 SpendType::from_i32(reqtx.input_descs[idx].spend_type)
                     .ok_or_else(|| self.invalid_argument("bad spend_type"))?,
@@ -557,7 +562,7 @@ impl Signer for MySigner {
             &channel_id,
             &tx,
             &indices,
-            &values,
+            &values_sat,
             &spendtypes,
             &uniclosekeys,
         )?;
@@ -596,13 +601,12 @@ impl Signer for MySigner {
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
-        let remote_funding_pubkey = self.public_key(req.remote_funding_pubkey)?;
         let remote_per_commitment_point = self.public_key(req.remote_per_commit_point)?;
-        let channel_value_satoshis = reqtx.input_descs[0]
+        let channel_value_sat = reqtx.input_descs[0]
             .prev_output
             .as_ref()
             .ok_or_else(|| self.invalid_argument("missing prev_output"))?
-            .value as u64;
+            .value_sat as u64;
         let witscripts = reqtx
             .output_descs
             .iter()
@@ -615,9 +619,7 @@ impl Signer for MySigner {
             &tx,
             witscripts,
             &remote_per_commitment_point,
-            &remote_funding_pubkey,
-            channel_value_satoshis,
-            req.option_static_remotekey,
+            channel_value_sat,
         )?;
 
         let reply = SignatureReply {
@@ -648,21 +650,13 @@ impl Signer for MySigner {
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
-        let remote_funding_pubkey = self.public_key(req.remote_funding_pubkey)?;
-
-        let funding_amount = reqtx.input_descs[0]
+        let funding_amount_sat = reqtx.input_descs[0]
             .prev_output
             .as_ref()
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
-            .value as u64;
+            .value_sat as u64;
 
-        let sigvec = self.sign_commitment_tx(
-            &node_id,
-            &channel_id,
-            &tx,
-            &remote_funding_pubkey,
-            funding_amount,
-        )?;
+        let sigvec = self.sign_commitment_tx(&node_id, &channel_id, &tx, funding_amount_sat)?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
@@ -689,16 +683,22 @@ impl Signer for MySigner {
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
-        let htlc_amount = reqtx.input_descs[0]
+        let htlc_amount_sat = reqtx.input_descs[0]
             .prev_output
             .as_ref()
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
-            .value as u64;
+            .value_sat as u64;
 
         let witscripts = collect_output_witscripts(&reqtx.output_descs);
 
-        let sigvec =
-            self.sign_local_htlc_tx(&node_id, &channel_id, &tx, req.n, witscripts, htlc_amount)?;
+        let sigvec = self.sign_local_htlc_tx(
+            &node_id,
+            &channel_id,
+            &tx,
+            req.n,
+            witscripts,
+            htlc_amount_sat,
+        )?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
@@ -730,11 +730,11 @@ impl Signer for MySigner {
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
-        let htlc_amount = reqtx.input_descs[0]
+        let htlc_amount_sat = reqtx.input_descs[0]
             .prev_output
             .as_ref()
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
-            .value as u64;
+            .value_sat as u64;
 
         let witscripts = collect_output_witscripts(&reqtx.output_descs);
 
@@ -744,7 +744,7 @@ impl Signer for MySigner {
             &tx,
             req.n,
             witscripts,
-            htlc_amount,
+            htlc_amount_sat,
         )?;
 
         let reply = SignatureReply {
@@ -786,8 +786,8 @@ impl Signer for MySigner {
 
         let remote_per_commitment_point = self.public_key(req.remote_per_commit_point)?;
 
-        let htlc_amount = match reqtx.input_descs[0].prev_output.as_ref() {
-            Some(out) => out.value as u64,
+        let htlc_amount_sat = match reqtx.input_descs[0].prev_output.as_ref() {
+            Some(out) => out.value_sat as u64,
             None => return Err(self.internal_error("missing input_desc[0]")),
         };
 
@@ -799,7 +799,7 @@ impl Signer for MySigner {
             &tx,
             witscripts,
             &remote_per_commitment_point,
-            htlc_amount,
+            htlc_amount_sat,
         )?;
 
         let reply = SignatureReply {
@@ -835,11 +835,11 @@ impl Signer for MySigner {
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
-        let htlc_amount = reqtx.input_descs[0]
+        let htlc_amount_sat = reqtx.input_descs[0]
             .prev_output
             .as_ref()
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
-            .value as u64;
+            .value_sat as u64;
 
         let remote_per_commitment_point = self.public_key(req.remote_per_commit_point)?;
 
@@ -851,7 +851,7 @@ impl Signer for MySigner {
             &tx,
             witscripts,
             &remote_per_commitment_point,
-            htlc_amount,
+            htlc_amount_sat,
         )?;
 
         let reply = SignatureReply {
@@ -884,11 +884,11 @@ impl Signer for MySigner {
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
-        let htlc_amount = reqtx.input_descs[0]
+        let htlc_amount_sat = reqtx.input_descs[0]
             .prev_output
             .as_ref()
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
-            .value as u64;
+            .value_sat as u64;
 
         let revocation_secret = self.secret_key(req.revocation_secret)?;
 
@@ -900,7 +900,7 @@ impl Signer for MySigner {
             &tx,
             &revocation_secret,
             witscripts,
-            htlc_amount,
+            htlc_amount_sat,
         )?;
 
         let reply = SignatureReply {
@@ -1068,15 +1068,15 @@ impl Signer for MySigner {
             .ok_or_else(|| self.invalid_argument("missing commitment info"))?;
         let remote_per_commitment_point = self.public_key(req_info.per_commitment_point.clone())?;
 
-        let (sig, htlc_sigs) = self.with_existing_channel(&node_id, &channel_id, |chan| {
+        let (sig, htlc_sigs) = self.with_ready_channel(&node_id, &channel_id, |chan| {
             let offered_htlcs = self.convert_htlcs(&req_info.offered_htlcs)?;
             let received_htlcs = self.convert_htlcs(&req_info.received_htlcs)?;
             chan.sign_remote_commitment_tx_phase2(
                 &remote_per_commitment_point,
                 req_info.n,
-                req_info.feerate_per_kw as u64,
-                req_info.to_local_value,
-                req_info.to_remote_value,
+                req_info.feerate_sat_per_kw as u64,
+                req_info.to_local_value_sat,
+                req_info.to_remote_value_sat,
                 offered_htlcs,
                 received_htlcs,
             )
@@ -1131,9 +1131,9 @@ impl Signer for MySigner {
             &node_id,
             &channel_id,
             req_info.n,
-            req_info.feerate_per_kw as u64,
-            req_info.to_local_value,
-            req_info.to_remote_value,
+            req_info.feerate_sat_per_kw as u64,
+            req_info.to_local_value_sat,
+            req_info.to_remote_value_sat,
             offered_htlcs,
             received_htlcs,
         )?;

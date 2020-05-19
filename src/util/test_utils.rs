@@ -5,7 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use bitcoin;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
+use bitcoin::hashes::{sha256d, Hash};
 use bitcoin::network::constants::Network;
+use bitcoin::OutPoint as BitcoinOutPoint;
 use chain::chaininterface;
 use chain::chaininterface::ConfirmationTarget;
 use chain::keysinterface;
@@ -13,11 +15,13 @@ use chain::transaction::OutPoint;
 use lightning::chain;
 use lightning::chain::keysinterface::ChannelKeys;
 use lightning::ln;
+use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::util::logger::{Level, Logger, Record};
 use ln::channelmonitor;
 use ln::channelmonitor::HTLCUpdate;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 
+use crate::node::node::ChannelSetup;
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 
 pub struct TestVecWriter(pub Vec<u8>);
@@ -169,12 +173,12 @@ impl keysinterface::KeysInterface for TestKeysInterface {
         &self,
         channel_id: [u8; 32],
         inbound: bool,
-        channel_value_satoshis: u64,
+        channel_value_sat: u64,
     ) -> EnforcingChannelKeys {
         EnforcingChannelKeys::new(self.backing.get_channel_keys(
             channel_id,
             inbound,
-            channel_value_satoshis,
+            channel_value_sat,
         ))
     }
 
@@ -250,3 +254,38 @@ pub fn make_test_key(i: u8) -> (PublicKey, SecretKey) {
 pub fn make_test_pubkey(i: u8) -> PublicKey {
     make_test_key(i).0
 }
+
+pub fn make_test_remote_points() -> ChannelPublicKeys {
+    ChannelPublicKeys {
+        funding_pubkey: make_test_pubkey(104),
+        revocation_basepoint: make_test_pubkey(100),
+        payment_basepoint: make_test_pubkey(101),
+        delayed_payment_basepoint: make_test_pubkey(102),
+        htlc_basepoint: make_test_pubkey(103),
+    }
+}
+
+pub fn make_test_channel_setup() -> ChannelSetup {
+    ChannelSetup {
+        is_outbound: true,
+        channel_value_sat: 300,
+        funding_outpoint: BitcoinOutPoint {
+            txid: sha256d::Hash::from_slice(&[2u8; 32]).unwrap(),
+            vout: 0,
+        },
+        local_to_self_delay: 5,
+        local_shutdown_script: Script::new(),
+        remote_points: make_test_remote_points(),
+        remote_to_self_delay: 5,
+        remote_shutdown_script: Script::new(),
+        option_static_remotekey: false,
+    }
+}
+
+pub const TEST_SEED: &[&str] = &[
+    "6c696768746e696e672d31000000000000000000000000000000000000000000",
+    "6c696768746e696e672d32000000000000000000000000000000000000000000",
+];
+
+pub const TEST_CHANNEL_ID: &[&str] =
+    &["0a78009591722cc84825ca95ee7ffa52428047ed12c9076044ebfe8665f9657f"]; // TEST_SEED[1], "nonce1"

@@ -56,8 +56,8 @@ pub fn get_commitment_transaction_number_obscure_factor(
 }
 
 pub fn build_close_tx(
-    to_local_value: u64,
-    to_remote_value: u64,
+    to_local_value_sat: u64,
+    to_remote_value_sat: u64,
     local_shutdown_script: &Script,
     remote_shutdown_script: &Script,
     outpoint: OutPoint,
@@ -75,21 +75,21 @@ pub fn build_close_tx(
 
     let mut txouts: Vec<(TxOut, ())> = Vec::new();
 
-    if to_remote_value > 0 {
+    if to_remote_value_sat > 0 {
         txouts.push((
             TxOut {
                 script_pubkey: remote_shutdown_script.clone(),
-                value: to_remote_value,
+                value: to_remote_value_sat,
             },
             (),
         ));
     }
 
-    if to_local_value > 0 {
+    if to_local_value_sat > 0 {
         txouts.push((
             TxOut {
                 script_pubkey: local_shutdown_script.clone(),
-                value: to_local_value,
+                value: to_local_value_sat,
             },
             (),
         ));
@@ -130,18 +130,18 @@ pub fn build_commitment_tx(
 
     let mut txouts: Vec<(TxOut, (Script, Option<HTLCOutputInCommitment>))> = Vec::new();
 
-    if info.to_remote_value > 0 {
+    if info.to_remote_value_sat > 0 {
         let script = info.to_remote_address.script_pubkey();
         txouts.push((
             TxOut {
                 script_pubkey: script.clone(),
-                value: info.to_remote_value as u64,
+                value: info.to_remote_value_sat as u64,
             },
             (script, None),
         ))
     }
 
-    if info.to_local_value > 0 {
+    if info.to_local_value_sat > 0 {
         let redeem_script = get_revokeable_redeemscript(
             &info.revocation_key,
             info.to_local_delay,
@@ -150,7 +150,7 @@ pub fn build_commitment_tx(
         txouts.push((
             TxOut {
                 script_pubkey: redeem_script.to_v0_p2wsh(),
-                value: info.to_local_value as u64,
+                value: info.to_local_value_sat as u64,
             },
             (redeem_script, None),
         ))
@@ -159,7 +159,7 @@ pub fn build_commitment_tx(
     for out in &info.offered_htlcs {
         let htlc_in_tx = HTLCOutputInCommitment {
             offered: true,
-            amount_msat: out.value * 1000,
+            amount_msat: out.value_sat * 1000,
             cltv_expiry: out.cltv_expiry,
             payment_hash: out.payment_hash,
             transaction_output_index: None,
@@ -167,7 +167,7 @@ pub fn build_commitment_tx(
         let script = chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys);
         let txout = TxOut {
             script_pubkey: script.to_v0_p2wsh(),
-            value: out.value,
+            value: out.value_sat,
         };
         txouts.push((txout, (script, Some(htlc_in_tx))));
     }
@@ -175,7 +175,7 @@ pub fn build_commitment_tx(
     for out in &info.received_htlcs {
         let htlc_in_tx = HTLCOutputInCommitment {
             offered: false,
-            amount_msat: out.value * 1000,
+            amount_msat: out.value_sat * 1000,
             cltv_expiry: out.cltv_expiry,
             payment_hash: out.payment_hash,
             transaction_output_index: None,
@@ -183,7 +183,7 @@ pub fn build_commitment_tx(
         let script = chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys);
         let txout = TxOut {
             script_pubkey: script.to_v0_p2wsh(),
-            value: out.value,
+            value: out.value_sat,
         };
         txouts.push((txout, (script, Some(htlc_in_tx))));
     }
@@ -230,7 +230,7 @@ pub fn sign_commitment(
     keys: &EnforcingChannelKeys,
     remote_funding_pubkey: &PublicKey,
     tx: &Transaction,
-    channel_value_satoshi: u64,
+    channel_value_sat: u64,
 ) -> Result<Signature, secp256k1::Error> {
     let funding_key = keys.funding_key();
     let funding_pubkey = keys.pubkeys().funding_pubkey;
@@ -241,7 +241,7 @@ pub fn sign_commitment(
         &bip143::SighashComponents::new(&tx).sighash_all(
             &tx.input[0],
             &channel_funding_redeemscript,
-            channel_value_satoshi,
+            channel_value_sat,
         )[..],
     )?;
     Ok(secp_ctx.sign(&commitment_sighash, funding_key))
@@ -261,7 +261,7 @@ pub fn sort_outputs<T, C: Fn(&T, &T) -> Ordering>(outputs: &mut Vec<(TxOut, T)>,
 // BEGIN NOT TESTED
 #[derive(Debug, Clone)]
 pub struct HTLCInfo {
-    pub value: u64,
+    pub value_sat: u64,
     /// RIPEMD160 of 32 bytes hash
     pub payment_hash_hash: [u8; 20],
     /// This is zero (unknown) for offered HTLCs in phase 1
@@ -272,7 +272,7 @@ pub struct HTLCInfo {
 /// Phase 2 HTLC info
 #[derive(Debug, Clone)]
 pub struct HTLCInfo2 {
-    pub value: u64,
+    pub value_sat: u64,
     pub payment_hash: PaymentHash,
     /// This is zero for offered HTLCs in phase 1
     pub cltv_expiry: u32,
@@ -282,10 +282,10 @@ pub struct HTLCInfo2 {
 #[derive(Debug, Clone)]
 pub struct CommitmentInfo2 {
     pub to_remote_address: Payload,
-    pub to_remote_value: u64,
+    pub to_remote_value_sat: u64,
     pub revocation_key: PublicKey,
     pub to_local_delayed_key: PublicKey,
-    pub to_local_value: u64,
+    pub to_local_value_sat: u64,
     pub to_local_delay: u16,
     pub offered_htlcs: Vec<HTLCInfo2>,
     pub received_htlcs: Vec<HTLCInfo2>,
@@ -295,10 +295,10 @@ pub struct CommitmentInfo2 {
 #[allow(dead_code)]
 pub struct CommitmentInfo {
     pub to_remote_address: Option<Payload>,
-    pub to_remote_value: u64,
+    pub to_remote_value_sat: u64,
     pub revocation_key: Option<PublicKey>,
     pub to_local_delayed_key: Option<PublicKey>,
-    pub to_local_value: u64,
+    pub to_local_value_sat: u64,
     pub to_local_delay: u16,
     pub offered_htlcs: Vec<HTLCInfo>,
     pub received_htlcs: Vec<HTLCInfo>,
@@ -308,10 +308,10 @@ impl CommitmentInfo {
     pub fn new() -> Self {
         CommitmentInfo {
             to_remote_address: None,
-            to_remote_value: 0,
+            to_remote_value_sat: 0,
             revocation_key: None,
             to_local_delayed_key: None,
-            to_local_value: 0,
+            to_local_value_sat: 0,
             to_local_delay: 0,
             offered_htlcs: vec![],
             received_htlcs: vec![],
@@ -356,7 +356,7 @@ impl CommitmentInfo {
 
         // This is safe because we checked for negative
         self.to_local_delay = delay as u16;
-        self.to_local_value = out.value;
+        self.to_local_value_sat = out.value;
         self.to_local_delayed_key = Some(
             PublicKey::from_slice(to_local_delayed_key.as_slice())
                 .map_err(|err| Mismatch(format!("to_local_delayed_key mismatch: {}", err)))?,
@@ -421,7 +421,7 @@ impl CommitmentInfo {
         let cltv_expiry = cltv_expiry as u32;
 
         let htlc = HTLCInfo {
-            value: out.value,
+            value_sat: out.value,
             payment_hash_hash,
             cltv_expiry,
         };
@@ -472,7 +472,7 @@ impl CommitmentInfo {
             .map_err(|_| Mismatch("payment hash RIPEMD160 must be length 20".to_string()))?;
 
         let htlc = HTLCInfo {
-            value: out.value,
+            value_sat: out.value,
             payment_hash_hash,
             cltv_expiry: 0,
         };
@@ -492,7 +492,7 @@ impl CommitmentInfo {
                 // END NOT TESTED
             }
             self.to_remote_address = Payload::from_script(&out.script_pubkey);
-            self.to_remote_value = out.value;
+            self.to_remote_value_sat = out.value;
         } else if out.script_pubkey.is_v0_p2wsh() {
             if script_bytes.is_empty() {
                 // BEGIN NOT TESTED
@@ -567,7 +567,7 @@ mod tests {
         assert_eq!(info.revocation_key.unwrap(), revocation_key);
         assert_eq!(info.to_local_delayed_key.unwrap(), delayed_key);
         assert_eq!(info.to_local_delay, 5);
-        assert_eq!(info.to_local_value, 123);
+        assert_eq!(info.to_local_value_sat, 123);
         let res = info.handle_to_local_script(&out, &script);
         assert!(res.is_err());
         #[rustfmt::skip]

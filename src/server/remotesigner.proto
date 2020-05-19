@@ -89,7 +89,6 @@ service Signer {
   rpc SignLocalCommitmentTxPhase2 (SignLocalCommitmentTxPhase2Request)
     returns (CommitmentTxSignatureReply);
 
-
   // BOLT #3 - HTLC Outputs, phase 1
   // Sign an htlc-success tx spending a local HTLC output, assuming we
   // know the preimage, at force-close time
@@ -166,6 +165,9 @@ message PingReply {
 message InitRequest {
   ChainParams chainparams = 1;
 
+  // Developer field: Flush the node state (support for integration tests).
+  bool coldstart = 2;
+
   // Developer field: set the HSM secret rather than generate it on
   // the signer side. Only allowed if this is using a non-production
   // network.
@@ -187,29 +189,44 @@ message GetExtPubKeyReply {
 }
 
 // Initialize a new channel
-// In phase 2, the node will also provide remote keys and basepoints
-// in the ReadyChannel call
 message NewChannelRequest {
   NodeId node_id = 1;
 
   // optional, will be pseudo-randomly generated if missing
   ChannelNonce channel_nonce = 2;
-
-  // in satoshis
-  uint64 channel_value = 3;
-
-  // Local to_self_delay
-  uint32 to_self_delay = 4;
-
-  // Local shutdown Bitcoin script used when closing the channel
-  bytes shutdown_script = 5;
-
-  // Whether we initiated the channel
-  bool is_outbound = 6;
 }
 
 message NewChannelReply {
   ChannelNonce channel_nonce = 1;
+}
+
+// Provide the funding outpoint and information from the remote peer
+// This is provided to signer at the point that the funding transaction was created
+message ReadyChannelRequest {
+  NodeId node_id = 1;
+
+  ChannelNonce channel_nonce = 2;
+
+  bool is_outbound = 3;
+
+  uint64 channel_value_sat = 4;
+
+  Outpoint funding_outpoint = 5;
+
+  uint32 local_to_self_delay = 6;
+
+  bytes local_shutdown_script = 7;
+
+  Basepoints remote_basepoints = 9;
+
+  uint32 remote_to_self_delay = 10;
+
+  bytes remote_shutdown_script = 11;
+
+  bool option_static_remotekey = 12;
+}
+
+message ReadyChannelReply {
 }
 
 // Sign a happy path mutual close transaction
@@ -219,9 +236,6 @@ message SignMutualCloseTxRequest {
   ChannelNonce channel_nonce = 2;
 
   Transaction tx = 3;
-
-  // Deprecated, should be provided in ChannelAcceptedRequest
-  PubKey remote_funding_pubkey = 4;
 }
 
 message SignatureReply {
@@ -298,16 +312,11 @@ message SignRemoteCommitmentTxRequest {
   
   ChannelNonce channel_nonce = 2;
 
-  // TODO deprecate these two and move to specifying all the
+  PubKey remote_per_commit_point = 3;
+  
+  // TODO deprecate and move to specifying all the
   // information that is required to rebuild the tx
-  Transaction tx = 3;
-
-  // TODO deprecate the next three fields and move to ReadyChannel
-  PubKey remote_funding_pubkey = 4;
-
-  PubKey remote_per_commit_point = 5;
-
-  bool option_static_remotekey = 7;
+  Transaction tx = 4;
 }
 
 // Force close a channel by signing a local commitment tx.  The
@@ -318,9 +327,6 @@ message SignCommitmentTxRequest {
   ChannelNonce channel_nonce = 2;
     
   Transaction tx = 3;
-  
-  // TODO deprecate and move to ReadyChannel
-  PubKey remote_funding_pubkey = 4;
 }
 
 // As part of a force close, sweep a local HTLC output hanging off the
@@ -550,7 +556,7 @@ message KeyLocator {
 // A Bitcoin transaction output
 message TxOut {
   /// The value of the output being spent.
-  int64 value = 1;
+  int64 value_sat = 1;
 
   /// The script of the output being spent.
   bytes pk_script = 2;
@@ -634,10 +640,10 @@ message SignMutualCloseTxPhase2Request {
   ChannelNonce channel_nonce = 2;
 
   // Value to us in satoshi, may be zero if dust
-  uint64 to_local_value = 3;
+  uint64 to_local_value_sat = 3;
 
   // Value to them in satoshi, may be zero if dust
-  uint64 to_remote_value = 4;
+  uint64 to_remote_value_sat = 4;
 }
 
 message CloseTxSignatureReply {
@@ -648,7 +654,7 @@ message CloseTxSignatureReply {
 // Information required to create HTLC output and a follow-up HTLC transaction
 message HTLCInfo {
   // The value in satoshis
-  uint64 value = 1;
+  uint64 value_sat = 1;
   bytes payment_hash = 2;
   uint32 cltv_expiry = 3;
 }
@@ -660,16 +666,16 @@ message HTLCInfo {
 // remote commitment tx, "local" is the remote peer.
 message CommitmentInfo {
   // Feerate, for building HTLC transactions
-  uint32 feerate_per_kw = 1;
+  uint32 feerate_sat_per_kw = 1;
 
   // Commitment number
   uint64 n = 2;
 
   // Value to local in satoshi
-  uint64 to_local_value = 4;
+  uint64 to_local_value_sat = 4;
 
   // Value to remote in satoshi
-  uint64 to_remote_value = 5;
+  uint64 to_remote_value_sat = 5;
 
   // Per-commitment point local to the transaction
   // Omitted if this is a local transaction, because the signer can compute it.
@@ -686,23 +692,6 @@ message CommitmentInfo {
 message Outpoint {
   bytes txid = 1;
   uint32 index = 2;
-}
-
-// Provide the funding outpoint and information from the remote peer
-// This is provided to signer at the point that the funding transaction was created
-message ReadyChannelRequest {
-  NodeId node_id = 1;
-
-  ChannelNonce channel_nonce = 2;
-
-  Basepoints basepoints = 3;
-  // Remote to_self_delay
-  uint32 to_self_delay = 4;
-  bytes shutdown_script = 5;
-  Outpoint funding_outpoint = 10;
-}
-
-message ReadyChannelReply {
 }
 
 // END NOT TESTED

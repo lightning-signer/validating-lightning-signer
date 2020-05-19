@@ -157,7 +157,7 @@ pub fn create_chan_between_nodes<'a, 'b, 'c, S: ChannelKeys>(
 pub fn create_chan_between_nodes_with_value<'a, 'b, 'c, S: ChannelKeys>(
     node_a: &'a Node<'b, 'c, S>,
     node_b: &'a Node<'b, 'c, S>,
-    channel_value: u64,
+    channel_value_sat: u64,
     push_msat: u64,
     a_flags: InitFeatures,
     b_flags: InitFeatures,
@@ -171,7 +171,7 @@ pub fn create_chan_between_nodes_with_value<'a, 'b, 'c, S: ChannelKeys>(
     let (funding_locked, channel_id, tx) = create_chan_between_nodes_with_value_a(
         node_a,
         node_b,
-        channel_value,
+        channel_value_sat,
         push_msat,
         a_flags,
         b_flags,
@@ -234,7 +234,7 @@ macro_rules! get_event_msg {
 
 pub fn create_funding_transaction<S: ChannelKeys>(
     node: &Node<S>,
-    expected_chan_value: u64,
+    expected_chan_value_sat: u64,
     expected_user_chan_id: u64,
 ) -> ([u8; 32], bitcoin::Transaction, OutPoint) {
     let chan_id = *node.network_chan_count.borrow();
@@ -248,7 +248,7 @@ pub fn create_funding_transaction<S: ChannelKeys>(
             ref output_script,
             user_channel_id,
         } => {
-            assert_eq!(*channel_value_satoshis, expected_chan_value);
+            assert_eq!(*channel_value_satoshis, expected_chan_value_sat);
             assert_eq!(user_channel_id, expected_user_chan_id);
 
             let tx = bitcoin::Transaction {
@@ -270,14 +270,19 @@ pub fn create_funding_transaction<S: ChannelKeys>(
 pub fn create_chan_between_nodes_with_value_init<S: ChannelKeys>(
     node_a: &Node<S>,
     node_b: &Node<S>,
-    channel_value: u64,
+    channel_value_sat: u64,
     push_msat: u64,
     a_flags: InitFeatures,
     b_flags: InitFeatures,
 ) -> bitcoin::Transaction {
     node_a
         .node
-        .create_channel(node_b.node.get_our_node_id(), channel_value, push_msat, 42)
+        .create_channel(
+            node_b.node.get_our_node_id(),
+            channel_value_sat,
+            push_msat,
+            42,
+        )
         .unwrap();
     node_b.node.handle_open_channel(
         &node_a.node.get_our_node_id(),
@@ -299,7 +304,7 @@ pub fn create_chan_between_nodes_with_value_init<S: ChannelKeys>(
     );
 
     let (temporary_channel_id, tx, funding_output) =
-        create_funding_transaction(node_a, channel_value, 42);
+        create_funding_transaction(node_a, channel_value_sat, 42);
 
     {
         node_a
@@ -437,7 +442,7 @@ pub fn create_chan_between_nodes_with_value_confirm<S: ChannelKeys>(
 pub fn create_chan_between_nodes_with_value_a<S: ChannelKeys>(
     node_a: &Node<S>,
     node_b: &Node<S>,
-    channel_value: u64,
+    channel_value_sat: u64,
     push_msat: u64,
     a_flags: InitFeatures,
     b_flags: InitFeatures,
@@ -449,7 +454,7 @@ pub fn create_chan_between_nodes_with_value_a<S: ChannelKeys>(
     let tx = create_chan_between_nodes_with_value_init(
         node_a,
         node_b,
-        channel_value,
+        channel_value_sat,
         push_msat,
         a_flags,
         b_flags,
@@ -533,7 +538,7 @@ pub fn create_announced_chan_between_nodes_with_value<S: ChannelKeys>(
     nodes: &Vec<Node<S>>,
     a: usize,
     b: usize,
-    channel_value: u64,
+    channel_value_sat: u64,
     push_msat: u64,
     a_flags: InitFeatures,
     b_flags: InitFeatures,
@@ -546,7 +551,7 @@ pub fn create_announced_chan_between_nodes_with_value<S: ChannelKeys>(
     let chan_announcement = create_chan_between_nodes_with_value(
         &nodes[a],
         &nodes[b],
-        channel_value,
+        channel_value_sat,
         push_msat,
         a_flags,
         b_flags,
@@ -898,7 +903,7 @@ pub fn send_along_route_with_hash<'a, 'b, S: ChannelKeys>(
     origin_node: &Node<'a, 'b, S>,
     route: Route,
     expected_route: &[&Node<'a, 'b, S>],
-    recv_value: u64,
+    recv_value_sat: u64,
     our_payment_hash: PaymentHash,
 ) {
     let mut payment_event = {
@@ -933,7 +938,7 @@ pub fn send_along_route_with_hash<'a, 'b, S: ChannelKeys>(
                     amt,
                 } => {
                     assert_eq!(our_payment_hash, *payment_hash);
-                    assert_eq!(amt, recv_value);
+                    assert_eq!(amt, recv_value_sat);
                 }
                 _ => panic!("Unexpected event"), // NOT TESTED
             }
@@ -953,14 +958,14 @@ pub fn send_along_route<'a, 'b, S: ChannelKeys>(
     origin_node: &Node<'a, 'b, S>,
     route: Route,
     expected_route: &[&Node<'a, 'b, S>],
-    recv_value: u64,
+    recv_value_sat: u64,
 ) -> (PaymentPreimage, PaymentHash) {
     let (our_payment_preimage, our_payment_hash) = get_payment_preimage_hash!(origin_node);
     send_along_route_with_hash(
         origin_node,
         route,
         expected_route,
-        recv_value,
+        recv_value_sat,
         our_payment_hash,
     );
     (our_payment_preimage, our_payment_hash)
@@ -971,13 +976,13 @@ pub fn claim_payment_along_route<'a, 'b, S: ChannelKeys>(
     expected_route: &[&Node<'a, 'b, S>],
     skip_last: bool,
     our_payment_preimage: PaymentPreimage,
-    expected_amount: u64,
+    expected_amount_sat: u64,
 ) {
     assert!(expected_route
         .last()
         .unwrap()
         .node
-        .claim_funds(our_payment_preimage, expected_amount));
+        .claim_funds(our_payment_preimage, expected_amount_sat));
     check_added_monitors!(expected_route.last().unwrap(), 1);
 
     let mut next_msgs: Option<(msgs::UpdateFulfillHTLC, msgs::CommitmentSigned)> = None;
@@ -1069,14 +1074,14 @@ pub fn claim_payment<'a, 'b, S: ChannelKeys>(
     origin_node: &Node<'a, 'b, S>,
     expected_route: &[&Node<'a, 'b, S>],
     our_payment_preimage: PaymentPreimage,
-    expected_amount: u64,
+    expected_amount_sat: u64,
 ) {
     claim_payment_along_route(
         origin_node,
         expected_route,
         false,
         our_payment_preimage,
-        expected_amount,
+        expected_amount_sat,
     );
 }
 
@@ -1085,7 +1090,7 @@ pub const TEST_FINAL_CLTV: u32 = 32;
 pub fn route_payment<'a, 'b, S: ChannelKeys>(
     origin_node: &Node<'a, 'b, S>,
     expected_route: &[&Node<'a, 'b, S>],
-    recv_value: u64,
+    recv_value_sat: u64,
 ) -> (PaymentPreimage, PaymentHash) {
     let route = origin_node
         .router
@@ -1093,7 +1098,7 @@ pub fn route_payment<'a, 'b, S: ChannelKeys>(
             &expected_route.last().unwrap().node.get_our_node_id(),
             None,
             &Vec::new(),
-            recv_value,
+            recv_value_sat,
             TEST_FINAL_CLTV,
         )
         .unwrap();
@@ -1102,13 +1107,13 @@ pub fn route_payment<'a, 'b, S: ChannelKeys>(
         assert_eq!(hop.pubkey, node.node.get_our_node_id());
     }
 
-    send_along_route(origin_node, route, expected_route, recv_value)
+    send_along_route(origin_node, route, expected_route, recv_value_sat)
 }
 
 pub fn route_over_limit<'a, 'b, S: ChannelKeys>(
     origin_node: &Node<'a, 'b, S>,
     expected_route: &[&Node<'a, 'b, S>],
-    recv_value: u64,
+    recv_value_sat: u64,
 ) {
     let route = origin_node
         .router
@@ -1116,7 +1121,7 @@ pub fn route_over_limit<'a, 'b, S: ChannelKeys>(
             &expected_route.last().unwrap().node.get_our_node_id(),
             None,
             &Vec::new(),
-            recv_value,
+            recv_value_sat,
             TEST_FINAL_CLTV,
         )
         .unwrap();
@@ -1141,15 +1146,15 @@ pub fn route_over_limit<'a, 'b, S: ChannelKeys>(
 pub fn send_payment<'a, 'b, S: ChannelKeys>(
     origin: &Node<'a, 'b, S>,
     expected_route: &[&Node<'a, 'b, S>],
-    recv_value: u64,
-    expected_value: u64,
+    recv_value_sat: u64,
+    expected_value_sat: u64,
 ) {
-    let our_payment_preimage = route_payment(&origin, expected_route, recv_value).0;
+    let our_payment_preimage = route_payment(&origin, expected_route, recv_value_sat).0;
     claim_payment(
         &origin,
         expected_route,
         our_payment_preimage,
-        expected_value,
+        expected_value_sat,
     );
 }
 

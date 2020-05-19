@@ -143,7 +143,7 @@ impl MyKeysManager {
     pub(crate) fn get_channel_keys_with_nonce(
         &self,
         channel_nonce: &[u8],
-        channel_value_satoshis: u64,
+        channel_value_sat: u64,
         hkdf_info: &str,
     ) -> InMemoryChannelKeys {
         let channel_seed = hkdf_sha256(
@@ -175,7 +175,7 @@ impl MyKeysManager {
             delayed_payment_base_key,
             htlc_base_key,
             commitment_seed,
-            channel_value_satoshis,
+            channel_value_sat,
         )
     }
 }
@@ -187,9 +187,11 @@ impl KeysInterface for MyKeysManager {
         self.node_secret.clone()
     }
 
+    // BEGIN NOT TESTED
     fn get_destination_script(&self) -> Script {
         self.destination_script.clone()
     }
+    // END NOT TESTED
 
     fn get_shutdown_pubkey(&self) -> PublicKey {
         self.shutdown_pubkey.clone()
@@ -200,17 +202,12 @@ impl KeysInterface for MyKeysManager {
         &self,
         _channel_id: [u8; 32],
         _inbound: bool,
-        _channel_value_satoshis: u64,
+        _channel_value_sat: u64,
     ) -> InMemoryChannelKeys {
         unimplemented!();
         #[allow(unreachable_code)]
-        self.get_channel_keys_with_nonce(
-            &_channel_id,
-            _channel_value_satoshis,
-            "rust-lightning-signer",
-        )
+        self.get_channel_keys_with_nonce(&_channel_id, _channel_value_sat, "rust-lightning-signer")
     }
-    // END NOT TESTED
 
     fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
         let mut sha = self.unique_start.clone();
@@ -236,6 +233,7 @@ impl KeysInterface for MyKeysManager {
             Sha256::from_engine(rng_seed).into_inner(),
         )
     }
+    // END NOT TESTED
 
     fn get_channel_id(&self) -> [u8; 32] {
         let mut sha = self.unique_start.clone();
