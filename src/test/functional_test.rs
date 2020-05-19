@@ -45,6 +45,7 @@ fn fake_network_test() {
     );
 }
 
+// BEGIN NOT TESTED
 pub fn create_node_cfgs_with_signer(
     node_count: usize,
     signer: &Arc<MySigner>,
@@ -88,6 +89,7 @@ pub fn create_node_cfgs_with_signer(
 }
 
 #[test]
+#[ignore]
 fn fake_network_with_signer_test() {
     // Simple test which builds a network of ChannelManagers, connects them to each other, and
     // tests that payments get routed and transactions broadcast in semi-reasonable ways.
@@ -113,3 +115,4 @@ fn fake_network_with_signer_test() {
         8_000_000,
     );
 }
+// END NOT TESTED

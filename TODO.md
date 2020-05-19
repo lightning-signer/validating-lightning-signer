@@ -17,3 +17,19 @@ Needs Further Thought:
 
 * lightning::util::byte_utils;
 * lightning::util::test_utils;
+
+### ready-channel punch list
+
+* Confirm handling in `check_client_capabilities`, is permissive ok?
+* Figure out some sanity checks for hsmd.c<hsmd>
+
+* Rebase onto latest `rust-lightning`.
+
+* Convert Phase1 interfaces w/ Tx to Phase2 w/ info.
+
+* Consider adding `push_msat`
+* Consider adding `feerate_per_kw`
+* How do we know when we've got them all?  Isn't generating the
+  messages the proof we've done it?
+
+* Disallow coldstart in prod.

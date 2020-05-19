@@ -90,7 +90,7 @@ impl ChannelKeys for EnforcingChannelKeys {
 
     fn sign_remote_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
-        feerate_per_kw: u64,
+        feerate_sat_per_kw: u64,
         commitment_tx: &Transaction,
         keys: &TxCreationKeys,
         htlcs: &[&HTLCOutputInCommitment],
@@ -123,7 +123,7 @@ impl ChannelKeys for EnforcingChannelKeys {
         Ok(self
             .inner
             .sign_remote_commitment(
-                feerate_per_kw,
+                feerate_sat_per_kw,
                 commitment_tx,
                 keys,
                 htlcs,

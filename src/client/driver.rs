@@ -20,6 +20,7 @@ pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
 
     let init_request = Request::new(InitRequest {
         chainparams: None,
+        coldstart: true,
         hsm_secret: Some(Secret {
             data: vec![0u8; 32],
         }),
@@ -39,10 +40,6 @@ pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
         channel_nonce: Some(ChannelNonce {
             data: channel_id.to_vec(),
         }),
-        channel_value: 123,
-        to_self_delay: 0,
-        shutdown_script: vec![0u8; 0],
-        is_outbound: true,
     });
     let response = client.new_channel(new_chan_request).await?;
 

@@ -34,16 +34,16 @@ pub trait ValidatorFactory: Send + Sync {
     fn make_validator_phase1(
         &self,
         channel: &Channel,
-        channel_value_satoshi: u64,
+        channel_value_sat: u64,
     ) -> Box<dyn Validator>;
 }
 
 pub struct SimpleValidatorFactory {}
 
-fn simple_validator(network: Network, channel_value_satoshi: u64) -> SimpleValidator {
+fn simple_validator(network: Network, channel_value_sat: u64) -> SimpleValidator {
     SimpleValidator {
         policy: make_simple_policy(network),
-        channel_value_satoshi,
+        channel_value_sat,
     }
 }
 
@@ -51,7 +51,7 @@ impl ValidatorFactory for SimpleValidatorFactory {
     fn make_validator(&self, channel: &Channel) -> Box<dyn Validator> {
         Box::new(simple_validator(
             channel.network(),
-            channel.channel_value_satoshi,
+            channel.setup.channel_value_sat,
         ))
     }
 
@@ -60,9 +60,9 @@ impl ValidatorFactory for SimpleValidatorFactory {
     fn make_validator_phase1(
         &self,
         channel: &Channel,
-        channel_value_satoshi: u64,
+        channel_value_sat: u64,
     ) -> Box<dyn Validator> {
-        Box::new(simple_validator(channel.network(), channel_value_satoshi))
+        Box::new(simple_validator(channel.network(), channel_value_sat))
     }
 }
 
@@ -74,13 +74,13 @@ pub struct SimplePolicy {
     /// Maximum delay in blocks
     pub max_delay: u16,
     /// Maximum channel value in satoshi
-    pub max_channel_size: u64,
+    pub max_channel_size_sat: u64,
     /// amounts below this number of satoshi are not considered important
-    pub epsilon: u64,
+    pub epsilon_sat: u64,
     /// Maximum number of in-flight HTLCs
     pub max_htlcs: usize,
     /// Maximum value of in-flight HTLCs
-    pub max_htlc_value_satoshi: u64,
+    pub max_htlc_value_sat: u64,
     /// Whether to use knowledge of chain state (e.g. current_height)
     pub use_chain_state: bool,
 }
@@ -88,7 +88,7 @@ pub struct SimplePolicy {
 
 pub struct SimpleValidator {
     pub policy: SimplePolicy,
-    pub channel_value_satoshi: u64,
+    pub channel_value_sat: u64,
 }
 
 /// A validator
@@ -109,9 +109,9 @@ pub struct SimpleValidator {
 /// - Funded - if this is not the first commitment, the funding UTXO must be active on chain
 /// with enough depth
 /// - HTLC in-flight value - the inflight value should not be too large
-/// -- done via max_htlc_value_satoshi
+/// -- done via max_htlc_value_sat
 /// - Fee - must be in range
-/// -- done via epsilon
+/// -- done via epsilon_sat
 /// - Number of HTLC outputs - must not be too large
 /// -- done via max_htlcs
 /// - HTLC routing - each offered HTLC must be balanced via a received HTLC
@@ -129,7 +129,7 @@ pub struct SimpleValidator {
 /// -- by construction
 /// - Offered payment hash - must be related to received HTLC payment hash
 /// - Trimming - outputs are trimmed iff under the dust limit
-/// -- done via epsilon
+/// -- done via epsilon_sat
 /// - Revocation - the previous commitment transaction was properly revoked by peer disclosing secret.
 /// - Note that this requires unbounded storage.
 /// - No breach - if signing a local commitment transaction, we must not have revoked it
@@ -192,41 +192,41 @@ impl Validator for SimpleValidator {
             return Err(Policy("too many HTLCs".to_string())); // NOT TESTED
         }
 
-        let mut htlc_value = 0;
+        let mut htlc_value_sat = 0;
 
         for htlc in &info.offered_htlcs {
-            htlc_value += htlc.value;
+            htlc_value_sat += htlc.value_sat;
         }
 
         for htlc in &info.received_htlcs {
             self.validate_expiry("received HTLC", htlc.cltv_expiry, state.current_height)?;
-            htlc_value += htlc.value;
+            htlc_value_sat += htlc.value_sat;
         }
 
-        if htlc_value > policy.max_htlc_value_satoshi {
+        if htlc_value_sat > policy.max_htlc_value_sat {
             // BEGIN NOT TESTED
             return Err(Policy(format!(
                 "sum of HTLC values {} too large",
-                htlc_value
+                htlc_value_sat
             )));
             // END NOT TESTED
         }
 
-        let value = info.to_local_value + info.to_remote_value + htlc_value;
-        if self.channel_value_satoshi < value {
+        let value_sat = info.to_local_value_sat + info.to_remote_value_sat + htlc_value_sat;
+        if self.channel_value_sat < value_sat {
             // BEGIN NOT TESTED
             return Err(Policy(format!(
                 "channel value greater than funding {} > {}",
-                value, self.channel_value_satoshi
+                value_sat, self.channel_value_sat
             )));
             // END NOT TESTED
         }
-        let shortage = self.channel_value_satoshi - value;
-        if shortage > policy.epsilon {
+        let shortage = self.channel_value_sat - value_sat;
+        if shortage > policy.epsilon_sat {
             // BEGIN NOT TESTED
             return Err(Policy(format!(
                 "channel value short by {} > {}",
-                shortage, policy.epsilon
+                shortage, policy.epsilon_sat
             )));
             // END NOT TESTED
         }
@@ -247,31 +247,31 @@ impl Validator for SimpleValidator {
             return Err(Policy("too many HTLCs".to_string()));
         }
 
-        let mut htlc_value = 0;
+        let mut htlc_value_sat = 0;
 
         for htlc in &info.offered_htlcs {
             self.validate_expiry("offered HTLC", htlc.cltv_expiry, state.current_height)?;
-            htlc_value += htlc.value;
+            htlc_value_sat += htlc.value_sat;
         }
 
         for htlc in &info.received_htlcs {
             self.validate_expiry("received HTLC", htlc.cltv_expiry, state.current_height)?;
-            htlc_value += htlc.value;
+            htlc_value_sat += htlc.value_sat;
         }
 
-        if htlc_value > policy.max_htlc_value_satoshi {
+        if htlc_value_sat > policy.max_htlc_value_sat {
             return Err(Policy(format!(
                 "sum of HTLC values {} too large",
-                htlc_value
+                htlc_value_sat
             )));
         }
 
-        let shortage =
-            self.channel_value_satoshi - (info.to_local_value + info.to_remote_value + htlc_value);
-        if shortage > policy.epsilon {
+        let shortage = self.channel_value_sat
+            - (info.to_local_value_sat + info.to_remote_value_sat + htlc_value_sat);
+        if shortage > policy.epsilon_sat {
             return Err(Policy(format!(
                 "channel value short by {} > {}",
-                shortage, policy.epsilon
+                shortage, policy.epsilon_sat
             )));
         }
 
@@ -279,7 +279,7 @@ impl Validator for SimpleValidator {
     }
 
     fn validate_channel_open(&self) -> Result<(), ValidationError> {
-        if self.channel_value_satoshi > self.policy.max_channel_size {
+        if self.channel_value_sat > self.policy.max_channel_size_sat {
             return Err(Policy("channel value too large".to_string()));
         }
         Ok(())
@@ -292,10 +292,10 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
         SimplePolicy {
             min_delay: 60,
             max_delay: 1440,
-            max_channel_size: 100_000_000,
-            epsilon: 200_000,
+            max_channel_size_sat: 100_000_000,
+            epsilon_sat: 200_000,
             max_htlcs: 1000,
-            max_htlc_value_satoshi: 10_000_000,
+            max_htlc_value_sat: 10_000_000,
             use_chain_state: false,
         }
     // END NOT TESTED
@@ -303,10 +303,10 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
         SimplePolicy {
             min_delay: 5,
             max_delay: 1440,
-            max_channel_size: 100_000_000,
-            epsilon: 200_000,
+            max_channel_size_sat: 100_000_000,
+            epsilon_sat: 200_000,
             max_htlcs: 1000,
-            max_htlc_value_satoshi: 10_000_000,
+            max_htlc_value_sat: 10_000_000,
             use_chain_state: false,
         }
     }
@@ -322,20 +322,20 @@ mod tests {
 
     use super::*;
 
-    fn make_test_validator(channel_value_satoshi: u64) -> SimpleValidator {
+    fn make_test_validator(channel_value_sat: u64) -> SimpleValidator {
         let policy = SimplePolicy {
             min_delay: 5,
             max_delay: 1440,
-            max_channel_size: 100_000_000,
-            epsilon: 100_000,
+            max_channel_size_sat: 100_000_000,
+            epsilon_sat: 100_000,
             max_htlcs: 1000,
-            max_htlc_value_satoshi: 10_000_000,
+            max_htlc_value_sat: 10_000_000,
             use_chain_state: true,
         };
 
         SimpleValidator {
             policy,
-            channel_value_satoshi,
+            channel_value_sat,
         }
     }
 
@@ -348,8 +348,8 @@ mod tests {
     }
 
     fn make_info(
-        to_local_value: u64,
-        to_remote_value: u64,
+        to_local_value_sat: u64,
+        to_remote_value_sat: u64,
         to_local_delay: u16,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
@@ -360,10 +360,10 @@ mod tests {
         let to_remote_address = payload_for_p2wpkh(&to_remote_pubkey);
         CommitmentInfo2 {
             to_remote_address,
-            to_remote_value,
+            to_remote_value_sat,
             revocation_key,
             to_local_delayed_key,
-            to_local_value,
+            to_local_value_sat,
             to_local_delay,
             offered_htlcs,
             received_htlcs,
@@ -376,7 +376,7 @@ mod tests {
 
     fn make_htlc_info(expiry: u32) -> HTLCInfo2 {
         HTLCInfo2 {
-            value: 10,
+            value_sat: 10,
             payment_hash: PaymentHash([0; 32]),
             cltv_expiry: expiry,
         }
@@ -413,7 +413,7 @@ mod tests {
     fn validate_remote_tx_htlc_shortage_test() {
         let validator = make_validator();
         let htlc = HTLCInfo2 {
-            value: 100_000,
+            value_sat: 100_000,
             payment_hash: PaymentHash([0; 32]),
             cltv_expiry: 1005,
         };
@@ -451,7 +451,7 @@ mod tests {
         };
         let htlcs = (0..1000)
             .map(|_| HTLCInfo2 {
-                value: 10001,
+                value_sat: 10001,
                 payment_hash: PaymentHash([0; 32]),
                 cltv_expiry: 1100,
             })
