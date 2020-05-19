@@ -542,10 +542,12 @@ impl Node {
     ) -> Result<(), Status> {
         let mut channels = self.channels.lock().unwrap();
         if channels.contains_key(&channel_id) {
+            // BEGIN NOT TESTED
             let msg = format!("channel already exists: {}", &channel_id);
             log_info!(self, "{}", &msg);
             // return Err(self.invalid_argument(&msg));
             return Ok(());
+            // END NOT TESTED
         }
         let channel_value_sat = 0; // Placeholder value, not known yet.
         let inmem_keys = self.keys_manager.get_channel_keys_with_nonce(

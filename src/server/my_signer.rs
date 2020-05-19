@@ -166,7 +166,9 @@ impl MySigner {
                     Some(ChannelSlot::Ready(chan)) => Some(chan as &mut ChannelBase),
                 };
                 let base = opt_base.ok_or_else(|| {
+                    // BEGIN NOT TESTED
                     self.invalid_argument(format!("no such channel: {}", &channel_id))
+                    // END NOT TESTED
                 })?;
                 f(base)
             },
@@ -1071,6 +1073,7 @@ mod tests {
     }
 
     #[ignore] // Ignore this test while we allow extra NewChannel calls.
+    // BEGIN NOT TESTED
     #[test]
     fn node_new_channel_already_exists_test() {
         let signer = MySigner::new();
@@ -1089,6 +1092,7 @@ mod tests {
             format!("channel already exists: {}", TEST_CHANNEL_ID[0])
         );
     }
+    // END NOT TESTED
 
     #[test]
     fn ready_channel_already_ready_test() {

@@ -33,6 +33,8 @@ impl MySigner {
         Status::invalid_argument(s)
     }
 
+    // BEGIN NOT TESTED
+
     #[allow(dead_code)]
     pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
@@ -40,8 +42,6 @@ impl MySigner {
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
     }
-
-    // BEGIN NOT TESTED
 
     fn node_id(&self, arg: Option<NodeId>) -> Result<PublicKey, Status> {
         let der_vec = &arg
