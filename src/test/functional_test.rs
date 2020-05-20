@@ -1,3 +1,5 @@
+// FILE NOT TESTED
+
 use std::sync::{Arc, Mutex};
 
 use bitcoin::{Network, Script};

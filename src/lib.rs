@@ -1,4 +1,4 @@
-#![crate_name = "lightning_signer"]
+#![crate_name = "lightning_signer"] // NOT TESTED
 #![forbid(unsafe_code)]
 #![allow(bare_trait_objects)]
 #![allow(ellipsis_inclusive_range_patterns)]

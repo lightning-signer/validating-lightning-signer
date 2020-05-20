@@ -2,19 +2,19 @@ use std::cmp;
 use std::cmp::Ordering;
 use std::convert::TryInto;
 
-use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut};
 use bitcoin::blockdata::opcodes::all::{
     OP_CHECKMULTISIG, OP_CHECKSIG, OP_CLTV, OP_CSV, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL,
     OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHNUM_2, OP_SIZE, OP_SWAP,
 };
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip143;
-use bitcoin_hashes::{Hash, HashEngine};
+use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut};
 use bitcoin_hashes::sha256::Hash as Sha256;
+use bitcoin_hashes::{Hash, HashEngine};
 use lightning::chain::keysinterface::ChannelKeys;
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
-    HTLCOutputInCommitment, make_funding_redeemscript, TxCreationKeys,
+    make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::channelmanager::PaymentHash;
 use secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signature};

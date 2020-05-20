@@ -2,9 +2,9 @@ use std::convert::TryInto;
 
 use backtrace::Backtrace;
 use bitcoin;
-use bitcoin::{OutPoint, Script};
 use bitcoin::consensus::{deserialize, encode};
 use bitcoin::util::psbt::serialize::Deserialize;
+use bitcoin::{OutPoint, Script};
 use bitcoin_hashes::Hash;
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
@@ -12,10 +12,10 @@ use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::channelmanager::PaymentHash;
 use secp256k1::{PublicKey, SecretKey};
 use serde_json::json;
-use tonic::{Request, Response, Status, transport::Server};
+use tonic::{transport::Server, Request, Response, Status};
 
-use remotesigner::*;
 use remotesigner::signer_server::{Signer, SignerServer};
+use remotesigner::*;
 
 use crate::node::node::{ChannelId, ChannelSetup};
 use crate::server::my_signer::MySigner;
@@ -318,6 +318,7 @@ impl Signer for MySigner {
             ChannelSetup {
                 is_outbound: req.is_outbound,
                 channel_value_sat: req.channel_value_sat,
+                push_value_msat: req.push_value_msat,
                 funding_outpoint: funding_outpoint,
                 local_to_self_delay: req.local_to_self_delay as u16,
                 local_shutdown_script: local_shutdown_script.clone(),

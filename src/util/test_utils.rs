@@ -22,14 +22,17 @@ use crate::node::node::ChannelSetup;
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 
 pub struct TestVecWriter(pub Vec<u8>);
+
+// BEGIN NOT TESTED
+
 impl Writer for TestVecWriter {
-	fn write_all(&mut self, buf: &[u8]) -> Result<(), ::std::io::Error> {
-		self.0.extend_from_slice(buf);
-		Ok(())
-	}
-	fn size_hint(&mut self, size: usize) {
-		self.0.reserve_exact(size);
-	}
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), ::std::io::Error> {
+        self.0.extend_from_slice(buf);
+        Ok(())
+    }
+    fn size_hint(&mut self, size: usize) {
+        self.0.reserve_exact(size);
+    }
 }
 
 pub struct TestFeeEstimator {
@@ -41,6 +44,8 @@ impl chaininterface::FeeEstimator for TestFeeEstimator {
         self.sat_per_kw
     }
 }
+
+// END NOT TESTED
 
 pub struct TestBroadcaster {
     pub txn_broadcasted: Mutex<Vec<Transaction>>,
@@ -112,6 +117,8 @@ pub struct TestKeysInterface {
     pub override_channel_id_priv: Mutex<Option<[u8; 32]>>,
 }
 
+// BEGIN NOT TESTED
+
 impl keysinterface::KeysInterface for TestKeysInterface {
     type ChanKeySigner = EnforcingChannelKeys;
 
@@ -124,15 +131,8 @@ impl keysinterface::KeysInterface for TestKeysInterface {
     fn get_shutdown_pubkey(&self) -> PublicKey {
         self.backing.get_shutdown_pubkey()
     }
-    fn get_channel_keys(
-        &self,
-        inbound: bool,
-        channel_value_sat: u64,
-    ) -> EnforcingChannelKeys {
-        EnforcingChannelKeys::new(self.backing.get_channel_keys(
-            inbound,
-            channel_value_sat,
-        ))
+    fn get_channel_keys(&self, inbound: bool, channel_value_sat: u64) -> EnforcingChannelKeys {
+        EnforcingChannelKeys::new(self.backing.get_channel_keys(inbound, channel_value_sat))
     }
 
     fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
@@ -152,14 +152,23 @@ impl keysinterface::KeysInterface for TestKeysInterface {
 
 impl TestKeysInterface {
     pub fn new(seed: &[u8; 32], network: Network) -> Self {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards");
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards");
         Self {
-            backing: keysinterface::KeysManager::new(seed, network, now.as_secs(), now.subsec_nanos()),
+            backing: keysinterface::KeysManager::new(
+                seed,
+                network,
+                now.as_secs(),
+                now.subsec_nanos(),
+            ),
             override_session_priv: Mutex::new(None),
             override_channel_id_priv: Mutex::new(None),
         }
     }
 }
+
+// END NOT TESTED
 
 pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> PublicKey {
     PublicKey::from_secret_key(
@@ -214,6 +223,7 @@ pub fn make_test_channel_setup() -> ChannelSetup {
     ChannelSetup {
         is_outbound: true,
         channel_value_sat: 300,
+        push_value_msat: 0,
         funding_outpoint: BitcoinOutPoint {
             txid: Txid::from_slice(&[2u8; 32]).unwrap(),
             vout: 0,

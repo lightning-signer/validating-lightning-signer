@@ -2,23 +2,23 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use bitcoin;
-use bitcoin::{Address, Network, Script, SigHashType};
 use bitcoin::hashes::Hash;
 use bitcoin::util::bip143;
 use bitcoin::util::bip143::SighashComponents;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use bitcoin::{Address, Network, Script, SigHashType};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{ChannelPublicKeys, derive_private_key};
+use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys};
 use lightning::util::logger::Logger;
-use rand::{Rng, thread_rng};
-use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
+use rand::{thread_rng, Rng};
 use secp256k1::ecdh::SharedSecret;
+use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use tonic::Status;
 
 use crate::node::node::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, Node};
 use crate::server::my_keys_manager::MyKeysManager;
-use crate::tx::tx::{build_close_tx, HTLCInfo2, sign_commitment};
+use crate::tx::tx::{build_close_tx, sign_commitment, HTLCInfo2};
 use crate::util::crypto_utils::derive_private_revocation_key;
 use crate::util::test_utils::TestLogger;
 
@@ -866,16 +866,16 @@ impl MySigner {
 #[cfg(test)]
 mod tests {
     use bitcoin;
-    use bitcoin::{OutPoint, TxIn, TxOut};
     use bitcoin::blockdata::opcodes;
     use bitcoin::blockdata::script::Builder;
     use bitcoin::consensus::deserialize;
     use bitcoin::util::bip143;
     use bitcoin::util::psbt::serialize::Serialize;
+    use bitcoin::{OutPoint, TxIn, TxOut};
     use bitcoin_hashes::hash160::Hash as Hash160;
     use lightning::ln::chan_utils::{
-        build_htlc_transaction, get_htlc_redeemscript, HTLCOutputInCommitment,
-        make_funding_redeemscript, TxCreationKeys,
+        build_htlc_transaction, get_htlc_redeemscript, make_funding_redeemscript,
+        HTLCOutputInCommitment, TxCreationKeys,
     };
     use lightning::ln::channelmanager::PaymentHash;
     use secp256k1::recovery::{RecoverableSignature, RecoveryId};

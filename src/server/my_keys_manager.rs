@@ -1,15 +1,15 @@
 use std::convert::TryInto;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
-use bitcoin::{Network, Script};
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin_hashes::{Hash, HashEngine};
+use bitcoin::{Network, Script};
 use bitcoin_hashes::hash160::Hash as Hash160;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::sha256::HashEngine as Sha256State;
+use bitcoin_hashes::{Hash, HashEngine};
 use lightning::chain::keysinterface::{InMemoryChannelKeys, KeysInterface};
 use lightning::util::logger::Logger;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Signing};
@@ -198,11 +198,7 @@ impl KeysInterface for MyKeysManager {
     }
 
     // BEGIN NOT TESTED
-    fn get_channel_keys(
-        &self,
-        _inbound: bool,
-        _channel_value_sat: u64,
-    ) -> InMemoryChannelKeys {
+    fn get_channel_keys(&self, _inbound: bool, _channel_value_sat: u64) -> InMemoryChannelKeys {
         unimplemented!();
     }
 

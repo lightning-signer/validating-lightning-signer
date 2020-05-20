@@ -6,11 +6,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use backtrace::Backtrace;
 use bitcoin;
-use bitcoin::{Network, OutPoint, Script, SigHashType};
 use bitcoin::util::bip32::ExtendedPrivKey;
+use bitcoin::{Network, OutPoint, Script, SigHashType};
 use bitcoin_hashes::core::fmt::{Error, Formatter};
-use bitcoin_hashes::Hash;
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
+use bitcoin_hashes::Hash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
@@ -20,10 +20,10 @@ use tonic::Status;
 
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
-use crate::server::my_keys_manager::{INITIAL_COMMITMENT_NUMBER, MyKeysManager};
+use crate::server::my_keys_manager::{MyKeysManager, INITIAL_COMMITMENT_NUMBER};
 use crate::tx::tx::{
-    build_commitment_tx, CommitmentInfo, CommitmentInfo2,
-    get_commitment_transaction_number_obscure_factor, HTLCInfo2, sign_commitment,
+    build_commitment_tx, get_commitment_transaction_number_obscure_factor, sign_commitment,
+    CommitmentInfo, CommitmentInfo2, HTLCInfo2,
 };
 use crate::util::crypto_utils::{
     derive_public_key, derive_public_revocation_key, payload_for_p2wpkh,
@@ -52,6 +52,7 @@ impl fmt::Display for ChannelId {
 pub struct ChannelSetup {
     pub is_outbound: bool,
     pub channel_value_sat: u64, // DUP keys.inner.channel_value_satoshis
+    pub push_value_msat: u64,
     pub funding_outpoint: OutPoint,
     pub local_to_self_delay: u16,
     pub local_shutdown_script: Script,    // previously MISSING?
@@ -67,7 +68,7 @@ pub struct ChannelStub {
     pub logger: Arc<Logger>,
     pub secp_ctx: Secp256k1<All>,
     pub keys: EnforcingChannelKeys, // Incomplete, channel_value_sat is placeholder.
-    channel_nonce: Vec<u8>,         // Since keys.inner is private we have to regenerate the keys,
+    channel_nonce: Vec<u8>,         // Since keys.inner is private needed to regenerate the keys,
 }
 
 // After ReadyChannel

@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use bitcoin::{Script, Transaction};
 use lightning::chain::keysinterface::{ChannelKeys, InMemoryChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, LocalCommitmentTransaction, TxCreationKeys};
+use lightning::ln::chan_utils::{
+    ChannelPublicKeys, HTLCOutputInCommitment, LocalCommitmentTransaction, TxCreationKeys,
+};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 
@@ -117,12 +119,19 @@ impl ChannelKeys for LoopbackChannelSigner {
     }
 
     fn sign_local_commitment<T: secp256k1::Signing + secp256k1::Verification>(
-        &self, _local_commitment_tx: &LocalCommitmentTransaction, _secp_ctx: &Secp256k1<T>) -> Result<Signature, ()> {
+        &self,
+        _local_commitment_tx: &LocalCommitmentTransaction,
+        _secp_ctx: &Secp256k1<T>,
+    ) -> Result<Signature, ()> {
         unimplemented!()
     }
 
     fn sign_local_commitment_htlc_transactions<T: secp256k1::Signing + secp256k1::Verification>(
-        &self, _local_commitment_tx: &LocalCommitmentTransaction, _local_csv: u16, _secp_ctx: &Secp256k1<T>) -> Result<Vec<Option<Signature>>, ()> {
+        &self,
+        _local_commitment_tx: &LocalCommitmentTransaction,
+        _local_csv: u16,
+        _secp_ctx: &Secp256k1<T>,
+    ) -> Result<Vec<Option<Signature>>, ()> {
         unimplemented!()
     }
 
@@ -206,15 +215,8 @@ impl KeysInterface for LoopbackSignerKeysInterface {
             .unwrap()
     }
 
-    fn get_channel_keys(
-        &self,
-        _inbound: bool,
-        _channel_value_sat: u64,
-    ) -> Self::ChanKeySigner {
-        let channel_id = self
-            .signer
-            .new_channel(&self.node_id, None, None)
-            .unwrap();
+    fn get_channel_keys(&self, _inbound: bool, _channel_value_sat: u64) -> Self::ChanKeySigner {
+        let channel_id = self.signer.new_channel(&self.node_id, None, None).unwrap();
         self.signer
             .ready_channel(&self.node_id, channel_id, make_test_channel_setup())
             .unwrap();
