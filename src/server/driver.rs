@@ -2,20 +2,20 @@ use std::convert::TryInto;
 
 use backtrace::Backtrace;
 use bitcoin;
+use bitcoin::{OutPoint, Script};
 use bitcoin::consensus::{deserialize, encode};
 use bitcoin::util::psbt::serialize::Deserialize;
-use bitcoin::{OutPoint, Script};
-use bitcoin_hashes::{sha256d, Hash};
+use bitcoin_hashes::Hash;
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::channelmanager::PaymentHash;
 use secp256k1::{PublicKey, SecretKey};
 use serde_json::json;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status, transport::Server};
 
-use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
+use remotesigner::signer_server::{Signer, SignerServer};
 
 use crate::node::node::{ChannelId, ChannelSetup};
 use crate::server::my_signer::MySigner;
@@ -250,7 +250,7 @@ impl Signer for MySigner {
 
         let basepoints = Basepoints {
             revocation: Some(self.to_pubkey(bps.revocation_basepoint)),
-            payment: Some(self.to_pubkey(bps.payment_basepoint)),
+            payment: Some(self.to_pubkey(bps.payment_point)),
             htlc: Some(self.to_pubkey(bps.htlc_basepoint)),
             delayed_payment: Some(self.to_pubkey(bps.delayed_payment_basepoint)),
             funding_pubkey: Some(self.to_pubkey(bps.funding_pubkey)),
@@ -283,7 +283,7 @@ impl Signer for MySigner {
         let req_outpoint = req
             .funding_outpoint
             .ok_or_else(|| self.invalid_argument("missing funding outpoint"))?;
-        let txid = sha256d::Hash::from_slice(&req_outpoint.txid).map_err(|err| {
+        let txid = bitcoin::Txid::from_slice(&req_outpoint.txid).map_err(|err| {
             self.invalid_argument(format!("cannot decode funding outpoint txid: {}", err))
         })?;
         let funding_outpoint = OutPoint {
@@ -302,7 +302,7 @@ impl Signer for MySigner {
         let remote_points = ChannelPublicKeys {
             funding_pubkey: self.public_key(remote_points.funding_pubkey)?,
             revocation_basepoint: self.public_key(remote_points.revocation)?,
-            payment_basepoint: self.public_key(remote_points.payment)?,
+            payment_point: self.public_key(remote_points.payment)?,
             delayed_payment_basepoint: self.public_key(remote_points.delayed_payment)?,
             htlc_basepoint: self.public_key(remote_points.htlc)?,
         };

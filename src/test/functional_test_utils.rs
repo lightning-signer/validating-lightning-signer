@@ -1,17 +1,13 @@
 //! A bunch of useful utilities for building networks of nodes and exchanging messages between
 //! nodes for functional tests.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-
 use bitcoin;
 use bitcoin::blockdata::block::BlockHeader;
-use bitcoin::util::hash::BitcoinHash;
 use bitcoin::Network;
+use bitcoin::util::hash::BitcoinHash;
+use bitcoin_hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::sha256d::Hash as Sha256d;
-use bitcoin_hashes::Hash;
 use chain::chaininterface;
 use chain::keysinterface::KeysInterface;
 use chain::transaction::OutPoint;
@@ -25,9 +21,12 @@ use ln::features::InitFeatures;
 use ln::msgs;
 use ln::msgs::{ChannelMessageHandler, RoutingMessageHandler};
 use ln::router::{Route, Router};
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use secp256k1::key::PublicKey;
 use secp256k1::Secp256k1;
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use util::errors::APIError;
 use util::events::{Event, EventsProvider, MessageSendEvent, MessageSendEventsProvider};
 use util::logger::Logger;
@@ -1266,4 +1265,78 @@ pub fn create_network<'a, 'b, S: ChannelKeys>(
     }
 
     nodes
+}
+
+pub struct TestChannelMonitor<'a> {
+    pub added_monitors: Mutex<Vec<(OutPoint, channelmonitor::ChannelMonitor<EnforcingChannelKeys>)>>,
+    pub latest_monitor_update_id: Mutex<HashMap<[u8; 32], (OutPoint, u64)>>,
+    pub simple_monitor: channelmonitor::SimpleManyChannelMonitor<OutPoint, EnforcingChannelKeys, &'a chaininterface::BroadcasterInterface, &'a TestFeeEstimator, &'a TestLogger, &'a ChainWatchInterface>,
+    pub update_ret: Mutex<Result<(), channelmonitor::ChannelMonitorUpdateErr>>,
+    // If this is set to Some(), after the next return, we'll always return this until update_ret
+    // is changed:
+    pub next_update_ret: Mutex<Option<Result<(), channelmonitor::ChannelMonitorUpdateErr>>>,
+}
+
+impl<'a> TestChannelMonitor<'a> {
+    pub fn new(chain_monitor: &'a chaininterface::ChainWatchInterface, broadcaster: &'a chaininterface::BroadcasterInterface, logger: &'a TestLogger, fee_estimator: &'a TestFeeEstimator) -> Self {
+        Self {
+            added_monitors: Mutex::new(Vec::new()),
+            latest_monitor_update_id: Mutex::new(HashMap::new()),
+            simple_monitor: channelmonitor::SimpleManyChannelMonitor::new(chain_monitor, broadcaster, logger, fee_estimator),
+            update_ret: Mutex::new(Ok(())),
+            next_update_ret: Mutex::new(None),
+        }
+    }
+}
+
+impl<'a> channelmonitor::ManyChannelMonitor<EnforcingChannelKeys> for TestChannelMonitor<'a> {
+    fn add_monitor(&self, funding_txo: OutPoint, monitor: channelmonitor::ChannelMonitor<EnforcingChannelKeys>) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
+        // At every point where we get a monitor update, we should be able to send a useful monitor
+        // to a watchtower and disk...
+        let mut w = TestVecWriter(Vec::new());
+        monitor.write_for_disk(&mut w).unwrap();
+        let new_monitor = <(BlockHash, channelmonitor::ChannelMonitor<EnforcingChannelKeys>)>::read(
+            &mut ::std::io::Cursor::new(&w.0)).unwrap().1;
+        assert!(new_monitor == monitor);
+        self.latest_monitor_update_id.lock().unwrap().insert(funding_txo.to_channel_id(), (funding_txo, monitor.get_latest_update_id()));
+        self.added_monitors.lock().unwrap().push((funding_txo, monitor));
+        assert!(self.simple_monitor.add_monitor(funding_txo, new_monitor).is_ok());
+
+        let ret = self.update_ret.lock().unwrap().clone();
+        if let Some(next_ret) = self.next_update_ret.lock().unwrap().take() {
+            *self.update_ret.lock().unwrap() = next_ret;
+        }
+        ret
+    }
+
+    fn update_monitor(&self, funding_txo: OutPoint, update: channelmonitor::ChannelMonitorUpdate) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
+        // Every monitor update should survive roundtrip
+        let mut w = TestVecWriter(Vec::new());
+        update.write(&mut w).unwrap();
+        assert!(channelmonitor::ChannelMonitorUpdate::read(
+            &mut ::std::io::Cursor::new(&w.0)).unwrap() == update);
+
+        self.latest_monitor_update_id.lock().unwrap().insert(funding_txo.to_channel_id(), (funding_txo, update.update_id));
+        assert!(self.simple_monitor.update_monitor(funding_txo, update).is_ok());
+        // At every point where we get a monitor update, we should be able to send a useful monitor
+        // to a watchtower and disk...
+        let monitors = self.simple_monitor.monitors.lock().unwrap();
+        let monitor = monitors.get(&funding_txo).unwrap();
+        w.0.clear();
+        monitor.write_for_disk(&mut w).unwrap();
+        let new_monitor = <(BlockHash, channelmonitor::ChannelMonitor<EnforcingChannelKeys>)>::read(
+            &mut ::std::io::Cursor::new(&w.0)).unwrap().1;
+        assert!(new_monitor == *monitor);
+        self.added_monitors.lock().unwrap().push((funding_txo, new_monitor));
+
+        let ret = self.update_ret.lock().unwrap().clone();
+        if let Some(next_ret) = self.next_update_ret.lock().unwrap().take() {
+            *self.update_ret.lock().unwrap() = next_ret;
+        }
+        ret
+    }
+
+    fn get_and_clear_pending_htlcs_updated(&self) -> Vec<HTLCUpdate> {
+        return self.simple_monitor.get_and_clear_pending_htlcs_updated();
+    }
 }

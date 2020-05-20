@@ -1,15 +1,15 @@
 use std::convert::TryInto;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
+use bitcoin::{Network, Script};
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::{Network, Script};
+use bitcoin_hashes::{Hash, HashEngine};
 use bitcoin_hashes::hash160::Hash as Hash160;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::sha256::HashEngine as Sha256State;
-use bitcoin_hashes::{Hash, HashEngine};
 use lightning::chain::keysinterface::{InMemoryChannelKeys, KeysInterface};
 use lightning::util::logger::Logger;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Signing};
@@ -160,7 +160,7 @@ impl MyKeysManager {
         ndx += 32;
         let htlc_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
-        let payment_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
+        let payment_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
         let delayed_payment_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
@@ -171,7 +171,7 @@ impl MyKeysManager {
             &secp_ctx,
             funding_key,
             revocation_base_key,
-            payment_base_key,
+            payment_key,
             delayed_payment_base_key,
             htlc_base_key,
             commitment_seed,
@@ -200,13 +200,10 @@ impl KeysInterface for MyKeysManager {
     // BEGIN NOT TESTED
     fn get_channel_keys(
         &self,
-        _channel_id: [u8; 32],
         _inbound: bool,
         _channel_value_sat: u64,
     ) -> InMemoryChannelKeys {
         unimplemented!();
-        #[allow(unreachable_code)]
-        self.get_channel_keys_with_nonce(&_channel_id, _channel_value_sat, "rust-lightning-signer")
     }
 
     fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
@@ -287,7 +284,7 @@ mod tests {
                 == "517c009452b4baa9df42d6c8cddc966e017d49606524ce7728681b593a5659c1"
         );
         assert!(
-            hex::encode(&keys.payment_base_key()[..])
+            hex::encode(&keys.payment_key()[..])
                 == "54ce3b75dcc2731604f3db55ecd1520d797a154cc757d6d98c3ffd1e90a9a25a"
         );
         assert!(

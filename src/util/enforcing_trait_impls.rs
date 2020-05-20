@@ -1,16 +1,19 @@
 use std::cmp;
+use std::io::Error;
 use std::sync::{Arc, Mutex};
 
 use bitcoin::blockdata::transaction::Transaction;
 use chain::keysinterface::{ChannelKeys, InMemoryChannelKeys};
 use lightning::chain;
 use lightning::ln;
-use lightning::ln::chan_utils::TxCreationKeys;
+use lightning::ln::chan_utils::{LocalCommitmentTransaction, TxCreationKeys};
+use lightning::ln::msgs::DecodeError;
+use lightning::util::ser::{Readable, Writeable, Writer};
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 use ln::msgs;
 use secp256k1;
-use secp256k1::key::{PublicKey, SecretKey};
 use secp256k1::{Secp256k1, Signature};
+use secp256k1::key::{PublicKey, SecretKey};
 
 /// Enforces some rules on ChannelKeys calls. Eventually we will
 /// probably want to expose a variant of this which would essentially
@@ -40,7 +43,6 @@ impl EnforcingChannelKeys {
     ) {
         let revocation_base =
             PublicKey::from_secret_key(secp_ctx, &self.inner.revocation_base_key());
-        let payment_base = PublicKey::from_secret_key(secp_ctx, &self.inner.payment_base_key());
         let htlc_base = PublicKey::from_secret_key(secp_ctx, &self.inner.htlc_base_key());
 
         let remote_points = self.inner.remote_pubkeys().as_ref().unwrap();
@@ -51,7 +53,6 @@ impl EnforcingChannelKeys {
             &remote_points.delayed_payment_basepoint,
             &remote_points.htlc_basepoint,
             &revocation_base,
-            &payment_base,
             &htlc_base,
         )
         .unwrap();
@@ -69,8 +70,8 @@ impl ChannelKeys for EnforcingChannelKeys {
     fn revocation_base_key(&self) -> &SecretKey {
         self.inner.revocation_base_key()
     }
-    fn payment_base_key(&self) -> &SecretKey {
-        self.inner.payment_base_key()
+    fn payment_key(&self) -> &SecretKey {
+        self.inner.payment_key()
     }
     fn delayed_payment_base_key(&self) -> &SecretKey {
         self.inner.delayed_payment_base_key()
@@ -133,6 +134,20 @@ impl ChannelKeys for EnforcingChannelKeys {
             .unwrap())
     }
 
+    fn sign_local_commitment<T: secp256k1::Signing + secp256k1::Verification>(
+        &self,
+        local_commitment_tx: &LocalCommitmentTransaction,
+        secp_ctx: &Secp256k1<T>) -> Result<Signature, ()> {
+        self.inner.sign_local_commitment(local_commitment_tx, secp_ctx)
+    }
+
+    fn sign_local_commitment_htlc_transactions<T: secp256k1::Signing + secp256k1::Verification>(
+        &self,
+        local_commitment_tx: &LocalCommitmentTransaction,
+        local_csv: u16, secp_ctx: &Secp256k1<T>) -> Result<Vec<Option<Signature>>, ()> {
+        self.inner.sign_local_commitment_htlc_transactions(local_commitment_tx, local_csv, secp_ctx)
+    }
+
     fn sign_closing_transaction<T: secp256k1::Signing>(
         &self,
         closing_tx: &Transaction,
@@ -155,4 +170,25 @@ impl ChannelKeys for EnforcingChannelKeys {
     fn set_remote_channel_pubkeys(&mut self, channel_pubkeys: &ChannelPublicKeys) {
         self.inner.set_remote_channel_pubkeys(channel_pubkeys)
     }
+}
+
+impl Writeable for EnforcingChannelKeys {
+	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+		self.inner.write(writer)?;
+		let (obscure, last) = *self.commitment_number_obscure_and_last.lock().unwrap();
+		obscure.write(writer)?;
+		last.write(writer)?;
+		Ok(())
+	}
+}
+
+impl Readable for EnforcingChannelKeys {
+	fn read<R: ::std::io::Read>(reader: &mut R) -> Result<Self, DecodeError> {
+		let inner = Readable::read(reader)?;
+		let obscure_and_last = Readable::read(reader)?;
+		Ok(EnforcingChannelKeys {
+			inner: inner,
+			commitment_number_obscure_and_last: Arc::new(Mutex::new(obscure_and_last))
+		})
+	}
 }
