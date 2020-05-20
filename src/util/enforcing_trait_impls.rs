@@ -12,17 +12,19 @@ use lightning::util::ser::{Readable, Writeable, Writer};
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 use ln::msgs;
 use secp256k1;
-use secp256k1::{Secp256k1, Signature};
 use secp256k1::key::{PublicKey, SecretKey};
+use secp256k1::{Secp256k1, Signature};
 
 /// Enforces some rules on ChannelKeys calls. Eventually we will
 /// probably want to expose a variant of this which would essentially
 /// be what you'd want to run on a hardware wallet.
+// BEGIN NOT TESTED
 #[derive(Clone)]
 pub struct EnforcingChannelKeys {
     pub inner: InMemoryChannelKeys,
     commitment_number_obscure_and_last: Arc<Mutex<(Option<u64>, u64)>>,
 }
+// END NOT TESTED
 
 impl EnforcingChannelKeys {
     pub fn new(inner: InMemoryChannelKeys) -> Self {
@@ -73,12 +75,14 @@ impl ChannelKeys for EnforcingChannelKeys {
     fn payment_key(&self) -> &SecretKey {
         self.inner.payment_key()
     }
+    // BEGIN NOT TESTED
     fn delayed_payment_base_key(&self) -> &SecretKey {
         self.inner.delayed_payment_base_key()
     }
     fn htlc_base_key(&self) -> &SecretKey {
         self.inner.htlc_base_key()
     }
+    // END NOT TESTED
     fn commitment_seed(&self) -> &[u8; 32] {
         self.inner.commitment_seed()
     }
@@ -116,7 +120,7 @@ impl ChannelKeys for EnforcingChannelKeys {
                 obscured_commitment_transaction_number ^ commitment_data.0.unwrap();
             assert!(
                 commitment_number == commitment_data.1
-                    || commitment_number == commitment_data.1 + 1
+                    || commitment_number == commitment_data.1 + 1 // NOT TESTED
             );
             commitment_data.1 = cmp::max(commitment_number, commitment_data.1)
         }
@@ -137,15 +141,20 @@ impl ChannelKeys for EnforcingChannelKeys {
     fn sign_local_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         local_commitment_tx: &LocalCommitmentTransaction,
-        secp_ctx: &Secp256k1<T>) -> Result<Signature, ()> {
-        self.inner.sign_local_commitment(local_commitment_tx, secp_ctx)
+        secp_ctx: &Secp256k1<T>,
+    ) -> Result<Signature, ()> {
+        self.inner
+            .sign_local_commitment(local_commitment_tx, secp_ctx)
     }
 
     fn sign_local_commitment_htlc_transactions<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         local_commitment_tx: &LocalCommitmentTransaction,
-        local_csv: u16, secp_ctx: &Secp256k1<T>) -> Result<Vec<Option<Signature>>, ()> {
-        self.inner.sign_local_commitment_htlc_transactions(local_commitment_tx, local_csv, secp_ctx)
+        local_csv: u16,
+        secp_ctx: &Secp256k1<T>,
+    ) -> Result<Vec<Option<Signature>>, ()> {
+        self.inner
+            .sign_local_commitment_htlc_transactions(local_commitment_tx, local_csv, secp_ctx)
     }
 
     fn sign_closing_transaction<T: secp256k1::Signing>(
@@ -159,6 +168,8 @@ impl ChannelKeys for EnforcingChannelKeys {
             .unwrap())
     }
 
+    // BEGIN NOT TESTED
+
     fn sign_channel_announcement<T: secp256k1::Signing>(
         &self,
         msg: &msgs::UnsignedChannelAnnouncement,
@@ -170,25 +181,29 @@ impl ChannelKeys for EnforcingChannelKeys {
     fn set_remote_channel_pubkeys(&mut self, channel_pubkeys: &ChannelPublicKeys) {
         self.inner.set_remote_channel_pubkeys(channel_pubkeys)
     }
+
+    // END NOT TESTED
 }
 
+// BEGIN NOT TESTED
 impl Writeable for EnforcingChannelKeys {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
-		self.inner.write(writer)?;
-		let (obscure, last) = *self.commitment_number_obscure_and_last.lock().unwrap();
-		obscure.write(writer)?;
-		last.write(writer)?;
-		Ok(())
-	}
+    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+        self.inner.write(writer)?;
+        let (obscure, last) = *self.commitment_number_obscure_and_last.lock().unwrap();
+        obscure.write(writer)?;
+        last.write(writer)?;
+        Ok(())
+    }
 }
+// END NOT TESTED
 
 impl Readable for EnforcingChannelKeys {
-	fn read<R: ::std::io::Read>(reader: &mut R) -> Result<Self, DecodeError> {
-		let inner = Readable::read(reader)?;
-		let obscure_and_last = Readable::read(reader)?;
-		Ok(EnforcingChannelKeys {
-			inner: inner,
-			commitment_number_obscure_and_last: Arc::new(Mutex::new(obscure_and_last))
-		})
-	}
+    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<Self, DecodeError> {
+        let inner = Readable::read(reader)?;
+        let obscure_and_last = Readable::read(reader)?;
+        Ok(EnforcingChannelKeys {
+            inner: inner,
+            commitment_number_obscure_and_last: Arc::new(Mutex::new(obscure_and_last)),
+        })
+    }
 }

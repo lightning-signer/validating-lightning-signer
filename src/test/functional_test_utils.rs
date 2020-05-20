@@ -1,13 +1,15 @@
 //! A bunch of useful utilities for building networks of nodes and exchanging messages between
 //! nodes for functional tests.
 
+// FILE NOT TESTED
+
 use bitcoin;
 use bitcoin::blockdata::block::BlockHeader;
-use bitcoin::Network;
 use bitcoin::util::hash::BitcoinHash;
-use bitcoin_hashes::Hash;
+use bitcoin::Network;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::sha256d::Hash as Sha256d;
+use bitcoin_hashes::Hash;
 use chain::chaininterface;
 use chain::keysinterface::KeysInterface;
 use chain::transaction::OutPoint;
@@ -21,7 +23,7 @@ use ln::features::InitFeatures;
 use ln::msgs;
 use ln::msgs::{ChannelMessageHandler, RoutingMessageHandler};
 use ln::router::{Route, Router};
-use rand::{Rng, thread_rng};
+use rand::{thread_rng, Rng};
 use secp256k1::key::PublicKey;
 use secp256k1::Secp256k1;
 use std::cell::RefCell;
@@ -262,7 +264,7 @@ pub fn create_funding_transaction<S: ChannelKeys>(
             let funding_outpoint = OutPoint::new(tx.txid(), 0);
             (*temporary_channel_id, tx, funding_outpoint)
         }
-        _ => panic!("Unexpected event"), // NOT TESTED
+        _ => panic!("Unexpected event"),
     }
 }
 
@@ -355,7 +357,7 @@ pub fn create_chan_between_nodes_with_value_init<S: ChannelKeys>(
             assert_eq!(user_channel_id, 42);
             assert_eq!(*funding_txo, funding_output);
         }
-        _ => panic!("Unexpected event"), // NOT TESTED
+        _ => panic!("Unexpected event"),
     };
 
     tx
@@ -403,7 +405,7 @@ pub fn create_chan_between_nodes_with_value_confirm_second<S: ChannelKeys>(
                     assert_eq!(*node_id, node_recv.node.get_our_node_id());
                     msg.clone()
                 }
-                _ => panic!("Unexpected event"), // NOT TESTED
+                _ => panic!("Unexpected event"),
             },
             match events_6[1] {
                 MessageSendEvent::SendAnnouncementSignatures {
@@ -413,7 +415,7 @@ pub fn create_chan_between_nodes_with_value_confirm_second<S: ChannelKeys>(
                     assert_eq!(*node_id, node_recv.node.get_our_node_id());
                     msg.clone()
                 }
-                _ => panic!("Unexpected event"), // NOT TESTED
+                _ => panic!("Unexpected event"),
             },
         ),
         channel_id,
@@ -490,7 +492,7 @@ pub fn create_chan_between_nodes_with_value_b<S: ChannelKeys>(
             ref msg,
             ref update_msg,
         } => (msg, update_msg),
-        _ => panic!("Unexpected event"), // NOT TESTED
+        _ => panic!("Unexpected event"),
     };
 
     node_a
@@ -506,7 +508,7 @@ pub fn create_chan_between_nodes_with_value_b<S: ChannelKeys>(
             assert!(*announcement == *msg);
             update_msg
         }
-        _ => panic!("Unexpected event"), // NOT TESTED
+        _ => panic!("Unexpected event"),
     };
 
     *node_a.network_chan_count.borrow_mut() += 1;
@@ -515,7 +517,7 @@ pub fn create_chan_between_nodes_with_value_b<S: ChannelKeys>(
         (*announcement).clone(),
         (*as_update).clone(),
         (*bs_update).clone(),
-    ) // NOT TESTED
+    )
 }
 
 pub fn create_announced_chan_between_nodes<S: ChannelKeys>(
@@ -753,11 +755,10 @@ impl SendEvent {
             MessageSendEvent::UpdateHTLCs { node_id, updates } => {
                 SendEvent::from_commitment_update(node_id, updates)
             }
-            _ => panic!("Unexpected event type!"), // NOT TESTED
+            _ => panic!("Unexpected event type!"),
         }
     }
 
-    // BEGIN NOT TESTED
     pub fn from_node<S: ChannelKeys>(_node: &Node<S>) -> SendEvent {
         unimplemented!(); // TODO - Remove when tested.
         #[allow(unreachable_code)]
@@ -767,7 +768,6 @@ impl SendEvent {
             SendEvent::from_event(events.pop().unwrap())
         }
     }
-    // END NOT TESTED
 }
 
 macro_rules! check_added_monitors {
@@ -815,7 +815,7 @@ macro_rules! commitment_signed_dance {
                     }
                     _ => panic!("Unexpected event"),
                 },
-                events.get(1).map(|e| e.clone()), // NOT TESTED
+                events.get(1).map(|e| e.clone()),
             )
         };
         check_added_monitors!($node_b, 1);
@@ -939,7 +939,7 @@ pub fn send_along_route_with_hash<'a, 'b, S: ChannelKeys>(
                     assert_eq!(our_payment_hash, *payment_hash);
                     assert_eq!(amt, recv_value_sat);
                 }
-                _ => panic!("Unexpected event"), // NOT TESTED
+                _ => panic!("Unexpected event"),
             }
         } else {
             let mut events_2 = node.node.get_and_clear_pending_msg_events();
@@ -1054,7 +1054,7 @@ pub fn claim_payment_along_route<'a, 'b, S: ChannelKeys>(
         } else if update_next_msgs {
             next_msgs = get_next_msgs!(node);
         } else {
-            assert!(node.node.get_and_clear_pending_msg_events().is_empty()); // NOT TESTED
+            assert!(node.node.get_and_clear_pending_msg_events().is_empty());
         }
         if !skip_last && idx == expected_route.len() - 1 {
             assert_eq!(expected_next_node, origin_node.node.get_our_node_id());
@@ -1217,7 +1217,7 @@ pub fn create_node_chanmgrs<'a, 'b, S: ChannelKeys>(
             cfgs[i].logger.clone(),
             cfgs[i].keys_manager.clone(),
             if node_config[i].is_some() {
-                node_config[i].clone().unwrap() // NOT TESTED
+                node_config[i].clone().unwrap()
             } else {
                 default_config
             },
@@ -1268,9 +1268,21 @@ pub fn create_network<'a, 'b, S: ChannelKeys>(
 }
 
 pub struct TestChannelMonitor<'a> {
-    pub added_monitors: Mutex<Vec<(OutPoint, channelmonitor::ChannelMonitor<EnforcingChannelKeys>)>>,
+    pub added_monitors: Mutex<
+        Vec<(
+            OutPoint,
+            channelmonitor::ChannelMonitor<EnforcingChannelKeys>,
+        )>,
+    >,
     pub latest_monitor_update_id: Mutex<HashMap<[u8; 32], (OutPoint, u64)>>,
-    pub simple_monitor: channelmonitor::SimpleManyChannelMonitor<OutPoint, EnforcingChannelKeys, &'a chaininterface::BroadcasterInterface, &'a TestFeeEstimator, &'a TestLogger, &'a ChainWatchInterface>,
+    pub simple_monitor: channelmonitor::SimpleManyChannelMonitor<
+        OutPoint,
+        EnforcingChannelKeys,
+        &'a chaininterface::BroadcasterInterface,
+        &'a TestFeeEstimator,
+        &'a TestLogger,
+        &'a ChainWatchInterface,
+    >,
     pub update_ret: Mutex<Result<(), channelmonitor::ChannelMonitorUpdateErr>>,
     // If this is set to Some(), after the next return, we'll always return this until update_ret
     // is changed:
@@ -1278,11 +1290,21 @@ pub struct TestChannelMonitor<'a> {
 }
 
 impl<'a> TestChannelMonitor<'a> {
-    pub fn new(chain_monitor: &'a chaininterface::ChainWatchInterface, broadcaster: &'a chaininterface::BroadcasterInterface, logger: &'a TestLogger, fee_estimator: &'a TestFeeEstimator) -> Self {
+    pub fn new(
+        chain_monitor: &'a chaininterface::ChainWatchInterface,
+        broadcaster: &'a chaininterface::BroadcasterInterface,
+        logger: &'a TestLogger,
+        fee_estimator: &'a TestFeeEstimator,
+    ) -> Self {
         Self {
             added_monitors: Mutex::new(Vec::new()),
             latest_monitor_update_id: Mutex::new(HashMap::new()),
-            simple_monitor: channelmonitor::SimpleManyChannelMonitor::new(chain_monitor, broadcaster, logger, fee_estimator),
+            simple_monitor: channelmonitor::SimpleManyChannelMonitor::new(
+                chain_monitor,
+                broadcaster,
+                logger,
+                fee_estimator,
+            ),
             update_ret: Mutex::new(Ok(())),
             next_update_ret: Mutex::new(None),
         }
@@ -1290,17 +1312,34 @@ impl<'a> TestChannelMonitor<'a> {
 }
 
 impl<'a> channelmonitor::ManyChannelMonitor<EnforcingChannelKeys> for TestChannelMonitor<'a> {
-    fn add_monitor(&self, funding_txo: OutPoint, monitor: channelmonitor::ChannelMonitor<EnforcingChannelKeys>) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
+    fn add_monitor(
+        &self,
+        funding_txo: OutPoint,
+        monitor: channelmonitor::ChannelMonitor<EnforcingChannelKeys>,
+    ) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
         // At every point where we get a monitor update, we should be able to send a useful monitor
         // to a watchtower and disk...
         let mut w = TestVecWriter(Vec::new());
         monitor.write_for_disk(&mut w).unwrap();
-        let new_monitor = <(BlockHash, channelmonitor::ChannelMonitor<EnforcingChannelKeys>)>::read(
-            &mut ::std::io::Cursor::new(&w.0)).unwrap().1;
+        let new_monitor = <(
+            BlockHash,
+            channelmonitor::ChannelMonitor<EnforcingChannelKeys>,
+        )>::read(&mut ::std::io::Cursor::new(&w.0))
+        .unwrap()
+        .1;
         assert!(new_monitor == monitor);
-        self.latest_monitor_update_id.lock().unwrap().insert(funding_txo.to_channel_id(), (funding_txo, monitor.get_latest_update_id()));
-        self.added_monitors.lock().unwrap().push((funding_txo, monitor));
-        assert!(self.simple_monitor.add_monitor(funding_txo, new_monitor).is_ok());
+        self.latest_monitor_update_id.lock().unwrap().insert(
+            funding_txo.to_channel_id(),
+            (funding_txo, monitor.get_latest_update_id()),
+        );
+        self.added_monitors
+            .lock()
+            .unwrap()
+            .push((funding_txo, monitor));
+        assert!(self
+            .simple_monitor
+            .add_monitor(funding_txo, new_monitor)
+            .is_ok());
 
         let ret = self.update_ret.lock().unwrap().clone();
         if let Some(next_ret) = self.next_update_ret.lock().unwrap().take() {
@@ -1309,25 +1348,44 @@ impl<'a> channelmonitor::ManyChannelMonitor<EnforcingChannelKeys> for TestChanne
         ret
     }
 
-    fn update_monitor(&self, funding_txo: OutPoint, update: channelmonitor::ChannelMonitorUpdate) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
+    fn update_monitor(
+        &self,
+        funding_txo: OutPoint,
+        update: channelmonitor::ChannelMonitorUpdate,
+    ) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
         // Every monitor update should survive roundtrip
         let mut w = TestVecWriter(Vec::new());
         update.write(&mut w).unwrap();
-        assert!(channelmonitor::ChannelMonitorUpdate::read(
-            &mut ::std::io::Cursor::new(&w.0)).unwrap() == update);
+        assert!(
+            channelmonitor::ChannelMonitorUpdate::read(&mut ::std::io::Cursor::new(&w.0)).unwrap()
+                == update
+        );
 
-        self.latest_monitor_update_id.lock().unwrap().insert(funding_txo.to_channel_id(), (funding_txo, update.update_id));
-        assert!(self.simple_monitor.update_monitor(funding_txo, update).is_ok());
+        self.latest_monitor_update_id
+            .lock()
+            .unwrap()
+            .insert(funding_txo.to_channel_id(), (funding_txo, update.update_id));
+        assert!(self
+            .simple_monitor
+            .update_monitor(funding_txo, update)
+            .is_ok());
         // At every point where we get a monitor update, we should be able to send a useful monitor
         // to a watchtower and disk...
         let monitors = self.simple_monitor.monitors.lock().unwrap();
         let monitor = monitors.get(&funding_txo).unwrap();
         w.0.clear();
         monitor.write_for_disk(&mut w).unwrap();
-        let new_monitor = <(BlockHash, channelmonitor::ChannelMonitor<EnforcingChannelKeys>)>::read(
-            &mut ::std::io::Cursor::new(&w.0)).unwrap().1;
+        let new_monitor = <(
+            BlockHash,
+            channelmonitor::ChannelMonitor<EnforcingChannelKeys>,
+        )>::read(&mut ::std::io::Cursor::new(&w.0))
+        .unwrap()
+        .1;
         assert!(new_monitor == *monitor);
-        self.added_monitors.lock().unwrap().push((funding_txo, new_monitor));
+        self.added_monitors
+            .lock()
+            .unwrap()
+            .push((funding_txo, new_monitor));
 
         let ret = self.update_ret.lock().unwrap().clone();
         if let Some(next_ret) = self.next_update_ret.lock().unwrap().take() {

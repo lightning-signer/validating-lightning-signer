@@ -211,11 +211,13 @@ message ReadyChannelRequest {
 
   uint64 channel_value_sat = 4;
 
-  Outpoint funding_outpoint = 5;
+  uint64 push_value_msat = 5;
 
-  uint32 local_to_self_delay = 6;
+  Outpoint funding_outpoint = 6;
 
-  bytes local_shutdown_script = 7;
+  uint32 local_to_self_delay = 7;
+
+  bytes local_shutdown_script = 8;
 
   Basepoints remote_basepoints = 9;
 
