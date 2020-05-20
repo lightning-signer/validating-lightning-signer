@@ -1,30 +1,36 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bitcoin;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
-use bitcoin::hashes::{sha256d, Hash};
+use bitcoin::hash_types::Txid;
+use bitcoin::hashes::Hash;
 use bitcoin::network::constants::Network;
 use bitcoin::OutPoint as BitcoinOutPoint;
 use chain::chaininterface;
 use chain::chaininterface::ConfirmationTarget;
 use chain::keysinterface;
-use chain::transaction::OutPoint;
 use lightning::chain;
-use lightning::chain::keysinterface::ChannelKeys;
-use lightning::ln;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::util::logger::{Level, Logger, Record};
-use ln::channelmonitor;
-use ln::channelmonitor::HTLCUpdate;
+use lightning::util::ser::Writer;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 
 use crate::node::node::ChannelSetup;
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 
 pub struct TestVecWriter(pub Vec<u8>);
+impl Writer for TestVecWriter {
+	fn write_all(&mut self, buf: &[u8]) -> Result<(), ::std::io::Error> {
+		self.0.extend_from_slice(buf);
+		Ok(())
+	}
+	fn size_hint(&mut self, size: usize) {
+		self.0.reserve_exact(size);
+	}
+}
 
 pub struct TestFeeEstimator {
     pub sat_per_kw: u64,
@@ -33,57 +39,6 @@ pub struct TestFeeEstimator {
 impl chaininterface::FeeEstimator for TestFeeEstimator {
     fn get_est_sat_per_1000_weight(&self, _confirmation_target: ConfirmationTarget) -> u64 {
         self.sat_per_kw
-    }
-}
-
-pub struct TestChannelMonitor<ChanSigner: ChannelKeys> {
-    pub added_monitors: Mutex<Vec<(OutPoint, channelmonitor::ChannelMonitor<ChanSigner>)>>,
-    pub simple_monitor: channelmonitor::SimpleManyChannelMonitor<OutPoint, ChanSigner>,
-    pub update_ret: Mutex<Result<(), channelmonitor::ChannelMonitorUpdateErr>>,
-}
-
-impl<ChanSigner: ChannelKeys> TestChannelMonitor<ChanSigner> {
-    pub fn new(
-        chain_monitor: Arc<chaininterface::ChainWatchInterface>,
-        broadcaster: Arc<chaininterface::BroadcasterInterface>,
-        logger: Arc<Logger>,
-        fee_estimator: Arc<chaininterface::FeeEstimator>,
-    ) -> Self {
-        Self {
-            added_monitors: Mutex::new(Vec::new()),
-            simple_monitor: channelmonitor::SimpleManyChannelMonitor::new(
-                chain_monitor,
-                broadcaster,
-                logger,
-                fee_estimator,
-            ),
-            update_ret: Mutex::new(Ok(())),
-        }
-    }
-}
-
-impl<ChanSigner: ChannelKeys> channelmonitor::ManyChannelMonitor<ChanSigner>
-    for TestChannelMonitor<ChanSigner>
-{
-    fn add_update_monitor(
-        &self,
-        funding_txo: OutPoint,
-        monitor: channelmonitor::ChannelMonitor<ChanSigner>,
-    ) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
-        self.added_monitors
-            .lock()
-            .unwrap()
-            .push((funding_txo, monitor.clone()));
-        assert!(self
-            .simple_monitor
-            .add_update_monitor(funding_txo, monitor)
-            .is_ok());
-
-        self.update_ret.lock().unwrap().clone()
-    }
-
-    fn fetch_pending_htlc_updated(&self) -> Vec<HTLCUpdate> {
-        return self.simple_monitor.fetch_pending_htlc_updated();
     }
 }
 
@@ -171,12 +126,10 @@ impl keysinterface::KeysInterface for TestKeysInterface {
     }
     fn get_channel_keys(
         &self,
-        channel_id: [u8; 32],
         inbound: bool,
         channel_value_sat: u64,
     ) -> EnforcingChannelKeys {
         EnforcingChannelKeys::new(self.backing.get_channel_keys(
-            channel_id,
             inbound,
             channel_value_sat,
         ))
@@ -198,18 +151,10 @@ impl keysinterface::KeysInterface for TestKeysInterface {
 }
 
 impl TestKeysInterface {
-    pub fn new(seed: &[u8; 32], network: Network, logger: Arc<Logger>) -> Self {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards");
+    pub fn new(seed: &[u8; 32], network: Network) -> Self {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards");
         Self {
-            backing: keysinterface::KeysManager::new(
-                seed,
-                network,
-                logger,
-                now.as_secs(),
-                now.subsec_nanos(),
-            ),
+            backing: keysinterface::KeysManager::new(seed, network, now.as_secs(), now.subsec_nanos()),
             override_session_priv: Mutex::new(None),
             override_channel_id_priv: Mutex::new(None),
         }
@@ -259,7 +204,7 @@ pub fn make_test_remote_points() -> ChannelPublicKeys {
     ChannelPublicKeys {
         funding_pubkey: make_test_pubkey(104),
         revocation_basepoint: make_test_pubkey(100),
-        payment_basepoint: make_test_pubkey(101),
+        payment_point: make_test_pubkey(101),
         delayed_payment_basepoint: make_test_pubkey(102),
         htlc_basepoint: make_test_pubkey(103),
     }
@@ -270,7 +215,7 @@ pub fn make_test_channel_setup() -> ChannelSetup {
         is_outbound: true,
         channel_value_sat: 300,
         funding_outpoint: BitcoinOutPoint {
-            txid: sha256d::Hash::from_slice(&[2u8; 32]).unwrap(),
+            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
             vout: 0,
         },
         local_to_self_delay: 5,

@@ -2,23 +2,23 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use bitcoin;
+use bitcoin::{Address, Network, Script, SigHashType};
+use bitcoin::hashes::Hash;
 use bitcoin::util::bip143;
 use bitcoin::util::bip143::SighashComponents;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::{Address, Network, Script, SigHashType};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
-use bitcoin_hashes::Hash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys};
+use lightning::ln::chan_utils::{ChannelPublicKeys, derive_private_key};
 use lightning::util::logger::Logger;
-use rand::{thread_rng, Rng};
-use secp256k1::ecdh::SharedSecret;
+use rand::{Rng, thread_rng};
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
+use secp256k1::ecdh::SharedSecret;
 use tonic::Status;
 
 use crate::node::node::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, Node};
 use crate::server::my_keys_manager::MyKeysManager;
-use crate::tx::tx::{build_close_tx, sign_commitment, HTLCInfo2};
+use crate::tx::tx::{build_close_tx, HTLCInfo2, sign_commitment};
 use crate::util::crypto_utils::derive_private_revocation_key;
 use crate::util::test_utils::TestLogger;
 
@@ -225,7 +225,7 @@ impl MySigner {
                     // BEGIN NOT TESTED
                     &chan.secp_ctx,
                     &commitment_point,
-                    &chan.keys.payment_base_key(),
+                    &chan.keys.payment_key(),
                 )
                 .map_err(|err| {
                     self.internal_error(format!("derive_private_key failed: {}", err))
@@ -233,7 +233,7 @@ impl MySigner {
                 // END NOT TESTED
                 None => {
                     // option_static_remotekey in effect
-                    chan.keys.payment_base_key().clone()
+                    chan.keys.payment_key().clone()
                 }
             };
             Ok(secret_key)
@@ -865,17 +865,17 @@ impl MySigner {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin;
+    use bitcoin::{OutPoint, TxIn, TxOut};
     use bitcoin::blockdata::opcodes;
     use bitcoin::blockdata::script::Builder;
     use bitcoin::consensus::deserialize;
-    use bitcoin::hashes::{sha256d, Hash};
     use bitcoin::util::bip143;
     use bitcoin::util::psbt::serialize::Serialize;
-    use bitcoin::{OutPoint, TxIn, TxOut};
     use bitcoin_hashes::hash160::Hash as Hash160;
     use lightning::ln::chan_utils::{
-        build_htlc_transaction, get_htlc_redeemscript, make_funding_redeemscript,
-        HTLCOutputInCommitment, TxCreationKeys,
+        build_htlc_transaction, get_htlc_redeemscript, HTLCOutputInCommitment,
+        make_funding_redeemscript, TxCreationKeys,
     };
     use lightning::ln::channelmanager::PaymentHash;
     use secp256k1::recovery::{RecoverableSignature, RecoveryId};
@@ -1572,7 +1572,7 @@ mod tests {
             "02982b69bb2d70b083921cbc862c0bcf7761b55d7485769ddf81c2947155b1afe4"
         );
         assert_eq!(
-            hex::encode(basepoints.payment_basepoint.serialize().to_vec()),
+            hex::encode(basepoints.payment_point.serialize().to_vec()),
             "026bb6655b5e0b5ff80d078d548819f57796013b09de8085ddc04b49854ae1e483"
         );
         assert_eq!(
@@ -1739,7 +1739,7 @@ mod tests {
         let node_id = signer.new_node();
         let xkey = signer.xkey(&node_id).expect("xkey");
         let channel_id = ChannelId([1; 32]);
-        let txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let indices = vec![0u32];
         let values_sat = vec![100u64];
 
@@ -1809,7 +1809,7 @@ mod tests {
         let signer = MySigner::new();
         let node_id = signer.new_node();
         let channel_id = ChannelId([1; 32]);
-        let txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let indices = vec![0u32];
         let values_sat = vec![100u64];
 
@@ -1883,7 +1883,7 @@ mod tests {
         let node_id = signer.new_node();
         let xkey = signer.xkey(&node_id).expect("xkey");
         let channel_id = ChannelId([1; 32]);
-        let txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let indices = vec![0u32];
         let values_sat = vec![100u64];
 
@@ -1955,7 +1955,7 @@ mod tests {
         let node_id = signer.new_node();
         let xkey = signer.xkey(&node_id).expect("xkey");
         let channel_id = ChannelId([1; 32]);
-        let txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let indices = vec![0u32];
         let values_sat = vec![100u64];
 
@@ -2043,7 +2043,7 @@ mod tests {
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_SEED[1], make_test_channel_setup());
 
-        let commitment_txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let feerate_per_kw = 1000;
         let to_self_delay = 32;
         let htlc = HTLCOutputInCommitment {
@@ -2073,7 +2073,6 @@ mod tests {
             &a_delayed_payment_base,
             &make_test_pubkey(4), // a_htlc_base
             &b_revocation_base,
-            &make_test_pubkey(5), // b_payment_base
             &make_test_pubkey(6),
         ) // b_htlc_base
         .expect("new TxCreationKeys");
@@ -2133,7 +2132,7 @@ mod tests {
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_SEED[1], make_test_channel_setup());
 
-        let commitment_txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let feerate_per_kw = 1000;
         let to_self_delay = 32;
         let htlc = HTLCOutputInCommitment {
@@ -2217,7 +2216,7 @@ mod tests {
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_SEED[1], make_test_channel_setup());
 
-        let commitment_txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let feerate_per_kw = 1000;
         let to_self_delay = 32;
         let htlc = HTLCOutputInCommitment {
@@ -2242,7 +2241,6 @@ mod tests {
             &a_delayed_payment_base,
             &make_test_pubkey(4), // a_htlc_base
             &b_revocation_base,
-            &make_test_pubkey(5), // b_payment_base
             &make_test_pubkey(6),
         ) // b_htlc_base
         .expect("new TxCreationKeys");
@@ -2299,7 +2297,7 @@ mod tests {
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_SEED[1], make_test_channel_setup());
 
-        let commitment_txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let feerate_per_kw = 1000;
         let to_self_delay = 32;
         let htlc = HTLCOutputInCommitment {
@@ -2324,7 +2322,6 @@ mod tests {
             &a_delayed_payment_base,
             &make_test_pubkey(4), // a_htlc_base
             &b_revocation_base,
-            &make_test_pubkey(5), // b_payment_base
             &make_test_pubkey(6),
         ) // b_htlc_base
         .expect("new TxCreationKeys");
@@ -2485,7 +2482,7 @@ mod tests {
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_SEED[1], make_test_channel_setup());
 
-        let commitment_txid = sha256d::Hash::from_slice(&[2u8; 32]).unwrap();
+        let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let feerate_per_kw = 1000;
         let to_self_delay = 32;
         let htlc = HTLCOutputInCommitment {

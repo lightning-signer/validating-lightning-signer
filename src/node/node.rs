@@ -6,11 +6,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use backtrace::Backtrace;
 use bitcoin;
-use bitcoin::util::bip32::ExtendedPrivKey;
 use bitcoin::{Network, OutPoint, Script, SigHashType};
+use bitcoin::util::bip32::ExtendedPrivKey;
 use bitcoin_hashes::core::fmt::{Error, Formatter};
-use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
+use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
@@ -20,10 +20,10 @@ use tonic::Status;
 
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
-use crate::server::my_keys_manager::{MyKeysManager, INITIAL_COMMITMENT_NUMBER};
+use crate::server::my_keys_manager::{INITIAL_COMMITMENT_NUMBER, MyKeysManager};
 use crate::tx::tx::{
-    build_commitment_tx, get_commitment_transaction_number_obscure_factor, sign_commitment,
-    CommitmentInfo, CommitmentInfo2, HTLCInfo2,
+    build_commitment_tx, CommitmentInfo, CommitmentInfo2,
+    get_commitment_transaction_number_obscure_factor, HTLCInfo2, sign_commitment,
 };
 use crate::util::crypto_utils::{
     derive_public_key, derive_public_revocation_key, payload_for_p2wpkh,
@@ -191,7 +191,6 @@ impl Channel {
             &a_points.delayed_payment_basepoint,
             &a_points.htlc_basepoint,
             &b_points.revocation_basepoint,
-            &b_points.payment_basepoint,
             &b_points.htlc_basepoint,
         )
         .expect("failed to derive keys")
@@ -223,12 +222,12 @@ impl Channel {
         let local_points = self.keys.pubkeys();
         // Our key (remote from the point of view of the tx)
         let remote_key = if self.setup.option_static_remotekey {
-            local_points.payment_basepoint // NOT TESTED
+            local_points.payment_point // NOT TESTED
         } else {
             derive_public_key(
                 &self.secp_ctx,
                 &remote_per_commitment_point,
-                &local_points.payment_basepoint,
+                &local_points.payment_point,
             )
             .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
         };
@@ -301,13 +300,13 @@ impl Channel {
     fn get_commitment_transaction_number_obscure_factor(&self) -> u64 {
         get_commitment_transaction_number_obscure_factor(
             &self.secp_ctx,
-            self.keys.payment_base_key(),
+            self.keys.payment_key(),
             &self
                 .keys
                 .remote_pubkeys()
                 .as_ref()
                 .expect("channel must be accepted")
-                .payment_basepoint,
+                .payment_point,
             self.setup.is_outbound,
         )
     }
@@ -362,7 +361,7 @@ impl Channel {
         let remote_key = derive_public_key(
             secp_ctx,
             &remote_per_commitment_point,
-            &local_points.payment_basepoint,
+            &local_points.payment_point,
         )
         .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?;
         let revocation_key = derive_public_revocation_key(
@@ -413,7 +412,7 @@ impl Channel {
         let remote_key = derive_public_key(
             secp_ctx,
             &per_commitment_point,
-            &remote_points.payment_basepoint,
+            &remote_points.payment_point,
         )
         .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?;
         let revocation_key = derive_public_revocation_key(
