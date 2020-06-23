@@ -17,7 +17,7 @@ use lightning::ln::chan_utils::{
     make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::channelmanager::PaymentHash;
-use secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signature};
+use secp256k1::{All, Message, PublicKey, Secp256k1, Signature};
 
 use crate::policy::error::ValidationError;
 use crate::policy::error::ValidationError::{Mismatch, ScriptFormat, TransactionFormat};
@@ -29,21 +29,20 @@ use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 const MAX_DELAY: i64 = 1000;
 
 pub fn get_commitment_transaction_number_obscure_factor(
-    secp_ctx: &Secp256k1<All>,
-    local_payment_key: &SecretKey,
+    _secp_ctx: &Secp256k1<All>,
+    local_payment_basepoint: &PublicKey,
     remote_payment_basepoint: &PublicKey,
     outbound: bool,
 ) -> u64 {
     let mut sha = Sha256::engine();
-    let our_payment_basepoint = PublicKey::from_secret_key(secp_ctx, local_payment_key);
 
     let their_payment_basepoint = remote_payment_basepoint.serialize();
     if outbound {
-        sha.input(&our_payment_basepoint.serialize());
+        sha.input(&local_payment_basepoint.serialize());
         sha.input(&their_payment_basepoint);
     } else {
         sha.input(&their_payment_basepoint); // NOT TESTED
-        sha.input(&our_payment_basepoint.serialize()); // NOT TESTED
+        sha.input(&local_payment_basepoint.serialize()); // NOT TESTED
     }
     let res = Sha256::from_engine(sha).into_inner();
 
