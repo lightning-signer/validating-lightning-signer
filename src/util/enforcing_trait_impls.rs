@@ -21,7 +21,7 @@ use secp256k1::{Secp256k1, Signature};
 // BEGIN NOT TESTED
 #[derive(Clone)]
 pub struct EnforcingChannelKeys {
-    pub inner: InMemoryChannelKeys,
+    inner: InMemoryChannelKeys,
     commitment_number_obscure_and_last: Arc<Mutex<(Option<u64>, u64)>>,
 }
 // END NOT TESTED
@@ -35,6 +35,8 @@ impl EnforcingChannelKeys {
     }
 
 	pub fn remote_pubkeys(&self) -> &ChannelPublicKeys { self.inner.remote_pubkeys() }
+
+    pub fn inner(&self) -> InMemoryChannelKeys { self.inner.clone() }
 }
 
 impl EnforcingChannelKeys {

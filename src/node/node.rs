@@ -156,10 +156,9 @@ impl Channel {
         &self,
         per_commitment_point: &PublicKey,
     ) -> Result<TxCreationKeys, Status> {
-        let keys = &self.keys.inner;
-        let local_points = keys.pubkeys();
+        let local_points = self.keys.pubkeys();
 
-        let remote_points = keys.remote_pubkeys();
+        let remote_points = self.keys.remote_pubkeys();
 
         Ok(self.make_tx_keys(per_commitment_point, remote_points, local_points))
     }
@@ -168,10 +167,9 @@ impl Channel {
         &self,
         per_commitment_point: &PublicKey,
     ) -> Result<TxCreationKeys, Status> {
-        let keys = &self.keys.inner;
-        let local_points = keys.pubkeys();
+        let local_points = self.keys.pubkeys();
 
-        let remote_points = keys.remote_pubkeys();
+        let remote_points = self.keys.remote_pubkeys();
 
         Ok(self.make_tx_keys(per_commitment_point, local_points, remote_points))
     }

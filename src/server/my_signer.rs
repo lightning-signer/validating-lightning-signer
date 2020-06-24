@@ -1429,7 +1429,7 @@ mod tests {
                 let pubkey = derive_public_key(
                     &secp_ctx,
                     &remote_per_commitment_point,
-                    &chan.keys.inner.pubkeys().htlc_basepoint,
+                    &chan.keys.pubkeys().htlc_basepoint,
                 )
                 .unwrap();
                 Ok(pubkey)
@@ -1449,7 +1449,7 @@ mod tests {
                 let pubkey = derive_public_key(
                     &secp_ctx,
                     &remote_per_commitment_point,
-                    &chan.keys.inner.pubkeys().delayed_payment_basepoint,
+                    &chan.keys.pubkeys().delayed_payment_basepoint,
                 )
                 .unwrap();
                 Ok(pubkey)
@@ -1469,7 +1469,7 @@ mod tests {
                 let pubkey = derive_public_revocation_key(
                     secp_ctx,
                     revocation_point, // matches revocation_secret
-                    &chan.keys.inner.pubkeys().revocation_basepoint,
+                    &chan.keys.pubkeys().revocation_basepoint,
                 )
                 .unwrap();
                 Ok(pubkey)

@@ -41,7 +41,7 @@ impl LoopbackChannelSigner {
             node_id: *node_id,
             channel_id: *channel_id,
             signer: signer.clone(),
-            keys: channel.keys.inner.clone(),
+            keys: channel.keys.inner(),
         }
     }
 }
@@ -164,7 +164,7 @@ impl ChannelKeys for LoopbackChannelSigner {
                     None => panic!("channel doesn't exist"),
                     Some(ChannelSlot::Stub(_)) => panic!("channel isn't ready"),
                     Some(ChannelSlot::Ready(chan)) => {
-                        chan.keys.inner.set_remote_channel_pubkeys(channel_points);
+                        chan.keys.set_remote_channel_pubkeys(channel_points);
                         Ok(())
                     }
                 });
