@@ -1075,7 +1075,7 @@ impl Signer for MySigner {
             chan.sign_remote_commitment_tx_phase2(
                 &remote_per_commitment_point,
                 req_info.n,
-                req_info.feerate_sat_per_kw as u64,
+                req_info.feerate_sat_per_kw,
                 req_info.to_local_value_sat,
                 req_info.to_remote_value_sat,
                 offered_htlcs,
@@ -1132,7 +1132,7 @@ impl Signer for MySigner {
             &node_id,
             &channel_id,
             req_info.n,
-            req_info.feerate_sat_per_kw as u64,
+            req_info.feerate_sat_per_kw,
             req_info.to_local_value_sat,
             req_info.to_remote_value_sat,
             offered_htlcs,

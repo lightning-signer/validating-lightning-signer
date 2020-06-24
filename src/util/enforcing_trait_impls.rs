@@ -21,7 +21,7 @@ use secp256k1::{Secp256k1, Signature};
 // BEGIN NOT TESTED
 #[derive(Clone)]
 pub struct EnforcingChannelKeys {
-    pub inner: InMemoryChannelKeys,
+    inner: InMemoryChannelKeys,
     commitment_number_obscure_and_last: Arc<Mutex<(Option<u64>, u64)>>,
 }
 // END NOT TESTED
@@ -33,6 +33,10 @@ impl EnforcingChannelKeys {
             commitment_number_obscure_and_last: Arc::new(Mutex::new((None, 0))),
         }
     }
+
+	pub fn remote_pubkeys(&self) -> &ChannelPublicKeys { self.inner.remote_pubkeys() }
+
+    pub fn inner(&self) -> InMemoryChannelKeys { self.inner.clone() }
 }
 
 impl EnforcingChannelKeys {
@@ -43,11 +47,12 @@ impl EnforcingChannelKeys {
         secp_ctx: &Secp256k1<T>,
         keys: &TxCreationKeys,
     ) {
+        // FIXME
         let revocation_base =
-            PublicKey::from_secret_key(secp_ctx, &self.inner.revocation_base_key());
-        let htlc_base = PublicKey::from_secret_key(secp_ctx, &self.inner.htlc_base_key());
+            PublicKey::from_secret_key(secp_ctx, &self.revocation_base_key());
+        let htlc_base = PublicKey::from_secret_key(secp_ctx, &self.htlc_base_key());
 
-        let remote_points = self.inner.remote_pubkeys().as_ref().unwrap();
+        let remote_points = self.inner.remote_pubkeys();
 
         let keys_expected = TxCreationKeys::new(
             secp_ctx,
@@ -63,25 +68,30 @@ impl EnforcingChannelKeys {
         }
     }
     // END NOT TESTED
+
+    // TODO leaking secrets below.
+    // We don't take advantage of the signing operations in InMemoryChannelKeys because that
+    // requires phase 2. In particular, the commitment and HTLCs must be signed in one operation.
+    pub fn funding_key(&self) -> &SecretKey {
+        &self.inner.funding_key
+    }
+    pub fn revocation_base_key(&self) -> &SecretKey {
+        &self.inner.revocation_base_key
+    }
+    pub fn payment_key(&self) -> &SecretKey {
+        &self.inner.payment_key
+    }
+    // BEGIN NOT TESTED
+    pub fn delayed_payment_base_key(&self) -> &SecretKey {
+        &self.inner.delayed_payment_base_key
+    }
+    // END NOT TESTED
+    pub fn htlc_base_key(&self) -> &SecretKey {
+        &self.inner.htlc_base_key
+    }
 }
 
 impl ChannelKeys for EnforcingChannelKeys {
-    fn funding_key(&self) -> &SecretKey {
-        self.inner.funding_key()
-    }
-    fn revocation_base_key(&self) -> &SecretKey {
-        self.inner.revocation_base_key()
-    }
-    fn payment_key(&self) -> &SecretKey {
-        self.inner.payment_key()
-    }
-    // BEGIN NOT TESTED
-    fn delayed_payment_base_key(&self) -> &SecretKey {
-        self.inner.delayed_payment_base_key()
-    }
-    fn htlc_base_key(&self) -> &SecretKey {
-        self.inner.htlc_base_key()
-    }
     // END NOT TESTED
     fn commitment_seed(&self) -> &[u8; 32] {
         self.inner.commitment_seed()
@@ -89,13 +99,11 @@ impl ChannelKeys for EnforcingChannelKeys {
     fn pubkeys(&self) -> &ChannelPublicKeys {
         self.inner.pubkeys()
     }
-    fn remote_pubkeys(&self) -> &Option<ChannelPublicKeys> {
-        self.inner.remote_pubkeys()
-    }
+    fn key_derivation_params(&self) -> (u64, u64) { self.inner.key_derivation_params() }
 
     fn sign_remote_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
-        feerate_sat_per_kw: u64,
+        feerate_sat_per_kw: u32,
         commitment_tx: &Transaction,
         keys: &TxCreationKeys,
         htlcs: &[&HTLCOutputInCommitment],
@@ -155,6 +163,16 @@ impl ChannelKeys for EnforcingChannelKeys {
     ) -> Result<Vec<Option<Signature>>, ()> {
         self.inner
             .sign_local_commitment_htlc_transactions(local_commitment_tx, local_csv, secp_ctx)
+    }
+
+    #[allow(unused_variables)]
+    fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(&self, justice_tx: &Transaction, input: usize, amount: u64, per_commitment_key: &SecretKey, htlc: &Option<HTLCOutputInCommitment>, on_remote_tx_csv: u16, secp_ctx: &Secp256k1<T>) -> Result<Signature, ()> {
+        unimplemented!()
+    }
+
+    #[allow(unused_variables)]
+    fn sign_remote_htlc_transaction<T: secp256k1::Signing + secp256k1::Verification>(&self, htlc_tx: &Transaction, input: usize, amount: u64, per_commitment_point: &PublicKey, htlc: &HTLCOutputInCommitment, secp_ctx: &Secp256k1<T>) -> Result<Signature, ()> {
+        unimplemented!()
     }
 
     fn sign_closing_transaction<T: secp256k1::Signing>(

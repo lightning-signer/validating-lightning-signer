@@ -156,12 +156,9 @@ impl Channel {
         &self,
         per_commitment_point: &PublicKey,
     ) -> Result<TxCreationKeys, Status> {
-        let keys = &self.keys.inner;
-        let local_points = keys.pubkeys();
+        let local_points = self.keys.pubkeys();
 
-        #[rustfmt::skip]
-        let remote_points = keys.remote_pubkeys().as_ref()
-            .ok_or_else(|| self.invalid_argument("channel must be accepted"))?;
+        let remote_points = self.keys.remote_pubkeys();
 
         Ok(self.make_tx_keys(per_commitment_point, remote_points, local_points))
     }
@@ -170,12 +167,9 @@ impl Channel {
         &self,
         per_commitment_point: &PublicKey,
     ) -> Result<TxCreationKeys, Status> {
-        let keys = &self.keys.inner;
-        let local_points = keys.pubkeys();
+        let local_points = self.keys.pubkeys();
 
-        #[rustfmt::skip]
-        let remote_points = keys.remote_pubkeys().as_ref()
-            .ok_or_else(|| self.invalid_argument("channel must be accepted"))?;
+        let remote_points = self.keys.remote_pubkeys();
 
         Ok(self.make_tx_keys(per_commitment_point, local_points, remote_points))
     }
@@ -268,7 +262,7 @@ impl Channel {
     // TODO phase 2
     pub fn sign_remote_commitment(
         &self,
-        feerate_per_kw: u64,
+        feerate_per_kw: u32,
         commitment_tx: &bitcoin::Transaction,
         per_commitment_point: &PublicKey,
         htlcs: &[&HTLCOutputInCommitment],
@@ -301,12 +295,10 @@ impl Channel {
     fn get_commitment_transaction_number_obscure_factor(&self) -> u64 {
         get_commitment_transaction_number_obscure_factor(
             &self.secp_ctx,
-            self.keys.payment_key(),
+            &self.keys.pubkeys().payment_point,
             &self
                 .keys
                 .remote_pubkeys()
-                .as_ref()
-                .expect("channel must be accepted")
                 .payment_point,
             self.setup.is_outbound,
         )
@@ -393,11 +385,7 @@ impl Channel {
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<CommitmentInfo2, Status> {
         let local_points = self.keys.pubkeys();
-        let remote_points = self
-            .keys
-            .remote_pubkeys()
-            .as_ref()
-            .ok_or_else(|| self.invalid_argument("channel not ready"))?;
+        let remote_points = self.keys.remote_pubkeys();
         let secp_ctx = &self.secp_ctx;
 
         let to_local_delayed_key = derive_public_key(
@@ -439,7 +427,7 @@ impl Channel {
         &self,
         remote_per_commitment_point: &PublicKey,
         commitment_number: u64,
-        feerate_per_kw: u64,
+        feerate_per_kw: u32,
         to_local_value_sat: u64,
         to_remote_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,

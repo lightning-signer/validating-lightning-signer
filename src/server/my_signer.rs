@@ -256,7 +256,7 @@ impl MySigner {
         node_id: &PublicKey,
         channel_id: &ChannelId,
         commitment_number: u64,
-        feerate_per_kw: u64,
+        feerate_per_kw: u32,
         to_local_value_sat: u64,
         to_remote_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
@@ -476,7 +476,7 @@ impl MySigner {
                 let htlc_privkey = derive_private_key(
                     &secp_ctx,
                     &per_commitment_point,
-                    &chan.keys.inner.htlc_base_key(),
+                    &chan.keys.htlc_base_key(),
                 )
                 .map_err(|err| {
                     // BEGIN NOT TESTED
@@ -549,7 +549,7 @@ impl MySigner {
                 let htlc_privkey = derive_private_key(
                     &secp_ctx,
                     &per_commitment_point,
-                    &chan.keys.inner.delayed_payment_base_key(),
+                    &chan.keys.delayed_payment_base_key(),
                 )
                 .map_err(|err| {
                     // BEGIN NOT TESTED
@@ -605,7 +605,7 @@ impl MySigner {
             let our_htlc_key = derive_private_key(
                 &secp_ctx,
                 &remote_per_commitment_point,
-                &chan.keys.inner.htlc_base_key(),
+                &chan.keys.htlc_base_key(),
             )
             .map_err(|err| {
                 // BEGIN NOT TESTED
@@ -660,7 +660,7 @@ impl MySigner {
                 let privkey = derive_private_key(
                     &secp_ctx,
                     &remote_per_commitment_point,
-                    &chan.keys.inner.htlc_base_key(),
+                    &chan.keys.htlc_base_key(),
                 )
                 .map_err(|err| self.internal_error(format!("derive privkey failed: {}", err)))?;
 
@@ -810,7 +810,7 @@ impl MySigner {
                 .serialize_der()
                 .to_vec();
             let bsigvec = secp_ctx
-                .sign(&encmsg, &chan.keys.inner.funding_key())
+                .sign(&encmsg, &chan.keys.funding_key())
                 .serialize_der()
                 .to_vec();
             Ok((nsigvec, bsigvec))
@@ -1429,7 +1429,7 @@ mod tests {
                 let pubkey = derive_public_key(
                     &secp_ctx,
                     &remote_per_commitment_point,
-                    &chan.keys.inner.pubkeys().htlc_basepoint,
+                    &chan.keys.pubkeys().htlc_basepoint,
                 )
                 .unwrap();
                 Ok(pubkey)
@@ -1449,7 +1449,7 @@ mod tests {
                 let pubkey = derive_public_key(
                     &secp_ctx,
                     &remote_per_commitment_point,
-                    &chan.keys.inner.pubkeys().delayed_payment_basepoint,
+                    &chan.keys.pubkeys().delayed_payment_basepoint,
                 )
                 .unwrap();
                 Ok(pubkey)
@@ -1469,7 +1469,7 @@ mod tests {
                 let pubkey = derive_public_revocation_key(
                     secp_ctx,
                     revocation_point, // matches revocation_secret
-                    &chan.keys.inner.pubkeys().revocation_basepoint,
+                    &chan.keys.pubkeys().revocation_basepoint,
                 )
                 .unwrap();
                 Ok(pubkey)
@@ -2582,7 +2582,7 @@ mod tests {
         let bsig = Signature::from_der(&bsigvec).expect("bsig");
         let _res: Result<(), Status> = signer.with_ready_channel(&node_id, &channel_id, |chan| {
             let funding_pubkey =
-                PublicKey::from_secret_key(&secp_ctx, &chan.keys.inner.funding_key());
+                PublicKey::from_secret_key(&secp_ctx, &chan.keys.funding_key());
             Ok(secp_ctx
                 .verify(&encmsg, &bsig, &funding_pubkey)
                 .expect("verify bsig"))

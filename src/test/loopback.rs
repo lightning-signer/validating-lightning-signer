@@ -41,54 +41,28 @@ impl LoopbackChannelSigner {
             node_id: *node_id,
             channel_id: *channel_id,
             signer: signer.clone(),
-            keys: channel.keys.inner.clone(),
+            keys: channel.keys.inner(),
         }
     }
 }
 
 impl ChannelKeys for LoopbackChannelSigner {
-    // TODO leaking secret key
-    fn funding_key(&self) -> &SecretKey {
-        self.keys.funding_key()
-    }
-
-    // TODO leaking secret key
-    fn revocation_base_key(&self) -> &SecretKey {
-        self.keys.revocation_base_key()
-    }
-
-    // TODO leaking secret key
-    fn payment_key(&self) -> &SecretKey {
-        self.keys.payment_key()
-    }
-
-    // TODO leaking secret key
-    fn delayed_payment_base_key(&self) -> &SecretKey {
-        self.keys.delayed_payment_base_key()
-    }
-
-    // TODO leaking secret key
-    fn htlc_base_key(&self) -> &SecretKey {
-        self.keys.htlc_base_key()
-    }
-
-    // TODO leaking secret key
-    fn commitment_seed(&self) -> &[u8; 32] {
-        self.keys.commitment_seed()
+    fn commitment_seed<'a>(&'a self) -> &'a [u8; 32] {
+        unimplemented!()
     }
 
     fn pubkeys(&self) -> &ChannelPublicKeys {
         self.keys.pubkeys()
     }
 
-    fn remote_pubkeys(&self) -> &Option<ChannelPublicKeys> {
-        self.keys.remote_pubkeys()
+    fn key_derivation_params(&self) -> (u64, u64) {
+        unimplemented!()
     }
 
     // FIXME - Couldn't this return a declared error signature?
     fn sign_remote_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
-        feerate_per_kw: u64,
+        feerate_per_kw: u32,
         commitment_tx: &Transaction,
         keys: &TxCreationKeys,
         htlcs: &[&HTLCOutputInCommitment],
@@ -132,6 +106,16 @@ impl ChannelKeys for LoopbackChannelSigner {
         _local_csv: u16,
         _secp_ctx: &Secp256k1<T>,
     ) -> Result<Vec<Option<Signature>>, ()> {
+        unimplemented!()
+    }
+
+    #[allow(unused_variables)]
+    fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(&self, justice_tx: &Transaction, input: usize, amount: u64, per_commitment_key: &SecretKey, htlc: &Option<HTLCOutputInCommitment>, on_remote_tx_csv: u16, secp_ctx: &Secp256k1<T>) -> Result<Signature, ()> {
+        unimplemented!()
+    }
+
+    #[allow(unused_variables)]
+    fn sign_remote_htlc_transaction<T: secp256k1::Signing + secp256k1::Verification>(&self, htlc_tx: &Transaction, input: usize, amount: u64, per_commitment_point: &PublicKey, htlc: &HTLCOutputInCommitment, secp_ctx: &Secp256k1<T>) -> Result<Signature, ()> {
         unimplemented!()
     }
 
@@ -180,7 +164,7 @@ impl ChannelKeys for LoopbackChannelSigner {
                     None => panic!("channel doesn't exist"),
                     Some(ChannelSlot::Stub(_)) => panic!("channel isn't ready"),
                     Some(ChannelSlot::Ready(chan)) => {
-                        chan.keys.inner.set_remote_channel_pubkeys(channel_points);
+                        chan.keys.set_remote_channel_pubkeys(channel_points);
                         Ok(())
                     }
                 });
