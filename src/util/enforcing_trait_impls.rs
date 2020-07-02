@@ -34,9 +34,13 @@ impl EnforcingChannelKeys {
         }
     }
 
-	pub fn remote_pubkeys(&self) -> &ChannelPublicKeys { self.inner.remote_pubkeys() }
+    pub fn remote_pubkeys(&self) -> &ChannelPublicKeys {
+        self.inner.remote_pubkeys()
+    }
 
-    pub fn inner(&self) -> InMemoryChannelKeys { self.inner.clone() }
+    pub fn inner(&self) -> InMemoryChannelKeys {
+        self.inner.clone()
+    }
 }
 
 impl EnforcingChannelKeys {
@@ -48,8 +52,7 @@ impl EnforcingChannelKeys {
         keys: &TxCreationKeys,
     ) {
         // FIXME
-        let revocation_base =
-            PublicKey::from_secret_key(secp_ctx, &self.revocation_base_key());
+        let revocation_base = PublicKey::from_secret_key(secp_ctx, &self.revocation_base_key());
         let htlc_base = PublicKey::from_secret_key(secp_ctx, &self.htlc_base_key());
 
         let remote_points = self.inner.remote_pubkeys();
@@ -92,14 +95,15 @@ impl EnforcingChannelKeys {
 }
 
 impl ChannelKeys for EnforcingChannelKeys {
-    // END NOT TESTED
-    fn commitment_seed(&self) -> &[u8; 32] {
-        self.inner.commitment_seed()
+    fn commitment_secret(&self, idx: u64) -> [u8; 32] {
+        self.inner.commitment_secret(idx)
     }
     fn pubkeys(&self) -> &ChannelPublicKeys {
         self.inner.pubkeys()
     }
-    fn key_derivation_params(&self) -> (u64, u64) { self.inner.key_derivation_params() }
+    fn key_derivation_params(&self) -> (u64, u64) {
+        self.inner.key_derivation_params()
+    }
 
     fn sign_remote_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
@@ -166,12 +170,29 @@ impl ChannelKeys for EnforcingChannelKeys {
     }
 
     #[allow(unused_variables)]
-    fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(&self, justice_tx: &Transaction, input: usize, amount: u64, per_commitment_key: &SecretKey, htlc: &Option<HTLCOutputInCommitment>, on_remote_tx_csv: u16, secp_ctx: &Secp256k1<T>) -> Result<Signature, ()> {
+    fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(
+        &self,
+        justice_tx: &Transaction,
+        input: usize,
+        amount: u64,
+        per_commitment_key: &SecretKey,
+        htlc: &Option<HTLCOutputInCommitment>,
+        on_remote_tx_csv: u16,
+        secp_ctx: &Secp256k1<T>,
+    ) -> Result<Signature, ()> {
         unimplemented!()
     }
 
     #[allow(unused_variables)]
-    fn sign_remote_htlc_transaction<T: secp256k1::Signing + secp256k1::Verification>(&self, htlc_tx: &Transaction, input: usize, amount: u64, per_commitment_point: &PublicKey, htlc: &HTLCOutputInCommitment, secp_ctx: &Secp256k1<T>) -> Result<Signature, ()> {
+    fn sign_remote_htlc_transaction<T: secp256k1::Signing + secp256k1::Verification>(
+        &self,
+        htlc_tx: &Transaction,
+        input: usize,
+        amount: u64,
+        per_commitment_point: &PublicKey,
+        htlc: &HTLCOutputInCommitment,
+        secp_ctx: &Secp256k1<T>,
+    ) -> Result<Signature, ()> {
         unimplemented!()
     }
 

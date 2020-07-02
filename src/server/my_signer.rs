@@ -17,7 +17,6 @@ use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use tonic::Status;
 
 use crate::node::node::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, Node};
-use crate::server::my_keys_manager::MyKeysManager;
 use crate::tx::tx::{build_close_tx, sign_commitment, HTLCInfo2};
 use crate::util::crypto_utils::derive_private_revocation_key;
 use crate::util::test_utils::TestLogger;
@@ -459,8 +458,7 @@ impl MySigner {
 
                 let secp_ctx = Secp256k1::signing_only();
 
-                let per_commitment_point =
-                    MyKeysManager::per_commitment_point(&secp_ctx, chan.keys.commitment_seed(), n);
+                let per_commitment_point = chan.get_per_commitment_point(n);
 
                 let htlc_redeemscript = Script::from((&output_witscripts[0]).to_vec());
 
@@ -532,8 +530,7 @@ impl MySigner {
 
                 let secp_ctx = Secp256k1::signing_only();
 
-                let per_commitment_point =
-                    MyKeysManager::per_commitment_point(&secp_ctx, chan.keys.commitment_seed(), n);
+                let per_commitment_point = chan.get_per_commitment_point(n);
 
                 let htlc_redeemscript = Script::from((&output_witscripts[0]).to_vec());
 
@@ -2581,8 +2578,7 @@ mod tests {
             .expect("verify nsig");
         let bsig = Signature::from_der(&bsigvec).expect("bsig");
         let _res: Result<(), Status> = signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            let funding_pubkey =
-                PublicKey::from_secret_key(&secp_ctx, &chan.keys.funding_key());
+            let funding_pubkey = PublicKey::from_secret_key(&secp_ctx, &chan.keys.funding_key());
             Ok(secp_ctx
                 .verify(&encmsg, &bsig, &funding_pubkey)
                 .expect("verify bsig"))

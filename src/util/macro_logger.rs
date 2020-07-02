@@ -60,3 +60,19 @@ macro_rules! log_trace {
 		log_internal!($self, lightning::util::logger::Level::Trace, $($arg)*);
 	)
 }
+
+pub struct DebugBytes<'a>(pub &'a [u8]);
+impl<'a> std::fmt::Display for DebugBytes<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        for i in self.0 {
+            write!(f, "{:02x}", i)?;
+        }
+        Ok(())
+    }
+}
+
+macro_rules! log_bytes {
+    ($obj: expr) => {
+        crate::util::macro_logger::DebugBytes(&$obj)
+    };
+}

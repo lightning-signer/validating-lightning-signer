@@ -16,7 +16,7 @@ use secp256k1::{PublicKey, Secp256k1, SecretKey, Signing};
 
 use crate::util::byte_utils;
 use crate::util::crypto_utils::{
-    bip32_key, build_commitment_secret, channels_seed, hkdf_sha256, hkdf_sha256_keys, node_keys,
+    bip32_key, channels_seed, hkdf_sha256, hkdf_sha256_keys, node_keys,
 };
 
 pub const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;
@@ -125,19 +125,11 @@ impl MyKeysManager {
         &self.bip32_key
     }
 
-    pub fn per_commitment_secret(commitment_seed: &[u8; 32], idx: u64) -> SecretKey {
-        build_commitment_secret(commitment_seed, INITIAL_COMMITMENT_NUMBER - idx)
-    }
-
     pub fn per_commitment_point<X: Signing>(
         secp_ctx: &Secp256k1<X>,
-        commitment_seed: &[u8; 32],
-        idx: u64,
+        commitment_secret: &[u8; 32],
     ) -> PublicKey {
-        PublicKey::from_secret_key(
-            secp_ctx,
-            &MyKeysManager::per_commitment_secret(commitment_seed, idx),
-        )
+        PublicKey::from_secret_key(secp_ctx, &SecretKey::from_slice(commitment_secret).unwrap())
     }
 
     pub(crate) fn get_channel_keys_with_nonce(
@@ -166,7 +158,7 @@ impl MyKeysManager {
         ndx += 32;
         let commitment_seed = keys_buf[ndx..ndx + 32].try_into().unwrap();
         let secp_ctx = Secp256k1::signing_only();
-        let derivation_param = (0,0); // TODO
+        let derivation_param = (0, 0); // TODO
         InMemoryChannelKeys::new(
             &secp_ctx,
             funding_key,
@@ -248,11 +240,10 @@ impl KeysInterface for MyKeysManager {
 
 #[cfg(test)]
 mod tests {
-    use lightning::chain::keysinterface::ChannelKeys;
-
     use crate::util::test_utils::TestLogger;
 
     use super::*;
+    use lightning::chain::keysinterface::ChannelKeys;
 
     fn logger() -> Arc<Logger> {
         Arc::new(TestLogger::with_id("server".to_owned()))
@@ -298,13 +289,15 @@ mod tests {
         channel_id[0] = 1u8;
         let keys = manager.get_channel_keys_with_nonce(&channel_id, 0, "c-lightning");
         assert!(
-            hex::encode(&keys.commitment_seed())
+            hex::encode(&keys.commitment_seed)
                 == "9fc48da6bc75058283b860d5989ffb802b6395ca28c4c3bb9d1da02df6bb0cb3"
         );
 
         let secp_ctx = Secp256k1::signing_only();
-        let per_commit_point =
-            MyKeysManager::per_commitment_point(&secp_ctx, keys.commitment_seed(), 3);
+        let per_commit_point = MyKeysManager::per_commitment_point(
+            &secp_ctx,
+            &keys.commitment_secret(INITIAL_COMMITMENT_NUMBER - 3),
+        );
         #[rustfmt::skip]
         assert!(	// NOT TESTED
             hex::encode(per_commit_point.serialize().to_vec())
