@@ -57,19 +57,6 @@ pub fn bip32_key(
         .unwrap()
 }
 
-/// idx should start at INITIAL_COMMITMENT_NUMBER and count backwards
-pub fn build_commitment_secret(commitment_seed: &[u8; 32], idx: u64) -> SecretKey {
-    let mut res: [u8; 32] = commitment_seed.clone();
-    for i in 0..48 {
-        let bitpos = 47 - i;
-        if idx & (1 << bitpos) == (1 << bitpos) {
-            res[bitpos / 8] ^= 1 << (bitpos & 7);
-            res = BitcoinSha256::hash(&res).into_inner();
-        }
-    }
-    SecretKey::from_slice(&res).unwrap()
-}
-
 pub fn derive_public_key<T: secp256k1::Signing>(
     secp_ctx: &Secp256k1<T>,
     per_commitment_point: &PublicKey,

@@ -1,16 +1,15 @@
 use std::sync::Arc;
 
 use bitcoin::{Script, Transaction};
-use lightning::chain::keysinterface::{ChannelKeys, InMemoryChannelKeys, KeysInterface};
+use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, HTLCOutputInCommitment, LocalCommitmentTransaction, TxCreationKeys,
 };
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 
-use crate::node::node::{Channel, ChannelId, ChannelSlot};
+use crate::node::node::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::server::my_signer::MySigner;
-use crate::util::test_utils::make_test_channel_setup;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -24,35 +23,57 @@ pub struct LoopbackChannelSigner {
     pub node_id: PublicKey,
     pub channel_id: ChannelId,
     pub signer: Arc<MySigner>,
-
-    // TODO leaking secrets
-    pub keys: InMemoryChannelKeys,
+    pub pubkeys: ChannelPublicKeys,
+    pub is_outbound: bool,
+    pub channel_value_sat: u64,
 }
 
 impl LoopbackChannelSigner {
     fn new(
         node_id: &PublicKey,
         channel_id: &ChannelId,
-        channel: &Channel,
         signer: Arc<MySigner>,
+        is_outbound: bool,
+        channel_value_sat: u64,
     ) -> LoopbackChannelSigner {
         log_info!(signer, "new channel {:?} {:?}", node_id, channel_id);
+        let pubkeys = signer
+            .with_channel_slot(node_id, channel_id, |slot| match slot {
+                None => Err(()),
+                Some(ChannelSlot::Stub(chan)) => Ok(chan.keys.pubkeys().clone()),
+                Some(ChannelSlot::Ready(chan)) => Ok(chan.keys.pubkeys().clone()),
+            })
+            .expect("no such channel");
         LoopbackChannelSigner {
             node_id: *node_id,
             channel_id: *channel_id,
             signer: signer.clone(),
-            keys: channel.keys.inner(),
+            pubkeys,
+            is_outbound,
+            channel_value_sat,
         }
+    }
+
+    fn unready_channel<T>(&self) -> Result<T, ()> {
+        let signer = &self.signer;
+        log_error!(signer, "unready channel {}", self.channel_id);
+        Err(())
     }
 }
 
 impl ChannelKeys for LoopbackChannelSigner {
-    fn commitment_seed<'a>(&'a self) -> &'a [u8; 32] {
-        unimplemented!()
+    fn commitment_secret(&self, idx: u64) -> [u8; 32] {
+        self.signer
+            .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
+                None => Err(()),
+                Some(ChannelSlot::Stub(chan)) => Ok(chan.keys.commitment_secret(idx)),
+                Some(ChannelSlot::Ready(chan)) => Ok(chan.keys.commitment_secret(idx)),
+            })
+            .expect("no such channel")
     }
 
     fn pubkeys(&self) -> &ChannelPublicKeys {
-        self.keys.pubkeys()
+        &self.pubkeys
     }
 
     fn key_derivation_params(&self) -> (u64, u64) {
@@ -79,7 +100,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         self.signer
             .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
                 None => Err(()),
-                Some(ChannelSlot::Stub(_)) => Err(()),
+                Some(ChannelSlot::Stub(_)) => self.unready_channel(),
                 Some(ChannelSlot::Ready(chan)) => chan
                     .sign_remote_commitment(
                         feerate_per_kw,
@@ -110,12 +131,29 @@ impl ChannelKeys for LoopbackChannelSigner {
     }
 
     #[allow(unused_variables)]
-    fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(&self, justice_tx: &Transaction, input: usize, amount: u64, per_commitment_key: &SecretKey, htlc: &Option<HTLCOutputInCommitment>, on_remote_tx_csv: u16, secp_ctx: &Secp256k1<T>) -> Result<Signature, ()> {
+    fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(
+        &self,
+        justice_tx: &Transaction,
+        input: usize,
+        amount: u64,
+        per_commitment_key: &SecretKey,
+        htlc: &Option<HTLCOutputInCommitment>,
+        on_remote_tx_csv: u16,
+        secp_ctx: &Secp256k1<T>,
+    ) -> Result<Signature, ()> {
         unimplemented!()
     }
 
     #[allow(unused_variables)]
-    fn sign_remote_htlc_transaction<T: secp256k1::Signing + secp256k1::Verification>(&self, htlc_tx: &Transaction, input: usize, amount: u64, per_commitment_point: &PublicKey, htlc: &HTLCOutputInCommitment, secp_ctx: &Secp256k1<T>) -> Result<Signature, ()> {
+    fn sign_remote_htlc_transaction<T: secp256k1::Signing + secp256k1::Verification>(
+        &self,
+        htlc_tx: &Transaction,
+        input: usize,
+        amount: u64,
+        per_commitment_point: &PublicKey,
+        htlc: &HTLCOutputInCommitment,
+        secp_ctx: &Secp256k1<T>,
+    ) -> Result<Signature, ()> {
         unimplemented!()
     }
 
@@ -150,24 +188,30 @@ impl ChannelKeys for LoopbackChannelSigner {
             })
     }
 
-    fn set_remote_channel_pubkeys(&mut self, channel_points: &ChannelPublicKeys) {
+    fn set_remote_channel_pubkeys(&mut self, remote_points: &ChannelPublicKeys) {
         let signer = &self.signer;
         log_info!(
             signer,
-            "set_remote_channel_keys {:?} {:?}",
+            "set_remote_channel_pubkeys {:?} {:?}",
             self.node_id,
             self.channel_id
         );
-        let _: Result<(), ()> =
-            self.signer
-                .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
-                    None => panic!("channel doesn't exist"),
-                    Some(ChannelSlot::Stub(_)) => panic!("channel isn't ready"),
-                    Some(ChannelSlot::Ready(chan)) => {
-                        chan.keys.set_remote_channel_pubkeys(channel_points);
-                        Ok(())
-                    }
-                });
+
+        let setup = ChannelSetup {
+            is_outbound: self.is_outbound,
+            channel_value_sat: self.channel_value_sat,
+            push_value_msat: 0,                        // TODO
+            funding_outpoint: Default::default(),      // TODO
+            local_to_self_delay: 0,                    // TODO
+            local_shutdown_script: Default::default(), // TODO
+            remote_points: remote_points.clone(),
+            remote_to_self_delay: 0,                    // TODO
+            remote_shutdown_script: Default::default(), // TODO
+            option_static_remotekey: false,             // TODO
+        };
+        self.signer
+            .ready_channel(&self.node_id, self.channel_id, setup)
+            .expect("channel already ready or does not exist");
     }
 }
 
@@ -199,21 +243,15 @@ impl KeysInterface for LoopbackSignerKeysInterface {
             .unwrap()
     }
 
-    fn get_channel_keys(&self, _inbound: bool, _channel_value_sat: u64) -> Self::ChanKeySigner {
+    fn get_channel_keys(&self, is_inbound: bool, channel_value_sat: u64) -> Self::ChanKeySigner {
         let channel_id = self.signer.new_channel(&self.node_id, None, None).unwrap();
-        self.signer
-            .ready_channel(&self.node_id, channel_id, make_test_channel_setup())
-            .unwrap();
-        self.signer
-            .with_ready_channel(&self.node_id, &channel_id, |chan| {
-                Ok(LoopbackChannelSigner::new(
-                    &self.node_id,
-                    &channel_id,
-                    &chan,
-                    Arc::clone(&self.signer),
-                ))
-            })
-            .unwrap()
+        LoopbackChannelSigner::new(
+            &self.node_id,
+            &channel_id,
+            Arc::clone(&self.signer),
+            !is_inbound,
+            channel_value_sat,
+        )
     }
 
     // TODO secret key leaking

@@ -104,13 +104,17 @@ impl ChannelBase for ChannelStub {
     }
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> PublicKey {
-        let seed = self.keys.commitment_seed();
-        MyKeysManager::per_commitment_point(&self.secp_ctx, seed, commitment_number)
+        let secret = self
+            .keys
+            .commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+        MyKeysManager::per_commitment_point(&self.secp_ctx, &secret)
     }
 
     fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey {
-        let seed = self.keys.commitment_seed();
-        MyKeysManager::per_commitment_secret(seed, commitment_number)
+        let secret = self
+            .keys
+            .commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+        SecretKey::from_slice(&secret).unwrap()
     }
 }
 
@@ -120,13 +124,17 @@ impl ChannelBase for Channel {
     }
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> PublicKey {
-        let seed = self.keys.commitment_seed();
-        MyKeysManager::per_commitment_point(&self.secp_ctx, seed, commitment_number)
+        let secret = self
+            .keys
+            .commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+        MyKeysManager::per_commitment_point(&self.secp_ctx, &secret)
     }
 
     fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey {
-        let seed = self.keys.commitment_seed();
-        MyKeysManager::per_commitment_secret(seed, commitment_number)
+        let secret = self
+            .keys
+            .commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+        SecretKey::from_slice(&secret).unwrap()
     }
 }
 
@@ -269,6 +277,12 @@ impl Channel {
         to_self_delay: u16,
     ) -> Result<(Signature, Vec<Signature>), Status> {
         let tx_keys = self.make_remote_tx_keys(per_commitment_point)?;
+        let pubkey = self.keys.pubkeys().funding_pubkey;
+        log_trace!(
+            self,
+            "sign_remote_commitment with pubkey {}",
+            log_bytes!(pubkey.serialize())
+        );
         self.keys
             .sign_remote_commitment(
                 feerate_per_kw,
@@ -296,10 +310,7 @@ impl Channel {
         get_commitment_transaction_number_obscure_factor(
             &self.secp_ctx,
             &self.keys.pubkeys().payment_point,
-            &self
-                .keys
-                .remote_pubkeys()
-                .payment_point,
+            &self.keys.remote_pubkeys().payment_point,
             self.setup.is_outbound,
         )
     }
