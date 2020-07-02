@@ -7,4 +7,8 @@ pub mod crypto_utils;
 pub mod macro_logger;
 pub mod enforcing_trait_impls;
 pub mod invoice_utils;
+pub mod loopback;
 pub mod test_utils;
+#[rustfmt::skip]
+#[macro_use]
+pub mod functional_test_utils;
