@@ -36,7 +36,7 @@ use util::events::{Event, EventsProvider, MessageSendEvent, MessageSendEventsPro
 
 use crate::util::test_utils;
 use crate::util::test_utils::{TestFeeEstimator, TestLogger};
-use crate::test::loopback::{LoopbackSignerKeysInterface, LoopbackChannelSigner};
+use crate::util::loopback::{LoopbackSignerKeysInterface, LoopbackChannelSigner};
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 100;
 

@@ -1,4 +1,6 @@
-// FILE NOT TESTED
+#![allow(unused_imports)]
+
+extern crate lightning_signer;
 
 use std::sync::{Arc, Mutex};
 
@@ -9,10 +11,13 @@ use lightning::ln::features::InitFeatures;
 use lightning::util::logger::Logger;
 use secp256k1::PublicKey;
 
-use crate::server::my_signer::MySigner;
-use crate::test::functional_test_utils::{create_announced_chan_between_nodes, create_network, create_node_chanmgrs, send_payment, NodeCfg, create_chanmon_cfgs, TestChannelMonitor, TestChanMonCfg};
-use crate::test::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
-use crate::util::test_utils;
+use lightning_signer::server::my_signer::MySigner;
+use lightning_signer::util::functional_test_utils::{
+    create_announced_chan_between_nodes, create_chanmon_cfgs, create_network, create_node_chanmgrs,
+    send_payment, NodeCfg, TestChanMonCfg, TestChannelMonitor,
+};
+use lightning_signer::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
+use lightning_signer::util::test_utils;
 
 fn make_features() -> InitFeatures {
     InitFeatures::known()
@@ -39,7 +44,8 @@ pub fn create_node_cfgs_with_signer<'a>(
             &chanmon_cfgs[i].chain_monitor,
             &chanmon_cfgs[i].tx_broadcaster,
             &chanmon_cfgs[i].logger,
-            &chanmon_cfgs[i].fee_estimator);
+            &chanmon_cfgs[i].fee_estimator,
+        );
 
         nodes.push(NodeCfg {
             chain_monitor: &chanmon_cfgs[i].chain_monitor,
@@ -48,7 +54,8 @@ pub fn create_node_cfgs_with_signer<'a>(
             fee_estimator: &chanmon_cfgs[i].fee_estimator,
             chan_monitor,
             keys_manager,
-            node_seed: seed });
+            node_seed: seed,
+        });
     }
 
     nodes

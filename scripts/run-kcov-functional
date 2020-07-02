@@ -2,11 +2,11 @@
 
 export CARGO_TARGET_DIR=target/kcov
 
-RUSTFLAGS="-C link-dead-code" cargo test --no-run --lib
+RUSTFLAGS="-C link-dead-code" cargo test --no-run --test functional_test
 cargo kcov \
   --verbose \
   --no-clean-rebuild \
-  --lib \
+  --test functional_test \
   -- \
   --verify \
   --exclude-pattern=/home/user/.cargo,/usr/include,/usr/src/debug
