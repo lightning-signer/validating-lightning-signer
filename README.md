@@ -6,6 +6,15 @@ for more information.
 
 ## Development Information
 
+### Formatting Code
+
+For some reason, the `ignore` configuration for rustfmt is only available on the nightly channel,
+even though it's documented as stable.
+
+    rustup install nightly
+
+    cargo +nightly fmt
+
 ### Building Rust Lightning Signer
 
     cargo build

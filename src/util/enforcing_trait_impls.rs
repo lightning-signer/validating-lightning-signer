@@ -159,6 +159,15 @@ impl ChannelKeys for EnforcingChannelKeys {
             .sign_local_commitment(local_commitment_tx, secp_ctx)
     }
 
+    fn unsafe_sign_local_commitment<T: secp256k1::Signing + secp256k1::Verification>(
+        &self,
+        local_commitment_tx: &LocalCommitmentTransaction,
+        secp_ctx: &Secp256k1<T>,
+    ) -> Result<Signature, ()> {
+        self.inner
+            .unsafe_sign_local_commitment(local_commitment_tx, secp_ctx)
+    }
+
     fn sign_local_commitment_htlc_transactions<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         local_commitment_tx: &LocalCommitmentTransaction,
@@ -180,10 +189,17 @@ impl ChannelKeys for EnforcingChannelKeys {
         on_remote_tx_csv: u16,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        unimplemented!()
+        self.inner.sign_justice_transaction(
+            justice_tx,
+            input,
+            amount,
+            per_commitment_key,
+            htlc,
+            on_remote_tx_csv,
+            secp_ctx,
+        )
     }
 
-    #[allow(unused_variables)]
     fn sign_remote_htlc_transaction<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         htlc_tx: &Transaction,
@@ -193,7 +209,14 @@ impl ChannelKeys for EnforcingChannelKeys {
         htlc: &HTLCOutputInCommitment,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        unimplemented!()
+        self.inner.sign_remote_htlc_transaction(
+            htlc_tx,
+            input,
+            amount,
+            per_commitment_point,
+            htlc,
+            secp_ctx,
+        )
     }
 
     fn sign_closing_transaction<T: secp256k1::Signing>(
