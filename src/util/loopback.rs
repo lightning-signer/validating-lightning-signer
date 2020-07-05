@@ -10,6 +10,8 @@ use secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 
 use crate::node::node::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::server::my_signer::MySigner;
+use lightning::util::ser::Writeable;
+use tonic::Status;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -59,10 +61,24 @@ impl LoopbackChannelSigner {
         log_error!(signer, "unready channel {}", self.channel_id);
         Err(())
     }
+
+    fn bad_status(&self, s: Status) {
+        let signer = &self.signer;
+        log_error!(signer, "bad status {:?} on channel {}", s, self.channel_id);
+    }
+}
+
+fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
+    res.pop();
+    let sig = Signature::from_der(res.as_slice())
+        .map_err(|_e| ())
+        .expect("failed to parse the signature we just created");
+    Ok(sig)
 }
 
 impl ChannelKeys for LoopbackChannelSigner {
     fn commitment_secret(&self, idx: u64) -> [u8; 32] {
+        // FIXME implement this in signer to remove this bypass
         self.signer
             .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
                 None => Err(()),
@@ -77,10 +93,11 @@ impl ChannelKeys for LoopbackChannelSigner {
     }
 
     fn key_derivation_params(&self) -> (u64, u64) {
-        unimplemented!()
+        // TODO
+        (0, 0)
     }
 
-    // FIXME - Couldn't this return a declared error signature?
+    // TODO - Couldn't this return a declared error signature?
     fn sign_remote_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         feerate_per_kw: u32,
@@ -97,6 +114,8 @@ impl ChannelKeys for LoopbackChannelSigner {
             self.node_id,
             self.channel_id
         );
+        // FIXME don't bypass the signer here
+        // The signer wants output_witscripts for validation - figure out how provide equivalent
         self.signer
             .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
                 None => Err(()),
@@ -115,6 +134,23 @@ impl ChannelKeys for LoopbackChannelSigner {
 
     fn sign_local_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
+        local_commitment_tx: &LocalCommitmentTransaction,
+        _secp_ctx: &Secp256k1<T>,
+    ) -> Result<Signature, ()> {
+        let res = self
+            .signer
+            .sign_commitment_tx(
+                &self.node_id,
+                &self.channel_id,
+                &local_commitment_tx.unsigned_tx,
+                self.channel_value_sat,
+            )
+            .map_err(|s| self.bad_status(s))?;
+        bitcoin_sig_to_signature(res)
+    }
+
+    fn unsafe_sign_local_commitment<T: secp256k1::Signing + secp256k1::Verification>(
+        &self,
         _local_commitment_tx: &LocalCommitmentTransaction,
         _secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
@@ -123,14 +159,27 @@ impl ChannelKeys for LoopbackChannelSigner {
 
     fn sign_local_commitment_htlc_transactions<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
-        _local_commitment_tx: &LocalCommitmentTransaction,
-        _local_csv: u16,
-        _secp_ctx: &Secp256k1<T>,
+        local_commitment_tx: &LocalCommitmentTransaction,
+        local_csv: u16,
+        secp_ctx: &Secp256k1<T>,
     ) -> Result<Vec<Option<Signature>>, ()> {
-        unimplemented!()
+        // FIXME don't bypass the signer here
+        // The signer wants output_witscripts for validation - figure out how provide equivalent
+        self.signer
+            .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
+                None => Err(()),
+                Some(ChannelSlot::Stub(_)) => self.unready_channel(),
+                Some(ChannelSlot::Ready(chan)) => chan
+                    .keys
+                    .sign_local_commitment_htlc_transactions(
+                        local_commitment_tx,
+                        local_csv,
+                        secp_ctx,
+                    )
+                    .map_err(|_| ()),
+            })
     }
 
-    #[allow(unused_variables)]
     fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         justice_tx: &Transaction,
@@ -141,10 +190,26 @@ impl ChannelKeys for LoopbackChannelSigner {
         on_remote_tx_csv: u16,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        unimplemented!()
+        // FIXME don't bypass the signer here
+        self.signer
+            .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
+                None => Err(()),
+                Some(ChannelSlot::Stub(_)) => self.unready_channel(),
+                Some(ChannelSlot::Ready(chan)) => chan
+                    .keys
+                    .sign_justice_transaction(
+                        justice_tx,
+                        input,
+                        amount,
+                        per_commitment_key,
+                        htlc,
+                        on_remote_tx_csv,
+                        secp_ctx,
+                    )
+                    .map_err(|_| ()),
+            })
     }
 
-    #[allow(unused_variables)]
     fn sign_remote_htlc_transaction<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         htlc_tx: &Transaction,
@@ -154,16 +219,48 @@ impl ChannelKeys for LoopbackChannelSigner {
         htlc: &HTLCOutputInCommitment,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        unimplemented!()
+        // FIXME don't bypass the signer here
+        self.signer
+            .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
+                None => Err(()),
+                Some(ChannelSlot::Stub(_)) => self.unready_channel(),
+                Some(ChannelSlot::Ready(chan)) => chan
+                    .keys
+                    .sign_remote_htlc_transaction(
+                        htlc_tx,
+                        input,
+                        amount,
+                        per_commitment_point,
+                        htlc,
+                        secp_ctx,
+                    )
+                    .map_err(|_| ()),
+            })
     }
 
-    // FIXME - Couldn't this return a declared error signature?
+    // TODO - Couldn't this return a declared error signature?
     fn sign_closing_transaction<T: secp256k1::Signing>(
         &self,
-        _closing_tx: &Transaction,
+        closing_tx: &Transaction,
         _secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        unimplemented!()
+        let signer = &self.signer;
+        log_info!(
+            signer,
+            "sign_closing_transaction {:?} {:?}",
+            self.node_id,
+            self.channel_id
+        );
+        let res = self
+            .signer
+            .sign_mutual_close_tx(
+                &self.node_id,
+                &self.channel_id,
+                closing_tx,
+                self.channel_value_sat,
+            )
+            .map_err(|s| self.bad_status(s))?;
+        bitcoin_sig_to_signature(res)
     }
 
     fn sign_channel_announcement<T: secp256k1::Signing>(
@@ -178,14 +275,16 @@ impl ChannelKeys for LoopbackChannelSigner {
             self.node_id,
             self.channel_id
         );
-        self.signer
-            .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
-                None => Err(()),
-                Some(ChannelSlot::Stub(_)) => Err(()),
-                Some(ChannelSlot::Ready(chan)) => {
-                    chan.sign_channel_announcement(msg).map_err(|_| ())
-                }
-            })
+        let res = self
+            .signer
+            .sign_channel_announcement(&self.node_id, &self.channel_id, &msg.encode())
+            .map_err(|s| self.bad_status(s))?
+            .1;
+
+        let sig = Signature::from_der(res.as_slice())
+            .map_err(|_e| ())
+            .expect("failed to parse the signature we just created");
+        Ok(sig)
     }
 
     fn set_remote_channel_pubkeys(&mut self, remote_points: &ChannelPublicKeys) {
@@ -271,4 +370,3 @@ impl KeysInterface for LoopbackSignerKeysInterface {
             .unwrap()
     }
 }
-// END NOT TESTED

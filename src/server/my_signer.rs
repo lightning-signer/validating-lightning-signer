@@ -588,6 +588,7 @@ impl MySigner {
 
             let secp_ctx = &chan.secp_ctx;
 
+            // FIXME this makes no sense, we are treating an output witscript as an input redeemscript
             let htlc_redeemscript = Script::from((&output_witscripts[0]).to_vec());
 
             let htlc_sighash = Message::from_slice(
