@@ -1,0 +1,11 @@
+#!/bin/sh
+
+export CARGO_TARGET_DIR=target/kcov
+
+RUSTFLAGS="-C link-dead-code" cargo test --no-run
+cargo kcov \
+  --verbose \
+  --no-clean-rebuild \
+  -- \
+  --verify \
+  --exclude-pattern=/home/user/.cargo,/usr/include,/usr/src/debug

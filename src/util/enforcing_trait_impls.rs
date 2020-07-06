@@ -38,9 +38,11 @@ impl EnforcingChannelKeys {
         self.inner.remote_pubkeys()
     }
 
+    // BEGIN NOT TESTED
     pub fn inner(&self) -> InMemoryChannelKeys {
         self.inner.clone()
     }
+    // END NOT TESTED
 }
 
 impl EnforcingChannelKeys {
@@ -84,11 +86,9 @@ impl EnforcingChannelKeys {
     pub fn payment_key(&self) -> &SecretKey {
         &self.inner.payment_key
     }
-    // BEGIN NOT TESTED
     pub fn delayed_payment_base_key(&self) -> &SecretKey {
         &self.inner.delayed_payment_base_key
     }
-    // END NOT TESTED
     pub fn htlc_base_key(&self) -> &SecretKey {
         &self.inner.htlc_base_key
     }
@@ -101,9 +101,11 @@ impl ChannelKeys for EnforcingChannelKeys {
     fn pubkeys(&self) -> &ChannelPublicKeys {
         self.inner.pubkeys()
     }
+    // BEGIN NOT TESTED
     fn key_derivation_params(&self) -> (u64, u64) {
         self.inner.key_derivation_params()
     }
+    // END NOT TESTED
 
     fn sign_remote_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
@@ -132,7 +134,7 @@ impl ChannelKeys for EnforcingChannelKeys {
                 obscured_commitment_transaction_number ^ commitment_data.0.unwrap();
             assert!(
                 commitment_number == commitment_data.1
-                    || commitment_number == commitment_data.1 + 1 // NOT TESTED
+                    || commitment_number == commitment_data.1 + 1
             );
             commitment_data.1 = cmp::max(commitment_number, commitment_data.1)
         }

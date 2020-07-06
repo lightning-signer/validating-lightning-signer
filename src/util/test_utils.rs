@@ -35,6 +35,8 @@ impl Writer for TestVecWriter {
     }
 }
 
+// END NOT TESTED
+
 pub struct TestFeeEstimator {
     pub sat_per_kw: u32,
 }
@@ -45,18 +47,14 @@ impl chaininterface::FeeEstimator for TestFeeEstimator {
     }
 }
 
-// END NOT TESTED
-
 pub struct TestBroadcaster {
     pub txn_broadcasted: Mutex<Vec<Transaction>>,
 }
 
 impl chaininterface::BroadcasterInterface for TestBroadcaster {
-    // BEGIN NOT TESTED
     fn broadcast_transaction(&self, tx: &Transaction) {
         self.txn_broadcasted.lock().unwrap().push(tx.clone());
     }
-    // END NOT TESTED
 }
 
 pub struct TestLogger {
@@ -66,11 +64,9 @@ pub struct TestLogger {
 }
 
 impl TestLogger {
-    // BEGIN NOT TESTED
     pub fn new() -> TestLogger {
         Self::with_id("".to_owned())
     }
-    // END NOT TESTED
     pub fn with_id(id: String) -> TestLogger {
         TestLogger {
             level: Level::Trace,
@@ -178,6 +174,7 @@ pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> Public
 }
 
 // BEGIN NOT TESTED
+
 pub fn make_test_bitcoin_key(i: u8) -> (bitcoin::PublicKey, bitcoin::PrivateKey) {
     let secp_ctx = Secp256k1::signing_only();
     let secret_key = SecretKey::from_slice(&[i; 32]).unwrap();
@@ -188,12 +185,11 @@ pub fn make_test_bitcoin_key(i: u8) -> (bitcoin::PublicKey, bitcoin::PrivateKey)
     };
     return (private_key.public_key(&secp_ctx), private_key);
 }
-// END NOT TESTED
 
-// BEGIN NOT TESTED
 pub fn make_test_bitcoin_pubkey(i: u8) -> bitcoin::PublicKey {
     make_test_bitcoin_key(i).0
 }
+
 // END NOT TESTED
 
 pub fn make_test_key(i: u8) -> (PublicKey, SecretKey) {
