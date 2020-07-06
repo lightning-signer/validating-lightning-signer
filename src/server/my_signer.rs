@@ -369,6 +369,7 @@ impl MySigner {
     }
     // END NOT TESTED
 
+    /// Sign the local commitment transaction, at force-close
     pub fn sign_commitment_tx(
         &self,
         node_id: &PublicKey,
@@ -376,6 +377,7 @@ impl MySigner {
         tx: &bitcoin::Transaction,
         funding_amount_sat: u64,
     ) -> Result<Vec<u8>, Status> {
+        // FIXME needs validation, and therefore needs output_witscripts
         let sigvec: Result<Vec<u8>, Status> =
             self.with_ready_channel(&node_id, &channel_id, |chan| {
                 if tx.input.len() != 1 {
@@ -694,6 +696,7 @@ impl MySigner {
 
                 let secp_ctx = &chan.secp_ctx;
 
+                // FIXME this makes no sense, we are treating an output witscript as an input redeemscript
                 let redeemscript = Script::from((&output_witscripts[0]).to_vec());
 
                 let sighash = Message::from_slice(
