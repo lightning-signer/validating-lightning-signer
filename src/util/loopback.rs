@@ -19,7 +19,6 @@ pub struct LoopbackSignerKeysInterface {
     pub signer: Arc<MySigner>,
 }
 
-// BEGIN NOT TESTED
 #[derive(Clone)]
 pub struct LoopbackChannelSigner {
     pub node_id: PublicKey,
@@ -43,7 +42,9 @@ impl LoopbackChannelSigner {
             .with_channel_slot(node_id, channel_id, |slot| match slot {
                 None => Err(()),
                 Some(ChannelSlot::Stub(chan)) => Ok(chan.keys.pubkeys().clone()),
+                // BEGIN NOT TESTED
                 Some(ChannelSlot::Ready(chan)) => Ok(chan.keys.pubkeys().clone()),
+                // END NOT TESTED
             })
             .expect("no such channel");
         LoopbackChannelSigner {
@@ -56,6 +57,7 @@ impl LoopbackChannelSigner {
         }
     }
 
+    // BEGIN NOT TESTED
     fn unready_channel<T>(&self) -> Result<T, ()> {
         let signer = &self.signer;
         log_error!(signer, "unready channel {}", self.channel_id);
@@ -66,12 +68,13 @@ impl LoopbackChannelSigner {
         let signer = &self.signer;
         log_error!(signer, "bad status {:?} on channel {}", s, self.channel_id);
     }
+    // END NOT TESTED
 }
 
 fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
     res.pop();
     let sig = Signature::from_der(res.as_slice())
-        .map_err(|_e| ())
+        .map_err(|_e| ()) // NOT TESTED
         .expect("failed to parse the signature we just created");
     Ok(sig)
 }
@@ -119,7 +122,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         self.signer
             .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
                 None => Err(()),
-                Some(ChannelSlot::Stub(_)) => self.unready_channel(),
+                Some(ChannelSlot::Stub(_)) => self.unready_channel(), // NOT TESTED
                 Some(ChannelSlot::Ready(chan)) => chan
                     .sign_remote_commitment(
                         feerate_per_kw,
@@ -128,7 +131,7 @@ impl ChannelKeys for LoopbackChannelSigner {
                         htlcs,
                         to_self_delay,
                     )
-                    .map_err(|_| ()),
+                    .map_err(|_| ()), // NOT TESTED
             })
     }
 
@@ -168,7 +171,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         self.signer
             .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
                 None => Err(()),
-                Some(ChannelSlot::Stub(_)) => self.unready_channel(),
+                Some(ChannelSlot::Stub(_)) => self.unready_channel(), // NOT TESTED
                 Some(ChannelSlot::Ready(chan)) => chan
                     .keys
                     .sign_local_commitment_htlc_transactions(
@@ -176,7 +179,7 @@ impl ChannelKeys for LoopbackChannelSigner {
                         local_csv,
                         secp_ctx,
                     )
-                    .map_err(|_| ()),
+                    .map_err(|_| ()), // NOT TESTED
             })
     }
 
@@ -194,7 +197,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         self.signer
             .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
                 None => Err(()),
-                Some(ChannelSlot::Stub(_)) => self.unready_channel(),
+                Some(ChannelSlot::Stub(_)) => self.unready_channel(), // NOT TESTED
                 Some(ChannelSlot::Ready(chan)) => chan
                     .keys
                     .sign_justice_transaction(
@@ -206,7 +209,7 @@ impl ChannelKeys for LoopbackChannelSigner {
                         on_remote_tx_csv,
                         secp_ctx,
                     )
-                    .map_err(|_| ()),
+                    .map_err(|_| ()), // NOT TESTED
             })
     }
 
@@ -223,7 +226,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         self.signer
             .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
                 None => Err(()),
-                Some(ChannelSlot::Stub(_)) => self.unready_channel(),
+                Some(ChannelSlot::Stub(_)) => self.unready_channel(), // NOT TESTED
                 Some(ChannelSlot::Ready(chan)) => chan
                     .keys
                     .sign_remote_htlc_transaction(
@@ -234,7 +237,7 @@ impl ChannelKeys for LoopbackChannelSigner {
                         htlc,
                         secp_ctx,
                     )
-                    .map_err(|_| ()),
+                    .map_err(|_| ()), // NOT TESTED
             })
     }
 
@@ -282,7 +285,7 @@ impl ChannelKeys for LoopbackChannelSigner {
             .1;
 
         let sig = Signature::from_der(res.as_slice())
-            .map_err(|_e| ())
+            .map_err(|_e| ()) // NOT TESTED
             .expect("failed to parse the signature we just created");
         Ok(sig)
     }

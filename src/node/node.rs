@@ -265,7 +265,6 @@ impl Channel {
         Ok(sig)
     }
 
-    // BEGIN NOT TESTED
     // Not tested because loopback test is currently ignored.
     // TODO phase 2
     pub fn sign_remote_commitment(
@@ -294,7 +293,6 @@ impl Channel {
             )
             .map_err(|_| self.internal_error("sign_remote_commitment failed"))
     }
-    // END NOT TESTED
 
     // BEGIN NOT TESTED
     // Not tested because loopback test is currently ignored.
@@ -600,7 +598,6 @@ impl Node {
         self.keys_manager.get_node_secret()
     }
 
-    // BEGIN NOT TESTED
     /// TODO leaking secret
     pub fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
         self.keys_manager.get_onion_rand()
@@ -622,7 +619,6 @@ impl Node {
     pub fn get_channel_id(&self) -> [u8; 32] {
         self.keys_manager.get_channel_id()
     }
-    // END NOT TESTED
 
     pub fn get_bip32_key(&self) -> &ExtendedPrivKey {
         self.keys_manager.get_bip32_key()

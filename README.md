@@ -27,20 +27,6 @@ even though it's documented as stable.
 
     cargo run --bin server
 
-### Using [Tarpaulin](https://github.com/xd009642/tarpaulin) for Code Coverage
-
-Basic coverage:
-
-    cargo install cargo-tarpaulin
-    cargo tarpaulin
-
-Check coverage annotations in source files:
-
-    cargo install cargo-coverage-annotations
-    cargo tarpaulin
-    cargo coverage-annotations |& sort > coverage.txt
-    diff coverage-false-positives.txt coverage.txt
-
 ### Using [kcov](https://github.com/SimonKagstrom/kcov) for Code Coverage
 
 Dependencies:
@@ -58,6 +44,8 @@ More dependencies:
 Run coverage:
 
     ./scripts/run-kcov
+    ./scripts/run-kcov-functional
+    ./scripts/run-kcov-all
         
 View Coverage Report:
 
