@@ -369,6 +369,7 @@ impl MySigner {
     }
     // END NOT TESTED
 
+    /// Sign the local commitment transaction, at force-close
     pub fn sign_commitment_tx(
         &self,
         node_id: &PublicKey,
@@ -376,6 +377,7 @@ impl MySigner {
         tx: &bitcoin::Transaction,
         funding_amount_sat: u64,
     ) -> Result<Vec<u8>, Status> {
+        // FIXME needs validation, and therefore needs output_witscripts
         let sigvec: Result<Vec<u8>, Status> =
             self.with_ready_channel(&node_id, &channel_id, |chan| {
                 if tx.input.len() != 1 {
@@ -439,7 +441,7 @@ impl MySigner {
         channel_id: &ChannelId,
         tx: &bitcoin::Transaction,
         n: u64,
-        output_witscripts: Vec<Vec<u8>>,
+        input_redeemscript: Vec<u8>,
         htlc_amount_sat: u64,
     ) -> Result<Vec<u8>, Status> {
         let sigvec: Result<Vec<u8>, Status> =
@@ -450,17 +452,12 @@ impl MySigner {
                 if tx.output.len() != 1 {
                     return Err(self.invalid_argument("tx.output.len() != 1")); // NOT TESTED
                 }
-                if output_witscripts.len() != 1 {
-                    // BEGIN NOT TESTED
-                    return Err(self.invalid_argument("output_witscripts.len() != 1"));
-                    // END NOT TESTED
-                }
 
                 let secp_ctx = Secp256k1::signing_only();
 
                 let per_commitment_point = chan.get_per_commitment_point(n);
 
-                let htlc_redeemscript = Script::from((&output_witscripts[0]).to_vec());
+                let htlc_redeemscript = Script::from(input_redeemscript.clone());
 
                 let htlc_sighash = Message::from_slice(
                     &bip143::SighashComponents::new(&tx).sighash_all(
@@ -511,7 +508,7 @@ impl MySigner {
         channel_id: &ChannelId,
         tx: &bitcoin::Transaction,
         n: u64,
-        output_witscripts: Vec<Vec<u8>>,
+        input_redeemscript: Vec<u8>,
         htlc_amount_sat: u64,
     ) -> Result<Vec<u8>, Status> {
         let sigvec: Result<Vec<u8>, Status> =
@@ -522,17 +519,12 @@ impl MySigner {
                 if tx.output.len() != 1 {
                     return Err(self.invalid_argument("tx.output.len() != 1")); // NOT TESTED
                 }
-                if output_witscripts.len() != 1 {
-                    // BEGIN NOT TESTED
-                    return Err(self.invalid_argument("output_witscripts.len() != 1"));
-                    // END NOT TESTED
-                }
 
                 let secp_ctx = Secp256k1::signing_only();
 
                 let per_commitment_point = chan.get_per_commitment_point(n);
 
-                let htlc_redeemscript = Script::from((&output_witscripts[0]).to_vec());
+                let htlc_redeemscript = Script::from(input_redeemscript.clone());
 
                 let htlc_sighash = Message::from_slice(
                     &bip143::SighashComponents::new(&tx).sighash_all(
@@ -569,16 +561,11 @@ impl MySigner {
         node_id: &PublicKey,
         channel_id: &ChannelId,
         tx: &bitcoin::Transaction,
-        output_witscripts: Vec<Vec<u8>>,
+        input_redeemscript: Vec<u8>,
         remote_per_commitment_point: &PublicKey,
         htlc_amount_sat: u64,
     ) -> Result<Vec<u8>, Status> {
         let sig: Result<Vec<u8>, Status> = self.with_ready_channel(&node_id, &channel_id, |chan| {
-            if tx.output.len() != output_witscripts.len() {
-                // BEGIN NOT TESTED
-                return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
-                // END NOT TESTED
-            }
             if tx.input.len() != 1 {
                 return Err(self.invalid_argument("len(tx.input) != 1")); // NOT TESTED
             }
@@ -588,8 +575,7 @@ impl MySigner {
 
             let secp_ctx = &chan.secp_ctx;
 
-            // FIXME this makes no sense, we are treating an output witscript as an input redeemscript
-            let htlc_redeemscript = Script::from((&output_witscripts[0]).to_vec());
+            let htlc_redeemscript = Script::from(input_redeemscript.clone());
 
             let htlc_sighash = Message::from_slice(
                 &bip143::SighashComponents::new(&tx).sighash_all(
@@ -624,7 +610,7 @@ impl MySigner {
         node_id: &PublicKey,
         channel_id: &ChannelId,
         tx: &bitcoin::Transaction,
-        output_witscripts: Vec<Vec<u8>>,
+        input_redeemscript: Vec<u8>,
         remote_per_commitment_point: &PublicKey,
         htlc_amount_sat: u64,
     ) -> Result<Vec<u8>, Status> {
@@ -636,15 +622,10 @@ impl MySigner {
                 if tx.output.len() != 1 {
                     return Err(self.invalid_argument("tx.output.len() != 1")); // NOT TESTED
                 }
-                if output_witscripts.len() != 1 {
-                    // BEGIN NOT TESTED
-                    return Err(self.invalid_argument("output_witscripts.len() != 1"));
-                    // END NOT TESTED
-                }
 
                 let secp_ctx = &chan.secp_ctx;
 
-                let redeemscript = Script::from((&output_witscripts[0]).to_vec());
+                let redeemscript = Script::from(input_redeemscript.clone());
 
                 let sighash = Message::from_slice(
                     &bip143::SighashComponents::new(&tx).sighash_all(
@@ -675,7 +656,7 @@ impl MySigner {
         channel_id: &ChannelId,
         tx: &bitcoin::Transaction,
         revocation_secret: &SecretKey,
-        output_witscripts: Vec<Vec<u8>>,
+        input_redeemscript: Vec<u8>,
         htlc_amount_sat: u64,
     ) -> Result<Vec<u8>, Status> {
         let sigvec: Result<Vec<u8>, Status> =
@@ -686,15 +667,10 @@ impl MySigner {
                 if tx.output.len() != 1 {
                     return Err(self.invalid_argument("tx.output.len() != 1")); // NOT TESTED
                 }
-                if output_witscripts.len() != 1 {
-                    // BEGIN NOT TESTED
-                    return Err(self.invalid_argument("output_witscripts.len() != 1"));
-                    // END NOT TESTED
-                }
 
                 let secp_ctx = &chan.secp_ctx;
 
-                let redeemscript = Script::from((&output_witscripts[0]).to_vec());
+                let redeemscript = Script::from(input_redeemscript.clone());
 
                 let sighash = Message::from_slice(
                     &bip143::SighashComponents::new(&tx).sighash_all(
@@ -2098,7 +2074,6 @@ mod tests {
         let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
 
         let htlc_amount_sat = 10 * 1000;
-        let output_witscripts = vec![htlc_redeemscript.to_bytes()];
 
         let sigvec = signer
             .sign_local_htlc_tx(
@@ -2106,7 +2081,7 @@ mod tests {
                 &channel_id,
                 &htlc_tx,
                 n,
-                output_witscripts,
+                htlc_redeemscript.to_bytes(),
                 htlc_amount_sat,
             )
             .unwrap();
@@ -2178,7 +2153,6 @@ mod tests {
             get_revokeable_redeemscript(&revocation_pubkey, to_self_delay, &a_delayed_payment_key);
 
         let htlc_amount_sat = 10 * 1000;
-        let output_witscripts = vec![redeemscript.to_bytes()];
 
         let sigvec = signer
             .sign_delayed_payment_to_us(
@@ -2186,7 +2160,7 @@ mod tests {
                 &channel_id,
                 &htlc_tx,
                 n,
-                output_witscripts,
+                redeemscript.to_bytes(),
                 htlc_amount_sat,
             )
             .unwrap();
@@ -2263,14 +2237,13 @@ mod tests {
         let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
 
         let htlc_amount_sat = 10 * 1000;
-        let output_witscripts = vec![htlc_redeemscript.to_bytes()];
 
         let ser_signature = signer
             .sign_remote_htlc_tx(
                 &node_id,
                 &channel_id,
                 &htlc_tx,
-                output_witscripts,
+                htlc_redeemscript.to_bytes(),
                 &remote_per_commitment_point,
                 htlc_amount_sat,
             )
@@ -2344,14 +2317,13 @@ mod tests {
         let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
 
         let htlc_amount_sat = 10 * 1000;
-        let output_witscripts = vec![htlc_redeemscript.to_bytes()];
 
         let ser_signature = signer
             .sign_remote_htlc_to_us(
                 &node_id,
                 &channel_id,
                 &htlc_tx,
-                output_witscripts,
+                htlc_redeemscript.to_bytes(),
                 &remote_per_commitment_point,
                 htlc_amount_sat,
             )
@@ -2532,7 +2504,6 @@ mod tests {
             get_revokeable_redeemscript(&revocation_pubkey, to_self_delay, &a_delayed_payment_key);
 
         let htlc_amount_sat = 10 * 1000;
-        let output_witscripts = vec![redeemscript.to_bytes()];
 
         let revocation_secret = derive_private_revocation_key(
             &secp_ctx,
@@ -2549,7 +2520,7 @@ mod tests {
                 &channel_id,
                 &htlc_tx,
                 &revocation_secret,
-                output_witscripts,
+                redeemscript.to_bytes(),
                 htlc_amount_sat,
             )
             .unwrap();

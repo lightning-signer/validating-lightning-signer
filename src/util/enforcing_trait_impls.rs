@@ -180,7 +180,6 @@ impl ChannelKeys for EnforcingChannelKeys {
             .sign_local_commitment_htlc_transactions(local_commitment_tx, local_csv, secp_ctx)
     }
 
-    #[allow(unused_variables)]
     fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         justice_tx: &Transaction,

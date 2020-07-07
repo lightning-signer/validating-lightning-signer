@@ -684,20 +684,20 @@ impl Signer for MySigner {
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
-        let htlc_amount_sat = reqtx.input_descs[0]
+        let input_desc = reqtx.input_descs[0].clone();
+        let htlc_amount_sat = input_desc
             .prev_output
-            .as_ref()
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
             .value_sat as u64;
 
-        let witscripts = collect_output_witscripts(&reqtx.output_descs);
+        let redeemscript = input_desc.redeem_script;
 
         let sigvec = self.sign_local_htlc_tx(
             &node_id,
             &channel_id,
             &tx,
             req.n,
-            witscripts,
+            redeemscript,
             htlc_amount_sat,
         )?;
 
@@ -731,20 +731,20 @@ impl Signer for MySigner {
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
-        let htlc_amount_sat = reqtx.input_descs[0]
+        let input_desc = reqtx.input_descs[0].clone();
+        let htlc_amount_sat = input_desc
             .prev_output
-            .as_ref()
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
             .value_sat as u64;
 
-        let witscripts = collect_output_witscripts(&reqtx.output_descs);
+        let redeemscript = input_desc.redeem_script;
 
         let sigvec = self.sign_delayed_payment_to_us(
             &node_id,
             &channel_id,
             &tx,
             req.n,
-            witscripts,
+            redeemscript,
             htlc_amount_sat,
         )?;
 
@@ -787,18 +787,18 @@ impl Signer for MySigner {
 
         let remote_per_commitment_point = self.public_key(req.remote_per_commit_point)?;
 
-        let htlc_amount_sat = match reqtx.input_descs[0].prev_output.as_ref() {
-            Some(out) => out.value_sat as u64,
-            None => return Err(self.internal_error("missing input_desc[0]")),
-        };
+        let input_desc = reqtx.input_descs[0].clone();
+        let htlc_amount_sat = input_desc.prev_output
+            .ok_or_else(|| self.internal_error("missing input_desc[0]"))?
+            .value_sat as u64;
 
-        let witscripts = collect_output_witscripts(&reqtx.output_descs);
+        let redeemscript = input_desc.redeem_script;
 
         let sig_data = self.sign_remote_htlc_tx(
             &node_id,
             &channel_id,
             &tx,
-            witscripts,
+            redeemscript,
             &remote_per_commitment_point,
             htlc_amount_sat,
         )?;
@@ -836,21 +836,20 @@ impl Signer for MySigner {
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
-        let htlc_amount_sat = reqtx.input_descs[0]
-            .prev_output
-            .as_ref()
+        let input_desc = reqtx.input_descs[0].clone();
+        let htlc_amount_sat = input_desc.prev_output
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
             .value_sat as u64;
 
         let remote_per_commitment_point = self.public_key(req.remote_per_commit_point)?;
 
-        let witscripts = collect_output_witscripts(&reqtx.output_descs);
+        let redeemscript = input_desc.redeem_script;
 
         let sigvec = self.sign_remote_htlc_to_us(
             &node_id,
             &channel_id,
             &tx,
-            witscripts,
+            redeemscript,
             &remote_per_commitment_point,
             htlc_amount_sat,
         )?;
@@ -885,22 +884,21 @@ impl Signer for MySigner {
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
-        let htlc_amount_sat = reqtx.input_descs[0]
-            .prev_output
-            .as_ref()
+        let input_desc = reqtx.input_descs[0].clone();
+        let htlc_amount_sat = input_desc.prev_output
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
             .value_sat as u64;
 
         let revocation_secret = self.secret_key(req.revocation_secret)?;
 
-        let witscripts = collect_output_witscripts(&reqtx.output_descs);
+        let redeemscript = input_desc.redeem_script;
 
         let sigvec = self.sign_penalty_to_us(
             &node_id,
             &channel_id,
             &tx,
             &revocation_secret,
-            witscripts,
+            redeemscript,
             htlc_amount_sat,
         )?;
 
