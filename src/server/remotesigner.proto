@@ -590,6 +590,8 @@ message InputDescriptor {
 
   // Only provided if input from unilateral close by peer on old channel.
   UnilateralCloseInfo close_info = 4;
+
+  bytes redeem_script = 5;
 }
 
 message OutputDescriptor {
