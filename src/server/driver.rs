@@ -57,6 +57,10 @@ impl MySigner {
 
     fn public_key(&self, arg: Option<PubKey>) -> Result<PublicKey, Status> {
         let pubkey = arg.ok_or_else(|| self.invalid_argument("missing pubkey"))?;
+        self.public_key_from_raw(pubkey)
+    }
+
+    fn public_key_from_raw(&self, pubkey: PubKey) -> Result<PublicKey, Status> {
         public_key_from_raw(pubkey.data.as_slice())
             .map_err(|err| self.invalid_argument(format!("could not deserialize pubkey: {}", err)))
     }
@@ -692,11 +696,16 @@ impl Signer for MySigner {
 
         let redeemscript = input_desc.redeem_script;
 
+        let opt_per_commitment_point = match req.per_commit_point {
+            Some(p) => Some(self.public_key_from_raw(p)?),
+            _ => None
+        };
         let sigvec = self.sign_local_htlc_tx(
             &node_id,
             &channel_id,
             &tx,
             req.n,
+            opt_per_commitment_point,
             redeemscript,
             htlc_amount_sat,
         )?;
@@ -779,6 +788,7 @@ impl Signer for MySigner {
         );
         log_debug!(self, "req={}", reqstr);
         let reqtx = req.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
+        let input = req.input;
 
         let tx_res: Result<bitcoin::Transaction, encode::Error> =
             deserialize(reqtx.raw_tx_bytes.as_slice());
@@ -798,6 +808,7 @@ impl Signer for MySigner {
             &node_id,
             &channel_id,
             &tx,
+            input as usize,
             redeemscript,
             &remote_per_commitment_point,
             htlc_amount_sat,
@@ -880,6 +891,7 @@ impl Signer for MySigner {
         log_info!(self, "ENTER sign_penalty_to_us({}/{})", node_id, channel_id);
         log_debug!(self, "req={}", reqstr);
         let reqtx = req.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
+        let input = req.input;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
@@ -897,6 +909,7 @@ impl Signer for MySigner {
             &node_id,
             &channel_id,
             &tx,
+            input as usize,
             &revocation_secret,
             redeemscript,
             htlc_amount_sat,
