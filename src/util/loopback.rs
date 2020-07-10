@@ -96,15 +96,9 @@ fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
 }
 
 impl ChannelKeys for LoopbackChannelSigner {
-    fn commitment_secret(&self, idx: u64) -> [u8; 32] {
-        // FIXME implement this in signer to remove this bypass
-        self.signer
-            .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
-                None => Err(()),
-                Some(ChannelSlot::Stub(chan)) => Ok(chan.keys.commitment_secret(idx)),
-                Some(ChannelSlot::Ready(chan)) => Ok(chan.keys.commitment_secret(idx)),
-            })
-            .expect("no such channel")
+    fn commitment_secret(&self, commitment_number: u64) -> [u8; 32] {
+        self.signer.revoke_commitent(&self.node_id, &self.channel_id, commitment_number)
+            .map_err(|s| self.bad_status(s)).unwrap()
     }
 
     fn pubkeys(&self) -> &ChannelPublicKeys {

@@ -212,6 +212,23 @@ impl MySigner {
         })
     }
 
+    pub fn revoke_commitent(
+        &self,
+        node_id: &PublicKey,
+        channel_id: &ChannelId,
+        commitment_number: u64,
+    ) -> Result<[u8; 32], Status> {
+        // TODO can't use this because RL calls us on unready channels.  That should change.
+        // self.with_ready_channel(&node_id, &channel_id, |chan| {
+        //     Ok(chan.keys.commitment_secret(commitment_number))
+        // })
+        self.with_channel_slot(node_id, channel_id, |slot| match slot {
+                None => Err(self.invalid_argument("no such channel")),
+                Some(ChannelSlot::Stub(chan)) => Ok(chan.keys.commitment_secret(commitment_number)),
+                Some(ChannelSlot::Ready(chan)) => Ok(chan.keys.commitment_secret(commitment_number)),
+            })
+    }
+
     pub fn get_unilateral_close_key(
         &self,
         node_id: &PublicKey,
