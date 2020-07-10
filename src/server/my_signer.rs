@@ -435,12 +435,14 @@ impl MySigner {
         sigvec
     }
 
+    /// the commitment number is ignored if the per commitment point is supplied
     pub fn sign_local_htlc_tx(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
         tx: &bitcoin::Transaction,
-        n: u64,
+        commitment_number: u64,
+        opt_per_commitment_point: Option<PublicKey>,
         input_redeemscript: Vec<u8>,
         htlc_amount_sat: u64,
     ) -> Result<Vec<u8>, Status> {
@@ -455,8 +457,8 @@ impl MySigner {
 
                 let secp_ctx = Secp256k1::signing_only();
 
-                let per_commitment_point = chan.get_per_commitment_point(n);
-
+                let per_commitment_point = opt_per_commitment_point
+                    .unwrap_or_else(|| chan.get_per_commitment_point(commitment_number));
                 let htlc_redeemscript = Script::from(input_redeemscript.clone());
 
                 let htlc_sighash = Message::from_slice(
@@ -561,14 +563,12 @@ impl MySigner {
         node_id: &PublicKey,
         channel_id: &ChannelId,
         tx: &bitcoin::Transaction,
+        input: usize,
         input_redeemscript: Vec<u8>,
         remote_per_commitment_point: &PublicKey,
         htlc_amount_sat: u64,
     ) -> Result<Vec<u8>, Status> {
         let sig: Result<Vec<u8>, Status> = self.with_ready_channel(&node_id, &channel_id, |chan| {
-            if tx.input.len() != 1 {
-                return Err(self.invalid_argument("len(tx.input) != 1")); // NOT TESTED
-            }
             if tx.output.len() != 1 {
                 return Err(self.invalid_argument("len(tx.output) != 1")); // NOT TESTED
             }
@@ -579,7 +579,7 @@ impl MySigner {
 
             let htlc_sighash = Message::from_slice(
                 &bip143::SighashComponents::new(&tx).sighash_all(
-                    &tx.input[0],
+                    &tx.input[input],
                     &htlc_redeemscript,
                     htlc_amount_sat,
                 )[..],
@@ -655,15 +655,13 @@ impl MySigner {
         node_id: &PublicKey,
         channel_id: &ChannelId,
         tx: &bitcoin::Transaction,
+        input: usize,
         revocation_secret: &SecretKey,
         input_redeemscript: Vec<u8>,
         htlc_amount_sat: u64,
     ) -> Result<Vec<u8>, Status> {
         let sigvec: Result<Vec<u8>, Status> =
             self.with_ready_channel(&node_id, &channel_id, |chan| {
-                if tx.input.len() != 1 {
-                    return Err(self.invalid_argument("tx.input.len() != 1")); // NOT TESTED
-                }
                 if tx.output.len() != 1 {
                     return Err(self.invalid_argument("tx.output.len() != 1")); // NOT TESTED
                 }
@@ -674,7 +672,7 @@ impl MySigner {
 
                 let sighash = Message::from_slice(
                     &bip143::SighashComponents::new(&tx).sighash_all(
-                        &tx.input[0],
+                        &tx.input[input],
                         &redeemscript,
                         htlc_amount_sat,
                     )[..],
@@ -2075,19 +2073,20 @@ mod tests {
 
         let htlc_amount_sat = 10 * 1000;
 
+        let htlc_pubkey =
+            get_channel_htlc_pubkey(&signer, &node_id, &channel_id, &per_commitment_point);
+
         let sigvec = signer
             .sign_local_htlc_tx(
                 &node_id,
                 &channel_id,
                 &htlc_tx,
                 n,
+                None,
                 htlc_redeemscript.to_bytes(),
                 htlc_amount_sat,
             )
             .unwrap();
-
-        let htlc_pubkey =
-            get_channel_htlc_pubkey(&signer, &node_id, &channel_id, &per_commitment_point);
 
         check_signature(
             &htlc_tx,
@@ -2097,6 +2096,28 @@ mod tests {
             htlc_amount_sat,
             &htlc_redeemscript,
         );
+
+        let sigvec1 = signer
+            .sign_local_htlc_tx(
+                &node_id,
+                &channel_id,
+                &htlc_tx,
+                999,
+                Some(per_commitment_point),
+                htlc_redeemscript.to_bytes(),
+                htlc_amount_sat,
+            )
+            .unwrap();
+
+        check_signature(
+            &htlc_tx,
+            0,
+            sigvec1,
+            &htlc_pubkey,
+            htlc_amount_sat,
+            &htlc_redeemscript,
+        );
+
     }
 
     #[test]
@@ -2243,6 +2264,7 @@ mod tests {
                 &node_id,
                 &channel_id,
                 &htlc_tx,
+                0,
                 htlc_redeemscript.to_bytes(),
                 &remote_per_commitment_point,
                 htlc_amount_sat,
@@ -2519,6 +2541,7 @@ mod tests {
                 &node_id,
                 &channel_id,
                 &htlc_tx,
+                0,
                 &revocation_secret,
                 redeemscript.to_bytes(),
                 htlc_amount_sat,

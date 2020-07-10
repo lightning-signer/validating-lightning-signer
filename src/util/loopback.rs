@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use bitcoin::{Script, Transaction};
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{
-    ChannelPublicKeys, HTLCOutputInCommitment, LocalCommitmentTransaction, TxCreationKeys,
-};
+use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, LocalCommitmentTransaction, TxCreationKeys, build_htlc_transaction, get_htlc_redeemscript};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 
@@ -12,6 +10,7 @@ use crate::node::node::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::server::my_signer::MySigner;
 use lightning::util::ser::Writeable;
 use tonic::Status;
+use lightning::ln::chan_utils;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -25,6 +24,7 @@ pub struct LoopbackChannelSigner {
     pub channel_id: ChannelId,
     pub signer: Arc<MySigner>,
     pub pubkeys: ChannelPublicKeys,
+    pub remote_pubkeys: Option<ChannelPublicKeys>,
     pub is_outbound: bool,
     pub channel_value_sat: u64,
 }
@@ -38,23 +38,39 @@ impl LoopbackChannelSigner {
         channel_value_sat: u64,
     ) -> LoopbackChannelSigner {
         log_info!(signer, "new channel {:?} {:?}", node_id, channel_id);
-        let pubkeys = signer
-            .with_channel_slot(node_id, channel_id, |slot| match slot {
-                None => Err(()),
-                Some(ChannelSlot::Stub(chan)) => Ok(chan.keys.pubkeys().clone()),
-                // BEGIN NOT TESTED
-                Some(ChannelSlot::Ready(chan)) => Ok(chan.keys.pubkeys().clone()),
-                // END NOT TESTED
-            })
-            .expect("no such channel");
+        let pubkeys =
+            signer.get_channel_basepoints(&node_id, &channel_id)
+                .map_err(|s| {
+                    log_error!(signer, "bad status {:?} on channel {}", s, channel_id);
+                    ()
+                }).expect("must be able to get basepoints");
         LoopbackChannelSigner {
             node_id: *node_id,
             channel_id: *channel_id,
             signer: signer.clone(),
             pubkeys,
+            remote_pubkeys: None,
             is_outbound,
             channel_value_sat,
         }
+    }
+
+    pub fn make_remote_tx_keys<T: secp256k1::Signing + secp256k1::Verification>(&self,
+        per_commitment_point: &PublicKey,
+        secp_ctx: &Secp256k1<T>,
+    ) -> Result<TxCreationKeys, ()> {
+        let pubkeys = &self.pubkeys;
+        let remote_pubkeys =
+            self.remote_pubkeys.as_ref().ok_or(())?;
+        let keys = TxCreationKeys::new(
+            secp_ctx,
+            &per_commitment_point,
+            &pubkeys.delayed_payment_basepoint,
+            &pubkeys.htlc_basepoint,
+            &remote_pubkeys.revocation_basepoint,
+            &remote_pubkeys.htlc_basepoint,
+        ).expect("failed to derive keys");
+        Ok(keys)
     }
 
     // BEGIN NOT TESTED
@@ -140,8 +156,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         local_commitment_tx: &LocalCommitmentTransaction,
         _secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        let res = self
-            .signer
+        let res = self.signer
             .sign_commitment_tx(
                 &self.node_id,
                 &self.channel_id,
@@ -162,25 +177,38 @@ impl ChannelKeys for LoopbackChannelSigner {
 
     fn sign_local_commitment_htlc_transactions<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
-        local_commitment_tx: &LocalCommitmentTransaction,
+        lct: &LocalCommitmentTransaction,
         local_csv: u16,
-        secp_ctx: &Secp256k1<T>,
+        _secp_ctx: &Secp256k1<T>,
     ) -> Result<Vec<Option<Signature>>, ()> {
-        // FIXME don't bypass the signer here
-        // The signer wants output_witscripts for validation - figure out how provide equivalent
-        self.signer
-            .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
-                None => Err(()),
-                Some(ChannelSlot::Stub(_)) => self.unready_channel(), // NOT TESTED
-                Some(ChannelSlot::Ready(chan)) => chan
-                    .keys
-                    .sign_local_commitment_htlc_transactions(
-                        local_commitment_tx,
-                        local_csv,
-                        secp_ctx,
-                    )
-                    .map_err(|_| ()), // NOT TESTED
-            })
+        let mut ret = Vec::with_capacity(lct.per_htlc.len());
+
+        for this_htlc in lct.per_htlc.iter() {
+            if this_htlc.0.transaction_output_index.is_some() {
+                let keys = &lct.local_keys;
+                let htlc_tx =
+                    build_htlc_transaction(&lct.txid(), lct.feerate_per_kw, local_csv,
+                                           &this_htlc.0,
+                                           &keys.a_delayed_payment_key,
+                                           &keys.revocation_key);
+
+                let htlc_redeemscript = get_htlc_redeemscript(&this_htlc.0, keys);
+
+                let res = self.signer.sign_local_htlc_tx(
+                    &self.node_id, &self.channel_id,
+                    &htlc_tx,
+                    0,
+                    Some(keys.per_commitment_point),
+                    htlc_redeemscript.to_bytes(),
+                    this_htlc.0.amount_msat,
+                ).map_err(|s| self.bad_status(s))?;
+
+                ret.push(Some(bitcoin_sig_to_signature(res)?));
+            } else {
+                ret.push(None);
+            }
+        }
+        Ok(ret)
     }
 
     fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(
@@ -193,24 +221,25 @@ impl ChannelKeys for LoopbackChannelSigner {
         on_remote_tx_csv: u16,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        // FIXME don't bypass the signer here
-        self.signer
-            .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
-                None => Err(()),
-                Some(ChannelSlot::Stub(_)) => self.unready_channel(), // NOT TESTED
-                Some(ChannelSlot::Ready(chan)) => chan
-                    .keys
-                    .sign_justice_transaction(
-                        justice_tx,
-                        input,
-                        amount,
-                        per_commitment_key,
-                        htlc,
-                        on_remote_tx_csv,
-                        secp_ctx,
-                    )
-                    .map_err(|_| ()), // NOT TESTED
-            })
+        let tx_keys =
+            self.make_remote_tx_keys(&PublicKey::from_secret_key(secp_ctx, per_commitment_key),
+                                     secp_ctx)?;
+        let redeem_script = if let Some(ref htlc) = *htlc {
+            chan_utils::get_htlc_redeemscript(&htlc, &tx_keys)
+        } else {
+            chan_utils::get_revokeable_redeemscript(&tx_keys.revocation_key, on_remote_tx_csv,
+                                                    &tx_keys.a_delayed_payment_key)
+        };
+
+        let res = self.signer.sign_penalty_to_us(
+            &self.node_id, &self.channel_id,
+            justice_tx,
+            input,
+            per_commitment_key,
+            redeem_script.to_bytes(),
+            amount)
+            .map_err(|s| self.bad_status(s))?;
+        bitcoin_sig_to_signature(res)
     }
 
     fn sign_remote_htlc_transaction<T: secp256k1::Signing + secp256k1::Verification>(
@@ -222,23 +251,18 @@ impl ChannelKeys for LoopbackChannelSigner {
         htlc: &HTLCOutputInCommitment,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        // FIXME don't bypass the signer here
-        self.signer
-            .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
-                None => Err(()),
-                Some(ChannelSlot::Stub(_)) => self.unready_channel(), // NOT TESTED
-                Some(ChannelSlot::Ready(chan)) => chan
-                    .keys
-                    .sign_remote_htlc_transaction(
-                        htlc_tx,
-                        input,
-                        amount,
-                        per_commitment_point,
-                        htlc,
-                        secp_ctx,
-                    )
-                    .map_err(|_| ()), // NOT TESTED
-            })
+        let chan_keys = self.make_remote_tx_keys(per_commitment_point, secp_ctx)?;
+        let redeem_script = chan_utils::get_htlc_redeemscript(htlc, &chan_keys);
+        let res = self.signer.sign_remote_htlc_tx(
+            &self.node_id,
+            &self.channel_id,
+            htlc_tx,
+            input,
+            redeem_script.to_bytes(),
+            per_commitment_point,
+            amount,
+        ).map_err(|s| self.bad_status(s))?;
+        bitcoin_sig_to_signature(res)
     }
 
     // TODO - Couldn't this return a declared error signature?
@@ -254,8 +278,7 @@ impl ChannelKeys for LoopbackChannelSigner {
             self.node_id,
             self.channel_id
         );
-        let res = self
-            .signer
+        let res = self.signer
             .sign_mutual_close_tx(
                 &self.node_id,
                 &self.channel_id,
@@ -278,8 +301,7 @@ impl ChannelKeys for LoopbackChannelSigner {
             self.node_id,
             self.channel_id
         );
-        let res = self
-            .signer
+        let res = self.signer
             .sign_channel_announcement(&self.node_id, &self.channel_id, &msg.encode())
             .map_err(|s| self.bad_status(s))?
             .1;
@@ -314,6 +336,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         self.signer
             .ready_channel(&self.node_id, self.channel_id, setup)
             .expect("channel already ready or does not exist");
+        self.remote_pubkeys = Some(remote_points.clone());
     }
 }
 
