@@ -22,6 +22,7 @@ use crate::util::crypto_utils::derive_private_revocation_key;
 use crate::util::test_utils::TestLogger;
 
 use super::remotesigner::SpendType;
+use std::convert::TryInto;
 
 pub struct MySigner {
     pub logger: Arc<Logger>,
@@ -212,21 +213,26 @@ impl MySigner {
         })
     }
 
+    pub fn get_per_commitment_point(
+        &self,
+        node_id: &PublicKey,
+        channel_id: &ChannelId,
+        commitment_number: u64,
+    ) -> Result<PublicKey, Status> {
+        self.with_channel_base(&node_id, &channel_id, |base| {
+            Ok(base.get_per_commitment_point(commitment_number))
+        })
+    }
+
     pub fn revoke_commitent(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
         commitment_number: u64,
     ) -> Result<[u8; 32], Status> {
-        // TODO can't use this because RL calls us on unready channels.  That should change.
-        // self.with_ready_channel(&node_id, &channel_id, |chan| {
-        //     Ok(chan.keys.commitment_secret(commitment_number))
-        // })
-        self.with_channel_slot(node_id, channel_id, |slot| match slot {
-                None => Err(self.invalid_argument("no such channel")),
-                Some(ChannelSlot::Stub(chan)) => Ok(chan.keys.commitment_secret(commitment_number)),
-                Some(ChannelSlot::Ready(chan)) => Ok(chan.keys.commitment_secret(commitment_number)),
-            })
+        self.with_ready_channel(&node_id, &channel_id, |chan| {
+            Ok(chan.get_per_commitment_secret(commitment_number)[..].try_into().unwrap())
+        })
     }
 
     pub fn get_unilateral_close_key(

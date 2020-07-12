@@ -104,16 +104,14 @@ impl ChannelBase for ChannelStub {
     }
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> PublicKey {
-        let secret = self
-            .keys
-            .commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
-        MyKeysManager::per_commitment_point(&self.secp_ctx, &secret)
+        self.keys.get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - commitment_number,
+                                           &self.secp_ctx)
     }
 
     fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey {
         let secret = self
             .keys
-            .commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+            .revoke_commitment(INITIAL_COMMITMENT_NUMBER - commitment_number);
         SecretKey::from_slice(&secret).unwrap()
     }
 }
@@ -124,16 +122,14 @@ impl ChannelBase for Channel {
     }
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> PublicKey {
-        let secret = self
-            .keys
-            .commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
-        MyKeysManager::per_commitment_point(&self.secp_ctx, &secret)
+        self.keys.get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - commitment_number,
+                                           &self.secp_ctx)
     }
 
     fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey {
         let secret = self
             .keys
-            .commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+            .revoke_commitment(INITIAL_COMMITMENT_NUMBER - commitment_number);
         SecretKey::from_slice(&secret).unwrap()
     }
 }

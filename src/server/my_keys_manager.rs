@@ -294,7 +294,7 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let per_commit_point = MyKeysManager::per_commitment_point(
             &secp_ctx,
-            &keys.commitment_secret(INITIAL_COMMITMENT_NUMBER - 3),
+            &keys.revoke_commitment(INITIAL_COMMITMENT_NUMBER - 3),
         );
         #[rustfmt::skip]
         assert!(	// NOT TESTED

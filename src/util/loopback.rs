@@ -11,6 +11,7 @@ use crate::server::my_signer::MySigner;
 use lightning::util::ser::Writeable;
 use tonic::Status;
 use lightning::ln::chan_utils;
+use crate::server::my_keys_manager::INITIAL_COMMITMENT_NUMBER;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -96,8 +97,18 @@ fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
 }
 
 impl ChannelKeys for LoopbackChannelSigner {
-    fn commitment_secret(&self, commitment_number: u64) -> [u8; 32] {
-        self.signer.revoke_commitent(&self.node_id, &self.channel_id, commitment_number)
+    fn revoke_commitment(&self, commitment_number: u64) -> [u8; 32] {
+        // signer layer expect forward counting commitment number, but we are passed a backwards counting one
+        self.signer.revoke_commitent(&self.node_id, &self.channel_id,
+                                     INITIAL_COMMITMENT_NUMBER - commitment_number)
+            .map_err(|s| self.bad_status(s)).unwrap()
+    }
+
+    fn get_per_commitment_point<T: secp256k1::Signing + secp256k1::Verification>(
+        &self, idx: u64, _secp_ctx: &Secp256k1<T>) -> PublicKey {
+        // signer layer expect forward counting commitment number, but we are passed a backwards counting one
+        self.signer.get_per_commitment_point(&self.node_id, &self.channel_id,
+                                             INITIAL_COMMITMENT_NUMBER - idx)
             .map_err(|s| self.bad_status(s)).unwrap()
     }
 
