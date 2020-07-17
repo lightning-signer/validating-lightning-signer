@@ -302,7 +302,6 @@ impl Channel {
 
     fn get_commitment_transaction_number_obscure_factor(&self) -> u64 {
         get_commitment_transaction_number_obscure_factor(
-            &self.secp_ctx,
             &self.keys.pubkeys().payment_point,
             &self.keys.remote_pubkeys().payment_point,
             self.setup.is_outbound,

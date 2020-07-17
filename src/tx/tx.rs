@@ -29,7 +29,6 @@ use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 const MAX_DELAY: i64 = 1000;
 
 pub fn get_commitment_transaction_number_obscure_factor(
-    _secp_ctx: &Secp256k1<All>,
     local_payment_basepoint: &PublicKey,
     remote_payment_basepoint: &PublicKey,
     outbound: bool,

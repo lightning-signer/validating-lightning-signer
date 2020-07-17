@@ -12,6 +12,8 @@ use lightning::util::ser::Writeable;
 use tonic::Status;
 use lightning::ln::chan_utils;
 use crate::server::my_keys_manager::INITIAL_COMMITMENT_NUMBER;
+use std::collections::HashSet;
+use crate::tx::tx::{HTLCInfo2, get_commitment_transaction_number_obscure_factor};
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -75,12 +77,6 @@ impl LoopbackChannelSigner {
     }
 
     // BEGIN NOT TESTED
-    fn unready_channel<T>(&self) -> Result<T, ()> {
-        let signer = &self.signer;
-        log_error!(signer, "unready channel {}", self.channel_id);
-        Err(())
-    }
-
     fn bad_status(&self, s: Status) {
         let signer = &self.signer;
         log_error!(signer, "bad status {:?} on channel {}", s, self.channel_id);
@@ -139,20 +135,38 @@ impl ChannelKeys for LoopbackChannelSigner {
             self.channel_id,
             commitment_tx.txid(),
         );
-        if !htlcs.is_empty() { unimplemented!() }
+
         let mut to_local_value_sat = 0;
         let mut to_remote_value_sat = 0;
 
-        let offered_htlcs = Vec::new();
-        let received_htlcs = Vec::new();
+        let mut offered_htlcs = Vec::new();
+        let mut received_htlcs = Vec::new();
+        let htlc_indices: HashSet<u32> =
+            htlcs.iter().filter_map(|h| h.transaction_output_index)
+                .collect();
 
-        for out in &commitment_tx.output {
+        for htlc in htlcs {
+            let info = HTLCInfo2 {
+                value_sat: htlc.amount_msat / 1000,
+                payment_hash: htlc.payment_hash,
+                cltv_expiry: htlc.cltv_expiry,
+            };
+            if htlc.offered {
+                offered_htlcs.push(info);
+            } else {
+                received_htlcs.push(info);
+            }
+        }
+
+        for (idx, out) in commitment_tx.output.iter().enumerate() {
             println!("{:?}", out.script_pubkey);
             if out.script_pubkey.is_v0_p2wsh() {
-                if to_local_value_sat != 0 {
-                    panic!("multiple to-local")
+                if !htlc_indices.contains(&(idx as u32)) {
+                    if to_local_value_sat != 0 {
+                        panic!("multiple to-local")
+                    }
+                    to_local_value_sat = out.value;
                 }
-                to_local_value_sat = out.value;
             } else {
                 if to_remote_value_sat != 0 {
                     panic!("multiple to-remote")
@@ -166,7 +180,14 @@ impl ChannelKeys for LoopbackChannelSigner {
             to_self_delay
         ).map_err(|s| self.bad_status(s))?;
 
-        let commitment_number = 0;
+        let obscure_factor = get_commitment_transaction_number_obscure_factor(
+            &self.pubkeys.payment_point,
+            &self.remote_pubkeys.as_ref().unwrap().payment_point,
+            self.is_outbound,
+        );
+
+        let commitment_number = (((commitment_tx.input[0].sequence as u64 & 0xffffff) << 3*8) |
+                (commitment_tx.lock_time as u64 & 0xffffff)) ^ obscure_factor;
         let (sig_vec, htlc_sig_vecs) = self.signer.sign_remote_commitment_tx_phase2(
             &self.node_id,
             &self.channel_id,
