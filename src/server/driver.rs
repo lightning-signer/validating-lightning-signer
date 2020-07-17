@@ -1080,19 +1080,19 @@ impl Signer for MySigner {
             .ok_or_else(|| self.invalid_argument("missing commitment info"))?;
         let remote_per_commitment_point = self.public_key(req_info.per_commitment_point.clone())?;
 
-        let (sig, htlc_sigs) = self.with_ready_channel(&node_id, &channel_id, |chan| {
-            let offered_htlcs = self.convert_htlcs(&req_info.offered_htlcs)?;
-            let received_htlcs = self.convert_htlcs(&req_info.received_htlcs)?;
-            chan.sign_remote_commitment_tx_phase2(
-                &remote_per_commitment_point,
-                req_info.n,
-                req_info.feerate_sat_per_kw,
-                req_info.to_local_value_sat,
-                req_info.to_remote_value_sat,
-                offered_htlcs,
-                received_htlcs,
-            )
-        })?;
+        let offered_htlcs = self.convert_htlcs(&req_info.offered_htlcs)?;
+        let received_htlcs = self.convert_htlcs(&req_info.received_htlcs)?;
+        let (sig, htlc_sigs) = self.sign_remote_commitment_tx_phase2(
+            &node_id,
+            &channel_id,
+            remote_per_commitment_point,
+            req_info.n,
+            req_info.feerate_sat_per_kw,
+            req_info.to_local_value_sat,
+            req_info.to_remote_value_sat,
+            offered_htlcs,
+            received_htlcs,
+        )?;
 
         let htlc_bitcoin_sigs = htlc_sigs
             .iter()

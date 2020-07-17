@@ -6,7 +6,7 @@ use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, Local
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 
-use crate::node::node::{ChannelId, ChannelSetup, ChannelSlot};
+use crate::node::node::{ChannelId, ChannelSetup};
 use crate::server::my_signer::MySigner;
 use lightning::util::ser::Writeable;
 use tonic::Status;
@@ -134,26 +134,56 @@ impl ChannelKeys for LoopbackChannelSigner {
         let signer = &self.signer;
         log_info!(
             signer,
-            "sign_remote_commitment {:?} {:?}",
+            "sign_remote_commitment {:?} {:?} txid {}",
             self.node_id,
-            self.channel_id
+            self.channel_id,
+            commitment_tx.txid(),
         );
-        // FIXME don't bypass the signer here
-        // The signer wants output_witscripts for validation - figure out how provide equivalent
-        self.signer
-            .with_channel_slot(&self.node_id, &self.channel_id, |slot| match slot {
-                None => Err(()),
-                Some(ChannelSlot::Stub(_)) => self.unready_channel(), // NOT TESTED
-                Some(ChannelSlot::Ready(chan)) => chan
-                    .sign_remote_commitment(
-                        feerate_per_kw,
-                        commitment_tx,
-                        &keys.per_commitment_point,
-                        htlcs,
-                        to_self_delay,
-                    )
-                    .map_err(|_| ()), // NOT TESTED
-            })
+        if !htlcs.is_empty() { unimplemented!() }
+        let mut to_local_value_sat = 0;
+        let mut to_remote_value_sat = 0;
+
+        let offered_htlcs = Vec::new();
+        let received_htlcs = Vec::new();
+
+        for out in &commitment_tx.output {
+            println!("{:?}", out.script_pubkey);
+            if out.script_pubkey.is_v0_p2wsh() {
+                if to_local_value_sat != 0 {
+                    panic!("multiple to-local")
+                }
+                to_local_value_sat = out.value;
+            } else {
+                if to_remote_value_sat != 0 {
+                    panic!("multiple to-remote")
+                }
+                to_remote_value_sat = out.value;
+            }
+        }
+        self.signer.additional_setup(
+            &self.node_id, &self.channel_id,
+            commitment_tx.input[0].previous_output,
+            to_self_delay
+        ).map_err(|s| self.bad_status(s))?;
+
+        let commitment_number = 0;
+        let (sig_vec, htlc_sig_vecs) = self.signer.sign_remote_commitment_tx_phase2(
+            &self.node_id,
+            &self.channel_id,
+            keys.per_commitment_point,
+            commitment_number,
+            feerate_per_kw,
+            to_local_value_sat,
+            to_remote_value_sat,
+            offered_htlcs,
+            received_htlcs,
+        ).map_err(|s| self.bad_status(s))?;
+        let commitment_sig = bitcoin_sig_to_signature(sig_vec)?;
+        let mut htlc_sigs = Vec::with_capacity(htlcs.len());
+        for htlc_sig_vec in htlc_sig_vecs {
+            htlc_sigs.push(bitcoin_sig_to_signature(htlc_sig_vec)?);
+        }
+        Ok((commitment_sig, htlc_sigs))
     }
 
     fn sign_local_commitment<T: secp256k1::Signing + secp256k1::Verification>(
@@ -336,7 +366,7 @@ impl ChannelKeys for LoopbackChannelSigner {
             remote_points: remote_points.clone(),
             remote_to_self_delay: 0,                    // TODO
             remote_shutdown_script: Default::default(), // TODO
-            option_static_remotekey: false,             // TODO
+            option_static_remotekey: true,             // TODO
         };
         self.signer
             .ready_channel(&self.node_id, self.channel_id, setup)
