@@ -6,7 +6,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::util::bip143;
 use bitcoin::util::bip143::SighashComponents;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::{Address, Network, Script, SigHashType};
+use bitcoin::{Address, Network, Script, SigHashType, OutPoint};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys};
@@ -22,6 +22,7 @@ use crate::util::crypto_utils::derive_private_revocation_key;
 use crate::util::test_utils::TestLogger;
 
 use super::remotesigner::SpendType;
+use std::convert::TryInto;
 
 pub struct MySigner {
     pub logger: Arc<Logger>,
@@ -94,6 +95,26 @@ impl MySigner {
         let channel_nonce = opt_channel_nonce.unwrap_or_else(|| channel_id.0.to_vec());
         node.new_channel(channel_id, channel_nonce, node)?;
         Ok(channel_id)
+    }
+
+    /// Temporary, until phase 2 is fully implemented.  This is part ready_channel
+    pub fn additional_setup(
+        &self,
+        node_id: &PublicKey,
+        channel_id: &ChannelId,
+        outpoint: OutPoint,
+        remote_to_self_delay: u16,
+    ) -> Result<(), Status> {
+        self.with_ready_channel(node_id, channel_id, |chan| {
+            if chan.setup.funding_outpoint.is_null() {
+                chan.setup.funding_outpoint = outpoint;
+                chan.setup.remote_to_self_delay = remote_to_self_delay;
+            } else if chan.setup.funding_outpoint != outpoint ||
+                chan.setup.remote_to_self_delay != remote_to_self_delay {
+                panic!("funding outpoint or remote_to_self_delay changed");
+            }
+            Ok(())
+        })
     }
 
     pub fn ready_channel(
@@ -212,6 +233,28 @@ impl MySigner {
         })
     }
 
+    pub fn get_per_commitment_point(
+        &self,
+        node_id: &PublicKey,
+        channel_id: &ChannelId,
+        commitment_number: u64,
+    ) -> Result<PublicKey, Status> {
+        self.with_channel_base(&node_id, &channel_id, |base| {
+            Ok(base.get_per_commitment_point(commitment_number))
+        })
+    }
+
+    pub fn revoke_commitent(
+        &self,
+        node_id: &PublicKey,
+        channel_id: &ChannelId,
+        commitment_number: u64,
+    ) -> Result<[u8; 32], Status> {
+        self.with_ready_channel(&node_id, &channel_id, |chan| {
+            Ok(chan.get_per_commitment_secret(commitment_number)[..].try_into().unwrap())
+        })
+    }
+
     pub fn get_unilateral_close_key(
         &self,
         node_id: &PublicKey,
@@ -250,6 +293,30 @@ impl MySigner {
         })
     }
 
+    pub fn sign_remote_commitment_tx_phase2(
+        &self,
+        node_id: &PublicKey,
+        channel_id: &ChannelId,
+        remote_per_commitment_point: PublicKey,
+        commitment_number: u64,
+        feerate_per_kw: u32,
+        to_local_value_sat: u64,
+        to_remote_value_sat: u64,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
+    ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+        self.with_ready_channel(&node_id, &channel_id, |chan| {
+            chan.sign_remote_commitment_tx_phase2(
+                &remote_per_commitment_point,
+                commitment_number,
+                feerate_per_kw,
+                to_local_value_sat,
+                to_remote_value_sat,
+                offered_htlcs.clone(),
+                received_htlcs.clone(),
+            )
+        })
+    }
     pub fn sign_local_commitment_tx_phase2(
         &self,
         node_id: &PublicKey,
@@ -1137,7 +1204,7 @@ mod tests {
             .expect("build_commitment_tx");
         assert_eq!(
             hex::encode(tx.txid()),
-            "37928c0aebd08ddfc1184c55e9bfae9820195db89cd585edf58340c1f0e2418f"
+            "8a4372344d00c1a30cb6e206b433eacec276614a0c10a662a052b02dbfe07037"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -1207,7 +1274,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(tx.txid()),
-            "27e70560539a2edeb0ba1a7c2cb11d9dcc0125f3d08039d0a74ecc9e6cda5983"
+            "a854dacde12365e2e2496562b55448292dc38e2da8a20d07f82ab39638c89a6c"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -1247,7 +1314,7 @@ mod tests {
                     chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
                 assert_eq!(
                     hex::encode(tx.txid()),
-                    "f65952efef66e5927e75d21740e6b67cdd64bb23f88aa41fa7853c3e071d6897"
+                    "a2e13c6a4b1b4764d7cd755ef3a53d38563169e6bf7999eb2afefffeed3790c4"
                 );
                 let (ser_signature, _) = chan.sign_remote_commitment_tx_phase2(
                     &remote_percommitment_point,
@@ -1308,7 +1375,7 @@ mod tests {
             .expect("sign");
         assert_eq!(
             hex::encode(tx.txid()),
-            "4e6b86ac33eb8c14fd5c6b04dda4ec29671f982e53a051ed69919a509e16f17c"
+            "46fc8aa602298e1317c1e0e204d526b093b5b340595ed78a3bc14d390cd7c8f3"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);

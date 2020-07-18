@@ -104,16 +104,14 @@ impl ChannelBase for ChannelStub {
     }
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> PublicKey {
-        let secret = self
-            .keys
-            .commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
-        MyKeysManager::per_commitment_point(&self.secp_ctx, &secret)
+        self.keys.get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - commitment_number,
+                                           &self.secp_ctx)
     }
 
     fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey {
         let secret = self
             .keys
-            .commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+            .revoke_commitment(INITIAL_COMMITMENT_NUMBER - commitment_number);
         SecretKey::from_slice(&secret).unwrap()
     }
 }
@@ -124,16 +122,14 @@ impl ChannelBase for Channel {
     }
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> PublicKey {
-        let secret = self
-            .keys
-            .commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
-        MyKeysManager::per_commitment_point(&self.secp_ctx, &secret)
+        self.keys.get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - commitment_number,
+                                           &self.secp_ctx)
     }
 
     fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey {
         let secret = self
             .keys
-            .commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+            .revoke_commitment(INITIAL_COMMITMENT_NUMBER - commitment_number);
         SecretKey::from_slice(&secret).unwrap()
     }
 }
@@ -306,13 +302,13 @@ impl Channel {
 
     fn get_commitment_transaction_number_obscure_factor(&self) -> u64 {
         get_commitment_transaction_number_obscure_factor(
-            &self.secp_ctx,
             &self.keys.pubkeys().payment_point,
             &self.keys.remote_pubkeys().payment_point,
             self.setup.is_outbound,
         )
     }
 
+    // forward counting commitment number
     pub fn build_commitment_tx(
         &self,
         remote_per_commitment_point: &PublicKey,
@@ -327,9 +323,8 @@ impl Channel {
         Status,
     > {
         let keys = self.make_remote_tx_keys(remote_per_commitment_point)?;
-        let obscured_commitment_transaction_number = self
-            .get_commitment_transaction_number_obscure_factor()
-            ^ (INITIAL_COMMITMENT_NUMBER - commitment_number);
+        let obscured_commitment_transaction_number =
+            self.get_commitment_transaction_number_obscure_factor() ^ commitment_number;
         let funding_outpoint = self.setup.funding_outpoint;
         Ok(build_commitment_tx(
             &keys,
@@ -360,12 +355,15 @@ impl Channel {
             self.internal_error(format!("could not derive to_local_delayed_key: {}", err))
             // END NOT TESTED
         })?;
-        let remote_key = derive_public_key(
-            secp_ctx,
-            &remote_per_commitment_point,
-            &local_points.payment_point,
-        )
-        .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?;
+        let remote_key = if self.setup.option_static_remotekey {
+            local_points.payment_point
+        } else {
+            derive_public_key(
+                secp_ctx,
+                &remote_per_commitment_point,
+                &local_points.payment_point,
+            ).map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
+        };
         let revocation_key = derive_public_revocation_key(
             secp_ctx,
             &remote_per_commitment_point,
@@ -452,6 +450,12 @@ impl Channel {
 
         let (tx, _scripts, htlcs) =
             self.build_commitment_tx(remote_per_commitment_point, commitment_number, &info)?;
+
+        for out in &tx.output {
+            println!("> {:?}", out.script_pubkey);
+        }
+        println!("txid {}", tx.txid());
+
         let keys = self.make_remote_tx_keys(remote_per_commitment_point)?;
 
         let mut htlc_refs = Vec::new();
@@ -583,7 +587,7 @@ impl Node {
             logger: Arc::clone(&stub.logger),
             secp_ctx: stub.secp_ctx.clone(),
             keys: EnforcingChannelKeys::new(inmem_keys),
-            setup: setup,
+            setup,
         };
         let validator = self.validator_factory.make_validator(&chan);
         validator

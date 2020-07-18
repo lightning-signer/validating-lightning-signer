@@ -95,12 +95,18 @@ impl EnforcingChannelKeys {
 }
 
 impl ChannelKeys for EnforcingChannelKeys {
-    fn commitment_secret(&self, idx: u64) -> [u8; 32] {
-        self.inner.commitment_secret(idx)
+    fn get_per_commitment_point<T: secp256k1::Signing + secp256k1::Verification>(&self, idx: u64, secp_ctx: &Secp256k1<T>) -> PublicKey {
+        self.inner.get_per_commitment_point(idx, secp_ctx)
     }
+
+    fn revoke_commitment(&self, idx: u64) -> [u8; 32] {
+        self.inner.revoke_commitment(idx)
+    }
+
     fn pubkeys(&self) -> &ChannelPublicKeys {
         self.inner.pubkeys()
     }
+
     // BEGIN NOT TESTED
     fn key_derivation_params(&self) -> (u64, u64) {
         self.inner.key_derivation_params()
