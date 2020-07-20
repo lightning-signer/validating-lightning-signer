@@ -25,11 +25,11 @@ serde_json = "1.0.48"
 
 [dependencies.lightning]
 git = "https://github.com/lightning-signer/rust-lightning.git"
-rev = "db9caee515b4035cd6f311a2629e39d085e73ae6"  # compat3 branch
+rev = "d3281ed0c42ac30020ad8ad105f096bcc53a583d"  # compat3 branch
 
 [dev-dependencies.lightning]
 git = "https://github.com/lightning-signer/rust-lightning.git"
-rev = "db9caee515b4035cd6f311a2629e39d085e73ae6"  # compat3 branch
+rev = "d3281ed0c42ac30020ad8ad105f096bcc53a583d"  # compat3 branch
 features = ["unsafe"]
 
 [dev-dependencies.bitcoin]
