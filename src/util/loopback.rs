@@ -425,6 +425,8 @@ impl KeysInterface for LoopbackSignerKeysInterface {
 }
 
 impl LoopbackChannelSigner {
+    /// Adapt phase 1 signing parameters (serialized tx and htlcs) to phase 2 information
+    /// (commitment number, local and remote values, HTLCInfo2 objects)
     fn decode_commitment_tx(&self,
                             commitment_tx: &Transaction,
                             htlcs: &[&HTLCOutputInCommitment])

@@ -346,6 +346,9 @@ impl MySigner {
                 htlc_refs.push(htlc); // NOT TESTED
             }
 
+            // We provide a dummy signature for the remote, since we don't require that sig
+            // to be passed in to this call.  It would have been better if LocalCommitmentTransaction
+            // didn't require the remote sig.
             let dummy_sig = Secp256k1::new().sign(&secp256k1::Message::from_slice(&[42; 32]).unwrap(), &SecretKey::from_slice(&[42; 32]).unwrap());
 
             let htlc_data: Vec<(HTLCOutputInCommitment, Option<Signature>)> =
