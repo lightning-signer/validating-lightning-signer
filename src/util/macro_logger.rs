@@ -63,12 +63,14 @@ macro_rules! log_trace {
 
 pub struct DebugBytes<'a>(pub &'a [u8]);
 impl<'a> std::fmt::Display for DebugBytes<'a> {
+    // BEGIN NOT TESTED
     fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
         for i in self.0 {
             write!(f, "{:02x}", i)?;
         }
         Ok(())
     }
+    // END NOT TESTED
 }
 
 macro_rules! log_bytes {

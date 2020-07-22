@@ -522,44 +522,53 @@ impl Signer for MySigner {
         let mut uniclosekeys: Vec<Option<SecretKey>> = Vec::new();
 
         for idx in 0..tx.input.len() {
-            let child_index = reqtx.input_descs[idx]
-                .key_loc
-                .as_ref()
-                .ok_or_else(|| self.invalid_argument("missing key_loc desc"))?
-                .key_index as u32;
-            indices.push(child_index);
-            let value_sat = reqtx.input_descs[idx]
-                .prev_output
-                .as_ref()
-                .ok_or_else(|| self.invalid_argument("missing output desc"))?
-                .value_sat as u64;
-            values_sat.push(value_sat);
-            spendtypes.push(
+            // Use SpendType::Invalid to flag/designate inputs we are not
+            // signing (PSBT case).
+            let spendtype =
                 SpendType::from_i32(reqtx.input_descs[idx].spend_type)
-                    .ok_or_else(|| self.invalid_argument("bad spend_type"))?,
-            );
-            let closeinfo = reqtx.input_descs[idx].close_info.as_ref();
-            let uck = match closeinfo {
-                // Normal case, no unilateral_close_info present.
-                None => None,
-                // Handling a peer unilateral close from old channel.
-                Some(ci) => {
-                    let old_chan_id = self.channel_id(&ci.channel_nonce)?;
-                    // Is there a commitment_point provided?
-                    let commitment_point = match &ci.commitment_point {
-                        // No, option_static_remotekey in effect.
-                        None => None,
-                        // Yes, commitment_point provided.
-                        Some(cpoint) => Some(self.public_key(Some(cpoint.clone()))?),
-                    };
-                    Some(self.get_unilateral_close_key(
-                        &node_id,
-                        &old_chan_id,
-                        &commitment_point,
-                    )?)
-                }
-            };
-            uniclosekeys.push(uck);
+                .ok_or_else(|| self.invalid_argument("bad spend_type"))?;
+            if spendtype == SpendType::Invalid {
+                indices.push(0);
+                values_sat.push(0);
+                spendtypes.push(spendtype);
+                uniclosekeys.push(None);
+            } else {
+                let child_index = reqtx.input_descs[idx]
+                    .key_loc
+                    .as_ref()
+                    .ok_or_else(|| self.invalid_argument("missing key_loc desc"))?
+                    .key_index as u32;
+                indices.push(child_index);
+                let value_sat = reqtx.input_descs[idx]
+                    .prev_output
+                    .as_ref()
+                    .ok_or_else(|| self.invalid_argument("missing output desc"))?
+                    .value_sat as u64;
+                values_sat.push(value_sat);
+                spendtypes.push(spendtype);
+                let closeinfo = reqtx.input_descs[idx].close_info.as_ref();
+                let uck = match closeinfo {
+                    // Normal case, no unilateral_close_info present.
+                    None => None,
+                    // Handling a peer unilateral close from old channel.
+                    Some(ci) => {
+                        let old_chan_id = self.channel_id(&ci.channel_nonce)?;
+                        // Is there a commitment_point provided?
+                        let commitment_point = match &ci.commitment_point {
+                            // No, option_static_remotekey in effect.
+                            None => None,
+                            // Yes, commitment_point provided.
+                            Some(cpoint) => Some(self.public_key(Some(cpoint.clone()))?),
+                        };
+                        Some(self.get_unilateral_close_key(
+                            &node_id,
+                            &old_chan_id,
+                            &commitment_point,
+                        )?)
+                    }
+                };
+                uniclosekeys.push(uck);
+            }
         }
 
         let witvec = self.sign_funding_tx(
