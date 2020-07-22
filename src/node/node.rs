@@ -104,8 +104,10 @@ impl ChannelBase for ChannelStub {
     }
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> PublicKey {
-        self.keys.get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - commitment_number,
-                                           &self.secp_ctx)
+        self.keys.get_per_commitment_point(
+            INITIAL_COMMITMENT_NUMBER - commitment_number,
+            &self.secp_ctx,
+        )
     }
 
     fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey {
@@ -122,8 +124,10 @@ impl ChannelBase for Channel {
     }
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> PublicKey {
-        self.keys.get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - commitment_number,
-                                           &self.secp_ctx)
+        self.keys.get_per_commitment_point(
+            INITIAL_COMMITMENT_NUMBER - commitment_number,
+            &self.secp_ctx,
+        )
     }
 
     fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey {
@@ -263,6 +267,7 @@ impl Channel {
 
     // Not tested because loopback test is currently ignored.
     // TODO phase 2
+    // BEGIN NOT TESTED
     pub fn sign_remote_commitment(
         &self,
         feerate_per_kw: u32,
@@ -289,6 +294,7 @@ impl Channel {
             )
             .map_err(|_| self.internal_error("sign_remote_commitment failed"))
     }
+    // END NOT TESTED
 
     // BEGIN NOT TESTED
     // Not tested because loopback test is currently ignored.
@@ -362,7 +368,8 @@ impl Channel {
                 secp_ctx,
                 &remote_per_commitment_point,
                 &local_points.payment_point,
-            ).map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
+            )
+            .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
         };
         let revocation_key = derive_public_revocation_key(
             secp_ctx,
@@ -460,7 +467,7 @@ impl Channel {
 
         let mut htlc_refs = Vec::new();
         for htlc in htlcs.iter() {
-            htlc_refs.push(htlc); // NOT TESTED
+            htlc_refs.push(htlc);
         }
         let sigs = self
             .keys
@@ -477,11 +484,9 @@ impl Channel {
         sig.push(SigHashType::All as u8);
         let mut htlc_sigs = Vec::new();
         for htlc_signature in sigs.1 {
-            // BEGIN NOT TESTED
             let mut htlc_sig = htlc_signature.serialize_der().to_vec();
             htlc_sig.push(SigHashType::All as u8);
             htlc_sigs.push(htlc_sig);
-            // END NOT TESTED
         }
         Ok((sig, htlc_sigs))
     }

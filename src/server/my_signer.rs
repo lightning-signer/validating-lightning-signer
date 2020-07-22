@@ -6,7 +6,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::util::bip143;
 use bitcoin::util::bip143::SighashComponents;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::{Address, Network, Script, SigHashType, OutPoint};
+use bitcoin::{Address, Network, OutPoint, Script, SigHashType};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys, LocalCommitmentTransaction, HTLCOutputInCommitment};
@@ -109,9 +109,10 @@ impl MySigner {
             if chan.setup.funding_outpoint.is_null() {
                 chan.setup.funding_outpoint = outpoint;
                 chan.setup.remote_to_self_delay = remote_to_self_delay;
-            } else if chan.setup.funding_outpoint != outpoint ||
-                chan.setup.remote_to_self_delay != remote_to_self_delay {
-                panic!("funding outpoint or remote_to_self_delay changed");
+            } else if chan.setup.funding_outpoint != outpoint
+                || chan.setup.remote_to_self_delay != remote_to_self_delay
+            {
+                panic!("funding outpoint or remote_to_self_delay changed"); // NOT TESTED
             }
             Ok(())
         })
@@ -251,7 +252,9 @@ impl MySigner {
         commitment_number: u64,
     ) -> Result<[u8; 32], Status> {
         self.with_ready_channel(&node_id, &channel_id, |chan| {
-            Ok(chan.get_per_commitment_secret(commitment_number)[..].try_into().unwrap())
+            Ok(chan.get_per_commitment_secret(commitment_number)[..]
+                .try_into()
+                .unwrap())
         })
     }
 
@@ -796,50 +799,61 @@ impl MySigner {
 
         let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for idx in 0..tx.input.len() {
-            let child_index = indices[idx];
-            let value_sat = values_sat[idx];
-            let privkey = match uniclosekeys[idx] {
-                // There was a unilateral_close_key.
-                Some(sk) => bitcoin::PrivateKey {
-                    compressed: true,
-                    network: Network::Testnet,
-                    key: sk,
-                },
-                // Derive the HD key.
-                None => {
-                    xkey.ckd_priv(&secp_ctx, ChildNumber::from(child_index))
-                        .map_err(|err| self.internal_error(format!("ckd_priv failed: {}", err)))?
-                        .private_key
-                }
-            };
-            let pubkey = privkey.public_key(&secp_ctx);
-            let script_code = Address::p2pkh(&pubkey, privkey.network).script_pubkey();
-            let sighash = match spendtypes[idx] {
-                SpendType::P2pkh => Message::from_slice(
-                    &tx.signature_hash(0, &script_code, 0x01)[..],
-                )
-                .map_err(|err| self.internal_error(format!("p2pkh sighash failed: {}", err))),
-                SpendType::P2wpkh | SpendType::P2shP2wpkh => Message::from_slice(
-                    &SighashComponents::new(&tx).sighash_all(
-                        &tx.input[idx],
-                        &script_code,
-                        value_sat,
-                    )[..],
-                )
-                .map_err(|err| self.internal_error(format!("p2wpkh sighash failed: {}", err))),
-                // BEGIN NOT TESTED
-                _ => Err(self.invalid_argument(format!(
-                    "unsupported spend_type: {}",
-                    spendtypes[idx] as i32
-                ))),
-                // END NOT TESTED
-            }?;
-            let mut sig = secp_ctx
-                .sign(&sighash, &privkey.key)
-                .serialize_der()
-                .to_vec();
-            sig.push(SigHashType::All as u8);
-            witvec.push((sig, pubkey.key.serialize().to_vec()));
+            if spendtypes[idx] == SpendType::Invalid {
+                // If we are signing a PSBT some of the inputs may be
+                // marked as SpendType::Invalid (we skip these), push
+                // an empty witness element instead.
+                witvec.push((vec![], vec![]));
+            } else {
+                let child_index = indices[idx];
+                let value_sat = values_sat[idx];
+                let privkey = match uniclosekeys[idx] {
+                    // There was a unilateral_close_key.
+                    Some(sk) => bitcoin::PrivateKey {
+                        compressed: true,
+                        network: Network::Testnet,
+                        key: sk,
+                    },
+                    // Derive the HD key.
+                    None => {
+                        xkey.ckd_priv(&secp_ctx, ChildNumber::from(child_index))
+                            .map_err(|err| {
+                                // BEGIN NOT TESTED
+                                self.internal_error(format!("ckd_priv failed: {}", err))
+                                // END NOT TESTED
+                            })?
+                            .private_key
+                    }
+                };
+                let pubkey = privkey.public_key(&secp_ctx);
+                let script_code = Address::p2pkh(&pubkey, privkey.network).script_pubkey();
+                let sighash = match spendtypes[idx] {
+                    SpendType::P2pkh => Message::from_slice(
+                        &tx.signature_hash(0, &script_code, 0x01)[..],
+                    )
+                    .map_err(|err| self.internal_error(format!("p2pkh sighash failed: {}", err))),
+                    SpendType::P2wpkh | SpendType::P2shP2wpkh => Message::from_slice(
+                        &SighashComponents::new(&tx).sighash_all(
+                            &tx.input[idx],
+                            &script_code,
+                            value_sat,
+                        )[..],
+                    )
+                    .map_err(|err| self.internal_error(format!("p2wpkh sighash failed: {}", err))),
+                    // BEGIN NOT TESTED
+                    _ => Err(self.invalid_argument(format!(
+                        "unsupported spend_type: {}",
+                        spendtypes[idx] as i32
+                    ))),
+                    // END NOT TESTED
+                }?;
+                let mut sig = secp_ctx
+                    .sign(&sighash, &privkey.key)
+                    .serialize_der()
+                    .to_vec();
+                sig.push(SigHashType::All as u8);
+                witvec.push((sig, pubkey.key.serialize().to_vec()));
+            }
         }
         Ok(witvec)
     }
@@ -2098,6 +2112,97 @@ mod tests {
     }
 
     #[test]
+    fn sign_funding_tx_psbt_test() -> Result<(), ()> {
+        let signer = MySigner::new();
+        let node_id = signer.new_node();
+        let channel_id = ChannelId([1; 32]);
+        let txids = vec![
+            bitcoin::Txid::from_slice(&[2u8; 32]).unwrap(),
+            bitcoin::Txid::from_slice(&[4u8; 32]).unwrap(),
+            bitcoin::Txid::from_slice(&[6u8; 32]).unwrap(),
+        ];
+
+        let inputs = vec![
+            TxIn {
+                previous_output: OutPoint {
+                    txid: txids[0],
+                    vout: 0,
+                },
+                script_sig: Script::new(),
+                sequence: 0,
+                witness: vec![],
+            },
+            TxIn {
+                previous_output: OutPoint {
+                    txid: txids[1],
+                    vout: 0,
+                },
+                script_sig: Script::new(),
+                sequence: 0,
+                witness: vec![],
+            },
+            TxIn {
+                previous_output: OutPoint {
+                    txid: txids[2],
+                    vout: 0,
+                },
+                script_sig: Script::new(),
+                sequence: 0,
+                witness: vec![],
+            },
+        ];
+
+        let tx = bitcoin::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: inputs,
+            output: vec![TxOut {
+                script_pubkey: Builder::new()
+                    .push_opcode(opcodes::all::OP_RETURN)
+                    .into_script(),
+                value: 100,
+            }],
+        };
+        let indices = vec![0u32, 1u32, 2u32];
+        let values_sat = vec![100u64, 101u64, 102u64];
+        let spendtypes = vec![
+            SpendType::Invalid,
+            SpendType::P2shP2wpkh,
+            SpendType::Invalid,
+        ];
+        let uniclosekeys = vec![None, None, None];
+
+        let witvec = signer
+            .sign_funding_tx(
+                &node_id,
+                &channel_id,
+                &tx,
+                &indices,
+                &values_sat,
+                &spendtypes,
+                &uniclosekeys,
+            )
+            .expect("good sigs");
+        // Should have three witness stack items.
+        assert_eq!(witvec.len(), 3);
+
+        // First item should be empty sig/pubkey.
+        assert_eq!(witvec[0].0.len(), 0);
+        assert_eq!(witvec[0].1.len(), 0);
+
+        // Second should have values.
+        assert!(witvec[1].0.len() > 0);
+        assert!(witvec[1].1.len() > 0);
+
+        // Third should be empty.
+        assert_eq!(witvec[2].0.len(), 0);
+        assert_eq!(witvec[2].1.len(), 0);
+
+        // Doesn't verify, not fully signed.
+        Ok(())
+    }
+
+    #[test]
     fn sign_local_htlc_tx_test() {
         let signer = MySigner::new();
         let (node_id, channel_id) =
@@ -2205,7 +2310,6 @@ mod tests {
             htlc_amount_sat,
             &htlc_redeemscript,
         );
-
     }
 
     #[test]

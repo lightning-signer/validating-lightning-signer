@@ -2,18 +2,21 @@ use std::sync::Arc;
 
 use bitcoin::{Script, Transaction};
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, LocalCommitmentTransaction, TxCreationKeys, build_htlc_transaction, get_htlc_redeemscript};
+use lightning::ln::chan_utils::{
+    build_htlc_transaction, get_htlc_redeemscript, ChannelPublicKeys, HTLCOutputInCommitment,
+    LocalCommitmentTransaction, TxCreationKeys,
+};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 
 use crate::node::node::{ChannelId, ChannelSetup};
-use crate::server::my_signer::MySigner;
-use lightning::util::ser::Writeable;
-use tonic::Status;
-use lightning::ln::chan_utils;
 use crate::server::my_keys_manager::INITIAL_COMMITMENT_NUMBER;
+use crate::server::my_signer::MySigner;
+use crate::tx::tx::{get_commitment_transaction_number_obscure_factor, HTLCInfo2};
+use lightning::ln::chan_utils;
+use lightning::util::ser::Writeable;
 use std::collections::HashSet;
-use crate::tx::tx::{HTLCInfo2, get_commitment_transaction_number_obscure_factor};
+use tonic::Status;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -41,12 +44,15 @@ impl LoopbackChannelSigner {
         channel_value_sat: u64,
     ) -> LoopbackChannelSigner {
         log_info!(signer, "new channel {:?} {:?}", node_id, channel_id);
-        let pubkeys =
-            signer.get_channel_basepoints(&node_id, &channel_id)
-                .map_err(|s| {
-                    log_error!(signer, "bad status {:?} on channel {}", s, channel_id);
-                    ()
-                }).expect("must be able to get basepoints");
+        let pubkeys = signer
+            .get_channel_basepoints(&node_id, &channel_id)
+            .map_err(|s| {
+                // BEGIN NOT TESTED
+                log_error!(signer, "bad status {:?} on channel {}", s, channel_id);
+                ()
+                // END NOT TESTED
+            })
+            .expect("must be able to get basepoints");
         LoopbackChannelSigner {
             node_id: *node_id,
             channel_id: *channel_id,
@@ -58,13 +64,13 @@ impl LoopbackChannelSigner {
         }
     }
 
-    pub fn make_remote_tx_keys<T: secp256k1::Signing + secp256k1::Verification>(&self,
+    pub fn make_remote_tx_keys<T: secp256k1::Signing + secp256k1::Verification>(
+        &self,
         per_commitment_point: &PublicKey,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<TxCreationKeys, ()> {
         let pubkeys = &self.pubkeys;
-        let remote_pubkeys =
-            self.remote_pubkeys.as_ref().ok_or(())?;
+        let remote_pubkeys = self.remote_pubkeys.as_ref().ok_or(())?;
         let keys = TxCreationKeys::new(
             secp_ctx,
             &per_commitment_point,
@@ -72,7 +78,8 @@ impl LoopbackChannelSigner {
             &pubkeys.htlc_basepoint,
             &remote_pubkeys.revocation_basepoint,
             &remote_pubkeys.htlc_basepoint,
-        ).expect("failed to derive keys");
+        )
+        .expect("failed to derive keys");
         Ok(keys)
     }
 
@@ -95,17 +102,30 @@ fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
 impl ChannelKeys for LoopbackChannelSigner {
     fn revoke_commitment(&self, commitment_number: u64) -> [u8; 32] {
         // signer layer expect forward counting commitment number, but we are passed a backwards counting one
-        self.signer.revoke_commitent(&self.node_id, &self.channel_id,
-                                     INITIAL_COMMITMENT_NUMBER - commitment_number)
-            .map_err(|s| self.bad_status(s)).unwrap()
+        self.signer
+            .revoke_commitent(
+                &self.node_id,
+                &self.channel_id,
+                INITIAL_COMMITMENT_NUMBER - commitment_number,
+            )
+            .map_err(|s| self.bad_status(s))
+            .unwrap()
     }
 
     fn get_per_commitment_point<T: secp256k1::Signing + secp256k1::Verification>(
-        &self, idx: u64, _secp_ctx: &Secp256k1<T>) -> PublicKey {
+        &self,
+        idx: u64,
+        _secp_ctx: &Secp256k1<T>,
+    ) -> PublicKey {
         // signer layer expect forward counting commitment number, but we are passed a backwards counting one
-        self.signer.get_per_commitment_point(&self.node_id, &self.channel_id,
-                                             INITIAL_COMMITMENT_NUMBER - idx)
-            .map_err(|s| self.bad_status(s)).unwrap()
+        self.signer
+            .get_per_commitment_point(
+                &self.node_id,
+                &self.channel_id,
+                INITIAL_COMMITMENT_NUMBER - idx,
+            )
+            .map_err(|s| self.bad_status(s))
+            .unwrap()
     }
 
     fn pubkeys(&self) -> &ChannelPublicKeys {
@@ -136,28 +156,37 @@ impl ChannelKeys for LoopbackChannelSigner {
             commitment_tx.txid(),
         );
 
-        let (commitment_number,
-            to_local_value_sat, to_remote_value_sat,
-            offered_htlcs, received_htlcs) =
-            self.decode_commitment_tx(commitment_tx, htlcs);
-
-        self.signer.additional_setup(
-            &self.node_id, &self.channel_id,
-            commitment_tx.input[0].previous_output,
-            to_self_delay
-        ).map_err(|s| self.bad_status(s))?;
-
-        let (sig_vec, htlc_sig_vecs) = self.signer.sign_remote_commitment_tx_phase2(
-            &self.node_id,
-            &self.channel_id,
-            keys.per_commitment_point,
+        let (
             commitment_number,
-            feerate_per_kw,
             to_local_value_sat,
             to_remote_value_sat,
             offered_htlcs,
             received_htlcs,
-        ).map_err(|s| self.bad_status(s))?;
+        ) = self.decode_commitment_tx(commitment_tx, htlcs);
+
+        self.signer
+            .additional_setup(
+                &self.node_id,
+                &self.channel_id,
+                commitment_tx.input[0].previous_output,
+                to_self_delay,
+            )
+            .map_err(|s| self.bad_status(s))?;
+
+        let (sig_vec, htlc_sig_vecs) = self
+            .signer
+            .sign_remote_commitment_tx_phase2(
+                &self.node_id,
+                &self.channel_id,
+                keys.per_commitment_point,
+                commitment_number,
+                feerate_per_kw,
+                to_local_value_sat,
+                to_remote_value_sat,
+                offered_htlcs,
+                received_htlcs,
+            )
+            .map_err(|s| self.bad_status(s))?;
         let commitment_sig = bitcoin_sig_to_signature(sig_vec)?;
         let mut htlc_sigs = Vec::with_capacity(htlcs.len());
         for htlc_sig_vec in htlc_sig_vecs {
@@ -171,15 +200,21 @@ impl ChannelKeys for LoopbackChannelSigner {
         local_commitment_tx: &LocalCommitmentTransaction,
         _secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        let htlcs: Vec<&HTLCOutputInCommitment> =
-            local_commitment_tx.per_htlc.iter().map(|(h,_)| h)
-                .collect();
-        let (commitment_number,
-            to_local_value_sat, to_remote_value_sat,
-            offered_htlcs, received_htlcs) =
-            self.decode_commitment_tx(&local_commitment_tx.unsigned_tx, htlcs.as_slice());
+        let htlcs: Vec<&HTLCOutputInCommitment> = local_commitment_tx
+            .per_htlc
+            .iter()
+            .map(|(h, _)| h)
+            .collect();
+        let (
+            commitment_number,
+            to_local_value_sat,
+            to_remote_value_sat,
+            offered_htlcs,
+            received_htlcs,
+        ) = self.decode_commitment_tx(&local_commitment_tx.unsigned_tx, htlcs.as_slice());
 
-        let (sig_vec, _htlc_sig_vecs) = self.signer
+        let (sig_vec, _htlc_sig_vecs) = self
+            .signer
             .sign_local_commitment_tx_phase2(
                 &self.node_id,
                 &self.channel_id,
@@ -188,8 +223,9 @@ impl ChannelKeys for LoopbackChannelSigner {
                 to_local_value_sat,
                 to_remote_value_sat,
                 offered_htlcs,
-                received_htlcs
-            ).map_err(|s| self.bad_status(s))?;
+                received_htlcs,
+            )
+            .map_err(|s| self.bad_status(s))?;
         bitcoin_sig_to_signature(sig_vec)
     }
 
@@ -212,26 +248,33 @@ impl ChannelKeys for LoopbackChannelSigner {
         for this_htlc in lct.per_htlc.iter() {
             if this_htlc.0.transaction_output_index.is_some() {
                 let keys = &lct.local_keys;
-                let htlc_tx =
-                    build_htlc_transaction(&lct.txid(), lct.feerate_per_kw, local_csv,
-                                           &this_htlc.0,
-                                           &keys.a_delayed_payment_key,
-                                           &keys.revocation_key);
+                let htlc_tx = build_htlc_transaction(
+                    &lct.txid(),
+                    lct.feerate_per_kw,
+                    local_csv,
+                    &this_htlc.0,
+                    &keys.a_delayed_payment_key,
+                    &keys.revocation_key,
+                );
 
                 let htlc_redeemscript = get_htlc_redeemscript(&this_htlc.0, keys);
 
-                let res = self.signer.sign_local_htlc_tx(
-                    &self.node_id, &self.channel_id,
-                    &htlc_tx,
-                    0,
-                    Some(keys.per_commitment_point),
-                    htlc_redeemscript.to_bytes(),
-                    this_htlc.0.amount_msat,
-                ).map_err(|s| self.bad_status(s))?;
+                let res = self
+                    .signer
+                    .sign_local_htlc_tx(
+                        &self.node_id,
+                        &self.channel_id,
+                        &htlc_tx,
+                        0,
+                        Some(keys.per_commitment_point),
+                        htlc_redeemscript.to_bytes(),
+                        this_htlc.0.amount_msat,
+                    )
+                    .map_err(|s| self.bad_status(s))?;
 
                 ret.push(Some(bitcoin_sig_to_signature(res)?));
             } else {
-                ret.push(None);
+                ret.push(None); // NOT TESTED
             }
         }
         Ok(ret)
@@ -247,23 +290,31 @@ impl ChannelKeys for LoopbackChannelSigner {
         on_remote_tx_csv: u16,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        let tx_keys =
-            self.make_remote_tx_keys(&PublicKey::from_secret_key(secp_ctx, per_commitment_key),
-                                     secp_ctx)?;
+        let tx_keys = self.make_remote_tx_keys(
+            &PublicKey::from_secret_key(secp_ctx, per_commitment_key),
+            secp_ctx,
+        )?;
         let redeem_script = if let Some(ref htlc) = *htlc {
-            chan_utils::get_htlc_redeemscript(&htlc, &tx_keys)
+            chan_utils::get_htlc_redeemscript(&htlc, &tx_keys) // NOT TESTED
         } else {
-            chan_utils::get_revokeable_redeemscript(&tx_keys.revocation_key, on_remote_tx_csv,
-                                                    &tx_keys.a_delayed_payment_key)
+            chan_utils::get_revokeable_redeemscript(
+                &tx_keys.revocation_key,
+                on_remote_tx_csv,
+                &tx_keys.a_delayed_payment_key,
+            )
         };
 
-        let res = self.signer.sign_penalty_to_us(
-            &self.node_id, &self.channel_id,
-            justice_tx,
-            input,
-            per_commitment_key,
-            redeem_script.to_bytes(),
-            amount)
+        let res = self
+            .signer
+            .sign_penalty_to_us(
+                &self.node_id,
+                &self.channel_id,
+                justice_tx,
+                input,
+                per_commitment_key,
+                redeem_script.to_bytes(),
+                amount,
+            )
             .map_err(|s| self.bad_status(s))?;
         bitcoin_sig_to_signature(res)
     }
@@ -279,15 +330,18 @@ impl ChannelKeys for LoopbackChannelSigner {
     ) -> Result<Signature, ()> {
         let chan_keys = self.make_remote_tx_keys(per_commitment_point, secp_ctx)?;
         let redeem_script = chan_utils::get_htlc_redeemscript(htlc, &chan_keys);
-        let res = self.signer.sign_remote_htlc_tx(
-            &self.node_id,
-            &self.channel_id,
-            htlc_tx,
-            input,
-            redeem_script.to_bytes(),
-            per_commitment_point,
-            amount,
-        ).map_err(|s| self.bad_status(s))?;
+        let res = self
+            .signer
+            .sign_remote_htlc_tx(
+                &self.node_id,
+                &self.channel_id,
+                htlc_tx,
+                input,
+                redeem_script.to_bytes(),
+                per_commitment_point,
+                amount,
+            )
+            .map_err(|s| self.bad_status(s))?;
         bitcoin_sig_to_signature(res)
     }
 
@@ -304,7 +358,8 @@ impl ChannelKeys for LoopbackChannelSigner {
             self.node_id,
             self.channel_id
         );
-        let res = self.signer
+        let res = self
+            .signer
             .sign_mutual_close_tx(
                 &self.node_id,
                 &self.channel_id,
@@ -327,7 +382,8 @@ impl ChannelKeys for LoopbackChannelSigner {
             self.node_id,
             self.channel_id
         );
-        let res = self.signer
+        let res = self
+            .signer
             .sign_channel_announcement(&self.node_id, &self.channel_id, &msg.encode())
             .map_err(|s| self.bad_status(s))?
             .1;
@@ -357,7 +413,7 @@ impl ChannelKeys for LoopbackChannelSigner {
             remote_points: remote_points.clone(),
             remote_to_self_delay: 0,                    // TODO
             remote_shutdown_script: Default::default(), // TODO
-            option_static_remotekey: true,             // TODO
+            option_static_remotekey: true,              // TODO
         };
         self.signer
             .ready_channel(&self.node_id, self.channel_id, setup)
@@ -365,7 +421,6 @@ impl ChannelKeys for LoopbackChannelSigner {
         self.remote_pubkeys = Some(remote_points.clone());
     }
 }
-
 
 impl KeysInterface for LoopbackSignerKeysInterface {
     type ChanKeySigner = LoopbackChannelSigner;
@@ -427,18 +482,20 @@ impl KeysInterface for LoopbackSignerKeysInterface {
 impl LoopbackChannelSigner {
     /// Adapt phase 1 signing parameters (serialized tx and htlcs) to phase 2 information
     /// (commitment number, local and remote values, HTLCInfo2 objects)
-    fn decode_commitment_tx(&self,
-                            commitment_tx: &Transaction,
-                            htlcs: &[&HTLCOutputInCommitment])
-        -> (u64, u64, u64, Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
+    fn decode_commitment_tx(
+        &self,
+        commitment_tx: &Transaction,
+        htlcs: &[&HTLCOutputInCommitment],
+    ) -> (u64, u64, u64, Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
         let mut to_local_value_sat = 0;
         let mut to_remote_value_sat = 0;
 
         let mut offered_htlcs = Vec::new();
         let mut received_htlcs = Vec::new();
-        let htlc_indices: HashSet<u32> =
-            htlcs.iter().filter_map(|h| h.transaction_output_index)
-                .collect();
+        let htlc_indices: HashSet<u32> = htlcs
+            .iter()
+            .filter_map(|h| h.transaction_output_index)
+            .collect();
 
         for htlc in htlcs {
             let info = HTLCInfo2 {
@@ -476,9 +533,16 @@ impl LoopbackChannelSigner {
             self.is_outbound,
         );
 
-        let commitment_number = (((commitment_tx.input[0].sequence as u64 & 0xffffff) << 3 * 8) |
-            (commitment_tx.lock_time as u64 & 0xffffff)) ^ obscure_factor;
+        let commitment_number = (((commitment_tx.input[0].sequence as u64 & 0xffffff) << 3 * 8)
+            | (commitment_tx.lock_time as u64 & 0xffffff))
+            ^ obscure_factor;
 
-        (commitment_number, to_local_value_sat, to_remote_value_sat, offered_htlcs, received_htlcs)
+        (
+            commitment_number,
+            to_local_value_sat,
+            to_remote_value_sat,
+            offered_htlcs,
+            received_htlcs,
+        )
     }
 }

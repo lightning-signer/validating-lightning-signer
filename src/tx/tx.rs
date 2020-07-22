@@ -40,8 +40,8 @@ pub fn get_commitment_transaction_number_obscure_factor(
         sha.input(&local_payment_basepoint.serialize());
         sha.input(&their_payment_basepoint);
     } else {
-        sha.input(&their_payment_basepoint); // NOT TESTED
-        sha.input(&local_payment_basepoint.serialize()); // NOT TESTED
+        sha.input(&their_payment_basepoint);
+        sha.input(&local_payment_basepoint.serialize());
     }
     let res = Sha256::from_engine(sha).into_inner();
 
