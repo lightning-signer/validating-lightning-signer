@@ -9,11 +9,11 @@ use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{Address, Network, Script, SigHashType, OutPoint};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys};
+use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys, LocalCommitmentTransaction, HTLCOutputInCommitment};
 use lightning::util::logger::Logger;
 use rand::{thread_rng, Rng};
 use secp256k1::ecdh::SharedSecret;
-use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
+use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature};
 use tonic::Status;
 
 use crate::node::node::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, Node};
@@ -345,29 +345,50 @@ impl MySigner {
             for htlc in htlcs.iter() {
                 htlc_refs.push(htlc); // NOT TESTED
             }
+
+            // We provide a dummy signature for the remote, since we don't require that sig
+            // to be passed in to this call.  It would have been better if LocalCommitmentTransaction
+            // didn't require the remote sig.
+            let dummy_sig = Secp256k1::new().sign(&secp256k1::Message::from_slice(&[42; 32]).unwrap(), &SecretKey::from_slice(&[42; 32]).unwrap());
+
+            let htlc_data: Vec<(HTLCOutputInCommitment, Option<Signature>)> =
+                htlc_refs.iter().map(|h| ((*h).clone(), None)).collect();
+            let commitment_tx = LocalCommitmentTransaction::new_missing_local_sig(
+                tx,
+                dummy_sig,
+                &chan.keys.pubkeys().funding_pubkey,
+                &chan.keys.remote_pubkeys().funding_pubkey,
+                keys,
+                feerate_per_kw,
+                htlc_data,
+            );
             // Although this method has "remote" in the name, it works for local too
-            let sigs = chan
+            let sig = chan
                 .keys
-                .sign_remote_commitment(
-                    feerate_per_kw,
-                    &tx,
-                    &keys,
-                    htlc_refs.as_slice(),
-                    chan.setup.local_to_self_delay,
-                    &chan.secp_ctx,
+                .sign_local_commitment(
+                    &commitment_tx,
+                    &chan.secp_ctx
                 )
                 .map_err(|_| self.internal_error("failed to sign"))?;
-            let mut sig = sigs.0.serialize_der().to_vec();
-            sig.push(SigHashType::All as u8);
-            let mut htlc_sigs = Vec::new();
-            for htlc_signature in sigs.1 {
+            let mut sig_vec = sig.serialize_der().to_vec();
+            sig_vec.push(SigHashType::All as u8);
+
+            let htlc_sigs = chan.keys.sign_local_commitment_htlc_transactions(
+                &commitment_tx,
+                chan.setup.local_to_self_delay,  // TODO cover this value with a test
+                &chan.secp_ctx
+            ).map_err(|_| self.internal_error("failed to sign htlcs"))?;
+            let mut htlc_sig_vecs = Vec::new();
+            for htlc_sig_o in htlc_sigs {
                 // BEGIN NOT TESTED
-                let mut htlc_sig = htlc_signature.serialize_der().to_vec();
-                htlc_sig.push(SigHashType::All as u8);
-                htlc_sigs.push(htlc_sig);
+                if let Some(htlc_sig) = htlc_sig_o {
+                    let mut htlc_sig_vec = htlc_sig.serialize_der().to_vec();
+                    htlc_sig_vec.push(SigHashType::All as u8);
+                    htlc_sig_vecs.push(htlc_sig_vec);
+                }
                 // END NOT TESTED
             }
-            Ok((sig, htlc_sigs))
+            Ok((sig_vec, htlc_sig_vecs))
         })
     }
 

@@ -136,58 +136,17 @@ impl ChannelKeys for LoopbackChannelSigner {
             commitment_tx.txid(),
         );
 
-        let mut to_local_value_sat = 0;
-        let mut to_remote_value_sat = 0;
+        let (commitment_number,
+            to_local_value_sat, to_remote_value_sat,
+            offered_htlcs, received_htlcs) =
+            self.decode_commitment_tx(commitment_tx, htlcs);
 
-        let mut offered_htlcs = Vec::new();
-        let mut received_htlcs = Vec::new();
-        let htlc_indices: HashSet<u32> =
-            htlcs.iter().filter_map(|h| h.transaction_output_index)
-                .collect();
-
-        for htlc in htlcs {
-            let info = HTLCInfo2 {
-                value_sat: htlc.amount_msat / 1000,
-                payment_hash: htlc.payment_hash,
-                cltv_expiry: htlc.cltv_expiry,
-            };
-            if htlc.offered {
-                offered_htlcs.push(info);
-            } else {
-                received_htlcs.push(info);
-            }
-        }
-
-        for (idx, out) in commitment_tx.output.iter().enumerate() {
-            println!("{:?}", out.script_pubkey);
-            if out.script_pubkey.is_v0_p2wsh() {
-                if !htlc_indices.contains(&(idx as u32)) {
-                    if to_local_value_sat != 0 {
-                        panic!("multiple to-local")
-                    }
-                    to_local_value_sat = out.value;
-                }
-            } else {
-                if to_remote_value_sat != 0 {
-                    panic!("multiple to-remote")
-                }
-                to_remote_value_sat = out.value;
-            }
-        }
         self.signer.additional_setup(
             &self.node_id, &self.channel_id,
             commitment_tx.input[0].previous_output,
             to_self_delay
         ).map_err(|s| self.bad_status(s))?;
 
-        let obscure_factor = get_commitment_transaction_number_obscure_factor(
-            &self.pubkeys.payment_point,
-            &self.remote_pubkeys.as_ref().unwrap().payment_point,
-            self.is_outbound,
-        );
-
-        let commitment_number = (((commitment_tx.input[0].sequence as u64 & 0xffffff) << 3*8) |
-                (commitment_tx.lock_time as u64 & 0xffffff)) ^ obscure_factor;
         let (sig_vec, htlc_sig_vecs) = self.signer.sign_remote_commitment_tx_phase2(
             &self.node_id,
             &self.channel_id,
@@ -212,15 +171,26 @@ impl ChannelKeys for LoopbackChannelSigner {
         local_commitment_tx: &LocalCommitmentTransaction,
         _secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        let res = self.signer
-            .sign_commitment_tx(
+        let htlcs: Vec<&HTLCOutputInCommitment> =
+            local_commitment_tx.per_htlc.iter().map(|(h,_)| h)
+                .collect();
+        let (commitment_number,
+            to_local_value_sat, to_remote_value_sat,
+            offered_htlcs, received_htlcs) =
+            self.decode_commitment_tx(&local_commitment_tx.unsigned_tx, htlcs.as_slice());
+
+        let (sig_vec, _htlc_sig_vecs) = self.signer
+            .sign_local_commitment_tx_phase2(
                 &self.node_id,
                 &self.channel_id,
-                &local_commitment_tx.unsigned_tx,
-                self.channel_value_sat,
-            )
-            .map_err(|s| self.bad_status(s))?;
-        bitcoin_sig_to_signature(res)
+                commitment_number,
+                local_commitment_tx.feerate_per_kw,
+                to_local_value_sat,
+                to_remote_value_sat,
+                offered_htlcs,
+                received_htlcs
+            ).map_err(|s| self.bad_status(s))?;
+        bitcoin_sig_to_signature(sig_vec)
     }
 
     fn unsafe_sign_local_commitment<T: secp256k1::Signing + secp256k1::Verification>(
@@ -396,6 +366,7 @@ impl ChannelKeys for LoopbackChannelSigner {
     }
 }
 
+
 impl KeysInterface for LoopbackSignerKeysInterface {
     type ChanKeySigner = LoopbackChannelSigner;
 
@@ -450,5 +421,64 @@ impl KeysInterface for LoopbackSignerKeysInterface {
                 node_opt.map_or(Err(()), |n| Ok(n.get_channel_id()))
             })
             .unwrap()
+    }
+}
+
+impl LoopbackChannelSigner {
+    /// Adapt phase 1 signing parameters (serialized tx and htlcs) to phase 2 information
+    /// (commitment number, local and remote values, HTLCInfo2 objects)
+    fn decode_commitment_tx(&self,
+                            commitment_tx: &Transaction,
+                            htlcs: &[&HTLCOutputInCommitment])
+        -> (u64, u64, u64, Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
+        let mut to_local_value_sat = 0;
+        let mut to_remote_value_sat = 0;
+
+        let mut offered_htlcs = Vec::new();
+        let mut received_htlcs = Vec::new();
+        let htlc_indices: HashSet<u32> =
+            htlcs.iter().filter_map(|h| h.transaction_output_index)
+                .collect();
+
+        for htlc in htlcs {
+            let info = HTLCInfo2 {
+                value_sat: htlc.amount_msat / 1000,
+                payment_hash: htlc.payment_hash,
+                cltv_expiry: htlc.cltv_expiry,
+            };
+            if htlc.offered {
+                offered_htlcs.push(info);
+            } else {
+                received_htlcs.push(info);
+            }
+        }
+
+        for (idx, out) in commitment_tx.output.iter().enumerate() {
+            println!("{:?}", out.script_pubkey);
+            if out.script_pubkey.is_v0_p2wsh() {
+                if !htlc_indices.contains(&(idx as u32)) {
+                    if to_local_value_sat != 0 {
+                        panic!("multiple to-local")
+                    }
+                    to_local_value_sat = out.value;
+                }
+            } else {
+                if to_remote_value_sat != 0 {
+                    panic!("multiple to-remote")
+                }
+                to_remote_value_sat = out.value;
+            }
+        }
+
+        let obscure_factor = get_commitment_transaction_number_obscure_factor(
+            &self.pubkeys.payment_point,
+            &self.remote_pubkeys.as_ref().unwrap().payment_point,
+            self.is_outbound,
+        );
+
+        let commitment_number = (((commitment_tx.input[0].sequence as u64 & 0xffffff) << 3 * 8) |
+            (commitment_tx.lock_time as u64 & 0xffffff)) ^ obscure_factor;
+
+        (commitment_number, to_local_value_sat, to_remote_value_sat, offered_htlcs, received_htlcs)
     }
 }
