@@ -99,8 +99,8 @@ impl ChannelKeys for EnforcingChannelKeys {
         self.inner.get_per_commitment_point(idx, secp_ctx)
     }
 
-    fn revoke_commitment(&self, idx: u64) -> [u8; 32] {
-        self.inner.revoke_commitment(idx)
+    fn release_commitment_secret(&self, idx: u64) -> [u8; 32] {
+        self.inner.release_commitment_secret(idx)
     }
 
     fn pubkeys(&self) -> &ChannelPublicKeys {

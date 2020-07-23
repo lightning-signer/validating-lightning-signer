@@ -100,7 +100,7 @@ fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
 }
 
 impl ChannelKeys for LoopbackChannelSigner {
-    fn revoke_commitment(&self, commitment_number: u64) -> [u8; 32] {
+    fn release_commitment_secret(&self, commitment_number: u64) -> [u8; 32] {
         // signer layer expect forward counting commitment number, but we are passed a backwards counting one
         self.signer
             .revoke_commitent(

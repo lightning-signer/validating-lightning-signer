@@ -113,7 +113,7 @@ impl ChannelBase for ChannelStub {
     fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey {
         let secret = self
             .keys
-            .revoke_commitment(INITIAL_COMMITMENT_NUMBER - commitment_number);
+            .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
         SecretKey::from_slice(&secret).unwrap()
     }
 }
@@ -133,7 +133,7 @@ impl ChannelBase for Channel {
     fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey {
         let secret = self
             .keys
-            .revoke_commitment(INITIAL_COMMITMENT_NUMBER - commitment_number);
+            .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
         SecretKey::from_slice(&secret).unwrap()
     }
 }
