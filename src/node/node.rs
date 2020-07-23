@@ -54,9 +54,11 @@ pub struct ChannelSetup {
     pub channel_value_sat: u64, // DUP keys.inner.channel_value_satoshis
     pub push_value_msat: u64,
     pub funding_outpoint: OutPoint,
+    /// locally imposed requirement on the remote commitment transaction to_self_delay
     pub local_to_self_delay: u16,
     pub local_shutdown_script: Script,    // previously MISSING?
     pub remote_points: ChannelPublicKeys, // DUP keys.inner.remote_channel_pubkeys
+    /// remotely imposed requirement on the local commitment transaction to_self_delay
     pub remote_to_self_delay: u16,
     pub remote_shutdown_script: Script,
     pub option_static_remotekey: bool, // previously MISSING?
@@ -384,7 +386,7 @@ impl Channel {
             revocation_key,
             to_local_delayed_key,
             to_local_value_sat,
-            to_local_delay: self.setup.remote_to_self_delay,
+            to_self_delay: self.setup.local_to_self_delay,
             offered_htlcs,
             received_htlcs,
         })
@@ -431,7 +433,7 @@ impl Channel {
             revocation_key,
             to_local_delayed_key,
             to_local_value_sat,
-            to_local_delay: self.setup.local_to_self_delay,
+            to_self_delay: self.setup.remote_to_self_delay,
             offered_htlcs,
             received_htlcs,
         })
@@ -476,7 +478,7 @@ impl Channel {
                 &tx,
                 &keys,
                 htlc_refs.as_slice(),
-                self.setup.remote_to_self_delay,
+                self.setup.local_to_self_delay,
                 &self.secp_ctx,
             )
             .map_err(|_| self.internal_error("failed to sign"))?;

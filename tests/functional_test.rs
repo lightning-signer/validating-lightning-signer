@@ -25,6 +25,7 @@ use self::lightning_signer::util::functional_test_utils::{
     create_announced_chan_between_nodes_with_value,
     route_payment,
     claim_payment};
+use lightning::util::config::{UserConfig, ChannelHandshakeConfig};
 
 pub fn create_node_cfgs_with_signer<'a>(
     node_count: usize,
@@ -87,6 +88,24 @@ fn fake_network_with_signer_test() {
 
     // Close channel normally
     close_channel(&nodes[0], &nodes[1], &chan_1.2, chan_1.3, true);
+}
+
+// Not currently used, but may be interesting for testing different to_self_delay values
+// for peering nodes.
+fn alt_config() -> UserConfig {
+    let mut cfg1 = UserConfig {
+        own_channel_config: ChannelHandshakeConfig {
+            minimum_depth: 6,
+            our_to_self_delay: 145,
+            our_htlc_minimum_msat: 1000,
+        },
+        peer_channel_config_limits: Default::default(),
+        channel_options: Default::default()
+    };
+    cfg1.channel_options.announced_channel = true;
+    cfg1.peer_channel_config_limits
+        .force_announced_channel_preference = false;
+    cfg1
 }
 
 #[test]

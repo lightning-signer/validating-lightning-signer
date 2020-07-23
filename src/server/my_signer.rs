@@ -97,20 +97,20 @@ impl MySigner {
         Ok(channel_id)
     }
 
-    /// Temporary, until phase 2 is fully implemented.  This is part ready_channel
+    /// Temporary, until phase 2 is fully implemented
     pub fn additional_setup(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
         outpoint: OutPoint,
-        remote_to_self_delay: u16,
+        local_to_self_delay: u16,
     ) -> Result<(), Status> {
         self.with_ready_channel(node_id, channel_id, |chan| {
             if chan.setup.funding_outpoint.is_null() {
                 chan.setup.funding_outpoint = outpoint;
-                chan.setup.remote_to_self_delay = remote_to_self_delay;
+                chan.setup.local_to_self_delay = local_to_self_delay;
             } else if chan.setup.funding_outpoint != outpoint
-                || chan.setup.remote_to_self_delay != remote_to_self_delay
+                || chan.setup.local_to_self_delay != local_to_self_delay
             {
                 panic!("funding outpoint or remote_to_self_delay changed"); // NOT TESTED
             }
@@ -2577,7 +2577,7 @@ mod tests {
             revocation_key,
             to_local_delayed_key,
             to_local_value_sat: 200,
-            to_local_delay: 6,
+            to_self_delay: 6,
             offered_htlcs: vec![],
             received_htlcs: vec![],
         };
@@ -2628,7 +2628,7 @@ mod tests {
             revocation_key,
             to_local_delayed_key,
             to_local_value_sat: 200,
-            to_local_delay: 6,
+            to_self_delay: 6,
             offered_htlcs: vec![],
             received_htlcs: vec![],
         };
