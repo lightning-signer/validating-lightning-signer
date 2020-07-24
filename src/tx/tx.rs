@@ -142,7 +142,7 @@ pub fn build_commitment_tx(
     if info.to_local_value_sat > 0 {
         let redeem_script = get_revokeable_redeemscript(
             &info.revocation_key,
-            info.to_local_delay,
+            info.to_self_delay,
             &info.to_local_delayed_key,
         );
         txouts.push((
@@ -284,7 +284,7 @@ pub struct CommitmentInfo2 {
     pub revocation_key: PublicKey,
     pub to_local_delayed_key: PublicKey,
     pub to_local_value_sat: u64,
-    pub to_local_delay: u16,
+    pub to_self_delay: u16,
     pub offered_htlcs: Vec<HTLCInfo2>,
     pub received_htlcs: Vec<HTLCInfo2>,
 }

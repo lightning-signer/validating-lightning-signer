@@ -241,7 +241,7 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         let policy = &self.policy;
 
-        self.validate_delay("to_local", info.to_local_delay as u32)?;
+        self.validate_delay("to_local", info.to_self_delay as u32)?;
 
         if info.offered_htlcs.len() + info.received_htlcs.len() > policy.max_htlcs {
             return Err(Policy("too many HTLCs".to_string()));
@@ -364,7 +364,7 @@ mod tests {
             revocation_key,
             to_local_delayed_key,
             to_local_value_sat,
-            to_local_delay,
+            to_self_delay: to_local_delay,
             offered_htlcs,
             received_htlcs,
         }

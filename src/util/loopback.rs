@@ -169,7 +169,7 @@ impl ChannelKeys for LoopbackChannelSigner {
                 &self.node_id,
                 &self.channel_id,
                 commitment_tx.input[0].previous_output,
-                to_self_delay,
+                to_self_delay,  // FIXME needed?
             )
             .map_err(|s| self.bad_status(s))?;
 
