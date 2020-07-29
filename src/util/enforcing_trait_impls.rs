@@ -119,7 +119,6 @@ impl ChannelKeys for EnforcingChannelKeys {
         commitment_tx: &Transaction,
         keys: &TxCreationKeys,
         htlcs: &[&HTLCOutputInCommitment],
-        to_self_delay: u16,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
         if commitment_tx.input.len() != 1 {
@@ -152,7 +151,6 @@ impl ChannelKeys for EnforcingChannelKeys {
                 commitment_tx,
                 keys,
                 htlcs,
-                to_self_delay,
                 secp_ctx,
             )
             .unwrap())
@@ -179,11 +177,10 @@ impl ChannelKeys for EnforcingChannelKeys {
     fn sign_local_commitment_htlc_transactions<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         local_commitment_tx: &LocalCommitmentTransaction,
-        local_csv: u16,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Vec<Option<Signature>>, ()> {
         self.inner
-            .sign_local_commitment_htlc_transactions(local_commitment_tx, local_csv, secp_ctx)
+            .sign_local_commitment_htlc_transactions(local_commitment_tx, secp_ctx)
     }
 
     fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(
@@ -193,7 +190,6 @@ impl ChannelKeys for EnforcingChannelKeys {
         amount: u64,
         per_commitment_key: &SecretKey,
         htlc: &Option<HTLCOutputInCommitment>,
-        on_remote_tx_csv: u16,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
         self.inner.sign_justice_transaction(
@@ -202,7 +198,6 @@ impl ChannelKeys for EnforcingChannelKeys {
             amount,
             per_commitment_key,
             htlc,
-            on_remote_tx_csv,
             secp_ctx,
         )
     }
@@ -247,8 +242,8 @@ impl ChannelKeys for EnforcingChannelKeys {
         self.inner.sign_channel_announcement(msg, secp_ctx)
     }
 
-    fn set_remote_channel_pubkeys(&mut self, channel_pubkeys: &ChannelPublicKeys) {
-        self.inner.set_remote_channel_pubkeys(channel_pubkeys)
+    fn on_accept(&mut self, channel_points: &ChannelPublicKeys, remote_to_self_delay: u16, local_to_self_delay: u16) {
+        self.inner.on_accept(channel_points, remote_to_self_delay, local_to_self_delay)
     }
 
     // END NOT TESTED

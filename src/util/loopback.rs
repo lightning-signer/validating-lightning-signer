@@ -33,6 +33,8 @@ pub struct LoopbackChannelSigner {
     pub remote_pubkeys: Option<ChannelPublicKeys>,
     pub is_outbound: bool,
     pub channel_value_sat: u64,
+    pub local_to_self_delay: u16,
+    pub remote_to_self_delay: u16,
 }
 
 impl LoopbackChannelSigner {
@@ -61,6 +63,8 @@ impl LoopbackChannelSigner {
             remote_pubkeys: None,
             is_outbound,
             channel_value_sat,
+            local_to_self_delay: 0,
+            remote_to_self_delay : 0,
         }
     }
 
@@ -144,7 +148,6 @@ impl ChannelKeys for LoopbackChannelSigner {
         commitment_tx: &Transaction,
         keys: &TxCreationKeys,
         htlcs: &[&HTLCOutputInCommitment],
-        to_self_delay: u16,
         _secp_ctx: &Secp256k1<T>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
         let signer = &self.signer;
@@ -169,7 +172,6 @@ impl ChannelKeys for LoopbackChannelSigner {
                 &self.node_id,
                 &self.channel_id,
                 commitment_tx.input[0].previous_output,
-                to_self_delay,  // FIXME needed?
             )
             .map_err(|s| self.bad_status(s))?;
 
@@ -240,7 +242,6 @@ impl ChannelKeys for LoopbackChannelSigner {
     fn sign_local_commitment_htlc_transactions<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         lct: &LocalCommitmentTransaction,
-        local_csv: u16,
         _secp_ctx: &Secp256k1<T>,
     ) -> Result<Vec<Option<Signature>>, ()> {
         let mut ret = Vec::with_capacity(lct.per_htlc.len());
@@ -251,7 +252,7 @@ impl ChannelKeys for LoopbackChannelSigner {
                 let htlc_tx = build_htlc_transaction(
                     &lct.txid(),
                     lct.feerate_per_kw,
-                    local_csv,
+                    self.remote_to_self_delay,
                     &this_htlc.0,
                     &keys.a_delayed_payment_key,
                     &keys.revocation_key,
@@ -265,13 +266,14 @@ impl ChannelKeys for LoopbackChannelSigner {
                         &self.node_id,
                         &self.channel_id,
                         &htlc_tx,
-                        0,
+                        0, // FIXME
                         Some(keys.per_commitment_point),
                         htlc_redeemscript.to_bytes(),
                         this_htlc.0.amount_msat,
                     )
                     .map_err(|s| self.bad_status(s))?;
 
+                // TODO cover the result with a test
                 ret.push(Some(bitcoin_sig_to_signature(res)?));
             } else {
                 ret.push(None); // NOT TESTED
@@ -287,7 +289,6 @@ impl ChannelKeys for LoopbackChannelSigner {
         amount: u64,
         per_commitment_key: &SecretKey,
         htlc: &Option<HTLCOutputInCommitment>,
-        on_remote_tx_csv: u16,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
         let tx_keys = self.make_remote_tx_keys(
@@ -299,7 +300,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         } else {
             chan_utils::get_revokeable_redeemscript(
                 &tx_keys.revocation_key,
-                on_remote_tx_csv,
+                self.local_to_self_delay,
                 &tx_keys.a_delayed_payment_key,
             )
         };
@@ -316,6 +317,7 @@ impl ChannelKeys for LoopbackChannelSigner {
                 amount,
             )
             .map_err(|s| self.bad_status(s))?;
+        // TODO cover the result with a test
         bitcoin_sig_to_signature(res)
     }
 
@@ -394,7 +396,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         Ok(sig)
     }
 
-    fn set_remote_channel_pubkeys(&mut self, remote_points: &ChannelPublicKeys) {
+    fn on_accept(&mut self, remote_points: &ChannelPublicKeys, remote_to_self_delay: u16, local_to_self_delay: u16) {
         let signer = &self.signer;
         log_info!(
             signer,
@@ -408,10 +410,10 @@ impl ChannelKeys for LoopbackChannelSigner {
             channel_value_sat: self.channel_value_sat,
             push_value_msat: 0,                        // TODO
             funding_outpoint: Default::default(),      // TODO
-            local_to_self_delay: 0,                    // TODO
+            local_to_self_delay,
             local_shutdown_script: Default::default(), // TODO
             remote_points: remote_points.clone(),
-            remote_to_self_delay: 0,                    // TODO
+            remote_to_self_delay,
             remote_shutdown_script: Default::default(), // TODO
             option_static_remotekey: true,              // TODO
         };
@@ -419,6 +421,8 @@ impl ChannelKeys for LoopbackChannelSigner {
             .ready_channel(&self.node_id, self.channel_id, setup)
             .expect("channel already ready or does not exist");
         self.remote_pubkeys = Some(remote_points.clone());
+        self.local_to_self_delay = local_to_self_delay;
+        self.remote_to_self_delay = remote_to_self_delay;
     }
 }
 

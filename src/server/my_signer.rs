@@ -103,16 +103,12 @@ impl MySigner {
         node_id: &PublicKey,
         channel_id: &ChannelId,
         outpoint: OutPoint,
-        local_to_self_delay: u16,
     ) -> Result<(), Status> {
         self.with_ready_channel(node_id, channel_id, |chan| {
             if chan.setup.funding_outpoint.is_null() {
                 chan.setup.funding_outpoint = outpoint;
-                chan.setup.local_to_self_delay = local_to_self_delay;
-            } else if chan.setup.funding_outpoint != outpoint
-                || chan.setup.local_to_self_delay != local_to_self_delay
-            {
-                panic!("funding outpoint or remote_to_self_delay changed"); // NOT TESTED
+            } else if chan.setup.funding_outpoint != outpoint {
+                panic!("funding outpoint changed"); // NOT TESTED
             }
             Ok(())
         })
@@ -378,7 +374,6 @@ impl MySigner {
 
             let htlc_sigs = chan.keys.sign_local_commitment_htlc_transactions(
                 &commitment_tx,
-                chan.setup.local_to_self_delay,  // TODO cover this value with a test
                 &chan.secp_ctx
             ).map_err(|_| self.internal_error("failed to sign htlcs"))?;
             let mut htlc_sig_vecs = Vec::new();
