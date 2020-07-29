@@ -276,7 +276,6 @@ impl Channel {
         commitment_tx: &bitcoin::Transaction,
         per_commitment_point: &PublicKey,
         htlcs: &[&HTLCOutputInCommitment],
-        to_self_delay: u16,
     ) -> Result<(Signature, Vec<Signature>), Status> {
         let tx_keys = self.make_remote_tx_keys(per_commitment_point)?;
         let pubkey = self.keys.pubkeys().funding_pubkey;
@@ -291,7 +290,6 @@ impl Channel {
                 commitment_tx,
                 &tx_keys,
                 htlcs,
-                to_self_delay,
                 &self.secp_ctx,
             )
             .map_err(|_| self.internal_error("sign_remote_commitment failed"))
@@ -478,7 +476,6 @@ impl Channel {
                 &tx,
                 &keys,
                 htlc_refs.as_slice(),
-                self.setup.local_to_self_delay,
                 &self.secp_ctx,
             )
             .map_err(|_| self.internal_error("failed to sign"))?;
@@ -588,7 +585,7 @@ impl Node {
             setup.channel_value_sat, // DUP VALUE
             "c-lightning",
         );
-        inmem_keys.set_remote_channel_pubkeys(&setup.remote_points); // DUP VALUE
+        inmem_keys.on_accept(&setup.remote_points, setup.remote_to_self_delay, setup.local_to_self_delay); // DUP VALUE
         let chan = Channel {
             node: Arc::clone(&stub.node),
             logger: Arc::clone(&stub.logger),
