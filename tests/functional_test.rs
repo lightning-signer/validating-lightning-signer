@@ -164,6 +164,8 @@ fn justice_tx_test() {
     nodes[1].block_notifier.block_connected(&Block { header, txdata: vec![revoked_local_txn[0].clone()] }, 1);
     assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 1);
     check_added_monitors!(nodes[1], 1);
+    let node1_txn = nodes[1].tx_broadcaster.txn_broadcasted.lock().unwrap();
+    check_spends!(node1_txn[0], revoked_local_txn[0]);
 }
 
 #[test]

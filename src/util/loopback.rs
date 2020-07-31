@@ -78,10 +78,10 @@ impl LoopbackChannelSigner {
         let keys = TxCreationKeys::new(
             secp_ctx,
             &per_commitment_point,
-            &pubkeys.delayed_payment_basepoint,
-            &pubkeys.htlc_basepoint,
-            &remote_pubkeys.revocation_basepoint,
+            &remote_pubkeys.delayed_payment_basepoint,
             &remote_pubkeys.htlc_basepoint,
+            &pubkeys.revocation_basepoint,
+            &pubkeys.htlc_basepoint,
         )
         .expect("failed to derive keys");
         Ok(keys)
@@ -330,11 +330,10 @@ impl ChannelKeys for LoopbackChannelSigner {
                 justice_tx,
                 input,
                 per_commitment_key,
-                redeem_script.to_bytes(),  // TODO cover this value with a test
+                redeem_script.to_bytes(),
                 amount,
             )
             .map_err(|s| self.bad_status(s))?;
-        // TODO cover the result with a test
         bitcoin_sig_to_signature(res)
     }
 
