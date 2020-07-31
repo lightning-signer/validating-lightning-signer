@@ -317,9 +317,10 @@ impl Channel {
     // forward counting commitment number
     pub fn build_commitment_tx(
         &self,
-        remote_per_commitment_point: &PublicKey,
+        per_commitment_point: &PublicKey,
         commitment_number: u64,
         info: &CommitmentInfo2,
+        local: bool,
     ) -> Result<
         (
             bitcoin::Transaction,
@@ -328,7 +329,8 @@ impl Channel {
         ),
         Status,
     > {
-        let keys = self.make_remote_tx_keys(remote_per_commitment_point)?;
+        let keys =
+            if local { self.make_local_tx_keys(per_commitment_point)? } else { self.make_remote_tx_keys(per_commitment_point)? };
         let obscured_commitment_transaction_number =
             self.get_commitment_transaction_number_obscure_factor() ^ commitment_number;
         let funding_outpoint = self.setup.funding_outpoint;
@@ -412,12 +414,17 @@ impl Channel {
             self.internal_error(format!("could not derive to_local_delayed_key: {}", err))
             // END NOT TESTED
         })?;
-        let remote_key = derive_public_key(
-            secp_ctx,
-            &per_commitment_point,
-            &remote_points.payment_point,
-        )
-        .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?;
+
+        let remote_key = if self.setup.option_static_remotekey {
+            remote_points.payment_point // NOT TESTED
+        } else {
+            derive_public_key(
+                &self.secp_ctx,
+                &per_commitment_point,
+                &remote_points.payment_point,
+            ).map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
+        };
+
         let revocation_key = derive_public_revocation_key(
             secp_ctx,
             &per_commitment_point,
@@ -456,10 +463,10 @@ impl Channel {
         )?;
 
         let (tx, _scripts, htlcs) =
-            self.build_commitment_tx(remote_per_commitment_point, commitment_number, &info)?;
+            self.build_commitment_tx(remote_per_commitment_point, commitment_number, &info, false)?;
 
         for out in &tx.output {
-            println!("> {:?}", out.script_pubkey);
+            println!("channel: remote script {:?}", out.script_pubkey);
         }
         println!("txid {}", tx.txid());
 

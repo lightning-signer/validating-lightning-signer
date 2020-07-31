@@ -36,6 +36,9 @@ features = ["unsafe"]
 version = "0.23"
 features = ["bitcoinconsensus"]
 
+[dev-dependencies.bitcoinconsensus]
+version = "0.19.0-1"
+
 [build-dependencies]
 tonic-build = "0.1.0"
 
