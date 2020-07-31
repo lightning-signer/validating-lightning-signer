@@ -644,6 +644,7 @@ pub fn create_announced_chan_between_nodes_with_value<'a, 'b, 'c, 'd>(
     )
 }
 
+#[macro_export]
 macro_rules! check_spends {
     ($tx: expr, $spends_tx: expr) => {{
         $tx.verify(|out_point| {
@@ -833,14 +834,6 @@ impl SendEvent {
         SendEvent::from_event(events.pop().unwrap())
     }
     // END NOT TESTED
-}
-
-macro_rules! check_added_monitors {
-    ($node: expr, $count: expr) => {{
-        let mut added_monitors = $node.chan_monitor.added_monitors.lock().unwrap();
-        assert_eq!(added_monitors.len(), $count);
-        added_monitors.clear();
-    }};
 }
 
 macro_rules! commitment_signed_dance {

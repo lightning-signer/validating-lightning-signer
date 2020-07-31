@@ -104,18 +104,6 @@ fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
 }
 
 impl ChannelKeys for LoopbackChannelSigner {
-    fn release_commitment_secret(&self, commitment_number: u64) -> [u8; 32] {
-        // signer layer expect forward counting commitment number, but we are passed a backwards counting one
-        self.signer
-            .revoke_commitent(
-                &self.node_id,
-                &self.channel_id,
-                INITIAL_COMMITMENT_NUMBER - commitment_number,
-            )
-            .map_err(|s| self.bad_status(s))
-            .unwrap()
-    }
-
     fn get_per_commitment_point<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         idx: u64,
@@ -127,6 +115,18 @@ impl ChannelKeys for LoopbackChannelSigner {
                 &self.node_id,
                 &self.channel_id,
                 INITIAL_COMMITMENT_NUMBER - idx,
+            )
+            .map_err(|s| self.bad_status(s))
+            .unwrap()
+    }
+
+    fn release_commitment_secret(&self, commitment_number: u64) -> [u8; 32] {
+        // signer layer expect forward counting commitment number, but we are passed a backwards counting one
+        self.signer
+            .revoke_commitent(
+                &self.node_id,
+                &self.channel_id,
+                INITIAL_COMMITMENT_NUMBER - commitment_number,
             )
             .map_err(|s| self.bad_status(s))
             .unwrap()
@@ -199,10 +199,17 @@ impl ChannelKeys for LoopbackChannelSigner {
 
     fn sign_local_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
-        local_commitment_tx: &LocalCommitmentTransaction,
+        lct: &LocalCommitmentTransaction,
         _secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        let htlcs: Vec<&HTLCOutputInCommitment> = local_commitment_tx
+        let signer = &self.signer;
+
+        for out in &lct.unsigned_tx.output {
+            log_debug!(signer, "loopback: local out script {:?} {}", out.script_pubkey, out.value);
+        }
+        log_debug!(signer, "loopback: sign local txid {}", lct.unsigned_tx.txid());
+
+        let htlcs: Vec<&HTLCOutputInCommitment> = lct
             .per_htlc
             .iter()
             .map(|(h, _)| h)
@@ -213,15 +220,14 @@ impl ChannelKeys for LoopbackChannelSigner {
             to_remote_value_sat,
             offered_htlcs,
             received_htlcs,
-        ) = self.decode_commitment_tx(&local_commitment_tx.unsigned_tx, htlcs.as_slice());
+        ) = self.decode_commitment_tx(&lct.unsigned_tx, htlcs.as_slice());
 
-        let (sig_vec, _htlc_sig_vecs) = self
-            .signer
+        let (sig_vec, _htlc_sig_vecs) = signer
             .sign_local_commitment_tx_phase2(
                 &self.node_id,
                 &self.channel_id,
                 commitment_number,
-                local_commitment_tx.feerate_per_kw,
+                0,  // feerate is not relevant because we are not signing HTLCs
                 to_local_value_sat,
                 to_remote_value_sat,
                 offered_htlcs,
@@ -244,7 +250,16 @@ impl ChannelKeys for LoopbackChannelSigner {
         lct: &LocalCommitmentTransaction,
         _secp_ctx: &Secp256k1<T>,
     ) -> Result<Vec<Option<Signature>>, ()> {
+        let signer = &self.signer;
         let mut ret = Vec::with_capacity(lct.per_htlc.len());
+
+        let htlcs: Vec<&HTLCOutputInCommitment> = lct
+            .per_htlc
+            .iter()
+            .map(|(h, _)| h)
+            .collect();
+        let (commitment_number, _, _, _, _, ) =
+            self.decode_commitment_tx(&lct.unsigned_tx, &htlcs);
 
         for this_htlc in lct.per_htlc.iter() {
             if this_htlc.0.transaction_output_index.is_some() {
@@ -258,22 +273,24 @@ impl ChannelKeys for LoopbackChannelSigner {
                     &keys.revocation_key,
                 );
 
+                for out in &htlc_tx.output {
+                    log_debug!(signer, "loopback: local out htlc script {:?} {}", out.script_pubkey, out.value);
+                }
+                log_debug!(signer, "loopback: sign local htlc txid {}", htlc_tx.txid());
                 let htlc_redeemscript = get_htlc_redeemscript(&this_htlc.0, keys);
 
-                let res = self
-                    .signer
+                let res = signer
                     .sign_local_htlc_tx(
                         &self.node_id,
                         &self.channel_id,
                         &htlc_tx,
-                        0, // FIXME
-                        Some(keys.per_commitment_point),
+                        commitment_number,
+                        None,
                         htlc_redeemscript.to_bytes(),
-                        this_htlc.0.amount_msat,
+                        this_htlc.0.amount_msat / 1000,
                     )
                     .map_err(|s| self.bad_status(s))?;
 
-                // TODO cover the result with a test
                 ret.push(Some(bitcoin_sig_to_signature(res)?));
             } else {
                 ret.push(None); // NOT TESTED
@@ -313,7 +330,7 @@ impl ChannelKeys for LoopbackChannelSigner {
                 justice_tx,
                 input,
                 per_commitment_key,
-                redeem_script.to_bytes(),
+                redeem_script.to_bytes(),  // TODO cover this value with a test
                 amount,
             )
             .map_err(|s| self.bad_status(s))?;
@@ -405,6 +422,7 @@ impl ChannelKeys for LoopbackChannelSigner {
             self.channel_id
         );
 
+        // TODO cover local vs remote to_self_delay with a test
         let setup = ChannelSetup {
             is_outbound: self.is_outbound,
             channel_value_sat: self.channel_value_sat,
@@ -515,7 +533,6 @@ impl LoopbackChannelSigner {
         }
 
         for (idx, out) in commitment_tx.output.iter().enumerate() {
-            println!("{:?}", out.script_pubkey);
             if out.script_pubkey.is_v0_p2wsh() {
                 if !htlc_indices.contains(&(idx as u32)) {
                     if to_local_value_sat != 0 {

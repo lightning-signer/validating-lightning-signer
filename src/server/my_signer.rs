@@ -337,7 +337,12 @@ impl MySigner {
                 received_htlcs.clone(),
             )?;
             let (tx, _scripts, htlcs) =
-                chan.build_commitment_tx(&per_commitment_point, commitment_number, &info)?;
+                chan.build_commitment_tx(&per_commitment_point, commitment_number, &info, true)?;
+            for out in &tx.output {
+                log_debug!(self, "my_signer: out script {:?} {}", out.script_pubkey, out.value);
+            }
+
+            log_debug!(self, "my_signer: sign local txid {}", tx.txid());
             let keys = chan.make_local_tx_keys(&per_commitment_point)?;
 
             let mut htlc_refs = Vec::new();
@@ -1219,7 +1224,7 @@ mod tests {
                     vec![],
                 )?;
                 let (tx, output_scripts, _) =
-                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
+                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info, false)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
                 let ser_signature = chan
                     .sign_remote_commitment_tx(
@@ -1288,7 +1293,7 @@ mod tests {
                     vec![htlc2.clone(), htlc3.clone()],
                 )?;
                 let (tx, output_scripts, _) =
-                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
+                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info, false)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
                 let ser_signature = chan
                     .sign_remote_commitment_tx(
@@ -1341,7 +1346,7 @@ mod tests {
                 )?;
 
                 let (tx, _, _) =
-                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
+                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info, false)?;
                 assert_eq!(
                     hex::encode(tx.txid()),
                     "a2e13c6a4b1b4764d7cd755ef3a53d38563169e6bf7999eb2afefffeed3790c4"
@@ -1388,7 +1393,7 @@ mod tests {
                     vec![],
                 )?;
 
-                chan.build_commitment_tx(&per_commitment_point, 23, &info)
+                chan.build_commitment_tx(&per_commitment_point, 23, &info, true)
             })
             .expect("build_commitment_tx");
         let (ser_signature, _) = signer
@@ -2580,7 +2585,7 @@ mod tests {
         let (tx, _, _) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 // chan.ready(&remote_points, to_self_delay, Script::new(), funding_outpoint);
-                chan.build_commitment_tx(&remote_per_commitment_point, n, &info)
+                chan.build_commitment_tx(&remote_per_commitment_point, n, &info, false)
             })
             .expect("tx");
 
@@ -2632,7 +2637,7 @@ mod tests {
         let (tx, _, _) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 // chan.ready(&remote_points, to_self_delay, Script::new(), funding_outpoint);
-                chan.build_commitment_tx(&remote_per_commitment_point, n, &info)
+                chan.build_commitment_tx(&remote_per_commitment_point, n, &info, false)
             })
             .expect("tx");
 
