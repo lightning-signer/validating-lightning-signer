@@ -225,7 +225,7 @@ pub fn make_test_channel_setup() -> ChannelSetup {
             vout: 0,
         },
         local_to_self_delay: 5,
-        local_shutdown_script: Script::new(),
+        local_shutdown_script: None,
         remote_points: make_test_remote_points(),
         remote_to_self_delay: 5,
         remote_shutdown_script: Script::new(),

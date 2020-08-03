@@ -13,6 +13,7 @@ use crate::node::node::{ChannelId, ChannelSetup};
 use crate::server::my_keys_manager::INITIAL_COMMITMENT_NUMBER;
 use crate::server::my_signer::MySigner;
 use crate::tx::tx::{get_commitment_transaction_number_obscure_factor, HTLCInfo2};
+use crate::util::crypto_utils::payload_for_p2wpkh;
 use lightning::ln::chan_utils;
 use lightning::util::ser::Writeable;
 use std::collections::HashSet;
@@ -64,7 +65,7 @@ impl LoopbackChannelSigner {
             is_outbound,
             channel_value_sat,
             local_to_self_delay: 0,
-            remote_to_self_delay : 0,
+            remote_to_self_delay: 0,
         }
     }
 
@@ -205,15 +206,20 @@ impl ChannelKeys for LoopbackChannelSigner {
         let signer = &self.signer;
 
         for out in &lct.unsigned_tx.output {
-            log_debug!(signer, "loopback: local out script {:?} {}", out.script_pubkey, out.value);
+            log_debug!(
+                signer,
+                "loopback: local out script {:?} {}",
+                out.script_pubkey,
+                out.value
+            );
         }
-        log_debug!(signer, "loopback: sign local txid {}", lct.unsigned_tx.txid());
+        log_debug!(
+            signer,
+            "loopback: sign local txid {}",
+            lct.unsigned_tx.txid()
+        );
 
-        let htlcs: Vec<&HTLCOutputInCommitment> = lct
-            .per_htlc
-            .iter()
-            .map(|(h, _)| h)
-            .collect();
+        let htlcs: Vec<&HTLCOutputInCommitment> = lct.per_htlc.iter().map(|(h, _)| h).collect();
         let (
             commitment_number,
             to_local_value_sat,
@@ -227,7 +233,7 @@ impl ChannelKeys for LoopbackChannelSigner {
                 &self.node_id,
                 &self.channel_id,
                 commitment_number,
-                0,  // feerate is not relevant because we are not signing HTLCs
+                0, // feerate is not relevant because we are not signing HTLCs
                 to_local_value_sat,
                 to_remote_value_sat,
                 offered_htlcs,
@@ -253,13 +259,8 @@ impl ChannelKeys for LoopbackChannelSigner {
         let signer = &self.signer;
         let mut ret = Vec::with_capacity(lct.per_htlc.len());
 
-        let htlcs: Vec<&HTLCOutputInCommitment> = lct
-            .per_htlc
-            .iter()
-            .map(|(h, _)| h)
-            .collect();
-        let (commitment_number, _, _, _, _, ) =
-            self.decode_commitment_tx(&lct.unsigned_tx, &htlcs);
+        let htlcs: Vec<&HTLCOutputInCommitment> = lct.per_htlc.iter().map(|(h, _)| h).collect();
+        let (commitment_number, _, _, _, _) = self.decode_commitment_tx(&lct.unsigned_tx, &htlcs);
 
         for this_htlc in lct.per_htlc.iter() {
             if this_htlc.0.transaction_output_index.is_some() {
@@ -274,11 +275,17 @@ impl ChannelKeys for LoopbackChannelSigner {
                 );
 
                 for out in &htlc_tx.output {
-                    log_debug!(signer, "loopback: local out htlc script {:?} {}", out.script_pubkey, out.value);
+                    log_debug!(
+                        signer,
+                        "loopback: local out htlc script {:?} {}",
+                        out.script_pubkey,
+                        out.value
+                    );
                 }
                 log_debug!(signer, "loopback: sign local htlc txid {}", htlc_tx.txid());
                 let htlc_redeemscript = get_htlc_redeemscript(&this_htlc.0, keys);
 
+                // TODO phase 2
                 let res = signer
                     .sign_local_htlc_tx(
                         &self.node_id,
@@ -322,6 +329,7 @@ impl ChannelKeys for LoopbackChannelSigner {
             )
         };
 
+        // TODO phase 2
         let res = self
             .signer
             .sign_penalty_to_us(
@@ -348,9 +356,11 @@ impl ChannelKeys for LoopbackChannelSigner {
     ) -> Result<Signature, ()> {
         let chan_keys = self.make_remote_tx_keys(per_commitment_point, secp_ctx)?;
         let redeem_script = chan_utils::get_htlc_redeemscript(htlc, &chan_keys);
+
+        // TODO phase 2
         let res = self
             .signer
-            .sign_remote_htlc_tx(
+            .sign_remote_htlc_to_us(
                 &self.node_id,
                 &self.channel_id,
                 htlc_tx,
@@ -376,13 +386,40 @@ impl ChannelKeys for LoopbackChannelSigner {
             self.node_id,
             self.channel_id
         );
+        let mut to_local_value = 0;
+        let mut to_remote_value = 0;
+        let local_script = payload_for_p2wpkh(
+            &signer
+                .get_shutdown_pubkey(&self.node_id)
+                .map_err(|s| self.bad_status(s))?,
+        )
+        .script_pubkey();
+        let mut to_remote_script = Script::default();
+        for out in &closing_tx.output {
+            if out.script_pubkey == local_script {
+                if to_local_value > 0 {
+                    log_error!(signer, "multiple to_local outputs");
+                    return Err(());
+                }
+                to_local_value = out.value;
+            } else {
+                if to_remote_value > 0 {
+                    log_error!(signer, "multiple to_remote outputs");
+                    return Err(());
+                }
+                to_remote_value = out.value;
+                to_remote_script = out.script_pubkey.clone();
+            }
+        }
+
         let res = self
             .signer
-            .sign_mutual_close_tx(
+            .sign_mutual_close_tx_phase2(
                 &self.node_id,
                 &self.channel_id,
-                closing_tx,
-                self.channel_value_sat,
+                to_local_value,
+                to_remote_value,
+                Some(to_remote_script),
             )
             .map_err(|s| self.bad_status(s))?;
         bitcoin_sig_to_signature(res)
@@ -412,7 +449,12 @@ impl ChannelKeys for LoopbackChannelSigner {
         Ok(sig)
     }
 
-    fn on_accept(&mut self, remote_points: &ChannelPublicKeys, remote_to_self_delay: u16, local_to_self_delay: u16) {
+    fn on_accept(
+        &mut self,
+        remote_points: &ChannelPublicKeys,
+        remote_to_self_delay: u16,
+        local_to_self_delay: u16,
+    ) {
         let signer = &self.signer;
         log_info!(
             signer,
@@ -425,10 +467,10 @@ impl ChannelKeys for LoopbackChannelSigner {
         let setup = ChannelSetup {
             is_outbound: self.is_outbound,
             channel_value_sat: self.channel_value_sat,
-            push_value_msat: 0,                        // TODO
-            funding_outpoint: Default::default(),      // TODO
+            push_value_msat: 0,                   // TODO
+            funding_outpoint: Default::default(), // TODO
             local_to_self_delay,
-            local_shutdown_script: Default::default(), // TODO
+            local_shutdown_script: None,          // use the signer's shutdown script
             remote_points: remote_points.clone(),
             remote_to_self_delay,
             remote_shutdown_script: Default::default(), // TODO
