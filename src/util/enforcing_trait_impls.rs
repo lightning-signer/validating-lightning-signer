@@ -95,7 +95,11 @@ impl EnforcingChannelKeys {
 }
 
 impl ChannelKeys for EnforcingChannelKeys {
-    fn get_per_commitment_point<T: secp256k1::Signing + secp256k1::Verification>(&self, idx: u64, secp_ctx: &Secp256k1<T>) -> PublicKey {
+    fn get_per_commitment_point<T: secp256k1::Signing + secp256k1::Verification>(
+        &self,
+        idx: u64,
+        secp_ctx: &Secp256k1<T>,
+    ) -> PublicKey {
         self.inner.get_per_commitment_point(idx, secp_ctx)
     }
 
@@ -146,13 +150,7 @@ impl ChannelKeys for EnforcingChannelKeys {
 
         Ok(self
             .inner
-            .sign_remote_commitment(
-                feerate_sat_per_kw,
-                commitment_tx,
-                keys,
-                htlcs,
-                secp_ctx,
-            )
+            .sign_remote_commitment(feerate_sat_per_kw, commitment_tx, keys, htlcs, secp_ctx)
             .unwrap())
     }
 
@@ -242,8 +240,14 @@ impl ChannelKeys for EnforcingChannelKeys {
         self.inner.sign_channel_announcement(msg, secp_ctx)
     }
 
-    fn on_accept(&mut self, channel_points: &ChannelPublicKeys, remote_to_self_delay: u16, local_to_self_delay: u16) {
-        self.inner.on_accept(channel_points, remote_to_self_delay, local_to_self_delay)
+    fn on_accept(
+        &mut self,
+        channel_points: &ChannelPublicKeys,
+        remote_to_self_delay: u16,
+        local_to_self_delay: u16,
+    ) {
+        self.inner
+            .on_accept(channel_points, remote_to_self_delay, local_to_self_delay)
     }
 
     // END NOT TESTED

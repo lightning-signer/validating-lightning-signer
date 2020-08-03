@@ -1462,3 +1462,15 @@ impl<'a> channelmonitor::ManyChannelMonitor for TestChannelMonitor<'a> {
         return self.simple_monitor.get_and_clear_pending_htlcs_updated();
     }
 }
+
+pub fn dump_node_txn(prefix: &str, node: &Node) {
+    let node_txn = node.tx_broadcaster.txn_broadcasted.lock().unwrap();
+    dump_txn(prefix, &*node_txn);
+}
+
+pub fn dump_txn(prefix: &str, txn: &Vec<Transaction>) {
+    println!("{}", prefix);
+    for x in txn {
+        println!("{} {} {:?}", prefix, x.txid(), x);
+    }
+}

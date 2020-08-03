@@ -378,7 +378,9 @@ message SignRemoteHTLCToUsRequest {
 
   Transaction tx = 3;
 
-  PubKey remote_per_commit_point = 4;
+  uint32 input = 4;
+
+  PubKey remote_per_commit_point = 5;
 }
 
 // Sign a penalty sweep of a remote to_local the peer has revoked
@@ -654,6 +656,9 @@ message SignMutualCloseTxPhase2Request {
 
   // Value to them in satoshi, may be zero if dust
   uint64 to_remote_value_sat = 4;
+
+  // Remote shutdown script, if not previously specified
+  bytes remote_shutdown_script = 5;
 }
 
 message CloseTxSignatureReply {

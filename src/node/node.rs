@@ -56,7 +56,8 @@ pub struct ChannelSetup {
     pub funding_outpoint: OutPoint,
     /// locally imposed requirement on the remote commitment transaction to_self_delay
     pub local_to_self_delay: u16,
-    pub local_shutdown_script: Script,    // previously MISSING?
+    /// Maybe be None if we should generate it inside the signer
+    pub local_shutdown_script: Option<Script>,
     pub remote_points: ChannelPublicKeys, // DUP keys.inner.remote_channel_pubkeys
     /// remotely imposed requirement on the local commitment transaction to_self_delay
     pub remote_to_self_delay: u16,
@@ -329,8 +330,11 @@ impl Channel {
         ),
         Status,
     > {
-        let keys =
-            if local { self.make_local_tx_keys(per_commitment_point)? } else { self.make_remote_tx_keys(per_commitment_point)? };
+        let keys = if local {
+            self.make_local_tx_keys(per_commitment_point)?
+        } else {
+            self.make_remote_tx_keys(per_commitment_point)?
+        };
         let obscured_commitment_transaction_number =
             self.get_commitment_transaction_number_obscure_factor() ^ commitment_number;
         let funding_outpoint = self.setup.funding_outpoint;
@@ -422,7 +426,8 @@ impl Channel {
                 &self.secp_ctx,
                 &per_commitment_point,
                 &remote_points.payment_point,
-            ).map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
+            )
+            .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
         };
 
         let revocation_key = derive_public_revocation_key(
@@ -592,7 +597,11 @@ impl Node {
             setup.channel_value_sat, // DUP VALUE
             "c-lightning",
         );
-        inmem_keys.on_accept(&setup.remote_points, setup.remote_to_self_delay, setup.local_to_self_delay); // DUP VALUE
+        inmem_keys.on_accept(
+            &setup.remote_points,
+            setup.remote_to_self_delay,
+            setup.local_to_self_delay,
+        ); // DUP VALUE
         let chan = Channel {
             node: Arc::clone(&stub.node),
             logger: Arc::clone(&stub.logger),

@@ -295,10 +295,15 @@ impl Signer for MySigner {
             vout: req_outpoint.index,
         };
 
-        let local_shutdown_script = Script::deserialize(&req.local_shutdown_script.as_slice())
-            .map_err(|err| {
-                self.invalid_argument(format!("could not parse local_shutdown_script: {}", err))
-            })?;
+        let local_shutdown_script =
+            if req.local_shutdown_script.is_empty() {
+                None
+            } else {
+                Some(Script::deserialize(&req.local_shutdown_script.as_slice())
+                    .map_err(|err| {
+                        self.invalid_argument(format!("could not parse local_shutdown_script: {}", err))
+                    })?)
+            };
 
         let remote_points = req
             .remote_basepoints
@@ -323,10 +328,10 @@ impl Signer for MySigner {
                 is_outbound: req.is_outbound,
                 channel_value_sat: req.channel_value_sat,
                 push_value_msat: req.push_value_msat,
-                funding_outpoint: funding_outpoint,
+                funding_outpoint,
                 local_to_self_delay: req.local_to_self_delay as u16,
-                local_shutdown_script: local_shutdown_script.clone(),
-                remote_points: remote_points,
+                remote_points,
+                local_shutdown_script,
                 remote_to_self_delay: req.remote_to_self_delay as u16,
                 remote_shutdown_script: remote_shutdown_script.clone(),
                 option_static_remotekey: req.option_static_remotekey,
@@ -397,12 +402,24 @@ impl Signer for MySigner {
         );
         log_debug!(self, "req={}", reqstr);
 
+        let opt_remote_shutdown_script = if req.remote_shutdown_script.is_empty() {
+            None
+        } else {
+            Some(
+                Script::deserialize(&req.remote_shutdown_script.as_slice()).map_err(|_| {
+                    self.invalid_argument("could not deserialize remote_shutdown_script")
+                })?,
+            )
+        };
+
         let sig_data = self.sign_mutual_close_tx_phase2(
             &node_id,
             &channel_id,
             req.to_local_value_sat,
             req.to_remote_value_sat,
+            opt_remote_shutdown_script,
         )?;
+
         let reply = CloseTxSignatureReply {
             signature: Some(BitcoinSignature { data: sig_data }),
         };
@@ -524,8 +541,7 @@ impl Signer for MySigner {
         for idx in 0..tx.input.len() {
             // Use SpendType::Invalid to flag/designate inputs we are not
             // signing (PSBT case).
-            let spendtype =
-                SpendType::from_i32(reqtx.input_descs[idx].spend_type)
+            let spendtype = SpendType::from_i32(reqtx.input_descs[idx].spend_type)
                 .ok_or_else(|| self.invalid_argument("bad spend_type"))?;
             if spendtype == SpendType::Invalid {
                 indices.push(0);
@@ -707,7 +723,7 @@ impl Signer for MySigner {
 
         let opt_per_commitment_point = match req.per_commit_point {
             Some(p) => Some(self.public_key_from_raw(p)?),
-            _ => None
+            _ => None,
         };
         let sigvec = self.sign_local_htlc_tx(
             &node_id,
@@ -807,7 +823,8 @@ impl Signer for MySigner {
         let remote_per_commitment_point = self.public_key(req.remote_per_commit_point)?;
 
         let input_desc = reqtx.input_descs[0].clone();
-        let htlc_amount_sat = input_desc.prev_output
+        let htlc_amount_sat = input_desc
+            .prev_output
             .ok_or_else(|| self.internal_error("missing input_desc[0]"))?
             .value_sat as u64;
 
@@ -857,7 +874,8 @@ impl Signer for MySigner {
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
         let input_desc = reqtx.input_descs[0].clone();
-        let htlc_amount_sat = input_desc.prev_output
+        let htlc_amount_sat = input_desc
+            .prev_output
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
             .value_sat as u64;
 
@@ -869,6 +887,7 @@ impl Signer for MySigner {
             &node_id,
             &channel_id,
             &tx,
+            req.input as usize,
             redeemscript,
             &remote_per_commitment_point,
             htlc_amount_sat,
@@ -906,7 +925,8 @@ impl Signer for MySigner {
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
 
         let input_desc = reqtx.input_descs[0].clone();
-        let htlc_amount_sat = input_desc.prev_output
+        let htlc_amount_sat = input_desc
+            .prev_output
             .ok_or_else(|| self.invalid_argument("missing input[0] amount"))?
             .value_sat as u64;
 

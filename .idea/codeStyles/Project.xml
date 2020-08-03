@@ -1,0 +1,7 @@
+<component name="ProjectCodeStyleConfiguration">
+  <code_scheme name="Project" version="173">
+    <codeStyleSettings language="Rust">
+      <option name="RIGHT_MARGIN" value="80" />
+    </codeStyleSettings>
+  </code_scheme>
+</component>

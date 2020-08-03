@@ -9,7 +9,9 @@ use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{Address, Network, OutPoint, Script, SigHashType};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys, LocalCommitmentTransaction, HTLCOutputInCommitment};
+use lightning::ln::chan_utils::{
+    derive_private_key, ChannelPublicKeys, HTLCOutputInCommitment, LocalCommitmentTransaction,
+};
 use lightning::util::logger::Logger;
 use rand::{thread_rng, Rng};
 use secp256k1::ecdh::SharedSecret;
@@ -18,7 +20,7 @@ use tonic::Status;
 
 use crate::node::node::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, Node};
 use crate::tx::tx::{build_close_tx, sign_commitment, HTLCInfo2};
-use crate::util::crypto_utils::derive_private_revocation_key;
+use crate::util::crypto_utils::{derive_private_revocation_key, payload_for_p2wpkh};
 use crate::util::test_utils::TestLogger;
 
 use super::remotesigner::SpendType;
@@ -339,7 +341,12 @@ impl MySigner {
             let (tx, _scripts, htlcs) =
                 chan.build_commitment_tx(&per_commitment_point, commitment_number, &info, true)?;
             for out in &tx.output {
-                log_debug!(self, "my_signer: out script {:?} {}", out.script_pubkey, out.value);
+                log_debug!(
+                    self,
+                    "my_signer: out script {:?} {}",
+                    out.script_pubkey,
+                    out.value
+                );
             }
 
             log_debug!(self, "my_signer: sign local txid {}", tx.txid());
@@ -353,7 +360,10 @@ impl MySigner {
             // We provide a dummy signature for the remote, since we don't require that sig
             // to be passed in to this call.  It would have been better if LocalCommitmentTransaction
             // didn't require the remote sig.
-            let dummy_sig = Secp256k1::new().sign(&secp256k1::Message::from_slice(&[42; 32]).unwrap(), &SecretKey::from_slice(&[42; 32]).unwrap());
+            let dummy_sig = Secp256k1::new().sign(
+                &secp256k1::Message::from_slice(&[42; 32]).unwrap(),
+                &SecretKey::from_slice(&[42; 32]).unwrap(),
+            );
 
             let htlc_data: Vec<(HTLCOutputInCommitment, Option<Signature>)> =
                 htlc_refs.iter().map(|h| ((*h).clone(), None)).collect();
@@ -369,18 +379,15 @@ impl MySigner {
             // Although this method has "remote" in the name, it works for local too
             let sig = chan
                 .keys
-                .sign_local_commitment(
-                    &commitment_tx,
-                    &chan.secp_ctx
-                )
+                .sign_local_commitment(&commitment_tx, &chan.secp_ctx)
                 .map_err(|_| self.internal_error("failed to sign"))?;
             let mut sig_vec = sig.serialize_der().to_vec();
             sig_vec.push(SigHashType::All as u8);
 
-            let htlc_sigs = chan.keys.sign_local_commitment_htlc_transactions(
-                &commitment_tx,
-                &chan.secp_ctx
-            ).map_err(|_| self.internal_error("failed to sign htlcs"))?;
+            let htlc_sigs = chan
+                .keys
+                .sign_local_commitment_htlc_transactions(&commitment_tx, &chan.secp_ctx)
+                .map_err(|_| self.internal_error("failed to sign htlcs"))?;
             let mut htlc_sig_vecs = Vec::new();
             for htlc_sig_o in htlc_sigs {
                 // BEGIN NOT TESTED
@@ -417,13 +424,21 @@ impl MySigner {
         channel_id: &ChannelId,
         to_local_value_sat: u64,
         to_remote_value_sat: u64,
+        opt_remote_shutdown_script: Option<Script>,
     ) -> Result<Vec<u8>, Status> {
         self.with_ready_channel(&node_id, &channel_id, |chan| {
+            let local_script =
+                chan.setup.local_shutdown_script.clone()
+                    .or_else(|| Some(payload_for_p2wpkh(&chan.node.keys_manager.get_shutdown_pubkey()).script_pubkey()))
+                    .unwrap();
+            let remote_script = opt_remote_shutdown_script
+                .as_ref()
+                .unwrap_or(&chan.setup.remote_shutdown_script);
             let tx = build_close_tx(
                 to_local_value_sat,
                 to_remote_value_sat,
-                &chan.setup.local_shutdown_script,
-                &chan.setup.remote_shutdown_script,
+                &local_script,
+                remote_script,
                 chan.setup.funding_outpoint,
             );
 
@@ -701,15 +716,13 @@ impl MySigner {
         node_id: &PublicKey,
         channel_id: &ChannelId,
         tx: &bitcoin::Transaction,
+        input: usize,
         input_redeemscript: Vec<u8>,
         remote_per_commitment_point: &PublicKey,
         htlc_amount_sat: u64,
     ) -> Result<Vec<u8>, Status> {
         let retval: Result<Vec<u8>, Status> =
             self.with_ready_channel(&node_id, &channel_id, |chan| {
-                if tx.input.len() != 1 {
-                    return Err(self.invalid_argument("tx.input.len() != 1")); // NOT TESTED
-                }
                 if tx.output.len() != 1 {
                     return Err(self.invalid_argument("tx.output.len() != 1")); // NOT TESTED
                 }
@@ -720,7 +733,7 @@ impl MySigner {
 
                 let sighash = Message::from_slice(
                     &bip143::SighashComponents::new(&tx).sighash_all(
-                        &tx.input[0],
+                        &tx.input[input],
                         &redeemscript,
                         htlc_amount_sat,
                     )[..],
@@ -1438,11 +1451,12 @@ mod tests {
             .new_channel(&node_id, Some(channel_nonce), None)
             .expect("new_channel");
 
-        let shutdown_pubkey = signer.get_shutdown_pubkey(&node_id).unwrap();
-
         let mut setup = make_test_channel_setup();
         setup.remote_shutdown_script = payload_for_p2wpkh(&make_test_pubkey(11)).script_pubkey();
-        setup.local_shutdown_script = payload_for_p2wpkh(&shutdown_pubkey).script_pubkey();
+
+        let local_shutdown_script =
+            payload_for_p2wpkh(&signer.get_shutdown_pubkey(&node_id).expect("shutdown key"))
+                .script_pubkey();
 
         signer
             .ready_channel(&node_id, channel_id, setup.clone())
@@ -1452,13 +1466,13 @@ mod tests {
             build_close_tx(
                 100,
                 200,
-                &setup.local_shutdown_script,
+                &local_shutdown_script,
                 &setup.remote_shutdown_script,
                 setup.funding_outpoint,
             )
         };
         let ser_signature = signer
-            .sign_mutual_close_tx_phase2(&node_id, &channel_id, 100, 200)
+            .sign_mutual_close_tx_phase2(&node_id, &channel_id, 100, 200, None)
             .expect("sign");
         assert_eq!(
             hex::encode(tx.txid()),
@@ -2537,6 +2551,7 @@ mod tests {
                 &node_id,
                 &channel_id,
                 &htlc_tx,
+                0,
                 htlc_redeemscript.to_bytes(),
                 &remote_per_commitment_point,
                 htlc_amount_sat,

@@ -16,12 +16,12 @@ use lightning::util::events::MessageSendEventsProvider;
 use lightning::util::logger::Logger;
 use secp256k1::PublicKey;
 
-use lightning_signer::{check_added_monitors, get_local_commitment_txn, check_spends};
+use lightning_signer::{check_added_monitors, check_spends, get_local_commitment_txn};
 use lightning_signer::server::my_signer::MySigner;
 use lightning_signer::util::functional_test_utils::{
-    close_channel, create_announced_chan_between_nodes, create_chanmon_cfgs, create_network,
-    create_node_chanmgrs, NodeCfg, send_payment, TestChanMonCfg, TestChannelMonitor
-};
+    close_channel, create_announced_chan_between_nodes, create_chanmon_cfgs,
+    create_network, create_node_chanmgrs, Node, NodeCfg, send_payment,
+    TestChanMonCfg, TestChannelMonitor};
 use lightning_signer::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use lightning_signer::util::test_utils;
 
@@ -204,9 +204,14 @@ fn claim_htlc_test() {
 
     {
         let node_txn = nodes[1].tx_broadcaster.txn_broadcasted.lock().unwrap();
+        // Check if the remote HTLC sweeps correctly spend the commitment
+        check_spends!(node_txn[0], remote_txn[0]);
+        check_spends!(node_txn[1], remote_txn[0]);
+
+        // TODO something funny here - why are both nodes broadcasting a commitment?
         // Check if closing tx correctly spends the funding
         check_spends!(node_txn[2], chan.3);
-        // Check if the HTLC sweeps correctly spend the commitment
+        // Check if the local HTLC sweeps correctly spend the commitment
         check_spends!(node_txn[3], node_txn[2]);
         check_spends!(node_txn[4], node_txn[2]);
     }
