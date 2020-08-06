@@ -13,7 +13,7 @@ use crate::node::node::{ChannelId, ChannelSetup};
 use crate::server::my_keys_manager::INITIAL_COMMITMENT_NUMBER;
 use crate::server::my_signer::MySigner;
 use crate::tx::tx::{get_commitment_transaction_number_obscure_factor, HTLCInfo2};
-use crate::util::crypto_utils::payload_for_p2wpkh;
+use crate::util::crypto_utils::{payload_for_p2wpkh, derive_public_revocation_key, derive_public_key};
 use lightning::ln::chan_utils;
 use lightning::util::ser::Writeable;
 use std::collections::HashSet;
@@ -245,7 +245,7 @@ impl ChannelKeys for LoopbackChannelSigner {
 
     fn unsafe_sign_local_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
-        _local_commitment_tx: &LocalCommitmentTransaction,
+        _lct: &LocalCommitmentTransaction,
         _secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
         unimplemented!()
@@ -254,7 +254,7 @@ impl ChannelKeys for LoopbackChannelSigner {
     fn sign_local_commitment_htlc_transactions<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         lct: &LocalCommitmentTransaction,
-        _secp_ctx: &Secp256k1<T>,
+        secp_ctx: &Secp256k1<T>,
     ) -> Result<Vec<Option<Signature>>, ()> {
         let signer = &self.signer;
         let mut ret = Vec::with_capacity(lct.per_htlc.len());
@@ -262,6 +262,10 @@ impl ChannelKeys for LoopbackChannelSigner {
         let htlcs: Vec<&HTLCOutputInCommitment> = lct.per_htlc.iter().map(|(h, _)| h).collect();
         let (commitment_number, _, _, _, _) = self.decode_commitment_tx(&lct.unsigned_tx, &htlcs);
 
+        let per_commitment_point = lct.local_keys.per_commitment_point;
+        let remote_pubkeys = self.remote_pubkeys.as_ref().unwrap();
+        let (revocation_key, delayed_payment_key) =
+            get_delayed_payment_keys(secp_ctx, &per_commitment_point, &self.pubkeys, remote_pubkeys)?;
         for this_htlc in lct.per_htlc.iter() {
             if this_htlc.0.transaction_output_index.is_some() {
                 let keys = &lct.local_keys;
@@ -270,8 +274,8 @@ impl ChannelKeys for LoopbackChannelSigner {
                     lct.feerate_per_kw,
                     self.remote_to_self_delay,
                     &this_htlc.0,
-                    &keys.a_delayed_payment_key,
-                    &keys.revocation_key,
+                    &delayed_payment_key,
+                    &revocation_key,
                 );
 
                 for out in &htlc_tx.output {
@@ -315,17 +319,19 @@ impl ChannelKeys for LoopbackChannelSigner {
         htlc: &Option<HTLCOutputInCommitment>,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        let tx_keys = self.make_remote_tx_keys(
-            &PublicKey::from_secret_key(secp_ctx, per_commitment_key),
-            secp_ctx,
-        )?;
+        let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
+        let remote_pubkeys = self.remote_pubkeys.as_ref().unwrap();
+
+        let (revocation_key, delayed_payment_key) =
+            get_delayed_payment_keys(secp_ctx, &per_commitment_point, remote_pubkeys, &self.pubkeys)?;
         let redeem_script = if let Some(ref htlc) = *htlc {
+            let tx_keys = self.make_remote_tx_keys(&per_commitment_point, secp_ctx)?;
             chan_utils::get_htlc_redeemscript(&htlc, &tx_keys) // NOT TESTED
         } else {
             chan_utils::get_revokeable_redeemscript(
-                &tx_keys.revocation_key,
+                &revocation_key,
                 self.local_to_self_delay,
-                &tx_keys.a_delayed_payment_key,
+                &delayed_payment_key,
             )
         };
 
@@ -485,6 +491,7 @@ impl ChannelKeys for LoopbackChannelSigner {
     }
 }
 
+
 impl KeysInterface for LoopbackSignerKeysInterface {
     type ChanKeySigner = LoopbackChannelSigner;
 
@@ -607,4 +614,21 @@ impl LoopbackChannelSigner {
             received_htlcs,
         )
     }
+}
+
+fn get_delayed_payment_keys<T: secp256k1::Signing + secp256k1::Verification>(
+    secp_ctx: &Secp256k1<T>,
+    per_commitment_point: &PublicKey,
+    a_pubkeys: &ChannelPublicKeys,
+    b_pubkeys: &ChannelPublicKeys)
+    -> Result<(PublicKey, PublicKey), ()> {
+    let revocation_key =
+        derive_public_revocation_key(secp_ctx, &per_commitment_point,
+                                     &b_pubkeys.revocation_basepoint)
+            .map_err(|_| ())?;
+    let delayed_payment_key =
+        derive_public_key(secp_ctx, &per_commitment_point,
+                          &a_pubkeys.delayed_payment_basepoint)
+            .map_err(|_| ())?;
+    Ok((revocation_key, delayed_payment_key))
 }
