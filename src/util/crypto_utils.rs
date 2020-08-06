@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use bitcoin::util::address::Payload;
-use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
+use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::Network;
 use bitcoin_hashes::hash160::Hash as BitcoinHash160;
 use bitcoin_hashes::sha256::Hash as BitcoinSha256;
@@ -34,11 +34,53 @@ pub fn channels_seed(node_seed: &[u8]) -> [u8; 32] {
 
 // This function will panic if the SecretKey::from_slice fails.  Only
 // use where appropriate.
-pub fn node_keys(secp_ctx: &Secp256k1<SignOnly>, node_seed: &[u8]) -> (PublicKey, SecretKey) {
+pub fn node_keys_native(
+    secp_ctx: &Secp256k1<SignOnly>,
+    node_seed: &[u8],
+) -> (PublicKey, SecretKey) {
     let node_private_bytes = hkdf_sha256(node_seed, "nodeid".as_bytes(), &[]);
     let node_secret_key = SecretKey::from_slice(&node_private_bytes).unwrap();
     let node_id = PublicKey::from_secret_key(&secp_ctx, &node_secret_key);
     (node_id, node_secret_key)
+}
+
+pub fn node_keys_lnd(
+    secp_ctx: &Secp256k1<SignOnly>,
+    network: Network,
+    node_seed: &[u8],
+) -> (PublicKey, SecretKey) {
+    let bip43purpose = 1017;
+    let coin_type = match network {
+        bitcoin::Network::Bitcoin => 0,
+        bitcoin::Network::Testnet => 1,
+        bitcoin::Network::Regtest => 1,
+    };
+    let key_family_node_key = 6;
+    let branch = 0;
+    let index = 0;
+    let master = ExtendedPrivKey::new_master(network.clone(), &node_seed).unwrap();
+    let node_ext_prv = master
+        .ckd_priv(
+            &secp_ctx,
+            ChildNumber::from_hardened_idx(bip43purpose).unwrap(),
+        )
+        .unwrap()
+        .ckd_priv(
+            &secp_ctx,
+            ChildNumber::from_hardened_idx(coin_type).unwrap(),
+        )
+        .unwrap()
+        .ckd_priv(
+            &secp_ctx,
+            ChildNumber::from_hardened_idx(key_family_node_key).unwrap(),
+        )
+        .unwrap()
+        .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(branch).unwrap())
+        .unwrap()
+        .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(index).unwrap())
+        .unwrap();
+    let node_ext_pub = &ExtendedPubKey::from_private(&secp_ctx, &node_ext_prv);
+    (node_ext_pub.public_key.key, node_ext_prv.private_key.key)
 }
 
 // This function will panic if the ExtendedPrivKey::new_master fails.  Only
@@ -145,15 +187,30 @@ pub fn payload_for_p2wpkh(key: &PublicKey) -> Payload {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bitcoin::Network::Testnet;
 
     #[test]
-    fn node_keys_test() -> Result<(), ()> {
+    fn node_keys_native_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
-        let (node_id, _) = node_keys(&secp_ctx, &[0u8; 32]);
+        let (node_id, _) = node_keys_native(&secp_ctx, &[0u8; 32]);
         let node_id_bytes = node_id.serialize().to_vec();
         assert!(
             hex::encode(&node_id_bytes)
                 == "02058e8b6c2ad363ec59aa136429256d745164c2bdc87f98f0a68690ec2c5c9b0b"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn node_keys_lnd_test() -> Result<(), ()> {
+        let secp_ctx = Secp256k1::signing_only();
+        let network = Testnet;
+        let (node_id, _) = node_keys_lnd(&secp_ctx, network, &[0u8; 32]);
+        let node_id_bytes = node_id.serialize().to_vec();
+        println!("{:?}", hex::encode(&node_id_bytes));
+        assert!(
+            hex::encode(&node_id_bytes)
+                == "0287a5eab0a005ea7f08a876257b98868b1e5b5a9167385904396743faa61a4745"
         );
         Ok(())
     }

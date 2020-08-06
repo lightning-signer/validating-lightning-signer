@@ -16,7 +16,7 @@ use secp256k1::{PublicKey, Secp256k1, SecretKey, Signing};
 
 use crate::util::byte_utils;
 use crate::util::crypto_utils::{
-    bip32_key, channels_seed, hkdf_sha256, hkdf_sha256_keys, node_keys,
+    bip32_key, channels_seed, hkdf_sha256, hkdf_sha256_keys, node_keys_lnd, node_keys_native,
 };
 
 pub const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;
@@ -42,9 +42,16 @@ pub struct MyKeysManager {
     logger: Arc<Logger>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum KeyDerivationStyle {
+    Native = 1,
+    Lnd = 2,
+}
+
 impl MyKeysManager {
     pub fn new(
-        seed: &[u8; 32],
+        key_derivation_style: KeyDerivationStyle,
+        seed: &[u8],
         network: Network,
         logger: Arc<Logger>,
         starting_time_secs: u64,
@@ -53,7 +60,10 @@ impl MyKeysManager {
         let secp_ctx = Secp256k1::signing_only();
         match ExtendedPrivKey::new_master(network.clone(), seed) {
             Ok(master_key) => {
-                let (_, node_secret) = node_keys(&secp_ctx, seed);
+                let (_, node_secret) = match key_derivation_style {
+                    KeyDerivationStyle::Native => node_keys_native(&secp_ctx, seed),
+                    KeyDerivationStyle::Lnd => node_keys_lnd(&secp_ctx, network.clone(), seed),
+                };
                 let destination_script = match master_key
                     .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(1).unwrap())
                 {
@@ -249,7 +259,14 @@ mod tests {
 
     #[test]
     fn keys_test() -> Result<(), ()> {
-        let manager = MyKeysManager::new(&[0u8; 32], Network::Testnet, logger(), 0, 0);
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Native,
+            &[0u8; 32],
+            Network::Testnet,
+            logger(),
+            0,
+            0,
+        );
         assert!(
             hex::encode(manager.channel_seed_base)
                 == "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53"
@@ -282,7 +299,14 @@ mod tests {
 
     #[test]
     fn per_commit_test() -> Result<(), ()> {
-        let manager = MyKeysManager::new(&[0u8; 32], Network::Testnet, logger(), 0, 0);
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Native,
+            &[0u8; 32],
+            Network::Testnet,
+            logger(),
+            0,
+            0,
+        );
         let mut channel_id = [0u8; 32];
         channel_id[0] = 1u8;
         let keys = manager.get_channel_keys_with_nonce(&channel_id, 0, "c-lightning");

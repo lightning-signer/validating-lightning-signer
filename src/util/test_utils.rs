@@ -18,8 +18,10 @@ use lightning::util::logger::{Level, Logger, Record};
 use lightning::util::ser::Writer;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 
-use crate::node::node::ChannelSetup;
+use crate::node::node::{ChannelSetup, NodeConfig};
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
+
+use crate::server::my_keys_manager::KeyDerivationStyle;
 
 pub struct TestVecWriter(pub Vec<u8>);
 
@@ -232,6 +234,10 @@ pub fn make_test_channel_setup() -> ChannelSetup {
         option_static_remotekey: false,
     }
 }
+
+pub const TEST_NODE_CONFIG: NodeConfig = NodeConfig {
+    key_derivation_style: KeyDerivationStyle::Native,
+};
 
 pub const TEST_SEED: &[&str] = &[
     "6c696768746e696e672d31000000000000000000000000000000000000000000",

@@ -24,6 +24,7 @@ use lightning_signer::util::functional_test_utils::{
     TestChanMonCfg, TestChannelMonitor};
 use lightning_signer::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use lightning_signer::util::test_utils;
+use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
 
 use self::lightning_signer::util::functional_test_utils::{
     claim_payment,
@@ -40,7 +41,7 @@ pub fn create_node_cfgs_with_signer<'a>(
     for i in 0..node_count {
         let seed = [i as u8; 32];
 
-        let node_id = signer.new_node();
+        let node_id = signer.new_node(TEST_NODE_CONFIG);
         let keys_manager = LoopbackSignerKeysInterface {
             node_id,
             signer: Arc::clone(signer),

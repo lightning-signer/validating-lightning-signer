@@ -24,6 +24,8 @@ use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::public_key_from_raw;
 
 use super::remotesigner;
+use crate::node::node;
+use crate::server::my_keys_manager::KeyDerivationStyle;
 
 impl MySigner {
     pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
@@ -147,6 +149,22 @@ impl Version for MySigner {
     }
 }
 
+
+fn convert_node_config(proto_node_config: NodeConfig) -> node::NodeConfig {
+    let proto_style = proto_node_config.key_derivation_style;
+    let key_derivation_style =
+        if proto_style == node_config::KeyDerivationStyle::Lnd as i32 {
+            KeyDerivationStyle::Lnd
+        } else if proto_style == node_config::KeyDerivationStyle::Native as i32 {
+            KeyDerivationStyle::Native
+        } else {
+            panic!("invalid key derivation style")
+        };
+    node::NodeConfig {
+        key_derivation_style
+    }
+}
+
 #[tonic::async_trait]
 impl Signer for MySigner {
     async fn ping(&self, request: Request<PingRequest>) -> Result<Response<PingReply>, Status> {
@@ -166,18 +184,35 @@ impl Signer for MySigner {
         let req = request.into_inner();
         log_info!(self, "ENTER init");
         log_debug!(self, "req={}", json!(&req));
+        let proto_node_config = req.node_config
+            .ok_or_else(|| self.invalid_argument("missing node_config"))?;
+        if proto_node_config.key_derivation_style != node_config::KeyDerivationStyle::Native as i32 &&
+            proto_node_config.key_derivation_style != node_config::KeyDerivationStyle::Lnd as i32 {
+                return Err(self.invalid_argument("unknown node_config.key_derivation_style"))
+            }
         let hsm_secret = req
             .hsm_secret
             .ok_or_else(|| self.invalid_argument("missing hsm_secret"))?
             .data;
-        let hsm_secret = hsm_secret
-            .as_slice()
-            .try_into()
-            .map_err(|err| self.invalid_argument(format!("secret length != 32: {}", err)))?;
-        let node_id = if req.coldstart {
-            Ok(self.new_node_from_seed(hsm_secret))
+        let hsm_secret = hsm_secret.as_slice();
+        if hsm_secret.len() > 0 {
+            if hsm_secret.len() < 16 {
+                return Err(self.invalid_argument("hsm_secret must be at least 16 bytes"))
+            }
+            if hsm_secret.len() > 64 {
+                return Err(self.invalid_argument("hsm_secret must be no larger than 64 bytes"))
+            }
+        }
+        let node_config = convert_node_config(proto_node_config);
+
+        let node_id = if hsm_secret.len() == 0 {
+            Ok(self.new_node(node_config))
         } else {
-            self.warmstart_with_seed(hsm_secret)
+            if req.coldstart {
+                Ok(self.new_node_from_seed(node_config, hsm_secret))
+            } else {
+                self.warmstart_with_seed(node_config, hsm_secret)
+            }
         }?
         .serialize()
         .to_vec();
@@ -295,15 +330,15 @@ impl Signer for MySigner {
             vout: req_outpoint.index,
         };
 
-        let local_shutdown_script =
-            if req.local_shutdown_script.is_empty() {
-                None
-            } else {
-                Some(Script::deserialize(&req.local_shutdown_script.as_slice())
-                    .map_err(|err| {
-                        self.invalid_argument(format!("could not parse local_shutdown_script: {}", err))
-                    })?)
-            };
+        let local_shutdown_script = if req.local_shutdown_script.is_empty() {
+            None
+        } else {
+            Some(
+                Script::deserialize(&req.local_shutdown_script.as_slice()).map_err(|err| {
+                    self.invalid_argument(format!("could not parse local_shutdown_script: {}", err))
+                })?,
+            )
+        };
 
         let remote_points = req
             .remote_basepoints
