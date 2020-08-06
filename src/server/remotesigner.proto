@@ -163,15 +163,17 @@ message PingReply {
 
 // Initialize a new Lightning node
 message InitRequest {
-  ChainParams chainparams = 1;
+  NodeConfig node_config = 1;
+  
+  ChainParams chainparams = 2;
 
   // Developer field: Flush the node state (support for integration tests).
-  bool coldstart = 2;
+  bool coldstart = 3;
 
   // Developer field: set the HSM secret rather than generate it on
   // the signer side. Only allowed if this is using a non-production
   // network.
-  Secret hsm_secret = 100;
+  BIP32Seed hsm_secret = 100;
 }
 
 message InitReply {
@@ -485,6 +487,19 @@ message VersionReply {
 
 // ----------------------------------------------------------------
 
+// Node Configuration
+message NodeConfig {
+  // The KeyDerivationStyle controls how nodeid and HD keys are
+  // derived from the seed.  Being compatible with specific node
+  // imlementations allows for comparison during integration testing.
+  enum KeyDerivationStyle {
+    INVALID = 0;
+    NATIVE = 1;
+    LND = 2;
+  }
+  KeyDerivationStyle key_derivation_style = 1;
+}
+
 // Specify the network (e.g. testnet, mainnet)
 message ChainParams {
   string network_name = 1;
@@ -509,6 +524,11 @@ message PubKey {
 // 256-bit Secret, 32 bytes
 // Can be used for revocation hash pre-image, shared secrets, etc.
 message Secret {
+  bytes data = 1;
+}
+
+// BIP-0032 Seed, must be between 16 and 64 bytes (inclusive) in length.
+message BIP32Seed {
   bytes data = 1;
 }
 

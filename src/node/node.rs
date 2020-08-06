@@ -20,7 +20,7 @@ use tonic::Status;
 
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
-use crate::server::my_keys_manager::{MyKeysManager, INITIAL_COMMITMENT_NUMBER};
+use crate::server::my_keys_manager::{MyKeysManager, INITIAL_COMMITMENT_NUMBER, KeyDerivationStyle};
 use crate::tx::tx::{
     build_commitment_tx, get_commitment_transaction_number_obscure_factor, sign_commitment,
     CommitmentInfo, CommitmentInfo2, HTLCInfo2,
@@ -507,8 +507,13 @@ impl Channel {
     }
 }
 
+pub struct NodeConfig {
+    pub key_derivation_style: KeyDerivationStyle,
+}
+
 pub struct Node {
     pub logger: Arc<Logger>,
+    pub node_config: NodeConfig,
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<HashMap<ChannelId, ChannelSlot>>,
     pub network: Network,
@@ -516,7 +521,12 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(logger: &Arc<Logger>, seed: &[u8; 32], network: Network) -> Node {
+    pub fn new(
+        logger: &Arc<Logger>,
+        node_config: NodeConfig,
+        seed: &[u8],
+        network: Network,
+    ) -> Node {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards");
@@ -524,12 +534,14 @@ impl Node {
         Node {
             logger: Arc::clone(logger),
             keys_manager: MyKeysManager::new(
+                node_config.key_derivation_style,
                 seed,
                 network,
                 Arc::clone(logger),
                 now.as_secs(),
                 now.subsec_nanos(),
             ),
+            node_config,
             channels: Mutex::new(HashMap::new()),
             network,
             validator_factory: Box::new(SimpleValidatorFactory {}),

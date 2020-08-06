@@ -476,7 +476,7 @@ impl ChannelKeys for LoopbackChannelSigner {
             push_value_msat: 0,                   // TODO
             funding_outpoint: Default::default(), // TODO
             local_to_self_delay,
-            local_shutdown_script: None,          // use the signer's shutdown script
+            local_shutdown_script: None, // use the signer's shutdown script
             remote_points: remote_points.clone(),
             remote_to_self_delay,
             remote_shutdown_script: Default::default(), // TODO
