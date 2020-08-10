@@ -18,7 +18,9 @@ use secp256k1::ecdh::SharedSecret;
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature};
 use tonic::Status;
 
-use crate::node::node::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, Node, NodeConfig};
+use crate::node::node::{
+    Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, Node, NodeConfig,
+};
 use crate::tx::tx::{build_close_tx, sign_commitment, HTLCInfo2};
 use crate::util::crypto_utils::{derive_private_revocation_key, payload_for_p2wpkh};
 use crate::util::test_utils::TestLogger;
@@ -985,7 +987,7 @@ mod tests {
     use crate::tx::script::get_revokeable_redeemscript;
     use crate::tx::tx::CommitmentInfo2;
     use crate::util::crypto_utils::{
-        derive_public_key, derive_public_revocation_key, payload_for_p2wpkh, public_key_from_raw,
+        derive_public_key, derive_public_revocation_key, payload_for_p2wpkh,
     };
     use crate::util::test_utils::*;
     use crate::util::test_utils::{make_test_channel_setup, make_test_remote_points, TEST_SEED};
@@ -2930,13 +2932,15 @@ mod tests {
     fn ecdh_test() {
         let signer = MySigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
-        let pointvec = hex::decode("79da12a8be2228292c9cd6e234aac8b7169ede47af7b181acd967d517f5ef0782fad295c1e8f23e2b90ff84e692458b866a6e93e716ad37accf88cb9dec6e3fc").unwrap();
-        let other_key = public_key_from_raw(pointvec.as_slice()).unwrap();
+        let pointvec =
+            hex::decode("0330febba06ba074378dec994669cf5ebf6b15e24a04ec190fb93a9482e841a0ca")
+                .unwrap();
+        let other_key = PublicKey::from_slice(pointvec.as_slice()).unwrap();
 
         let ssvec = signer.ecdh(&node_id, &other_key).unwrap();
         assert_eq!(
             ssvec,
-            hex::decode("73d43a67933ac7cb104d7df12eb46e4b8e474abd2e79c268dcd93f3aba07a059")
+            hex::decode("48db1582f4b42a0068b5727fd37090a65fbf1f9bd842f4393afc2e794719ae47")
                 .unwrap()
         );
     }
@@ -3064,33 +3068,6 @@ mod tests {
         assert_eq!(
             hex::encode(sighash),
             "c37af31116d1b27caf68aae9e3ac82f1477929014d5b917657d0eb49478cb670"
-        );
-    }
-
-    // TODO move this elsewhere
-    #[test]
-    fn deser_raw_test() {
-        let raw: [u8; 64] = [
-            158, 156, 70, 5, 38, 221, 32, 73, 180, 87, 57, 36, 5, 47, 168, 160, 245, 209, 189, 150,
-            120, 71, 89, 121, 242, 226, 118, 91, 240, 36, 16, 253, 43, 220, 178, 191, 181, 152,
-            246, 154, 176, 43, 194, 95, 165, 0, 61, 9, 214, 95, 90, 144, 62, 135, 181, 82, 32, 196,
-            138, 80, 167, 249, 29, 143,
-        ];
-        let point = public_key_from_raw(&raw).unwrap();
-        let secret = SecretKey::from_slice(
-            hex::decode("7f4fa93708cb666f507f35ae9967c23f75976ab721cbcf5352bb49c50c8b7458")
-                .unwrap()
-                .as_slice(),
-        )
-        .unwrap();
-        let ss = SharedSecret::new(&point, &secret);
-        assert_eq!(
-            hex::encode(ss[..].to_vec()),
-            "08e9c2ce6d882fd3c8166c9c26e748ff3def2c75b717b7709556ec9688515dc9"
-        );
-        assert_eq!(
-            hex::encode(point.serialize().to_vec()),
-            "03fd1024f05b76e2f27959477896bdd1f5a0a82f05243957b44920dd2605469c9e"
         );
     }
 }

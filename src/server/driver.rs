@@ -21,7 +21,6 @@ use crate::node::node::{ChannelId, ChannelSetup};
 use crate::server::my_signer::MySigner;
 use crate::server::remotesigner::version_server::Version;
 use crate::tx::tx::HTLCInfo2;
-use crate::util::crypto_utils::public_key_from_raw;
 
 use super::remotesigner;
 use crate::node::node;
@@ -49,21 +48,23 @@ impl MySigner {
         let der_vec = &arg
             .ok_or_else(|| self.invalid_argument("missing node ID"))?
             .data;
-        let slice: &[u8] = der_vec
-            .as_slice()
-            .try_into()
-            .map_err(|err| self.invalid_argument(format!("node ID wrong length: {}", err)))?;
+        let slice: &[u8] = der_vec.as_slice();
+        if slice.len() != 33 {
+            return Err(self.invalid_argument(format!("nodeid must be 33 bytes")));
+        }
         PublicKey::from_slice(slice)
             .map_err(|err| self.invalid_argument(format!("could not deserialize nodeid: {}", err)))
     }
 
     fn public_key(&self, arg: Option<PubKey>) -> Result<PublicKey, Status> {
-        let pubkey = arg.ok_or_else(|| self.invalid_argument("missing pubkey"))?;
-        self.public_key_from_raw(pubkey)
-    }
-
-    fn public_key_from_raw(&self, pubkey: PubKey) -> Result<PublicKey, Status> {
-        public_key_from_raw(pubkey.data.as_slice())
+        let der_vec = &arg
+            .ok_or_else(|| self.invalid_argument("missing pubkey"))?
+            .data;
+        let slice: &[u8] = der_vec.as_slice();
+        if slice.len() != 33 {
+            return Err(self.invalid_argument(format!("pubkey must be 33 bytes")));
+        }
+        PublicKey::from_slice(slice)
             .map_err(|err| self.invalid_argument(format!("could not deserialize pubkey: {}", err)))
     }
 
@@ -757,7 +758,7 @@ impl Signer for MySigner {
         let redeemscript = input_desc.redeem_script;
 
         let opt_per_commitment_point = match req.per_commit_point {
-            Some(p) => Some(self.public_key_from_raw(p)?),
+            Some(p) => Some(self.public_key(Some(p))?),
             _ => None,
         };
         let sigvec = self.sign_local_htlc_tx(

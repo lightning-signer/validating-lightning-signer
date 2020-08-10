@@ -8,7 +8,7 @@ use bitcoin_hashes::sha256::Hash as BitcoinSha256;
 use bitcoin_hashes::{Hash, HashEngine};
 use crypto::hkdf::{hkdf_expand, hkdf_extract};
 use crypto::sha2::Sha256;
-use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
+use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 
 pub fn hkdf_sha256(secret: &[u8], info: &[u8], salt: &[u8]) -> [u8; 32] {
     let digest = Sha256::new();
@@ -232,15 +232,4 @@ mod tests {
         assert!(format!("{}", key) == "tprv8ejySXSgpWvEBguEGNFYNcHz29W7QxEodgnwbfLzBCccBnxGAq4vBkgqUYPGR5EnCbLvJE7YQsod6qpid85JhvAfizVpqPg3WsWB6UG3fEL");
         Ok(())
     }
-}
-
-pub fn public_key_from_raw(raw: &[u8]) -> Result<PublicKey, Error> {
-    let mut x = raw[0..32].to_vec();
-    x.reverse();
-    let mut y = raw[32..64].to_vec();
-    y.reverse();
-    let mut z = x;
-    z.append(&mut y);
-    z.insert(0, 4u8);
-    PublicKey::from_slice(z.as_slice())
 }
