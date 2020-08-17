@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use bitcoin::{Script, Transaction};
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{
-    build_htlc_transaction, get_htlc_redeemscript, ChannelPublicKeys, HTLCOutputInCommitment,
-    LocalCommitmentTransaction, TxCreationKeys,
-};
+use lightning::ln::chan_utils::{build_htlc_transaction, get_htlc_redeemscript, ChannelPublicKeys, HTLCOutputInCommitment, LocalCommitmentTransaction, TxCreationKeys, PreCalculatedTxCreationKeys};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 
@@ -147,7 +144,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         &self,
         feerate_per_kw: u32,
         commitment_tx: &Transaction,
-        keys: &TxCreationKeys,
+        keys: &PreCalculatedTxCreationKeys,
         htlcs: &[&HTLCOutputInCommitment],
         _secp_ctx: &Secp256k1<T>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
@@ -181,7 +178,7 @@ impl ChannelKeys for LoopbackChannelSigner {
             .sign_remote_commitment_tx_phase2(
                 &self.node_id,
                 &self.channel_id,
-                keys.per_commitment_point,
+                *keys.per_commitment_point(),
                 commitment_number,
                 feerate_per_kw,
                 to_local_value_sat,
@@ -262,13 +259,13 @@ impl ChannelKeys for LoopbackChannelSigner {
         let htlcs: Vec<&HTLCOutputInCommitment> = lct.per_htlc.iter().map(|(h, _)| h).collect();
         let (commitment_number, _, _, _, _) = self.decode_commitment_tx(&lct.unsigned_tx, &htlcs);
 
-        let per_commitment_point = lct.local_keys.per_commitment_point;
+        let per_commitment_point = lct.trust_key_derivation().per_commitment_point;
         let remote_pubkeys = self.remote_pubkeys.as_ref().unwrap();
         let (revocation_key, delayed_payment_key) =
             get_delayed_payment_keys(secp_ctx, &per_commitment_point, &self.pubkeys, remote_pubkeys)?;
         for this_htlc in lct.per_htlc.iter() {
             if this_htlc.0.transaction_output_index.is_some() {
-                let keys = &lct.local_keys;
+                let keys = lct.trust_key_derivation();
                 let htlc_tx = build_htlc_transaction(
                     &lct.txid(),
                     lct.feerate_per_kw,

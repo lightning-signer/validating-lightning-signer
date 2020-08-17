@@ -12,7 +12,7 @@ use bitcoin_hashes::core::fmt::{Error, Formatter};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys};
+use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys, PreCalculatedTxCreationKeys};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::util::logger::Logger;
 use secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
@@ -278,7 +278,8 @@ impl Channel {
         per_commitment_point: &PublicKey,
         htlcs: &[&HTLCOutputInCommitment],
     ) -> Result<(Signature, Vec<Signature>), Status> {
-        let tx_keys = self.make_remote_tx_keys(per_commitment_point)?;
+        let tx_keys = PreCalculatedTxCreationKeys::new(
+            self.make_remote_tx_keys(per_commitment_point)?);
         let pubkey = self.keys.pubkeys().funding_pubkey;
         log_trace!(
             self,
@@ -475,7 +476,8 @@ impl Channel {
         }
         println!("txid {}", tx.txid());
 
-        let keys = self.make_remote_tx_keys(remote_per_commitment_point)?;
+        let keys = PreCalculatedTxCreationKeys::new(
+            self.make_remote_tx_keys(remote_per_commitment_point)?);
 
         let mut htlc_refs = Vec::new();
         for htlc in htlcs.iter() {
