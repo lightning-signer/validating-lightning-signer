@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use bitcoin::{Script, Transaction};
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{build_htlc_transaction, get_htlc_redeemscript, ChannelPublicKeys, HTLCOutputInCommitment, LocalCommitmentTransaction, TxCreationKeys, PreCalculatedTxCreationKeys};
+use lightning::ln::chan_utils::{
+    build_htlc_transaction, get_htlc_redeemscript, ChannelPublicKeys, HTLCOutputInCommitment,
+    LocalCommitmentTransaction, PreCalculatedTxCreationKeys, TxCreationKeys,
+};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 
@@ -10,7 +13,9 @@ use crate::node::node::{ChannelId, ChannelSetup};
 use crate::server::my_keys_manager::INITIAL_COMMITMENT_NUMBER;
 use crate::server::my_signer::MySigner;
 use crate::tx::tx::{get_commitment_transaction_number_obscure_factor, HTLCInfo2};
-use crate::util::crypto_utils::{payload_for_p2wpkh, derive_public_revocation_key, derive_public_key};
+use crate::util::crypto_utils::{
+    derive_public_key, derive_public_revocation_key, payload_for_p2wpkh,
+};
 use lightning::ln::chan_utils;
 use lightning::util::ser::Writeable;
 use std::collections::HashSet;
@@ -261,8 +266,12 @@ impl ChannelKeys for LoopbackChannelSigner {
 
         let per_commitment_point = lct.trust_key_derivation().per_commitment_point;
         let remote_pubkeys = self.remote_pubkeys.as_ref().unwrap();
-        let (revocation_key, delayed_payment_key) =
-            get_delayed_payment_keys(secp_ctx, &per_commitment_point, &self.pubkeys, remote_pubkeys)?;
+        let (revocation_key, delayed_payment_key) = get_delayed_payment_keys(
+            secp_ctx,
+            &per_commitment_point,
+            &self.pubkeys,
+            remote_pubkeys,
+        )?;
         for this_htlc in lct.per_htlc.iter() {
             if this_htlc.0.transaction_output_index.is_some() {
                 let keys = lct.trust_key_derivation();
@@ -319,8 +328,12 @@ impl ChannelKeys for LoopbackChannelSigner {
         let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
         let remote_pubkeys = self.remote_pubkeys.as_ref().unwrap();
 
-        let (revocation_key, delayed_payment_key) =
-            get_delayed_payment_keys(secp_ctx, &per_commitment_point, remote_pubkeys, &self.pubkeys)?;
+        let (revocation_key, delayed_payment_key) = get_delayed_payment_keys(
+            secp_ctx,
+            &per_commitment_point,
+            remote_pubkeys,
+            &self.pubkeys,
+        )?;
         let redeem_script = if let Some(ref htlc) = *htlc {
             let tx_keys = self.make_remote_tx_keys(&per_commitment_point, secp_ctx)?;
             chan_utils::get_htlc_redeemscript(&htlc, &tx_keys) // NOT TESTED
@@ -488,7 +501,6 @@ impl ChannelKeys for LoopbackChannelSigner {
     }
 }
 
-
 impl KeysInterface for LoopbackSignerKeysInterface {
     type ChanKeySigner = LoopbackChannelSigner;
 
@@ -617,15 +629,19 @@ fn get_delayed_payment_keys<T: secp256k1::Signing + secp256k1::Verification>(
     secp_ctx: &Secp256k1<T>,
     per_commitment_point: &PublicKey,
     a_pubkeys: &ChannelPublicKeys,
-    b_pubkeys: &ChannelPublicKeys)
-    -> Result<(PublicKey, PublicKey), ()> {
-    let revocation_key =
-        derive_public_revocation_key(secp_ctx, &per_commitment_point,
-                                     &b_pubkeys.revocation_basepoint)
-            .map_err(|_| ())?;
-    let delayed_payment_key =
-        derive_public_key(secp_ctx, &per_commitment_point,
-                          &a_pubkeys.delayed_payment_basepoint)
-            .map_err(|_| ())?;
+    b_pubkeys: &ChannelPublicKeys,
+) -> Result<(PublicKey, PublicKey), ()> {
+    let revocation_key = derive_public_revocation_key(
+        secp_ctx,
+        &per_commitment_point,
+        &b_pubkeys.revocation_basepoint,
+    )
+    .map_err(|_| ())?;
+    let delayed_payment_key = derive_public_key(
+        secp_ctx,
+        &per_commitment_point,
+        &a_pubkeys.delayed_payment_basepoint,
+    )
+    .map_err(|_| ())?;
     Ok((revocation_key, delayed_payment_key))
 }

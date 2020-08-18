@@ -12,7 +12,9 @@ use bitcoin_hashes::core::fmt::{Error, Formatter};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys, PreCalculatedTxCreationKeys};
+use lightning::ln::chan_utils::{
+    ChannelPublicKeys, HTLCOutputInCommitment, PreCalculatedTxCreationKeys, TxCreationKeys,
+};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::util::logger::Logger;
 use secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
@@ -20,7 +22,9 @@ use tonic::Status;
 
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
-use crate::server::my_keys_manager::{MyKeysManager, INITIAL_COMMITMENT_NUMBER, KeyDerivationStyle};
+use crate::server::my_keys_manager::{
+    KeyDerivationStyle, MyKeysManager, INITIAL_COMMITMENT_NUMBER,
+};
 use crate::tx::tx::{
     build_commitment_tx, get_commitment_transaction_number_obscure_factor, sign_commitment,
     CommitmentInfo, CommitmentInfo2, HTLCInfo2,
@@ -278,8 +282,8 @@ impl Channel {
         per_commitment_point: &PublicKey,
         htlcs: &[&HTLCOutputInCommitment],
     ) -> Result<(Signature, Vec<Signature>), Status> {
-        let tx_keys = PreCalculatedTxCreationKeys::new(
-            self.make_remote_tx_keys(per_commitment_point)?);
+        let tx_keys =
+            PreCalculatedTxCreationKeys::new(self.make_remote_tx_keys(per_commitment_point)?);
         let pubkey = self.keys.pubkeys().funding_pubkey;
         log_trace!(
             self,
@@ -477,7 +481,8 @@ impl Channel {
         println!("txid {}", tx.txid());
 
         let keys = PreCalculatedTxCreationKeys::new(
-            self.make_remote_tx_keys(remote_per_commitment_point)?);
+            self.make_remote_tx_keys(remote_per_commitment_point)?,
+        );
 
         let mut htlc_refs = Vec::new();
         for htlc in htlcs.iter() {

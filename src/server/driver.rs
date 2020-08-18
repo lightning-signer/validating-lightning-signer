@@ -150,19 +150,17 @@ impl Version for MySigner {
     }
 }
 
-
 fn convert_node_config(proto_node_config: NodeConfig) -> node::NodeConfig {
     let proto_style = proto_node_config.key_derivation_style;
-    let key_derivation_style =
-        if proto_style == node_config::KeyDerivationStyle::Lnd as i32 {
-            KeyDerivationStyle::Lnd
-        } else if proto_style == node_config::KeyDerivationStyle::Native as i32 {
-            KeyDerivationStyle::Native
-        } else {
-            panic!("invalid key derivation style")
-        };
+    let key_derivation_style = if proto_style == node_config::KeyDerivationStyle::Lnd as i32 {
+        KeyDerivationStyle::Lnd
+    } else if proto_style == node_config::KeyDerivationStyle::Native as i32 {
+        KeyDerivationStyle::Native
+    } else {
+        panic!("invalid key derivation style")
+    };
     node::NodeConfig {
-        key_derivation_style
+        key_derivation_style,
     }
 }
 
@@ -185,12 +183,14 @@ impl Signer for MySigner {
         let req = request.into_inner();
         log_info!(self, "ENTER init");
         log_debug!(self, "req={}", json!(&req));
-        let proto_node_config = req.node_config
+        let proto_node_config = req
+            .node_config
             .ok_or_else(|| self.invalid_argument("missing node_config"))?;
-        if proto_node_config.key_derivation_style != node_config::KeyDerivationStyle::Native as i32 &&
-            proto_node_config.key_derivation_style != node_config::KeyDerivationStyle::Lnd as i32 {
-                return Err(self.invalid_argument("unknown node_config.key_derivation_style"))
-            }
+        if proto_node_config.key_derivation_style != node_config::KeyDerivationStyle::Native as i32
+            && proto_node_config.key_derivation_style != node_config::KeyDerivationStyle::Lnd as i32
+        {
+            return Err(self.invalid_argument("unknown node_config.key_derivation_style"));
+        }
         let hsm_secret = req
             .hsm_secret
             .ok_or_else(|| self.invalid_argument("missing hsm_secret"))?
@@ -198,10 +198,10 @@ impl Signer for MySigner {
         let hsm_secret = hsm_secret.as_slice();
         if hsm_secret.len() > 0 {
             if hsm_secret.len() < 16 {
-                return Err(self.invalid_argument("hsm_secret must be at least 16 bytes"))
+                return Err(self.invalid_argument("hsm_secret must be at least 16 bytes"));
             }
             if hsm_secret.len() > 64 {
-                return Err(self.invalid_argument("hsm_secret must be no larger than 64 bytes"))
+                return Err(self.invalid_argument("hsm_secret must be no larger than 64 bytes"));
             }
         }
         let node_config = convert_node_config(proto_node_config);

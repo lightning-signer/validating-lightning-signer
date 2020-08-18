@@ -6,7 +6,9 @@ use bitcoin::blockdata::transaction::Transaction;
 use chain::keysinterface::{ChannelKeys, InMemoryChannelKeys};
 use lightning::chain;
 use lightning::ln;
-use lightning::ln::chan_utils::{LocalCommitmentTransaction, PreCalculatedTxCreationKeys, TxCreationKeys};
+use lightning::ln::chan_utils::{
+    LocalCommitmentTransaction, PreCalculatedTxCreationKeys, TxCreationKeys,
+};
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};

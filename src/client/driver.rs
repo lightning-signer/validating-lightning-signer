@@ -19,7 +19,7 @@ pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
     println!("RESPONSE={:?}", response);
 
     let init_request = Request::new(InitRequest {
-        node_config: Some(NodeConfig{
+        node_config: Some(NodeConfig {
             key_derivation_style: node_config::KeyDerivationStyle::Native as i32,
         }),
         chainparams: None,
