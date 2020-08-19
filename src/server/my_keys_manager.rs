@@ -1,5 +1,5 @@
 use std::convert::TryInto;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use bitcoin::blockdata::opcodes;
@@ -16,13 +16,23 @@ use secp256k1::{PublicKey, Secp256k1, SecretKey, Signing};
 
 use crate::util::byte_utils;
 use crate::util::crypto_utils::{
-    bip32_key, channels_seed, hkdf_sha256, hkdf_sha256_keys, node_keys_lnd, node_keys_native,
+    bip32_key, channels_seed, derive_key_lnd, hkdf_sha256, hkdf_sha256_keys, node_keys_lnd,
+    node_keys_native,
 };
 
 pub const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;
 
+#[derive(Clone, Copy, Debug)] // NOT TESTED
+pub enum KeyDerivationStyle {
+    Native = 1,
+    Lnd = 2,
+}
+
 pub struct MyKeysManager {
     secp_ctx: Secp256k1<secp256k1::SignOnly>,
+    key_derivation_style: KeyDerivationStyle,
+    network: Network,
+    master_key: ExtendedPrivKey,
     node_secret: SecretKey,
     channel_seed_base: [u8; 32],
     bip32_key: ExtendedPrivKey,
@@ -36,16 +46,11 @@ pub struct MyKeysManager {
     session_child_index: AtomicUsize,
     channel_id_master_key: ExtendedPrivKey,
     channel_id_child_index: AtomicUsize,
+    lnd_basepoint_index: AtomicU32,
 
     unique_start: Sha256State,
     #[allow(dead_code)]
     logger: Arc<Logger>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum KeyDerivationStyle {
-    Native = 1,
-    Lnd = 2,
 }
 
 impl MyKeysManager {
@@ -62,7 +67,9 @@ impl MyKeysManager {
             Ok(master_key) => {
                 let (_, node_secret) = match key_derivation_style {
                     KeyDerivationStyle::Native => node_keys_native(&secp_ctx, seed),
-                    KeyDerivationStyle::Lnd => node_keys_lnd(&secp_ctx, network.clone(), seed),
+                    KeyDerivationStyle::Lnd => {
+                        node_keys_lnd(&secp_ctx, network.clone(), master_key)
+                    }
                 };
                 let destination_script = match master_key
                     .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(1).unwrap())
@@ -111,6 +118,9 @@ impl MyKeysManager {
 
                 MyKeysManager {
                     secp_ctx,
+                    key_derivation_style,
+                    network,
+                    master_key,
                     node_secret,
                     channel_seed_base,
                     bip32_key,
@@ -122,7 +132,7 @@ impl MyKeysManager {
                     session_child_index: AtomicUsize::new(0),
                     channel_id_master_key,
                     channel_id_child_index: AtomicUsize::new(0),
-
+                    lnd_basepoint_index: AtomicU32::new(0),
                     unique_start,
                     logger,
                 }
@@ -146,8 +156,23 @@ impl MyKeysManager {
         &self,
         channel_nonce: &[u8],
         channel_value_sat: u64,
-        hkdf_info: &str,
     ) -> InMemoryChannelKeys {
+        match self.key_derivation_style {
+            KeyDerivationStyle::Native => {
+                self.get_channel_keys_with_nonce_native(channel_nonce, channel_value_sat)
+            }
+            KeyDerivationStyle::Lnd => {
+                self.get_channel_keys_with_nonce_lnd(channel_nonce, channel_value_sat)
+            }
+        }
+    }
+
+    fn get_channel_keys_with_nonce_native(
+        &self,
+        channel_nonce: &[u8],
+        channel_value_sat: u64,
+    ) -> InMemoryChannelKeys {
+        let hkdf_info = "c-lightning";
         let channel_seed = hkdf_sha256(
             &self.channel_seed_base,
             "per-peer seed".as_bytes(),
@@ -169,6 +194,64 @@ impl MyKeysManager {
         let commitment_seed = keys_buf[ndx..ndx + 32].try_into().unwrap();
         let secp_ctx = Secp256k1::signing_only();
         let derivation_param = (0, 0); // TODO
+        InMemoryChannelKeys::new(
+            &secp_ctx,
+            funding_key,
+            revocation_base_key,
+            payment_key,
+            delayed_payment_base_key,
+            htlc_base_key,
+            commitment_seed,
+            channel_value_sat,
+            derivation_param,
+        )
+    }
+
+    fn get_channel_keys_with_nonce_lnd(
+        &self,
+        channel_nonce: &[u8],
+        channel_value_sat: u64,
+    ) -> InMemoryChannelKeys {
+        // FIXME - How does lnd generate it's commitment seed? This is a stripped
+        // native (really c-lightning) version.
+        //
+        let hkdf_info = "c-lightning";
+        let channel_seed = hkdf_sha256(
+            &self.channel_seed_base,
+            "per-peer seed".as_bytes(),
+            channel_nonce,
+        );
+        let keys_buf = hkdf_sha256_keys(&channel_seed, hkdf_info.as_bytes(), &[]);
+        let mut ndx = 0;
+        ndx += 32;
+        ndx += 32;
+        ndx += 32;
+        ndx += 32;
+        ndx += 32;
+        let commitment_seed = keys_buf[ndx..ndx + 32].try_into().unwrap();
+
+        let secp_ctx = Secp256k1::signing_only();
+
+        // These need to match the constants defined in lnd/keychain/derivation.go
+        // KeyFamilyMultiSig KeyFamily = 0
+        // KeyFamilyRevocationBase = 1
+        // KeyFamilyHtlcBase KeyFamily = 2
+        // KeyFamilyPaymentBase KeyFamily = 3
+        // KeyFamilyDelayBase KeyFamily = 4
+        let basepoint_index = self.lnd_basepoint_index.fetch_add(1, Ordering::AcqRel);
+        let (_, funding_key) =
+            derive_key_lnd(&secp_ctx, self.network, self.master_key, 0, basepoint_index);
+        let (_, revocation_base_key) =
+            derive_key_lnd(&secp_ctx, self.network, self.master_key, 1, basepoint_index);
+        let (_, htlc_base_key) =
+            derive_key_lnd(&secp_ctx, self.network, self.master_key, 2, basepoint_index);
+        let (_, payment_key) =
+            derive_key_lnd(&secp_ctx, self.network, self.master_key, 3, basepoint_index);
+        let (_, delayed_payment_base_key) =
+            derive_key_lnd(&secp_ctx, self.network, self.master_key, 4, basepoint_index);
+
+        let derivation_param = (0, 0); // TODO
+
         InMemoryChannelKeys::new(
             &secp_ctx,
             funding_key,
@@ -258,7 +341,7 @@ mod tests {
     }
 
     #[test]
-    fn keys_test() -> Result<(), ()> {
+    fn keys_test_native() -> Result<(), ()> {
         let manager = MyKeysManager::new(
             KeyDerivationStyle::Native,
             &[0u8; 32],
@@ -273,7 +356,7 @@ mod tests {
         );
         let mut channel_id = [0u8; 32];
         channel_id[0] = 1u8;
-        let keys = manager.get_channel_keys_with_nonce(&channel_id, 0, "c-lightning");
+        let keys = manager.get_channel_keys_with_nonce(&channel_id, 0);
         assert!(
             hex::encode(&keys.funding_key[..])
                 == "bf36bee09cc5dd64c8f19e10b258efb1f606722e9ff6fe3267b63e2dbe33dcfc"
@@ -298,6 +381,46 @@ mod tests {
     }
 
     #[test]
+    fn keys_test_lnd() -> Result<(), ()> {
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Lnd,
+            &[0u8; 32],
+            Network::Testnet,
+            logger(),
+            0,
+            0,
+        );
+        assert!(
+            hex::encode(manager.channel_seed_base)
+                == "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53"
+        );
+        let mut channel_id = [0u8; 32];
+        channel_id[0] = 1u8;
+        let keys = manager.get_channel_keys_with_nonce(&channel_id, 0);
+        assert!(
+            hex::encode(&keys.funding_key[..])
+                == "0b2f20d28e705daea86a93e6d5646e2f8989956d73c61752e7cf6c4421071e99"
+        );
+        assert!(
+            hex::encode(&keys.revocation_base_key[..])
+                == "920c0b18c7d0979dc7119efb1ca520cf6899c92a3236d146968b521a901eac63"
+        );
+        assert!(
+            hex::encode(&keys.htlc_base_key[..])
+                == "60deb71963b8574f3c8bf5df2d7b851f9c31a866a1c14bd00dae1263a5f27c55"
+        );
+        assert!(
+            hex::encode(&keys.payment_key[..])
+                == "064e32a51f3ed0a41936bd788a80dc91b7521a85da00f02196eddbd32c3d5631"
+        );
+        assert!(
+            hex::encode(&keys.delayed_payment_base_key[..])
+                == "47a6c0532b9e593e84d91451104dc6fe10ba4aa30cd7c95ed039916d3e908b10"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn per_commit_test() -> Result<(), ()> {
         let manager = MyKeysManager::new(
             KeyDerivationStyle::Native,
@@ -309,7 +432,7 @@ mod tests {
         );
         let mut channel_id = [0u8; 32];
         channel_id[0] = 1u8;
-        let keys = manager.get_channel_keys_with_nonce(&channel_id, 0, "c-lightning");
+        let keys = manager.get_channel_keys_with_nonce(&channel_id, 0);
         assert!(
             hex::encode(&keys.commitment_seed)
                 == "9fc48da6bc75058283b860d5989ffb802b6395ca28c4c3bb9d1da02df6bb0cb3"

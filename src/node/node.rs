@@ -425,7 +425,7 @@ impl Channel {
         })?;
 
         let remote_key = if self.setup.option_static_remotekey {
-            remote_points.payment_point // NOT TESTED
+            remote_points.payment_point
         } else {
             derive_public_key(
                 &self.secp_ctx,
@@ -586,11 +586,9 @@ impl Node {
             // END NOT TESTED
         }
         let channel_value_sat = 0; // Placeholder value, not known yet.
-        let inmem_keys = self.keys_manager.get_channel_keys_with_nonce(
-            channel_nonce.as_slice(),
-            channel_value_sat,
-            "c-lightning",
-        );
+        let inmem_keys = self
+            .keys_manager
+            .get_channel_keys_with_nonce(channel_nonce.as_slice(), channel_value_sat);
         let stub = ChannelStub {
             node: Arc::clone(arc_self),
             logger: Arc::clone(&self.logger),
@@ -614,7 +612,6 @@ impl Node {
         let mut inmem_keys = self.keys_manager.get_channel_keys_with_nonce(
             stub.channel_nonce.as_slice(),
             setup.channel_value_sat, // DUP VALUE
-            "c-lightning",
         );
         inmem_keys.on_accept(
             &setup.remote_points,

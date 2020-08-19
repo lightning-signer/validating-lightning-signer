@@ -360,7 +360,7 @@ impl MySigner {
 
             let mut htlc_refs = Vec::new();
             for htlc in htlcs.iter() {
-                htlc_refs.push(htlc); // NOT TESTED
+                htlc_refs.push(htlc);
             }
 
             // We provide a dummy signature for the remote, since we don't require that sig
@@ -396,13 +396,11 @@ impl MySigner {
                 .map_err(|_| self.internal_error("failed to sign htlcs"))?;
             let mut htlc_sig_vecs = Vec::new();
             for htlc_sig_o in htlc_sigs {
-                // BEGIN NOT TESTED
                 if let Some(htlc_sig) = htlc_sig_o {
                     let mut htlc_sig_vec = htlc_sig.serialize_der().to_vec();
                     htlc_sig_vec.push(SigHashType::All as u8);
                     htlc_sig_vecs.push(htlc_sig_vec);
                 }
-                // END NOT TESTED
             }
             Ok((sig_vec, htlc_sig_vecs))
         })
@@ -2211,7 +2209,7 @@ mod tests {
                 script_sig: Script::new(),
                 sequence: 0,
                 witness: vec![],
-            },
+            }, // NOT TESTED
             TxIn {
                 previous_output: OutPoint {
                     txid: txids[1],
@@ -2220,7 +2218,7 @@ mod tests {
                 script_sig: Script::new(),
                 sequence: 0,
                 witness: vec![],
-            },
+            }, // NOT TESTED
             TxIn {
                 previous_output: OutPoint {
                     txid: txids[2],
@@ -2229,7 +2227,7 @@ mod tests {
                 script_sig: Script::new(),
                 sequence: 0,
                 witness: vec![],
-            },
+            }, // NOT TESTED
         ];
 
         let tx = bitcoin::Transaction {

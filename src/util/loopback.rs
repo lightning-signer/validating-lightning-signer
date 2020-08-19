@@ -335,8 +335,10 @@ impl ChannelKeys for LoopbackChannelSigner {
             &self.pubkeys,
         )?;
         let redeem_script = if let Some(ref htlc) = *htlc {
+            // BEGIN NOT TESTED
             let tx_keys = self.make_remote_tx_keys(&per_commitment_point, secp_ctx)?;
-            chan_utils::get_htlc_redeemscript(&htlc, &tx_keys) // NOT TESTED
+            chan_utils::get_htlc_redeemscript(&htlc, &tx_keys)
+        // END NOT TESTED
         } else {
             chan_utils::get_revokeable_redeemscript(
                 &revocation_key,
@@ -414,14 +416,18 @@ impl ChannelKeys for LoopbackChannelSigner {
         for out in &closing_tx.output {
             if out.script_pubkey == local_script {
                 if to_local_value > 0 {
+                    // BEGIN NOT TESTED
                     log_error!(signer, "multiple to_local outputs");
                     return Err(());
+                    // END NOT TESTED
                 }
                 to_local_value = out.value;
             } else {
                 if to_remote_value > 0 {
+                    // BEGIN NOT TESTED
                     log_error!(signer, "multiple to_remote outputs");
                     return Err(());
+                    // END NOT TESTED
                 }
                 to_remote_value = out.value;
                 to_remote_script = out.script_pubkey.clone();
@@ -593,13 +599,13 @@ impl LoopbackChannelSigner {
             if out.script_pubkey.is_v0_p2wsh() {
                 if !htlc_indices.contains(&(idx as u32)) {
                     if to_local_value_sat != 0 {
-                        panic!("multiple to-local")
+                        panic!("multiple to-local") // NOT TESTED
                     }
                     to_local_value_sat = out.value;
                 }
             } else {
                 if to_remote_value_sat != 0 {
-                    panic!("multiple to-remote")
+                    panic!("multiple to-remote") // NOT TESTED
                 }
                 to_remote_value_sat = out.value;
             }
