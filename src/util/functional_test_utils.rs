@@ -1463,6 +1463,7 @@ impl<'a> channelmonitor::ManyChannelMonitor for TestChannelMonitor<'a> {
     }
 }
 
+// BEGIN NOT TESTED
 pub fn dump_node_txn(prefix: &str, node: &Node) {
     let node_txn = node.tx_broadcaster.txn_broadcasted.lock().unwrap();
     dump_txn(prefix, &*node_txn);
@@ -1474,3 +1475,4 @@ pub fn dump_txn(prefix: &str, txn: &Vec<Transaction>) {
         println!("{} {} {:?}", prefix, x.txid(), x);
     }
 }
+// END NOT TESTED

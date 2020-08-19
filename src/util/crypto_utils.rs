@@ -47,18 +47,28 @@ pub fn node_keys_native(
 pub fn node_keys_lnd(
     secp_ctx: &Secp256k1<SignOnly>,
     network: Network,
-    node_seed: &[u8],
+    master: ExtendedPrivKey,
+) -> (PublicKey, SecretKey) {
+    let key_family_node_key = 6;
+    let index = 0;
+    derive_key_lnd(secp_ctx, network, master, key_family_node_key, index)
+}
+
+pub fn derive_key_lnd(
+    secp_ctx: &Secp256k1<SignOnly>,
+    network: Network,
+    master: ExtendedPrivKey,
+    key_family: u32,
+    index: u32,
 ) -> (PublicKey, SecretKey) {
     let bip43purpose = 1017;
-    let coin_type = match network {
+    #[rustfmt::skip]
+    let coin_type = match network { // NOT TESTED
         bitcoin::Network::Bitcoin => 0,
         bitcoin::Network::Testnet => 1,
-        bitcoin::Network::Regtest => 1,
+        bitcoin::Network::Regtest => 1, // NOT TESTED
     };
-    let key_family_node_key = 6;
     let branch = 0;
-    let index = 0;
-    let master = ExtendedPrivKey::new_master(network.clone(), &node_seed).unwrap();
     let node_ext_prv = master
         .ckd_priv(
             &secp_ctx,
@@ -72,7 +82,7 @@ pub fn node_keys_lnd(
         .unwrap()
         .ckd_priv(
             &secp_ctx,
-            ChildNumber::from_hardened_idx(key_family_node_key).unwrap(),
+            ChildNumber::from_hardened_idx(key_family).unwrap(),
         )
         .unwrap()
         .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(branch).unwrap())
@@ -205,7 +215,8 @@ mod tests {
     fn node_keys_lnd_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
         let network = Testnet;
-        let (node_id, _) = node_keys_lnd(&secp_ctx, network, &[0u8; 32]);
+        let master = ExtendedPrivKey::new_master(network.clone(), &[0u8; 32]).unwrap();
+        let (node_id, _) = node_keys_lnd(&secp_ctx, network, master);
         let node_id_bytes = node_id.serialize().to_vec();
         println!("{:?}", hex::encode(&node_id_bytes));
         assert!(
