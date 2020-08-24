@@ -24,11 +24,11 @@ serde = { version = "1.0.105", features = ["derive"] }
 serde_json = "1.0.48"
 
 [dependencies.lightning]
-git = "https://github.com/lightning-signer/rust-lightning.git"
-rev = "93a73440919ccd694565e8b79b8f5c8af4f8a628"  # compat7 branch
+git = "https://github.com/rust-bitcoin/rust-lightning.git"
+rev = "b3b4f434a2c384b4d37d7e7977ebd190377f2891"
 [dev-dependencies.lightning]
-git = "https://github.com/lightning-signer/rust-lightning.git"
-rev = "93a73440919ccd694565e8b79b8f5c8af4f8a628"  # compat7 branch
+git = "https://github.com/rust-bitcoin/rust-lightning.git"
+rev = "b3b4f434a2c384b4d37d7e7977ebd190377f2891"
 features = ["unsafe_revoked_tx_signing"]
 
 [dev-dependencies.bitcoin]
