@@ -499,7 +499,7 @@ impl ChannelKeys for LoopbackChannelSigner {
             option_static_remotekey: true,              // TODO
         };
         self.signer
-            .ready_channel(&self.node_id, self.channel_id, setup)
+            .ready_channel(&self.node_id, self.channel_id, None, setup)
             .expect("channel already ready or does not exist");
         self.remote_pubkeys = Some(remote_points.clone());
         self.local_to_self_delay = local_to_self_delay;

@@ -40,11 +40,9 @@ impl EnforcingChannelKeys {
         self.inner.remote_pubkeys()
     }
 
-    // BEGIN NOT TESTED
     pub fn inner(&self) -> InMemoryChannelKeys {
         self.inner.clone()
     }
-    // END NOT TESTED
 }
 
 impl EnforcingChannelKeys {

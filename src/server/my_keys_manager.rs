@@ -167,6 +167,10 @@ impl MyKeysManager {
         }
     }
 
+    pub(crate) fn derivation_params() -> (u64, u64) {
+        (0, 0) // TODO
+    }
+
     fn get_channel_keys_with_nonce_native(
         &self,
         channel_nonce: &[u8],
@@ -193,7 +197,6 @@ impl MyKeysManager {
         ndx += 32;
         let commitment_seed = keys_buf[ndx..ndx + 32].try_into().unwrap();
         let secp_ctx = Secp256k1::signing_only();
-        let derivation_param = (0, 0); // TODO
         InMemoryChannelKeys::new(
             &secp_ctx,
             funding_key,
@@ -203,7 +206,7 @@ impl MyKeysManager {
             htlc_base_key,
             commitment_seed,
             channel_value_sat,
-            derivation_param,
+            MyKeysManager::derivation_params(),
         )
     }
 
@@ -250,8 +253,6 @@ impl MyKeysManager {
         let (_, delayed_payment_base_key) =
             derive_key_lnd(&secp_ctx, self.network, self.master_key, 4, basepoint_index);
 
-        let derivation_param = (0, 0); // TODO
-
         InMemoryChannelKeys::new(
             &secp_ctx,
             funding_key,
@@ -261,7 +262,7 @@ impl MyKeysManager {
             htlc_base_key,
             commitment_seed,
             channel_value_sat,
-            derivation_param,
+            MyKeysManager::derivation_params(),
         )
     }
 }
