@@ -253,15 +253,15 @@ impl Signer for MySigner {
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         // req.channel_nonce is optional, will be generated if missing.
-        let opt_channel_id = self.channel_id(&req.channel_nonce).ok();
-        let opt_channel_nonce = req.channel_nonce.map(|cn| cn.data);
+        let opt_channel_id = self.channel_id(&req.channel_nonce0).ok();
+        let opt_channel_nonce0 = req.channel_nonce0.map(|cn| cn.data);
         log_info!(self, "ENTER new_channel({}/{:?})", node_id, opt_channel_id);
         log_debug!(self, "req={}", reqstr);
 
-        let channel_id = self.new_channel(&node_id, opt_channel_nonce, opt_channel_id)?;
+        let channel_id = self.new_channel(&node_id, opt_channel_nonce0, opt_channel_id)?;
 
         let reply = NewChannelReply {
-            channel_nonce: Some(ChannelNonce {
+            channel_nonce0: Some(ChannelNonce {
                 data: channel_id.0.to_vec(),
             }),
         };
@@ -316,8 +316,11 @@ impl Signer for MySigner {
         let req = request.into_inner();
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
-        let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER ready_channel({}/{})", node_id, channel_id);
+        let channel_id0 = self.channel_id(&req.channel_nonce0)?;
+        let opt_channel_id = req.option_channel_nonce
+            .map_or(None, |nonce| Some(channel_nonce_to_id(&nonce.data)));
+        log_info!(self, "ENTER ready_channel({}/{})->({}/{:?})",
+                  node_id, channel_id0, node_id, opt_channel_id);
         log_debug!(self, "req={}", reqstr);
 
         let req_outpoint = req
@@ -359,7 +362,8 @@ impl Signer for MySigner {
 
         self.ready_channel(
             &node_id,
-            channel_id,
+            channel_id0,
+            opt_channel_id,
             ChannelSetup {
                 is_outbound: req.is_outbound,
                 channel_value_sat: req.channel_value_sat,
@@ -374,7 +378,8 @@ impl Signer for MySigner {
             },
         )?;
         let reply = ReadyChannelReply {};
-        log_info!(self, "REPLY ready_channel({}/{})", node_id, channel_id);
+        log_info!(self, "REPLY ready_channel({}/{})->({}/{:?})",
+                  node_id, channel_id0, node_id, opt_channel_id);
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }

@@ -11,7 +11,7 @@ use bitcoin::{Network, OutPoint, Script, SigHashType};
 use bitcoin_hashes::core::fmt::{Error, Formatter};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
-use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
+use lightning::chain::keysinterface::{ChannelKeys, InMemoryChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, HTLCOutputInCommitment, PreCalculatedTxCreationKeys, TxCreationKeys,
 };
@@ -75,7 +75,6 @@ pub struct ChannelStub {
     pub logger: Arc<Logger>,
     pub secp_ctx: Secp256k1<All>,
     pub keys: EnforcingChannelKeys, // Incomplete, channel_value_sat is placeholder.
-    channel_nonce: Vec<u8>,         // Since keys.inner is private needed to regenerate the keys,
 }
 
 // After ReadyChannel
@@ -142,6 +141,27 @@ impl ChannelBase for Channel {
             .keys
             .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
         SecretKey::from_slice(&secret).unwrap()
+    }
+}
+
+impl ChannelStub {
+    pub(crate) fn channel_keys_with_channel_value(
+        &self,
+        channel_value_sat: u64,
+    ) -> InMemoryChannelKeys {
+        let secp_ctx = Secp256k1::signing_only();
+        let keys0 = self.keys.inner();
+        InMemoryChannelKeys::new(
+            &secp_ctx,
+            keys0.funding_key,
+            keys0.revocation_base_key,
+            keys0.payment_key,
+            keys0.delayed_payment_base_key,
+            keys0.htlc_base_key,
+            keys0.commitment_seed,
+            channel_value_sat,
+            MyKeysManager::derivation_params(),
+        )
     }
 }
 
@@ -522,7 +542,7 @@ pub struct Node {
     pub logger: Arc<Logger>,
     pub node_config: NodeConfig,
     pub(crate) keys_manager: MyKeysManager,
-    channels: Mutex<HashMap<ChannelId, ChannelSlot>>,
+    channels: Mutex<HashMap<ChannelId, Arc<Mutex<ChannelSlot>>>>,
     pub network: Network,
     validator_factory: Box<dyn ValidatorFactory>,
 }
@@ -573,7 +593,7 @@ impl Node {
     pub fn new_channel(
         &self,
         channel_id: ChannelId,
-        channel_nonce: Vec<u8>,
+        channel_nonce0: Vec<u8>,
         arc_self: &Arc<Node>,
     ) -> Result<(), Status> {
         let mut channels = self.channels.lock().unwrap();
@@ -588,48 +608,74 @@ impl Node {
         let channel_value_sat = 0; // Placeholder value, not known yet.
         let inmem_keys = self
             .keys_manager
-            .get_channel_keys_with_nonce(channel_nonce.as_slice(), channel_value_sat);
+            .get_channel_keys_with_nonce(channel_nonce0.as_slice(), channel_value_sat);
         let stub = ChannelStub {
             node: Arc::clone(arc_self),
             logger: Arc::clone(&self.logger),
             secp_ctx: Secp256k1::new(),
             keys: EnforcingChannelKeys::new(inmem_keys),
-            channel_nonce: channel_nonce,
         };
-        channels.insert(channel_id, ChannelSlot::Stub(stub));
+        channels.insert(channel_id, Arc::new(Mutex::new(ChannelSlot::Stub(stub))));
         Ok(())
     }
 
-    pub fn ready_channel(&self, channel_id: ChannelId, setup: ChannelSetup) -> Result<(), Status> {
-        let mut channels = self.channels.lock().unwrap();
-        let stub = match channels.get_mut(&channel_id) {
-            None => Err(self.invalid_argument(format!("channel does not exist: {}", channel_id))),
-            Some(ChannelSlot::Stub(stub)) => Ok(stub),
-            Some(ChannelSlot::Ready(_)) => {
-                Err(self.invalid_argument(format!("channel already ready: {}", channel_id)))
+    pub fn ready_channel(
+        &self,
+        channel_id0: ChannelId,
+        opt_channel_id: Option<ChannelId>,
+        setup: ChannelSetup,
+    ) -> Result<(), Status> {
+        let chan = {
+            let channels = self.channels.lock().unwrap();
+            let arcobj = channels.get(&channel_id0).ok_or_else(|| {
+                self.invalid_argument(format!("channel does not exist: {}", channel_id0))
+            })?;
+            let slot = arcobj.lock().unwrap();
+            let stub = match &*slot {
+                ChannelSlot::Stub(stub) => Ok(stub),
+                ChannelSlot::Ready(_) => {
+                    Err(self.invalid_argument(format!("channel already ready: {}", channel_id0)))
+                }
+            }?;
+            let mut inmem_keys = stub.channel_keys_with_channel_value(setup.channel_value_sat);
+            inmem_keys.on_accept(
+                &setup.remote_points,
+                setup.remote_to_self_delay,
+                setup.local_to_self_delay,
+            ); // DUP VALUE
+            Channel {
+                node: Arc::clone(&stub.node),
+                logger: Arc::clone(&stub.logger),
+                secp_ctx: stub.secp_ctx.clone(),
+                keys: EnforcingChannelKeys::new(inmem_keys),
+                setup,
             }
-        }?;
-        let mut inmem_keys = self.keys_manager.get_channel_keys_with_nonce(
-            stub.channel_nonce.as_slice(),
-            setup.channel_value_sat, // DUP VALUE
-        );
-        inmem_keys.on_accept(
-            &setup.remote_points,
-            setup.remote_to_self_delay,
-            setup.local_to_self_delay,
-        ); // DUP VALUE
-        let chan = Channel {
-            node: Arc::clone(&stub.node),
-            logger: Arc::clone(&stub.logger),
-            secp_ctx: stub.secp_ctx.clone(),
-            keys: EnforcingChannelKeys::new(inmem_keys),
-            setup,
         };
         let validator = self.validator_factory.make_validator(&chan);
         validator
             .validate_channel_open()
             .map_err(|ve| chan.validation_error(ve))?;
-        channels.insert(channel_id, ChannelSlot::Ready(chan));
+
+        let mut channels = self.channels.lock().unwrap();
+
+        // Wrap the ready channel with an arc so we can potentially
+        // refer to it multiple times.
+        let arcobj = Arc::new(Mutex::new(ChannelSlot::Ready(chan)));
+
+        // If a permanent channel_id was provided use it, otherwise
+        // continue with the initial channel_id0.
+        let chan_id = opt_channel_id.unwrap_or(channel_id0);
+
+        // Associate the new ready channel with the channel id.
+        channels.insert(chan_id, arcobj.clone());
+
+        // If we are using a new permanent channel_id additionally
+        // associate the channel with the original (initial)
+        // channel_id as well.
+        if channel_id0 != chan_id {
+            channels.insert(channel_id0, arcobj.clone());
+        }
+
         Ok(())
     }
 
@@ -720,7 +766,7 @@ impl Node {
         Ok(res)
     }
 
-    pub fn channels(&self) -> MutexGuard<HashMap<ChannelId, ChannelSlot>> {
+    pub fn channels(&self) -> MutexGuard<HashMap<ChannelId, Arc<Mutex<ChannelSlot>>>> {
         self.channels.lock().unwrap()
     }
 }

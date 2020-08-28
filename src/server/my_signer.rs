@@ -90,7 +90,7 @@ impl MySigner {
     pub fn new_channel(
         &self,
         node_id: &PublicKey,
-        opt_channel_nonce: Option<Vec<u8>>,
+        opt_channel_nonce0: Option<Vec<u8>>,
         opt_channel_id: Option<ChannelId>,
     ) -> Result<ChannelId, Status> {
         log_info!(self, "new channel {}/{:?}", node_id, opt_channel_id);
@@ -100,8 +100,8 @@ impl MySigner {
             .ok_or_else(|| self.invalid_argument(format!("no such node {}", node_id)))?;
         let keys_manager = &node.keys_manager;
         let channel_id = opt_channel_id.unwrap_or_else(|| ChannelId(keys_manager.get_channel_id()));
-        let channel_nonce = opt_channel_nonce.unwrap_or_else(|| channel_id.0.to_vec());
-        node.new_channel(channel_id, channel_nonce, node)?;
+        let channel_nonce0 = opt_channel_nonce0.unwrap_or_else(|| channel_id.0.to_vec());
+        node.new_channel(channel_id, channel_nonce0, node)?;
         Ok(channel_id)
     }
 
@@ -125,15 +125,23 @@ impl MySigner {
     pub fn ready_channel(
         &self,
         node_id: &PublicKey,
-        channel_id: ChannelId,
+        channel_id0: ChannelId,
+        opt_channel_id: Option<ChannelId>,
         setup: ChannelSetup,
     ) -> Result<(), Status> {
-        log_info!(self, "ready channel {}/{:?}", node_id, channel_id);
+        log_info!(
+            self,
+            "ready channel {}/{:?} -> {}/{:?}",
+            node_id,
+            channel_id0,
+            node_id,
+            opt_channel_id,
+        );
         let nodes = self.nodes.lock().unwrap();
         let node = nodes
             .get(node_id)
             .ok_or_else(|| self.invalid_argument(format!("no such node {}", node_id)))?;
-        node.ready_channel(channel_id, setup)?;
+        node.ready_channel(channel_id0, opt_channel_id, setup)?;
         Ok(())
     }
 
@@ -166,7 +174,14 @@ impl MySigner {
     {
         let nodes = self.nodes.lock().unwrap();
         let node = nodes.get(node_id);
-        node.map_or_else(|| f(None), |n| f(n.channels().get_mut(channel_id)))
+        node.map_or_else(
+            || f(None),
+            |n| {
+                n.channels()
+                    .get_mut(channel_id)
+                    .map_or_else(|| f(None), |arcobj| f(Some(&mut *arcobj.lock().unwrap())))
+            },
+        )
     }
 
     pub fn with_channel_base<F: Sized, T>(
@@ -184,17 +199,17 @@ impl MySigner {
             || Err(self.invalid_argument("no such node")),
             |n| {
                 let mut guard = n.channels();
-                let slot = guard.get_mut(channel_id);
-                let opt_base = match slot {
-                    None => None,
-                    Some(ChannelSlot::Stub(stub)) => Some(stub as &mut ChannelBase),
-                    Some(ChannelSlot::Ready(chan)) => Some(chan as &mut ChannelBase),
-                };
-                let base = opt_base.ok_or_else(|| {
+                let elem = guard.get_mut(channel_id);
+                let arcobj = elem.ok_or_else(|| {
                     // BEGIN NOT TESTED
                     self.invalid_argument(format!("no such channel: {}", &channel_id))
                     // END NOT TESTED
                 })?;
+                let mut slot = arcobj.lock().unwrap();
+                let base = match &mut *slot {
+                    ChannelSlot::Stub(stub) => stub as &mut ChannelBase,
+                    ChannelSlot::Ready(chan) => chan as &mut ChannelBase,
+                };
                 f(base)
             },
         )
@@ -215,13 +230,16 @@ impl MySigner {
             || Err(self.invalid_argument("no such node")),
             |n| {
                 let mut guard = n.channels();
-                let slot = guard.get_mut(channel_id);
-                match slot {
-                    None => Err(self.invalid_argument(format!("no such channel: {}", &channel_id))),
-                    Some(ChannelSlot::Stub(_)) => {
+                let elem = guard.get_mut(channel_id);
+                let arcobj = elem.ok_or_else(|| {
+                    self.invalid_argument(format!("no such channel: {}", &channel_id))
+                })?;
+                let mut slot = arcobj.lock().unwrap();
+                match &mut *slot {
+                    ChannelSlot::Stub(_) => {
                         Err(self.invalid_argument(format!("channel not ready: {}", &channel_id)))
                     }
-                    Some(ChannelSlot::Ready(chan)) => f(chan),
+                    ChannelSlot::Ready(chan) => f(chan),
                 }
             },
         )
@@ -1011,7 +1029,7 @@ mod tests {
             .new_channel(&node_id, Some(channel_nonce), Some(channel_id))
             .expect("new_channel");
         signer
-            .ready_channel(&node_id, channel_id, setup)
+            .ready_channel(&node_id, channel_id, None, setup)
             .expect("ready channel");
         (node_id, channel_id)
     }
@@ -1030,6 +1048,78 @@ mod tests {
                 assert_eq!(format!("{:?}", chan), "channel");
                 Ok(())
             });
+    }
+
+    #[test]
+    fn ready_channel_not_exist_test() {
+        let signer = MySigner::new();
+        let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
+        let channel_nonce_x = "nonceX".as_bytes().to_vec();
+        let channel_id_x = channel_nonce_to_id(&channel_nonce_x);
+        let status: Result<(), Status> =
+            signer.ready_channel(&node_id, channel_id_x, None, make_test_channel_setup());
+        assert!(status.is_err());
+        let err = status.unwrap_err();
+        assert_eq!(err.code(), Code::InvalidArgument);
+        assert_eq!(
+            err.message(),
+            format!("channel does not exist: {}", &channel_id_x)
+        );
+    }
+
+    #[test]
+    fn ready_channel_dual_channelid_test() {
+        let signer = MySigner::new();
+        let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_id = channel_nonce_to_id(&channel_nonce);
+        signer
+            .new_channel(&node_id, Some(channel_nonce), Some(channel_id))
+            .expect("new_channel");
+
+        // Issue ready_channel w/ an alternate id.
+        let channel_nonce_x = "nonceX".as_bytes().to_vec();
+        let channel_id_x = channel_nonce_to_id(&channel_nonce_x);
+        let _result = signer
+            .ready_channel(
+                &node_id,
+                channel_id,
+                Some(channel_id_x),
+                make_test_channel_setup(),
+            )
+            .expect("ready_channel");
+
+        // Original channel_id should work with_ready_channel.
+        let val = signer
+            .with_ready_channel(&node_id, &channel_id, |_chan| Ok(42))
+            .expect("u32");
+        assert_eq!(val, 42);
+
+        // Alternate channel_id should work with_ready_channel.
+        let val_x = signer
+            .with_ready_channel(&node_id, &channel_id_x, |_chan| Ok(43))
+            .expect("u32");
+        assert_eq!(val_x, 43);
+    }
+
+    #[test]
+    fn with_ready_channel_not_exist_test() {
+        let signer = MySigner::new();
+        let (node_id, _channel_id) = init_node_and_channel(
+            &signer,
+            TEST_NODE_CONFIG,
+            TEST_SEED[1],
+            make_test_channel_setup(),
+        );
+        let channel_nonce_x = "nonceX".as_bytes().to_vec();
+        let channel_id_x = channel_nonce_to_id(&channel_nonce_x);
+
+        let status: Result<(), Status> =
+            signer.with_ready_channel(&node_id, &channel_id_x, |_chan| Ok(()));
+        assert!(status.is_err());
+        let err = status.unwrap_err();
+        assert_eq!(err.code(), Code::InvalidArgument);
+        assert_eq!(err.message(), format!("no such channel: {}", &channel_id_x));
     }
 
     #[test]
@@ -1236,7 +1326,7 @@ mod tests {
         );
 
         // Trying to ready it again should fail.
-        let result = signer.ready_channel(&node_id, channel_id, make_test_channel_setup());
+        let result = signer.ready_channel(&node_id, channel_id, None, make_test_channel_setup());
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
@@ -1511,7 +1601,7 @@ mod tests {
                 .script_pubkey();
 
         signer
-            .ready_channel(&node_id, channel_id, setup.clone())
+            .ready_channel(&node_id, channel_id, None, setup.clone())
             .expect("ready channel");
 
         let tx = {
@@ -2956,7 +3046,7 @@ mod tests {
             .unwrap();
 
         signer
-            .ready_channel(&node_id, channel_id, make_test_channel_setup())
+            .ready_channel(&node_id, channel_id, None, make_test_channel_setup())
             .expect("ready channel");
 
         let uck = signer

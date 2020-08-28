@@ -40,13 +40,13 @@ pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
         node_id: Some(NodeId {
             data: node_id.clone(),
         }),
-        channel_nonce: Some(ChannelNonce {
+        channel_nonce0: Some(ChannelNonce {
             data: channel_id.to_vec(),
         }),
     });
     let response = client.new_channel(new_chan_request).await?;
 
-    let channel_id = response.into_inner().channel_nonce;
+    let channel_id = response.into_inner().channel_nonce0;
 
     let per_commit_request = Request::new(GetPerCommitmentPointRequest {
         node_id: Some(NodeId {

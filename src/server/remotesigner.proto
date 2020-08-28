@@ -194,12 +194,16 @@ message GetExtPubKeyReply {
 message NewChannelRequest {
   NodeId node_id = 1;
 
+  // An initial channel nonce, used until the channel is established
+  // with ReadyChannel.  At ReadyChannel the initial channel nonce may
+  // be optionally replaced with a permanent channel nonce.
+  //
   // optional, will be pseudo-randomly generated if missing
-  ChannelNonce channel_nonce = 2;
+  ChannelNonce channel_nonce0 = 2;
 }
 
 message NewChannelReply {
-  ChannelNonce channel_nonce = 1;
+  ChannelNonce channel_nonce0 = 1;
 }
 
 // Provide the funding outpoint and information from the remote peer
@@ -207,27 +211,33 @@ message NewChannelReply {
 message ReadyChannelRequest {
   NodeId node_id = 1;
 
-  ChannelNonce channel_nonce = 2;
+  // The initial channel nonce provided to NewChannel.
+  ChannelNonce channel_nonce0 = 2;
 
-  bool is_outbound = 3;
+  // An optional permanent channel nonce to be used for the rest of
+  // the channel's lifetime.  If not provided the initial channel
+  // nonce will be used.
+  ChannelNonce option_channel_nonce = 3;
 
-  uint64 channel_value_sat = 4;
+  bool is_outbound = 4;
 
-  uint64 push_value_msat = 5;
+  uint64 channel_value_sat = 5;
 
-  Outpoint funding_outpoint = 6;
+  uint64 push_value_msat = 6;
 
-  uint32 local_to_self_delay = 7;
+  Outpoint funding_outpoint = 7;
 
-  bytes local_shutdown_script = 8;
+  uint32 local_to_self_delay = 8;
 
-  Basepoints remote_basepoints = 9;
+  bytes local_shutdown_script = 9;
 
-  uint32 remote_to_self_delay = 10;
+  Basepoints remote_basepoints = 10;
 
-  bytes remote_shutdown_script = 11;
+  uint32 remote_to_self_delay = 11;
 
-  bool option_static_remotekey = 12;
+  bytes remote_shutdown_script = 12;
+
+  bool option_static_remotekey = 13;
 }
 
 message ReadyChannelReply {
