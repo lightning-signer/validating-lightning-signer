@@ -10,7 +10,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         // All other protobuf "bytes" fields need to be listed below.
         .field_attribute(
-            "NewChannelRequest.shutdown_script",
+            "ReadyChannelRequest.local_shutdown_script",
+            "#[serde(serialize_with = \"crate::util::macro_logger::as_hex\")]",
+        )
+        .field_attribute(
+            "ReadyChannelRequest.remote_shutdown_script",
             "#[serde(serialize_with = \"crate::util::macro_logger::as_hex\")]",
         )
         .field_attribute(
@@ -42,7 +46,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "#[serde(serialize_with = \"crate::util::macro_logger::as_hex\")]",
         )
         .field_attribute(
+            "InputDescriptor.redeem_script",
+            "#[serde(serialize_with = \"crate::util::macro_logger::as_hex\")]",
+        )
+        .field_attribute(
             "OutputDescriptor.witscript",
+            "#[serde(serialize_with = \"crate::util::macro_logger::as_hex\")]",
+        )
+        .field_attribute(
+            "SignMutualCloseTxPhase2Request.remote_shutdown_script",
             "#[serde(serialize_with = \"crate::util::macro_logger::as_hex\")]",
         )
         .field_attribute(
@@ -51,10 +63,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .field_attribute(
             "Outpoint.txid",
-            "#[serde(serialize_with = \"crate::util::macro_logger::as_hex\")]",
-        )
-        .field_attribute(
-            "ReadyChannelRequest.shutdown_script",
             "#[serde(serialize_with = \"crate::util::macro_logger::as_hex\")]",
         )
         .out_dir("src/server")
