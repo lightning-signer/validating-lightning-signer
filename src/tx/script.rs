@@ -3,7 +3,11 @@ use bitcoin::blockdata::opcodes::Class;
 use bitcoin::blockdata::script::read_scriptint;
 use bitcoin::blockdata::script::Instruction::PushBytes;
 use bitcoin::blockdata::script::{Builder, Instructions};
+use bitcoin::hash_types::PubkeyHash;
+use bitcoin::hashes::ripemd160::Hash as Ripemd160;
+use bitcoin::hashes::Hash;
 use bitcoin::{blockdata, Script};
+use lightning::ln::chan_utils::{HTLCOutputInCommitment, TxCreationKeys};
 use secp256k1::PublicKey;
 
 use crate::policy::error::ValidationError;
@@ -79,6 +83,120 @@ pub fn get_revokeable_redeemscript(
         .push_opcode(opcodes::all::OP_CHECKSIG)
         .into_script()
 }
+
+// FIXME - This should be in chan_utils.
+pub fn get_delayed_redeemscript(delayed_key: &PublicKey) -> Script {
+    Builder::new()
+        .push_slice(&delayed_key.serialize())
+        .push_opcode(opcodes::all::OP_CHECKSIGVERIFY)
+        .push_opcode(opcodes::all::OP_PUSHNUM_1)
+        .push_opcode(opcodes::all::OP_CSV)
+        .into_script()
+}
+
+// FIXME - This should be in chan_utils.
+pub fn get_anchor_redeemscript(funding_key: &PublicKey) -> Script {
+    Builder::new()
+        .push_slice(&funding_key.serialize())
+        .push_opcode(opcodes::all::OP_CHECKSIG)
+        .push_opcode(opcodes::all::OP_IFDUP)
+        .push_opcode(opcodes::all::OP_NOTIF)
+        .push_opcode(opcodes::all::OP_PUSHNUM_16)
+        .push_opcode(opcodes::all::OP_CSV)
+        .push_opcode(opcodes::all::OP_ENDIF)
+        .into_script()
+}
+
+// FIXME - yup, chan_utils.
+#[inline]
+pub fn get_htlc_anchor_redeemscript(
+    htlc: &HTLCOutputInCommitment,
+    keys: &TxCreationKeys,
+) -> Script {
+    get_htlc_anchor_redeemscript_with_explicit_keys(
+        htlc,
+        &keys.a_htlc_key,
+        &keys.b_htlc_key,
+        &keys.revocation_key,
+    )
+}
+pub fn get_htlc_anchor_redeemscript_with_explicit_keys(
+    htlc: &HTLCOutputInCommitment,
+    a_htlc_key: &PublicKey,
+    b_htlc_key: &PublicKey,
+    revocation_key: &PublicKey,
+) -> Script {
+    let payment_hash160 = Ripemd160::hash(&htlc.payment_hash.0[..]).into_inner();
+    if htlc.offered {
+        Builder::new()
+            .push_opcode(opcodes::all::OP_DUP)
+            .push_opcode(opcodes::all::OP_HASH160)
+            .push_slice(&PubkeyHash::hash(&revocation_key.serialize())[..])
+            .push_opcode(opcodes::all::OP_EQUAL)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_opcode(opcodes::all::OP_CHECKSIG)
+            .push_opcode(opcodes::all::OP_ELSE)
+            .push_slice(&b_htlc_key.serialize()[..])
+            .push_opcode(opcodes::all::OP_SWAP)
+            .push_opcode(opcodes::all::OP_SIZE)
+            .push_int(32)
+            .push_opcode(opcodes::all::OP_EQUAL)
+            .push_opcode(opcodes::all::OP_NOTIF)
+            .push_opcode(opcodes::all::OP_DROP)
+            .push_int(2)
+            .push_opcode(opcodes::all::OP_SWAP)
+            .push_slice(&a_htlc_key.serialize()[..])
+            .push_int(2)
+            .push_opcode(opcodes::all::OP_CHECKMULTISIG)
+            .push_opcode(opcodes::all::OP_ELSE)
+            .push_opcode(opcodes::all::OP_HASH160)
+            .push_slice(&payment_hash160)
+            .push_opcode(opcodes::all::OP_EQUALVERIFY)
+            .push_opcode(opcodes::all::OP_CHECKSIG)
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .push_opcode(opcodes::all::OP_PUSHNUM_1)
+            .push_opcode(opcodes::all::OP_CSV)
+            .push_opcode(opcodes::all::OP_DROP)
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .into_script()
+    } else {
+        Builder::new()
+            .push_opcode(opcodes::all::OP_DUP)
+            .push_opcode(opcodes::all::OP_HASH160)
+            .push_slice(&PubkeyHash::hash(&revocation_key.serialize())[..])
+            .push_opcode(opcodes::all::OP_EQUAL)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_opcode(opcodes::all::OP_CHECKSIG)
+            .push_opcode(opcodes::all::OP_ELSE)
+            .push_slice(&b_htlc_key.serialize()[..])
+            .push_opcode(opcodes::all::OP_SWAP)
+            .push_opcode(opcodes::all::OP_SIZE)
+            .push_int(32)
+            .push_opcode(opcodes::all::OP_EQUAL)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_opcode(opcodes::all::OP_HASH160)
+            .push_slice(&payment_hash160)
+            .push_opcode(opcodes::all::OP_EQUALVERIFY)
+            .push_int(2)
+            .push_opcode(opcodes::all::OP_SWAP)
+            .push_slice(&a_htlc_key.serialize()[..])
+            .push_int(2)
+            .push_opcode(opcodes::all::OP_CHECKMULTISIG)
+            .push_opcode(opcodes::all::OP_ELSE)
+            .push_opcode(opcodes::all::OP_DROP)
+            .push_int(htlc.cltv_expiry as i64)
+            .push_opcode(opcodes::all::OP_CLTV)
+            .push_opcode(opcodes::all::OP_DROP)
+            .push_opcode(opcodes::all::OP_CHECKSIG)
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .push_opcode(opcodes::all::OP_PUSHNUM_1)
+            .push_opcode(opcodes::all::OP_CSV)
+            .push_opcode(opcodes::all::OP_DROP)
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .into_script()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{i16, i32, i8, u16, u8};

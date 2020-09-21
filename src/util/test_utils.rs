@@ -13,15 +13,16 @@ use chain::chaininterface;
 use chain::chaininterface::ConfirmationTarget;
 use chain::keysinterface;
 use lightning::chain;
+use lightning::chain::keysinterface::{ChannelKeys, InMemoryChannelKeys};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::util::logger::{Level, Logger, Record};
 use lightning::util::ser::Writer;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 
-use crate::node::node::{ChannelSetup, NodeConfig};
+use crate::node::node::{ChannelSetup, CommitmentType, NodeConfig};
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 
-use crate::server::my_keys_manager::KeyDerivationStyle;
+use crate::server::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 
 pub struct TestVecWriter(pub Vec<u8>);
 
@@ -207,6 +208,10 @@ pub fn make_test_pubkey(i: u8) -> PublicKey {
     make_test_key(i).0
 }
 
+pub fn make_test_privkey(i: u8) -> SecretKey {
+    make_test_key(i).1
+}
+
 pub fn make_test_remote_points() -> ChannelPublicKeys {
     ChannelPublicKeys {
         funding_pubkey: make_test_pubkey(104),
@@ -217,6 +222,7 @@ pub fn make_test_remote_points() -> ChannelPublicKeys {
     }
 }
 
+// FIXME - this channel setup is unreasonably small, 300 is less than dust limit ...
 pub fn make_test_channel_setup() -> ChannelSetup {
     ChannelSetup {
         is_outbound: true,
@@ -231,8 +237,45 @@ pub fn make_test_channel_setup() -> ChannelSetup {
         remote_points: make_test_remote_points(),
         remote_to_self_delay: 5,
         remote_shutdown_script: Script::new(),
-        option_static_remotekey: false,
+        commitment_type: CommitmentType::Legacy,
     }
+}
+
+pub fn make_reasonable_test_channel_setup() -> ChannelSetup {
+    ChannelSetup {
+        is_outbound: true,
+        channel_value_sat: 3_000_000,
+        push_value_msat: 0,
+        funding_outpoint: BitcoinOutPoint {
+            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
+            vout: 0,
+        },
+        local_to_self_delay: 5,
+        local_shutdown_script: None,
+        remote_points: make_test_remote_points(),
+        remote_to_self_delay: 5,
+        remote_shutdown_script: Script::new(),
+        commitment_type: CommitmentType::Legacy,
+    }
+}
+
+pub fn make_test_channel_keys() -> EnforcingChannelKeys {
+    let secp_ctx = Secp256k1::signing_only();
+    let channel_value_sat = 3_000_000;
+    let mut inmemkeys = InMemoryChannelKeys::new(
+        &secp_ctx,
+        make_test_privkey(1), // funding_key
+        make_test_privkey(2), // revocation_base_key
+        make_test_privkey(3), // payment_key
+        make_test_privkey(4), // delayed_payment_base_key
+        make_test_privkey(5), // htlc_base_key
+        [4u8; 32],            // commitment_seed
+        channel_value_sat,
+        MyKeysManager::derivation_params(),
+    );
+    // This needs to match make_test_channel_setup above.
+    inmemkeys.on_accept(&make_test_remote_points(), 5, 5);
+    EnforcingChannelKeys::new(inmemkeys)
 }
 
 pub const TEST_NODE_CONFIG: NodeConfig = NodeConfig {

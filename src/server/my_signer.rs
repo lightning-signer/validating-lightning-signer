@@ -363,7 +363,7 @@ impl MySigner {
                 received_htlcs.clone(),
             )?;
             let (tx, _scripts, htlcs) =
-                chan.build_commitment_tx(&per_commitment_point, commitment_number, &info, true)?;
+                chan.build_commitment_tx(&per_commitment_point, commitment_number, &info)?;
             for out in &tx.output {
                 log_debug!(
                     self,
@@ -998,12 +998,13 @@ mod tests {
     use secp256k1::Signature;
     use tonic::Code;
 
+    use crate::node::node::CommitmentType;
     use crate::policy::error::ValidationError;
     use crate::server::driver::channel_nonce_to_id;
     use crate::tx::script::get_revokeable_redeemscript;
-    use crate::tx::tx::CommitmentInfo2;
+    use crate::tx::tx::{CommitmentInfo2, ANCHOR_SAT};
     use crate::util::crypto_utils::{
-        derive_public_key, derive_public_revocation_key, payload_for_p2wpkh,
+        derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh,
     };
     use crate::util::test_utils::*;
     use crate::util::test_utils::{make_test_channel_setup, make_test_remote_points, TEST_SEED};
@@ -1172,7 +1173,7 @@ mod tests {
         });
         assert!(status.is_err());
         let err = status.unwrap_err();
-        assert_eq!(err.message(), "policy failure testing");
+        assert_eq!(err.message(), "policy failure: testing");
     }
 
     #[test]
@@ -1376,7 +1377,7 @@ mod tests {
                     vec![],
                 )?;
                 let (tx, output_scripts, _) =
-                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info, false)?;
+                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
                 let ser_signature = chan
                     .sign_remote_commitment_tx(
@@ -1392,6 +1393,59 @@ mod tests {
         assert_eq!(
             hex::encode(tx.txid()),
             "8a4372344d00c1a30cb6e206b433eacec276614a0c10a662a052b02dbfe07037"
+        );
+
+        let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
+        let channel_funding_redeemscript =
+            make_funding_redeemscript(&funding_pubkey, &remote_points.funding_pubkey);
+
+        check_signature(
+            &tx,
+            0,
+            ser_signature,
+            &funding_pubkey,
+            setup.channel_value_sat,
+            &channel_funding_redeemscript,
+        );
+    }
+
+    #[test]
+    fn sign_remote_commitment_tx_with_anchors_test() {
+        let signer = MySigner::new();
+        let mut setup = make_reasonable_test_channel_setup();
+        setup.commitment_type = CommitmentType::Anchors;
+        let (node_id, channel_id) =
+            init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
+        let remote_percommitment_point = make_test_pubkey(10);
+        let remote_points = make_test_remote_points();
+        let to_remote_value_sat = 2_000_000;
+        let to_local_value_sat = setup.channel_value_sat - to_remote_value_sat - (2 * ANCHOR_SAT);
+        let (ser_signature, tx) = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                let info = chan.build_remote_commitment_info(
+                    &remote_percommitment_point,
+                    to_local_value_sat,
+                    to_remote_value_sat,
+                    vec![],
+                    vec![],
+                )?;
+                let (tx, output_scripts, _) =
+                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
+                let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
+                let ser_signature = chan
+                    .sign_remote_commitment_tx(
+                        &tx,
+                        &output_witscripts,
+                        &remote_percommitment_point,
+                        setup.channel_value_sat,
+                    )
+                    .expect("sign");
+                Ok((ser_signature, tx))
+            })
+            .expect("build_commitment_tx");
+        assert_eq!(
+            hex::encode(tx.txid()),
+            "4bc86f69c663818d979c2ceb135fc5caee4b8b854ac38df9bf978e4a2450fba1"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -1446,7 +1500,7 @@ mod tests {
                     vec![htlc2.clone(), htlc3.clone()],
                 )?;
                 let (tx, output_scripts, _) =
-                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info, false)?;
+                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
                 let ser_signature = chan
                     .sign_remote_commitment_tx(
@@ -1463,6 +1517,82 @@ mod tests {
         assert_eq!(
             hex::encode(tx.txid()),
             "a854dacde12365e2e2496562b55448292dc38e2da8a20d07f82ab39638c89a6c"
+        );
+
+        let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
+        let channel_funding_redeemscript =
+            make_funding_redeemscript(&funding_pubkey, &remote_points.funding_pubkey);
+
+        check_signature(
+            &tx,
+            0,
+            ser_signature,
+            &funding_pubkey,
+            setup.channel_value_sat,
+            &channel_funding_redeemscript,
+        );
+    }
+
+    #[test]
+    fn sign_remote_commitment_tx_with_htlc_and_anchors_test() {
+        let signer = MySigner::new();
+        let mut setup = make_reasonable_test_channel_setup();
+        setup.commitment_type = CommitmentType::Anchors;
+        let (node_id, channel_id) =
+            init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
+
+        let remote_percommitment_point = make_test_pubkey(10);
+        let remote_points = make_test_remote_points();
+
+        let htlc1 = HTLCInfo2 {
+            value_sat: 1,
+            payment_hash: PaymentHash([1; 32]),
+            cltv_expiry: 2 << 16,
+        };
+
+        let htlc2 = HTLCInfo2 {
+            value_sat: 1,
+            payment_hash: PaymentHash([3; 32]),
+            cltv_expiry: 3 << 16,
+        };
+
+        let htlc3 = HTLCInfo2 {
+            value_sat: 1,
+            payment_hash: PaymentHash([5; 32]),
+            cltv_expiry: 4 << 16,
+        };
+
+        let to_remote_value_sat = 2_000_000;
+        let to_local_value_sat =
+            setup.channel_value_sat - to_remote_value_sat - 3 - (2 * ANCHOR_SAT);
+
+        let (ser_signature, tx) = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                let info = chan.build_remote_commitment_info(
+                    &remote_percommitment_point,
+                    to_local_value_sat,
+                    to_remote_value_sat,
+                    vec![htlc1.clone()],
+                    vec![htlc2.clone(), htlc3.clone()],
+                )?;
+                let (tx, output_scripts, _) =
+                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
+                let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
+                let ser_signature = chan
+                    .sign_remote_commitment_tx(
+                        &tx,
+                        &output_witscripts,
+                        &remote_percommitment_point,
+                        setup.channel_value_sat,
+                    )
+                    .expect("sign");
+                Ok((ser_signature, tx))
+            })
+            .expect("build_commitment_tx");
+
+        assert_eq!(
+            hex::encode(tx.txid()),
+            "8b3b88baa0229f54bb9050d538204542a66537402d6a86457f31590efda2a0ca"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -1500,7 +1630,7 @@ mod tests {
                 )?;
 
                 let (tx, _, _) =
-                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info, false)?;
+                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
                 assert_eq!(
                     hex::encode(tx.txid()),
                     "a2e13c6a4b1b4764d7cd755ef3a53d38563169e6bf7999eb2afefffeed3790c4"
@@ -1548,7 +1678,7 @@ mod tests {
                     vec![],
                 )?;
 
-                chan.build_commitment_tx(&per_commitment_point, 23, &info, true)
+                chan.build_commitment_tx(&per_commitment_point, 23, &info)
             })
             .expect("build_commitment_tx");
         let (ser_signature, _) = signer
@@ -1696,7 +1826,7 @@ mod tests {
         let res: Result<PublicKey, Status> =
             signer.with_ready_channel(&node_id, &channel_id, |chan| {
                 let secp_ctx = &chan.secp_ctx;
-                let pubkey = derive_public_revocation_key(
+                let pubkey = derive_revocation_pubkey(
                     secp_ctx,
                     revocation_point, // matches revocation_secret
                     &chan.keys.pubkeys().revocation_basepoint,
@@ -2422,7 +2552,7 @@ mod tests {
         .expect("a_delayed_payment_key");
 
         let revocation_key =
-            derive_public_revocation_key(&secp_ctx_all, &per_commitment_point, &b_revocation_base)
+            derive_revocation_pubkey(&secp_ctx_all, &per_commitment_point, &b_revocation_base)
                 .expect("revocation_key");
 
         let htlc_tx = build_htlc_transaction(
@@ -2526,7 +2656,7 @@ mod tests {
         .expect("a_delayed_payment_key");
 
         let revocation_pubkey =
-            derive_public_revocation_key(&secp_ctx_all, &per_commitment_point, &b_revocation_base)
+            derive_revocation_pubkey(&secp_ctx_all, &per_commitment_point, &b_revocation_base)
                 .expect("revocation_pubkey");
 
         let htlc_tx = build_htlc_transaction(
@@ -2615,7 +2745,7 @@ mod tests {
                 .expect("a_delayed_payment_key");
 
         let revocation_key =
-            derive_public_revocation_key(&secp_ctx, &per_commitment_point, &b_revocation_base)
+            derive_revocation_pubkey(&secp_ctx, &per_commitment_point, &b_revocation_base)
                 .expect("revocation_key");
 
         let htlc_tx = build_htlc_transaction(
@@ -2700,7 +2830,7 @@ mod tests {
                 .expect("a_delayed_payment_key");
 
         let revocation_key =
-            derive_public_revocation_key(&secp_ctx, &per_commitment_point, &b_revocation_base)
+            derive_revocation_pubkey(&secp_ctx, &per_commitment_point, &b_revocation_base)
                 .expect("revocation_key");
 
         let htlc_tx = build_htlc_transaction(
@@ -2754,14 +2884,15 @@ mod tests {
 
         let remote_per_commitment_point = make_test_pubkey(10);
         let to_remote_pubkey = make_test_pubkey(1);
-        let revocation_key = make_test_pubkey(2);
-        let to_local_delayed_key = make_test_pubkey(3);
-        let to_remote_address = payload_for_p2wpkh(&to_remote_pubkey);
+        let revocation_pubkey = make_test_pubkey(2);
+        let to_local_delayed_pubkey = make_test_pubkey(3);
+        let to_remote_delayed_pubkey = to_remote_pubkey.clone();
         let info = CommitmentInfo2 {
-            to_remote_address,
+            is_remote: false,
+            to_remote_delayed_pubkey,
             to_remote_value_sat: 100,
-            revocation_key,
-            to_local_delayed_key,
+            revocation_pubkey,
+            to_local_delayed_pubkey,
             to_local_value_sat: 200,
             to_self_delay: 6,
             offered_htlcs: vec![],
@@ -2771,7 +2902,7 @@ mod tests {
         let (tx, _, _) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 // chan.ready(&remote_points, to_self_delay, Script::new(), funding_outpoint);
-                chan.build_commitment_tx(&remote_per_commitment_point, n, &info, false)
+                chan.build_commitment_tx(&remote_per_commitment_point, n, &info)
             })
             .expect("tx");
 
@@ -2806,14 +2937,15 @@ mod tests {
 
         let remote_per_commitment_point = make_test_pubkey(10);
         let to_remote_pubkey = make_test_pubkey(1);
-        let revocation_key = make_test_pubkey(2);
-        let to_local_delayed_key = make_test_pubkey(3);
-        let to_remote_address = payload_for_p2wpkh(&to_remote_pubkey);
+        let revocation_pubkey = make_test_pubkey(2);
+        let to_local_delayed_pubkey = make_test_pubkey(3);
+        let to_remote_delayed_pubkey = to_remote_pubkey.clone();
         let info = CommitmentInfo2 {
-            to_remote_address,
+            is_remote: false,
+            to_remote_delayed_pubkey,
             to_remote_value_sat: 100,
-            revocation_key,
-            to_local_delayed_key,
+            revocation_pubkey,
+            to_local_delayed_pubkey,
             to_local_value_sat: 200,
             to_self_delay: 6,
             offered_htlcs: vec![],
@@ -2824,7 +2956,7 @@ mod tests {
         let (tx, _, _) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 // chan.ready(&remote_points, to_self_delay, Script::new(), funding_outpoint);
-                chan.build_commitment_tx(&remote_per_commitment_point, n, &info, false)
+                chan.build_commitment_tx(&remote_per_commitment_point, n, &info)
             })
             .expect("tx");
 
@@ -2883,30 +3015,30 @@ mod tests {
 
         let a_delayed_payment_base = make_test_pubkey(2);
 
-        let a_delayed_payment_key =
+        let a_delayed_payment_pubkey =
             derive_public_key(&secp_ctx, &per_commitment_point, &a_delayed_payment_base)
-                .expect("a_delayed_payment_key");
+                .expect("a_delayed_payment_pubkey");
 
         let (b_revocation_base_point, b_revocation_base_secret) = make_test_key(42);
 
-        let revocation_pubkey = derive_public_revocation_key(
-            &secp_ctx,
-            &per_commitment_point,
-            &b_revocation_base_point,
-        )
-        .expect("revocation_pubkey");
+        let revocation_pubkey =
+            derive_revocation_pubkey(&secp_ctx, &per_commitment_point, &b_revocation_base_point)
+                .expect("revocation_pubkey");
 
         let htlc_tx = build_htlc_transaction(
             &commitment_txid,
             feerate_per_kw,
             to_self_delay,
             &htlc,
-            &a_delayed_payment_key,
+            &a_delayed_payment_pubkey,
             &revocation_pubkey,
         );
 
-        let redeemscript =
-            get_revokeable_redeemscript(&revocation_pubkey, to_self_delay, &a_delayed_payment_key);
+        let redeemscript = get_revokeable_redeemscript(
+            &revocation_pubkey,
+            to_self_delay,
+            &a_delayed_payment_pubkey,
+        );
 
         let htlc_amount_sat = 10 * 1000;
 

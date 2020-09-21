@@ -29,9 +29,7 @@ use crate::tx::tx::{
     build_commitment_tx, get_commitment_transaction_number_obscure_factor, sign_commitment,
     CommitmentInfo, CommitmentInfo2, HTLCInfo2,
 };
-use crate::util::crypto_utils::{
-    derive_public_key, derive_public_revocation_key, payload_for_p2wpkh,
-};
+use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::invoice_utils;
 
@@ -52,6 +50,13 @@ impl fmt::Display for ChannelId {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CommitmentType {
+    Legacy,
+    StaticRemoteKey,
+    Anchors,
+}
+
 #[derive(Clone)]
 pub struct ChannelSetup {
     pub is_outbound: bool,
@@ -66,7 +71,17 @@ pub struct ChannelSetup {
     /// remotely imposed requirement on the local commitment transaction to_self_delay
     pub remote_to_self_delay: u16,
     pub remote_shutdown_script: Script,
-    pub option_static_remotekey: bool, // previously MISSING?
+    pub commitment_type: CommitmentType,
+}
+
+impl ChannelSetup {
+    pub(crate) fn option_static_remotekey(&self) -> bool {
+        self.commitment_type != CommitmentType::Legacy
+    }
+
+    pub(crate) fn option_anchor_outputs(&self) -> bool {
+        self.commitment_type == CommitmentType::Anchors
+    }
 }
 
 // After NewChannel, before ReadyChannel
@@ -183,6 +198,7 @@ impl Channel {
     pub(crate) fn validation_error(&self, ve: ValidationError) -> Status {
         let s: String = ve.into();
         log_error!(self, "VALIDATION ERROR: {}", &s);
+        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
 
@@ -226,6 +242,24 @@ impl Channel {
         .expect("failed to derive keys")
     }
 
+    fn derive_remote_payment_pubkey(
+        &self,
+        remote_per_commitment_point: &PublicKey,
+    ) -> Result<PublicKey, Status> {
+        let local_points = self.keys.pubkeys();
+        let remote_key = if self.setup.option_static_remotekey() {
+            local_points.payment_point
+        } else {
+            derive_public_key(
+                &self.secp_ctx,
+                &remote_per_commitment_point,
+                &local_points.payment_point,
+            )
+            .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
+        };
+        Ok(remote_key)
+    }
+
     /// Phase 1
     pub fn sign_remote_commitment_tx(
         &self,
@@ -242,26 +276,21 @@ impl Channel {
 
         // The CommitmentInfo will be used to check policy
         // assertions.
-        let mut info = CommitmentInfo::new();
+        let mut info = CommitmentInfo::new_remote();
         for ind in 0..tx.output.len() {
-            log_debug!(self, "script {:?}", tx.output[ind].script_pubkey);
-            info.handle_output(&tx.output[ind], output_witscripts[ind].as_slice())
-                .map_err(|ve| self.invalid_argument(format!("output[{}]: {}", ind, ve)))?;
+            log_debug!(self, "pkscript[{}] {:?}", ind, tx.output[ind].script_pubkey);
+            info.handle_output(
+                &self.keys,
+                &self.setup,
+                &tx.output[ind],
+                output_witscripts[ind].as_slice(),
+            )
+            .map_err(|ve| self.invalid_argument(format!("output[{}]: {}", ind, ve)))?;
         }
 
-        let local_points = self.keys.pubkeys();
         // Our key (remote from the point of view of the tx)
-        let remote_key = if self.setup.option_static_remotekey {
-            local_points.payment_point // NOT TESTED
-        } else {
-            derive_public_key(
-                &self.secp_ctx,
-                &remote_per_commitment_point,
-                &local_points.payment_point,
-            )
-            .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
-        };
-
+        let remote_payment_pubkey =
+            self.derive_remote_payment_pubkey(remote_per_commitment_point)?;
         let validator = self
             .node
             .validator_factory
@@ -275,7 +304,12 @@ impl Channel {
         let state = ValidatorState { current_height: 0 };
 
         validator
-            .validate_remote_tx_phase1(&state, &info, payload_for_p2wpkh(&remote_key))
+            .validate_remote_tx_phase1(
+                &self.setup,
+                &state,
+                &info,
+                payload_for_p2wpkh(&remote_payment_pubkey),
+            )
             .map_err(|ve| self.validation_error(ve))?;
 
         let commitment_sig = sign_commitment(
@@ -346,7 +380,6 @@ impl Channel {
         per_commitment_point: &PublicKey,
         commitment_number: u64,
         info: &CommitmentInfo2,
-        local: bool,
     ) -> Result<
         (
             bitcoin::Transaction,
@@ -355,19 +388,36 @@ impl Channel {
         ),
         Status,
     > {
-        let keys = if local {
+        let keys = if !info.is_remote {
             self.make_local_tx_keys(per_commitment_point)?
         } else {
             self.make_remote_tx_keys(per_commitment_point)?
         };
+
+        // FIXME, WORKAROUND - These should be in `keys` above.
+        let (workaround_local_funding_pubkey, workaround_remote_funding_pubkey) = if !info.is_remote
+        {
+            (
+                &self.keys.pubkeys().funding_pubkey,
+                &self.keys.remote_pubkeys().funding_pubkey,
+            )
+        } else {
+            (
+                &self.keys.remote_pubkeys().funding_pubkey,
+                &self.keys.pubkeys().funding_pubkey,
+            )
+        };
+
         let obscured_commitment_transaction_number =
             self.get_commitment_transaction_number_obscure_factor() ^ commitment_number;
-        let funding_outpoint = self.setup.funding_outpoint;
         Ok(build_commitment_tx(
             &keys,
             info,
             obscured_commitment_transaction_number,
-            funding_outpoint,
+            self.setup.funding_outpoint,
+            self.setup.option_anchor_outputs(),
+            workaround_local_funding_pubkey,
+            workaround_remote_funding_pubkey,
         ))
     }
 
@@ -382,7 +432,7 @@ impl Channel {
         let local_points = self.keys.pubkeys();
         let secp_ctx = &self.secp_ctx;
 
-        let to_local_delayed_key = derive_public_key(
+        let to_local_delayed_pubkey = derive_public_key(
             secp_ctx,
             &remote_per_commitment_point,
             &self.setup.remote_points.delayed_payment_basepoint,
@@ -392,28 +442,21 @@ impl Channel {
             self.internal_error(format!("could not derive to_local_delayed_key: {}", err))
             // END NOT TESTED
         })?;
-        let remote_key = if self.setup.option_static_remotekey {
-            local_points.payment_point
-        } else {
-            derive_public_key(
-                secp_ctx,
-                &remote_per_commitment_point,
-                &local_points.payment_point,
-            )
-            .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
-        };
-        let revocation_key = derive_public_revocation_key(
+        let remote_payment_pubkey =
+            self.derive_remote_payment_pubkey(remote_per_commitment_point)?;
+        let revocation_pubkey = derive_revocation_pubkey(
             secp_ctx,
             &remote_per_commitment_point,
             &local_points.revocation_basepoint,
         )
         .map_err(|err| self.internal_error(format!("could not derive revocation key: {}", err)))?;
-        let to_remote_address = payload_for_p2wpkh(&remote_key);
+        let to_remote_delayed_pubkey = remote_payment_pubkey.clone();
         Ok(CommitmentInfo2 {
-            to_remote_address,
+            is_remote: true,
+            to_remote_delayed_pubkey,
             to_remote_value_sat,
-            revocation_key,
-            to_local_delayed_key,
+            revocation_pubkey,
+            to_local_delayed_pubkey,
             to_local_value_sat,
             to_self_delay: self.setup.local_to_self_delay,
             offered_htlcs,
@@ -433,18 +476,18 @@ impl Channel {
         let remote_points = self.keys.remote_pubkeys();
         let secp_ctx = &self.secp_ctx;
 
-        let to_local_delayed_key = derive_public_key(
+        let to_local_delayed_pubkey = derive_public_key(
             secp_ctx,
             &per_commitment_point,
             &local_points.delayed_payment_basepoint,
         )
         .map_err(|err| {
             // BEGIN NOT TESTED
-            self.internal_error(format!("could not derive to_local_delayed_key: {}", err))
+            self.internal_error(format!("could not derive to_local_delayed_pubkey: {}", err))
             // END NOT TESTED
         })?;
 
-        let remote_key = if self.setup.option_static_remotekey {
+        let remote_pubkey = if self.setup.option_static_remotekey() {
             remote_points.payment_point
         } else {
             derive_public_key(
@@ -452,21 +495,30 @@ impl Channel {
                 &per_commitment_point,
                 &remote_points.payment_point,
             )
-            .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
+            .map_err(|err| {
+                // BEGIN NOT TESTED
+                self.internal_error(format!("could not derive remote_pubkey: {}", err))
+                // END NOT TESTED
+            })?
         };
 
-        let revocation_key = derive_public_revocation_key(
+        let revocation_pubkey = derive_revocation_pubkey(
             secp_ctx,
             &per_commitment_point,
             &remote_points.revocation_basepoint,
         )
-        .map_err(|err| self.internal_error(format!("could not derive revocation_key: {}", err)))?;
-        let to_remote_address = payload_for_p2wpkh(&remote_key);
+        .map_err(|err| {
+            // BEGIN NOT TESTED
+            self.internal_error(format!("could not derive revocation_pubkey: {}", err))
+            // END NOT TESTED
+        })?;
+        let to_remote_delayed_pubkey = remote_pubkey.clone();
         Ok(CommitmentInfo2 {
-            to_remote_address,
+            is_remote: false,
+            to_remote_delayed_pubkey,
             to_remote_value_sat,
-            revocation_key,
-            to_local_delayed_key,
+            revocation_pubkey,
+            to_local_delayed_pubkey,
             to_local_value_sat,
             to_self_delay: self.setup.remote_to_self_delay,
             offered_htlcs,
@@ -493,7 +545,7 @@ impl Channel {
         )?;
 
         let (tx, _scripts, htlcs) =
-            self.build_commitment_tx(remote_per_commitment_point, commitment_number, &info, false)?;
+            self.build_commitment_tx(remote_per_commitment_point, commitment_number, &info)?;
 
         for out in &tx.output {
             println!("channel: remote script {:?}", out.script_pubkey);
