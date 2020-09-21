@@ -123,8 +123,8 @@ pub fn derive_public_key<T: secp256k1::Signing>(
     base_point.combine(&hashkey)
 }
 
-// FIXME - copied from chan_utils, lobby to increase visibility.
-pub fn derive_public_revocation_key<T: secp256k1::Verification>(
+// FIXME - copied from chan_utils.derive_public_revocation_key, lobby to increase visibility.
+pub fn derive_revocation_pubkey<T: secp256k1::Verification>(
     secp_ctx: &Secp256k1<T>,
     per_commitment_point: &PublicKey,
     revocation_base_point: &PublicKey,

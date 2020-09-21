@@ -17,10 +17,10 @@ impl std::fmt::Display for ValidationError {
 impl Into<String> for ValidationError {
     fn into(self) -> String {
         match self {
-            TransactionFormat(s) => "transaction format ".to_string() + &s,
-            ScriptFormat(s) => "script format ".to_string() + &s,
-            Mismatch(s) => "script template mismatch ".to_string() + &s,
-            Policy(s) => "policy failure ".to_string() + &s,
+            TransactionFormat(s) => "transaction format: ".to_string() + &s,
+            ScriptFormat(s) => "script format: ".to_string() + &s,
+            Mismatch(s) => "script template mismatch: ".to_string() + &s,
+            Policy(s) => "policy failure: ".to_string() + &s,
         }
     }
 }
@@ -37,7 +37,7 @@ mod tests {
         );
         assert_eq!(
             Into::<String>::into(TransactionFormat("testing".to_string())),
-            "transaction format testing"
+            "transaction format: testing"
         );
         assert_eq!(
             format!("{}", ScriptFormat("testing".to_string())),
@@ -45,7 +45,7 @@ mod tests {
         );
         assert_eq!(
             Into::<String>::into(ScriptFormat("testing".to_string())),
-            "script format testing"
+            "script format: testing"
         );
         assert_eq!(
             format!("{}", Mismatch("testing".to_string())),
@@ -53,7 +53,7 @@ mod tests {
         );
         assert_eq!(
             Into::<String>::into(Mismatch("testing".to_string())),
-            "script template mismatch testing"
+            "script template mismatch: testing"
         );
         assert_eq!(
             format!("{}", Policy("testing".to_string())),
@@ -61,7 +61,7 @@ mod tests {
         );
         assert_eq!(
             Into::<String>::into(Policy("testing".to_string())),
-            "policy failure testing"
+            "policy failure: testing"
         );
     }
 }

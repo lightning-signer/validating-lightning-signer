@@ -9,13 +9,11 @@ use lightning::ln::chan_utils::{
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 
-use crate::node::node::{ChannelId, ChannelSetup};
+use crate::node::node::{ChannelId, ChannelSetup, CommitmentType};
 use crate::server::my_keys_manager::INITIAL_COMMITMENT_NUMBER;
 use crate::server::my_signer::MySigner;
 use crate::tx::tx::{get_commitment_transaction_number_obscure_factor, HTLCInfo2};
-use crate::util::crypto_utils::{
-    derive_public_key, derive_public_revocation_key, payload_for_p2wpkh,
-};
+use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
 use lightning::ln::chan_utils;
 use lightning::util::ser::Writeable;
 use std::collections::HashSet;
@@ -496,7 +494,7 @@ impl ChannelKeys for LoopbackChannelSigner {
             remote_points: remote_points.clone(),
             remote_to_self_delay,
             remote_shutdown_script: Default::default(), // TODO
-            option_static_remotekey: true,              // TODO
+            commitment_type: CommitmentType::StaticRemoteKey, // TODO
         };
         self.signer
             .ready_channel(&self.node_id, self.channel_id, None, setup)
@@ -637,7 +635,7 @@ fn get_delayed_payment_keys<T: secp256k1::Signing + secp256k1::Verification>(
     a_pubkeys: &ChannelPublicKeys,
     b_pubkeys: &ChannelPublicKeys,
 ) -> Result<(PublicKey, PublicKey), ()> {
-    let revocation_key = derive_public_revocation_key(
+    let revocation_key = derive_revocation_pubkey(
         secp_ctx,
         &per_commitment_point,
         &b_pubkeys.revocation_basepoint,

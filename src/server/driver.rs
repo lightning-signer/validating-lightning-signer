@@ -17,7 +17,7 @@ use tonic::{transport::Server, Request, Response, Status};
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
 
-use crate::node::node::{ChannelId, ChannelSetup};
+use crate::node::node::{ChannelId, ChannelSetup, CommitmentType};
 use crate::server::my_signer::MySigner;
 use crate::server::remotesigner::version_server::Version;
 use crate::tx::tx::HTLCInfo2;
@@ -147,6 +147,18 @@ impl Version for MySigner {
             prerelease: "pre".to_string(),
             build_metadata: "".to_string(),
         }))
+    }
+}
+
+fn convert_commitment_type(proto_commitment_type: i32) -> node::CommitmentType {
+    if proto_commitment_type == ready_channel_request::CommitmentType::Legacy as i32 {
+        CommitmentType::Legacy
+    } else if proto_commitment_type == ready_channel_request::CommitmentType::StaticRemotekey as i32 {
+        CommitmentType::StaticRemoteKey
+    } else if proto_commitment_type == ready_channel_request::CommitmentType::Anchors as i32 {
+        CommitmentType::Anchors
+    } else {
+        panic!("invalid commitment type")
     }
 }
 
@@ -374,7 +386,7 @@ impl Signer for MySigner {
                 local_shutdown_script,
                 remote_to_self_delay: req.remote_to_self_delay as u16,
                 remote_shutdown_script: remote_shutdown_script.clone(),
-                option_static_remotekey: req.option_static_remotekey,
+                commitment_type: convert_commitment_type(req.commitment_type),
             },
         )?;
         let reply = ReadyChannelReply {};

@@ -3,8 +3,9 @@ use std::cmp::Ordering;
 use std::convert::TryInto;
 
 use bitcoin::blockdata::opcodes::all::{
-    OP_CHECKMULTISIG, OP_CHECKSIG, OP_CLTV, OP_CSV, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL,
-    OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHNUM_2, OP_SIZE, OP_SWAP,
+    OP_CHECKMULTISIG, OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_CLTV, OP_CSV, OP_DROP, OP_DUP, OP_ELSE,
+    OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_IFDUP, OP_NOTIF, OP_PUSHNUM_1,
+    OP_PUSHNUM_16, OP_PUSHNUM_2, OP_SIZE, OP_SWAP,
 };
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip143;
@@ -19,14 +20,18 @@ use lightning::ln::chan_utils::{
 use lightning::ln::channelmanager::PaymentHash;
 use secp256k1::{All, Message, PublicKey, Secp256k1, Signature};
 
+use crate::node::node::ChannelSetup;
 use crate::policy::error::ValidationError;
 use crate::policy::error::ValidationError::{Mismatch, ScriptFormat, TransactionFormat};
 use crate::tx::script::{
-    expect_data, expect_number, expect_op, expect_script_end, get_revokeable_redeemscript,
+    expect_data, expect_number, expect_op, expect_script_end, get_anchor_redeemscript,
+    get_delayed_redeemscript, get_htlc_anchor_redeemscript, get_revokeable_redeemscript,
 };
+use crate::util::crypto_utils::payload_for_p2wpkh;
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 
 const MAX_DELAY: i64 = 1000;
+pub const ANCHOR_SAT: u64 = 330;
 
 pub fn get_commitment_transaction_number_obscure_factor(
     local_payment_basepoint: &PublicKey,
@@ -113,6 +118,9 @@ pub fn build_commitment_tx(
     info: &CommitmentInfo2,
     obscured_commitment_transaction_number: u64,
     outpoint: OutPoint,
+    option_anchor_outputs: bool,
+    workaround_local_funding_pubkey: &PublicKey,
+    workaround_remote_funding_pubkey: &PublicKey,
 ) -> (Transaction, Vec<Script>, Vec<HTLCOutputInCommitment>) {
     let txins = {
         let mut ins: Vec<TxIn> = Vec::new();
@@ -129,21 +137,40 @@ pub fn build_commitment_tx(
     let mut txouts: Vec<(TxOut, (Script, Option<HTLCOutputInCommitment>))> = Vec::new();
 
     if info.to_remote_value_sat > 0 {
-        let script = info.to_remote_address.script_pubkey();
-        txouts.push((
-            TxOut {
-                script_pubkey: script.clone(),
-                value: info.to_remote_value_sat as u64,
-            },
-            (script, None),
-        ))
+        if !option_anchor_outputs {
+            let script = payload_for_p2wpkh(&info.to_remote_delayed_pubkey).script_pubkey();
+            txouts.push((
+                TxOut {
+                    script_pubkey: script.clone(),
+                    value: info.to_remote_value_sat as u64,
+                },
+                (script, None),
+            ))
+        } else {
+            let delayed_script = get_delayed_redeemscript(&info.to_remote_delayed_pubkey);
+            txouts.push((
+                TxOut {
+                    script_pubkey: delayed_script.to_v0_p2wsh(),
+                    value: info.to_remote_value_sat as u64,
+                },
+                (delayed_script, None),
+            ));
+            let anchor_script = get_anchor_redeemscript(workaround_remote_funding_pubkey);
+            txouts.push((
+                TxOut {
+                    script_pubkey: anchor_script.to_v0_p2wsh(),
+                    value: ANCHOR_SAT,
+                },
+                (anchor_script, None),
+            ));
+        }
     }
 
     if info.to_local_value_sat > 0 {
         let redeem_script = get_revokeable_redeemscript(
-            &info.revocation_key,
+            &info.revocation_pubkey,
             info.to_self_delay,
-            &info.to_local_delayed_key,
+            &info.to_local_delayed_pubkey,
         );
         txouts.push((
             TxOut {
@@ -151,7 +178,17 @@ pub fn build_commitment_tx(
                 value: info.to_local_value_sat as u64,
             },
             (redeem_script, None),
-        ))
+        ));
+        if option_anchor_outputs {
+            let anchor_script = get_anchor_redeemscript(workaround_local_funding_pubkey);
+            txouts.push((
+                TxOut {
+                    script_pubkey: anchor_script.to_v0_p2wsh(),
+                    value: ANCHOR_SAT,
+                },
+                (anchor_script, None),
+            ));
+        }
     }
 
     for out in &info.offered_htlcs {
@@ -162,7 +199,11 @@ pub fn build_commitment_tx(
             payment_hash: out.payment_hash,
             transaction_output_index: None,
         };
-        let script = chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys);
+        let script = if option_anchor_outputs {
+            get_htlc_anchor_redeemscript(&htlc_in_tx, &keys)
+        } else {
+            chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys)
+        };
         let txout = TxOut {
             script_pubkey: script.to_v0_p2wsh(),
             value: out.value_sat,
@@ -178,7 +219,11 @@ pub fn build_commitment_tx(
             payment_hash: out.payment_hash,
             transaction_output_index: None,
         };
-        let script = chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys);
+        let script = if option_anchor_outputs {
+            get_htlc_anchor_redeemscript(&htlc_in_tx, &keys)
+        } else {
+            chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys)
+        };
         let txout = TxOut {
             script_pubkey: script.to_v0_p2wsh(),
             value: out.value_sat,
@@ -279,10 +324,11 @@ pub struct HTLCInfo2 {
 // BEGIN NOT TESTED
 #[derive(Debug, Clone)]
 pub struct CommitmentInfo2 {
-    pub to_remote_address: Payload,
+    pub is_remote: bool,
+    pub to_remote_delayed_pubkey: PublicKey,
     pub to_remote_value_sat: u64,
-    pub revocation_key: PublicKey,
-    pub to_local_delayed_key: PublicKey,
+    pub revocation_pubkey: PublicKey,
+    pub to_local_delayed_pubkey: PublicKey,
     pub to_local_value_sat: u64,
     pub to_self_delay: u16,
     pub offered_htlcs: Vec<HTLCInfo2>,
@@ -292,55 +338,94 @@ pub struct CommitmentInfo2 {
 
 #[allow(dead_code)]
 pub struct CommitmentInfo {
+    pub is_remote: bool,
     pub to_remote_address: Option<Payload>,
+    pub to_remote_delayed_pubkey: Option<PublicKey>,
     pub to_remote_value_sat: u64,
-    pub revocation_key: Option<PublicKey>,
-    pub to_local_delayed_key: Option<PublicKey>,
+    pub to_remote_anchor_count: u16,
+    pub revocation_pubkey: Option<PublicKey>,
+    pub to_local_delayed_pubkey: Option<PublicKey>,
     pub to_local_value_sat: u64,
     pub to_local_delay: u16,
+    pub to_local_anchor_count: u16,
     pub offered_htlcs: Vec<HTLCInfo>,
     pub received_htlcs: Vec<HTLCInfo>,
 }
 
 impl CommitmentInfo {
-    pub fn new() -> Self {
+    pub fn new_local() -> Self {
+        CommitmentInfo::new(false)
+    }
+
+    pub fn new_remote() -> Self {
+        CommitmentInfo::new(true)
+    }
+
+    pub fn new(is_remote: bool) -> Self {
         CommitmentInfo {
+            is_remote,
             to_remote_address: None,
+            to_remote_delayed_pubkey: None,
             to_remote_value_sat: 0,
-            revocation_key: None,
-            to_local_delayed_key: None,
+            to_remote_anchor_count: 0,
+            revocation_pubkey: None,
+            to_local_delayed_pubkey: None,
             to_local_value_sat: 0,
             to_local_delay: 0,
+            to_local_anchor_count: 0,
             offered_htlcs: vec![],
             received_htlcs: vec![],
         }
     }
 
-    fn has_to_local(&self) -> bool {
-        self.to_local_delayed_key.is_some()
+    pub fn has_to_local(&self) -> bool {
+        self.to_local_delayed_pubkey.is_some()
     }
 
-    fn has_to_remote(&self) -> bool {
-        self.to_remote_address.is_some()
+    pub fn has_to_remote(&self) -> bool {
+        self.to_remote_address.is_some() || self.to_remote_delayed_pubkey.is_some()
     }
 
-    fn handle_to_local_script(
-        &mut self,
-        out: &TxOut,
+    pub fn to_local_anchor_value_sat(&self) -> u64 {
+        if self.to_local_anchor_count == 1 {
+            ANCHOR_SAT
+        } else {
+            0
+        }
+    }
+
+    pub fn to_remote_anchor_value_sat(&self) -> u64 {
+        if self.to_remote_anchor_count == 1 {
+            ANCHOR_SAT
+        } else {
+            0
+        }
+    }
+
+    fn parse_to_local_script(
+        &self,
         script: &Script,
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(Vec<u8>, i64, Vec<u8>), ValidationError> {
         let iter = &mut script.iter(true);
         expect_op(iter, OP_IF)?;
-        let revocation_key = expect_data(iter)?;
+        let revocation_pubkey = expect_data(iter)?;
         expect_op(iter, OP_ELSE)?;
         let delay = expect_number(iter)?;
         expect_op(iter, OP_CSV)?;
         expect_op(iter, OP_DROP)?;
-        let to_local_delayed_key = expect_data(iter)?;
+        let to_local_delayed_pubkey = expect_data(iter)?;
         expect_op(iter, OP_ENDIF)?;
         expect_op(iter, OP_CHECKSIG)?;
         expect_script_end(iter)?;
+        Ok((revocation_pubkey, delay, to_local_delayed_pubkey))
+    }
 
+    fn handle_to_local_output(
+        &mut self,
+        out: &TxOut,
+        vals: (Vec<u8>, i64, Vec<u8>),
+    ) -> Result<(), ValidationError> {
+        let (revocation_pubkey, delay, to_local_delayed_pubkey) = vals;
         if self.has_to_local() {
             return Err(TransactionFormat("already have to local".to_string()));
         }
@@ -355,32 +440,60 @@ impl CommitmentInfo {
         // This is safe because we checked for negative
         self.to_local_delay = delay as u16;
         self.to_local_value_sat = out.value;
-        self.to_local_delayed_key = Some(
-            PublicKey::from_slice(to_local_delayed_key.as_slice())
-                .map_err(|err| Mismatch(format!("to_local_delayed_key mismatch: {}", err)))?,
+        self.to_local_delayed_pubkey = Some(
+            PublicKey::from_slice(to_local_delayed_pubkey.as_slice())
+                .map_err(|err| Mismatch(format!("to_local_delayed_pubkey malformed: {}", err)))?,
         );
-        self.revocation_key = Some(
-            PublicKey::from_slice(revocation_key.as_slice())
-                .map_err(|err| Mismatch(format!("revocation_key mismatch: {}", err)))?,
+        self.revocation_pubkey = Some(
+            PublicKey::from_slice(revocation_pubkey.as_slice())
+                .map_err(|err| Mismatch(format!("revocation_pubkey malformed: {}", err)))?,
         );
 
         Ok(())
     }
 
-    fn handle_received_htlc_script(
+    fn parse_to_remote_delayed_script(&self, script: &Script) -> Result<Vec<u8>, ValidationError> {
+        let iter = &mut script.iter(true);
+        let to_remote_delayed_pubkey_data = expect_data(iter)?;
+        expect_op(iter, OP_CHECKSIGVERIFY)?;
+        expect_op(iter, OP_PUSHNUM_1)?;
+        expect_op(iter, OP_CSV)?;
+        expect_script_end(iter)?;
+        Ok(to_remote_delayed_pubkey_data)
+    }
+
+    fn handle_to_remote_delayed_output(
         &mut self,
         out: &TxOut,
-        script: &Script,
+        to_remote_delayed_pubkey_data: Vec<u8>,
     ) -> Result<(), ValidationError> {
+        if self.has_to_remote() {
+            // BEGIN NOT TESTED
+            return Err(TransactionFormat("more than one to remote".to_string()));
+            // END NOT TESTED
+        }
+        self.to_remote_delayed_pubkey = Some(
+            PublicKey::from_slice(to_remote_delayed_pubkey_data.as_slice())
+                .map_err(|err| Mismatch(format!("to_remote delayed pubkey malformed: {}", err)))?,
+        );
+        self.to_remote_value_sat = out.value;
+        Ok(())
+    }
+
+    fn parse_received_htlc_script(
+        &self,
+        script: &Script,
+        option_anchor_outputs: bool,
+    ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i64), ValidationError> {
         let iter = &mut script.iter(true);
         expect_op(iter, OP_DUP)?;
         expect_op(iter, OP_HASH160)?;
-        let _revocation_hash = expect_data(iter)?;
+        let revocation_hash = expect_data(iter)?;
         expect_op(iter, OP_EQUAL)?;
         expect_op(iter, OP_IF)?;
         expect_op(iter, OP_CHECKSIG)?;
         expect_op(iter, OP_ELSE)?;
-        let _remote_htlc_key = expect_data(iter)?;
+        let remote_htlc_pubkey = expect_data(iter)?;
         expect_op(iter, OP_SWAP)?;
         expect_op(iter, OP_SIZE)?;
         let thirty_two = expect_number(iter)?;
@@ -394,7 +507,7 @@ impl CommitmentInfo {
         expect_op(iter, OP_EQUALVERIFY)?;
         expect_op(iter, OP_PUSHNUM_2)?;
         expect_op(iter, OP_SWAP)?;
-        let _local_htlc_key = expect_data(iter)?;
+        let local_htlc_pubkey = expect_data(iter)?;
         expect_op(iter, OP_PUSHNUM_2)?;
         expect_op(iter, OP_CHECKMULTISIG)?;
         expect_op(iter, OP_ELSE)?;
@@ -404,9 +517,34 @@ impl CommitmentInfo {
         expect_op(iter, OP_DROP)?;
         expect_op(iter, OP_CHECKSIG)?;
         expect_op(iter, OP_ENDIF)?;
+        if option_anchor_outputs {
+            expect_op(iter, OP_PUSHNUM_1)?;
+            expect_op(iter, OP_CSV)?;
+            expect_op(iter, OP_DROP)?;
+        }
         expect_op(iter, OP_ENDIF)?;
         expect_script_end(iter)?;
+        Ok((
+            revocation_hash,
+            remote_htlc_pubkey,
+            payment_hash_vec,
+            local_htlc_pubkey,
+            cltv_expiry,
+        ))
+    }
 
+    fn handle_received_htlc_output(
+        &mut self,
+        out: &TxOut,
+        vals: (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i64),
+    ) -> Result<(), ValidationError> {
+        let (
+            _revocation_hash,
+            _remote_htlc_pubkey,
+            payment_hash_vec,
+            _local_htlc_pubkey,
+            cltv_expiry,
+        ) = vals;
         let payment_hash_hash = payment_hash_vec
             .as_slice()
             .try_into()
@@ -424,23 +562,24 @@ impl CommitmentInfo {
             cltv_expiry,
         };
         self.received_htlcs.push(htlc);
+
         Ok(())
     }
 
-    fn handle_offered_htlc_script(
-        &mut self,
-        out: &TxOut,
+    fn parse_offered_htlc_script(
+        &self,
         script: &Script,
-    ) -> Result<(), ValidationError> {
+        option_anchor_outputs: bool,
+    ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), ValidationError> {
         let iter = &mut script.iter(true);
         expect_op(iter, OP_DUP)?;
         expect_op(iter, OP_HASH160)?;
-        let _revocation_hash = expect_data(iter)?;
+        let revocation_hash = expect_data(iter)?;
         expect_op(iter, OP_EQUAL)?;
         expect_op(iter, OP_IF)?;
         expect_op(iter, OP_CHECKSIG)?;
         expect_op(iter, OP_ELSE)?;
-        let _remote_htlc_key = expect_data(iter)?;
+        let remote_htlc_pubkey = expect_data(iter)?;
         expect_op(iter, OP_SWAP)?;
         expect_op(iter, OP_SIZE)?;
         let thirty_two = expect_number(iter)?;
@@ -452,7 +591,7 @@ impl CommitmentInfo {
         expect_op(iter, OP_DROP)?;
         expect_op(iter, OP_PUSHNUM_2)?;
         expect_op(iter, OP_SWAP)?;
-        let _local_htlc_key = expect_data(iter)?;
+        let local_htlc_pubkey = expect_data(iter)?;
         expect_op(iter, OP_PUSHNUM_2)?;
         expect_op(iter, OP_CHECKMULTISIG)?;
         expect_op(iter, OP_ELSE)?;
@@ -461,8 +600,27 @@ impl CommitmentInfo {
         expect_op(iter, OP_EQUALVERIFY)?;
         expect_op(iter, OP_CHECKSIG)?;
         expect_op(iter, OP_ENDIF)?;
+        if option_anchor_outputs {
+            expect_op(iter, OP_PUSHNUM_1)?;
+            expect_op(iter, OP_CSV)?;
+            expect_op(iter, OP_DROP)?;
+        }
         expect_op(iter, OP_ENDIF)?;
         expect_script_end(iter)?;
+        Ok((
+            revocation_hash,
+            remote_htlc_pubkey,
+            local_htlc_pubkey,
+            payment_hash_vec,
+        ))
+    }
+
+    fn handle_offered_htlc_output(
+        &mut self,
+        out: &TxOut,
+        vals: (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>),
+    ) -> Result<(), ValidationError> {
+        let (_revocation_hash, _remote_htlc_pubkey, _local_htlc_pubkey, payment_hash_vec) = vals;
 
         let payment_hash_hash = payment_hash_vec
             .as_slice()
@@ -475,50 +633,118 @@ impl CommitmentInfo {
             cltv_expiry: 0,
         };
         self.offered_htlcs.push(htlc);
+
         Ok(())
     }
 
+    fn parse_anchor_script(&self, script: &Script) -> Result<Vec<u8>, ValidationError> {
+        let iter = &mut script.iter(true);
+        let to_pubkey_data = expect_data(iter)?;
+        expect_op(iter, OP_CHECKSIG)?;
+        expect_op(iter, OP_IFDUP)?;
+        expect_op(iter, OP_NOTIF)?;
+        expect_op(iter, OP_PUSHNUM_16)?;
+        expect_op(iter, OP_CSV)?;
+        expect_op(iter, OP_ENDIF)?;
+        expect_script_end(iter)?;
+        Ok(to_pubkey_data)
+    }
+
+    fn handle_anchor_output(
+        &mut self,
+        keys: &EnforcingChannelKeys,
+        out: &TxOut,
+        to_pubkey_data: Vec<u8>,
+    ) -> Result<(), ValidationError> {
+        let to_pubkey = PublicKey::from_slice(to_pubkey_data.as_slice())
+            .map_err(|err| Mismatch(format!("anchor to_pubkey malformed: {}", err)))?;
+
+        // "to_local" and "to_remote" are dependent on which side owns this commitment.
+        let (to_local_funding_pubkey, to_remote_funding_pubkey) = if self.is_remote {
+            (
+                keys.remote_pubkeys().funding_pubkey,
+                keys.pubkeys().funding_pubkey,
+            )
+        } else {
+            (
+                keys.pubkeys().funding_pubkey,
+                keys.remote_pubkeys().funding_pubkey,
+            )
+        };
+
+        if out.value != ANCHOR_SAT {
+            return Err(Mismatch(format!("anchor wrong size: {}", out.value)));
+        }
+
+        if to_pubkey == to_local_funding_pubkey {
+            // local anchor
+            self.to_local_anchor_count += 1;
+        } else if to_pubkey == to_remote_funding_pubkey {
+            // remote anchor
+            self.to_remote_anchor_count += 1;
+        } else {
+            return Err(Mismatch(format!(
+                "anchor to_pubkey {} doesn't match local or remote",
+                hex::encode(to_pubkey_data)
+            )));
+        }
+        Ok(())
+    }
+
+    // This routine is only called on "remote" commitments.
     pub fn handle_output(
         &mut self,
+        keys: &EnforcingChannelKeys,
+        setup: &ChannelSetup,
         out: &TxOut,
         script_bytes: &[u8],
     ) -> Result<(), ValidationError> {
         if out.script_pubkey.is_v0_p2wpkh() {
+            if setup.option_anchor_outputs() {
+                return Err(TransactionFormat(
+                    "p2wpkh to_remote not valid with anchors".to_string(),
+                ));
+            }
             if self.has_to_remote() {
-                // BEGIN NOT TESTED
                 return Err(TransactionFormat("more than one to remote".to_string()));
-                // END NOT TESTED
             }
             self.to_remote_address = Payload::from_script(&out.script_pubkey);
             self.to_remote_value_sat = out.value;
         } else if out.script_pubkey.is_v0_p2wsh() {
             if script_bytes.is_empty() {
-                // BEGIN NOT TESTED
                 return Err(TransactionFormat("missing witscript for p2wsh".to_string()));
-                // END NOT TESTED
             }
             let script = Script::from(script_bytes.to_vec());
             if out.script_pubkey != script.to_v0_p2wsh() {
                 return Err(TransactionFormat(
-                    "script pubkey doesn't match inner script".to_string(), // NOT TESTED
+                    "script pubkey doesn't match inner script".to_string(),
                 ));
             }
-            let res = self.handle_to_local_script(out, &script);
-            if res.is_ok() {
-                return Ok(());
+            let vals = self.parse_to_local_script(&script);
+            if vals.is_ok() {
+                return self.handle_to_local_output(out, vals.unwrap());
             }
-            let res = self.handle_received_htlc_script(out, &script);
-            if res.is_ok() {
-                return Ok(());
+            let vals = self.parse_received_htlc_script(&script, setup.option_anchor_outputs());
+            if vals.is_ok() {
+                return self.handle_received_htlc_output(out, vals.unwrap());
             }
-            let res = self.handle_offered_htlc_script(out, &script);
-            if res.is_ok() {
-                return Ok(());
+            let vals = self.parse_offered_htlc_script(&script, setup.option_anchor_outputs());
+            if vals.is_ok() {
+                return self.handle_offered_htlc_output(out, vals.unwrap());
             }
-            println!("unknown script {:?}", script); // NOT TESTED
-            return Err(TransactionFormat("unknown p2wsh script".to_string())); // NOT TESTED
+            let vals = self.parse_anchor_script(&script);
+            if vals.is_ok() {
+                return self.handle_anchor_output(keys, out, vals.unwrap());
+            }
+            if setup.option_anchor_outputs() {
+                let vals = self.parse_to_remote_delayed_script(&script);
+                if vals.is_ok() {
+                    return self.handle_to_remote_delayed_output(out, vals.unwrap());
+                }
+            }
+            return Err(TransactionFormat("unknown p2wsh script".to_string()));
         } else {
-            return Err(TransactionFormat("unknown output type".to_string())); // NOT TESTED
+            return Err(TransactionFormat("unknown output type".to_string()));
         }
         Ok(())
     }
@@ -527,51 +753,209 @@ impl CommitmentInfo {
 #[cfg(test)]
 mod tests {
     use bitcoin::blockdata::script::Builder;
+    use bitcoin::{Address, Network};
     use secp256k1::{Secp256k1, SecretKey};
 
+    use crate::node::node::CommitmentType;
     use crate::tx::script::get_revokeable_redeemscript;
+    use crate::util::test_utils::{
+        make_reasonable_test_channel_setup, make_test_channel_keys, make_test_pubkey,
+    };
 
     use super::*;
 
     #[test]
     fn parse_test_err() {
-        let mut info = CommitmentInfo::new();
-        let out = TxOut {
-            value: 0,
-            script_pubkey: Default::default(),
-        };
+        let info = CommitmentInfo::new_local();
         let script = Builder::new().into_script();
-        let err = info.handle_to_local_script(&out, &script);
+        let err = info.parse_to_local_script(&script);
         assert!(err.is_err());
     }
 
     #[test]
     fn parse_test() {
         let secp_ctx = Secp256k1::signing_only();
-        let mut info = CommitmentInfo::new();
+        let mut info = CommitmentInfo::new_local();
         let out = TxOut {
             value: 123,
             script_pubkey: Default::default(),
         };
-        let revocation_key =
+        let revocation_pubkey =
             PublicKey::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[4u8; 32]).unwrap());
-        let delayed_key =
+        let delayed_pubkey =
             PublicKey::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[3u8; 32]).unwrap());
-        let script = get_revokeable_redeemscript(&revocation_key, 5, &delayed_key);
-        let res = info.handle_to_local_script(&out, &script);
+        let script = get_revokeable_redeemscript(&revocation_pubkey, 5, &delayed_pubkey);
+        let vals = info.parse_to_local_script(&script).unwrap();
+        let res = info.handle_to_local_output(&out, vals);
         assert!(res.is_ok());
         assert!(info.has_to_local());
         assert!(!info.has_to_remote());
-        assert_eq!(info.revocation_key.unwrap(), revocation_key);
-        assert_eq!(info.to_local_delayed_key.unwrap(), delayed_key);
+        assert_eq!(info.revocation_pubkey.unwrap(), revocation_pubkey);
+        assert_eq!(info.to_local_delayed_pubkey.unwrap(), delayed_pubkey);
         assert_eq!(info.to_local_delay, 5);
         assert_eq!(info.to_local_value_sat, 123);
-        let res = info.handle_to_local_script(&out, &script);
+        // Make sure you can't do it again (can't have two to_local outputs).
+        let vals = info.parse_to_local_script(&script);
+        let res = info.handle_to_local_output(&out, vals.unwrap());
         assert!(res.is_err());
         #[rustfmt::skip]
         assert!( // NOT TESTED
             TransactionFormat("already have to local".to_string())
                 == res.expect_err("expecting err")
+        );
+    }
+
+    #[test]
+    fn handle_anchor_wrong_size_test() {
+        let mut info = CommitmentInfo::new_local();
+        let keys = make_test_channel_keys();
+        let out = TxOut {
+            value: 329,
+            script_pubkey: Default::default(),
+        };
+        let to_pubkey_data = keys.pubkeys().funding_pubkey.serialize().to_vec();
+        let res = info.handle_anchor_output(&keys, &out, to_pubkey_data);
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            Mismatch(format!("anchor wrong size: {}", out.value))
+        );
+    }
+
+    #[test]
+    fn handle_anchor_not_local_or_remote_test() {
+        let mut info = CommitmentInfo::new_local();
+        let keys = make_test_channel_keys();
+        let out = TxOut {
+            value: 330,
+            script_pubkey: Default::default(),
+        };
+        let to_pubkey_data = make_test_pubkey(42).serialize().to_vec(); // doesn't match
+        let res = info.handle_anchor_output(&keys, &out, to_pubkey_data.clone());
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            Mismatch(format!(
+                "anchor to_pubkey {} doesn\'t match local or remote",
+                hex::encode(to_pubkey_data)
+            ))
+        );
+    }
+
+    #[test]
+    fn handle_output_unknown_output_type_test() {
+        let mut info = CommitmentInfo::new_local();
+        let keys = make_test_channel_keys();
+        let setup = make_reasonable_test_channel_setup();
+        let out = TxOut {
+            value: 42,
+            script_pubkey: Default::default(),
+        };
+        let script_bytes = [3u8; 30];
+        let res = info.handle_output(&keys, &setup, &out, &script_bytes);
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            TransactionFormat("unknown output type".to_string())
+        );
+    }
+
+    #[test]
+    fn handle_output_unknown_p2wsh_script_test() {
+        let mut info = CommitmentInfo::new_local();
+        let keys = make_test_channel_keys();
+        let setup = make_reasonable_test_channel_setup();
+        let script = Builder::new()
+            .push_slice(&[0u8; 42]) // invalid
+            .into_script();
+        let out = TxOut {
+            value: 42,
+            script_pubkey: Address::p2wsh(&script, Network::Testnet).script_pubkey(),
+        };
+        let res = info.handle_output(&keys, &setup, &out, script.as_bytes());
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            TransactionFormat("unknown p2wsh script".to_string())
+        );
+    }
+
+    #[test]
+    fn handle_output_p2wpkh_to_remote_with_anchors_test() {
+        let mut info = CommitmentInfo::new_local();
+        let keys = make_test_channel_keys();
+        let mut setup = make_reasonable_test_channel_setup();
+        setup.commitment_type = CommitmentType::Anchors;
+        let pubkey = bitcoin::PublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
+        let out = TxOut {
+            value: 42,
+            script_pubkey: Address::p2wpkh(&pubkey, Network::Testnet).script_pubkey(),
+        };
+        let res = info.handle_output(&keys, &setup, &out, &[0u8; 0]);
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            TransactionFormat("p2wpkh to_remote not valid with anchors".to_string())
+        );
+    }
+
+    #[test]
+    fn handle_output_more_than_one_to_remote_test() {
+        let mut info = CommitmentInfo::new_local();
+        let keys = make_test_channel_keys();
+        let setup = make_reasonable_test_channel_setup();
+        let pubkey = bitcoin::PublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
+        let address = Address::p2wpkh(&pubkey, Network::Testnet);
+        let out = TxOut {
+            value: 42,
+            script_pubkey: address.script_pubkey(),
+        };
+
+        // Make the info look like a to_remote has already been seen.
+        info.to_remote_address = Some(address.payload);
+
+        let res = info.handle_output(&keys, &setup, &out, &[0u8; 0]);
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            TransactionFormat("more than one to remote".to_string())
+        );
+    }
+
+    #[test]
+    fn handle_output_missing_witscript_test() {
+        let mut info = CommitmentInfo::new_local();
+        let keys = make_test_channel_keys();
+        let setup = make_reasonable_test_channel_setup();
+        let script = Builder::new().into_script();
+        let out = TxOut {
+            value: 42,
+            script_pubkey: Address::p2wsh(&script, Network::Testnet).script_pubkey(),
+        };
+        let res = info.handle_output(&keys, &setup, &out, script.as_bytes());
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            TransactionFormat("missing witscript for p2wsh".to_string())
+        );
+    }
+
+    #[test]
+    fn handle_output_script_pubkey_doesnt_match_test() {
+        let mut info = CommitmentInfo::new_local();
+        let keys = make_test_channel_keys();
+        let setup = make_reasonable_test_channel_setup();
+        let script0 = Builder::new().into_script();
+        let script1 = Builder::new().push_slice(&[0u8; 42]).into_script();
+        let out = TxOut {
+            value: 42,
+            script_pubkey: Address::p2wsh(&script0, Network::Testnet).script_pubkey(),
+        };
+        let res = info.handle_output(&keys, &setup, &out, script1.as_bytes());
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            TransactionFormat("script pubkey doesn\'t match inner script".to_string())
         );
     }
 }

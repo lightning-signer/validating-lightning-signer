@@ -237,7 +237,12 @@ message ReadyChannelRequest {
 
   bytes remote_shutdown_script = 12;
 
-  bool option_static_remotekey = 13;
+  enum CommitmentType {
+    LEGACY = 0;
+    STATIC_REMOTEKEY = 1;
+    ANCHORS = 2;
+  }
+  CommitmentType commitment_type = 13;
 }
 
 message ReadyChannelReply {
@@ -613,7 +618,7 @@ message UnilateralCloseInfo {
   // Identifies the old channel closed unilaterally by the peer.
   ChannelNonce channel_nonce = 1;
 
-  // Will be None if this is a option_static_remotekey commitment.
+  // Will be None if this is not a CommitmentType::LEGACY channel.
   PubKey commitment_point = 2;
 }
 
