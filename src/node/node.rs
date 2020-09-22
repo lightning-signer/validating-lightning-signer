@@ -6,28 +6,31 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use backtrace::Backtrace;
 use bitcoin;
-use bitcoin::util::bip32::ExtendedPrivKey;
 use bitcoin::{Network, OutPoint, Script, SigHashType};
+use bitcoin::secp256k1;
+use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
+use bitcoin::util::bip32::ExtendedPrivKey;
 use bitcoin_hashes::core::fmt::{Error, Formatter};
-use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
+use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use lightning::chain::keysinterface::{ChannelKeys, InMemoryChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, HTLCOutputInCommitment, PreCalculatedTxCreationKeys, TxCreationKeys,
 };
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::util::logger::Logger;
-use secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
+use secp256k1 as secp256k1_recoverable;
+use secp256k1::Secp256k1 as Secp256k1_recoverable;
 use tonic::Status;
 
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
 use crate::server::my_keys_manager::{
-    KeyDerivationStyle, MyKeysManager, INITIAL_COMMITMENT_NUMBER,
+    INITIAL_COMMITMENT_NUMBER, KeyDerivationStyle, MyKeysManager,
 };
 use crate::tx::tx::{
-    build_commitment_tx, get_commitment_transaction_number_obscure_factor, sign_commitment,
-    CommitmentInfo, CommitmentInfo2, HTLCInfo2,
+    build_commitment_tx, CommitmentInfo, CommitmentInfo2,
+    get_commitment_transaction_number_obscure_factor, HTLCInfo2, sign_commitment,
 };
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
@@ -231,7 +234,7 @@ impl Channel {
         a_points: &ChannelPublicKeys,
         b_points: &ChannelPublicKeys,
     ) -> TxCreationKeys {
-        TxCreationKeys::new(
+        TxCreationKeys::derive_new(
             &self.secp_ctx,
             &per_commitment_point,
             &a_points.delayed_payment_basepoint,
@@ -261,7 +264,7 @@ impl Channel {
     }
 
     /// Phase 1
-    pub fn sign_remote_commitment_tx(
+    pub fn sign_counterparty_commitment_tx(
         &self,
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
@@ -329,7 +332,7 @@ impl Channel {
     // Not tested because loopback test is currently ignored.
     // TODO phase 2
     // BEGIN NOT TESTED
-    pub fn sign_remote_commitment(
+    pub fn sign_counterparty_commitment(
         &self,
         feerate_per_kw: u32,
         commitment_tx: &bitcoin::Transaction,
@@ -341,18 +344,18 @@ impl Channel {
         let pubkey = self.keys.pubkeys().funding_pubkey;
         log_trace!(
             self,
-            "sign_remote_commitment with pubkey {}",
+            "sign_counterparty_commitment with pubkey {}",
             log_bytes!(pubkey.serialize())
         );
         self.keys
-            .sign_remote_commitment(
+            .sign_counterparty_commitment(
                 feerate_per_kw,
                 commitment_tx,
                 &tx_keys,
                 htlcs,
                 &self.secp_ctx,
             )
-            .map_err(|_| self.internal_error("sign_remote_commitment failed"))
+            .map_err(|_| self.internal_error("sign_counterparty_commitment failed"))
     }
     // END NOT TESTED
 
@@ -526,7 +529,7 @@ impl Channel {
         })
     }
 
-    pub fn sign_remote_commitment_tx_phase2(
+    pub fn sign_counterparty_commitment_tx_phase2(
         &self,
         remote_per_commitment_point: &PublicKey,
         commitment_number: u64,
@@ -562,7 +565,7 @@ impl Channel {
         }
         let sigs = self
             .keys
-            .sign_remote_commitment(
+            .sign_counterparty_commitment(
                 feerate_per_kw,
                 &tx,
                 &keys,
@@ -736,11 +739,6 @@ impl Node {
         self.keys_manager.get_node_secret()
     }
 
-    /// TODO leaking secret
-    pub fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
-        self.keys_manager.get_onion_rand()
-    }
-
     /// Get destination redeemScript to encumber static protocol exit points.
     pub fn get_destination_script(&self) -> Script {
         self.keys_manager.get_destination_script()
@@ -751,13 +749,6 @@ impl Node {
         self.keys_manager.get_shutdown_pubkey()
     }
 
-    /// Get a unique temporary channel id. Channels will be referred
-    /// to by this until the funding transaction is created, at which
-    /// point they will use the outpoint in the funding transaction.
-    pub fn get_channel_id(&self) -> [u8; 32] {
-        self.keys_manager.get_channel_id()
-    }
-
     pub fn get_bip32_key(&self) -> &ExtendedPrivKey {
         self.keys_manager.get_bip32_key()
     }
@@ -765,7 +756,7 @@ impl Node {
     pub fn sign_node_announcement(&self, na: &Vec<u8>) -> Result<Vec<u8>, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let na_hash = Sha256dHash::hash(na);
-        let encmsg = ::secp256k1::Message::from_slice(&na_hash[..])
+        let encmsg = secp256k1::Message::from_slice(&na_hash[..])
             .map_err(|err| self.internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign(&encmsg, &self.get_node_secret());
         let res = sig.serialize_der().to_vec();
@@ -775,7 +766,7 @@ impl Node {
     pub fn sign_channel_update(&self, cu: &Vec<u8>) -> Result<Vec<u8>, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let cu_hash = Sha256dHash::hash(cu);
-        let encmsg = ::secp256k1::Message::from_slice(&cu_hash[..])
+        let encmsg = secp256k1::Message::from_slice(&cu_hash[..])
             .map_err(|err| self.internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign(&encmsg, &self.get_node_secret());
         let res = sig.serialize_der().to_vec();
@@ -794,8 +785,8 @@ impl Node {
             &data_part.check_base32().expect("needs to be base32 data"),
         );
 
-        let secp_ctx = Secp256k1::signing_only();
-        let encmsg = ::secp256k1::Message::from_slice(&hash[..])
+        let secp_ctx = Secp256k1_recoverable::signing_only();
+        let encmsg = secp256k1_recoverable::Message::from_slice(&hash[..])
             .map_err(|err| self.internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign_recoverable(&encmsg, &self.get_node_secret());
         let (rid, sig) = sig.serialize_compact();
@@ -809,7 +800,7 @@ impl Node {
         buffer.extend(message);
         let secp_ctx = Secp256k1::signing_only();
         let hash = Sha256dHash::hash(&buffer);
-        let encmsg = ::secp256k1::Message::from_slice(&hash[..])
+        let encmsg = secp256k1::Message::from_slice(&hash[..])
             .map_err(|err| self.internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign_recoverable(&encmsg, &self.get_node_secret());
         let (rid, sig) = sig.serialize_compact();

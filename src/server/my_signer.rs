@@ -1,32 +1,32 @@
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 
 use bitcoin;
-use bitcoin::hashes::Hash;
-use bitcoin::util::bip143;
-use bitcoin::util::bip143::SighashComponents;
-use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{Address, Network, OutPoint, Script, SigHashType};
+use bitcoin::hashes::Hash;
+use bitcoin::secp256k1;
+use bitcoin::secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature};
+use bitcoin::secp256k1::ecdh::SharedSecret;
+use bitcoin::util::bip143::SigHashCache;
+use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{
-    derive_private_key, ChannelPublicKeys, HTLCOutputInCommitment, LocalCommitmentTransaction,
+    ChannelPublicKeys, derive_private_key, HolderCommitmentTransaction, HTLCOutputInCommitment,
 };
 use lightning::util::logger::Logger;
-use rand::{thread_rng, Rng};
-use secp256k1::ecdh::SharedSecret;
-use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature};
+use rand::{Rng, thread_rng};
 use tonic::Status;
 
 use crate::node::node::{
     Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, Node, NodeConfig,
 };
-use crate::tx::tx::{build_close_tx, sign_commitment, HTLCInfo2};
+use crate::tx::tx::{build_close_tx, HTLCInfo2, sign_commitment};
 use crate::util::crypto_utils::{derive_private_revocation_key, payload_for_p2wpkh};
 use crate::util::test_utils::TestLogger;
 
 use super::remotesigner::SpendType;
-use std::convert::TryInto;
 
 pub struct MySigner {
     pub logger: Arc<Logger>,
@@ -318,7 +318,7 @@ impl MySigner {
         })
     }
 
-    pub fn sign_remote_commitment_tx_phase2(
+    pub fn sign_counterparty_commitment_tx_phase2(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
@@ -331,7 +331,7 @@ impl MySigner {
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
         self.with_ready_channel(&node_id, &channel_id, |chan| {
-            chan.sign_remote_commitment_tx_phase2(
+            chan.sign_counterparty_commitment_tx_phase2(
                 &remote_per_commitment_point,
                 commitment_number,
                 feerate_per_kw,
@@ -342,7 +342,7 @@ impl MySigner {
             )
         })
     }
-    pub fn sign_local_commitment_tx_phase2(
+    pub fn sign_holder_commitment_tx_phase2(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
@@ -382,7 +382,7 @@ impl MySigner {
             }
 
             // We provide a dummy signature for the remote, since we don't require that sig
-            // to be passed in to this call.  It would have been better if LocalCommitmentTransaction
+            // to be passed in to this call.  It would have been better if HolderCommitmentTransaction
             // didn't require the remote sig.
             let dummy_sig = Secp256k1::new().sign(
                 &secp256k1::Message::from_slice(&[42; 32]).unwrap(),
@@ -391,7 +391,7 @@ impl MySigner {
 
             let htlc_data: Vec<(HTLCOutputInCommitment, Option<Signature>)> =
                 htlc_refs.iter().map(|h| ((*h).clone(), None)).collect();
-            let commitment_tx = LocalCommitmentTransaction::new_missing_local_sig(
+            let commitment_tx = HolderCommitmentTransaction::new_missing_holder_sig(
                 tx,
                 dummy_sig,
                 &chan.keys.pubkeys().funding_pubkey,
@@ -403,14 +403,14 @@ impl MySigner {
             // Although this method has "remote" in the name, it works for local too
             let sig = chan
                 .keys
-                .sign_local_commitment(&commitment_tx, &chan.secp_ctx)
+                .sign_holder_commitment(&commitment_tx, &chan.secp_ctx)
                 .map_err(|_| self.internal_error("failed to sign"))?;
             let mut sig_vec = sig.serialize_der().to_vec();
             sig_vec.push(SigHashType::All as u8);
 
             let htlc_sigs = chan
                 .keys
-                .sign_local_commitment_htlc_transactions(&commitment_tx, &chan.secp_ctx)
+                .sign_holder_commitment_htlc_transactions(&commitment_tx, &chan.secp_ctx)
                 .map_err(|_| self.internal_error("failed to sign htlcs"))?;
             let mut htlc_sig_vecs = Vec::new();
             for htlc_sig_o in htlc_sigs {
@@ -484,7 +484,7 @@ impl MySigner {
 
     // Note: chan.channel_value_sat is uninitialized in phase 1, so we get it from caller instead
     // BEGIN NOT TESTED
-    pub fn sign_remote_commitment_tx(
+    pub fn sign_counterparty_commitment_tx(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
@@ -494,7 +494,7 @@ impl MySigner {
         channel_value_sat: u64,
     ) -> Result<Vec<u8>, Status> {
         self.with_ready_channel(&node_id, &channel_id, |chan| {
-            chan.sign_remote_commitment_tx(
+            chan.sign_counterparty_commitment_tx(
                 tx,
                 &output_witscripts,
                 remote_per_commitment_point,
@@ -597,10 +597,11 @@ impl MySigner {
                 let htlc_redeemscript = Script::from(input_redeemscript.clone());
 
                 let htlc_sighash = Message::from_slice(
-                    &bip143::SighashComponents::new(&tx).sighash_all(
-                        &tx.input[0],
+                    &SigHashCache::new(tx).signature_hash(
+                        0,
                         &htlc_redeemscript,
                         htlc_amount_sat,
+                        SigHashType::All
                     )[..],
                 )
                 .map_err(|err| self.internal_error(format!("htlc_sighash failed:{}", err)))?;
@@ -664,10 +665,11 @@ impl MySigner {
                 let htlc_redeemscript = Script::from(input_redeemscript.clone());
 
                 let htlc_sighash = Message::from_slice(
-                    &bip143::SighashComponents::new(&tx).sighash_all(
-                        &tx.input[0],
+                    &SigHashCache::new(tx).signature_hash(
+                        0,
                         &htlc_redeemscript,
                         htlc_amount_sat,
+                        SigHashType::All
                     )[..],
                 )
                 .map_err(|err| self.internal_error(format!("htlc_sighash failed: {}", err)))?;
@@ -713,10 +715,11 @@ impl MySigner {
             let htlc_redeemscript = Script::from(input_redeemscript.clone());
 
             let htlc_sighash = Message::from_slice(
-                &bip143::SighashComponents::new(&tx).sighash_all(
-                    &tx.input[input],
+                &SigHashCache::new(tx).signature_hash(
+                    input,
                     &htlc_redeemscript,
                     htlc_amount_sat,
+                    SigHashType::All
                 )[..],
             )
             .map_err(|err| self.internal_error(format!("htlc_sighash failed: {}", err)))?;
@@ -761,10 +764,11 @@ impl MySigner {
                 let redeemscript = Script::from(input_redeemscript.clone());
 
                 let sighash = Message::from_slice(
-                    &bip143::SighashComponents::new(&tx).sighash_all(
-                        &tx.input[input],
+                    &SigHashCache::new(tx).signature_hash(
+                        input,
                         &redeemscript,
                         htlc_amount_sat,
+                        SigHashType::All
                     )[..],
                 )
                 .map_err(|err| self.internal_error(format!("sighash failed: {}", err)))?;
@@ -804,10 +808,11 @@ impl MySigner {
                 let redeemscript = Script::from(input_redeemscript.clone());
 
                 let sighash = Message::from_slice(
-                    &bip143::SighashComponents::new(&tx).sighash_all(
-                        &tx.input[input],
+                    &SigHashCache::new(tx).signature_hash(
+                        input,
                         &redeemscript,
                         htlc_amount_sat,
+                        SigHashType::All
                     )[..],
                 )
                 .map_err(|err| self.internal_error(format!("sighash failed: {}", err)))?;
@@ -875,10 +880,11 @@ impl MySigner {
                     )
                     .map_err(|err| self.internal_error(format!("p2pkh sighash failed: {}", err))),
                     SpendType::P2wpkh | SpendType::P2shP2wpkh => Message::from_slice(
-                        &SighashComponents::new(&tx).sighash_all(
-                            &tx.input[idx],
+                        &SigHashCache::new(tx).signature_hash(
+                            idx,
                             &script_code,
                             value_sat,
+                            SigHashType::All
                         )[..],
                     )
                     .map_err(|err| self.internal_error(format!("p2wpkh sighash failed: {}", err))),
@@ -918,7 +924,7 @@ impl MySigner {
     ) -> Result<(Vec<u8>, Vec<u8>), Status> {
         let secp_ctx = Secp256k1::signing_only();
         let ca_hash = Sha256dHash::hash(ca);
-        let encmsg = ::secp256k1::Message::from_slice(&ca_hash[..])
+        let encmsg = secp256k1::Message::from_slice(&ca_hash[..])
             .map_err(|err| self.internal_error(format!("encmsg failed: {}", err)))?;
         self.with_ready_channel(&node_id, &channel_id, |chan| {
             let nsigvec = secp_ctx
@@ -982,20 +988,19 @@ impl MySigner {
 #[cfg(test)]
 mod tests {
     use bitcoin;
+    use bitcoin::{OutPoint, TxIn, TxOut};
     use bitcoin::blockdata::opcodes;
     use bitcoin::blockdata::script::Builder;
     use bitcoin::consensus::deserialize;
-    use bitcoin::util::bip143;
+    use bitcoin::secp256k1::Signature;
     use bitcoin::util::psbt::serialize::Serialize;
-    use bitcoin::{OutPoint, TxIn, TxOut};
     use bitcoin_hashes::hash160::Hash as Hash160;
     use lightning::ln::chan_utils::{
-        build_htlc_transaction, get_htlc_redeemscript, make_funding_redeemscript,
-        HTLCOutputInCommitment, TxCreationKeys,
+        build_htlc_transaction, get_htlc_redeemscript, HTLCOutputInCommitment,
+        make_funding_redeemscript, TxCreationKeys,
     };
     use lightning::ln::channelmanager::PaymentHash;
     use secp256k1::recovery::{RecoverableSignature, RecoveryId};
-    use secp256k1::Signature;
     use tonic::Code;
 
     use crate::node::node::CommitmentType;
@@ -1360,7 +1365,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_remote_commitment_tx_test() {
+    fn sign_counterparty_commitment_tx_test() {
         let signer = MySigner::new();
         let setup = make_test_channel_setup();
         let (node_id, channel_id) =
@@ -1380,7 +1385,7 @@ mod tests {
                     chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
                 let ser_signature = chan
-                    .sign_remote_commitment_tx(
+                    .sign_counterparty_commitment_tx(
                         &tx,
                         &output_witscripts,
                         &remote_percommitment_point,
@@ -1433,7 +1438,7 @@ mod tests {
                     chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
                 let ser_signature = chan
-                    .sign_remote_commitment_tx(
+                    .sign_counterparty_commitment_tx(
                         &tx,
                         &output_witscripts,
                         &remote_percommitment_point,
@@ -1463,7 +1468,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_remote_commitment_tx_with_htlc_test() {
+    fn sign_counterparty_commitment_tx_with_htlc_test() {
         let signer = MySigner::new();
         let setup = make_test_channel_setup();
         let (node_id, channel_id) =
@@ -1503,7 +1508,7 @@ mod tests {
                     chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
                 let ser_signature = chan
-                    .sign_remote_commitment_tx(
+                    .sign_counterparty_commitment_tx(
                         &tx,
                         &output_witscripts,
                         &remote_percommitment_point,
@@ -1579,7 +1584,7 @@ mod tests {
                     chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
                 let ser_signature = chan
-                    .sign_remote_commitment_tx(
+                    .sign_counterparty_commitment_tx(
                         &tx,
                         &output_witscripts,
                         &remote_percommitment_point,
@@ -1610,7 +1615,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_remote_commitment_tx_phase2_test() {
+    fn sign_counterparty_commitment_tx_phase2_test() {
         let signer = MySigner::new();
         let setup = make_test_channel_setup();
         let (node_id, channel_id) =
@@ -1635,7 +1640,7 @@ mod tests {
                     hex::encode(tx.txid()),
                     "a2e13c6a4b1b4764d7cd755ef3a53d38563169e6bf7999eb2afefffeed3790c4"
                 );
-                let (ser_signature, _) = chan.sign_remote_commitment_tx_phase2(
+                let (ser_signature, _) = chan.sign_counterparty_commitment_tx_phase2(
                     &remote_percommitment_point,
                     23,
                     0, // feerate not used
@@ -1661,7 +1666,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_local_commitment_tx_phase2_test() {
+    fn sign_holder_commitment_tx_phase2_test() {
         let signer = MySigner::new();
         let setup = make_test_channel_setup();
         let (node_id, channel_id) =
@@ -1682,7 +1687,7 @@ mod tests {
             })
             .expect("build_commitment_tx");
         let (ser_signature, _) = signer
-            .sign_local_commitment_tx_phase2(
+            .sign_holder_commitment_tx_phase2(
                 &node_id,
                 &channel_id,
                 23,
@@ -1839,17 +1844,18 @@ mod tests {
 
     fn check_signature(
         tx: &bitcoin::Transaction,
-        input_idx: usize,
+        input: usize,
         ser_signature: Vec<u8>,
         pubkey: &PublicKey,
         input_value_sat: u64,
         redeemscript: &Script,
     ) {
         let sighash = Message::from_slice(
-            &bip143::SighashComponents::new(&tx).sighash_all(
-                &tx.input[input_idx],
+            &SigHashCache::new(tx).signature_hash(
+                input,
                 &redeemscript,
                 input_value_sat,
+                SigHashType::All
             )[..],
         )
         .expect("sighash");
@@ -2080,7 +2086,7 @@ mod tests {
                     .private_key
                     .public_key(&secp_ctx),
                 Network::Testnet,
-            )
+            ).unwrap()
         };
 
         tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
@@ -2157,7 +2163,7 @@ mod tests {
                     .private_key
                     .public_key(&secp_ctx),
                 Network::Testnet,
-            )
+            ).unwrap()
         };
 
         tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
@@ -2232,7 +2238,7 @@ mod tests {
 
         assert_eq!(witvec[0].1, uniclosepubkey.serialize());
 
-        let address = Address::p2wpkh(&uniclosepubkey, Network::Testnet);
+        let address = Address::p2wpkh(&uniclosepubkey, Network::Testnet).unwrap();
 
         tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
         println!("{:?}", tx.input[0].script_sig);
@@ -2373,7 +2379,7 @@ mod tests {
                     .private_key
                     .public_key(&secp_ctx),
                 Network::Testnet,
-            )
+            ).unwrap()
         };
 
         let pubkey = xkey
@@ -2534,7 +2540,7 @@ mod tests {
         let a_delayed_payment_base = make_test_pubkey(2);
         let b_revocation_base = make_test_pubkey(3);
 
-        let keys = TxCreationKeys::new(
+        let keys = TxCreationKeys::derive_new(
             &secp_ctx_all,
             &per_commitment_point,
             &a_delayed_payment_base,
@@ -2730,7 +2736,7 @@ mod tests {
 
         let secp_ctx = Secp256k1::new();
 
-        let keys = TxCreationKeys::new(
+        let keys = TxCreationKeys::derive_new(
             &secp_ctx,
             &per_commitment_point,
             &a_delayed_payment_base,
@@ -2815,7 +2821,7 @@ mod tests {
 
         let secp_ctx = Secp256k1::new();
 
-        let keys = TxCreationKeys::new(
+        let keys = TxCreationKeys::derive_new(
             &secp_ctx,
             &per_commitment_point,
             &a_delayed_payment_base,
@@ -3084,7 +3090,7 @@ mod tests {
             .sign_channel_announcement(&node_id, &channel_id, &ann)
             .unwrap();
         let ca_hash = Sha256dHash::hash(&ann);
-        let encmsg = ::secp256k1::Message::from_slice(&ca_hash[..]).expect("encmsg");
+        let encmsg = secp256k1::Message::from_slice(&ca_hash[..]).expect("encmsg");
         let secp_ctx = Secp256k1::new();
         let nsig = Signature::from_der(&nsigvec).expect("nsig");
         secp_ctx
@@ -3216,11 +3222,11 @@ mod tests {
         let mut buffer = String::from("Lightning Signed Message:").into_bytes();
         buffer.extend(message);
         let hash = Sha256dHash::hash(&buffer);
-        let encmsg = ::secp256k1::Message::from_slice(&hash[..]).unwrap();
+        let encmsg = secp256k1::Message::from_slice(&hash[..]).unwrap();
         let sig = rsig.to_standard();
         let pubkey = secp_ctx.recover(&encmsg, &rsig).unwrap();
         assert!(secp_ctx.verify(&encmsg, &sig, &pubkey).is_ok());
-        assert!(pubkey == node_id);
+        assert_eq!(pubkey, node_id);
     }
 
     // TODO move this elsewhere
@@ -3284,7 +3290,7 @@ mod tests {
         let value = 600_000_000;
 
         let sighash =
-            &SighashComponents::new(&tx).sighash_all(&tx.input[1], &script_code, value)[..];
+            &SigHashCache::new(&tx).signature_hash(1, &script_code, value, SigHashType::All)[..];
         assert_eq!(
             hex::encode(sighash),
             "c37af31116d1b27caf68aae9e3ac82f1477929014d5b917657d0eb49478cb670"

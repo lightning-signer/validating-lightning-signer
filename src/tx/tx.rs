@@ -9,7 +9,7 @@ use bitcoin::blockdata::opcodes::all::{
 };
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip143;
-use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut};
+use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut, SigHashType};
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::{Hash, HashEngine};
 use lightning::chain::keysinterface::ChannelKeys;
@@ -18,7 +18,8 @@ use lightning::ln::chan_utils::{
     make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::channelmanager::PaymentHash;
-use secp256k1::{All, Message, PublicKey, Secp256k1, Signature};
+use bitcoin::secp256k1;
+use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, Signature};
 
 use crate::node::node::ChannelSetup;
 use crate::policy::error::ValidationError;
@@ -281,10 +282,11 @@ pub fn sign_commitment(
         make_funding_redeemscript(&funding_pubkey, &remote_funding_pubkey);
 
     let commitment_sighash = Message::from_slice(
-        &bip143::SighashComponents::new(&tx).sighash_all(
-            &tx.input[0],
+        &bip143::SigHashCache::new(tx).signature_hash(
+            0,
             &channel_funding_redeemscript,
             channel_value_sat,
+            SigHashType::All
         )[..],
     )?;
     Ok(secp_ctx.sign(&commitment_sighash, funding_key))
@@ -406,7 +408,7 @@ impl CommitmentInfo {
         &self,
         script: &Script,
     ) -> Result<(Vec<u8>, i64, Vec<u8>), ValidationError> {
-        let iter = &mut script.iter(true);
+        let iter = &mut script.instructions();
         expect_op(iter, OP_IF)?;
         let revocation_pubkey = expect_data(iter)?;
         expect_op(iter, OP_ELSE)?;
@@ -453,7 +455,7 @@ impl CommitmentInfo {
     }
 
     fn parse_to_remote_delayed_script(&self, script: &Script) -> Result<Vec<u8>, ValidationError> {
-        let iter = &mut script.iter(true);
+        let iter = &mut script.instructions();
         let to_remote_delayed_pubkey_data = expect_data(iter)?;
         expect_op(iter, OP_CHECKSIGVERIFY)?;
         expect_op(iter, OP_PUSHNUM_1)?;
@@ -485,7 +487,7 @@ impl CommitmentInfo {
         script: &Script,
         option_anchor_outputs: bool,
     ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i64), ValidationError> {
-        let iter = &mut script.iter(true);
+        let iter = &mut script.instructions();
         expect_op(iter, OP_DUP)?;
         expect_op(iter, OP_HASH160)?;
         let revocation_hash = expect_data(iter)?;
@@ -571,7 +573,7 @@ impl CommitmentInfo {
         script: &Script,
         option_anchor_outputs: bool,
     ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), ValidationError> {
-        let iter = &mut script.iter(true);
+        let iter = &mut script.instructions();
         expect_op(iter, OP_DUP)?;
         expect_op(iter, OP_HASH160)?;
         let revocation_hash = expect_data(iter)?;
@@ -638,7 +640,7 @@ impl CommitmentInfo {
     }
 
     fn parse_anchor_script(&self, script: &Script) -> Result<Vec<u8>, ValidationError> {
-        let iter = &mut script.iter(true);
+        let iter = &mut script.instructions();
         let to_pubkey_data = expect_data(iter)?;
         expect_op(iter, OP_CHECKSIG)?;
         expect_op(iter, OP_IFDUP)?;
@@ -754,7 +756,7 @@ impl CommitmentInfo {
 mod tests {
     use bitcoin::blockdata::script::Builder;
     use bitcoin::{Address, Network};
-    use secp256k1::{Secp256k1, SecretKey};
+    use bitcoin::secp256k1::{Secp256k1, SecretKey};
 
     use crate::node::node::CommitmentType;
     use crate::tx::script::get_revokeable_redeemscript;
@@ -889,7 +891,7 @@ mod tests {
         let pubkey = bitcoin::PublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
         let out = TxOut {
             value: 42,
-            script_pubkey: Address::p2wpkh(&pubkey, Network::Testnet).script_pubkey(),
+            script_pubkey: Address::p2wpkh(&pubkey, Network::Testnet).unwrap().script_pubkey(),
         };
         let res = info.handle_output(&keys, &setup, &out, &[0u8; 0]);
         assert!(res.is_err());
@@ -905,7 +907,7 @@ mod tests {
         let keys = make_test_channel_keys();
         let setup = make_reasonable_test_channel_setup();
         let pubkey = bitcoin::PublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
-        let address = Address::p2wpkh(&pubkey, Network::Testnet);
+        let address = Address::p2wpkh(&pubkey, Network::Testnet).unwrap();
         let out = TxOut {
             value: 42,
             script_pubkey: address.script_pubkey(),

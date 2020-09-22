@@ -10,10 +10,10 @@ path = "src/lib.rs"
 
 [dependencies]
 backtrace = "0.3"
-bitcoin = "0.23"
-bitcoin_hashes = "0.7.6"
-secp256k1 = { version="0.17.2", features = ["recovery"] }
-hex = "0.3"
+bitcoin = "0.24"
+secp256k1 = { version="0.18.0", features = ["recovery"] }
+bitcoin_hashes = "0.8.0"
+hex = "0.3.2"
 rand = "0.4"
 tonic = "0.1.1"
 prost = "0.6"
@@ -25,14 +25,14 @@ serde_json = "1.0.48"
 
 [dependencies.lightning]
 git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "b3b4f434a2c384b4d37d7e7977ebd190377f2891"
+rev = "640ae63a5ab47605207201fb28cdf7f240e86891"
 [dev-dependencies.lightning]
 git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "b3b4f434a2c384b4d37d7e7977ebd190377f2891"
+rev = "640ae63a5ab47605207201fb28cdf7f240e86891"
 features = ["unsafe_revoked_tx_signing"]
 
 [dev-dependencies.bitcoin]
-version = "0.23"
+version = "0.24"
 features = ["bitcoinconsensus"]
 
 [dev-dependencies.bitcoinconsensus]

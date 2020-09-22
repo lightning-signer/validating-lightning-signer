@@ -3,18 +3,23 @@
 extern crate lightning_signer;
 
 use std::sync::{Arc, MutexGuard};
+use std::time::Duration;
 
 use bitcoin::{Block, BlockHeader, Network, OutPoint, Script, Transaction};
+use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::consensus::serialize;
+use bitcoin::network::constants::Network::Testnet;
+use bitcoin::secp256k1::PublicKey;
+use bitcoin::util::bip32::ChildNumber;
+use bitcoin_hashes::core::sync::atomic::AtomicUsize;
 use bitcoinconsensus::{VERIFY_ALL, verify_with_flags};
-use lightning::chain::chaininterface;
+use lightning::chain::{chaininterface, keysinterface};
 use lightning::chain::keysinterface::KeysInterface;
 use lightning::ln::features::InitFeatures;
 use lightning::ln::msgs::{ChannelMessageHandler, ChannelUpdate};
 use lightning::util::config::{ChannelHandshakeConfig, UserConfig};
 use lightning::util::events::MessageSendEventsProvider;
 use lightning::util::logger::Logger;
-use secp256k1::PublicKey;
 
 use lightning_signer::{check_added_monitors, check_spends, get_local_commitment_txn};
 use lightning_signer::server::my_signer::MySigner;
@@ -42,9 +47,15 @@ pub fn create_node_cfgs_with_signer<'a>(
         let seed = [i as u8; 32];
 
         let node_id = signer.new_node(TEST_NODE_CONFIG);
+
+        let network = Testnet;
+        let now = Duration::from_secs(genesis_block(network).header.time as u64);
+        let backing = keysinterface::KeysManager::new(&seed.clone(), network,
+                                                      now.as_secs(), now.subsec_nanos());
         let keys_manager = LoopbackSignerKeysInterface {
             node_id,
             signer: Arc::clone(signer),
+            backing,
         };
 
         let chan_monitor = TestChannelMonitor::new(

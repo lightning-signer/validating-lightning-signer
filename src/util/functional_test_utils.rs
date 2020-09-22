@@ -9,7 +9,6 @@ use std::sync::Mutex;
 use bitcoin;
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::hash_types::BlockHash;
-use bitcoin::util::hash::BitcoinHash;
 use bitcoin::{Network, Transaction, TxOut};
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::Hash;
@@ -20,7 +19,7 @@ use lightning::chain::chaininterface::ChainWatchInterface;
 use lightning::ln;
 use lightning::ln::channelmanager::PaymentSecret;
 use lightning::ln::channelmonitor;
-use lightning::ln::channelmonitor::HTLCUpdate;
+use lightning::ln::channelmonitor::MonitorEvent;
 use lightning::routing::network_graph::NetGraphMsgHandler;
 use lightning::routing::router::{get_route, Route};
 use lightning::util;
@@ -29,7 +28,7 @@ use ln::channelmanager::{ChannelManager, PaymentHash, PaymentPreimage};
 use ln::features::InitFeatures;
 use ln::msgs;
 use ln::msgs::{ChannelMessageHandler, RoutingMessageHandler};
-use secp256k1::key::PublicKey;
+use bitcoin::secp256k1::key::PublicKey;
 use util::events::{Event, EventsProvider, MessageSendEvent, MessageSendEventsProvider};
 
 use crate::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
@@ -57,7 +56,7 @@ pub fn confirm_transaction<'a, 'b: 'a>(
     for i in 2..CHAN_CONFIRM_DEPTH {
         header = BlockHeader {
             version: 0x20000000,
-            prev_blockhash: header.bitcoin_hash(),
+            prev_blockhash: header.block_hash(),
             merkle_root: Default::default(),
             time: 42,
             bits: 42,
@@ -91,7 +90,7 @@ pub fn connect_blocks<'a, 'b>(
     for i in 2..depth + 1 {
         header = BlockHeader {
             version: 0x20000000,
-            prev_blockhash: header.bitcoin_hash(),
+            prev_blockhash: header.block_hash(),
             merkle_root: Default::default(),
             time: 42,
             bits: 42,
@@ -99,7 +98,7 @@ pub fn connect_blocks<'a, 'b>(
         };
         notifier.block_connected_checked(&header, height + i, &Vec::new(), &Vec::new());
     }
-    header.bitcoin_hash()
+    header.block_hash()
 }
 // END NOT TESTED
 
@@ -257,7 +256,7 @@ macro_rules! get_local_commitment_txn {
         for (funding_txo, monitor) in monitors.iter_mut() {
             if funding_txo.to_channel_id() == $channel_id {
                 commitment_txn =
-                    Some(monitor.unsafe_get_latest_local_commitment_txn(&$node.logger));
+                    Some(monitor.unsafe_get_latest_holder_commitment_txn(&$node.logger));
                 break;
             }
         }
@@ -294,7 +293,7 @@ pub fn create_funding_transaction<'a, 'b, 'c>(
             assert_eq!(user_channel_id, expected_user_chan_id);
 
             let tx = Transaction {
-                version: chan_id as u32,
+                version: chan_id as i32,
                 lock_time: 0,
                 input: Vec::new(),
                 output: vec![TxOut {
@@ -412,7 +411,7 @@ pub fn create_chan_between_nodes_with_value_confirm_first<'a, 'b, 'c, 'd>(
         &node_conf.block_notifier,
         &node_conf.chain_monitor,
         &tx,
-        tx.version,
+        tx.version as u32,
     );
     node_recv.node.handle_funding_locked(
         &node_conf.node.get_our_node_id(),
@@ -475,7 +474,7 @@ pub fn create_chan_between_nodes_with_value_confirm<'a, 'b, 'c, 'd>(
         &node_a.block_notifier,
         &node_a.chain_monitor,
         &tx,
-        tx.version,
+        tx.version as u32,
     );
     create_chan_between_nodes_with_value_confirm_second(node_b, node_a)
 }
@@ -1458,8 +1457,8 @@ impl<'a> channelmonitor::ManyChannelMonitor for TestChannelMonitor<'a> {
         self.simple_monitor.update_monitor(funding_txo, update)
     }
 
-    fn get_and_clear_pending_htlcs_updated(&self) -> Vec<HTLCUpdate> {
-        return self.simple_monitor.get_and_clear_pending_htlcs_updated();
+    fn get_and_clear_pending_monitor_events(&self) -> Vec<MonitorEvent> {
+        self.simple_monitor.get_and_clear_pending_monitor_events()
     }
 }
 
