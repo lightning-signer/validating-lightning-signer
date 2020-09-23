@@ -7,15 +7,15 @@ use chain::keysinterface::{ChannelKeys, InMemoryChannelKeys};
 use lightning::chain;
 use lightning::ln;
 use lightning::ln::chan_utils::{
-    LocalCommitmentTransaction, PreCalculatedTxCreationKeys, TxCreationKeys,
+    HolderCommitmentTransaction, PreCalculatedTxCreationKeys, TxCreationKeys,
 };
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 use ln::msgs;
-use secp256k1;
-use secp256k1::key::{PublicKey, SecretKey};
-use secp256k1::{Secp256k1, Signature};
+use bitcoin::secp256k1;
+use bitcoin::secp256k1::key::{SecretKey, PublicKey};
+use bitcoin::secp256k1::{Secp256k1, Signature};
 
 /// Enforces some rules on ChannelKeys calls. Eventually we will
 /// probably want to expose a variant of this which would essentially
@@ -37,7 +37,7 @@ impl EnforcingChannelKeys {
     }
 
     pub fn remote_pubkeys(&self) -> &ChannelPublicKeys {
-        self.inner.remote_pubkeys()
+        self.inner.counterparty_pubkeys()
     }
 
     pub fn inner(&self) -> InMemoryChannelKeys {
@@ -57,9 +57,9 @@ impl EnforcingChannelKeys {
         let revocation_base = PublicKey::from_secret_key(secp_ctx, &self.revocation_base_key());
         let htlc_base = PublicKey::from_secret_key(secp_ctx, &self.htlc_base_key());
 
-        let remote_points = self.inner.remote_pubkeys();
+        let remote_points = self.remote_pubkeys();
 
-        let keys_expected = TxCreationKeys::new(
+        let keys_expected = TxCreationKeys::derive_new(
             secp_ctx,
             &keys.per_commitment_point,
             &remote_points.delayed_payment_basepoint,
@@ -117,7 +117,7 @@ impl ChannelKeys for EnforcingChannelKeys {
     }
     // END NOT TESTED
 
-    fn sign_remote_commitment<T: secp256k1::Signing + secp256k1::Verification>(
+    fn sign_counterparty_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         feerate_sat_per_kw: u32,
         commitment_tx: &Transaction,
@@ -150,35 +150,35 @@ impl ChannelKeys for EnforcingChannelKeys {
 
         Ok(self
             .inner
-            .sign_remote_commitment(feerate_sat_per_kw, commitment_tx, keys, htlcs, secp_ctx)
+            .sign_counterparty_commitment(feerate_sat_per_kw, commitment_tx, keys, htlcs, secp_ctx)
             .unwrap())
     }
 
-    fn sign_local_commitment<T: secp256k1::Signing + secp256k1::Verification>(
+    fn sign_holder_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
-        local_commitment_tx: &LocalCommitmentTransaction,
+        local_commitment_tx: &HolderCommitmentTransaction,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
         self.inner
-            .sign_local_commitment(local_commitment_tx, secp_ctx)
+            .sign_holder_commitment(local_commitment_tx, secp_ctx)
     }
 
-    fn unsafe_sign_local_commitment<T: secp256k1::Signing + secp256k1::Verification>(
+    fn unsafe_sign_holder_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
-        local_commitment_tx: &LocalCommitmentTransaction,
+        local_commitment_tx: &HolderCommitmentTransaction,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
         self.inner
-            .unsafe_sign_local_commitment(local_commitment_tx, secp_ctx)
+            .unsafe_sign_holder_commitment(local_commitment_tx, secp_ctx)
     }
 
-    fn sign_local_commitment_htlc_transactions<T: secp256k1::Signing + secp256k1::Verification>(
+    fn sign_holder_commitment_htlc_transactions<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
-        local_commitment_tx: &LocalCommitmentTransaction,
+        local_commitment_tx: &HolderCommitmentTransaction,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Vec<Option<Signature>>, ()> {
         self.inner
-            .sign_local_commitment_htlc_transactions(local_commitment_tx, secp_ctx)
+            .sign_holder_commitment_htlc_transactions(local_commitment_tx, secp_ctx)
     }
 
     fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(
@@ -200,7 +200,7 @@ impl ChannelKeys for EnforcingChannelKeys {
         )
     }
 
-    fn sign_remote_htlc_transaction<T: secp256k1::Signing + secp256k1::Verification>(
+    fn sign_counterparty_htlc_transaction<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         htlc_tx: &Transaction,
         input: usize,
@@ -209,7 +209,7 @@ impl ChannelKeys for EnforcingChannelKeys {
         htlc: &HTLCOutputInCommitment,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        self.inner.sign_remote_htlc_transaction(
+        self.inner.sign_counterparty_htlc_transaction(
             htlc_tx,
             input,
             amount,

@@ -12,7 +12,8 @@ use bitcoin_hashes::sha256::HashEngine as Sha256State;
 use bitcoin_hashes::{Hash, HashEngine};
 use lightning::chain::keysinterface::{InMemoryChannelKeys, KeysInterface};
 use lightning::util::logger::Logger;
-use secp256k1::{PublicKey, Secp256k1, SecretKey, Signing};
+use bitcoin::secp256k1;
+use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signing};
 
 use crate::util::byte_utils;
 use crate::util::crypto_utils::{
@@ -42,8 +43,6 @@ pub struct MyKeysManager {
     channel_master_key: ExtendedPrivKey,
     #[allow(dead_code)]
     channel_child_index: AtomicUsize,
-    session_master_key: ExtendedPrivKey,
-    session_child_index: AtomicUsize,
     channel_id_master_key: ExtendedPrivKey,
     channel_id_child_index: AtomicUsize,
     lnd_basepoint_index: AtomicU32,
@@ -101,9 +100,6 @@ impl MyKeysManager {
                 let channel_master_key = master_key
                     .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(3).unwrap())
                     .expect("Your RNG is busted");
-                let session_master_key = master_key
-                    .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(4).unwrap())
-                    .expect("Your RNG is busted");
                 let channel_id_master_key = master_key
                     .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(5).unwrap())
                     .expect("Your RNG is busted");
@@ -128,8 +124,6 @@ impl MyKeysManager {
                     shutdown_pubkey,
                     channel_master_key,
                     channel_child_index: AtomicUsize::new(0),
-                    session_master_key,
-                    session_child_index: AtomicUsize::new(0),
                     channel_id_master_key,
                     channel_id_child_index: AtomicUsize::new(0),
                     lnd_basepoint_index: AtomicU32::new(0),
@@ -265,6 +259,22 @@ impl MyKeysManager {
             MyKeysManager::derivation_params(),
         )
     }
+
+    pub fn get_channel_id(&self) -> [u8; 32] {
+        let mut sha = self.unique_start.clone();
+
+        let child_ix = self.channel_id_child_index.fetch_add(1, Ordering::AcqRel);
+        let child_privkey = self
+            .channel_id_master_key
+            .ckd_priv(
+                &self.secp_ctx,
+                ChildNumber::from_hardened_idx(child_ix as u32).expect("key space exhausted"),
+            )
+            .expect("Your RNG is busted");
+        sha.input(&child_privkey.private_key.key[..]);
+
+        Sha256::from_engine(sha).into_inner()
+    }
 }
 
 impl KeysInterface for MyKeysManager {
@@ -286,48 +296,11 @@ impl KeysInterface for MyKeysManager {
     fn get_channel_keys(&self, _inbound: bool, _channel_value_sat: u64) -> InMemoryChannelKeys {
         unimplemented!();
     }
+
+    fn get_secure_random_bytes(&self) -> [u8; 32] {
+        unimplemented!()
+    }
     // END NOT TESTED
-
-    fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
-        let mut sha = self.unique_start.clone();
-
-        let child_ix = self.session_child_index.fetch_add(1, Ordering::AcqRel);
-        let child_privkey = self
-            .session_master_key
-            .ckd_priv(
-                &self.secp_ctx,
-                ChildNumber::from_hardened_idx(child_ix as u32).expect("key space exhausted"),
-            )
-            .expect("Your RNG is busted");
-        sha.input(&child_privkey.private_key.key[..]);
-
-        let mut rng_seed = sha.clone();
-        // Not exactly the most ideal construction, but the second value will get fed into
-        // ChaCha so it is another step harder to break.
-        rng_seed.input(b"RNG Seed Salt");
-        sha.input(b"Session Key Salt");
-        (
-            SecretKey::from_slice(&Sha256::from_engine(sha).into_inner())
-                .expect("Your RNG is busted"),
-            Sha256::from_engine(rng_seed).into_inner(),
-        )
-    }
-
-    fn get_channel_id(&self) -> [u8; 32] {
-        let mut sha = self.unique_start.clone();
-
-        let child_ix = self.channel_id_child_index.fetch_add(1, Ordering::AcqRel);
-        let child_privkey = self
-            .channel_id_master_key
-            .ckd_priv(
-                &self.secp_ctx,
-                ChildNumber::from_hardened_idx(child_ix as u32).expect("key space exhausted"),
-            )
-            .expect("Your RNG is busted");
-        sha.input(&child_privkey.private_key.key[..]);
-
-        Sha256::from_engine(sha).into_inner()
-    }
 }
 
 #[cfg(test)]

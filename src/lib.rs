@@ -7,7 +7,6 @@ extern crate bitcoin;
 extern crate bitcoin_hashes;
 extern crate hex;
 extern crate rand;
-extern crate secp256k1;
 extern crate tonic;
 
 #[macro_use]

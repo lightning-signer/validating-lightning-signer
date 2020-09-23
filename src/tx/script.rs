@@ -1,23 +1,28 @@
+use bitcoin::{blockdata, Script};
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::opcodes::Class;
-use bitcoin::blockdata::script::read_scriptint;
-use bitcoin::blockdata::script::Instruction::PushBytes;
-use bitcoin::blockdata::script::{Builder, Instructions};
-use bitcoin::hash_types::PubkeyHash;
+use bitcoin::blockdata::script::{Builder, Instruction, Instructions, read_scriptint};
 use bitcoin::hashes::ripemd160::Hash as Ripemd160;
-use bitcoin::hashes::Hash;
-use bitcoin::{blockdata, Script};
+use bitcoin::secp256k1::PublicKey;
+use bitcoin::hash_types::PubkeyHash;
 use lightning::ln::chan_utils::{HTLCOutputInCommitment, TxCreationKeys};
-use secp256k1::PublicKey;
 
 use crate::policy::error::ValidationError;
 use crate::policy::error::ValidationError::Mismatch;
+use bitcoin::hashes::Hash;
+
+#[inline]
+fn expect_next<'a>(iter: &'a mut Instructions) -> Result<Instruction<'a>, ValidationError> {
+    iter.next()
+        .ok_or(Mismatch("unexpected end".to_string()))?
+        .map_err(|_| Mismatch("unparseable opcode".to_string()))
+}
 
 #[inline]
 pub fn expect_op(iter: &mut Instructions, op: opcodes::All) -> Result<(), ValidationError> {
-    let ins = iter.next();
+    let ins = expect_next(iter)?;
     match ins {
-        Some(blockdata::script::Instruction::Op(o)) => {
+        blockdata::script::Instruction::Op(o) => {
             if o == op {
                 Ok(())
             } else {
@@ -30,19 +35,18 @@ pub fn expect_op(iter: &mut Instructions, op: opcodes::All) -> Result<(), Valida
 
 #[inline]
 pub fn expect_number(iter: &mut Instructions) -> Result<i64, ValidationError> {
-    let ins = iter.next();
+    let ins = expect_next(iter)?;
     match ins {
-        Some(blockdata::script::Instruction::Op(op)) => {
+        blockdata::script::Instruction::Op(op) => {
             let cls = op.classify();
             match cls {
                 Class::PushNum(i) => Ok(i as i64),
                 _ => Err(Mismatch(format!("expected PushNum, saw {:?}", cls))), // NOT TESTED
             }
         }
-        Some(PushBytes(d)) => {
+        blockdata::script::Instruction::PushBytes(d) => {
             read_scriptint(&d).map_err(|err| Mismatch(format!("read_scriptint failed: {:?}", err)))
         }
-        _ => Err(Mismatch(format!("expected number, saw {:?}", ins))), // NOT TESTED
     }
 }
 
@@ -58,10 +62,10 @@ pub fn expect_script_end(iter: &mut Instructions) -> Result<(), ValidationError>
 
 #[inline]
 pub fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, ValidationError> {
-    let ins = iter.next();
+    let ins = expect_next(iter)?;
     match ins {
-        Some(PushBytes(d)) => Ok(d.to_vec()),
-        _ => return Err(Mismatch(format!("expected data, saw {:?}", ins))), // NOT TESTED
+        blockdata::script::Instruction::PushBytes(d) => Ok(d.to_vec()),
+        _ => Err(Mismatch(format!("expected data, saw {:?}", ins))), // NOT TESTED
     }
 }
 
@@ -115,11 +119,12 @@ pub fn get_htlc_anchor_redeemscript(
 ) -> Script {
     get_htlc_anchor_redeemscript_with_explicit_keys(
         htlc,
-        &keys.a_htlc_key,
-        &keys.b_htlc_key,
+        &keys.broadcaster_htlc_key,
+        &keys.countersignatory_htlc_key,
         &keys.revocation_key,
     )
 }
+
 pub fn get_htlc_anchor_redeemscript_with_explicit_keys(
     htlc: &HTLCOutputInCommitment,
     a_htlc_key: &PublicKey,
@@ -227,7 +232,7 @@ mod tests {
             .push_int(i32::MAX as i64)		// OP_PUSHBYTES_4 ffffff7f
             .into_script();
         println!("{:?}", script);
-        let iter = &mut script.iter(true);
+        let iter = &mut script.instructions();
         assert_eq!(expect_number(iter).unwrap(), i32::MIN as i64 + 1);
         assert_eq!(expect_number(iter).unwrap(), i16::MIN as i64);
         assert_eq!(expect_number(iter).unwrap(), i16::MIN as i64 + 1);

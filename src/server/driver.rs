@@ -10,7 +10,7 @@ use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::channelmanager::PaymentHash;
-use secp256k1::{PublicKey, SecretKey};
+use bitcoin::secp256k1::{PublicKey, SecretKey};
 use serde_json::json;
 use tonic::{transport::Server, Request, Response, Status};
 
@@ -674,7 +674,7 @@ impl Signer for MySigner {
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
             self,
-            "ENTER sign_remote_commitment_tx({}/{})",
+            "ENTER sign_counterparty_commitment_tx({}/{})",
             node_id,
             channel_id
         );
@@ -696,7 +696,7 @@ impl Signer for MySigner {
             .map(|odsc| odsc.witscript.clone())
             .collect();
 
-        let sig_data = self.sign_remote_commitment_tx(
+        let sig_data = self.sign_counterparty_commitment_tx(
             &node_id,
             &channel_id,
             &tx,
@@ -710,7 +710,7 @@ impl Signer for MySigner {
         };
         log_info!(
             self,
-            "REPLY sign_remote_commitment_tx({}/{})",
+            "REPLY sign_counterparty_commitment_tx({}/{})",
             node_id,
             channel_id
         );
@@ -1152,7 +1152,7 @@ impl Signer for MySigner {
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
             self,
-            "ENTER sign_remote_commitment_tx_phase2({}/{})",
+            "ENTER sign_counterparty_commitment_tx_phase2({}/{})",
             node_id,
             channel_id
         );
@@ -1164,7 +1164,7 @@ impl Signer for MySigner {
 
         let offered_htlcs = self.convert_htlcs(&req_info.offered_htlcs)?;
         let received_htlcs = self.convert_htlcs(&req_info.received_htlcs)?;
-        let (sig, htlc_sigs) = self.sign_remote_commitment_tx_phase2(
+        let (sig, htlc_sigs) = self.sign_counterparty_commitment_tx_phase2(
             &node_id,
             &channel_id,
             remote_per_commitment_point,
@@ -1186,7 +1186,7 @@ impl Signer for MySigner {
         };
         log_info!(
             self,
-            "REPLY sign_remote_commitment_tx_phase2({}/{})",
+            "REPLY sign_counterparty_commitment_tx_phase2({}/{})",
             node_id,
             channel_id
         );
@@ -1204,7 +1204,7 @@ impl Signer for MySigner {
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
             self,
-            "ENTER sign_local_commitment_tx_phase2({}/{})",
+            "ENTER sign_holder_commitment_tx_phase2({}/{})",
             node_id,
             channel_id
         );
@@ -1221,7 +1221,7 @@ impl Signer for MySigner {
         let offered_htlcs = self.convert_htlcs(&req_info.offered_htlcs)?;
         let received_htlcs = self.convert_htlcs(&req_info.received_htlcs)?;
 
-        let (sig, htlc_sigs) = self.sign_local_commitment_tx_phase2(
+        let (sig, htlc_sigs) = self.sign_holder_commitment_tx_phase2(
             &node_id,
             &channel_id,
             req_info.n,
@@ -1242,7 +1242,7 @@ impl Signer for MySigner {
         };
         log_info!(
             self,
-            "REPLY sign_local_commitment_tx_phase2({}/{})",
+            "REPLY sign_holder_commitment_tx_phase2({}/{})",
             node_id,
             channel_id
         );

@@ -17,7 +17,7 @@ use lightning::chain::keysinterface::{ChannelKeys, InMemoryChannelKeys};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::util::logger::{Level, Logger, Record};
 use lightning::util::ser::Writer;
-use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
+use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 
 use crate::node::node::{ChannelSetup, CommitmentType, NodeConfig};
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
@@ -127,25 +127,17 @@ impl keysinterface::KeysInterface for TestKeysInterface {
     fn get_destination_script(&self) -> Script {
         self.backing.get_destination_script()
     }
+
     fn get_shutdown_pubkey(&self) -> PublicKey {
         self.backing.get_shutdown_pubkey()
     }
+
     fn get_channel_keys(&self, inbound: bool, channel_value_sat: u64) -> EnforcingChannelKeys {
         EnforcingChannelKeys::new(self.backing.get_channel_keys(inbound, channel_value_sat))
     }
 
-    fn get_onion_rand(&self) -> (SecretKey, [u8; 32]) {
-        match *self.override_session_priv.lock().unwrap() {
-            Some(key) => (key.clone(), [0; 32]),
-            None => self.backing.get_onion_rand(),
-        }
-    }
-
-    fn get_channel_id(&self) -> [u8; 32] {
-        match *self.override_channel_id_priv.lock().unwrap() {
-            Some(key) => key.clone(),
-            None => self.backing.get_channel_id(),
-        }
+    fn get_secure_random_bytes(&self) -> [u8; 32] {
+        self.backing.get_secure_random_bytes()
     }
 }
 
