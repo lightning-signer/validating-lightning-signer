@@ -8,6 +8,7 @@ use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::hash_types::Txid;
 use bitcoin::hashes::Hash;
 use bitcoin::network::constants::Network;
+use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 use bitcoin::OutPoint as BitcoinOutPoint;
 use chain::chaininterface;
 use chain::chaininterface::ConfirmationTarget;
@@ -17,7 +18,6 @@ use lightning::chain::keysinterface::{ChannelKeys, InMemoryChannelKeys};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::util::logger::{Level, Logger, Record};
 use lightning::util::ser::Writer;
-use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 
 use crate::node::node::{ChannelSetup, CommitmentType, NodeConfig};
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;

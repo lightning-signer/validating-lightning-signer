@@ -1,10 +1,10 @@
-use bitcoin::{blockdata, Script};
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::opcodes::Class;
-use bitcoin::blockdata::script::{Builder, Instruction, Instructions, read_scriptint};
+use bitcoin::blockdata::script::{read_scriptint, Builder, Instruction, Instructions};
+use bitcoin::hash_types::PubkeyHash;
 use bitcoin::hashes::ripemd160::Hash as Ripemd160;
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::hash_types::PubkeyHash;
+use bitcoin::{blockdata, Script};
 use lightning::ln::chan_utils::{HTLCOutputInCommitment, TxCreationKeys};
 
 use crate::policy::error::ValidationError;
@@ -15,7 +15,7 @@ use bitcoin::hashes::Hash;
 fn expect_next<'a>(iter: &'a mut Instructions) -> Result<Instruction<'a>, ValidationError> {
     iter.next()
         .ok_or(Mismatch("unexpected end".to_string()))?
-        .map_err(|_| Mismatch("unparseable opcode".to_string()))
+        .map_err(|_| Mismatch("unparseable opcode".to_string())) // NOT TESTED
 }
 
 #[inline]

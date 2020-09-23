@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
+use bitcoin::secp256k1;
+use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signing};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{Network, Script};
 use bitcoin_hashes::hash160::Hash as Hash160;
@@ -12,8 +14,6 @@ use bitcoin_hashes::sha256::HashEngine as Sha256State;
 use bitcoin_hashes::{Hash, HashEngine};
 use lightning::chain::keysinterface::{InMemoryChannelKeys, KeysInterface};
 use lightning::util::logger::Logger;
-use bitcoin::secp256k1;
-use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signing};
 
 use crate::util::byte_utils;
 use crate::util::crypto_utils::{

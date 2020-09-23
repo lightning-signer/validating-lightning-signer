@@ -3,6 +3,9 @@ use std::io::Error;
 use std::sync::{Arc, Mutex};
 
 use bitcoin::blockdata::transaction::Transaction;
+use bitcoin::secp256k1;
+use bitcoin::secp256k1::key::{PublicKey, SecretKey};
+use bitcoin::secp256k1::{Secp256k1, Signature};
 use chain::keysinterface::{ChannelKeys, InMemoryChannelKeys};
 use lightning::chain;
 use lightning::ln;
@@ -13,9 +16,6 @@ use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 use ln::msgs;
-use bitcoin::secp256k1;
-use bitcoin::secp256k1::key::{SecretKey, PublicKey};
-use bitcoin::secp256k1::{Secp256k1, Signature};
 
 /// Enforces some rules on ChannelKeys calls. Eventually we will
 /// probably want to expose a variant of this which would essentially

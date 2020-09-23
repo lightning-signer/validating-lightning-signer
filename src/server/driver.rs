@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use backtrace::Backtrace;
 use bitcoin;
 use bitcoin::consensus::{deserialize, encode};
+use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::util::psbt::serialize::Deserialize;
 use bitcoin::{OutPoint, Script};
 use bitcoin_hashes::Hash;
@@ -10,7 +11,6 @@ use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::channelmanager::PaymentHash;
-use bitcoin::secp256k1::{PublicKey, SecretKey};
 use serde_json::json;
 use tonic::{transport::Server, Request, Response, Status};
 
@@ -153,7 +153,8 @@ impl Version for MySigner {
 fn convert_commitment_type(proto_commitment_type: i32) -> node::CommitmentType {
     if proto_commitment_type == ready_channel_request::CommitmentType::Legacy as i32 {
         CommitmentType::Legacy
-    } else if proto_commitment_type == ready_channel_request::CommitmentType::StaticRemotekey as i32 {
+    } else if proto_commitment_type == ready_channel_request::CommitmentType::StaticRemotekey as i32
+    {
         CommitmentType::StaticRemoteKey
     } else if proto_commitment_type == ready_channel_request::CommitmentType::Anchors as i32 {
         CommitmentType::Anchors
@@ -329,10 +330,17 @@ impl Signer for MySigner {
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id0 = self.channel_id(&req.channel_nonce0)?;
-        let opt_channel_id = req.option_channel_nonce
+        let opt_channel_id = req
+            .option_channel_nonce
             .map_or(None, |nonce| Some(channel_nonce_to_id(&nonce.data)));
-        log_info!(self, "ENTER ready_channel({}/{})->({}/{:?})",
-                  node_id, channel_id0, node_id, opt_channel_id);
+        log_info!(
+            self,
+            "ENTER ready_channel({}/{})->({}/{:?})",
+            node_id,
+            channel_id0,
+            node_id,
+            opt_channel_id
+        );
         log_debug!(self, "req={}", reqstr);
 
         let req_outpoint = req
@@ -390,8 +398,14 @@ impl Signer for MySigner {
             },
         )?;
         let reply = ReadyChannelReply {};
-        log_info!(self, "REPLY ready_channel({}/{})->({}/{:?})",
-                  node_id, channel_id0, node_id, opt_channel_id);
+        log_info!(
+            self,
+            "REPLY ready_channel({}/{})->({}/{:?})",
+            node_id,
+            channel_id0,
+            node_id,
+            opt_channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }

@@ -3,26 +3,26 @@ use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 
 use bitcoin;
-use bitcoin::{Address, Network, OutPoint, Script, SigHashType};
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1;
-use bitcoin::secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::secp256k1::ecdh::SharedSecret;
+use bitcoin::secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use bitcoin::{Address, Network, OutPoint, Script, SigHashType};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{
-    ChannelPublicKeys, derive_private_key, HolderCommitmentTransaction, HTLCOutputInCommitment,
+    derive_private_key, ChannelPublicKeys, HTLCOutputInCommitment, HolderCommitmentTransaction,
 };
 use lightning::util::logger::Logger;
-use rand::{Rng, thread_rng};
+use rand::{thread_rng, Rng};
 use tonic::Status;
 
 use crate::node::node::{
     Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, Node, NodeConfig,
 };
-use crate::tx::tx::{build_close_tx, HTLCInfo2, sign_commitment};
+use crate::tx::tx::{build_close_tx, sign_commitment, HTLCInfo2};
 use crate::util::crypto_utils::{derive_private_revocation_key, payload_for_p2wpkh};
 use crate::util::test_utils::TestLogger;
 
@@ -601,7 +601,7 @@ impl MySigner {
                         0,
                         &htlc_redeemscript,
                         htlc_amount_sat,
-                        SigHashType::All
+                        SigHashType::All,
                     )[..],
                 )
                 .map_err(|err| self.internal_error(format!("htlc_sighash failed:{}", err)))?;
@@ -669,7 +669,7 @@ impl MySigner {
                         0,
                         &htlc_redeemscript,
                         htlc_amount_sat,
-                        SigHashType::All
+                        SigHashType::All,
                     )[..],
                 )
                 .map_err(|err| self.internal_error(format!("htlc_sighash failed: {}", err)))?;
@@ -719,7 +719,7 @@ impl MySigner {
                     input,
                     &htlc_redeemscript,
                     htlc_amount_sat,
-                    SigHashType::All
+                    SigHashType::All,
                 )[..],
             )
             .map_err(|err| self.internal_error(format!("htlc_sighash failed: {}", err)))?;
@@ -768,7 +768,7 @@ impl MySigner {
                         input,
                         &redeemscript,
                         htlc_amount_sat,
-                        SigHashType::All
+                        SigHashType::All,
                     )[..],
                 )
                 .map_err(|err| self.internal_error(format!("sighash failed: {}", err)))?;
@@ -812,7 +812,7 @@ impl MySigner {
                         input,
                         &redeemscript,
                         htlc_amount_sat,
-                        SigHashType::All
+                        SigHashType::All,
                     )[..],
                 )
                 .map_err(|err| self.internal_error(format!("sighash failed: {}", err)))?;
@@ -884,7 +884,7 @@ impl MySigner {
                             idx,
                             &script_code,
                             value_sat,
-                            SigHashType::All
+                            SigHashType::All,
                         )[..],
                     )
                     .map_err(|err| self.internal_error(format!("p2wpkh sighash failed: {}", err))),
@@ -988,16 +988,16 @@ impl MySigner {
 #[cfg(test)]
 mod tests {
     use bitcoin;
-    use bitcoin::{OutPoint, TxIn, TxOut};
     use bitcoin::blockdata::opcodes;
     use bitcoin::blockdata::script::Builder;
     use bitcoin::consensus::deserialize;
     use bitcoin::secp256k1::Signature;
     use bitcoin::util::psbt::serialize::Serialize;
+    use bitcoin::{OutPoint, TxIn, TxOut};
     use bitcoin_hashes::hash160::Hash as Hash160;
     use lightning::ln::chan_utils::{
-        build_htlc_transaction, get_htlc_redeemscript, HTLCOutputInCommitment,
-        make_funding_redeemscript, TxCreationKeys,
+        build_htlc_transaction, get_htlc_redeemscript, make_funding_redeemscript,
+        HTLCOutputInCommitment, TxCreationKeys,
     };
     use lightning::ln::channelmanager::PaymentHash;
     use secp256k1::recovery::{RecoverableSignature, RecoveryId};
@@ -1855,7 +1855,7 @@ mod tests {
                 input,
                 &redeemscript,
                 input_value_sat,
-                SigHashType::All
+                SigHashType::All,
             )[..],
         )
         .expect("sighash");
@@ -2086,7 +2086,8 @@ mod tests {
                     .private_key
                     .public_key(&secp_ctx),
                 Network::Testnet,
-            ).unwrap()
+            )
+            .unwrap()
         };
 
         tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
@@ -2163,7 +2164,8 @@ mod tests {
                     .private_key
                     .public_key(&secp_ctx),
                 Network::Testnet,
-            ).unwrap()
+            )
+            .unwrap()
         };
 
         tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
@@ -2379,7 +2381,8 @@ mod tests {
                     .private_key
                     .public_key(&secp_ctx),
                 Network::Testnet,
-            ).unwrap()
+            )
+            .unwrap()
         };
 
         let pubkey = xkey

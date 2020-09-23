@@ -7,9 +7,11 @@ use bitcoin::blockdata::opcodes::all::{
     OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_IFDUP, OP_NOTIF, OP_PUSHNUM_1,
     OP_PUSHNUM_16, OP_PUSHNUM_2, OP_SIZE, OP_SWAP,
 };
+use bitcoin::secp256k1;
+use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, Signature};
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip143;
-use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut, SigHashType};
+use bitcoin::{OutPoint, Script, SigHashType, Transaction, TxIn, TxOut};
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::{Hash, HashEngine};
 use lightning::chain::keysinterface::ChannelKeys;
@@ -18,8 +20,6 @@ use lightning::ln::chan_utils::{
     make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::channelmanager::PaymentHash;
-use bitcoin::secp256k1;
-use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, Signature};
 
 use crate::node::node::ChannelSetup;
 use crate::policy::error::ValidationError;
@@ -286,7 +286,7 @@ pub fn sign_commitment(
             0,
             &channel_funding_redeemscript,
             channel_value_sat,
-            SigHashType::All
+            SigHashType::All,
         )[..],
     )?;
     Ok(secp_ctx.sign(&commitment_sighash, funding_key))
@@ -755,8 +755,8 @@ impl CommitmentInfo {
 #[cfg(test)]
 mod tests {
     use bitcoin::blockdata::script::Builder;
-    use bitcoin::{Address, Network};
     use bitcoin::secp256k1::{Secp256k1, SecretKey};
+    use bitcoin::{Address, Network};
 
     use crate::node::node::CommitmentType;
     use crate::tx::script::get_revokeable_redeemscript;
@@ -891,7 +891,9 @@ mod tests {
         let pubkey = bitcoin::PublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
         let out = TxOut {
             value: 42,
-            script_pubkey: Address::p2wpkh(&pubkey, Network::Testnet).unwrap().script_pubkey(),
+            script_pubkey: Address::p2wpkh(&pubkey, Network::Testnet)
+                .unwrap()
+                .script_pubkey(),
         };
         let res = info.handle_output(&keys, &setup, &out, &[0u8; 0]);
         assert!(res.is_err());

@@ -1,5 +1,7 @@
 use std::io::Write;
 
+use bitcoin::secp256k1;
+use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::Network;
@@ -8,8 +10,6 @@ use bitcoin_hashes::sha256::Hash as BitcoinSha256;
 use bitcoin_hashes::{Hash, HashEngine};
 use crypto::hkdf::{hkdf_expand, hkdf_extract};
 use crypto::sha2::Sha256;
-use bitcoin::secp256k1;
-use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 
 pub fn hkdf_sha256(secret: &[u8], info: &[u8], salt: &[u8]) -> [u8; 32] {
     let digest = Sha256::new();

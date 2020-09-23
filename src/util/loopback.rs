@@ -1,15 +1,15 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use bitcoin::{Script, Transaction};
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
+use bitcoin::{Script, Transaction};
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface, KeysManager};
-use lightning::ln::chan_utils::{
-    build_htlc_transaction, ChannelPublicKeys, get_htlc_redeemscript, HolderCommitmentTransaction,
-    HTLCOutputInCommitment, PreCalculatedTxCreationKeys, TxCreationKeys,
-};
 use lightning::ln::chan_utils;
+use lightning::ln::chan_utils::{
+    build_htlc_transaction, get_htlc_redeemscript, ChannelPublicKeys, HTLCOutputInCommitment,
+    HolderCommitmentTransaction, PreCalculatedTxCreationKeys, TxCreationKeys,
+};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::util::ser::Writeable;
 use tonic::Status;
@@ -18,9 +18,7 @@ use crate::node::node::{ChannelId, ChannelSetup, CommitmentType};
 use crate::server::my_keys_manager::INITIAL_COMMITMENT_NUMBER;
 use crate::server::my_signer::MySigner;
 use crate::tx::tx::{get_commitment_transaction_number_obscure_factor, HTLCInfo2};
-use crate::util::crypto_utils::{
-    derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh,
-};
+use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -524,7 +522,6 @@ impl KeysInterface for LoopbackSignerKeysInterface {
     fn get_destination_script(&self) -> Script {
         self.signer
             .with_node(&self.node_id, |node_opt| {
-
                 node_opt.map_or(Err(()), |n| Ok(n.get_destination_script()))
             })
             .unwrap()

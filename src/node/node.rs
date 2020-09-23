@@ -6,13 +6,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use backtrace::Backtrace;
 use bitcoin;
-use bitcoin::{Network, OutPoint, Script, SigHashType};
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::bip32::ExtendedPrivKey;
+use bitcoin::{Network, OutPoint, Script, SigHashType};
 use bitcoin_hashes::core::fmt::{Error, Formatter};
-use bitcoin_hashes::Hash;
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
+use bitcoin_hashes::Hash;
 use lightning::chain::keysinterface::{ChannelKeys, InMemoryChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, HTLCOutputInCommitment, PreCalculatedTxCreationKeys, TxCreationKeys,
@@ -26,11 +26,11 @@ use tonic::Status;
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
 use crate::server::my_keys_manager::{
-    INITIAL_COMMITMENT_NUMBER, KeyDerivationStyle, MyKeysManager,
+    KeyDerivationStyle, MyKeysManager, INITIAL_COMMITMENT_NUMBER,
 };
 use crate::tx::tx::{
-    build_commitment_tx, CommitmentInfo, CommitmentInfo2,
-    get_commitment_transaction_number_obscure_factor, HTLCInfo2, sign_commitment,
+    build_commitment_tx, get_commitment_transaction_number_obscure_factor, sign_commitment,
+    CommitmentInfo, CommitmentInfo2, HTLCInfo2,
 };
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
