@@ -246,8 +246,11 @@ impl ChannelKeys for EnforcingChannelKeys {
         counterparty_to_self_delay: u16,
         local_to_self_delay: u16,
     ) {
-        self.inner
-            .on_accept(channel_points, counterparty_to_self_delay, local_to_self_delay)
+        self.inner.on_accept(
+            channel_points,
+            counterparty_to_self_delay,
+            local_to_self_delay,
+        )
     }
 
     // END NOT TESTED

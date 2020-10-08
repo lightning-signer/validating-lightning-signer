@@ -181,9 +181,16 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         let policy = &self.policy;
 
-        if info.to_countersigner_address.as_ref().unwrap_or(&our_address) != &our_address {
+        if info
+            .to_countersigner_address
+            .as_ref()
+            .unwrap_or(&our_address)
+            != &our_address
+        {
             // BEGIN NOT TESTED
-            return Err(TransactionFormat("to_countersigner address mismatch".to_string()));
+            return Err(TransactionFormat(
+                "to_countersigner address mismatch".to_string(),
+            ));
             // END NOT TESTED
         }
 
@@ -732,7 +739,8 @@ mod tests {
         assert!(validator
             .validate_remote_tx(&make_test_channel_setup(), &state, &info)
             .is_ok());
-        let info_bad = make_counterparty_info(99_000_000, 800_000 - 1, 6, vec![htlc.clone()], vec![]);
+        let info_bad =
+            make_counterparty_info(99_000_000, 800_000 - 1, 6, vec![htlc.clone()], vec![]);
         assert_policy_error(
             validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
             "channel value short by 100001 > 100000",
@@ -789,12 +797,14 @@ mod tests {
         assert!(validator
             .validate_remote_tx(&make_test_channel_setup(), &state, &info_good)
             .is_ok());
-        let info_bad = make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info(1004)]);
+        let info_bad =
+            make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info(1004)]);
         assert_policy_error(
             validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
             "received HTLC expiry too early",
         ); // NOT TESTED
-        let info_bad = make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info(2441)]);
+        let info_bad =
+            make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info(2441)]);
         assert_policy_error(
             validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
             "received HTLC expiry too late",

@@ -1012,7 +1012,9 @@ mod tests {
         derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh,
     };
     use crate::util::test_utils::*;
-    use crate::util::test_utils::{make_test_channel_setup, make_test_counterparty_points, TEST_SEED};
+    use crate::util::test_utils::{
+        make_test_channel_setup, make_test_counterparty_points, TEST_SEED,
+    };
 
     use super::*;
 
@@ -1424,7 +1426,8 @@ mod tests {
         let remote_percommitment_point = make_test_pubkey(10);
         let counterparty_points = make_test_counterparty_points();
         let to_counterparty_value_sat = 2_000_000;
-        let to_holder_value_sat = setup.channel_value_sat - to_counterparty_value_sat - (2 * ANCHOR_SAT);
+        let to_holder_value_sat =
+            setup.channel_value_sat - to_counterparty_value_sat - (2 * ANCHOR_SAT);
         let (ser_signature, tx) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let info = chan.build_counterparty_commitment_info(
@@ -1649,8 +1652,10 @@ mod tests {
                     vec![],
                     vec![],
                 )?;
-                let channel_funding_redeemscript =
-                    make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
+                let channel_funding_redeemscript = make_funding_redeemscript(
+                    &funding_pubkey,
+                    &setup.counterparty_points.funding_pubkey,
+                );
 
                 check_signature(
                     &tx,
@@ -1729,7 +1734,8 @@ mod tests {
             .expect("new_channel");
 
         let mut setup = make_test_channel_setup();
-        setup.counterparty_shutdown_script = payload_for_p2wpkh(&make_test_pubkey(11)).script_pubkey();
+        setup.counterparty_shutdown_script =
+            payload_for_p2wpkh(&make_test_pubkey(11)).script_pubkey();
 
         let local_shutdown_script =
             payload_for_p2wpkh(&signer.get_shutdown_pubkey(&node_id).expect("shutdown key"))

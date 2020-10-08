@@ -375,9 +375,12 @@ impl Signer for MySigner {
             htlc_basepoint: self.public_key(counterparty_points.htlc)?,
         };
 
-        let counterparty_shutdown_script = Script::deserialize(&req.remote_shutdown_script.as_slice())
-            .map_err(|err| {
-                self.invalid_argument(format!("could not parse counterparty_shutdown_script: {}", err))
+        let counterparty_shutdown_script =
+            Script::deserialize(&req.remote_shutdown_script.as_slice()).map_err(|err| {
+                self.invalid_argument(format!(
+                    "could not parse counterparty_shutdown_script: {}",
+                    err
+                ))
             })?;
 
         self.ready_channel(

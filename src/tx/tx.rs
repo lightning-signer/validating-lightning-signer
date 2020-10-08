@@ -456,7 +456,10 @@ impl CommitmentInfo {
         Ok(())
     }
 
-    fn parse_to_countersigner_delayed_script(&self, script: &Script) -> Result<Vec<u8>, ValidationError> {
+    fn parse_to_countersigner_delayed_script(
+        &self,
+        script: &Script,
+    ) -> Result<Vec<u8>, ValidationError> {
         let iter = &mut script.instructions();
         let pubkey_data = expect_data(iter)?;
         expect_op(iter, OP_CHECKSIGVERIFY)?;
@@ -478,8 +481,14 @@ impl CommitmentInfo {
             // END NOT TESTED
         }
         self.to_countersigner_pubkey = Some(
-            PublicKey::from_slice(to_countersigner_delayed_pubkey_data.as_slice())
-                .map_err(|err| Mismatch(format!("to_countersigner delayed pubkey malformed: {}", err)))?,
+            PublicKey::from_slice(to_countersigner_delayed_pubkey_data.as_slice()).map_err(
+                |err| {
+                    Mismatch(format!(
+                        "to_countersigner delayed pubkey malformed: {}",
+                        err
+                    ))
+                },
+            )?,
         );
         self.to_countersigner_value_sat = out.value;
         Ok(())
@@ -665,17 +674,18 @@ impl CommitmentInfo {
             .map_err(|err| Mismatch(format!("anchor to_pubkey malformed: {}", err)))?;
 
         // These are dependent on which side owns this commitment.
-        let (to_broadcaster_funding_pubkey, to_countersigner_funding_pubkey) = if self.is_counterparty_broadcaster {
-            (
-                keys.counterparty_pubkeys().funding_pubkey,
-                keys.pubkeys().funding_pubkey,
-            )
-        } else {
-            (
-                keys.pubkeys().funding_pubkey,
-                keys.counterparty_pubkeys().funding_pubkey,
-            )
-        };
+        let (to_broadcaster_funding_pubkey, to_countersigner_funding_pubkey) =
+            if self.is_counterparty_broadcaster {
+                (
+                    keys.counterparty_pubkeys().funding_pubkey,
+                    keys.pubkeys().funding_pubkey,
+                )
+            } else {
+                (
+                    keys.pubkeys().funding_pubkey,
+                    keys.counterparty_pubkeys().funding_pubkey,
+                )
+            };
 
         if out.value != ANCHOR_SAT {
             return Err(Mismatch(format!("anchor wrong size: {}", out.value)));
@@ -711,7 +721,9 @@ impl CommitmentInfo {
                 ));
             }
             if self.has_to_countersigner() {
-                return Err(TransactionFormat("more than one to_countersigner".to_string()));
+                return Err(TransactionFormat(
+                    "more than one to_countersigner".to_string(),
+                ));
             }
             self.to_countersigner_address = Payload::from_script(&out.script_pubkey);
             self.to_countersigner_value_sat = out.value;

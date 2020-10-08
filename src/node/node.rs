@@ -258,7 +258,9 @@ impl Channel {
                 &remote_per_commitment_point,
                 &holder_points.payment_point,
             )
-            .map_err(|err| self.internal_error(format!("could not derive counterparty_key: {}", err)))?
+            .map_err(|err| {
+                self.internal_error(format!("could not derive counterparty_key: {}", err))
+            })?
         };
         Ok(counterparty_key)
     }
@@ -398,18 +400,18 @@ impl Channel {
         };
 
         // FIXME, WORKAROUND - These should be in `keys` above.
-        let (workaround_local_funding_pubkey, workaround_remote_funding_pubkey) = if !info.is_counterparty_broadcaster
-        {
-            (
-                &self.keys.pubkeys().funding_pubkey,
-                &self.keys.counterparty_pubkeys().funding_pubkey,
-            )
-        } else {
-            (
-                &self.keys.counterparty_pubkeys().funding_pubkey,
-                &self.keys.pubkeys().funding_pubkey,
-            )
-        };
+        let (workaround_local_funding_pubkey, workaround_remote_funding_pubkey) =
+            if !info.is_counterparty_broadcaster {
+                (
+                    &self.keys.pubkeys().funding_pubkey,
+                    &self.keys.counterparty_pubkeys().funding_pubkey,
+                )
+            } else {
+                (
+                    &self.keys.counterparty_pubkeys().funding_pubkey,
+                    &self.keys.pubkeys().funding_pubkey,
+                )
+            };
 
         let obscured_commitment_transaction_number =
             self.get_commitment_transaction_number_obscure_factor() ^ commitment_number;
@@ -486,7 +488,10 @@ impl Channel {
         )
         .map_err(|err| {
             // BEGIN NOT TESTED
-            self.internal_error(format!("could not derive to_holder_delayed_pubkey: {}", err))
+            self.internal_error(format!(
+                "could not derive to_holder_delayed_pubkey: {}",
+                err
+            ))
             // END NOT TESTED
         })?;
 
