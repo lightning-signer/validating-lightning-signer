@@ -33,11 +33,11 @@ pub struct LoopbackChannelSigner {
     pub channel_id: ChannelId,
     pub signer: Arc<MySigner>,
     pub pubkeys: ChannelPublicKeys,
-    pub remote_pubkeys: Option<ChannelPublicKeys>,
+    pub counterparty_pubkeys: Option<ChannelPublicKeys>,
     pub is_outbound: bool,
     pub channel_value_sat: u64,
     pub local_to_self_delay: u16,
-    pub remote_to_self_delay: u16,
+    pub counterparty_to_self_delay: u16,
 }
 
 impl LoopbackChannelSigner {
@@ -63,26 +63,26 @@ impl LoopbackChannelSigner {
             channel_id: *channel_id,
             signer: signer.clone(),
             pubkeys,
-            remote_pubkeys: None,
+            counterparty_pubkeys: None,
             is_outbound,
             channel_value_sat,
             local_to_self_delay: 0,
-            remote_to_self_delay: 0,
+            counterparty_to_self_delay: 0,
         }
     }
 
-    pub fn make_remote_tx_keys<T: secp256k1::Signing + secp256k1::Verification>(
+    pub fn make_counterparty_tx_keys<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         per_commitment_point: &PublicKey,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<TxCreationKeys, ()> {
         let pubkeys = &self.pubkeys;
-        let remote_pubkeys = self.remote_pubkeys.as_ref().ok_or(())?;
+        let counterparty_pubkeys = self.counterparty_pubkeys.as_ref().ok_or(())?;
         let keys = TxCreationKeys::derive_new(
             secp_ctx,
             &per_commitment_point,
-            &remote_pubkeys.delayed_payment_basepoint,
-            &remote_pubkeys.htlc_basepoint,
+            &counterparty_pubkeys.delayed_payment_basepoint,
+            &counterparty_pubkeys.htlc_basepoint,
             &pubkeys.revocation_basepoint,
             &pubkeys.htlc_basepoint,
         )
@@ -164,8 +164,8 @@ impl ChannelKeys for LoopbackChannelSigner {
 
         let (
             commitment_number,
-            to_local_value_sat,
-            to_remote_value_sat,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
             offered_htlcs,
             received_htlcs,
         ) = self.decode_commitment_tx(commitment_tx, htlcs);
@@ -186,8 +186,8 @@ impl ChannelKeys for LoopbackChannelSigner {
                 *keys.per_commitment_point(),
                 commitment_number,
                 feerate_per_kw,
-                to_local_value_sat,
-                to_remote_value_sat,
+                to_holder_value_sat,
+                to_counterparty_value_sat,
                 offered_htlcs,
                 received_htlcs,
             )
@@ -224,8 +224,8 @@ impl ChannelKeys for LoopbackChannelSigner {
         let htlcs: Vec<&HTLCOutputInCommitment> = hct.per_htlc.iter().map(|(h, _)| h).collect();
         let (
             commitment_number,
-            to_local_value_sat,
-            to_remote_value_sat,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
             offered_htlcs,
             received_htlcs,
         ) = self.decode_commitment_tx(&hct.unsigned_tx, htlcs.as_slice());
@@ -236,8 +236,8 @@ impl ChannelKeys for LoopbackChannelSigner {
                 &self.channel_id,
                 commitment_number,
                 0, // feerate is not relevant because we are not signing HTLCs
-                to_local_value_sat,
-                to_remote_value_sat,
+                to_holder_value_sat,
+                to_counterparty_value_sat,
                 offered_htlcs,
                 received_htlcs,
             )
@@ -265,12 +265,12 @@ impl ChannelKeys for LoopbackChannelSigner {
         let (commitment_number, _, _, _, _) = self.decode_commitment_tx(&hct.unsigned_tx, &htlcs);
 
         let per_commitment_point = hct.trust_key_derivation().per_commitment_point;
-        let remote_pubkeys = self.remote_pubkeys.as_ref().unwrap();
+        let counterparty_pubkeys = self.counterparty_pubkeys.as_ref().unwrap();
         let (revocation_key, delayed_payment_key) = get_delayed_payment_keys(
             secp_ctx,
             &per_commitment_point,
             &self.pubkeys,
-            remote_pubkeys,
+            counterparty_pubkeys,
         )?;
         for this_htlc in hct.per_htlc.iter() {
             if this_htlc.0.transaction_output_index.is_some() {
@@ -278,7 +278,7 @@ impl ChannelKeys for LoopbackChannelSigner {
                 let htlc_tx = build_htlc_transaction(
                     &hct.txid(),
                     hct.feerate_per_kw,
-                    self.remote_to_self_delay,
+                    self.counterparty_to_self_delay,
                     &this_htlc.0,
                     &delayed_payment_key,
                     &revocation_key,
@@ -326,17 +326,17 @@ impl ChannelKeys for LoopbackChannelSigner {
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
         let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
-        let remote_pubkeys = self.remote_pubkeys.as_ref().unwrap();
+        let counterparty_pubkeys = self.counterparty_pubkeys.as_ref().unwrap();
 
         let (revocation_key, delayed_payment_key) = get_delayed_payment_keys(
             secp_ctx,
             &per_commitment_point,
-            remote_pubkeys,
+            counterparty_pubkeys,
             &self.pubkeys,
         )?;
         let redeem_script = if let Some(ref htlc) = *htlc {
             // BEGIN NOT TESTED
-            let tx_keys = self.make_remote_tx_keys(&per_commitment_point, secp_ctx)?;
+            let tx_keys = self.make_counterparty_tx_keys(&per_commitment_point, secp_ctx)?;
             chan_utils::get_htlc_redeemscript(&htlc, &tx_keys)
         // END NOT TESTED
         } else {
@@ -372,7 +372,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         htlc: &HTLCOutputInCommitment,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        let chan_keys = self.make_remote_tx_keys(per_commitment_point, secp_ctx)?;
+        let chan_keys = self.make_counterparty_tx_keys(per_commitment_point, secp_ctx)?;
         let redeem_script = chan_utils::get_htlc_redeemscript(htlc, &chan_keys);
 
         // TODO phase 2
@@ -404,33 +404,33 @@ impl ChannelKeys for LoopbackChannelSigner {
             self.node_id,
             self.channel_id
         );
-        let mut to_local_value = 0;
-        let mut to_remote_value = 0;
+        let mut to_holder_value = 0;
+        let mut to_counterparty_value = 0;
         let local_script = payload_for_p2wpkh(
             &signer
                 .get_shutdown_pubkey(&self.node_id)
                 .map_err(|s| self.bad_status(s))?,
         )
         .script_pubkey();
-        let mut to_remote_script = Script::default();
+        let mut to_counterparty_script = Script::default();
         for out in &closing_tx.output {
             if out.script_pubkey == local_script {
-                if to_local_value > 0 {
+                if to_holder_value > 0 {
                     // BEGIN NOT TESTED
-                    log_error!(signer, "multiple to_local outputs");
+                    log_error!(signer, "multiple to_holder outputs");
                     return Err(());
                     // END NOT TESTED
                 }
-                to_local_value = out.value;
+                to_holder_value = out.value;
             } else {
-                if to_remote_value > 0 {
+                if to_counterparty_value > 0 {
                     // BEGIN NOT TESTED
-                    log_error!(signer, "multiple to_remote outputs");
+                    log_error!(signer, "multiple to_counterparty outputs");
                     return Err(());
                     // END NOT TESTED
                 }
-                to_remote_value = out.value;
-                to_remote_script = out.script_pubkey.clone();
+                to_counterparty_value = out.value;
+                to_counterparty_script = out.script_pubkey.clone();
             }
         }
 
@@ -439,9 +439,9 @@ impl ChannelKeys for LoopbackChannelSigner {
             .sign_mutual_close_tx_phase2(
                 &self.node_id,
                 &self.channel_id,
-                to_local_value,
-                to_remote_value,
-                Some(to_remote_script),
+                to_holder_value,
+                to_counterparty_value,
+                Some(to_counterparty_script),
             )
             .map_err(|s| self.bad_status(s))?;
         bitcoin_sig_to_signature(res)
@@ -473,8 +473,8 @@ impl ChannelKeys for LoopbackChannelSigner {
 
     fn on_accept(
         &mut self,
-        remote_points: &ChannelPublicKeys,
-        remote_to_self_delay: u16,
+        counterparty_points: &ChannelPublicKeys,
+        counterparty_to_self_delay: u16,
         local_to_self_delay: u16,
     ) {
         let signer = &self.signer;
@@ -492,18 +492,18 @@ impl ChannelKeys for LoopbackChannelSigner {
             push_value_msat: 0,                   // TODO
             funding_outpoint: Default::default(), // TODO
             local_to_self_delay,
-            local_shutdown_script: None, // use the signer's shutdown script
-            remote_points: remote_points.clone(),
-            remote_to_self_delay,
-            remote_shutdown_script: Default::default(), // TODO
+            holder_shutdown_script: None, // use the signer's shutdown script
+            counterparty_points: counterparty_points.clone(),
+            counterparty_to_self_delay,
+            counterparty_shutdown_script: Default::default(), // TODO
             commitment_type: CommitmentType::StaticRemoteKey, // TODO
         };
         self.signer
             .ready_channel(&self.node_id, self.channel_id, None, setup)
             .expect("channel already ready or does not exist");
-        self.remote_pubkeys = Some(remote_points.clone());
+        self.counterparty_pubkeys = Some(counterparty_points.clone());
         self.local_to_self_delay = local_to_self_delay;
-        self.remote_to_self_delay = remote_to_self_delay;
+        self.counterparty_to_self_delay = counterparty_to_self_delay;
     }
 }
 
@@ -559,8 +559,8 @@ impl LoopbackChannelSigner {
         commitment_tx: &Transaction,
         htlcs: &[&HTLCOutputInCommitment],
     ) -> (u64, u64, u64, Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
-        let mut to_local_value_sat = 0;
-        let mut to_remote_value_sat = 0;
+        let mut to_holder_value_sat = 0;
+        let mut to_counterparty_value_sat = 0;
 
         let mut offered_htlcs = Vec::new();
         let mut received_htlcs = Vec::new();
@@ -585,22 +585,22 @@ impl LoopbackChannelSigner {
         for (idx, out) in commitment_tx.output.iter().enumerate() {
             if out.script_pubkey.is_v0_p2wsh() {
                 if !htlc_indices.contains(&(idx as u32)) {
-                    if to_local_value_sat != 0 {
+                    if to_holder_value_sat != 0 {
                         panic!("multiple to-local") // NOT TESTED
                     }
-                    to_local_value_sat = out.value;
+                    to_holder_value_sat = out.value;
                 }
             } else {
-                if to_remote_value_sat != 0 {
+                if to_counterparty_value_sat != 0 {
                     panic!("multiple to-remote") // NOT TESTED
                 }
-                to_remote_value_sat = out.value;
+                to_counterparty_value_sat = out.value;
             }
         }
 
         let obscure_factor = get_commitment_transaction_number_obscure_factor(
             &self.pubkeys.payment_point,
-            &self.remote_pubkeys.as_ref().unwrap().payment_point,
+            &self.counterparty_pubkeys.as_ref().unwrap().payment_point,
             self.is_outbound,
         );
 
@@ -610,8 +610,8 @@ impl LoopbackChannelSigner {
 
         (
             commitment_number,
-            to_local_value_sat,
-            to_remote_value_sat,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
             offered_htlcs,
             received_htlcs,
         )

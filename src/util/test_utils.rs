@@ -204,7 +204,7 @@ pub fn make_test_privkey(i: u8) -> SecretKey {
     make_test_key(i).1
 }
 
-pub fn make_test_remote_points() -> ChannelPublicKeys {
+pub fn make_test_counterparty_points() -> ChannelPublicKeys {
     ChannelPublicKeys {
         funding_pubkey: make_test_pubkey(104),
         revocation_basepoint: make_test_pubkey(100),
@@ -225,10 +225,10 @@ pub fn make_test_channel_setup() -> ChannelSetup {
             vout: 0,
         },
         local_to_self_delay: 5,
-        local_shutdown_script: None,
-        remote_points: make_test_remote_points(),
-        remote_to_self_delay: 5,
-        remote_shutdown_script: Script::new(),
+        holder_shutdown_script: None,
+        counterparty_points: make_test_counterparty_points(),
+        counterparty_to_self_delay: 5,
+        counterparty_shutdown_script: Script::new(),
         commitment_type: CommitmentType::Legacy,
     }
 }
@@ -243,10 +243,10 @@ pub fn make_reasonable_test_channel_setup() -> ChannelSetup {
             vout: 0,
         },
         local_to_self_delay: 5,
-        local_shutdown_script: None,
-        remote_points: make_test_remote_points(),
-        remote_to_self_delay: 5,
-        remote_shutdown_script: Script::new(),
+        holder_shutdown_script: None,
+        counterparty_points: make_test_counterparty_points(),
+        counterparty_to_self_delay: 5,
+        counterparty_shutdown_script: Script::new(),
         commitment_type: CommitmentType::Legacy,
     }
 }
@@ -266,7 +266,7 @@ pub fn make_test_channel_keys() -> EnforcingChannelKeys {
         MyKeysManager::derivation_params(),
     );
     // This needs to match make_test_channel_setup above.
-    inmemkeys.on_accept(&make_test_remote_points(), 5, 5);
+    inmemkeys.on_accept(&make_test_counterparty_points(), 5, 5);
     EnforcingChannelKeys::new(inmemkeys)
 }
 

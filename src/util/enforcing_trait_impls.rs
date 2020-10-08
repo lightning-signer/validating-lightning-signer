@@ -36,7 +36,7 @@ impl EnforcingChannelKeys {
         }
     }
 
-    pub fn remote_pubkeys(&self) -> &ChannelPublicKeys {
+    pub fn counterparty_pubkeys(&self) -> &ChannelPublicKeys {
         self.inner.counterparty_pubkeys()
     }
 
@@ -57,13 +57,13 @@ impl EnforcingChannelKeys {
         let revocation_base = PublicKey::from_secret_key(secp_ctx, &self.revocation_base_key());
         let htlc_base = PublicKey::from_secret_key(secp_ctx, &self.htlc_base_key());
 
-        let remote_points = self.remote_pubkeys();
+        let counterparty_pubkeys = self.counterparty_pubkeys();
 
         let keys_expected = TxCreationKeys::derive_new(
             secp_ctx,
             &keys.per_commitment_point,
-            &remote_points.delayed_payment_basepoint,
-            &remote_points.htlc_basepoint,
+            &counterparty_pubkeys.delayed_payment_basepoint,
+            &counterparty_pubkeys.htlc_basepoint,
             &revocation_base,
             &htlc_base,
         )
@@ -243,11 +243,11 @@ impl ChannelKeys for EnforcingChannelKeys {
     fn on_accept(
         &mut self,
         channel_points: &ChannelPublicKeys,
-        remote_to_self_delay: u16,
+        counterparty_to_self_delay: u16,
         local_to_self_delay: u16,
     ) {
         self.inner
-            .on_accept(channel_points, remote_to_self_delay, local_to_self_delay)
+            .on_accept(channel_points, counterparty_to_self_delay, local_to_self_delay)
     }
 
     // END NOT TESTED

@@ -69,11 +69,11 @@ pub struct ChannelSetup {
     /// locally imposed requirement on the remote commitment transaction to_self_delay
     pub local_to_self_delay: u16,
     /// Maybe be None if we should generate it inside the signer
-    pub local_shutdown_script: Option<Script>,
-    pub remote_points: ChannelPublicKeys, // DUP keys.inner.remote_channel_pubkeys
+    pub holder_shutdown_script: Option<Script>,
+    pub counterparty_points: ChannelPublicKeys, // DUP keys.inner.remote_channel_pubkeys
     /// remotely imposed requirement on the local commitment transaction to_self_delay
-    pub remote_to_self_delay: u16,
-    pub remote_shutdown_script: Script,
+    pub counterparty_to_self_delay: u16,
+    pub counterparty_shutdown_script: Script,
     pub commitment_type: CommitmentType,
 }
 
@@ -206,26 +206,26 @@ impl Channel {
     }
 
     // Phase 2
-    fn make_remote_tx_keys(
+    fn make_counterparty_tx_keys(
         &self,
         per_commitment_point: &PublicKey,
     ) -> Result<TxCreationKeys, Status> {
-        let local_points = self.keys.pubkeys();
+        let holder_points = self.keys.pubkeys();
 
-        let remote_points = self.keys.remote_pubkeys();
+        let counterparty_points = self.keys.counterparty_pubkeys();
 
-        Ok(self.make_tx_keys(per_commitment_point, remote_points, local_points))
+        Ok(self.make_tx_keys(per_commitment_point, counterparty_points, holder_points))
     }
 
-    pub(crate) fn make_local_tx_keys(
+    pub(crate) fn make_holder_tx_keys(
         &self,
         per_commitment_point: &PublicKey,
     ) -> Result<TxCreationKeys, Status> {
-        let local_points = self.keys.pubkeys();
+        let holder_points = self.keys.pubkeys();
 
-        let remote_points = self.keys.remote_pubkeys();
+        let counterparty_points = self.keys.counterparty_pubkeys();
 
-        Ok(self.make_tx_keys(per_commitment_point, local_points, remote_points))
+        Ok(self.make_tx_keys(per_commitment_point, holder_points, counterparty_points))
     }
 
     fn make_tx_keys(
@@ -245,22 +245,22 @@ impl Channel {
         .expect("failed to derive keys")
     }
 
-    fn derive_remote_payment_pubkey(
+    fn derive_counterparty_payment_pubkey(
         &self,
         remote_per_commitment_point: &PublicKey,
     ) -> Result<PublicKey, Status> {
-        let local_points = self.keys.pubkeys();
-        let remote_key = if self.setup.option_static_remotekey() {
-            local_points.payment_point
+        let holder_points = self.keys.pubkeys();
+        let counterparty_key = if self.setup.option_static_remotekey() {
+            holder_points.payment_point
         } else {
             derive_public_key(
                 &self.secp_ctx,
                 &remote_per_commitment_point,
-                &local_points.payment_point,
+                &holder_points.payment_point,
             )
-            .map_err(|err| self.internal_error(format!("could not derive remote_key: {}", err)))?
+            .map_err(|err| self.internal_error(format!("could not derive counterparty_key: {}", err)))?
         };
-        Ok(remote_key)
+        Ok(counterparty_key)
     }
 
     /// Phase 1
@@ -279,7 +279,7 @@ impl Channel {
 
         // The CommitmentInfo will be used to check policy
         // assertions.
-        let mut info = CommitmentInfo::new_remote();
+        let mut info = CommitmentInfo::new_for_counterparty();
         for ind in 0..tx.output.len() {
             log_debug!(self, "pkscript[{}] {:?}", ind, tx.output[ind].script_pubkey);
             info.handle_output(
@@ -292,8 +292,8 @@ impl Channel {
         }
 
         // Our key (remote from the point of view of the tx)
-        let remote_payment_pubkey =
-            self.derive_remote_payment_pubkey(remote_per_commitment_point)?;
+        let counterparty_payment_pubkey =
+            self.derive_counterparty_payment_pubkey(remote_per_commitment_point)?;
         let validator = self
             .node
             .validator_factory
@@ -311,14 +311,14 @@ impl Channel {
                 &self.setup,
                 &state,
                 &info,
-                payload_for_p2wpkh(&remote_payment_pubkey),
+                payload_for_p2wpkh(&counterparty_payment_pubkey),
             )
             .map_err(|ve| self.validation_error(ve))?;
 
         let commitment_sig = sign_commitment(
             &self.secp_ctx,
             &self.keys,
-            &self.setup.remote_points.funding_pubkey,
+            &self.setup.counterparty_points.funding_pubkey,
             &tx,
             channel_value_sat,
         )
@@ -340,7 +340,7 @@ impl Channel {
         htlcs: &[&HTLCOutputInCommitment],
     ) -> Result<(Signature, Vec<Signature>), Status> {
         let tx_keys =
-            PreCalculatedTxCreationKeys::new(self.make_remote_tx_keys(per_commitment_point)?);
+            PreCalculatedTxCreationKeys::new(self.make_counterparty_tx_keys(per_commitment_point)?);
         let pubkey = self.keys.pubkeys().funding_pubkey;
         log_trace!(
             self,
@@ -372,7 +372,7 @@ impl Channel {
     fn get_commitment_transaction_number_obscure_factor(&self) -> u64 {
         get_commitment_transaction_number_obscure_factor(
             &self.keys.pubkeys().payment_point,
-            &self.keys.remote_pubkeys().payment_point,
+            &self.keys.counterparty_pubkeys().payment_point,
             self.setup.is_outbound,
         )
     }
@@ -391,22 +391,22 @@ impl Channel {
         ),
         Status,
     > {
-        let keys = if !info.is_remote {
-            self.make_local_tx_keys(per_commitment_point)?
+        let keys = if !info.is_counterparty_broadcaster {
+            self.make_holder_tx_keys(per_commitment_point)?
         } else {
-            self.make_remote_tx_keys(per_commitment_point)?
+            self.make_counterparty_tx_keys(per_commitment_point)?
         };
 
         // FIXME, WORKAROUND - These should be in `keys` above.
-        let (workaround_local_funding_pubkey, workaround_remote_funding_pubkey) = if !info.is_remote
+        let (workaround_local_funding_pubkey, workaround_remote_funding_pubkey) = if !info.is_counterparty_broadcaster
         {
             (
                 &self.keys.pubkeys().funding_pubkey,
-                &self.keys.remote_pubkeys().funding_pubkey,
+                &self.keys.counterparty_pubkeys().funding_pubkey,
             )
         } else {
             (
-                &self.keys.remote_pubkeys().funding_pubkey,
+                &self.keys.counterparty_pubkeys().funding_pubkey,
                 &self.keys.pubkeys().funding_pubkey,
             )
         };
@@ -424,83 +424,83 @@ impl Channel {
         ))
     }
 
-    pub fn build_remote_commitment_info(
+    pub fn build_counterparty_commitment_info(
         &self,
         remote_per_commitment_point: &PublicKey,
-        to_local_value_sat: u64,
-        to_remote_value_sat: u64,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<CommitmentInfo2, Status> {
-        let local_points = self.keys.pubkeys();
+        let holder_points = self.keys.pubkeys();
         let secp_ctx = &self.secp_ctx;
 
-        let to_local_delayed_pubkey = derive_public_key(
+        let to_holder_delayed_pubkey = derive_public_key(
             secp_ctx,
             &remote_per_commitment_point,
-            &self.setup.remote_points.delayed_payment_basepoint,
+            &self.setup.counterparty_points.delayed_payment_basepoint,
         )
         .map_err(|err| {
             // BEGIN NOT TESTED
-            self.internal_error(format!("could not derive to_local_delayed_key: {}", err))
+            self.internal_error(format!("could not derive to_holder_delayed_key: {}", err))
             // END NOT TESTED
         })?;
-        let remote_payment_pubkey =
-            self.derive_remote_payment_pubkey(remote_per_commitment_point)?;
+        let counterparty_payment_pubkey =
+            self.derive_counterparty_payment_pubkey(remote_per_commitment_point)?;
         let revocation_pubkey = derive_revocation_pubkey(
             secp_ctx,
             &remote_per_commitment_point,
-            &local_points.revocation_basepoint,
+            &holder_points.revocation_basepoint,
         )
         .map_err(|err| self.internal_error(format!("could not derive revocation key: {}", err)))?;
-        let to_remote_delayed_pubkey = remote_payment_pubkey.clone();
+        let to_counterparty_pubkey = counterparty_payment_pubkey.clone();
         Ok(CommitmentInfo2 {
-            is_remote: true,
-            to_remote_delayed_pubkey,
-            to_remote_value_sat,
+            is_counterparty_broadcaster: true,
+            to_countersigner_pubkey: to_counterparty_pubkey,
+            to_countersigner_value_sat: to_counterparty_value_sat,
             revocation_pubkey,
-            to_local_delayed_pubkey,
-            to_local_value_sat,
+            to_broadcaster_delayed_pubkey: to_holder_delayed_pubkey,
+            to_broadcaster_value_sat: to_holder_value_sat,
             to_self_delay: self.setup.local_to_self_delay,
             offered_htlcs,
             received_htlcs,
         })
     }
 
-    pub fn build_local_commitment_info(
+    pub fn build_holder_commitment_info(
         &self,
         per_commitment_point: &PublicKey,
-        to_local_value_sat: u64,
-        to_remote_value_sat: u64,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<CommitmentInfo2, Status> {
-        let local_points = self.keys.pubkeys();
-        let remote_points = self.keys.remote_pubkeys();
+        let holder_points = self.keys.pubkeys();
+        let counterparty_points = self.keys.counterparty_pubkeys();
         let secp_ctx = &self.secp_ctx;
 
-        let to_local_delayed_pubkey = derive_public_key(
+        let to_holder_delayed_pubkey = derive_public_key(
             secp_ctx,
             &per_commitment_point,
-            &local_points.delayed_payment_basepoint,
+            &holder_points.delayed_payment_basepoint,
         )
         .map_err(|err| {
             // BEGIN NOT TESTED
-            self.internal_error(format!("could not derive to_local_delayed_pubkey: {}", err))
+            self.internal_error(format!("could not derive to_holder_delayed_pubkey: {}", err))
             // END NOT TESTED
         })?;
 
-        let remote_pubkey = if self.setup.option_static_remotekey() {
-            remote_points.payment_point
+        let counterparty_pubkey = if self.setup.option_static_remotekey() {
+            counterparty_points.payment_point
         } else {
             derive_public_key(
                 &self.secp_ctx,
                 &per_commitment_point,
-                &remote_points.payment_point,
+                &counterparty_points.payment_point,
             )
             .map_err(|err| {
                 // BEGIN NOT TESTED
-                self.internal_error(format!("could not derive remote_pubkey: {}", err))
+                self.internal_error(format!("could not derive counterparty_pubkey: {}", err))
                 // END NOT TESTED
             })?
         };
@@ -508,22 +508,22 @@ impl Channel {
         let revocation_pubkey = derive_revocation_pubkey(
             secp_ctx,
             &per_commitment_point,
-            &remote_points.revocation_basepoint,
+            &counterparty_points.revocation_basepoint,
         )
         .map_err(|err| {
             // BEGIN NOT TESTED
             self.internal_error(format!("could not derive revocation_pubkey: {}", err))
             // END NOT TESTED
         })?;
-        let to_remote_delayed_pubkey = remote_pubkey.clone();
+        let to_counterparty_pubkey = counterparty_pubkey.clone();
         Ok(CommitmentInfo2 {
-            is_remote: false,
-            to_remote_delayed_pubkey,
-            to_remote_value_sat,
+            is_counterparty_broadcaster: false,
+            to_countersigner_pubkey: to_counterparty_pubkey,
+            to_countersigner_value_sat: to_counterparty_value_sat,
             revocation_pubkey,
-            to_local_delayed_pubkey,
-            to_local_value_sat,
-            to_self_delay: self.setup.remote_to_self_delay,
+            to_broadcaster_delayed_pubkey: to_holder_delayed_pubkey,
+            to_broadcaster_value_sat: to_holder_value_sat,
+            to_self_delay: self.setup.counterparty_to_self_delay,
             offered_htlcs,
             received_htlcs,
         })
@@ -534,15 +534,15 @@ impl Channel {
         remote_per_commitment_point: &PublicKey,
         commitment_number: u64,
         feerate_per_kw: u32,
-        to_local_value_sat: u64,
-        to_remote_value_sat: u64,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
-        let info = self.build_remote_commitment_info(
+        let info = self.build_counterparty_commitment_info(
             remote_per_commitment_point,
-            to_local_value_sat,
-            to_remote_value_sat,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
             offered_htlcs.clone(),
             received_htlcs.clone(),
         )?;
@@ -556,7 +556,7 @@ impl Channel {
         println!("txid {}", tx.txid());
 
         let keys = PreCalculatedTxCreationKeys::new(
-            self.make_remote_tx_keys(remote_per_commitment_point)?,
+            self.make_counterparty_tx_keys(remote_per_commitment_point)?,
         );
 
         let mut htlc_refs = Vec::new();
@@ -694,8 +694,8 @@ impl Node {
             }?;
             let mut inmem_keys = stub.channel_keys_with_channel_value(setup.channel_value_sat);
             inmem_keys.on_accept(
-                &setup.remote_points,
-                setup.remote_to_self_delay,
+                &setup.counterparty_points,
+                setup.counterparty_to_self_delay,
                 setup.local_to_self_delay,
             ); // DUP VALUE
             Channel {

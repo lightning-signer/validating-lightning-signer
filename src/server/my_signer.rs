@@ -325,8 +325,8 @@ impl MySigner {
         remote_per_commitment_point: PublicKey,
         commitment_number: u64,
         feerate_per_kw: u32,
-        to_local_value_sat: u64,
-        to_remote_value_sat: u64,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
@@ -335,8 +335,8 @@ impl MySigner {
                 &remote_per_commitment_point,
                 commitment_number,
                 feerate_per_kw,
-                to_local_value_sat,
-                to_remote_value_sat,
+                to_holder_value_sat,
+                to_counterparty_value_sat,
                 offered_htlcs.clone(),
                 received_htlcs.clone(),
             )
@@ -348,17 +348,17 @@ impl MySigner {
         channel_id: &ChannelId,
         commitment_number: u64,
         feerate_per_kw: u32,
-        to_local_value_sat: u64,
-        to_remote_value_sat: u64,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
         self.with_ready_channel(&node_id, &channel_id, |chan| {
             let per_commitment_point = chan.get_per_commitment_point(commitment_number);
-            let info = chan.build_local_commitment_info(
+            let info = chan.build_holder_commitment_info(
                 &per_commitment_point,
-                to_local_value_sat,
-                to_remote_value_sat,
+                to_holder_value_sat,
+                to_counterparty_value_sat,
                 offered_htlcs.clone(),
                 received_htlcs.clone(),
             )?;
@@ -373,8 +373,8 @@ impl MySigner {
                 );
             }
 
-            log_debug!(self, "my_signer: sign local txid {}", tx.txid());
-            let keys = chan.make_local_tx_keys(&per_commitment_point)?;
+            log_debug!(self, "my_signer: sign holder txid {}", tx.txid());
+            let keys = chan.make_holder_tx_keys(&per_commitment_point)?;
 
             let mut htlc_refs = Vec::new();
             for htlc in htlcs.iter() {
@@ -395,7 +395,7 @@ impl MySigner {
                 tx,
                 dummy_sig,
                 &chan.keys.pubkeys().funding_pubkey,
-                &chan.keys.remote_pubkeys().funding_pubkey,
+                &chan.keys.counterparty_pubkeys().funding_pubkey,
                 keys,
                 feerate_per_kw,
                 htlc_data,
@@ -444,14 +444,14 @@ impl MySigner {
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
-        to_local_value_sat: u64,
-        to_remote_value_sat: u64,
-        opt_remote_shutdown_script: Option<Script>,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
+        opt_counterparty_shutdown_script: Option<Script>,
     ) -> Result<Vec<u8>, Status> {
         self.with_ready_channel(&node_id, &channel_id, |chan| {
             let local_script = chan
                 .setup
-                .local_shutdown_script
+                .holder_shutdown_script
                 .clone()
                 .or_else(|| {
                     Some(
@@ -460,12 +460,12 @@ impl MySigner {
                     )
                 })
                 .unwrap();
-            let remote_script = opt_remote_shutdown_script
+            let remote_script = opt_counterparty_shutdown_script
                 .as_ref()
-                .unwrap_or(&chan.setup.remote_shutdown_script);
+                .unwrap_or(&chan.setup.counterparty_shutdown_script);
             let tx = build_close_tx(
-                to_local_value_sat,
-                to_remote_value_sat,
+                to_holder_value_sat,
+                to_counterparty_value_sat,
                 &local_script,
                 remote_script,
                 chan.setup.funding_outpoint,
@@ -525,7 +525,7 @@ impl MySigner {
                 let commitment_sig = sign_commitment(
                     &chan.secp_ctx,
                     &chan.keys,
-                    &chan.setup.remote_points.funding_pubkey,
+                    &chan.setup.counterparty_points.funding_pubkey,
                     &tx,
                     funding_amount_sat,
                 )
@@ -557,7 +557,7 @@ impl MySigner {
                 let commitment_sig = sign_commitment(
                     &chan.secp_ctx,
                     &chan.keys,
-                    &chan.setup.remote_points.funding_pubkey,
+                    &chan.setup.counterparty_points.funding_pubkey,
                     &tx,
                     funding_amount_sat,
                 )
@@ -1012,7 +1012,7 @@ mod tests {
         derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh,
     };
     use crate::util::test_utils::*;
-    use crate::util::test_utils::{make_test_channel_setup, make_test_remote_points, TEST_SEED};
+    use crate::util::test_utils::{make_test_channel_setup, make_test_counterparty_points, TEST_SEED};
 
     use super::*;
 
@@ -1371,10 +1371,10 @@ mod tests {
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
         let remote_percommitment_point = make_test_pubkey(10);
-        let remote_points = make_test_remote_points();
+        let counterparty_points = make_test_counterparty_points();
         let (ser_signature, tx) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let info = chan.build_remote_commitment_info(
+                let info = chan.build_counterparty_commitment_info(
                     &remote_percommitment_point,
                     200,
                     100,
@@ -1402,7 +1402,7 @@ mod tests {
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
         let channel_funding_redeemscript =
-            make_funding_redeemscript(&funding_pubkey, &remote_points.funding_pubkey);
+            make_funding_redeemscript(&funding_pubkey, &counterparty_points.funding_pubkey);
 
         check_signature(
             &tx,
@@ -1422,15 +1422,15 @@ mod tests {
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
         let remote_percommitment_point = make_test_pubkey(10);
-        let remote_points = make_test_remote_points();
-        let to_remote_value_sat = 2_000_000;
-        let to_local_value_sat = setup.channel_value_sat - to_remote_value_sat - (2 * ANCHOR_SAT);
+        let counterparty_points = make_test_counterparty_points();
+        let to_counterparty_value_sat = 2_000_000;
+        let to_holder_value_sat = setup.channel_value_sat - to_counterparty_value_sat - (2 * ANCHOR_SAT);
         let (ser_signature, tx) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let info = chan.build_remote_commitment_info(
+                let info = chan.build_counterparty_commitment_info(
                     &remote_percommitment_point,
-                    to_local_value_sat,
-                    to_remote_value_sat,
+                    to_holder_value_sat,
+                    to_counterparty_value_sat,
                     vec![],
                     vec![],
                 )?;
@@ -1455,7 +1455,7 @@ mod tests {
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
         let channel_funding_redeemscript =
-            make_funding_redeemscript(&funding_pubkey, &remote_points.funding_pubkey);
+            make_funding_redeemscript(&funding_pubkey, &counterparty_points.funding_pubkey);
 
         check_signature(
             &tx,
@@ -1475,7 +1475,7 @@ mod tests {
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
         let remote_percommitment_point = make_test_pubkey(10);
-        let remote_points = make_test_remote_points();
+        let counterparty_points = make_test_counterparty_points();
 
         let htlc1 = HTLCInfo2 {
             value_sat: 1,
@@ -1497,7 +1497,7 @@ mod tests {
 
         let (ser_signature, tx) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let info = chan.build_remote_commitment_info(
+                let info = chan.build_counterparty_commitment_info(
                     &remote_percommitment_point,
                     197,
                     100,
@@ -1526,7 +1526,7 @@ mod tests {
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
         let channel_funding_redeemscript =
-            make_funding_redeemscript(&funding_pubkey, &remote_points.funding_pubkey);
+            make_funding_redeemscript(&funding_pubkey, &counterparty_points.funding_pubkey);
 
         check_signature(
             &tx,
@@ -1547,7 +1547,7 @@ mod tests {
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
         let remote_percommitment_point = make_test_pubkey(10);
-        let remote_points = make_test_remote_points();
+        let counterparty_points = make_test_counterparty_points();
 
         let htlc1 = HTLCInfo2 {
             value_sat: 1,
@@ -1567,16 +1567,16 @@ mod tests {
             cltv_expiry: 4 << 16,
         };
 
-        let to_remote_value_sat = 2_000_000;
-        let to_local_value_sat =
-            setup.channel_value_sat - to_remote_value_sat - 3 - (2 * ANCHOR_SAT);
+        let to_counterparty_value_sat = 2_000_000;
+        let to_holder_value_sat =
+            setup.channel_value_sat - to_counterparty_value_sat - 3 - (2 * ANCHOR_SAT);
 
         let (ser_signature, tx) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let info = chan.build_remote_commitment_info(
+                let info = chan.build_counterparty_commitment_info(
                     &remote_percommitment_point,
-                    to_local_value_sat,
-                    to_remote_value_sat,
+                    to_holder_value_sat,
+                    to_counterparty_value_sat,
                     vec![htlc1.clone()],
                     vec![htlc2.clone(), htlc3.clone()],
                 )?;
@@ -1602,7 +1602,7 @@ mod tests {
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
         let channel_funding_redeemscript =
-            make_funding_redeemscript(&funding_pubkey, &remote_points.funding_pubkey);
+            make_funding_redeemscript(&funding_pubkey, &counterparty_points.funding_pubkey);
 
         check_signature(
             &tx,
@@ -1626,7 +1626,7 @@ mod tests {
 
         signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let info = chan.build_remote_commitment_info(
+                let info = chan.build_counterparty_commitment_info(
                     &remote_percommitment_point,
                     100,
                     200,
@@ -1650,7 +1650,7 @@ mod tests {
                     vec![],
                 )?;
                 let channel_funding_redeemscript =
-                    make_funding_redeemscript(&funding_pubkey, &setup.remote_points.funding_pubkey);
+                    make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
 
                 check_signature(
                     &tx,
@@ -1675,7 +1675,7 @@ mod tests {
         let (tx, _, _) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let per_commitment_point = chan.get_per_commitment_point(23);
-                let info = chan.build_local_commitment_info(
+                let info = chan.build_holder_commitment_info(
                     &per_commitment_point,
                     100,
                     200,
@@ -1705,7 +1705,7 @@ mod tests {
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
         let channel_funding_redeemscript =
-            make_funding_redeemscript(&funding_pubkey, &setup.remote_points.funding_pubkey);
+            make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
 
         check_signature(
             &tx,
@@ -1729,7 +1729,7 @@ mod tests {
             .expect("new_channel");
 
         let mut setup = make_test_channel_setup();
-        setup.remote_shutdown_script = payload_for_p2wpkh(&make_test_pubkey(11)).script_pubkey();
+        setup.counterparty_shutdown_script = payload_for_p2wpkh(&make_test_pubkey(11)).script_pubkey();
 
         let local_shutdown_script =
             payload_for_p2wpkh(&signer.get_shutdown_pubkey(&node_id).expect("shutdown key"))
@@ -1744,7 +1744,7 @@ mod tests {
                 100,
                 200,
                 &local_shutdown_script,
-                &setup.remote_shutdown_script,
+                &setup.counterparty_shutdown_script,
                 setup.funding_outpoint,
             )
         };
@@ -1758,7 +1758,7 @@ mod tests {
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
         let channel_funding_redeemscript =
-            make_funding_redeemscript(&funding_pubkey, &setup.remote_points.funding_pubkey);
+            make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
 
         check_signature(
             &tx,
@@ -2892,17 +2892,16 @@ mod tests {
         let n: u64 = 1;
 
         let remote_per_commitment_point = make_test_pubkey(10);
-        let to_remote_pubkey = make_test_pubkey(1);
+        let to_countersigner_pubkey = make_test_pubkey(1);
         let revocation_pubkey = make_test_pubkey(2);
-        let to_local_delayed_pubkey = make_test_pubkey(3);
-        let to_remote_delayed_pubkey = to_remote_pubkey.clone();
+        let to_broadcaster_delayed_pubkey = make_test_pubkey(3);
         let info = CommitmentInfo2 {
-            is_remote: false,
-            to_remote_delayed_pubkey,
-            to_remote_value_sat: 100,
+            is_counterparty_broadcaster: false,
+            to_countersigner_pubkey,
+            to_countersigner_value_sat: 100,
             revocation_pubkey,
-            to_local_delayed_pubkey,
-            to_local_value_sat: 200,
+            to_broadcaster_delayed_pubkey,
+            to_broadcaster_value_sat: 200,
             to_self_delay: 6,
             offered_htlcs: vec![],
             received_htlcs: vec![],
@@ -2910,7 +2909,7 @@ mod tests {
 
         let (tx, _, _) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                // chan.ready(&remote_points, to_self_delay, Script::new(), funding_outpoint);
+                // chan.ready(&counterparty_points, to_self_delay, Script::new(), funding_outpoint);
                 chan.build_commitment_tx(&remote_per_commitment_point, n, &info)
             })
             .expect("tx");
@@ -2922,7 +2921,7 @@ mod tests {
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
 
         let channel_funding_redeemscript =
-            make_funding_redeemscript(&funding_pubkey, &setup.remote_points.funding_pubkey);
+            make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
 
         check_signature(
             &tx,
@@ -2945,26 +2944,25 @@ mod tests {
         let n: u64 = 1;
 
         let remote_per_commitment_point = make_test_pubkey(10);
-        let to_remote_pubkey = make_test_pubkey(1);
+        let to_countersigner_pubkey = make_test_pubkey(1);
         let revocation_pubkey = make_test_pubkey(2);
-        let to_local_delayed_pubkey = make_test_pubkey(3);
-        let to_remote_delayed_pubkey = to_remote_pubkey.clone();
+        let to_broadcaster_delayed_pubkey = make_test_pubkey(3);
         let info = CommitmentInfo2 {
-            is_remote: false,
-            to_remote_delayed_pubkey,
-            to_remote_value_sat: 100,
+            is_counterparty_broadcaster: false,
+            to_countersigner_pubkey,
+            to_countersigner_value_sat: 100,
             revocation_pubkey,
-            to_local_delayed_pubkey,
-            to_local_value_sat: 200,
+            to_broadcaster_delayed_pubkey,
+            to_broadcaster_value_sat: 200,
             to_self_delay: 6,
             offered_htlcs: vec![],
             received_htlcs: vec![],
         };
-        let remote_points = make_test_remote_points();
+        let counterparty_points = make_test_counterparty_points();
 
         let (tx, _, _) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                // chan.ready(&remote_points, to_self_delay, Script::new(), funding_outpoint);
+                // chan.ready(&counterparty_points, to_self_delay, Script::new(), funding_outpoint);
                 chan.build_commitment_tx(&remote_per_commitment_point, n, &info)
             })
             .expect("tx");
@@ -2976,7 +2974,7 @@ mod tests {
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
 
         let channel_funding_redeemscript =
-            make_funding_redeemscript(&funding_pubkey, &remote_points.funding_pubkey);
+            make_funding_redeemscript(&funding_pubkey, &counterparty_points.funding_pubkey);
 
         check_signature(
             &tx,

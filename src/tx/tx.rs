@@ -36,12 +36,12 @@ pub const ANCHOR_SAT: u64 = 330;
 
 pub fn get_commitment_transaction_number_obscure_factor(
     local_payment_basepoint: &PublicKey,
-    remote_payment_basepoint: &PublicKey,
+    counterparty_payment_basepoint: &PublicKey,
     outbound: bool,
 ) -> u64 {
     let mut sha = Sha256::engine();
 
-    let their_payment_basepoint = remote_payment_basepoint.serialize();
+    let their_payment_basepoint = counterparty_payment_basepoint.serialize();
     if outbound {
         sha.input(&local_payment_basepoint.serialize());
         sha.input(&their_payment_basepoint);
@@ -60,10 +60,10 @@ pub fn get_commitment_transaction_number_obscure_factor(
 }
 
 pub fn build_close_tx(
-    to_local_value_sat: u64,
-    to_remote_value_sat: u64,
+    to_holder_value_sat: u64,
+    to_counterparty_value_sat: u64,
     local_shutdown_script: &Script,
-    remote_shutdown_script: &Script,
+    counterparty_shutdown_script: &Script,
     outpoint: OutPoint,
 ) -> Transaction {
     let txins = {
@@ -79,21 +79,21 @@ pub fn build_close_tx(
 
     let mut txouts: Vec<(TxOut, ())> = Vec::new();
 
-    if to_remote_value_sat > 0 {
+    if to_counterparty_value_sat > 0 {
         txouts.push((
             TxOut {
-                script_pubkey: remote_shutdown_script.clone(),
-                value: to_remote_value_sat,
+                script_pubkey: counterparty_shutdown_script.clone(),
+                value: to_counterparty_value_sat,
             },
             (),
         ));
     }
 
-    if to_local_value_sat > 0 {
+    if to_holder_value_sat > 0 {
         txouts.push((
             TxOut {
                 script_pubkey: local_shutdown_script.clone(),
-                value: to_local_value_sat,
+                value: to_holder_value_sat,
             },
             (),
         ));
@@ -137,22 +137,22 @@ pub fn build_commitment_tx(
 
     let mut txouts: Vec<(TxOut, (Script, Option<HTLCOutputInCommitment>))> = Vec::new();
 
-    if info.to_remote_value_sat > 0 {
+    if info.to_countersigner_value_sat > 0 {
         if !option_anchor_outputs {
-            let script = payload_for_p2wpkh(&info.to_remote_delayed_pubkey).script_pubkey();
+            let script = payload_for_p2wpkh(&info.to_countersigner_pubkey).script_pubkey();
             txouts.push((
                 TxOut {
                     script_pubkey: script.clone(),
-                    value: info.to_remote_value_sat as u64,
+                    value: info.to_countersigner_value_sat as u64,
                 },
                 (script, None),
             ))
         } else {
-            let delayed_script = get_delayed_redeemscript(&info.to_remote_delayed_pubkey);
+            let delayed_script = get_delayed_redeemscript(&info.to_countersigner_pubkey);
             txouts.push((
                 TxOut {
                     script_pubkey: delayed_script.to_v0_p2wsh(),
-                    value: info.to_remote_value_sat as u64,
+                    value: info.to_countersigner_value_sat as u64,
                 },
                 (delayed_script, None),
             ));
@@ -167,16 +167,16 @@ pub fn build_commitment_tx(
         }
     }
 
-    if info.to_local_value_sat > 0 {
+    if info.to_broadcaster_value_sat > 0 {
         let redeem_script = get_revokeable_redeemscript(
             &info.revocation_pubkey,
             info.to_self_delay,
-            &info.to_local_delayed_pubkey,
+            &info.to_broadcaster_delayed_pubkey,
         );
         txouts.push((
             TxOut {
                 script_pubkey: redeem_script.to_v0_p2wsh(),
-                value: info.to_local_value_sat as u64,
+                value: info.to_broadcaster_value_sat as u64,
             },
             (redeem_script, None),
         ));
@@ -272,14 +272,14 @@ pub fn build_commitment_tx(
 pub fn sign_commitment(
     secp_ctx: &Secp256k1<All>,
     keys: &EnforcingChannelKeys,
-    remote_funding_pubkey: &PublicKey,
+    counterparty_funding_pubkey: &PublicKey,
     tx: &Transaction,
     channel_value_sat: u64,
 ) -> Result<Signature, secp256k1::Error> {
     let funding_key = keys.funding_key();
     let funding_pubkey = keys.pubkeys().funding_pubkey;
     let channel_funding_redeemscript =
-        make_funding_redeemscript(&funding_pubkey, &remote_funding_pubkey);
+        make_funding_redeemscript(&funding_pubkey, &counterparty_funding_pubkey);
 
     let commitment_sighash = Message::from_slice(
         &bip143::SigHashCache::new(tx).signature_hash(
@@ -326,12 +326,13 @@ pub struct HTLCInfo2 {
 // BEGIN NOT TESTED
 #[derive(Debug, Clone)]
 pub struct CommitmentInfo2 {
-    pub is_remote: bool,
-    pub to_remote_delayed_pubkey: PublicKey,
-    pub to_remote_value_sat: u64,
+    pub is_counterparty_broadcaster: bool,
+    pub to_countersigner_pubkey: PublicKey,
+    pub to_countersigner_value_sat: u64,
+    /// Broadcaster revocation pubkey
     pub revocation_pubkey: PublicKey,
-    pub to_local_delayed_pubkey: PublicKey,
-    pub to_local_value_sat: u64,
+    pub to_broadcaster_delayed_pubkey: PublicKey,
+    pub to_broadcaster_value_sat: u64,
     pub to_self_delay: u16,
     pub offered_htlcs: Vec<HTLCInfo2>,
     pub received_htlcs: Vec<HTLCInfo2>,
@@ -340,71 +341,72 @@ pub struct CommitmentInfo2 {
 
 #[allow(dead_code)]
 pub struct CommitmentInfo {
-    pub is_remote: bool,
-    pub to_remote_address: Option<Payload>,
-    pub to_remote_delayed_pubkey: Option<PublicKey>,
-    pub to_remote_value_sat: u64,
-    pub to_remote_anchor_count: u16,
+    pub is_counterparty_broadcaster: bool,
+    pub to_countersigner_address: Option<Payload>,
+    pub to_countersigner_pubkey: Option<PublicKey>,
+    pub to_countersigner_value_sat: u64,
+    pub to_countersigner_anchor_count: u16,
+    /// Broadcaster revocation pubkey
     pub revocation_pubkey: Option<PublicKey>,
-    pub to_local_delayed_pubkey: Option<PublicKey>,
-    pub to_local_value_sat: u64,
-    pub to_local_delay: u16,
-    pub to_local_anchor_count: u16,
+    pub to_broadcaster_delayed_pubkey: Option<PublicKey>,
+    pub to_broadcaster_value_sat: u64,
+    pub to_self_delay: u16,
+    pub to_broadcaster_anchor_count: u16,
     pub offered_htlcs: Vec<HTLCInfo>,
     pub received_htlcs: Vec<HTLCInfo>,
 }
 
 impl CommitmentInfo {
-    pub fn new_local() -> Self {
+    pub fn new_for_holder() -> Self {
         CommitmentInfo::new(false)
     }
 
-    pub fn new_remote() -> Self {
+    pub fn new_for_counterparty() -> Self {
         CommitmentInfo::new(true)
     }
 
-    pub fn new(is_remote: bool) -> Self {
+    pub fn new(is_counterparty_broadcaster: bool) -> Self {
         CommitmentInfo {
-            is_remote,
-            to_remote_address: None,
-            to_remote_delayed_pubkey: None,
-            to_remote_value_sat: 0,
-            to_remote_anchor_count: 0,
+            is_counterparty_broadcaster,
+            to_countersigner_address: None,
+            to_countersigner_pubkey: None,
+            to_countersigner_value_sat: 0,
+            to_countersigner_anchor_count: 0,
             revocation_pubkey: None,
-            to_local_delayed_pubkey: None,
-            to_local_value_sat: 0,
-            to_local_delay: 0,
-            to_local_anchor_count: 0,
+            to_broadcaster_delayed_pubkey: None,
+            to_broadcaster_value_sat: 0,
+            to_self_delay: 0,
+            to_broadcaster_anchor_count: 0,
             offered_htlcs: vec![],
             received_htlcs: vec![],
         }
     }
 
-    pub fn has_to_local(&self) -> bool {
-        self.to_local_delayed_pubkey.is_some()
+    pub fn has_to_broadcaster(&self) -> bool {
+        self.to_broadcaster_delayed_pubkey.is_some()
     }
 
-    pub fn has_to_remote(&self) -> bool {
-        self.to_remote_address.is_some() || self.to_remote_delayed_pubkey.is_some()
+    pub fn has_to_countersigner(&self) -> bool {
+        self.to_countersigner_address.is_some() || self.to_countersigner_pubkey.is_some()
     }
 
-    pub fn to_local_anchor_value_sat(&self) -> u64 {
-        if self.to_local_anchor_count == 1 {
+    pub fn to_broadcaster_anchor_value_sat(&self) -> u64 {
+        if self.to_broadcaster_anchor_count == 1 {
             ANCHOR_SAT
         } else {
             0
         }
     }
 
-    pub fn to_remote_anchor_value_sat(&self) -> u64 {
-        if self.to_remote_anchor_count == 1 {
+    pub fn to_countersigner_anchor_value_sat(&self) -> u64 {
+        if self.to_countersigner_anchor_count == 1 {
             ANCHOR_SAT
         } else {
             0
         }
     }
 
-    fn parse_to_local_script(
+    fn parse_to_broadcaster_script(
         &self,
         script: &Script,
     ) -> Result<(Vec<u8>, i64, Vec<u8>), ValidationError> {
@@ -415,20 +417,20 @@ impl CommitmentInfo {
         let delay = expect_number(iter)?;
         expect_op(iter, OP_CSV)?;
         expect_op(iter, OP_DROP)?;
-        let to_local_delayed_pubkey = expect_data(iter)?;
+        let delayed_pubkey = expect_data(iter)?;
         expect_op(iter, OP_ENDIF)?;
         expect_op(iter, OP_CHECKSIG)?;
         expect_script_end(iter)?;
-        Ok((revocation_pubkey, delay, to_local_delayed_pubkey))
+        Ok((revocation_pubkey, delay, delayed_pubkey))
     }
 
-    fn handle_to_local_output(
+    fn handle_to_broadcaster_output(
         &mut self,
         out: &TxOut,
         vals: (Vec<u8>, i64, Vec<u8>),
     ) -> Result<(), ValidationError> {
-        let (revocation_pubkey, delay, to_local_delayed_pubkey) = vals;
-        if self.has_to_local() {
+        let (revocation_pubkey, delay, delayed_pubkey) = vals;
+        if self.has_to_broadcaster() {
             return Err(TransactionFormat("already have to local".to_string()));
         }
 
@@ -440,11 +442,11 @@ impl CommitmentInfo {
         }
 
         // This is safe because we checked for negative
-        self.to_local_delay = delay as u16;
-        self.to_local_value_sat = out.value;
-        self.to_local_delayed_pubkey = Some(
-            PublicKey::from_slice(to_local_delayed_pubkey.as_slice())
-                .map_err(|err| Mismatch(format!("to_local_delayed_pubkey malformed: {}", err)))?,
+        self.to_self_delay = delay as u16;
+        self.to_broadcaster_value_sat = out.value;
+        self.to_broadcaster_delayed_pubkey = Some(
+            PublicKey::from_slice(delayed_pubkey.as_slice())
+                .map_err(|err| Mismatch(format!("delayed_pubkey malformed: {}", err)))?,
         );
         self.revocation_pubkey = Some(
             PublicKey::from_slice(revocation_pubkey.as_slice())
@@ -454,31 +456,32 @@ impl CommitmentInfo {
         Ok(())
     }
 
-    fn parse_to_remote_delayed_script(&self, script: &Script) -> Result<Vec<u8>, ValidationError> {
+    fn parse_to_countersigner_delayed_script(&self, script: &Script) -> Result<Vec<u8>, ValidationError> {
         let iter = &mut script.instructions();
-        let to_remote_delayed_pubkey_data = expect_data(iter)?;
+        let pubkey_data = expect_data(iter)?;
         expect_op(iter, OP_CHECKSIGVERIFY)?;
         expect_op(iter, OP_PUSHNUM_1)?;
         expect_op(iter, OP_CSV)?;
         expect_script_end(iter)?;
-        Ok(to_remote_delayed_pubkey_data)
+        Ok(pubkey_data)
     }
 
-    fn handle_to_remote_delayed_output(
+    /// 1 block delayed because of anchor usage
+    fn handle_to_countersigner_delayed_output(
         &mut self,
         out: &TxOut,
-        to_remote_delayed_pubkey_data: Vec<u8>,
+        to_countersigner_delayed_pubkey_data: Vec<u8>,
     ) -> Result<(), ValidationError> {
-        if self.has_to_remote() {
+        if self.has_to_countersigner() {
             // BEGIN NOT TESTED
             return Err(TransactionFormat("more than one to remote".to_string()));
             // END NOT TESTED
         }
-        self.to_remote_delayed_pubkey = Some(
-            PublicKey::from_slice(to_remote_delayed_pubkey_data.as_slice())
-                .map_err(|err| Mismatch(format!("to_remote delayed pubkey malformed: {}", err)))?,
+        self.to_countersigner_pubkey = Some(
+            PublicKey::from_slice(to_countersigner_delayed_pubkey_data.as_slice())
+                .map_err(|err| Mismatch(format!("to_countersigner delayed pubkey malformed: {}", err)))?,
         );
-        self.to_remote_value_sat = out.value;
+        self.to_countersigner_value_sat = out.value;
         Ok(())
     }
 
@@ -661,16 +664,16 @@ impl CommitmentInfo {
         let to_pubkey = PublicKey::from_slice(to_pubkey_data.as_slice())
             .map_err(|err| Mismatch(format!("anchor to_pubkey malformed: {}", err)))?;
 
-        // "to_local" and "to_remote" are dependent on which side owns this commitment.
-        let (to_local_funding_pubkey, to_remote_funding_pubkey) = if self.is_remote {
+        // These are dependent on which side owns this commitment.
+        let (to_broadcaster_funding_pubkey, to_countersigner_funding_pubkey) = if self.is_counterparty_broadcaster {
             (
-                keys.remote_pubkeys().funding_pubkey,
+                keys.counterparty_pubkeys().funding_pubkey,
                 keys.pubkeys().funding_pubkey,
             )
         } else {
             (
                 keys.pubkeys().funding_pubkey,
-                keys.remote_pubkeys().funding_pubkey,
+                keys.counterparty_pubkeys().funding_pubkey,
             )
         };
 
@@ -678,12 +681,12 @@ impl CommitmentInfo {
             return Err(Mismatch(format!("anchor wrong size: {}", out.value)));
         }
 
-        if to_pubkey == to_local_funding_pubkey {
+        if to_pubkey == to_broadcaster_funding_pubkey {
             // local anchor
-            self.to_local_anchor_count += 1;
-        } else if to_pubkey == to_remote_funding_pubkey {
+            self.to_broadcaster_anchor_count += 1;
+        } else if to_pubkey == to_countersigner_funding_pubkey {
             // remote anchor
-            self.to_remote_anchor_count += 1;
+            self.to_countersigner_anchor_count += 1;
         } else {
             return Err(Mismatch(format!(
                 "anchor to_pubkey {} doesn't match local or remote",
@@ -704,14 +707,14 @@ impl CommitmentInfo {
         if out.script_pubkey.is_v0_p2wpkh() {
             if setup.option_anchor_outputs() {
                 return Err(TransactionFormat(
-                    "p2wpkh to_remote not valid with anchors".to_string(),
+                    "p2wpkh to_countersigner not valid with anchors".to_string(),
                 ));
             }
-            if self.has_to_remote() {
-                return Err(TransactionFormat("more than one to remote".to_string()));
+            if self.has_to_countersigner() {
+                return Err(TransactionFormat("more than one to_countersigner".to_string()));
             }
-            self.to_remote_address = Payload::from_script(&out.script_pubkey);
-            self.to_remote_value_sat = out.value;
+            self.to_countersigner_address = Payload::from_script(&out.script_pubkey);
+            self.to_countersigner_value_sat = out.value;
         } else if out.script_pubkey.is_v0_p2wsh() {
             if script_bytes.is_empty() {
                 return Err(TransactionFormat("missing witscript for p2wsh".to_string()));
@@ -722,9 +725,9 @@ impl CommitmentInfo {
                     "script pubkey doesn't match inner script".to_string(),
                 ));
             }
-            let vals = self.parse_to_local_script(&script);
+            let vals = self.parse_to_broadcaster_script(&script);
             if vals.is_ok() {
-                return self.handle_to_local_output(out, vals.unwrap());
+                return self.handle_to_broadcaster_output(out, vals.unwrap());
             }
             let vals = self.parse_received_htlc_script(&script, setup.option_anchor_outputs());
             if vals.is_ok() {
@@ -739,9 +742,9 @@ impl CommitmentInfo {
                 return self.handle_anchor_output(keys, out, vals.unwrap());
             }
             if setup.option_anchor_outputs() {
-                let vals = self.parse_to_remote_delayed_script(&script);
+                let vals = self.parse_to_countersigner_delayed_script(&script);
                 if vals.is_ok() {
-                    return self.handle_to_remote_delayed_output(out, vals.unwrap());
+                    return self.handle_to_countersigner_delayed_output(out, vals.unwrap());
                 }
             }
             return Err(TransactionFormat("unknown p2wsh script".to_string()));
@@ -768,16 +771,16 @@ mod tests {
 
     #[test]
     fn parse_test_err() {
-        let info = CommitmentInfo::new_local();
+        let info = CommitmentInfo::new_for_holder();
         let script = Builder::new().into_script();
-        let err = info.parse_to_local_script(&script);
+        let err = info.parse_to_broadcaster_script(&script);
         assert!(err.is_err());
     }
 
     #[test]
     fn parse_test() {
         let secp_ctx = Secp256k1::signing_only();
-        let mut info = CommitmentInfo::new_local();
+        let mut info = CommitmentInfo::new_for_holder();
         let out = TxOut {
             value: 123,
             script_pubkey: Default::default(),
@@ -787,29 +790,29 @@ mod tests {
         let delayed_pubkey =
             PublicKey::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[3u8; 32]).unwrap());
         let script = get_revokeable_redeemscript(&revocation_pubkey, 5, &delayed_pubkey);
-        let vals = info.parse_to_local_script(&script).unwrap();
-        let res = info.handle_to_local_output(&out, vals);
+        let vals = info.parse_to_broadcaster_script(&script).unwrap();
+        let res = info.handle_to_broadcaster_output(&out, vals);
         assert!(res.is_ok());
-        assert!(info.has_to_local());
-        assert!(!info.has_to_remote());
+        assert!(info.has_to_broadcaster());
+        assert!(!info.has_to_countersigner());
         assert_eq!(info.revocation_pubkey.unwrap(), revocation_pubkey);
-        assert_eq!(info.to_local_delayed_pubkey.unwrap(), delayed_pubkey);
-        assert_eq!(info.to_local_delay, 5);
-        assert_eq!(info.to_local_value_sat, 123);
-        // Make sure you can't do it again (can't have two to_local outputs).
-        let vals = info.parse_to_local_script(&script);
-        let res = info.handle_to_local_output(&out, vals.unwrap());
+        assert_eq!(info.to_broadcaster_delayed_pubkey.unwrap(), delayed_pubkey);
+        assert_eq!(info.to_self_delay, 5);
+        assert_eq!(info.to_broadcaster_value_sat, 123);
+        // Make sure you can't do it again (can't have two to_broadcaster outputs).
+        let vals = info.parse_to_broadcaster_script(&script);
+        let res = info.handle_to_broadcaster_output(&out, vals.unwrap());
         assert!(res.is_err());
         #[rustfmt::skip]
-        assert!( // NOT TESTED
-            TransactionFormat("already have to local".to_string())
-                == res.expect_err("expecting err")
+        assert_eq!( // NOT TESTED
+            TransactionFormat("already have to local".to_string()),
+                    res.expect_err("expecting err")
         );
     }
 
     #[test]
     fn handle_anchor_wrong_size_test() {
-        let mut info = CommitmentInfo::new_local();
+        let mut info = CommitmentInfo::new_for_holder();
         let keys = make_test_channel_keys();
         let out = TxOut {
             value: 329,
@@ -826,7 +829,7 @@ mod tests {
 
     #[test]
     fn handle_anchor_not_local_or_remote_test() {
-        let mut info = CommitmentInfo::new_local();
+        let mut info = CommitmentInfo::new_for_holder();
         let keys = make_test_channel_keys();
         let out = TxOut {
             value: 330,
@@ -846,7 +849,7 @@ mod tests {
 
     #[test]
     fn handle_output_unknown_output_type_test() {
-        let mut info = CommitmentInfo::new_local();
+        let mut info = CommitmentInfo::new_for_holder();
         let keys = make_test_channel_keys();
         let setup = make_reasonable_test_channel_setup();
         let out = TxOut {
@@ -864,7 +867,7 @@ mod tests {
 
     #[test]
     fn handle_output_unknown_p2wsh_script_test() {
-        let mut info = CommitmentInfo::new_local();
+        let mut info = CommitmentInfo::new_for_holder();
         let keys = make_test_channel_keys();
         let setup = make_reasonable_test_channel_setup();
         let script = Builder::new()
@@ -883,8 +886,8 @@ mod tests {
     }
 
     #[test]
-    fn handle_output_p2wpkh_to_remote_with_anchors_test() {
-        let mut info = CommitmentInfo::new_local();
+    fn handle_output_p2wpkh_to_countersigner_with_anchors_test() {
+        let mut info = CommitmentInfo::new_for_holder();
         let keys = make_test_channel_keys();
         let mut setup = make_reasonable_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
@@ -899,13 +902,13 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
-            TransactionFormat("p2wpkh to_remote not valid with anchors".to_string())
+            TransactionFormat("p2wpkh to_countersigner not valid with anchors".to_string())
         );
     }
 
     #[test]
-    fn handle_output_more_than_one_to_remote_test() {
-        let mut info = CommitmentInfo::new_local();
+    fn handle_output_more_than_one_to_countersigner_test() {
+        let mut info = CommitmentInfo::new_for_holder();
         let keys = make_test_channel_keys();
         let setup = make_reasonable_test_channel_setup();
         let pubkey = bitcoin::PublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
@@ -916,19 +919,19 @@ mod tests {
         };
 
         // Make the info look like a to_remote has already been seen.
-        info.to_remote_address = Some(address.payload);
+        info.to_countersigner_address = Some(address.payload);
 
         let res = info.handle_output(&keys, &setup, &out, &[0u8; 0]);
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
-            TransactionFormat("more than one to remote".to_string())
+            TransactionFormat("more than one to_countersigner".to_string())
         );
     }
 
     #[test]
     fn handle_output_missing_witscript_test() {
-        let mut info = CommitmentInfo::new_local();
+        let mut info = CommitmentInfo::new_for_holder();
         let keys = make_test_channel_keys();
         let setup = make_reasonable_test_channel_setup();
         let script = Builder::new().into_script();
@@ -946,7 +949,7 @@ mod tests {
 
     #[test]
     fn handle_output_script_pubkey_doesnt_match_test() {
-        let mut info = CommitmentInfo::new_local();
+        let mut info = CommitmentInfo::new_for_holder();
         let keys = make_test_channel_keys();
         let setup = make_reasonable_test_channel_setup();
         let script0 = Builder::new().into_script();
