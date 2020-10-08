@@ -335,7 +335,10 @@ impl Validator for SimpleValidator {
 
     fn validate_channel_open(&self) -> Result<(), ValidationError> {
         if self.channel_value_sat > self.policy.max_channel_size_sat {
-            return Err(Policy("channel value too large".to_string()));
+            return Err(Policy(format!(
+                "channel value {} too large",
+                self.channel_value_sat
+            )));
         }
         Ok(())
     }
@@ -347,7 +350,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
         SimplePolicy {
             min_delay: 60,
             max_delay: 1440,
-            max_channel_size_sat: 100_000_000,
+            max_channel_size_sat: 1_000_000_001, // lnd itest: wumbu default + 1
             epsilon_sat: 200_000,
             max_htlcs: 1000,
             max_htlc_value_sat: 10_000_000,
@@ -358,7 +361,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
         SimplePolicy {
             min_delay: 4,
             max_delay: 1440,
-            max_channel_size_sat: 100_000_000,
+            max_channel_size_sat: 1_000_000_001, // lnd itest: wumbu default + 1
             epsilon_sat: 200_000,
             max_htlcs: 1000,
             max_htlc_value_sat: 10_000_000,
