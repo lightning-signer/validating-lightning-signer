@@ -364,20 +364,20 @@ impl Signer for MySigner {
             )
         };
 
-        let remote_points = req
+        let counterparty_points = req
             .remote_basepoints
             .ok_or_else(|| self.invalid_argument("missing remote_basepoints"))?;
-        let remote_points = ChannelPublicKeys {
-            funding_pubkey: self.public_key(remote_points.funding_pubkey)?,
-            revocation_basepoint: self.public_key(remote_points.revocation)?,
-            payment_point: self.public_key(remote_points.payment)?,
-            delayed_payment_basepoint: self.public_key(remote_points.delayed_payment)?,
-            htlc_basepoint: self.public_key(remote_points.htlc)?,
+        let counterparty_points = ChannelPublicKeys {
+            funding_pubkey: self.public_key(counterparty_points.funding_pubkey)?,
+            revocation_basepoint: self.public_key(counterparty_points.revocation)?,
+            payment_point: self.public_key(counterparty_points.payment)?,
+            delayed_payment_basepoint: self.public_key(counterparty_points.delayed_payment)?,
+            htlc_basepoint: self.public_key(counterparty_points.htlc)?,
         };
 
-        let remote_shutdown_script = Script::deserialize(&req.remote_shutdown_script.as_slice())
+        let counterparty_shutdown_script = Script::deserialize(&req.remote_shutdown_script.as_slice())
             .map_err(|err| {
-                self.invalid_argument(format!("could not parse remote_shutdown_script: {}", err))
+                self.invalid_argument(format!("could not parse counterparty_shutdown_script: {}", err))
             })?;
 
         self.ready_channel(
@@ -390,10 +390,10 @@ impl Signer for MySigner {
                 push_value_msat: req.push_value_msat,
                 funding_outpoint,
                 local_to_self_delay: req.local_to_self_delay as u16,
-                remote_points,
-                local_shutdown_script,
-                remote_to_self_delay: req.remote_to_self_delay as u16,
-                remote_shutdown_script: remote_shutdown_script.clone(),
+                counterparty_points,
+                holder_shutdown_script: local_shutdown_script,
+                counterparty_to_self_delay: req.remote_to_self_delay as u16,
+                counterparty_shutdown_script: counterparty_shutdown_script.clone(),
                 commitment_type: convert_commitment_type(req.commitment_type),
             },
         )?;
@@ -469,12 +469,12 @@ impl Signer for MySigner {
         );
         log_debug!(self, "req={}", reqstr);
 
-        let opt_remote_shutdown_script = if req.remote_shutdown_script.is_empty() {
+        let opt_counterparty_shutdown_script = if req.remote_shutdown_script.is_empty() {
             None
         } else {
             Some(
                 Script::deserialize(&req.remote_shutdown_script.as_slice()).map_err(|_| {
-                    self.invalid_argument("could not deserialize remote_shutdown_script")
+                    self.invalid_argument("could not deserialize counterparty_shutdown_script")
                 })?,
             )
         };
@@ -484,7 +484,7 @@ impl Signer for MySigner {
             &channel_id,
             req.to_local_value_sat,
             req.to_remote_value_sat,
-            opt_remote_shutdown_script,
+            opt_counterparty_shutdown_script,
         )?;
 
         let reply = CloseTxSignatureReply {

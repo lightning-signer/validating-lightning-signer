@@ -197,7 +197,7 @@ fn claim_htlc_test() {
     let payment_preimage = route_payment(&nodes[0], &vec!(&nodes[1])[..], 3000000).0;
     route_payment(&nodes[1], &vec!(&nodes[0])[..], 3000000).0;
 
-    // Remote commitment txn with 4 outputs : to_local, to_remote, 1 outgoing HTLC, 1 incoming HTLC
+    // Remote commitment txn with 4 outputs : to_broadcaster, to_countersigner, 1 outgoing HTLC, 1 incoming HTLC
     let remote_txn = get_local_commitment_txn!(nodes[0], chan.2);
     assert_eq!(remote_txn[0].output.len(), 4);
     assert_eq!(remote_txn[0].input.len(), 1);

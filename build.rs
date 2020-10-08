@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "#[serde(serialize_with = \"crate::util::macro_logger::as_hex\")]",
         )
         .field_attribute(
-            "ReadyChannelRequest.remote_shutdown_script",
+            "ReadyChannelRequest.counterparty_shutdown_script",
             "#[serde(serialize_with = \"crate::util::macro_logger::as_hex\")]",
         )
         .field_attribute(
@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "#[serde(serialize_with = \"crate::util::macro_logger::as_hex\")]",
         )
         .field_attribute(
-            "SignMutualCloseTxPhase2Request.remote_shutdown_script",
+            "SignMutualCloseTxPhase2Request.counterparty_shutdown_script",
             "#[serde(serialize_with = \"crate::util::macro_logger::as_hex\")]",
         )
         .field_attribute(
