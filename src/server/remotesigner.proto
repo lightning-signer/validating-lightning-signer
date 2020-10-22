@@ -485,6 +485,9 @@ message RecoverableNodeSignatureReply {
 message SignMessageRequest {
   NodeId node_id = 1;
 
+  // NOTE - The remote signer will prepend the standard prefix
+  // "Lightning Signed Message:" so this prefix should not be included
+  // here.
   bytes message = 2;
 }
 
