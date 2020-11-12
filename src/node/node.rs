@@ -259,7 +259,9 @@ impl Channel {
                 &holder_points.payment_point,
             )
             .map_err(|err| {
+                // BEGIN NOT TESTED
                 self.internal_error(format!("could not derive counterparty_key: {}", err))
+                // END NOT TESTED
             })?
         };
         Ok(counterparty_key)
@@ -562,7 +564,7 @@ impl Channel {
 
         let keys = PreCalculatedTxCreationKeys::new(
             self.make_counterparty_tx_keys(remote_per_commitment_point)?,
-        );
+        ); // NOT TESTED
 
         let mut htlc_refs = Vec::new();
         for htlc in htlcs.iter() {
@@ -754,8 +756,8 @@ impl Node {
         self.keys_manager.get_shutdown_pubkey()
     }
 
-    pub fn get_bip32_key(&self) -> &ExtendedPrivKey {
-        self.keys_manager.get_bip32_key()
+    pub fn get_account_extended_key(&self) -> &ExtendedPrivKey {
+        self.keys_manager.get_account_extended_key()
     }
 
     pub fn sign_node_announcement(&self, na: &Vec<u8>) -> Result<Vec<u8>, Status> {

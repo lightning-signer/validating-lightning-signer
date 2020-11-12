@@ -247,7 +247,7 @@ impl Signer for MySigner {
         let node_id = self.node_id(req.node_id)?;
         log_info!(self, "ENTER get_ext_pub_key({})", node_id);
         log_debug!(self, "req={}", reqstr);
-        let extpubkey = self.get_ext_pub_key(&node_id)?;
+        let extpubkey = self.get_account_ext_pub_key(&node_id)?;
         let reply = GetExtPubKeyReply {
             xpub: Some(ExtPubKey {
                 encoded: format!("{}", extpubkey),
@@ -603,7 +603,7 @@ impl Signer for MySigner {
             deserialize(reqtx.raw_tx_bytes.as_slice());
         let tx = tx_res
             .map_err(|e| self.invalid_argument(format!("could not deserialize tx - {}", e)))?;
-        let mut indices = Vec::new();
+        let mut paths: Vec<Vec<u32>> = Vec::new();
         let mut values_sat = Vec::new();
         let mut spendtypes: Vec<SpendType> = Vec::new();
         let mut uniclosekeys: Vec<Option<SecretKey>> = Vec::new();
@@ -614,21 +614,21 @@ impl Signer for MySigner {
             let spendtype = SpendType::from_i32(reqtx.input_descs[idx].spend_type)
                 .ok_or_else(|| self.invalid_argument("bad spend_type"))?;
             if spendtype == SpendType::Invalid {
-                indices.push(0);
+                paths.push(vec![]);
                 values_sat.push(0);
                 spendtypes.push(spendtype);
                 uniclosekeys.push(None);
             } else {
-                let child_index = reqtx.input_descs[idx]
+                let child_path = &reqtx.input_descs[idx]
                     .key_loc
                     .as_ref()
                     .ok_or_else(|| self.invalid_argument("missing key_loc desc"))?
-                    .key_index as u32;
-                indices.push(child_index);
+                    .key_path;
+                paths.push(child_path.to_vec());
                 let value_sat = reqtx.input_descs[idx]
                     .prev_output
                     .as_ref()
-                    .ok_or_else(|| self.invalid_argument("missing output desc"))?
+                    .ok_or_else(|| self.invalid_argument("missing prev_output desc"))?
                     .value_sat as u64;
                 values_sat.push(value_sat);
                 spendtypes.push(spendtype);
@@ -661,7 +661,7 @@ impl Signer for MySigner {
             &node_id,
             &channel_id,
             &tx,
-            &indices,
+            &paths,
             &values_sat,
             &spendtypes,
             &uniclosekeys,

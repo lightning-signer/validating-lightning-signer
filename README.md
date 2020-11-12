@@ -40,7 +40,8 @@ Build v38 of kcov from git@github.com:SimonKagstrom/kcov.git .
 More dependencies:
 
     cargo install cargo-kcov
-    
+    cargo install cargo-coverage-annotations
+
 Run coverage:
 
     ./scripts/run-kcov

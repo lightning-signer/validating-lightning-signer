@@ -447,11 +447,11 @@ impl CommitmentInfo {
         self.to_broadcaster_delayed_pubkey = Some(
             PublicKey::from_slice(delayed_pubkey.as_slice())
                 .map_err(|err| Mismatch(format!("delayed_pubkey malformed: {}", err)))?,
-        );
+        ); // NOT TESTED
         self.revocation_pubkey = Some(
             PublicKey::from_slice(revocation_pubkey.as_slice())
                 .map_err(|err| Mismatch(format!("revocation_pubkey malformed: {}", err)))?,
-        );
+        ); // NOT TESTED
 
         Ok(())
     }
@@ -482,14 +482,16 @@ impl CommitmentInfo {
         }
         self.to_countersigner_pubkey = Some(
             PublicKey::from_slice(to_countersigner_delayed_pubkey_data.as_slice()).map_err(
+                // BEGIN NOT TESTED
                 |err| {
                     Mismatch(format!(
                         "to_countersigner delayed pubkey malformed: {}",
                         err
                     ))
                 },
+                // END NOT TESTED
             )?,
-        );
+        ); // NOT TESTED
         self.to_countersigner_value_sat = out.value;
         Ok(())
     }

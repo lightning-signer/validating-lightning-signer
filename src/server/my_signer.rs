@@ -2,13 +2,15 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 
+use secp256k1::SignOnly;
+
 use bitcoin;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::bip143::SigHashCache;
-use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use bitcoin::util::bip32::{ChildNumber, ExtendedPubKey};
 use bitcoin::{Address, Network, OutPoint, Script, SigHashType};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
@@ -245,14 +247,40 @@ impl MySigner {
         )
     }
 
-    pub fn xkey(&self, node_id: &PublicKey) -> Result<ExtendedPrivKey, Status> {
+    pub fn get_wallet_key(
+        &self,
+        secp_ctx: &Secp256k1<SignOnly>,
+        node_id: &PublicKey,
+        child_path: &Vec<u32>,
+    ) -> Result<bitcoin::PrivateKey, Status> {
         self.with_node(&node_id, |opt_node| {
             let node = opt_node.ok_or_else(|| {
                 // BEGIN NOT TESTED
-                self.invalid_argument(format!("xkey: node_id not found: {}", node_id))
+                self.invalid_argument(format!("get_wallet_key: node_id not found: {}", node_id))
                 // END NOT TESTED
             })?;
-            Ok(node.get_bip32_key().clone())
+            if child_path.len() != node.node_config.key_derivation_style.get_key_path_len() {
+                // BEGIN NOT TESTED
+                self.invalid_argument(format!(
+                    "get_wallet_key: bad child_path len : {}",
+                    child_path.len()
+                ));
+                // END NOT TESTED
+            }
+            // Start with the base xpriv for this wallet.
+            let mut xkey = node.get_account_extended_key().clone();
+
+            // Derive the rest of the child_path.
+            for elem in child_path {
+                xkey = xkey
+                    .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(*elem).unwrap())
+                    .map_err(|err| {
+                        // BEGIN NOT TESTED
+                        self.internal_error(format!("derive child_path failed: {}", err))
+                        // END NOT TESTED
+                    })?;
+            }
+            Ok(xkey.private_key)
         })
     }
 
@@ -424,11 +452,12 @@ impl MySigner {
         })
     }
 
-    pub fn get_ext_pub_key(&self, node_id: &PublicKey) -> Result<ExtendedPubKey, Status> {
+    pub fn get_account_ext_pub_key(&self, node_id: &PublicKey) -> Result<ExtendedPubKey, Status> {
         self.with_node(node_id, |opt_node| {
             let secp_ctx = Secp256k1::signing_only();
             let node = opt_node.ok_or_else(|| self.invalid_argument("no such node"))?;
-            let extpubkey = ExtendedPubKey::from_private(&secp_ctx, &node.get_bip32_key());
+            let extpubkey =
+                ExtendedPubKey::from_private(&secp_ctx, &node.get_account_extended_key());
             Ok(extpubkey)
         })
     }
@@ -836,13 +865,12 @@ impl MySigner {
         node_id: &PublicKey,
         _channel_id: &ChannelId,
         tx: &bitcoin::Transaction,
-        indices: &Vec<u32>,
+        paths: &Vec<Vec<u32>>,
         values_sat: &Vec<u64>,
         spendtypes: &Vec<SpendType>,
         uniclosekeys: &Vec<Option<SecretKey>>,
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Status> {
         let secp_ctx = Secp256k1::signing_only();
-        let xkey = self.xkey(node_id)?;
 
         let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for idx in 0..tx.input.len() {
@@ -852,7 +880,7 @@ impl MySigner {
                 // an empty witness element instead.
                 witvec.push((vec![], vec![]));
             } else {
-                let child_index = indices[idx];
+                let child_path = &paths[idx];
                 let value_sat = values_sat[idx];
                 let privkey = match uniclosekeys[idx] {
                     // There was a unilateral_close_key.
@@ -863,13 +891,12 @@ impl MySigner {
                     },
                     // Derive the HD key.
                     None => {
-                        xkey.ckd_priv(&secp_ctx, ChildNumber::from(child_index))
+                        self.get_wallet_key(&secp_ctx, node_id, child_path)
                             .map_err(|err| {
                                 // BEGIN NOT TESTED
-                                self.internal_error(format!("ckd_priv failed: {}", err))
+                                self.internal_error(format!("get_wallet_key failed: {}", err))
                                 // END NOT TESTED
                             })?
-                            .private_key
                     }
                 };
                 let pubkey = privkey.public_key(&secp_ctx);
@@ -2033,9 +2060,8 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MySigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
-        let xkey = signer.xkey(&node_id).expect("xkey");
         let channel_id = ChannelId([1; 32]);
-        let indices = vec![0u32, 1u32];
+        let indices = vec![vec![0u32], vec![1u32]];
         let values_sat = vec![100u64, 200u64];
 
         let input1 = TxIn {
@@ -2086,10 +2112,9 @@ mod tests {
 
         let address = |n: u32| {
             Address::p2wpkh(
-                &xkey
-                    .ckd_priv(&secp_ctx, ChildNumber::from(n))
+                &signer
+                    .get_wallet_key(&secp_ctx, &node_id, &vec![n])
                     .unwrap()
-                    .private_key
                     .public_key(&secp_ctx),
                 Network::Testnet,
             )
@@ -2122,10 +2147,9 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MySigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
-        let xkey = signer.xkey(&node_id).expect("xkey");
         let channel_id = ChannelId([1; 32]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
-        let indices = vec![0u32];
+        let indices = vec![vec![0u32]];
         let values_sat = vec![100u64];
 
         let input1 = TxIn {
@@ -2164,10 +2188,9 @@ mod tests {
 
         let address = |n: u32| {
             Address::p2wpkh(
-                &xkey
-                    .ckd_priv(&secp_ctx, ChildNumber::from(n))
+                &signer
+                    .get_wallet_key(&secp_ctx, &node_id, &vec![n])
                     .unwrap()
-                    .private_key
                     .public_key(&secp_ctx),
                 Network::Testnet,
             )
@@ -2196,7 +2219,7 @@ mod tests {
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let channel_id = ChannelId([1; 32]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
-        let indices = vec![0u32];
+        let indices = vec![vec![0u32]];
         let values_sat = vec![100u64];
 
         let input1 = TxIn {
@@ -2267,10 +2290,9 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MySigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
-        let xkey = signer.xkey(&node_id).expect("xkey");
         let channel_id = ChannelId([1; 32]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
-        let indices = vec![0u32];
+        let indices = vec![vec![0u32]];
         let values_sat = vec![100u64];
 
         let input1 = TxIn {
@@ -2309,10 +2331,9 @@ mod tests {
 
         let address = |n: u32| {
             Address::p2pkh(
-                &xkey
-                    .ckd_priv(&secp_ctx, ChildNumber::from(n))
+                &signer
+                    .get_wallet_key(&secp_ctx, &node_id, &vec![n])
                     .unwrap()
-                    .private_key
                     .public_key(&secp_ctx),
                 Network::Testnet,
             )
@@ -2339,10 +2360,9 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MySigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
-        let xkey = signer.xkey(&node_id).expect("xkey");
         let channel_id = ChannelId([1; 32]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
-        let indices = vec![0u32];
+        let indices = vec![vec![0u32]];
         let values_sat = vec![100u64];
 
         let input1 = TxIn {
@@ -2381,20 +2401,18 @@ mod tests {
 
         let address = |n: u32| {
             Address::p2shwpkh(
-                &xkey
-                    .ckd_priv(&secp_ctx, ChildNumber::from(n))
+                &signer
+                    .get_wallet_key(&secp_ctx, &node_id, &vec![n])
                     .unwrap()
-                    .private_key
                     .public_key(&secp_ctx),
                 Network::Testnet,
             )
             .unwrap()
         };
 
-        let pubkey = xkey
-            .ckd_priv(&secp_ctx, ChildNumber::from(indices[0]))
+        let pubkey = &signer
+            .get_wallet_key(&secp_ctx, &node_id, &indices[0])
             .unwrap()
-            .private_key
             .public_key(&secp_ctx);
 
         let keyhash = Hash160::hash(&pubkey.serialize()[..]);
@@ -2476,7 +2494,7 @@ mod tests {
                 value: 100,
             }],
         };
-        let indices = vec![0u32, 1u32, 2u32];
+        let indices = vec![vec![0u32], vec![1u32], vec![2u32]];
         let values_sat = vec![100u64, 101u64, 102u64];
         let spendtypes = vec![
             SpendType::Invalid,
@@ -3208,10 +3226,10 @@ mod tests {
     }
 
     #[test]
-    fn get_ext_pub_key_test() {
+    fn get_account_ext_pub_key_test() {
         let signer = MySigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
-        let xpub = signer.get_ext_pub_key(&node_id).unwrap();
+        let xpub = signer.get_account_ext_pub_key(&node_id).unwrap();
         assert_eq!(format!("{}", xpub), "tpubDAu312RD7nE6R9qyB4xJk9QAMyi3ppq3UJ4MMUGpB9frr6eNDd8FJVPw27zTVvWAfYFVUtJamgfh5ZLwT23EcymYgLx7MHsU8zZxc9L3GKk");
     }
 
