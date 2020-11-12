@@ -597,8 +597,12 @@ message ExtPubKey {
 // ----------------------------------------------------------------
 
 message KeyLocator {
-  /// The index of the key being identified.
-  int32 key_index = 2;
+  /// Vector of leaf key_indices representing a BIP32 key derivation
+  /// path.  This elements of this path are appended as non-hardened
+  /// children to the fixed base path appropriate for each wallet
+  /// layout implied by KeyDerivationStyle.  The number of key_path
+  /// elements must also match the KeyDerivationStyle.
+  repeated uint32 key_path = 1;
 }
 
 // A Bitcoin transaction output

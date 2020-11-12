@@ -17,8 +17,8 @@ use lightning::util::logger::Logger;
 
 use crate::util::byte_utils;
 use crate::util::crypto_utils::{
-    bip32_key, channels_seed, derive_key_lnd, hkdf_sha256, hkdf_sha256_keys, node_keys_lnd,
-    node_keys_native,
+    channels_seed, derive_key_lnd, get_account_extended_key_lnd, get_account_extended_key_native,
+    hkdf_sha256, hkdf_sha256_keys, node_keys_lnd, node_keys_native,
 };
 
 pub const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;
@@ -29,6 +29,37 @@ pub enum KeyDerivationStyle {
     Lnd = 2,
 }
 
+pub trait KeyDerivationParam {
+    fn get_key_path_len(&self) -> usize;
+}
+
+impl KeyDerivationStyle {
+    pub fn get_key_path_len(&self) -> usize {
+        // BEGIN NOT TESTED
+        match self {
+            // END NOT TESTED
+            // c-lightning uses a single BIP32 chain for both external
+            // and internal (change) addresses.
+            KeyDerivationStyle::Native => 1,
+            // lnd uses two BIP32 branches, one for external and one
+            // for internal (change) addresses.
+            KeyDerivationStyle::Lnd => 2, // NOT TESTED
+        }
+    }
+
+    pub fn get_account_extended_key(
+        &self,
+        secp_ctx: &Secp256k1<secp256k1::SignOnly>,
+        network: Network,
+        seed: &[u8],
+    ) -> ExtendedPrivKey {
+        match self {
+            KeyDerivationStyle::Native => get_account_extended_key_native(secp_ctx, network, seed),
+            KeyDerivationStyle::Lnd => get_account_extended_key_lnd(secp_ctx, network, seed),
+        }
+    }
+}
+
 pub struct MyKeysManager {
     secp_ctx: Secp256k1<secp256k1::SignOnly>,
     key_derivation_style: KeyDerivationStyle,
@@ -36,7 +67,7 @@ pub struct MyKeysManager {
     master_key: ExtendedPrivKey,
     node_secret: SecretKey,
     channel_seed_base: [u8; 32],
-    bip32_key: ExtendedPrivKey,
+    account_extended_key: ExtendedPrivKey,
     destination_script: Script,
     shutdown_pubkey: PublicKey,
     #[allow(dead_code)]
@@ -110,7 +141,8 @@ impl MyKeysManager {
                 unique_start.input(seed);
 
                 let channel_seed_base = channels_seed(seed);
-                let bip32_key = bip32_key(&secp_ctx, network, seed);
+                let account_extended_key =
+                    key_derivation_style.get_account_extended_key(&secp_ctx, network, seed);
 
                 MyKeysManager {
                     secp_ctx,
@@ -119,7 +151,7 @@ impl MyKeysManager {
                     master_key,
                     node_secret,
                     channel_seed_base,
-                    bip32_key,
+                    account_extended_key,
                     destination_script,
                     shutdown_pubkey,
                     channel_master_key,
@@ -135,8 +167,8 @@ impl MyKeysManager {
         }
     }
 
-    pub fn get_bip32_key(&self) -> &ExtendedPrivKey {
-        &self.bip32_key
+    pub fn get_account_extended_key(&self) -> &ExtendedPrivKey {
+        &self.account_extended_key
     }
 
     pub fn per_commitment_point<X: Signing>(

@@ -34,7 +34,7 @@ pub fn channels_seed(node_seed: &[u8]) -> [u8; 32] {
 }
 
 // This function will panic if the SecretKey::from_slice fails.  Only
-// use where appropriate.
+// use where failure is an option (ie, startup).
 pub fn node_keys_native(
     secp_ctx: &Secp256k1<SignOnly>,
     node_seed: &[u8],
@@ -94,9 +94,9 @@ pub fn derive_key_lnd(
     (node_ext_pub.public_key.key, node_ext_prv.private_key.key)
 }
 
-// This function will panic if the ExtendedPrivKey::new_master fails.  Only
-// use where appropriate.
-pub fn bip32_key(
+// This function will panic if the ExtendedPrivKey::new_master fails.
+// Only use where failure is an option (ie, startup).
+pub fn get_account_extended_key_native(
     secp_ctx: &Secp256k1<SignOnly>,
     network: Network,
     node_seed: &[u8],
@@ -107,6 +107,27 @@ pub fn bip32_key(
         .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(0).unwrap())
         .unwrap()
         .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(0).unwrap())
+        .unwrap()
+}
+
+// This function will panic if the ExtendedPrivKey::new_master fails.
+// Only use where failure is an option (ie, startup).
+pub fn get_account_extended_key_lnd(
+    secp_ctx: &Secp256k1<SignOnly>,
+    network: Network,
+    node_seed: &[u8],
+) -> ExtendedPrivKey {
+    // Must match btcsuite/btcwallet/waddrmgr/scoped_manager.go
+    let master = ExtendedPrivKey::new_master(network.clone(), node_seed).unwrap();
+    let purpose = 84;
+    let cointype = 0;
+    let account = 0;
+    master
+        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(purpose).unwrap())
+        .unwrap()
+        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(cointype).unwrap())
+        .unwrap()
+        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(account).unwrap())
         .unwrap()
 }
 
@@ -238,9 +259,9 @@ mod tests {
     }
 
     #[test]
-    fn bip32_key_test() -> Result<(), ()> {
+    fn get_account_extended_key_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
-        let key = bip32_key(&secp_ctx, Network::Testnet, &[0u8; 32]);
+        let key = get_account_extended_key_native(&secp_ctx, Network::Testnet, &[0u8; 32]);
         assert!(format!("{}", key) == "tprv8ejySXSgpWvEBguEGNFYNcHz29W7QxEodgnwbfLzBCccBnxGAq4vBkgqUYPGR5EnCbLvJE7YQsod6qpid85JhvAfizVpqPg3WsWB6UG3fEL");
         Ok(())
     }
