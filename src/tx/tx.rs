@@ -1,6 +1,7 @@
 use std::cmp;
 use std::cmp::Ordering;
 use std::convert::TryInto;
+use std::fmt;
 
 use bitcoin::blockdata::opcodes::all::{
     OP_CHECKMULTISIG, OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_CLTV, OP_CSV, OP_DROP, OP_DUP, OP_ELSE,
@@ -29,6 +30,7 @@ use crate::tx::script::{
     get_delayed_redeemscript, get_htlc_anchor_redeemscript, get_revokeable_redeemscript,
 };
 use crate::util::crypto_utils::payload_for_p2wpkh;
+use crate::util::debug_utils::DebugPayload;
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 
 const MAX_DELAY: i64 = 1000;
@@ -304,13 +306,26 @@ pub fn sort_outputs<T, C: Fn(&T, &T) -> Ordering>(outputs: &mut Vec<(TxOut, T)>,
 
 /// Phase 1 HTLC info
 // BEGIN NOT TESTED
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct HTLCInfo {
     pub value_sat: u64,
     /// RIPEMD160 of 32 bytes hash
     pub payment_hash_hash: [u8; 20],
     /// This is zero (unknown) for offered HTLCs in phase 1
     pub cltv_expiry: u32,
+}
+// END NOT TESTED
+
+// Implement manually so we can have hex encoded payment_hash_hash.
+// BEGIN NOT TESTED
+impl fmt::Debug for HTLCInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HTLCInfo")
+            .field("value_sat", &self.value_sat)
+            .field("payment_hash_hash", &hex::encode(&self.payment_hash_hash))
+            .field("cltv_expiry", &self.cltv_expiry)
+            .finish()
+    }
 }
 // END NOT TESTED
 
@@ -355,6 +370,50 @@ pub struct CommitmentInfo {
     pub offered_htlcs: Vec<HTLCInfo>,
     pub received_htlcs: Vec<HTLCInfo>,
 }
+
+// Define manually because Payload's fmt::Debug is lame.
+// BEGIN NOT TESTED
+impl fmt::Debug for CommitmentInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CommitmentInfo")
+            .field(
+                "is_counterparty_broadcaster",
+                &self.is_counterparty_broadcaster,
+            )
+            // Wrap the to_countersigner_address Payload w/ a nicer printing one.
+            .field(
+                "to_countersigner_address",
+                &self
+                    .to_countersigner_address
+                    .as_ref()
+                    .map(|p| DebugPayload(&p)),
+            )
+            .field("to_countersigner_pubkey", &self.to_countersigner_pubkey)
+            .field(
+                "to_countersigner_value_sat",
+                &self.to_countersigner_value_sat,
+            )
+            .field(
+                "to_countersigner_anchor_count",
+                &self.to_countersigner_anchor_count,
+            )
+            .field("revocation_pubkey", &self.revocation_pubkey)
+            .field(
+                "to_broadcaster_delayed_pubkey",
+                &self.to_broadcaster_delayed_pubkey,
+            )
+            .field("to_broadcaster_value_sat", &self.to_broadcaster_value_sat)
+            .field("to_self_delay", &self.to_self_delay)
+            .field(
+                "to_broadcaster_anchor_count",
+                &self.to_broadcaster_anchor_count,
+            )
+            .field("offered_htlcs", &self.offered_htlcs)
+            .field("received_htlcs", &self.received_htlcs)
+            .finish()
+    }
+}
+// END NOT TESTED
 
 impl CommitmentInfo {
     pub fn new_for_holder() -> Self {

@@ -596,6 +596,14 @@ message ExtPubKey {
 
 // ----------------------------------------------------------------
 
+message UnilateralCloseInfo {
+  // Identifies the old channel closed unilaterally by the peer.
+  ChannelNonce channel_nonce = 1;
+
+  // Will be None if this is not a CommitmentType::LEGACY channel.
+  PubKey commitment_point = 2;
+}
+
 message KeyLocator {
   /// Vector of leaf key_indices representing a BIP32 key derivation
   /// path.  This elements of this path are appended as non-hardened
@@ -603,15 +611,11 @@ message KeyLocator {
   /// layout implied by KeyDerivationStyle.  The number of key_path
   /// elements must also match the KeyDerivationStyle.
   repeated uint32 key_path = 1;
-}
 
-// A Bitcoin transaction output
-message TxOut {
-  /// The value of the output being spent.
-  int64 value_sat = 1;
-
-  /// The script of the output being spent.
-  bytes pk_script = 2;
+  // Provided instead of key_path if input is payment output from
+  // unilateral close by peer on old channel (ie not in the wallet
+  // proper).
+  UnilateralCloseInfo close_info = 2;
 }
 
 enum SpendType {
@@ -621,27 +625,14 @@ enum SpendType {
   P2SH_P2WPKH = 4;
 }
 
-message UnilateralCloseInfo {
-  // Identifies the old channel closed unilaterally by the peer.
-  ChannelNonce channel_nonce = 1;
-
-  // Will be None if this is not a CommitmentType::LEGACY channel.
-  PubKey commitment_point = 2;
-}
-
 message InputDescriptor {
   KeyLocator key_loc = 1;
 
-  // A description of the utxo being spent. The value and script
-  // MUST be provided.
-  TxOut prev_output = 2;
+  int64 value_sat = 2;
 
   SpendType spend_type = 3;
 
-  // Only provided if input from unilateral close by peer on old channel.
-  UnilateralCloseInfo close_info = 4;
-
-  bytes redeem_script = 5;
+  bytes redeem_script = 4;
 }
 
 message OutputDescriptor {
