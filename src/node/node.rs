@@ -77,6 +77,35 @@ pub struct ChannelSetup {
     pub commitment_type: CommitmentType,
 }
 
+// Need to define manually because ChannelPublicKeys doesn't derive Debug.
+// BEGIN NOT TESTED
+impl fmt::Debug for ChannelSetup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ChannelSetup")
+            .field("is_outbound", &self.is_outbound)
+            .field("channel_value_sat", &self.channel_value_sat)
+            .field("push_value_msat", &self.push_value_msat)
+            .field("funding_outpoint", &self.funding_outpoint)
+            .field("local_to_self_delay", &self.local_to_self_delay)
+            .field("holder_shutdown_script", &self.holder_shutdown_script)
+            .field(
+                "counterparty_points",
+                log_channel_public_keys!(&self.counterparty_points),
+            )
+            .field(
+                "counterparty_to_self_delay",
+                &self.counterparty_to_self_delay,
+            )
+            .field(
+                "counterparty_shutdown_script",
+                &self.counterparty_shutdown_script,
+            )
+            .field("commitment_type", &self.commitment_type)
+            .finish()
+    }
+}
+// END NOT TESTED
+
 impl ChannelSetup {
     pub(crate) fn option_static_remotekey(&self) -> bool {
         self.commitment_type != CommitmentType::Legacy
@@ -309,15 +338,23 @@ impl Channel {
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let state = ValidatorState { current_height: 0 };
-
+        let our_address = payload_for_p2wpkh(&counterparty_payment_pubkey);
         validator
-            .validate_remote_tx_phase1(
-                &self.setup,
-                &state,
-                &info,
-                payload_for_p2wpkh(&counterparty_payment_pubkey),
-            )
-            .map_err(|ve| self.validation_error(ve))?;
+            .validate_remote_tx_phase1(&self.setup, &state, &info, &our_address)
+            .map_err(|ve| {
+                // BEGIN NOT TESTED
+                log_debug!(
+                    self,
+                    "VALIDATION FAILED:\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}\nour_address={:#?}",
+                    &tx,
+                    &self.setup,
+                    &state,
+                    &info,
+                    log_payload!(our_address),
+                );
+                self.validation_error(ve)
+                // END NOT TESTED
+            })?;
 
         let commitment_sig = sign_commitment(
             &self.secp_ctx,

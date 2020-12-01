@@ -880,7 +880,6 @@ impl MySigner {
                 // an empty witness element instead.
                 witvec.push((vec![], vec![]));
             } else {
-                let child_path = &paths[idx];
                 let value_sat = values_sat[idx];
                 let privkey = match uniclosekeys[idx] {
                     // There was a unilateral_close_key.
@@ -891,6 +890,7 @@ impl MySigner {
                     },
                     // Derive the HD key.
                     None => {
+                        let child_path = &paths[idx];
                         self.get_wallet_key(&secp_ctx, node_id, child_path)
                             .map_err(|err| {
                                 // BEGIN NOT TESTED
