@@ -23,13 +23,10 @@ use lightning::util::logger::Logger;
 
 use lightning_signer::{check_added_monitors, check_spends, get_local_commitment_txn};
 use lightning_signer::server::my_signer::MySigner;
-use lightning_signer::util::functional_test_utils::{
-    close_channel, create_announced_chan_between_nodes, create_chanmon_cfgs,
-    create_network, create_node_chanmgrs, Node, NodeCfg, send_payment,
-    TestChanMonCfg, TestChannelMonitor};
+use lightning_signer::util::functional_test_utils::{close_channel, create_announced_chan_between_nodes, create_chanmon_cfgs, create_network, create_node_chanmgrs, Node, NodeCfg, send_payment, TestChanMonCfg, connect_block};
 use lightning_signer::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use lightning_signer::util::test_utils;
-use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
+use lightning_signer::util::test_utils::{TEST_NODE_CONFIG, TestChainMonitor};
 
 use self::lightning_signer::util::functional_test_utils::{
     claim_payment,
@@ -58,21 +55,16 @@ pub fn create_node_cfgs_with_signer<'a>(
             backing,
         };
 
-        let chan_monitor = TestChannelMonitor::new(
-            &chanmon_cfgs[i].chain_monitor,
-            &chanmon_cfgs[i].tx_broadcaster,
-            &chanmon_cfgs[i].logger,
-            &chanmon_cfgs[i].fee_estimator,
-        );
+        let chain_monitor = TestChainMonitor::new(Some(&chanmon_cfgs[i].chain_source), &chanmon_cfgs[i].tx_broadcaster, &chanmon_cfgs[i].logger, &chanmon_cfgs[i].fee_estimator, &chanmon_cfgs[i].persister);
 
         nodes.push(NodeCfg {
-            chain_monitor: &chanmon_cfgs[i].chain_monitor,
+            chain_source: &chanmon_cfgs[i].chain_source,
             logger: &chanmon_cfgs[i].logger,
             tx_broadcaster: &chanmon_cfgs[i].tx_broadcaster,
             fee_estimator: &chanmon_cfgs[i].fee_estimator,
-            chan_monitor,
+            chain_monitor,
             keys_manager,
-            node_seed: seed,
+            node_seed: seed
         });
     }
 
@@ -150,7 +142,7 @@ fn channel_force_close_test() {
     check_spends!(node_txn[0], chan.3);
 
     let header = BlockHeader { version: 0x20000000, prev_blockhash: Default::default(), merkle_root: Default::default(), time: 42, bits: 42, nonce: 42 };
-    nodes[1].block_notifier.block_connected(&Block { header, txdata: vec![node_txn[0].clone()] }, 0);
+    connect_block(&nodes[1], &Block { header, txdata: vec![node_txn[0].clone()] }, 0);
     assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 1);
     check_added_monitors!(nodes[1], 1);
 }
@@ -175,7 +167,7 @@ fn justice_tx_test() {
 
     // Inform nodes[1] that nodes[0] broadcast a stale tx
     let header = BlockHeader { version: 0x20000000, prev_blockhash: Default::default(), merkle_root: Default::default(), time: 42, bits: 42, nonce: 42 };
-    nodes[1].block_notifier.block_connected(&Block { header, txdata: vec![revoked_local_txn[0].clone()] }, 1);
+    connect_block(&nodes[1], &Block { header, txdata: vec![revoked_local_txn[0].clone()] }, 1);
     assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 1);
     check_added_monitors!(nodes[1], 1);
     let node1_txn = nodes[1].tx_broadcaster.txn_broadcasted.lock().unwrap();
@@ -212,7 +204,7 @@ fn claim_htlc_test() {
     nodes[1].node.claim_funds(payment_preimage, &None, 3_000_000);
     let header = BlockHeader { version: 0x20000000, prev_blockhash: Default::default(), merkle_root: Default::default(), time: 42, bits: 42, nonce: 42 };
 
-    nodes[1].block_notifier.block_connected(&Block { header, txdata: vec![remote_txn[0].clone()] }, 1);
+    connect_block(&nodes[1], &Block { header, txdata: vec![remote_txn[0].clone()] }, 1);
     assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 2);
     check_added_monitors!(nodes[1], 2);
 

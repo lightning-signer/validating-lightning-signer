@@ -14,9 +14,7 @@ use bitcoin_hashes::core::fmt::{Error, Formatter};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
 use lightning::chain::keysinterface::{ChannelKeys, InMemoryChannelKeys, KeysInterface};
-use lightning::ln::chan_utils::{
-    ChannelPublicKeys, HTLCOutputInCommitment, PreCalculatedTxCreationKeys, TxCreationKeys,
-};
+use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys, CommitmentTransaction, ChannelTransactionParameters, CounterpartyChannelTransactionParameters, HolderCommitmentTransaction};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::util::logger::Logger;
 use secp256k1 as secp256k1_recoverable;
@@ -35,6 +33,7 @@ use crate::tx::tx::{
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::invoice_utils;
+use lightning::chain;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
@@ -235,7 +234,7 @@ impl Channel {
     }
 
     // Phase 2
-    fn make_counterparty_tx_keys(
+    pub fn make_counterparty_tx_keys(
         &self,
         per_commitment_point: &PublicKey,
     ) -> Result<TxCreationKeys, Status> {
@@ -370,38 +369,7 @@ impl Channel {
         Ok(sig)
     }
 
-    // Not tested because loopback test is currently ignored.
-    // TODO phase 2
     // BEGIN NOT TESTED
-    pub fn sign_counterparty_commitment(
-        &self,
-        feerate_per_kw: u32,
-        commitment_tx: &bitcoin::Transaction,
-        per_commitment_point: &PublicKey,
-        htlcs: &[&HTLCOutputInCommitment],
-    ) -> Result<(Signature, Vec<Signature>), Status> {
-        let tx_keys =
-            PreCalculatedTxCreationKeys::new(self.make_counterparty_tx_keys(per_commitment_point)?);
-        let pubkey = self.keys.pubkeys().funding_pubkey;
-        log_trace!(
-            self,
-            "sign_counterparty_commitment with pubkey {}",
-            log_bytes!(pubkey.serialize())
-        );
-        self.keys
-            .sign_counterparty_commitment(
-                feerate_per_kw,
-                commitment_tx,
-                &tx_keys,
-                htlcs,
-                &self.secp_ctx,
-            )
-            .map_err(|_| self.internal_error("sign_counterparty_commitment failed"))
-    }
-    // END NOT TESTED
-
-    // BEGIN NOT TESTED
-    // Not tested because loopback test is currently ignored.
     pub fn sign_channel_announcement(
         &self,
         msg: &UnsignedChannelAnnouncement,
@@ -438,7 +406,7 @@ impl Channel {
             self.make_counterparty_tx_keys(per_commitment_point)?
         };
 
-        // FIXME, WORKAROUND - These should be in `keys` above.
+        // TODO - consider if we can get LDK to put funding pubkeys in TxCreationKeys
         let (workaround_local_funding_pubkey, workaround_remote_funding_pubkey) =
             if !info.is_counterparty_broadcaster {
                 (
@@ -476,7 +444,7 @@ impl Channel {
         let holder_points = self.keys.pubkeys();
         let secp_ctx = &self.secp_ctx;
 
-        let to_holder_delayed_pubkey = derive_public_key(
+        let to_counterparty_delayed_pubkey = derive_public_key(
             secp_ctx,
             &remote_per_commitment_point,
             &self.setup.counterparty_points.delayed_payment_basepoint,
@@ -494,14 +462,14 @@ impl Channel {
             &holder_points.revocation_basepoint,
         )
         .map_err(|err| self.internal_error(format!("could not derive revocation key: {}", err)))?;
-        let to_counterparty_pubkey = counterparty_payment_pubkey.clone();
+        let to_holder_pubkey = counterparty_payment_pubkey.clone();
         Ok(CommitmentInfo2 {
             is_counterparty_broadcaster: true,
-            to_countersigner_pubkey: to_counterparty_pubkey,
-            to_countersigner_value_sat: to_counterparty_value_sat,
+            to_countersigner_pubkey: to_holder_pubkey,
+            to_countersigner_value_sat: to_holder_value_sat,
             revocation_pubkey,
-            to_broadcaster_delayed_pubkey: to_holder_delayed_pubkey,
-            to_broadcaster_value_sat: to_holder_value_sat,
+            to_broadcaster_delayed_pubkey: to_counterparty_delayed_pubkey,
+            to_broadcaster_value_sat: to_counterparty_value_sat,
             to_self_delay: self.setup.holder_to_self_delay,
             offered_htlcs,
             received_htlcs,
@@ -573,6 +541,7 @@ impl Channel {
         })
     }
 
+    // TODO anchors support once upstream supports it
     pub fn sign_counterparty_commitment_tx_phase2(
         &self,
         remote_per_commitment_point: &PublicKey,
@@ -583,40 +552,17 @@ impl Channel {
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
-        let info = self.build_counterparty_commitment_info(
-            remote_per_commitment_point,
-            to_holder_value_sat,
-            to_counterparty_value_sat,
-            offered_htlcs.clone(),
-            received_htlcs.clone(),
-        )?;
+        let htlcs = Self::htlcs_info2_to_htlcs(offered_htlcs, received_htlcs);
 
-        let (tx, _scripts, htlcs) =
-            self.build_commitment_tx(remote_per_commitment_point, commitment_number, &info)?;
+        let commitment_tx = self.make_counterparty_commitment_tx(remote_per_commitment_point, commitment_number, feerate_per_kw, to_holder_value_sat, to_counterparty_value_sat, htlcs);
 
-        for out in &tx.output {
-            println!("channel: remote script {:?}", out.script_pubkey);
-        }
-        println!("txid {}", tx.txid());
+        log_debug!(self, "channel: sign counterparty txid {}", commitment_tx.trust().built_transaction().txid);
 
-        let keys = PreCalculatedTxCreationKeys::new(
-            self.make_counterparty_tx_keys(remote_per_commitment_point)?,
-        ); // NOT TESTED
-
-        let mut htlc_refs = Vec::new();
-        for htlc in htlcs.iter() {
-            htlc_refs.push(htlc);
-        }
-        let sigs = self
-            .keys
+        let sigs = self.keys
             .sign_counterparty_commitment(
-                feerate_per_kw,
-                &tx,
-                &keys,
-                htlc_refs.as_slice(),
+                &commitment_tx,
                 &self.secp_ctx,
-            )
-            .map_err(|_| self.internal_error("failed to sign"))?;
+            ).map_err(|_| self.internal_error("failed to sign"))?;
         let mut sig = sigs.0.serialize_der().to_vec();
         sig.push(SigHashType::All as u8);
         let mut htlc_sigs = Vec::new();
@@ -626,6 +572,130 @@ impl Channel {
             htlc_sigs.push(htlc_sig);
         }
         Ok((sig, htlc_sigs))
+    }
+
+    pub(crate) fn make_counterparty_commitment_tx(&self, remote_per_commitment_point: &PublicKey, commitment_number: u64, feerate_per_kw: u32, to_holder_value_sat: u64, to_counterparty_value_sat: u64, htlcs: Vec<HTLCOutputInCommitment>) -> CommitmentTransaction {
+        let keys = self.make_counterparty_tx_keys(remote_per_commitment_point).unwrap();
+
+        let mut htlcs_with_aux = htlcs.iter()
+            .map(|h| (h.clone(), ())).collect();
+        let channel_parameters = self.make_channel_parameters();
+        let parameters = channel_parameters.as_counterparty_broadcastable();
+        let commitment_tx = CommitmentTransaction::new_with_auxiliary_htlc_data(
+            INITIAL_COMMITMENT_NUMBER - commitment_number,
+            to_counterparty_value_sat, to_holder_value_sat,
+            keys, feerate_per_kw, &mut htlcs_with_aux, &parameters
+        );
+        commitment_tx
+    }
+
+    // TODO anchors support once upstream supports it
+    pub fn sign_holder_commitment_tx_phase2(
+        &self,
+        commitment_number: u64,
+        feerate_per_kw: u32,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
+    ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+        let htlcs = Self::htlcs_info2_to_htlcs(offered_htlcs, received_htlcs);
+
+        // We provide a dummy signature for the remote, since we don't require that sig
+        // to be passed in to this call.  It would have been better if HolderCommitmentTransaction
+        // didn't require the remote sig.
+        // TODO consider if we actually want the sig for policy checks
+        let dummy_sig = Secp256k1::new().sign(
+            &secp256k1::Message::from_slice(&[42; 32]).unwrap(),
+            &SecretKey::from_slice(&[42; 32]).unwrap(),
+        );
+        let mut htlc_dummy_sigs = Vec::with_capacity(htlcs.len());
+        htlc_dummy_sigs.resize(htlcs.len(), dummy_sig);
+
+        let commitment_tx = self.make_holder_commitment_tx(commitment_number, feerate_per_kw, to_holder_value_sat, to_counterparty_value_sat, htlcs);
+        log_debug!(self, "channel: sign holder txid {}", commitment_tx.trust().built_transaction().txid);
+
+        let holder_commitment_tx = HolderCommitmentTransaction::new(
+            commitment_tx,
+            dummy_sig,
+            htlc_dummy_sigs,
+            &self.keys.pubkeys().funding_pubkey,
+            &self.keys.counterparty_pubkeys().funding_pubkey
+        );
+
+        let sig = self.keys
+            .sign_holder_commitment(&holder_commitment_tx, &self.secp_ctx)
+            .map_err(|_| self.internal_error("failed to sign"))?;
+        let mut sig_vec = sig.serialize_der().to_vec();
+        sig_vec.push(SigHashType::All as u8);
+
+        let htlc_sigs = self.keys.sign_holder_commitment_htlc_transactions(&holder_commitment_tx, &self.secp_ctx)
+            .map_err(|_| self.internal_error("failed to sign"))?;
+
+        let mut htlc_sig_vecs = Vec::new();
+        for htlc_sig in htlc_sigs {
+            let mut htlc_sig_vec = htlc_sig.serialize_der().to_vec();
+            htlc_sig_vec.push(SigHashType::All as u8);
+            htlc_sig_vecs.push(htlc_sig_vec);
+        }
+        Ok((sig_vec, htlc_sig_vecs))
+    }
+
+    pub(crate) fn make_holder_commitment_tx(&self, commitment_number: u64, feerate_per_kw: u32, to_holder_value_sat: u64, to_counterparty_value_sat: u64, htlcs: Vec<HTLCOutputInCommitment>) -> CommitmentTransaction {
+        let per_commitment_point = self.get_per_commitment_point(commitment_number);
+        let keys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
+
+        let mut htlcs_with_aux = htlcs.iter()
+            .map(|h| (h.clone(), ())).collect();
+        let channel_parameters = self.make_channel_parameters();
+        let parameters = channel_parameters.as_holder_broadcastable();
+        let commitment_tx = CommitmentTransaction::new_with_auxiliary_htlc_data(
+            INITIAL_COMMITMENT_NUMBER - commitment_number,
+            to_holder_value_sat, to_counterparty_value_sat,
+            keys, feerate_per_kw, &mut htlcs_with_aux, &parameters
+        );
+        commitment_tx
+    }
+
+    fn htlcs_info2_to_htlcs(offered_htlcs: Vec<HTLCInfo2>, received_htlcs: Vec<HTLCInfo2>) -> Vec<HTLCOutputInCommitment> {
+        let mut htlcs = Vec::new();
+        for htlc in offered_htlcs {
+            htlcs.push(HTLCOutputInCommitment {
+                offered: true,
+                amount_msat: htlc.value_sat * 1000,
+                cltv_expiry: htlc.cltv_expiry,
+                payment_hash: htlc.payment_hash,
+                transaction_output_index: None
+            });
+        }
+        for htlc in received_htlcs {
+            htlcs.push(HTLCOutputInCommitment {
+                offered: false,
+                amount_msat: htlc.value_sat * 1000,
+                cltv_expiry: htlc.cltv_expiry,
+                payment_hash: htlc.payment_hash,
+                transaction_output_index: None
+            });
+        }
+        htlcs
+    }
+
+    pub fn make_channel_parameters(&self) -> ChannelTransactionParameters {
+        let funding_outpoint = chain::transaction::OutPoint {
+            txid: self.setup.funding_outpoint.txid,
+            index: self.setup.funding_outpoint.vout as u16
+        };
+        let channel_parameters = ChannelTransactionParameters {
+            holder_pubkeys: self.get_channel_basepoints(),
+            holder_selected_contest_delay: self.setup.holder_to_self_delay,
+            is_outbound_from_holder: self.setup.is_outbound,
+            counterparty_parameters: Some(CounterpartyChannelTransactionParameters {
+                pubkeys: self.setup.counterparty_points.clone(),
+                selected_contest_delay: self.setup.counterparty_to_self_delay
+            }),
+            funding_outpoint: Some(funding_outpoint)
+        };
+        channel_parameters
     }
 
     pub fn network(&self) -> Network {
@@ -737,11 +807,21 @@ impl Node {
                 }
             }?;
             let mut inmem_keys = stub.channel_keys_with_channel_value(setup.channel_value_sat);
-            inmem_keys.on_accept(
-                &setup.counterparty_points,
-                setup.counterparty_to_self_delay,
-                setup.holder_to_self_delay,
-            ); // DUP VALUE
+            let funding_outpoint = Some(chain::transaction::OutPoint {
+                txid: setup.funding_outpoint.txid,
+                index: setup.funding_outpoint.vout as u16
+            });
+            let channel_transaction_parameters = ChannelTransactionParameters {
+                holder_pubkeys: inmem_keys.pubkeys().clone(),
+                holder_selected_contest_delay: setup.counterparty_to_self_delay,
+                is_outbound_from_holder: false,
+                counterparty_parameters: Some(CounterpartyChannelTransactionParameters {
+                    pubkeys: setup.counterparty_points.clone(),
+                    selected_contest_delay: setup.counterparty_to_self_delay
+                }),
+                funding_outpoint
+            };
+            inmem_keys.ready_channel(&channel_transaction_parameters);
             Channel {
                 node: Arc::clone(&stub.node),
                 logger: Arc::clone(&stub.logger),
