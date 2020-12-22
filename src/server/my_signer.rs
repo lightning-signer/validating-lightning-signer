@@ -574,6 +574,7 @@ impl MySigner {
         tx: &bitcoin::Transaction,
         funding_amount_sat: u64,
     ) -> Result<Vec<u8>, Status> {
+        // FIXME needs validation, and therefore needs output_witscripts
         let sigvec: Result<Vec<u8>, Status> =
             self.with_ready_channel(&node_id, &channel_id, |chan| {
                 if tx.input.len() != 1 {
@@ -743,12 +744,18 @@ impl MySigner {
 
             let htlc_redeemscript = Script::from(input_redeemscript.clone());
 
+            let sig_hash_type = if chan.setup.option_anchor_outputs() {
+                SigHashType::SinglePlusAnyoneCanPay
+            } else {
+                SigHashType::All
+            };
+
             let htlc_sighash = Message::from_slice(
                 &SigHashCache::new(tx).signature_hash(
                     input,
                     &htlc_redeemscript,
                     htlc_amount_sat,
-                    SigHashType::All,
+                    sig_hash_type,
                 )[..],
             )
             .map_err(|err| self.internal_error(format!("htlc_sighash failed: {}", err)))?;
@@ -1883,12 +1890,38 @@ mod tests {
         input_value_sat: u64,
         redeemscript: &Script,
     ) {
+        check_signature_with_setup(
+            tx,
+            input,
+            ser_signature,
+            pubkey,
+            input_value_sat,
+            redeemscript,
+            &make_test_channel_setup(),
+        )
+    }
+
+    fn check_signature_with_setup(
+        tx: &bitcoin::Transaction,
+        input: usize,
+        ser_signature: Vec<u8>,
+        pubkey: &PublicKey,
+        input_value_sat: u64,
+        redeemscript: &Script,
+        setup: &ChannelSetup,
+    ) {
+        let sig_hash_type = if setup.option_anchor_outputs() {
+            SigHashType::SinglePlusAnyoneCanPay
+        } else {
+            SigHashType::All
+        };
+
         let sighash = Message::from_slice(
             &SigHashCache::new(tx).signature_hash(
                 input,
                 &redeemscript,
                 input_value_sat,
-                SigHashType::All,
+                sig_hash_type,
             )[..],
         )
         .expect("sighash");
@@ -2816,6 +2849,90 @@ mod tests {
             &htlc_pubkey,
             htlc_amount_sat,
             &htlc_redeemscript,
+        );
+    }
+
+    #[test]
+    fn sign_remote_htlc_tx_with_anchors_test() {
+        let signer = MySigner::new();
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = CommitmentType::Anchors;
+        let (node_id, channel_id) =
+            init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
+
+        let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
+        let feerate_per_kw = 1000;
+        let to_self_delay = 32;
+        let htlc = HTLCOutputInCommitment {
+            offered: true,
+            amount_msat: 1 * 1000 * 1000,
+            cltv_expiry: 2 << 16,
+            payment_hash: PaymentHash([1; 32]),
+            transaction_output_index: Some(0),
+        };
+
+        let remote_per_commitment_point = make_test_pubkey(10);
+
+        let per_commitment_point = make_test_pubkey(1);
+        let a_delayed_payment_base = make_test_pubkey(2);
+        let b_revocation_base = make_test_pubkey(3);
+
+        let secp_ctx = Secp256k1::new();
+
+        let keys = TxCreationKeys::derive_new(
+            &secp_ctx,
+            &per_commitment_point,
+            &a_delayed_payment_base,
+            &make_test_pubkey(4), // a_htlc_base
+            &b_revocation_base,
+            &make_test_pubkey(6),
+        ) // b_htlc_base
+        .expect("new TxCreationKeys");
+
+        let a_delayed_payment_key =
+            derive_public_key(&secp_ctx, &per_commitment_point, &a_delayed_payment_base)
+                .expect("a_delayed_payment_key");
+
+        let revocation_key =
+            derive_revocation_pubkey(&secp_ctx, &per_commitment_point, &b_revocation_base)
+                .expect("revocation_key");
+
+        let htlc_tx = build_htlc_transaction(
+            &commitment_txid,
+            feerate_per_kw,
+            to_self_delay,
+            &htlc,
+            &a_delayed_payment_key,
+            &revocation_key,
+        );
+
+        let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
+
+        let htlc_amount_sat = 10 * 1000;
+
+        let ser_signature = signer
+            .sign_remote_htlc_tx(
+                &node_id,
+                &channel_id,
+                &htlc_tx,
+                0,
+                htlc_redeemscript.to_bytes(),
+                &remote_per_commitment_point,
+                htlc_amount_sat,
+            )
+            .unwrap();
+
+        let htlc_pubkey =
+            get_channel_htlc_pubkey(&signer, &node_id, &channel_id, &remote_per_commitment_point);
+
+        check_signature_with_setup(
+            &htlc_tx,
+            0,
+            ser_signature,
+            &htlc_pubkey,
+            htlc_amount_sat,
+            &htlc_redeemscript,
+            &setup,
         );
     }
 

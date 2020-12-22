@@ -106,9 +106,9 @@ service Signer {
   rpc SignRemoteHTLCTx (SignRemoteHTLCTxRequest)
     returns (SignatureReply);
 
-  // BOLT #3 - HTLC Outputs, phase 1 Sign an htlc-success tx on a
-  // remote HTLC output offered to us, assuming we know the preimage,
-  // at force-close time
+  // BOLT #3 - HTLC Outputs, phase 1
+  // Sign an htlc-success tx on a remote HTLC output offered to us,
+  // assuming we know the preimage, at force-close time
   rpc SignRemoteHTLCToUs (SignRemoteHTLCToUsRequest)
     returns (SignatureReply);
 
@@ -382,7 +382,7 @@ message SignRemoteHTLCTxRequest {
 
   Transaction tx = 3;
 
-  uint32 input = 4;
+  uint32 input = 4;  // FIXME - currently unset by clients, set or remove
 
   PubKey remote_per_commit_point = 5;
 }
