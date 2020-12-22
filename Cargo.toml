@@ -1,7 +1,7 @@
 [package]
 name = "lightning-signer"
 version = "0.1.0"
-authors = ["Devrandom <c1.devrandom@niftybox.net>"]
+authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
 edition = "2018"
 
 [lib]
