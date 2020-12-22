@@ -1898,7 +1898,7 @@ mod tests {
             input_value_sat,
             redeemscript,
             &make_test_channel_setup(),
-        )
+        ) // NOT TESTED
     }
 
     fn check_signature_with_setup(

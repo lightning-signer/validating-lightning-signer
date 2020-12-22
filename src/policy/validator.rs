@@ -561,7 +561,7 @@ mod tests {
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
             "to_broadcaster anchor without option_anchor_outputs",
-        );
+        ); // NOT TESTED
     }
 
     #[test]
@@ -582,7 +582,7 @@ mod tests {
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
             "to_countersigner anchor without option_anchor_outputs",
-        );
+        ); // NOT TESTED
     }
 
     #[test]
@@ -610,7 +610,7 @@ mod tests {
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
             "more than one to_broadcaster anchors",
-        );
+        ); // NOT TESTED
     }
 
     #[test]
@@ -638,7 +638,7 @@ mod tests {
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
             "more than one to_countersigner anchors",
-        );
+        ); // NOT TESTED
     }
 
     #[test]
@@ -666,7 +666,7 @@ mod tests {
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
             "to_broadcaster output without to_broadcaster anchor",
-        );
+        ); // NOT TESTED
     }
 
     #[test]
@@ -694,7 +694,7 @@ mod tests {
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
             "to_countersigner output without to_countersigner anchor",
-        );
+        ); // NOT TESTED
     }
 
     #[test]
@@ -717,7 +717,7 @@ mod tests {
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
             "to_broadcaster anchor without to_broadcaster output or HTLCs",
-        );
+        ); // NOT TESTED
     }
 
     #[test]
@@ -758,7 +758,7 @@ mod tests {
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
             "to_countersigner anchor without to_countersigner output or HTLCs",
-        );
+        ); // NOT TESTED
     }
 
     #[test]
