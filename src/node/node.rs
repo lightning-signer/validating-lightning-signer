@@ -67,7 +67,7 @@ pub struct ChannelSetup {
     pub push_value_msat: u64,
     pub funding_outpoint: OutPoint,
     /// locally imposed requirement on the remote commitment transaction to_self_delay
-    pub local_to_self_delay: u16,
+    pub holder_to_self_delay: u16,
     /// Maybe be None if we should generate it inside the signer
     pub holder_shutdown_script: Option<Script>,
     pub counterparty_points: ChannelPublicKeys, // DUP keys.inner.remote_channel_pubkeys
@@ -86,7 +86,7 @@ impl fmt::Debug for ChannelSetup {
             .field("channel_value_sat", &self.channel_value_sat)
             .field("push_value_msat", &self.push_value_msat)
             .field("funding_outpoint", &self.funding_outpoint)
-            .field("local_to_self_delay", &self.local_to_self_delay)
+            .field("holder_to_self_delay", &self.holder_to_self_delay)
             .field("holder_shutdown_script", &self.holder_shutdown_script)
             .field(
                 "counterparty_points",
@@ -502,7 +502,7 @@ impl Channel {
             revocation_pubkey,
             to_broadcaster_delayed_pubkey: to_holder_delayed_pubkey,
             to_broadcaster_value_sat: to_holder_value_sat,
-            to_self_delay: self.setup.local_to_self_delay,
+            to_self_delay: self.setup.holder_to_self_delay,
             offered_htlcs,
             received_htlcs,
         })
@@ -740,7 +740,7 @@ impl Node {
             inmem_keys.on_accept(
                 &setup.counterparty_points,
                 setup.counterparty_to_self_delay,
-                setup.local_to_self_delay,
+                setup.holder_to_self_delay,
             ); // DUP VALUE
             Channel {
                 node: Arc::clone(&stub.node),

@@ -297,7 +297,7 @@ impl ChannelKeys for LoopbackChannelSigner {
 
                 // TODO phase 2
                 let res = signer
-                    .sign_local_htlc_tx(
+                    .sign_holder_htlc_tx(
                         &self.node_id,
                         &self.channel_id,
                         &htlc_tx,
@@ -378,7 +378,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         // TODO phase 2
         let res = self
             .signer
-            .sign_remote_htlc_to_us(
+            .sign_counterparty_htlc_to_us(
                 &self.node_id,
                 &self.channel_id,
                 htlc_tx,
@@ -491,7 +491,7 @@ impl ChannelKeys for LoopbackChannelSigner {
             channel_value_sat: self.channel_value_sat,
             push_value_msat: 0,                   // TODO
             funding_outpoint: Default::default(), // TODO
-            local_to_self_delay,
+            holder_to_self_delay: local_to_self_delay,
             holder_shutdown_script: None, // use the signer's shutdown script
             counterparty_points: counterparty_points.clone(),
             counterparty_to_self_delay,
