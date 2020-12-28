@@ -271,7 +271,8 @@ pub fn build_commitment_tx(
     )
 }
 
-pub fn sign_commitment(
+// Sign a Bitcoin commitment tx or a mutual-close tx
+pub(crate) fn sign_commitment(
     secp_ctx: &Secp256k1<All>,
     keys: &EnforcingChannelKeys,
     counterparty_funding_pubkey: &PublicKey,

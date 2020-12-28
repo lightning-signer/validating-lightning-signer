@@ -354,29 +354,29 @@ impl Signer for MySigner {
             vout: req_outpoint.index,
         };
 
-        let local_shutdown_script = if req.local_shutdown_script.is_empty() {
+        let holder_shutdown_script = if req.holder_shutdown_script.is_empty() {
             None
         } else {
             Some(
-                Script::deserialize(&req.local_shutdown_script.as_slice()).map_err(|err| {
-                    self.invalid_argument(format!("could not parse local_shutdown_script: {}", err))
+                Script::deserialize(&req.holder_shutdown_script.as_slice()).map_err(|err| {
+                    self.invalid_argument(format!("could not parse holder_shutdown_script: {}", err))
                 })?,
             )
         };
 
-        let counterparty_points = req
-            .remote_basepoints
-            .ok_or_else(|| self.invalid_argument("missing remote_basepoints"))?;
+        let points = req
+            .counterparty_basepoints
+            .ok_or_else(|| self.invalid_argument("missing counterparty_basepoints"))?;
         let counterparty_points = ChannelPublicKeys {
-            funding_pubkey: self.public_key(counterparty_points.funding_pubkey)?,
-            revocation_basepoint: self.public_key(counterparty_points.revocation)?,
-            payment_point: self.public_key(counterparty_points.payment)?,
-            delayed_payment_basepoint: self.public_key(counterparty_points.delayed_payment)?,
-            htlc_basepoint: self.public_key(counterparty_points.htlc)?,
+            funding_pubkey: self.public_key(points.funding_pubkey)?,
+            revocation_basepoint: self.public_key(points.revocation)?,
+            payment_point: self.public_key(points.payment)?,
+            delayed_payment_basepoint: self.public_key(points.delayed_payment)?,
+            htlc_basepoint: self.public_key(points.htlc)?,
         };
 
         let counterparty_shutdown_script =
-            Script::deserialize(&req.remote_shutdown_script.as_slice()).map_err(|err| {
+            Script::deserialize(&req.counterparty_shutdown_script.as_slice()).map_err(|err| {
                 self.invalid_argument(format!(
                     "could not parse counterparty_shutdown_script: {}",
                     err
@@ -392,11 +392,11 @@ impl Signer for MySigner {
                 channel_value_sat: req.channel_value_sat,
                 push_value_msat: req.push_value_msat,
                 funding_outpoint,
-                local_to_self_delay: req.local_to_self_delay as u16,
+                holder_to_self_delay: req.holder_to_self_delay as u16,
                 counterparty_points,
-                holder_shutdown_script: local_shutdown_script,
-                counterparty_to_self_delay: req.remote_to_self_delay as u16,
-                counterparty_shutdown_script: counterparty_shutdown_script.clone(),
+                holder_shutdown_script,
+                counterparty_to_self_delay: req.counterparty_to_self_delay as u16,
+                counterparty_shutdown_script,
                 commitment_type: convert_commitment_type(req.commitment_type),
             },
         )?;
@@ -468,11 +468,11 @@ impl Signer for MySigner {
         );
         log_debug!(self, "req={}", reqstr);
 
-        let opt_counterparty_shutdown_script = if req.remote_shutdown_script.is_empty() {
+        let opt_counterparty_shutdown_script = if req.counterparty_shutdown_script.is_empty() {
             None
         } else {
             Some(
-                Script::deserialize(&req.remote_shutdown_script.as_slice()).map_err(|_| {
+                Script::deserialize(&req.counterparty_shutdown_script.as_slice()).map_err(|_| {
                     self.invalid_argument("could not deserialize counterparty_shutdown_script")
                 })?,
             )
@@ -481,8 +481,8 @@ impl Signer for MySigner {
         let sig_data = self.sign_mutual_close_tx_phase2(
             &node_id,
             &channel_id,
-            req.to_local_value_sat,
-            req.to_remote_value_sat,
+            req.to_holder_value_sat,
+            req.to_counterparty_value_sat,
             opt_counterparty_shutdown_script,
         )?;
 
@@ -678,9 +678,9 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_remote_commitment_tx(
+    async fn sign_counterparty_commitment_tx(
         &self,
-        request: Request<SignRemoteCommitmentTxRequest>,
+        request: Request<SignCounterpartyCommitmentTxRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
         let reqstr = json!(&req);
@@ -728,9 +728,9 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_commitment_tx(
+    async fn sign_holder_commitment_tx(
         &self,
-        request: Request<SignCommitmentTxRequest>,
+        request: Request<SignHolderCommitmentTxRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
         let reqstr = json!(&req);
@@ -745,27 +745,27 @@ impl Signer for MySigner {
 
         let funding_amount_sat = reqtx.input_descs[0].value_sat as u64;
 
-        let sigvec = self.sign_commitment_tx(&node_id, &channel_id, &tx, funding_amount_sat)?;
+        let sigvec = self.sign_holder_commitment_tx(&node_id, &channel_id, &tx, funding_amount_sat)?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
                 data: sigvec.clone(),
             }),
         };
-        log_info!(self, "REPLY sign_commitment_tx({}/{})", node_id, channel_id);
+        log_info!(self, "REPLY sign_holder_commitment_tx({}/{})", node_id, channel_id);
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
-    async fn sign_local_htlc_tx(
+    async fn sign_holder_htlc_tx(
         &self,
-        request: Request<SignLocalHtlcTxRequest>,
+        request: Request<SignHolderHtlcTxRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_local_htlc_tx({}/{})", node_id, channel_id);
+        log_info!(self, "ENTER sign_holder_htlc_tx({}/{})", node_id, channel_id);
         log_debug!(self, "req={}", reqstr);
         let reqtx = req.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
 
@@ -780,7 +780,7 @@ impl Signer for MySigner {
             Some(p) => Some(self.public_key(Some(p))?),
             _ => None,
         };
-        let sigvec = self.sign_local_htlc_tx(
+        let sigvec = self.sign_holder_htlc_tx(
             &node_id,
             &channel_id,
             &tx,
@@ -795,7 +795,7 @@ impl Signer for MySigner {
                 data: sigvec.clone(),
             }),
         };
-        log_info!(self, "REPLY sign_local_htlc_tx({}/{})", node_id, channel_id);
+        log_info!(self, "REPLY sign_holder_htlc_tx({}/{})", node_id, channel_id);
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -824,11 +824,15 @@ impl Signer for MySigner {
         let htlc_amount_sat = input_desc.value_sat as u64;
         let redeemscript = input_desc.redeem_script;
 
+        let input: usize = req.input.try_into()
+            .map_err(|_| self.invalid_argument("bad input index"))?;
+
         let sigvec = self.sign_delayed_payment_to_us(
             &node_id,
             &channel_id,
             &tx,
-            req.n,
+            input,
+            req.commitment_number,
             redeemscript,
             htlc_amount_sat,
         )?;
@@ -848,9 +852,9 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_remote_htlc_tx(
+    async fn sign_counterparty_htlc_tx(
         &self,
-        request: Request<SignRemoteHtlcTxRequest>,
+        request: Request<SignCounterpartyHtlcTxRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
         let reqstr = json!(&req);
@@ -858,13 +862,12 @@ impl Signer for MySigner {
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
             self,
-            "ENTER sign_remote_htlc_tx({}/{})",
+            "ENTER sign_counterparty_htlc_tx({}/{})",
             node_id,
             channel_id
         );
         log_debug!(self, "req={}", reqstr);
         let reqtx = req.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
-        let input = req.input;
 
         let tx_res: Result<bitcoin::Transaction, encode::Error> =
             deserialize(reqtx.raw_tx_bytes.as_slice());
@@ -877,11 +880,10 @@ impl Signer for MySigner {
         let htlc_amount_sat = input_desc.value_sat as u64;
         let redeemscript = input_desc.redeem_script;
 
-        let sig_data = self.sign_remote_htlc_tx(
+        let sig_data = self.sign_counterparty_htlc_tx(
             &node_id,
             &channel_id,
             &tx,
-            input as usize,
             redeemscript,
             &remote_per_commitment_point,
             htlc_amount_sat,
@@ -892,7 +894,7 @@ impl Signer for MySigner {
         };
         log_info!(
             self,
-            "REPLY sign_remote_htlc_tx({}/{})",
+            "REPLY sign_counterparty_htlc_tx({}/{})",
             node_id,
             channel_id
         );
@@ -900,9 +902,9 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_remote_htlc_to_us(
+    async fn sign_counterparty_htlc_to_us(
         &self,
-        request: Request<SignRemoteHtlcToUsRequest>,
+        request: Request<SignCounterpartyHtlcToUsRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
         let reqstr = json!(&req);
@@ -910,7 +912,7 @@ impl Signer for MySigner {
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
             self,
-            "ENTER sign_remote_htlc_to_us({}/{})",
+            "ENTER sign_counterparty_htlc_to_us({}/{})",
             node_id,
             channel_id
         );
@@ -926,11 +928,14 @@ impl Signer for MySigner {
 
         let remote_per_commitment_point = self.public_key(req.remote_per_commit_point)?;
 
-        let sigvec = self.sign_remote_htlc_to_us(
+        let input: usize = req.input.try_into()
+            .map_err(|_| self.invalid_argument("bad input index"))?;
+
+        let sigvec = self.sign_counterparty_htlc_to_us(
             &node_id,
             &channel_id,
             &tx,
-            req.input as usize,
+            input,
             redeemscript,
             &remote_per_commitment_point,
             htlc_amount_sat,
@@ -943,7 +948,7 @@ impl Signer for MySigner {
         };
         log_info!(
             self,
-            "REPLY sign_remote_htlc_to_us({}/{})",
+            "REPLY sign_counterparty_htlc_to_us({}/{})",
             node_id,
             channel_id
         );
@@ -951,9 +956,9 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_penalty_to_us(
+    async fn sign_justice_tx_to_us(
         &self,
-        request: Request<SignPenaltyToUsRequest>,
+        request: Request<SignJusticeTxToUsRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
         let reqstr = json!(&req);
@@ -962,7 +967,6 @@ impl Signer for MySigner {
         log_info!(self, "ENTER sign_penalty_to_us({}/{})", node_id, channel_id);
         log_debug!(self, "req={}", reqstr);
         let reqtx = req.tx.ok_or_else(|| self.invalid_argument("missing tx"))?;
-        let input = req.input;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_argument(format!("bad tx: {}", e)))?;
@@ -973,11 +977,14 @@ impl Signer for MySigner {
 
         let revocation_secret = self.secret_key(req.revocation_secret)?;
 
+        let input: usize = req.input.try_into()
+            .map_err(|_| self.invalid_argument("bad input index"))?;
+
         let sigvec = self.sign_penalty_to_us(
             &node_id,
             &channel_id,
             &tx,
-            input as usize,
+            input,
             &revocation_secret,
             redeemscript,
             htlc_amount_sat,
@@ -1128,9 +1135,9 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_remote_commitment_tx_phase2(
+    async fn sign_counterparty_commitment_tx_phase2(
         &self,
-        request: Request<SignRemoteCommitmentTxPhase2Request>,
+        request: Request<SignCounterpartyCommitmentTxPhase2Request>,
     ) -> Result<Response<CommitmentTxSignatureReply>, Status> {
         let req = request.into_inner();
         let reqstr = json!(&req);
@@ -1156,8 +1163,8 @@ impl Signer for MySigner {
             remote_per_commitment_point,
             req_info.n,
             req_info.feerate_sat_per_kw,
-            req_info.to_local_value_sat,
-            req_info.to_remote_value_sat,
+            req_info.to_holder_value_sat,
+            req_info.to_counterparty_value_sat,
             offered_htlcs,
             received_htlcs,
         )?;
@@ -1180,9 +1187,9 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_local_commitment_tx_phase2(
+    async fn sign_holder_commitment_tx_phase2(
         &self,
-        request: Request<SignLocalCommitmentTxPhase2Request>,
+        request: Request<SignHolderCommitmentTxPhase2Request>,
     ) -> Result<Response<CommitmentTxSignatureReply>, Status> {
         let req = request.into_inner();
         let reqstr = json!(&req);
@@ -1200,7 +1207,7 @@ impl Signer for MySigner {
             .ok_or_else(|| self.invalid_argument("missing commitment info"))?;
         if req_info.per_commitment_point.is_some() {
             return Err(
-                self.invalid_argument("per-commitment point must not be provided for local txs")
+                self.invalid_argument("per-commitment point must not be provided for holder txs")
             );
         }
 
@@ -1212,8 +1219,8 @@ impl Signer for MySigner {
             &channel_id,
             req_info.n,
             req_info.feerate_sat_per_kw,
-            req_info.to_local_value_sat,
-            req_info.to_remote_value_sat,
+            req_info.to_holder_value_sat,
+            req_info.to_counterparty_value_sat,
             offered_htlcs,
             received_htlcs,
         )?;

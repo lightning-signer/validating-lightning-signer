@@ -2,6 +2,11 @@ syntax = "proto3";
 
 package remotesigner;
 
+// Glossary:
+// - Holder - the local lightning node
+// - Counterparty - the peer on the relevant channel
+// - Phase 1 / Phase 2 - versions of this API (see below)
+
 // Phase 1 API
 // -----------
 //
@@ -22,7 +27,7 @@ service Signer {
   rpc Init (InitRequest)
     returns (InitReply);
 
-  // Get signing XPUB for a node.
+  // Get layer-1 XPUB for a node.
   rpc GetExtPubKey (GetExtPubKeyRequest)
     returns (GetExtPubKeyReply);
   
@@ -36,16 +41,23 @@ service Signer {
     returns (ReadyChannelReply);
 
   // BOLT #2 - Channel Close - phase 1
+  // No further commitments will be signed.
+  // This is a layer-2 to layer-1 transaction.
   rpc SignMutualCloseTx (SignMutualCloseTxRequest)
     returns (SignatureReply);
 
   // BOLT #2 - Channel Close - phase 2
+  // No further commitments will be signed.
+  // This is a layer-2 to layer-1 transaction.
   rpc SignMutualCloseTxPhase2 (SignMutualCloseTxPhase2Request)
     returns (CloseTxSignatureReply);
 
   // BOLT #2 - Message Retransmission
   // Used to recover from local data loss by checking that our secret
   // provided by the peer is correct.
+  //
+  // WARNING: this does not guarantee that the peer provided us the latest secret,
+  // and if in fact the peer lied they will take all of the funds in the channel.
   rpc CheckFutureSecret (CheckFutureSecretRequest)
     returns (CheckFutureSecretReply);
 
@@ -56,67 +68,76 @@ service Signer {
 
   // BOLT #3 - Per-commitment Secret Requirements
   // Get our current per-commitment point and the secret for the point
-  // at commitment n-2
+  // at commitment n-2.  The release of the secret for n-2 effectively
+  // revokes that commitment, and it cannot be signed.  It is an error
+  // if the n-2 commitment was already signed.
   rpc GetPerCommitmentPoint (GetPerCommitmentPointRequest)
     returns (GetPerCommitmentPointReply);
 
   // BOLT #3 - Funding Transaction
   // Sign the funding transaction
   // TODO this must be done after we know the remote signature on the
-  // commitment tx - need an API call that provides this to the
-  // signer.
+  // commitment tx - need to provide this to the signer.
+  // This a layer-1 to layer-2 transaction.
   rpc SignFundingTx (SignFundingTxRequest)
     returns (SignFundingTxReply);
 
   // BOLT #3 - Commitment Transaction, phase 1
-  // Sign the remote commitment tx, at commitment time
-  rpc SignRemoteCommitmentTx (SignRemoteCommitmentTxRequest)
+  // Sign the counterparty's commitment tx, at commitment time.
+  // The signature is provided to the counterparty.
+  rpc SignCounterpartyCommitmentTx (SignCounterpartyCommitmentTxRequest)
     returns (SignatureReply);
 
   // BOLT #3 - Commitment Transaction and attached HTLCs, phase 2
-  // Sign the remote commitment tx and attached HTLCs, at commitment time
-  rpc SignRemoteCommitmentTxPhase2 (SignRemoteCommitmentTxPhase2Request)
+  // Sign the counterparty commitment tx and attached HTLCs, at commitment time
+  rpc SignCounterpartyCommitmentTxPhase2 (SignCounterpartyCommitmentTxPhase2Request)
     returns (CommitmentTxSignatureReply);
 
   // BOLT #3 - Commitment Transaction, , phase 1
-  // Sign the local commitment tx, at force-close time
-  rpc SignCommitmentTx (SignCommitmentTxRequest)
+  // Sign the holder's commitment tx, at force-close time.
+  // No further commitments can be signed on this channel.
+  // The commitment must not have been revoked.
+  rpc SignHolderCommitmentTx (SignHolderCommitmentTxRequest)
     returns (SignatureReply);
 
   // BOLT #3 - Commitment Transaction and attached HTLCs, phase 2
-  // Sign the local commitment tx and attached HTLCs, at force-close time.
+  // Sign the holder's commitment tx and attached HTLCs, at force-close time.
   // No further commitments can be signed on this channel.
-  rpc SignLocalCommitmentTxPhase2 (SignLocalCommitmentTxPhase2Request)
+  // The commitment must not have been revoked.
+  rpc SignHolderCommitmentTxPhase2 (SignHolderCommitmentTxPhase2Request)
     returns (CommitmentTxSignatureReply);
 
   // BOLT #3 - HTLC Outputs, phase 1
-  // Sign an htlc-success tx spending a local HTLC output, assuming we
-  // know the preimage, at force-close time
-  rpc SignLocalHTLCTx (SignLocalHTLCTxRequest)
+  // Sign an HTLC-Success or HTLC-Timeout tx spending a holder's HTLC output, at force-close time
+  rpc SignHolderHTLCTx (SignHolderHTLCTxRequest)
     returns (SignatureReply);
 
   // BOLT #5 - Unilateral Close Handling, phase 1
-  // Sign a delayed to-local output - either from the commitment tx or
-  // from an HTLC, at force-close time
+  // Sign a tx sweeping a delayed to-local output - either from the commitment tx or
+  // from an HTLC, at force-close time.
+  // This is a layer-2 to layer-1 transaction.
   rpc SignDelayedPaymentToUs (SignDelayedPaymentToUsRequest)
     returns (SignatureReply);
 
   // BOLT #3 - HTLC Outputs, phase 1
-  // Sign a remote HTLC tx, at commitment time
-  rpc SignRemoteHTLCTx (SignRemoteHTLCTxRequest)
+  // Sign a counterparty HTLC tx, at commitment time.
+  // This can be either an HTLC-Success or HTLC-Timeout tx.
+  rpc SignCounterpartyHTLCTx (SignCounterpartyHTLCTxRequest)
     returns (SignatureReply);
 
   // BOLT #3 - HTLC Outputs, phase 1
-  // Sign an htlc-success tx on a remote HTLC output offered to us,
-  // assuming we know the preimage, at force-close time
-  rpc SignRemoteHTLCToUs (SignRemoteHTLCToUsRequest)
+  // Sign a tx sweeping a counterparty HTLC-Success / HTLC-Timeout tx output,
+  // at force-close time.
+  // This is a layer-2 to layer-1 transaction.
+  rpc SignCounterpartyHTLCToUs (SignCounterpartyHTLCToUsRequest)
     returns (SignatureReply);
 
   // BOLT #5 - Unilateral Close Handling, phase 1
-  // Sign a penalty tx to us - either sweeping the to-local commitment
-  // tx output or sweeping an HTLC tx output, after the remote
+  // Sign a justice tx to us - either sweeping the to-local commitment
+  // tx output or sweeping an HTLC tx output, after the counterparty
   // broadcast a revoked commitment transaction.
-  rpc SignPenaltyToUs (SignPenaltyToUsRequest)
+  // This is a layer-2 to layer-1 transaction.
+  rpc SignJusticeTxToUs (SignJusticeTxToUsRequest)
     returns (SignatureReply);
 
   // BOLT #7 - channel_announcement
@@ -206,7 +227,7 @@ message NewChannelReply {
   ChannelNonce channel_nonce0 = 1;
 }
 
-// Provide the funding outpoint and information from the remote peer
+// Provide the funding outpoint and information from the counterparty
 // This is provided to signer at the point that the funding transaction was created
 message ReadyChannelRequest {
   NodeId node_id = 1;
@@ -227,15 +248,15 @@ message ReadyChannelRequest {
 
   Outpoint funding_outpoint = 7;
 
-  uint32 local_to_self_delay = 8;
+  uint32 holder_to_self_delay = 8;
 
-  bytes local_shutdown_script = 9;
+  bytes holder_shutdown_script = 9;
 
-  Basepoints remote_basepoints = 10;
+  Basepoints counterparty_basepoints = 10;
 
-  uint32 remote_to_self_delay = 11;
+  uint32 counterparty_to_self_delay = 11;
 
-  bytes remote_shutdown_script = 12;
+  bytes counterparty_shutdown_script = 12;
 
   enum CommitmentType {
     LEGACY = 0;
@@ -261,7 +282,7 @@ message SignatureReply {
   BitcoinSignature signature = 1;
 }
 
-// Check if the remote really knows a secret that we haven't generated
+// Check if the counterparty really knows a secret that we haven't generated
 // since being restored from backup.  This proves to us that the state
 // of the channel is at least at commitment number `n + 1`
 message CheckFutureSecretRequest {
@@ -273,7 +294,7 @@ message CheckFutureSecretRequest {
   uint64 n = 3;
 
   // our secret that we haven't generated since being restored from
-  // backup, but the remote claims is part of our shachain
+  // backup, but the counterparty claims is part of our shachain
   Secret suggested = 4;
 }
 
@@ -325,8 +346,8 @@ message SignFundingTxReply {
   repeated Witness witnesses = 1;
 }
 
-// Sign the remote commitment
-message SignRemoteCommitmentTxRequest {
+// Sign the counterparty commitment
+message SignCounterpartyCommitmentTxRequest {
   NodeId node_id = 1;
   
   ChannelNonce channel_nonce = 2;
@@ -338,9 +359,9 @@ message SignRemoteCommitmentTxRequest {
   Transaction tx = 4;
 }
 
-// Force close a channel by signing a local commitment tx.  The
+// Force close a channel by signing a holder commitment tx.  The
 // channel moves to closing state.
-message SignCommitmentTxRequest {
+message SignHolderCommitmentTxRequest {
   NodeId node_id = 1;
   
   ChannelNonce channel_nonce = 2;
@@ -348,9 +369,9 @@ message SignCommitmentTxRequest {
   Transaction tx = 3;
 }
 
-// As part of a force close, sweep a local HTLC output hanging off the
+// As part of a force close, sweep a holder-broadcast HTLC output hanging off the
 // commitment tx
-message SignLocalHTLCTxRequest {
+message SignHolderHTLCTxRequest {
   NodeId node_id = 1;
 
   ChannelNonce channel_nonce = 2;
@@ -362,52 +383,55 @@ message SignLocalHTLCTxRequest {
   PubKey per_commit_point = 5;
 }
 
-// As part of a force close, sweep the delayed to local output hanging
-// off the commitment tx
+// As part of a force close, sweep the delayed to-local output hanging
+// off the commitment tx or HTLC tx that the holder broadcast
 message SignDelayedPaymentToUsRequest {
   NodeId node_id = 1;
     
   ChannelNonce channel_nonce = 2;
 
   Transaction tx = 3;
-  
-  uint64 n = 4;
+
+  // The input index to be signed
+  uint32 input = 4;
+
+  uint64 commitment_number = 5;
 }
 
-// Sign a remote HTLC tx hanging off the remote commitment tx
-message SignRemoteHTLCTxRequest {
+// Sign a counterparty HTLC tx hanging off the counterparty commitment tx
+message SignCounterpartyHTLCTxRequest {
   NodeId node_id = 1;
 
   ChannelNonce channel_nonce = 2;
 
   Transaction tx = 3;
-
-  uint32 input = 4;  // FIXME - currently unset by clients, set or remove
 
   PubKey remote_per_commit_point = 5;
 }
 
-// Sweep a remote HTLC to us
-message SignRemoteHTLCToUsRequest {
+// Sweep a counterparty HTLC to us
+message SignCounterpartyHTLCToUsRequest {
   NodeId node_id = 1;
 
   ChannelNonce channel_nonce = 2;
 
   Transaction tx = 3;
 
+  // The input index to be signed
   uint32 input = 4;
 
   PubKey remote_per_commit_point = 5;
 }
 
-// Sign a penalty sweep of a remote to_local the peer has revoked
-message SignPenaltyToUsRequest {
+// Sign a penalty sweep of a counterparty to_local the counterparty has revoked
+message SignJusticeTxToUsRequest {
   NodeId node_id = 1;
     
   ChannelNonce channel_nonce = 2;
 
   Transaction tx = 3;
 
+  // The input index to be signed
   uint32 input = 4;
 
   Secret revocation_secret = 5;	// FIXME - should this be remembered instead?
@@ -485,7 +509,7 @@ message RecoverableNodeSignatureReply {
 message SignMessageRequest {
   NodeId node_id = 1;
 
-  // NOTE - The remote signer will prepend the standard prefix
+  // NOTE - The counterparty will prepend the standard prefix
   // "Lightning Signed Message:" so this prefix should not be included
   // here.
   bytes message = 2;
@@ -655,8 +679,8 @@ message Witness {
 // signs the commitment and HTLC transactions from elementary info,
 // rather than sending the serialized transaction on the wire.
 
-// Sign the remote commitment
-message SignRemoteCommitmentTxPhase2Request {
+// Sign the counterparty commitment
+message SignCounterpartyCommitmentTxPhase2Request {
   NodeId node_id = 1;
 
   ChannelNonce channel_nonce = 2;
@@ -664,8 +688,8 @@ message SignRemoteCommitmentTxPhase2Request {
   CommitmentInfo commitment_info = 4;
 }
 
-// Sign the local commitment
-message SignLocalCommitmentTxPhase2Request {
+// Sign the holder commitment
+message SignHolderCommitmentTxPhase2Request {
   NodeId node_id = 1;
 
   ChannelNonce channel_nonce = 2;
@@ -684,14 +708,14 @@ message SignMutualCloseTxPhase2Request {
 
   ChannelNonce channel_nonce = 2;
 
-  // Value to us in satoshi, may be zero if dust
-  uint64 to_local_value_sat = 3;
+  // Value to holder in satoshi, may be zero if dust
+  uint64 to_holder_value_sat = 3;
 
-  // Value to them in satoshi, may be zero if dust
-  uint64 to_remote_value_sat = 4;
+  // Value to counterparty in satoshi, may be zero if dust
+  uint64 to_counterparty_value_sat = 4;
 
-  // Remote shutdown script, if not previously specified
-  bytes remote_shutdown_script = 5;
+  // Counterparty shutdown script, if not previously specified
+  bytes counterparty_shutdown_script = 5;
 }
 
 message CloseTxSignatureReply {
@@ -709,9 +733,10 @@ message HTLCInfo {
 
 // Information required to construct a commitment transaction.
 //
-// The notions of "local" "remote", "offered" and "received" are from
-// the point of view of the transaction.  For example, when signing a
-// remote commitment tx, "local" is the remote peer.
+// The notions of "holder" "counterparty", "offered" and "received" are from
+// the point of view of the transaction's broadcaster.  For example, when signing a
+// counterparty commitment tx, "holder" is the counterparty.
+// TODO: change these to broadcaster/countersignatory
 message CommitmentInfo {
   // Feerate, for building HTLC transactions
   uint32 feerate_sat_per_kw = 1;
@@ -719,14 +744,14 @@ message CommitmentInfo {
   // Commitment number
   uint64 n = 2;
 
-  // Value to local in satoshi
-  uint64 to_local_value_sat = 4;
+  // Value to holder in satoshi
+  uint64 to_holder_value_sat = 4;
 
-  // Value to remote in satoshi
-  uint64 to_remote_value_sat = 5;
+  // Value to counterparty in satoshi
+  uint64 to_counterparty_value_sat = 5;
 
-  // Per-commitment point local to the transaction
-  // Omitted if this is a local transaction, because the signer can compute it.
+  // Per-commitment point generated by the transaction's broadcaster.
+  // Omitted if this is a holder-broadcast transaction, because the signer can compute it.
   PubKey per_commitment_point = 6;
 
   // Offered HTLC info

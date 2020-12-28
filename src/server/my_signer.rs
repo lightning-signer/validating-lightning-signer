@@ -534,7 +534,7 @@ impl MySigner {
     // END NOT TESTED
 
     /// Sign the local commitment transaction, at force-close
-    pub fn sign_commitment_tx(
+    pub fn sign_holder_commitment_tx(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
@@ -601,7 +601,7 @@ impl MySigner {
     }
 
     /// the commitment number is ignored if the per commitment point is supplied
-    pub fn sign_local_htlc_tx(
+    pub fn sign_holder_htlc_tx(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
@@ -675,28 +675,26 @@ impl MySigner {
         node_id: &PublicKey,
         channel_id: &ChannelId,
         tx: &bitcoin::Transaction,
-        n: u64,
+        input: usize,
+        commitment_number: u64,
         input_redeemscript: Vec<u8>,
         htlc_amount_sat: u64,
     ) -> Result<Vec<u8>, Status> {
         let sigvec: Result<Vec<u8>, Status> =
             self.with_ready_channel(&node_id, &channel_id, |chan| {
-                if tx.input.len() != 1 {
-                    return Err(self.invalid_argument("tx.input.len() != 1")); // NOT TESTED
-                }
                 if tx.output.len() != 1 {
                     return Err(self.invalid_argument("tx.output.len() != 1")); // NOT TESTED
                 }
 
                 let secp_ctx = Secp256k1::signing_only();
 
-                let per_commitment_point = chan.get_per_commitment_point(n);
+                let per_commitment_point = chan.get_per_commitment_point(commitment_number);
 
                 let htlc_redeemscript = Script::from(input_redeemscript.clone());
 
                 let htlc_sighash = Message::from_slice(
                     &SigHashCache::new(tx).signature_hash(
-                        0,
+                        input,
                         &htlc_redeemscript,
                         htlc_amount_sat,
                         SigHashType::All,
@@ -725,12 +723,11 @@ impl MySigner {
         sigvec
     }
 
-    pub fn sign_remote_htlc_tx(
+    pub fn sign_counterparty_htlc_tx(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
         tx: &bitcoin::Transaction,
-        input: usize,
         input_redeemscript: Vec<u8>,
         remote_per_commitment_point: &PublicKey,
         htlc_amount_sat: u64,
@@ -752,7 +749,7 @@ impl MySigner {
 
             let htlc_sighash = Message::from_slice(
                 &SigHashCache::new(tx).signature_hash(
-                    input,
+                    0,
                     &htlc_redeemscript,
                     htlc_amount_sat,
                     sig_hash_type,
@@ -779,7 +776,7 @@ impl MySigner {
         sig
     }
 
-    pub fn sign_remote_htlc_to_us(
+    pub fn sign_counterparty_htlc_to_us(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
@@ -2638,7 +2635,7 @@ mod tests {
             get_channel_htlc_pubkey(&signer, &node_id, &channel_id, &per_commitment_point);
 
         let sigvec = signer
-            .sign_local_htlc_tx(
+            .sign_holder_htlc_tx(
                 &node_id,
                 &channel_id,
                 &htlc_tx,
@@ -2659,7 +2656,7 @@ mod tests {
         );
 
         let sigvec1 = signer
-            .sign_local_htlc_tx(
+            .sign_holder_htlc_tx(
                 &node_id,
                 &channel_id,
                 &htlc_tx,
@@ -2744,6 +2741,7 @@ mod tests {
                 &node_id,
                 &channel_id,
                 &htlc_tx,
+                0,
                 n,
                 redeemscript.to_bytes(),
                 htlc_amount_sat,
@@ -2828,11 +2826,10 @@ mod tests {
         let htlc_amount_sat = 10 * 1000;
 
         let ser_signature = signer
-            .sign_remote_htlc_tx(
+            .sign_counterparty_htlc_tx(
                 &node_id,
                 &channel_id,
                 &htlc_tx,
-                0,
                 htlc_redeemscript.to_bytes(),
                 &remote_per_commitment_point,
                 htlc_amount_sat,
@@ -2911,11 +2908,10 @@ mod tests {
         let htlc_amount_sat = 10 * 1000;
 
         let ser_signature = signer
-            .sign_remote_htlc_tx(
+            .sign_counterparty_htlc_tx(
                 &node_id,
                 &channel_id,
                 &htlc_tx,
-                0,
                 htlc_redeemscript.to_bytes(),
                 &remote_per_commitment_point,
                 htlc_amount_sat,
@@ -2997,7 +2993,7 @@ mod tests {
         let htlc_amount_sat = 10 * 1000;
 
         let ser_signature = signer
-            .sign_remote_htlc_to_us(
+            .sign_counterparty_htlc_to_us(
                 &node_id,
                 &channel_id,
                 &htlc_tx,
@@ -3056,7 +3052,7 @@ mod tests {
             .expect("tx");
 
         let sigvec = signer
-            .sign_commitment_tx(&node_id, &channel_id, &tx, setup.channel_value_sat)
+            .sign_holder_commitment_tx(&node_id, &channel_id, &tx, setup.channel_value_sat)
             .unwrap();
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
