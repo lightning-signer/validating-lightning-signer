@@ -17,9 +17,7 @@ use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::{Hash, HashEngine};
 use lightning::chain::keysinterface::ChannelKeys;
 use lightning::ln::chan_utils;
-use lightning::ln::chan_utils::{
-    make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
-};
+use lightning::ln::chan_utils::{make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys, get_revokeable_redeemscript};
 use lightning::ln::channelmanager::PaymentHash;
 
 use crate::node::node::ChannelSetup;
@@ -27,7 +25,7 @@ use crate::policy::error::ValidationError;
 use crate::policy::error::ValidationError::{Mismatch, ScriptFormat, TransactionFormat};
 use crate::tx::script::{
     expect_data, expect_number, expect_op, expect_script_end, get_anchor_redeemscript,
-    get_delayed_redeemscript, get_htlc_anchor_redeemscript, get_revokeable_redeemscript,
+    get_delayed_redeemscript, get_htlc_anchor_redeemscript,
 };
 use crate::util::crypto_utils::payload_for_p2wpkh;
 use crate::util::debug_utils::DebugPayload;
@@ -836,7 +834,6 @@ mod tests {
     use bitcoin::{Address, Network};
 
     use crate::node::node::CommitmentType;
-    use crate::tx::script::get_revokeable_redeemscript;
     use crate::util::test_utils::{
         make_reasonable_test_channel_setup, make_test_channel_keys, make_test_pubkey,
     };

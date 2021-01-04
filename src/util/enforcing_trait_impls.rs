@@ -1,4 +1,3 @@
-use std::cmp;
 use std::io::Error;
 use std::sync::{Arc, Mutex};
 
@@ -9,13 +8,12 @@ use bitcoin::secp256k1::{Secp256k1, Signature};
 use chain::keysinterface::{ChannelKeys, InMemoryChannelKeys};
 use lightning::chain;
 use lightning::ln;
-use lightning::ln::chan_utils::{
-    HolderCommitmentTransaction, PreCalculatedTxCreationKeys, TxCreationKeys,
-};
+use lightning::ln::chan_utils::{HolderCommitmentTransaction, TxCreationKeys, CommitmentTransaction, ChannelTransactionParameters};
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 use ln::msgs;
+use std::cmp;
 
 /// Enforces some rules on ChannelKeys calls. Eventually we will
 /// probably want to expose a variant of this which would essentially
@@ -24,7 +22,7 @@ use ln::msgs;
 #[derive(Clone)]
 pub struct EnforcingChannelKeys {
     inner: InMemoryChannelKeys,
-    commitment_number_obscure_and_last: Arc<Mutex<(Option<u64>, u64)>>,
+    last_commitment_number: Arc<Mutex<Option<u64>>>,
 }
 // END NOT TESTED
 
@@ -32,7 +30,7 @@ impl EnforcingChannelKeys {
     pub fn new(inner: InMemoryChannelKeys) -> Self {
         Self {
             inner,
-            commitment_number_obscure_and_last: Arc::new(Mutex::new((None, 0))),
+            last_commitment_number: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -119,39 +117,16 @@ impl ChannelKeys for EnforcingChannelKeys {
 
     fn sign_counterparty_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
-        feerate_sat_per_kw: u32,
-        commitment_tx: &Transaction,
-        keys: &PreCalculatedTxCreationKeys,
-        htlcs: &[&HTLCOutputInCommitment],
-        secp_ctx: &Secp256k1<T>,
-    ) -> Result<(Signature, Vec<Signature>), ()> {
-        if commitment_tx.input.len() != 1 {
-            panic!("lightning commitment transactions have a single input"); // NOT TESTED
-        }
+        commitment_tx: &CommitmentTransaction,
+        secp_ctx: &Secp256k1<T>) -> Result<(Signature, Vec<Signature>), ()> {
         // FIXME bypass while integrating with c-lightning
         // self.check_keys(secp_ctx, keys);
-        let obscured_commitment_transaction_number = (commitment_tx.lock_time & 0xffffff) as u64
-            | ((commitment_tx.input[0].sequence as u64 & 0xffffff) << 3 * 8);
+        let commitment_number = commitment_tx.commitment_number();
+        let mut last_commitment_number = self.last_commitment_number.lock().unwrap();
+        assert!(commitment_number == commitment_number || commitment_number - 1 == commitment_number, "{} doesn't come after {}", commitment_number, commitment_number);
 
-        {
-            let mut commitment_data = self.commitment_number_obscure_and_last.lock().unwrap();
-            if commitment_data.0.is_none() {
-                commitment_data.0 =
-                    Some(obscured_commitment_transaction_number ^ commitment_data.1);
-            }
-            let commitment_number =
-                obscured_commitment_transaction_number ^ commitment_data.0.unwrap();
-            assert!(
-                commitment_number == commitment_data.1
-                    || commitment_number == commitment_data.1 + 1
-            );
-            commitment_data.1 = cmp::max(commitment_number, commitment_data.1)
-        }
-
-        Ok(self
-            .inner
-            .sign_counterparty_commitment(feerate_sat_per_kw, commitment_tx, keys, htlcs, secp_ctx)
-            .unwrap())
+        *last_commitment_number = Some(cmp::min(commitment_number, commitment_number));
+        Ok(self.inner.sign_counterparty_commitment(commitment_tx, secp_ctx).unwrap())
     }
 
     fn sign_holder_commitment<T: secp256k1::Signing + secp256k1::Verification>(
@@ -159,8 +134,7 @@ impl ChannelKeys for EnforcingChannelKeys {
         local_commitment_tx: &HolderCommitmentTransaction,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<Signature, ()> {
-        self.inner
-            .sign_holder_commitment(local_commitment_tx, secp_ctx)
+        self.inner.sign_holder_commitment(local_commitment_tx, secp_ctx)
     }
 
     fn unsafe_sign_holder_commitment<T: secp256k1::Signing + secp256k1::Verification>(
@@ -176,7 +150,7 @@ impl ChannelKeys for EnforcingChannelKeys {
         &self,
         local_commitment_tx: &HolderCommitmentTransaction,
         secp_ctx: &Secp256k1<T>,
-    ) -> Result<Vec<Option<Signature>>, ()> {
+    ) -> Result<Vec<Signature>, ()> {
         self.inner
             .sign_holder_commitment_htlc_transactions(local_commitment_tx, secp_ctx)
     }
@@ -240,17 +214,8 @@ impl ChannelKeys for EnforcingChannelKeys {
         self.inner.sign_channel_announcement(msg, secp_ctx)
     }
 
-    fn on_accept(
-        &mut self,
-        channel_points: &ChannelPublicKeys,
-        counterparty_to_self_delay: u16,
-        local_to_self_delay: u16,
-    ) {
-        self.inner.on_accept(
-            channel_points,
-            counterparty_to_self_delay,
-            local_to_self_delay,
-        )
+    fn ready_channel(&mut self, channel_parameters: &ChannelTransactionParameters) {
+        self.inner.ready_channel(channel_parameters)
     }
 
     // END NOT TESTED
@@ -260,8 +225,7 @@ impl ChannelKeys for EnforcingChannelKeys {
 impl Writeable for EnforcingChannelKeys {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
         self.inner.write(writer)?;
-        let (obscure, last) = *self.commitment_number_obscure_and_last.lock().unwrap();
-        obscure.write(writer)?;
+        let last = *self.last_commitment_number.lock().unwrap();
         last.write(writer)?;
         Ok(())
     }
@@ -271,10 +235,10 @@ impl Writeable for EnforcingChannelKeys {
 impl Readable for EnforcingChannelKeys {
     fn read<R: ::std::io::Read>(reader: &mut R) -> Result<Self, DecodeError> {
         let inner = Readable::read(reader)?;
-        let obscure_and_last = Readable::read(reader)?;
+        let last = Readable::read(reader)?;
         Ok(EnforcingChannelKeys {
-            inner: inner,
-            commitment_number_obscure_and_last: Arc::new(Mutex::new(obscure_and_last)),
+            inner,
+            last_commitment_number: Arc::new(Mutex::new(last)),
         })
     }
 }

@@ -69,25 +69,7 @@ pub fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, ValidationError> 
     }
 }
 
-// FIXME - This is copied from chan_utils.
-pub fn get_revokeable_redeemscript(
-    revocation_key: &PublicKey,
-    to_self_delay: u16,
-    delayed_payment_key: &PublicKey,
-) -> Script {
-    Builder::new()
-        .push_opcode(opcodes::all::OP_IF)
-        .push_slice(&revocation_key.serialize())
-        .push_opcode(opcodes::all::OP_ELSE)
-        .push_int(to_self_delay as i64)
-        .push_opcode(opcodes::all::OP_CSV)
-        .push_opcode(opcodes::all::OP_DROP)
-        .push_slice(&delayed_payment_key.serialize())
-        .push_opcode(opcodes::all::OP_ENDIF)
-        .push_opcode(opcodes::all::OP_CHECKSIG)
-        .into_script()
-}
-
+/// To-counterparty redeem script when anchors are enabled - one block delay
 // FIXME - This should be in chan_utils.
 pub fn get_delayed_redeemscript(delayed_key: &PublicKey) -> Script {
     Builder::new()
@@ -98,6 +80,7 @@ pub fn get_delayed_redeemscript(delayed_key: &PublicKey) -> Script {
         .into_script()
 }
 
+/// Anchor redeem script
 // FIXME - This should be in chan_utils.
 pub fn get_anchor_redeemscript(funding_key: &PublicKey) -> Script {
     Builder::new()
@@ -111,6 +94,7 @@ pub fn get_anchor_redeemscript(funding_key: &PublicKey) -> Script {
         .into_script()
 }
 
+/// HTLC redeem script when anchors are enabled
 // FIXME - yup, chan_utils.
 #[inline]
 pub fn get_htlc_anchor_redeemscript(
@@ -125,7 +109,7 @@ pub fn get_htlc_anchor_redeemscript(
     )
 }
 
-pub fn get_htlc_anchor_redeemscript_with_explicit_keys(
+fn get_htlc_anchor_redeemscript_with_explicit_keys(
     htlc: &HTLCOutputInCommitment,
     a_htlc_key: &PublicKey,
     b_htlc_key: &PublicKey,
