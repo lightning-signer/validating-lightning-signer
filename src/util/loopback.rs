@@ -6,8 +6,8 @@ use bitcoin::{Script, Transaction};
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface, KeysManager};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys, CommitmentTransaction, ChannelTransactionParameters};
-use lightning::ln::msgs::UnsignedChannelAnnouncement;
-use lightning::util::ser::Writeable;
+use lightning::ln::msgs::{UnsignedChannelAnnouncement, DecodeError};
+use lightning::util::ser::{Writeable, Writer};
 use tonic::Status;
 
 use crate::node::node::{ChannelId, ChannelSetup, CommitmentType};
@@ -15,6 +15,7 @@ use crate::server::my_keys_manager::INITIAL_COMMITMENT_NUMBER;
 use crate::server::my_signer::MySigner;
 use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
+use tokio::io::Error;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -144,6 +145,11 @@ impl LoopbackChannelSigner {
     }
 }
 
+impl Writeable for LoopbackChannelSigner {
+    fn write<W: Writer>(&self, _writer: &mut W) -> Result<(), Error> {
+        unimplemented!()
+    }
+}
 
 fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
     res.pop();
@@ -235,24 +241,19 @@ impl ChannelKeys for LoopbackChannelSigner {
         Ok((commitment_sig, htlc_sigs))
     }
 
-    fn sign_holder_commitment<T: secp256k1::Signing + secp256k1::Verification>(&self, hct: &HolderCommitmentTransaction, _secp_ctx: &Secp256k1<T>) -> Result<Signature, ()> {
-        Ok(self.sign_holder_commitment_and_htlcs(hct)?.0)
+    fn sign_holder_commitment_and_htlcs<T: secp256k1::Signing + secp256k1::Verification>(&self, hct: &HolderCommitmentTransaction, _secp_ctx: &Secp256k1<T>) -> Result<(Signature, Vec<Signature>), ()> {
+        Ok(self.sign_holder_commitment_and_htlcs(hct)?)
     }
 
-    fn unsafe_sign_holder_commitment<T: secp256k1::Signing + secp256k1::Verification>(
-        &self,
-        _hct: &HolderCommitmentTransaction,
-        _secp_ctx: &Secp256k1<T>,
-    ) -> Result<Signature, ()> {
-        unimplemented!()
-    }
-
-    fn sign_holder_commitment_htlc_transactions<T: secp256k1::Signing + secp256k1::Verification>(
+    fn unsafe_sign_holder_commitment_and_htlcs<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         hct: &HolderCommitmentTransaction,
-        _secp_ctx: &Secp256k1<T>,
-    ) -> Result<Vec<Signature>, ()> {
-        Ok(self.sign_holder_commitment_and_htlcs(hct)?.1)
+        secp_ctx: &Secp256k1<T>,
+    ) -> Result<(Signature, Vec<Signature>), ()> {
+        self.signer.with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+            chan.keys.unsafe_sign_holder_commitment_and_htlcs(hct, secp_ctx)
+                .map_err(|_| Status::internal("could not unsafe-sign"))
+        }).map_err(|_s| ())
     }
 
     fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(
@@ -486,6 +487,10 @@ impl KeysInterface for LoopbackSignerKeysInterface {
 
     fn get_secure_random_bytes(&self) -> [u8; 32] {
         self.backing.get_secure_random_bytes()
+    }
+
+    fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::ChanKeySigner, DecodeError> {
+        unimplemented!()
     }
 }
 

@@ -129,30 +129,20 @@ impl ChannelKeys for EnforcingChannelKeys {
         Ok(self.inner.sign_counterparty_commitment(commitment_tx, secp_ctx).unwrap())
     }
 
-    fn sign_holder_commitment<T: secp256k1::Signing + secp256k1::Verification>(
+    fn sign_holder_commitment_and_htlcs<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         local_commitment_tx: &HolderCommitmentTransaction,
         secp_ctx: &Secp256k1<T>,
-    ) -> Result<Signature, ()> {
-        self.inner.sign_holder_commitment(local_commitment_tx, secp_ctx)
+    ) -> Result<(Signature, Vec<Signature>), ()> {
+        self.inner.sign_holder_commitment_and_htlcs(local_commitment_tx, secp_ctx)
     }
 
-    fn unsafe_sign_holder_commitment<T: secp256k1::Signing + secp256k1::Verification>(
+    fn unsafe_sign_holder_commitment_and_htlcs<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         local_commitment_tx: &HolderCommitmentTransaction,
         secp_ctx: &Secp256k1<T>,
-    ) -> Result<Signature, ()> {
-        self.inner
-            .unsafe_sign_holder_commitment(local_commitment_tx, secp_ctx)
-    }
-
-    fn sign_holder_commitment_htlc_transactions<T: secp256k1::Signing + secp256k1::Verification>(
-        &self,
-        local_commitment_tx: &HolderCommitmentTransaction,
-        secp_ctx: &Secp256k1<T>,
-    ) -> Result<Vec<Signature>, ()> {
-        self.inner
-            .sign_holder_commitment_htlc_transactions(local_commitment_tx, secp_ctx)
+    ) -> Result<(Signature, Vec<Signature>), ()> {
+        self.inner.unsafe_sign_holder_commitment_and_htlcs(local_commitment_tx, secp_ctx)
     }
 
     fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(
