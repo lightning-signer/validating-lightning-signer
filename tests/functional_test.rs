@@ -131,7 +131,7 @@ fn channel_force_close_test() {
                                                               InitFeatures::known(), InitFeatures::known());
 
     // Close channel forcefully
-    nodes[0].node.force_close_channel(&chan.2);
+    let _ = nodes[0].node.force_close_channel(&chan.2);
     assert_eq!(nodes[0].node.get_and_clear_pending_msg_events().len(), 1);
     check_added_monitors!(nodes[0], 1);
 
@@ -239,7 +239,7 @@ fn channel_force_close_with_htlc_test() {
     let _payment_preimage_1 = route_payment(&nodes[0], &vec!(&nodes[1], &nodes[2])[..], 3000000).0;
 
     // Close channel forcefully
-    nodes[0].node.force_close_channel(&chan_1.2);
+    let _ = nodes[0].node.force_close_channel(&chan_1.2);
     assert_eq!(nodes[0].node.get_and_clear_pending_msg_events().len(), 1);
     check_added_monitors!(nodes[0], 1);
 

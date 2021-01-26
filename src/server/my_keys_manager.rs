@@ -20,6 +20,7 @@ use crate::util::crypto_utils::{
     channels_seed, derive_key_lnd, get_account_extended_key_lnd, get_account_extended_key_native,
     hkdf_sha256, hkdf_sha256_keys, node_keys_lnd, node_keys_native,
 };
+use lightning::ln::msgs::DecodeError;
 
 pub const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;
 
@@ -330,6 +331,10 @@ impl KeysInterface for MyKeysManager {
     }
 
     fn get_secure_random_bytes(&self) -> [u8; 32] {
+        unimplemented!()
+    }
+
+    fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::ChanKeySigner, DecodeError> {
         unimplemented!()
     }
     // END NOT TESTED

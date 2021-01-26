@@ -623,14 +623,11 @@ impl Channel {
             &self.keys.counterparty_pubkeys().funding_pubkey
         );
 
-        let sig = self.keys
-            .sign_holder_commitment(&holder_commitment_tx, &self.secp_ctx)
+        let (sig, htlc_sigs) = self.keys
+            .sign_holder_commitment_and_htlcs(&holder_commitment_tx, &self.secp_ctx)
             .map_err(|_| self.internal_error("failed to sign"))?;
         let mut sig_vec = sig.serialize_der().to_vec();
         sig_vec.push(SigHashType::All as u8);
-
-        let htlc_sigs = self.keys.sign_holder_commitment_htlc_transactions(&holder_commitment_tx, &self.secp_ctx)
-            .map_err(|_| self.internal_error("failed to sign"))?;
 
         let mut htlc_sig_vecs = Vec::new();
         for htlc_sig in htlc_sigs {

@@ -25,10 +25,10 @@ serde_json = "1.0.48"
 
 [dependencies.lightning]
 git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "9c9c88147e6a8fa637dc048f764ab8ecfea200d4"
+rev = "f151c029756622d06303252f918fce1b26809d23"
 [dev-dependencies.lightning]
 git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "9c9c88147e6a8fa637dc048f764ab8ecfea200d4"
+rev = "f151c029756622d06303252f918fce1b26809d23"
 features = ["unsafe_revoked_tx_signing", "_test_utils"]
 
 [dev-dependencies.bitcoin]
