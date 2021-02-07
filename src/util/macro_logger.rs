@@ -1,6 +1,8 @@
+#[cfg(feature = "grpc")]
 use serde::Serializer;
 
 // BEGIN NOT TESTED
+#[cfg(feature = "grpc")]
 pub fn as_hex<S>(buf: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
