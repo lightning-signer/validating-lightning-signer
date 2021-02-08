@@ -1,3 +1,5 @@
+// FILE NOT TESTED
+
 #![crate_name = "lightning_signer"]
 #![forbid(unsafe_code)]
 #![allow(bare_trait_objects)]

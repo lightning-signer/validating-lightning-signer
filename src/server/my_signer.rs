@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::convert::{TryInto, TryFrom};
+use std::convert::{TryFrom, TryInto};
 use std::sync::{Arc, Mutex};
 
 use secp256k1::SignOnly;
@@ -26,9 +26,8 @@ use crate::node::node::{
 };
 use crate::tx::tx::{build_close_tx, sign_commitment, HTLCInfo2};
 use crate::util::crypto_utils::{derive_private_revocation_key, payload_for_p2wpkh};
-use crate::util::test_utils::TestLogger;
 use crate::util::status::Status;
-
+use crate::util::test_utils::TestLogger;
 
 #[derive(PartialEq, Clone, Copy)]
 #[repr(i32)]
@@ -42,16 +41,18 @@ pub enum SpendType {
 impl TryFrom<i32> for SpendType {
     type Error = ();
 
+    // BEGIN NOT TESTED
     fn try_from(i: i32) -> Result<Self, Self::Error> {
         let res = match i {
             x if x == SpendType::Invalid as i32 => SpendType::Invalid,
             x if x == SpendType::P2pkh as i32 => SpendType::P2pkh,
             x if x == SpendType::P2wpkh as i32 => SpendType::P2wpkh,
             x if x == SpendType::P2shP2wpkh as i32 => SpendType::P2shP2wpkh,
-            _ => return Err(())
+            _ => return Err(()),
         };
         Ok(res)
     }
+    // END NOT TESTED
 }
 
 pub struct MySigner {
@@ -68,7 +69,6 @@ impl MySigner {
     }
 
     // BEGIN NOT TESTED
-
     #[allow(dead_code)]
     pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
@@ -76,6 +76,7 @@ impl MySigner {
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
     }
+    // END NOT TESTED
 
     pub fn new() -> MySigner {
         let test_logger = Arc::new(TestLogger::with_id("server".to_owned()));
@@ -149,6 +150,7 @@ impl MySigner {
     }
 
     /// Temporary, until phase 2 is fully implemented
+    // BEGIN NOT TESTED
     pub fn additional_setup(
         &self,
         node_id: &PublicKey,
@@ -159,11 +161,12 @@ impl MySigner {
             if chan.setup.funding_outpoint.is_null() {
                 chan.setup.funding_outpoint = outpoint;
             } else if chan.setup.funding_outpoint != outpoint {
-                panic!("funding outpoint changed"); // NOT TESTED
+                panic!("funding outpoint changed");
             }
             Ok(())
         })
     }
+    // END NOT TESTED
 
     pub fn ready_channel(
         &self,
@@ -1021,7 +1024,10 @@ mod tests {
     use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::{OutPoint, TxIn, TxOut};
     use bitcoin_hashes::hash160::Hash as Hash160;
-    use lightning::ln::chan_utils::{build_htlc_transaction, get_htlc_redeemscript, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys, get_revokeable_redeemscript};
+    use lightning::ln::chan_utils::{
+        build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
+        make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
+    };
     use lightning::ln::channelmanager::PaymentHash;
     use secp256k1::recovery::{RecoverableSignature, RecoveryId};
 
@@ -1037,7 +1043,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::util::status::{Status, Code};
+    use crate::util::status::{Code, Status};
 
     fn init_node(signer: &MySigner, node_config: NodeConfig, seedstr: &str) -> PublicKey {
         let mut seed = [0; 32];
@@ -1400,15 +1406,18 @@ mod tests {
                 let channel_parameters = chan.make_channel_parameters();
                 let parameters = channel_parameters.as_counterparty_broadcastable();
                 let mut htlcs = vec![];
-                let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point).unwrap();
-                let redeem_scripts = build_tx_scripts(&keys, 100, 197, &mut htlcs, &parameters).expect("scripts");
+                let keys = chan
+                    .make_counterparty_tx_keys(&remote_percommitment_point)
+                    .unwrap();
+                let redeem_scripts =
+                    build_tx_scripts(&keys, 100, 197, &mut htlcs, &parameters).expect("scripts");
                 let commitment_tx = chan.make_counterparty_commitment_tx(
                     &remote_percommitment_point,
                     23,
                     0,
                     200,
                     100,
-                    htlcs
+                    htlcs,
                 );
                 // rebuild to get the scripts
                 let trusted_tx = commitment_tx.trust();
@@ -1423,7 +1432,8 @@ mod tests {
                     )
                     .expect("sign");
                 Ok((ser_signature, tx.transaction.clone()))
-            }).expect("build_commitment_tx");
+            })
+            .expect("build_commitment_tx");
 
         assert_eq!(
             hex::encode(tx.txid()),
@@ -1514,7 +1524,7 @@ mod tests {
             amount_msat: 1000,
             payment_hash: PaymentHash([1; 32]),
             cltv_expiry: 2 << 16,
-            transaction_output_index: None
+            transaction_output_index: None,
         };
 
         let htlc2 = HTLCOutputInCommitment {
@@ -1522,7 +1532,7 @@ mod tests {
             amount_msat: 1000,
             payment_hash: PaymentHash([3; 32]),
             cltv_expiry: 3 << 16,
-            transaction_output_index: None
+            transaction_output_index: None,
         };
 
         let htlc3 = HTLCOutputInCommitment {
@@ -1530,7 +1540,7 @@ mod tests {
             amount_msat: 1000,
             payment_hash: PaymentHash([5; 32]),
             cltv_expiry: 4 << 16,
-            transaction_output_index: None
+            transaction_output_index: None,
         };
 
         let (ser_signature, tx) = signer
@@ -1538,15 +1548,18 @@ mod tests {
                 let channel_parameters = chan.make_channel_parameters();
                 let parameters = channel_parameters.as_counterparty_broadcastable();
                 let mut htlcs = vec![htlc1.clone(), htlc2.clone(), htlc3.clone()];
-                let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point).unwrap();
-                let redeem_scripts = build_tx_scripts(&keys, 100, 197, &mut htlcs, &parameters).expect("scripts");
+                let keys = chan
+                    .make_counterparty_tx_keys(&remote_percommitment_point)
+                    .unwrap();
+                let redeem_scripts =
+                    build_tx_scripts(&keys, 100, 197, &mut htlcs, &parameters).expect("scripts");
                 let commitment_tx = chan.make_counterparty_commitment_tx(
                     &remote_percommitment_point,
                     23,
                     0,
                     197,
                     100,
-                    htlcs
+                    htlcs,
                 );
                 // rebuild to get the scripts
                 let trusted_tx = commitment_tx.trust();
@@ -1669,38 +1682,40 @@ mod tests {
         let remote_percommitment_point = make_test_pubkey(10);
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
 
-        let tx = signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            let commitment_tx = chan.make_counterparty_commitment_tx(
-                &remote_percommitment_point,
+        let tx = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                let commitment_tx = chan.make_counterparty_commitment_tx(
+                    &remote_percommitment_point,
+                    23,
+                    0,
+                    100,
+                    200,
+                    vec![],
+                );
+                let trusted_tx = commitment_tx.trust();
+                let tx = trusted_tx.built_transaction();
+                assert_eq!(
+                    hex::encode(tx.txid),
+                    "eca4bec8c50a4498c5fa5cb34ec4aaafc3b46e879a3cdad6ab4954922e08cabd"
+                );
+                Ok(tx.transaction.clone())
+            })
+            .expect("build");
+        let (ser_signature, _) = signer
+            .sign_counterparty_commitment_tx_phase2(
+                &node_id,
+                &channel_id,
+                remote_percommitment_point,
                 23,
-                0,
+                0, // we are not looking at HTLCs yet
                 100,
                 200,
-                vec![]
-            );
-            let trusted_tx = commitment_tx.trust();
-            let tx = trusted_tx.built_transaction();
-            assert_eq!(
-                hex::encode(tx.txid),
-                "eca4bec8c50a4498c5fa5cb34ec4aaafc3b46e879a3cdad6ab4954922e08cabd"
-            );
-            Ok(tx.transaction.clone())
-        }).expect("build");
-        let (ser_signature, _) = signer.sign_counterparty_commitment_tx_phase2(
-            &node_id,
-            &channel_id,
-            remote_percommitment_point,
-            23,
-            0, // we are not looking at HTLCs yet
-            100,
-            200,
-            vec![],
-            vec![],
-        ).expect("sign");
-        let channel_funding_redeemscript = make_funding_redeemscript(
-            &funding_pubkey,
-            &setup.counterparty_points.funding_pubkey,
-        );
+                vec![],
+                vec![],
+            )
+            .expect("sign");
+        let channel_funding_redeemscript =
+            make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
 
         check_signature(
             &tx,
@@ -1721,15 +1736,14 @@ mod tests {
 
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let commitment_tx = chan.make_holder_commitment_tx(
-                    23,
-                    0,
-                    100,
-                    200,
-                    vec![]
-                );
-               Ok(commitment_tx.trust().built_transaction().transaction.clone())
-            }).expect("build");
+                let commitment_tx = chan.make_holder_commitment_tx(23, 0, 100, 200, vec![]);
+                Ok(commitment_tx
+                    .trust()
+                    .built_transaction()
+                    .transaction
+                    .clone())
+            })
+            .expect("build");
         let (ser_signature, _) = signer
             .sign_holder_commitment_tx_phase2(
                 &node_id,
@@ -1740,7 +1754,8 @@ mod tests {
                 200,
                 vec![],
                 vec![],
-            ).expect("sign");
+            )
+            .expect("sign");
         assert_eq!(
             hex::encode(tx.txid()),
             "57ac467fdcf17d64c6c6a4d37e6b4b618cc688f69dc56698bc9ac0a874a5ae1c"
@@ -3034,15 +3049,14 @@ mod tests {
 
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let commitment_tx = chan.make_holder_commitment_tx(
-                    23,
-                    0,
-                    200,
-                    100,
-                    vec![]
-                );
-               Ok(commitment_tx.trust().built_transaction().transaction.clone())
-            }).expect("tx");
+                let commitment_tx = chan.make_holder_commitment_tx(23, 0, 200, 100, vec![]);
+                Ok(commitment_tx
+                    .trust()
+                    .built_transaction()
+                    .transaction
+                    .clone())
+            })
+            .expect("tx");
 
         let sigvec = signer
             .sign_holder_commitment_tx(&node_id, &channel_id, &tx, setup.channel_value_sat)
@@ -3075,15 +3089,14 @@ mod tests {
 
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let commitment_tx = chan.make_holder_commitment_tx(
-                    23,
-                    0,
-                    200,
-                    100,
-                    vec![]
-                );
-               Ok(commitment_tx.trust().built_transaction().transaction.clone())
-            }).expect("tx");
+                let commitment_tx = chan.make_holder_commitment_tx(23, 0, 200, 100, vec![]);
+                Ok(commitment_tx
+                    .trust()
+                    .built_transaction()
+                    .transaction
+                    .clone())
+            })
+            .expect("tx");
 
         let sigvec = signer
             .sign_mutual_close_tx(&node_id, &channel_id, &tx, setup.channel_value_sat)

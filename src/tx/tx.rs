@@ -17,7 +17,9 @@ use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::{Hash, HashEngine};
 use lightning::chain::keysinterface::ChannelKeys;
 use lightning::ln::chan_utils;
-use lightning::ln::chan_utils::{make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys, get_revokeable_redeemscript};
+use lightning::ln::chan_utils::{
+    get_revokeable_redeemscript, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
+};
 use lightning::ln::channelmanager::PaymentHash;
 
 use crate::node::node::ChannelSetup;
@@ -46,8 +48,10 @@ pub fn get_commitment_transaction_number_obscure_factor(
         sha.input(&local_payment_basepoint.serialize());
         sha.input(&their_payment_basepoint);
     } else {
+        // BEGIN NOT TESTED
         sha.input(&their_payment_basepoint);
         sha.input(&local_payment_basepoint.serialize());
+        // END NOT TESTED
     }
     let res = Sha256::from_engine(sha).into_inner();
 
@@ -139,6 +143,7 @@ pub fn build_commitment_tx(
 
     if info.to_countersigner_value_sat > 0 {
         if !option_anchor_outputs {
+            // BEGIN NOT TESTED
             let script = payload_for_p2wpkh(&info.to_countersigner_pubkey).script_pubkey();
             txouts.push((
                 TxOut {
@@ -148,6 +153,7 @@ pub fn build_commitment_tx(
                 (script, None),
             ))
         } else {
+            // END NOT TESTED
             let delayed_script = get_delayed_redeemscript(&info.to_countersigner_pubkey);
             txouts.push((
                 TxOut {
@@ -203,7 +209,7 @@ pub fn build_commitment_tx(
         let script = if option_anchor_outputs {
             get_htlc_anchor_redeemscript(&htlc_in_tx, &keys)
         } else {
-            chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys)
+            chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys) // NOT TESTED
         };
         let txout = TxOut {
             script_pubkey: script.to_v0_p2wsh(),
@@ -223,7 +229,7 @@ pub fn build_commitment_tx(
         let script = if option_anchor_outputs {
             get_htlc_anchor_redeemscript(&htlc_in_tx, &keys)
         } else {
-            chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys)
+            chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys) // NOT TESTED
         };
         let txout = TxOut {
             script_pubkey: script.to_v0_p2wsh(),

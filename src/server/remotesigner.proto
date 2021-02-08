@@ -172,6 +172,8 @@ service Version {
 
 // ----------------------------------------------------------------
 
+// FILE NOT TESTED
+
 // BEGIN NOT TESTED
 
 message PingRequest {
