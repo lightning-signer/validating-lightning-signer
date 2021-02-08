@@ -1,9 +1,10 @@
 use std::collections::HashMap;
-use std::convert::TryInto;
+use std::convert::{TryInto, TryFrom};
 use std::sync::{Arc, Mutex};
 
 use secp256k1::SignOnly;
 
+use backtrace::Backtrace;
 use bitcoin;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1;
@@ -13,11 +14,12 @@ use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPubKey};
 use bitcoin::{Address, Network, OutPoint, Script, SigHashType};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
+use crypto::digest::Digest;
+use crypto::sha2::Sha256;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys};
 use lightning::util::logger::Logger;
 use rand::{thread_rng, Rng};
-use tonic::Status;
 
 use crate::node::node::{
     Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, Node, NodeConfig,
@@ -25,8 +27,32 @@ use crate::node::node::{
 use crate::tx::tx::{build_close_tx, sign_commitment, HTLCInfo2};
 use crate::util::crypto_utils::{derive_private_revocation_key, payload_for_p2wpkh};
 use crate::util::test_utils::TestLogger;
+use crate::util::status::Status;
 
-use super::remotesigner::SpendType;
+
+#[derive(PartialEq, Clone, Copy)]
+#[repr(i32)]
+pub enum SpendType {
+    Invalid = 0,
+    P2pkh = 1,
+    P2wpkh = 3,
+    P2shP2wpkh = 4,
+}
+
+impl TryFrom<i32> for SpendType {
+    type Error = ();
+
+    fn try_from(i: i32) -> Result<Self, Self::Error> {
+        let res = match i {
+            x if x == SpendType::Invalid as i32 => SpendType::Invalid,
+            x if x == SpendType::P2pkh as i32 => SpendType::P2pkh,
+            x if x == SpendType::P2wpkh as i32 => SpendType::P2wpkh,
+            x if x == SpendType::P2shP2wpkh as i32 => SpendType::P2shP2wpkh,
+            _ => return Err(())
+        };
+        Ok(res)
+    }
+}
 
 pub struct MySigner {
     pub logger: Arc<Logger>,
@@ -34,6 +60,23 @@ pub struct MySigner {
 }
 
 impl MySigner {
+    pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
+        let s = msg.into();
+        log_error!(self, "INVALID ARGUMENT: {}", &s);
+        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
+        Status::invalid_argument(s)
+    }
+
+    // BEGIN NOT TESTED
+
+    #[allow(dead_code)]
+    pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
+        let s = msg.into();
+        log_error!(self, "INTERNAL ERROR: {}", &s);
+        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
+        Status::internal(s)
+    }
+
     pub fn new() -> MySigner {
         let test_logger = Arc::new(TestLogger::with_id("server".to_owned()));
         let signer = MySigner {
@@ -958,6 +1001,16 @@ impl MySigner {
     }
 }
 
+pub fn channel_nonce_to_id(nonce: &Vec<u8>) -> ChannelId {
+    // Impedance mismatch - we want a 32 byte channel ID for internal use
+    // Hash the client supplied channel nonce
+    let mut digest = Sha256::new();
+    digest.input(nonce.as_slice());
+    let mut result = [0u8; 32];
+    digest.result(&mut result);
+    ChannelId(result)
+}
+
 #[cfg(test)]
 mod tests {
     use bitcoin;
@@ -971,11 +1024,9 @@ mod tests {
     use lightning::ln::chan_utils::{build_htlc_transaction, get_htlc_redeemscript, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys, get_revokeable_redeemscript};
     use lightning::ln::channelmanager::PaymentHash;
     use secp256k1::recovery::{RecoverableSignature, RecoveryId};
-    use tonic::Code;
 
     use crate::node::node::CommitmentType;
     use crate::policy::error::ValidationError;
-    use crate::server::driver::channel_nonce_to_id;
     use crate::tx::tx::ANCHOR_SAT;
     use crate::util::crypto_utils::{
         derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh,
@@ -986,6 +1037,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::util::status::{Status, Code};
 
     fn init_node(signer: &MySigner, node_config: NodeConfig, seedstr: &str) -> PublicKey {
         let mut seed = [0; 32];

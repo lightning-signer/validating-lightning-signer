@@ -7,6 +7,7 @@ rust-latest:
   before_script:
     - rustup component add rustfmt
   script:
+    - cargo build --features=grpc
     - cargo build
     - cargo test
 

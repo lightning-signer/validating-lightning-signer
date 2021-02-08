@@ -7,10 +7,12 @@ extern crate bitcoin;
 extern crate bitcoin_hashes;
 extern crate hex;
 extern crate rand;
+#[cfg(feature = "grpc")]
 extern crate tonic;
 
 #[macro_use]
 pub mod util;
+#[cfg(feature = "grpc")]
 pub mod client;
 pub mod node;
 pub mod policy;

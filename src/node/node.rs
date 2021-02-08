@@ -19,7 +19,6 @@ use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::util::logger::Logger;
 use secp256k1 as secp256k1_recoverable;
 use secp256k1::Secp256k1 as Secp256k1_recoverable;
-use tonic::Status;
 
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
@@ -34,6 +33,7 @@ use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, pay
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::invoice_utils;
 use lightning::chain;
+use crate::util::status::Status;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);

@@ -8,14 +8,14 @@ use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys, CommitmentTransaction, ChannelTransactionParameters};
 use lightning::ln::msgs::{UnsignedChannelAnnouncement, DecodeError};
 use lightning::util::ser::{Writeable, Writer};
-use tonic::Status;
 
 use crate::node::node::{ChannelId, ChannelSetup, CommitmentType};
 use crate::server::my_keys_manager::INITIAL_COMMITMENT_NUMBER;
 use crate::server::my_signer::MySigner;
 use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
-use tokio::io::Error;
+use std::io::Error;
+use crate::util::status::Status;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
