@@ -8,7 +8,10 @@ use bitcoin::secp256k1::{Secp256k1, Signature};
 use chain::keysinterface::{ChannelKeys, InMemoryChannelKeys};
 use lightning::chain;
 use lightning::ln;
-use lightning::ln::chan_utils::{HolderCommitmentTransaction, TxCreationKeys, CommitmentTransaction, ChannelTransactionParameters};
+use lightning::ln::chan_utils::{
+    ChannelTransactionParameters, CommitmentTransaction, HolderCommitmentTransaction,
+    TxCreationKeys,
+};
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
@@ -118,15 +121,24 @@ impl ChannelKeys for EnforcingChannelKeys {
     fn sign_counterparty_commitment<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         commitment_tx: &CommitmentTransaction,
-        secp_ctx: &Secp256k1<T>) -> Result<(Signature, Vec<Signature>), ()> {
+        secp_ctx: &Secp256k1<T>,
+    ) -> Result<(Signature, Vec<Signature>), ()> {
         // FIXME bypass while integrating with c-lightning
         // self.check_keys(secp_ctx, keys);
         let commitment_number = commitment_tx.commitment_number();
         let mut last_commitment_number = self.last_commitment_number.lock().unwrap();
-        assert!(commitment_number == commitment_number || commitment_number - 1 == commitment_number, "{} doesn't come after {}", commitment_number, commitment_number);
+        assert!(
+            commitment_number == commitment_number || commitment_number - 1 == commitment_number,
+            "{} doesn't come after {}", // NOT TESTED
+            commitment_number,
+            commitment_number
+        );
 
         *last_commitment_number = Some(cmp::min(commitment_number, commitment_number));
-        Ok(self.inner.sign_counterparty_commitment(commitment_tx, secp_ctx).unwrap())
+        Ok(self
+            .inner
+            .sign_counterparty_commitment(commitment_tx, secp_ctx)
+            .unwrap())
     }
 
     fn sign_holder_commitment_and_htlcs<T: secp256k1::Signing + secp256k1::Verification>(
@@ -134,7 +146,8 @@ impl ChannelKeys for EnforcingChannelKeys {
         local_commitment_tx: &HolderCommitmentTransaction,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
-        self.inner.sign_holder_commitment_and_htlcs(local_commitment_tx, secp_ctx)
+        self.inner
+            .sign_holder_commitment_and_htlcs(local_commitment_tx, secp_ctx)
     }
 
     fn unsafe_sign_holder_commitment_and_htlcs<T: secp256k1::Signing + secp256k1::Verification>(
@@ -142,7 +155,8 @@ impl ChannelKeys for EnforcingChannelKeys {
         local_commitment_tx: &HolderCommitmentTransaction,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
-        self.inner.unsafe_sign_holder_commitment_and_htlcs(local_commitment_tx, secp_ctx)
+        self.inner
+            .unsafe_sign_holder_commitment_and_htlcs(local_commitment_tx, secp_ctx)
     }
 
     fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(

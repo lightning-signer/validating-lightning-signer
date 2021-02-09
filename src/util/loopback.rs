@@ -5,8 +5,11 @@ use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::{Script, Transaction};
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface, KeysManager};
 use lightning::ln::chan_utils;
-use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys, CommitmentTransaction, ChannelTransactionParameters};
-use lightning::ln::msgs::{UnsignedChannelAnnouncement, DecodeError};
+use lightning::ln::chan_utils::{
+    ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, HTLCOutputInCommitment,
+    HolderCommitmentTransaction, TxCreationKeys,
+};
+use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
 use lightning::util::ser::{Writeable, Writer};
 
 use crate::node::node::{ChannelId, ChannelSetup, CommitmentType};
@@ -14,8 +17,8 @@ use crate::server::my_keys_manager::INITIAL_COMMITMENT_NUMBER;
 use crate::server::my_signer::MySigner;
 use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
-use std::io::Error;
 use crate::util::status::Status;
+use std::io::Error;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -94,7 +97,10 @@ impl LoopbackChannelSigner {
     }
     // END NOT TESTED
 
-    fn sign_holder_commitment_and_htlcs(&self, hct: &HolderCommitmentTransaction) -> Result<(Signature, Vec<Signature>), ()> {
+    fn sign_holder_commitment_and_htlcs(
+        &self,
+        hct: &HolderCommitmentTransaction,
+    ) -> Result<(Signature, Vec<Signature>), ()> {
         let signer = &self.signer;
         let commitment_tx = hct.trust();
 
@@ -108,7 +114,8 @@ impl LoopbackChannelSigner {
         let to_holder_value_sat = hct.to_broadcaster_value_sat();
         let to_counterparty_value_sat = hct.to_countersignatory_value_sat();
         let feerate_per_kw = hct.feerate_per_kw();
-        let (offered_htlcs, received_htlcs) = LoopbackChannelSigner::convert_to_htlc_info2(hct.htlcs());
+        let (offered_htlcs, received_htlcs) =
+            LoopbackChannelSigner::convert_to_htlc_info2(hct.htlcs());
 
         let (sig_vec, htlc_sig_vecs) = signer
             .sign_holder_commitment_tx_phase2(
@@ -120,20 +127,26 @@ impl LoopbackChannelSigner {
                 to_counterparty_value_sat,
                 offered_htlcs,
                 received_htlcs,
-            ).map_err(|s| self.bad_status(s))?;
-        let htlc_sigs = htlc_sig_vecs.iter().map(|s| bitcoin_sig_to_signature(s.clone()).unwrap()).collect();
+            )
+            .map_err(|s| self.bad_status(s))?;
+        let htlc_sigs = htlc_sig_vecs
+            .iter()
+            .map(|s| bitcoin_sig_to_signature(s.clone()).unwrap())
+            .collect();
         let sig = bitcoin_sig_to_signature(sig_vec).unwrap();
         Ok((sig, htlc_sigs))
     }
 
-    fn convert_to_htlc_info2(htlcs: &Vec<HTLCOutputInCommitment>) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
+    fn convert_to_htlc_info2(
+        htlcs: &Vec<HTLCOutputInCommitment>,
+    ) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
         let mut offered_htlcs = Vec::new();
         let mut received_htlcs = Vec::new();
         for htlc in htlcs {
             let htlc_info = HTLCInfo2 {
                 value_sat: htlc.amount_msat / 1000,
                 payment_hash: htlc.payment_hash,
-                cltv_expiry: htlc.cltv_expiry
+                cltv_expiry: htlc.cltv_expiry,
             };
             if htlc.offered {
                 offered_htlcs.push(htlc_info);
@@ -145,11 +158,13 @@ impl LoopbackChannelSigner {
     }
 }
 
+// BEGIN NOT TESTED
 impl Writeable for LoopbackChannelSigner {
     fn write<W: Writer>(&self, _writer: &mut W) -> Result<(), Error> {
         unimplemented!()
     }
 }
+// END NOT TESTED
 
 fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
     res.pop();
@@ -198,7 +213,11 @@ impl ChannelKeys for LoopbackChannelSigner {
     }
 
     // TODO - Couldn't this return a declared error signature?
-    fn sign_counterparty_commitment<T: secp256k1::Signing + secp256k1::Verification>(&self, commitment_tx: &CommitmentTransaction, _secp_ctx: &Secp256k1<T>) -> Result<(Signature, Vec<Signature>), ()> {
+    fn sign_counterparty_commitment<T: secp256k1::Signing + secp256k1::Verification>(
+        &self,
+        commitment_tx: &CommitmentTransaction,
+        _secp_ctx: &Secp256k1<T>,
+    ) -> Result<(Signature, Vec<Signature>), ()> {
         let signer = &self.signer;
         let trusted_tx = commitment_tx.trust();
         log_info!(
@@ -209,7 +228,8 @@ impl ChannelKeys for LoopbackChannelSigner {
             trusted_tx.built_transaction().txid,
         );
 
-        let (offered_htlcs, received_htlcs) = LoopbackChannelSigner::convert_to_htlc_info2(commitment_tx.htlcs());
+        let (offered_htlcs, received_htlcs) =
+            LoopbackChannelSigner::convert_to_htlc_info2(commitment_tx.htlcs());
 
         // This doesn't actually require trust
         let per_commitment_point = trusted_tx.keys().per_commitment_point;
@@ -241,7 +261,11 @@ impl ChannelKeys for LoopbackChannelSigner {
         Ok((commitment_sig, htlc_sigs))
     }
 
-    fn sign_holder_commitment_and_htlcs<T: secp256k1::Signing + secp256k1::Verification>(&self, hct: &HolderCommitmentTransaction, _secp_ctx: &Secp256k1<T>) -> Result<(Signature, Vec<Signature>), ()> {
+    fn sign_holder_commitment_and_htlcs<T: secp256k1::Signing + secp256k1::Verification>(
+        &self,
+        hct: &HolderCommitmentTransaction,
+        _secp_ctx: &Secp256k1<T>,
+    ) -> Result<(Signature, Vec<Signature>), ()> {
         Ok(self.sign_holder_commitment_and_htlcs(hct)?)
     }
 
@@ -250,10 +274,13 @@ impl ChannelKeys for LoopbackChannelSigner {
         hct: &HolderCommitmentTransaction,
         secp_ctx: &Secp256k1<T>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
-        self.signer.with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-            chan.keys.unsafe_sign_holder_commitment_and_htlcs(hct, secp_ctx)
-                .map_err(|_| Status::internal("could not unsafe-sign"))
-        }).map_err(|_s| ())
+        self.signer
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                chan.keys
+                    .unsafe_sign_holder_commitment_and_htlcs(hct, secp_ctx)
+                    .map_err(|_| Status::internal("could not unsafe-sign")) // NOT TESTED
+            })
+            .map_err(|_s| ()) // NOT TESTED
     }
 
     fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(
@@ -426,7 +453,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         let setup = ChannelSetup {
             is_outbound: self.is_outbound,
             channel_value_sat: self.channel_value_sat,
-            push_value_msat: 0,                   // TODO
+            push_value_msat: 0, // TODO
             funding_outpoint,
             holder_to_self_delay: parameters.holder_selected_contest_delay,
             holder_shutdown_script: None, // use the signer's shutdown script
@@ -444,7 +471,6 @@ impl ChannelKeys for LoopbackChannelSigner {
         self.counterparty_to_self_delay = counterparty_parameters.selected_contest_delay;
     }
 }
-
 
 impl KeysInterface for LoopbackSignerKeysInterface {
     type ChanKeySigner = LoopbackChannelSigner;
@@ -489,9 +515,11 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         self.backing.get_secure_random_bytes()
     }
 
+    // BEGIN NOT TESTED
     fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::ChanKeySigner, DecodeError> {
         unimplemented!()
     }
+    // END NOT TESTED
 }
 
 fn get_delayed_payment_keys<T: secp256k1::Signing + secp256k1::Verification>(

@@ -1,3 +1,5 @@
+// FILE NOT TESTED
+
 use tonic::Request;
 
 use remotesigner::signer_client::SignerClient;

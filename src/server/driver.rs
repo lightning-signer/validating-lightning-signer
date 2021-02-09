@@ -1,4 +1,6 @@
-use std::convert::{TryInto, TryFrom};
+// FILE NOT TESTED
+
+use std::convert::{TryFrom, TryInto};
 
 use backtrace::Backtrace;
 use bitcoin;
@@ -18,7 +20,7 @@ use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
 
 use crate::node::node::{ChannelId, ChannelSetup, CommitmentType};
-use crate::server::my_signer::{MySigner, channel_nonce_to_id};
+use crate::server::my_signer::{channel_nonce_to_id, MySigner};
 use crate::server::remotesigner::version_server::Version;
 use crate::tx::tx::HTLCInfo2;
 
@@ -50,8 +52,9 @@ impl MySigner {
         if slice.len() != 33 {
             return Err(self.invalid_grpc_argument(format!("nodeid must be 33 bytes")));
         }
-        PublicKey::from_slice(slice)
-            .map_err(|err| self.invalid_grpc_argument(format!("could not deserialize nodeid: {}", err)))
+        PublicKey::from_slice(slice).map_err(|err| {
+            self.invalid_grpc_argument(format!("could not deserialize nodeid: {}", err))
+        })
     }
 
     fn public_key(&self, arg: Option<PubKey>) -> Result<PublicKey, Status> {
@@ -62,8 +65,9 @@ impl MySigner {
         if slice.len() != 33 {
             return Err(self.invalid_grpc_argument(format!("pubkey must be 33 bytes")));
         }
-        PublicKey::from_slice(slice)
-            .map_err(|err| self.invalid_grpc_argument(format!("could not deserialize pubkey: {}", err)))
+        PublicKey::from_slice(slice).map_err(|err| {
+            self.invalid_grpc_argument(format!("could not deserialize pubkey: {}", err))
+        })
     }
 
     fn secret_key(&self, arg: Option<Secret>) -> Result<SecretKey, Status> {
@@ -72,7 +76,9 @@ impl MySigner {
                 .data
                 .as_slice(),
         )
-        .map_err(|err| self.invalid_grpc_argument(format!("could not deserialize secret: {}", err)));
+        .map_err(|err| {
+            self.invalid_grpc_argument(format!("could not deserialize secret: {}", err))
+        });
     }
 
     // Converts secp256k1::PublicKey into remotesigner::PubKey
@@ -108,8 +114,6 @@ impl MySigner {
         }
         Ok(htlcs)
     }
-
-    // END NOT TESTED
 }
 
 // BEGIN NOT TESTED
@@ -202,7 +206,9 @@ impl Signer for MySigner {
                 return Err(self.invalid_grpc_argument("hsm_secret must be at least 16 bytes"));
             }
             if hsm_secret.len() > 64 {
-                return Err(self.invalid_grpc_argument("hsm_secret must be no larger than 64 bytes"));
+                return Err(
+                    self.invalid_grpc_argument("hsm_secret must be no larger than 64 bytes")
+                );
             }
         }
         let node_config = convert_node_config(proto_node_config);
@@ -215,7 +221,8 @@ impl Signer for MySigner {
             } else {
                 self.warmstart_with_seed(node_config, hsm_secret)
             }
-        }.map_err(|e| e)?
+        }
+        .map_err(|e| e)?
         .serialize()
         .to_vec();
         let reply = InitReply {
@@ -347,7 +354,10 @@ impl Signer for MySigner {
         } else {
             Some(
                 Script::deserialize(&req.holder_shutdown_script.as_slice()).map_err(|err| {
-                    self.invalid_grpc_argument(format!("could not parse holder_shutdown_script: {}", err))
+                    self.invalid_grpc_argument(format!(
+                        "could not parse holder_shutdown_script: {}",
+                        err
+                    ))
                 })?,
             )
         };
@@ -416,7 +426,9 @@ impl Signer for MySigner {
             channel_id
         );
         log_debug!(self, "req={}", reqstr);
-        let reqtx = req.tx.ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+        let reqtx = req
+            .tx
+            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
@@ -460,9 +472,13 @@ impl Signer for MySigner {
             None
         } else {
             Some(
-                Script::deserialize(&req.counterparty_shutdown_script.as_slice()).map_err(|_| {
-                    self.invalid_grpc_argument("could not deserialize counterparty_shutdown_script")
-                })?,
+                Script::deserialize(&req.counterparty_shutdown_script.as_slice()).map_err(
+                    |_| {
+                        self.invalid_grpc_argument(
+                            "could not deserialize counterparty_shutdown_script",
+                        )
+                    },
+                )?,
             )
         };
 
@@ -582,7 +598,9 @@ impl Signer for MySigner {
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(self, "ENTER sign_funding_tx({}/{})", node_id, channel_id);
         log_debug!(self, "req={}", reqstr);
-        let reqtx = req.tx.ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+        let reqtx = req
+            .tx
+            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
         let tx_res: Result<bitcoin::Transaction, encode::Error> =
             deserialize(reqtx.raw_tx_bytes.as_slice());
         let tx = tx_res
@@ -682,7 +700,9 @@ impl Signer for MySigner {
         );
         log_debug!(self, "req={}", reqstr);
 
-        let reqtx = req.tx.ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+        let reqtx = req
+            .tx
+            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
@@ -726,21 +746,29 @@ impl Signer for MySigner {
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(self, "ENTER sign_commitment_tx({}/{})", node_id, channel_id);
         log_debug!(self, "req={}", reqstr);
-        let reqtx = req.tx.ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+        let reqtx = req
+            .tx
+            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
         let funding_amount_sat = reqtx.input_descs[0].value_sat as u64;
 
-        let sigvec = self.sign_holder_commitment_tx(&node_id, &channel_id, &tx, funding_amount_sat)?;
+        let sigvec =
+            self.sign_holder_commitment_tx(&node_id, &channel_id, &tx, funding_amount_sat)?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
                 data: sigvec.clone(),
             }),
         };
-        log_info!(self, "REPLY sign_holder_commitment_tx({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "REPLY sign_holder_commitment_tx({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -753,9 +781,16 @@ impl Signer for MySigner {
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_holder_htlc_tx({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "ENTER sign_holder_htlc_tx({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "req={}", reqstr);
-        let reqtx = req.tx.ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+        let reqtx = req
+            .tx
+            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
@@ -783,7 +818,12 @@ impl Signer for MySigner {
                 data: sigvec.clone(),
             }),
         };
-        log_info!(self, "REPLY sign_holder_htlc_tx({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "REPLY sign_holder_htlc_tx({}/{})",
+            node_id,
+            channel_id
+        );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -803,7 +843,9 @@ impl Signer for MySigner {
             channel_id
         );
         log_debug!(self, "req={}", reqstr);
-        let reqtx = req.tx.ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+        let reqtx = req
+            .tx
+            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
@@ -812,7 +854,9 @@ impl Signer for MySigner {
         let htlc_amount_sat = input_desc.value_sat as u64;
         let redeemscript = input_desc.redeem_script;
 
-        let input: usize = req.input.try_into()
+        let input: usize = req
+            .input
+            .try_into()
             .map_err(|_| self.invalid_grpc_argument("bad input index"))?;
 
         let sigvec = self.sign_delayed_payment_to_us(
@@ -855,12 +899,14 @@ impl Signer for MySigner {
             channel_id
         );
         log_debug!(self, "req={}", reqstr);
-        let reqtx = req.tx.ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+        let reqtx = req
+            .tx
+            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx_res: Result<bitcoin::Transaction, encode::Error> =
             deserialize(reqtx.raw_tx_bytes.as_slice());
-        let tx =
-            tx_res.map_err(|e| self.invalid_grpc_argument(format!("deserialize tx fail: {}", e)))?;
+        let tx = tx_res
+            .map_err(|e| self.invalid_grpc_argument(format!("deserialize tx fail: {}", e)))?;
 
         let remote_per_commitment_point = self.public_key(req.remote_per_commit_point)?;
 
@@ -905,7 +951,9 @@ impl Signer for MySigner {
             channel_id
         );
         log_debug!(self, "req={}", reqstr);
-        let reqtx = req.tx.ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+        let reqtx = req
+            .tx
+            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
@@ -916,7 +964,9 @@ impl Signer for MySigner {
 
         let remote_per_commitment_point = self.public_key(req.remote_per_commit_point)?;
 
-        let input: usize = req.input.try_into()
+        let input: usize = req
+            .input
+            .try_into()
             .map_err(|_| self.invalid_grpc_argument("bad input index"))?;
 
         let sigvec = self.sign_counterparty_htlc_to_us(
@@ -954,7 +1004,9 @@ impl Signer for MySigner {
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(self, "ENTER sign_penalty_to_us({}/{})", node_id, channel_id);
         log_debug!(self, "req={}", reqstr);
-        let reqtx = req.tx.ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+        let reqtx = req
+            .tx
+            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
@@ -965,7 +1017,9 @@ impl Signer for MySigner {
 
         let revocation_secret = self.secret_key(req.revocation_secret)?;
 
-        let input: usize = req.input.try_into()
+        let input: usize = req
+            .input
+            .try_into()
             .map_err(|_| self.invalid_grpc_argument("bad input index"))?;
 
         let sigvec = self.sign_penalty_to_us(
@@ -1194,9 +1248,9 @@ impl Signer for MySigner {
             .commitment_info
             .ok_or_else(|| self.invalid_grpc_argument("missing commitment info"))?;
         if req_info.per_commitment_point.is_some() {
-            return Err(
-                self.invalid_grpc_argument("per-commitment point must not be provided for holder txs")
-            );
+            return Err(self.invalid_grpc_argument(
+                "per-commitment point must not be provided for holder txs",
+            ));
         }
 
         let offered_htlcs = self.convert_htlcs(&req_info.offered_htlcs)?;
