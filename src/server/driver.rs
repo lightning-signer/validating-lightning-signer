@@ -260,18 +260,15 @@ impl Signer for MySigner {
         let req = request.into_inner();
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
-        // req.channel_nonce is optional, will be generated if missing.
         let opt_channel_id = self.channel_id(&req.channel_nonce0).ok();
-        let opt_channel_nonce0 = req.channel_nonce0.map(|cn| cn.data);
+        let opt_channel_nonce0 = req.channel_nonce0.as_ref().map(|cn| cn.data.clone());
         log_info!(self, "ENTER new_channel({}/{:?})", node_id, opt_channel_id);
         log_debug!(self, "req={}", reqstr);
 
         let channel_id = self.new_channel(&node_id, opt_channel_nonce0, opt_channel_id)?;
 
         let reply = NewChannelReply {
-            channel_nonce0: Some(ChannelNonce {
-                data: channel_id.0.to_vec(),
-            }),
+            channel_nonce0: req.channel_nonce0,
         };
         log_info!(self, "REPLY new_channel({}/{})", node_id, channel_id);
         log_debug!(self, "reply={}", json!(&reply));
