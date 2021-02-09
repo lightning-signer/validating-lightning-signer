@@ -116,7 +116,7 @@ service Signer {
   // Sign a tx sweeping a delayed to-local output - either from the commitment tx or
   // from an HTLC, at force-close time.
   // This is a layer-2 to layer-1 transaction.
-  rpc SignDelayedPaymentToUs (SignDelayedPaymentToUsRequest)
+  rpc SignDelayedSweep (SignDelayedSweepRequest)
     returns (SignatureReply);
 
   // BOLT #3 - HTLC Outputs, phase 1
@@ -129,7 +129,7 @@ service Signer {
   // Sign a tx sweeping a counterparty HTLC-Success / HTLC-Timeout tx output,
   // at force-close time.
   // This is a layer-2 to layer-1 transaction.
-  rpc SignCounterpartyHTLCToUs (SignCounterpartyHTLCToUsRequest)
+  rpc SignCounterpartyHTLCSweep (SignCounterpartyHTLCSweepRequest)
     returns (SignatureReply);
 
   // BOLT #5 - Unilateral Close Handling, phase 1
@@ -137,7 +137,7 @@ service Signer {
   // tx output or sweeping an HTLC tx output, after the counterparty
   // broadcast a revoked commitment transaction.
   // This is a layer-2 to layer-1 transaction.
-  rpc SignJusticeTxToUs (SignJusticeTxToUsRequest)
+  rpc SignJusticeSweep (SignJusticeSweepRequest)
     returns (SignatureReply);
 
   // BOLT #7 - channel_announcement
@@ -387,7 +387,7 @@ message SignHolderHTLCTxRequest {
 
 // As part of a force close, sweep the delayed to-local output hanging
 // off the commitment tx or HTLC tx that the holder broadcast
-message SignDelayedPaymentToUsRequest {
+message SignDelayedSweepRequest {
   NodeId node_id = 1;
     
   ChannelNonce channel_nonce = 2;
@@ -412,7 +412,7 @@ message SignCounterpartyHTLCTxRequest {
 }
 
 // Sweep a counterparty HTLC to us
-message SignCounterpartyHTLCToUsRequest {
+message SignCounterpartyHTLCSweepRequest {
   NodeId node_id = 1;
 
   ChannelNonce channel_nonce = 2;
@@ -426,7 +426,7 @@ message SignCounterpartyHTLCToUsRequest {
 }
 
 // Sign a penalty sweep of a counterparty to_local the counterparty has revoked
-message SignJusticeTxToUsRequest {
+message SignJusticeSweepRequest {
   NodeId node_id = 1;
     
   ChannelNonce channel_nonce = 2;

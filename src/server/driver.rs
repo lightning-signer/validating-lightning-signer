@@ -825,20 +825,15 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_delayed_payment_to_us(
+    async fn sign_delayed_sweep(
         &self,
-        request: Request<SignDelayedPaymentToUsRequest>,
+        request: Request<SignDelayedSweepRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(
-            self,
-            "ENTER sign_delayed_payment_to_us({}/{})",
-            node_id,
-            channel_id
-        );
+        log_info!(self, "ENTER sign_delayed_sweep({}/{})", node_id, channel_id);
         log_debug!(self, "req={}", reqstr);
         let reqtx = req
             .tx
@@ -856,7 +851,7 @@ impl Signer for MySigner {
             .try_into()
             .map_err(|_| self.invalid_grpc_argument("bad input index"))?;
 
-        let sigvec = self.sign_delayed_payment_to_us(
+        let sigvec = self.sign_delayed_sweep(
             &node_id,
             &channel_id,
             &tx,
@@ -871,12 +866,7 @@ impl Signer for MySigner {
                 data: sigvec.clone(),
             }),
         };
-        log_info!(
-            self,
-            "REPLY sign_delayed_payment_to_us({}/{})",
-            node_id,
-            channel_id
-        );
+        log_info!(self, "REPLY sign_delayed_sweep({}/{})", node_id, channel_id);
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
@@ -933,9 +923,9 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_counterparty_htlc_to_us(
+    async fn sign_counterparty_htlc_sweep(
         &self,
-        request: Request<SignCounterpartyHtlcToUsRequest>,
+        request: Request<SignCounterpartyHtlcSweepRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
         let reqstr = json!(&req);
@@ -943,7 +933,7 @@ impl Signer for MySigner {
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
             self,
-            "ENTER sign_counterparty_htlc_to_us({}/{})",
+            "ENTER sign_counterparty_htlc_sweep({}/{})",
             node_id,
             channel_id
         );
@@ -966,7 +956,7 @@ impl Signer for MySigner {
             .try_into()
             .map_err(|_| self.invalid_grpc_argument("bad input index"))?;
 
-        let sigvec = self.sign_counterparty_htlc_to_us(
+        let sigvec = self.sign_counterparty_htlc_sweep(
             &node_id,
             &channel_id,
             &tx,
@@ -983,7 +973,7 @@ impl Signer for MySigner {
         };
         log_info!(
             self,
-            "REPLY sign_counterparty_htlc_to_us({}/{})",
+            "REPLY sign_counterparty_htlc_sweep({}/{})",
             node_id,
             channel_id
         );
@@ -991,15 +981,15 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn sign_justice_tx_to_us(
+    async fn sign_justice_sweep(
         &self,
-        request: Request<SignJusticeTxToUsRequest>,
+        request: Request<SignJusticeSweepRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
         let reqstr = json!(&req);
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_penalty_to_us({}/{})", node_id, channel_id);
+        log_info!(self, "ENTER sign_justice_sweep({}/{})", node_id, channel_id);
         log_debug!(self, "req={}", reqstr);
         let reqtx = req
             .tx
@@ -1019,7 +1009,7 @@ impl Signer for MySigner {
             .try_into()
             .map_err(|_| self.invalid_grpc_argument("bad input index"))?;
 
-        let sigvec = self.sign_penalty_to_us(
+        let sigvec = self.sign_justice_sweep(
             &node_id,
             &channel_id,
             &tx,
@@ -1034,7 +1024,7 @@ impl Signer for MySigner {
                 data: sigvec.clone(),
             }),
         };
-        log_info!(self, "REPLY sign_penalty_to_us({}/{})", node_id, channel_id);
+        log_info!(self, "REPLY sign_justice_sweep({}/{})", node_id, channel_id);
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }

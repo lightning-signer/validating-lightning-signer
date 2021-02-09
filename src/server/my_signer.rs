@@ -658,7 +658,7 @@ impl MySigner {
         })
     }
 
-    pub fn sign_delayed_payment_to_us(
+    pub fn sign_delayed_sweep(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
@@ -764,7 +764,7 @@ impl MySigner {
         sig
     }
 
-    pub fn sign_counterparty_htlc_to_us(
+    pub fn sign_counterparty_htlc_sweep(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
@@ -808,7 +808,7 @@ impl MySigner {
         retval
     }
 
-    pub fn sign_penalty_to_us(
+    pub fn sign_justice_sweep(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
@@ -2700,7 +2700,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_delayed_payment_to_us_test() {
+    fn sign_delayed_sweep_test() {
         let signer = MySigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
@@ -2759,7 +2759,7 @@ mod tests {
         let htlc_amount_sat = 10 * 1000;
 
         let sigvec = signer
-            .sign_delayed_payment_to_us(
+            .sign_delayed_sweep(
                 &node_id,
                 &channel_id,
                 &htlc_tx,
@@ -2955,7 +2955,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_remote_htlc_to_us_test() {
+    fn sign_counterparty_htlc_sweep_test() {
         let signer = MySigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
@@ -3015,7 +3015,7 @@ mod tests {
         let htlc_amount_sat = 10 * 1000;
 
         let ser_signature = signer
-            .sign_counterparty_htlc_to_us(
+            .sign_counterparty_htlc_sweep(
                 &node_id,
                 &channel_id,
                 &htlc_tx,
@@ -3118,7 +3118,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_penalty_to_us_test() {
+    fn sign_justice_sweep_test() {
         let signer = MySigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
@@ -3190,7 +3190,7 @@ mod tests {
         let revocation_point = PublicKey::from_secret_key(&secp_ctx, &revocation_secret);
 
         let sigvec = signer
-            .sign_penalty_to_us(
+            .sign_justice_sweep(
                 &node_id,
                 &channel_id,
                 &htlc_tx,

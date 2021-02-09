@@ -317,7 +317,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         // TODO phase 2
         let res = self
             .signer
-            .sign_penalty_to_us(
+            .sign_justice_sweep(
                 &self.node_id,
                 &self.channel_id,
                 justice_tx,
@@ -345,7 +345,7 @@ impl ChannelKeys for LoopbackChannelSigner {
         // TODO phase 2
         let res = self
             .signer
-            .sign_counterparty_htlc_to_us(
+            .sign_counterparty_htlc_sweep(
                 &self.node_id,
                 &self.channel_id,
                 htlc_tx,
