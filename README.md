@@ -18,6 +18,10 @@ even though it's documented as stable.
 ### Building Rust Lightning Signer
 
     cargo build
+
+or if you want to enable grpc:
+
+    cargo build --features=grpc
     
 ### Running Unit Tests
 
@@ -25,7 +29,7 @@ even though it's documented as stable.
     
 ### Running the Server
 
-    cargo run --bin server
+    cargo run --features=grpc --bin server
 
 ### Using [kcov](https://github.com/SimonKagstrom/kcov) for Code Coverage
 
