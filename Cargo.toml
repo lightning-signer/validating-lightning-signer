@@ -5,7 +5,7 @@ authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.co
 edition = "2018"
 
 [features]
-
+default = ["grpc"]
 grpc = ["tokio", "tonic", "prost", "serde", "serde_json"]
 
 [lib]

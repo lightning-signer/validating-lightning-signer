@@ -19,9 +19,9 @@ even though it's documented as stable.
 
     cargo build
 
-or if you want to enable grpc:
+or if you want to disable grpc (grpc is the only default feature):
 
-    cargo build --features=grpc
+    cargo build --no-default-features
     
 ### Running Unit Tests
 
@@ -29,7 +29,7 @@ or if you want to enable grpc:
     
 ### Running the Server
 
-    cargo run --features=grpc --bin server
+    cargo run --bin server
 
 ### Using [kcov](https://github.com/SimonKagstrom/kcov) for Code Coverage
 
