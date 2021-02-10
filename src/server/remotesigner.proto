@@ -35,20 +35,19 @@ service Signer {
   rpc NewChannel (NewChannelRequest)
     returns (NewChannelReply);
 
-  // BOLT #2 - Peer Protocol - memorize remote basepoints and funding outpoint
-  // Signatures can only be requested after this call.
+  // BOLT #2 - Peer Protocol
+  // Memorize remote basepoints and funding outpoint Signatures can
+  // only be requested after this call.
   rpc ReadyChannel (ReadyChannelRequest)
     returns (ReadyChannelReply);
 
   // BOLT #2 - Channel Close - phase 1
   // No further commitments will be signed.
-  // This is a layer-2 to layer-1 transaction.
   rpc SignMutualCloseTx (SignMutualCloseTxRequest)
     returns (SignatureReply);
 
   // BOLT #2 - Channel Close - phase 2
   // No further commitments will be signed.
-  // This is a layer-2 to layer-1 transaction.
   rpc SignMutualCloseTxPhase2 (SignMutualCloseTxPhase2Request)
     returns (CloseTxSignatureReply);
 
@@ -56,8 +55,9 @@ service Signer {
   // Used to recover from local data loss by checking that our secret
   // provided by the peer is correct.
   //
-  // WARNING: this does not guarantee that the peer provided us the latest secret,
-  // and if in fact the peer lied they will take all of the funds in the channel.
+  // WARNING: this does not guarantee that the peer provided us the
+  // latest secret, and if in fact the peer lied they will take all of
+  // the funds in the channel.
   rpc CheckFutureSecret (CheckFutureSecretRequest)
     returns (CheckFutureSecretReply);
 
@@ -78,7 +78,6 @@ service Signer {
   // Sign the funding transaction
   // TODO this must be done after we know the remote signature on the
   // commitment tx - need to provide this to the signer.
-  // This a layer-1 to layer-2 transaction.
   rpc SignFundingTx (SignFundingTxRequest)
     returns (SignFundingTxReply);
 
@@ -89,54 +88,60 @@ service Signer {
     returns (SignatureReply);
 
   // BOLT #3 - Commitment Transaction and attached HTLCs, phase 2
-  // Sign the counterparty commitment tx and attached HTLCs, at commitment time
+  // Sign the counterparty commitment tx and attached HTLCs, at
+  // commitment time
   rpc SignCounterpartyCommitmentTxPhase2 (SignCounterpartyCommitmentTxPhase2Request)
     returns (CommitmentTxSignatureReply);
 
   // BOLT #3 - Commitment Transaction, , phase 1
-  // Sign the holder's commitment tx, at force-close time.
-  // No further commitments can be signed on this channel.
-  // The commitment must not have been revoked.
+  // Sign the holder's commitment tx, at force-close time.  No further
+  // commitments can be signed on this channel.  The commitment must
+  // not have been revoked.
   rpc SignHolderCommitmentTx (SignHolderCommitmentTxRequest)
     returns (SignatureReply);
 
   // BOLT #3 - Commitment Transaction and attached HTLCs, phase 2
-  // Sign the holder's commitment tx and attached HTLCs, at force-close time.
-  // No further commitments can be signed on this channel.
-  // The commitment must not have been revoked.
+  // Sign the holder's commitment tx and attached HTLCs, at
+  // force-close time.  No further commitments can be signed on this
+  // channel.  The commitment must not have been revoked.
   rpc SignHolderCommitmentTxPhase2 (SignHolderCommitmentTxPhase2Request)
     returns (CommitmentTxSignatureReply);
 
   // BOLT #3 - HTLC Outputs, phase 1
-  // Sign an HTLC-Success or HTLC-Timeout tx spending a holder's HTLC output, at force-close time
+  // Sign an HTLC-Success or HTLC-Timeout tx spending a holder's HTLC
+  // output, at force-close time
   rpc SignHolderHTLCTx (SignHolderHTLCTxRequest)
     returns (SignatureReply);
 
   // BOLT #5 - Unilateral Close Handling, phase 1
-  // Sign a tx sweeping a delayed to-local output - either from the commitment tx or
-  // from an HTLC, at force-close time.
-  // This is a layer-2 to layer-1 transaction.
+  // Sign a tx input sweeping a delayed output - either from the
+  // commitment tx's to_local output at force-close time or from an
+  // HTLC Success or HTLC Timeout second-level tx.
   rpc SignDelayedSweep (SignDelayedSweepRequest)
     returns (SignatureReply);
 
   // BOLT #3 - HTLC Outputs, phase 1
   // Sign a counterparty HTLC tx, at commitment time.
   // This can be either an HTLC-Success or HTLC-Timeout tx.
+  // The signature is provided to the counterparty.
   rpc SignCounterpartyHTLCTx (SignCounterpartyHTLCTxRequest)
     returns (SignatureReply);
 
   // BOLT #3 - HTLC Outputs, phase 1
-  // Sign a tx sweeping a counterparty HTLC-Success / HTLC-Timeout tx output,
-  // at force-close time.
-  // This is a layer-2 to layer-1 transaction.
+  // Sign a tx input sweeping the to_remote output of the commitment
+  // tx after the channel has been force-closed by our counterparty.
   rpc SignCounterpartyHTLCSweep (SignCounterpartyHTLCSweepRequest)
     returns (SignatureReply);
 
   // BOLT #5 - Unilateral Close Handling, phase 1
-  // Sign a justice tx to us - either sweeping the to-local commitment
-  // tx output or sweeping an HTLC tx output, after the counterparty
-  // broadcast a revoked commitment transaction.
-  // This is a layer-2 to layer-1 transaction.
+  // Sign a justice tx input to us after the counterparty has
+  // broadcast a revoked commitment.  This signature applies to the
+  // following outputs:
+  // - counterparty's to_local commitment tx output
+  // - counterparty's offered HTLC output prior to their HTLC Timeout tx
+  // - counterparty's received HTLC output prior to their HTLC Success tx
+  // - counterparty's HTLC Timeout second-level tx output
+  // - counterparty's HTLC Success second-level tx output
   rpc SignJusticeSweep (SignJusticeSweepRequest)
     returns (SignatureReply);
 
