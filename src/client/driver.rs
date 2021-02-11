@@ -1,6 +1,6 @@
 // FILE NOT TESTED
 
-use tonic::Request;
+use tonic::{Request, transport};
 
 use remotesigner::signer_client::SignerClient;
 
@@ -8,11 +8,12 @@ use crate::server::remotesigner;
 use crate::server::remotesigner::{PingRequest, InitRequest, NewChannelRequest, NodeId, ChannelNonce, GetPerCommitmentPointRequest, Bip32Seed, NodeConfig};
 use crate::server::remotesigner::node_config::KeyDerivationStyle;
 
-// BEGIN NOT TESTED
-#[tokio::main]
-pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = SignerClient::connect("http://[::1]:50051").await?;
+pub async fn connect() -> Result<SignerClient<transport::Channel>, Box<dyn std::error::Error>> {
+    Ok(SignerClient::connect("http://[::1]:50051").await?)
+}
 
+
+pub async fn ping(client: &mut SignerClient<transport::Channel>) -> Result<(), Box<dyn std::error::Error>> {
     let ping_request = Request::new(PingRequest {
         message: "hello".into(),
     });
@@ -20,6 +21,31 @@ pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
     let response = client.ping(ping_request).await?;
 
     println!("ping response={:?}", response);
+    Ok(())
+}
+
+pub async fn new_node(client: &mut SignerClient<transport::Channel>) -> Result<(), Box<dyn std::error::Error>> {
+    let init_request = Request::new(InitRequest {
+        node_config: Some(NodeConfig {
+            key_derivation_style: KeyDerivationStyle::Native as i32,
+        }),
+        chainparams: None,
+        coldstart: true,
+        hsm_secret: Some(Bip32Seed {
+            data: vec![0u8; 32],
+        }),
+    });
+
+    let response = client.init(init_request).await?;
+    let node_id = response.into_inner().node_id.expect("missing node_id").data;
+
+    println!("new node {}", hex::encode(&node_id));
+    Ok(())
+}
+
+// BEGIN NOT TESTED
+pub async fn integration_test(client: &mut SignerClient<transport::Channel>) -> Result<(), Box<dyn std::error::Error>> {
+    ping(client).await?;
 
     let init_request = Request::new(InitRequest {
         node_config: Some(NodeConfig {
@@ -37,8 +63,7 @@ pub async fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("new node {}", hex::encode(&node_id));
 
-    let mut channel_nonce = [0u8; 32];
-    channel_nonce[0] = 1u8;
+    let channel_nonce = [1u8];
     let new_chan_request = Request::new(NewChannelRequest {
         node_id: Some(NodeId {
             data: node_id.clone(),

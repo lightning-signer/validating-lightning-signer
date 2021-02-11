@@ -5,8 +5,8 @@ authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.co
 edition = "2018"
 
 [features]
-default = ["grpc"]
-grpc = ["tokio", "tonic", "prost", "serde", "serde_json"]
+
+grpc = ["tokio", "tonic", "prost", "serde", "serde_json", "clap"]
 
 [lib]
 name = "lightning_signer"
@@ -26,6 +26,7 @@ prost = { version = "0.6", optional = true }
 tokio = { version = "0.2", features = ["macros"], optional = true }
 serde = { version = "1.0.105", features = ["derive"], optional = true }
 serde_json = { version = "1.0.48", optional = true }
+clap = { version = "3.0.0-beta.2", optional = true }
 
 [dependencies.lightning]
 git = "https://github.com/rust-bitcoin/rust-lightning.git"
