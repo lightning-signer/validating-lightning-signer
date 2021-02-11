@@ -174,6 +174,62 @@ impl SimpleValidator {
     }
 }
 
+// not yet implemented
+// TODO - policy-v1-funding-output-scriptpubkey
+// TODO - policy-v1-funding-output-match-commitment
+// TODO - policy-v1-funding-fee-range
+// TODO - policy-v1-funding-format-standard
+// TODO - policy-v2-funding-change-to-wallet
+
+// sign_commitment_tx has some, missing these
+// TODO - policy-v1-commitment-input-single
+// TODO - policy-v1-commitment-input-match-funding
+// TODO - policy-v1-commitment-version
+// TODO - policy-v1-commitment-locktime
+// TODO - policy-v1-commitment-nsequence
+// TODO - policy-v2-commitment-initial-funding-value
+// TODO - policy-v2-commitment-spends-active-utxo
+// TODO - policy-v2-commitment-htlc-routing-balance
+// TODO - policy-v2-commitment-htlc-received-spends-active-utxo
+// TODO - policy-v1-commitment-revocation-pubkey
+// TODO - policy-v1-commitment-htlc-delay-range
+// TODO - policy-v1-commitment-payment-pubkey
+// TODO - policy-v1-commitment-delayed-pubkey
+// TODO - policy-v1-commitment-htlc-pubkey
+// TODO - policy-v2-commitment-htlc-offered-hash-matches
+// TODO - policy-v1-commitment-outputs-trimmed
+// TODO - policy-v2-commitment-previous-revoked
+// TODO - policy-v2-commitment-local-not-revoked
+// TODO - policy-v1-commitment-anchor-static-remotekey
+
+// not yet implemented
+// TODO - policy-v2-revoke-new-commitment-signed
+// TODO - policy-v2-revoke-new-commitment-valid
+// TODO - policy-v2-revoke-not-closed
+
+// not yet implemented
+// TODO - policy-v1-htlc-revocation-pubkey
+// TODO - policy-v1-htlc-payment-pubkey
+// TODO - policy-v1-htlc-version
+// TODO - policy-v1-htlc-locktime
+// TODO - policy-v1-htlc-nsequence
+// TODO - policy-v1-htlc-fee-range
+
+// not yet implemented
+// TODO - policy-v2-mutual-destination-whitelisted
+// TODO - policy-v2-mutual-value-matches-commitment
+// TODO - policy-v2-mutual-fee-range
+// TODO - policy-v2-mutual-no-pending-htlcs
+
+// not yet implemented
+// TODO - policy-v2-forced-destination-whitelisted
+// TODO - policy-v2-forced-fee-range
+
+// not yet implemented
+// TODO - policy-v3-velocity-transferred
+// TODO - policy-v3-merchant-no-sends
+// TODO - policy-v3-routing-deltas-only-htlc
+
 impl Validator for SimpleValidator {
     fn validate_remote_tx_phase1(
         &self,
@@ -197,12 +253,14 @@ impl Validator for SimpleValidator {
             // END NOT TESTED
         }
 
+        // policy-v1-commitment-to-self-delay-range
         if info.to_broadcaster_delayed_pubkey.is_some() {
             self.validate_delay("to_broadcaster", info.to_self_delay as u32)?;
         }
 
         let num_htlc = info.offered_htlcs.len() + info.received_htlcs.len();
 
+        // policy-v2-commitment-htlc-count-limit
         if num_htlc > policy.max_htlcs {
             return Err(Policy("too many HTLCs".to_string())); // NOT TESTED
         }
@@ -213,45 +271,58 @@ impl Validator for SimpleValidator {
             htlc_value_sat += htlc.value_sat;
         }
 
+        // policy-v2-htlc-delay-range
         for htlc in &info.received_htlcs {
             self.validate_expiry("received HTLC", htlc.cltv_expiry, state.current_height)?;
             htlc_value_sat += htlc.value_sat;
         }
 
         if !setup.option_anchor_outputs() {
+            // policy-v1-commitment-anchors-not-when-off
             if info.to_broadcaster_anchor_count > 0 {
                 return Err(Policy(
                     "to_broadcaster anchor without option_anchor_outputs".to_string(),
                 ));
             }
+            // policy-v1-commitment-anchors-not-when-off
             if info.to_countersigner_anchor_count > 0 {
                 return Err(Policy(
                     "to_countersigner anchor without option_anchor_outputs".to_string(),
                 ));
             }
         } else {
+            // FIXME - Does this need it's own policy tag?
+            // policy-v1-commitment-anchor-to-local
             if info.to_broadcaster_anchor_count > 1 {
                 return Err(Policy("more than one to_broadcaster anchors".to_string()));
             }
+            // FIXME - Does this need it's own policy tag?
+            // policy-v1-commitment-anchor-to-remote
             if info.to_countersigner_anchor_count > 1 {
                 return Err(Policy("more than one to_countersigner anchors".to_string()));
             }
+            // policy-v1-commitment-anchor-to-local
             if info.has_to_broadcaster() && info.to_broadcaster_anchor_count == 0 {
                 return Err(Policy(
                     "to_broadcaster output without to_broadcaster anchor".to_string(),
                 ));
             }
+            // policy-v1-commitment-anchor-to-remote
             if info.has_to_countersigner() && info.to_countersigner_anchor_count == 0 {
                 return Err(Policy(
                     "to_countersigner output without to_countersigner anchor".to_string(),
                 ));
             }
             if num_htlc == 0 {
+                // FIXME - Does this need it's own policy tag?
+                // policy-v1-commitment-anchor-to-local
                 if !info.has_to_broadcaster() && info.to_broadcaster_anchor_count == 1 {
                     return Err(Policy(
                         "to_broadcaster anchor without to_broadcaster output or HTLCs".to_string(),
                     ));
                 }
+                // FIXME - Does this need it's own policy tag?
+                // policy-v1-commitment-anchor-to-remote
                 if !info.has_to_countersigner() && info.to_countersigner_anchor_count == 1 {
                     return Err(Policy(
                         "to_countersigner anchor without to_countersigner output or HTLCs"
@@ -261,6 +332,7 @@ impl Validator for SimpleValidator {
             }
         }
 
+        // policy-v2-commitment-htlc-inflight-limit
         if htlc_value_sat > policy.max_htlc_value_sat {
             // BEGIN NOT TESTED
             return Err(Policy(format!(
@@ -283,6 +355,8 @@ impl Validator for SimpleValidator {
             )));
             // END NOT TESTED
         }
+
+        // policy-v2-commitment-fee-range
         let shortage = self.channel_value_sat - value_sat;
         if shortage > policy.epsilon_sat {
             // BEGIN NOT TESTED
@@ -304,8 +378,10 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         let policy = &self.policy;
 
+        // policy-v1-commitment-to-self-delay-range
         self.validate_delay("to_broadcaster", info.to_self_delay as u32)?;
 
+        // policy-v2-commitment-htlc-count-limit
         if info.offered_htlcs.len() + info.received_htlcs.len() > policy.max_htlcs {
             return Err(Policy("too many HTLCs".to_string()));
         }
@@ -322,6 +398,7 @@ impl Validator for SimpleValidator {
             htlc_value_sat += htlc.value_sat;
         }
 
+        // policy-v2-commitment-htlc-inflight-limit
         if htlc_value_sat > policy.max_htlc_value_sat {
             return Err(Policy(format!(
                 "sum of HTLC values {} too large",
@@ -329,6 +406,7 @@ impl Validator for SimpleValidator {
             )));
         }
 
+        // policy-v2-commitment-fee-range
         let shortage = self.channel_value_sat
             - (info.to_broadcaster_value_sat + info.to_countersigner_value_sat + htlc_value_sat);
         if shortage > policy.epsilon_sat {
@@ -341,6 +419,8 @@ impl Validator for SimpleValidator {
         Ok(())
     }
 
+    // policy-v3-velocity-funding
+    // TODO - this implementation is incomplete
     fn validate_channel_open(&self) -> Result<(), ValidationError> {
         if self.channel_value_sat > self.policy.max_channel_size_sat {
             return Err(Policy(format!(
