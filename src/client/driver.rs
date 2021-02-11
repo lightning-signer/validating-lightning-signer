@@ -7,6 +7,7 @@ use remotesigner::signer_client::SignerClient;
 use crate::server::remotesigner;
 use crate::server::remotesigner::{PingRequest, InitRequest, NewChannelRequest, NodeId, ChannelNonce, GetPerCommitmentPointRequest, Bip32Seed, NodeConfig};
 use crate::server::remotesigner::node_config::KeyDerivationStyle;
+use rand::{OsRng, Rng};
 
 pub async fn connect() -> Result<SignerClient<transport::Channel>, Box<dyn std::error::Error>> {
     Ok(SignerClient::connect("http://[::1]:50051").await?)
@@ -31,15 +32,29 @@ pub async fn new_node(client: &mut SignerClient<transport::Channel>) -> Result<(
         }),
         chainparams: None,
         coldstart: true,
-        hsm_secret: Some(Bip32Seed {
-            data: vec![0u8; 32],
-        }),
+        hsm_secret: None,
     });
 
     let response = client.init(init_request).await?;
     let node_id = response.into_inner().node_id.expect("missing node_id").data;
 
-    println!("new node {}", hex::encode(&node_id));
+    println!("{}", hex::encode(&node_id));
+    Ok(())
+}
+
+pub async fn new_channel(client: &mut SignerClient<transport::Channel>, node_id: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
+    let mut channel_nonce = [0u8; 32];
+    let mut rng = OsRng::new().unwrap();
+    rng.fill_bytes(&mut channel_nonce);
+
+    let new_chan_request = Request::new(NewChannelRequest {
+        node_id: Some(NodeId {
+            data: node_id.clone(),
+        }),
+        channel_nonce0: Some(ChannelNonce { data: channel_nonce.to_vec() }),
+    });
+    let _response = client.new_channel(new_chan_request).await?.into_inner();
+    println!("{}", hex::encode(&channel_nonce));
     Ok(())
 }
 

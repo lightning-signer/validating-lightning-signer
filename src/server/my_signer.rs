@@ -19,7 +19,6 @@ use crypto::sha2::Sha256;
 use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
 use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys};
 use lightning::util::logger::Logger;
-use rand::{thread_rng, Rng};
 
 use crate::node::node::{
     Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, Node, NodeConfig,
@@ -28,6 +27,7 @@ use crate::tx::tx::{build_close_tx, sign_commitment, HTLCInfo2};
 use crate::util::crypto_utils::{derive_private_revocation_key, payload_for_p2wpkh};
 use crate::util::status::Status;
 use crate::util::test_utils::TestLogger;
+use rand::{OsRng, Rng};
 
 #[derive(PartialEq, Clone, Copy)]
 #[repr(i32)]
@@ -91,7 +91,7 @@ impl MySigner {
     pub fn new_node(&self, node_config: NodeConfig) -> PublicKey {
         let secp_ctx = Secp256k1::signing_only();
         let network = Network::Testnet;
-        let mut rng = thread_rng();
+        let mut rng = OsRng::new().unwrap();
 
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);
@@ -114,23 +114,6 @@ impl MySigner {
         node_id
     }
 
-    pub fn warmstart_with_seed(
-        &self,
-        node_config: NodeConfig,
-        seed: &[u8],
-    ) -> Result<PublicKey, Status> {
-        let secp_ctx = Secp256k1::signing_only();
-        let network = Network::Testnet;
-
-        let node = Node::new(&self.logger, node_config, seed, network);
-        let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
-        let nodes = self.nodes.lock().unwrap();
-        nodes.get(&node_id).ok_or_else(|| {
-            self.invalid_argument(format!("warmstart failed: no such node: {}", node_id))
-        })?;
-        Ok(node_id)
-    }
-
     pub fn new_channel(
         &self,
         node_id: &PublicKey,
@@ -147,6 +130,23 @@ impl MySigner {
         let channel_nonce0 = opt_channel_nonce0.unwrap_or_else(|| channel_id.0.to_vec());
         node.new_channel(channel_id, channel_nonce0, node)?;
         Ok(channel_id)
+    }
+
+    pub fn warmstart_with_seed(
+        &self,
+        node_config: NodeConfig,
+        seed: &[u8],
+    ) -> Result<PublicKey, Status> {
+        let secp_ctx = Secp256k1::signing_only();
+        let network = Network::Testnet;
+
+        let node = Node::new(&self.logger, node_config, seed, network);
+        let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
+        let nodes = self.nodes.lock().unwrap();
+        nodes.get(&node_id).ok_or_else(|| {
+            self.invalid_argument(format!("warmstart failed: no such node: {}", node_id))
+        })?;
+        Ok(node_id)
     }
 
     /// Temporary, until phase 2 is fully implemented
