@@ -494,6 +494,7 @@ impl CommitmentInfo {
         vals: (Vec<u8>, i64, Vec<u8>),
     ) -> Result<(), ValidationError> {
         let (revocation_pubkey, delay, delayed_pubkey) = vals;
+        // policy-v1-commitment-singular-to-local
         if self.has_to_broadcaster() {
             return Err(TransactionFormat("already have to local".to_string()));
         }
@@ -539,6 +540,7 @@ impl CommitmentInfo {
         out: &TxOut,
         to_countersigner_delayed_pubkey_data: Vec<u8>,
     ) -> Result<(), ValidationError> {
+        // policy-v1-commitment-singular-to-remote
         if self.has_to_countersigner() {
             // BEGIN NOT TESTED
             return Err(TransactionFormat("more than one to remote".to_string()));
@@ -753,6 +755,7 @@ impl CommitmentInfo {
                 )
             };
 
+        // policy-v1-commitment-anchor-amount
         if out.value != ANCHOR_SAT {
             return Err(Mismatch(format!("anchor wrong size: {}", out.value)));
         }
@@ -764,6 +767,7 @@ impl CommitmentInfo {
             // remote anchor
             self.to_countersigner_anchor_count += 1;
         } else {
+            // policy-v1-commitment-anchor-match-fundingkey
             return Err(Mismatch(format!(
                 "anchor to_pubkey {} doesn't match local or remote",
                 hex::encode(to_pubkey_data)
@@ -781,11 +785,13 @@ impl CommitmentInfo {
         script_bytes: &[u8],
     ) -> Result<(), ValidationError> {
         if out.script_pubkey.is_v0_p2wpkh() {
+            // FIXME - Does this need it's own policy tag?
             if setup.option_anchor_outputs() {
                 return Err(TransactionFormat(
                     "p2wpkh to_countersigner not valid with anchors".to_string(),
                 ));
             }
+            // policy-v1-commitment-singular-to-remote
             if self.has_to_countersigner() {
                 return Err(TransactionFormat(
                     "more than one to_countersigner".to_string(),
@@ -798,6 +804,7 @@ impl CommitmentInfo {
                 return Err(TransactionFormat("missing witscript for p2wsh".to_string()));
             }
             let script = Script::from(script_bytes.to_vec());
+            // FIXME - Does this need it's own policy tag?
             if out.script_pubkey != script.to_v0_p2wsh() {
                 return Err(TransactionFormat(
                     "script pubkey doesn't match inner script".to_string(),
@@ -825,8 +832,10 @@ impl CommitmentInfo {
                     return self.handle_to_countersigner_delayed_output(out, vals.unwrap());
                 }
             }
+            // policy-v1-commitment-no-unrecognized-outputs
             return Err(TransactionFormat("unknown p2wsh script".to_string()));
         } else {
+            // policy-v1-commitment-no-unrecognized-outputs
             return Err(TransactionFormat("unknown output type".to_string()));
         }
         Ok(())
