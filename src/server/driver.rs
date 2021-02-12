@@ -198,8 +198,9 @@ impl Signer for MySigner {
         }
         let hsm_secret = req
             .hsm_secret
-            .ok_or_else(|| self.invalid_grpc_argument("missing hsm_secret"))?
-            .data;
+            .map(|o| o.data)
+            .unwrap_or_else(|| Vec::new());
+
         let hsm_secret = hsm_secret.as_slice();
         if hsm_secret.len() > 0 {
             if hsm_secret.len() < 16 {
