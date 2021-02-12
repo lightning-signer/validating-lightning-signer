@@ -33,6 +33,7 @@ fn make_node_subapp() -> App<'static> {
     App::new("node")
         .about("control a node")
         .subcommand(App::new("new").about("Add a new node to the signer.  Outputs the node ID."))
+        .subcommand(App::new("list").about("List configured nodes."))
 }
 
 #[tokio::main]
@@ -41,6 +42,7 @@ async fn node_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
 
     match matches.subcommand() {
         Some(("new", _)) => driver::new_node(&mut client).await?,
+        Some(("list", _)) => driver::list_nodes(&mut client).await?,
         Some((name, _)) => panic!("unimplemented command {}", name),
         None => { println!("missing sub-command"); make_node_subapp().print_help()?},
     };
@@ -52,6 +54,7 @@ fn make_chan_subapp() -> App<'static> {
         .alias("chan")
         .about("control a channel")
         .subcommand(App::new("new").about("Add a new channel to a node.  Outputs the channel ID."))
+        .subcommand(App::new("list").about("List channels in a node"))
 }
 
 #[tokio::main]
@@ -62,6 +65,7 @@ async fn chan_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
 
     match matches.subcommand() {
         Some(("new", _)) => driver::new_channel(&mut client, node_id).await?,
+        Some(("list", _)) => driver::list_channels(&mut client, node_id).await?,
         Some((name, _)) => panic!("unimplemented command {}", name),
         None => { println!("missing sub-command"); make_chan_subapp().print_help()?},
     };

@@ -5,7 +5,7 @@ use tonic::{Request, transport};
 use remotesigner::signer_client::SignerClient;
 
 use crate::server::remotesigner;
-use crate::server::remotesigner::{PingRequest, InitRequest, NewChannelRequest, NodeId, ChannelNonce, GetPerCommitmentPointRequest, Bip32Seed, NodeConfig};
+use crate::server::remotesigner::{PingRequest, InitRequest, NewChannelRequest, NodeId, ChannelNonce, GetPerCommitmentPointRequest, Bip32Seed, NodeConfig, ListNodesRequest, ListChannelsRequest};
 use crate::server::remotesigner::node_config::KeyDerivationStyle;
 use rand::{OsRng, Rng};
 
@@ -39,6 +39,37 @@ pub async fn new_node(client: &mut SignerClient<transport::Channel>) -> Result<(
     let node_id = response.into_inner().node_id.expect("missing node_id").data;
 
     println!("{}", hex::encode(&node_id));
+    Ok(())
+}
+
+pub async fn list_nodes(client: &mut SignerClient<transport::Channel>) -> Result<(), Box<dyn std::error::Error>> {
+    let list_request = Request::new(ListNodesRequest {});
+
+    let response = client.list_nodes(list_request).await?.into_inner();
+    let mut node_ids: Vec<&Vec<u8>> = response.node_ids
+        .iter().map(|id| &id.data).collect();
+    node_ids.sort();
+
+    for node_id in node_ids {
+        println!("{}", hex::encode(node_id));
+    }
+    Ok(())
+}
+
+pub async fn list_channels(client: &mut SignerClient<transport::Channel>, node_id: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
+    let list_request =
+        Request::new(ListChannelsRequest {
+            node_id: Some(NodeId { data: node_id })
+        });
+
+    let response = client.list_channels(list_request).await?.into_inner();
+    let mut channel_ids: Vec<&Vec<u8>> = response.channel_nonces
+        .iter().map(|id| &id.data).collect();
+    channel_ids.sort();
+
+    for channel_nonce in channel_ids {
+        println!("{}", hex::encode(channel_nonce));
+    }
     Ok(())
 }
 
