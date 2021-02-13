@@ -122,6 +122,7 @@ impl ChannelSetup {
 // After NewChannel, before ReadyChannel
 pub struct ChannelStub {
     pub node: Arc<Node>,
+    pub nonce: Vec<u8>,
     pub logger: Arc<Logger>,
     pub secp_ctx: Secp256k1<All>,
     pub keys: EnforcingChannelKeys, // Incomplete, channel_value_sat is placeholder.
@@ -130,6 +131,7 @@ pub struct ChannelStub {
 // After ReadyChannel
 pub struct Channel {
     pub node: Arc<Node>,
+    pub nonce: Vec<u8>,
     pub logger: Arc<Logger>,
     pub secp_ctx: Secp256k1<All>,
     pub keys: EnforcingChannelKeys,
@@ -141,11 +143,21 @@ pub enum ChannelSlot {
     Ready(Channel),
 }
 
+impl ChannelSlot {
+    pub(crate) fn nonce(&self) -> Vec<u8> {
+        match self {
+            ChannelSlot::Stub(stub) => stub.nonce(),
+            ChannelSlot::Ready(chan) => chan.nonce(),
+        }
+    }
+}
+
 pub trait ChannelBase {
     // Both ChannelStub and ready Channels can handle these.
     fn get_channel_basepoints(&self) -> ChannelPublicKeys;
     fn get_per_commitment_point(&self, commitment_number: u64) -> PublicKey;
     fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey;
+    fn nonce(&self) -> Vec<u8>;
 }
 
 impl Debug for Channel {
@@ -172,6 +184,10 @@ impl ChannelBase for ChannelStub {
             .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
         SecretKey::from_slice(&secret).unwrap()
     }
+
+    fn nonce(&self) -> Vec<u8> {
+        self.nonce.clone()
+    }
 }
 
 impl ChannelBase for Channel {
@@ -191,6 +207,10 @@ impl ChannelBase for Channel {
             .keys
             .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
         SecretKey::from_slice(&secret).unwrap()
+    }
+
+    fn nonce(&self) -> Vec<u8> {
+        self.nonce.clone()
     }
 }
 
@@ -825,6 +845,7 @@ impl Node {
             .get_channel_keys_with_nonce(channel_nonce0.as_slice(), channel_value_sat);
         let stub = ChannelStub {
             node: Arc::clone(arc_self),
+            nonce: channel_nonce0,
             logger: Arc::clone(&self.logger),
             secp_ctx: Secp256k1::new(),
             keys: EnforcingChannelKeys::new(inmem_keys),
@@ -869,6 +890,7 @@ impl Node {
             inmem_keys.ready_channel(&channel_transaction_parameters);
             Channel {
                 node: Arc::clone(&stub.node),
+                nonce: stub.nonce.clone(),
                 logger: Arc::clone(&stub.logger),
                 secp_ctx: stub.secp_ctx.clone(),
                 keys: EnforcingChannelKeys::new(inmem_keys),

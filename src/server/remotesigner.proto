@@ -27,6 +27,14 @@ service Signer {
   rpc Init (InitRequest)
     returns (InitReply);
 
+  // List nodes
+  rpc ListNodes (ListNodesRequest)
+      returns (ListNodesReply);
+
+  // List channels for a node
+  rpc ListChannels (ListChannelsRequest)
+      returns (ListChannelsReply);
+
   // Get layer-1 XPUB for a node.
   rpc GetExtPubKey (GetExtPubKeyRequest)
     returns (GetExtPubKeyReply);
@@ -180,6 +188,21 @@ service Version {
 // FILE NOT TESTED
 
 // BEGIN NOT TESTED
+
+message ListNodesRequest {
+}
+
+message ListNodesReply {
+  repeated NodeId node_ids = 1;
+}
+
+message ListChannelsRequest {
+  NodeId node_id = 1;
+}
+
+message ListChannelsReply {
+  repeated ChannelNonce channel_nonces = 1;
+}
 
 message PingRequest {
   string message = 1;

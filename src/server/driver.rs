@@ -1272,6 +1272,36 @@ impl Signer for MySigner {
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }
+
+    async fn list_nodes(&self, _request: Request<ListNodesRequest>) -> Result<Response<ListNodesReply>, Status> {
+        let nodes = self.nodes.lock().unwrap();
+        let node_ids = nodes.keys()
+            .map(|k| k.serialize().to_vec())
+            .map(|id| NodeId { data: id })
+            .collect();
+        let reply = ListNodesReply {
+            node_ids
+        };
+        Ok(Response::new(reply))
+    }
+
+
+    async fn list_channels(&self, request: Request<ListChannelsRequest>) -> Result<Response<ListChannelsReply>, Status> {
+        let req = request.into_inner();
+        let node_id = self.node_id(req.node_id)?;
+
+        self.with_node(&node_id, |node| {
+            let node = node.ok_or_else(|| self.invalid_grpc_argument("missing node"))?;
+            let channel_ids = node.channels().values()
+                .map(|chan| chan.lock().unwrap().nonce())
+                .map(|nonce| ChannelNonce { data: nonce })
+                .collect();
+            Ok(Response::new(ListChannelsReply {
+                // FIXME needs nonces not IDs
+                channel_nonces: channel_ids
+            }))
+        })
+    }
 }
 // END NOT TESTED
 

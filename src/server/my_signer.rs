@@ -57,7 +57,7 @@ impl TryFrom<i32> for SpendType {
 
 pub struct MySigner {
     pub logger: Arc<Logger>,
-    nodes: Mutex<HashMap<PublicKey, Arc<Node>>>,
+    pub(crate) nodes: Mutex<HashMap<PublicKey, Arc<Node>>>,
 }
 
 impl MySigner {
