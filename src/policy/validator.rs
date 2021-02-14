@@ -1,5 +1,5 @@
 use bitcoin::util::address::Payload;
-use bitcoin::Network;
+use bitcoin::{self, Network};
 
 use crate::node::node::{Channel, ChannelSetup};
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
@@ -96,6 +96,8 @@ pub struct SimpleValidator {
     pub channel_value_sat: u64,
 }
 
+// FIXME - Should this next comment be removed because duplicative?
+//
 /// A validator
 ///
 /// Some of the rules will be implicitly enforced in phase 2, where the signer constructs the
@@ -144,10 +146,10 @@ impl SimpleValidator {
         let policy = &self.policy;
 
         if delay < policy.min_delay as u32 {
-            return Err(Policy(format!("{} delay too small", name))); // NOT TESTED
+            return Err(Policy(format!("{} delay too small", name)));
         }
         if delay > policy.max_delay as u32 {
-            return Err(Policy(format!("{} delay too large", name))); // NOT TESTED
+            return Err(Policy(format!("{} delay too large", name)));
         }
 
         Ok(())
@@ -246,11 +248,9 @@ impl Validator for SimpleValidator {
             .unwrap_or(our_address)
             != our_address
         {
-            // BEGIN NOT TESTED
             return Err(TransactionFormat(
                 "to_countersigner address mismatch".to_string(),
             ));
-            // END NOT TESTED
         }
 
         // policy-v1-commitment-to-self-delay-range
@@ -262,7 +262,7 @@ impl Validator for SimpleValidator {
 
         // policy-v2-commitment-htlc-count-limit
         if num_htlc > policy.max_htlcs {
-            return Err(Policy("too many HTLCs".to_string())); // NOT TESTED
+            return Err(Policy("too many HTLCs".to_string()));
         }
 
         let mut htlc_value_sat = 0;
@@ -334,12 +334,10 @@ impl Validator for SimpleValidator {
 
         // policy-v2-commitment-htlc-inflight-limit
         if htlc_value_sat > policy.max_htlc_value_sat {
-            // BEGIN NOT TESTED
             return Err(Policy(format!(
                 "sum of HTLC values {} too large",
                 htlc_value_sat
             )));
-            // END NOT TESTED
         }
 
         let value_sat = info.to_broadcaster_value_sat
@@ -348,23 +346,19 @@ impl Validator for SimpleValidator {
             + info.to_countersigner_anchor_value_sat()
             + htlc_value_sat;
         if self.channel_value_sat < value_sat {
-            // BEGIN NOT TESTED
             return Err(Policy(format!(
                 "channel value greater than funding {} > {}",
                 value_sat, self.channel_value_sat
             )));
-            // END NOT TESTED
         }
 
         // policy-v2-commitment-fee-range
         let shortage = self.channel_value_sat - value_sat;
         if shortage > policy.epsilon_sat {
-            // BEGIN NOT TESTED
             return Err(Policy(format!(
                 "channel value short by {} > {}",
                 shortage, policy.epsilon_sat
             )));
-            // END NOT TESTED
         }
 
         Ok(())
@@ -520,7 +514,7 @@ mod tests {
         }
     }
 
-    fn make_remote_info1(
+    fn make_counterparty_info1(
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
         to_self_delay: u16,
@@ -547,7 +541,7 @@ mod tests {
         }
     }
 
-    fn make_remote_info1_with_anchors(
+    fn make_counterparty_info1_with_anchors(
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
         to_self_delay: u16,
@@ -578,6 +572,12 @@ mod tests {
         make_test_validator(100_000_000)
     }
 
+    fn make_validator_state() -> ValidatorState {
+        ValidatorState {
+            current_height: 1000,
+        }
+    }
+
     fn make_htlc_info(expiry: u32) -> HTLCInfo {
         HTLCInfo {
             value_sat: 10,
@@ -594,16 +594,22 @@ mod tests {
         }
     }
 
-    fn assert_policy_error(res: Result<(), ValidationError>, expected: &str) {
-        assert_eq!(res.unwrap_err(), Policy(expected.to_string()));
+    macro_rules! assert_policy_error {
+        ($res: expr, $expected: expr) => {
+            assert_eq!($res.unwrap_err(), Policy($expected.to_string()));
+        };
+    }
+
+    macro_rules! assert_txfmt_error {
+        ($res: expr, $expected: expr) => {
+            assert_eq!($res.unwrap_err(), TransactionFormat($expected.to_string()));
+        };
     }
 
     #[test]
     fn validate_remote_tx_test() {
         let validator = make_validator();
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let info = make_counterparty_info(99_000_000, 900_000, 6, vec![], vec![]);
         assert!(validator
             .validate_remote_tx(&make_test_channel_setup(), &state, &info)
@@ -611,58 +617,194 @@ mod tests {
     }
 
     #[test]
+    fn validate_remote_tx_to_broadcaster_min_delay_test() {
+        let validator = make_validator();
+        let state = make_validator_state();
+        // 5 is ok ...
+        let info = make_counterparty_info(99_000_000, 900_000, 5, vec![], vec![]);
+        assert!(validator
+            .validate_remote_tx(&make_test_channel_setup(), &state, &info)
+            .is_ok());
+        // but 4 is right out
+        let info_bad = make_counterparty_info(99_000_000, 900_000, 4, vec![], vec![]);
+        assert_policy_error!(
+            validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
+            "to_broadcaster delay too small"
+        );
+    }
+
+    #[test]
+    fn validate_remote_tx_to_broadcaster_max_delay_test() {
+        let validator = make_validator();
+        let state = make_validator_state();
+        // 1440 is ok ...
+        let info = make_counterparty_info(99_000_000, 900_000, 1440, vec![], vec![]);
+        assert!(validator
+            .validate_remote_tx(&make_test_channel_setup(), &state, &info)
+            .is_ok());
+        // but 1441 is right out
+        let info_bad = make_counterparty_info(99_000_000, 900_000, 1441, vec![], vec![]);
+        assert_policy_error!(
+            validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
+            "to_broadcaster delay too large"
+        );
+    }
+
+    #[test]
+    fn validate_remote_tx_phase1_countersigner_addr_test() {
+        let validator = make_validator();
+        let state = make_validator_state();
+        let mut info = make_counterparty_info1(99_000_000, 900_000, 5, vec![], vec![]);
+        info.to_countersigner_address = Some(payload_for_p2wpkh(&make_test_pubkey(1)));
+        assert_txfmt_error!(
+            validator.validate_remote_tx_phase1(
+                &make_test_channel_setup(),
+                &state,
+                &info,
+                &payload_for_p2wpkh(&make_test_pubkey(2)),
+            ),
+            "to_countersigner address mismatch"
+        );
+    }
+
+    #[test]
+    fn validate_remote_tx_phase1_htlc_count_test() {
+        let validator = make_validator();
+        let state = make_validator_state();
+        let htlcs = vec![make_htlc_info(1100); validator.policy.max_htlcs + 1];
+        let info = make_counterparty_info1(99_000_000, 900_000, 5, htlcs.clone(), vec![]);
+        assert_policy_error!(
+            validator.validate_remote_tx_phase1(
+                &make_test_channel_setup(),
+                &state,
+                &info,
+                &payload_for_p2wpkh(&make_test_pubkey(1)),
+            ),
+            "too many HTLCs"
+        );
+        let info2 = make_counterparty_info1(99_000_000, 900_000, 5, vec![], htlcs);
+        assert_policy_error!(
+            validator.validate_remote_tx_phase1(
+                &make_test_channel_setup(),
+                &state,
+                &info2,
+                &payload_for_p2wpkh(&make_test_pubkey(1)),
+            ),
+            "too many HTLCs"
+        );
+    }
+
+    #[test]
+    fn validate_remote_tx_phase1_htlc_inflight_test() {
+        let validator = make_validator();
+        let state = make_validator_state();
+        let htlcs = vec![
+            HTLCInfo {
+                value_sat: 20_000,
+                payment_hash_hash: [0; 20],
+                cltv_expiry: 1100
+            };
+            validator.policy.max_htlcs
+        ];
+        let info = make_counterparty_info1(99_000_000, 900_000, 5, htlcs, vec![]);
+        assert_policy_error!(
+            validator.validate_remote_tx_phase1(
+                &make_test_channel_setup(),
+                &state,
+                &info,
+                &payload_for_p2wpkh(&make_test_pubkey(1)),
+            ),
+            "sum of HTLC values 20000000 too large"
+        );
+    }
+
+    #[test]
+    fn validate_remote_tx_phase1_channel_value_test() {
+        let validator = make_validator();
+        let state = make_validator_state();
+        let htlcs = vec![
+            HTLCInfo {
+                value_sat: 10_000,
+                payment_hash_hash: [0; 20],
+                cltv_expiry: 1100
+            };
+            validator.policy.max_htlcs
+        ];
+        let info = make_counterparty_info1(99_000_000, 900_000, 5, htlcs, vec![]);
+        assert_policy_error!(
+            validator.validate_remote_tx_phase1(
+                &make_test_channel_setup(),
+                &state,
+                &info,
+                &payload_for_p2wpkh(&make_test_pubkey(1)),
+            ),
+            "channel value greater than funding 109900000 > 100000000"
+        );
+    }
+
+    #[test]
     fn validate_remote_tx_shortage_test() {
         let validator = make_validator();
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let info_bad = make_counterparty_info(99_000_000, 900_000 - 1, 6, vec![], vec![]);
-        assert_policy_error(
+        assert_policy_error!(
             validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
-            "channel value short by 100001 > 100000",
-        ); // NOT TESTED
+            "channel value short by 100001 > 100000"
+        );
+    }
+
+    #[test]
+    fn validate_remote_tx_phase1_shortage_test() {
+        let validator = make_validator();
+        let state = make_validator_state();
+        let info_bad = make_counterparty_info1(99_000_000, 900_000 - 1, 6, vec![], vec![]);
+        assert_policy_error!(
+            validator.validate_remote_tx_phase1(
+                &make_test_channel_setup(),
+                &state,
+                &info_bad,
+                &payload_for_p2wpkh(&make_test_pubkey(1)),
+            ),
+            "channel value short by 100001 > 100000"
+        );
     }
 
     #[test]
     fn validate_to_broadcaster_anchor_without_option_anchor_outputs_test() {
         let setup = make_reasonable_test_channel_setup();
         let validator = make_test_validator(setup.channel_value_sat);
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let remote_pubkey = make_test_pubkey(101);
-        let mut info_bad = make_remote_info1(2_000_000, 1_000_000, 6, vec![], vec![]);
+        let mut info_bad = make_counterparty_info1(2_000_000, 1_000_000, 6, vec![], vec![]);
         info_bad.to_broadcaster_anchor_count = 1;
-        assert_policy_error(
+        assert_policy_error!(
             validator.validate_remote_tx_phase1(
                 &setup,
                 &state,
                 &info_bad,
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
-            "to_broadcaster anchor without option_anchor_outputs",
-        ); // NOT TESTED
+            "to_broadcaster anchor without option_anchor_outputs"
+        );
     }
 
     #[test]
     fn validate_to_countersigner_anchor_without_option_anchor_outputs_test() {
         let setup = make_reasonable_test_channel_setup();
         let validator = make_test_validator(setup.channel_value_sat);
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let remote_pubkey = make_test_pubkey(101);
-        let mut info_bad = make_remote_info1(2_000_000, 1_000_000, 6, vec![], vec![]);
+        let mut info_bad = make_counterparty_info1(2_000_000, 1_000_000, 6, vec![], vec![]);
         info_bad.to_countersigner_anchor_count = 1;
-        assert_policy_error(
+        assert_policy_error!(
             validator.validate_remote_tx_phase1(
                 &setup,
                 &state,
                 &info_bad,
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
-            "to_countersigner anchor without option_anchor_outputs",
-        ); // NOT TESTED
+            "to_countersigner anchor without option_anchor_outputs"
+        );
     }
 
     #[test]
@@ -670,11 +812,9 @@ mod tests {
         let mut setup = make_reasonable_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
         let validator = make_test_validator(setup.channel_value_sat);
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let remote_pubkey = make_test_pubkey(101);
-        let mut info_bad = make_remote_info1_with_anchors(
+        let mut info_bad = make_counterparty_info1_with_anchors(
             2_000_000,
             1_000_000 - (2 * ANCHOR_SAT),
             6,
@@ -682,15 +822,15 @@ mod tests {
             vec![],
         );
         info_bad.to_broadcaster_anchor_count = 2;
-        assert_policy_error(
+        assert_policy_error!(
             validator.validate_remote_tx_phase1(
                 &setup,
                 &state,
                 &info_bad,
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
-            "more than one to_broadcaster anchors",
-        ); // NOT TESTED
+            "more than one to_broadcaster anchors"
+        );
     }
 
     #[test]
@@ -698,11 +838,9 @@ mod tests {
         let mut setup = make_reasonable_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
         let validator = make_test_validator(setup.channel_value_sat);
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let remote_pubkey = make_test_pubkey(101);
-        let mut info_bad = make_remote_info1_with_anchors(
+        let mut info_bad = make_counterparty_info1_with_anchors(
             2_000_000,
             1_000_000 - (2 * ANCHOR_SAT),
             6,
@@ -710,15 +848,15 @@ mod tests {
             vec![],
         );
         info_bad.to_countersigner_anchor_count = 2;
-        assert_policy_error(
+        assert_policy_error!(
             validator.validate_remote_tx_phase1(
                 &setup,
                 &state,
                 &info_bad,
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
-            "more than one to_countersigner anchors",
-        ); // NOT TESTED
+            "more than one to_countersigner anchors"
+        );
     }
 
     #[test]
@@ -726,11 +864,9 @@ mod tests {
         let mut setup = make_reasonable_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
         let validator = make_test_validator(setup.channel_value_sat);
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let remote_pubkey = make_test_pubkey(101);
-        let mut info_bad = make_remote_info1_with_anchors(
+        let mut info_bad = make_counterparty_info1_with_anchors(
             2_000_000,
             1_000_000 - (2 * ANCHOR_SAT),
             6,
@@ -738,15 +874,15 @@ mod tests {
             vec![],
         );
         info_bad.to_broadcaster_anchor_count = 0;
-        assert_policy_error(
+        assert_policy_error!(
             validator.validate_remote_tx_phase1(
                 &setup,
                 &state,
                 &info_bad,
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
-            "to_broadcaster output without to_broadcaster anchor",
-        ); // NOT TESTED
+            "to_broadcaster output without to_broadcaster anchor"
+        );
     }
 
     #[test]
@@ -754,11 +890,9 @@ mod tests {
         let mut setup = make_reasonable_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
         let validator = make_test_validator(setup.channel_value_sat);
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let remote_pubkey = make_test_pubkey(101);
-        let mut info_bad = make_remote_info1_with_anchors(
+        let mut info_bad = make_counterparty_info1_with_anchors(
             2_000_000,
             1_000_000 - (2 * ANCHOR_SAT),
             6,
@@ -766,15 +900,15 @@ mod tests {
             vec![],
         );
         info_bad.to_countersigner_anchor_count = 0;
-        assert_policy_error(
+        assert_policy_error!(
             validator.validate_remote_tx_phase1(
                 &setup,
                 &state,
                 &info_bad,
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
-            "to_countersigner output without to_countersigner anchor",
-        ); // NOT TESTED
+            "to_countersigner output without to_countersigner anchor"
+        );
     }
 
     #[test]
@@ -782,22 +916,25 @@ mod tests {
         let mut setup = make_reasonable_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
         let validator = make_test_validator(setup.channel_value_sat);
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let remote_pubkey = make_test_pubkey(101);
-        let mut info_bad =
-            make_remote_info1_with_anchors(0, 3_000_000 - (2 * ANCHOR_SAT), 6, vec![], vec![]);
+        let mut info_bad = make_counterparty_info1_with_anchors(
+            0,
+            3_000_000 - (2 * ANCHOR_SAT),
+            6,
+            vec![],
+            vec![],
+        );
         info_bad.to_broadcaster_delayed_pubkey = None;
-        assert_policy_error(
+        assert_policy_error!(
             validator.validate_remote_tx_phase1(
                 &setup,
                 &state,
                 &info_bad,
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
-            "to_broadcaster anchor without to_broadcaster output or HTLCs",
-        ); // NOT TESTED
+            "to_broadcaster anchor without to_broadcaster output or HTLCs"
+        );
     }
 
     #[test]
@@ -805,13 +942,16 @@ mod tests {
         let mut setup = make_reasonable_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
         let validator = make_test_validator(setup.channel_value_sat);
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let remote_pubkey = make_test_pubkey(101);
         let htlcs = vec![make_htlc_info(1100)];
-        let mut info =
-            make_remote_info1_with_anchors(0, 3_000_000 - (2 * ANCHOR_SAT) - 10, 6, htlcs, vec![]);
+        let mut info = make_counterparty_info1_with_anchors(
+            0,
+            3_000_000 - (2 * ANCHOR_SAT) - 10,
+            6,
+            htlcs,
+            vec![],
+        );
         info.to_broadcaster_delayed_pubkey = None;
         assert!(validator
             .validate_remote_tx_phase1(&setup, &state, &info, &payload_for_p2wpkh(&remote_pubkey),)
@@ -823,22 +963,25 @@ mod tests {
         let mut setup = make_reasonable_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
         let validator = make_test_validator(setup.channel_value_sat);
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let remote_pubkey = make_test_pubkey(101);
-        let mut info_bad =
-            make_remote_info1_with_anchors(0, 3_000_000 - (2 * ANCHOR_SAT), 6, vec![], vec![]);
+        let mut info_bad = make_counterparty_info1_with_anchors(
+            0,
+            3_000_000 - (2 * ANCHOR_SAT),
+            6,
+            vec![],
+            vec![],
+        );
         info_bad.to_countersigner_pubkey = None;
-        assert_policy_error(
+        assert_policy_error!(
             validator.validate_remote_tx_phase1(
                 &setup,
                 &state,
                 &info_bad,
                 &payload_for_p2wpkh(&remote_pubkey),
             ),
-            "to_countersigner anchor without to_countersigner output or HTLCs",
-        ); // NOT TESTED
+            "to_countersigner anchor without to_countersigner output or HTLCs"
+        );
     }
 
     #[test]
@@ -846,13 +989,16 @@ mod tests {
         let mut setup = make_reasonable_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
         let validator = make_test_validator(setup.channel_value_sat);
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let remote_pubkey = make_test_pubkey(101);
         let htlcs = vec![make_htlc_info(1100)];
-        let mut info =
-            make_remote_info1_with_anchors(0, 3_000_000 - (2 * ANCHOR_SAT) - 10, 6, vec![], htlcs);
+        let mut info = make_counterparty_info1_with_anchors(
+            0,
+            3_000_000 - (2 * ANCHOR_SAT) - 10,
+            6,
+            vec![],
+            htlcs,
+        );
         info.to_countersigner_pubkey = None;
         assert!(validator
             .validate_remote_tx_phase1(&setup, &state, &info, &payload_for_p2wpkh(&remote_pubkey),)
@@ -867,41 +1013,35 @@ mod tests {
             payment_hash: PaymentHash([0; 32]),
             cltv_expiry: 1005,
         };
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let info = make_counterparty_info(99_000_000, 800_000, 6, vec![htlc.clone()], vec![]);
         assert!(validator
             .validate_remote_tx(&make_test_channel_setup(), &state, &info)
             .is_ok());
         let info_bad =
             make_counterparty_info(99_000_000, 800_000 - 1, 6, vec![htlc.clone()], vec![]);
-        assert_policy_error(
+        assert_policy_error!(
             validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
-            "channel value short by 100001 > 100000",
-        ); // NOT TESTED
+            "channel value short by 100001 > 100000"
+        );
     }
 
     #[test]
     fn validate_remote_tx_htlc_count_test() {
         let validator = make_validator();
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let htlcs = (0..1001).map(|_| make_htlc_info2(1100)).collect();
         let info_bad = make_counterparty_info(99_000_000, 900_000, 6, vec![], htlcs);
-        assert_policy_error(
+        assert_policy_error!(
             validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
-            "too many HTLCs",
-        ); // NOT TESTED
+            "too many HTLCs"
+        );
     }
 
     #[test]
     fn validate_remote_tx_htlc_value_test() {
         let validator = make_validator();
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let htlcs = (0..1000)
             .map(|_| HTLCInfo2 {
                 value_sat: 10001,
@@ -910,18 +1050,16 @@ mod tests {
             })
             .collect();
         let info_bad = make_counterparty_info(99_000_000, 900_000, 6, vec![], htlcs);
-        assert_policy_error(
+        assert_policy_error!(
             validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
-            "sum of HTLC values 10001000 too large",
-        ); // NOT TESTED
+            "sum of HTLC values 10001000 too large"
+        );
     }
 
     #[test]
     fn validate_remote_tx_htlc_delay_test() {
         let validator = make_validator();
-        let state = ValidatorState {
-            current_height: 1000,
-        };
+        let state = make_validator_state();
         let info_good =
             make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info2(1005)]);
         assert!(validator
@@ -934,15 +1072,15 @@ mod tests {
             .is_ok());
         let info_bad =
             make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info2(1004)]);
-        assert_policy_error(
+        assert_policy_error!(
             validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
-            "received HTLC expiry too early",
-        ); // NOT TESTED
+            "received HTLC expiry too early"
+        );
         let info_bad =
             make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info2(2441)]);
-        assert_policy_error(
+        assert_policy_error!(
             validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
-            "received HTLC expiry too late",
-        ); // NOT TESTED
+            "received HTLC expiry too late"
+        );
     }
 }

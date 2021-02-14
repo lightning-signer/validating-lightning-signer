@@ -1,7 +1,7 @@
-// FILE NOT TESTED
+// BEGIN NOT TESTED
 
 extern crate clap;
-use clap::{App, ArgMatches, Arg};
+use clap::{App, Arg, ArgMatches};
 
 use lightning_signer::client::driver;
 
@@ -18,7 +18,10 @@ async fn test_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
     match matches.subcommand() {
         Some(("integration", _)) => driver::integration_test(&mut client).await?,
         Some((name, _)) => panic!("unimplemented command {}", name),
-        None => { println!("missing sub-command"); make_test_subapp().print_help()?},
+        None => {
+            println!("missing sub-command");
+            make_test_subapp().print_help()?
+        }
     };
     Ok(())
 }
@@ -44,7 +47,10 @@ async fn node_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
         Some(("new", _)) => driver::new_node(&mut client).await?,
         Some(("list", _)) => driver::list_nodes(&mut client).await?,
         Some((name, _)) => panic!("unimplemented command {}", name),
-        None => { println!("missing sub-command"); make_node_subapp().print_help()?},
+        None => {
+            println!("missing sub-command");
+            make_node_subapp().print_help()?
+        }
     };
     Ok(())
 }
@@ -67,24 +73,27 @@ async fn chan_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
         Some(("new", _)) => driver::new_channel(&mut client, node_id).await?,
         Some(("list", _)) => driver::list_channels(&mut client, node_id).await?,
         Some((name, _)) => panic!("unimplemented command {}", name),
-        None => { println!("missing sub-command"); make_chan_subapp().print_help()?},
+        None => {
+            println!("missing sub-command");
+            make_chan_subapp().print_help()?
+        }
     };
     Ok(())
 }
 
-// BEGIN NOT TESTED
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let test_subapp = make_test_subapp();
     let node_subapp = make_node_subapp();
     let chan_subapp = make_chan_subapp();
     let app = App::new("client")
         .about("a CLI utility which communicates with a running Lightning Signer server via gRPC")
-        .arg(Arg::new("node")
-            .short('n')
-            .long("node")
-            .takes_value(true)
-            .global(true)
-            .validator(|v| hex::decode(v))
+        .arg(
+            Arg::new("node")
+                .short('n')
+                .long("node")
+                .takes_value(true)
+                .global(true)
+                .validator(|v| hex::decode(v)),
         )
         .subcommand(test_subapp)
         .subcommand(node_subapp)
@@ -102,4 +111,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     Ok(())
 }
+
 // END NOT TESTED

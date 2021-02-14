@@ -144,12 +144,14 @@ pub enum ChannelSlot {
 }
 
 impl ChannelSlot {
+    // BEGIN NOT TESTED
     pub(crate) fn nonce(&self) -> Vec<u8> {
         match self {
             ChannelSlot::Stub(stub) => stub.nonce(),
             ChannelSlot::Ready(chan) => chan.nonce(),
         }
     }
+    // END NOT TESTED
 }
 
 pub trait ChannelBase {
@@ -185,9 +187,11 @@ impl ChannelBase for ChannelStub {
         SecretKey::from_slice(&secret).unwrap()
     }
 
+    // BEGIN NOT TESTED
     fn nonce(&self) -> Vec<u8> {
         self.nonce.clone()
     }
+    // END NOT TESTED
 }
 
 impl ChannelBase for Channel {
@@ -209,9 +213,11 @@ impl ChannelBase for Channel {
         SecretKey::from_slice(&secret).unwrap()
     }
 
+    // BEGIN NOT TESTED
     fn nonce(&self) -> Vec<u8> {
         self.nonce.clone()
     }
+    // END NOT TESTED
 }
 
 impl ChannelStub {
