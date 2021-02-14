@@ -310,7 +310,6 @@ pub fn sort_outputs<T, C: Fn(&T, &T) -> Ordering>(outputs: &mut Vec<(TxOut, T)>,
 }
 
 /// Phase 1 HTLC info
-// BEGIN NOT TESTED
 #[derive(Clone)]
 pub struct HTLCInfo {
     pub value_sat: u64,
@@ -319,7 +318,6 @@ pub struct HTLCInfo {
     /// This is zero (unknown) for offered HTLCs in phase 1
     pub cltv_expiry: u32,
 }
-// END NOT TESTED
 
 // Implement manually so we can have hex encoded payment_hash_hash.
 // BEGIN NOT TESTED

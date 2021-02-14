@@ -1,5 +1,3 @@
-// FILE NOT TESTED
-
 use lightning_signer::server;
 
 // BEGIN NOT TESTED

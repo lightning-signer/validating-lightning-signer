@@ -1,5 +1,3 @@
-// FILE NOT TESTED
-
 use std::convert::{TryFrom, TryInto};
 
 use backtrace::Backtrace;
@@ -28,6 +26,8 @@ use super::remotesigner;
 use crate::node::node;
 use crate::server::my_keys_manager::KeyDerivationStyle;
 use crate::util::status;
+
+// BEGIN NOT TESTED
 
 impl From<status::Status> for Status {
     fn from(s: status::Status) -> Self {
@@ -116,7 +116,6 @@ impl MySigner {
     }
 }
 
-// BEGIN NOT TESTED
 pub fn collect_output_witscripts(output_descs: &Vec<OutputDescriptor>) -> Vec<Vec<u8>> {
     output_descs
         .iter()
@@ -196,10 +195,7 @@ impl Signer for MySigner {
         {
             return Err(self.invalid_grpc_argument("unknown node_config.key_derivation_style"));
         }
-        let hsm_secret = req
-            .hsm_secret
-            .map(|o| o.data)
-            .unwrap_or_else(|| Vec::new());
+        let hsm_secret = req.hsm_secret.map(|o| o.data).unwrap_or_else(|| Vec::new());
 
         let hsm_secret = hsm_secret.as_slice();
         if hsm_secret.len() > 0 {
@@ -1273,39 +1269,43 @@ impl Signer for MySigner {
         Ok(Response::new(reply))
     }
 
-    async fn list_nodes(&self, _request: Request<ListNodesRequest>) -> Result<Response<ListNodesReply>, Status> {
+    async fn list_nodes(
+        &self,
+        _request: Request<ListNodesRequest>,
+    ) -> Result<Response<ListNodesReply>, Status> {
         let nodes = self.nodes.lock().unwrap();
-        let node_ids = nodes.keys()
+        let node_ids = nodes
+            .keys()
             .map(|k| k.serialize().to_vec())
             .map(|id| NodeId { data: id })
             .collect();
-        let reply = ListNodesReply {
-            node_ids
-        };
+        let reply = ListNodesReply { node_ids };
         Ok(Response::new(reply))
     }
 
-
-    async fn list_channels(&self, request: Request<ListChannelsRequest>) -> Result<Response<ListChannelsReply>, Status> {
+    async fn list_channels(
+        &self,
+        request: Request<ListChannelsRequest>,
+    ) -> Result<Response<ListChannelsReply>, Status> {
         let req = request.into_inner();
         let node_id = self.node_id(req.node_id)?;
 
         self.with_node(&node_id, |node| {
             let node = node.ok_or_else(|| self.invalid_grpc_argument("missing node"))?;
-            let channel_ids = node.channels().values()
+            let channel_ids = node
+                .channels()
+                .values()
                 .map(|chan| chan.lock().unwrap().nonce())
                 .map(|nonce| ChannelNonce { data: nonce })
                 .collect();
             Ok(Response::new(ListChannelsReply {
                 // FIXME needs nonces not IDs
-                channel_nonces: channel_ids
+                channel_nonces: channel_ids,
             }))
         })
     }
 }
-// END NOT TESTED
 
-// BEGIN NOT TESTED
 #[tokio::main]
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse()?;
