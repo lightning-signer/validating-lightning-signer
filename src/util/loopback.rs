@@ -207,9 +207,8 @@ impl ChannelKeys for LoopbackChannelSigner {
         &self.pubkeys
     }
 
-    fn key_derivation_params(&self) -> (u64, u64) {
-        // TODO
-        (0, 0)
+    fn channel_keys_id(&self) -> [u8; 32] {
+        self.channel_id.0
     }
 
     // TODO - Couldn't this return a declared error signature?

@@ -26,7 +26,7 @@ use lightning::util::logger::{Level, Logger, Record};
 use lightning::util::test_utils;
 
 use crate::node::node::{ChannelSetup, CommitmentType, NodeConfig};
-use crate::server::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
+use crate::server::my_keys_manager::KeyDerivationStyle;
 use crate::tx::tx::sort_outputs;
 use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
 use crate::util::loopback::LoopbackChannelSigner;
@@ -337,7 +337,7 @@ pub fn make_test_channel_keys() -> EnforcingChannelKeys {
         make_test_privkey(5), // htlc_base_key
         [4u8; 32],            // commitment_seed
         channel_value_sat,
-        MyKeysManager::derivation_params(),
+        [0u8; 32],
     );
     // This needs to match make_test_channel_setup above.
     inmemkeys.ready_channel(&ChannelTransactionParameters {

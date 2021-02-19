@@ -236,7 +236,7 @@ impl ChannelStub {
             keys0.htlc_base_key,
             keys0.commitment_seed,
             channel_value_sat,
-            MyKeysManager::derivation_params(),
+            keys0.channel_keys_id(),
         )
     }
 }
@@ -848,7 +848,7 @@ impl Node {
         let channel_value_sat = 0; // Placeholder value, not known yet.
         let inmem_keys = self
             .keys_manager
-            .get_channel_keys_with_nonce(channel_nonce0.as_slice(), channel_value_sat);
+            .get_channel_keys_with_id(channel_id, channel_nonce0.as_slice(), channel_value_sat);
         let stub = ChannelStub {
             node: Arc::clone(arc_self),
             nonce: channel_nonce0,
