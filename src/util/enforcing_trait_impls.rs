@@ -113,8 +113,8 @@ impl ChannelKeys for EnforcingChannelKeys {
     }
 
     // BEGIN NOT TESTED
-    fn key_derivation_params(&self) -> (u64, u64) {
-        self.inner.key_derivation_params()
+    fn channel_keys_id(&self) -> [u8; 32] {
+        self.inner.channel_keys_id()
     }
     // END NOT TESTED
 
