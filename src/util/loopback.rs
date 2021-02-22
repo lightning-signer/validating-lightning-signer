@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::{Script, Transaction};
-use lightning::chain::keysinterface::{ChannelKeys, KeysInterface, KeysManager};
+use lightning::chain::keysinterface::{Sign, KeysInterface, KeysManager};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, HTLCOutputInCommitment,
@@ -174,7 +174,7 @@ fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
     Ok(sig)
 }
 
-impl ChannelKeys for LoopbackChannelSigner {
+impl Sign for LoopbackChannelSigner {
     fn get_per_commitment_point<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         idx: u64,
@@ -472,7 +472,7 @@ impl ChannelKeys for LoopbackChannelSigner {
 }
 
 impl KeysInterface for LoopbackSignerKeysInterface {
-    type ChanKeySigner = LoopbackChannelSigner;
+    type Signer = LoopbackChannelSigner;
 
     // TODO secret key leaking
     fn get_node_secret(&self) -> SecretKey {
@@ -499,7 +499,7 @@ impl KeysInterface for LoopbackSignerKeysInterface {
             .unwrap()
     }
 
-    fn get_channel_keys(&self, is_inbound: bool, channel_value_sat: u64) -> Self::ChanKeySigner {
+    fn get_channel_signer(&self, is_inbound: bool, channel_value_sat: u64) -> Self::Signer {
         let channel_id = self.signer.new_channel(&self.node_id, None, None).unwrap();
         LoopbackChannelSigner::new(
             &self.node_id,
@@ -515,7 +515,7 @@ impl KeysInterface for LoopbackSignerKeysInterface {
     }
 
     // BEGIN NOT TESTED
-    fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::ChanKeySigner, DecodeError> {
+    fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::Signer, DecodeError> {
         unimplemented!()
     }
     // END NOT TESTED

@@ -5,7 +5,7 @@ use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::key::{PublicKey, SecretKey};
 use bitcoin::secp256k1::{Secp256k1, Signature};
-use chain::keysinterface::{ChannelKeys, InMemoryChannelKeys};
+use chain::keysinterface::{Sign, InMemorySigner};
 use lightning::chain;
 use lightning::ln;
 use lightning::ln::chan_utils::{
@@ -18,19 +18,19 @@ use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 use ln::msgs;
 use std::cmp;
 
-/// Enforces some rules on ChannelKeys calls. Eventually we will
+/// Enforces some rules on Sign calls. Eventually we will
 /// probably want to expose a variant of this which would essentially
 /// be what you'd want to run on a hardware wallet.
 // BEGIN NOT TESTED
 #[derive(Clone)]
-pub struct EnforcingChannelKeys {
-    inner: InMemoryChannelKeys,
+pub struct EnforcingSigner {
+    inner: InMemorySigner,
     last_commitment_number: Arc<Mutex<Option<u64>>>,
 }
 // END NOT TESTED
 
-impl EnforcingChannelKeys {
-    pub fn new(inner: InMemoryChannelKeys) -> Self {
+impl EnforcingSigner {
+    pub fn new(inner: InMemorySigner) -> Self {
         Self {
             inner,
             last_commitment_number: Arc::new(Mutex::new(None)),
@@ -41,12 +41,12 @@ impl EnforcingChannelKeys {
         self.inner.counterparty_pubkeys()
     }
 
-    pub fn inner(&self) -> InMemoryChannelKeys {
+    pub fn inner(&self) -> InMemorySigner {
         self.inner.clone()
     }
 }
 
-impl EnforcingChannelKeys {
+impl EnforcingSigner {
     // BEGIN NOT TESTED
     #[allow(dead_code)]
     fn check_keys<T: secp256k1::Signing + secp256k1::Verification>(
@@ -76,7 +76,7 @@ impl EnforcingChannelKeys {
     // END NOT TESTED
 
     // TODO leaking secrets below.
-    // We don't take advantage of the signing operations in InMemoryChannelKeys because that
+    // We don't take advantage of the signing operations in InMemorySigner because that
     // requires phase 2. In particular, the commitment and HTLCs must be signed in one operation.
     pub fn funding_key(&self) -> &SecretKey {
         &self.inner.funding_key
@@ -95,7 +95,7 @@ impl EnforcingChannelKeys {
     }
 }
 
-impl ChannelKeys for EnforcingChannelKeys {
+impl Sign for EnforcingSigner {
     fn get_per_commitment_point<T: secp256k1::Signing + secp256k1::Verification>(
         &self,
         idx: u64,
@@ -226,7 +226,7 @@ impl ChannelKeys for EnforcingChannelKeys {
 }
 
 // BEGIN NOT TESTED
-impl Writeable for EnforcingChannelKeys {
+impl Writeable for EnforcingSigner {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
         self.inner.write(writer)?;
         let last = *self.last_commitment_number.lock().unwrap();
@@ -236,11 +236,11 @@ impl Writeable for EnforcingChannelKeys {
 }
 // END NOT TESTED
 
-impl Readable for EnforcingChannelKeys {
+impl Readable for EnforcingSigner {
     fn read<R: ::std::io::Read>(reader: &mut R) -> Result<Self, DecodeError> {
         let inner = Readable::read(reader)?;
         let last = Readable::read(reader)?;
-        Ok(EnforcingChannelKeys {
+        Ok(EnforcingSigner {
             inner,
             last_commitment_number: Arc::new(Mutex::new(last)),
         })

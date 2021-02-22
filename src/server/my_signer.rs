@@ -16,7 +16,7 @@ use bitcoin::{Address, Network, OutPoint, Script, SigHashType};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
-use lightning::chain::keysinterface::{ChannelKeys, KeysInterface};
+use lightning::chain::keysinterface::{Sign, KeysInterface};
 use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys};
 use lightning::util::logger::Logger;
 

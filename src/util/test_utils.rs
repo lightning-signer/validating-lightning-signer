@@ -14,7 +14,7 @@ use bitcoin::{OutPoint as BitcoinOutPoint, TxOut};
 use chain::chaininterface;
 use lightning::chain;
 use lightning::chain::channelmonitor::MonitorEvent;
-use lightning::chain::keysinterface::{ChannelKeys, InMemoryChannelKeys};
+use lightning::chain::keysinterface::{Sign, InMemorySigner};
 use lightning::chain::transaction::OutPoint;
 use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{
@@ -28,7 +28,7 @@ use lightning::util::test_utils;
 use crate::node::node::{ChannelSetup, CommitmentType, NodeConfig};
 use crate::server::my_keys_manager::KeyDerivationStyle;
 use crate::tx::tx::sort_outputs;
-use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
+use crate::util::enforcing_trait_impls::EnforcingSigner;
 use crate::util::loopback::LoopbackChannelSigner;
 
 pub struct TestLogger {
@@ -159,9 +159,7 @@ impl<'a> TestChainMonitor<'a> {
         }
     }
 }
-impl<'a> chain::Watch for TestChainMonitor<'a> {
-    type Keys = LoopbackChannelSigner;
-
+impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
     fn watch_channel(
         &self,
         funding_txo: OutPoint,
@@ -325,10 +323,10 @@ pub fn make_reasonable_test_channel_setup() -> ChannelSetup {
     }
 }
 
-pub fn make_test_channel_keys() -> EnforcingChannelKeys {
+pub fn make_test_channel_keys() -> EnforcingSigner {
     let secp_ctx = Secp256k1::signing_only();
     let channel_value_sat = 3_000_000;
-    let mut inmemkeys = InMemoryChannelKeys::new(
+    let mut inmemkeys = InMemorySigner::new(
         &secp_ctx,
         make_test_privkey(1), // funding_key
         make_test_privkey(2), // revocation_base_key
@@ -353,7 +351,7 @@ pub fn make_test_channel_keys() -> EnforcingChannelKeys {
             index: 0,
         }),
     });
-    EnforcingChannelKeys::new(inmemkeys)
+    EnforcingSigner::new(inmemkeys)
 }
 
 pub const TEST_NODE_CONFIG: NodeConfig = NodeConfig {
