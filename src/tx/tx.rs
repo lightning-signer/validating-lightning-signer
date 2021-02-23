@@ -15,7 +15,7 @@ use bitcoin::util::bip143;
 use bitcoin::{OutPoint, Script, SigHashType, Transaction, TxIn, TxOut};
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::{Hash, HashEngine};
-use lightning::chain::keysinterface::ChannelKeys;
+use lightning::chain::keysinterface::Sign;
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     get_revokeable_redeemscript, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
@@ -31,7 +31,7 @@ use crate::tx::script::{
 };
 use crate::util::crypto_utils::payload_for_p2wpkh;
 use crate::util::debug_utils::DebugPayload;
-use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
+use crate::util::enforcing_trait_impls::EnforcingSigner;
 
 const MAX_DELAY: i64 = 1000;
 pub const ANCHOR_SAT: u64 = 330;
@@ -278,7 +278,7 @@ pub fn build_commitment_tx(
 // Sign a Bitcoin commitment tx or a mutual-close tx
 pub(crate) fn sign_commitment(
     secp_ctx: &Secp256k1<All>,
-    keys: &EnforcingChannelKeys,
+    keys: &EnforcingSigner,
     counterparty_funding_pubkey: &PublicKey,
     tx: &Transaction,
     channel_value_sat: u64,
@@ -732,7 +732,7 @@ impl CommitmentInfo {
 
     fn handle_anchor_output(
         &mut self,
-        keys: &EnforcingChannelKeys,
+        keys: &EnforcingSigner,
         out: &TxOut,
         to_pubkey_data: Vec<u8>,
     ) -> Result<(), ValidationError> {
@@ -777,7 +777,7 @@ impl CommitmentInfo {
     // This routine is only called on "remote" commitments.
     pub fn handle_output(
         &mut self,
-        keys: &EnforcingChannelKeys,
+        keys: &EnforcingSigner,
         setup: &ChannelSetup,
         out: &TxOut,
         script_bytes: &[u8],

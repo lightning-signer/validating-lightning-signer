@@ -12,7 +12,7 @@ use bitcoin_hashes::hash160::Hash as Hash160;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::sha256::HashEngine as Sha256State;
 use bitcoin_hashes::{Hash, HashEngine};
-use lightning::chain::keysinterface::{InMemoryChannelKeys, KeysInterface};
+use lightning::chain::keysinterface::{InMemorySigner, KeysInterface};
 use lightning::util::logger::Logger;
 
 use crate::util::byte_utils;
@@ -185,7 +185,7 @@ impl MyKeysManager {
         channel_id: ChannelId,
         channel_nonce: &[u8],
         channel_value_sat: u64,
-    ) -> InMemoryChannelKeys {
+    ) -> InMemorySigner {
         match self.key_derivation_style {
             KeyDerivationStyle::Native => {
                 self.get_channel_keys_with_nonce_native(channel_id, channel_nonce, channel_value_sat)
@@ -201,7 +201,7 @@ impl MyKeysManager {
         channel_id: ChannelId,
         channel_nonce: &[u8],
         channel_value_sat: u64,
-    ) -> InMemoryChannelKeys {
+    ) -> InMemorySigner {
         let hkdf_info = "c-lightning";
         let channel_seed = hkdf_sha256(
             &self.channel_seed_base,
@@ -223,7 +223,7 @@ impl MyKeysManager {
         ndx += 32;
         let commitment_seed = keys_buf[ndx..ndx + 32].try_into().unwrap();
         let secp_ctx = Secp256k1::signing_only();
-        InMemoryChannelKeys::new(
+        InMemorySigner::new(
             &secp_ctx,
             funding_key,
             revocation_base_key,
@@ -241,7 +241,7 @@ impl MyKeysManager {
         channel_id: ChannelId,
         channel_nonce: &[u8],
         channel_value_sat: u64,
-    ) -> InMemoryChannelKeys {
+    ) -> InMemorySigner {
         // FIXME - How does lnd generate it's commitment seed? This is a stripped
         // native (really c-lightning) version.
         //
@@ -280,7 +280,7 @@ impl MyKeysManager {
         let (_, delayed_payment_base_key) =
             derive_key_lnd(&secp_ctx, self.network, self.master_key, 4, basepoint_index);
 
-        InMemoryChannelKeys::new(
+        InMemorySigner::new(
             &secp_ctx,
             funding_key,
             revocation_base_key,
@@ -311,7 +311,7 @@ impl MyKeysManager {
 }
 
 impl KeysInterface for MyKeysManager {
-    type ChanKeySigner = InMemoryChannelKeys;
+    type Signer = InMemorySigner;
 
     fn get_node_secret(&self) -> SecretKey {
         self.node_secret.clone()
@@ -326,7 +326,7 @@ impl KeysInterface for MyKeysManager {
     }
 
     // BEGIN NOT TESTED
-    fn get_channel_keys(&self, _inbound: bool, _channel_value_sat: u64) -> InMemoryChannelKeys {
+    fn get_channel_signer(&self, _inbound: bool, _channel_value_sat: u64) -> InMemorySigner {
         unimplemented!();
     }
 
@@ -334,7 +334,7 @@ impl KeysInterface for MyKeysManager {
         unimplemented!()
     }
 
-    fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::ChanKeySigner, DecodeError> {
+    fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::Signer, DecodeError> {
         unimplemented!()
     }
     // END NOT TESTED
@@ -345,7 +345,7 @@ mod tests {
     use crate::util::test_utils::TestLogger;
 
     use super::*;
-    use lightning::chain::keysinterface::ChannelKeys;
+    use lightning::chain::keysinterface::Sign;
 
     fn logger() -> Arc<Logger> {
         Arc::new(TestLogger::with_id("server".to_owned()))
@@ -371,7 +371,7 @@ mod tests {
         Ok(())
     }
 
-    fn make_test_keys(manager: MyKeysManager) -> InMemoryChannelKeys {
+    fn make_test_keys(manager: MyKeysManager) -> InMemorySigner {
         let channel_id = ChannelId([0u8; 32]);
         let mut channel_nonce = [0u8; 32];
         channel_nonce[0] = 1u8;

@@ -13,7 +13,7 @@ use bitcoin::{Network, OutPoint, Script, SigHashType};
 use bitcoin_hashes::core::fmt::{Error, Formatter};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
-use lightning::chain::keysinterface::{ChannelKeys, InMemoryChannelKeys, KeysInterface};
+use lightning::chain::keysinterface::{Sign, InMemorySigner, KeysInterface};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction,
     CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
@@ -34,7 +34,7 @@ use crate::tx::tx::{
     CommitmentInfo, CommitmentInfo2, HTLCInfo2,
 };
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
-use crate::util::enforcing_trait_impls::EnforcingChannelKeys;
+use crate::util::enforcing_trait_impls::EnforcingSigner;
 use crate::util::invoice_utils;
 use crate::util::status::Status;
 use lightning::chain;
@@ -125,7 +125,7 @@ pub struct ChannelStub {
     pub nonce: Vec<u8>,
     pub logger: Arc<Logger>,
     pub secp_ctx: Secp256k1<All>,
-    pub keys: EnforcingChannelKeys, // Incomplete, channel_value_sat is placeholder.
+    pub keys: EnforcingSigner, // Incomplete, channel_value_sat is placeholder.
 }
 
 // After ReadyChannel
@@ -134,7 +134,7 @@ pub struct Channel {
     pub nonce: Vec<u8>,
     pub logger: Arc<Logger>,
     pub secp_ctx: Secp256k1<All>,
-    pub keys: EnforcingChannelKeys,
+    pub keys: EnforcingSigner,
     pub setup: ChannelSetup,
 }
 
@@ -224,10 +224,10 @@ impl ChannelStub {
     pub(crate) fn channel_keys_with_channel_value(
         &self,
         channel_value_sat: u64,
-    ) -> InMemoryChannelKeys {
+    ) -> InMemorySigner {
         let secp_ctx = Secp256k1::signing_only();
         let keys0 = self.keys.inner();
-        InMemoryChannelKeys::new(
+        InMemorySigner::new(
             &secp_ctx,
             keys0.funding_key,
             keys0.revocation_base_key,
@@ -854,7 +854,7 @@ impl Node {
             nonce: channel_nonce0,
             logger: Arc::clone(&self.logger),
             secp_ctx: Secp256k1::new(),
-            keys: EnforcingChannelKeys::new(inmem_keys),
+            keys: EnforcingSigner::new(inmem_keys),
         };
         channels.insert(channel_id, Arc::new(Mutex::new(ChannelSlot::Stub(stub))));
         Ok(())
@@ -899,7 +899,7 @@ impl Node {
                 nonce: stub.nonce.clone(),
                 logger: Arc::clone(&stub.logger),
                 secp_ctx: stub.secp_ctx.clone(),
-                keys: EnforcingChannelKeys::new(inmem_keys),
+                keys: EnforcingSigner::new(inmem_keys),
                 setup,
             }
         };

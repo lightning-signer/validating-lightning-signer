@@ -30,10 +30,10 @@ clap = { version = "3.0.0-beta.2", optional = true }
 
 [dependencies.lightning]
 git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "2088f4bec3e3389c09b97576ad165ace39e8c324"
+rev = "94bb0c9128c2635ea08ec089f79fab04880dedd0"
 [dev-dependencies.lightning]
 git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "2088f4bec3e3389c09b97576ad165ace39e8c324"
+rev = "94bb0c9128c2635ea08ec089f79fab04880dedd0"
 features = ["unsafe_revoked_tx_signing", "_test_utils"]
 
 [dev-dependencies.bitcoin]

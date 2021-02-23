@@ -47,8 +47,7 @@ pub fn create_node_cfgs_with_signer<'a>(
 
         let network = Testnet;
         let now = Duration::from_secs(genesis_block(network).header.time as u64);
-        let backing = keysinterface::KeysManager::new(&seed.clone(), network,
-                                                      now.as_secs(), now.subsec_nanos());
+        let backing = keysinterface::KeysManager::new(&seed.clone(), now.as_secs(), now.subsec_nanos());
         let keys_manager = LoopbackSignerKeysInterface {
             node_id,
             signer: Arc::clone(signer),
