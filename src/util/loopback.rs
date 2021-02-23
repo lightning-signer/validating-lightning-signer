@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::{Script, Transaction};
-use lightning::chain::keysinterface::{Sign, KeysInterface, KeysManager};
+use lightning::chain::keysinterface::{KeysInterface, KeysManager, Sign};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, HTLCOutputInCommitment,

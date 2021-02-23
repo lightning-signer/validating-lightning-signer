@@ -13,7 +13,7 @@ use bitcoin::{Network, OutPoint, Script, SigHashType};
 use bitcoin_hashes::core::fmt::{Error, Formatter};
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
-use lightning::chain::keysinterface::{Sign, InMemorySigner, KeysInterface};
+use lightning::chain::keysinterface::{InMemorySigner, KeysInterface, Sign};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction,
     CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
@@ -221,10 +221,7 @@ impl ChannelBase for Channel {
 }
 
 impl ChannelStub {
-    pub(crate) fn channel_keys_with_channel_value(
-        &self,
-        channel_value_sat: u64,
-    ) -> InMemorySigner {
+    pub(crate) fn channel_keys_with_channel_value(&self, channel_value_sat: u64) -> InMemorySigner {
         let secp_ctx = Secp256k1::signing_only();
         let keys0 = self.keys.inner();
         InMemorySigner::new(
@@ -846,9 +843,11 @@ impl Node {
             // END NOT TESTED
         }
         let channel_value_sat = 0; // Placeholder value, not known yet.
-        let inmem_keys = self
-            .keys_manager
-            .get_channel_keys_with_id(channel_id, channel_nonce0.as_slice(), channel_value_sat);
+        let inmem_keys = self.keys_manager.get_channel_keys_with_id(
+            channel_id,
+            channel_nonce0.as_slice(),
+            channel_value_sat,
+        );
         let stub = ChannelStub {
             node: Arc::clone(arc_self),
             nonce: channel_nonce0,
