@@ -5,7 +5,7 @@ use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::key::{PublicKey, SecretKey};
 use bitcoin::secp256k1::{Secp256k1, Signature};
-use chain::keysinterface::{Sign, InMemorySigner};
+use chain::keysinterface::{InMemorySigner, Sign};
 use lightning::chain;
 use lightning::ln;
 use lightning::ln::chan_utils::{
