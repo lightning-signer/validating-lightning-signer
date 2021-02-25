@@ -4,6 +4,24 @@ Please see the
 [Rust Lightning Signer Project Overview](https://gitlab.com/lightning-signer/docs/-/blob/master/README.md)
 for more information.
 
+# Starting the gRPC server
+
+The gRPC server is a reference implementation of a signer which listens for requests from the node and from the admin CLI over gRPC.
+
+It can be started via: `cargo run --bin server`
+
+# Using the admin CLI
+
+Assuming the server is running (see above), the admin CLI can be invoked as follows: `cargo run --bin client -- [ARGUMENTS]`.  For example, to get help, run `cargo run --bin client -- help`.
+
+Here is an example session:
+
+```shell
+node_id=$(cargo run --bin client -- node new)
+channel_id=$(cargo run --bin client -- channel new -n $node_id)
+cargo run --bin client -- channel list -n $node_id
+```
+
 ## Development Information
 
 ### Formatting Code
