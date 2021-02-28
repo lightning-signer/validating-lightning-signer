@@ -419,6 +419,9 @@ impl fmt::Debug for CommitmentInfo {
 // END NOT TESTED
 
 impl CommitmentInfo {
+    // FIXME - should the new_for_{holder,counterparty} wrappers move
+    // to Validator::make_info_for_{holder,counterparty}?
+
     pub fn new_for_holder() -> Self {
         CommitmentInfo::new(false)
     }
@@ -774,7 +777,6 @@ impl CommitmentInfo {
         Ok(())
     }
 
-    // This routine is only called on "remote" commitments.
     pub fn handle_output(
         &mut self,
         keys: &EnforcingSigner,
@@ -782,6 +784,10 @@ impl CommitmentInfo {
         out: &TxOut,
         script_bytes: &[u8],
     ) -> Result<(), ValidationError> {
+        // FIXME - This routine is only called on "remote" commitments. Remove this
+        // assert when that is not the case ...
+        assert!(self.is_counterparty_broadcaster);
+
         if out.script_pubkey.is_v0_p2wpkh() {
             // FIXME - Does this need it's own policy tag?
             if setup.option_anchor_outputs() {
@@ -933,7 +939,7 @@ mod tests {
 
     #[test]
     fn handle_output_unknown_output_type_test() {
-        let mut info = CommitmentInfo::new_for_holder();
+        let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
         let setup = make_reasonable_test_channel_setup();
         let out = TxOut {
@@ -951,7 +957,7 @@ mod tests {
 
     #[test]
     fn handle_output_unknown_p2wsh_script_test() {
-        let mut info = CommitmentInfo::new_for_holder();
+        let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
         let setup = make_reasonable_test_channel_setup();
         let script = Builder::new()
@@ -971,7 +977,7 @@ mod tests {
 
     #[test]
     fn handle_output_p2wpkh_to_countersigner_with_anchors_test() {
-        let mut info = CommitmentInfo::new_for_holder();
+        let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
         let mut setup = make_reasonable_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
@@ -992,7 +998,7 @@ mod tests {
 
     #[test]
     fn handle_output_more_than_one_to_countersigner_test() {
-        let mut info = CommitmentInfo::new_for_holder();
+        let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
         let setup = make_reasonable_test_channel_setup();
         let pubkey = bitcoin::PublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
@@ -1015,7 +1021,7 @@ mod tests {
 
     #[test]
     fn handle_output_missing_witscript_test() {
-        let mut info = CommitmentInfo::new_for_holder();
+        let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
         let setup = make_reasonable_test_channel_setup();
         let script = Builder::new().into_script();
@@ -1033,7 +1039,7 @@ mod tests {
 
     #[test]
     fn handle_output_script_pubkey_doesnt_match_test() {
-        let mut info = CommitmentInfo::new_for_holder();
+        let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
         let setup = make_reasonable_test_channel_setup();
         let script0 = Builder::new().into_script();

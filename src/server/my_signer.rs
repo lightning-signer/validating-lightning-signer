@@ -2135,17 +2135,7 @@ mod tests {
             sequence: 0,
             witness: vec![],
         };
-        let mut tx = bitcoin::Transaction {
-            version: 2,
-            lock_time: 0,
-            input: vec![input1, input2],
-            output: vec![TxOut {
-                script_pubkey: Builder::new()
-                    .push_opcode(opcodes::all::OP_RETURN)
-                    .into_script(),
-                value: 300,
-            }],
-        };
+        let mut tx = make_test_funding_tx(vec![input1, input2], 300);
         let spendtypes = vec![SpendType::P2wpkh, SpendType::P2wpkh];
         let uniclosekeys = vec![None, None];
 
@@ -2211,17 +2201,7 @@ mod tests {
             witness: vec![],
         };
 
-        let mut tx = bitcoin::Transaction {
-            version: 2,
-            lock_time: 0,
-            input: vec![input1],
-            output: vec![TxOut {
-                script_pubkey: Builder::new()
-                    .push_opcode(opcodes::all::OP_RETURN)
-                    .into_script(),
-                value: 100,
-            }],
-        };
+        let mut tx = make_test_funding_tx(vec![input1], 100);
         let spendtypes = vec![SpendType::P2wpkh];
         let uniclosekeys = vec![None];
 
@@ -2281,17 +2261,7 @@ mod tests {
             witness: vec![],
         };
 
-        let mut tx = bitcoin::Transaction {
-            version: 2,
-            lock_time: 0,
-            input: vec![input1],
-            output: vec![TxOut {
-                script_pubkey: Builder::new()
-                    .push_opcode(opcodes::all::OP_RETURN)
-                    .into_script(),
-                value: 100,
-            }],
-        };
+        let mut tx = make_test_funding_tx(vec![input1], 200);
         let spendtypes = vec![SpendType::P2wpkh];
 
         let uniclosekey = SecretKey::from_slice(
@@ -2354,17 +2324,7 @@ mod tests {
             witness: vec![],
         };
 
-        let mut tx = bitcoin::Transaction {
-            version: 2,
-            lock_time: 0,
-            input: vec![input1],
-            output: vec![TxOut {
-                script_pubkey: Builder::new()
-                    .push_opcode(opcodes::all::OP_RETURN)
-                    .into_script(),
-                value: 100,
-            }],
-        };
+        let mut tx = make_test_funding_tx(vec![input1], 100);
         let spendtypes = vec![SpendType::P2pkh];
         let uniclosekeys = vec![None];
 
@@ -2424,17 +2384,7 @@ mod tests {
             witness: vec![],
         };
 
-        let mut tx = bitcoin::Transaction {
-            version: 2,
-            lock_time: 0,
-            input: vec![input1],
-            output: vec![TxOut {
-                script_pubkey: Builder::new()
-                    .push_opcode(opcodes::all::OP_RETURN)
-                    .into_script(),
-                value: 100,
-            }],
-        };
+        let mut tx = make_test_funding_tx(vec![input1], 100);
         let spendtypes = vec![SpendType::P2shP2wpkh];
         let uniclosekeys = vec![None];
 
@@ -2535,17 +2485,7 @@ mod tests {
             }, // NOT TESTED
         ];
 
-        let tx = bitcoin::Transaction {
-            version: 2,
-            lock_time: 0,
-            input: inputs,
-            output: vec![TxOut {
-                script_pubkey: Builder::new()
-                    .push_opcode(opcodes::all::OP_RETURN)
-                    .into_script(),
-                value: 100,
-            }],
-        };
+        let tx = make_test_funding_tx(inputs, 100);
         let indices = vec![vec![0u32], vec![1u32], vec![2u32]];
         let values_sat = vec![100u64, 101u64, 102u64];
         let spendtypes = vec![
@@ -3041,7 +2981,7 @@ mod tests {
 
     #[test]
     // TODO - same as sign_mutual_close_tx_test
-    fn sign_commitment_tx_test() {
+    fn sign_holder_commitment_tx_test() {
         let signer = MySigner::new();
         let setup = make_static_test_channel_setup();
         let (node_id, channel_id) =

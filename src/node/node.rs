@@ -31,7 +31,7 @@ use crate::server::my_keys_manager::{
 };
 use crate::tx::tx::{
     build_commitment_tx, get_commitment_transaction_number_obscure_factor, sign_commitment,
-    CommitmentInfo, CommitmentInfo2, HTLCInfo2,
+    CommitmentInfo2, HTLCInfo2,
 };
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
 use crate::util::enforcing_trait_impls::EnforcingSigner;
@@ -336,31 +336,31 @@ impl Channel {
             // END NOT TESTED
         }
 
-        // The CommitmentInfo will be used to check policy
-        // assertions.
-        let mut info = CommitmentInfo::new_for_counterparty();
-        for ind in 0..tx.output.len() {
-            log_debug!(self, "pkscript[{}] {:?}", ind, tx.output[ind].script_pubkey);
-            info.handle_output(
-                &self.keys,
-                &self.setup,
-                &tx.output[ind],
-                output_witscripts[ind].as_slice(),
-            )
-            .map_err(|ve| self.invalid_argument(format!("output[{}]: {}", ind, ve)))?;
-        }
-
-        // Our key (remote from the point of view of the tx)
-        let counterparty_payment_pubkey =
-            self.derive_counterparty_payment_pubkey(remote_per_commitment_point)?;
         let validator = self
             .node
             .validator_factory
             .make_validator_phase1(self, channel_value_sat);
-        // since we didn't have the value at the real open, validate it now
+
+        // Since we didn't have the value at the real open, validate it now.
         validator
             .validate_channel_open()
             .map_err(|ve| self.validation_error(ve))?;
+
+        // The CommitmentInfo will be used to check policy assertions.
+        let is_counterparty = true;
+        let info = validator
+            .make_info(
+                &self.keys,
+                &self.setup,
+                is_counterparty,
+                tx,
+                output_witscripts,
+            )
+            .map_err(|err| self.validation_error(err))?;
+
+        // Our key (remote from the point of view of the tx).
+        let counterparty_payment_pubkey =
+            self.derive_counterparty_payment_pubkey(remote_per_commitment_point)?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let state = ValidatorState { current_height: 0 };
