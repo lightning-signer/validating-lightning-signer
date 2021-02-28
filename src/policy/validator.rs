@@ -3,11 +3,20 @@ use bitcoin::{self, Network};
 
 use crate::node::node::{Channel, ChannelSetup};
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
+use crate::util::enforcing_trait_impls::EnforcingSigner;
 
-use super::error::ValidationError;
-use super::error::ValidationError::{Policy, TransactionFormat};
+use super::error::ValidationError::{self, Policy, TransactionFormat};
 
 pub trait Validator {
+    fn make_info(
+        &self,
+        keys: &EnforcingSigner,
+        setup: &ChannelSetup,
+        is_counterparty: bool,
+        tx: &bitcoin::Transaction,
+        output_witscripts: &Vec<Vec<u8>>,
+    ) -> Result<CommitmentInfo, ValidationError>;
+
     /// Phase 1 remote tx validation
     fn validate_remote_tx_phase1(
         &self,
@@ -96,51 +105,6 @@ pub struct SimpleValidator {
     pub channel_value_sat: u64,
 }
 
-// FIXME - Should this next comment be removed because duplicative?
-//
-/// A validator
-///
-/// Some of the rules will be implicitly enforced in phase 2, where the signer constructs the
-/// transaction rather than receiving it from the caller.  Such rules are marked as
-/// "by construction".
-///
-/// Rules:
-/// - Input - the single input must spend the funding output
-/// -- by construction
-/// - Value - if we are the funder, the value to us of the initial commitment transaction
-/// should be equal to our funding value
-/// - Format - version, locktime and nsequence must be as specified in BOLT 3
-/// -- by construction
-/// - Output - the outputs must be at most one to-local, at most one to-remote and HTLCs
-/// -- by construction
-/// - Funded - if this is not the first commitment, the funding UTXO must be active on chain
-/// with enough depth
-/// - HTLC in-flight value - the inflight value should not be too large
-/// -- done via max_htlc_value_sat
-/// - Fee - must be in range
-/// -- done via epsilon_sat
-/// - Number of HTLC outputs - must not be too large
-/// -- done via max_htlcs
-/// - HTLC routing - each offered HTLC must be balanced via a received HTLC
-/// - HTLC receive channel validity - the funding UTXO of the receive channel must be active on chain
-/// with enough depth
-/// - Our revocation pubkey - must be correct
-/// -- by construction
-/// - To self delay and HTLC delay - must be within range
-/// -- done via min_delay, max_delay
-/// - Our payment pubkey - must be correct
-/// -- by construction
-/// - Our delayed payment pubkey - must be correct
-/// -- by construction
-/// - Our HTLC pubkey - must be correct
-/// -- by construction
-/// - Offered payment hash - must be related to received HTLC payment hash
-/// - Trimming - outputs are trimmed iff under the dust limit
-/// -- done via epsilon_sat
-/// - Revocation - the previous commitment transaction was properly revoked by peer disclosing secret.
-/// - Note that this requires unbounded storage.
-/// - No breach - if signing a local commitment transaction, we must not have revoked it
-
 impl SimpleValidator {
     fn validate_delay(&self, name: &str, delay: u32) -> Result<(), ValidationError> {
         let policy = &self.policy;
@@ -186,7 +150,6 @@ impl SimpleValidator {
 // sign_commitment_tx has some, missing these
 // TODO - policy-v1-commitment-input-single
 // TODO - policy-v1-commitment-input-match-funding
-// TODO - policy-v1-commitment-version
 // TODO - policy-v1-commitment-locktime
 // TODO - policy-v1-commitment-nsequence
 // TODO - policy-v2-commitment-initial-funding-value
@@ -233,6 +196,32 @@ impl SimpleValidator {
 // TODO - policy-v3-routing-deltas-only-htlc
 
 impl Validator for SimpleValidator {
+    fn make_info(
+        &self,
+        keys: &EnforcingSigner,
+        setup: &ChannelSetup,
+        is_counterparty: bool,
+        tx: &bitcoin::Transaction,
+        output_witscripts: &Vec<Vec<u8>>,
+    ) -> Result<CommitmentInfo, ValidationError> {
+        // policy-v1-commitment-version
+        if tx.version != 2 {
+            return Err(Policy(format!("bad commitment version: {}", tx.version)));
+        }
+
+        let mut info = CommitmentInfo::new(is_counterparty);
+        for ind in 0..tx.output.len() {
+            info.handle_output(
+                keys,
+                setup,
+                &tx.output[ind],
+                output_witscripts[ind].as_slice(),
+            )
+            .map_err(|ve| Policy(format!("tx output[{}]: {}", ind, ve)))?;
+        }
+        Ok(info)
+    }
+
     fn validate_remote_tx_phase1(
         &self,
         setup: &ChannelSetup,
@@ -413,7 +402,7 @@ impl Validator for SimpleValidator {
         Ok(())
     }
 
-    // policy-v3-velocity-funding
+    // TODO - policy-v3-velocity-funding
     // TODO - this implementation is incomplete
     fn validate_channel_open(&self) -> Result<(), ValidationError> {
         if self.channel_value_sat > self.policy.max_channel_size_sat {
@@ -454,16 +443,31 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::TxIn;
+
     use lightning::ln::channelmanager::PaymentHash;
 
     use crate::node::node::CommitmentType;
     use crate::tx::tx::{HTLCInfo, HTLCInfo2, ANCHOR_SAT};
     use crate::util::crypto_utils::payload_for_p2wpkh;
     use crate::util::test_utils::{
-        make_reasonable_test_channel_setup, make_test_channel_setup, make_test_pubkey,
+        make_reasonable_test_channel_setup, make_test_channel_keys, make_test_channel_setup,
+        make_test_commitment_tx, make_test_pubkey,
     };
 
     use super::*;
+
+    macro_rules! assert_policy_error {
+        ($res: expr, $expected: expr) => {
+            assert_eq!($res.unwrap_err(), Policy($expected.to_string()));
+        };
+    }
+
+    macro_rules! assert_txfmt_error {
+        ($res: expr, $expected: expr) => {
+            assert_eq!($res.unwrap_err(), TransactionFormat($expected.to_string()));
+        };
+    }
 
     fn make_test_validator(channel_value_sat: u64) -> SimpleValidator {
         let policy = SimplePolicy {
@@ -480,6 +484,36 @@ mod tests {
             policy,
             channel_value_sat,
         }
+    }
+
+    #[test]
+    fn make_info_test() {
+        let validator = make_test_validator(100_000_000);
+        let info = validator
+            .make_info(
+                &make_test_channel_keys(),
+                &make_test_channel_setup(),
+                true,
+                &make_test_commitment_tx(),
+                &vec![vec![]],
+            )
+            .unwrap();
+        assert_eq!(info.is_counterparty_broadcaster, true);
+    }
+
+    #[test]
+    fn validate_policy_commitment_version() {
+        let validator = make_test_validator(100_000_000);
+        let mut tx = make_test_commitment_tx();
+        tx.version = 1;
+        let res = validator.make_info(
+            &make_test_channel_keys(),
+            &make_test_channel_setup(),
+            true,
+            &tx,
+            &vec![vec![]],
+        ); // NOT TESTED
+        assert_policy_error!(res, "bad commitment version: 1");
     }
 
     #[test]
@@ -592,18 +626,6 @@ mod tests {
             payment_hash: PaymentHash([0; 32]),
             cltv_expiry: expiry,
         }
-    }
-
-    macro_rules! assert_policy_error {
-        ($res: expr, $expected: expr) => {
-            assert_eq!($res.unwrap_err(), Policy($expected.to_string()));
-        };
-    }
-
-    macro_rules! assert_txfmt_error {
-        ($res: expr, $expected: expr) => {
-            assert_eq!($res.unwrap_err(), TransactionFormat($expected.to_string()));
-        };
     }
 
     #[test]

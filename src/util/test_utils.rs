@@ -10,7 +10,7 @@ use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::Hash;
 use bitcoin::network::constants::Network;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
-use bitcoin::{OutPoint as BitcoinOutPoint, TxOut};
+use bitcoin::{OutPoint as BitcoinOutPoint, TxIn, TxOut};
 use chain::chaininterface;
 use lightning::chain;
 use lightning::chain::channelmonitor::MonitorEvent;
@@ -28,6 +28,7 @@ use lightning::util::test_utils;
 use crate::node::node::{ChannelSetup, CommitmentType, NodeConfig};
 use crate::server::my_keys_manager::KeyDerivationStyle;
 use crate::tx::tx::sort_outputs;
+use crate::util::crypto_utils::payload_for_p2wpkh;
 use crate::util::enforcing_trait_impls::EnforcingSigner;
 use crate::util::loopback::LoopbackChannelSigner;
 
@@ -222,8 +223,6 @@ pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> Public
     )
 }
 
-// BEGIN NOT TESTED
-
 pub fn make_test_bitcoin_key(i: u8) -> (bitcoin::PublicKey, bitcoin::PrivateKey) {
     let secp_ctx = Secp256k1::signing_only();
     let secret_key = SecretKey::from_slice(&[i; 32]).unwrap();
@@ -238,8 +237,6 @@ pub fn make_test_bitcoin_key(i: u8) -> (bitcoin::PublicKey, bitcoin::PrivateKey)
 pub fn make_test_bitcoin_pubkey(i: u8) -> bitcoin::PublicKey {
     make_test_bitcoin_key(i).0
 }
-
-// END NOT TESTED
 
 pub fn make_test_key(i: u8) -> (PublicKey, SecretKey) {
     let secp_ctx = Secp256k1::signing_only();
@@ -352,6 +349,41 @@ pub fn make_test_channel_keys() -> EnforcingSigner {
         }),
     });
     EnforcingSigner::new(inmemkeys)
+}
+
+pub fn make_test_funding_tx(inputs: Vec<TxIn>, value: u64) -> bitcoin::Transaction {
+    bitcoin::Transaction {
+        version: 2,
+        lock_time: 0,
+        input: inputs,
+        output: vec![TxOut {
+            script_pubkey: Builder::new()
+                .push_opcode(opcodes::all::OP_RETURN)
+                .into_script(),
+            value,
+        }],
+    }
+}
+
+pub fn make_test_commitment_tx() -> bitcoin::Transaction {
+    let input = TxIn {
+        previous_output: BitcoinOutPoint {
+            txid: Default::default(),
+            vout: 0,
+        },
+        script_sig: Script::new(),
+        sequence: 0,
+        witness: vec![],
+    };
+    bitcoin::Transaction {
+        version: 2,
+        lock_time: 0,
+        input: vec![input],
+        output: vec![TxOut {
+            script_pubkey: payload_for_p2wpkh(&make_test_bitcoin_pubkey(1).key).script_pubkey(),
+            value: 300,
+        }],
+    }
 }
 
 pub const TEST_NODE_CONFIG: NodeConfig = NodeConfig {
