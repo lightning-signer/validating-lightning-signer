@@ -25,16 +25,30 @@ use std::cmp;
 #[derive(Clone)]
 pub struct EnforcingSigner {
     inner: InMemorySigner,
-    last_commitment_number: Arc<Mutex<Option<u64>>>,
+    state: Arc<Mutex<EnforcementState>>,
 }
 // END NOT TESTED
 
+#[derive(Clone)]
+pub struct EnforcementState {
+    pub last_commitment_number: Option<u64>
+}
+
 impl EnforcingSigner {
     pub fn new(inner: InMemorySigner) -> Self {
+        let state = EnforcementState { last_commitment_number: None };
+        EnforcingSigner::new_with_state(inner, state)
+    }
+
+    pub fn new_with_state(inner: InMemorySigner, state: EnforcementState) -> EnforcingSigner {
         Self {
             inner,
-            last_commitment_number: Arc::new(Mutex::new(None)),
+            state: Arc::new(Mutex::new(state)),
         }
+    }
+
+    pub fn enforcement_state(&self) -> EnforcementState {
+        self.state.lock().unwrap().clone()
     }
 
     pub fn counterparty_pubkeys(&self) -> &ChannelPublicKeys {
@@ -43,6 +57,10 @@ impl EnforcingSigner {
 
     pub fn inner(&self) -> InMemorySigner {
         self.inner.clone()
+    }
+
+    pub fn last_commitment_number(&self) -> Option<u64> {
+        self.state.lock().unwrap().last_commitment_number
     }
 }
 
@@ -126,7 +144,8 @@ impl Sign for EnforcingSigner {
         // FIXME bypass while integrating with c-lightning
         // self.check_keys(secp_ctx, keys);
         let commitment_number = commitment_tx.commitment_number();
-        let mut last_commitment_number = self.last_commitment_number.lock().unwrap();
+        let mut state = self.state.lock().unwrap();
+        let last_commitment_number = &mut state.last_commitment_number;
         assert!(
             commitment_number == commitment_number || commitment_number - 1 == commitment_number,
             "{} doesn't come after {}", // NOT TESTED
@@ -229,7 +248,7 @@ impl Sign for EnforcingSigner {
 impl Writeable for EnforcingSigner {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
         self.inner.write(writer)?;
-        let last = *self.last_commitment_number.lock().unwrap();
+        let last = self.state.lock().unwrap().last_commitment_number;
         last.write(writer)?;
         Ok(())
     }
@@ -240,9 +259,10 @@ impl Readable for EnforcingSigner {
     fn read<R: ::std::io::Read>(reader: &mut R) -> Result<Self, DecodeError> {
         let inner = Readable::read(reader)?;
         let last = Readable::read(reader)?;
+        let state = EnforcementState { last_commitment_number: last };
         Ok(EnforcingSigner {
             inner,
-            last_commitment_number: Arc::new(Mutex::new(last)),
+            state: Arc::new(Mutex::new(state)),
         })
     }
 }

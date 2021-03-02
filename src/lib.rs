@@ -18,3 +18,4 @@ pub mod node;
 pub mod policy;
 pub mod server;
 pub mod tx;
+pub mod persist;

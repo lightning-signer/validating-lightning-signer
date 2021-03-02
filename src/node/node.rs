@@ -34,7 +34,7 @@ use crate::tx::tx::{
     CommitmentInfo2, HTLCInfo2,
 };
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
-use crate::util::enforcing_trait_impls::EnforcingSigner;
+use crate::util::enforcing_trait_impls::{EnforcingSigner, EnforcementState};
 use crate::util::invoice_utils;
 use crate::util::status::Status;
 use lightning::chain;
@@ -120,15 +120,18 @@ impl ChannelSetup {
 }
 
 // After NewChannel, before ReadyChannel
+#[derive(Clone)]
 pub struct ChannelStub {
     pub node: Arc<Node>,
     pub nonce: Vec<u8>,
     pub logger: Arc<Logger>,
     pub secp_ctx: Secp256k1<All>,
     pub keys: EnforcingSigner, // Incomplete, channel_value_sat is placeholder.
+    pub id0: ChannelId,
 }
 
 // After ReadyChannel
+#[derive(Clone)]
 pub struct Channel {
     pub node: Arc<Node>,
     pub nonce: Vec<u8>,
@@ -136,6 +139,8 @@ pub struct Channel {
     pub secp_ctx: Secp256k1<All>,
     pub keys: EnforcingSigner,
     pub setup: ChannelSetup,
+    pub id0: ChannelId,
+    pub id: Option<ChannelId>,
 }
 
 pub enum ChannelSlot {
@@ -771,6 +776,7 @@ impl Channel {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct NodeConfig {
     pub key_derivation_style: KeyDerivationStyle,
 }
@@ -812,6 +818,11 @@ impl Node {
         }
     }
 
+    pub fn get_id(&self) -> PublicKey {
+        let secp_ctx = Secp256k1::signing_only();
+        PublicKey::from_secret_key(&secp_ctx, &self.keys_manager.get_node_secret())
+    }
+
     #[allow(dead_code)]
     pub(crate) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
@@ -832,14 +843,14 @@ impl Node {
         channel_id: ChannelId,
         channel_nonce0: Vec<u8>,
         arc_self: &Arc<Node>,
-    ) -> Result<(), Status> {
+    ) -> Result<Option<ChannelStub>, Status> {
         let mut channels = self.channels.lock().unwrap();
         if channels.contains_key(&channel_id) {
             // BEGIN NOT TESTED
             let msg = format!("channel already exists: {}", &channel_id);
             log_info!(self, "{}", &msg);
             // return Err(self.invalid_argument(&msg));
-            return Ok(());
+            return Ok(None);
             // END NOT TESTED
         }
         let channel_value_sat = 0; // Placeholder value, not known yet.
@@ -854,17 +865,87 @@ impl Node {
             logger: Arc::clone(&self.logger),
             secp_ctx: Secp256k1::new(),
             keys: EnforcingSigner::new(inmem_keys),
+            id0: channel_id,
         };
-        channels.insert(channel_id, Arc::new(Mutex::new(ChannelSlot::Stub(stub))));
-        Ok(())
+        // TODO this clone is expensive
+        channels.insert(channel_id, Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone()))));
+        Ok(Some(stub))
     }
 
+    pub fn restore_channel(
+        &self,
+        channel_id0: ChannelId,
+        channel_id: Option<ChannelId>,
+        nonce: Vec<u8>,
+        channel_value_sat: u64,
+        channel_setup: Option<ChannelSetup>,
+        enforcement_state: EnforcementState,
+        arc_self: &Arc<Node>,
+    ) -> Result<Arc<Mutex<ChannelSlot>>, ()> {
+        let mut channels = self.channels.lock().unwrap();
+        assert!(!channels.contains_key(&channel_id0));
+        let signer = self.keys_manager.get_channel_keys_with_id(
+            channel_id0,
+            nonce.as_slice(),
+            channel_value_sat,
+        );
+        let mut enforcing_signer = EnforcingSigner::new_with_state(signer, enforcement_state);
+
+        let slot = match channel_setup {
+            None => {
+                let stub = ChannelStub {
+                    node: Arc::clone(arc_self),
+                    nonce,
+                    logger: Arc::clone(&self.logger),
+                    secp_ctx: Secp256k1::new(),
+                    keys: enforcing_signer,
+                    id0: channel_id0
+                };
+                // TODO this clone is expensive
+                let slot = Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone())));
+                channels.insert(channel_id0, Arc::clone(&slot));
+                channel_id.map(|id| channels.insert(id, Arc::clone(&slot)));
+                slot
+            },
+            Some(setup) => {
+                let channel_transaction_parameters =
+                    Node::channel_setup_to_channel_transaction_parameters(&setup, enforcing_signer.inner().pubkeys());
+                enforcing_signer.ready_channel(&channel_transaction_parameters);
+                let channel = Channel {
+                    node: Arc::clone(arc_self),
+                    nonce,
+                    logger: Arc::clone(&self.logger),
+                    secp_ctx: Secp256k1::new(),
+                    keys: enforcing_signer,
+                    setup,
+                    id0: channel_id0,
+                    id: channel_id,
+                };
+                // TODO this clone is expensive
+                let slot = Arc::new(Mutex::new(ChannelSlot::Ready(channel.clone())));
+                channels.insert(channel_id0, Arc::clone(&slot));
+                channel_id.map(|id| channels.insert(id, Arc::clone(&slot)));
+                slot
+            }
+        };
+        Ok(slot)
+    }
+
+    /// Ready a new channel, making it available for use.
+    ///
+    /// This populates fields that are known later in the channel creation flow,
+    /// such as fields that are supplied by the counterparty and funding outpoint.
+    ///
+    /// * `channel_id0` - the original channel ID supplied to [`Node::new_channel`]
+    /// * `opt_channel_id` - the permanent channel ID
+    ///
+    /// After this call, the channel may be referred to by either ID.
     pub fn ready_channel(
         &self,
         channel_id0: ChannelId,
         opt_channel_id: Option<ChannelId>,
         setup: ChannelSetup,
-    ) -> Result<(), Status> {
+    ) -> Result<Channel, Status> {
         let chan = {
             let channels = self.channels.lock().unwrap();
             let arcobj = channels.get(&channel_id0).ok_or_else(|| {
@@ -878,20 +959,9 @@ impl Node {
                 }
             }?;
             let mut inmem_keys = stub.channel_keys_with_channel_value(setup.channel_value_sat);
-            let funding_outpoint = Some(chain::transaction::OutPoint {
-                txid: setup.funding_outpoint.txid,
-                index: setup.funding_outpoint.vout as u16,
-            });
-            let channel_transaction_parameters = ChannelTransactionParameters {
-                holder_pubkeys: inmem_keys.pubkeys().clone(),
-                holder_selected_contest_delay: setup.holder_to_self_delay,
-                is_outbound_from_holder: setup.is_outbound,
-                counterparty_parameters: Some(CounterpartyChannelTransactionParameters {
-                    pubkeys: setup.counterparty_points.clone(),
-                    selected_contest_delay: setup.counterparty_to_self_delay,
-                }),
-                funding_outpoint,
-            };
+            let holder_pubkeys = inmem_keys.pubkeys();
+            let channel_transaction_parameters =
+                Node::channel_setup_to_channel_transaction_parameters(&setup, holder_pubkeys);
             inmem_keys.ready_channel(&channel_transaction_parameters);
             Channel {
                 node: Arc::clone(&stub.node),
@@ -900,6 +970,8 @@ impl Node {
                 secp_ctx: stub.secp_ctx.clone(),
                 keys: EnforcingSigner::new(inmem_keys),
                 setup,
+                id0: channel_id0,
+                id: opt_channel_id,
             }
         };
         let validator = self.validator_factory.make_validator(&chan);
@@ -911,7 +983,8 @@ impl Node {
 
         // Wrap the ready channel with an arc so we can potentially
         // refer to it multiple times.
-        let arcobj = Arc::new(Mutex::new(ChannelSlot::Ready(chan)));
+        // TODO this clone is expensive
+        let arcobj = Arc::new(Mutex::new(ChannelSlot::Ready(chan.clone())));
 
         // If a permanent channel_id was provided use it, otherwise
         // continue with the initial channel_id0.
@@ -927,7 +1000,25 @@ impl Node {
             channels.insert(channel_id0, arcobj.clone());
         }
 
-        Ok(())
+        Ok(chan)
+    }
+
+    fn channel_setup_to_channel_transaction_parameters(setup: &ChannelSetup, holder_pubkeys: &ChannelPublicKeys) -> ChannelTransactionParameters {
+        let funding_outpoint = Some(chain::transaction::OutPoint {
+            txid: setup.funding_outpoint.txid,
+            index: setup.funding_outpoint.vout as u16,
+        });
+        let channel_transaction_parameters = ChannelTransactionParameters {
+            holder_pubkeys: holder_pubkeys.clone(),
+            holder_selected_contest_delay: setup.holder_to_self_delay,
+            is_outbound_from_holder: setup.is_outbound,
+            counterparty_parameters: Some(CounterpartyChannelTransactionParameters {
+                pubkeys: setup.counterparty_points.clone(),
+                selected_contest_delay: setup.counterparty_to_self_delay,
+            }),
+            funding_outpoint,
+        };
+        channel_transaction_parameters
     }
 
     /// TODO leaking secret

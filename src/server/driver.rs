@@ -26,6 +26,8 @@ use super::remotesigner;
 use crate::node::node;
 use crate::server::my_keys_manager::KeyDerivationStyle;
 use crate::util::status;
+use crate::persist::persist_json::KVJsonPersister;
+use crate::persist::Persist;
 
 // BEGIN NOT TESTED
 
@@ -219,9 +221,8 @@ impl Signer for MySigner {
                 self.warmstart_with_seed(node_config, hsm_secret)
             }
         }
-        .map_err(|e| e)?
-        .serialize()
-        .to_vec();
+            .map_err(|e| e)?
+            .serialize().to_vec();
         let reply = InitReply {
             node_id: Some(NodeId { data: node_id }),
         };
@@ -1306,10 +1307,16 @@ impl Signer for MySigner {
     }
 }
 
+const DEFAULT_DIR: &str = ".lightning-signer";
+
 #[tokio::main]
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse()?;
-    let signer = MySigner::new();
+
+    let path = format!("{}/{}", DEFAULT_DIR, "data");
+    let persister: Box<dyn Persist> = Box::new(KVJsonPersister::new(path.as_str()));
+    let signer = MySigner::new_with_persister(persister);
+    println!("Starting");
 
     Server::builder()
         .add_service(SignerServer::new(signer))
