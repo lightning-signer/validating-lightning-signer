@@ -884,8 +884,8 @@ impl Node {
             });
             let channel_transaction_parameters = ChannelTransactionParameters {
                 holder_pubkeys: inmem_keys.pubkeys().clone(),
-                holder_selected_contest_delay: setup.counterparty_to_self_delay,
-                is_outbound_from_holder: false,
+                holder_selected_contest_delay: setup.holder_to_self_delay,
+                is_outbound_from_holder: setup.is_outbound,
                 counterparty_parameters: Some(CounterpartyChannelTransactionParameters {
                     pubkeys: setup.counterparty_points.clone(),
                     selected_contest_delay: setup.counterparty_to_self_delay,

@@ -1086,6 +1086,20 @@ mod tests {
     }
 
     #[test]
+    fn ready_channel_test() {
+        let signer = MySigner::new();
+        let (node_id, channel_id) =
+            init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        signer.with_ready_channel(&node_id, &channel_id, |c| {
+            let signer = &c.keys.inner();
+            let params = signer.get_channel_parameters();
+            assert!(params.is_outbound_from_holder);
+            assert_eq!(params.holder_selected_contest_delay, 6);
+            Ok(())
+        }).unwrap();
+    }
+
+    #[test]
     fn ready_channel_not_exist_test() {
         let signer = MySigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
