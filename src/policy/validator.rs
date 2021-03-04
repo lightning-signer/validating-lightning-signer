@@ -443,8 +443,6 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::TxIn;
-
     use lightning::ln::channelmanager::PaymentHash;
 
     use crate::node::node::CommitmentType;
