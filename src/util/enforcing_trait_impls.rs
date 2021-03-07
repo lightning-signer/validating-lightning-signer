@@ -145,15 +145,19 @@ impl Sign for EnforcingSigner {
         // self.check_keys(secp_ctx, keys);
         let commitment_number = commitment_tx.commitment_number();
         let mut state = self.state.lock().unwrap();
-        let last_commitment_number = &mut state.last_commitment_number;
-        assert!(
-            commitment_number == commitment_number || commitment_number - 1 == commitment_number,
-            "{} doesn't come after {}", // NOT TESTED
-            commitment_number,
-            commitment_number
-        );
+        let last_commitment_number = state.last_commitment_number;
+        if let Some(last) = last_commitment_number {
+            assert!(
+                last == commitment_number || last - 1 == commitment_number,
+                "{} doesn't come after {} (backwards counting)", // NOT TESTED
+                commitment_number,
+                last
+            );
+            state.last_commitment_number = Some(cmp::min(last, commitment_number));
+        } else {
+            state.last_commitment_number = Some(commitment_number);
+        }
 
-        *last_commitment_number = Some(cmp::min(commitment_number, commitment_number));
         Ok(self
             .inner
             .sign_counterparty_commitment(commitment_tx, secp_ctx)
