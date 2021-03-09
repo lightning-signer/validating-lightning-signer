@@ -19,6 +19,8 @@ pub trait Persist: Sync+Send {
     fn get_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<model::ChannelEntry, ()>;
     fn get_node_channels(&self, node_id: &PublicKey) -> Vec<(ChannelId, model::ChannelEntry)>;
     fn get_nodes(&self) -> Vec<(PublicKey, model::NodeEntry)>;
+    /// Clears the database.  Not for production use.
+    fn clear_database(&self);
 }
 
 pub struct DummyPersister;
@@ -46,6 +48,9 @@ impl Persist for DummyPersister {
 
     fn get_nodes(&self) -> Vec<(PublicKey, NodeEntry)> {
         Vec::new()
+    }
+
+    fn clear_database(&self) {
     }
 }
 

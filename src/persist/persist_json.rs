@@ -12,7 +12,7 @@ pub struct KVJsonPersister<'a> {
     pub channel_bucket: Bucket<'a, NodeChannelId, Json<ChannelEntry>>,
 }
 
-impl<'a> KVJsonPersister<'a> {
+impl KVJsonPersister<'_> {
     pub fn new(path: &str) -> Self {
         let cfg = Config::new(path);
         let store = Store::new(cfg).expect("create store");
@@ -26,11 +26,6 @@ impl<'a> KVJsonPersister<'a> {
             node_bucket,
             channel_bucket
         }
-    }
-
-    pub fn clear(&self) {
-        self.channel_bucket.clear().unwrap();
-        self.node_bucket.clear().unwrap();
     }
 }
 
@@ -116,6 +111,11 @@ impl<'a> Persist for KVJsonPersister<'a> {
         }
         res
     }
+
+    fn clear_database(&self) {
+        self.channel_bucket.clear().unwrap();
+        self.node_bucket.clear().unwrap();
+    }
 }
 
 #[cfg(test)]
@@ -142,7 +142,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         let persister = KVJsonPersister::new(path_str);
-        persister.clear();
+        persister.clear_database();
         (persister, dir, path_str.to_string())
     }
 

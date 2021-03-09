@@ -12,7 +12,7 @@ use lightning_signer::persist::persist_json::KVJsonPersister;
 
 pub fn main() {
     let persister = KVJsonPersister::new("/tmp/signer.kv");
-    persister.clear();
+    persister.clear_database();
     let channel_nonce = "nonce0".as_bytes().to_vec();
     let channel_id = channel_nonce_to_id(&channel_nonce);
     let channel_nonce1 = "nonce1".as_bytes().to_vec();
