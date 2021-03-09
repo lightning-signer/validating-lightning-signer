@@ -216,7 +216,8 @@ message InitRequest {
   
   ChainParams chainparams = 2;
 
-  // Developer field: Flush the node state (support for integration tests).
+  // Developer field: flush the node state if exists (support for integration tests).
+  // This will cause an error if the server was not started with --test-mode and the node exists.
   bool coldstart = 3;
 
   // Developer field: set the HSM secret rather than generate it on

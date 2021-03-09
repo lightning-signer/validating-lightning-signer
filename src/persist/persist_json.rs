@@ -31,13 +31,23 @@ impl KVJsonPersister<'_> {
 
 impl<'a> Persist for KVJsonPersister<'a> {
     fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8], network: Network) {
+        let key = node_id.serialize().to_vec();
+        assert!(!self.node_bucket.contains(key.clone()).unwrap());
         let entry = NodeEntry {
             seed: seed.to_vec(),
             key_derivation_style: config.key_derivation_style as u8,
             network: network.to_string(),
         };
-        self.node_bucket.set(node_id.serialize().to_vec(), Json(entry)).expect("insert node");
+        self.node_bucket.set(key, Json(entry)).expect("insert node");
         self.node_bucket.flush().expect("flush");
+    }
+
+    fn delete_node(&self, node_id: &PublicKey) {
+        for item_res in self.channel_bucket.iter_prefix(NodeChannelId::new_prefix(node_id)) {
+            let id : NodeChannelId = item_res.unwrap().key().unwrap();
+            self.channel_bucket.remove(id).unwrap();
+        }
+        self.node_bucket.remove(node_id.serialize().to_vec()).unwrap();
     }
 
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()> {

@@ -62,6 +62,7 @@ pub struct MySigner {
     pub logger: Arc<Logger>,
     pub(crate) nodes: Mutex<HashMap<PublicKey, Arc<Node>>>,
     pub(crate) persister: Box<dyn Persist>,
+    pub(crate) test_mode: bool
 }
 
 impl MySigner {
@@ -83,12 +84,12 @@ impl MySigner {
     // END NOT TESTED
 
     pub fn new() -> MySigner {
-        let signer = MySigner::new_with_persister(Box::new(DummyPersister));
+        let signer = MySigner::new_with_persister(Box::new(DummyPersister), true);
         log_info!(signer, "new MySigner");
         signer
     }
 
-    pub(crate) fn new_with_persister(persister: Box<dyn Persist>) -> MySigner {
+    pub(crate) fn new_with_persister(persister: Box<dyn Persist>, test_mode: bool) -> MySigner {
         let test_logger: Arc<dyn Logger> = Arc::new(TestLogger::with_id("server".to_owned()));
         let mut nodes = HashMap::new();
         println!("Start restore");
@@ -112,6 +113,7 @@ impl MySigner {
             logger: test_logger,
             nodes: Mutex::new(nodes),
             persister,
+            test_mode
         }
     }
 
@@ -131,16 +133,25 @@ impl MySigner {
         node_id
     }
 
-    pub fn new_node_from_seed(&self, node_config: NodeConfig, seed: &[u8]) -> PublicKey {
+    pub fn new_node_from_seed(&self, node_config: NodeConfig, seed: &[u8]) -> Result<PublicKey, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let network = Network::Testnet;
 
         let node = Node::new(&self.logger, node_config, seed, network);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
+        if self.test_mode {
+            // In test mode we allow overwriting the node (thereby resetting all of its channels)
+            self.persister.delete_node(&node_id);
+        } else {
+            // In production, the node must not have existed
+            if nodes.contains_key(&node_id) {
+                return Err(self.invalid_argument("node_exists"))
+            }
+        }
         nodes.insert(node_id, Arc::new(node));
         self.persister.new_node(&node_id, &node_config, seed, network);
-        node_id
+        Ok(node_id)
     }
 
     pub fn new_channel(
@@ -1105,7 +1116,7 @@ mod tests {
     fn init_node(signer: &MySigner, node_config: NodeConfig, seedstr: &str) -> PublicKey {
         let mut seed = [0; 32];
         seed.copy_from_slice(hex::decode(seedstr).unwrap().as_slice());
-        signer.new_node_from_seed(node_config, &seed)
+        signer.new_node_from_seed(node_config, &seed).unwrap()
     }
 
     fn init_node_and_channel(
@@ -1456,7 +1467,7 @@ mod tests {
         assert_eq!(err.message(), "warmstart failed: no such node: 022d223620a359a47ff7f7ac447c85c46c923da53389221a0054c11c1e3ca31d59");
 
         // Then a "coldstart" from seed should succeed.
-        let node_id = signer.new_node_from_seed(TEST_NODE_CONFIG, &seed);
+        let node_id = signer.new_node_from_seed(TEST_NODE_CONFIG, &seed).unwrap();
 
         // Now a warmstart will work, should get the same node_id.
         let result = signer.warmstart_with_seed(TEST_NODE_CONFIG, &seed);

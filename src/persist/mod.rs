@@ -8,7 +8,10 @@ use secp256k1::PublicKey;
 use crate::persist::model::{ChannelEntry, NodeEntry};
 
 pub trait Persist: Sync+Send {
+    /// Create a new node
     fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8], network: Network);
+    /// Delete a node and all of its channels.  Used in test mode.
+    fn delete_node(&self, node_id: &PublicKey);
     /// Will error if exists
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()>;
     /// Will error if doesn't exist.
@@ -28,6 +31,9 @@ pub struct DummyPersister;
 #[allow(unused_variables)]
 impl Persist for DummyPersister {
     fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8], network: Network) {
+    }
+
+    fn delete_node(&self, node_id: &PublicKey) {
     }
 
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()> {
