@@ -5,8 +5,9 @@ authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.co
 edition = "2018"
 
 [features]
-default = ["grpc"]
+default = ["grpc", "persist_kv_json"]
 grpc = ["tokio", "tonic", "prost", "serde", "serde_json", "clap"]
+persist_kv_json = [ "kv", "serde_with", "secp256k1/serde" ]
 
 [lib]
 name = "lightning_signer"
@@ -21,12 +22,17 @@ hex = "0.3.2"
 rand = "0.4"
 rust-crypto = "0.2.36"
 bech32 = "0.7"
+kv = { version = "0.22.0", features = ["json-value"], optional = true }
 tonic = { version = "0.1.1", optional = true }
 prost = { version = "0.6", optional = true }
 tokio = { version = "0.2", features = ["macros"], optional = true }
 serde = { version = "1.0.105", features = ["derive"], optional = true }
 serde_json = { version = "1.0.48", optional = true }
+serde_with = { version = "1.6.4", features = ["hex"], optional = true }
 clap = { version = "3.0.0-beta.2", optional = true }
+
+[dev-dependencies]
+tempfile = "3.2.0"
 
 [dependencies.lightning]
 git = "https://github.com/rust-bitcoin/rust-lightning.git"
@@ -55,3 +61,8 @@ required-features = ["grpc"]
 name = "server"
 path = "src/server_main.rs"
 required-features = ["grpc"]
+
+[[bin]]
+name = "persist_test"
+path = "src/persist_test_main.rs"
+required-features = ["persist_kv_json"]

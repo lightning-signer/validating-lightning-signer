@@ -1,4 +1,4 @@
-use std::convert::TryInto;
+use std::convert::{TryInto, TryFrom};
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -29,6 +29,19 @@ pub const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;
 pub enum KeyDerivationStyle {
     Native = 1,
     Lnd = 2,
+}
+
+impl TryFrom<u8> for KeyDerivationStyle {
+    type Error = ();
+
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        use KeyDerivationStyle::{Native, Lnd};
+        match v {
+            x if x == Native as u8 => Ok(Native),
+            x if x == Lnd as u8 => Ok(Lnd),
+            _ => Err(()),
+        }
+    }
 }
 
 pub trait KeyDerivationParam {

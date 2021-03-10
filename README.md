@@ -10,6 +10,8 @@ The gRPC server is a reference implementation of a signer which listens for requ
 
 It can be started via: `cargo run --bin server`
 
+The server will persist it's state to `.lightning-signer` in the current directory.
+
 # Using the admin CLI
 
 Assuming the server is running (see above), the admin CLI can be invoked as follows: `cargo run --bin client -- [ARGUMENTS]`.  For example, to get help, run `cargo run --bin client -- help`.

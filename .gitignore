@@ -3,3 +3,4 @@
 /coverage.txt
 /src/server/remotesigner.rs
 /target
+/.lightning-signer/

@@ -28,6 +28,9 @@ use crate::util::crypto_utils::{derive_private_revocation_key, payload_for_p2wpk
 use crate::util::status::Status;
 use crate::util::test_utils::TestLogger;
 use rand::{OsRng, Rng};
+use crate::persist::{Persist, DummyPersister};
+use crate::server::my_keys_manager::KeyDerivationStyle;
+use std::str::FromStr;
 
 #[derive(PartialEq, Clone, Copy)]
 #[repr(i32)]
@@ -58,6 +61,8 @@ impl TryFrom<i32> for SpendType {
 pub struct MySigner {
     pub logger: Arc<Logger>,
     pub(crate) nodes: Mutex<HashMap<PublicKey, Arc<Node>>>,
+    pub(crate) persister: Box<dyn Persist>,
+    pub(crate) test_mode: bool
 }
 
 impl MySigner {
@@ -79,13 +84,37 @@ impl MySigner {
     // END NOT TESTED
 
     pub fn new() -> MySigner {
-        let test_logger = Arc::new(TestLogger::with_id("server".to_owned()));
-        let signer = MySigner {
-            logger: test_logger,
-            nodes: Mutex::new(HashMap::new()),
-        };
+        let signer = MySigner::new_with_persister(Box::new(DummyPersister), true);
         log_info!(signer, "new MySigner");
         signer
+    }
+
+    pub(crate) fn new_with_persister(persister: Box<dyn Persist>, test_mode: bool) -> MySigner {
+        let test_logger: Arc<dyn Logger> = Arc::new(TestLogger::with_id("server".to_owned()));
+        let mut nodes = HashMap::new();
+        println!("Start restore");
+        for (node_id, node_entry) in persister.get_nodes() {
+            let config = NodeConfig { key_derivation_style: KeyDerivationStyle::try_from(node_entry.key_derivation_style).unwrap() };
+            let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
+            let node = Arc::new(Node::new(&test_logger, config, node_entry.seed.as_slice(), network));
+            println!("Restore node {}", node_id);
+            for (channel_id0, channel_entry) in persister.get_node_channels(&node_id) {
+                println!("  Restore channel {}", channel_id0);
+                node.restore_channel(channel_id0, channel_entry.id,
+                                     channel_entry.nonce,
+                                     channel_entry.channel_value_satoshis,
+                                     channel_entry.channel_setup,
+                                     channel_entry.enforcement_state,
+                                     &node).expect("restore channel");
+            }
+            nodes.insert(node_id, node);
+        }
+        MySigner {
+            logger: test_logger,
+            nodes: Mutex::new(nodes),
+            persister,
+            test_mode
+        }
     }
 
     pub fn new_node(&self, node_config: NodeConfig) -> PublicKey {
@@ -100,18 +129,29 @@ impl MySigner {
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         nodes.insert(node_id, Arc::new(node));
+        self.persister.new_node(&node_id, &node_config, &seed, network);
         node_id
     }
 
-    pub fn new_node_from_seed(&self, node_config: NodeConfig, seed: &[u8]) -> PublicKey {
+    pub fn new_node_from_seed(&self, node_config: NodeConfig, seed: &[u8]) -> Result<PublicKey, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let network = Network::Testnet;
 
         let node = Node::new(&self.logger, node_config, seed, network);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
+        if self.test_mode {
+            // In test mode we allow overwriting the node (thereby resetting all of its channels)
+            self.persister.delete_node(&node_id);
+        } else {
+            // In production, the node must not have existed
+            if nodes.contains_key(&node_id) {
+                return Err(self.invalid_argument("node_exists"))
+            }
+        }
         nodes.insert(node_id, Arc::new(node));
-        node_id
+        self.persister.new_node(&node_id, &node_config, seed, network);
+        Ok(node_id)
     }
 
     pub fn new_channel(
@@ -128,7 +168,9 @@ impl MySigner {
         let keys_manager = &node.keys_manager;
         let channel_id = opt_channel_id.unwrap_or_else(|| ChannelId(keys_manager.get_channel_id()));
         let channel_nonce0 = opt_channel_nonce0.unwrap_or_else(|| channel_id.0.to_vec());
-        node.new_channel(channel_id, channel_nonce0, node)?;
+        let stub = node.new_channel(channel_id, channel_nonce0, node)?;
+        stub.map(|s| self.persister.new_channel(&node_id, &s)
+            .expect("channel was in storage but not in memory"));
         Ok(channel_id)
     }
 
@@ -163,6 +205,7 @@ impl MySigner {
             } else if chan.setup.funding_outpoint != outpoint {
                 panic!("funding outpoint changed");
             }
+            self.persist_channel(node_id, chan);
             Ok(())
         })
     }
@@ -187,7 +230,8 @@ impl MySigner {
         let node = nodes
             .get(node_id)
             .ok_or_else(|| self.invalid_argument(format!("no such node {}", node_id)))?;
-        node.ready_channel(channel_id0, opt_channel_id, setup)?;
+        let channel = node.ready_channel(channel_id0, opt_channel_id, setup)?;
+        self.persist_channel(node_id, &channel);
         Ok(())
     }
 
@@ -345,13 +389,20 @@ impl MySigner {
         channel_id: &ChannelId,
         commitment_number: u64,
     ) -> Result<[u8; 32], Status> {
-        self.with_ready_channel(&node_id, &channel_id, |chan| {
-            Ok(chan.get_per_commitment_secret(commitment_number)[..]
-                .try_into()
-                .unwrap())
+        self.with_ready_channel(node_id, channel_id, |chan| {
+            let secret = chan.get_per_commitment_secret(commitment_number)[..]
+                .try_into().unwrap();
+            self.persist_channel(node_id, chan);
+            Ok(secret)
         })
     }
 
+    fn persist_channel(&self, node_id: &PublicKey, chan: &Channel) {
+        self.persister.update_channel(&node_id, &chan)
+            .expect("channel was in storage but not in memory");
+    }
+
+    // TODO(devrandom) key leaking from this layer
     pub fn get_unilateral_close_key(
         &self,
         node_id: &PublicKey,
@@ -404,7 +455,7 @@ impl MySigner {
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
         self.with_ready_channel(&node_id, &channel_id, |chan| {
-            chan.sign_counterparty_commitment_tx_phase2(
+            let result = chan.sign_counterparty_commitment_tx_phase2(
                 &remote_per_commitment_point,
                 commitment_number,
                 feerate_per_kw,
@@ -412,7 +463,9 @@ impl MySigner {
                 to_counterparty_value_sat,
                 offered_htlcs.clone(),
                 received_htlcs.clone(),
-            )
+            );
+            self.persist_channel(node_id, chan);
+            result
         })
     }
 
@@ -429,14 +482,16 @@ impl MySigner {
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
         self.with_ready_channel(&node_id, &channel_id, |chan| {
-            chan.sign_holder_commitment_tx_phase2(
+            let result = chan.sign_holder_commitment_tx_phase2(
                 commitment_number,
                 feerate_per_kw,
                 to_holder_value_sat,
                 to_counterparty_value_sat,
                 offered_htlcs.clone(),
                 received_htlcs.clone(),
-            )
+            );
+            self.persist_channel(node_id, chan);
+            result
         })
     }
 
@@ -495,6 +550,7 @@ impl MySigner {
             let mut bitcoin_sig = sig.serialize_der().to_vec();
             bitcoin_sig.push(SigHashType::All as u8);
 
+            self.persist_channel(node_id, chan);
             Ok(bitcoin_sig)
         })
     }
@@ -511,12 +567,14 @@ impl MySigner {
         channel_value_sat: u64,
     ) -> Result<Vec<u8>, Status> {
         self.with_ready_channel(&node_id, &channel_id, |chan| {
-            chan.sign_counterparty_commitment_tx(
+            let result = chan.sign_counterparty_commitment_tx(
                 tx,
                 &output_witscripts,
                 remote_per_commitment_point,
                 channel_value_sat,
-            )
+            );
+            self.persist_channel(node_id, chan);
+            result
         })
     }
     // END NOT TESTED
@@ -550,6 +608,7 @@ impl MySigner {
 
                 let mut sigvec = commitment_sig.serialize_der().to_vec();
                 sigvec.push(SigHashType::All as u8);
+                self.persist_channel(node_id, chan);
                 Ok(sigvec)
             });
         sigvec
@@ -583,6 +642,7 @@ impl MySigner {
 
                 let mut sigvec = commitment_sig.serialize_der().to_vec();
                 sigvec.push(SigHashType::All as u8);
+                self.persist_channel(node_id, chan);
                 Ok(sigvec)
             });
         sigvec
@@ -640,6 +700,7 @@ impl MySigner {
                     .serialize_der()
                     .to_vec();
                 sigvec.push(SigHashType::All as u8);
+                self.persist_channel(node_id, chan);
                 Ok(sigvec)
             });
         sigvec
@@ -706,6 +767,7 @@ impl MySigner {
                     .serialize_der()
                     .to_vec();
                 sigvec.push(SigHashType::All as u8);
+                self.persist_channel(node_id, chan);
                 Ok(sigvec)
             });
         sigvec
@@ -759,6 +821,7 @@ impl MySigner {
             let sigobj = secp_ctx.sign(&htlc_sighash, &our_htlc_key);
             let mut sig = sigobj.serialize_der().to_vec();
             sig.push(SigHashType::All as u8);
+            self.persist_channel(node_id, chan);
             Ok(sig)
         });
         sig
@@ -803,6 +866,7 @@ impl MySigner {
 
                 let mut sigvec = secp_ctx.sign(&sighash, &privkey).serialize_der().to_vec();
                 sigvec.push(SigHashType::All as u8);
+                self.persist_channel(node_id, chan);
                 Ok(sigvec)
             });
         retval
@@ -847,6 +911,7 @@ impl MySigner {
 
                 let mut sigvec = secp_ctx.sign(&sighash, &privkey).serialize_der().to_vec();
                 sigvec.push(SigHashType::All as u8);
+                self.persist_channel(node_id, chan);
                 Ok(sigvec)
             });
         sigvec
@@ -922,6 +987,7 @@ impl MySigner {
                 witvec.push((sig, pubkey.key.serialize().to_vec()));
             }
         }
+        // TODO(devrandom) self.persist_channel(node_id, chan);
         Ok(witvec)
     }
 
@@ -954,6 +1020,7 @@ impl MySigner {
                 .sign(&encmsg, &chan.keys.funding_key())
                 .serialize_der()
                 .to_vec();
+            self.persist_channel(node_id, chan);
             Ok((nsigvec, bsigvec))
         })
     }
@@ -978,6 +1045,7 @@ impl MySigner {
         self.with_node(&node_id, |opt_node| {
             let node = opt_node.ok_or_else(|| self.invalid_argument("no such node"))?;
             let sig = node.sign_channel_update(cu)?;
+            // TODO(devrandom) self.persist_channel(node_id, chan);
             Ok(sig)
         })
     }
@@ -1048,7 +1116,7 @@ mod tests {
     fn init_node(signer: &MySigner, node_config: NodeConfig, seedstr: &str) -> PublicKey {
         let mut seed = [0; 32];
         seed.copy_from_slice(hex::decode(seedstr).unwrap().as_slice());
-        signer.new_node_from_seed(node_config, &seed)
+        signer.new_node_from_seed(node_config, &seed).unwrap()
     }
 
     fn init_node_and_channel(
@@ -1083,6 +1151,20 @@ mod tests {
                 assert_eq!(format!("{:?}", chan), "channel");
                 Ok(())
             });
+    }
+
+    #[test]
+    fn ready_channel_test() {
+        let signer = MySigner::new();
+        let (node_id, channel_id) =
+            init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        signer.with_ready_channel(&node_id, &channel_id, |c| {
+            let signer = &c.keys.inner();
+            let params = signer.get_channel_parameters();
+            assert!(params.is_outbound_from_holder);
+            assert_eq!(params.holder_selected_contest_delay, 6);
+            Ok(())
+        }).unwrap();
     }
 
     #[test]
@@ -1385,7 +1467,7 @@ mod tests {
         assert_eq!(err.message(), "warmstart failed: no such node: 022d223620a359a47ff7f7ac447c85c46c923da53389221a0054c11c1e3ca31d59");
 
         // Then a "coldstart" from seed should succeed.
-        let node_id = signer.new_node_from_seed(TEST_NODE_CONFIG, &seed);
+        let node_id = signer.new_node_from_seed(TEST_NODE_CONFIG, &seed).unwrap();
 
         // Now a warmstart will work, should get the same node_id.
         let result = signer.warmstart_with_seed(TEST_NODE_CONFIG, &seed);

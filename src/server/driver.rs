@@ -26,6 +26,9 @@ use super::remotesigner;
 use crate::node::node;
 use crate::server::my_keys_manager::KeyDerivationStyle;
 use crate::util::status;
+use crate::persist::persist_json::KVJsonPersister;
+use crate::persist::{Persist, DummyPersister};
+use clap::{App, Arg};
 
 // BEGIN NOT TESTED
 
@@ -214,14 +217,13 @@ impl Signer for MySigner {
             Ok(self.new_node(node_config))
         } else {
             if req.coldstart {
-                Ok(self.new_node_from_seed(node_config, hsm_secret))
+                self.new_node_from_seed(node_config, hsm_secret)
             } else {
                 self.warmstart_with_seed(node_config, hsm_secret)
             }
         }
-        .map_err(|e| e)?
-        .serialize()
-        .to_vec();
+            .map_err(|e| e)?
+            .serialize().to_vec();
         let reply = InitReply {
             node_id: Some(NodeId { data: node_id }),
         };
@@ -1306,10 +1308,36 @@ impl Signer for MySigner {
     }
 }
 
+const DEFAULT_DIR: &str = ".lightning-signer";
+
 #[tokio::main]
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
+    let app = App::new("server")
+        .about("Lightning Signer with a gRPC interface.  Persists to .lightning-signer .")
+        .arg(
+            Arg::new("test-mode")
+                .about("allow nodes to be recreated, deleting all channels")
+                .short('t')
+                .long("test-mode")
+                .takes_value(false))
+        .arg(
+            Arg::new("no-persist")
+                .about("disable all persistence")
+                .long("no-persist")
+                .takes_value(false));
+    let matches = app.get_matches();
     let addr = "[::1]:50051".parse()?;
-    let signer = MySigner::new();
+
+    let path = format!("{}/{}", DEFAULT_DIR, "data");
+    let test_mode = matches.is_present("test-mode");
+    let persister: Box<dyn Persist> =
+        if matches.is_present("no-persist") {
+            Box::new(DummyPersister)
+        } else {
+            Box::new(KVJsonPersister::new(path.as_str()))
+        };
+    let signer = MySigner::new_with_persister(persister, test_mode);
+    println!("Starting");
 
     Server::builder()
         .add_service(SignerServer::new(signer))
