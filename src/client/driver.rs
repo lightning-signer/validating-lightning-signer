@@ -10,6 +10,7 @@ use crate::server::remotesigner::{
 };
 
 use rand::{OsRng, Rng};
+use bip39::{Mnemonic, Language};
 
 // BEGIN NOT TESTED
 
@@ -33,18 +34,21 @@ pub async fn ping(
 pub async fn new_node(
     client: &mut SignerClient<transport::Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let mnemonic = Mnemonic::generate_in(Language::English, 12).unwrap();
+    let secret = mnemonic.to_seed("");
     let init_request = Request::new(InitRequest {
         node_config: Some(NodeConfig {
             key_derivation_style: KeyDerivationStyle::Native as i32,
         }),
         chainparams: None,
         coldstart: true,
-        hsm_secret: None,
+        hsm_secret: Some(Bip32Seed { data: secret.to_vec() }),
     });
 
     let response = client.init(init_request).await?;
     let node_id = response.into_inner().node_id.expect("missing node_id").data;
 
+    eprintln!("mnemonic: {}", mnemonic);
     println!("{}", hex::encode(&node_id));
     Ok(())
 }
@@ -86,10 +90,15 @@ pub async fn list_channels(
 pub async fn new_channel(
     client: &mut SignerClient<transport::Channel>,
     node_id: Vec<u8>,
+    nonce_hex: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut channel_nonce = [0u8; 32];
-    let mut rng = OsRng::new().unwrap();
-    rng.fill_bytes(&mut channel_nonce);
+    if let Some(nonce_hex) = nonce_hex {
+        channel_nonce.copy_from_slice(hex::decode(nonce_hex).unwrap().as_slice());
+    } else {
+        let mut rng = OsRng::new().unwrap();
+        rng.fill_bytes(&mut channel_nonce);
+    }
 
     let new_chan_request = Request::new(NewChannelRequest {
         node_id: Some(NodeId {
@@ -99,7 +108,8 @@ pub async fn new_channel(
             data: channel_nonce.to_vec(),
         }),
     });
-    let _response = client.new_channel(new_chan_request).await?.into_inner();
+    let response = client.new_channel(new_chan_request).await?.into_inner();
+    assert_eq!(response.channel_nonce0, Some(ChannelNonce { data: channel_nonce.to_vec() }));
     println!("{}", hex::encode(&channel_nonce));
     Ok(())
 }
