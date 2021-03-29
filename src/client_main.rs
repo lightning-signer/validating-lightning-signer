@@ -35,7 +35,7 @@ async fn ping_subcommand() -> Result<(), Box<dyn std::error::Error>> {
 fn make_node_subapp() -> App<'static> {
     App::new("node")
         .about("control a node")
-        .subcommand(App::new("new").about("Add a new node to the signer.  Outputs the node ID."))
+        .subcommand(App::new("new").about("Add a new node to the signer.  Outputs the node ID to stdout and the mnemonic to stderr."))
         .subcommand(App::new("list").about("List configured nodes."))
 }
 

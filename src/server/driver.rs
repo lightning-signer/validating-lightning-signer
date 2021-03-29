@@ -189,7 +189,8 @@ impl Signer for MySigner {
     async fn init(&self, request: Request<InitRequest>) -> Result<Response<InitReply>, Status> {
         let req = request.into_inner();
         log_info!(self, "ENTER init");
-        log_debug!(self, "req={}", json!(&req));
+        // We don't want to log the secret, so comment this out by default
+        //log_debug!(self, "req={}", json!(&req));
         let proto_node_config = req
             .node_config
             .ok_or_else(|| self.invalid_grpc_argument("missing node_config"))?;

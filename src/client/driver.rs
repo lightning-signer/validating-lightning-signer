@@ -10,6 +10,7 @@ use crate::server::remotesigner::{
 };
 
 use rand::{OsRng, Rng};
+use bip39::{Mnemonic, Language};
 
 // BEGIN NOT TESTED
 
@@ -33,18 +34,21 @@ pub async fn ping(
 pub async fn new_node(
     client: &mut SignerClient<transport::Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let mnemonic = Mnemonic::generate_in(Language::English, 12).unwrap();
+    let secret = mnemonic.to_seed("");
     let init_request = Request::new(InitRequest {
         node_config: Some(NodeConfig {
             key_derivation_style: KeyDerivationStyle::Native as i32,
         }),
         chainparams: None,
         coldstart: true,
-        hsm_secret: None,
+        hsm_secret: Some(Bip32Seed { data: secret.to_vec() }),
     });
 
     let response = client.init(init_request).await?;
     let node_id = response.into_inner().node_id.expect("missing node_id").data;
 
+    eprintln!("mnemonic: {}", mnemonic);
     println!("{}", hex::encode(&node_id));
     Ok(())
 }
