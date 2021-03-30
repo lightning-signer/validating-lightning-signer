@@ -1,13 +1,13 @@
 use crate::node::node::{Channel, ChannelId, ChannelStub, NodeConfig};
 
-pub mod ser_util;
 pub mod model;
+pub mod ser_util;
 
+use crate::persist::model::{ChannelEntry, NodeEntry};
 use bitcoin::Network;
 use secp256k1::PublicKey;
-use crate::persist::model::{ChannelEntry, NodeEntry};
 
-pub trait Persist: Sync+Send {
+pub trait Persist: Sync + Send {
     /// Create a new node
     fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8], network: Network);
     /// Delete a node and all of its channels.  Used in test mode.
@@ -19,7 +19,11 @@ pub trait Persist: Sync+Send {
     /// * `id0` original channel ID supplied to [`Persist::new_channel()`]
     /// * `id` an optional additional permanent channel ID
     fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), ()>;
-    fn get_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<model::ChannelEntry, ()>;
+    fn get_channel(
+        &self,
+        node_id: &PublicKey,
+        channel_id: &ChannelId,
+    ) -> Result<model::ChannelEntry, ()>;
     fn get_node_channels(&self, node_id: &PublicKey) -> Vec<(ChannelId, model::ChannelEntry)>;
     fn get_nodes(&self) -> Vec<(PublicKey, model::NodeEntry)>;
     /// Clears the database.  Not for production use.
@@ -30,11 +34,9 @@ pub struct DummyPersister;
 
 #[allow(unused_variables)]
 impl Persist for DummyPersister {
-    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8], network: Network) {
-    }
+    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8], network: Network) {}
 
-    fn delete_node(&self, node_id: &PublicKey) {
-    }
+    fn delete_node(&self, node_id: &PublicKey) {}
 
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()> {
         Ok(())
@@ -44,6 +46,8 @@ impl Persist for DummyPersister {
         Ok(())
     }
 
+    // BEGIN NOT TESTED
+
     fn get_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<ChannelEntry, ()> {
         Err(())
     }
@@ -52,15 +56,16 @@ impl Persist for DummyPersister {
         Vec::new()
     }
 
+    // END NOT TESTED
+
     fn get_nodes(&self) -> Vec<(PublicKey, NodeEntry)> {
         Vec::new()
     }
 
-    fn clear_database(&self) {
-    }
+    fn clear_database(&self) {} // NOT TESTED
 }
 
 pub mod util;
 
-#[cfg(feature="persist_kv_json")]
+#[cfg(feature = "persist_kv_json")]
 pub mod persist_json;

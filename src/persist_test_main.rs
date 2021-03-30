@@ -5,11 +5,12 @@ use kv::Json;
 use lightning::util::logger::Logger;
 
 use lightning_signer::persist::model::{ChannelEntry, NodeChannelId, NodeEntry};
+use lightning_signer::persist::persist_json::KVJsonPersister;
 use lightning_signer::persist::{util, Persist};
 use lightning_signer::server::my_signer::channel_nonce_to_id;
-use lightning_signer::util::test_utils::{TEST_NODE_CONFIG, TestLogger};
-use lightning_signer::persist::persist_json::KVJsonPersister;
+use lightning_signer::util::test_utils::{TestLogger, TEST_NODE_CONFIG};
 
+// BEGIN NOT TESTED
 pub fn main() {
     let persister = KVJsonPersister::new("/tmp/signer.kv");
     persister.clear_database();
@@ -19,16 +20,19 @@ pub fn main() {
     let channel_id1 = channel_nonce_to_id(&channel_nonce1);
 
     let logger: Arc<dyn Logger> = Arc::new(TestLogger::with_id("server".to_owned()));
-    let (node_id, node_arc, stub) = util::make_node_and_channel(&logger, &channel_nonce, channel_id);
+    let (node_id, node_arc, stub) =
+        util::make_node_and_channel(&logger, &channel_nonce, channel_id);
     let node = &*node_arc;
 
     persister.new_node(&node_id, &TEST_NODE_CONFIG, &[3u8; 32], Network::Regtest);
 
     persister.new_channel(&node_id, &stub).unwrap();
 
-    let dummy_pubkey= util::make_dummy_pubkey(0x12);
+    let dummy_pubkey = util::make_dummy_pubkey(0x12);
     let setup = util::create_test_channel_setup(dummy_pubkey);
-    let channel = node.ready_channel(channel_id, Some(channel_id1), setup).unwrap();
+    let channel = node
+        .ready_channel(channel_id, Some(channel_id1), setup)
+        .unwrap();
 
     for (id, entry) in persister.get_node_channels(&node_id) {
         println!("{} {}", id, Json(entry));
@@ -54,4 +58,4 @@ pub fn main() {
         println!("{}: {}", id, entry_json);
     }
 }
-
+// END NOT TESTED

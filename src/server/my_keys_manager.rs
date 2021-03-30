@@ -1,4 +1,4 @@
-use std::convert::{TryInto, TryFrom};
+use std::convert::{TryFrom, TryInto};
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -34,14 +34,16 @@ pub enum KeyDerivationStyle {
 impl TryFrom<u8> for KeyDerivationStyle {
     type Error = ();
 
+    // BEGIN NOT TESTED
     fn try_from(v: u8) -> Result<Self, Self::Error> {
-        use KeyDerivationStyle::{Native, Lnd};
+        use KeyDerivationStyle::{Lnd, Native};
         match v {
             x if x == Native as u8 => Ok(Native),
             x if x == Lnd as u8 => Ok(Lnd),
             _ => Err(()),
         }
     }
+    // END NOT TESTED
 }
 
 pub trait KeyDerivationParam {

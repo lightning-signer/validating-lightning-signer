@@ -1,6 +1,6 @@
 use std::convert::TryInto;
-use std::fmt::{Display, Formatter};
 use std::fmt;
+use std::fmt::{Display, Formatter};
 
 use kv::{Key, Raw};
 use secp256k1::PublicKey;
@@ -10,7 +10,7 @@ use serde_with::serde_as;
 
 use crate::node::node::{ChannelId, ChannelSetup};
 
-use super::ser_util::{ChannelSetupDef, ChannelIdHandler, EnforcementStateDef};
+use super::ser_util::{ChannelIdHandler, ChannelSetupDef, EnforcementStateDef};
 use crate::util::enforcing_trait_impls::EnforcementState;
 
 #[serde_as]
@@ -49,6 +49,8 @@ impl NodeChannelId {
         Self(res)
     }
 
+    // BEGIN NOT TESTED
+
     pub fn new_prefix(node_id: &PublicKey) -> Self {
         let mut res = Vec::with_capacity(33);
         res.append(node_id.serialize().to_vec().as_mut());
@@ -62,13 +64,22 @@ impl NodeChannelId {
     pub fn channel_id(&self) -> ChannelId {
         ChannelId(self.0.as_slice()[33..].try_into().unwrap())
     }
+
+    // END NOT TESTED
 }
 
+// BEGIN NOT TESTED
 impl Display for NodeChannelId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}/{}", hex::encode(&self.0.as_slice()[0..33]), hex::encode(&self.0.as_slice()[33..]))
+        write!(
+            f,
+            "{}/{}",
+            hex::encode(&self.0.as_slice()[0..33]),
+            hex::encode(&self.0.as_slice()[33..])
+        )
     }
 }
+// END NOT TESTED
 
 impl AsRef<[u8]> for NodeChannelId {
     fn as_ref(&self) -> &[u8] {
@@ -76,8 +87,10 @@ impl AsRef<[u8]> for NodeChannelId {
     }
 }
 
+// BEGIN NOT TESTED
 impl<'a> Key<'a> for NodeChannelId {
     fn from_raw_key(r: &'a Raw) -> Result<Self, kv::Error> {
         Ok(NodeChannelId(r.to_vec()))
     }
 }
+// END NOT TESTED

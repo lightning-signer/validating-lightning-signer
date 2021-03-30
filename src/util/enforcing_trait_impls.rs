@@ -21,22 +21,22 @@ use std::cmp;
 /// Enforces some rules on Sign calls. Eventually we will
 /// probably want to expose a variant of this which would essentially
 /// be what you'd want to run on a hardware wallet.
-// BEGIN NOT TESTED
 #[derive(Clone)]
 pub struct EnforcingSigner {
     inner: InMemorySigner,
     state: Arc<Mutex<EnforcementState>>,
 }
-// END NOT TESTED
 
 #[derive(Clone)]
 pub struct EnforcementState {
-    pub last_commitment_number: Option<u64>
+    pub last_commitment_number: Option<u64>,
 }
 
 impl EnforcingSigner {
     pub fn new(inner: InMemorySigner) -> Self {
-        let state = EnforcementState { last_commitment_number: None };
+        let state = EnforcementState {
+            last_commitment_number: None,
+        };
         EnforcingSigner::new_with_state(inner, state)
     }
 
@@ -59,9 +59,11 @@ impl EnforcingSigner {
         self.inner.clone()
     }
 
+    // BEGIN NOT TESTED
     pub fn last_commitment_number(&self) -> Option<u64> {
         self.state.lock().unwrap().last_commitment_number
     }
+    // END NOT TESTED
 }
 
 impl EnforcingSigner {
@@ -232,7 +234,6 @@ impl Sign for EnforcingSigner {
     }
 
     // BEGIN NOT TESTED
-
     fn sign_channel_announcement<T: secp256k1::Signing>(
         &self,
         msg: &msgs::UnsignedChannelAnnouncement,
@@ -240,12 +241,11 @@ impl Sign for EnforcingSigner {
     ) -> Result<Signature, ()> {
         self.inner.sign_channel_announcement(msg, secp_ctx)
     }
+    // END NOT TESTED
 
     fn ready_channel(&mut self, channel_parameters: &ChannelTransactionParameters) {
         self.inner.ready_channel(channel_parameters)
     }
-
-    // END NOT TESTED
 }
 
 // BEGIN NOT TESTED
@@ -263,7 +263,9 @@ impl Readable for EnforcingSigner {
     fn read<R: ::std::io::Read>(reader: &mut R) -> Result<Self, DecodeError> {
         let inner = Readable::read(reader)?;
         let last = Readable::read(reader)?;
-        let state = EnforcementState { last_commitment_number: last };
+        let state = EnforcementState {
+            last_commitment_number: last,
+        };
         Ok(EnforcingSigner {
             inner,
             state: Arc::new(Mutex::new(state)),

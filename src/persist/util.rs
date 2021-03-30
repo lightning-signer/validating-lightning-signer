@@ -1,29 +1,32 @@
 use std::sync::Arc;
 
-use bitcoin::Network;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
+use bitcoin::Network;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::util::logger::Logger;
 
 use crate::node::node::{ChannelId, ChannelSetup, ChannelSlot, ChannelStub, CommitmentType, Node};
 use crate::util::test_utils::{TEST_NODE_CONFIG, TEST_SEED};
 
-pub fn do_with_channel_stub<F: Fn(&ChannelStub) -> ()>(
-    node: &Node,
-    channel_id: &ChannelId,
-    f: F) {
+pub fn do_with_channel_stub<F: Fn(&ChannelStub) -> ()>(node: &Node, channel_id: &ChannelId, f: F) {
     let guard = node.channels();
     let slot = guard.get(&channel_id).unwrap().lock().unwrap();
     match &*slot {
         ChannelSlot::Stub(s) => f(&s),
-        ChannelSlot::Ready(_) => panic!("expected channel stub")
+        ChannelSlot::Ready(_) => panic!("expected channel stub"),
     }
 }
 
-pub fn make_node_and_channel(logger: &Arc<dyn Logger>, channel_nonce: &Vec<u8>, channel_id: ChannelId) -> (PublicKey, Arc<Node>, ChannelStub) {
+pub fn make_node_and_channel(
+    logger: &Arc<dyn Logger>,
+    channel_nonce: &Vec<u8>,
+    channel_id: ChannelId,
+) -> (PublicKey, Arc<Node>, ChannelStub) {
     let (node_id, node) = make_node(logger);
 
-    let channel = node.new_channel(channel_id, channel_nonce.clone(), &Arc::clone(&node)).unwrap();
+    let channel = node
+        .new_channel(channel_id, channel_nonce.clone(), &Arc::clone(&node))
+        .unwrap(); // NOT TESTED
     (node_id, node, channel.unwrap())
 }
 
@@ -49,11 +52,11 @@ pub fn create_test_channel_setup(dummy_pubkey: PublicKey) -> ChannelSetup {
             revocation_basepoint: dummy_pubkey,
             payment_point: dummy_pubkey,
             delayed_payment_basepoint: dummy_pubkey,
-            htlc_basepoint: dummy_pubkey
+            htlc_basepoint: dummy_pubkey,
         },
         counterparty_to_self_delay: 11,
         counterparty_shutdown_script: Default::default(),
-        commitment_type: CommitmentType::Legacy
+        commitment_type: CommitmentType::Legacy,
     }
 }
 

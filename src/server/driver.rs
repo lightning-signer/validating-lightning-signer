@@ -24,10 +24,10 @@ use crate::tx::tx::HTLCInfo2;
 
 use super::remotesigner;
 use crate::node::node;
+use crate::persist::persist_json::KVJsonPersister;
+use crate::persist::{DummyPersister, Persist};
 use crate::server::my_keys_manager::KeyDerivationStyle;
 use crate::util::status;
-use crate::persist::persist_json::KVJsonPersister;
-use crate::persist::{Persist, DummyPersister};
 use clap::{App, Arg};
 
 // BEGIN NOT TESTED
@@ -223,8 +223,9 @@ impl Signer for MySigner {
                 self.warmstart_with_seed(node_config, hsm_secret)
             }
         }
-            .map_err(|e| e)?
-            .serialize().to_vec();
+        .map_err(|e| e)?
+        .serialize()
+        .to_vec();
         let reply = InitReply {
             node_id: Some(NodeId { data: node_id }),
         };
@@ -1320,23 +1321,24 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .about("allow nodes to be recreated, deleting all channels")
                 .short('t')
                 .long("test-mode")
-                .takes_value(false))
+                .takes_value(false),
+        )
         .arg(
             Arg::new("no-persist")
                 .about("disable all persistence")
                 .long("no-persist")
-                .takes_value(false));
+                .takes_value(false),
+        );
     let matches = app.get_matches();
     let addr = "[::1]:50051".parse()?;
 
     let path = format!("{}/{}", DEFAULT_DIR, "data");
     let test_mode = matches.is_present("test-mode");
-    let persister: Box<dyn Persist> =
-        if matches.is_present("no-persist") {
-            Box::new(DummyPersister)
-        } else {
-            Box::new(KVJsonPersister::new(path.as_str()))
-        };
+    let persister: Box<dyn Persist> = if matches.is_present("no-persist") {
+        Box::new(DummyPersister)
+    } else {
+        Box::new(KVJsonPersister::new(path.as_str()))
+    };
     let signer = MySigner::new_with_persister(persister, test_mode);
     println!("Starting");
 
