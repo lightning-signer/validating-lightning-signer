@@ -9,8 +9,8 @@ use crate::server::remotesigner::{
     ListNodesRequest, NewChannelRequest, NodeConfig, NodeId, PingRequest,
 };
 
+use bip39::{Language, Mnemonic};
 use rand::{OsRng, Rng};
-use bip39::{Mnemonic, Language};
 
 // BEGIN NOT TESTED
 
@@ -42,7 +42,9 @@ pub async fn new_node(
         }),
         chainparams: None,
         coldstart: true,
-        hsm_secret: Some(Bip32Seed { data: secret.to_vec() }),
+        hsm_secret: Some(Bip32Seed {
+            data: secret.to_vec(),
+        }),
     });
 
     let response = client.init(init_request).await?;
@@ -109,7 +111,12 @@ pub async fn new_channel(
         }),
     });
     let response = client.new_channel(new_chan_request).await?.into_inner();
-    assert_eq!(response.channel_nonce0, Some(ChannelNonce { data: channel_nonce.to_vec() }));
+    assert_eq!(
+        response.channel_nonce0,
+        Some(ChannelNonce {
+            data: channel_nonce.to_vec()
+        })
+    );
     println!("{}", hex::encode(&channel_nonce));
     Ok(())
 }

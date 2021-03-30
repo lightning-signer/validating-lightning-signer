@@ -34,7 +34,7 @@ use crate::tx::tx::{
     CommitmentInfo2, HTLCInfo2,
 };
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
-use crate::util::enforcing_trait_impls::{EnforcingSigner, EnforcementState};
+use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
 use crate::util::invoice_utils;
 use crate::util::status::Status;
 use lightning::chain;
@@ -776,7 +776,7 @@ impl Channel {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone)] // NOT TESTED
 pub struct NodeConfig {
     pub key_derivation_style: KeyDerivationStyle,
 }
@@ -868,7 +868,10 @@ impl Node {
             id0: channel_id,
         };
         // TODO this clone is expensive
-        channels.insert(channel_id, Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone()))));
+        channels.insert(
+            channel_id,
+            Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone()))),
+        );
         Ok(Some(stub))
     }
 
@@ -899,17 +902,20 @@ impl Node {
                     logger: Arc::clone(&self.logger),
                     secp_ctx: Secp256k1::new(),
                     keys: enforcing_signer,
-                    id0: channel_id0
+                    id0: channel_id0,
                 };
                 // TODO this clone is expensive
                 let slot = Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone())));
                 channels.insert(channel_id0, Arc::clone(&slot));
                 channel_id.map(|id| channels.insert(id, Arc::clone(&slot)));
                 slot
-            },
+            }
             Some(setup) => {
                 let channel_transaction_parameters =
-                    Node::channel_setup_to_channel_transaction_parameters(&setup, enforcing_signer.inner().pubkeys());
+                    Node::channel_setup_to_channel_transaction_parameters(
+                        &setup,
+                        enforcing_signer.inner().pubkeys(),
+                    );
                 enforcing_signer.ready_channel(&channel_transaction_parameters);
                 let channel = Channel {
                     node: Arc::clone(arc_self),
@@ -1003,7 +1009,10 @@ impl Node {
         Ok(chan)
     }
 
-    fn channel_setup_to_channel_transaction_parameters(setup: &ChannelSetup, holder_pubkeys: &ChannelPublicKeys) -> ChannelTransactionParameters {
+    fn channel_setup_to_channel_transaction_parameters(
+        setup: &ChannelSetup,
+        holder_pubkeys: &ChannelPublicKeys,
+    ) -> ChannelTransactionParameters {
         let funding_outpoint = Some(chain::transaction::OutPoint {
             txid: setup.funding_outpoint.txid,
             index: setup.funding_outpoint.vout as u16,

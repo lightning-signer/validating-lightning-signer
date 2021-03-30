@@ -15,7 +15,7 @@ pub mod util;
 #[cfg(feature = "grpc")]
 pub mod client;
 pub mod node;
+pub mod persist;
 pub mod policy;
 pub mod server;
 pub mod tx;
-pub mod persist;

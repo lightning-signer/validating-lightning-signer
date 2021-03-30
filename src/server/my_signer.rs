@@ -23,13 +23,13 @@ use lightning::util::logger::Logger;
 use crate::node::node::{
     Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, Node, NodeConfig,
 };
+use crate::persist::{DummyPersister, Persist};
+use crate::server::my_keys_manager::KeyDerivationStyle;
 use crate::tx::tx::{build_close_tx, sign_commitment, HTLCInfo2};
 use crate::util::crypto_utils::{derive_private_revocation_key, payload_for_p2wpkh};
 use crate::util::status::Status;
 use crate::util::test_utils::TestLogger;
 use rand::{OsRng, Rng};
-use crate::persist::{Persist, DummyPersister};
-use crate::server::my_keys_manager::KeyDerivationStyle;
 use std::str::FromStr;
 
 #[derive(PartialEq, Clone, Copy)]
@@ -62,7 +62,7 @@ pub struct MySigner {
     pub logger: Arc<Logger>,
     pub(crate) nodes: Mutex<HashMap<PublicKey, Arc<Node>>>,
     pub(crate) persister: Box<dyn Persist>,
-    pub(crate) test_mode: bool
+    pub(crate) test_mode: bool,
 }
 
 impl MySigner {
@@ -94,26 +94,40 @@ impl MySigner {
         let mut nodes = HashMap::new();
         println!("Start restore");
         for (node_id, node_entry) in persister.get_nodes() {
-            let config = NodeConfig { key_derivation_style: KeyDerivationStyle::try_from(node_entry.key_derivation_style).unwrap() };
+            // BEGIN NOT TESTED
+            let config = NodeConfig {
+                key_derivation_style: KeyDerivationStyle::try_from(node_entry.key_derivation_style)
+                    .unwrap(),
+            };
             let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
-            let node = Arc::new(Node::new(&test_logger, config, node_entry.seed.as_slice(), network));
+            let node = Arc::new(Node::new(
+                &test_logger,
+                config,
+                node_entry.seed.as_slice(),
+                network,
+            ));
             println!("Restore node {}", node_id);
             for (channel_id0, channel_entry) in persister.get_node_channels(&node_id) {
                 println!("  Restore channel {}", channel_id0);
-                node.restore_channel(channel_id0, channel_entry.id,
-                                     channel_entry.nonce,
-                                     channel_entry.channel_value_satoshis,
-                                     channel_entry.channel_setup,
-                                     channel_entry.enforcement_state,
-                                     &node).expect("restore channel");
+                node.restore_channel(
+                    channel_id0,
+                    channel_entry.id,
+                    channel_entry.nonce,
+                    channel_entry.channel_value_satoshis,
+                    channel_entry.channel_setup,
+                    channel_entry.enforcement_state,
+                    &node,
+                )
+                .expect("restore channel");
             }
             nodes.insert(node_id, node);
+            // END NOT TESTED
         }
         MySigner {
             logger: test_logger,
             nodes: Mutex::new(nodes),
             persister,
-            test_mode
+            test_mode,
         }
     }
 
@@ -129,11 +143,16 @@ impl MySigner {
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         nodes.insert(node_id, Arc::new(node));
-        self.persister.new_node(&node_id, &node_config, &seed, network);
+        self.persister
+            .new_node(&node_id, &node_config, &seed, network);
         node_id
     }
 
-    pub fn new_node_from_seed(&self, node_config: NodeConfig, seed: &[u8]) -> Result<PublicKey, Status> {
+    pub fn new_node_from_seed(
+        &self,
+        node_config: NodeConfig,
+        seed: &[u8],
+    ) -> Result<PublicKey, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let network = Network::Testnet;
 
@@ -145,12 +164,15 @@ impl MySigner {
             self.persister.delete_node(&node_id);
         } else {
             // In production, the node must not have existed
+            // BEGIN NOT TESTED
             if nodes.contains_key(&node_id) {
-                return Err(self.invalid_argument("node_exists"))
+                return Err(self.invalid_argument("node_exists"));
             }
+            // END NOT TESTED
         }
         nodes.insert(node_id, Arc::new(node));
-        self.persister.new_node(&node_id, &node_config, seed, network);
+        self.persister
+            .new_node(&node_id, &node_config, seed, network);
         Ok(node_id)
     }
 
@@ -169,8 +191,11 @@ impl MySigner {
         let channel_id = opt_channel_id.unwrap_or_else(|| ChannelId(keys_manager.get_channel_id()));
         let channel_nonce0 = opt_channel_nonce0.unwrap_or_else(|| channel_id.0.to_vec());
         let stub = node.new_channel(channel_id, channel_nonce0, node)?;
-        stub.map(|s| self.persister.new_channel(&node_id, &s)
-            .expect("channel was in storage but not in memory"));
+        stub.map(|s| {
+            self.persister
+                .new_channel(&node_id, &s)
+                .expect("channel was in storage but not in memory")
+        });
         Ok(channel_id)
     }
 
@@ -391,14 +416,16 @@ impl MySigner {
     ) -> Result<[u8; 32], Status> {
         self.with_ready_channel(node_id, channel_id, |chan| {
             let secret = chan.get_per_commitment_secret(commitment_number)[..]
-                .try_into().unwrap();
+                .try_into()
+                .unwrap();
             self.persist_channel(node_id, chan);
             Ok(secret)
         })
     }
 
     fn persist_channel(&self, node_id: &PublicKey, chan: &Channel) {
-        self.persister.update_channel(&node_id, &chan)
+        self.persister
+            .update_channel(&node_id, &chan)
             .expect("channel was in storage but not in memory");
     }
 
@@ -1156,15 +1183,21 @@ mod tests {
     #[test]
     fn ready_channel_test() {
         let signer = MySigner::new();
-        let (node_id, channel_id) =
-            init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
-        signer.with_ready_channel(&node_id, &channel_id, |c| {
-            let signer = &c.keys.inner();
-            let params = signer.get_channel_parameters();
-            assert!(params.is_outbound_from_holder);
-            assert_eq!(params.holder_selected_contest_delay, 6);
-            Ok(())
-        }).unwrap();
+        let (node_id, channel_id) = init_node_and_channel(
+            &signer,
+            TEST_NODE_CONFIG,
+            TEST_SEED[1],
+            make_test_channel_setup(),
+        );
+        signer
+            .with_ready_channel(&node_id, &channel_id, |c| {
+                let signer = &c.keys.inner();
+                let params = signer.get_channel_parameters();
+                assert!(params.is_outbound_from_holder);
+                assert_eq!(params.holder_selected_contest_delay, 6);
+                Ok(())
+            })
+            .unwrap();
     }
 
     #[test]

@@ -16,15 +16,13 @@ impl KVJsonPersister<'_> {
     pub fn new(path: &str) -> Self {
         let cfg = Config::new(path);
         let store = Store::new(cfg).expect("create store");
-        let node_bucket =
-            store.bucket(Some("nodes"))
-                .expect("create node bucket");
-        let channel_bucket=
-            store.bucket(Some("channels"))
-                .expect("create channel bucket");
+        let node_bucket = store.bucket(Some("nodes")).expect("create node bucket");
+        let channel_bucket = store
+            .bucket(Some("channels"))
+            .expect("create channel bucket");
         Self {
             node_bucket,
-            channel_bucket
+            channel_bucket,
         }
     }
 }
@@ -42,31 +40,46 @@ impl<'a> Persist for KVJsonPersister<'a> {
         self.node_bucket.flush().expect("flush");
     }
 
+    // BEGIN NOT TESTED
     fn delete_node(&self, node_id: &PublicKey) {
-        for item_res in self.channel_bucket.iter_prefix(NodeChannelId::new_prefix(node_id)) {
-            let id : NodeChannelId = item_res.unwrap().key().unwrap();
+        for item_res in self
+            .channel_bucket
+            .iter_prefix(NodeChannelId::new_prefix(node_id))
+        {
+            let id: NodeChannelId = item_res.unwrap().key().unwrap();
             self.channel_bucket.remove(id).unwrap();
         }
-        self.node_bucket.remove(node_id.serialize().to_vec()).unwrap();
+        self.node_bucket
+            .remove(node_id.serialize().to_vec())
+            .unwrap();
     }
+    // END NOT TESTED
 
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()> {
         let enforcing_keys = &stub.keys;
         let channel_value_satoshis = 0; // TODO not known yet
 
-        self.channel_bucket.transaction(|txn| {
-            let id = NodeChannelId::new(node_id, &stub.id0);
-            let entry = ChannelEntry {
-                nonce: stub.nonce.clone(),
-                channel_value_satoshis,
-                channel_setup: None,
-                id: None,
-                enforcement_state: enforcing_keys.enforcement_state(),
-            };
-            if txn.get(id.clone()).unwrap().is_some() { return Err(TransactionError::Abort(kv::Error::Message("already exists".to_string())))}
-            txn.set(id, Json(entry)).expect("insert channel");
-            Ok(())
-        }).expect("new transaction");
+        self.channel_bucket
+            .transaction(|txn| {
+                let id = NodeChannelId::new(node_id, &stub.id0);
+                let entry = ChannelEntry {
+                    nonce: stub.nonce.clone(),
+                    channel_value_satoshis,
+                    channel_setup: None,
+                    id: None,
+                    enforcement_state: enforcing_keys.enforcement_state(),
+                };
+                if txn.get(id.clone()).unwrap().is_some() {
+                    // BEGIN NOT TESTED
+                    return Err(TransactionError::Abort(kv::Error::Message(
+                        "already exists".to_string(),
+                    )));
+                    // END NOT TESTED
+                }
+                txn.set(id, Json(entry)).expect("insert channel");
+                Ok(())
+            })
+            .expect("new transaction");
         self.node_bucket.flush().expect("flush");
         Ok(())
     }
@@ -75,34 +88,45 @@ impl<'a> Persist for KVJsonPersister<'a> {
         let enforcing_keys = &channel.keys;
         let channel_value_satoshis = channel.setup.channel_value_sat;
 
-        self.channel_bucket.transaction(|txn| {
-            let node_channel_id = NodeChannelId::new(node_id, &channel.id0);
-            let entry = ChannelEntry {
-                nonce: channel.nonce.clone(),
-                channel_value_satoshis,
-                channel_setup: Some(channel.setup.clone()),
-                id: channel.id,
-                enforcement_state: enforcing_keys.enforcement_state()
-            };
-            if txn.get(node_channel_id.clone()).unwrap().is_none() { return Err(TransactionError::Abort(kv::Error::Message("not found".to_string())))}
-            let json = Json(entry);
-            txn.set(node_channel_id, json).expect("update channel");
-            Ok(())
-        }).expect("update transaction");
+        self.channel_bucket
+            .transaction(|txn| {
+                let node_channel_id = NodeChannelId::new(node_id, &channel.id0);
+                let entry = ChannelEntry {
+                    nonce: channel.nonce.clone(),
+                    channel_value_satoshis,
+                    channel_setup: Some(channel.setup.clone()),
+                    id: channel.id,
+                    enforcement_state: enforcing_keys.enforcement_state(),
+                };
+                if txn.get(node_channel_id.clone()).unwrap().is_none() {
+                    // BEGIN NOT TESTED
+                    return Err(TransactionError::Abort(kv::Error::Message(
+                        "not found".to_string(),
+                    )));
+                    // END NOT TESTED
+                }
+                let json = Json(entry);
+                txn.set(node_channel_id, json).expect("update channel");
+                Ok(())
+            })
+            .expect("update transaction");
         self.node_bucket.flush().expect("flush");
         Ok(())
     }
 
     fn get_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<ChannelEntry, ()> {
         let id = NodeChannelId::new(node_id, channel_id);
-        let json = self.channel_bucket.get(id)
-            .unwrap().ok_or_else(|| ())?;
+        let json = self.channel_bucket.get(id).unwrap().ok_or_else(|| ())?;
         Ok(json.0)
     }
 
+    // BEGIN NOT TESTED
     fn get_node_channels(&self, node_id: &PublicKey) -> Vec<(ChannelId, ChannelEntry)> {
         let mut res = Vec::new();
-        for item_res in self.channel_bucket.iter_prefix(NodeChannelId::new_prefix(node_id)) {
+        for item_res in self
+            .channel_bucket
+            .iter_prefix(NodeChannelId::new_prefix(node_id))
+        {
             let item = item_res.unwrap();
             let value: Json<ChannelEntry> = item.value().unwrap();
             let key: NodeChannelId = item.key().unwrap();
@@ -110,6 +134,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
         }
         res
     }
+    // END NOT TESTED
 
     fn get_nodes(&self) -> Vec<(PublicKey, NodeEntry)> {
         let mut res = Vec::new();
@@ -142,7 +167,7 @@ mod tests {
     use crate::persist::util::*;
     use crate::server::my_signer::channel_nonce_to_id;
     use crate::util::enforcing_trait_impls::EnforcingSigner;
-    use crate::util::test_utils::{TEST_NODE_CONFIG, TestLogger};
+    use crate::util::test_utils::{TestLogger, TEST_NODE_CONFIG};
 
     use super::*;
 
@@ -175,12 +200,24 @@ mod tests {
 
             let entry = persister.get_channel(&node_id, &channel_id0).unwrap();
             let (_, restored_node_arc) = make_node(&logger);
-            let slot = restored_node_arc.restore_channel(channel_id0, None, entry.nonce, entry.channel_value_satoshis, entry.channel_setup, entry.enforcement_state, &restored_node_arc).unwrap();
+            let slot = restored_node_arc
+                .restore_channel(
+                    channel_id0,
+                    None,
+                    entry.nonce,
+                    entry.channel_value_satoshis,
+                    entry.channel_setup,
+                    entry.enforcement_state,
+                    &restored_node_arc,
+                )
+                .unwrap();
 
             let guard = slot.lock().unwrap();
             if let ChannelSlot::Stub(s) = &*guard {
                 check_signer_roundtrip(&stub.keys, &s.keys.inner());
-            } else { panic!() }
+            } else {
+                panic!() // NOT TESTED
+            }
         }
 
         // Ready the channel
@@ -191,18 +228,32 @@ mod tests {
             let channel_nonce1 = "nonce1".as_bytes().to_vec();
             let channel_id1 = channel_nonce_to_id(&channel_nonce1);
 
-            let channel = node.ready_channel(channel_id0, Some(channel_id1), setup).unwrap();
+            let channel = node
+                .ready_channel(channel_id0, Some(channel_id1), setup)
+                .unwrap();
             persister.update_channel(&node_id, &channel).unwrap();
 
             let entry = persister.get_channel(&node_id, &channel_id0).unwrap();
             let (_, restored_node_arc) = make_node(&logger);
-            let slot = restored_node_arc.restore_channel(channel_id0, entry.id, entry.nonce, entry.channel_value_satoshis, entry.channel_setup, entry.enforcement_state, &restored_node_arc).unwrap();
+            let slot = restored_node_arc
+                .restore_channel(
+                    channel_id0,
+                    entry.id,
+                    entry.nonce,
+                    entry.channel_value_satoshis,
+                    entry.channel_setup,
+                    entry.enforcement_state,
+                    &restored_node_arc,
+                )
+                .unwrap();
             assert!(node.channels().contains_key(&channel_id0));
             assert!(node.channels().contains_key(&channel_id1));
             let guard = slot.lock().unwrap();
             if let ChannelSlot::Ready(s) = &*guard {
                 check_signer_roundtrip(&channel.keys, &s.keys.inner());
-            } else { panic!() }
+            } else {
+                panic!() // NOT TESTED
+            }
         }
 
         drop(persister);
@@ -222,7 +273,10 @@ mod tests {
         }
     }
 
-    fn check_signer_roundtrip(existing_enforcing_signer: &EnforcingSigner, signer: &InMemorySigner) {
+    fn check_signer_roundtrip(
+        existing_enforcing_signer: &EnforcingSigner,
+        signer: &InMemorySigner,
+    ) {
         let existing_signer = existing_enforcing_signer.inner();
         let mut existing_w = VecWriter(Vec::new());
         existing_signer.write(&mut existing_w).unwrap();
