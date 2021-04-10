@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 
 use backtrace::Backtrace;
@@ -6,6 +7,7 @@ use bitcoin::consensus::{deserialize, encode};
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::util::psbt::serialize::Deserialize;
 use bitcoin::{OutPoint, Script};
+use bitcoin_hashes::ripemd160::Hash as Ripemd160Hash;
 use bitcoin_hashes::Hash;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::channelmanager::PaymentHash;
@@ -712,6 +714,14 @@ impl Signer for MySigner {
             .map(|odsc| odsc.witscript.clone())
             .collect();
 
+        let mut payment_hashmap = HashMap::new();
+        for hash in req.payment_hashes.iter() {
+            let phash = hash.as_slice().try_into().map_err(|err| {
+                self.invalid_grpc_argument(format!("could not decode payment hash: {}", err))
+            })?;
+            payment_hashmap.insert(Ripemd160Hash::hash(hash).into_inner(), PaymentHash(phash));
+        }
+
         let sig_data = self.sign_counterparty_commitment_tx(
             &node_id,
             &channel_id,
@@ -719,6 +729,8 @@ impl Signer for MySigner {
             witscripts,
             &remote_per_commitment_point,
             channel_value_sat,
+            &payment_hashmap,
+            req.commit_num,
         )?;
 
         let reply = SignatureReply {

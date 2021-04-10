@@ -386,6 +386,10 @@ message SignCounterpartyCommitmentTxRequest {
   // TODO deprecate and move to specifying all the
   // information that is required to rebuild the tx
   Transaction tx = 4;
+
+  // These are needed in addition to the tx to recompose.
+  repeated bytes payment_hashes = 5;
+  uint64 commit_num = 6;
 }
 
 // Force close a channel by signing a holder commitment tx.  The

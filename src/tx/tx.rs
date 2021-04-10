@@ -36,6 +36,7 @@ use crate::util::enforcing_trait_impls::EnforcingSigner;
 const MAX_DELAY: i64 = 1000;
 pub const ANCHOR_SAT: u64 = 330;
 
+// BEGIN NOT TESTED
 pub fn get_commitment_transaction_number_obscure_factor(
     local_payment_basepoint: &PublicKey,
     counterparty_payment_basepoint: &PublicKey,
@@ -48,10 +49,8 @@ pub fn get_commitment_transaction_number_obscure_factor(
         sha.input(&local_payment_basepoint.serialize());
         sha.input(&their_payment_basepoint);
     } else {
-        // BEGIN NOT TESTED
         sha.input(&their_payment_basepoint);
         sha.input(&local_payment_basepoint.serialize());
-        // END NOT TESTED
     }
     let res = Sha256::from_engine(sha).into_inner();
 
@@ -62,6 +61,7 @@ pub fn get_commitment_transaction_number_obscure_factor(
         | ((res[30] as u64) << 1 * 8)
         | ((res[31] as u64) << 0 * 8)
 }
+// END NOT TESTED
 
 pub fn build_close_tx(
     to_holder_value_sat: u64,
@@ -118,6 +118,7 @@ pub fn build_close_tx(
     }
 }
 
+// BEGIN NOT TESTED
 pub fn build_commitment_tx(
     keys: &TxCreationKeys,
     info: &CommitmentInfo2,
@@ -143,7 +144,6 @@ pub fn build_commitment_tx(
 
     if info.to_countersigner_value_sat > 0 {
         if !option_anchor_outputs {
-            // BEGIN NOT TESTED
             let script = payload_for_p2wpkh(&info.to_countersigner_pubkey).script_pubkey();
             txouts.push((
                 TxOut {
@@ -153,7 +153,6 @@ pub fn build_commitment_tx(
                 (script, None),
             ))
         } else {
-            // END NOT TESTED
             let delayed_script = get_delayed_redeemscript(&info.to_countersigner_pubkey);
             txouts.push((
                 TxOut {
@@ -209,7 +208,7 @@ pub fn build_commitment_tx(
         let script = if option_anchor_outputs {
             get_htlc_anchor_redeemscript(&htlc_in_tx, &keys)
         } else {
-            chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys) // NOT TESTED
+            chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys)
         };
         let txout = TxOut {
             script_pubkey: script.to_v0_p2wsh(),
@@ -229,7 +228,7 @@ pub fn build_commitment_tx(
         let script = if option_anchor_outputs {
             get_htlc_anchor_redeemscript(&htlc_in_tx, &keys)
         } else {
-            chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys) // NOT TESTED
+            chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys)
         };
         let txout = TxOut {
             script_pubkey: script.to_v0_p2wsh(),
@@ -238,7 +237,6 @@ pub fn build_commitment_tx(
         txouts.push((txout, (script, Some(htlc_in_tx))));
     }
     sort_outputs(&mut txouts, |a, b| {
-        // BEGIN NOT TESTED
         if let &(_, Some(ref a_htlcout)) = a {
             if let &(_, Some(ref b_htlcout)) = b {
                 a_htlcout.cltv_expiry.cmp(&b_htlcout.cltv_expiry)
@@ -248,7 +246,6 @@ pub fn build_commitment_tx(
         } else {
             cmp::Ordering::Equal
         }
-        // END NOT TESTED
     });
     let mut outputs = Vec::with_capacity(txouts.len());
     let mut scripts = Vec::with_capacity(txouts.len());
@@ -274,6 +271,7 @@ pub fn build_commitment_tx(
         htlcs,
     )
 }
+// END NOT TESTED
 
 // Sign a Bitcoin commitment tx or a mutual-close tx
 pub(crate) fn sign_commitment(
@@ -522,6 +520,7 @@ impl CommitmentInfo {
         Ok(())
     }
 
+    // BEGIN NOT TESTED
     fn parse_to_countersigner_delayed_script(
         &self,
         script: &Script,
@@ -543,25 +542,22 @@ impl CommitmentInfo {
     ) -> Result<(), ValidationError> {
         // policy-v1-commitment-singular-to-remote
         if self.has_to_countersigner() {
-            // BEGIN NOT TESTED
             return Err(TransactionFormat("more than one to remote".to_string()));
-            // END NOT TESTED
         }
         self.to_countersigner_pubkey = Some(
             PublicKey::from_slice(to_countersigner_delayed_pubkey_data.as_slice()).map_err(
-                // BEGIN NOT TESTED
                 |err| {
                     Mismatch(format!(
                         "to_countersigner delayed pubkey malformed: {}",
                         err
                     ))
                 },
-                // END NOT TESTED
             )?,
-        ); // NOT TESTED
+        );
         self.to_countersigner_value_sat = out.value;
         Ok(())
     }
+    // END NOT TESTED
 
     fn parse_received_htlc_script(
         &self,
@@ -601,9 +597,11 @@ impl CommitmentInfo {
         expect_op(iter, OP_CHECKSIG)?;
         expect_op(iter, OP_ENDIF)?;
         if option_anchor_outputs {
+            // BEGIN NOT TESTED
             expect_op(iter, OP_PUSHNUM_1)?;
             expect_op(iter, OP_CSV)?;
             expect_op(iter, OP_DROP)?;
+            // END NOT TESTED
         }
         expect_op(iter, OP_ENDIF)?;
         expect_script_end(iter)?;
@@ -684,9 +682,11 @@ impl CommitmentInfo {
         expect_op(iter, OP_CHECKSIG)?;
         expect_op(iter, OP_ENDIF)?;
         if option_anchor_outputs {
+            // BEGIN NOT TESTED
             expect_op(iter, OP_PUSHNUM_1)?;
             expect_op(iter, OP_CSV)?;
             expect_op(iter, OP_DROP)?;
+            // END NOT TESTED
         }
         expect_op(iter, OP_ENDIF)?;
         expect_script_end(iter)?;
@@ -724,6 +724,7 @@ impl CommitmentInfo {
         let iter = &mut script.instructions();
         let to_pubkey_data = expect_data(iter)?;
         expect_op(iter, OP_CHECKSIG)?;
+        // BEGIN NOT TESTED
         expect_op(iter, OP_IFDUP)?;
         expect_op(iter, OP_NOTIF)?;
         expect_op(iter, OP_PUSHNUM_16)?;
@@ -731,6 +732,7 @@ impl CommitmentInfo {
         expect_op(iter, OP_ENDIF)?;
         expect_script_end(iter)?;
         Ok(to_pubkey_data)
+        // END NOT TESTED
     }
 
     fn handle_anchor_output(
@@ -745,10 +747,12 @@ impl CommitmentInfo {
         // These are dependent on which side owns this commitment.
         let (to_broadcaster_funding_pubkey, to_countersigner_funding_pubkey) =
             if self.is_counterparty_broadcaster {
+                // BEGIN NOT TESTED
                 (
                     keys.counterparty_pubkeys().funding_pubkey,
                     keys.pubkeys().funding_pubkey,
                 )
+            // END NOT TESTED
             } else {
                 (
                     keys.pubkeys().funding_pubkey,
@@ -763,10 +767,10 @@ impl CommitmentInfo {
 
         if to_pubkey == to_broadcaster_funding_pubkey {
             // local anchor
-            self.to_broadcaster_anchor_count += 1;
+            self.to_broadcaster_anchor_count += 1; // NOT TESTED
         } else if to_pubkey == to_countersigner_funding_pubkey {
             // remote anchor
-            self.to_countersigner_anchor_count += 1;
+            self.to_countersigner_anchor_count += 1; // NOT TESTED
         } else {
             // policy-v1-commitment-anchor-match-fundingkey
             return Err(Mismatch(format!(
@@ -774,7 +778,7 @@ impl CommitmentInfo {
                 hex::encode(to_pubkey_data)
             )));
         }
-        Ok(())
+        Ok(()) // NOT TESTED
     }
 
     pub fn handle_output(
@@ -831,10 +835,12 @@ impl CommitmentInfo {
                 return self.handle_anchor_output(keys, out, vals.unwrap());
             }
             if setup.option_anchor_outputs() {
+                // BEGIN NOT TESTED
                 let vals = self.parse_to_countersigner_delayed_script(&script);
                 if vals.is_ok() {
                     return self.handle_to_countersigner_delayed_output(out, vals.unwrap());
                 }
+                // END NOT TESTED
             }
             // policy-v1-commitment-no-unrecognized-outputs
             return Err(TransactionFormat("unknown p2wsh script".to_string()));

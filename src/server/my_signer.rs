@@ -18,6 +18,7 @@ use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use lightning::chain::keysinterface::{KeysInterface, Sign};
 use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys};
+use lightning::ln::channelmanager::PaymentHash;
 use lightning::util::logger::Logger;
 
 use crate::node::node::{
@@ -592,6 +593,8 @@ impl MySigner {
         output_witscripts: Vec<Vec<u8>>,
         remote_per_commitment_point: &PublicKey,
         channel_value_sat: u64,
+        payment_hashmap: &HashMap<[u8; 20], PaymentHash>,
+        commit_num: u64,
     ) -> Result<Vec<u8>, Status> {
         self.with_ready_channel(&node_id, &channel_id, |chan| {
             let result = chan.sign_counterparty_commitment_tx(
@@ -599,6 +602,8 @@ impl MySigner {
                 &output_witscripts,
                 remote_per_commitment_point,
                 channel_value_sat,
+                payment_hashmap,
+                commit_num,
             );
             self.persist_channel(node_id, chan);
             result
@@ -1119,6 +1124,7 @@ mod tests {
     use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::{OutPoint, TxIn, TxOut};
     use bitcoin_hashes::hash160::Hash as Hash160;
+    use bitcoin_hashes::ripemd160::Hash as Ripemd160Hash;
     use lightning::ln::chan_utils::{
         build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
         make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
@@ -1526,10 +1532,12 @@ mod tests {
                     .unwrap();
                 let redeem_scripts =
                     build_tx_scripts(&keys, 100, 197, &mut htlcs, &parameters).expect("scripts");
+                let commit_num = 23;
+                let feerate_per_kw = 0;
                 let commitment_tx = chan.make_counterparty_commitment_tx(
                     &remote_percommitment_point,
-                    23,
-                    0,
+                    commit_num,
+                    feerate_per_kw,
                     200,
                     100,
                     htlcs,
@@ -1538,12 +1546,15 @@ mod tests {
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
                 let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+                let payment_hashmap = HashMap::new();
                 let ser_signature = chan
                     .sign_counterparty_commitment_tx(
                         &tx.transaction,
                         &output_witscripts,
                         &remote_percommitment_point,
                         setup.channel_value_sat,
+                        &payment_hashmap,
+                        commit_num,
                     )
                     .expect("sign");
                 Ok((ser_signature, tx.transaction.clone()))
@@ -1570,7 +1581,9 @@ mod tests {
     }
 
     #[test]
-    fn sign_remote_commitment_tx_with_anchors_test() {
+    #[ignore] // we don't support anchors yet
+              // BEGIN NOT TESTED
+    fn sign_counterparty_commitment_tx_with_anchors_test() {
         let signer = MySigner::new();
         let mut setup = make_reasonable_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
@@ -1590,15 +1603,19 @@ mod tests {
                     vec![],
                     vec![],
                 )?;
+                let commit_num = 23;
                 let (tx, output_scripts, _) =
-                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
+                    chan.build_commitment_tx(&remote_percommitment_point, commit_num, &info)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
+                let payment_hashmap = HashMap::new();
                 let ser_signature = chan
                     .sign_counterparty_commitment_tx(
                         &tx,
                         &output_witscripts,
                         &remote_percommitment_point,
                         setup.channel_value_sat,
+                        &payment_hashmap,
+                        commit_num,
                     )
                     .expect("sign");
                 Ok((ser_signature, tx))
@@ -1623,6 +1640,7 @@ mod tests {
             &channel_funding_redeemscript,
         );
     }
+    // END NOT TESTED
 
     #[test]
     fn sign_counterparty_commitment_tx_with_htlc_test() {
@@ -1663,15 +1681,24 @@ mod tests {
                 let channel_parameters = chan.make_channel_parameters();
                 let parameters = channel_parameters.as_counterparty_broadcastable();
                 let mut htlcs = vec![htlc1.clone(), htlc2.clone(), htlc3.clone()];
+                let mut payment_hashmap = HashMap::new();
+                for htlc in &htlcs {
+                    payment_hashmap.insert(
+                        Ripemd160Hash::hash(&htlc.payment_hash.0).into_inner(),
+                        htlc.payment_hash,
+                    );
+                }
                 let keys = chan
                     .make_counterparty_tx_keys(&remote_percommitment_point)
                     .unwrap();
                 let redeem_scripts =
                     build_tx_scripts(&keys, 100, 197, &mut htlcs, &parameters).expect("scripts");
+                let commit_num = 23;
+                let feerate_per_kw = 0;
                 let commitment_tx = chan.make_counterparty_commitment_tx(
                     &remote_percommitment_point,
-                    23,
-                    0,
+                    commit_num,
+                    feerate_per_kw,
                     197,
                     100,
                     htlcs,
@@ -1686,6 +1713,8 @@ mod tests {
                         &output_witscripts,
                         &remote_percommitment_point,
                         setup.channel_value_sat,
+                        &payment_hashmap,
+                        commit_num,
                     )
                     .expect("sign");
                 Ok((ser_signature, tx.transaction.clone()))
@@ -1712,7 +1741,9 @@ mod tests {
     }
 
     #[test]
-    fn sign_remote_commitment_tx_with_htlc_and_anchors_test() {
+    #[ignore] // we don't support anchors yet
+              // BEGIN NOT TESTED
+    fn sign_counterparty_commitment_tx_with_htlc_and_anchors_test() {
         let signer = MySigner::new();
         let mut setup = make_reasonable_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
@@ -1744,6 +1775,14 @@ mod tests {
         let to_holder_value_sat =
             setup.channel_value_sat - to_counterparty_value_sat - 3 - (2 * ANCHOR_SAT);
 
+        let mut payment_hashmap = HashMap::new();
+        for htlc in &vec![htlc1.clone(), htlc2.clone(), htlc3.clone()] {
+            payment_hashmap.insert(
+                Ripemd160Hash::hash(&htlc.payment_hash.0).into_inner(),
+                htlc.payment_hash,
+            );
+        }
+
         let (ser_signature, tx) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let info = chan.build_counterparty_commitment_info(
@@ -1753,8 +1792,9 @@ mod tests {
                     vec![htlc1.clone()],
                     vec![htlc2.clone(), htlc3.clone()],
                 )?;
+                let commit_num = 23;
                 let (tx, output_scripts, _) =
-                    chan.build_commitment_tx(&remote_percommitment_point, 23, &info)?;
+                    chan.build_commitment_tx(&remote_percommitment_point, commit_num, &info)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
                 let ser_signature = chan
                     .sign_counterparty_commitment_tx(
@@ -1762,6 +1802,8 @@ mod tests {
                         &output_witscripts,
                         &remote_percommitment_point,
                         setup.channel_value_sat,
+                        &payment_hashmap,
+                        commit_num,
                     )
                     .expect("sign");
                 Ok((ser_signature, tx))
@@ -1786,6 +1828,7 @@ mod tests {
             &channel_funding_redeemscript,
         );
     }
+    // END NOT TESTED
 
     #[test]
     fn sign_counterparty_commitment_tx_phase2_test() {

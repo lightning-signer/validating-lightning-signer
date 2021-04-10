@@ -8,6 +8,7 @@ use crate::util::enforcing_trait_impls::EnforcingSigner;
 use super::error::ValidationError::{self, Policy, TransactionFormat};
 
 pub trait Validator {
+    /// Phase 1 CommitmentInfo
     fn make_info(
         &self,
         keys: &EnforcingSigner,
