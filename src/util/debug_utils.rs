@@ -45,8 +45,3 @@ impl<'a> std::fmt::Debug for DebugPayload<'a> {
     }
 }
 // END NOT TESTED
-macro_rules! log_payload {
-    ($obj: expr) => {
-        &crate::util::debug_utils::DebugPayload(&$obj)
-    };
-}

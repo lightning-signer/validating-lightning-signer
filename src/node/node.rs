@@ -15,10 +15,12 @@ use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
 use lightning::chain::keysinterface::{InMemorySigner, KeysInterface, Sign};
 use lightning::ln::chan_utils::{
-    ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction,
-    CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
-    TxCreationKeys,
+    make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters,
+    CommitmentTransaction, CounterpartyChannelTransactionParameters, HTLCOutputInCommitment,
+    HolderCommitmentTransaction, TxCreationKeys,
 };
+
+use lightning::ln::channelmanager::PaymentHash;
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::util::logger::Logger;
 use secp256k1 as secp256k1_recoverable;
@@ -30,10 +32,10 @@ use crate::server::my_keys_manager::{
     KeyDerivationStyle, MyKeysManager, INITIAL_COMMITMENT_NUMBER,
 };
 use crate::tx::tx::{
-    build_commitment_tx, get_commitment_transaction_number_obscure_factor, sign_commitment,
-    CommitmentInfo2, HTLCInfo2,
+    build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
+    HTLCInfo, HTLCInfo2,
 };
-use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
+use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey};
 use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
 use crate::util::invoice_utils;
 use crate::util::status::Status;
@@ -334,7 +336,14 @@ impl Channel {
         output_witscripts: &Vec<Vec<u8>>,
         remote_per_commitment_point: &PublicKey,
         channel_value_sat: u64,
+        payment_hashmap: &HashMap<[u8; 20], PaymentHash>,
+        commitment_number: u64,
     ) -> Result<Vec<u8>, Status> {
+        // Set the feerate_per_kw to 0 because it is only used to
+        // generate the htlc success/timeout tx signatures and these
+        // signatures are discarded.
+        let feerate_per_kw = 0;
+
         if tx.output.len() != output_witscripts.len() {
             // BEGIN NOT TESTED
             return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
@@ -351,7 +360,7 @@ impl Channel {
             .validate_channel_open()
             .map_err(|ve| self.validation_error(ve))?;
 
-        // The CommitmentInfo will be used to check policy assertions.
+        // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = true;
         let info = validator
             .make_info(
@@ -363,52 +372,83 @@ impl Channel {
             )
             .map_err(|err| self.validation_error(err))?;
 
-        // Our key (remote from the point of view of the tx).
-        let counterparty_payment_pubkey =
-            self.derive_counterparty_payment_pubkey(remote_per_commitment_point)?;
+        let offered_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.offered_htlcs)?;
+        let received_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.received_htlcs)?;
+
+        let info2 = self.build_counterparty_commitment_info(
+            remote_per_commitment_point,
+            info.to_broadcaster_value_sat,
+            info.to_countersigner_value_sat,
+            offered_htlcs,
+            received_htlcs,
+        )?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let state = ValidatorState { current_height: 0 };
-        let our_address = payload_for_p2wpkh(&counterparty_payment_pubkey);
         validator
-            .validate_remote_tx_phase1(&self.setup, &state, &info, &our_address)
+            .validate_remote_tx(&self.setup, &state, &info2)
             .map_err(|ve| {
                 // BEGIN NOT TESTED
                 log_debug!(
                     self,
-                    "VALIDATION FAILED:\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}\nour_address={:#?}",
+                    "VALIDATION FAILED:\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
                     &tx,
                     &self.setup,
                     &state,
-                    &info,
-                    log_payload!(our_address),
+                    &info2,
                 );
                 self.validation_error(ve)
                 // END NOT TESTED
             })?;
 
-        let commitment_sig = sign_commitment(
-            &self.secp_ctx,
-            &self.keys,
-            &self.setup.counterparty_points.funding_pubkey,
-            &tx,
-            channel_value_sat,
-        )
-        .map_err(|err| self.internal_error(format!("sign_commitment failed: {}", err)))?;
+        let htlcs = Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
 
-        let mut sig = commitment_sig.serialize_der().to_vec();
+        let commitment_tx = self.make_counterparty_commitment_tx(
+            remote_per_commitment_point,
+            commitment_number,
+            feerate_per_kw,
+            info.to_countersigner_value_sat,
+            info.to_broadcaster_value_sat,
+            htlcs,
+        );
+
+        let funding_redeemscript = make_funding_redeemscript(
+            &self.keys.pubkeys().funding_pubkey,
+            &self.keys.counterparty_pubkeys().funding_pubkey,
+        );
+        let original_tx_sighash =
+            tx.signature_hash(0, &funding_redeemscript, SigHashType::All as u32);
+        let recomposed_tx_sighash = commitment_tx
+            .trust()
+            .built_transaction()
+            .transaction
+            .signature_hash(0, &funding_redeemscript, SigHashType::All as u32);
+        if recomposed_tx_sighash != original_tx_sighash {
+            // BEGIN NOT TESTED
+            return Err(
+                self.validation_error(ValidationError::Policy("sighash mismatch".to_string()))
+            );
+            // END NOT TESTED
+        }
+
+        // Sign the commitment.  Discard the htlc signatures for now.
+        let sigs = self
+            .keys
+            .sign_counterparty_commitment(&commitment_tx, &self.secp_ctx)
+            .map_err(|_| self.internal_error("failed to sign"))?;
+        let mut sig = sigs.0.serialize_der().to_vec();
         sig.push(SigHashType::All as u8);
         Ok(sig)
     }
 
     // BEGIN NOT TESTED
+
     pub fn sign_channel_announcement(
         &self,
         msg: &UnsignedChannelAnnouncement,
     ) -> Result<Signature, ()> {
         self.keys.sign_channel_announcement(msg, &self.secp_ctx)
     }
-    // END NOT TESTED
 
     fn get_commitment_transaction_number_obscure_factor(&self) -> u64 {
         get_commitment_transaction_number_obscure_factor(
@@ -433,7 +473,7 @@ impl Channel {
         Status,
     > {
         let keys = if !info.is_counterparty_broadcaster {
-            self.make_holder_tx_keys(per_commitment_point)? // NOT TESTED
+            self.make_holder_tx_keys(per_commitment_point)?
         } else {
             self.make_counterparty_tx_keys(per_commitment_point)?
         };
@@ -441,11 +481,10 @@ impl Channel {
         // TODO - consider if we can get LDK to put funding pubkeys in TxCreationKeys
         let (workaround_local_funding_pubkey, workaround_remote_funding_pubkey) =
             if !info.is_counterparty_broadcaster {
-                // BEGIN NOT TESTED
                 (
                     &self.keys.pubkeys().funding_pubkey,
                     &self.keys.counterparty_pubkeys().funding_pubkey,
-                ) // END NOT TESTED
+                )
             } else {
                 (
                     &self.keys.counterparty_pubkeys().funding_pubkey,
@@ -465,6 +504,8 @@ impl Channel {
             workaround_remote_funding_pubkey,
         ))
     }
+
+    // END NOT TESTED
 
     pub fn build_counterparty_commitment_info(
         &self,
@@ -581,7 +622,7 @@ impl Channel {
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
-        let htlcs = Self::htlcs_info2_to_htlcs(offered_htlcs, received_htlcs);
+        let htlcs = Self::htlcs_info2_to_oic(offered_htlcs, received_htlcs);
 
         let commitment_tx = self.make_counterparty_commitment_tx(
             remote_per_commitment_point,
@@ -651,7 +692,7 @@ impl Channel {
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
-        let htlcs = Self::htlcs_info2_to_htlcs(offered_htlcs, received_htlcs);
+        let htlcs = Self::htlcs_info2_to_oic(offered_htlcs, received_htlcs);
 
         // We provide a dummy signature for the remote, since we don't require that sig
         // to be passed in to this call.  It would have been better if HolderCommitmentTransaction
@@ -727,7 +768,7 @@ impl Channel {
         commitment_tx
     }
 
-    fn htlcs_info2_to_htlcs(
+    fn htlcs_info2_to_oic(
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Vec<HTLCOutputInCommitment> {
@@ -751,6 +792,24 @@ impl Channel {
             });
         }
         htlcs
+    }
+
+    fn htlcs_info1_to_info2(
+        payment_hashmap: &HashMap<[u8; 20], PaymentHash>,
+        htlcs: &Vec<HTLCInfo>,
+    ) -> Result<Vec<HTLCInfo2>, Status> {
+        let mut htlcs2 = Vec::new();
+        for htlc in htlcs.iter() {
+            let payment_hash = payment_hashmap
+                .get(&htlc.payment_hash_hash)
+                .ok_or_else(|| Status::invalid_argument("unmappable htlc payment_hash"))?;
+            htlcs2.push(HTLCInfo2 {
+                value_sat: htlc.value_sat,
+                payment_hash: payment_hash.clone(),
+                cltv_expiry: htlc.cltv_expiry,
+            });
+        }
+        Ok(htlcs2)
     }
 
     pub fn make_channel_parameters(&self) -> ChannelTransactionParameters {

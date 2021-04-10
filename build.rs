@@ -65,6 +65,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Outpoint.txid",
             "#[serde(serialize_with = \"crate::util::macro_logger::as_hex\")]",
         )
+        .field_attribute(
+            "SignCounterpartyCommitmentTxRequest.payment_hashes",
+            "#[serde(serialize_with = \"crate::util::macro_logger::as_hex_vec\")]",
+        )
         .out_dir("src/server")
         .compile(&["src/server/remotesigner.proto"], &["src/server"])?;
     Ok(())

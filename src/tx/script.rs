@@ -69,6 +69,8 @@ pub fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, ValidationError> 
     }
 }
 
+// BEGIN NOT TESTED
+
 /// To-counterparty redeem script when anchors are enabled - one block delay
 // FIXME - This should be in chan_utils.
 pub fn get_delayed_redeemscript(delayed_key: &PublicKey) -> Script {
@@ -185,6 +187,8 @@ fn get_htlc_anchor_redeemscript_with_explicit_keys(
             .into_script()
     }
 }
+
+// END NOT TESTED
 
 #[cfg(test)]
 mod tests {
