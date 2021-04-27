@@ -4,7 +4,6 @@
 #![allow(ellipsis_inclusive_range_patterns)]
 
 extern crate bitcoin;
-extern crate bitcoin_hashes;
 extern crate hex;
 extern crate rand;
 #[cfg(feature = "grpc")]

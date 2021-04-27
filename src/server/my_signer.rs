@@ -2,21 +2,20 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::sync::{Arc, Mutex};
 
-use secp256k1::SignOnly;
+use bitcoin::secp256k1::SignOnly;
 
 use backtrace::Backtrace;
 use bitcoin;
-use bitcoin::hashes::Hash;
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPubKey};
 use bitcoin::{Address, Network, OutPoint, Script, SigHashType};
-use bitcoin_hashes::sha256d::Hash as Sha256dHash;
+use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
-use lightning::chain::keysinterface::{KeysInterface, Sign};
+use lightning::chain::keysinterface::{KeysInterface, BaseSign};
 use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys};
 use lightning::ln::channelmanager::PaymentHash;
 use lightning::util::logger::Logger;
@@ -32,6 +31,7 @@ use crate::util::status::Status;
 use crate::util::test_utils::TestLogger;
 use rand::{OsRng, Rng};
 use std::str::FromStr;
+use bitcoin::hashes::Hash;
 
 #[derive(PartialEq, Clone, Copy)]
 #[repr(i32)]
@@ -1123,14 +1123,14 @@ mod tests {
     use bitcoin::secp256k1::Signature;
     use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::{OutPoint, TxIn, TxOut};
-    use bitcoin_hashes::hash160::Hash as Hash160;
-    use bitcoin_hashes::ripemd160::Hash as Ripemd160Hash;
+    use bitcoin::hashes::hash160::Hash as Hash160;
+    use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
     use lightning::ln::chan_utils::{
         build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
         make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
     };
     use lightning::ln::channelmanager::PaymentHash;
-    use secp256k1::recovery::{RecoverableSignature, RecoveryId};
+    use ::secp256k1::recovery::{RecoverableSignature, RecoveryId};
 
     use crate::node::node::CommitmentType;
     use crate::policy::error::ValidationError;
@@ -1145,6 +1145,7 @@ mod tests {
 
     use super::*;
     use crate::util::status::{Code, Status};
+    use bitcoin::hashes::Hash;
 
     fn init_node(signer: &MySigner, node_config: NodeConfig, seedstr: &str) -> PublicKey {
         let mut seed = [0; 32];
@@ -3448,15 +3449,15 @@ mod tests {
         let rsig =
             RecoverableSignature::from_compact(&rsigvec[..], RecoveryId::from_i32(rid).unwrap())
                 .unwrap();
-        let secp_ctx = Secp256k1::new();
+        let secp_ctx = ::secp256k1::Secp256k1::new();
         let mut buffer = String::from("Lightning Signed Message:").into_bytes();
         buffer.extend(message);
         let hash = Sha256dHash::hash(&buffer);
-        let encmsg = secp256k1::Message::from_slice(&hash[..]).unwrap();
-        let sig = rsig.to_standard();
+        let encmsg = ::secp256k1::Message::from_slice(&hash[..]).unwrap();
+        let sig = ::secp256k1::Signature::from_compact(&rsig.to_standard().serialize_compact()).unwrap();
         let pubkey = secp_ctx.recover(&encmsg, &rsig).unwrap();
         assert!(secp_ctx.verify(&encmsg, &sig, &pubkey).is_ok());
-        assert_eq!(pubkey, node_id);
+        assert_eq!(pubkey.serialize().to_vec(), node_id.serialize().to_vec());
     }
 
     // TODO move this elsewhere

@@ -14,7 +14,7 @@ use bitcoin::{OutPoint as BitcoinOutPoint, TxIn, TxOut};
 use chain::chaininterface;
 use lightning::chain;
 use lightning::chain::channelmonitor::MonitorEvent;
-use lightning::chain::keysinterface::{InMemorySigner, Sign};
+use lightning::chain::keysinterface::{InMemorySigner, BaseSign};
 use lightning::chain::transaction::OutPoint;
 use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{

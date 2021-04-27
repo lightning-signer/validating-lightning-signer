@@ -5,7 +5,7 @@ pub mod ser_util;
 
 use crate::persist::model::{ChannelEntry, NodeEntry};
 use bitcoin::Network;
-use secp256k1::PublicKey;
+use bitcoin::secp256k1::PublicKey;
 
 pub trait Persist: Sync + Send {
     /// Create a new node

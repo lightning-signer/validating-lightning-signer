@@ -11,7 +11,6 @@ use bitcoin::consensus::serialize;
 use bitcoin::network::constants::Network::Testnet;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::bip32::ChildNumber;
-use bitcoin_hashes::core::sync::atomic::AtomicUsize;
 use bitcoinconsensus::{VERIFY_ALL, verify_with_flags};
 use lightning::chain::{chaininterface, keysinterface};
 use lightning::chain::keysinterface::KeysInterface;
@@ -21,9 +20,9 @@ use lightning::util::config::{ChannelHandshakeConfig, UserConfig};
 use lightning::util::events::MessageSendEventsProvider;
 use lightning::util::logger::Logger;
 
-use lightning_signer::{check_added_monitors, check_spends, get_local_commitment_txn};
+use lightning_signer::{check_added_monitors, check_spends, get_local_commitment_txn, check_closed_broadcast, expect_pending_htlcs_forwardable_ignore, expect_payment_failed};
 use lightning_signer::server::my_signer::MySigner;
-use lightning_signer::util::functional_test_utils::{close_channel, create_announced_chan_between_nodes, create_chanmon_cfgs, create_network, create_node_chanmgrs, Node, NodeCfg, send_payment, TestChanMonCfg, connect_block};
+use lightning_signer::util::functional_test_utils::{close_channel, create_announced_chan_between_nodes, create_chanmon_cfgs, create_network, create_node_chanmgrs, Node, NodeCfg, send_payment, TestChanMonCfg, connect_block, mine_transaction, confirm_transaction_at, connect_blocks, get_announce_close_broadcast_events};
 use lightning_signer::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use lightning_signer::util::test_utils;
 use lightning_signer::util::test_utils::{TEST_NODE_CONFIG, TestChainMonitor};
@@ -32,6 +31,8 @@ use self::lightning_signer::util::functional_test_utils::{
     claim_payment,
     create_announced_chan_between_nodes_with_value,
     route_payment};
+use std::collections::BTreeSet;
+use lightning::ln::functional_test_utils::{OFFERED_HTLC_SCRIPT_WEIGHT, ACCEPTED_HTLC_SCRIPT_WEIGHT};
 
 pub fn create_node_cfgs_with_signer<'a>(
     node_count: usize,
@@ -131,18 +132,22 @@ fn channel_force_close_test() {
 
     // Close channel forcefully
     let _ = nodes[0].node.force_close_channel(&chan.2);
-    assert_eq!(nodes[0].node.get_and_clear_pending_msg_events().len(), 1);
+
+    check_closed_broadcast!(nodes[0], true);
+
+    // assert_eq!(nodes[0].node.get_and_clear_pending_msg_events().len(), 1);
     check_added_monitors!(nodes[0], 1);
 
     // Cause the other node to sweep
     let node_txn = nodes[0].tx_broadcaster.txn_broadcasted.lock().unwrap();
+    assert_eq!(node_txn.len(), 1);
 
     // Check if closing tx correctly spends the funding
     check_spends!(node_txn[0], chan.3);
 
-    let header = BlockHeader { version: 0x20000000, prev_blockhash: Default::default(), merkle_root: Default::default(), time: 42, bits: 42, nonce: 42 };
-    connect_block(&nodes[1], &Block { header, txdata: vec![node_txn[0].clone()] }, 0);
-    assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 1);
+    let header = BlockHeader { version: 0x20000000, prev_blockhash: nodes[0].best_block_hash(), merkle_root: Default::default(), time: 42, bits: 42, nonce: 42 };
+    connect_block(&nodes[1], &Block { header, txdata: vec![node_txn[0].clone()] });
+    assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 2);
     check_added_monitors!(nodes[1], 1);
 }
 
@@ -164,62 +169,85 @@ fn justice_tx_test() {
     // Send a payment through, updating everyone's latest commitment txn
     send_payment(&nodes[0], &vec!(&nodes[1])[..], 5000000, 5_000_000);
 
-    // Inform nodes[1] that nodes[0] broadcast a stale tx
-    let header = BlockHeader { version: 0x20000000, prev_blockhash: Default::default(), merkle_root: Default::default(), time: 42, bits: 42, nonce: 42 };
-    connect_block(&nodes[1], &Block { header, txdata: vec![revoked_local_txn[0].clone()] }, 1);
-    assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 1);
+    mine_transaction(&nodes[1], &revoked_local_txn[0]);
+    assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 2);
     check_added_monitors!(nodes[1], 1);
     let node1_txn = nodes[1].tx_broadcaster.txn_broadcasted.lock().unwrap();
+    assert_eq!(node1_txn.len(), 2); // ChannelMonitor: penalty tx, ChannelManager: local commitment tx
     check_spends!(node1_txn[0], revoked_local_txn[0]);
 }
 
 #[test]
-fn claim_htlc_test() {
+fn claim_htlc_outputs_single_tx() {
     let signer = Arc::new(MySigner::new());
 
+    // Node revoked old state, htlcs have timed out, claim each of them in separated justice tx
     let chanmon_cfgs = create_chanmon_cfgs(2);
     let node_cfgs = create_node_cfgs_with_signer(2, &signer, &chanmon_cfgs);
     let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[None, None]);
     let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
 
-    let chan = create_announced_chan_between_nodes_with_value(&nodes, 0, 1, 1000000, 59000000,
-                                                              InitFeatures::known(), InitFeatures::known());
-    // node[0] is gonna to revoke an old state thus node[1] should be able to claim the revoked output
-    let payment_preimage = route_payment(&nodes[0], &vec!(&nodes[1])[..], 3000000).0;
-    route_payment(&nodes[1], &vec!(&nodes[0])[..], 3000000).0;
+    let chan_1 = create_announced_chan_between_nodes(&nodes, 0, 1, InitFeatures::known(), InitFeatures::known());
 
-    // Remote commitment txn with 4 outputs : to_broadcaster, to_countersigner, 1 outgoing HTLC, 1 incoming HTLC
-    let remote_txn = get_local_commitment_txn!(nodes[0], chan.2);
-    assert_eq!(remote_txn[0].output.len(), 4);
-    assert_eq!(remote_txn[0].input.len(), 1);
-    assert_eq!(remote_txn[0].input[0].previous_output.txid, chan.3.txid());
+    // Rebalance the network to generate htlc in the two directions
+    send_payment(&nodes[0], &vec!(&nodes[1])[..], 8000000, 8_000_000);
+    // node[0] is gonna to revoke an old state thus node[1] should be able to claim both offered/received HTLC outputs on top of commitment tx, but this
+    // time as two different claim transactions as we're gonna to timeout htlc with given a high current height
+    let payment_preimage_1 = route_payment(&nodes[0], &vec!(&nodes[1])[..], 3000000).0;
+    let (_payment_preimage_2, payment_hash_2) = route_payment(&nodes[1], &vec!(&nodes[0])[..], 3000000);
 
-    // Check if closing tx correctly spends the funding
-    check_spends!(remote_txn[0], chan.3);
-    // Check if the HTLC sweep correctly spends the commitment
-    check_spends!(remote_txn[1], remote_txn[0]);
+    // Get the will-be-revoked local txn from node[0]
+    let revoked_local_txn = get_local_commitment_txn!(nodes[0], chan_1.2);
 
-    // Claim a HTLC without revocation (provide B monitor with preimage)
-    nodes[1].node.claim_funds(payment_preimage, &None, 3_000_000);
-    let header = BlockHeader { version: 0x20000000, prev_blockhash: Default::default(), merkle_root: Default::default(), time: 42, bits: 42, nonce: 42 };
-
-    connect_block(&nodes[1], &Block { header, txdata: vec![remote_txn[0].clone()] }, 1);
-    assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 2);
-    check_added_monitors!(nodes[1], 2);
+    //Revoke the old state
+    claim_payment(&nodes[0], &vec!(&nodes[1])[..], payment_preimage_1, 3_000_000);
 
     {
-        let node_txn = nodes[1].tx_broadcaster.txn_broadcasted.lock().unwrap();
-        // Check if the remote HTLC sweeps correctly spend the commitment
-        check_spends!(node_txn[0], remote_txn[0]);
-        check_spends!(node_txn[1], remote_txn[0]);
+        confirm_transaction_at(&nodes[0], &revoked_local_txn[0], 100);
+        check_added_monitors!(nodes[0], 1);
+        confirm_transaction_at(&nodes[1], &revoked_local_txn[0], 100);
+        check_added_monitors!(nodes[1], 1);
+        expect_pending_htlcs_forwardable_ignore!(nodes[0]);
 
-        // TODO something funny here - why are both nodes broadcasting a commitment?
-        // Check if closing tx correctly spends the funding
-        check_spends!(node_txn[2], chan.3);
-        // Check if the local HTLC sweeps correctly spend the commitment
-        check_spends!(node_txn[3], node_txn[2]);
-        check_spends!(node_txn[4], node_txn[2]);
+        connect_blocks(&nodes[1], 6 - 1);
+        expect_payment_failed!(nodes[1], payment_hash_2, true);
+
+        let node_txn = nodes[1].tx_broadcaster.txn_broadcasted.lock().unwrap();
+        assert_eq!(node_txn.len(), 9);
+        // ChannelMonitor: justice tx revoked offered htlc, justice tx revoked received htlc, justice tx revoked to_local (3)
+        // ChannelManager: local commmitment + local HTLC-timeout (2)
+        // ChannelMonitor: bumped justice tx, after one increase, bumps on HTLC aren't generated not being substantial anymore, bump on revoked to_local isn't generated due to more room for expiration (2)
+        // ChannelMonitor: local commitment + local HTLC-timeout (2)
+
+        // Check the pair local commitment and HTLC-timeout broadcast due to HTLC expiration
+        assert_eq!(node_txn[0].input.len(), 1);
+        check_spends!(node_txn[0], chan_1.3);
+        assert_eq!(node_txn[1].input.len(), 1);
+        let witness_script = node_txn[1].input[0].witness.last().unwrap();
+        assert_eq!(witness_script.len(), OFFERED_HTLC_SCRIPT_WEIGHT); //Spending an offered htlc output
+    check_spends!(node_txn[1], node_txn[0]);
+
+        // Justice transactions are indices 1-2-4
+        assert_eq!(node_txn[2].input.len(), 1);
+        assert_eq!(node_txn[3].input.len(), 1);
+        assert_eq!(node_txn[4].input.len(), 1);
+
+        check_spends!(node_txn[2], revoked_local_txn[0]);
+        check_spends!(node_txn[3], revoked_local_txn[0]);
+        check_spends!(node_txn[4], revoked_local_txn[0]);
+
+        let mut witness_lens = BTreeSet::new();
+        witness_lens.insert(node_txn[2].input[0].witness.last().unwrap().len());
+        witness_lens.insert(node_txn[3].input[0].witness.last().unwrap().len());
+        witness_lens.insert(node_txn[4].input[0].witness.last().unwrap().len());
+        assert_eq!(witness_lens.len(), 3);
+        assert_eq!(*witness_lens.iter().skip(0).next().unwrap(), 77); // revoked to_local
+        assert_eq!(*witness_lens.iter().skip(1).next().unwrap(), OFFERED_HTLC_SCRIPT_WEIGHT); // revoked offered HTLC
+        assert_eq!(*witness_lens.iter().skip(2).next().unwrap(), ACCEPTED_HTLC_SCRIPT_WEIGHT); // revoked received HTLC
     }
+    get_announce_close_broadcast_events(&nodes, 0, 1);
+    assert_eq!(nodes[0].node.list_channels().len(), 0);
+    assert_eq!(nodes[1].node.list_channels().len(), 0);
 }
 
 #[test]
@@ -239,10 +267,11 @@ fn channel_force_close_with_htlc_test() {
 
     // Close channel forcefully
     let _ = nodes[0].node.force_close_channel(&chan_1.2);
-    assert_eq!(nodes[0].node.get_and_clear_pending_msg_events().len(), 1);
+    check_closed_broadcast!(nodes[0], true);
     check_added_monitors!(nodes[0], 1);
 
     let node_txn = nodes[0].tx_broadcaster.txn_broadcasted.lock().unwrap();
+    assert_eq!(node_txn.len(), 2); // ChannelMonitor: penalty tx, ChannelManager: local commitment tx
 
     // Check if closing tx correctly spends the funding
     check_spends!(node_txn[0], chan_1.3);

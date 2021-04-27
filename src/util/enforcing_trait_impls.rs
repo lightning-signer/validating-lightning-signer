@@ -2,10 +2,9 @@ use std::io::Error;
 use std::sync::{Arc, Mutex};
 
 use bitcoin::blockdata::transaction::Transaction;
-use bitcoin::secp256k1;
 use bitcoin::secp256k1::key::{PublicKey, SecretKey};
-use bitcoin::secp256k1::{Secp256k1, Signature};
-use chain::keysinterface::{InMemorySigner, Sign};
+use bitcoin::secp256k1::{Secp256k1, Signature, All};
+use chain::keysinterface::InMemorySigner;
 use lightning::chain;
 use lightning::ln;
 use lightning::ln::chan_utils::{
@@ -17,6 +16,7 @@ use lightning::util::ser::{Readable, Writeable, Writer};
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 use ln::msgs;
 use std::cmp;
+use lightning::chain::keysinterface::BaseSign;
 
 /// Enforces some rules on Sign calls. Eventually we will
 /// probably want to expose a variant of this which would essentially
@@ -69,9 +69,9 @@ impl EnforcingSigner {
 impl EnforcingSigner {
     // BEGIN NOT TESTED
     #[allow(dead_code)]
-    fn check_keys<T: secp256k1::Signing + secp256k1::Verification>(
+    fn check_keys(
         &self,
-        secp_ctx: &Secp256k1<T>,
+        secp_ctx: &Secp256k1<All>,
         keys: &TxCreationKeys,
     ) {
         // FIXME
@@ -115,11 +115,11 @@ impl EnforcingSigner {
     }
 }
 
-impl Sign for EnforcingSigner {
-    fn get_per_commitment_point<T: secp256k1::Signing + secp256k1::Verification>(
+impl BaseSign for EnforcingSigner {
+    fn get_per_commitment_point(
         &self,
         idx: u64,
-        secp_ctx: &Secp256k1<T>,
+        secp_ctx: &Secp256k1<All>,
     ) -> PublicKey {
         self.inner.get_per_commitment_point(idx, secp_ctx)
     }
@@ -138,10 +138,10 @@ impl Sign for EnforcingSigner {
     }
     // END NOT TESTED
 
-    fn sign_counterparty_commitment<T: secp256k1::Signing + secp256k1::Verification>(
+    fn sign_counterparty_commitment(
         &self,
         commitment_tx: &CommitmentTransaction,
-        secp_ctx: &Secp256k1<T>,
+        secp_ctx: &Secp256k1<All>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
         // FIXME bypass while integrating with c-lightning
         // self.check_keys(secp_ctx, keys);
@@ -166,32 +166,32 @@ impl Sign for EnforcingSigner {
             .unwrap())
     }
 
-    fn sign_holder_commitment_and_htlcs<T: secp256k1::Signing + secp256k1::Verification>(
+    fn sign_holder_commitment_and_htlcs(
         &self,
         local_commitment_tx: &HolderCommitmentTransaction,
-        secp_ctx: &Secp256k1<T>,
+        secp_ctx: &Secp256k1<All>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
         self.inner
             .sign_holder_commitment_and_htlcs(local_commitment_tx, secp_ctx)
     }
 
-    fn unsafe_sign_holder_commitment_and_htlcs<T: secp256k1::Signing + secp256k1::Verification>(
+    fn unsafe_sign_holder_commitment_and_htlcs(
         &self,
         local_commitment_tx: &HolderCommitmentTransaction,
-        secp_ctx: &Secp256k1<T>,
+        secp_ctx: &Secp256k1<All>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
         self.inner
             .unsafe_sign_holder_commitment_and_htlcs(local_commitment_tx, secp_ctx)
     }
 
-    fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(
+    fn sign_justice_transaction(
         &self,
         justice_tx: &Transaction,
         input: usize,
         amount: u64,
         per_commitment_key: &SecretKey,
         htlc: &Option<HTLCOutputInCommitment>,
-        secp_ctx: &Secp256k1<T>,
+        secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         self.inner.sign_justice_transaction(
             justice_tx,
@@ -203,14 +203,14 @@ impl Sign for EnforcingSigner {
         )
     }
 
-    fn sign_counterparty_htlc_transaction<T: secp256k1::Signing + secp256k1::Verification>(
+    fn sign_counterparty_htlc_transaction(
         &self,
         htlc_tx: &Transaction,
         input: usize,
         amount: u64,
         per_commitment_point: &PublicKey,
         htlc: &HTLCOutputInCommitment,
-        secp_ctx: &Secp256k1<T>,
+        secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         self.inner.sign_counterparty_htlc_transaction(
             htlc_tx,
@@ -222,10 +222,10 @@ impl Sign for EnforcingSigner {
         )
     }
 
-    fn sign_closing_transaction<T: secp256k1::Signing>(
+    fn sign_closing_transaction(
         &self,
         closing_tx: &Transaction,
-        secp_ctx: &Secp256k1<T>,
+        secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         Ok(self
             .inner
@@ -234,10 +234,10 @@ impl Sign for EnforcingSigner {
     }
 
     // BEGIN NOT TESTED
-    fn sign_channel_announcement<T: secp256k1::Signing>(
+    fn sign_channel_announcement(
         &self,
         msg: &msgs::UnsignedChannelAnnouncement,
-        secp_ctx: &Secp256k1<T>,
+        secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         self.inner.sign_channel_announcement(msg, secp_ctx)
     }

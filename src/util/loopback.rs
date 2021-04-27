@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use bitcoin::secp256k1;
-use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
+use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signature, All};
 use bitcoin::{Script, Transaction};
-use lightning::chain::keysinterface::{KeysInterface, KeysManager, Sign};
+use lightning::chain::keysinterface::{KeysInterface, KeysManager, Sign, BaseSign};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, HTLCOutputInCommitment,
@@ -71,10 +70,10 @@ impl LoopbackChannelSigner {
         }
     }
 
-    pub fn make_counterparty_tx_keys<T: secp256k1::Signing + secp256k1::Verification>(
+    pub fn make_counterparty_tx_keys(
         &self,
         per_commitment_point: &PublicKey,
-        secp_ctx: &Secp256k1<T>,
+        secp_ctx: &Secp256k1<All>,
     ) -> Result<TxCreationKeys, ()> {
         let pubkeys = &self.pubkeys;
         let counterparty_pubkeys = self.counterparty_pubkeys.as_ref().ok_or(())?;
@@ -174,11 +173,11 @@ fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
     Ok(sig)
 }
 
-impl Sign for LoopbackChannelSigner {
-    fn get_per_commitment_point<T: secp256k1::Signing + secp256k1::Verification>(
+impl BaseSign for LoopbackChannelSigner {
+    fn get_per_commitment_point(
         &self,
         idx: u64,
-        _secp_ctx: &Secp256k1<T>,
+        _secp_ctx: &Secp256k1<All>,
     ) -> PublicKey {
         // signer layer expect forward counting commitment number, but we are passed a backwards counting one
         self.signer
@@ -212,10 +211,10 @@ impl Sign for LoopbackChannelSigner {
     }
 
     // TODO - Couldn't this return a declared error signature?
-    fn sign_counterparty_commitment<T: secp256k1::Signing + secp256k1::Verification>(
+    fn sign_counterparty_commitment(
         &self,
         commitment_tx: &CommitmentTransaction,
-        _secp_ctx: &Secp256k1<T>,
+        _secp_ctx: &Secp256k1<All>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
         let signer = &self.signer;
         let trusted_tx = commitment_tx.trust();
@@ -260,18 +259,18 @@ impl Sign for LoopbackChannelSigner {
         Ok((commitment_sig, htlc_sigs))
     }
 
-    fn sign_holder_commitment_and_htlcs<T: secp256k1::Signing + secp256k1::Verification>(
+    fn sign_holder_commitment_and_htlcs(
         &self,
         hct: &HolderCommitmentTransaction,
-        _secp_ctx: &Secp256k1<T>,
+        _secp_ctx: &Secp256k1<All>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
         Ok(self.sign_holder_commitment_and_htlcs(hct)?)
     }
 
-    fn unsafe_sign_holder_commitment_and_htlcs<T: secp256k1::Signing + secp256k1::Verification>(
+    fn unsafe_sign_holder_commitment_and_htlcs(
         &self,
         hct: &HolderCommitmentTransaction,
-        secp_ctx: &Secp256k1<T>,
+        secp_ctx: &Secp256k1<All>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
         self.signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
@@ -282,14 +281,14 @@ impl Sign for LoopbackChannelSigner {
             .map_err(|_s| ()) // NOT TESTED
     }
 
-    fn sign_justice_transaction<T: secp256k1::Signing + secp256k1::Verification>(
+    fn sign_justice_transaction(
         &self,
         justice_tx: &Transaction,
         input: usize,
         amount: u64,
         per_commitment_key: &SecretKey,
         htlc: &Option<HTLCOutputInCommitment>,
-        secp_ctx: &Secp256k1<T>,
+        secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
         let counterparty_pubkeys = self.counterparty_pubkeys.as_ref().unwrap();
@@ -329,14 +328,14 @@ impl Sign for LoopbackChannelSigner {
         bitcoin_sig_to_signature(res)
     }
 
-    fn sign_counterparty_htlc_transaction<T: secp256k1::Signing + secp256k1::Verification>(
+    fn sign_counterparty_htlc_transaction(
         &self,
         htlc_tx: &Transaction,
         input: usize,
         amount: u64,
         per_commitment_point: &PublicKey,
         htlc: &HTLCOutputInCommitment,
-        secp_ctx: &Secp256k1<T>,
+        secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         let chan_keys = self.make_counterparty_tx_keys(per_commitment_point, secp_ctx)?;
         let redeem_script = chan_utils::get_htlc_redeemscript(htlc, &chan_keys);
@@ -358,10 +357,10 @@ impl Sign for LoopbackChannelSigner {
     }
 
     // TODO - Couldn't this return a declared error signature?
-    fn sign_closing_transaction<T: secp256k1::Signing>(
+    fn sign_closing_transaction(
         &self,
         closing_tx: &Transaction,
-        _secp_ctx: &Secp256k1<T>,
+        _secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         let signer = &self.signer;
         log_info!(
@@ -413,10 +412,10 @@ impl Sign for LoopbackChannelSigner {
         bitcoin_sig_to_signature(res)
     }
 
-    fn sign_channel_announcement<T: secp256k1::Signing>(
+    fn sign_channel_announcement(
         &self,
         msg: &UnsignedChannelAnnouncement,
-        _secp_ctx: &Secp256k1<T>,
+        _secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         let signer = &self.signer;
         log_info!(
@@ -471,6 +470,9 @@ impl Sign for LoopbackChannelSigner {
     }
 }
 
+impl Sign for LoopbackChannelSigner {
+}
+
 impl KeysInterface for LoopbackSignerKeysInterface {
     type Signer = LoopbackChannelSigner;
 
@@ -521,8 +523,8 @@ impl KeysInterface for LoopbackSignerKeysInterface {
     // END NOT TESTED
 }
 
-fn get_delayed_payment_keys<T: secp256k1::Signing + secp256k1::Verification>(
-    secp_ctx: &Secp256k1<T>,
+fn get_delayed_payment_keys(
+    secp_ctx: &Secp256k1<All>,
     per_commitment_point: &PublicKey,
     a_pubkeys: &ChannelPublicKeys,
     b_pubkeys: &ChannelPublicKeys,
