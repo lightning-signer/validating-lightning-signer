@@ -15,10 +15,8 @@ path = "src/lib.rs"
 
 [dependencies]
 backtrace = "0.3"
-bitcoin = "0.24"
 bip39 = {version = "1.0.0", features = ["rand"] }
 secp256k1 = { version = "0.18.0", features = ["recovery"] }
-bitcoin_hashes = "0.8.0"
 hex = "0.3.2"
 rand = "0.4"
 rust-crypto = "0.2.36"
@@ -37,14 +35,22 @@ tempfile = "3.2.0"
 
 [dependencies.lightning]
 git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "94bb0c9128c2635ea08ec089f79fab04880dedd0"
-[dev-dependencies.lightning]
-git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "94bb0c9128c2635ea08ec089f79fab04880dedd0"
+rev = "95779285575d3139482a73a943234c7dd82eb956"
+# we need this for integration testing
 features = ["unsafe_revoked_tx_signing", "_test_utils"]
 
+[dev-dependencies.lightning]
+git = "https://github.com/rust-bitcoin/rust-lightning.git"
+rev = "95779285575d3139482a73a943234c7dd82eb956"
+features = ["unsafe_revoked_tx_signing", "_test_utils"]
+
+[dependencies.bitcoin]
+version = "0.26"
+# we need this for integration testing
+features = ["bitcoinconsensus"]
+
 [dev-dependencies.bitcoin]
-version = "0.24"
+version = "0.26"
 features = ["bitcoinconsensus"]
 
 [dev-dependencies.bitcoinconsensus]

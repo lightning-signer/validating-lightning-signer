@@ -8,10 +8,10 @@ use bitcoin::secp256k1;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signing};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{Network, Script};
-use bitcoin_hashes::hash160::Hash as Hash160;
-use bitcoin_hashes::sha256::Hash as Sha256;
-use bitcoin_hashes::sha256::HashEngine as Sha256State;
-use bitcoin_hashes::{Hash, HashEngine};
+use bitcoin::hashes::hash160::Hash as Hash160;
+use bitcoin::hashes::sha256::Hash as Sha256;
+use bitcoin::hashes::sha256::HashEngine as Sha256State;
+use bitcoin::hashes::{Hash, HashEngine};
 use lightning::chain::keysinterface::{InMemorySigner, KeysInterface};
 use lightning::util::logger::Logger;
 
@@ -362,7 +362,7 @@ mod tests {
     use crate::util::test_utils::TestLogger;
 
     use super::*;
-    use lightning::chain::keysinterface::Sign;
+    use lightning::chain::keysinterface::BaseSign;
 
     fn logger() -> Arc<Logger> {
         Arc::new(TestLogger::with_id("server".to_owned()))

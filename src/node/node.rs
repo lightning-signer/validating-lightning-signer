@@ -10,10 +10,10 @@ use bitcoin::secp256k1;
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::bip32::ExtendedPrivKey;
 use bitcoin::{Network, OutPoint, Script, SigHashType};
-use bitcoin_hashes::core::fmt::{Error, Formatter};
-use bitcoin_hashes::sha256d::Hash as Sha256dHash;
-use bitcoin_hashes::Hash;
-use lightning::chain::keysinterface::{InMemorySigner, KeysInterface, Sign};
+use bitcoin::hashes::core::fmt::{Error, Formatter};
+use bitcoin::hashes::sha256d::Hash as Sha256dHash;
+use bitcoin::hashes::Hash;
+use lightning::chain::keysinterface::{InMemorySigner, KeysInterface, BaseSign};
 use lightning::ln::chan_utils::{
     make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters,
     CommitmentTransaction, CounterpartyChannelTransactionParameters, HTLCOutputInCommitment,
@@ -23,8 +23,8 @@ use lightning::ln::chan_utils::{
 use lightning::ln::channelmanager::PaymentHash;
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::util::logger::Logger;
-use secp256k1 as secp256k1_recoverable;
-use secp256k1::Secp256k1 as Secp256k1_recoverable;
+use ::secp256k1 as secp256k1_recoverable;
+use ::secp256k1::{Secp256k1 as Secp256k1_recoverable, SecretKey as SecretKey_recoverable};
 
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
@@ -1143,7 +1143,8 @@ impl Node {
         let secp_ctx = Secp256k1_recoverable::signing_only();
         let encmsg = secp256k1_recoverable::Message::from_slice(&hash[..])
             .map_err(|err| self.internal_error(format!("encmsg failed: {}", err)))?;
-        let sig = secp_ctx.sign_recoverable(&encmsg, &self.get_node_secret());
+        let node_secret = SecretKey_recoverable::from_slice(self.get_node_secret().as_ref()).unwrap();
+        let sig = secp_ctx.sign_recoverable(&encmsg, &node_secret);
         let (rid, sig) = sig.serialize_compact();
         let mut res = sig.to_vec();
         res.push(rid.to_i32() as u8);

@@ -1,6 +1,6 @@
 use bech32::u5;
-use bitcoin_hashes::sha256;
-use bitcoin_hashes::Hash;
+use bitcoin::hashes::sha256;
+use bitcoin::hashes::Hash;
 
 // from rust-lightning-invoice
 pub fn hash_from_parts(hrp_bytes: &[u8], data_without_signature: &[u5]) -> [u8; 32] {

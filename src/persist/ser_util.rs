@@ -4,7 +4,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::{OutPoint, Script, Txid};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::util::ser::Writer;
-use secp256k1::PublicKey;
+use bitcoin::secp256k1::key::PublicKey;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::serde_as;
 use serde_with::{DeserializeAs, SerializeAs};
@@ -58,13 +58,19 @@ impl<'de> DeserializeAs<'de, ChannelId> for ChannelIdHandler {
     }
 }
 
+#[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "ChannelPublicKeys")]
 pub struct ChannelPublicKeysDef {
+    #[serde_as(as = "PublicKeyHandler")]
     pub funding_pubkey: PublicKey,
+    #[serde_as(as = "PublicKeyHandler")]
     pub revocation_basepoint: PublicKey,
+    #[serde_as(as = "PublicKeyHandler")]
     pub payment_point: PublicKey,
+    #[serde_as(as = "PublicKeyHandler")]
     pub delayed_payment_basepoint: PublicKey,
+    #[serde_as(as = "PublicKeyHandler")]
     pub htlc_basepoint: PublicKey,
 }
 

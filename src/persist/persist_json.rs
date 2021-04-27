@@ -1,6 +1,6 @@
 use bitcoin::Network;
 use kv::{Bucket, Config, Json, Store, TransactionError};
-use secp256k1::PublicKey;
+use bitcoin::secp256k1::PublicKey;
 
 use crate::node::node::{Channel, ChannelId, ChannelStub, NodeConfig};
 use crate::persist::model::{ChannelEntry, NodeChannelId, NodeEntry};

@@ -5,9 +5,9 @@ use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::Network;
-use bitcoin_hashes::hash160::Hash as BitcoinHash160;
-use bitcoin_hashes::sha256::Hash as BitcoinSha256;
-use bitcoin_hashes::{Hash, HashEngine};
+use bitcoin::hashes::hash160::Hash as BitcoinHash160;
+use bitcoin::hashes::sha256::Hash as BitcoinSha256;
+use bitcoin::hashes::{Hash, HashEngine};
 use crypto::hkdf::{hkdf_expand, hkdf_extract};
 use crypto::sha2::Sha256;
 
@@ -68,6 +68,7 @@ pub fn derive_key_lnd(
         bitcoin::Network::Bitcoin => 0,
         bitcoin::Network::Testnet => 1,
         bitcoin::Network::Regtest => 1, // NOT TESTED
+        bitcoin::Network::Signet => 1, // NOT TESTED
     };
     let branch = 0;
     let node_ext_prv = master

@@ -1,5 +1,3 @@
-extern crate bitcoin_hashes;
-
 // FILE NOT TESTED
 
 pub mod script;

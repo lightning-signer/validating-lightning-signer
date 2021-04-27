@@ -3,34 +3,33 @@ use std::convert::{TryFrom, TryInto};
 
 use backtrace::Backtrace;
 use bitcoin;
+use bitcoin::{OutPoint, Script};
 use bitcoin::consensus::{deserialize, encode};
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::util::psbt::serialize::Deserialize;
-use bitcoin::{OutPoint, Script};
-use bitcoin_hashes::ripemd160::Hash as Ripemd160Hash;
-use bitcoin_hashes::Hash;
+use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
+use clap::{App, Arg};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::channelmanager::PaymentHash;
 use serde_json::json;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status, transport::Server};
 
-use crate::server::my_signer::SpendType;
-
-use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
+use remotesigner::signer_server::{Signer, SignerServer};
 
 use crate::node::node::{ChannelId, ChannelSetup, CommitmentType};
+use crate::node::node;
+use crate::persist::{DummyPersister, Persist};
+use crate::persist::persist_json::KVJsonPersister;
+use crate::server::my_keys_manager::KeyDerivationStyle;
 use crate::server::my_signer::{channel_nonce_to_id, MySigner};
+use crate::server::my_signer::SpendType;
 use crate::server::remotesigner::version_server::Version;
 use crate::tx::tx::HTLCInfo2;
+use crate::util::status;
 
 use super::remotesigner;
-use crate::node::node;
-use crate::persist::persist_json::KVJsonPersister;
-use crate::persist::{DummyPersister, Persist};
-use crate::server::my_keys_manager::KeyDerivationStyle;
-use crate::util::status;
-use clap::{App, Arg};
+use bitcoin::hashes::Hash as BitcoinHash;
 
 // BEGIN NOT TESTED
 

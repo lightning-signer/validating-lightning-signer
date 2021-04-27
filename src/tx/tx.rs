@@ -13,9 +13,9 @@ use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, Signature};
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip143;
 use bitcoin::{OutPoint, Script, SigHashType, Transaction, TxIn, TxOut};
-use bitcoin_hashes::sha256::Hash as Sha256;
-use bitcoin_hashes::{Hash, HashEngine};
-use lightning::chain::keysinterface::Sign;
+use bitcoin::hashes::sha256::Hash as Sha256;
+use bitcoin::hashes::{Hash, HashEngine};
+use lightning::chain::keysinterface::BaseSign;
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     get_revokeable_redeemscript, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,

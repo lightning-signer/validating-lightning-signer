@@ -3,7 +3,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 
 use kv::{Key, Raw};
-use secp256k1::PublicKey;
+use bitcoin::secp256k1::PublicKey;
 use serde::{Deserialize, Serialize};
 use serde_with::hex::Hex;
 use serde_with::serde_as;
