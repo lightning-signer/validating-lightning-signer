@@ -1130,7 +1130,7 @@ mod tests {
         make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
     };
     use lightning::ln::channelmanager::PaymentHash;
-    use ::secp256k1::recovery::{RecoverableSignature, RecoveryId};
+    use bitcoin::secp256k1::recovery::{RecoverableSignature, RecoveryId};
 
     use crate::node::node::CommitmentType;
     use crate::policy::error::ValidationError;
@@ -3449,12 +3449,12 @@ mod tests {
         let rsig =
             RecoverableSignature::from_compact(&rsigvec[..], RecoveryId::from_i32(rid).unwrap())
                 .unwrap();
-        let secp_ctx = ::secp256k1::Secp256k1::new();
+        let secp_ctx = secp256k1::Secp256k1::new();
         let mut buffer = String::from("Lightning Signed Message:").into_bytes();
         buffer.extend(message);
         let hash = Sha256dHash::hash(&buffer);
-        let encmsg = ::secp256k1::Message::from_slice(&hash[..]).unwrap();
-        let sig = ::secp256k1::Signature::from_compact(&rsig.to_standard().serialize_compact()).unwrap();
+        let encmsg = secp256k1::Message::from_slice(&hash[..]).unwrap();
+        let sig = secp256k1::Signature::from_compact(&rsig.to_standard().serialize_compact()).unwrap();
         let pubkey = secp_ctx.recover(&encmsg, &rsig).unwrap();
         assert!(secp_ctx.verify(&encmsg, &sig, &pubkey).is_ok());
         assert_eq!(pubkey.serialize().to_vec(), node_id.serialize().to_vec());

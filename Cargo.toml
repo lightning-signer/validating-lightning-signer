@@ -7,7 +7,7 @@ edition = "2018"
 [features]
 default = ["grpc", "persist_kv_json"]
 grpc = ["tokio", "tonic", "prost", "serde", "serde_json", "clap"]
-persist_kv_json = [ "kv", "serde_with", "secp256k1/serde" ]
+persist_kv_json = [ "kv", "serde_with", "bitcoin/use-serde" ]
 
 [lib]
 name = "lightning_signer"
@@ -16,7 +16,6 @@ path = "src/lib.rs"
 [dependencies]
 backtrace = "0.3"
 bip39 = {version = "1.0.0", features = ["rand"] }
-secp256k1 = { version = "0.18.0", features = ["recovery"] }
 hex = "0.3.2"
 rand = "0.4"
 rust-crypto = "0.2.36"
