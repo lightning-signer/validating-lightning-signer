@@ -7,7 +7,7 @@ rust-latest:
   before_script:
     - rustup component add rustfmt
   script:
-    - cargo build --features=grpc
+    - cd lightning-signer-core && cargo build --no-default-features  # make sure it builds without test_utils enabled
     - cargo build
     - cargo test
 
@@ -22,6 +22,6 @@ coverage:
     - apt-get install -y libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
     - cargo kcov --print-install-kcov-sh | sh
   script:
-    - CARGO_TARGET_DIR=target/kcov cargo kcov --verbose --lib -- --verify --exclude-pattern=/home/user/.cargo,/usr/include,/usr/src/debug,src/util/loopback.rs,src/util/functional_test_util.rs
+    - cd lightning-signer-core && CARGO_TARGET_DIR=target/kcov cargo kcov --verbose --lib -- --verify --exclude-pattern=/home/user/.cargo,/usr/include,/usr/src/debug,src/util/loopback.rs,src/util/functional_test_util.rs
   after_script:
     - bash <(curl -s https://codecov.io/bash) -t "${CODECOV_TOKEN}"

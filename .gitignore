@@ -1,6 +1,6 @@
 **/*.rs.bk
 /cobertura.xml
 /coverage.txt
-/src/server/remotesigner.rs
+/lightning-signer-server/src/server/remotesigner.rs
 /target
 /.lightning-signer/
