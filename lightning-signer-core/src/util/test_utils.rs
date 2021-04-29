@@ -14,7 +14,7 @@ use bitcoin::{OutPoint as BitcoinOutPoint, TxIn, TxOut};
 use chain::chaininterface;
 use lightning::chain;
 use lightning::chain::channelmonitor::MonitorEvent;
-use lightning::chain::keysinterface::{InMemorySigner, BaseSign};
+use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::chain::transaction::OutPoint;
 use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{
@@ -26,11 +26,11 @@ use lightning::util::logger::{Level, Logger, Record};
 use lightning::util::test_utils;
 
 use crate::node::node::{ChannelSetup, CommitmentType, NodeConfig};
+use crate::signer::my_keys_manager::KeyDerivationStyle;
 use crate::tx::tx::sort_outputs;
 use crate::util::crypto_utils::payload_for_p2wpkh;
 use crate::util::enforcing_trait_impls::EnforcingSigner;
 use crate::util::loopback::LoopbackChannelSigner;
-use crate::signer::my_keys_manager::KeyDerivationStyle;
 
 pub struct TestLogger {
     level: Level,

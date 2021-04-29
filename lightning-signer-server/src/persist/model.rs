@@ -5,13 +5,15 @@ use std::fmt::{Display, Formatter};
 use bitcoin::secp256k1::PublicKey;
 use kv::{Key, Raw};
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 use serde_with::hex::Hex;
+use serde_with::serde_as;
 
+use super::ser_util::{ChannelIdHandler, ChannelSetupDef, EnforcementStateDef};
 use lightning_signer::node::node::{ChannelId, ChannelSetup};
-use lightning_signer::persist::model::{ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry};
+use lightning_signer::persist::model::{
+    ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
+};
 use lightning_signer::util::enforcing_trait_impls::EnforcementState;
-use super::ser_util::{ChannelSetupDef, ChannelIdHandler, EnforcementStateDef};
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
@@ -27,7 +29,7 @@ impl From<NodeEntry> for CoreNodeEntry {
         CoreNodeEntry {
             seed: e.seed,
             key_derivation_style: e.key_derivation_style,
-            network: e.network
+            network: e.network,
         }
     }
 }
@@ -54,7 +56,7 @@ impl From<ChannelEntry> for CoreChannelEntry {
             channel_value_satoshis: e.channel_value_satoshis,
             channel_setup: e.channel_setup,
             id: e.id,
-            enforcement_state: e.enforcement_state
+            enforcement_state: e.enforcement_state,
         }
     }
 }

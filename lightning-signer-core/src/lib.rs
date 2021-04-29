@@ -11,8 +11,8 @@ extern crate tonic;
 
 #[macro_use]
 pub mod util;
-pub mod signer;
 pub mod node;
-pub mod policy;
-pub mod tx;
 pub mod persist;
+pub mod policy;
+pub mod signer;
+pub mod tx;

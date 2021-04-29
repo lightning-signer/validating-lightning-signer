@@ -3,9 +3,10 @@ use std::sync::{Arc, Mutex};
 
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::secp256k1::key::{PublicKey, SecretKey};
-use bitcoin::secp256k1::{Secp256k1, Signature, All};
+use bitcoin::secp256k1::{All, Secp256k1, Signature};
 use chain::keysinterface::InMemorySigner;
 use lightning::chain;
+use lightning::chain::keysinterface::BaseSign;
 use lightning::ln;
 use lightning::ln::chan_utils::{
     ChannelTransactionParameters, CommitmentTransaction, HolderCommitmentTransaction,
@@ -16,7 +17,6 @@ use lightning::util::ser::{Readable, Writeable, Writer};
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 use ln::msgs;
 use std::cmp;
-use lightning::chain::keysinterface::BaseSign;
 
 /// Enforces some rules on Sign calls. Eventually we will
 /// probably want to expose a variant of this which would essentially
@@ -69,11 +69,7 @@ impl EnforcingSigner {
 impl EnforcingSigner {
     // BEGIN NOT TESTED
     #[allow(dead_code)]
-    fn check_keys(
-        &self,
-        secp_ctx: &Secp256k1<All>,
-        keys: &TxCreationKeys,
-    ) {
+    fn check_keys(&self, secp_ctx: &Secp256k1<All>, keys: &TxCreationKeys) {
         // FIXME
         let revocation_base = PublicKey::from_secret_key(secp_ctx, &self.revocation_base_key());
         let htlc_base = PublicKey::from_secret_key(secp_ctx, &self.htlc_base_key());
@@ -116,11 +112,7 @@ impl EnforcingSigner {
 }
 
 impl BaseSign for EnforcingSigner {
-    fn get_per_commitment_point(
-        &self,
-        idx: u64,
-        secp_ctx: &Secp256k1<All>,
-    ) -> PublicKey {
+    fn get_per_commitment_point(&self, idx: u64, secp_ctx: &Secp256k1<All>) -> PublicKey {
         self.inner.get_per_commitment_point(idx, secp_ctx)
     }
 

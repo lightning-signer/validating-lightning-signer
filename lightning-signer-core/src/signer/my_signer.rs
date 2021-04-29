@@ -6,31 +6,31 @@ use bitcoin::secp256k1::SignOnly;
 
 use backtrace::Backtrace;
 use bitcoin;
+use bitcoin::hashes::sha256::Hash as Sha256Hash;
+use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPubKey};
 use bitcoin::{Address, Network, OutPoint, Script, SigHashType};
-use bitcoin::hashes::sha256d::Hash as Sha256dHash;
-use bitcoin::hashes::sha256::Hash as Sha256Hash;
-use lightning::chain::keysinterface::{KeysInterface, BaseSign};
+use lightning::chain::keysinterface::{BaseSign, KeysInterface};
 use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys};
 use lightning::ln::channelmanager::PaymentHash;
 use lightning::util::logger::Logger;
 
+use super::my_keys_manager::KeyDerivationStyle;
 use crate::node::node::{
     Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, Node, NodeConfig,
 };
 use crate::persist::{DummyPersister, Persist};
-use super::my_keys_manager::KeyDerivationStyle;
 use crate::tx::tx::{build_close_tx, sign_commitment, HTLCInfo2};
 use crate::util::crypto_utils::{derive_private_revocation_key, payload_for_p2wpkh};
 use crate::util::status::Status;
 use crate::util::test_utils::TestLogger;
+use bitcoin::hashes::Hash;
 use rand::{OsRng, Rng};
 use std::str::FromStr;
-use bitcoin::hashes::Hash;
 
 #[derive(PartialEq, Clone, Copy)]
 #[repr(i32)]
@@ -1123,17 +1123,17 @@ mod tests {
     use bitcoin::blockdata::opcodes;
     use bitcoin::blockdata::script::Builder;
     use bitcoin::consensus::deserialize;
+    use bitcoin::hashes::hash160::Hash as Hash160;
+    use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
+    use bitcoin::secp256k1::recovery::{RecoverableSignature, RecoveryId};
     use bitcoin::secp256k1::Signature;
     use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::{OutPoint, TxIn, TxOut};
-    use bitcoin::hashes::hash160::Hash as Hash160;
-    use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
     use lightning::ln::chan_utils::{
         build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
         make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
     };
     use lightning::ln::channelmanager::PaymentHash;
-    use bitcoin::secp256k1::recovery::{RecoverableSignature, RecoveryId};
 
     use crate::node::node::CommitmentType;
     use crate::policy::error::ValidationError;
@@ -3457,7 +3457,8 @@ mod tests {
         buffer.extend(message);
         let hash = Sha256dHash::hash(&buffer);
         let encmsg = secp256k1::Message::from_slice(&hash[..]).unwrap();
-        let sig = secp256k1::Signature::from_compact(&rsig.to_standard().serialize_compact()).unwrap();
+        let sig =
+            secp256k1::Signature::from_compact(&rsig.to_standard().serialize_compact()).unwrap();
         let pubkey = secp_ctx.recover(&encmsg, &rsig).unwrap();
         assert!(secp_ctx.verify(&encmsg, &sig, &pubkey).is_ok());
         assert_eq!(pubkey.serialize().to_vec(), node_id.serialize().to_vec());

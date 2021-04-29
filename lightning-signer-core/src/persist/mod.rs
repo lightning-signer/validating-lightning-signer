@@ -1,5 +1,5 @@
-use bitcoin::Network;
 use bitcoin::secp256k1::PublicKey;
+use bitcoin::Network;
 
 use crate::node::node::{Channel, ChannelId, ChannelStub, NodeConfig};
 
@@ -46,7 +46,11 @@ impl Persist for DummyPersister {
 
     // BEGIN NOT TESTED
 
-    fn get_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<model::ChannelEntry, ()> {
+    fn get_channel(
+        &self,
+        node_id: &PublicKey,
+        channel_id: &ChannelId,
+    ) -> Result<model::ChannelEntry, ()> {
         Err(())
     }
 

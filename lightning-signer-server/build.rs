@@ -4,10 +4,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .format(false)
         .type_attribute(".", "#[derive(serde::Serialize)]")
         // WARNING - we serialize *ALL* fields named "data" presuming they are Vec<u8>
-        .field_attribute(
-            "data",
-            "#[serde(serialize_with = \"crate::util::as_hex\")]",
-        )
+        .field_attribute("data", "#[serde(serialize_with = \"crate::util::as_hex\")]")
         // All other protobuf "bytes" fields need to be listed below.
         .field_attribute(
             "ReadyChannelRequest.local_shutdown_script",

@@ -8,13 +8,13 @@ use bitcoin::blockdata::opcodes::all::{
     OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_IFDUP, OP_NOTIF, OP_PUSHNUM_1,
     OP_PUSHNUM_16, OP_PUSHNUM_2, OP_SIZE, OP_SWAP,
 };
+use bitcoin::hashes::sha256::Hash as Sha256;
+use bitcoin::hashes::{Hash, HashEngine};
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, Signature};
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip143;
 use bitcoin::{OutPoint, Script, SigHashType, Transaction, TxIn, TxOut};
-use bitcoin::hashes::sha256::Hash as Sha256;
-use bitcoin::hashes::{Hash, HashEngine};
 use lightning::chain::keysinterface::BaseSign;
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{

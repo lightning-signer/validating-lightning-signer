@@ -1,13 +1,15 @@
-use bitcoin::Network;
 use bitcoin::secp256k1::PublicKey;
+use bitcoin::Network;
 use kv::{Bucket, Config, Json, Store, TransactionError};
 
 use lightning_signer::node::node::{Channel, ChannelId, ChannelStub, NodeConfig};
 use lightning_signer::persist::Persist;
 
 use crate::persist::model::NodeChannelId;
-use lightning_signer::persist::model::{ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry};
 use crate::persist::model::{ChannelEntry, NodeEntry};
+use lightning_signer::persist::model::{
+    ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
+};
 
 /// A persister that uses the kv crate and JSON serialization for values.
 pub struct KVJsonPersister<'a> {
@@ -117,7 +119,11 @@ impl<'a> Persist for KVJsonPersister<'a> {
         Ok(())
     }
 
-    fn get_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<CoreChannelEntry, ()> {
+    fn get_channel(
+        &self,
+        node_id: &PublicKey,
+        channel_id: &ChannelId,
+    ) -> Result<CoreChannelEntry, ()> {
         let id = NodeChannelId::new(node_id, channel_id);
         let value = self.channel_bucket.get(id).unwrap().ok_or_else(|| ())?;
         let entry = CoreChannelEntry::from(value.0);
@@ -171,7 +177,7 @@ mod tests {
     use lightning_signer::node::node::ChannelSlot;
     use lightning_signer::signer::my_signer::channel_nonce_to_id;
     use lightning_signer::util::enforcing_trait_impls::EnforcingSigner;
-    use lightning_signer::util::test_utils::{TEST_NODE_CONFIG, TestLogger};
+    use lightning_signer::util::test_utils::{TestLogger, TEST_NODE_CONFIG};
 
     use crate::persist::ser_util::VecWriter;
     use crate::persist::util::*;

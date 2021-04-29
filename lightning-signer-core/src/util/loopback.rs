@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signature, All};
+use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::{Script, Transaction};
-use lightning::chain::keysinterface::{KeysInterface, KeysManager, Sign, BaseSign};
+use lightning::chain::keysinterface::{BaseSign, KeysInterface, KeysManager, Sign};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, HTLCOutputInCommitment,
@@ -12,12 +12,12 @@ use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
 use lightning::util::ser::{Writeable, Writer};
 
 use crate::node::node::{ChannelId, ChannelSetup, CommitmentType};
+use crate::signer::my_signer::MySigner;
 use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
 use crate::util::status::Status;
-use std::io::Error;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
-use crate::signer::my_signer::MySigner;
+use std::io::Error;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -174,11 +174,7 @@ fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
 }
 
 impl BaseSign for LoopbackChannelSigner {
-    fn get_per_commitment_point(
-        &self,
-        idx: u64,
-        _secp_ctx: &Secp256k1<All>,
-    ) -> PublicKey {
+    fn get_per_commitment_point(&self, idx: u64, _secp_ctx: &Secp256k1<All>) -> PublicKey {
         // signer layer expect forward counting commitment number, but we are passed a backwards counting one
         self.signer
             .get_per_commitment_point(
@@ -471,8 +467,7 @@ impl BaseSign for LoopbackChannelSigner {
     }
 }
 
-impl Sign for LoopbackChannelSigner {
-}
+impl Sign for LoopbackChannelSigner {}
 
 impl KeysInterface for LoopbackSignerKeysInterface {
     type Signer = LoopbackChannelSigner;

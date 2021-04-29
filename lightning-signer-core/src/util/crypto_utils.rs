@@ -1,14 +1,14 @@
 use std::io::Write;
 
+use bitcoin::bech32;
+use bitcoin::hashes::hash160::Hash as BitcoinHash160;
+use bitcoin::hashes::sha256::Hash as BitcoinSha256;
+use bitcoin::hashes::{Hash, HashEngine};
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::Network;
-use bitcoin::hashes::hash160::Hash as BitcoinHash160;
-use bitcoin::hashes::sha256::Hash as BitcoinSha256;
-use bitcoin::hashes::{Hash, HashEngine};
-use bitcoin::bech32;
 use crypto::hkdf::{hkdf_expand, hkdf_extract};
 use crypto::sha2::Sha256;
 

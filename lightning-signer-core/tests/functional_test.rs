@@ -6,33 +6,42 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, MutexGuard};
 use std::time::Duration;
 
-use bitcoin::{Block, BlockHeader, Network, OutPoint, Script, Transaction};
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::consensus::serialize;
 use bitcoin::network::constants::Network::Testnet;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::bip32::ChildNumber;
-use bitcoinconsensus::{VERIFY_ALL, verify_with_flags};
-use lightning::chain::{chaininterface, keysinterface};
+use bitcoin::{Block, BlockHeader, Network, OutPoint, Script, Transaction};
+use bitcoinconsensus::{verify_with_flags, VERIFY_ALL};
 use lightning::chain::keysinterface::KeysInterface;
+use lightning::chain::{chaininterface, keysinterface};
 use lightning::ln::features::InitFeatures;
-use lightning::ln::functional_test_utils::{ACCEPTED_HTLC_SCRIPT_WEIGHT, OFFERED_HTLC_SCRIPT_WEIGHT};
+use lightning::ln::functional_test_utils::{
+    ACCEPTED_HTLC_SCRIPT_WEIGHT, OFFERED_HTLC_SCRIPT_WEIGHT,
+};
 use lightning::ln::msgs::{ChannelMessageHandler, ChannelUpdate};
 use lightning::util::config::{ChannelHandshakeConfig, UserConfig};
 use lightning::util::events::MessageSendEventsProvider;
 use lightning::util::logger::Logger;
 
-use lightning_signer::{check_added_monitors, check_closed_broadcast, check_spends, expect_payment_failed, expect_pending_htlcs_forwardable_ignore, get_local_commitment_txn};
 use lightning_signer::signer::my_signer::MySigner;
-use lightning_signer::util::functional_test_utils::{close_channel, confirm_transaction_at, connect_block, connect_blocks, create_announced_chan_between_nodes, create_chanmon_cfgs, create_network, create_node_chanmgrs, get_announce_close_broadcast_events, mine_transaction, Node, NodeCfg, send_payment, TestChanMonCfg};
+use lightning_signer::util::functional_test_utils::{
+    close_channel, confirm_transaction_at, connect_block, connect_blocks,
+    create_announced_chan_between_nodes, create_chanmon_cfgs, create_network, create_node_chanmgrs,
+    get_announce_close_broadcast_events, mine_transaction, send_payment, Node, NodeCfg,
+    TestChanMonCfg,
+};
 use lightning_signer::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use lightning_signer::util::test_utils;
-use lightning_signer::util::test_utils::{TEST_NODE_CONFIG, TestChainMonitor};
+use lightning_signer::util::test_utils::{TestChainMonitor, TEST_NODE_CONFIG};
+use lightning_signer::{
+    check_added_monitors, check_closed_broadcast, check_spends, expect_payment_failed,
+    expect_pending_htlcs_forwardable_ignore, get_local_commitment_txn,
+};
 
 use self::lightning_signer::util::functional_test_utils::{
-    claim_payment,
-    create_announced_chan_between_nodes_with_value,
-    route_payment};
+    claim_payment, create_announced_chan_between_nodes_with_value, route_payment,
+};
 
 pub fn create_node_cfgs_with_signer<'a>(
     node_count: usize,
@@ -48,14 +57,21 @@ pub fn create_node_cfgs_with_signer<'a>(
 
         let network = Testnet;
         let now = Duration::from_secs(genesis_block(network).header.time as u64);
-        let backing = keysinterface::KeysManager::new(&seed.clone(), now.as_secs(), now.subsec_nanos());
+        let backing =
+            keysinterface::KeysManager::new(&seed.clone(), now.as_secs(), now.subsec_nanos());
         let keys_manager = LoopbackSignerKeysInterface {
             node_id,
             signer: Arc::clone(signer),
             backing,
         };
 
-        let chain_monitor = TestChainMonitor::new(Some(&chanmon_cfgs[i].chain_source), &chanmon_cfgs[i].tx_broadcaster, &chanmon_cfgs[i].logger, &chanmon_cfgs[i].fee_estimator, &chanmon_cfgs[i].persister);
+        let chain_monitor = TestChainMonitor::new(
+            Some(&chanmon_cfgs[i].chain_source),
+            &chanmon_cfgs[i].tx_broadcaster,
+            &chanmon_cfgs[i].logger,
+            &chanmon_cfgs[i].fee_estimator,
+            &chanmon_cfgs[i].persister,
+        );
 
         nodes.push(NodeCfg {
             chain_source: &chanmon_cfgs[i].chain_source,
@@ -64,7 +80,7 @@ pub fn create_node_cfgs_with_signer<'a>(
             fee_estimator: &chanmon_cfgs[i].fee_estimator,
             chain_monitor,
             keys_manager,
-            node_seed: seed
+            node_seed: seed,
         });
     }
 
@@ -83,15 +99,35 @@ fn fake_network_with_signer_test() {
     let nodes = create_network(4, &node_cfgs, &node_chanmgrs);
 
     // Create some initial channels
-    let chan_1 =
-        create_announced_chan_between_nodes(&nodes, 0, 1, InitFeatures::known(), InitFeatures::known());
-    let _chan_2 =
-        create_announced_chan_between_nodes(&nodes, 1, 2, InitFeatures::known(), InitFeatures::known());
-    let _chan_3 =
-        create_announced_chan_between_nodes(&nodes, 2, 3, InitFeatures::known(), InitFeatures::known());
+    let chan_1 = create_announced_chan_between_nodes(
+        &nodes,
+        0,
+        1,
+        InitFeatures::known(),
+        InitFeatures::known(),
+    );
+    let _chan_2 = create_announced_chan_between_nodes(
+        &nodes,
+        1,
+        2,
+        InitFeatures::known(),
+        InitFeatures::known(),
+    );
+    let _chan_3 = create_announced_chan_between_nodes(
+        &nodes,
+        2,
+        3,
+        InitFeatures::known(),
+        InitFeatures::known(),
+    );
 
     // Rebalance the network a bit by relaying one payment through all the channels...
-    send_payment(&nodes[0], &vec![&nodes[1], &nodes[2], &nodes[3]][..], 8000000, 8_000_000);
+    send_payment(
+        &nodes[0],
+        &vec![&nodes[1], &nodes[2], &nodes[3]][..],
+        8000000,
+        8_000_000,
+    );
 
     // Close channel normally
     close_channel(&nodes[0], &nodes[1], &chan_1.2, chan_1.3, true);
@@ -108,7 +144,7 @@ fn _alt_config() -> UserConfig {
             our_htlc_minimum_msat: 1000,
         },
         peer_channel_config_limits: Default::default(),
-        channel_options: Default::default()
+        channel_options: Default::default(),
     };
     cfg1.channel_options.announced_channel = true;
     cfg1.peer_channel_config_limits
@@ -127,8 +163,15 @@ fn channel_force_close_test() {
     let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
 
     // Create some initial channels
-    let chan = create_announced_chan_between_nodes_with_value(&nodes, 0, 1, 100000, 99000000,
-                                                              InitFeatures::known(), InitFeatures::known());
+    let chan = create_announced_chan_between_nodes_with_value(
+        &nodes,
+        0,
+        1,
+        100000,
+        99000000,
+        InitFeatures::known(),
+        InitFeatures::known(),
+    );
 
     // Close channel forcefully
     let _ = nodes[0].node.force_close_channel(&chan.2);
@@ -145,8 +188,21 @@ fn channel_force_close_test() {
     // Check if closing tx correctly spends the funding
     check_spends!(node_txn[0], chan.3);
 
-    let header = BlockHeader { version: 0x20000000, prev_blockhash: nodes[0].best_block_hash(), merkle_root: Default::default(), time: 42, bits: 42, nonce: 42 };
-    connect_block(&nodes[1], &Block { header, txdata: vec![node_txn[0].clone()] });
+    let header = BlockHeader {
+        version: 0x20000000,
+        prev_blockhash: nodes[0].best_block_hash(),
+        merkle_root: Default::default(),
+        time: 42,
+        bits: 42,
+        nonce: 42,
+    };
+    connect_block(
+        &nodes[1],
+        &Block {
+            header,
+            txdata: vec![node_txn[0].clone()],
+        },
+    );
     assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 2);
     check_added_monitors!(nodes[1], 1);
 }
@@ -160,14 +216,20 @@ fn justice_tx_test() {
     let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[None, None]);
     let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
 
-    let chan_1 = create_announced_chan_between_nodes(&nodes, 0, 1, InitFeatures::known(), InitFeatures::known());
+    let chan_1 = create_announced_chan_between_nodes(
+        &nodes,
+        0,
+        1,
+        InitFeatures::known(),
+        InitFeatures::known(),
+    );
     // node[0] is gonna to revoke an old state thus node[1] should be able to claim the revoked output
     let revoked_local_txn = get_local_commitment_txn!(nodes[0], chan_1.2);
     assert_eq!(revoked_local_txn.len(), 1);
     // Only output is the full channel value back to nodes[0]:
     assert_eq!(revoked_local_txn[0].output.len(), 1);
     // Send a payment through, updating everyone's latest commitment txn
-    send_payment(&nodes[0], &vec!(&nodes[1])[..], 5000000, 5_000_000);
+    send_payment(&nodes[0], &vec![&nodes[1]][..], 5000000, 5_000_000);
 
     mine_transaction(&nodes[1], &revoked_local_txn[0]);
     assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 2);
@@ -187,20 +249,32 @@ fn claim_htlc_outputs_single_tx() {
     let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[None, None]);
     let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
 
-    let chan_1 = create_announced_chan_between_nodes(&nodes, 0, 1, InitFeatures::known(), InitFeatures::known());
+    let chan_1 = create_announced_chan_between_nodes(
+        &nodes,
+        0,
+        1,
+        InitFeatures::known(),
+        InitFeatures::known(),
+    );
 
     // Rebalance the network to generate htlc in the two directions
-    send_payment(&nodes[0], &vec!(&nodes[1])[..], 8000000, 8_000_000);
+    send_payment(&nodes[0], &vec![&nodes[1]][..], 8000000, 8_000_000);
     // node[0] is gonna to revoke an old state thus node[1] should be able to claim both offered/received HTLC outputs on top of commitment tx, but this
     // time as two different claim transactions as we're gonna to timeout htlc with given a high current height
-    let payment_preimage_1 = route_payment(&nodes[0], &vec!(&nodes[1])[..], 3000000).0;
-    let (_payment_preimage_2, payment_hash_2) = route_payment(&nodes[1], &vec!(&nodes[0])[..], 3000000);
+    let payment_preimage_1 = route_payment(&nodes[0], &vec![&nodes[1]][..], 3000000).0;
+    let (_payment_preimage_2, payment_hash_2) =
+        route_payment(&nodes[1], &vec![&nodes[0]][..], 3000000);
 
     // Get the will-be-revoked local txn from node[0]
     let revoked_local_txn = get_local_commitment_txn!(nodes[0], chan_1.2);
 
     //Revoke the old state
-    claim_payment(&nodes[0], &vec!(&nodes[1])[..], payment_preimage_1, 3_000_000);
+    claim_payment(
+        &nodes[0],
+        &vec![&nodes[1]][..],
+        payment_preimage_1,
+        3_000_000,
+    );
 
     {
         confirm_transaction_at(&nodes[0], &revoked_local_txn[0], 100);
@@ -225,7 +299,7 @@ fn claim_htlc_outputs_single_tx() {
         assert_eq!(node_txn[1].input.len(), 1);
         let witness_script = node_txn[1].input[0].witness.last().unwrap();
         assert_eq!(witness_script.len(), OFFERED_HTLC_SCRIPT_WEIGHT); //Spending an offered htlc output
-    check_spends!(node_txn[1], node_txn[0]);
+        check_spends!(node_txn[1], node_txn[0]);
 
         // Justice transactions are indices 1-2-4
         assert_eq!(node_txn[2].input.len(), 1);
@@ -242,8 +316,14 @@ fn claim_htlc_outputs_single_tx() {
         witness_lens.insert(node_txn[4].input[0].witness.last().unwrap().len());
         assert_eq!(witness_lens.len(), 3);
         assert_eq!(*witness_lens.iter().skip(0).next().unwrap(), 77); // revoked to_local
-        assert_eq!(*witness_lens.iter().skip(1).next().unwrap(), OFFERED_HTLC_SCRIPT_WEIGHT); // revoked offered HTLC
-        assert_eq!(*witness_lens.iter().skip(2).next().unwrap(), ACCEPTED_HTLC_SCRIPT_WEIGHT); // revoked received HTLC
+        assert_eq!(
+            *witness_lens.iter().skip(1).next().unwrap(),
+            OFFERED_HTLC_SCRIPT_WEIGHT
+        ); // revoked offered HTLC
+        assert_eq!(
+            *witness_lens.iter().skip(2).next().unwrap(),
+            ACCEPTED_HTLC_SCRIPT_WEIGHT
+        ); // revoked received HTLC
     }
     get_announce_close_broadcast_events(&nodes, 0, 1);
     assert_eq!(nodes[0].node.list_channels().len(), 0);
@@ -260,10 +340,22 @@ fn channel_force_close_with_htlc_test() {
     let nodes = create_network(3, &node_cfgs, &node_chanmgrs);
 
     // Create some initial channels
-    let chan_1 = create_announced_chan_between_nodes(&nodes, 0, 1, InitFeatures::known(), InitFeatures::known());
-    let _chan_2 = create_announced_chan_between_nodes(&nodes, 1, 2, InitFeatures::known(), InitFeatures::known());
+    let chan_1 = create_announced_chan_between_nodes(
+        &nodes,
+        0,
+        1,
+        InitFeatures::known(),
+        InitFeatures::known(),
+    );
+    let _chan_2 = create_announced_chan_between_nodes(
+        &nodes,
+        1,
+        2,
+        InitFeatures::known(),
+        InitFeatures::known(),
+    );
 
-    let _payment_preimage_1 = route_payment(&nodes[0], &vec!(&nodes[1], &nodes[2])[..], 3000000).0;
+    let _payment_preimage_1 = route_payment(&nodes[0], &vec![&nodes[1], &nodes[2]][..], 3000000).0;
 
     // Close channel forcefully
     let _ = nodes[0].node.force_close_channel(&chan_1.2);

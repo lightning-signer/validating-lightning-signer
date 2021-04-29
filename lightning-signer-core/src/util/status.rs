@@ -93,4 +93,3 @@ impl From<Status> for tonic::Status {
         tonic::Status::new(code.try_into().unwrap(), s.message())
     }
 }
-

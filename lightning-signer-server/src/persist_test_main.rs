@@ -5,11 +5,11 @@ use kv::Json;
 use lightning::util::logger::Logger;
 
 use lightning_signer::persist::Persist;
+use lightning_signer::signer::my_signer::channel_nonce_to_id;
+use lightning_signer::util::test_utils::{TestLogger, TEST_NODE_CONFIG};
 use lightning_signer_server::persist::model::{ChannelEntry, NodeChannelId, NodeEntry};
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
 use lightning_signer_server::persist::util;
-use lightning_signer::signer::my_signer::channel_nonce_to_id;
-use lightning_signer::util::test_utils::{TestLogger, TEST_NODE_CONFIG};
 
 // BEGIN NOT TESTED
 pub fn main() {

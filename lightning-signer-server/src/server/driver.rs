@@ -3,35 +3,35 @@ use std::convert::{TryFrom, TryInto};
 
 use backtrace::Backtrace;
 use bitcoin;
-use bitcoin::{OutPoint, Script};
 use bitcoin::consensus::{deserialize, encode};
-use bitcoin::hashes::Hash as BitcoinHash;
 use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
+use bitcoin::hashes::Hash as BitcoinHash;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::util::psbt::serialize::Deserialize;
+use bitcoin::{OutPoint, Script};
 use clap::{App, Arg};
 use serde_json::json;
-use tonic::{Request, Response, Status, transport::Server};
+use tonic::{transport::Server, Request, Response, Status};
 
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::channelmanager::PaymentHash;
-use lightning_signer::node::node::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::node::node;
-use lightning_signer::tx::tx::HTLCInfo2;
-use lightning_signer::{log_error, log_internal, log_info, log_debug};
+use lightning_signer::node::node::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::signer::my_signer::SpendType;
-use remotesigner::*;
+use lightning_signer::tx::tx::HTLCInfo2;
+use lightning_signer::{log_debug, log_error, log_info, log_internal};
 use remotesigner::signer_server::{Signer, SignerServer};
+use remotesigner::*;
 
 use crate::persist::persist_json::KVJsonPersister;
 use crate::server::remotesigner::version_server::Version;
 
 use super::remotesigner;
-use lightning_signer::util::status;
-use lightning_signer::signer::my_signer::{MySigner, channel_nonce_to_id};
-use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
-use lightning_signer::persist::{Persist, DummyPersister};
 use lightning::util::logger::Logger;
+use lightning_signer::persist::{DummyPersister, Persist};
+use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
+use lightning_signer::signer::my_signer::{channel_nonce_to_id, MySigner};
+use lightning_signer::util::status;
 use std::sync::Arc;
 
 struct SignServer {
@@ -266,7 +266,9 @@ impl Signer for SignServer {
         log_info!(self, "ENTER new_channel({}/{:?})", node_id, opt_channel_id);
         log_debug!(self, "req={}", reqstr);
 
-        let channel_id = self.signer.new_channel(&node_id, opt_channel_nonce0, opt_channel_id)?;
+        let channel_id = self
+            .signer
+            .new_channel(&node_id, opt_channel_nonce0, opt_channel_id)?;
 
         let reply = NewChannelReply {
             channel_nonce0: req.channel_nonce0,
@@ -433,7 +435,9 @@ impl Signer for SignServer {
 
         let funding_amount_sat = reqtx.input_descs[0].value_sat as u64;
 
-        let sigvec = self.signer.sign_mutual_close_tx(&node_id, &channel_id, &tx, funding_amount_sat)?;
+        let sigvec =
+            self.signer
+                .sign_mutual_close_tx(&node_id, &channel_id, &tx, funding_amount_sat)?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
@@ -519,8 +523,12 @@ impl Signer for SignServer {
         let commitment_number = req.n;
         let suggested = self.secret_key(req.suggested)?;
 
-        let correct =
-            self.signer.check_future_secret(&node_id, &channel_id, commitment_number, &suggested)?;
+        let correct = self.signer.check_future_secret(
+            &node_id,
+            &channel_id,
+            commitment_number,
+            &suggested,
+        )?;
 
         let reply = CheckFutureSecretReply { correct };
         log_info!(
@@ -551,8 +559,9 @@ impl Signer for SignServer {
         let commitment_number = req.n;
 
         // This API call can be made on a channel stub as well as a ready channel.
-        let res: Result<(PublicKey, Option<SecretKey>), status::Status> =
-            self.signer.with_channel_base(&node_id, &channel_id, |base| {
+        let res: Result<(PublicKey, Option<SecretKey>), status::Status> = self
+            .signer
+            .with_channel_base(&node_id, &channel_id, |base| {
                 let point = base.get_per_commitment_point(commitment_number);
                 let secret = if commitment_number >= 2 {
                     Some(base.get_per_commitment_secret(commitment_number - 2))
@@ -763,8 +772,12 @@ impl Signer for SignServer {
 
         let funding_amount_sat = reqtx.input_descs[0].value_sat as u64;
 
-        let sigvec =
-            self.signer.sign_holder_commitment_tx(&node_id, &channel_id, &tx, funding_amount_sat)?;
+        let sigvec = self.signer.sign_holder_commitment_tx(
+            &node_id,
+            &channel_id,
+            &tx,
+            funding_amount_sat,
+        )?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
@@ -1057,7 +1070,9 @@ impl Signer for SignServer {
         );
         log_debug!(self, "req={}", reqstr);
 
-        let (nsigvec, bsigvec) = self.signer.sign_channel_announcement(&node_id, &channel_id, &ca)?;
+        let (nsigvec, bsigvec) =
+            self.signer
+                .sign_channel_announcement(&node_id, &channel_id, &ca)?;
 
         let reply = SignChannelAnnouncementReply {
             node_signature: Some(EcdsaSignature {
@@ -1143,7 +1158,9 @@ impl Signer for SignServer {
         let human_readable_part = req.human_readable_part;
         log_info!(self, "ENTER sign_invoice({})", node_id);
         log_debug!(self, "req={}", reqstr);
-        let sig_data = self.signer.sign_invoice(&node_id, &data_part, &human_readable_part)?;
+        let sig_data = self
+            .signer
+            .sign_invoice(&node_id, &data_part, &human_readable_part)?;
         let reply = RecoverableNodeSignatureReply {
             signature: Some(EcdsaRecoverableSignature {
                 data: sig_data.clone(),
@@ -1287,7 +1304,9 @@ impl Signer for SignServer {
         &self,
         _request: Request<ListNodesRequest>,
     ) -> Result<Response<ListNodesReply>, Status> {
-        let node_ids = self.signer.get_node_ids()
+        let node_ids = self
+            .signer
+            .get_node_ids()
             .iter()
             .map(|k| k.serialize().to_vec())
             .map(|id| NodeId { data: id })
@@ -1351,7 +1370,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let signer = MySigner::new_with_persister(persister, test_mode);
     let server = SignServer {
         logger: Arc::clone(&signer.logger),
-        signer
+        signer,
     };
     println!("Starting");
 
