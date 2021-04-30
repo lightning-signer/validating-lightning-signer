@@ -4,8 +4,14 @@ stages:
 rust-latest:
   stage: build
   image: rust:latest
-  before_script:
-    - rustup component add rustfmt
+  script:
+    - cd lightning-signer-core && cargo build --no-default-features  # make sure it builds without test_utils enabled
+    - cargo build
+    - cargo test
+
+rust-1.45.2:
+  stage: build
+  image: rust:1.45.2
   script:
     - cd lightning-signer-core && cargo build --no-default-features  # make sure it builds without test_utils enabled
     - cargo build
