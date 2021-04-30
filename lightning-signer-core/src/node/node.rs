@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use backtrace::Backtrace;
 use bitcoin;
 use bitcoin::hashes::core::fmt::{Error, Formatter};
+use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1;
@@ -20,9 +21,8 @@ use lightning::ln::chan_utils::{
     HolderCommitmentTransaction, TxCreationKeys,
 };
 
-use lightning::ln::channelmanager::PaymentHash;
+use lightning::ln::PaymentHash;
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
-use lightning::util::logger::Logger;
 
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
@@ -36,6 +36,8 @@ use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
 use crate::util::status::Status;
 use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
 use lightning::chain;
+use bitcoin::secp256k1::recovery::RecoverableSignature;
+use crate::signer::my_signer::SyncLogger;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
@@ -122,7 +124,7 @@ impl ChannelSetup {
 pub struct ChannelStub {
     pub node: Arc<Node>,
     pub nonce: Vec<u8>,
-    pub logger: Arc<Logger>,
+    pub logger: Arc<SyncLogger>,
     pub secp_ctx: Secp256k1<All>,
     pub keys: EnforcingSigner, // Incomplete, channel_value_sat is placeholder.
     pub id0: ChannelId,
@@ -133,7 +135,7 @@ pub struct ChannelStub {
 pub struct Channel {
     pub node: Arc<Node>,
     pub nonce: Vec<u8>,
-    pub logger: Arc<Logger>,
+    pub logger: Arc<SyncLogger>,
     pub secp_ctx: Secp256k1<All>,
     pub keys: EnforcingSigner,
     pub setup: ChannelSetup,
@@ -837,7 +839,7 @@ pub struct NodeConfig {
 }
 
 pub struct Node {
-    pub logger: Arc<Logger>,
+    pub logger: Arc<SyncLogger>,
     pub node_config: NodeConfig,
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<HashMap<ChannelId, Arc<Mutex<ChannelSlot>>>>,
@@ -847,7 +849,7 @@ pub struct Node {
 
 impl Node {
     pub fn new(
-        logger: &Arc<Logger>,
+        logger: &Arc<SyncLogger>,
         node_config: NodeConfig,
         seed: &[u8],
         network: Network,
@@ -1124,7 +1126,7 @@ impl Node {
         Ok(res)
     }
 
-    pub fn sign_invoice(
+    pub fn sign_invoice_in_parts(
         &self,
         data_part: &Vec<u8>,
         human_readable_part: &String,
@@ -1145,6 +1147,13 @@ impl Node {
         let mut res = sig.to_vec();
         res.push(rid.to_i32() as u8);
         Ok(res)
+    }
+
+    pub fn sign_invoice(&self, invoice_preimage: &Vec<u8>) -> RecoverableSignature {
+        let secp_ctx = Secp256k1::signing_only();
+        let hash = Sha256Hash::hash(invoice_preimage);
+        let message = secp256k1::Message::from_slice(&hash).unwrap();
+        secp_ctx.sign_recoverable(&message, &self.get_node_secret())
     }
 
     pub fn sign_message(&self, message: &Vec<u8>) -> Result<Vec<u8>, Status> {

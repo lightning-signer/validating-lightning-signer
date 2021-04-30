@@ -20,7 +20,7 @@ use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     get_revokeable_redeemscript, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
 };
-use lightning::ln::channelmanager::PaymentHash;
+use lightning::ln::PaymentHash;
 
 use crate::node::node::ChannelSetup;
 use crate::policy::error::ValidationError;

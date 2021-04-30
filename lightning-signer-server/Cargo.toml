@@ -31,7 +31,8 @@ bitcoin = { version = "0.26", features = ["bitcoinconsensus"]}
 
 [dependencies.lightning]
 git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "95779285575d3139482a73a943234c7dd82eb956"
+rev = "3b67be235a46d8f9a9a6faf7ca7c5872ffbd8646"
+
 # we need this for integration testing
 features = ["unsafe_revoked_tx_signing", "_test_utils"]
 

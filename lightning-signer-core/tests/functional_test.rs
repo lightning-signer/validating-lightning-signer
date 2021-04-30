@@ -126,7 +126,6 @@ fn fake_network_with_signer_test() {
         &nodes[0],
         &vec![&nodes[1], &nodes[2], &nodes[3]][..],
         8000000,
-        8_000_000,
     );
 
     // Close channel normally
@@ -229,7 +228,7 @@ fn justice_tx_test() {
     // Only output is the full channel value back to nodes[0]:
     assert_eq!(revoked_local_txn[0].output.len(), 1);
     // Send a payment through, updating everyone's latest commitment txn
-    send_payment(&nodes[0], &vec![&nodes[1]][..], 5000000, 5_000_000);
+    send_payment(&nodes[0], &vec![&nodes[1]][..], 5000000);
 
     mine_transaction(&nodes[1], &revoked_local_txn[0]);
     assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 2);
@@ -258,11 +257,11 @@ fn claim_htlc_outputs_single_tx() {
     );
 
     // Rebalance the network to generate htlc in the two directions
-    send_payment(&nodes[0], &vec![&nodes[1]][..], 8000000, 8_000_000);
+    send_payment(&nodes[0], &vec![&nodes[1]][..], 8000000);
     // node[0] is gonna to revoke an old state thus node[1] should be able to claim both offered/received HTLC outputs on top of commitment tx, but this
     // time as two different claim transactions as we're gonna to timeout htlc with given a high current height
     let payment_preimage_1 = route_payment(&nodes[0], &vec![&nodes[1]][..], 3000000).0;
-    let (_payment_preimage_2, payment_hash_2) =
+    let (_payment_preimage_2, payment_hash_2, _payment_secret_2) =
         route_payment(&nodes[1], &vec![&nodes[0]][..], 3000000);
 
     // Get the will-be-revoked local txn from node[0]
@@ -273,7 +272,6 @@ fn claim_htlc_outputs_single_tx() {
         &nodes[0],
         &vec![&nodes[1]][..],
         payment_preimage_1,
-        3_000_000,
     );
 
     {

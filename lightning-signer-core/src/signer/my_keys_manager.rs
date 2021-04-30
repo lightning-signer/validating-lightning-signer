@@ -13,7 +13,6 @@ use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signing};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{Network, Script};
 use lightning::chain::keysinterface::{InMemorySigner, KeysInterface};
-use lightning::util::logger::Logger;
 
 use crate::node::node::ChannelId;
 use crate::util::byte_utils;
@@ -22,6 +21,8 @@ use crate::util::crypto_utils::{
     hkdf_sha256, hkdf_sha256_keys, node_keys_lnd, node_keys_native,
 };
 use lightning::ln::msgs::DecodeError;
+use bitcoin::secp256k1::recovery::RecoverableSignature;
+use crate::signer::my_signer::SyncLogger;
 
 #[derive(Clone, Copy, Debug)] // NOT TESTED
 pub enum KeyDerivationStyle {
@@ -95,7 +96,7 @@ pub struct MyKeysManager {
 
     unique_start: Sha256State,
     #[allow(dead_code)]
-    logger: Arc<Logger>,
+    logger: Arc<SyncLogger>,
 }
 
 impl MyKeysManager {
@@ -103,7 +104,7 @@ impl MyKeysManager {
         key_derivation_style: KeyDerivationStyle,
         seed: &[u8],
         network: Network,
-        logger: Arc<Logger>,
+        logger: Arc<SyncLogger>,
         starting_time_secs: u64,
         starting_time_nanos: u32,
     ) -> MyKeysManager {
@@ -352,6 +353,10 @@ impl KeysInterface for MyKeysManager {
     fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::Signer, DecodeError> {
         unimplemented!()
     }
+
+    fn sign_invoice(&self, _invoice_preimage: Vec<u8>) -> Result<RecoverableSignature, ()> {
+        unimplemented!()
+    }
     // END NOT TESTED
 }
 
@@ -363,7 +368,7 @@ mod tests {
     use super::*;
     use lightning::chain::keysinterface::BaseSign;
 
-    fn logger() -> Arc<Logger> {
+    fn logger() -> Arc<SyncLogger> {
         Arc::new(TestLogger::with_id("server".to_owned()))
     }
 

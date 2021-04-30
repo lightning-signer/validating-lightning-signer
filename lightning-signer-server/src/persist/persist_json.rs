@@ -172,10 +172,9 @@ mod tests {
     use tempfile::TempDir;
 
     use lightning::chain::keysinterface::InMemorySigner;
-    use lightning::util::logger::Logger;
     use lightning::util::ser::Writeable;
     use lightning_signer::node::node::ChannelSlot;
-    use lightning_signer::signer::my_signer::channel_nonce_to_id;
+    use lightning_signer::signer::my_signer::{channel_nonce_to_id, SyncLogger};
     use lightning_signer::util::enforcing_trait_impls::EnforcingSigner;
     use lightning_signer::util::test_utils::{TestLogger, TEST_NODE_CONFIG};
 
@@ -201,7 +200,7 @@ mod tests {
         let channel_nonce = "nonce0".as_bytes().to_vec();
         let channel_id0 = channel_nonce_to_id(&channel_nonce);
 
-        let logger: Arc<dyn Logger> = Arc::new(TestLogger::with_id("server".to_owned()));
+        let logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::with_id("server".to_owned()));
         let (node_id, node_arc, stub) = make_node_and_channel(&logger, &channel_nonce, channel_id0);
 
         let node = &*node_arc;

@@ -8,6 +8,7 @@ pub struct NodeEntry {
     pub network: String,
 }
 
+#[derive(Debug)]
 pub struct ChannelEntry {
     pub nonce: Vec<u8>,
     pub channel_value_satoshis: u64,

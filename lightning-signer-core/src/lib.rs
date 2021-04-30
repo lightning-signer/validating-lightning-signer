@@ -16,3 +16,6 @@ pub mod persist;
 pub mod policy;
 pub mod signer;
 pub mod tx;
+
+/// This trait will be used to apply Send + Sync gated by no_std
+pub trait SendSync: Send + Sync {}

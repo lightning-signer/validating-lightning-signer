@@ -16,7 +16,7 @@ use bitcoin::util::bip32::{ChildNumber, ExtendedPubKey};
 use bitcoin::{Address, Network, OutPoint, Script, SigHashType};
 use lightning::chain::keysinterface::{BaseSign, KeysInterface};
 use lightning::ln::chan_utils::{derive_private_key, ChannelPublicKeys};
-use lightning::ln::channelmanager::PaymentHash;
+use lightning::ln::PaymentHash;
 use lightning::util::logger::Logger;
 
 use super::my_keys_manager::KeyDerivationStyle;
@@ -31,6 +31,7 @@ use crate::util::test_utils::TestLogger;
 use bitcoin::hashes::Hash;
 use rand::{OsRng, Rng};
 use std::str::FromStr;
+use crate::SendSync;
 
 #[derive(PartialEq, Clone, Copy)]
 #[repr(i32)]
@@ -58,8 +59,11 @@ impl TryFrom<i32> for SpendType {
     // END NOT TESTED
 }
 
+pub trait SyncLogger: Logger + SendSync {
+}
+
 pub struct MySigner {
-    pub logger: Arc<Logger>,
+    pub logger: Arc<dyn SyncLogger>,
     pub(crate) nodes: Mutex<HashMap<PublicKey, Arc<Node>>>,
     pub(crate) persister: Box<dyn Persist>,
     pub(crate) test_mode: bool,
@@ -90,7 +94,7 @@ impl MySigner {
     }
 
     pub fn new_with_persister(persister: Box<dyn Persist>, test_mode: bool) -> MySigner {
-        let test_logger: Arc<dyn Logger> = Arc::new(TestLogger::with_id("server".to_owned()));
+        let test_logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::with_id("server".to_owned()));
         let mut nodes = HashMap::new();
         println!("Start restore");
         for (node_id, node_entry) in persister.get_nodes() {
@@ -1096,7 +1100,7 @@ impl MySigner {
     ) -> Result<Vec<u8>, Status> {
         self.with_node(&node_id, |opt_node| {
             let node = opt_node.ok_or_else(|| self.invalid_argument("no such node"))?;
-            let sig = node.sign_invoice(data_part, human_readable_part)?;
+            let sig = node.sign_invoice_in_parts(data_part, human_readable_part)?;
             Ok(sig)
         })
     }
@@ -1133,7 +1137,7 @@ mod tests {
         build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
         make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
     };
-    use lightning::ln::channelmanager::PaymentHash;
+    use lightning::ln::PaymentHash;
 
     use crate::node::node::CommitmentType;
     use crate::policy::error::ValidationError;

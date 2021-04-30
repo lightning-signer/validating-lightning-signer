@@ -27,7 +27,7 @@ pub struct EnforcingSigner {
     state: Arc<Mutex<EnforcementState>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EnforcementState {
     pub last_commitment_number: Option<u64>,
 }
