@@ -21,12 +21,13 @@ use lightning::ln::chan_utils::{
     HolderCommitmentTransaction, TxCreationKeys,
 };
 
-use lightning::ln::PaymentHash;
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
+use lightning::ln::PaymentHash;
 
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
+use crate::signer::my_signer::SyncLogger;
 use crate::tx::tx::{
     build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
     HTLCInfo, HTLCInfo2,
@@ -35,9 +36,8 @@ use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey};
 use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
 use crate::util::status::Status;
 use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
-use lightning::chain;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
-use crate::signer::my_signer::SyncLogger;
+use lightning::chain;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);

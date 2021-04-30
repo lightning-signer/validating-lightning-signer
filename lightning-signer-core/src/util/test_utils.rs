@@ -27,11 +27,11 @@ use lightning::util::test_utils;
 
 use crate::node::node::{ChannelSetup, CommitmentType, NodeConfig};
 use crate::signer::my_keys_manager::KeyDerivationStyle;
+use crate::signer::my_signer::SyncLogger;
 use crate::tx::tx::sort_outputs;
 use crate::util::crypto_utils::payload_for_p2wpkh;
 use crate::util::enforcing_trait_impls::EnforcingSigner;
 use crate::util::loopback::LoopbackChannelSigner;
-use crate::signer::my_signer::SyncLogger;
 use crate::SendSync;
 
 pub struct TestLogger {
@@ -40,11 +40,9 @@ pub struct TestLogger {
     pub lines: Mutex<HashMap<(String, String), usize>>,
 }
 
-impl SendSync for TestLogger {
-}
+impl SendSync for TestLogger {}
 
-impl SyncLogger for TestLogger {
-}
+impl SyncLogger for TestLogger {}
 
 impl TestLogger {
     // BEGIN NOT TESTED

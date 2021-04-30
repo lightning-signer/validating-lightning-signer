@@ -7,8 +7,8 @@ use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning_signer::node::node::{
     ChannelId, ChannelSetup, ChannelSlot, ChannelStub, CommitmentType, Node,
 };
-use lightning_signer::util::test_utils::{TEST_NODE_CONFIG, TEST_SEED};
 use lightning_signer::signer::my_signer::SyncLogger;
+use lightning_signer::util::test_utils::{TEST_NODE_CONFIG, TEST_SEED};
 
 pub fn do_with_channel_stub<F: Fn(&ChannelStub) -> ()>(node: &Node, channel_id: &ChannelId, f: F) {
     let guard = node.channels();

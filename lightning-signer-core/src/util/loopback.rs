@@ -17,8 +17,8 @@ use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
 use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
-use std::io::Error;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
+use std::io::Error;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {

@@ -268,11 +268,7 @@ fn claim_htlc_outputs_single_tx() {
     let revoked_local_txn = get_local_commitment_txn!(nodes[0], chan_1.2);
 
     //Revoke the old state
-    claim_payment(
-        &nodes[0],
-        &vec![&nodes[1]][..],
-        payment_preimage_1,
-    );
+    claim_payment(&nodes[0], &vec![&nodes[1]][..], payment_preimage_1);
 
     {
         confirm_transaction_at(&nodes[0], &revoked_local_txn[0], 100);

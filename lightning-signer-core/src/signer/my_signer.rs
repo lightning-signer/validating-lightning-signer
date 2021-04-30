@@ -28,10 +28,10 @@ use crate::tx::tx::{build_close_tx, sign_commitment, HTLCInfo2};
 use crate::util::crypto_utils::{derive_private_revocation_key, payload_for_p2wpkh};
 use crate::util::status::Status;
 use crate::util::test_utils::TestLogger;
+use crate::SendSync;
 use bitcoin::hashes::Hash;
 use rand::{OsRng, Rng};
 use std::str::FromStr;
-use crate::SendSync;
 
 #[derive(PartialEq, Clone, Copy)]
 #[repr(i32)]
@@ -59,8 +59,7 @@ impl TryFrom<i32> for SpendType {
     // END NOT TESTED
 }
 
-pub trait SyncLogger: Logger + SendSync {
-}
+pub trait SyncLogger: Logger + SendSync {}
 
 pub struct MySigner {
     pub logger: Arc<dyn SyncLogger>,

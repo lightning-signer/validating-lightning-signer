@@ -15,14 +15,14 @@ use bitcoin::{Network, Script};
 use lightning::chain::keysinterface::{InMemorySigner, KeysInterface};
 
 use crate::node::node::ChannelId;
+use crate::signer::my_signer::SyncLogger;
 use crate::util::byte_utils;
 use crate::util::crypto_utils::{
     channels_seed, derive_key_lnd, get_account_extended_key_lnd, get_account_extended_key_native,
     hkdf_sha256, hkdf_sha256_keys, node_keys_lnd, node_keys_native,
 };
-use lightning::ln::msgs::DecodeError;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
-use crate::signer::my_signer::SyncLogger;
+use lightning::ln::msgs::DecodeError;
 
 #[derive(Clone, Copy, Debug)] // NOT TESTED
 pub enum KeyDerivationStyle {
