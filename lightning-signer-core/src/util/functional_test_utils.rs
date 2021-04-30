@@ -15,7 +15,7 @@ use bitcoin::hashes::Hash;
 use chain::transaction::OutPoint;
 use lightning::chain;
 use lightning::ln;
-use lightning::ln::channelmanager::{PaymentSecret, ChainParameters};
+use lightning::ln::channelmanager::{PaymentSecret, ChainParameters, BestBlock};
 use lightning::routing::network_graph::NetGraphMsgHandler;
 use lightning::routing::router::{get_route, Route};
 use lightning::util;
@@ -29,9 +29,10 @@ use util::events::{Event, EventsProvider, MessageSendEvent, MessageSendEventsPro
 
 use crate::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use crate::util::test_utils::{TestChainMonitor, TestPersister};
-use lightning::chain::Listen;
+use lightning::chain::{Listen, Confirm};
 use bitcoin::blockdata::constants::genesis_block;
 use lightning::ln::functional_test_utils::ConnectStyle;
+use lightning::ln::features::InvoiceFeatures;
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 10;
 
@@ -91,22 +92,26 @@ pub fn connect_block<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, block: &Block) 
     do_connect_block(node, block, false);
 }
 
-fn do_connect_block<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, block: &Block, skip_manager: bool) {
-    let txdata: Vec<_> = block.txdata.iter().enumerate().collect();
+fn do_connect_block<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, block: &Block, skip_intermediaries: bool) {
     let height = node.best_block_info().1 + 1;
-    node.chain_monitor.chain_monitor.block_connected(&block.header, &txdata, height);
-    if !skip_manager {
+    if !skip_intermediaries {
+        let txdata: Vec<_> = block.txdata.iter().enumerate().collect();
         match *node.connect_style.borrow() {
             ConnectStyle::BestBlockFirst|ConnectStyle::BestBlockFirstSkippingBlocks => {
-                node.node.update_best_block(&block.header, height);
-                node.node.transactions_confirmed(&block.header, height, &block.txdata.iter().enumerate().collect::<Vec<_>>());
+                node.chain_monitor.chain_monitor.best_block_updated(&block.header, height);
+                node.chain_monitor.chain_monitor.transactions_confirmed(&block.header, &txdata, height);
+                node.node.best_block_updated(&block.header, height);
+                node.node.transactions_confirmed(&block.header, &txdata, height);
             },
             ConnectStyle::TransactionsFirst|ConnectStyle::TransactionsFirstSkippingBlocks => {
-                node.node.transactions_confirmed(&block.header, height, &block.txdata.iter().enumerate().collect::<Vec<_>>());
-                node.node.update_best_block(&block.header, height);
+                node.chain_monitor.chain_monitor.transactions_confirmed(&block.header, &txdata, height);
+                node.chain_monitor.chain_monitor.best_block_updated(&block.header, height);
+                node.node.transactions_confirmed(&block.header, &txdata, height);
+                node.node.best_block_updated(&block.header, height);
             },
             ConnectStyle::FullBlockViaListen => {
-                Listen::block_connected(node.node, &block, height);
+                node.chain_monitor.chain_monitor.block_connected(&block, height);
+                node.node.block_connected(&block, height);
             }
         }
     }
@@ -783,13 +788,17 @@ macro_rules! commitment_signed_dance {
     }};
 }
 
+/// Get a payment preimage and hash.
 macro_rules! get_payment_preimage_hash {
-    ($node: expr) => {{
-        let payment_preimage = PaymentPreimage([*$node.network_payment_count.borrow(); 32]);
-        *$node.network_payment_count.borrow_mut() += 1;
-        let payment_hash = PaymentHash(Sha256::hash(&payment_preimage.0[..]).into_inner());
-        (payment_preimage, payment_hash)
-    }};
+	($dest_node: expr) => {
+		{
+			let payment_preimage = PaymentPreimage([*$dest_node.network_payment_count.borrow(); 32]);
+			*$dest_node.network_payment_count.borrow_mut() += 1;
+			let payment_hash = PaymentHash(Sha256::hash(&payment_preimage.0[..]).into_inner());
+			let payment_secret = $dest_node.node.create_inbound_payment_for_hash(payment_hash, None, 7200, 0).unwrap();
+			(payment_preimage, payment_hash, payment_secret)
+		}
+	}
 }
 
 macro_rules! expect_pending_htlcs_forwardable {
@@ -856,26 +865,10 @@ macro_rules! expect_payment_failed {
 	}
 }
 
-pub fn send_along_route_with_secret<'a, 'b, 'c>(
-    origin_node: &Node<'a, 'b, 'c>,
-    route: Route,
-    expected_paths: &[&[&Node<'a, 'b, 'c>]],
-    recv_value: u64,
-    our_payment_hash: PaymentHash,
-    our_payment_secret: Option<PaymentSecret>,
-) {
-    origin_node
-        .node
-        .send_payment(&route, our_payment_hash, &our_payment_secret)
-        .unwrap();
+pub fn send_along_route_with_secret<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, route: Route, expected_paths: &[&[&Node<'a, 'b, 'c>]], recv_value: u64, our_payment_hash: PaymentHash, our_payment_secret: PaymentSecret) {
+    origin_node.node.send_payment(&route, our_payment_hash, &Some(our_payment_secret)).unwrap();
     check_added_monitors!(origin_node, expected_paths.len());
-    pass_along_route(
-        origin_node,
-        expected_paths,
-        recv_value,
-        our_payment_hash,
-        our_payment_secret,
-    );
+    pass_along_route(origin_node, expected_paths, recv_value, our_payment_hash, our_payment_secret);
 }
 
 pub fn pass_along_path<'a, 'b, 'c>(
@@ -883,7 +876,7 @@ pub fn pass_along_path<'a, 'b, 'c>(
     expected_path: &[&Node<'a, 'b, 'c>],
     recv_value: u64,
     our_payment_hash: PaymentHash,
-    our_payment_secret: Option<PaymentSecret>,
+    our_payment_secret: PaymentSecret,
     ev: MessageSendEvent,
     payment_received_expected: bool,
 ) {
@@ -905,12 +898,9 @@ pub fn pass_along_path<'a, 'b, 'c>(
             if payment_received_expected {
                 assert_eq!(events_2.len(), 1);
                 match events_2[0] {
-                    Event::PaymentReceived {
-                        ref payment_hash,
-                        ref payment_secret,
-                        amt,
-                    } => {
+                    Event::PaymentReceived { ref payment_hash, ref payment_preimage, ref payment_secret, amt, user_payment_id: _ } => {
                         assert_eq!(our_payment_hash, *payment_hash);
+                        assert!(payment_preimage.is_none());
                         assert_eq!(our_payment_secret, *payment_secret);
                         assert_eq!(amt, recv_value);
                     }
@@ -936,7 +926,7 @@ pub fn pass_along_route<'a, 'b, 'c>(
     expected_route: &[&[&Node<'a, 'b, 'c>]],
     recv_value: u64,
     our_payment_hash: PaymentHash,
-    our_payment_secret: Option<PaymentSecret>,
+    our_payment_secret: PaymentSecret,
 ) {
     let mut events = origin_node.node.get_and_clear_pending_msg_events();
     assert_eq!(events.len(), expected_route.len());
@@ -956,140 +946,75 @@ pub fn pass_along_route<'a, 'b, 'c>(
     }
 }
 
-pub fn send_along_route_with_hash<'a, 'b, 'c>(
-    origin_node: &Node<'a, 'b, 'c>,
-    route: Route,
-    expected_route: &[&Node<'a, 'b, 'c>],
-    recv_value: u64,
-    our_payment_hash: PaymentHash,
-) {
-    send_along_route_with_secret(
-        origin_node,
-        route,
-        &[expected_route],
-        recv_value,
-        our_payment_hash,
-        None,
-    );
+pub fn send_along_route<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, route: Route, expected_route: &[&Node<'a, 'b, 'c>], recv_value: u64) -> (PaymentPreimage, PaymentHash, PaymentSecret) {
+    let (our_payment_preimage, our_payment_hash, our_payment_secret) = get_payment_preimage_hash!(expected_route.last().unwrap());
+    send_along_route_with_secret(origin_node, route, &[expected_route], recv_value, our_payment_hash, our_payment_secret);
+    (our_payment_preimage, our_payment_hash, our_payment_secret)
 }
 
-pub fn send_along_route<'a, 'b, 'c>(
-    origin_node: &Node<'a, 'b, 'c>,
-    route: Route,
-    expected_route: &[&Node<'a, 'b, 'c>],
-    recv_value: u64,
-) -> (PaymentPreimage, PaymentHash) {
-    let (our_payment_preimage, our_payment_hash) = get_payment_preimage_hash!(origin_node);
-    send_along_route_with_hash(
-        origin_node,
-        route,
-        expected_route,
-        recv_value,
-        our_payment_hash,
-    );
-    (our_payment_preimage, our_payment_hash)
-}
-
-pub fn claim_payment_along_route_with_secret<'a, 'b, 'c>(
-    origin_node: &Node<'a, 'b, 'c>,
-    expected_paths: &[&[&Node<'a, 'b, 'c>]],
-    skip_last: bool,
-    our_payment_preimage: PaymentPreimage,
-    our_payment_secret: Option<PaymentSecret>,
-    expected_amount: u64,
-) {
+pub fn claim_payment_along_route<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_paths: &[&[&Node<'a, 'b, 'c>]], skip_last: bool, our_payment_preimage: PaymentPreimage) {
     for path in expected_paths.iter() {
-        assert_eq!(
-            path.last().unwrap().node.get_our_node_id(),
-            expected_paths[0].last().unwrap().node.get_our_node_id()
-        );
+        assert_eq!(path.last().unwrap().node.get_our_node_id(), expected_paths[0].last().unwrap().node.get_our_node_id());
     }
-    assert!(expected_paths[0].last().unwrap().node.claim_funds(
-        our_payment_preimage,
-        &our_payment_secret,
-        expected_amount
-    ));
+    assert!(expected_paths[0].last().unwrap().node.claim_funds(our_payment_preimage));
     check_added_monitors!(expected_paths[0].last().unwrap(), expected_paths.len());
 
     macro_rules! msgs_from_ev {
-        ($ev: expr) => {
-            match $ev {
-                &MessageSendEvent::UpdateHTLCs {
-                    ref node_id,
-                    updates:
-                        msgs::CommitmentUpdate {
-                            ref update_add_htlcs,
-                            ref update_fulfill_htlcs,
-                            ref update_fail_htlcs,
-                            ref update_fail_malformed_htlcs,
-                            ref update_fee,
-                            ref commitment_signed,
-                        },
-                } => {
-                    assert!(update_add_htlcs.is_empty());
-                    assert_eq!(update_fulfill_htlcs.len(), 1);
-                    assert!(update_fail_htlcs.is_empty());
-                    assert!(update_fail_malformed_htlcs.is_empty());
-                    assert!(update_fee.is_none());
-                    (
-                        (update_fulfill_htlcs[0].clone(), commitment_signed.clone()),
-                        node_id.clone(),
-                    )
-                }
-                _ => panic!("Unexpected event"),
-            }
-        };
-    }
-    let mut per_path_msgs: Vec<((msgs::UpdateFulfillHTLC, msgs::CommitmentSigned), PublicKey)> =
-        Vec::with_capacity(expected_paths.len());
-    let events = expected_paths[0]
-        .last()
-        .unwrap()
-        .node
-        .get_and_clear_pending_msg_events();
+		($ev: expr) => {
+			match $ev {
+				&MessageSendEvent::UpdateHTLCs { ref node_id, updates: msgs::CommitmentUpdate { ref update_add_htlcs, ref update_fulfill_htlcs, ref update_fail_htlcs, ref update_fail_malformed_htlcs, ref update_fee, ref commitment_signed } } => {
+					assert!(update_add_htlcs.is_empty());
+					assert_eq!(update_fulfill_htlcs.len(), 1);
+					assert!(update_fail_htlcs.is_empty());
+					assert!(update_fail_malformed_htlcs.is_empty());
+					assert!(update_fee.is_none());
+					((update_fulfill_htlcs[0].clone(), commitment_signed.clone()), node_id.clone())
+				},
+				_ => panic!("Unexpected event"),
+			}
+		}
+	}
+    let mut per_path_msgs: Vec<((msgs::UpdateFulfillHTLC, msgs::CommitmentSigned), PublicKey)> = Vec::with_capacity(expected_paths.len());
+    let events = expected_paths[0].last().unwrap().node.get_and_clear_pending_msg_events();
     assert_eq!(events.len(), expected_paths.len());
     for ev in events.iter() {
         per_path_msgs.push(msgs_from_ev!(ev));
     }
 
-    for (expected_route, (path_msgs, next_hop)) in
-        expected_paths.iter().zip(per_path_msgs.drain(..))
-    {
+    for (expected_route, (path_msgs, next_hop)) in expected_paths.iter().zip(per_path_msgs.drain(..)) {
         let mut next_msgs = Some(path_msgs);
         let mut expected_next_node = next_hop;
 
         macro_rules! last_update_fulfill_dance {
-            ($node: expr, $prev_node: expr) => {{
-                $node.node.handle_update_fulfill_htlc(
-                    &$prev_node.node.get_our_node_id(),
-                    &next_msgs.as_ref().unwrap().0,
-                );
-                check_added_monitors!($node, 0);
-                assert!($node.node.get_and_clear_pending_msg_events().is_empty());
-                commitment_signed_dance!($node, $prev_node, next_msgs.as_ref().unwrap().1, false);
-            }};
-        }
+			($node: expr, $prev_node: expr) => {
+				{
+					$node.node.handle_update_fulfill_htlc(&$prev_node.node.get_our_node_id(), &next_msgs.as_ref().unwrap().0);
+					check_added_monitors!($node, 0);
+					assert!($node.node.get_and_clear_pending_msg_events().is_empty());
+					commitment_signed_dance!($node, $prev_node, next_msgs.as_ref().unwrap().1, false);
+				}
+			}
+		}
         macro_rules! mid_update_fulfill_dance {
-            ($node: expr, $prev_node: expr, $new_msgs: expr) => {{
-                $node.node.handle_update_fulfill_htlc(
-                    &$prev_node.node.get_our_node_id(),
-                    &next_msgs.as_ref().unwrap().0,
-                );
-                check_added_monitors!($node, 1);
-                let new_next_msgs = if $new_msgs {
-                    let events = $node.node.get_and_clear_pending_msg_events();
-                    assert_eq!(events.len(), 1);
-                    let (res, nexthop) = msgs_from_ev!(&events[0]);
-                    expected_next_node = nexthop;
-                    Some(res)
-                } else {
-                    assert!($node.node.get_and_clear_pending_msg_events().is_empty());
-                    None
-                };
-                commitment_signed_dance!($node, $prev_node, next_msgs.as_ref().unwrap().1, false);
-                next_msgs = new_next_msgs;
-            }};
-        }
+			($node: expr, $prev_node: expr, $new_msgs: expr) => {
+				{
+					$node.node.handle_update_fulfill_htlc(&$prev_node.node.get_our_node_id(), &next_msgs.as_ref().unwrap().0);
+					check_added_monitors!($node, 1);
+					let new_next_msgs = if $new_msgs {
+						let events = $node.node.get_and_clear_pending_msg_events();
+						assert_eq!(events.len(), 1);
+						let (res, nexthop) = msgs_from_ev!(&events[0]);
+						expected_next_node = nexthop;
+						Some(res)
+					} else {
+						assert!($node.node.get_and_clear_pending_msg_events().is_empty());
+						None
+					};
+					commitment_signed_dance!($node, $prev_node, next_msgs.as_ref().unwrap().1, false);
+					next_msgs = new_next_msgs;
+				}
+			}
+		}
 
         let mut prev_node = expected_route.last().unwrap();
         for (idx, node) in expected_route.iter().rev().enumerate().skip(1) {
@@ -1098,10 +1023,8 @@ pub fn claim_payment_along_route_with_secret<'a, 'b, 'c>(
             if next_msgs.is_some() {
                 mid_update_fulfill_dance!(node, prev_node, update_next_msgs);
             } else {
-                // BEGIN NOT TESTED
                 assert!(!update_next_msgs);
                 assert!(node.node.get_and_clear_pending_msg_events().is_empty());
-                // END NOT TESTED
             }
             if !skip_last && idx == expected_route.len() - 1 {
                 assert_eq!(expected_next_node, origin_node.node.get_our_node_id());
@@ -1117,48 +1040,16 @@ pub fn claim_payment_along_route_with_secret<'a, 'b, 'c>(
     }
 }
 
-pub fn claim_payment_along_route<'a, 'b, 'c>(
-    origin_node: &Node<'a, 'b, 'c>,
-    expected_route: &[&Node<'a, 'b, 'c>],
-    skip_last: bool,
-    our_payment_preimage: PaymentPreimage,
-    expected_amount: u64,
-) {
-    claim_payment_along_route_with_secret(
-        origin_node,
-        &[expected_route],
-        skip_last,
-        our_payment_preimage,
-        None,
-        expected_amount,
-    );
-}
-
-pub fn claim_payment<'a, 'b, 'c>(
-    origin_node: &Node<'a, 'b, 'c>,
-    expected_route: &[&Node<'a, 'b, 'c>],
-    our_payment_preimage: PaymentPreimage,
-    expected_amount: u64,
-) {
-    claim_payment_along_route(
-        origin_node,
-        expected_route,
-        false,
-        our_payment_preimage,
-        expected_amount,
-    );
+pub fn claim_payment<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_route: &[&Node<'a, 'b, 'c>], our_payment_preimage: PaymentPreimage) {
+    claim_payment_along_route(origin_node, &[expected_route], false, our_payment_preimage);
 }
 
 pub const TEST_FINAL_CLTV: u32 = 32;
 
-pub fn route_payment<'a, 'b, 'c>(
-    origin_node: &Node<'a, 'b, 'c>,
-    expected_route: &[&Node<'a, 'b, 'c>],
-    recv_value: u64,
-) -> (PaymentPreimage, PaymentHash) {
+pub fn route_payment<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_route: &[&Node<'a, 'b, 'c>], recv_value: u64) -> (PaymentPreimage, PaymentHash, PaymentSecret) {
     let net_graph_msg_handler = &origin_node.net_graph_msg_handler;
     let logger = test_utils::TestLogger::new();
-    let route = get_route(&origin_node.node.get_our_node_id(), &net_graph_msg_handler.network_graph.read().unwrap(), &expected_route.last().unwrap().node.get_our_node_id(), None, None, &Vec::new(), recv_value, TEST_FINAL_CLTV, &logger).unwrap();
+    let route = get_route(&origin_node.node.get_our_node_id(), &net_graph_msg_handler.network_graph.read().unwrap(), &expected_route.last().unwrap().node.get_our_node_id(), Some(InvoiceFeatures::known()), None, &Vec::new(), recv_value, TEST_FINAL_CLTV, &logger).unwrap();
     assert_eq!(route.paths.len(), 1);
     assert_eq!(route.paths[0].len(), expected_route.len());
     for (node, hop) in expected_route.iter().zip(route.paths[0].iter()) {
@@ -1168,19 +1059,9 @@ pub fn route_payment<'a, 'b, 'c>(
     send_along_route(origin_node, route, expected_route, recv_value)
 }
 
-pub fn send_payment<'a, 'b, 'c>(
-    origin: &Node<'a, 'b, 'c>,
-    expected_route: &[&Node<'a, 'b, 'c>],
-    recv_value: u64,
-    expected_value: u64,
-) {
+pub fn send_payment<'a, 'b, 'c>(origin: &Node<'a, 'b, 'c>, expected_route: &[&Node<'a, 'b, 'c>], recv_value: u64)  {
     let our_payment_preimage = route_payment(&origin, expected_route, recv_value).0;
-    claim_payment(
-        &origin,
-        expected_route,
-        our_payment_preimage,
-        expected_value,
-    );
+    claim_payment(&origin, expected_route, our_payment_preimage);
 }
 
 pub fn create_chanmon_cfgs(node_count: usize) -> Vec<TestChanMonCfg> {
@@ -1230,8 +1111,7 @@ pub fn create_node_chanmgrs<'a, 'b>(
         let network = Network::Testnet;
         let params = ChainParameters {
             network,
-            latest_hash: genesis_block(network).header.block_hash(),
-            latest_height: 0,
+            best_block: BestBlock::from_genesis(network),
         };
         let node = ChannelManager::new(cfgs[i].fee_estimator, &cfgs[i].chain_monitor, cfgs[i].tx_broadcaster, cfgs[i].logger, &cfgs[i].keys_manager, if node_config[i].is_some() { node_config[i].clone().unwrap() } else { default_config }, params);
         chanmgrs.push(node);
