@@ -6,22 +6,28 @@ use std::rc::Rc;
 use std::sync::Mutex;
 
 use bitcoin;
-use bitcoin::blockdata::block::BlockHeader;
-use bitcoin::hash_types::BlockHash;
-use bitcoin::secp256k1::key::PublicKey;
 use bitcoin::{Block, Network, Transaction, TxOut};
-use bitcoin::hashes::sha256::Hash as Sha256;
+use bitcoin::blockdata::block::BlockHeader;
+use bitcoin::blockdata::constants::genesis_block;
+use bitcoin::hash_types::BlockHash;
 use bitcoin::hashes::Hash;
+use bitcoin::hashes::sha256::Hash as Sha256;
+use bitcoin::secp256k1::key::PublicKey;
 use chain::transaction::OutPoint;
 use lightning::chain;
+use lightning::chain::{Confirm, Listen};
 use lightning::ln;
-use lightning::ln::channelmanager::{PaymentSecret, ChainParameters, BestBlock};
+use lightning::ln::channelmanager::{BestBlock, ChainParameters};
+use lightning::ln::features::InvoiceFeatures;
+use lightning::ln::functional_test_utils::ConnectStyle;
+use lightning::ln::PaymentSecret;
 use lightning::routing::network_graph::NetGraphMsgHandler;
 use lightning::routing::router::{get_route, Route};
 use lightning::util;
 use lightning::util::config::UserConfig;
 use lightning::util::test_utils;
-use ln::channelmanager::{ChannelManager, PaymentHash, PaymentPreimage};
+use ln::{PaymentHash, PaymentPreimage};
+use ln::channelmanager::ChannelManager;
 use ln::features::InitFeatures;
 use ln::msgs;
 use ln::msgs::{ChannelMessageHandler, RoutingMessageHandler};
@@ -29,10 +35,6 @@ use util::events::{Event, EventsProvider, MessageSendEvent, MessageSendEventsPro
 
 use crate::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use crate::util::test_utils::{TestChainMonitor, TestPersister};
-use lightning::chain::{Listen, Confirm};
-use bitcoin::blockdata::constants::genesis_block;
-use lightning::ln::functional_test_utils::ConnectStyle;
-use lightning::ln::features::InvoiceFeatures;
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 10;
 

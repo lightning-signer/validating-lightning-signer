@@ -3,12 +3,12 @@ use std::sync::Arc;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::Network;
 use lightning::ln::chan_utils::ChannelPublicKeys;
-use lightning::util::logger::Logger;
 
 use lightning_signer::node::node::{
     ChannelId, ChannelSetup, ChannelSlot, ChannelStub, CommitmentType, Node,
 };
 use lightning_signer::util::test_utils::{TEST_NODE_CONFIG, TEST_SEED};
+use lightning_signer::signer::my_signer::SyncLogger;
 
 pub fn do_with_channel_stub<F: Fn(&ChannelStub) -> ()>(node: &Node, channel_id: &ChannelId, f: F) {
     let guard = node.channels();
@@ -20,7 +20,7 @@ pub fn do_with_channel_stub<F: Fn(&ChannelStub) -> ()>(node: &Node, channel_id: 
 }
 
 pub fn make_node_and_channel(
-    logger: &Arc<dyn Logger>,
+    logger: &Arc<dyn SyncLogger>,
     channel_nonce: &Vec<u8>,
     channel_id: ChannelId,
 ) -> (PublicKey, Arc<Node>, ChannelStub) {
@@ -32,7 +32,7 @@ pub fn make_node_and_channel(
     (node_id, node, channel.unwrap())
 }
 
-pub(crate) fn make_node(logger: &Arc<dyn Logger>) -> (PublicKey, Arc<Node>) {
+pub(crate) fn make_node(logger: &Arc<dyn SyncLogger>) -> (PublicKey, Arc<Node>) {
     let mut seed = [0; 32];
     seed.copy_from_slice(hex::decode(TEST_SEED[1]).unwrap().as_slice());
 

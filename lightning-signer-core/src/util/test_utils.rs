@@ -31,11 +31,19 @@ use crate::tx::tx::sort_outputs;
 use crate::util::crypto_utils::payload_for_p2wpkh;
 use crate::util::enforcing_trait_impls::EnforcingSigner;
 use crate::util::loopback::LoopbackChannelSigner;
+use crate::signer::my_signer::SyncLogger;
+use crate::SendSync;
 
 pub struct TestLogger {
     level: Level,
     id: String,
     pub lines: Mutex<HashMap<(String, String), usize>>,
+}
+
+impl SendSync for TestLogger {
+}
+
+impl SyncLogger for TestLogger {
 }
 
 impl TestLogger {

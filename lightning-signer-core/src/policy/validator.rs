@@ -444,7 +444,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
 
 #[cfg(test)]
 mod tests {
-    use lightning::ln::channelmanager::PaymentHash;
+    use lightning::ln::PaymentHash;
 
     use crate::node::node::CommitmentType;
     use crate::tx::tx::{HTLCInfo, HTLCInfo2, ANCHOR_SAT};

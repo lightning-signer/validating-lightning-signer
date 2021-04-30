@@ -18,6 +18,7 @@ use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, pay
 use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use std::io::Error;
+use bitcoin::secp256k1::recovery::RecoverableSignature;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -515,6 +516,12 @@ impl KeysInterface for LoopbackSignerKeysInterface {
     // BEGIN NOT TESTED
     fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::Signer, DecodeError> {
         unimplemented!()
+    }
+
+    fn sign_invoice(&self, invoice_preimage: Vec<u8>) -> Result<RecoverableSignature, ()> {
+        self.signer.with_node(&self.node_id, |node_opt| {
+            node_opt.map_or(Err(()), |n| Ok(n.sign_invoice(&invoice_preimage)))
+        })
     }
     // END NOT TESTED
 }

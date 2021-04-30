@@ -14,10 +14,10 @@ use serde_json::json;
 use tonic::{transport::Server, Request, Response, Status};
 
 use lightning::ln::chan_utils::ChannelPublicKeys;
-use lightning::ln::channelmanager::PaymentHash;
+use lightning::ln::PaymentHash;
 use lightning_signer::node::node;
 use lightning_signer::node::node::{ChannelId, ChannelSetup, CommitmentType};
-use lightning_signer::signer::my_signer::SpendType;
+use lightning_signer::signer::my_signer::{SpendType, SyncLogger};
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::{log_debug, log_error, log_info, log_internal};
 use remotesigner::signer_server::{Signer, SignerServer};
@@ -27,7 +27,6 @@ use crate::persist::persist_json::KVJsonPersister;
 use crate::server::remotesigner::version_server::Version;
 
 use super::remotesigner;
-use lightning::util::logger::Logger;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::signer::my_signer::{channel_nonce_to_id, MySigner};
@@ -35,7 +34,7 @@ use lightning_signer::util::status;
 use std::sync::Arc;
 
 struct SignServer {
-    pub logger: Arc<Logger>,
+    pub logger: Arc<dyn SyncLogger>,
     pub signer: MySigner,
 }
 
@@ -127,7 +126,7 @@ pub fn collect_output_witscripts(output_descs: &Vec<OutputDescriptor>) -> Vec<Ve
 }
 
 #[tonic::async_trait]
-impl Version for MySigner {
+impl Version for SignServer {
     async fn version(
         &self,
         _request: Request<VersionRequest>,
