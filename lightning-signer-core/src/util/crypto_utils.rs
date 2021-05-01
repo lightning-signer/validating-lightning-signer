@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use bitcoin::bech32;
 use bitcoin::hashes::hash160::Hash as BitcoinHash160;
 use bitcoin::hashes::sha256::Hash as BitcoinSha256;
@@ -222,9 +220,7 @@ pub fn derive_private_revocation_key<T: secp256k1::Signing>(
 
 pub fn payload_for_p2wpkh(key: &PublicKey) -> Payload {
     let mut hash_engine = BitcoinHash160::engine();
-    hash_engine
-        .write_all(&key.serialize())
-        .expect("failed to serialize pubkey");
+    hash_engine.input(&key.serialize());
     Payload::WitnessProgram {
         version: bech32::u5::try_from_u8(0).expect("0<32"),
         program: BitcoinHash160::from_engine(hash_engine)[..].to_vec(),
@@ -287,9 +283,9 @@ mod tests {
         let salt = [3u8];
         let mut output = [0u8; 32*6];
         hkdf_extract_expand(&salt, &secret, &info, &mut output);
-        assert_eq!(hex::encode(&output), "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0efbbb13e74af4687137801e1628d1d1876d251b31d1321383568a9387da7c0baa7dee83ba374bba3774ef01140e4c4293791a512e536764bf4405aea511be32d5fd71a0b7a7ef3638312e476eb323fbac5f3d549ccf0fe0eabb38fe7bc16ad01db2288e57de45eabecd561ede4dc89164099ed7f0b0db5250e2b377e2aa84f520838612dccbde870f7b06a1e03f3cd79d30da717c55e15442a0b4dd02aafcd86");
+        assert_eq!(hex::encode(output.to_vec()), "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0efbbb13e74af4687137801e1628d1d1876d251b31d1321383568a9387da7c0baa7dee83ba374bba3774ef01140e4c4293791a512e536764bf4405aea511be32d5fd71a0b7a7ef3638312e476eb323fbac5f3d549ccf0fe0eabb38fe7bc16ad01db2288e57de45eabecd561ede4dc89164099ed7f0b0db5250e2b377e2aa84f520838612dccbde870f7b06a1e03f3cd79d30da717c55e15442a0b4dd02aafcd86");
         let mut output = [0u8; 32];
         hkdf_extract_expand(&salt, &secret, &info, &mut output);
-        assert_eq!(hex::encode(&output), "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0");
+        assert_eq!(hex::encode(output.to_vec()), "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0");
     }
 }

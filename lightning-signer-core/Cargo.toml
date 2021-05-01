@@ -14,20 +14,22 @@ grpc = ["tonic"]
 
 test_utils = ["lightning/_test_utils", "lightning/unsafe_revoked_tx_signing"]
 
+debug = ["backtrace"]
+
 [lib]
 name = "lightning_signer"
 path = "src/lib.rs"
 
 [dependencies]
-# Also depended by rust-lightning
+# Also depended on by rust-lightning
 hex = "0.3.2"
 
 # TODO make optional
 # for creating a new channel
 rand = "0.4"
-backtrace = { version = "0.3", optional = true }
 # TODO end
 
+backtrace = { version = "0.3", optional = true }
 tonic = { version = "0.1.1", optional = true }
 
 [dev-dependencies]
@@ -37,18 +39,8 @@ tempfile = "3.2.0"
 git = "https://github.com/rust-bitcoin/rust-lightning.git"
 rev = "3b67be235a46d8f9a9a6faf7ca7c5872ffbd8646"
 
-[dev-dependencies.lightning]
-git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "3b67be235a46d8f9a9a6faf7ca7c5872ffbd8646"
-features = ["_test_utils"]
-
 [dependencies.bitcoin]
 version = "0.26"
-# we need this for integration testing
-features = ["bitcoinconsensus"]
-
-[dev-dependencies.bitcoinconsensus]
-version = "0.19.0-3"
 
 [[bin]]
 name = "example_main"

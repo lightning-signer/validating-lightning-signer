@@ -650,7 +650,6 @@ version = "0.1.0"
 dependencies = [
  "backtrace",
  "bitcoin",
- "bitcoinconsensus",
  "hex 0.3.2",
  "lightning",
  "rand 0.4.6",

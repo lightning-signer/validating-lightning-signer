@@ -176,12 +176,13 @@ mod tests {
     use lightning_signer::node::node::ChannelSlot;
     use lightning_signer::signer::my_signer::{channel_nonce_to_id, SyncLogger};
     use lightning_signer::util::enforcing_trait_impls::EnforcingSigner;
-    use lightning_signer::util::test_utils::{TestLogger, TEST_NODE_CONFIG};
+    use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
 
     use crate::persist::ser_util::VecWriter;
     use crate::persist::util::*;
 
     use super::*;
+    use lightning_signer::util::test_logger::TestLogger;
 
     fn make_temp_persister<'a>() -> (KVJsonPersister<'a>, TempDir, String) {
         let dir = TempDir::new().unwrap();
