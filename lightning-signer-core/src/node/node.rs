@@ -423,6 +423,12 @@ impl Channel {
             .signature_hash(0, &funding_redeemscript, SigHashType::All as u32);
         if recomposed_tx_sighash != original_tx_sighash {
             // BEGIN NOT TESTED
+            log_debug!(self, "ORIGINAL_TX={:#?}", &tx);
+            log_debug!(
+                self,
+                "RECOMPOSED_TX={:#?}",
+                &commitment_tx.trust().built_transaction().transaction
+            );
             return Err(
                 self.validation_error(ValidationError::Policy("sighash mismatch".to_string()))
             );
