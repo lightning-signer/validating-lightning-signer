@@ -19,12 +19,13 @@ name = "lightning_signer"
 path = "src/lib.rs"
 
 [dependencies]
+# Also depended by rust-lightning
 hex = "0.3.2"
 
 # TODO make optional
 # for creating a new channel
 rand = "0.4"
-backtrace = "0.3"
+backtrace = { version = "0.3", optional = true }
 # TODO end
 
 tonic = { version = "0.1.1", optional = true }

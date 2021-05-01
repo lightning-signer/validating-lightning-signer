@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use bitcoin::secp256k1::SignOnly;
 
+#[cfg(feature = "backtrace")]
 use backtrace::Backtrace;
 use bitcoin;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
@@ -72,6 +73,7 @@ impl MySigner {
     pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INVALID ARGUMENT: {}", &s);
+        #[cfg(feature = "backtrace")]
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
@@ -81,6 +83,7 @@ impl MySigner {
     pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INTERNAL ERROR: {}", &s);
+        #[cfg(feature = "backtrace")]
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
     }
