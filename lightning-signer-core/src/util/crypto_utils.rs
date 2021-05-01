@@ -3,30 +3,43 @@ use std::io::Write;
 use bitcoin::bech32;
 use bitcoin::hashes::hash160::Hash as BitcoinHash160;
 use bitcoin::hashes::sha256::Hash as BitcoinSha256;
-use bitcoin::hashes::{Hash, HashEngine};
+use bitcoin::hashes::{Hash, HashEngine, HmacEngine, Hmac};
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::Network;
-use crypto::hkdf::{hkdf_expand, hkdf_extract};
-use crypto::sha2::Sha256;
+
+fn hkdf_extract_expand(salt: &[u8], secret: &[u8], info: &[u8], output: &mut [u8]) {
+    let mut hmac = HmacEngine::<BitcoinSha256>::new(salt);
+    hmac.input(secret);
+    let prk = Hmac::from_engine(hmac).into_inner();
+
+    let mut t = [0; 32];
+    let mut n: u8 = 0;
+
+    for chunk in output.chunks_mut(32) {
+        let mut hmac = HmacEngine::<BitcoinSha256>::new(&prk[..]);
+        n = n.checked_add(1).expect("HKDF size limit exceeded.");
+        if n != 1 {
+            hmac.input(&t);
+        }
+        hmac.input(&info);
+        hmac.input(&[n]);
+        t = Hmac::from_engine(hmac).into_inner();
+        chunk.copy_from_slice(&t);
+    }
+}
 
 pub fn hkdf_sha256(secret: &[u8], info: &[u8], salt: &[u8]) -> [u8; 32] {
-    let digest = Sha256::new();
-    let mut prk = [0u8; 32];
-    hkdf_extract(digest, salt, secret, &mut prk);
     let mut result = [0u8; 32];
-    hkdf_expand(digest, &prk, info, &mut result);
+    hkdf_extract_expand(salt, secret, info, &mut result);
     result
 }
 
 pub fn hkdf_sha256_keys(secret: &[u8], info: &[u8], salt: &[u8]) -> [u8; 32 * 6] {
-    let digest = Sha256::new();
-    let mut prk = [0u8; 32];
-    hkdf_extract(digest, salt, secret, &mut prk);
     let mut result = [0u8; 32 * 6];
-    hkdf_expand(digest, &prk, info, &mut result);
+    hkdf_extract_expand(salt, secret, info, &mut result);
     result
 }
 
@@ -242,10 +255,9 @@ mod tests {
         let master = ExtendedPrivKey::new_master(network.clone(), &[0u8; 32]).unwrap();
         let (node_id, _) = node_keys_lnd(&secp_ctx, network, master);
         let node_id_bytes = node_id.serialize().to_vec();
-        println!("{:?}", hex::encode(&node_id_bytes));
-        assert!(
-            hex::encode(&node_id_bytes)
-                == "0287a5eab0a005ea7f08a876257b98868b1e5b5a9167385904396743faa61a4745"
+        assert_eq!(
+            hex::encode(&node_id_bytes),
+            "0287a5eab0a005ea7f08a876257b98868b1e5b5a9167385904396743faa61a4745"
         );
         Ok(())
     }
@@ -253,9 +265,9 @@ mod tests {
     #[test]
     fn channels_seed_test() -> Result<(), ()> {
         let seed = channels_seed(&[0u8; 32]);
-        assert!(
-            hex::encode(&seed)
-                == "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53"
+        assert_eq!(
+            hex::encode(&seed),
+            "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53"
         );
         Ok(())
     }
@@ -264,7 +276,20 @@ mod tests {
     fn get_account_extended_key_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
         let key = get_account_extended_key_native(&secp_ctx, Network::Testnet, &[0u8; 32]);
-        assert!(format!("{}", key) == "tprv8ejySXSgpWvEBguEGNFYNcHz29W7QxEodgnwbfLzBCccBnxGAq4vBkgqUYPGR5EnCbLvJE7YQsod6qpid85JhvAfizVpqPg3WsWB6UG3fEL");
+        assert_eq!(format!("{}", key), "tprv8ejySXSgpWvEBguEGNFYNcHz29W7QxEodgnwbfLzBCccBnxGAq4vBkgqUYPGR5EnCbLvJE7YQsod6qpid85JhvAfizVpqPg3WsWB6UG3fEL");
         Ok(())
+    }
+
+    #[test]
+    fn test_hkdf() {
+        let secret = [1u8];
+        let info = [2u8];
+        let salt = [3u8];
+        let mut output = [0u8; 32*6];
+        hkdf_extract_expand(&salt, &secret, &info, &mut output);
+        assert_eq!(hex::encode(&output), "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0efbbb13e74af4687137801e1628d1d1876d251b31d1321383568a9387da7c0baa7dee83ba374bba3774ef01140e4c4293791a512e536764bf4405aea511be32d5fd71a0b7a7ef3638312e476eb323fbac5f3d549ccf0fe0eabb38fe7bc16ad01db2288e57de45eabecd561ede4dc89164099ed7f0b0db5250e2b377e2aa84f520838612dccbde870f7b06a1e03f3cd79d30da717c55e15442a0b4dd02aafcd86");
+        let mut output = [0u8; 32];
+        hkdf_extract_expand(&salt, &secret, &info, &mut output);
+        assert_eq!(hex::encode(&output), "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0");
     }
 }

@@ -24,8 +24,6 @@ hex = "0.3.2"
 # TODO make optional
 # for creating a new channel
 rand = "0.4"
-# for c-lightning compatibility (hkdf), but should be able to use relevant bits from bitcoin crate
-rust-crypto = "0.2.36"
 backtrace = "0.3"
 # TODO end
 
