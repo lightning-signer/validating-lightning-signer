@@ -1,13 +1,13 @@
 use lightning::util::logger::{Level, Logger, Record};
-use std::sync::Mutex;
-use std::collections::HashMap;
+use crate::Mutex;
+use crate::Map;
 use crate::SendSync;
 use crate::signer::my_signer::SyncLogger;
 
 pub struct TestLogger {
     level: Level,
     id: String,
-    pub lines: Mutex<HashMap<(String, String), usize>>,
+    pub lines: Mutex<Map<(String, String), usize>>,
 }
 
 impl SendSync for TestLogger {}
@@ -24,7 +24,7 @@ impl TestLogger {
         TestLogger {
             level: Level::Trace,
             id,
-            lines: Mutex::new(HashMap::new()),
+            lines: Mutex::new(Map::new()),
         }
     }
     // BEGIN NOT TESTED

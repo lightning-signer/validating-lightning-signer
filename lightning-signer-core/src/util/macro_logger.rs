@@ -2,7 +2,7 @@ macro_rules! function {
     () => {{
         fn _f() {}
         fn _type_name_of<T>(_: T) -> &'static str {
-            std::any::type_name::<T>()
+            core::any::type_name::<T>()
         }
         let name = _type_name_of(_f);
         &name[..name.len() - 3]
@@ -57,9 +57,9 @@ macro_rules! log_trace {
 }
 
 pub struct DebugBytes<'a>(pub &'a [u8]);
-impl<'a> std::fmt::Display for DebugBytes<'a> {
+impl<'a> core::fmt::Display for DebugBytes<'a> {
     // BEGIN NOT TESTED
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
         for i in self.0 {
             write!(f, "{:02x}", i)?;
         }

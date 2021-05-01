@@ -1,6 +1,6 @@
-use std::cmp;
-use std::collections::HashMap;
-use std::sync::Mutex;
+use core::cmp;
+use crate::Map;
+use crate::Mutex;
 
 use bitcoin;
 use bitcoin::blockdata::opcodes;
@@ -70,7 +70,7 @@ impl channelmonitor::Persist<LoopbackChannelSigner> for TestPersister {
 
 pub struct TestChainMonitor<'a> {
     pub added_monitors: Mutex<Vec<(OutPoint, ())>>,
-    pub latest_monitor_update_id: Mutex<HashMap<[u8; 32], (OutPoint, u64)>>,
+    pub latest_monitor_update_id: Mutex<Map<[u8; 32], (OutPoint, u64)>>,
     pub chain_monitor: chainmonitor::ChainMonitor<
         LoopbackChannelSigner,
         &'a test_utils::TestChainSource,
@@ -94,7 +94,7 @@ impl<'a> TestChainMonitor<'a> {
     ) -> Self {
         Self {
             added_monitors: Mutex::new(Vec::new()),
-            latest_monitor_update_id: Mutex::new(HashMap::new()),
+            latest_monitor_update_id: Mutex::new(Map::new()),
             chain_monitor: chainmonitor::ChainMonitor::new(
                 chain_source,
                 broadcaster,

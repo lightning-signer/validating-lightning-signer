@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use crate::Arc;
 
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::{Script, Transaction};
@@ -18,7 +18,7 @@ use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, pay
 use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
-use std::io::Error;
+use crate::IOError;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -160,7 +160,7 @@ impl LoopbackChannelSigner {
 
 // BEGIN NOT TESTED
 impl Writeable for LoopbackChannelSigner {
-    fn write<W: Writer>(&self, _writer: &mut W) -> Result<(), Error> {
+    fn write<W: Writer>(&self, _writer: &mut W) -> Result<(), IOError> {
         unimplemented!()
     }
 }

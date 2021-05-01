@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
-use std::sync::{Arc, Mutex};
+use crate::Map;
+use core::convert::{TryFrom, TryInto};
+use crate::{Arc, Mutex};
 
 use bitcoin::secp256k1::SignOnly;
 
@@ -31,7 +31,7 @@ use crate::util::status::Status;
 use crate::SendSync;
 use bitcoin::hashes::Hash;
 use rand::{OsRng, Rng};
-use std::str::FromStr;
+use core::str::FromStr;
 use crate::util::test_logger::TestLogger;
 
 #[derive(PartialEq, Clone, Copy)]
@@ -64,7 +64,7 @@ pub trait SyncLogger: Logger + SendSync {}
 
 pub struct MySigner {
     pub logger: Arc<dyn SyncLogger>,
-    pub(crate) nodes: Mutex<HashMap<PublicKey, Arc<Node>>>,
+    pub(crate) nodes: Mutex<Map<PublicKey, Arc<Node>>>,
     pub(crate) persister: Box<dyn Persist>,
     pub(crate) test_mode: bool,
 }
@@ -97,7 +97,7 @@ impl MySigner {
 
     pub fn new_with_persister(persister: Box<dyn Persist>, test_mode: bool) -> MySigner {
         let test_logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::with_id("server".to_owned()));
-        let mut nodes = HashMap::new();
+        let mut nodes = Map::new();
         println!("Start restore");
         for (node_id, node_entry) in persister.get_nodes() {
             // BEGIN NOT TESTED
@@ -605,7 +605,7 @@ impl MySigner {
         output_witscripts: Vec<Vec<u8>>,
         remote_per_commitment_point: &PublicKey,
         channel_value_sat: u64,
-        payment_hashmap: &HashMap<[u8; 20], PaymentHash>,
+        payment_hashmap: &Map<[u8; 20], PaymentHash>,
         commit_num: u64,
     ) -> Result<Vec<u8>, Status> {
         self.with_ready_channel(&node_id, &channel_id, |chan| {
@@ -1556,7 +1556,7 @@ mod tests {
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
                 let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
-                let payment_hashmap = HashMap::new();
+                let payment_hashmap = Map::new();
                 let ser_signature = chan
                     .sign_counterparty_commitment_tx(
                         &tx.transaction,
@@ -1617,7 +1617,7 @@ mod tests {
                 let (tx, output_scripts, _) =
                     chan.build_commitment_tx(&remote_percommitment_point, commit_num, &info)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
-                let payment_hashmap = HashMap::new();
+                let payment_hashmap = Map::new();
                 let ser_signature = chan
                     .sign_counterparty_commitment_tx(
                         &tx,
@@ -1691,7 +1691,7 @@ mod tests {
                 let channel_parameters = chan.make_channel_parameters();
                 let parameters = channel_parameters.as_counterparty_broadcastable();
                 let mut htlcs = vec![htlc1.clone(), htlc2.clone(), htlc3.clone()];
-                let mut payment_hashmap = HashMap::new();
+                let mut payment_hashmap = Map::new();
                 for htlc in &htlcs {
                     payment_hashmap.insert(
                         Ripemd160Hash::hash(&htlc.payment_hash.0).into_inner(),
@@ -1785,7 +1785,7 @@ mod tests {
         let to_holder_value_sat =
             setup.channel_value_sat - to_counterparty_value_sat - 3 - (2 * ANCHOR_SAT);
 
-        let mut payment_hashmap = HashMap::new();
+        let mut payment_hashmap = Map::new();
         for htlc in &vec![htlc1.clone(), htlc2.clone(), htlc3.clone()] {
             payment_hashmap.insert(
                 Ripemd160Hash::hash(&htlc.payment_hash.0).into_inner(),
@@ -3492,7 +3492,7 @@ mod tests {
         println!("{:?}", &spent2.output[0].script_pubkey);
         println!("{:?}", &spent3.output[0].script_pubkey);
 
-        let mut spent = HashMap::new();
+        let mut spent = Map::new();
         spent.insert(spent1.txid(), spent1);
         spent.insert(spent2.txid(), spent2);
         spent.insert(spent3.txid(), spent3);

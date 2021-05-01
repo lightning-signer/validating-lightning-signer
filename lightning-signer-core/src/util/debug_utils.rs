@@ -4,8 +4,8 @@ use lightning::ln::chan_utils::ChannelPublicKeys;
 // Debug printer for ChannelPublicKeys which doesn't have one.
 // BEGIN NOT TESTED
 pub struct DebugChannelPublicKeys<'a>(pub &'a ChannelPublicKeys);
-impl<'a> std::fmt::Debug for DebugChannelPublicKeys<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+impl<'a> core::fmt::Debug for DebugChannelPublicKeys<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
         f.debug_struct("ChannelPublicKeys")
             .field("funding_pubkey", &self.0.funding_pubkey)
             .field("revocation_basepoint", &self.0.revocation_basepoint)
@@ -28,8 +28,8 @@ macro_rules! log_channel_public_keys {
 // Debug printer for Payload which uses hex encoded strings.
 // BEGIN NOT TESTED
 pub struct DebugPayload<'a>(pub &'a Payload);
-impl<'a> std::fmt::Debug for DebugPayload<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+impl<'a> core::fmt::Debug for DebugPayload<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
         match *self.0 {
             Payload::PubkeyHash(ref hash) => write!(f, "{}", hex::encode(&hash)),
             Payload::ScriptHash(ref hash) => write!(f, "{}", hex::encode(&hash)),

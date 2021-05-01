@@ -1,5 +1,5 @@
-use std::io::Error;
-use std::sync::{Arc, Mutex};
+use crate::{IORead, IOError};
+use crate::{Arc, Mutex};
 
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::secp256k1::key::{PublicKey, SecretKey};
@@ -16,7 +16,7 @@ use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 use ln::msgs;
-use std::cmp;
+use core::cmp;
 
 /// Enforces some rules on Sign calls. Eventually we will
 /// probably want to expose a variant of this which would essentially
@@ -243,7 +243,7 @@ impl BaseSign for EnforcingSigner {
 
 // BEGIN NOT TESTED
 impl Writeable for EnforcingSigner {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), IOError> {
         self.inner.write(writer)?;
         let last = self.state.lock().unwrap().last_commitment_number;
         last.write(writer)?;
@@ -253,7 +253,7 @@ impl Writeable for EnforcingSigner {
 // END NOT TESTED
 
 impl Readable for EnforcingSigner {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<Self, DecodeError> {
+    fn read<R: IORead>(reader: &mut R) -> Result<Self, DecodeError> {
         let inner = Readable::read(reader)?;
         let last = Readable::read(reader)?;
         let state = EnforcementState {
