@@ -362,7 +362,7 @@ impl KeysInterface for MyKeysManager {
 
 #[cfg(test)]
 mod tests {
-    use crate::util::test_utils::TestLogger;
+    use crate::util::test_logger::TestLogger;
     use crate::util::INITIAL_COMMITMENT_NUMBER;
 
     use super::*;

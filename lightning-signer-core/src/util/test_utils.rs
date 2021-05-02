@@ -22,73 +22,14 @@ use lightning::ln::chan_utils::{
     ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
     DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
-use lightning::util::logger::{Level, Logger, Record};
 use lightning::util::test_utils;
 
 use crate::node::node::{ChannelSetup, CommitmentType, NodeConfig};
 use crate::signer::my_keys_manager::KeyDerivationStyle;
-use crate::signer::my_signer::SyncLogger;
 use crate::tx::tx::sort_outputs;
 use crate::util::crypto_utils::payload_for_p2wpkh;
 use crate::util::enforcing_trait_impls::EnforcingSigner;
 use crate::util::loopback::LoopbackChannelSigner;
-use crate::SendSync;
-
-pub struct TestLogger {
-    level: Level,
-    id: String,
-    pub lines: Mutex<HashMap<(String, String), usize>>,
-}
-
-impl SendSync for TestLogger {}
-
-impl SyncLogger for TestLogger {}
-
-impl TestLogger {
-    // BEGIN NOT TESTED
-    pub fn new() -> TestLogger {
-        Self::with_id("".to_owned())
-    }
-    // END NOT TESTED
-    pub fn with_id(id: String) -> TestLogger {
-        TestLogger {
-            level: Level::Trace,
-            id,
-            lines: Mutex::new(HashMap::new()),
-        }
-    }
-    // BEGIN NOT TESTED
-    pub fn enable(&mut self, level: Level) {
-        self.level = level;
-    }
-    pub fn assert_log(&self, module: String, line: String, count: usize) {
-        let log_entries = self.lines.lock().unwrap();
-        assert_eq!(log_entries.get(&(module, line)), Some(&count));
-    }
-    // END NOT TESTED
-}
-
-impl Logger for TestLogger {
-    fn log(&self, record: &Record) {
-        *self
-            .lines
-            .lock()
-            .unwrap()
-            .entry((record.module_path.to_string(), format!("{}", record.args)))
-            .or_insert(0) += 1;
-        if self.level >= record.level {
-            println!(
-                "{:<5} {} [{} : {}, {}] {}",
-                record.level.to_string(),
-                self.id,
-                record.module_path,
-                record.file,
-                record.line,
-                record.args
-            );
-        }
-    }
-}
 
 pub struct TestPersister {
     pub update_ret: Mutex<Result<(), channelmonitor::ChannelMonitorUpdateErr>>,

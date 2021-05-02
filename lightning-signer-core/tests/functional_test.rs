@@ -12,7 +12,6 @@ use bitcoin::network::constants::Network::Testnet;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::{Block, BlockHeader, Network, OutPoint, Script, Transaction};
-use bitcoinconsensus::{verify_with_flags, VERIFY_ALL};
 use lightning::chain::keysinterface::KeysInterface;
 use lightning::chain::{chaininterface, keysinterface};
 use lightning::ln::features::InitFeatures;

@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use bitcoin::secp256k1::SignOnly;
 
+#[cfg(feature = "backtrace")]
 use backtrace::Backtrace;
 use bitcoin;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
@@ -27,11 +28,11 @@ use crate::persist::{DummyPersister, Persist};
 use crate::tx::tx::{build_close_tx, sign_commitment, HTLCInfo2};
 use crate::util::crypto_utils::{derive_private_revocation_key, payload_for_p2wpkh};
 use crate::util::status::Status;
-use crate::util::test_utils::TestLogger;
 use crate::SendSync;
 use bitcoin::hashes::Hash;
 use rand::{OsRng, Rng};
 use std::str::FromStr;
+use crate::util::test_logger::TestLogger;
 
 #[derive(PartialEq, Clone, Copy)]
 #[repr(i32)]
@@ -72,6 +73,7 @@ impl MySigner {
     pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INVALID ARGUMENT: {}", &s);
+        #[cfg(feature = "backtrace")]
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
@@ -81,6 +83,7 @@ impl MySigner {
     pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INTERNAL ERROR: {}", &s);
+        #[cfg(feature = "backtrace")]
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
     }

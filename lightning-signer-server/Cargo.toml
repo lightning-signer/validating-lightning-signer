@@ -14,7 +14,7 @@ name = "lightning_signer_server"
 path = "src/lib.rs"
 
 [dependencies]
-lightning-signer-core = { path = "../lightning-signer-core" }
+lightning-signer-core = { path = "../lightning-signer-core", features = ["debug"] }
 backtrace = "0.3"
 bip39 = {version = "1.0.0", features = ["rand"] }
 hex = "0.3.2"

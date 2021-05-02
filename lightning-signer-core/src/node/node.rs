@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(feature = "backtrace")]
 use backtrace::Backtrace;
 use bitcoin;
 use bitcoin::hashes::core::fmt::{Error, Formatter};
@@ -247,6 +248,7 @@ impl Channel {
     pub(crate) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INVALID ARGUMENT: {}", &s);
+        #[cfg(feature = "backtrace")]
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
@@ -254,6 +256,7 @@ impl Channel {
     pub(crate) fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INTERNAL ERROR: {}", &s);
+        #[cfg(feature = "backtrace")]
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
     }
@@ -261,6 +264,7 @@ impl Channel {
     pub(crate) fn validation_error(&self, ve: ValidationError) -> Status {
         let s: String = ve.into();
         log_error!(self, "VALIDATION ERROR: {}", &s);
+        #[cfg(feature = "backtrace")]
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
@@ -890,6 +894,7 @@ impl Node {
     pub(crate) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INVALID ARGUMENT: {}", &s);
+        #[cfg(feature = "backtrace")]
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
     }
@@ -897,6 +902,7 @@ impl Node {
     pub(crate) fn internal_error(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INTERNAL ERROR: {}", &s);
+        #[cfg(feature = "backtrace")]
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::internal(s)
     }
