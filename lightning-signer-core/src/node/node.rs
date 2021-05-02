@@ -1,8 +1,8 @@
 use core::fmt;
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{SystemTime, UNIX_EPOCH};
+use core::fmt::Debug;
+use core::time::Duration;
+use crate::Map;
+use crate::{Arc, Mutex, MutexGuard};
 
 #[cfg(feature = "backtrace")]
 use backtrace::Backtrace;
@@ -39,6 +39,7 @@ use crate::util::status::Status;
 use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
 use bitcoin::secp256k1::recovery::RecoverableSignature;
 use lightning::chain;
+use bitcoin::blockdata::constants::genesis_block;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
@@ -338,7 +339,7 @@ impl Channel {
         output_witscripts: &Vec<Vec<u8>>,
         remote_per_commitment_point: &PublicKey,
         channel_value_sat: u64,
-        payment_hashmap: &HashMap<[u8; 20], PaymentHash>,
+        payment_hashmap: &Map<[u8; 20], PaymentHash>,
         commitment_number: u64,
     ) -> Result<Vec<u8>, Status> {
         // Set the feerate_per_kw to 0 because it is only used to
@@ -803,7 +804,7 @@ impl Channel {
     }
 
     fn htlcs_info1_to_info2(
-        payment_hashmap: &HashMap<[u8; 20], PaymentHash>,
+        payment_hashmap: &Map<[u8; 20], PaymentHash>,
         htlcs: &Vec<HTLCInfo>,
     ) -> Result<Vec<HTLCInfo2>, Status> {
         let mut htlcs2 = Vec::new();
@@ -852,7 +853,7 @@ pub struct Node {
     pub logger: Arc<SyncLogger>,
     pub node_config: NodeConfig,
     pub(crate) keys_manager: MyKeysManager,
-    channels: Mutex<HashMap<ChannelId, Arc<Mutex<ChannelSlot>>>>,
+    channels: Mutex<Map<ChannelId, Arc<Mutex<ChannelSlot>>>>,
     pub network: Network,
     validator_factory: Box<dyn ValidatorFactory>,
 }
@@ -864,9 +865,7 @@ impl Node {
         seed: &[u8],
         network: Network,
     ) -> Node {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards");
+        let now = Duration::from_secs(genesis_block(network).header.time as u64);
 
         Node {
             logger: Arc::clone(logger),
@@ -879,7 +878,7 @@ impl Node {
                 now.subsec_nanos(),
             ),
             node_config,
-            channels: Mutex::new(HashMap::new()),
+            channels: Mutex::new(Map::new()),
             network,
             validator_factory: Box::new(SimpleValidatorFactory {}),
         }
@@ -1182,7 +1181,7 @@ impl Node {
         Ok(res)
     }
 
-    pub fn channels(&self) -> MutexGuard<HashMap<ChannelId, Arc<Mutex<ChannelSlot>>>> {
+    pub fn channels(&self) -> MutexGuard<Map<ChannelId, Arc<Mutex<ChannelSlot>>>> {
         self.channels.lock().unwrap()
     }
 }

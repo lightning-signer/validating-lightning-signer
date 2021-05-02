@@ -1,5 +1,5 @@
-use std::error::Error;
-use std::fmt;
+use crate::StdError;
+use core::fmt;
 
 // BEGIN NOT TESTED
 #[derive(Clone)]
@@ -81,10 +81,10 @@ impl fmt::Display for Status {
 
 // END NOT TESTED
 
-impl Error for Status {}
+impl StdError for Status {}
 
 #[cfg(feature = "grpc")]
-use std::convert::TryInto;
+use core::convert::TryInto;
 
 #[cfg(feature = "grpc")]
 impl From<Status> for tonic::Status {

@@ -1,6 +1,6 @@
-use std::convert::{TryFrom, TryInto};
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use std::sync::Arc;
+use core::convert::{TryFrom, TryInto};
+use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use crate::Arc;
 
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;

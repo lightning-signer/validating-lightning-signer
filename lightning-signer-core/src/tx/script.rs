@@ -192,7 +192,7 @@ fn get_htlc_anchor_redeemscript_with_explicit_keys(
 
 #[cfg(test)]
 mod tests {
-    use std::{i16, i32, i8, u16, u8};
+    use core::{i16, i32, i8, u16, u8};
 
     use bitcoin::blockdata::script::Builder;
 
