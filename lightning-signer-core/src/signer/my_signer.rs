@@ -196,14 +196,11 @@ impl MySigner {
         opt_channel_id: Option<ChannelId>,
     ) -> Result<ChannelId, Status> {
         log_info!(self, "new channel {}/{:?}", node_id, opt_channel_id);
-        let nodes = self.nodes.lock().unwrap();
-        let node = nodes
-            .get(node_id)
-            .ok_or_else(|| self.invalid_argument(format!("no such node {}", node_id)))?;
+        let node = self.get_node(node_id)?;
         let keys_manager = &node.keys_manager;
         let channel_id = opt_channel_id.unwrap_or_else(|| ChannelId(keys_manager.get_channel_id()));
         let channel_nonce0 = opt_channel_nonce0.unwrap_or_else(|| channel_id.0.to_vec());
-        let stub = node.new_channel(channel_id, channel_nonce0, node)?;
+        let stub = node.new_channel(channel_id, channel_nonce0, &node)?;
         stub.map(|s| {
             self.persister
                 .new_channel(&node_id, &s)
@@ -277,39 +274,22 @@ impl MySigner {
     where
         F: Fn(Option<&Node>) -> Result<T, E>,
     {
-        let nodes = self.nodes.lock().unwrap();
-        let node = nodes.get(node_id);
-        f(node.map(|an| an.as_ref()))
+        let node_res = self.get_node(node_id);
+        match node_res {
+            Err(_) => f(None),
+            Ok(n) => f(Some(&*n))
+        }
     }
 
     pub fn with_node_do<F: Sized, T>(&self, node_id: &PublicKey, f: F) -> T
     where
         F: Fn(Option<&Node>) -> T,
     {
-        let nodes = self.nodes.lock().unwrap();
-        let node = nodes.get(node_id);
-        f(node.map(|an| an.as_ref()))
-    }
-
-    pub fn with_channel_slot<F: Sized, T, E>(
-        &self,
-        node_id: &PublicKey,
-        channel_id: &ChannelId,
-        f: F,
-    ) -> Result<T, E>
-    where
-        F: Fn(Option<&mut ChannelSlot>) -> Result<T, E>,
-    {
-        let nodes = self.nodes.lock().unwrap();
-        let node = nodes.get(node_id);
-        node.map_or_else(
-            || f(None),
-            |n| {
-                n.channels()
-                    .get_mut(channel_id)
-                    .map_or_else(|| f(None), |arcobj| f(Some(&mut *arcobj.lock().unwrap())))
-            },
-        )
+        let node_res = self.get_node(node_id);
+        match node_res {
+            Err(_) => f(None),
+            Ok(n) => f(Some(&*n))
+        }
     }
 
     pub fn with_channel_base<F: Sized, T>(
@@ -321,26 +301,34 @@ impl MySigner {
     where
         F: Fn(&mut ChannelBase) -> Result<T, Status>,
     {
+        let slot_arc = self.get_channel_slot(&node_id, &channel_id)?;
+        let mut slot = slot_arc.lock().unwrap();
+        let base = match &mut *slot {
+            ChannelSlot::Stub(stub) => stub as &mut ChannelBase,
+            ChannelSlot::Ready(chan) => chan as &mut ChannelBase,
+        };
+        f(base)
+    }
+
+    fn get_channel_slot(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<Arc<Mutex<ChannelSlot>>, Status> {
+        let node = self.get_node(node_id)?;
+        // Grab a reference to the channel slot and release the channels mutex
+        let mut guard = node.channels();
+        let elem = guard.get_mut(channel_id);
+        let slot_arc = elem.ok_or_else(|| {
+            // BEGIN NOT TESTED
+            self.invalid_argument(format!("no such channel: {}", &channel_id))
+            // END NOT TESTED
+        })?;
+        Ok(Arc::clone(slot_arc))
+    }
+
+    fn get_node(&self, node_id: &PublicKey) -> Result<Arc<Node>, Status> {
+        // Grab a reference to the node and release the nodes mutex
         let nodes = self.nodes.lock().unwrap();
-        let node = nodes.get(node_id);
-        node.map_or_else(
-            || Err(self.invalid_argument("no such node")),
-            |n| {
-                let mut guard = n.channels();
-                let elem = guard.get_mut(channel_id);
-                let arcobj = elem.ok_or_else(|| {
-                    // BEGIN NOT TESTED
-                    self.invalid_argument(format!("no such channel: {}", &channel_id))
-                    // END NOT TESTED
-                })?;
-                let mut slot = arcobj.lock().unwrap();
-                let base = match &mut *slot {
-                    ChannelSlot::Stub(stub) => stub as &mut ChannelBase,
-                    ChannelSlot::Ready(chan) => chan as &mut ChannelBase,
-                };
-                f(base)
-            },
-        )
+        let node = nodes.get(node_id)
+            .ok_or_else(|| self.invalid_argument("no such node"))?;
+        Ok(Arc::clone(node))
     }
 
     pub fn with_ready_channel<F: Sized, T>(
@@ -352,25 +340,14 @@ impl MySigner {
     where
         F: Fn(&mut Channel) -> Result<T, Status>,
     {
-        let nodes = self.nodes.lock().unwrap();
-        let node = nodes.get(node_id);
-        node.map_or_else(
-            || Err(self.invalid_argument("no such node")),
-            |n| {
-                let mut guard = n.channels();
-                let elem = guard.get_mut(channel_id);
-                let arcobj = elem.ok_or_else(|| {
-                    self.invalid_argument(format!("no such channel: {}", &channel_id))
-                })?;
-                let mut slot = arcobj.lock().unwrap();
-                match &mut *slot {
-                    ChannelSlot::Stub(_) => {
-                        Err(self.invalid_argument(format!("channel not ready: {}", &channel_id)))
-                    }
-                    ChannelSlot::Ready(chan) => f(chan),
-                }
-            },
-        )
+        let slot_arc = self.get_channel_slot(&node_id, &channel_id)?;
+        let mut slot = slot_arc.lock().unwrap();
+        match &mut *slot {
+            ChannelSlot::Stub(_) => {
+                Err(self.invalid_argument(format!("channel not ready: {}", &channel_id)))
+            }
+            ChannelSlot::Ready(chan) => f(chan),
+        }
     }
 
     pub fn get_wallet_key(
@@ -2129,10 +2106,7 @@ mod tests {
         signer.with_node_do(&node_id, |node| {
             assert!(node.is_some());
         });
-        let _: Result<(), ()> = signer.with_channel_slot(&node_id, &channel_id, |slot| {
-            assert!(slot.is_some());
-            Ok(())
-        });
+        assert!(signer.get_channel_slot(&node_id, &channel_id).is_ok());
     }
 
     #[test]
@@ -2140,10 +2114,7 @@ mod tests {
         let signer = MySigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let channel_id = ChannelId([1; 32]);
-        signer.with_channel_slot(&node_id, &channel_id, |slot| {
-            assert!(slot.is_none());
-            Ok(())
-        })?;
+        assert!(signer.get_channel_slot(&node_id, &channel_id).is_err());
         Ok(())
     }
 
@@ -2157,15 +2128,9 @@ mod tests {
         );
 
         let channel_id = ChannelId([1; 32]);
-        signer.with_channel_slot(&node_id, &channel_id, |slot| {
-            assert!(slot.is_none());
-            Ok(())
-        })?;
+        assert!(signer.get_channel_slot(&node_id, &channel_id).is_err());
+        assert!(signer.get_node(&node_id).is_err());
 
-        signer.with_node(&node_id, |node| {
-            assert!(node.is_none());
-            Ok(())
-        })?;
         Ok(())
     }
 
