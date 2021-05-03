@@ -21,9 +21,8 @@ pub mod tx;
 #[cfg(not(feature = "std"))]
 mod nostd;
 
-// TODO provide no_std implementations of the items below
+// TODO these are required because of rust-lightning
 pub use std::io::{Error as IOError, Read as IORead};
-pub use std::error::Error as StdError;
 
 /// This trait will be used to apply Send + Sync gated by no_std
 #[cfg(feature = "std")]
