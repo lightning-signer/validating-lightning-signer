@@ -8,6 +8,7 @@ extern crate hex;
 extern crate rand;
 #[cfg(feature = "grpc")]
 extern crate tonic;
+extern crate alloc;
 
 #[macro_use]
 pub mod util;
@@ -17,14 +18,23 @@ pub mod policy;
 pub mod signer;
 pub mod tx;
 
-// TODO provide no_std implementations of the items below
+#[cfg(not(feature = "std"))]
+mod nostd;
+
+// TODO these are required because of rust-lightning
+pub use std::io::{Error as IOError, Read as IORead};
 
 /// This trait will be used to apply Send + Sync gated by no_std
+#[cfg(feature = "std")]
 pub trait SendSync: Send + Sync {}
 
-pub use std::rc::Rc;
-pub use std::sync::{Arc, Mutex, MutexGuard};
-pub use std::io::{Error as IOError, Read as IORead};
-pub use std::collections::BTreeSet as Set;
-pub use std::collections::HashMap as Map;
-pub use std::error::Error as StdError;
+#[cfg(feature = "std")]
+pub use std::sync::{Mutex, MutexGuard};
+
+#[cfg(not(feature = "std"))]
+pub use nostd::*;
+
+pub use alloc::sync::Arc;
+pub use alloc::rc::Rc;
+pub use alloc::collections::BTreeSet as Set;
+pub use hashbrown::HashMap as Map;

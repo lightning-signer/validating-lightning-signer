@@ -14,7 +14,7 @@ use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::secp256k1::key::PublicKey;
 use chain::transaction::OutPoint;
 use lightning::chain;
-use lightning::chain::{Confirm, Listen};
+use lightning::chain::{Confirm, Listen, chaininterface};
 use lightning::ln;
 use lightning::ln::channelmanager::{BestBlock, ChainParameters};
 use lightning::ln::features::InvoiceFeatures;
@@ -138,7 +138,7 @@ pub fn disconnect_block<'a, 'b, 'c, 'd>(
 // END NOT TESTED
 
 pub struct TestChanMonCfg {
-    pub tx_broadcaster: test_utils::TestBroadcaster,
+    pub tx_broadcaster: TestBroadcaster,
     pub fee_estimator: test_utils::TestFeeEstimator,
     pub chain_source: test_utils::TestChainSource,
     pub persister: TestPersister,
@@ -147,7 +147,7 @@ pub struct TestChanMonCfg {
 
 pub struct NodeCfg<'a> {
     pub chain_source: &'a test_utils::TestChainSource,
-    pub tx_broadcaster: &'a test_utils::TestBroadcaster,
+    pub tx_broadcaster: &'a TestBroadcaster,
     pub fee_estimator: &'a test_utils::TestFeeEstimator,
     pub chain_monitor: TestChainMonitor<'a>,
     pub keys_manager: LoopbackSignerKeysInterface,
@@ -157,13 +157,13 @@ pub struct NodeCfg<'a> {
 
 pub struct Node<'a, 'b: 'a, 'c: 'b> {
     pub chain_source: &'c test_utils::TestChainSource,
-    pub tx_broadcaster: &'c test_utils::TestBroadcaster,
+    pub tx_broadcaster: &'c TestBroadcaster,
     pub chain_monitor: &'b TestChainMonitor<'c>,
     pub keys_manager: &'b LoopbackSignerKeysInterface,
     pub node: &'a ChannelManager<
         LoopbackChannelSigner,
         &'b TestChainMonitor<'c>,
-        &'c test_utils::TestBroadcaster,
+        &'c TestBroadcaster,
         &'b LoopbackSignerKeysInterface,
         &'c test_utils::TestFeeEstimator,
         &'c test_utils::TestLogger,
@@ -1066,10 +1066,19 @@ pub fn send_payment<'a, 'b, 'c>(origin: &Node<'a, 'b, 'c>, expected_route: &[&No
     claim_payment(&origin, expected_route, our_payment_preimage);
 }
 
+pub struct TestBroadcaster {
+    pub txn_broadcasted: Mutex<Vec<Transaction>>,
+}
+impl chaininterface::BroadcasterInterface for TestBroadcaster {
+    fn broadcast_transaction(&self, tx: &Transaction) {
+        self.txn_broadcasted.lock().unwrap().push(tx.clone());
+    }
+}
+
 pub fn create_chanmon_cfgs(node_count: usize) -> Vec<TestChanMonCfg> {
     let mut chan_mon_cfgs = Vec::new();
     for i in 0..node_count {
-        let tx_broadcaster = test_utils::TestBroadcaster {
+        let tx_broadcaster = TestBroadcaster {
             txn_broadcasted: Mutex::new(Vec::new()),
         };
         let fee_estimator = test_utils::TestFeeEstimator { sat_per_kw: 253 };
@@ -1096,7 +1105,7 @@ pub fn create_node_chanmgrs<'a, 'b>(
     ChannelManager<
         LoopbackChannelSigner,
         &'a TestChainMonitor<'b>,
-        &'b test_utils::TestBroadcaster,
+        &'b TestBroadcaster,
         &'a LoopbackSignerKeysInterface,
         &'b test_utils::TestFeeEstimator,
         &'b test_utils::TestLogger,
@@ -1129,7 +1138,7 @@ pub fn create_network<'a, 'b: 'a, 'c: 'b>(
         ChannelManager<
             LoopbackChannelSigner,
             &'b TestChainMonitor<'c>,
-            &'c test_utils::TestBroadcaster,
+            &'c TestBroadcaster,
             &'b LoopbackSignerKeysInterface,
             &'c test_utils::TestFeeEstimator,
             &'c test_utils::TestLogger,

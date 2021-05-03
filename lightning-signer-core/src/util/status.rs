@@ -1,4 +1,3 @@
-use crate::StdError;
 use core::fmt;
 
 // BEGIN NOT TESTED
@@ -81,7 +80,8 @@ impl fmt::Display for Status {
 
 // END NOT TESTED
 
-impl StdError for Status {}
+#[cfg(feature = "grpc")]
+impl std::error::Error for Status {}
 
 #[cfg(feature = "grpc")]
 use core::convert::TryInto;
