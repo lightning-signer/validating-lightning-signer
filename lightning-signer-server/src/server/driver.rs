@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 
 use backtrace::Backtrace;
@@ -19,7 +18,7 @@ use lightning_signer::node::node;
 use lightning_signer::node::node::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::signer::my_signer::{SpendType, SyncLogger};
 use lightning_signer::tx::tx::HTLCInfo2;
-use lightning_signer::{log_debug, log_error, log_info, log_internal};
+use lightning_signer::{log_debug, log_error, log_info, log_internal, Map};
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
 
@@ -720,7 +719,7 @@ impl Signer for SignServer {
             .map(|odsc| odsc.witscript.clone())
             .collect();
 
-        let mut payment_hashmap = HashMap::new();
+        let mut payment_hashmap = Map::new();
         for hash in req.payment_hashes.iter() {
             let phash = hash.as_slice().try_into().map_err(|err| {
                 self.invalid_grpc_argument(format!("could not decode payment hash: {}", err))

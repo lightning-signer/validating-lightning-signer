@@ -7,7 +7,9 @@ edition = "2018"
 [features]
 
 # just so that `cargo test` runs the functional test by default, but you can disable this
-default = ["test_utils"]
+default = ["test_utils", "std"]
+
+std = []
 
 # if you use tonic, this is convenient for auto-conversion of MySigner Status to tonic::Status
 grpc = ["tonic"]
@@ -31,6 +33,7 @@ rand = "0.4"
 
 backtrace = { version = "0.3", optional = true }
 tonic = { version = "0.1.1", optional = true }
+hashbrown = "0.11.2"
 
 [dev-dependencies]
 tempfile = "3.2.0"
