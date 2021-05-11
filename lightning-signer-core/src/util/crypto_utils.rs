@@ -1,9 +1,9 @@
-use bitcoin::bech32;
+use bitcoin::{bech32, SigHashType};
 use bitcoin::hashes::hash160::Hash as BitcoinHash160;
 use bitcoin::hashes::sha256::Hash as BitcoinSha256;
 use bitcoin::hashes::{Hash, HashEngine, HmacEngine, Hmac};
 use bitcoin::secp256k1;
-use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
+use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly, Signature};
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::Network;
@@ -225,6 +225,12 @@ pub fn payload_for_p2wpkh(key: &PublicKey) -> Payload {
         version: bech32::u5::try_from_u8(0).expect("0<32"),
         program: BitcoinHash160::from_engine(hash_engine)[..].to_vec(),
     }
+}
+
+pub fn signature_to_bitcoin_vec(sig: Signature) -> Vec<u8> {
+    let mut sigvec = sig.serialize_der().to_vec();
+    sigvec.push(SigHashType::All as u8);
+    sigvec
 }
 
 #[cfg(test)]
