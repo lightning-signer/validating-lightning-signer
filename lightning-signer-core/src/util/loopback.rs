@@ -137,7 +137,6 @@ impl LoopbackChannelSigner {
                     offered_htlcs.clone(),
                     received_htlcs.clone(),
                 )?;
-                self.signer.persist_channel(&self.node_id, chan);
                 Ok(result)
             }).map_err(|s| self.bad_status(s))?;
 
@@ -207,7 +206,6 @@ impl BaseSign for LoopbackChannelSigner {
             let secret = chan.get_per_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number)[..]
                 .try_into()
                 .unwrap();
-            self.signer.persist_channel(&self.node_id, chan);
             Ok(secret)
         });
         secret.expect("missing channel")
@@ -329,7 +327,6 @@ impl BaseSign for LoopbackChannelSigner {
                 per_commitment_key,
                 &redeem_script,
                 amount)?;
-            self.signer.persist_channel(&self.node_id, chan);
             Ok(signature_to_bitcoin_vec(sig))
         }).map_err(|s| self.bad_status(s))?;
 
@@ -357,7 +354,6 @@ impl BaseSign for LoopbackChannelSigner {
                     per_commitment_point,
                     &redeem_script,
                     amount)?;
-                self.signer.persist_channel(&self.node_id, chan);
                 Ok(signature_to_bitcoin_vec(sig))
             }).map_err(|s| self.bad_status(s))?;
 
@@ -410,7 +406,7 @@ impl BaseSign for LoopbackChannelSigner {
                 to_holder_value,
                 to_counterparty_value,
                 Some(to_counterparty_script.clone())
-            ).map_err(|_| Status::internal("failed to sign"))
+            )
         }).map_err(|_| ())
     }
 
@@ -434,7 +430,6 @@ impl BaseSign for LoopbackChannelSigner {
         let res = bsig.serialize_der().to_vec();
 
         let sig = Signature::from_der(res.as_slice())
-            .map_err(|_e| ()) // NOT TESTED
             .expect("failed to parse the signature we just created");
         Ok(sig)
     }

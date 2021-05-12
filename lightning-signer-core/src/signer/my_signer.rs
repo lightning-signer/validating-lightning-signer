@@ -59,7 +59,7 @@ pub trait SyncLogger: Logger + SendSync {}
 pub struct MySigner {
     pub logger: Arc<dyn SyncLogger>,
     pub(crate) nodes: Mutex<Map<PublicKey, Arc<Node>>>,
-    pub(crate) persister: Box<dyn Persist>,
+    pub(crate) persister: Arc<dyn Persist>,
     pub(crate) test_mode: bool,
 }
 
@@ -84,12 +84,12 @@ impl MySigner {
     // END NOT TESTED
 
     pub fn new() -> MySigner {
-        let signer = MySigner::new_with_persister(Box::new(DummyPersister), true);
+        let signer = MySigner::new_with_persister(Arc::new(DummyPersister), true);
         log_info!(signer, "new MySigner");
         signer
     }
 
-    pub fn new_with_persister(persister: Box<dyn Persist>, test_mode: bool) -> MySigner {
+    pub fn new_with_persister(persister: Arc<dyn Persist>, test_mode: bool) -> MySigner {
         let test_logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::with_id("server".to_owned()));
         let mut nodes = Map::new();
         println!("Start restore");
@@ -105,6 +105,7 @@ impl MySigner {
                 config,
                 node_entry.seed.as_slice(),
                 network,
+                &persister
             ));
             println!("Restore node {}", node_id);
             for (channel_id0, channel_entry) in persister.get_node_channels(&node_id) {
@@ -139,7 +140,7 @@ impl MySigner {
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);
 
-        let node = Node::new(&self.logger, node_config, &seed, network);
+        let node = Node::new(&self.logger, node_config, &seed, network, &self.persister);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         nodes.insert(node_id, Arc::new(node));
@@ -156,7 +157,7 @@ impl MySigner {
         let secp_ctx = Secp256k1::signing_only();
         let network = Network::Testnet;
 
-        let node = Node::new(&self.logger, node_config, seed, network);
+        let node = Node::new(&self.logger, node_config, seed, network, &self.persister);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         if self.test_mode {
@@ -211,7 +212,7 @@ impl MySigner {
         let secp_ctx = Secp256k1::signing_only();
         let network = Network::Testnet;
 
-        let node = Node::new(&self.logger, node_config, seed, network);
+        let node = Node::new(&self.logger, node_config, seed, network, &self.persister);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let nodes = self.nodes.lock().unwrap();
         nodes.get(&node_id).ok_or_else(|| {
@@ -330,8 +331,7 @@ impl MySigner {
         Ok(xkey.private_key)
     }
 
-    // TODO(devrandom) move into Node
-    pub fn persist_channel(&self, node_id: &PublicKey, chan: &Channel) {
+    fn persist_channel(&self, node_id: &PublicKey, chan: &Channel) {
         self.persister
             .update_channel(&node_id, &chan)
             .expect("channel was in storage but not in memory");

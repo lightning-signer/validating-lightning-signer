@@ -19,7 +19,6 @@ use lightning_signer::node::node::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::signer::my_signer::{SpendType, SyncLogger};
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::{log_debug, log_error, log_info, log_internal, Map};
-use lightning_signer::util::status::Status as LSStatus;
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
 
@@ -471,7 +470,7 @@ impl Signer for SignServer {
                 let sig = chan.sign_mutual_close_tx(
                     &tx,
                     funding_amount_sat,
-                ).map_err(|_| LSStatus::internal("failed to sign"))?;
+                )?;
 
                 Ok(signature_to_bitcoin_vec(sig))
             }).map_err(|_| self.internal_error("signing mutual close failed"))?;
@@ -525,11 +524,9 @@ impl Signer for SignServer {
                 req.to_holder_value_sat,
                 req.to_counterparty_value_sat,
                 opt_counterparty_shutdown_script.clone()
-            ).map_err(|_| LSStatus::internal("failed to sign"))?;
+            )?;
             let mut bitcoin_sig = sig.serialize_der().to_vec();
             bitcoin_sig.push(SigHashType::All as u8);
-
-            self.signer.persist_channel(&node_id, chan);
             Ok(bitcoin_sig)
         })?;
 
@@ -744,16 +741,14 @@ impl Signer for SignServer {
         }
 
         let sig_data = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            let result = chan.sign_counterparty_commitment_tx(
+            chan.sign_counterparty_commitment_tx(
                 &tx,
                 &witscripts,
                 &remote_per_commitment_point,
                 channel_value_sat,
                 &payment_hashmap,
                 req.commit_num,
-            );
-            self.signer.persist_channel(&node_id, chan);
-            result
+            )
         })?;
 
         let reply = SignatureReply {
@@ -799,7 +794,7 @@ impl Signer for SignServer {
                 let commitment_sig = chan.sign_holder_commitment_tx(
                     &tx,
                     funding_amount_sat,
-                ).map_err(|_| LSStatus::internal("failed to sign"))?;
+                )?;
 
                 Ok(signature_to_bitcoin_vec(commitment_sig))
             }).map_err(|_| self.internal_error("signing holder commitment failed"))?;
@@ -862,8 +857,7 @@ impl Signer for SignServer {
                 opt_per_commitment_point,
                 &redeemscript,
                 htlc_amount_sat,
-            ).map_err(|_| LSStatus::internal("failed to sign"))?;
-            self.signer.persist_channel(&node_id, chan);
+            )?;
             Ok(signature_to_bitcoin_vec(sig))
         }).map_err(|_| Status::internal("failed to sign"))?;
 
@@ -919,9 +913,7 @@ impl Signer for SignServer {
                     input,
                     req.commitment_number,
                     &htlc_redeemscript,
-                    htlc_amount_sat)
-                    .map_err(|_| LSStatus::internal("failed to sign"))?;
-                self.signer.persist_channel(&node_id, chan);
+                    htlc_amount_sat)?;
                 Ok(signature_to_bitcoin_vec(sig))
             }).map_err(|_| Status::internal("failed to sign"))?;
 
@@ -973,7 +965,7 @@ impl Signer for SignServer {
                 &remote_per_commitment_point,
                 &redeemscript,
                 htlc_amount_sat
-            ).map_err(|_| LSStatus::internal("failed to sign"))?;
+            )?;
             Ok(signature_to_bitcoin_vec(sig))
         }).map_err(|_| Status::internal("failed to sign"))?;
 
@@ -1033,7 +1025,6 @@ impl Signer for SignServer {
                     &remote_per_commitment_point,
                     &redeemscript,
                     htlc_amount_sat)?;
-                self.signer.persist_channel(&node_id, chan);
                 Ok(signature_to_bitcoin_vec(sig))
             }).map_err(|_| Status::internal("failed to sign"))?;
 
@@ -1086,7 +1077,6 @@ impl Signer for SignServer {
                     &revocation_secret,
                     &redeemscript,
                     htlc_amount_sat)?;
-                self.signer.persist_channel(&node_id, chan);
                 Ok(signature_to_bitcoin_vec(sig))
             }).map_err(|_| Status::internal("failed to sign"))?;
 
@@ -1332,7 +1322,6 @@ impl Signer for SignServer {
                     offered_htlcs.clone(),
                     received_htlcs.clone(),
                 )?;
-                self.signer.persist_channel(&node_id, chan);
                 Ok(result)
             })?;
 
@@ -1415,10 +1404,10 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
 
     let path = format!("{}/{}", DEFAULT_DIR, "data");
     let test_mode = matches.is_present("test-mode");
-    let persister: Box<dyn Persist> = if matches.is_present("no-persist") {
-        Box::new(DummyPersister)
+    let persister: Arc<dyn Persist> = if matches.is_present("no-persist") {
+        Arc::new(DummyPersister)
     } else {
-        Box::new(KVJsonPersister::new(path.as_str()))
+        Arc::new(KVJsonPersister::new(path.as_str()))
     };
     let signer = MySigner::new_with_persister(persister, test_mode);
     let server = SignServer {

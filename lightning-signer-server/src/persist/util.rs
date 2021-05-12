@@ -9,6 +9,7 @@ use lightning_signer::node::node::{
 };
 use lightning_signer::signer::my_signer::SyncLogger;
 use lightning_signer::util::test_utils::{TEST_NODE_CONFIG, TEST_SEED};
+use lightning_signer::persist::{Persist, DummyPersister};
 
 pub fn do_with_channel_stub<F: Fn(&ChannelStub) -> ()>(node: &Node, channel_id: &ChannelId, f: F) {
     let guard = node.channels();
@@ -36,7 +37,8 @@ pub(crate) fn make_node(logger: &Arc<dyn SyncLogger>) -> (PublicKey, Arc<Node>) 
     let mut seed = [0; 32];
     seed.copy_from_slice(hex::decode(TEST_SEED[1]).unwrap().as_slice());
 
-    let node = Arc::new(Node::new(logger, TEST_NODE_CONFIG, &seed, Network::Testnet));
+    let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
+    let node = Arc::new(Node::new(logger, TEST_NODE_CONFIG, &seed, Network::Testnet, &persister));
     let node_id = node.get_id();
     (node_id, node)
 }
