@@ -15,7 +15,6 @@ use bitcoin::{Address, Network, OutPoint, SigHashType};
 use lightning::chain::keysinterface::KeysInterface;
 use lightning::util::logger::Logger;
 
-use super::my_keys_manager::KeyDerivationStyle;
 use crate::node::node::{
     Channel, ChannelBase, ChannelId, ChannelSlot, Node, NodeConfig,
 };
@@ -25,7 +24,6 @@ use crate::util::status::Status;
 use crate::SendSync;
 use bitcoin::hashes::Hash;
 use rand::{OsRng, Rng};
-use core::str::FromStr;
 use crate::util::test_logger::TestLogger;
 
 #[derive(PartialEq, Clone, Copy)]
@@ -96,33 +94,11 @@ impl MultiSigner {
         let mut nodes = Map::new();
         println!("Start restore");
         for (node_id, node_entry) in persister.get_nodes() {
-            // BEGIN NOT TESTED
-            let config = NodeConfig {
-                key_derivation_style: KeyDerivationStyle::try_from(node_entry.key_derivation_style)
-                    .unwrap(),
-            };
-            let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
-            let node = Arc::new(Node::new(
-                &test_logger,
-                config,
-                node_entry.seed.as_slice(),
-                network,
-                &persister
-            ));
-            println!("Restore node {}", node_id);
-            for (channel_id0, channel_entry) in persister.get_node_channels(&node_id) {
-                println!("  Restore channel {}", channel_id0);
-                node.restore_channel(
-                    channel_id0,
-                    channel_entry.id,
-                    channel_entry.nonce,
-                    channel_entry.channel_value_satoshis,
-                    channel_entry.channel_setup,
-                    channel_entry.enforcement_state,
-                    &node,
-                )
-                .expect("restore channel");
-            }
+            let node =
+                Node::restore_node(&node_id,
+                                   node_entry,
+                                   Arc::clone(&persister),
+                                   Arc::clone(&test_logger));
             nodes.insert(node_id, node);
             // END NOT TESTED
         }
@@ -279,7 +255,6 @@ impl MultiSigner {
         }
     }
 
-    // TODO this seems to be used only in tests?
     pub(crate) fn get_wallet_key(
         &self,
         secp_ctx: &Secp256k1<SignOnly>,
@@ -391,6 +366,7 @@ impl MultiSigner {
     }
 
     // Convenience for tests
+    #[allow(dead_code)]
     pub(crate) fn new_channel(
         &self,
         node_id: &PublicKey,

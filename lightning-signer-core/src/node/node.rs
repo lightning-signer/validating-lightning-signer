@@ -35,6 +35,9 @@ use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use crate::persist::Persist;
+use crate::persist::model::NodeEntry;
+use std::convert::TryFrom;
+use std::str::FromStr;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
@@ -1250,6 +1253,40 @@ impl Node {
             }
         };
         Ok(slot)
+    }
+
+    pub fn restore_node(node_id: &PublicKey,
+                        node_entry: NodeEntry,
+                        persister: Arc<dyn Persist>,
+                        logger: Arc<dyn SyncLogger>) -> Arc<Node> {
+        // BEGIN NOT TESTED
+        let config = NodeConfig {
+            key_derivation_style: KeyDerivationStyle::try_from(node_entry.key_derivation_style)
+                .unwrap(),
+        };
+        let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
+        let node = Arc::new(Node::new(
+            &logger,
+            config,
+            node_entry.seed.as_slice(),
+            network,
+            &persister
+        ));
+        assert_eq!(&node.get_id(), node_id);
+        log_info!(node, "Restore node {}", node_id);
+        for (channel_id0, channel_entry) in persister.get_node_channels(node_id) {
+            log_info!(node, "  Restore channel {}", channel_id0);
+            node.restore_channel(
+                channel_id0,
+                channel_entry.id,
+                channel_entry.nonce,
+                channel_entry.channel_value_satoshis,
+                channel_entry.channel_setup,
+                channel_entry.enforcement_state,
+                &node,
+            ).expect("restore channel");
+        }
+        node
     }
 
     /// Ready a new channel, making it available for use.
