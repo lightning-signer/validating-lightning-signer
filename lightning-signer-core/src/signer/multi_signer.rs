@@ -184,28 +184,6 @@ impl MultiSigner {
         nodes.keys().map(|k| k.clone()).collect()
     }
 
-    /// opt_channel_nonce0 should be unique if specified, or a unique one
-    /// will be generated for you.
-    pub fn new_channel(
-        &self,
-        node_id: &PublicKey,
-        opt_channel_nonce0: Option<Vec<u8>>,
-        opt_channel_id: Option<ChannelId>,
-    ) -> Result<ChannelId, Status> {
-        log_info!(self, "new channel {}/{:?}", node_id, opt_channel_id);
-        let node = self.get_node(node_id)?;
-        let keys_manager = &node.keys_manager;
-        let channel_id = opt_channel_id.unwrap_or_else(|| ChannelId(keys_manager.get_channel_id()));
-        let channel_nonce0 = opt_channel_nonce0.unwrap_or_else(|| channel_id.0.to_vec());
-        let stub = node.new_channel(channel_id, channel_nonce0, &node)?;
-        stub.map(|s| {
-            self.persister
-                .new_channel(&node_id, &s)
-                .expect("channel was in storage but not in memory")
-        });
-        Ok(channel_id)
-    }
-
     pub fn warmstart_with_seed(
         &self,
         node_config: NodeConfig,
@@ -410,6 +388,19 @@ impl MultiSigner {
         }
         // TODO(devrandom) self.persist_channel(node_id, chan);
         Ok(witvec)
+    }
+
+    // Convenience for tests
+    pub(crate) fn new_channel(
+        &self,
+        node_id: &PublicKey,
+        opt_channel_nonce0: Option<Vec<u8>>,
+        opt_channel_id: Option<ChannelId>,
+    ) -> Result<ChannelId, Status> {
+        let node = self.get_node(node_id)?;
+        let (channel_id, _stub) =
+            node.new_channel(opt_channel_id, opt_channel_nonce0, &node)?;
+        Ok(channel_id)
     }
 }
 

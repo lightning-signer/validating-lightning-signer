@@ -27,8 +27,8 @@ pub fn make_node_and_channel(
 ) -> (PublicKey, Arc<Node>, ChannelStub) {
     let (node_id, node) = make_node(logger);
 
-    let channel = node
-        .new_channel(channel_id, channel_nonce.clone(), &Arc::clone(&node))
+    let (_, channel) = node
+        .new_channel(Some(channel_id), Some(channel_nonce.clone()), &Arc::clone(&node))
         .unwrap(); // NOT TESTED
     (node_id, node, channel.unwrap())
 }

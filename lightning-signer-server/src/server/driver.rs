@@ -293,9 +293,9 @@ impl Signer for SignServer {
         let opt_channel_nonce0 = req.channel_nonce0.as_ref().map(|cn| cn.data.clone());
         log_info!(self, "ENTER new_channel({}/{:?})", node_id, opt_channel_id);
 
-        let channel_id = self
-            .signer
-            .new_channel(&node_id, opt_channel_nonce0, opt_channel_id)?;
+        let node = self.signer.get_node(&node_id)?;
+        let (channel_id, _) =
+            node.new_channel(opt_channel_id, opt_channel_nonce0, &node)?;
 
         let reply = NewChannelReply {
             channel_nonce0: req.channel_nonce0,

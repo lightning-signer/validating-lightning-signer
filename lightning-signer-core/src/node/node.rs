@@ -1147,17 +1147,21 @@ impl Node {
 
     pub fn new_channel(
         &self,
-        channel_id: ChannelId,
-        channel_nonce0: Vec<u8>,
+        opt_channel_id: Option<ChannelId>,
+        opt_channel_nonce0: Option<Vec<u8>>,
         arc_self: &Arc<Node>,
-    ) -> Result<Option<ChannelStub>, Status> {
+    ) -> Result<(ChannelId, Option<ChannelStub>), Status> {
+        let channel_id =
+            opt_channel_id.unwrap_or_else(|| ChannelId(self.keys_manager.get_channel_id()));
+        let channel_nonce0 =
+            opt_channel_nonce0.unwrap_or_else(|| channel_id.0.to_vec());
         let mut channels = self.channels.lock().unwrap();
         if channels.contains_key(&channel_id) {
             // BEGIN NOT TESTED
             let msg = format!("channel already exists: {}", &channel_id);
             log_info!(self, "{}", &msg);
             // return Err(self.invalid_argument(&msg));
-            return Ok(None);
+            return Ok((channel_id, None));
             // END NOT TESTED
         }
         let channel_value_sat = 0; // Placeholder value, not known yet.
@@ -1179,7 +1183,11 @@ impl Node {
             channel_id,
             Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone()))),
         );
-        Ok(Some(stub))
+        self.persister
+            .new_channel(&self.get_id(), &stub)
+            // This should only fail if the channel was previously persisted
+            .expect("channel was in storage but not in memory");
+        Ok((channel_id, Some(stub)))
     }
 
     pub fn restore_channel(

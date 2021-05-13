@@ -489,7 +489,9 @@ impl KeysInterface for LoopbackSignerKeysInterface {
     }
 
     fn get_channel_signer(&self, is_inbound: bool, channel_value_sat: u64) -> Self::Signer {
-        let channel_id = self.signer.new_channel(&self.node_id, None, None).unwrap();
+        let node = self.signer.get_node(&self.node_id).unwrap();
+        let (channel_id, _) =
+            node.new_channel(None, None, &node).unwrap();
         LoopbackChannelSigner::new(
             &self.node_id,
             &channel_id,
