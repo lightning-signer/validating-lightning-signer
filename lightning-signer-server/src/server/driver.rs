@@ -16,7 +16,7 @@ use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
 use lightning_signer::node::node;
 use lightning_signer::node::node::{ChannelId, ChannelSetup, CommitmentType};
-use lightning_signer::signer::my_signer::{SpendType, SyncLogger};
+use lightning_signer::signer::multi_signer::{SpendType, SyncLogger};
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::{log_debug, log_error, log_info, log_internal, Map};
 use remotesigner::signer_server::{Signer, SignerServer};
@@ -28,14 +28,14 @@ use crate::server::remotesigner::version_server::Version;
 use super::remotesigner;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
-use lightning_signer::signer::my_signer::{channel_nonce_to_id, MySigner};
+use lightning_signer::signer::multi_signer::{channel_nonce_to_id, MultiSigner};
 use lightning_signer::util::status;
 use std::sync::Arc;
 use lightning_signer::util::crypto_utils::signature_to_bitcoin_vec;
 
 struct SignServer {
     pub logger: Arc<dyn SyncLogger>,
-    pub signer: MySigner,
+    pub signer: MultiSigner,
 }
 
 impl SignServer {
@@ -1409,7 +1409,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         Arc::new(KVJsonPersister::new(path.as_str()))
     };
-    let signer = MySigner::new_with_persister(persister, test_mode);
+    let signer = MultiSigner::new_with_persister(persister, test_mode);
     let server = SignServer {
         logger: Arc::clone(&signer.logger),
         signer,

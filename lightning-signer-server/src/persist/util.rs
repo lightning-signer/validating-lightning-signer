@@ -7,7 +7,7 @@ use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning_signer::node::node::{
     ChannelId, ChannelSetup, ChannelSlot, ChannelStub, CommitmentType, Node,
 };
-use lightning_signer::signer::my_signer::SyncLogger;
+use lightning_signer::signer::multi_signer::SyncLogger;
 use lightning_signer::util::test_utils::{TEST_NODE_CONFIG, TEST_SEED};
 use lightning_signer::persist::{Persist, DummyPersister};
 

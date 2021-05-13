@@ -56,14 +56,16 @@ impl TryFrom<i32> for SpendType {
 
 pub trait SyncLogger: Logger + SendSync {}
 
-pub struct MySigner {
+/// A signer for multiple nodes
+/// If you need just one node, use [Node](lightning_signer::node::Node) directly.
+pub struct MultiSigner {
     pub logger: Arc<dyn SyncLogger>,
     pub(crate) nodes: Mutex<Map<PublicKey, Arc<Node>>>,
     pub(crate) persister: Arc<dyn Persist>,
     pub(crate) test_mode: bool,
 }
 
-impl MySigner {
+impl MultiSigner {
     pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
         log_error!(self, "INVALID ARGUMENT: {}", &s);
@@ -83,13 +85,13 @@ impl MySigner {
     }
     // END NOT TESTED
 
-    pub fn new() -> MySigner {
-        let signer = MySigner::new_with_persister(Arc::new(DummyPersister), true);
+    pub fn new() -> MultiSigner {
+        let signer = MultiSigner::new_with_persister(Arc::new(DummyPersister), true);
         log_info!(signer, "new MySigner");
         signer
     }
 
-    pub fn new_with_persister(persister: Arc<dyn Persist>, test_mode: bool) -> MySigner {
+    pub fn new_with_persister(persister: Arc<dyn Persist>, test_mode: bool) -> MultiSigner {
         let test_logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::with_id("server".to_owned()));
         let mut nodes = Map::new();
         println!("Start restore");
@@ -124,7 +126,7 @@ impl MySigner {
             nodes.insert(node_id, node);
             // END NOT TESTED
         }
-        MySigner {
+        MultiSigner {
             logger: test_logger,
             nodes: Mutex::new(nodes),
             persister,
@@ -449,14 +451,14 @@ mod tests {
     use bitcoin::hashes::Hash;
     use lightning::chain::keysinterface::BaseSign;
 
-    fn init_node(signer: &MySigner, node_config: NodeConfig, seedstr: &str) -> PublicKey {
+    fn init_node(signer: &MultiSigner, node_config: NodeConfig, seedstr: &str) -> PublicKey {
         let mut seed = [0; 32];
         seed.copy_from_slice(hex::decode(seedstr).unwrap().as_slice());
         signer.new_node_from_seed(node_config, &seed).unwrap()
     }
 
     fn init_node_and_channel(
-        signer: &MySigner,
+        signer: &MultiSigner,
         node_config: NodeConfig,
         seedstr: &str,
         setup: ChannelSetup,
@@ -475,7 +477,7 @@ mod tests {
 
     #[test]
     fn channel_debug_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -491,7 +493,7 @@ mod tests {
 
     #[test]
     fn ready_channel_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -511,7 +513,7 @@ mod tests {
 
     #[test]
     fn ready_channel_not_exist_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_nonce_x = "nonceX".as_bytes().to_vec();
         let channel_id_x = channel_nonce_to_id(&channel_nonce_x);
@@ -529,7 +531,7 @@ mod tests {
 
     #[test]
     fn ready_channel_dual_channelid_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_nonce = "nonce1".as_bytes().to_vec();
         let channel_id = channel_nonce_to_id(&channel_nonce);
@@ -562,7 +564,7 @@ mod tests {
 
     #[test]
     fn with_ready_channel_not_exist_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, _channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -582,7 +584,7 @@ mod tests {
 
     #[test]
     fn channel_invalid_argument_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -600,7 +602,7 @@ mod tests {
 
     #[test]
     fn channel_internal_error_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -618,7 +620,7 @@ mod tests {
 
     #[test]
     fn channel_validation_error_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -635,7 +637,7 @@ mod tests {
 
     #[test]
     fn node_debug_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, _channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -648,7 +650,7 @@ mod tests {
 
     #[test]
     fn node_invalid_argument_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, _channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -664,7 +666,7 @@ mod tests {
 
     #[test]
     fn node_internal_error_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, _channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -680,7 +682,7 @@ mod tests {
 
     #[test]
     fn channel_stub_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_nonce = "nonce1".as_bytes().to_vec();
         let channel_id = channel_nonce_to_id(&channel_nonce);
@@ -744,7 +746,7 @@ mod tests {
     // BEGIN NOT TESTED
     #[test]
     fn node_new_channel_already_exists_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, _channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -768,7 +770,7 @@ mod tests {
 
     #[test]
     fn ready_channel_already_ready_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -790,7 +792,7 @@ mod tests {
 
     #[test]
     fn warmstart_with_seed_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let mut seed = [0; 32];
         seed.copy_from_slice(hex::decode(TEST_SEED[1]).unwrap().as_slice());
 
@@ -812,7 +814,7 @@ mod tests {
 
     #[test]
     fn sign_counterparty_commitment_tx_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let setup = make_static_test_channel_setup();
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
@@ -880,7 +882,7 @@ mod tests {
     #[ignore] // we don't support anchors yet
               // BEGIN NOT TESTED
     fn sign_counterparty_commitment_tx_with_anchors_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let mut setup = make_reasonable_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
         let (node_id, channel_id) =
@@ -940,7 +942,7 @@ mod tests {
 
     #[test]
     fn sign_counterparty_commitment_tx_with_htlc_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let setup = make_static_test_channel_setup();
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
@@ -1040,7 +1042,7 @@ mod tests {
     #[ignore] // we don't support anchors yet
               // BEGIN NOT TESTED
     fn sign_counterparty_commitment_tx_with_htlc_and_anchors_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let mut setup = make_reasonable_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
         let (node_id, channel_id) =
@@ -1128,7 +1130,7 @@ mod tests {
 
     #[test]
     fn sign_counterparty_commitment_tx_phase2_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let setup = make_static_test_channel_setup();
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
@@ -1181,7 +1183,7 @@ mod tests {
 
     #[test]
     fn sign_holder_commitment_tx_phase2_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let setup = make_static_test_channel_setup();
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
@@ -1229,7 +1231,7 @@ mod tests {
     fn sign_mutual_close_tx_phase2_test() {
         // We can't use init_node_and_channel here because we need the node_id to construct
         // the ChannelSetup.
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_nonce = "nonce1".as_bytes().to_vec();
         let channel_id = signer
@@ -1287,7 +1289,7 @@ mod tests {
     }
 
     fn get_channel_funding_pubkey(
-        signer: &MySigner,
+        signer: &MultiSigner,
         node_id: &PublicKey,
         channel_id: &ChannelId,
     ) -> PublicKey {
@@ -1299,7 +1301,7 @@ mod tests {
     }
 
     fn get_channel_htlc_pubkey(
-        signer: &MySigner,
+        signer: &MultiSigner,
         node_id: &PublicKey,
         channel_id: &ChannelId,
         remote_per_commitment_point: &PublicKey,
@@ -1319,7 +1321,7 @@ mod tests {
     }
 
     fn get_channel_delayed_payment_pubkey(
-        signer: MySigner,
+        signer: MultiSigner,
         node_id: &PublicKey,
         channel_id: &ChannelId,
         remote_per_commitment_point: &PublicKey,
@@ -1339,7 +1341,7 @@ mod tests {
     }
 
     fn get_channel_revocation_pubkey(
-        signer: MySigner,
+        signer: MultiSigner,
         node_id: &PublicKey,
         channel_id: &ChannelId,
         revocation_point: &PublicKey,
@@ -1412,7 +1414,7 @@ mod tests {
 
     #[test]
     fn new_channel_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let channel_id = signer.new_channel(&node_id, None, None).unwrap();
         assert!(signer.get_node(&node_id).is_ok());
@@ -1421,7 +1423,7 @@ mod tests {
 
     #[test]
     fn bad_channel_lookup_test() -> Result<(), ()> {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let channel_id = ChannelId([1; 32]);
         assert!(signer.get_channel_slot(&node_id, &channel_id).is_err());
@@ -1431,7 +1433,7 @@ mod tests {
     #[test]
     fn bad_node_lookup_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = pubkey_from_secret_hex(
             "0101010101010101010101010101010101010101010101010101010101010101",
             &secp_ctx,
@@ -1447,7 +1449,7 @@ mod tests {
     #[test]
     fn new_channel_bad_node_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = pubkey_from_secret_hex(
             "0101010101010101010101010101010101010101010101010101010101010101",
             &secp_ctx,
@@ -1481,7 +1483,7 @@ mod tests {
 
     #[test]
     fn get_channel_basepoints_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -1498,7 +1500,7 @@ mod tests {
 
     #[test]
     fn get_per_commitment_point_and_secret_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -1522,7 +1524,7 @@ mod tests {
 
     #[test]
     fn get_check_future_secret_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -1555,7 +1557,7 @@ mod tests {
     #[test]
     fn sign_funding_tx_p2wpkh_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let channel_id = ChannelId([1; 32]);
         let indices = vec![vec![0u32], vec![1u32]];
@@ -1632,7 +1634,7 @@ mod tests {
     #[test]
     fn sign_funding_tx_p2wpkh_test1() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let channel_id = ChannelId([1; 32]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
@@ -1692,7 +1694,7 @@ mod tests {
     #[test]
     fn sign_funding_tx_unilateral_close_info_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let channel_id = ChannelId([1; 32]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
@@ -1755,7 +1757,7 @@ mod tests {
     #[test]
     fn sign_funding_tx_p2pkh_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let channel_id = ChannelId([1; 32]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
@@ -1815,7 +1817,7 @@ mod tests {
     #[test]
     fn sign_funding_tx_p2sh_p2wpkh_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let channel_id = ChannelId([1; 32]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
@@ -1891,7 +1893,7 @@ mod tests {
 
     #[test]
     fn sign_funding_tx_psbt_test() -> Result<(), ()> {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let channel_id = ChannelId([1; 32]);
         let txids = vec![
@@ -1972,7 +1974,7 @@ mod tests {
 
     #[test]
     fn sign_local_htlc_tx_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -2084,7 +2086,7 @@ mod tests {
 
     #[test]
     fn sign_delayed_sweep_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -2172,7 +2174,7 @@ mod tests {
 
     #[test]
     fn sign_remote_htlc_tx_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -2255,7 +2257,7 @@ mod tests {
 
     #[test]
     fn sign_remote_htlc_tx_with_anchors_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let mut setup = make_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
         let (node_id, channel_id) =
@@ -2337,7 +2339,7 @@ mod tests {
 
     #[test]
     fn sign_counterparty_htlc_sweep_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -2422,7 +2424,7 @@ mod tests {
     #[test]
     // TODO - same as sign_mutual_close_tx_test
     fn sign_holder_commitment_tx_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let setup = make_static_test_channel_setup();
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
@@ -2464,7 +2466,7 @@ mod tests {
     #[test]
     // TODO - same as sign_commitment_tx_test
     fn sign_mutual_close_tx_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let setup = make_static_test_channel_setup();
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
@@ -2509,7 +2511,7 @@ mod tests {
 
     #[test]
     fn sign_justice_sweep_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -2598,7 +2600,7 @@ mod tests {
 
     #[test]
     fn sign_channel_announcement_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
             TEST_NODE_CONFIG,
@@ -2627,7 +2629,7 @@ mod tests {
 
     #[test]
     fn sign_node_announcement_test() -> Result<(), ()> {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let ann = hex::decode("000302aaa25e445fef0265b6ab5ec860cd257865d61ef0bbf5b3339c36cbda8b26b74e7f1dca490b65180265b64c4f554450484f544f2d2e302d3139392d67613237336639642d6d6f646465640000").unwrap();
         let sigvec = signer.get_node(&node_id).unwrap().sign_node_announcement(&ann).unwrap();
@@ -2637,7 +2639,7 @@ mod tests {
 
     #[test]
     fn sign_channel_update_test() -> Result<(), ()> {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let cu = hex::decode("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00006700000100015e42ddc6010000060000000000000000000000010000000a000000003b023380").unwrap();
         let sigvec = signer.get_node(&node_id).unwrap().sign_channel_update(&cu).unwrap();
@@ -2647,7 +2649,7 @@ mod tests {
 
     #[test]
     fn sign_invoice_test() -> Result<(), ()> {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let human_readable_part = String::from("lnbcrt1230n");
         let data_part = hex::decode("010f0418090a010101141917110f01040e050f06100003021e1b0e13161c150301011415060204130c0018190d07070a18070a1c1101111e111f130306000d00120c11121706181b120d051807081a0b0f0d18060004120e140018000105100114000b130b01110c001a05041a181716020007130c091d11170d10100d0b1a1b00030e05190208171e16080d00121a00110719021005000405001000").unwrap();
@@ -2660,7 +2662,7 @@ mod tests {
 
     #[test]
     fn sign_invoice_with_overhang_test() -> Result<(), ()> {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let human_readable_part = String::from("lnbcrt2m");
         let data_part = hex::decode("010f0a001d051e0101140c0c000006140009160c09051a0d1a190708020d17141106171f0f07131616111f1910070b0d0e150c0c0c0d010d1a01181c15100d010009181a06101a0a0309181b040a111a0a06111705100c0b18091909030e151b14060004120e14001800010510011419080f1307000a0a0517021c171410101a1e101605050a08180d0d110e13150409051d02091d181502020f050e1a1f161a09130005000405001000").unwrap();
@@ -2676,7 +2678,7 @@ mod tests {
 
     #[test]
     fn ecdh_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let pointvec =
             hex::decode("0330febba06ba074378dec994669cf5ebf6b15e24a04ec190fb93a9482e841a0ca")
@@ -2693,7 +2695,7 @@ mod tests {
 
     #[test]
     fn get_unilateral_close_key_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[0]);
         let channel_nonce = hex::decode(
             "022d223620a359a47ff7f7ac447c85c46c923da53389221a0054c11c1e3ca31d590100000000000000",
@@ -2723,7 +2725,7 @@ mod tests {
 
     #[test]
     fn get_account_ext_pub_key_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let node = signer.get_node(&node_id).unwrap();
         let xpub = node.get_account_extended_pubkey();
@@ -2732,7 +2734,7 @@ mod tests {
 
     #[test]
     fn sign_message_test() {
-        let signer = MySigner::new();
+        let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let message = String::from("Testing 1 2 3").into_bytes();
         let mut rsigvec = signer.get_node(&node_id).unwrap()

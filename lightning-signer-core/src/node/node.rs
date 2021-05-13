@@ -23,7 +23,7 @@ use lightning::ln::PaymentHash;
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
-use crate::signer::my_signer::SyncLogger;
+use crate::signer::multi_signer::SyncLogger;
 use crate::tx::tx::{build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2, HTLCInfo, HTLCInfo2, build_close_tx, sign_commitment};
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, derive_private_revocation_key};
 use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
@@ -1084,6 +1084,7 @@ pub struct NodeConfig {
     pub key_derivation_style: KeyDerivationStyle,
 }
 
+/// A signer for one Lightning node.
 pub struct Node {
     pub logger: Arc<SyncLogger>,
     pub node_config: NodeConfig,

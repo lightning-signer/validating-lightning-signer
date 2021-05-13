@@ -174,7 +174,7 @@ mod tests {
     use lightning::chain::keysinterface::InMemorySigner;
     use lightning::util::ser::Writeable;
     use lightning_signer::node::node::ChannelSlot;
-    use lightning_signer::signer::my_signer::{channel_nonce_to_id, SyncLogger};
+    use lightning_signer::signer::multi_signer::{channel_nonce_to_id, SyncLogger};
     use lightning_signer::util::enforcing_trait_impls::EnforcingSigner;
     use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
 

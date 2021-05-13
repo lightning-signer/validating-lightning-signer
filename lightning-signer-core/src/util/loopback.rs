@@ -12,7 +12,7 @@ use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
 use lightning::util::ser::{Writeable, Writer};
 
 use crate::node::node::{ChannelId, ChannelSetup, CommitmentType, Node, ChannelBase};
-use crate::signer::my_signer::MySigner;
+use crate::signer::multi_signer::MultiSigner;
 use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, signature_to_bitcoin_vec};
 use crate::util::status::Status;
@@ -24,7 +24,7 @@ use std::convert::TryInto;
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
     pub node_id: PublicKey,
-    pub signer: Arc<MySigner>,
+    pub signer: Arc<MultiSigner>,
     pub backing: KeysManager,
 }
 
@@ -40,7 +40,7 @@ impl LoopbackSignerKeysInterface {
 pub struct LoopbackChannelSigner {
     pub node_id: PublicKey,
     pub channel_id: ChannelId,
-    pub signer: Arc<MySigner>,
+    pub signer: Arc<MultiSigner>,
     pub pubkeys: ChannelPublicKeys,
     pub counterparty_pubkeys: Option<ChannelPublicKeys>,
     pub is_outbound: bool,
@@ -53,7 +53,7 @@ impl LoopbackChannelSigner {
     fn new(
         node_id: &PublicKey,
         channel_id: &ChannelId,
-        signer: Arc<MySigner>,
+        signer: Arc<MultiSigner>,
         is_outbound: bool,
         channel_value_sat: u64,
     ) -> LoopbackChannelSigner {

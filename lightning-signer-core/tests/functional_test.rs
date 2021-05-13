@@ -23,7 +23,7 @@ use lightning::util::config::{ChannelHandshakeConfig, UserConfig};
 use lightning::util::events::MessageSendEventsProvider;
 use lightning::util::logger::Logger;
 
-use lightning_signer::signer::my_signer::MySigner;
+use lightning_signer::signer::multi_signer::MultiSigner;
 use lightning_signer::util::functional_test_utils::{
     close_channel, confirm_transaction_at, connect_block, connect_blocks,
     create_announced_chan_between_nodes, create_chanmon_cfgs, create_network, create_node_chanmgrs,
@@ -44,7 +44,7 @@ use self::lightning_signer::util::functional_test_utils::{
 
 pub fn create_node_cfgs_with_signer<'a>(
     node_count: usize,
-    signer: &Arc<MySigner>,
+    signer: &Arc<MultiSigner>,
     chanmon_cfgs: &'a Vec<TestChanMonCfg>,
 ) -> Vec<NodeCfg<'a>> {
     let mut nodes = Vec::new();
@@ -90,7 +90,7 @@ pub fn create_node_cfgs_with_signer<'a>(
 fn fake_network_with_signer_test() {
     // Simple test which builds a network of ChannelManagers, connects them to each other, and
     // tests that payments get routed and transactions broadcast in semi-reasonable ways.
-    let signer = Arc::new(MySigner::new());
+    let signer = Arc::new(MultiSigner::new());
 
     let chanmon_cfgs = create_chanmon_cfgs(4);
     let node_cfgs = create_node_cfgs_with_signer(4, &signer, &chanmon_cfgs);
@@ -153,7 +153,7 @@ fn _alt_config() -> UserConfig {
 
 #[test]
 fn channel_force_close_test() {
-    let signer = Arc::new(MySigner::new());
+    let signer = Arc::new(MultiSigner::new());
 
     let chanmon_cfgs = create_chanmon_cfgs(2);
     let node_cfgs = create_node_cfgs_with_signer(2, &signer, &chanmon_cfgs);
@@ -207,7 +207,7 @@ fn channel_force_close_test() {
 
 #[test]
 fn justice_tx_test() {
-    let signer = Arc::new(MySigner::new());
+    let signer = Arc::new(MultiSigner::new());
 
     let chanmon_cfgs = create_chanmon_cfgs(2);
     let node_cfgs = create_node_cfgs_with_signer(2, &signer, &chanmon_cfgs);
@@ -239,7 +239,7 @@ fn justice_tx_test() {
 
 #[test]
 fn claim_htlc_outputs_single_tx() {
-    let signer = Arc::new(MySigner::new());
+    let signer = Arc::new(MultiSigner::new());
 
     // Node revoked old state, htlcs have timed out, claim each of them in separated justice tx
     let chanmon_cfgs = create_chanmon_cfgs(2);
@@ -325,7 +325,7 @@ fn claim_htlc_outputs_single_tx() {
 
 #[test]
 fn channel_force_close_with_htlc_test() {
-    let signer = Arc::new(MySigner::new());
+    let signer = Arc::new(MultiSigner::new());
 
     let chanmon_cfgs = create_chanmon_cfgs(3);
     let node_cfgs = create_node_cfgs_with_signer(3, &signer, &chanmon_cfgs);
