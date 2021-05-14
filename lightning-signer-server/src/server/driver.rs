@@ -288,16 +288,21 @@ impl Signer for SignServer {
         let req = request.into_inner();
         log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
-        let opt_channel_id = self.channel_id(&req.channel_nonce0).ok();
+        // If the nonce is specified, the channel ID is the sha256 of the nonce
+        // If the nonce is not specified, the channel ID is the sha256 of the nonce, per Node::new_channel
+        // TODO this is inconsistent
+        let opt_channel_id = req.channel_nonce0.as_ref()
+            .map(|n| channel_nonce_to_id(&n.data));
         let opt_channel_nonce0 = req.channel_nonce0.as_ref().map(|cn| cn.data.clone());
-        log_info!(self, "ENTER new_channel({}/{:?})", node_id, opt_channel_id);
+        log_info!(self, "ENTER new_channel({}/{:?}/{:?})", node_id, opt_channel_id, opt_channel_nonce0);
 
         let node = self.signer.get_node(&node_id)?;
-        let (channel_id, _) =
+        let (channel_id, stub) =
             node.new_channel(opt_channel_id, opt_channel_nonce0, &node)?;
+        let stub = stub.ok_or_else(|| self.invalid_grpc_argument("channel already exists"))?;
 
         let reply = NewChannelReply {
-            channel_nonce0: req.channel_nonce0,
+            channel_nonce0: Some(ChannelNonce { data: stub.nonce } ),
         };
         log_info!(self, "REPLY new_channel({}/{})", node_id, channel_id);
         log_debug!(self, "reply={}", json!(&reply));
@@ -882,7 +887,7 @@ impl Signer for SignServer {
         let req = request.into_inner();
         log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id.clone())?;
-        let channel_id = self.channel_id(&req.channel_nonce.clone())?;
+        let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(self, "ENTER sign_delayed_sweep({}/{})", node_id, channel_id);
 
         let reqtx = req.tx.clone()
@@ -1367,8 +1372,13 @@ impl Signer for SignServer {
         let node = self.signer.get_node(&node_id)?;
         let channel_nonces = node
             .channels()
-            .values()
-            .map(|chan| chan.lock().unwrap().nonce())
+            .iter()
+            .map(|(id, chan_mutex)|
+                {
+                    let chan = chan_mutex.lock().unwrap();
+                    log_info!(self, "chan id={} nonce={} id_in_obj={}", id, hex::encode(chan.nonce()), chan.id());
+                    chan.nonce()
+                })
             .map(|nonce| ChannelNonce { data: nonce })
             .collect();
         Ok(Response::new(ListChannelsReply {

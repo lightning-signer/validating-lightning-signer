@@ -93,6 +93,7 @@ pub async fn new_channel(
     client: &mut SignerClient<transport::Channel>,
     node_id: Vec<u8>,
     nonce_hex: Option<&str>,
+    no_nonce: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut channel_nonce = [0u8; 32];
     if let Some(nonce_hex) = nonce_hex {
@@ -106,18 +107,20 @@ pub async fn new_channel(
         node_id: Some(NodeId {
             data: node_id.clone(),
         }),
-        channel_nonce0: Some(ChannelNonce {
-            data: channel_nonce.to_vec(),
-        }),
+        channel_nonce0: if no_nonce { None } else {
+            Some(ChannelNonce { data: channel_nonce.to_vec() })
+        },
     });
     let response = client.new_channel(new_chan_request).await?.into_inner();
-    assert_eq!(
-        response.channel_nonce0,
-        Some(ChannelNonce {
-            data: channel_nonce.to_vec()
-        })
-    );
-    println!("{}", hex::encode(&channel_nonce));
+    if !no_nonce {
+        assert_eq!(
+            response.channel_nonce0,
+            Some(ChannelNonce {
+                data: channel_nonce.to_vec()
+            })
+        );
+    }
+    println!("{}", hex::encode(&response.channel_nonce0.unwrap().data));
     Ok(())
 }
 

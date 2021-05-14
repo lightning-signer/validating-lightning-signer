@@ -178,6 +178,13 @@ impl ChannelSlot {
             ChannelSlot::Ready(chan) => chan.nonce(),
         }
     }
+
+    pub fn id(&self) -> ChannelId {
+        match self {
+            ChannelSlot::Stub(stub) => stub.id0,
+            ChannelSlot::Ready(chan) => chan.id0,
+        }
+    }
     // END NOT TESTED
 }
 
@@ -1245,9 +1252,15 @@ impl Node {
     /// The initial channel ID may be specified in `opt_channel_id`.  If the channel
     /// with this ID already exists, no stub is returned.
     ///
+    /// If unspecified, the channel nonce will default to the channel ID.
+    ///
     /// This function is currently infallible.
     ///
     /// Returns the channel ID and the stub.
+    // TODO the relationship between nonce and ID is different from
+    // the behavior used in the gRPC driver.  Here the nonce defaults to the ID
+    // but in the gRPC driver, the nonce is supplied by the caller, and the ID
+    // is set to the sha256 of the nonce.
     pub fn new_channel(
         &self,
         opt_channel_id: Option<ChannelId>,
@@ -1353,6 +1366,7 @@ impl Node {
                 slot
             }
         };
+        self.keys_manager.increment_channel_id_child_index();
         Ok(slot)
     }
 

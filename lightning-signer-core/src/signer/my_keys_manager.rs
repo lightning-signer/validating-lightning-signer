@@ -88,8 +88,6 @@ pub struct MyKeysManager {
     shutdown_pubkey: PublicKey,
     #[allow(dead_code)]
     channel_master_key: ExtendedPrivKey,
-    #[allow(dead_code)]
-    channel_child_index: AtomicUsize,
     channel_id_master_key: ExtendedPrivKey,
     channel_id_child_index: AtomicUsize,
     lnd_basepoint_index: AtomicU32,
@@ -171,7 +169,6 @@ impl MyKeysManager {
                     destination_script,
                     shutdown_pubkey,
                     channel_master_key,
-                    channel_child_index: AtomicUsize::new(0),
                     channel_id_master_key,
                     channel_id_child_index: AtomicUsize::new(0),
                     lnd_basepoint_index: AtomicU32::new(0),
@@ -314,7 +311,7 @@ impl MyKeysManager {
     pub fn get_channel_id(&self) -> [u8; 32] {
         let mut sha = self.unique_start.clone();
 
-        let child_ix = self.channel_id_child_index.fetch_add(1, Ordering::AcqRel);
+        let child_ix = self.increment_channel_id_child_index();
         let child_privkey = self
             .channel_id_master_key
             .ckd_priv(
@@ -325,6 +322,10 @@ impl MyKeysManager {
         sha.input(&child_privkey.private_key.key[..]);
 
         Sha256::from_engine(sha).into_inner()
+    }
+
+    pub fn increment_channel_id_child_index(&self) -> usize {
+        self.channel_id_child_index.fetch_add(1, Ordering::AcqRel)
     }
 }
 
