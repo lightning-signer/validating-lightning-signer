@@ -1365,15 +1365,14 @@ impl Signer for SignServer {
         let node_id = self.node_id(req.node_id)?;
 
         let node = self.signer.get_node(&node_id)?;
-        let channel_ids = node
+        let channel_nonces = node
             .channels()
             .values()
             .map(|chan| chan.lock().unwrap().nonce())
             .map(|nonce| ChannelNonce { data: nonce })
             .collect();
         Ok(Response::new(ListChannelsReply {
-            // FIXME needs nonces not IDs
-            channel_nonces: channel_ids,
+            channel_nonces,
         }))
     }
 }

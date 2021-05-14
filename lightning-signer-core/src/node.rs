@@ -1,41 +1,40 @@
 use core::fmt::{self, Debug, Error, Formatter};
 use core::time::Duration;
-use crate::Map;
-use crate::{Arc, Mutex, MutexGuard};
+use core::convert::TryFrom;
+use core::str::FromStr;
 
 #[cfg(feature = "backtrace")]
 use backtrace::Backtrace;
 use bitcoin;
+use bitcoin::{Network, OutPoint, Script, SigHashType};
+use bitcoin::blockdata::constants::genesis_block;
+use bitcoin::hashes::Hash;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
-use bitcoin::hashes::Hash;
 use bitcoin::secp256k1;
-use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature, Message};
+use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signature};
+use bitcoin::secp256k1::ecdh::SharedSecret;
+use bitcoin::secp256k1::recovery::RecoverableSignature;
+use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::{Network, OutPoint, Script, SigHashType};
+use lightning::chain;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface};
-use lightning::ln::chan_utils::{make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys, derive_private_key};
-
+use lightning::ln::chan_utils::{ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters, derive_private_key, HolderCommitmentTransaction, HTLCOutputInCommitment, make_funding_redeemscript, TxCreationKeys};
 use lightning::ln::PaymentHash;
 
+use crate::{Arc, Mutex, MutexGuard};
+use crate::Map;
+use crate::persist::model::NodeEntry;
+use crate::persist::Persist;
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
-use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::signer::multi_signer::SyncLogger;
-use crate::tx::tx::{build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2, HTLCInfo, HTLCInfo2, build_close_tx, sign_commitment};
-use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, derive_private_revocation_key};
+use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
+use crate::tx::tx::{build_close_tx, build_commitment_tx, CommitmentInfo2, get_commitment_transaction_number_obscure_factor, HTLCInfo, HTLCInfo2, sign_commitment};
+use crate::util::{INITIAL_COMMITMENT_NUMBER, invoice_utils};
+use crate::util::crypto_utils::{derive_private_revocation_key, derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
 use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
 use crate::util::status::Status;
-use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
-use bitcoin::secp256k1::recovery::RecoverableSignature;
-use lightning::chain;
-use bitcoin::blockdata::constants::genesis_block;
-use bitcoin::util::bip143::SigHashCache;
-use bitcoin::secp256k1::ecdh::SharedSecret;
-use crate::persist::Persist;
-use crate::persist::model::NodeEntry;
-use std::convert::TryFrom;
-use std::str::FromStr;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
@@ -54,6 +53,7 @@ impl fmt::Display for ChannelId {
     }
 }
 
+/// The commitment type, based on the negotiated option
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CommitmentType {
     Legacy,
@@ -61,20 +61,28 @@ pub enum CommitmentType {
     Anchors,
 }
 
+/// The negotiated parameters for the [Channel]
 #[derive(Clone)]
 pub struct ChannelSetup {
+    /// Whether the channel is outbound
     pub is_outbound: bool,
+    /// The total the channel was funded with
     pub channel_value_sat: u64, // DUP keys.inner.channel_value_satoshis
+    /// How much was pushed to the counterparty
     pub push_value_msat: u64,
+    /// The funding outpoint
     pub funding_outpoint: OutPoint,
     /// locally imposed requirement on the remote commitment transaction to_self_delay
     pub holder_to_self_delay: u16,
     /// Maybe be None if we should generate it inside the signer
     pub holder_shutdown_script: Option<Script>,
+    /// The counterparty's basepoints and pubkeys
     pub counterparty_points: ChannelPublicKeys, // DUP keys.inner.remote_channel_pubkeys
     /// remotely imposed requirement on the local commitment transaction to_self_delay
     pub counterparty_to_self_delay: u16,
+    /// The counterparty's shutdown script, for mutual close
     pub counterparty_shutdown_script: Script,
+    /// The negotiated commitment type
     pub commitment_type: CommitmentType,
 }
 
@@ -117,30 +125,45 @@ impl ChannelSetup {
     }
 }
 
-// After NewChannel, before ReadyChannel
+/// A channel takes this form after [Node::new_channel], and before [Node::ready_channel]
 #[derive(Clone)]
 pub struct ChannelStub {
+    /// A backpointer to the node
     pub node: Arc<Node>,
+    /// The channel nonce, used to derive keys
     pub nonce: Vec<u8>,
+    /// The logger
     pub logger: Arc<SyncLogger>,
-    pub secp_ctx: Secp256k1<All>,
+    pub(crate) secp_ctx: Secp256k1<All>,
+    /// The signer for this channel
     pub keys: EnforcingSigner, // Incomplete, channel_value_sat is placeholder.
+    /// The initial channel ID, used to find the channel in the node
     pub id0: ChannelId,
 }
 
-// After ReadyChannel
+/// After [Node::ready_channel]
 #[derive(Clone)]
 pub struct Channel {
+    /// A backpointer to the node
     pub node: Arc<Node>,
+    /// The channel nonce, used to derive keys
     pub nonce: Vec<u8>,
+    /// The logger
     pub logger: Arc<SyncLogger>,
-    pub secp_ctx: Secp256k1<All>,
+    pub(crate) secp_ctx: Secp256k1<All>,
+    /// The signer for this channel
     pub keys: EnforcingSigner,
+    /// The negotiated channel setup
     pub setup: ChannelSetup,
+    /// The initial channel ID
     pub id0: ChannelId,
+    /// The optional permanent channel ID
     pub id: Option<ChannelId>,
 }
 
+/// A channel can be in two states - before [Node::ready_channel] it's a
+/// [ChannelStub], afterwards it's a [Channel].  This enum keeps track
+/// of the two different states.
 pub enum ChannelSlot {
     Stub(ChannelStub),
     Ready(Channel),
@@ -148,6 +171,7 @@ pub enum ChannelSlot {
 
 impl ChannelSlot {
     // BEGIN NOT TESTED
+    /// Get the channel nonce, used to derive the channel keys
     pub fn nonce(&self) -> Vec<u8> {
         match self {
             ChannelSlot::Stub(stub) => stub.nonce(),
@@ -157,11 +181,17 @@ impl ChannelSlot {
     // END NOT TESTED
 }
 
+/// A trait implemented by both channel states.  See [ChannelSlot]
 pub trait ChannelBase {
-    // Both ChannelStub and ready Channels can handle these.
+    /// Get the channel basepoints and public keys
     fn get_channel_basepoints(&self) -> ChannelPublicKeys;
+    /// Get the per-commitment point for a holder commitment transaction
     fn get_per_commitment_point(&self, commitment_number: u64) -> PublicKey;
+    /// Get the per-commitment secret for a holder commitment transaction
+    // TODO leaking secret
     fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey;
+    /// Get the channel nonce, used to derive the channel keys
+    // TODO should this be exposed?
     fn nonce(&self) -> Vec<u8>;
 }
 
@@ -390,7 +420,7 @@ impl Channel {
 
     /// Sign a counterparty commitment transaction after rebuilding it
     /// from the supplied arguments.
-    // TODO anchors support once upstream supports it
+    // TODO anchors support once LDK supports it
     pub fn sign_counterparty_commitment_tx_phase2(
         &self,
         remote_per_commitment_point: &PublicKey,
@@ -1107,17 +1137,49 @@ pub struct NodeConfig {
 }
 
 /// A signer for one Lightning node.
+///
+/// ```rust
+/// use lightning_signer::node::{Node, NodeConfig, ChannelSlot, ChannelBase};
+/// use lightning_signer::persist::{DummyPersister, Persist};
+/// use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
+/// use lightning_signer::util::test_logger::TestLogger;
+/// use lightning_signer::signer::multi_signer::SyncLogger;
+///
+/// use bitcoin::Network;
+/// use std::sync::Arc;
+///
+/// let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
+/// let network = Network::Testnet;
+/// let seed = [0; 32];
+/// let config = TEST_NODE_CONFIG;
+/// let logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::new());
+/// let node = Arc::new(Node::new(&logger, config, &seed, network, &persister));
+/// let (channel_id, opt_stub) = node.new_channel(None, None, &node).expect("new channel");
+/// assert!(opt_stub.is_some());
+/// let channel_slot_mutex = node.get_channel(&channel_id).expect("get channel");
+/// let channel_slot = channel_slot_mutex.lock().expect("lock");
+/// match &*channel_slot {
+///     ChannelSlot::Stub(stub) => {
+///         // Do things with the stub, such as readying it or getting the points
+///         let holder_basepoints = stub.get_channel_basepoints();
+///     }
+///     ChannelSlot::Ready(_) => panic!("expected a stub")
+/// }
+/// ```
 pub struct Node {
     pub logger: Arc<SyncLogger>,
-    pub node_config: NodeConfig,
+    pub(crate) node_config: NodeConfig,
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<Map<ChannelId, Arc<Mutex<ChannelSlot>>>>,
-    pub network: Network,
+    pub(crate) network: Network,
     validator_factory: Box<dyn ValidatorFactory>,
     pub(crate) persister: Arc<dyn Persist>,
 }
 
 impl Node {
+    /// Create a node.
+    ///
+    /// NOTE: you must persist the node yourself if it is new.
     pub fn new(
         logger: &Arc<SyncLogger>,
         node_config: NodeConfig,
@@ -1145,9 +1207,20 @@ impl Node {
         }
     }
 
+    /// Get the node ID, which is the same as the node public key
     pub fn get_id(&self) -> PublicKey {
         let secp_ctx = Secp256k1::signing_only();
         PublicKey::from_secret_key(&secp_ctx, &self.keys_manager.get_node_secret())
+    }
+
+    /// Get the [Mutex] protected channel slot
+    pub fn get_channel(&self, channel_id: &ChannelId) -> Result<Arc<Mutex<ChannelSlot>>, Status> {
+        let mut guard = self.channels();
+        let elem = guard.get_mut(channel_id);
+        let slot_arc = elem.ok_or_else(|| {
+            Status::invalid_argument("no such channel")
+        })?;
+        Ok(Arc::clone(slot_arc))
     }
 
     #[allow(dead_code)]
@@ -1167,6 +1240,14 @@ impl Node {
         Status::internal(s)
     }
 
+    /// Create a new channel, which starts out as a stub.
+    ///
+    /// The initial channel ID may be specified in `opt_channel_id`.  If the channel
+    /// with this ID already exists, no stub is returned.
+    ///
+    /// This function is currently infallible.
+    ///
+    /// Returns the channel ID and the stub.
     pub fn new_channel(
         &self,
         opt_channel_id: Option<ChannelId>,
@@ -1207,12 +1288,13 @@ impl Node {
         );
         self.persister
             .new_channel(&self.get_id(), &stub)
-            // This should only fail if the channel was previously persisted
+            // Persist.new_channel should only fail if the channel was previously persisted.
+            // So if it did fail, we have an internal error.
             .expect("channel was in storage but not in memory");
         Ok((channel_id, Some(stub)))
     }
 
-    pub fn restore_channel(
+    pub(crate) fn restore_channel(
         &self,
         channel_id0: ChannelId,
         channel_id: Option<ChannelId>,
@@ -1274,6 +1356,11 @@ impl Node {
         Ok(slot)
     }
 
+    /// Restore a node from a persisted [NodeEntry].
+    ///
+    /// You can get the [NodeEntry] from [Persist::get_nodes].
+    ///
+    /// The channels are also restored from the `persister`.
     pub fn restore_node(node_id: &PublicKey,
                         node_entry: NodeEntry,
                         persister: Arc<dyn Persist>,
@@ -1308,6 +1395,23 @@ impl Node {
         node
     }
 
+    /// Restore all nodes from `persister`.
+    ///
+    /// The channels of each node are also restored.
+    pub fn restore_nodes(persister: Arc<dyn Persist>,
+                         logger: Arc<dyn SyncLogger>) -> Map<PublicKey, Arc<Node>> {
+        let mut nodes = Map::new();
+        for (node_id, node_entry) in persister.get_nodes() {
+            let node =
+                Node::restore_node(&node_id,
+                                   node_entry,
+                                   Arc::clone(&persister),
+                                   Arc::clone(&logger));
+            nodes.insert(node_id, node);
+        }
+        nodes
+    }
+
     /// Ready a new channel, making it available for use.
     ///
     /// This populates fields that are known later in the channel creation flow,
@@ -1316,6 +1420,7 @@ impl Node {
     /// * `channel_id0` - the original channel ID supplied to [`Node::new_channel`]
     /// * `opt_channel_id` - the permanent channel ID
     ///
+    /// The channel is promoted from a [ChannelStub] to a [Channel].
     /// After this call, the channel may be referred to by either ID.
     pub fn ready_channel(
         &self,

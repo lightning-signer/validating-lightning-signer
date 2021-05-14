@@ -2,6 +2,8 @@
 #![forbid(unsafe_code)]
 #![allow(bare_trait_objects)]
 #![allow(ellipsis_inclusive_range_patterns)]
+#![warn(broken_intra_doc_links)]
+// #![warn(missing_docs)]
 
 extern crate bitcoin;
 extern crate hex;
