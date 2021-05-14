@@ -2,7 +2,7 @@ use bitcoin::secp256k1::PublicKey;
 use bitcoin::Network;
 use kv::{Bucket, Config, Json, Store, TransactionError};
 
-use lightning_signer::node::node::{Channel, ChannelId, ChannelStub, NodeConfig};
+use lightning_signer::node::{Channel, ChannelId, ChannelStub, NodeConfig};
 use lightning_signer::persist::Persist;
 
 use crate::persist::model::NodeChannelId;
@@ -173,7 +173,7 @@ mod tests {
 
     use lightning::chain::keysinterface::InMemorySigner;
     use lightning::util::ser::Writeable;
-    use lightning_signer::node::node::ChannelSlot;
+    use lightning_signer::node::ChannelSlot;
     use lightning_signer::signer::multi_signer::{channel_nonce_to_id, SyncLogger};
     use lightning_signer::util::enforcing_trait_impls::EnforcingSigner;
     use lightning_signer::util::test_utils::TEST_NODE_CONFIG;

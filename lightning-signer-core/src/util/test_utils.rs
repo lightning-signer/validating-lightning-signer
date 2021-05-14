@@ -24,7 +24,7 @@ use lightning::ln::chan_utils::{
 };
 use lightning::util::test_utils;
 
-use crate::node::node::{ChannelSetup, CommitmentType, NodeConfig};
+use crate::node::{ChannelSetup, CommitmentType, NodeConfig};
 use crate::signer::my_keys_manager::KeyDerivationStyle;
 use crate::tx::tx::sort_outputs;
 use crate::util::crypto_utils::payload_for_p2wpkh;

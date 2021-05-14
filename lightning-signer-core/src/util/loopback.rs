@@ -11,7 +11,7 @@ use lightning::ln::chan_utils::{
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
 use lightning::util::ser::{Writeable, Writer};
 
-use crate::node::node::{ChannelId, ChannelSetup, CommitmentType, Node, ChannelBase};
+use crate::node::{ChannelId, ChannelSetup, CommitmentType, Node, ChannelBase};
 use crate::signer::multi_signer::MultiSigner;
 use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, signature_to_bitcoin_vec};

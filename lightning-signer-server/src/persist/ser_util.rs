@@ -10,7 +10,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::serde_as;
 use serde_with::{DeserializeAs, SerializeAs};
 
-use lightning_signer::node::node::{ChannelId, ChannelSetup, CommitmentType};
+use lightning_signer::node::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::util::enforcing_trait_impls::EnforcementState;
 
 #[derive(Copy, Clone, Debug, Default)] // NOT TESTED

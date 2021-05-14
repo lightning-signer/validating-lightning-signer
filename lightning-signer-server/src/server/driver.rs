@@ -14,8 +14,7 @@ use tonic::{transport::Server, Request, Response, Status};
 
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
-use lightning_signer::node::node;
-use lightning_signer::node::node::{ChannelId, ChannelSetup, CommitmentType};
+use lightning_signer::node::{self, ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::signer::multi_signer::{SpendType, SyncLogger};
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::{log_debug, log_error, log_info, log_internal, Map};

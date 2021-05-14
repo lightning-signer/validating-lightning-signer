@@ -4,7 +4,7 @@ use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::Network;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 
-use lightning_signer::node::node::{
+use lightning_signer::node::{
     ChannelId, ChannelSetup, ChannelSlot, ChannelStub, CommitmentType, Node,
 };
 use lightning_signer::signer::multi_signer::SyncLogger;

@@ -14,7 +14,7 @@ use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{Network, Script};
 use lightning::chain::keysinterface::{InMemorySigner, KeysInterface};
 
-use crate::node::node::ChannelId;
+use crate::node::ChannelId;
 use crate::signer::multi_signer::SyncLogger;
 use crate::util::byte_utils;
 use crate::util::crypto_utils::{

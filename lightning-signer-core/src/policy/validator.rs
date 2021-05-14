@@ -1,7 +1,7 @@
 use bitcoin::util::address::Payload;
 use bitcoin::{self, Network};
 
-use crate::node::node::{Channel, ChannelSetup};
+use crate::node::{Channel, ChannelSetup};
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
 use crate::util::enforcing_trait_impls::EnforcingSigner;
 
@@ -446,7 +446,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
 mod tests {
     use lightning::ln::PaymentHash;
 
-    use crate::node::node::CommitmentType;
+    use crate::node::CommitmentType;
     use crate::tx::tx::{HTLCInfo, HTLCInfo2, ANCHOR_SAT};
     use crate::util::crypto_utils::payload_for_p2wpkh;
     use crate::util::test_utils::{

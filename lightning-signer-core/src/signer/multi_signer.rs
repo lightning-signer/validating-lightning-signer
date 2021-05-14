@@ -15,7 +15,7 @@ use bitcoin::{Address, Network, OutPoint, SigHashType};
 use lightning::chain::keysinterface::KeysInterface;
 use lightning::util::logger::Logger;
 
-use crate::node::node::{
+use crate::node::{
     Channel, ChannelBase, ChannelId, ChannelSlot, Node, NodeConfig,
 };
 use crate::persist::{DummyPersister, Persist};
@@ -54,8 +54,9 @@ impl TryFrom<i32> for SpendType {
 
 pub trait SyncLogger: Logger + SendSync {}
 
-/// A signer for multiple nodes
-/// If you need just one node, use [Node](lightning_signer::node::Node) directly.
+/// A signer for multiple nodes.
+///
+/// If you need just one node, use [Node] directly.
 pub struct MultiSigner {
     pub logger: Arc<dyn SyncLogger>,
     pub(crate) nodes: Mutex<Map<PublicKey, Arc<Node>>>,
@@ -404,7 +405,7 @@ mod tests {
     use lightning::ln::chan_utils::{build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys, ChannelPublicKeys};
     use lightning::ln::PaymentHash;
 
-    use crate::node::node::{CommitmentType, ChannelSetup};
+    use crate::node::{CommitmentType, ChannelSetup};
     use crate::policy::error::ValidationError;
     use crate::tx::tx::{ANCHOR_SAT, HTLCInfo2, build_close_tx};
     use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, derive_private_revocation_key};

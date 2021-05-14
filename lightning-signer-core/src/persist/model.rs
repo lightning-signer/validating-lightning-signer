@@ -1,4 +1,4 @@
-use crate::node::node::{ChannelId, ChannelSetup};
+use crate::node::{ChannelId, ChannelSetup};
 
 use crate::util::enforcing_trait_impls::EnforcementState;
 

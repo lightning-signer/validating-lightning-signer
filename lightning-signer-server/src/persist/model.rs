@@ -9,7 +9,7 @@ use serde_with::hex::Hex;
 use serde_with::serde_as;
 
 use super::ser_util::{ChannelIdHandler, ChannelSetupDef, EnforcementStateDef};
-use lightning_signer::node::node::{ChannelId, ChannelSetup};
+use lightning_signer::node::{ChannelId, ChannelSetup};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
