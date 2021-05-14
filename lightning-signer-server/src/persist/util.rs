@@ -24,23 +24,23 @@ pub fn make_node_and_channel(
     logger: &Arc<dyn SyncLogger>,
     channel_nonce: &Vec<u8>,
     channel_id: ChannelId,
-) -> (PublicKey, Arc<Node>, ChannelStub) {
-    let (node_id, node) = make_node(logger);
+) -> (PublicKey, Arc<Node>, ChannelStub, [u8; 32]) {
+    let (node_id, node, seed) = make_node(logger);
 
     let (_, channel) = node
         .new_channel(Some(channel_id), Some(channel_nonce.clone()), &Arc::clone(&node))
         .unwrap(); // NOT TESTED
-    (node_id, node, channel.unwrap())
+    (node_id, node, channel.unwrap(), seed)
 }
 
-pub(crate) fn make_node(logger: &Arc<dyn SyncLogger>) -> (PublicKey, Arc<Node>) {
+pub(crate) fn make_node(logger: &Arc<dyn SyncLogger>) -> (PublicKey, Arc<Node>, [u8; 32]) {
     let mut seed = [0; 32];
     seed.copy_from_slice(hex::decode(TEST_SEED[1]).unwrap().as_slice());
 
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
     let node = Arc::new(Node::new(logger, TEST_NODE_CONFIG, &seed, Network::Testnet, &persister));
     let node_id = node.get_id();
-    (node_id, node)
+    (node_id, node, seed)
 }
 
 pub fn create_test_channel_setup(dummy_pubkey: PublicKey) -> ChannelSetup {

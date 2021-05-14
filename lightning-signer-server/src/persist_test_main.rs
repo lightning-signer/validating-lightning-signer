@@ -21,7 +21,7 @@ pub fn main() {
     let channel_id1 = channel_nonce_to_id(&channel_nonce1);
 
     let logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::with_id("server".to_owned()));
-    let (node_id, node_arc, stub) =
+    let (node_id, node_arc, stub, _seed) =
         util::make_node_and_channel(&logger, &channel_nonce, channel_id);
     let node = &*node_arc;
 

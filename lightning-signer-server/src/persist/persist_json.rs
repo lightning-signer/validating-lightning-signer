@@ -173,7 +173,7 @@ mod tests {
 
     use lightning::chain::keysinterface::InMemorySigner;
     use lightning::util::ser::Writeable;
-    use lightning_signer::node::ChannelSlot;
+    use lightning_signer::node::{ChannelSlot, Node};
     use lightning_signer::signer::multi_signer::{channel_nonce_to_id, SyncLogger};
     use lightning_signer::util::enforcing_trait_impls::EnforcingSigner;
     use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
@@ -196,80 +196,62 @@ mod tests {
 
     #[test]
     fn round_trip_signer_test() {
-        let (persister, temp_dir, path) = make_temp_persister();
 
         let channel_nonce = "nonce0".as_bytes().to_vec();
         let channel_id0 = channel_nonce_to_id(&channel_nonce);
 
         let logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::with_id("server".to_owned()));
-        let (node_id, node_arc, stub) = make_node_and_channel(&logger, &channel_nonce, channel_id0);
+        let (node_id, node_arc, stub, seed) =
+            make_node_and_channel(&logger, &channel_nonce, channel_id0);
 
         let node = &*node_arc;
 
-        persister.new_node(&node_id, &TEST_NODE_CONFIG, &[3u8; 32], Network::Regtest);
-
-        {
+        let (temp_dir, path) = {
+            let (persister, temp_dir, path) = make_temp_persister();
+            let persister: Arc<dyn Persist> = Arc::new(persister);
+            persister.new_node(&node_id, &TEST_NODE_CONFIG, &seed, Network::Regtest);
             persister.new_channel(&node_id, &stub).unwrap();
 
-            let entry = persister.get_channel(&node_id, &channel_id0).unwrap();
-            let (_, restored_node_arc) = make_node(&logger);
-            let slot = restored_node_arc
-                .restore_channel(
-                    channel_id0,
-                    None,
-                    entry.nonce,
-                    entry.channel_value_satoshis,
-                    entry.channel_setup,
-                    entry.enforcement_state,
-                    &restored_node_arc,
-                )
-                .unwrap();
+            {
+                let nodes = Node::restore_nodes(Arc::clone(&persister), Arc::clone(&logger));
+                let restored_node_arc = nodes.get(&node_id).unwrap();
+                let slot = restored_node_arc.get_channel(&stub.id0).unwrap();
 
-            let guard = slot.lock().unwrap();
-            if let ChannelSlot::Stub(s) = &*guard {
-                check_signer_roundtrip(&stub.keys, &s.keys.inner());
-            } else {
-                panic!() // NOT TESTED
+                let guard = slot.lock().unwrap();
+                if let ChannelSlot::Stub(s) = &*guard {
+                    check_signer_roundtrip(&stub.keys, &s.keys.inner());
+                } else {
+                    panic!() // NOT TESTED
+                }
             }
-        }
 
-        // Ready the channel
-        {
-            let dummy_pubkey = make_dummy_pubkey(0x12);
-            let setup = create_test_channel_setup(dummy_pubkey);
+            // Ready the channel
+            {
+                let dummy_pubkey = make_dummy_pubkey(0x12);
+                let setup = create_test_channel_setup(dummy_pubkey);
 
-            let channel_nonce1 = "nonce1".as_bytes().to_vec();
-            let channel_id1 = channel_nonce_to_id(&channel_nonce1);
+                let channel_nonce1 = "nonce1".as_bytes().to_vec();
+                let channel_id1 = channel_nonce_to_id(&channel_nonce1);
 
-            let channel = node
-                .ready_channel(channel_id0, Some(channel_id1), setup)
-                .unwrap();
-            persister.update_channel(&node_id, &channel).unwrap();
+                let channel = node
+                    .ready_channel(channel_id0, Some(channel_id1), setup)
+                    .unwrap();
+                persister.update_channel(&node_id, &channel).unwrap();
 
-            let entry = persister.get_channel(&node_id, &channel_id0).unwrap();
-            let (_, restored_node_arc) = make_node(&logger);
-            let slot = restored_node_arc
-                .restore_channel(
-                    channel_id0,
-                    entry.id,
-                    entry.nonce,
-                    entry.channel_value_satoshis,
-                    entry.channel_setup,
-                    entry.enforcement_state,
-                    &restored_node_arc,
-                )
-                .unwrap();
-            assert!(node.channels().contains_key(&channel_id0));
-            assert!(node.channels().contains_key(&channel_id1));
-            let guard = slot.lock().unwrap();
-            if let ChannelSlot::Ready(s) = &*guard {
-                check_signer_roundtrip(&channel.keys, &s.keys.inner());
-            } else {
-                panic!() // NOT TESTED
+                let nodes = Node::restore_nodes(Arc::clone(&persister), Arc::clone(&logger));
+                let restored_node_arc = nodes.get(&node_id).unwrap();
+                let slot = restored_node_arc.get_channel(&stub.id0).unwrap();
+                assert!(node.channels().contains_key(&channel_id0));
+                assert!(node.channels().contains_key(&channel_id1));
+                let guard = slot.lock().unwrap();
+                if let ChannelSlot::Ready(s) = &*guard {
+                    check_signer_roundtrip(&channel.keys, &s.keys.inner());
+                } else {
+                    panic!() // NOT TESTED
+                }
             }
-        }
-
-        drop(persister);
+            (temp_dir, path)
+        };
 
         {
             let persister1 = KVJsonPersister::new(path.as_str());
