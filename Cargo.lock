@@ -656,8 +656,8 @@ checksum = "18794a8ad5b29321f790b55d93dfba91e125cb1a9edbd4f8e3150acc771c1a5e"
 
 [[package]]
 name = "lightning"
-version = "0.0.13"
-source = "git+https://github.com/rust-bitcoin/rust-lightning.git?rev=3b67be235a46d8f9a9a6faf7ca7c5872ffbd8646#3b67be235a46d8f9a9a6faf7ca7c5872ffbd8646"
+version = "0.0.14"
+source = "git+https://github.com/rust-bitcoin/rust-lightning.git?rev=0b1f0a7edc7d836e75e69442e84038f6c4116174#0b1f0a7edc7d836e75e69442e84038f6c4116174"
 dependencies = [
  "bitcoin",
  "hex 0.3.2",
@@ -666,7 +666,7 @@ dependencies = [
 
 [[package]]
 name = "lightning-signer-core"
-version = "0.1.0"
+version = "0.1.0-2"
 dependencies = [
  "backtrace",
  "bitcoin",
@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "lightning-signer-server"
-version = "0.1.0"
+version = "0.1.0-1"
 dependencies = [
  "backtrace",
  "bip39",

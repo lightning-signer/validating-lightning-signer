@@ -1,5 +1,4 @@
-use core::fmt;
-use core::fmt::Debug;
+use core::fmt::{self, Debug, Error, Formatter};
 use core::time::Duration;
 use crate::Map;
 use crate::{Arc, Mutex, MutexGuard};
@@ -7,7 +6,6 @@ use crate::{Arc, Mutex, MutexGuard};
 #[cfg(feature = "backtrace")]
 use backtrace::Backtrace;
 use bitcoin;
-use bitcoin::hashes::core::fmt::{Error, Formatter};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
