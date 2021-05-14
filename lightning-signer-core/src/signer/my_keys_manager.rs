@@ -183,10 +183,12 @@ impl MyKeysManager {
         }
     }
 
+    /// Get the layer-1 xpub
     pub fn get_account_extended_key(&self) -> &ExtendedPrivKey {
         &self.account_extended_key
     }
 
+    /// Convert a commitment secret to a commitment point
     pub fn per_commitment_point<X: Signing>(
         secp_ctx: &Secp256k1<X>,
         commitment_secret: &[u8; 32],
