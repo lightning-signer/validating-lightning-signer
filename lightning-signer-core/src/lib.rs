@@ -36,7 +36,7 @@ pub use std::sync::{Mutex, MutexGuard};
 #[cfg(not(feature = "std"))]
 pub use nostd::*;
 
-pub use alloc::sync::Arc;
+pub use alloc::sync::{Arc, Weak};
 pub use alloc::rc::Rc;
 pub use alloc::collections::BTreeSet as Set;
 pub use hashbrown::HashMap as Map;

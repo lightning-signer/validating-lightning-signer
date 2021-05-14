@@ -530,7 +530,7 @@ mod tests {
         assert!(status.is_err());
         let err = status.unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
-        assert_eq!(err.message(), format!("no such channel: {}", &channel_id_x));
+        assert_eq!(err.message(), "no such channel");
     }
 
     #[test]

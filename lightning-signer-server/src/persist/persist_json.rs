@@ -212,10 +212,11 @@ mod tests {
             persister.new_node(&node_id, &TEST_NODE_CONFIG, &seed, Network::Regtest);
             persister.new_channel(&node_id, &stub).unwrap();
 
+            let nodes = Node::restore_nodes(Arc::clone(&persister), Arc::clone(&logger));
+            let restored_node = nodes.get(&node_id).unwrap();
+
             {
-                let nodes = Node::restore_nodes(Arc::clone(&persister), Arc::clone(&logger));
-                let restored_node_arc = nodes.get(&node_id).unwrap();
-                let slot = restored_node_arc.get_channel(&stub.id0).unwrap();
+                let slot = restored_node.get_channel(&stub.id0).unwrap();
 
                 let guard = slot.lock().unwrap();
                 if let ChannelSlot::Stub(s) = &*guard {

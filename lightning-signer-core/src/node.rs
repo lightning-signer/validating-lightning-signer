@@ -22,7 +22,7 @@ use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface};
 use lightning::ln::chan_utils::{ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters, derive_private_key, HolderCommitmentTransaction, HTLCOutputInCommitment, make_funding_redeemscript, TxCreationKeys};
 use lightning::ln::PaymentHash;
 
-use crate::{Arc, Mutex, MutexGuard};
+use crate::{Weak, Arc, Mutex, MutexGuard};
 use crate::Map;
 use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
@@ -129,7 +129,7 @@ impl ChannelSetup {
 #[derive(Clone)]
 pub struct ChannelStub {
     /// A backpointer to the node
-    pub node: Arc<Node>,
+    pub node: Weak<Node>,
     /// The channel nonce, used to derive keys
     pub nonce: Vec<u8>,
     /// The logger
@@ -145,7 +145,7 @@ pub struct ChannelStub {
 #[derive(Clone)]
 pub struct Channel {
     /// A backpointer to the node
-    pub node: Arc<Node>,
+    pub node: Weak<Node>,
     /// The channel nonce, used to derive keys
     pub nonce: Vec<u8>,
     /// The logger
@@ -637,9 +637,13 @@ impl Channel {
         self.setup.holder_shutdown_script
             .clone()
             .unwrap_or_else(
-                || payload_for_p2wpkh(&self.node.keys_manager.get_shutdown_pubkey())
+                || payload_for_p2wpkh(&self.get_node().keys_manager.get_shutdown_pubkey())
                     .script_pubkey(),
             )
+    }
+
+    fn get_node(&self) -> Arc<Node> {
+        self.node.upgrade().unwrap()
     }
 
     /// Sign a mutual close transaction after rebuilding it from the supplied arguments
@@ -764,17 +768,18 @@ impl Channel {
         let encmsg = secp256k1::Message::from_slice(&ann_hash[..])
             .expect("encmsg failed");
 
-        (self.secp_ctx.sign(&encmsg, &self.node.get_node_secret()),
+        (self.secp_ctx.sign(&encmsg, &self.get_node().get_node_secret()),
          self.secp_ctx.sign(&encmsg, &self.keys.funding_key()))
     }
 
     fn persist(&self) -> Result<(), Status> {
-        self.node.persister.update_channel(&self.node.get_id(), &self)
+        let node_id = self.get_node().get_id();
+        self.get_node().persister.update_channel(&node_id, &self)
             .map_err(|_| Status::internal("persist failed"))
     }
 
     pub fn network(&self) -> Network {
-        self.node.network
+        self.get_node().network
     }
 }
 
@@ -908,7 +913,7 @@ impl Channel {
         }
 
         let validator = self
-            .node
+            .node.upgrade().unwrap()
             .validator_factory
             .make_validator_phase1(self, channel_value_sat);
 
@@ -1287,7 +1292,7 @@ impl Node {
             channel_value_sat,
         );
         let stub = ChannelStub {
-            node: Arc::clone(arc_self),
+            node: Arc::downgrade(arc_self),
             nonce: channel_nonce0,
             logger: Arc::clone(&self.logger),
             secp_ctx: Secp256k1::new(),
@@ -1329,7 +1334,7 @@ impl Node {
         let slot = match channel_setup {
             None => {
                 let stub = ChannelStub {
-                    node: Arc::clone(arc_self),
+                    node: Arc::downgrade(arc_self),
                     nonce,
                     logger: Arc::clone(&self.logger),
                     secp_ctx: Secp256k1::new(),
@@ -1350,7 +1355,7 @@ impl Node {
                     );
                 enforcing_signer.ready_channel(&channel_transaction_parameters);
                 let channel = Channel {
-                    node: Arc::clone(arc_self),
+                    node: Arc::downgrade(arc_self),
                     nonce,
                     logger: Arc::clone(&self.logger),
                     secp_ctx: Secp256k1::new(),
@@ -1460,7 +1465,7 @@ impl Node {
                 Node::channel_setup_to_channel_transaction_parameters(&setup, holder_pubkeys);
             inmem_keys.ready_channel(&channel_transaction_parameters);
             Channel {
-                node: Arc::clone(&stub.node),
+                node: Weak::clone(&stub.node),
                 nonce: stub.nonce.clone(),
                 logger: Arc::clone(&stub.logger),
                 secp_ctx: stub.secp_ctx.clone(),
