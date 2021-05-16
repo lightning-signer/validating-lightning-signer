@@ -11,14 +11,16 @@ use lightning::ln::chan_utils::{
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
 use lightning::util::ser::{Writeable, Writer};
 
-use crate::node::{ChannelId, ChannelSetup, CommitmentType, Node, ChannelBase};
+use crate::node::{ChannelBase, ChannelId, ChannelSetup, CommitmentType, Node};
 use crate::signer::multi_signer::MultiSigner;
 use crate::tx::tx::HTLCInfo2;
-use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, signature_to_bitcoin_vec};
+use crate::util::crypto_utils::{
+    derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, signature_to_bitcoin_vec,
+};
 use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
-use bitcoin::secp256k1::recovery::RecoverableSignature;
 use crate::IOError;
+use bitcoin::secp256k1::recovery::RecoverableSignature;
 use std::convert::TryInto;
 
 /// Adapt MySigner to KeysInterface
@@ -30,11 +32,11 @@ pub struct LoopbackSignerKeysInterface {
 
 impl LoopbackSignerKeysInterface {
     fn get_node(&self) -> Arc<Node> {
-        self.signer.get_node(&self.node_id)
+        self.signer
+            .get_node(&self.node_id)
             .expect("our node is missing")
     }
 }
-
 
 #[derive(Clone)]
 pub struct LoopbackChannelSigner {
@@ -58,9 +60,10 @@ impl LoopbackChannelSigner {
         channel_value_sat: u64,
     ) -> LoopbackChannelSigner {
         log_info!(signer, "new channel {:?} {:?}", node_id, channel_id);
-        let pubkeys = signer.with_channel_base(&node_id, &channel_id, |base| {
-            Ok(base.get_channel_basepoints())
-        })
+        let pubkeys = signer
+            .with_channel_base(&node_id, &channel_id, |base| {
+                Ok(base.get_channel_basepoints())
+            })
             .map_err(|s| {
                 // BEGIN NOT TESTED
                 log_error!(signer, "bad status {:?} on channel {}", s, channel_id);
@@ -127,8 +130,9 @@ impl LoopbackChannelSigner {
         let (offered_htlcs, received_htlcs) =
             LoopbackChannelSigner::convert_to_htlc_info2(hct.htlcs());
 
-        let (sig_vec, htlc_sig_vecs) =
-            self.signer.with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+        let (sig_vec, htlc_sig_vecs) = self
+            .signer
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 let result = chan.sign_holder_commitment_tx_phase2(
                     commitment_number,
                     feerate_per_kw,
@@ -138,7 +142,8 @@ impl LoopbackChannelSigner {
                     received_htlcs.clone(),
                 )?;
                 Ok(result)
-            }).map_err(|s| self.bad_status(s))?;
+            })
+            .map_err(|s| self.bad_status(s))?;
 
         let htlc_sigs = htlc_sig_vecs
             .iter()
@@ -169,7 +174,8 @@ impl LoopbackChannelSigner {
     }
 
     fn get_node(&self) -> Arc<Node> {
-        self.signer.get_node(&self.node_id)
+        self.signer
+            .get_node(&self.node_id)
             .expect("our node is missing")
     }
 }
@@ -193,21 +199,25 @@ fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
 impl BaseSign for LoopbackChannelSigner {
     fn get_per_commitment_point(&self, idx: u64, _secp_ctx: &Secp256k1<All>) -> PublicKey {
         // signer layer expect forward counting commitment number, but we are passed a backwards counting one
-        self.signer.with_channel_base(&self.node_id, &self.channel_id, |base| {
-            Ok(base.get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - idx))
-        })
+        self.signer
+            .with_channel_base(&self.node_id, &self.channel_id, |base| {
+                Ok(base.get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - idx))
+            })
             .map_err(|s| self.bad_status(s))
             .unwrap()
     }
 
     fn release_commitment_secret(&self, commitment_number: u64) -> [u8; 32] {
         // signer layer expect forward counting commitment number, but we are passed a backwards counting one
-        let secret = self.signer.with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-            let secret = chan.get_per_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number)[..]
-                .try_into()
-                .unwrap();
-            Ok(secret)
-        });
+        let secret = self
+            .signer
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                let secret = chan
+                    .get_per_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number)[..]
+                    .try_into()
+                    .unwrap();
+                Ok(secret)
+            });
         secret.expect("missing channel")
     }
 
@@ -246,17 +256,20 @@ impl BaseSign for LoopbackChannelSigner {
         let to_counterparty_value_sat = commitment_tx.to_broadcaster_value_sat();
         let feerate_per_kw = commitment_tx.feerate_per_kw();
 
-        let (sig_vec, htlc_sigs_vecs) = self.signer.with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-            chan.sign_counterparty_commitment_tx_phase2(
-                &per_commitment_point,
-                commitment_number,
-                feerate_per_kw,
-                to_holder_value_sat,
-                to_counterparty_value_sat,
-                offered_htlcs.clone(),
-                received_htlcs.clone(),
-            )
-        }).map_err(|s| self.bad_status(s))?;
+        let (sig_vec, htlc_sigs_vecs) = self
+            .signer
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                chan.sign_counterparty_commitment_tx_phase2(
+                    &per_commitment_point,
+                    commitment_number,
+                    feerate_per_kw,
+                    to_holder_value_sat,
+                    to_counterparty_value_sat,
+                    offered_htlcs.clone(),
+                    received_htlcs.clone(),
+                )
+            })
+            .map_err(|s| self.bad_status(s))?;
         let commitment_sig = bitcoin_sig_to_signature(sig_vec)?;
         let mut htlc_sigs = Vec::with_capacity(commitment_tx.htlcs().len());
         for htlc_sig_vec in htlc_sigs_vecs {
@@ -320,15 +333,19 @@ impl BaseSign for LoopbackChannelSigner {
         };
 
         // TODO phase 2
-        let res = self.signer.with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-            let sig = chan.sign_justice_sweep(
-                justice_tx,
-                input,
-                per_commitment_key,
-                &redeem_script,
-                amount)?;
-            Ok(signature_to_bitcoin_vec(sig))
-        }).map_err(|s| self.bad_status(s))?;
+        let res = self
+            .signer
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                let sig = chan.sign_justice_sweep(
+                    justice_tx,
+                    input,
+                    per_commitment_key,
+                    &redeem_script,
+                    amount,
+                )?;
+                Ok(signature_to_bitcoin_vec(sig))
+            })
+            .map_err(|s| self.bad_status(s))?;
 
         bitcoin_sig_to_signature(res)
     }
@@ -346,16 +363,19 @@ impl BaseSign for LoopbackChannelSigner {
         let redeem_script = chan_utils::get_htlc_redeemscript(htlc, &chan_keys);
 
         // TODO phase 2
-        let res =
-            self.signer.with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+        let res = self
+            .signer
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 let sig = chan.sign_counterparty_htlc_sweep(
                     htlc_tx,
                     input,
                     per_commitment_point,
                     &redeem_script,
-                    amount)?;
+                    amount,
+                )?;
                 Ok(signature_to_bitcoin_vec(sig))
-            }).map_err(|s| self.bad_status(s))?;
+            })
+            .map_err(|s| self.bad_status(s))?;
 
         bitcoin_sig_to_signature(res)
     }
@@ -375,9 +395,8 @@ impl BaseSign for LoopbackChannelSigner {
         );
         let mut to_holder_value = 0;
         let mut to_counterparty_value = 0;
-        let local_script = payload_for_p2wpkh(
-            &self.get_node().get_shutdown_pubkey()
-        ).script_pubkey();
+        let local_script =
+            payload_for_p2wpkh(&self.get_node().get_shutdown_pubkey()).script_pubkey();
         let mut to_counterparty_script = Script::default();
         for out in &closing_tx.output {
             if out.script_pubkey == local_script {
@@ -401,13 +420,15 @@ impl BaseSign for LoopbackChannelSigner {
         }
 
         // TODO error handling is awkward
-        self.signer.with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-            chan.sign_mutual_close_tx_phase2(
-                to_holder_value,
-                to_counterparty_value,
-                Some(to_counterparty_script.clone())
-            )
-        }).map_err(|_| ())
+        self.signer
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                chan.sign_mutual_close_tx_phase2(
+                    to_holder_value,
+                    to_counterparty_value,
+                    Some(to_counterparty_script.clone()),
+                )
+            })
+            .map_err(|_| ())
     }
 
     fn sign_channel_announcement(
@@ -423,9 +444,12 @@ impl BaseSign for LoopbackChannelSigner {
             self.channel_id
         );
 
-        let (_nsig, bsig) = self.signer.with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-            Ok(chan.sign_channel_announcement(&msg.encode()))
-        }).map_err(|s| self.bad_status(s))?;
+        let (_nsig, bsig) = self
+            .signer
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                Ok(chan.sign_channel_announcement(&msg.encode()))
+            })
+            .map_err(|s| self.bad_status(s))?;
 
         let res = bsig.serialize_der().to_vec();
 
@@ -458,8 +482,7 @@ impl BaseSign for LoopbackChannelSigner {
             counterparty_shutdown_script: Default::default(), // TODO
             commitment_type: CommitmentType::StaticRemoteKey, // TODO
         };
-        let node = self.signer.get_node(&self.node_id)
-            .expect("no such node");
+        let node = self.signer.get_node(&self.node_id).expect("no such node");
 
         node.ready_channel(self.channel_id, None, setup)
             .expect("channel already ready or does not exist");
@@ -490,8 +513,7 @@ impl KeysInterface for LoopbackSignerKeysInterface {
 
     fn get_channel_signer(&self, is_inbound: bool, channel_value_sat: u64) -> Self::Signer {
         let node = self.signer.get_node(&self.node_id).unwrap();
-        let (channel_id, _) =
-            node.new_channel(None, None, &node).unwrap();
+        let (channel_id, _) = node.new_channel(None, None, &node).unwrap();
         LoopbackChannelSigner::new(
             &self.node_id,
             &channel_id,

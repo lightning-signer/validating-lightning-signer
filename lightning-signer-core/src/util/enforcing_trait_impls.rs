@@ -1,10 +1,11 @@
-use crate::{IORead, IOError};
 use crate::{Arc, Mutex};
+use crate::{IOError, IORead};
 
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::secp256k1::key::{PublicKey, SecretKey};
 use bitcoin::secp256k1::{All, Secp256k1, Signature};
 use chain::keysinterface::InMemorySigner;
+use core::cmp;
 use lightning::chain;
 use lightning::chain::keysinterface::BaseSign;
 use lightning::ln;
@@ -16,7 +17,6 @@ use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 use ln::msgs;
-use core::cmp;
 
 /// Enforces some rules on Sign calls. Eventually we will
 /// probably want to expose a variant of this which would essentially

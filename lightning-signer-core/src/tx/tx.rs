@@ -296,7 +296,10 @@ pub(crate) fn sign_commitment(
     Ok(secp_ctx.sign(&commitment_sighash, funding_key))
 }
 
-pub fn sort_outputs<T, C: Fn(&T, &T) -> cmp::Ordering>(outputs: &mut Vec<(TxOut, T)>, tie_breaker: C) {
+pub fn sort_outputs<T, C: Fn(&T, &T) -> cmp::Ordering>(
+    outputs: &mut Vec<(TxOut, T)>,
+    tie_breaker: C,
+) {
     outputs.sort_unstable_by(|a, b| {
         a.0.value.cmp(&b.0.value).then_with(|| {
             a.0.script_pubkey[..]

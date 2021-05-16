@@ -5,12 +5,12 @@
 #![warn(broken_intra_doc_links)]
 // #![warn(missing_docs)]
 
+extern crate alloc;
 extern crate bitcoin;
 extern crate hex;
 extern crate rand;
 #[cfg(feature = "grpc")]
 extern crate tonic;
-extern crate alloc;
 
 #[macro_use]
 pub mod util;
@@ -36,7 +36,7 @@ pub use std::sync::{Mutex, MutexGuard};
 #[cfg(not(feature = "std"))]
 pub use nostd::*;
 
-pub use alloc::sync::{Arc, Weak};
-pub use alloc::rc::Rc;
 pub use alloc::collections::BTreeSet as Set;
+pub use alloc::rc::Rc;
+pub use alloc::sync::{Arc, Weak};
 pub use hashbrown::HashMap as Map;

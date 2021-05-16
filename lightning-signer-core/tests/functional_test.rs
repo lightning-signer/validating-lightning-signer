@@ -2,9 +2,9 @@
 
 extern crate lightning_signer;
 
-use lightning_signer::Set;
-use lightning_signer::Arc;
 use core::time::Duration;
+use lightning_signer::Arc;
+use lightning_signer::Set;
 
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::consensus::serialize;

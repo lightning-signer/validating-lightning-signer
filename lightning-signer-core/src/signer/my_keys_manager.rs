@@ -1,6 +1,6 @@
+use crate::Arc;
 use core::convert::{TryFrom, TryInto};
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use crate::Arc;
 
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;

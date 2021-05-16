@@ -107,8 +107,12 @@ pub async fn new_channel(
         node_id: Some(NodeId {
             data: node_id.clone(),
         }),
-        channel_nonce0: if no_nonce { None } else {
-            Some(ChannelNonce { data: channel_nonce.to_vec() })
+        channel_nonce0: if no_nonce {
+            None
+        } else {
+            Some(ChannelNonce {
+                data: channel_nonce.to_vec(),
+            })
         },
     });
     let response = client.new_channel(new_chan_request).await?.into_inner();

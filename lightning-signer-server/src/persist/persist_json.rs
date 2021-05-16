@@ -196,7 +196,6 @@ mod tests {
 
     #[test]
     fn round_trip_signer_test() {
-
         let channel_nonce = "nonce0".as_bytes().to_vec();
         let channel_id0 = channel_nonce_to_id(&channel_nonce);
 

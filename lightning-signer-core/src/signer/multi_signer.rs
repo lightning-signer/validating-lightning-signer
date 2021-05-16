@@ -1,6 +1,6 @@
 use crate::Map;
-use core::convert::TryFrom;
 use crate::{Arc, Mutex};
+use core::convert::TryFrom;
 
 use bitcoin::secp256k1::SignOnly;
 
@@ -15,16 +15,14 @@ use bitcoin::{Address, Network, OutPoint, SigHashType};
 use lightning::chain::keysinterface::KeysInterface;
 use lightning::util::logger::Logger;
 
-use crate::node::{
-    Channel, ChannelBase, ChannelId, ChannelSlot, Node, NodeConfig,
-};
+use crate::node::{Channel, ChannelBase, ChannelId, ChannelSlot, Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
 use crate::util::crypto_utils::signature_to_bitcoin_vec;
 use crate::util::status::Status;
+use crate::util::test_logger::TestLogger;
 use crate::SendSync;
 use bitcoin::hashes::Hash;
 use rand::{OsRng, Rng};
-use crate::util::test_logger::TestLogger;
 
 #[derive(PartialEq, Clone, Copy)]
 #[repr(i32)]
@@ -93,8 +91,7 @@ impl MultiSigner {
     pub fn new_with_persister(persister: Arc<dyn Persist>, test_mode: bool) -> MultiSigner {
         let test_logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::with_id("server".to_owned()));
         println!("Start restore");
-        let nodes =
-            Node::restore_nodes(Arc::clone(&persister), Arc::clone(&test_logger));
+        let nodes = Node::restore_nodes(Arc::clone(&persister), Arc::clone(&test_logger));
         MultiSigner {
             logger: test_logger,
             nodes: Mutex::new(nodes),
@@ -208,14 +205,19 @@ impl MultiSigner {
         f(base)
     }
 
-    fn get_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<Arc<Mutex<ChannelSlot>>, Status> {
+    fn get_channel(
+        &self,
+        node_id: &PublicKey,
+        channel_id: &ChannelId,
+    ) -> Result<Arc<Mutex<ChannelSlot>>, Status> {
         self.get_node(node_id)?.get_channel(channel_id)
     }
 
     pub fn get_node(&self, node_id: &PublicKey) -> Result<Arc<Node>, Status> {
         // Grab a reference to the node and release the nodes mutex
         let nodes = self.nodes.lock().unwrap();
-        let node = nodes.get(node_id)
+        let node = nodes
+            .get(node_id)
             .ok_or_else(|| self.invalid_argument("no such node"))?;
         Ok(Arc::clone(node))
     }
@@ -358,8 +360,7 @@ impl MultiSigner {
         opt_channel_id: Option<ChannelId>,
     ) -> Result<ChannelId, Status> {
         let node = self.get_node(node_id)?;
-        let (channel_id, _stub) =
-            node.new_channel(opt_channel_id, opt_channel_nonce0, &node)?;
+        let (channel_id, _stub) = node.new_channel(opt_channel_id, opt_channel_nonce0, &node)?;
         Ok(channel_id)
     }
 }
@@ -377,21 +378,27 @@ mod tests {
     use bitcoin::blockdata::opcodes;
     use bitcoin::blockdata::script::Builder;
     use bitcoin::consensus::deserialize;
-    use bitcoin::hashes::sha256d::Hash as Sha256dHash;
     use bitcoin::hashes::hash160::Hash as Hash160;
     use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
+    use bitcoin::hashes::sha256d::Hash as Sha256dHash;
+    use bitcoin::secp256k1;
     use bitcoin::secp256k1::recovery::{RecoverableSignature, RecoveryId};
     use bitcoin::secp256k1::Signature;
-    use bitcoin::secp256k1;
     use bitcoin::util::psbt::serialize::Serialize;
-    use bitcoin::{OutPoint, TxIn, TxOut, Script};
-    use lightning::ln::chan_utils::{build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys, ChannelPublicKeys};
+    use bitcoin::{OutPoint, Script, TxIn, TxOut};
+    use lightning::ln::chan_utils::{
+        build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
+        make_funding_redeemscript, ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys,
+    };
     use lightning::ln::PaymentHash;
 
-    use crate::node::{CommitmentType, ChannelSetup};
+    use crate::node::{ChannelSetup, CommitmentType};
     use crate::policy::error::ValidationError;
-    use crate::tx::tx::{ANCHOR_SAT, HTLCInfo2, build_close_tx};
-    use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, derive_private_revocation_key};
+    use crate::tx::tx::{build_close_tx, HTLCInfo2, ANCHOR_SAT};
+    use crate::util::crypto_utils::{
+        derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
+        payload_for_p2wpkh,
+    };
     use crate::util::test_utils::*;
     use crate::util::test_utils::{
         make_test_channel_setup, make_test_counterparty_points, TEST_SEED,
@@ -494,11 +501,8 @@ mod tests {
         let channel_nonce_x = "nonceX".as_bytes().to_vec();
         let channel_id_x = channel_nonce_to_id(&channel_nonce_x);
         let node = signer.get_node(&node_id).unwrap();
-        node.ready_channel(
-            channel_id,
-            Some(channel_id_x),
-            make_test_channel_setup(),
-        ).expect("ready_channel");
+        node.ready_channel(channel_id, Some(channel_id_x), make_test_channel_setup())
+            .expect("ready_channel");
 
         // Original channel_id should work with_ready_channel.
         let val = signer
@@ -666,9 +670,11 @@ mod tests {
             Ok(())
         });
 
-        let basepoints = signer.with_channel_base(&node_id, &channel_id, |base| {
-            Ok(base.get_channel_basepoints())
-        }).unwrap();
+        let basepoints = signer
+            .with_channel_base(&node_id, &channel_id, |base| {
+                Ok(base.get_channel_basepoints())
+            })
+            .unwrap();
         // get_channel_basepoints should work.
         check_basepoints(&basepoints);
 
@@ -680,16 +686,20 @@ mod tests {
                 .as_slice(),
         )
         .unwrap();
-        let correct = signer.with_channel_base(&node_id, &channel_id, |base| {
-            let secret = base.get_per_commitment_secret(n);
-            Ok(suggested[..] == secret[..])
-        }).unwrap();
+        let correct = signer
+            .with_channel_base(&node_id, &channel_id, |base| {
+                let secret = base.get_per_commitment_secret(n);
+                Ok(suggested[..] == secret[..])
+            })
+            .unwrap();
         assert_eq!(correct, true);
 
-        let notcorrect = signer.with_channel_base(&node_id, &channel_id, |base| {
-            let secret = base.get_per_commitment_secret(n+1);
-            Ok(suggested[..] == secret[..])
-        }).unwrap();
+        let notcorrect = signer
+            .with_channel_base(&node_id, &channel_id, |base| {
+                let secret = base.get_per_commitment_secret(n + 1);
+                Ok(suggested[..] == secret[..])
+            })
+            .unwrap();
         assert_eq!(notcorrect, false);
     }
 
@@ -1108,17 +1118,19 @@ mod tests {
                 Ok(tx.transaction.clone())
             })
             .expect("build");
-        let (ser_signature, _) = signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            chan.sign_counterparty_commitment_tx_phase2(
-                &remote_percommitment_point,
-                23,
-                0, // we are not looking at HTLCs yet
-                100,
-                200,
-                vec![],
-                vec![],
-            )
-        }).expect("sign");
+        let (ser_signature, _) = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                chan.sign_counterparty_commitment_tx_phase2(
+                    &remote_percommitment_point,
+                    23,
+                    0, // we are not looking at HTLCs yet
+                    100,
+                    200,
+                    vec![],
+                    vec![],
+                )
+            })
+            .expect("sign");
         let channel_funding_redeemscript =
             make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
 
@@ -1149,15 +1161,17 @@ mod tests {
                     .clone())
             })
             .expect("build");
-        let (ser_signature, _) = signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            chan.sign_holder_commitment_tx_phase2(
-                23,
-                0, // feerate not used
-                100,
-                200,
-                vec![],
-                vec![],
-            )})
+        let (ser_signature, _) = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                chan.sign_holder_commitment_tx_phase2(
+                    23,
+                    0, // feerate not used
+                    100,
+                    200,
+                    vec![],
+                    vec![],
+                )
+            })
             .expect("sign");
         assert_eq!(
             hex::encode(tx.txid()),
@@ -1194,9 +1208,7 @@ mod tests {
             payload_for_p2wpkh(&make_test_pubkey(11)).script_pubkey();
 
         let node = signer.get_node(&node_id).unwrap();
-        let local_shutdown_script =
-            payload_for_p2wpkh(&node.get_shutdown_pubkey())
-                .script_pubkey();
+        let local_shutdown_script = payload_for_p2wpkh(&node.get_shutdown_pubkey()).script_pubkey();
 
         let node = signer.get_node(&node_id).unwrap();
         node.ready_channel(channel_id, None, setup.clone())
@@ -1211,15 +1223,18 @@ mod tests {
                 setup.funding_outpoint,
             )
         };
-        let ser_signature =
-            signer.with_ready_channel(&node_id, &channel_id, |chan| {
-                let sig = chan.sign_mutual_close_tx_phase2(
-                    100,
-                    200,
-                    Some(setup.counterparty_shutdown_script.clone())
-                ).unwrap();
+        let ser_signature = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                let sig = chan
+                    .sign_mutual_close_tx_phase2(
+                        100,
+                        200,
+                        Some(setup.counterparty_shutdown_script.clone()),
+                    )
+                    .unwrap();
                 Ok(signature_to_bitcoin_vec(sig))
-            }).expect("sign");
+            })
+            .expect("sign");
         assert_eq!(
             hex::encode(tx.txid()),
             "7d1618688e8a9a4cc09c94f5385a05c92a8b6662ac6e7e77eeb19a0e19070a56"
@@ -1442,9 +1457,11 @@ mod tests {
             make_test_channel_setup(),
         );
 
-        let basepoints = signer.with_channel_base(&node_id, &channel_id, |base| {
-            Ok(base.get_channel_basepoints())
-        }).unwrap();
+        let basepoints = signer
+            .with_channel_base(&node_id, &channel_id, |base| {
+                Ok(base.get_channel_basepoints())
+            })
+            .unwrap();
 
         check_basepoints(&basepoints);
     }
@@ -1492,16 +1509,20 @@ mod tests {
         )
         .unwrap();
 
-        let correct = signer.with_channel_base(&node_id, &channel_id, |base| {
-            let secret = base.get_per_commitment_secret(n);
-            Ok(suggested[..] == secret[..])
-        }).unwrap();
+        let correct = signer
+            .with_channel_base(&node_id, &channel_id, |base| {
+                let secret = base.get_per_commitment_secret(n);
+                Ok(suggested[..] == secret[..])
+            })
+            .unwrap();
         assert_eq!(correct, true);
 
-        let notcorrect = signer.with_channel_base(&node_id, &channel_id, |base| {
-            let secret = base.get_per_commitment_secret(n+1);
-            Ok(suggested[..] == secret[..])
-        }).unwrap();
+        let notcorrect = signer
+            .with_channel_base(&node_id, &channel_id, |base| {
+                let secret = base.get_per_commitment_secret(n + 1);
+                Ok(suggested[..] == secret[..])
+            })
+            .unwrap();
         assert_eq!(notcorrect, false);
     }
 
@@ -1994,16 +2015,14 @@ mod tests {
         let htlc_pubkey =
             get_channel_htlc_pubkey(&signer, &node_id, &channel_id, &per_commitment_point);
 
-        let sigvec = signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            let sig = chan.sign_holder_htlc_tx(
-                &htlc_tx,
-                n,
-                None,
-                &htlc_redeemscript,
-                htlc_amount_sat,
-            ).unwrap();
-            Ok(signature_to_bitcoin_vec(sig))
-        }).unwrap();
+        let sigvec = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                let sig = chan
+                    .sign_holder_htlc_tx(&htlc_tx, n, None, &htlc_redeemscript, htlc_amount_sat)
+                    .unwrap();
+                Ok(signature_to_bitcoin_vec(sig))
+            })
+            .unwrap();
 
         check_signature(
             &htlc_tx,
@@ -2014,16 +2033,20 @@ mod tests {
             &htlc_redeemscript,
         );
 
-        let sigvec1 = signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            let sig = chan.sign_holder_htlc_tx(
-                &htlc_tx,
-                999,
-                Some(per_commitment_point),
-                &htlc_redeemscript,
-                htlc_amount_sat,
-            ).unwrap();
-            Ok(signature_to_bitcoin_vec(sig))
-        }).unwrap();
+        let sigvec1 = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                let sig = chan
+                    .sign_holder_htlc_tx(
+                        &htlc_tx,
+                        999,
+                        Some(per_commitment_point),
+                        &htlc_redeemscript,
+                        htlc_amount_sat,
+                    )
+                    .unwrap();
+                Ok(signature_to_bitcoin_vec(sig))
+            })
+            .unwrap();
 
         check_signature(
             &htlc_tx,
@@ -2094,17 +2117,14 @@ mod tests {
 
         let htlc_amount_sat = 10 * 1000;
 
-        let sigvec =
-            signer.with_ready_channel(&node_id, &channel_id, |chan| {
-                let sig = chan.sign_delayed_sweep(
-                    &htlc_tx,
-                    0,
-                    n,
-                    &redeemscript,
-                    htlc_amount_sat)
+        let sigvec = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                let sig = chan
+                    .sign_delayed_sweep(&htlc_tx, 0, n, &redeemscript, htlc_amount_sat)
                     .unwrap();
                 Ok(signature_to_bitcoin_vec(sig))
-            }).unwrap();
+            })
+            .unwrap();
 
         let htlc_pubkey = get_channel_delayed_payment_pubkey(
             signer,
@@ -2183,15 +2203,19 @@ mod tests {
 
         let htlc_amount_sat = 10 * 1000;
 
-        let ser_signature = signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            let sig = chan.sign_counterparty_htlc_tx(
-                &htlc_tx,
-                &remote_per_commitment_point,
-                &htlc_redeemscript,
-                htlc_amount_sat
-            ).unwrap();
-            Ok(signature_to_bitcoin_vec(sig))
-        }).unwrap();
+        let ser_signature = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                let sig = chan
+                    .sign_counterparty_htlc_tx(
+                        &htlc_tx,
+                        &remote_per_commitment_point,
+                        &htlc_redeemscript,
+                        htlc_amount_sat,
+                    )
+                    .unwrap();
+                Ok(signature_to_bitcoin_vec(sig))
+            })
+            .unwrap();
 
         let htlc_pubkey =
             get_channel_htlc_pubkey(&signer, &node_id, &channel_id, &remote_per_commitment_point);
@@ -2264,15 +2288,19 @@ mod tests {
 
         let htlc_amount_sat = 10 * 1000;
 
-        let ser_signature = signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            let sig = chan.sign_counterparty_htlc_tx(
-                &htlc_tx,
-                &remote_per_commitment_point,
-                &htlc_redeemscript,
-                htlc_amount_sat
-            ).unwrap();
-            Ok(signature_to_bitcoin_vec(sig))
-        }).unwrap();
+        let ser_signature = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                let sig = chan
+                    .sign_counterparty_htlc_tx(
+                        &htlc_tx,
+                        &remote_per_commitment_point,
+                        &htlc_redeemscript,
+                        htlc_amount_sat,
+                    )
+                    .unwrap();
+                Ok(signature_to_bitcoin_vec(sig))
+            })
+            .unwrap();
 
         let htlc_pubkey =
             get_channel_htlc_pubkey(&signer, &node_id, &channel_id, &remote_per_commitment_point);
@@ -2348,16 +2376,20 @@ mod tests {
 
         let htlc_amount_sat = 10 * 1000;
 
-        let ser_signature =
-            signer.with_ready_channel(&node_id, &channel_id, |chan| {
-                let sig = chan.sign_counterparty_htlc_sweep(
-                    &htlc_tx,
-                    0,
-                    &remote_per_commitment_point,
-                    &htlc_redeemscript,
-                    htlc_amount_sat).unwrap();
+        let ser_signature = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                let sig = chan
+                    .sign_counterparty_htlc_sweep(
+                        &htlc_tx,
+                        0,
+                        &remote_per_commitment_point,
+                        &htlc_redeemscript,
+                        htlc_amount_sat,
+                    )
+                    .unwrap();
                 Ok(signature_to_bitcoin_vec(sig))
-            }).unwrap();
+            })
+            .unwrap();
 
         let htlc_pubkey =
             get_channel_htlc_pubkey(&signer, &node_id, &channel_id, &remote_per_commitment_point);
@@ -2391,13 +2423,14 @@ mod tests {
             })
             .expect("tx");
 
-        let sigvec = signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            let sig = chan.sign_holder_commitment_tx(
-                &tx,
-                setup.channel_value_sat,
-            ).unwrap();
-            Ok(signature_to_bitcoin_vec(sig))
-        }).unwrap();
+        let sigvec = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                let sig = chan
+                    .sign_holder_commitment_tx(&tx, setup.channel_value_sat)
+                    .unwrap();
+                Ok(signature_to_bitcoin_vec(sig))
+            })
+            .unwrap();
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
 
@@ -2435,15 +2468,15 @@ mod tests {
             })
             .expect("tx");
 
-        let sigvec =
-            signer.with_ready_channel(&node_id, &channel_id, |chan| {
-                let sig = chan.sign_mutual_close_tx(
-                    &tx,
-                    setup.channel_value_sat,
-                ).unwrap();
+        let sigvec = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                let sig = chan
+                    .sign_mutual_close_tx(&tx, setup.channel_value_sat)
+                    .unwrap();
 
                 Ok(signature_to_bitcoin_vec(sig))
-            }).unwrap();
+            })
+            .unwrap();
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
 
@@ -2532,16 +2565,20 @@ mod tests {
 
         let revocation_point = PublicKey::from_secret_key(&secp_ctx, &revocation_secret);
 
-        let sigvec =
-            signer.with_ready_channel(&node_id, &channel_id, |chan| {
-                let sig = chan.sign_justice_sweep(
-                    &htlc_tx,
-                    0,
-                    &revocation_secret,
-                    &redeemscript,
-                    htlc_amount_sat).unwrap();
+        let sigvec = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                let sig = chan
+                    .sign_justice_sweep(
+                        &htlc_tx,
+                        0,
+                        &revocation_secret,
+                        &redeemscript,
+                        htlc_amount_sat,
+                    )
+                    .unwrap();
                 Ok(signature_to_bitcoin_vec(sig))
-            }).unwrap();
+            })
+            .unwrap();
 
         let pubkey =
             get_channel_revocation_pubkey(signer, &node_id, &channel_id, &revocation_point);
@@ -2560,9 +2597,11 @@ mod tests {
         );
 
         let ann = hex::decode("0123456789abcdef").unwrap();
-        let (nsig, bsig) = signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            Ok(chan.sign_channel_announcement(&ann))
-        }).unwrap();
+        let (nsig, bsig) = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                Ok(chan.sign_channel_announcement(&ann))
+            })
+            .unwrap();
 
         let ca_hash = Sha256dHash::hash(&ann);
         let encmsg = secp256k1::Message::from_slice(&ca_hash[..]).expect("encmsg");
@@ -2583,7 +2622,11 @@ mod tests {
         let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let ann = hex::decode("000302aaa25e445fef0265b6ab5ec860cd257865d61ef0bbf5b3339c36cbda8b26b74e7f1dca490b65180265b64c4f554450484f544f2d2e302d3139392d67613237336639642d6d6f646465640000").unwrap();
-        let sigvec = signer.get_node(&node_id).unwrap().sign_node_announcement(&ann).unwrap();
+        let sigvec = signer
+            .get_node(&node_id)
+            .unwrap()
+            .sign_node_announcement(&ann)
+            .unwrap();
         assert_eq!(sigvec, hex::decode("30450221008ef1109b95f127a7deec63b190b72180f0c2692984eaf501c44b6bfc5c4e915502207a6fa2f250c5327694967be95ff42a94a9c3d00b7fa0fbf7daa854ceb872e439").unwrap());
         Ok(())
     }
@@ -2593,7 +2636,11 @@ mod tests {
         let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let cu = hex::decode("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00006700000100015e42ddc6010000060000000000000000000000010000000a000000003b023380").unwrap();
-        let sigvec = signer.get_node(&node_id).unwrap().sign_channel_update(&cu).unwrap();
+        let sigvec = signer
+            .get_node(&node_id)
+            .unwrap()
+            .sign_channel_update(&cu)
+            .unwrap();
         assert_eq!(sigvec, hex::decode("3045022100be9840696c868b161aaa997f9fa91a899e921ea06c8083b2e1ea32b8b511948d0220352eec7a74554f97c2aed26950b8538ca7d7d7568b42fd8c6f195bd749763fa5").unwrap());
         Ok(())
     }
@@ -2604,7 +2651,9 @@ mod tests {
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let human_readable_part = String::from("lnbcrt1230n");
         let data_part = hex::decode("010f0418090a010101141917110f01040e050f06100003021e1b0e13161c150301011415060204130c0018190d07070a18070a1c1101111e111f130306000d00120c11121706181b120d051807081a0b0f0d18060004120e140018000105100114000b130b01110c001a05041a181716020007130c091d11170d10100d0b1a1b00030e05190208171e16080d00121a00110719021005000405001000").unwrap();
-        let rsig = signer.get_node(&node_id).unwrap()
+        let rsig = signer
+            .get_node(&node_id)
+            .unwrap()
             .sign_invoice_in_parts(&data_part, &human_readable_part)
             .unwrap();
         assert_eq!(rsig, hex::decode("739ffb91aa7c0b3d3c92de1600f7a9afccedc5597977095228232ee4458685531516451b84deb35efad27a311ea99175d10c6cdb458cd27ce2ed104eb6cf806400").unwrap());
@@ -2620,7 +2669,9 @@ mod tests {
         // The data_part is 170 bytes.
         // overhang = (data_part.len() * 5) % 8 = 2
         // looking for a verified invoice where overhang is in 1..3
-        let rsig = signer.get_node(&node_id).unwrap()
+        let rsig = signer
+            .get_node(&node_id)
+            .unwrap()
             .sign_invoice_in_parts(&data_part, &human_readable_part)
             .unwrap();
         assert_eq!(rsig, hex::decode("f278cdba3fd4a37abf982cee5a66f52e142090631ef57763226f1232eead78b43da7962fcfe29ffae9bd918c588df71d6d7b92a4787de72801594b22f0e7e62a00").unwrap());
@@ -2660,9 +2711,11 @@ mod tests {
         node.ready_channel(channel_id, None, make_test_channel_setup())
             .expect("ready channel");
 
-        let uck = signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            chan.get_unilateral_close_key(&None)
-        }).unwrap();
+        let uck = signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                chan.get_unilateral_close_key(&None)
+            })
+            .unwrap();
 
         assert_eq!(
             uck,
@@ -2688,8 +2741,11 @@ mod tests {
         let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let message = String::from("Testing 1 2 3").into_bytes();
-        let mut rsigvec = signer.get_node(&node_id).unwrap()
-            .sign_message(&message).unwrap();
+        let mut rsigvec = signer
+            .get_node(&node_id)
+            .unwrap()
+            .sign_message(&message)
+            .unwrap();
         let rid = rsigvec.pop().unwrap() as i32;
         let rsig =
             RecoverableSignature::from_compact(&rsigvec[..], RecoveryId::from_i32(rid).unwrap())

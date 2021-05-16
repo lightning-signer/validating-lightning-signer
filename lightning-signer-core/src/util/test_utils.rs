@@ -1,6 +1,6 @@
-use core::cmp;
 use crate::Map;
 use crate::Mutex;
+use core::cmp;
 
 use bitcoin;
 use bitcoin::blockdata::opcodes;

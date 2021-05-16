@@ -62,9 +62,12 @@ fn make_chan_subapp() -> App<'static> {
         .subcommand(
             App::new("new")
                 .about("Add a new channel to a node.  Outputs the channel ID.")
-                .arg(Arg::new("no-nonce")
-                    .about("generate the nonce on the server")
-                    .long("no-nonce").takes_value(false))
+                .arg(
+                    Arg::new("no-nonce")
+                        .about("generate the nonce on the server")
+                        .long("no-nonce")
+                        .takes_value(false),
+                )
                 .arg(
                     Arg::new("nonce")
                         .takes_value(true)
@@ -82,9 +85,13 @@ async fn chan_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
 
     match matches.subcommand() {
         Some(("new", matches)) => {
-            driver::new_channel(&mut client, node_id,
-                                matches.value_of("nonce"),
-                                matches.is_present("no-nonce")).await?
+            driver::new_channel(
+                &mut client,
+                node_id,
+                matches.value_of("nonce"),
+                matches.is_present("no-nonce"),
+            )
+            .await?
         }
         Some(("list", _)) => driver::list_channels(&mut client, node_id).await?,
         Some((name, _)) => panic!("unimplemented command {}", name),

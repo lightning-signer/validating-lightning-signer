@@ -7,12 +7,14 @@ pub trait SendSync {}
 pub struct MutexGuard<'a, T>(RefMut<'a, T>);
 
 pub struct Mutex<T> {
-    inner: RefCell<T>
+    inner: RefCell<T>,
 }
 
 impl<T> Mutex<T> {
     pub fn new(inner: T) -> Self {
-        Self { inner: RefCell::new(inner) }
+        Self {
+            inner: RefCell::new(inner),
+        }
     }
 
     pub fn lock(&self) -> Result<MutexGuard<T>, ()> {

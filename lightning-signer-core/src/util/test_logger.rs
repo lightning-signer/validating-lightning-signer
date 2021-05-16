@@ -1,8 +1,8 @@
-use lightning::util::logger::{Level, Logger, Record};
-use crate::Mutex;
-use crate::Map;
-use crate::SendSync;
 use crate::signer::multi_signer::SyncLogger;
+use crate::Map;
+use crate::Mutex;
+use crate::SendSync;
+use lightning::util::logger::{Level, Logger, Record};
 
 pub struct TestLogger {
     level: Level,
@@ -59,4 +59,3 @@ impl Logger for TestLogger {
         }
     }
 }
-
