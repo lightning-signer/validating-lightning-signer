@@ -252,6 +252,9 @@ message NewChannelRequest {
   // be optionally replaced with a permanent channel nonce for further
   // API calls.
   //
+  // NOTE: the internal channel ID is set to the channel nonce hashed
+  // with sha256.
+  //
   // Optional. A unique pseudo-random one is generated if not specified
   // and will be returned in the reply.
   ChannelNonce channel_nonce0 = 2;

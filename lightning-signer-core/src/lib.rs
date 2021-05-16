@@ -2,6 +2,8 @@
 #![forbid(unsafe_code)]
 #![allow(bare_trait_objects)]
 #![allow(ellipsis_inclusive_range_patterns)]
+#![warn(broken_intra_doc_links)]
+// #![warn(missing_docs)]
 
 extern crate bitcoin;
 extern crate hex;
@@ -34,7 +36,7 @@ pub use std::sync::{Mutex, MutexGuard};
 #[cfg(not(feature = "std"))]
 pub use nostd::*;
 
-pub use alloc::sync::Arc;
+pub use alloc::sync::{Arc, Weak};
 pub use alloc::rc::Rc;
 pub use alloc::collections::BTreeSet as Set;
 pub use hashbrown::HashMap as Map;

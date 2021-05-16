@@ -1,43 +1,40 @@
-use core::fmt;
-use core::fmt::Debug;
+use core::fmt::{self, Debug, Error, Formatter};
 use core::time::Duration;
-use crate::Map;
-use crate::{Arc, Mutex, MutexGuard};
+use core::convert::TryFrom;
+use core::str::FromStr;
 
 #[cfg(feature = "backtrace")]
 use backtrace::Backtrace;
 use bitcoin;
-use bitcoin::hashes::core::fmt::{Error, Formatter};
+use bitcoin::{Network, OutPoint, Script, SigHashType};
+use bitcoin::blockdata::constants::genesis_block;
+use bitcoin::hashes::Hash;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
-use bitcoin::hashes::Hash;
 use bitcoin::secp256k1;
-use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature, Message};
+use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signature};
+use bitcoin::secp256k1::ecdh::SharedSecret;
+use bitcoin::secp256k1::recovery::RecoverableSignature;
+use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::{Network, OutPoint, Script, SigHashType};
+use lightning::chain;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface};
-use lightning::ln::chan_utils::{make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys, derive_private_key};
-
+use lightning::ln::chan_utils::{ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters, derive_private_key, HolderCommitmentTransaction, HTLCOutputInCommitment, make_funding_redeemscript, TxCreationKeys};
 use lightning::ln::PaymentHash;
 
+use crate::{Weak, Arc, Mutex, MutexGuard};
+use crate::Map;
+use crate::persist::model::NodeEntry;
+use crate::persist::Persist;
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
-use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::signer::multi_signer::SyncLogger;
-use crate::tx::tx::{build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2, HTLCInfo, HTLCInfo2, build_close_tx, sign_commitment};
-use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, derive_private_revocation_key};
+use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
+use crate::tx::tx::{build_close_tx, build_commitment_tx, CommitmentInfo2, get_commitment_transaction_number_obscure_factor, HTLCInfo, HTLCInfo2, sign_commitment};
+use crate::util::{INITIAL_COMMITMENT_NUMBER, invoice_utils};
+use crate::util::crypto_utils::{derive_private_revocation_key, derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
 use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
 use crate::util::status::Status;
-use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
-use bitcoin::secp256k1::recovery::RecoverableSignature;
-use lightning::chain;
-use bitcoin::blockdata::constants::genesis_block;
-use bitcoin::util::bip143::SigHashCache;
-use bitcoin::secp256k1::ecdh::SharedSecret;
-use crate::persist::Persist;
-use crate::persist::model::NodeEntry;
-use std::convert::TryFrom;
-use std::str::FromStr;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
@@ -56,6 +53,7 @@ impl fmt::Display for ChannelId {
     }
 }
 
+/// The commitment type, based on the negotiated option
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CommitmentType {
     Legacy,
@@ -63,20 +61,28 @@ pub enum CommitmentType {
     Anchors,
 }
 
+/// The negotiated parameters for the [Channel]
 #[derive(Clone)]
 pub struct ChannelSetup {
+    /// Whether the channel is outbound
     pub is_outbound: bool,
+    /// The total the channel was funded with
     pub channel_value_sat: u64, // DUP keys.inner.channel_value_satoshis
+    /// How much was pushed to the counterparty
     pub push_value_msat: u64,
+    /// The funding outpoint
     pub funding_outpoint: OutPoint,
     /// locally imposed requirement on the remote commitment transaction to_self_delay
     pub holder_to_self_delay: u16,
     /// Maybe be None if we should generate it inside the signer
     pub holder_shutdown_script: Option<Script>,
+    /// The counterparty's basepoints and pubkeys
     pub counterparty_points: ChannelPublicKeys, // DUP keys.inner.remote_channel_pubkeys
     /// remotely imposed requirement on the local commitment transaction to_self_delay
     pub counterparty_to_self_delay: u16,
+    /// The counterparty's shutdown script, for mutual close
     pub counterparty_shutdown_script: Script,
+    /// The negotiated commitment type
     pub commitment_type: CommitmentType,
 }
 
@@ -119,30 +125,45 @@ impl ChannelSetup {
     }
 }
 
-// After NewChannel, before ReadyChannel
+/// A channel takes this form after [Node::new_channel], and before [Node::ready_channel]
 #[derive(Clone)]
 pub struct ChannelStub {
-    pub node: Arc<Node>,
+    /// A backpointer to the node
+    pub node: Weak<Node>,
+    /// The channel nonce, used to derive keys
     pub nonce: Vec<u8>,
+    /// The logger
     pub logger: Arc<SyncLogger>,
-    pub secp_ctx: Secp256k1<All>,
+    pub(crate) secp_ctx: Secp256k1<All>,
+    /// The signer for this channel
     pub keys: EnforcingSigner, // Incomplete, channel_value_sat is placeholder.
+    /// The initial channel ID, used to find the channel in the node
     pub id0: ChannelId,
 }
 
-// After ReadyChannel
+/// After [Node::ready_channel]
 #[derive(Clone)]
 pub struct Channel {
-    pub node: Arc<Node>,
+    /// A backpointer to the node
+    pub node: Weak<Node>,
+    /// The channel nonce, used to derive keys
     pub nonce: Vec<u8>,
+    /// The logger
     pub logger: Arc<SyncLogger>,
-    pub secp_ctx: Secp256k1<All>,
+    pub(crate) secp_ctx: Secp256k1<All>,
+    /// The signer for this channel
     pub keys: EnforcingSigner,
+    /// The negotiated channel setup
     pub setup: ChannelSetup,
+    /// The initial channel ID
     pub id0: ChannelId,
+    /// The optional permanent channel ID
     pub id: Option<ChannelId>,
 }
 
+/// A channel can be in two states - before [Node::ready_channel] it's a
+/// [ChannelStub], afterwards it's a [Channel].  This enum keeps track
+/// of the two different states.
 pub enum ChannelSlot {
     Stub(ChannelStub),
     Ready(Channel),
@@ -150,20 +171,34 @@ pub enum ChannelSlot {
 
 impl ChannelSlot {
     // BEGIN NOT TESTED
+    /// Get the channel nonce, used to derive the channel keys
     pub fn nonce(&self) -> Vec<u8> {
         match self {
             ChannelSlot::Stub(stub) => stub.nonce(),
             ChannelSlot::Ready(chan) => chan.nonce(),
         }
     }
+
+    pub fn id(&self) -> ChannelId {
+        match self {
+            ChannelSlot::Stub(stub) => stub.id0,
+            ChannelSlot::Ready(chan) => chan.id0,
+        }
+    }
     // END NOT TESTED
 }
 
+/// A trait implemented by both channel states.  See [ChannelSlot]
 pub trait ChannelBase {
-    // Both ChannelStub and ready Channels can handle these.
+    /// Get the channel basepoints and public keys
     fn get_channel_basepoints(&self) -> ChannelPublicKeys;
+    /// Get the per-commitment point for a holder commitment transaction
     fn get_per_commitment_point(&self, commitment_number: u64) -> PublicKey;
+    /// Get the per-commitment secret for a holder commitment transaction
+    // TODO leaking secret
     fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey;
+    /// Get the channel nonce, used to derive the channel keys
+    // TODO should this be exposed?
     fn nonce(&self) -> Vec<u8>;
 }
 
@@ -243,6 +278,7 @@ impl ChannelStub {
     }
 }
 
+// Phase 2
 impl Channel {
     pub(crate) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
         let s = msg.into();
@@ -269,7 +305,7 @@ impl Channel {
     }
 
     // Phase 2
-    pub fn make_counterparty_tx_keys(
+    pub(crate) fn make_counterparty_tx_keys(
         &self,
         per_commitment_point: &PublicKey,
     ) -> Result<TxCreationKeys, Status> {
@@ -305,7 +341,7 @@ impl Channel {
             &b_points.revocation_basepoint,
             &b_points.htlc_basepoint,
         )
-        .expect("failed to derive keys")
+            .expect("failed to derive keys")
     }
 
     fn derive_counterparty_payment_pubkey(
@@ -322,133 +358,12 @@ impl Channel {
                 &remote_per_commitment_point,
                 &holder_points.payment_point,
             )
-            .map_err(|err| {
-                self.internal_error(format!("could not derive counterparty_key: {}", err))
-            })?
+                .map_err(|err| {
+                    self.internal_error(format!("could not derive counterparty_key: {}", err))
+                })?
             // END NOT TESTED
         };
         Ok(counterparty_key)
-    }
-
-    /// Phase 1
-    pub fn sign_counterparty_commitment_tx(
-        &self,
-        tx: &bitcoin::Transaction,
-        output_witscripts: &Vec<Vec<u8>>,
-        remote_per_commitment_point: &PublicKey,
-        channel_value_sat: u64,
-        payment_hashmap: &Map<[u8; 20], PaymentHash>,
-        commitment_number: u64,
-    ) -> Result<Vec<u8>, Status> {
-        // Set the feerate_per_kw to 0 because it is only used to
-        // generate the htlc success/timeout tx signatures and these
-        // signatures are discarded.
-        let feerate_per_kw = 0;
-
-        if tx.output.len() != output_witscripts.len() {
-            // BEGIN NOT TESTED
-            return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
-            // END NOT TESTED
-        }
-
-        let validator = self
-            .node
-            .validator_factory
-            .make_validator_phase1(self, channel_value_sat);
-
-        // Since we didn't have the value at the real open, validate it now.
-        validator
-            .validate_channel_open()
-            .map_err(|ve| self.validation_error(ve))?;
-
-        // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
-        let is_counterparty = true;
-        let info = validator
-            .make_info(
-                &self.keys,
-                &self.setup,
-                is_counterparty,
-                tx,
-                output_witscripts,
-            )
-            .map_err(|err| self.validation_error(err))?;
-
-        let offered_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.offered_htlcs)?;
-        let received_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.received_htlcs)?;
-
-        let info2 = self.build_counterparty_commitment_info(
-            remote_per_commitment_point,
-            info.to_broadcaster_value_sat,
-            info.to_countersigner_value_sat,
-            offered_htlcs,
-            received_htlcs,
-        )?;
-
-        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
-        let state = ValidatorState { current_height: 0 };
-        validator
-            .validate_remote_tx(&self.setup, &state, &info2)
-            .map_err(|ve| {
-                // BEGIN NOT TESTED
-                log_debug!(
-                    self,
-                    "VALIDATION FAILED:\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
-                    &tx,
-                    &self.setup,
-                    &state,
-                    &info2,
-                );
-                self.validation_error(ve)
-                // END NOT TESTED
-            })?;
-
-        let htlcs = Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
-
-        let commitment_tx = self.make_counterparty_commitment_tx(
-            remote_per_commitment_point,
-            commitment_number,
-            feerate_per_kw,
-            info.to_countersigner_value_sat,
-            info.to_broadcaster_value_sat,
-            htlcs,
-        );
-
-        let funding_redeemscript = make_funding_redeemscript(
-            &self.keys.pubkeys().funding_pubkey,
-            &self.keys.counterparty_pubkeys().funding_pubkey,
-        );
-        let original_tx_sighash =
-            tx.signature_hash(0, &funding_redeemscript, SigHashType::All as u32);
-        let recomposed_tx_sighash = commitment_tx
-            .trust()
-            .built_transaction()
-            .transaction
-            .signature_hash(0, &funding_redeemscript, SigHashType::All as u32);
-        if recomposed_tx_sighash != original_tx_sighash {
-            // BEGIN NOT TESTED
-            log_debug!(self, "ORIGINAL_TX={:#?}", &tx);
-            log_debug!(
-                self,
-                "RECOMPOSED_TX={:#?}",
-                &commitment_tx.trust().built_transaction().transaction
-            );
-            return Err(
-                self.validation_error(ValidationError::Policy("sighash mismatch".to_string()))
-            );
-            // END NOT TESTED
-        }
-
-        // Sign the commitment.  Discard the htlc signatures for now.
-        let sigs = self
-            .keys
-            .sign_counterparty_commitment(&commitment_tx, &self.secp_ctx)
-            .map_err(|_| self.internal_error("failed to sign"))?;
-        let mut sig = sigs.0.serialize_der().to_vec();
-        sig.push(SigHashType::All as u8);
-
-        self.persist()?;
-
-        Ok(sig)
     }
 
     // BEGIN NOT TESTED
@@ -461,7 +376,8 @@ impl Channel {
     }
 
     // forward counting commitment number
-    pub fn build_commitment_tx(
+    #[allow(dead_code)]
+    pub(crate) fn build_commitment_tx(
         &self,
         per_commitment_point: &PublicKey,
         commitment_number: u64,
@@ -509,111 +425,9 @@ impl Channel {
 
     // END NOT TESTED
 
-    pub fn build_counterparty_commitment_info(
-        &self,
-        remote_per_commitment_point: &PublicKey,
-        to_holder_value_sat: u64,
-        to_counterparty_value_sat: u64,
-        offered_htlcs: Vec<HTLCInfo2>,
-        received_htlcs: Vec<HTLCInfo2>,
-    ) -> Result<CommitmentInfo2, Status> {
-        let holder_points = self.keys.pubkeys();
-        let secp_ctx = &self.secp_ctx;
-
-        let to_counterparty_delayed_pubkey = derive_public_key(
-            secp_ctx,
-            &remote_per_commitment_point,
-            &self.setup.counterparty_points.delayed_payment_basepoint,
-        )
-        .map_err(|err| {
-            // BEGIN NOT TESTED
-            self.internal_error(format!("could not derive to_holder_delayed_key: {}", err))
-            // END NOT TESTED
-        })?;
-        let counterparty_payment_pubkey =
-            self.derive_counterparty_payment_pubkey(remote_per_commitment_point)?;
-        let revocation_pubkey = derive_revocation_pubkey(
-            secp_ctx,
-            &remote_per_commitment_point,
-            &holder_points.revocation_basepoint,
-        )
-        .map_err(|err| self.internal_error(format!("could not derive revocation key: {}", err)))?;
-        let to_holder_pubkey = counterparty_payment_pubkey.clone();
-        Ok(CommitmentInfo2 {
-            is_counterparty_broadcaster: true,
-            to_countersigner_pubkey: to_holder_pubkey,
-            to_countersigner_value_sat: to_holder_value_sat,
-            revocation_pubkey,
-            to_broadcaster_delayed_pubkey: to_counterparty_delayed_pubkey,
-            to_broadcaster_value_sat: to_counterparty_value_sat,
-            to_self_delay: self.setup.holder_to_self_delay,
-            offered_htlcs,
-            received_htlcs,
-        })
-    }
-
-    // BEGIN NOT TESTED
-    pub fn build_holder_commitment_info(
-        &self,
-        per_commitment_point: &PublicKey,
-        to_holder_value_sat: u64,
-        to_counterparty_value_sat: u64,
-        offered_htlcs: Vec<HTLCInfo2>,
-        received_htlcs: Vec<HTLCInfo2>,
-    ) -> Result<CommitmentInfo2, Status> {
-        let holder_points = self.keys.pubkeys();
-        let counterparty_points = self.keys.counterparty_pubkeys();
-        let secp_ctx = &self.secp_ctx;
-
-        let to_holder_delayed_pubkey = derive_public_key(
-            secp_ctx,
-            &per_commitment_point,
-            &holder_points.delayed_payment_basepoint,
-        )
-        .map_err(|err| {
-            self.internal_error(format!(
-                "could not derive to_holder_delayed_pubkey: {}",
-                err
-            ))
-        })?;
-
-        let counterparty_pubkey = if self.setup.option_static_remotekey() {
-            counterparty_points.payment_point
-        } else {
-            derive_public_key(
-                &self.secp_ctx,
-                &per_commitment_point,
-                &counterparty_points.payment_point,
-            )
-            .map_err(|err| {
-                self.internal_error(format!("could not derive counterparty_pubkey: {}", err))
-            })?
-        };
-
-        let revocation_pubkey = derive_revocation_pubkey(
-            secp_ctx,
-            &per_commitment_point,
-            &counterparty_points.revocation_basepoint,
-        )
-        .map_err(|err| {
-            self.internal_error(format!("could not derive revocation_pubkey: {}", err))
-        })?;
-        let to_counterparty_pubkey = counterparty_pubkey.clone();
-        Ok(CommitmentInfo2 {
-            is_counterparty_broadcaster: false,
-            to_countersigner_pubkey: to_counterparty_pubkey,
-            to_countersigner_value_sat: to_counterparty_value_sat,
-            revocation_pubkey,
-            to_broadcaster_delayed_pubkey: to_holder_delayed_pubkey,
-            to_broadcaster_value_sat: to_holder_value_sat,
-            to_self_delay: self.setup.counterparty_to_self_delay,
-            offered_htlcs,
-            received_htlcs,
-        })
-    }
-    // END NOT TESTED
-
-    // TODO anchors support once upstream supports it
+    /// Sign a counterparty commitment transaction after rebuilding it
+    /// from the supplied arguments.
+    // TODO anchors support once LDK supports it
     pub fn sign_counterparty_commitment_tx_phase2(
         &self,
         remote_per_commitment_point: &PublicKey,
@@ -684,6 +498,8 @@ impl Channel {
         commitment_tx
     }
 
+    /// Sign a holder commitment transaction after rebuilding it
+    /// from the supplied arguments.
     // TODO anchors support once upstream supports it
     pub fn sign_holder_commitment_tx_phase2(
         &self,
@@ -797,24 +613,7 @@ impl Channel {
         htlcs
     }
 
-    fn htlcs_info1_to_info2(
-        payment_hashmap: &Map<[u8; 20], PaymentHash>,
-        htlcs: &Vec<HTLCInfo>,
-    ) -> Result<Vec<HTLCInfo2>, Status> {
-        let mut htlcs2 = Vec::new();
-        for htlc in htlcs.iter() {
-            let payment_hash = payment_hashmap
-                .get(&htlc.payment_hash_hash)
-                .ok_or_else(|| Status::invalid_argument("unmappable htlc payment_hash"))?;
-            htlcs2.push(HTLCInfo2 {
-                value_sat: htlc.value_sat,
-                payment_hash: payment_hash.clone(),
-                cltv_expiry: htlc.cltv_expiry,
-            });
-        }
-        Ok(htlcs2)
-    }
-
+    /// Build channel parameters, used to further build a commitment transaction
     pub fn make_channel_parameters(&self) -> ChannelTransactionParameters {
         let funding_outpoint = chain::transaction::OutPoint {
             txid: self.setup.funding_outpoint.txid,
@@ -833,15 +632,21 @@ impl Channel {
         channel_parameters
     }
 
+    /// Get the shutdown script where our funds will go when we mutual-close
     pub fn get_shutdown_script(&self) -> Script {
         self.setup.holder_shutdown_script
             .clone()
             .unwrap_or_else(
-                || payload_for_p2wpkh(&self.node.keys_manager.get_shutdown_pubkey())
+                || payload_for_p2wpkh(&self.get_node().keys_manager.get_shutdown_pubkey())
                     .script_pubkey(),
             )
     }
 
+    fn get_node(&self) -> Arc<Node> {
+        self.node.upgrade().unwrap()
+    }
+
+    /// Sign a mutual close transaction after rebuilding it from the supplied arguments
     pub fn sign_mutual_close_tx_phase2(
         &self,
         to_holder_value_sat: u64,
@@ -868,6 +673,363 @@ impl Channel {
         res
     }
 
+    /// Sign a delayed output that goes to us while sweeping a transaction we broadcast
+    pub fn sign_delayed_sweep(
+        &self,
+        tx: &bitcoin::Transaction,
+        input: usize,
+        commitment_number: u64,
+        redeemscript: &Script,
+        htlc_amount_sat: u64,
+    ) -> Result<Signature, Status> {
+        let per_commitment_point = self.get_per_commitment_point(commitment_number);
+
+        let htlc_sighash = Message::from_slice(
+            &SigHashCache::new(tx).signature_hash(
+                input,
+                &redeemscript,
+                htlc_amount_sat,
+                SigHashType::All,
+            )[..],
+        ).map_err(|_| Status::internal("failed to sighash"))?;
+
+        let htlc_privkey = derive_private_key(
+            &self.secp_ctx,
+            &per_commitment_point,
+            &self.keys.delayed_payment_base_key(),
+        ).map_err(|_| Status::internal("failed to derive key"))?;
+
+        let sig = self.secp_ctx.sign(&htlc_sighash, &htlc_privkey);
+        self.persist()?;
+        Ok(sig)
+    }
+
+    /// Sign TODO
+    pub fn sign_counterparty_htlc_sweep(
+        &self,
+        tx: &bitcoin::Transaction,
+        input: usize,
+        remote_per_commitment_point: &PublicKey,
+        redeemscript: &Script,
+        htlc_amount_sat: u64,
+    ) -> Result<Signature, Status> {
+        let htlc_sighash = Message::from_slice(
+            &SigHashCache::new(tx).signature_hash(
+                input,
+                &redeemscript,
+                htlc_amount_sat,
+                SigHashType::All,
+            )[..],
+        ).map_err(|_| Status::internal("failed to sighash"))?;
+
+        let htlc_privkey = derive_private_key(
+            &self.secp_ctx,
+            &remote_per_commitment_point,
+            &self.keys.htlc_base_key(),
+        ).map_err(|_| Status::internal("failed to derive key"))?;
+
+        let sig = self.secp_ctx.sign(&htlc_sighash, &htlc_privkey);
+        self.persist()?;
+        Ok(sig)
+    }
+
+    /// Sign a justice transaction on an old state that the counterparty broadcast
+    pub fn sign_justice_sweep(
+        &self,
+        tx: &bitcoin::Transaction,
+        input: usize,
+        revocation_secret: &SecretKey,
+        redeemscript: &Script,
+        htlc_amount_sat: u64,
+    ) -> Result<Signature, Status> {
+        let sighash = Message::from_slice(
+            &SigHashCache::new(tx).signature_hash(
+                input,
+                &redeemscript,
+                htlc_amount_sat,
+                SigHashType::All,
+            )[..],
+        ).map_err(|_| Status::internal("failed to sighash"))?;
+
+        let privkey = derive_private_revocation_key(
+            &self.secp_ctx,
+            revocation_secret,
+            self.keys.revocation_base_key(),
+        ).map_err(|_| Status::internal("failed to derive key"))?;
+
+        let sig = self.secp_ctx.sign(&sighash, &privkey);
+        self.persist()?;
+        Ok(sig)
+    }
+
+    /// Sign a channel announcement with both the node key and the funding key
+    pub fn sign_channel_announcement(&self, announcement: &Vec<u8>) -> (Signature, Signature) {
+        let ann_hash = Sha256dHash::hash(announcement);
+        let encmsg = secp256k1::Message::from_slice(&ann_hash[..])
+            .expect("encmsg failed");
+
+        (self.secp_ctx.sign(&encmsg, &self.get_node().get_node_secret()),
+         self.secp_ctx.sign(&encmsg, &self.keys.funding_key()))
+    }
+
+    fn persist(&self) -> Result<(), Status> {
+        let node_id = self.get_node().get_id();
+        self.get_node().persister.update_channel(&node_id, &self)
+            .map_err(|_| Status::internal("persist failed"))
+    }
+
+    pub fn network(&self) -> Network {
+        self.get_node().network
+    }
+}
+
+// Phase 1
+impl Channel {
+    pub(crate) fn build_counterparty_commitment_info(
+        &self,
+        remote_per_commitment_point: &PublicKey,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
+    ) -> Result<CommitmentInfo2, Status> {
+        let holder_points = self.keys.pubkeys();
+        let secp_ctx = &self.secp_ctx;
+
+        let to_counterparty_delayed_pubkey = derive_public_key(
+            secp_ctx,
+            &remote_per_commitment_point,
+            &self.setup.counterparty_points.delayed_payment_basepoint,
+        )
+            .map_err(|err| {
+                // BEGIN NOT TESTED
+                self.internal_error(format!("could not derive to_holder_delayed_key: {}", err))
+                // END NOT TESTED
+            })?;
+        let counterparty_payment_pubkey =
+            self.derive_counterparty_payment_pubkey(remote_per_commitment_point)?;
+        let revocation_pubkey = derive_revocation_pubkey(
+            secp_ctx,
+            &remote_per_commitment_point,
+            &holder_points.revocation_basepoint,
+        )
+            .map_err(|err| self.internal_error(format!("could not derive revocation key: {}", err)))?;
+        let to_holder_pubkey = counterparty_payment_pubkey.clone();
+        Ok(CommitmentInfo2 {
+            is_counterparty_broadcaster: true,
+            to_countersigner_pubkey: to_holder_pubkey,
+            to_countersigner_value_sat: to_holder_value_sat,
+            revocation_pubkey,
+            to_broadcaster_delayed_pubkey: to_counterparty_delayed_pubkey,
+            to_broadcaster_value_sat: to_counterparty_value_sat,
+            to_self_delay: self.setup.holder_to_self_delay,
+            offered_htlcs,
+            received_htlcs,
+        })
+    }
+
+    // TODO dead code
+    // BEGIN NOT TESTED
+    #[allow(dead_code)]
+    pub fn build_holder_commitment_info(
+        &self,
+        per_commitment_point: &PublicKey,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
+    ) -> Result<CommitmentInfo2, Status> {
+        let holder_points = self.keys.pubkeys();
+        let counterparty_points = self.keys.counterparty_pubkeys();
+        let secp_ctx = &self.secp_ctx;
+
+        let to_holder_delayed_pubkey = derive_public_key(
+            secp_ctx,
+            &per_commitment_point,
+            &holder_points.delayed_payment_basepoint,
+        )
+            .map_err(|err| {
+                self.internal_error(format!(
+                    "could not derive to_holder_delayed_pubkey: {}",
+                    err
+                ))
+            })?;
+
+        let counterparty_pubkey = if self.setup.option_static_remotekey() {
+            counterparty_points.payment_point
+        } else {
+            derive_public_key(
+                &self.secp_ctx,
+                &per_commitment_point,
+                &counterparty_points.payment_point,
+            )
+                .map_err(|err| {
+                    self.internal_error(format!("could not derive counterparty_pubkey: {}", err))
+                })?
+        };
+
+        let revocation_pubkey = derive_revocation_pubkey(
+            secp_ctx,
+            &per_commitment_point,
+            &counterparty_points.revocation_basepoint,
+        )
+            .map_err(|err| {
+                self.internal_error(format!("could not derive revocation_pubkey: {}", err))
+            })?;
+        let to_counterparty_pubkey = counterparty_pubkey.clone();
+        Ok(CommitmentInfo2 {
+            is_counterparty_broadcaster: false,
+            to_countersigner_pubkey: to_counterparty_pubkey,
+            to_countersigner_value_sat: to_counterparty_value_sat,
+            revocation_pubkey,
+            to_broadcaster_delayed_pubkey: to_holder_delayed_pubkey,
+            to_broadcaster_value_sat: to_holder_value_sat,
+            to_self_delay: self.setup.counterparty_to_self_delay,
+            offered_htlcs,
+            received_htlcs,
+        })
+    }
+    // END NOT TESTED
+
+    /// Phase 1
+    pub fn sign_counterparty_commitment_tx(
+        &self,
+        tx: &bitcoin::Transaction,
+        output_witscripts: &Vec<Vec<u8>>,
+        remote_per_commitment_point: &PublicKey,
+        channel_value_sat: u64,
+        payment_hashmap: &Map<[u8; 20], PaymentHash>,
+        commitment_number: u64,
+    ) -> Result<Vec<u8>, Status> {
+        // Set the feerate_per_kw to 0 because it is only used to
+        // generate the htlc success/timeout tx signatures and these
+        // signatures are discarded.
+        let feerate_per_kw = 0;
+
+        if tx.output.len() != output_witscripts.len() {
+            // BEGIN NOT TESTED
+            return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
+            // END NOT TESTED
+        }
+
+        let validator = self
+            .node.upgrade().unwrap()
+            .validator_factory
+            .make_validator_phase1(self, channel_value_sat);
+
+        // Since we didn't have the value at the real open, validate it now.
+        validator
+            .validate_channel_open()
+            .map_err(|ve| self.validation_error(ve))?;
+
+        // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
+        let is_counterparty = true;
+        let info = validator
+            .make_info(
+                &self.keys,
+                &self.setup,
+                is_counterparty,
+                tx,
+                output_witscripts,
+            )
+            .map_err(|err| self.validation_error(err))?;
+
+        let offered_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.offered_htlcs)?;
+        let received_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.received_htlcs)?;
+
+        let info2 = self.build_counterparty_commitment_info(
+            remote_per_commitment_point,
+            info.to_broadcaster_value_sat,
+            info.to_countersigner_value_sat,
+            offered_htlcs,
+            received_htlcs,
+        )?;
+
+        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
+        let state = ValidatorState { current_height: 0 };
+        validator
+            .validate_remote_tx(&self.setup, &state, &info2)
+            .map_err(|ve| {
+                // BEGIN NOT TESTED
+                log_debug!(
+                    self,
+                    "VALIDATION FAILED:\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
+                    &tx,
+                    &self.setup,
+                    &state,
+                    &info2,
+                );
+                self.validation_error(ve)
+                // END NOT TESTED
+            })?;
+
+        let htlcs = Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
+
+        let commitment_tx = self.make_counterparty_commitment_tx(
+            remote_per_commitment_point,
+            commitment_number,
+            feerate_per_kw,
+            info.to_countersigner_value_sat,
+            info.to_broadcaster_value_sat,
+            htlcs,
+        );
+
+        let funding_redeemscript = make_funding_redeemscript(
+            &self.keys.pubkeys().funding_pubkey,
+            &self.keys.counterparty_pubkeys().funding_pubkey,
+        );
+        let original_tx_sighash =
+            tx.signature_hash(0, &funding_redeemscript, SigHashType::All as u32);
+        let recomposed_tx_sighash = commitment_tx
+            .trust()
+            .built_transaction()
+            .transaction
+            .signature_hash(0, &funding_redeemscript, SigHashType::All as u32);
+        if recomposed_tx_sighash != original_tx_sighash {
+            // BEGIN NOT TESTED
+            log_debug!(self, "ORIGINAL_TX={:#?}", &tx);
+            log_debug!(
+                self,
+                "RECOMPOSED_TX={:#?}",
+                &commitment_tx.trust().built_transaction().transaction
+            );
+            return Err(
+                self.validation_error(ValidationError::Policy("sighash mismatch".to_string()))
+            );
+            // END NOT TESTED
+        }
+
+        // Sign the commitment.  Discard the htlc signatures for now.
+        let sigs = self
+            .keys
+            .sign_counterparty_commitment(&commitment_tx, &self.secp_ctx)
+            .map_err(|_| self.internal_error("failed to sign"))?;
+        let mut sig = sigs.0.serialize_der().to_vec();
+        sig.push(SigHashType::All as u8);
+
+        self.persist()?;
+
+        Ok(sig)
+    }
+
+    fn htlcs_info1_to_info2(
+        payment_hashmap: &Map<[u8; 20], PaymentHash>,
+        htlcs: &Vec<HTLCInfo>,
+    ) -> Result<Vec<HTLCInfo2>, Status> {
+        let mut htlcs2 = Vec::new();
+        for htlc in htlcs.iter() {
+            let payment_hash = payment_hashmap
+                .get(&htlc.payment_hash_hash)
+                .ok_or_else(|| Status::invalid_argument("unmappable htlc payment_hash"))?;
+            htlcs2.push(HTLCInfo2 {
+                value_sat: htlc.value_sat,
+                payment_hash: payment_hash.clone(),
+                cltv_expiry: htlc.cltv_expiry,
+            });
+        }
+        Ok(htlcs2)
+    }
+
     pub fn sign_holder_commitment_tx(
         &self,
         tx: &bitcoin::Transaction,
@@ -882,6 +1044,7 @@ impl Channel {
         ).map_err(|_| Status::internal("failed to sign"))
     }
 
+    /// Phase 1
     pub fn sign_mutual_close_tx(
         &self,
         tx: &bitcoin::Transaction,
@@ -896,6 +1059,7 @@ impl Channel {
         ).map_err(|_| Status::internal("failed to sign"))
     }
 
+    /// Phase 1
     pub fn sign_holder_htlc_tx(
         &self,
         tx: &bitcoin::Transaction,
@@ -929,6 +1093,7 @@ impl Channel {
         Ok(sig)
     }
 
+    /// Phase 1
     pub fn sign_counterparty_htlc_tx(
         &self,
         tx: &bitcoin::Transaction,
@@ -960,101 +1125,6 @@ impl Channel {
         Ok(self.secp_ctx.sign(&htlc_sighash, &htlc_privkey))
     }
 
-    pub fn sign_delayed_sweep(
-        &self,
-        tx: &bitcoin::Transaction,
-        input: usize,
-        commitment_number: u64,
-        redeemscript: &Script,
-        htlc_amount_sat: u64,
-    ) -> Result<Signature, Status> {
-        let per_commitment_point = self.get_per_commitment_point(commitment_number);
-
-        let htlc_sighash = Message::from_slice(
-            &SigHashCache::new(tx).signature_hash(
-                input,
-                &redeemscript,
-                htlc_amount_sat,
-                SigHashType::All,
-            )[..],
-        ).map_err(|_| Status::internal("failed to sighash"))?;
-
-        let htlc_privkey = derive_private_key(
-            &self.secp_ctx,
-            &per_commitment_point,
-            &self.keys.delayed_payment_base_key(),
-        ).map_err(|_| Status::internal("failed to derive key"))?;
-
-        let sig = self.secp_ctx.sign(&htlc_sighash, &htlc_privkey);
-        self.persist()?;
-        Ok(sig)
-    }
-
-    pub fn sign_counterparty_htlc_sweep(
-        &self,
-        tx: &bitcoin::Transaction,
-        input: usize,
-        remote_per_commitment_point: &PublicKey,
-        redeemscript: &Script,
-        htlc_amount_sat: u64,
-    ) -> Result<Signature, Status> {
-        let htlc_sighash = Message::from_slice(
-            &SigHashCache::new(tx).signature_hash(
-                input,
-                &redeemscript,
-                htlc_amount_sat,
-                SigHashType::All,
-            )[..],
-        ).map_err(|_| Status::internal("failed to sighash"))?;
-
-        let htlc_privkey = derive_private_key(
-            &self.secp_ctx,
-            &remote_per_commitment_point,
-            &self.keys.htlc_base_key(),
-        ).map_err(|_| Status::internal("failed to derive key"))?;
-
-        let sig = self.secp_ctx.sign(&htlc_sighash, &htlc_privkey);
-        self.persist()?;
-        Ok(sig)
-    }
-
-    pub fn sign_justice_sweep(
-        &self,
-        tx: &bitcoin::Transaction,
-        input: usize,
-        revocation_secret: &SecretKey,
-        redeemscript: &Script,
-        htlc_amount_sat: u64,
-    ) -> Result<Signature, Status> {
-        let sighash = Message::from_slice(
-            &SigHashCache::new(tx).signature_hash(
-                input,
-                &redeemscript,
-                htlc_amount_sat,
-                SigHashType::All,
-            )[..],
-        ).map_err(|_| Status::internal("failed to sighash"))?;
-
-        let privkey = derive_private_revocation_key(
-            &self.secp_ctx,
-            revocation_secret,
-            self.keys.revocation_base_key(),
-        ).map_err(|_| Status::internal("failed to derive key"))?;
-
-        let sig = self.secp_ctx.sign(&sighash, &privkey);
-        self.persist()?;
-        Ok(sig)
-    }
-
-    pub fn sign_channel_announcement(&self, announcement: &Vec<u8>) -> (Signature, Signature) {
-        let ann_hash = Sha256dHash::hash(announcement);
-        let encmsg = secp256k1::Message::from_slice(&ann_hash[..])
-            .expect("encmsg failed");
-
-        (self.secp_ctx.sign(&encmsg, &self.node.get_node_secret()),
-         self.secp_ctx.sign(&encmsg, &self.keys.funding_key()))
-    }
-
     // TODO(devrandom) key leaking from this layer
     pub fn get_unilateral_close_key(&self, commitment_point: &Option<PublicKey>) -> Result<SecretKey, Status> {
         Ok(match commitment_point {
@@ -1071,15 +1141,6 @@ impl Channel {
             }
         })
     }
-
-    fn persist(&self) -> Result<(), Status> {
-        self.node.persister.update_channel(&self.node.get_id(), &self)
-            .map_err(|_| Status::internal("persist failed"))
-    }
-
-    pub fn network(&self) -> Network {
-        self.node.network
-    }
 }
 
 #[derive(Copy, Clone)] // NOT TESTED
@@ -1088,17 +1149,49 @@ pub struct NodeConfig {
 }
 
 /// A signer for one Lightning node.
+///
+/// ```rust
+/// use lightning_signer::node::{Node, NodeConfig, ChannelSlot, ChannelBase};
+/// use lightning_signer::persist::{DummyPersister, Persist};
+/// use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
+/// use lightning_signer::util::test_logger::TestLogger;
+/// use lightning_signer::signer::multi_signer::SyncLogger;
+///
+/// use bitcoin::Network;
+/// use std::sync::Arc;
+///
+/// let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
+/// let network = Network::Testnet;
+/// let seed = [0; 32];
+/// let config = TEST_NODE_CONFIG;
+/// let logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::new());
+/// let node = Arc::new(Node::new(&logger, config, &seed, network, &persister));
+/// let (channel_id, opt_stub) = node.new_channel(None, None, &node).expect("new channel");
+/// assert!(opt_stub.is_some());
+/// let channel_slot_mutex = node.get_channel(&channel_id).expect("get channel");
+/// let channel_slot = channel_slot_mutex.lock().expect("lock");
+/// match &*channel_slot {
+///     ChannelSlot::Stub(stub) => {
+///         // Do things with the stub, such as readying it or getting the points
+///         let holder_basepoints = stub.get_channel_basepoints();
+///     }
+///     ChannelSlot::Ready(_) => panic!("expected a stub")
+/// }
+/// ```
 pub struct Node {
     pub logger: Arc<SyncLogger>,
-    pub node_config: NodeConfig,
+    pub(crate) node_config: NodeConfig,
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<Map<ChannelId, Arc<Mutex<ChannelSlot>>>>,
-    pub network: Network,
+    pub(crate) network: Network,
     validator_factory: Box<dyn ValidatorFactory>,
     pub(crate) persister: Arc<dyn Persist>,
 }
 
 impl Node {
+    /// Create a node.
+    ///
+    /// NOTE: you must persist the node yourself if it is new.
     pub fn new(
         logger: &Arc<SyncLogger>,
         node_config: NodeConfig,
@@ -1126,9 +1219,20 @@ impl Node {
         }
     }
 
+    /// Get the node ID, which is the same as the node public key
     pub fn get_id(&self) -> PublicKey {
         let secp_ctx = Secp256k1::signing_only();
         PublicKey::from_secret_key(&secp_ctx, &self.keys_manager.get_node_secret())
+    }
+
+    /// Get the [Mutex] protected channel slot
+    pub fn get_channel(&self, channel_id: &ChannelId) -> Result<Arc<Mutex<ChannelSlot>>, Status> {
+        let mut guard = self.channels();
+        let elem = guard.get_mut(channel_id);
+        let slot_arc = elem.ok_or_else(|| {
+            Status::invalid_argument("no such channel")
+        })?;
+        Ok(Arc::clone(slot_arc))
     }
 
     #[allow(dead_code)]
@@ -1148,6 +1252,20 @@ impl Node {
         Status::internal(s)
     }
 
+    /// Create a new channel, which starts out as a stub.
+    ///
+    /// The initial channel ID may be specified in `opt_channel_id`.  If the channel
+    /// with this ID already exists, no stub is returned.
+    ///
+    /// If unspecified, the channel nonce will default to the channel ID.
+    ///
+    /// This function is currently infallible.
+    ///
+    /// Returns the channel ID and the stub.
+    // TODO the relationship between nonce and ID is different from
+    // the behavior used in the gRPC driver.  Here the nonce defaults to the ID
+    // but in the gRPC driver, the nonce is supplied by the caller, and the ID
+    // is set to the sha256 of the nonce.
     pub fn new_channel(
         &self,
         opt_channel_id: Option<ChannelId>,
@@ -1174,7 +1292,7 @@ impl Node {
             channel_value_sat,
         );
         let stub = ChannelStub {
-            node: Arc::clone(arc_self),
+            node: Arc::downgrade(arc_self),
             nonce: channel_nonce0,
             logger: Arc::clone(&self.logger),
             secp_ctx: Secp256k1::new(),
@@ -1188,12 +1306,13 @@ impl Node {
         );
         self.persister
             .new_channel(&self.get_id(), &stub)
-            // This should only fail if the channel was previously persisted
+            // Persist.new_channel should only fail if the channel was previously persisted.
+            // So if it did fail, we have an internal error.
             .expect("channel was in storage but not in memory");
         Ok((channel_id, Some(stub)))
     }
 
-    pub fn restore_channel(
+    pub(crate) fn restore_channel(
         &self,
         channel_id0: ChannelId,
         channel_id: Option<ChannelId>,
@@ -1215,7 +1334,7 @@ impl Node {
         let slot = match channel_setup {
             None => {
                 let stub = ChannelStub {
-                    node: Arc::clone(arc_self),
+                    node: Arc::downgrade(arc_self),
                     nonce,
                     logger: Arc::clone(&self.logger),
                     secp_ctx: Secp256k1::new(),
@@ -1236,7 +1355,7 @@ impl Node {
                     );
                 enforcing_signer.ready_channel(&channel_transaction_parameters);
                 let channel = Channel {
-                    node: Arc::clone(arc_self),
+                    node: Arc::downgrade(arc_self),
                     nonce,
                     logger: Arc::clone(&self.logger),
                     secp_ctx: Secp256k1::new(),
@@ -1252,9 +1371,15 @@ impl Node {
                 slot
             }
         };
+        self.keys_manager.increment_channel_id_child_index();
         Ok(slot)
     }
 
+    /// Restore a node from a persisted [NodeEntry].
+    ///
+    /// You can get the [NodeEntry] from [Persist::get_nodes].
+    ///
+    /// The channels are also restored from the `persister`.
     pub fn restore_node(node_id: &PublicKey,
                         node_entry: NodeEntry,
                         persister: Arc<dyn Persist>,
@@ -1289,6 +1414,23 @@ impl Node {
         node
     }
 
+    /// Restore all nodes from `persister`.
+    ///
+    /// The channels of each node are also restored.
+    pub fn restore_nodes(persister: Arc<dyn Persist>,
+                         logger: Arc<dyn SyncLogger>) -> Map<PublicKey, Arc<Node>> {
+        let mut nodes = Map::new();
+        for (node_id, node_entry) in persister.get_nodes() {
+            let node =
+                Node::restore_node(&node_id,
+                                   node_entry,
+                                   Arc::clone(&persister),
+                                   Arc::clone(&logger));
+            nodes.insert(node_id, node);
+        }
+        nodes
+    }
+
     /// Ready a new channel, making it available for use.
     ///
     /// This populates fields that are known later in the channel creation flow,
@@ -1297,6 +1439,7 @@ impl Node {
     /// * `channel_id0` - the original channel ID supplied to [`Node::new_channel`]
     /// * `opt_channel_id` - the permanent channel ID
     ///
+    /// The channel is promoted from a [ChannelStub] to a [Channel].
     /// After this call, the channel may be referred to by either ID.
     pub fn ready_channel(
         &self,
@@ -1322,7 +1465,7 @@ impl Node {
                 Node::channel_setup_to_channel_transaction_parameters(&setup, holder_pubkeys);
             inmem_keys.ready_channel(&channel_transaction_parameters);
             Channel {
-                node: Arc::clone(&stub.node),
+                node: Weak::clone(&stub.node),
                 nonce: stub.nonce.clone(),
                 logger: Arc::clone(&stub.logger),
                 secp_ctx: stub.secp_ctx.clone(),
@@ -1385,7 +1528,10 @@ impl Node {
         channel_transaction_parameters
     }
 
-    /// TODO leaking secret
+    /// Get the node secret key
+    /// This function will be eliminated once the node key related items
+    /// are implemented.  This includes onion decoding and p2p handshake.
+    // TODO leaking secret
     pub fn get_node_secret(&self) -> SecretKey {
         self.keys_manager.get_node_secret()
     }
@@ -1400,15 +1546,19 @@ impl Node {
         self.keys_manager.get_shutdown_pubkey()
     }
 
+    /// Get the layer-1 xprv
+    // TODO leaking private key
     pub fn get_account_extended_key(&self) -> &ExtendedPrivKey {
         self.keys_manager.get_account_extended_key()
     }
 
+    /// Get the layer-1 xpub
     pub fn get_account_extended_pubkey(&self) -> ExtendedPubKey {
         let secp_ctx = Secp256k1::signing_only();
         ExtendedPubKey::from_private(&secp_ctx, &self.get_account_extended_key())
     }
 
+    /// Sign a node announcement using the node key
     pub fn sign_node_announcement(&self, na: &Vec<u8>) -> Result<Vec<u8>, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let na_hash = Sha256dHash::hash(na);
@@ -1419,6 +1569,7 @@ impl Node {
         Ok(res)
     }
 
+    /// Sign a channel update using the node key
     pub fn sign_channel_update(&self, cu: &Vec<u8>) -> Result<Vec<u8>, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let cu_hash = Sha256dHash::hash(cu);
@@ -1429,6 +1580,7 @@ impl Node {
         Ok(res)
     }
 
+    /// Sign an invoice
     pub fn sign_invoice_in_parts(
         &self,
         data_part: &Vec<u8>,
@@ -1452,6 +1604,7 @@ impl Node {
         Ok(res)
     }
 
+    /// Sign an invoice
     pub fn sign_invoice(&self, invoice_preimage: &Vec<u8>) -> RecoverableSignature {
         let secp_ctx = Secp256k1::signing_only();
         let hash = Sha256Hash::hash(invoice_preimage);
@@ -1459,6 +1612,7 @@ impl Node {
         secp_ctx.sign_recoverable(&message, &self.get_node_secret())
     }
 
+    /// Sign a Lightning message
     pub fn sign_message(&self, message: &Vec<u8>) -> Result<Vec<u8>, Status> {
         let mut buffer = String::from("Lightning Signed Message:").into_bytes();
         buffer.extend(message);
@@ -1473,10 +1627,14 @@ impl Node {
         Ok(res)
     }
 
+    /// Get the channels this node knows about.
+    /// Currently, channels are not pruned once closed, but this will change.
     pub fn channels(&self) -> MutexGuard<Map<ChannelId, Arc<Mutex<ChannelSlot>>>> {
         self.channels.lock().unwrap()
     }
 
+    /// Perform an ECDH operation between the node key and a public key
+    /// This can be used for onion packet decoding
     pub fn ecdh(&self, other_key: &PublicKey) -> Vec<u8> {
         let our_key = self.keys_manager.get_node_secret();
         let ss = SharedSecret::new(&other_key, &our_key);

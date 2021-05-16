@@ -15,7 +15,7 @@ use bitcoin::{Address, Network, OutPoint, SigHashType};
 use lightning::chain::keysinterface::KeysInterface;
 use lightning::util::logger::Logger;
 
-use crate::node::node::{
+use crate::node::{
     Channel, ChannelBase, ChannelId, ChannelSlot, Node, NodeConfig,
 };
 use crate::persist::{DummyPersister, Persist};
@@ -54,8 +54,9 @@ impl TryFrom<i32> for SpendType {
 
 pub trait SyncLogger: Logger + SendSync {}
 
-/// A signer for multiple nodes
-/// If you need just one node, use [Node](lightning_signer::node::Node) directly.
+/// A signer for multiple nodes.
+///
+/// If you need just one node, use [Node] directly.
 pub struct MultiSigner {
     pub logger: Arc<dyn SyncLogger>,
     pub(crate) nodes: Mutex<Map<PublicKey, Arc<Node>>>,
@@ -91,17 +92,9 @@ impl MultiSigner {
 
     pub fn new_with_persister(persister: Arc<dyn Persist>, test_mode: bool) -> MultiSigner {
         let test_logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::with_id("server".to_owned()));
-        let mut nodes = Map::new();
         println!("Start restore");
-        for (node_id, node_entry) in persister.get_nodes() {
-            let node =
-                Node::restore_node(&node_id,
-                                   node_entry,
-                                   Arc::clone(&persister),
-                                   Arc::clone(&test_logger));
-            nodes.insert(node_id, node);
-            // END NOT TESTED
-        }
+        let nodes =
+            Node::restore_nodes(Arc::clone(&persister), Arc::clone(&test_logger));
         MultiSigner {
             logger: test_logger,
             nodes: Mutex::new(nodes),
@@ -206,7 +199,7 @@ impl MultiSigner {
     where
         F: Fn(&mut ChannelBase) -> Result<T, Status>,
     {
-        let slot_arc = self.get_channel_slot(&node_id, &channel_id)?;
+        let slot_arc = self.get_channel(&node_id, &channel_id)?;
         let mut slot = slot_arc.lock().unwrap();
         let base = match &mut *slot {
             ChannelSlot::Stub(stub) => stub as &mut ChannelBase,
@@ -215,17 +208,8 @@ impl MultiSigner {
         f(base)
     }
 
-    fn get_channel_slot(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<Arc<Mutex<ChannelSlot>>, Status> {
-        let node = self.get_node(node_id)?;
-        // Grab a reference to the channel slot and release the channels mutex
-        let mut guard = node.channels();
-        let elem = guard.get_mut(channel_id);
-        let slot_arc = elem.ok_or_else(|| {
-            // BEGIN NOT TESTED
-            self.invalid_argument(format!("no such channel: {}", &channel_id))
-            // END NOT TESTED
-        })?;
-        Ok(Arc::clone(slot_arc))
+    fn get_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<Arc<Mutex<ChannelSlot>>, Status> {
+        self.get_node(node_id)?.get_channel(channel_id)
     }
 
     pub fn get_node(&self, node_id: &PublicKey) -> Result<Arc<Node>, Status> {
@@ -245,7 +229,7 @@ impl MultiSigner {
     where
         F: Fn(&mut Channel) -> Result<T, Status>,
     {
-        let slot_arc = self.get_channel_slot(&node_id, &channel_id)?;
+        let slot_arc = self.get_channel(&node_id, &channel_id)?;
         let mut slot = slot_arc.lock().unwrap();
         match &mut *slot {
             ChannelSlot::Stub(_) => {
@@ -404,7 +388,7 @@ mod tests {
     use lightning::ln::chan_utils::{build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys, ChannelPublicKeys};
     use lightning::ln::PaymentHash;
 
-    use crate::node::node::{CommitmentType, ChannelSetup};
+    use crate::node::{CommitmentType, ChannelSetup};
     use crate::policy::error::ValidationError;
     use crate::tx::tx::{ANCHOR_SAT, HTLCInfo2, build_close_tx};
     use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, derive_private_revocation_key};
@@ -546,7 +530,7 @@ mod tests {
         assert!(status.is_err());
         let err = status.unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
-        assert_eq!(err.message(), format!("no such channel: {}", &channel_id_x));
+        assert_eq!(err.message(), "no such channel");
     }
 
     #[test]
@@ -1385,7 +1369,7 @@ mod tests {
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let channel_id = signer.new_channel(&node_id, None, None).unwrap();
         assert!(signer.get_node(&node_id).is_ok());
-        assert!(signer.get_channel_slot(&node_id, &channel_id).is_ok());
+        assert!(signer.get_channel(&node_id, &channel_id).is_ok());
     }
 
     #[test]
@@ -1393,7 +1377,7 @@ mod tests {
         let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let channel_id = ChannelId([1; 32]);
-        assert!(signer.get_channel_slot(&node_id, &channel_id).is_err());
+        assert!(signer.get_channel(&node_id, &channel_id).is_err());
         Ok(())
     }
 
@@ -1407,7 +1391,7 @@ mod tests {
         );
 
         let channel_id = ChannelId([1; 32]);
-        assert!(signer.get_channel_slot(&node_id, &channel_id).is_err());
+        assert!(signer.get_channel(&node_id, &channel_id).is_err());
         assert!(signer.get_node(&node_id).is_err());
 
         Ok(())
