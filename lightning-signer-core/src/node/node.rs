@@ -12,34 +12,32 @@ use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1;
-use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
-use bitcoin::util::bip32::ExtendedPrivKey;
+use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature, Message};
+use bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{Network, OutPoint, Script, SigHashType};
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface};
-use lightning::ln::chan_utils::{
-    make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters,
-    CommitmentTransaction, CounterpartyChannelTransactionParameters, HTLCOutputInCommitment,
-    HolderCommitmentTransaction, TxCreationKeys,
-};
+use lightning::ln::chan_utils::{make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys, derive_private_key};
 
-use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::ln::PaymentHash;
 
 use crate::policy::error::ValidationError;
 use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
-use crate::signer::my_signer::SyncLogger;
-use crate::tx::tx::{
-    build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
-    HTLCInfo, HTLCInfo2,
-};
-use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey};
+use crate::signer::multi_signer::SyncLogger;
+use crate::tx::tx::{build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2, HTLCInfo, HTLCInfo2, build_close_tx, sign_commitment};
+use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, derive_private_revocation_key};
 use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
 use crate::util::status::Status;
 use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
 use bitcoin::secp256k1::recovery::RecoverableSignature;
 use lightning::chain;
 use bitcoin::blockdata::constants::genesis_block;
+use bitcoin::util::bip143::SigHashCache;
+use bitcoin::secp256k1::ecdh::SharedSecret;
+use crate::persist::Persist;
+use crate::persist::model::NodeEntry;
+use std::convert::TryFrom;
+use std::str::FromStr;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
@@ -214,9 +212,9 @@ impl ChannelBase for Channel {
     }
 
     fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey {
-        let secret = self
-            .keys
+        let secret = self.keys
             .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+        self.persist().unwrap();
         SecretKey::from_slice(&secret).unwrap()
     }
 
@@ -447,18 +445,13 @@ impl Channel {
             .map_err(|_| self.internal_error("failed to sign"))?;
         let mut sig = sigs.0.serialize_der().to_vec();
         sig.push(SigHashType::All as u8);
+
+        self.persist()?;
+
         Ok(sig)
     }
 
     // BEGIN NOT TESTED
-
-    pub fn sign_channel_announcement(
-        &self,
-        msg: &UnsignedChannelAnnouncement,
-    ) -> Result<Signature, ()> {
-        self.keys.sign_channel_announcement(msg, &self.secp_ctx)
-    }
-
     fn get_commitment_transaction_number_obscure_factor(&self) -> u64 {
         get_commitment_transaction_number_obscure_factor(
             &self.keys.pubkeys().payment_point,
@@ -748,6 +741,7 @@ impl Channel {
             htlc_sig_vec.push(SigHashType::All as u8);
             htlc_sig_vecs.push(htlc_sig_vec);
         }
+        self.persist()?;
         Ok((sig_vec, htlc_sig_vecs))
     }
 
@@ -839,6 +833,250 @@ impl Channel {
         channel_parameters
     }
 
+    pub fn get_shutdown_script(&self) -> Script {
+        self.setup.holder_shutdown_script
+            .clone()
+            .unwrap_or_else(
+                || payload_for_p2wpkh(&self.node.keys_manager.get_shutdown_pubkey())
+                    .script_pubkey(),
+            )
+    }
+
+    pub fn sign_mutual_close_tx_phase2(
+        &self,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
+        counterparty_shutdown_script: Option<Script>
+    ) -> Result<Signature, Status> {
+        let holder_script = self.get_shutdown_script();
+
+        let counterparty_script = counterparty_shutdown_script
+            .as_ref()
+            .unwrap_or(&self.setup.counterparty_shutdown_script);
+
+        let tx = build_close_tx(
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            &holder_script,
+            counterparty_script,
+            self.setup.funding_outpoint,
+        );
+
+        let res = self.keys.sign_closing_transaction(&tx, &self.secp_ctx)
+            .map_err(|_| Status::internal("failed to sign"));
+        self.persist()?;
+        res
+    }
+
+    pub fn sign_holder_commitment_tx(
+        &self,
+        tx: &bitcoin::Transaction,
+        funding_amount_sat: u64,
+    ) -> Result<Signature, Status> {
+        sign_commitment(
+            &self.secp_ctx,
+            &self.keys,
+            &self.setup.counterparty_points.funding_pubkey,
+            &tx,
+            funding_amount_sat,
+        ).map_err(|_| Status::internal("failed to sign"))
+    }
+
+    pub fn sign_mutual_close_tx(
+        &self,
+        tx: &bitcoin::Transaction,
+        funding_amount_sat: u64,
+    ) -> Result<Signature, Status> {
+        sign_commitment(
+            &self.secp_ctx,
+            &self.keys,
+            &self.setup.counterparty_points.funding_pubkey,
+            &tx,
+            funding_amount_sat,
+        ).map_err(|_| Status::internal("failed to sign"))
+    }
+
+    pub fn sign_holder_htlc_tx(
+        &self,
+        tx: &bitcoin::Transaction,
+        commitment_number: u64,
+        opt_per_commitment_point: Option<PublicKey>,
+        redeemscript: &Script,
+        htlc_amount_sat: u64,
+    ) -> Result<Signature, Status> {
+        let per_commitment_point = opt_per_commitment_point
+            .unwrap_or_else(|| self.get_per_commitment_point(commitment_number));
+
+        let htlc_sighash = Message::from_slice(
+            &SigHashCache::new(tx).signature_hash(
+                0,
+                redeemscript,
+                htlc_amount_sat,
+                SigHashType::All,
+            )[..],
+        ).map_err(|_| Status::internal("failed to sighash"))?;
+
+        let htlc_privkey = derive_private_key(
+            &self.secp_ctx,
+            &per_commitment_point,
+            &self.keys.htlc_base_key(),
+        ).map_err(|_| Status::internal("failed to derive key"))?;
+
+        let sig = self.secp_ctx.sign(&htlc_sighash, &htlc_privkey);
+
+        self.persist()?;
+
+        Ok(sig)
+    }
+
+    pub fn sign_counterparty_htlc_tx(
+        &self,
+        tx: &bitcoin::Transaction,
+        remote_per_commitment_point: &PublicKey,
+        redeemscript: &Script,
+        htlc_amount_sat: u64,
+    ) -> Result<Signature, Status> {
+        let sighash_type = if self.setup.option_anchor_outputs() {
+            SigHashType::SinglePlusAnyoneCanPay
+        } else {
+            SigHashType::All
+        };
+
+        let htlc_sighash = Message::from_slice(
+            &SigHashCache::new(tx).signature_hash(
+                0,
+                redeemscript,
+                htlc_amount_sat,
+                sighash_type,
+            )[..],
+        ).map_err(|_| Status::internal("failed to sighash"))?;
+
+        let htlc_privkey = derive_private_key(
+            &self.secp_ctx,
+            &remote_per_commitment_point,
+            &self.keys.htlc_base_key(),
+        ).map_err(|_| Status::internal("failed to derive key"))?;
+
+        Ok(self.secp_ctx.sign(&htlc_sighash, &htlc_privkey))
+    }
+
+    pub fn sign_delayed_sweep(
+        &self,
+        tx: &bitcoin::Transaction,
+        input: usize,
+        commitment_number: u64,
+        redeemscript: &Script,
+        htlc_amount_sat: u64,
+    ) -> Result<Signature, Status> {
+        let per_commitment_point = self.get_per_commitment_point(commitment_number);
+
+        let htlc_sighash = Message::from_slice(
+            &SigHashCache::new(tx).signature_hash(
+                input,
+                &redeemscript,
+                htlc_amount_sat,
+                SigHashType::All,
+            )[..],
+        ).map_err(|_| Status::internal("failed to sighash"))?;
+
+        let htlc_privkey = derive_private_key(
+            &self.secp_ctx,
+            &per_commitment_point,
+            &self.keys.delayed_payment_base_key(),
+        ).map_err(|_| Status::internal("failed to derive key"))?;
+
+        let sig = self.secp_ctx.sign(&htlc_sighash, &htlc_privkey);
+        self.persist()?;
+        Ok(sig)
+    }
+
+    pub fn sign_counterparty_htlc_sweep(
+        &self,
+        tx: &bitcoin::Transaction,
+        input: usize,
+        remote_per_commitment_point: &PublicKey,
+        redeemscript: &Script,
+        htlc_amount_sat: u64,
+    ) -> Result<Signature, Status> {
+        let htlc_sighash = Message::from_slice(
+            &SigHashCache::new(tx).signature_hash(
+                input,
+                &redeemscript,
+                htlc_amount_sat,
+                SigHashType::All,
+            )[..],
+        ).map_err(|_| Status::internal("failed to sighash"))?;
+
+        let htlc_privkey = derive_private_key(
+            &self.secp_ctx,
+            &remote_per_commitment_point,
+            &self.keys.htlc_base_key(),
+        ).map_err(|_| Status::internal("failed to derive key"))?;
+
+        let sig = self.secp_ctx.sign(&htlc_sighash, &htlc_privkey);
+        self.persist()?;
+        Ok(sig)
+    }
+
+    pub fn sign_justice_sweep(
+        &self,
+        tx: &bitcoin::Transaction,
+        input: usize,
+        revocation_secret: &SecretKey,
+        redeemscript: &Script,
+        htlc_amount_sat: u64,
+    ) -> Result<Signature, Status> {
+        let sighash = Message::from_slice(
+            &SigHashCache::new(tx).signature_hash(
+                input,
+                &redeemscript,
+                htlc_amount_sat,
+                SigHashType::All,
+            )[..],
+        ).map_err(|_| Status::internal("failed to sighash"))?;
+
+        let privkey = derive_private_revocation_key(
+            &self.secp_ctx,
+            revocation_secret,
+            self.keys.revocation_base_key(),
+        ).map_err(|_| Status::internal("failed to derive key"))?;
+
+        let sig = self.secp_ctx.sign(&sighash, &privkey);
+        self.persist()?;
+        Ok(sig)
+    }
+
+    pub fn sign_channel_announcement(&self, announcement: &Vec<u8>) -> (Signature, Signature) {
+        let ann_hash = Sha256dHash::hash(announcement);
+        let encmsg = secp256k1::Message::from_slice(&ann_hash[..])
+            .expect("encmsg failed");
+
+        (self.secp_ctx.sign(&encmsg, &self.node.get_node_secret()),
+         self.secp_ctx.sign(&encmsg, &self.keys.funding_key()))
+    }
+
+    // TODO(devrandom) key leaking from this layer
+    pub fn get_unilateral_close_key(&self, commitment_point: &Option<PublicKey>) -> Result<SecretKey, Status> {
+        Ok(match commitment_point {
+            Some(commitment_point) => derive_private_key(
+                &self.secp_ctx,
+                &commitment_point,
+                &self.keys.payment_key(),
+            ).map_err(|err| {
+                Status::internal(format!("derive_private_key failed: {}", err))
+            })?,
+            None => {
+                // option_static_remotekey in effect
+                self.keys.payment_key().clone()
+            }
+        })
+    }
+
+    fn persist(&self) -> Result<(), Status> {
+        self.node.persister.update_channel(&self.node.get_id(), &self)
+            .map_err(|_| Status::internal("persist failed"))
+    }
+
     pub fn network(&self) -> Network {
         self.node.network
     }
@@ -849,6 +1087,7 @@ pub struct NodeConfig {
     pub key_derivation_style: KeyDerivationStyle,
 }
 
+/// A signer for one Lightning node.
 pub struct Node {
     pub logger: Arc<SyncLogger>,
     pub node_config: NodeConfig,
@@ -856,6 +1095,7 @@ pub struct Node {
     channels: Mutex<Map<ChannelId, Arc<Mutex<ChannelSlot>>>>,
     pub network: Network,
     validator_factory: Box<dyn ValidatorFactory>,
+    pub(crate) persister: Arc<dyn Persist>,
 }
 
 impl Node {
@@ -864,6 +1104,7 @@ impl Node {
         node_config: NodeConfig,
         seed: &[u8],
         network: Network,
+        persister: &Arc<Persist>
     ) -> Node {
         let now = Duration::from_secs(genesis_block(network).header.time as u64);
 
@@ -881,6 +1122,7 @@ impl Node {
             channels: Mutex::new(Map::new()),
             network,
             validator_factory: Box::new(SimpleValidatorFactory {}),
+            persister: Arc::clone(persister)
         }
     }
 
@@ -908,17 +1150,21 @@ impl Node {
 
     pub fn new_channel(
         &self,
-        channel_id: ChannelId,
-        channel_nonce0: Vec<u8>,
+        opt_channel_id: Option<ChannelId>,
+        opt_channel_nonce0: Option<Vec<u8>>,
         arc_self: &Arc<Node>,
-    ) -> Result<Option<ChannelStub>, Status> {
+    ) -> Result<(ChannelId, Option<ChannelStub>), Status> {
+        let channel_id =
+            opt_channel_id.unwrap_or_else(|| ChannelId(self.keys_manager.get_channel_id()));
+        let channel_nonce0 =
+            opt_channel_nonce0.unwrap_or_else(|| channel_id.0.to_vec());
         let mut channels = self.channels.lock().unwrap();
         if channels.contains_key(&channel_id) {
             // BEGIN NOT TESTED
             let msg = format!("channel already exists: {}", &channel_id);
             log_info!(self, "{}", &msg);
             // return Err(self.invalid_argument(&msg));
-            return Ok(None);
+            return Ok((channel_id, None));
             // END NOT TESTED
         }
         let channel_value_sat = 0; // Placeholder value, not known yet.
@@ -940,7 +1186,11 @@ impl Node {
             channel_id,
             Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone()))),
         );
-        Ok(Some(stub))
+        self.persister
+            .new_channel(&self.get_id(), &stub)
+            // This should only fail if the channel was previously persisted
+            .expect("channel was in storage but not in memory");
+        Ok((channel_id, Some(stub)))
     }
 
     pub fn restore_channel(
@@ -1003,6 +1253,40 @@ impl Node {
             }
         };
         Ok(slot)
+    }
+
+    pub fn restore_node(node_id: &PublicKey,
+                        node_entry: NodeEntry,
+                        persister: Arc<dyn Persist>,
+                        logger: Arc<dyn SyncLogger>) -> Arc<Node> {
+        // BEGIN NOT TESTED
+        let config = NodeConfig {
+            key_derivation_style: KeyDerivationStyle::try_from(node_entry.key_derivation_style)
+                .unwrap(),
+        };
+        let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
+        let node = Arc::new(Node::new(
+            &logger,
+            config,
+            node_entry.seed.as_slice(),
+            network,
+            &persister
+        ));
+        assert_eq!(&node.get_id(), node_id);
+        log_info!(node, "Restore node {}", node_id);
+        for (channel_id0, channel_entry) in persister.get_node_channels(node_id) {
+            log_info!(node, "  Restore channel {}", channel_id0);
+            node.restore_channel(
+                channel_id0,
+                channel_entry.id,
+                channel_entry.nonce,
+                channel_entry.channel_value_satoshis,
+                channel_entry.channel_setup,
+                channel_entry.enforcement_state,
+                &node,
+            ).expect("restore channel");
+        }
+        node
     }
 
     /// Ready a new channel, making it available for use.
@@ -1074,6 +1358,9 @@ impl Node {
             channels.insert(channel_id0, arcobj.clone());
         }
 
+        self.persister.update_channel(&self.get_id(), &chan)
+            .map_err(|_| Status::internal("persist failed"))?;
+
         Ok(chan)
     }
 
@@ -1115,6 +1402,11 @@ impl Node {
 
     pub fn get_account_extended_key(&self) -> &ExtendedPrivKey {
         self.keys_manager.get_account_extended_key()
+    }
+
+    pub fn get_account_extended_pubkey(&self) -> ExtendedPubKey {
+        let secp_ctx = Secp256k1::signing_only();
+        ExtendedPubKey::from_private(&secp_ctx, &self.get_account_extended_key())
     }
 
     pub fn sign_node_announcement(&self, na: &Vec<u8>) -> Result<Vec<u8>, Status> {
@@ -1183,6 +1475,12 @@ impl Node {
 
     pub fn channels(&self) -> MutexGuard<Map<ChannelId, Arc<Mutex<ChannelSlot>>>> {
         self.channels.lock().unwrap()
+    }
+
+    pub fn ecdh(&self, other_key: &PublicKey) -> Vec<u8> {
+        let our_key = self.keys_manager.get_node_secret();
+        let ss = SharedSecret::new(&other_key, &our_key);
+        ss[..].to_vec()
     }
 }
 

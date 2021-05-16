@@ -7,8 +7,9 @@ use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning_signer::node::node::{
     ChannelId, ChannelSetup, ChannelSlot, ChannelStub, CommitmentType, Node,
 };
-use lightning_signer::signer::my_signer::SyncLogger;
+use lightning_signer::signer::multi_signer::SyncLogger;
 use lightning_signer::util::test_utils::{TEST_NODE_CONFIG, TEST_SEED};
+use lightning_signer::persist::{Persist, DummyPersister};
 
 pub fn do_with_channel_stub<F: Fn(&ChannelStub) -> ()>(node: &Node, channel_id: &ChannelId, f: F) {
     let guard = node.channels();
@@ -26,8 +27,8 @@ pub fn make_node_and_channel(
 ) -> (PublicKey, Arc<Node>, ChannelStub) {
     let (node_id, node) = make_node(logger);
 
-    let channel = node
-        .new_channel(channel_id, channel_nonce.clone(), &Arc::clone(&node))
+    let (_, channel) = node
+        .new_channel(Some(channel_id), Some(channel_nonce.clone()), &Arc::clone(&node))
         .unwrap(); // NOT TESTED
     (node_id, node, channel.unwrap())
 }
@@ -36,7 +37,8 @@ pub(crate) fn make_node(logger: &Arc<dyn SyncLogger>) -> (PublicKey, Arc<Node>) 
     let mut seed = [0; 32];
     seed.copy_from_slice(hex::decode(TEST_SEED[1]).unwrap().as_slice());
 
-    let node = Arc::new(Node::new(logger, TEST_NODE_CONFIG, &seed, Network::Testnet));
+    let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
+    let node = Arc::new(Node::new(logger, TEST_NODE_CONFIG, &seed, Network::Testnet, &persister));
     let node_id = node.get_id();
     (node_id, node)
 }

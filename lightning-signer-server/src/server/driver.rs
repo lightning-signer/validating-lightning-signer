@@ -7,7 +7,7 @@ use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
 use bitcoin::hashes::Hash as BitcoinHash;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::util::psbt::serialize::Deserialize;
-use bitcoin::{OutPoint, Script};
+use bitcoin::{OutPoint, Script, SigHashType};
 use clap::{App, Arg};
 use serde_json::json;
 use tonic::{transport::Server, Request, Response, Status};
@@ -16,7 +16,7 @@ use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
 use lightning_signer::node::node;
 use lightning_signer::node::node::{ChannelId, ChannelSetup, CommitmentType};
-use lightning_signer::signer::my_signer::{SpendType, SyncLogger};
+use lightning_signer::signer::multi_signer::{SpendType, SyncLogger};
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::{log_debug, log_error, log_info, log_internal, Map};
 use remotesigner::signer_server::{Signer, SignerServer};
@@ -28,13 +28,14 @@ use crate::server::remotesigner::version_server::Version;
 use super::remotesigner;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
-use lightning_signer::signer::my_signer::{channel_nonce_to_id, MySigner};
+use lightning_signer::signer::multi_signer::{channel_nonce_to_id, MultiSigner};
 use lightning_signer::util::status;
 use std::sync::Arc;
+use lightning_signer::util::crypto_utils::signature_to_bitcoin_vec;
 
 struct SignServer {
     pub logger: Arc<dyn SyncLogger>,
-    pub signer: MySigner,
+    pub signer: MultiSigner,
 }
 
 impl SignServer {
@@ -43,6 +44,13 @@ impl SignServer {
         log_error!(self, "INVALID ARGUMENT: {}", &s);
         log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
         Status::invalid_argument(s)
+    }
+
+    pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
+        let s = msg.into();
+        log_error!(self, "INTERNAL ERROR: {}", &s);
+        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
+        Status::internal(s)
     }
 
     fn node_id(&self, arg: Option<NodeId>) -> Result<PublicKey, Status> {
@@ -114,6 +122,28 @@ impl SignServer {
             });
         }
         Ok(htlcs)
+    }
+
+    fn get_unilateral_close_key(&self, node_id: &PublicKey, closeinfo: Option<&UnilateralCloseInfo>) -> Result<Option<SecretKey>, Status> {
+        match closeinfo {
+            // Normal case, no unilateral_close_info present.
+            None => Ok(None),
+            // Handling a peer unilateral close from old channel.
+            Some(ci) => {
+                let old_chan_id = self.channel_id(&ci.channel_nonce)?;
+                // Is there a commitment_point provided?
+                let commitment_point = match &ci.commitment_point {
+                    // No, option_static_remotekey in effect.
+                    None => None,
+                    // Yes, commitment_point provided.
+                    Some(cpoint) => Some(self.public_key(Some(cpoint.clone()))?),
+                };
+                let key = self.signer.with_ready_channel(node_id, &old_chan_id, |chan| {
+                    chan.get_unilateral_close_key(&commitment_point)
+                })?;
+                Ok(Some(key))
+            }
+        }
     }
 }
 
@@ -237,11 +267,11 @@ impl Signer for SignServer {
         request: Request<GetExtPubKeyRequest>,
     ) -> Result<Response<GetExtPubKeyReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         log_info!(self, "ENTER get_ext_pub_key({})", node_id);
-        log_debug!(self, "req={}", reqstr);
-        let extpubkey = self.signer.get_account_ext_pub_key(&node_id)?;
+        let node = self.signer.get_node(&node_id)?;
+        let extpubkey = node.get_account_extended_pubkey();
         let reply = GetExtPubKeyReply {
             xpub: Some(ExtPubKey {
                 encoded: format!("{}", extpubkey),
@@ -257,16 +287,15 @@ impl Signer for SignServer {
         request: Request<NewChannelRequest>,
     ) -> Result<Response<NewChannelReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let opt_channel_id = self.channel_id(&req.channel_nonce0).ok();
         let opt_channel_nonce0 = req.channel_nonce0.as_ref().map(|cn| cn.data.clone());
         log_info!(self, "ENTER new_channel({}/{:?})", node_id, opt_channel_id);
-        log_debug!(self, "req={}", reqstr);
 
-        let channel_id = self
-            .signer
-            .new_channel(&node_id, opt_channel_nonce0, opt_channel_id)?;
+        let node = self.signer.get_node(&node_id)?;
+        let (channel_id, _) =
+            node.new_channel(opt_channel_id, opt_channel_nonce0, &node)?;
 
         let reply = NewChannelReply {
             channel_nonce0: req.channel_nonce0,
@@ -281,7 +310,7 @@ impl Signer for SignServer {
         request: Request<GetChannelBasepointsRequest>,
     ) -> Result<Response<GetChannelBasepointsReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
@@ -290,9 +319,10 @@ impl Signer for SignServer {
             node_id,
             channel_id
         );
-        log_debug!(self, "req={}", reqstr);
 
-        let bps = self.signer.get_channel_basepoints(&node_id, &channel_id)?;
+        let bps = self.signer.with_channel_base(&node_id, &channel_id, |base| {
+            Ok(base.get_channel_basepoints())
+        })?;
 
         let basepoints = Basepoints {
             revocation: Some(self.to_pubkey(bps.revocation_basepoint)),
@@ -320,7 +350,7 @@ impl Signer for SignServer {
         request: Request<ReadyChannelRequest>,
     ) -> Result<Response<ReadyChannelReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id0 = self.channel_id(&req.channel_nonce0)?;
         let opt_channel_id = req
@@ -334,7 +364,6 @@ impl Signer for SignServer {
             node_id,
             opt_channel_id
         );
-        log_debug!(self, "req={}", reqstr);
 
         let req_outpoint = req
             .funding_outpoint
@@ -379,23 +408,20 @@ impl Signer for SignServer {
                 ))
             })?;
 
-        self.signer.ready_channel(
-            &node_id,
-            channel_id0,
-            opt_channel_id,
-            ChannelSetup {
-                is_outbound: req.is_outbound,
-                channel_value_sat: req.channel_value_sat,
-                push_value_msat: req.push_value_msat,
-                funding_outpoint,
-                holder_to_self_delay: req.holder_to_self_delay as u16,
-                counterparty_points,
-                holder_shutdown_script,
-                counterparty_to_self_delay: req.counterparty_to_self_delay as u16,
-                counterparty_shutdown_script,
-                commitment_type: convert_commitment_type(req.commitment_type),
-            },
-        )?;
+        let setup = ChannelSetup {
+            is_outbound: req.is_outbound,
+            channel_value_sat: req.channel_value_sat,
+            push_value_msat: req.push_value_msat,
+            funding_outpoint,
+            holder_to_self_delay: req.holder_to_self_delay as u16,
+            counterparty_points,
+            holder_shutdown_script,
+            counterparty_to_self_delay: req.counterparty_to_self_delay as u16,
+            counterparty_shutdown_script,
+            commitment_type: convert_commitment_type(req.commitment_type),
+        };
+        let node = self.signer.get_node(&node_id)?;
+        node.ready_channel(channel_id0, opt_channel_id, setup)?;
         let reply = ReadyChannelReply {};
         log_info!(
             self,
@@ -414,7 +440,7 @@ impl Signer for SignServer {
         request: Request<SignMutualCloseTxRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
@@ -423,7 +449,6 @@ impl Signer for SignServer {
             node_id,
             channel_id
         );
-        log_debug!(self, "req={}", reqstr);
         let reqtx = req
             .tx
             .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
@@ -431,11 +456,24 @@ impl Signer for SignServer {
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
+        if tx.input.len() != 1 {
+            return Err(self.invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
+        }
+        if tx.output.len() == 0 {
+            return Err(self.invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
+        }
+
         let funding_amount_sat = reqtx.input_descs[0].value_sat as u64;
 
         let sigvec =
-            self.signer
-                .sign_mutual_close_tx(&node_id, &channel_id, &tx, funding_amount_sat)?;
+            self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+                let sig = chan.sign_mutual_close_tx(
+                    &tx,
+                    funding_amount_sat,
+                )?;
+
+                Ok(signature_to_bitcoin_vec(sig))
+            }).map_err(|_| self.internal_error("signing mutual close failed"))?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
@@ -457,8 +495,8 @@ impl Signer for SignServer {
         request: Request<SignMutualCloseTxPhase2Request>,
     ) -> Result<Response<CloseTxSignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
-        let node_id = self.node_id(req.node_id)?;
+        log_debug!(self, "req={}", json!(&req));
+        let node_id = self.node_id(req.node_id.clone())?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
             self,
@@ -466,7 +504,6 @@ impl Signer for SignServer {
             node_id,
             channel_id
         );
-        log_debug!(self, "req={}", reqstr);
 
         let opt_counterparty_shutdown_script = if req.counterparty_shutdown_script.is_empty() {
             None
@@ -482,13 +519,16 @@ impl Signer for SignServer {
             )
         };
 
-        let sig_data = self.signer.sign_mutual_close_tx_phase2(
-            &node_id,
-            &channel_id,
-            req.to_holder_value_sat,
-            req.to_counterparty_value_sat,
-            opt_counterparty_shutdown_script,
-        )?;
+        let sig_data = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+            let sig = chan.sign_mutual_close_tx_phase2(
+                req.to_holder_value_sat,
+                req.to_counterparty_value_sat,
+                opt_counterparty_shutdown_script.clone()
+            )?;
+            let mut bitcoin_sig = sig.serialize_der().to_vec();
+            bitcoin_sig.push(SigHashType::All as u8);
+            Ok(bitcoin_sig)
+        })?;
 
         let reply = CloseTxSignatureReply {
             signature: Some(BitcoinSignature { data: sig_data }),
@@ -508,7 +548,7 @@ impl Signer for SignServer {
         request: Request<CheckFutureSecretRequest>,
     ) -> Result<Response<CheckFutureSecretReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
@@ -517,16 +557,13 @@ impl Signer for SignServer {
             node_id,
             channel_id
         );
-        log_debug!(self, "req={}", reqstr);
         let commitment_number = req.n;
         let suggested = self.secret_key(req.suggested)?;
 
-        let correct = self.signer.check_future_secret(
-            &node_id,
-            &channel_id,
-            commitment_number,
-            &suggested,
-        )?;
+        let correct = self.signer.with_channel_base(&node_id, &channel_id, |base| {
+            let secret = base.get_per_commitment_secret(commitment_number);
+            Ok(suggested[..] == secret[..])
+        })?;
 
         let reply = CheckFutureSecretReply { correct };
         log_info!(
@@ -544,7 +581,7 @@ impl Signer for SignServer {
         request: Request<GetPerCommitmentPointRequest>,
     ) -> Result<Response<GetPerCommitmentPointReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
@@ -553,7 +590,6 @@ impl Signer for SignServer {
             node_id,
             channel_id
         );
-        log_debug!(self, "req={}", reqstr);
         let commitment_number = req.n;
 
         // This API call can be made on a channel stub as well as a ready channel.
@@ -598,13 +634,11 @@ impl Signer for SignServer {
         request: Request<SignFundingTxRequest>,
     ) -> Result<Response<SignFundingTxReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(self, "ENTER sign_funding_tx({}/{})", node_id, channel_id);
-        log_debug!(self, "req={}", reqstr);
-        let reqtx = req
-            .tx
+        let reqtx = req.tx
             .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
         let tx_res: Result<bitcoin::Transaction, encode::Error> =
             deserialize(reqtx.raw_tx_bytes.as_slice());
@@ -641,26 +675,7 @@ impl Signer for SignServer {
                     .ok_or_else(|| self.invalid_grpc_argument("missing key_loc desc"))?
                     .close_info
                     .as_ref();
-                let uck = match closeinfo {
-                    // Normal case, no unilateral_close_info present.
-                    None => None,
-                    // Handling a peer unilateral close from old channel.
-                    Some(ci) => {
-                        let old_chan_id = self.channel_id(&ci.channel_nonce)?;
-                        // Is there a commitment_point provided?
-                        let commitment_point = match &ci.commitment_point {
-                            // No, option_static_remotekey in effect.
-                            None => None,
-                            // Yes, commitment_point provided.
-                            Some(cpoint) => Some(self.public_key(Some(cpoint.clone()))?),
-                        };
-                        Some(self.signer.get_unilateral_close_key(
-                            &node_id,
-                            &old_chan_id,
-                            &commitment_point,
-                        )?)
-                    }
-                };
+                let uck = self.get_unilateral_close_key(&node_id, closeinfo)?;
                 uniclosekeys.push(uck);
             }
         }
@@ -694,24 +709,22 @@ impl Signer for SignServer {
         request: Request<SignCounterpartyCommitmentTxRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
-        let node_id = self.node_id(req.node_id)?;
-        let channel_id = self.channel_id(&req.channel_nonce)?;
+        log_debug!(self, "req={}", json!(&req));
+        let node_id = self.node_id(req.node_id.clone())?;
+        let channel_id = self.channel_id(&req.channel_nonce.clone())?;
         log_info!(
             self,
             "ENTER sign_counterparty_commitment_tx({}/{})",
             node_id,
             channel_id
         );
-        log_debug!(self, "req={}", reqstr);
 
-        let reqtx = req
-            .tx
+        let reqtx = req.tx.clone()
             .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
-        let remote_per_commitment_point = self.public_key(req.remote_per_commit_point)?;
+        let remote_per_commitment_point = self.public_key(req.remote_per_commit_point.clone())?;
         let channel_value_sat = reqtx.input_descs[0].value_sat as u64;
         let witscripts = reqtx
             .output_descs
@@ -727,16 +740,16 @@ impl Signer for SignServer {
             payment_hashmap.insert(Ripemd160Hash::hash(hash).into_inner(), PaymentHash(phash));
         }
 
-        let sig_data = self.signer.sign_counterparty_commitment_tx(
-            &node_id,
-            &channel_id,
-            &tx,
-            witscripts,
-            &remote_per_commitment_point,
-            channel_value_sat,
-            &payment_hashmap,
-            req.commit_num,
-        )?;
+        let sig_data = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+            chan.sign_counterparty_commitment_tx(
+                &tx,
+                &witscripts,
+                &remote_per_commitment_point,
+                channel_value_sat,
+                &payment_hashmap,
+                req.commit_num,
+            )
+        })?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature { data: sig_data }),
@@ -756,26 +769,35 @@ impl Signer for SignServer {
         request: Request<SignHolderCommitmentTxRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(self, "ENTER sign_commitment_tx({}/{})", node_id, channel_id);
-        log_debug!(self, "req={}", reqstr);
-        let reqtx = req
-            .tx
+
+        let reqtx = req.tx
             .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
+        if tx.input.len() != 1 {
+            return Err(self.invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
+        }
+        if tx.output.len() == 0 {
+            return Err(self.invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
+        }
+
         let funding_amount_sat = reqtx.input_descs[0].value_sat as u64;
 
-        let sigvec = self.signer.sign_holder_commitment_tx(
-            &node_id,
-            &channel_id,
-            &tx,
-            funding_amount_sat,
-        )?;
+        let sigvec =
+            self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+                let commitment_sig = chan.sign_holder_commitment_tx(
+                    &tx,
+                    funding_amount_sat,
+                )?;
+
+                Ok(signature_to_bitcoin_vec(commitment_sig))
+            }).map_err(|_| self.internal_error("signing holder commitment failed"))?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
@@ -797,40 +819,47 @@ impl Signer for SignServer {
         request: Request<SignHolderHtlcTxRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
-        let node_id = self.node_id(req.node_id)?;
-        let channel_id = self.channel_id(&req.channel_nonce)?;
+        log_debug!(self, "req={}", json!(&req));
+        let node_id = self.node_id(req.node_id.clone())?;
+        let channel_id = self.channel_id(&req.channel_nonce.clone())?;
         log_info!(
             self,
             "ENTER sign_holder_htlc_tx({}/{})",
             node_id,
             channel_id
         );
-        log_debug!(self, "req={}", reqstr);
-        let reqtx = req
-            .tx
+        let reqtx = req.tx.clone()
             .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
+        if tx.input.len() != 1 {
+            return Err(self.invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
+        }
+        if tx.output.len() == 0 {
+            return Err(self.invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
+        }
+
         let input_desc = reqtx.input_descs[0].clone();
         let htlc_amount_sat = input_desc.value_sat as u64;
-        let redeemscript = input_desc.redeem_script;
+        let redeemscript = Script::from(input_desc.redeem_script);
 
-        let opt_per_commitment_point = match req.per_commit_point {
-            Some(p) => Some(self.public_key(Some(p))?),
-            _ => None,
-        };
-        let sigvec = self.signer.sign_holder_htlc_tx(
-            &node_id,
-            &channel_id,
-            &tx,
-            req.n,
-            opt_per_commitment_point,
-            redeemscript,
-            htlc_amount_sat,
-        )?;
+        let opt_per_commitment_point =
+            match req.per_commit_point.clone() {
+                Some(p) => Some(self.public_key(Some(p))?),
+                _ => None,
+            };
+        let sigvec = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+            let sig = chan.sign_holder_htlc_tx(
+                &tx,
+                req.n,
+                opt_per_commitment_point,
+                &redeemscript,
+                htlc_amount_sat,
+            )?;
+            Ok(signature_to_bitcoin_vec(sig))
+        }).map_err(|_| Status::internal("failed to sign"))?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
@@ -852,13 +881,12 @@ impl Signer for SignServer {
         request: Request<SignDelayedSweepRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
-        let node_id = self.node_id(req.node_id)?;
-        let channel_id = self.channel_id(&req.channel_nonce)?;
+        log_debug!(self, "req={}", json!(&req));
+        let node_id = self.node_id(req.node_id.clone())?;
+        let channel_id = self.channel_id(&req.channel_nonce.clone())?;
         log_info!(self, "ENTER sign_delayed_sweep({}/{})", node_id, channel_id);
-        log_debug!(self, "req={}", reqstr);
-        let reqtx = req
-            .tx
+
+        let reqtx = req.tx.clone()
             .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
@@ -868,20 +896,26 @@ impl Signer for SignServer {
         let htlc_amount_sat = input_desc.value_sat as u64;
         let redeemscript = input_desc.redeem_script;
 
-        let input: usize = req
-            .input
+        let input: usize = req.input
             .try_into()
             .map_err(|_| self.invalid_grpc_argument("bad input index"))?;
 
-        let sigvec = self.signer.sign_delayed_sweep(
-            &node_id,
-            &channel_id,
-            &tx,
-            input,
-            req.commitment_number,
-            redeemscript,
-            htlc_amount_sat,
-        )?;
+        if tx.output.len() != 1 {
+            return Err(Status::invalid_argument("tx.output.len() != 1")); // NOT TESTED
+        }
+
+        let htlc_redeemscript = Script::from(redeemscript.clone());
+
+        let sigvec =
+            self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+                let sig = chan.sign_delayed_sweep(
+                    &tx,
+                    input,
+                    req.commitment_number,
+                    &htlc_redeemscript,
+                    htlc_amount_sat)?;
+                Ok(signature_to_bitcoin_vec(sig))
+            }).map_err(|_| Status::internal("failed to sign"))?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
@@ -898,7 +932,7 @@ impl Signer for SignServer {
         request: Request<SignCounterpartyHtlcTxRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
@@ -907,9 +941,7 @@ impl Signer for SignServer {
             node_id,
             channel_id
         );
-        log_debug!(self, "req={}", reqstr);
-        let reqtx = req
-            .tx
+        let reqtx = req.tx.clone()
             .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx_res: Result<bitcoin::Transaction, encode::Error> =
@@ -921,19 +953,24 @@ impl Signer for SignServer {
 
         let input_desc = reqtx.input_descs[0].clone();
         let htlc_amount_sat = input_desc.value_sat as u64;
-        let redeemscript = input_desc.redeem_script;
+        let redeemscript = Script::from(input_desc.redeem_script);
 
-        let sig_data = self.signer.sign_counterparty_htlc_tx(
-            &node_id,
-            &channel_id,
-            &tx,
-            redeemscript,
-            &remote_per_commitment_point,
-            htlc_amount_sat,
-        )?;
+        if tx.output.len() != 1 {
+            return Err(Status::invalid_argument("len(tx.output) != 1")); // NOT TESTED
+        }
+
+        let sig_vec = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+            let sig = chan.sign_counterparty_htlc_tx(
+                &tx,
+                &remote_per_commitment_point,
+                &redeemscript,
+                htlc_amount_sat
+            )?;
+            Ok(signature_to_bitcoin_vec(sig))
+        }).map_err(|_| Status::internal("failed to sign"))?;
 
         let reply = SignatureReply {
-            signature: Some(BitcoinSignature { data: sig_data }),
+            signature: Some(BitcoinSignature { data: sig_vec }),
         };
         log_info!(
             self,
@@ -950,7 +987,7 @@ impl Signer for SignServer {
         request: Request<SignCounterpartyHtlcSweepRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
@@ -959,9 +996,7 @@ impl Signer for SignServer {
             node_id,
             channel_id
         );
-        log_debug!(self, "req={}", reqstr);
-        let reqtx = req
-            .tx
+        let reqtx = req.tx
             .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
@@ -969,7 +1004,7 @@ impl Signer for SignServer {
 
         let input_desc = reqtx.input_descs[0].clone();
         let htlc_amount_sat = input_desc.value_sat as u64;
-        let redeemscript = input_desc.redeem_script;
+        let redeemscript = Script::from(input_desc.redeem_script);
 
         let remote_per_commitment_point = self.public_key(req.remote_per_commit_point)?;
 
@@ -978,15 +1013,20 @@ impl Signer for SignServer {
             .try_into()
             .map_err(|_| self.invalid_grpc_argument("bad input index"))?;
 
-        let sigvec = self.signer.sign_counterparty_htlc_sweep(
-            &node_id,
-            &channel_id,
-            &tx,
-            input,
-            redeemscript,
-            &remote_per_commitment_point,
-            htlc_amount_sat,
-        )?;
+        if tx.output.len() != 1 {
+            return Err(Status::invalid_argument("tx.output.len() != 1")); // NOT TESTED
+        }
+
+        let sigvec =
+            self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+                let sig = chan.sign_counterparty_htlc_sweep(
+                    &tx,
+                    input,
+                    &remote_per_commitment_point,
+                    &redeemscript,
+                    htlc_amount_sat)?;
+                Ok(signature_to_bitcoin_vec(sig))
+            }).map_err(|_| Status::internal("failed to sign"))?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
@@ -1008,13 +1048,11 @@ impl Signer for SignServer {
         request: Request<SignJusticeSweepRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(self, "ENTER sign_justice_sweep({}/{})", node_id, channel_id);
-        log_debug!(self, "req={}", reqstr);
-        let reqtx = req
-            .tx
+        let reqtx = req.tx
             .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
@@ -1022,7 +1060,7 @@ impl Signer for SignServer {
 
         let input_desc = reqtx.input_descs[0].clone();
         let htlc_amount_sat = input_desc.value_sat as u64;
-        let redeemscript = input_desc.redeem_script;
+        let redeemscript = Script::from(input_desc.redeem_script);
 
         let revocation_secret = self.secret_key(req.revocation_secret)?;
 
@@ -1031,15 +1069,17 @@ impl Signer for SignServer {
             .try_into()
             .map_err(|_| self.invalid_grpc_argument("bad input index"))?;
 
-        let sigvec = self.signer.sign_justice_sweep(
-            &node_id,
-            &channel_id,
-            &tx,
-            input,
-            &revocation_secret,
-            redeemscript,
-            htlc_amount_sat,
-        )?;
+        let sigvec =
+            self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+                let sig = chan.sign_justice_sweep(
+                    &tx,
+                    input,
+                    &revocation_secret,
+                    &redeemscript,
+                    htlc_amount_sat)?;
+                Ok(signature_to_bitcoin_vec(sig))
+            }).map_err(|_| Status::internal("failed to sign"))?;
+
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
@@ -1056,28 +1096,26 @@ impl Signer for SignServer {
         request: Request<SignChannelAnnouncementRequest>,
     ) -> Result<Response<SignChannelAnnouncementReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        let ca = req.channel_announcement;
         log_info!(
             self,
             "ENTER sign_channel_announcement({}/{})",
             node_id,
             channel_id
         );
-        log_debug!(self, "req={}", reqstr);
 
-        let (nsigvec, bsigvec) =
-            self.signer
-                .sign_channel_announcement(&node_id, &channel_id, &ca)?;
-
+        let ca = req.channel_announcement;
+        let (nsig, bsig) = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+            Ok(chan.sign_channel_announcement(&ca))
+        }).map_err(|e| Status::internal(e.to_string()))?;
         let reply = SignChannelAnnouncementReply {
             node_signature: Some(EcdsaSignature {
-                data: nsigvec.clone(),
+                data: nsig.serialize_der().to_vec(),
             }),
             bitcoin_signature: Some(EcdsaSignature {
-                data: bsigvec.clone(),
+                data: bsig.serialize_der().to_vec(),
             }),
         };
         log_info!(
@@ -1095,12 +1133,13 @@ impl Signer for SignServer {
         request: Request<SignNodeAnnouncementRequest>,
     ) -> Result<Response<NodeSignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let na = req.node_announcement;
         log_info!(self, "ENTER sign_node_announcement({})", node_id);
-        log_debug!(self, "req={}", reqstr);
-        let sig_data = self.signer.sign_node_announcement(&node_id, &na)?;
+
+        let node = self.signer.get_node(&node_id)?;
+        let sig_data = node.sign_node_announcement(&na)?;
         let reply = NodeSignatureReply {
             signature: Some(EcdsaSignature { data: sig_data }),
         };
@@ -1114,12 +1153,12 @@ impl Signer for SignServer {
         request: Request<SignChannelUpdateRequest>,
     ) -> Result<Response<NodeSignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let cu = req.channel_update;
         log_info!(self, "ENTER sign_channel_update({})", node_id);
-        log_debug!(self, "req={}", reqstr);
-        let sig_data = self.signer.sign_channel_update(&node_id, &cu)?;
+        let node = self.signer.get_node(&node_id)?;
+        let sig_data = node.sign_channel_update(&cu)?;
         let reply = NodeSignatureReply {
             signature: Some(EcdsaSignature { data: sig_data }),
         };
@@ -1130,14 +1169,16 @@ impl Signer for SignServer {
 
     async fn ecdh(&self, request: Request<EcdhRequest>) -> Result<Response<EcdhReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
-        let other_key = self.public_key(req.point)?;
+        let other_key = self.public_key(req.point.clone())?;
         log_info!(self, "ENTER ecdh({} + {})", node_id, other_key);
-        log_debug!(self, "req={}", reqstr);
+
+        let node = self.signer.get_node(&node_id)?;
+        let data = node.ecdh(&other_key);
         let reply = EcdhReply {
             shared_secret: Some(Secret {
-                data: self.signer.ecdh(&node_id, &other_key)?,
+                data,
             }),
         };
         log_info!(self, "REPLY ecdh({} + {})", node_id, other_key);
@@ -1150,15 +1191,15 @@ impl Signer for SignServer {
         request: Request<SignInvoiceRequest>,
     ) -> Result<Response<RecoverableNodeSignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let data_part = req.data_part;
         let human_readable_part = req.human_readable_part;
         log_info!(self, "ENTER sign_invoice({})", node_id);
-        log_debug!(self, "req={}", reqstr);
-        let sig_data = self
-            .signer
-            .sign_invoice(&node_id, &data_part, &human_readable_part)?;
+
+        let node = self.signer.get_node(&node_id)?;
+        let sig_data = node
+            .sign_invoice_in_parts(&data_part, &human_readable_part)?;
         let reply = RecoverableNodeSignatureReply {
             signature: Some(EcdsaRecoverableSignature {
                 data: sig_data.clone(),
@@ -1174,12 +1215,13 @@ impl Signer for SignServer {
         request: Request<SignMessageRequest>,
     ) -> Result<Response<RecoverableNodeSignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let message = req.message;
         log_info!(self, "ENTER sign_message({})", node_id);
-        log_debug!(self, "req={}", reqstr);
-        let rsigvec = self.signer.sign_message(&node_id, &message)?;
+
+        let node = self.signer.get_node(&node_id)?;
+        let rsigvec = node.sign_message(&message)?;
         let reply = RecoverableNodeSignatureReply {
             signature: Some(EcdsaRecoverableSignature {
                 data: rsigvec.clone(),
@@ -1195,7 +1237,7 @@ impl Signer for SignServer {
         request: Request<SignCounterpartyCommitmentTxPhase2Request>,
     ) -> Result<Response<CommitmentTxSignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
@@ -1204,7 +1246,7 @@ impl Signer for SignServer {
             node_id,
             channel_id
         );
-        log_debug!(self, "req={}", reqstr);
+
         let req_info = req
             .commitment_info
             .ok_or_else(|| self.invalid_grpc_argument("missing commitment info"))?;
@@ -1212,17 +1254,18 @@ impl Signer for SignServer {
 
         let offered_htlcs = self.convert_htlcs(&req_info.offered_htlcs)?;
         let received_htlcs = self.convert_htlcs(&req_info.received_htlcs)?;
-        let (sig, htlc_sigs) = self.signer.sign_counterparty_commitment_tx_phase2(
-            &node_id,
-            &channel_id,
-            remote_per_commitment_point,
-            req_info.n,
-            req_info.feerate_sat_per_kw,
-            req_info.to_holder_value_sat,
-            req_info.to_counterparty_value_sat,
-            offered_htlcs,
-            received_htlcs,
-        )?;
+
+        let (sig, htlc_sigs) = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+            chan.sign_counterparty_commitment_tx_phase2(
+                &remote_per_commitment_point,
+                req_info.n,
+                req_info.feerate_sat_per_kw,
+                req_info.to_holder_value_sat,
+                req_info.to_counterparty_value_sat,
+                offered_htlcs.clone(),
+                received_htlcs.clone(),
+            )
+        })?;
 
         let htlc_bitcoin_sigs = htlc_sigs
             .iter()
@@ -1247,7 +1290,7 @@ impl Signer for SignServer {
         request: Request<SignHolderCommitmentTxPhase2Request>,
     ) -> Result<Response<CommitmentTxSignatureReply>, Status> {
         let req = request.into_inner();
-        let reqstr = json!(&req);
+        log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_info!(
@@ -1256,7 +1299,7 @@ impl Signer for SignServer {
             node_id,
             channel_id
         );
-        log_debug!(self, "req={}", reqstr);
+
         let req_info = req
             .commitment_info
             .ok_or_else(|| self.invalid_grpc_argument("missing commitment info"))?;
@@ -1269,16 +1312,18 @@ impl Signer for SignServer {
         let offered_htlcs = self.convert_htlcs(&req_info.offered_htlcs)?;
         let received_htlcs = self.convert_htlcs(&req_info.received_htlcs)?;
 
-        let (sig, htlc_sigs) = self.signer.sign_holder_commitment_tx_phase2(
-            &node_id,
-            &channel_id,
-            req_info.n,
-            req_info.feerate_sat_per_kw,
-            req_info.to_holder_value_sat,
-            req_info.to_counterparty_value_sat,
-            offered_htlcs,
-            received_htlcs,
-        )?;
+        let (sig, htlc_sigs) =
+            self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+                let result = chan.sign_holder_commitment_tx_phase2(
+                    req_info.n,
+                    req_info.feerate_sat_per_kw,
+                    req_info.to_holder_value_sat,
+                    req_info.to_counterparty_value_sat,
+                    offered_htlcs.clone(),
+                    received_htlcs.clone(),
+                )?;
+                Ok(result)
+            })?;
 
         let htlc_bitcoin_sigs = htlc_sigs
             .iter()
@@ -1320,21 +1365,20 @@ impl Signer for SignServer {
         let req = request.into_inner();
         let node_id = self.node_id(req.node_id)?;
 
-        self.signer.with_node(&node_id, |node| {
-            let node = node.ok_or_else(|| self.invalid_grpc_argument("missing node"))?;
-            let channel_ids = node
-                .channels()
-                .values()
-                .map(|chan| chan.lock().unwrap().nonce())
-                .map(|nonce| ChannelNonce { data: nonce })
-                .collect();
-            Ok(Response::new(ListChannelsReply {
-                // FIXME needs nonces not IDs
-                channel_nonces: channel_ids,
-            }))
-        })
+        let node = self.signer.get_node(&node_id)?;
+        let channel_ids = node
+            .channels()
+            .values()
+            .map(|chan| chan.lock().unwrap().nonce())
+            .map(|nonce| ChannelNonce { data: nonce })
+            .collect();
+        Ok(Response::new(ListChannelsReply {
+            // FIXME needs nonces not IDs
+            channel_nonces: channel_ids,
+        }))
     }
 }
+
 
 const DEFAULT_DIR: &str = ".lightning-signer";
 
@@ -1360,12 +1404,12 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
 
     let path = format!("{}/{}", DEFAULT_DIR, "data");
     let test_mode = matches.is_present("test-mode");
-    let persister: Box<dyn Persist> = if matches.is_present("no-persist") {
-        Box::new(DummyPersister)
+    let persister: Arc<dyn Persist> = if matches.is_present("no-persist") {
+        Arc::new(DummyPersister)
     } else {
-        Box::new(KVJsonPersister::new(path.as_str()))
+        Arc::new(KVJsonPersister::new(path.as_str()))
     };
-    let signer = MySigner::new_with_persister(persister, test_mode);
+    let signer = MultiSigner::new_with_persister(persister, test_mode);
     let server = SignServer {
         logger: Arc::clone(&signer.logger),
         signer,

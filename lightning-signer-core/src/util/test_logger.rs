@@ -2,7 +2,7 @@ use lightning::util::logger::{Level, Logger, Record};
 use crate::Mutex;
 use crate::Map;
 use crate::SendSync;
-use crate::signer::my_signer::SyncLogger;
+use crate::signer::multi_signer::SyncLogger;
 
 pub struct TestLogger {
     level: Level,
