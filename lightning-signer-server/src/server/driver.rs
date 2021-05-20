@@ -1456,9 +1456,31 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .about("disable all persistence")
                 .long("no-persist")
                 .takes_value(false),
+        )
+        .arg(
+            Arg::new("interface")
+                .about("the interface to listen on (ip v4 or v6)")
+                .short('i')
+                .long("interface")
+                .takes_value(true)
+                .value_name("0.0.0.0")
+                .default_value("[::1]"),
+        )
+        .arg(
+            Arg::new("port")
+                .about("the port to listen")
+                .short('p')
+                .long("port")
+                .takes_value(true)
+                .default_value("50051"),
         );
     let matches = app.get_matches();
-    let addr = "[::1]:50051".parse()?;
+    let addr = format!(
+        "{}:{}",
+        matches.value_of("interface").unwrap(),
+        matches.value_of("port").unwrap()
+    )
+    .parse()?;
 
     let path = format!("{}/{}", DEFAULT_DIR, "data");
     let test_mode = matches.is_present("test-mode");
