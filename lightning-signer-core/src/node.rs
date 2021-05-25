@@ -1287,7 +1287,7 @@ impl Node {
     /// Create a new channel, which starts out as a stub.
     ///
     /// The initial channel ID may be specified in `opt_channel_id`.  If the channel
-    /// with this ID already exists, no stub is returned.
+    /// with this ID already exists, the existing stub is returned.
     ///
     /// If unspecified, the channel nonce will default to the channel ID.
     ///
@@ -1308,14 +1308,36 @@ impl Node {
             opt_channel_id.unwrap_or_else(|| ChannelId(self.keys_manager.get_channel_id()));
         let channel_nonce0 = opt_channel_nonce0.unwrap_or_else(|| channel_id.0.to_vec());
         let mut channels = self.channels.lock().unwrap();
-        if channels.contains_key(&channel_id) {
-            // BEGIN NOT TESTED
-            let msg = format!("channel already exists: {}", &channel_id);
-            log_info!(self, "{}", &msg);
-            // return Err(self.invalid_argument(&msg));
-            return Ok((channel_id, None));
-            // END NOT TESTED
+
+        // Is there a preexisting channel slot?
+        let maybe_slot = channels.get(&channel_id);
+        if maybe_slot.is_some() {
+            match &*maybe_slot.unwrap().lock().unwrap() {
+                ChannelSlot::Stub(stub) => {
+                    if channel_nonce0 != stub.nonce {
+                        return Err(self.invalid_argument(format!(
+                            "new_channel nonce mismatch with existing stub: \
+                             channel_id={} channel_nonce0={} stub.nonce={}",
+                            channel_id,
+                            hex::encode(channel_nonce0),
+                            hex::encode(&stub.nonce)
+                        )));
+                    }
+                    // This stub is "embryonic" (hasn't signed a commitment).  This
+                    // can happen if the initial channel create to this peer failed
+                    // in negotiation.  It's ok to just use this stub.
+                    return Ok((channel_id, Some(stub.clone())));
+                }
+                ChannelSlot::Ready(_) => {
+                    // Calling new_channel on a channel that's already been marked
+                    // ready is not allowed.
+                    return Err(
+                        self.invalid_argument(format!("channel already ready: {}", channel_id))
+                    );
+                }
+            };
         }
+
         let channel_value_sat = 0; // Placeholder value, not known yet.
         let inmem_keys = self.keys_manager.get_channel_keys_with_id(
             channel_id,
