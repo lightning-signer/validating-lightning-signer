@@ -295,7 +295,7 @@ impl Signer for SignServer {
         log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         // If the nonce is specified, the channel ID is the sha256 of the nonce
-        // If the nonce is not specified, the channel ID is the sha256 of the nonce, per Node::new_channel
+        // If the nonce is not specified, the channel ID is the nonce, per Node::new_channel
         // TODO this is inconsistent
         let opt_channel_id = req
             .channel_nonce0
