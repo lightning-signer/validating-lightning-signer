@@ -1,4 +1,5 @@
 use std::convert::{TryFrom, TryInto};
+use std::process;
 
 use backtrace::Backtrace;
 use bitcoin;
@@ -1442,6 +1443,7 @@ const DEFAULT_DIR: &str = ".lightning-signer";
 
 #[tokio::main]
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
+    println!("rsignerd {} starting", process::id());
     let app = App::new("server")
         .about("Lightning Signer with a gRPC interface.  Persists to .lightning-signer .")
         .arg(
@@ -1467,6 +1469,14 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .default_value("[::1]"),
         )
         .arg(
+            Arg::new("datadir")
+                .short('d')
+                .long("datadir")
+                .default_value(DEFAULT_DIR)
+                .about("data directory")
+                .takes_value(true),
+        )
+        .arg(
             Arg::new("port")
                 .about("the port to listen")
                 .short('p')
@@ -1482,7 +1492,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     )
     .parse()?;
 
-    let path = format!("{}/{}", DEFAULT_DIR, "data");
+    let path = format!("{}/{}", matches.value_of("datadir").unwrap(), "data");
     let test_mode = matches.is_present("test-mode");
     let persister: Arc<dyn Persist> = if matches.is_present("no-persist") {
         Arc::new(DummyPersister)
@@ -1494,12 +1504,20 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         logger: Arc::clone(&signer.logger),
         signer,
     };
-    println!("Starting");
 
-    Server::builder()
+    let (shutdown_trigger, shutdown_signal) = triggered::trigger();
+    ctrlc::set_handler(move || {
+        shutdown_trigger.trigger();
+    })
+    .expect("Error setting Ctrl-C handler");
+
+    let service = Server::builder()
         .add_service(SignerServer::new(server))
-        .serve(addr)
-        .await?;
+        .serve_with_shutdown(addr, shutdown_signal);
+
+    println!("rsignerd {} ready on {}", process::id(), addr);
+    service.await?;
+    println!("rsignerd {} finished", process::id());
 
     Ok(())
 }
