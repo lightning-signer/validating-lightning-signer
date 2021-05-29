@@ -2,7 +2,7 @@ use crate::Arc;
 
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::{Script, Transaction};
-use lightning::chain::keysinterface::{BaseSign, KeysInterface, KeysManager, Sign};
+use lightning::chain::keysinterface::{BaseSign, KeysInterface, Sign};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, HTLCOutputInCommitment,
@@ -27,7 +27,6 @@ use std::convert::TryInto;
 pub struct LoopbackSignerKeysInterface {
     pub node_id: PublicKey,
     pub signer: Arc<MultiSigner>,
-    pub backing: KeysManager,
 }
 
 impl LoopbackSignerKeysInterface {
@@ -524,7 +523,7 @@ impl KeysInterface for LoopbackSignerKeysInterface {
     }
 
     fn get_secure_random_bytes(&self) -> [u8; 32] {
-        self.backing.get_secure_random_bytes()
+        self.get_node().get_secure_random_bytes()
     }
 
     // BEGIN NOT TESTED

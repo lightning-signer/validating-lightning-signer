@@ -90,6 +90,11 @@ pub struct MyKeysManager {
     channel_master_key: ExtendedPrivKey,
     channel_id_master_key: ExtendedPrivKey,
     channel_id_child_index: AtomicUsize,
+
+    rand_bytes_master_key: ExtendedPrivKey,
+    rand_bytes_child_index: AtomicUsize,
+    rand_bytes_unique_start: Sha256State,
+
     lnd_basepoint_index: AtomicU32,
 
     unique_start: Sha256State,
@@ -158,7 +163,14 @@ impl MyKeysManager {
                 let account_extended_key =
                     key_derivation_style.get_account_extended_key(&secp_ctx, network, seed);
 
-                MyKeysManager {
+                let rand_bytes_master_key = master_key.ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(4).unwrap()).expect("Your RNG is busted");
+
+                let mut rand_bytes_unique_start = Sha256::engine();
+                rand_bytes_unique_start.input(&byte_utils::be64_to_array(starting_time_secs));
+                rand_bytes_unique_start.input(&byte_utils::be32_to_array(starting_time_nanos));
+                rand_bytes_unique_start.input(seed);
+
+                let mut res = MyKeysManager {
                     secp_ctx,
                     key_derivation_style,
                     network,
@@ -171,10 +183,17 @@ impl MyKeysManager {
                     channel_master_key,
                     channel_id_master_key,
                     channel_id_child_index: AtomicUsize::new(0),
+                    rand_bytes_master_key,
+                    rand_bytes_child_index: AtomicUsize::new(0),
+                    rand_bytes_unique_start,
                     lnd_basepoint_index: AtomicU32::new(0),
                     unique_start,
                     logger,
-                }
+                };
+
+                let secp_seed = res.get_secure_random_bytes();
+                res.secp_ctx.seeded_randomize(&secp_seed);
+                res
             }
             Err(_) => panic!("Your rng is busted"), // NOT TESTED
         }
@@ -350,7 +369,14 @@ impl KeysInterface for MyKeysManager {
     }
 
     fn get_secure_random_bytes(&self) -> [u8; 32] {
-        unimplemented!()
+        let mut sha = self.rand_bytes_unique_start.clone();
+
+        let child_ix = self.rand_bytes_child_index.fetch_add(1, Ordering::AcqRel);
+        let child_privkey = self.rand_bytes_master_key.ckd_priv(&self.secp_ctx, ChildNumber::from_hardened_idx(child_ix as u32).expect("key space exhausted")).expect("Your RNG is busted");
+        sha.input(&child_privkey.private_key.key[..]);
+
+        sha.input(b"Unique Secure Random Bytes Salt");
+        Sha256::from_engine(sha).into_inner()
     }
 
     fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::Signer, DecodeError> {

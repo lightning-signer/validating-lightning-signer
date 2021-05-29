@@ -1259,6 +1259,10 @@ impl Node {
         PublicKey::from_secret_key(&secp_ctx, &self.keys_manager.get_node_secret())
     }
 
+    pub(crate) fn get_secure_random_bytes(&self) -> [u8; 32] {
+        self.keys_manager.get_secure_random_bytes()
+    }
+
     /// Get the [Mutex] protected channel slot
     pub fn get_channel(&self, channel_id: &ChannelId) -> Result<Arc<Mutex<ChannelSlot>>, Status> {
         let mut guard = self.channels();

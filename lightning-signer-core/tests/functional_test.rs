@@ -54,14 +54,9 @@ pub fn create_node_cfgs_with_signer<'a>(
 
         let node_id = signer.new_node(TEST_NODE_CONFIG);
 
-        let network = Testnet;
-        let now = Duration::from_secs(genesis_block(network).header.time as u64);
-        let backing =
-            keysinterface::KeysManager::new(&seed.clone(), now.as_secs(), now.subsec_nanos());
         let keys_manager = LoopbackSignerKeysInterface {
             node_id,
             signer: Arc::clone(signer),
-            backing,
         };
 
         let chain_monitor = TestChainMonitor::new(
