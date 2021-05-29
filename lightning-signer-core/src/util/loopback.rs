@@ -1,8 +1,8 @@
 use crate::Arc;
 
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
-use bitcoin::{Script, Transaction};
-use lightning::chain::keysinterface::{BaseSign, KeysInterface, Sign};
+use bitcoin::{Script, Transaction, TxOut};
+use lightning::chain::keysinterface::{BaseSign, KeysInterface, Sign, SpendableOutputDescriptor};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, HTLCOutputInCommitment,
@@ -34,6 +34,20 @@ impl LoopbackSignerKeysInterface {
         self.signer
             .get_node(&self.node_id)
             .expect("our node is missing")
+    }
+
+    pub fn spend_spendable_outputs(
+        &self, descriptors: &[&SpendableOutputDescriptor], outputs: Vec<TxOut>,
+        change_destination_script: Script, feerate_sat_per_1000_weight: u32,
+        secp_ctx: &Secp256k1<All>,
+    ) -> Result<Transaction, ()> {
+        self.get_node()
+            .spend_spendable_outputs(
+                descriptors,
+                outputs,
+                change_destination_script,
+                feerate_sat_per_1000_weight,
+                secp_ctx)
     }
 }
 

@@ -10,7 +10,7 @@ use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
-use bitcoin::secp256k1;
+use bitcoin::{secp256k1, TxOut, Transaction};
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
 use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signature};
@@ -18,7 +18,7 @@ use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{Network, OutPoint, Script, SigHashType};
 use lightning::chain;
-use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface};
+use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface, SpendableOutputDescriptor};
 use lightning::ln::chan_utils::{
     derive_private_key, make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters,
     CommitmentTransaction, CounterpartyChannelTransactionParameters, HTLCOutputInCommitment,
@@ -44,6 +44,7 @@ use crate::util::status::Status;
 use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
 use crate::Map;
 use crate::{Arc, Mutex, MutexGuard, Weak};
+use std::convert::TryInto;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
@@ -1452,7 +1453,7 @@ impl Node {
         let node = Arc::new(Node::new(
             &logger,
             config,
-            node_entry.seed.as_slice(),
+            node_entry.seed.as_slice().try_into().expect("seed wrong length"),
             network,
             &persister,
         ));
@@ -1469,7 +1470,7 @@ impl Node {
                 channel_entry.enforcement_state,
                 &node,
             )
-            .expect("restore channel");
+                .expect("restore channel");
         }
         node
     }
@@ -1703,6 +1704,20 @@ impl Node {
         let our_key = self.keys_manager.get_node_secret();
         let ss = SharedSecret::new(&other_key, &our_key);
         ss[..].to_vec()
+    }
+
+    pub fn spend_spendable_outputs(
+        &self, descriptors: &[&SpendableOutputDescriptor], outputs: Vec<TxOut>,
+        change_destination_script: Script, feerate_sat_per_1000_weight: u32,
+        secp_ctx: &Secp256k1<All>,
+    ) -> Result<Transaction, ()> {
+        self.keys_manager.spend_spendable_outputs(
+            descriptors,
+            outputs,
+            change_destination_script,
+            feerate_sat_per_1000_weight,
+            secp_ctx,
+        )
     }
 }
 
