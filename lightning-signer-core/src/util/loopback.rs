@@ -37,17 +37,20 @@ impl LoopbackSignerKeysInterface {
     }
 
     pub fn spend_spendable_outputs(
-        &self, descriptors: &[&SpendableOutputDescriptor], outputs: Vec<TxOut>,
-        change_destination_script: Script, feerate_sat_per_1000_weight: u32,
+        &self,
+        descriptors: &[&SpendableOutputDescriptor],
+        outputs: Vec<TxOut>,
+        change_destination_script: Script,
+        feerate_sat_per_1000_weight: u32,
         secp_ctx: &Secp256k1<All>,
     ) -> Result<Transaction, ()> {
-        self.get_node()
-            .spend_spendable_outputs(
-                descriptors,
-                outputs,
-                change_destination_script,
-                feerate_sat_per_1000_weight,
-                secp_ctx)
+        self.get_node().spend_spendable_outputs(
+            descriptors,
+            outputs,
+            change_destination_script,
+            feerate_sat_per_1000_weight,
+            secp_ctx,
+        )
     }
 }
 

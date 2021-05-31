@@ -20,7 +20,7 @@ use lightning::ln::functional_test_utils::{
 };
 use lightning::ln::msgs::{ChannelMessageHandler, ChannelUpdate};
 use lightning::util::config::{ChannelHandshakeConfig, UserConfig};
-use lightning::util::events::{EventsProvider, MessageSendEventsProvider, Event};
+use lightning::util::events::{Event, EventsProvider, MessageSendEventsProvider};
 use lightning::util::logger::Logger;
 
 use lightning_signer::signer::multi_signer::MultiSigner;
@@ -359,36 +359,57 @@ fn channel_force_close_with_htlc_test() {
 
 const ANTI_REORG_DELAY: u32 = 6;
 
-use bitcoin::secp256k1::{Secp256k1, Message};
-use bitcoin::blockdata::script::Builder;
 use bitcoin::blockdata::opcodes;
+use bitcoin::blockdata::script::Builder;
+use bitcoin::secp256k1::{Message, Secp256k1};
 
 macro_rules! check_spendable_outputs {
-	($node: expr, $der_idx: expr, $keysinterface: expr, $chan_value: expr) => {
-		{
-			let mut events = $node.chain_monitor.chain_monitor.get_and_clear_pending_events();
-			let mut txn = Vec::new();
-			let mut all_outputs = Vec::new();
-			let secp_ctx = Secp256k1::new();
-			for event in events.drain(..) {
-				match event {
-					Event::SpendableOutputs { mut outputs } => {
-						for outp in outputs.drain(..) {
-							txn.push($keysinterface.spend_spendable_outputs(&[&outp], Vec::new(), Builder::new().push_opcode(opcodes::all::OP_RETURN).into_script(), 253, &secp_ctx).unwrap());
-							all_outputs.push(outp);
-						}
-					},
-					_ => panic!("Unexpected event"),
-				};
-			}
-			if all_outputs.len() > 1 {
-				if let Ok(tx) = $keysinterface.spend_spendable_outputs(&all_outputs.iter().map(|a| a).collect::<Vec<_>>(), Vec::new(), Builder::new().push_opcode(opcodes::all::OP_RETURN).into_script(), 253, &secp_ctx) {
-					txn.push(tx);
-				}
-			}
-			txn
-		}
-	}
+    ($node: expr, $der_idx: expr, $keysinterface: expr, $chan_value: expr) => {{
+        let mut events = $node
+            .chain_monitor
+            .chain_monitor
+            .get_and_clear_pending_events();
+        let mut txn = Vec::new();
+        let mut all_outputs = Vec::new();
+        let secp_ctx = Secp256k1::new();
+        for event in events.drain(..) {
+            match event {
+                Event::SpendableOutputs { mut outputs } => {
+                    for outp in outputs.drain(..) {
+                        txn.push(
+                            $keysinterface
+                                .spend_spendable_outputs(
+                                    &[&outp],
+                                    Vec::new(),
+                                    Builder::new()
+                                        .push_opcode(opcodes::all::OP_RETURN)
+                                        .into_script(),
+                                    253,
+                                    &secp_ctx,
+                                )
+                                .unwrap(),
+                        );
+                        all_outputs.push(outp);
+                    }
+                }
+                _ => panic!("Unexpected event"),
+            };
+        }
+        if all_outputs.len() > 1 {
+            if let Ok(tx) = $keysinterface.spend_spendable_outputs(
+                &all_outputs.iter().map(|a| a).collect::<Vec<_>>(),
+                Vec::new(),
+                Builder::new()
+                    .push_opcode(opcodes::all::OP_RETURN)
+                    .into_script(),
+                253,
+                &secp_ctx,
+            ) {
+                txn.push(tx);
+            }
+        }
+        txn
+    }};
 }
 
 #[test]
@@ -400,9 +421,15 @@ fn test_static_output_closing_tx() {
     let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[None, None]);
     let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
 
-    let chan = create_announced_chan_between_nodes(&nodes, 0, 1, InitFeatures::known(), InitFeatures::known());
+    let chan = create_announced_chan_between_nodes(
+        &nodes,
+        0,
+        1,
+        InitFeatures::known(),
+        InitFeatures::known(),
+    );
 
-    send_payment(&nodes[0], &vec!(&nodes[1])[..], 8000000);
+    send_payment(&nodes[0], &vec![&nodes[1]][..], 8000000);
     let closing_tx = close_channel(&nodes[0], &nodes[1], &chan.2, chan.3, true).2;
 
     mine_transaction(&nodes[0], &closing_tx);

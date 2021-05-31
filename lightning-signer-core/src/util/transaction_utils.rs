@@ -1,5 +1,5 @@
-use bitcoin::{Transaction, Script, TxOut, VarInt};
 use bitcoin::consensus::Encodable;
+use bitcoin::{Script, Transaction, TxOut, VarInt};
 
 pub const MAX_VALUE_MSAT: u64 = 21_000_000_0000_0000_000;
 
@@ -8,12 +8,15 @@ pub const MAX_VALUE_MSAT: u64 = 21_000_000_0000_0000_000;
 /// Assumes at least one input will have a witness (ie spends a segwit output).
 /// Returns an Err(()) if the requested feerate cannot be met.
 pub fn maybe_add_change_output(
-    tx: &mut Transaction, input_value: u64, witness_max_weight: usize,
-    feerate_sat_per_1000_weight: u32, change_destination_script: Script,
+    tx: &mut Transaction,
+    input_value: u64,
+    witness_max_weight: usize,
+    feerate_sat_per_1000_weight: u32,
+    change_destination_script: Script,
 ) -> Result<(), ()> {
     if input_value > MAX_VALUE_MSAT / 1000 {
         //bail!("Input value is greater than max satoshis");
-        return Err(())
+        return Err(());
     }
 
     let mut output_value = 0;
@@ -21,13 +24,17 @@ pub fn maybe_add_change_output(
         output_value += output.value;
         if output_value >= input_value {
             // bail!("Ouput value equals or exceeds input value");
-            return Err(())
+            return Err(());
         }
     }
 
     let dust_value = get_dust_value(&change_destination_script);
-    let mut change_output = TxOut { script_pubkey: change_destination_script, value: 0 };
-    let change_len = change_output.consensus_encode(&mut std::io::sink())
+    let mut change_output = TxOut {
+        script_pubkey: change_destination_script,
+        value: 0,
+    };
+    let change_len = change_output
+        .consensus_encode(&mut std::io::sink())
         .map_err(|_| ())?;
     let mut weight_with_change: i64 =
         tx.get_weight() as i64 + 2 + witness_max_weight as i64 + change_len as i64 * 4;
@@ -43,11 +50,12 @@ pub fn maybe_add_change_output(
         tx.output.push(change_output);
     } else if (input_value - output_value) as i64
         - (tx.get_weight() as i64 + 2 + witness_max_weight as i64)
-        * feerate_sat_per_1000_weight as i64
-        / 1000 < 0
+            * feerate_sat_per_1000_weight as i64
+            / 1000
+        < 0
     {
         // bail!("Requested fee rate cannot be met");
-        return Err(())
+        return Err(());
     }
 
     Ok(())
