@@ -37,8 +37,8 @@ rand = "0.4"
 # TODO end
 
 backtrace = { version = "0.3", optional = true }
-tonic = { version = "0.1.1", optional = true }
-hashbrown = "0.11.2"
+tonic = { version = "0.4", optional = true, default-features = false }
+hashbrown = "0.9" # match hashbrown dependency version via tonic/h2/indexmap
 
 [dev-dependencies]
 tempfile = "3.2.0"
