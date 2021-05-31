@@ -18,5 +18,6 @@ pub mod test_utils;
 #[macro_use]
 pub mod functional_test_utils;
 pub mod status;
+pub mod transaction_utils;
 
 pub const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;

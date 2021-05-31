@@ -20,7 +20,7 @@ use lightning::ln::functional_test_utils::{
 };
 use lightning::ln::msgs::{ChannelMessageHandler, ChannelUpdate};
 use lightning::util::config::{ChannelHandshakeConfig, UserConfig};
-use lightning::util::events::MessageSendEventsProvider;
+use lightning::util::events::{EventsProvider, MessageSendEventsProvider, Event};
 use lightning::util::logger::Logger;
 
 use lightning_signer::signer::multi_signer::MultiSigner;
@@ -54,14 +54,9 @@ pub fn create_node_cfgs_with_signer<'a>(
 
         let node_id = signer.new_node(TEST_NODE_CONFIG);
 
-        let network = Testnet;
-        let now = Duration::from_secs(genesis_block(network).header.time as u64);
-        let backing =
-            keysinterface::KeysManager::new(&seed.clone(), now.as_secs(), now.subsec_nanos());
         let keys_manager = LoopbackSignerKeysInterface {
             node_id,
             signer: Arc::clone(signer),
-            backing,
         };
 
         let chain_monitor = TestChainMonitor::new(
@@ -360,4 +355,67 @@ fn channel_force_close_with_htlc_test() {
 
     // Check if closing tx correctly spends the funding
     check_spends!(node_txn[0], chan_1.3);
+}
+
+const ANTI_REORG_DELAY: u32 = 6;
+
+use bitcoin::secp256k1::{Secp256k1, Message};
+use bitcoin::blockdata::script::Builder;
+use bitcoin::blockdata::opcodes;
+
+macro_rules! check_spendable_outputs {
+	($node: expr, $der_idx: expr, $keysinterface: expr, $chan_value: expr) => {
+		{
+			let mut events = $node.chain_monitor.chain_monitor.get_and_clear_pending_events();
+			let mut txn = Vec::new();
+			let mut all_outputs = Vec::new();
+			let secp_ctx = Secp256k1::new();
+			for event in events.drain(..) {
+				match event {
+					Event::SpendableOutputs { mut outputs } => {
+						for outp in outputs.drain(..) {
+							txn.push($keysinterface.spend_spendable_outputs(&[&outp], Vec::new(), Builder::new().push_opcode(opcodes::all::OP_RETURN).into_script(), 253, &secp_ctx).unwrap());
+							all_outputs.push(outp);
+						}
+					},
+					_ => panic!("Unexpected event"),
+				};
+			}
+			if all_outputs.len() > 1 {
+				if let Ok(tx) = $keysinterface.spend_spendable_outputs(&all_outputs.iter().map(|a| a).collect::<Vec<_>>(), Vec::new(), Builder::new().push_opcode(opcodes::all::OP_RETURN).into_script(), 253, &secp_ctx) {
+					txn.push(tx);
+				}
+			}
+			txn
+		}
+	}
+}
+
+#[test]
+fn test_static_output_closing_tx() {
+    let signer = Arc::new(MultiSigner::new());
+
+    let chanmon_cfgs = create_chanmon_cfgs(2);
+    let node_cfgs = create_node_cfgs_with_signer(2, &signer, &chanmon_cfgs);
+    let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[None, None]);
+    let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
+
+    let chan = create_announced_chan_between_nodes(&nodes, 0, 1, InitFeatures::known(), InitFeatures::known());
+
+    send_payment(&nodes[0], &vec!(&nodes[1])[..], 8000000);
+    let closing_tx = close_channel(&nodes[0], &nodes[1], &chan.2, chan.3, true).2;
+
+    mine_transaction(&nodes[0], &closing_tx);
+    connect_blocks(&nodes[0], ANTI_REORG_DELAY - 1);
+
+    let spend_txn = check_spendable_outputs!(nodes[0], 2, node_cfgs[0].keys_manager, 100000);
+    assert_eq!(spend_txn.len(), 1);
+    check_spends!(spend_txn[0], closing_tx);
+
+    mine_transaction(&nodes[1], &closing_tx);
+    connect_blocks(&nodes[1], ANTI_REORG_DELAY - 1);
+
+    let spend_txn = check_spendable_outputs!(nodes[1], 2, node_cfgs[1].keys_manager, 100000);
+    assert_eq!(spend_txn.len(), 1);
+    check_spends!(spend_txn[0], closing_tx);
 }
