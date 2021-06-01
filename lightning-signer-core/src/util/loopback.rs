@@ -317,15 +317,8 @@ impl BaseSign for LoopbackChannelSigner {
             .map_err(|_s| ()) // NOT TESTED
     }
 
-    fn sign_justice_transaction(
-        &self,
-        justice_tx: &Transaction,
-        input: usize,
-        amount: u64,
-        per_commitment_key: &SecretKey,
-        htlc: &Option<HTLCOutputInCommitment>,
-        secp_ctx: &Secp256k1<All>,
-    ) -> Result<Signature, ()> {
+
+    fn sign_justice_revoked_output(&self, justice_tx: &Transaction, input: usize, amount: u64, per_commitment_key: &SecretKey, secp_ctx: &Secp256k1<All>) -> Result<Signature, ()> {
         let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
         let counterparty_pubkeys = self.counterparty_pubkeys.as_ref().unwrap();
 
@@ -335,18 +328,36 @@ impl BaseSign for LoopbackChannelSigner {
             counterparty_pubkeys,
             &self.pubkeys,
         )?;
-        let redeem_script = if let Some(ref htlc) = *htlc {
-            // BEGIN NOT TESTED
-            let tx_keys = self.make_counterparty_tx_keys(&per_commitment_point, secp_ctx)?;
-            chan_utils::get_htlc_redeemscript(&htlc, &tx_keys)
-        // END NOT TESTED
-        } else {
+        let redeem_script =
             chan_utils::get_revokeable_redeemscript(
                 &revocation_key,
                 self.local_to_self_delay,
                 &delayed_payment_key,
-            )
-        };
+            );
+
+        // TODO phase 2
+        let res = self
+            .signer
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                let sig = chan.sign_justice_sweep(
+                    justice_tx,
+                    input,
+                    per_commitment_key,
+                    &redeem_script,
+                    amount,
+                )?;
+                Ok(signature_to_bitcoin_vec(sig))
+            })
+            .map_err(|s| self.bad_status(s))?;
+
+        bitcoin_sig_to_signature(res)
+    }
+
+    fn sign_justice_revoked_htlc(&self, justice_tx: &Transaction, input: usize, amount: u64, per_commitment_key: &SecretKey, htlc: &HTLCOutputInCommitment, secp_ctx: &Secp256k1<All>) -> Result<Signature, ()> {
+        let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
+
+        let tx_keys = self.make_counterparty_tx_keys(&per_commitment_point, secp_ctx)?;
+        let redeem_script = chan_utils::get_htlc_redeemscript(&htlc, &tx_keys);
 
         // TODO phase 2
         let res = self

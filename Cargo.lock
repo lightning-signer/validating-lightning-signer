@@ -499,15 +499,15 @@ checksum = "4a1ce40d6fc9764887c2fdc7305c3dcc429ba11ff981c1509416afd5697e4437"
 
 [[package]]
 name = "httpdate"
-version = "1.0.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6456b8a6c8f33fee7d958fcd1b60d55b11940a79e63ae87013e6d22e26034440"
+checksum = "494b4d60369511e7dea41cf646832512a94e542f68bb9c49e54518e0f468eb47"
 
 [[package]]
 name = "hyper"
-version = "0.14.8"
+version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3f71a7eea53a3f8257a7b4795373ff886397178cd634430ea94e12d7fe4fe34"
+checksum = "e8e946c2b1349055e0b72ae281b238baf1a3ea7307c7e9f9d64673bdd9c26ac7"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -605,7 +605,7 @@ checksum = "18794a8ad5b29321f790b55d93dfba91e125cb1a9edbd4f8e3150acc771c1a5e"
 [[package]]
 name = "lightning"
 version = "0.0.14"
-source = "git+https://github.com/rust-bitcoin/rust-lightning.git?rev=0b1f0a7edc7d836e75e69442e84038f6c4116174#0b1f0a7edc7d836e75e69442e84038f6c4116174"
+source = "git+https://github.com/rust-bitcoin/rust-lightning.git?rev=ee29bc4096897e5309a95927a287f183db300e8d#ee29bc4096897e5309a95927a287f183db300e8d"
 dependencies = [
  "bitcoin",
  "hex 0.3.2",
@@ -636,6 +636,7 @@ dependencies = [
  "clap",
  "ctrlc",
  "hex 0.3.2",
+ "hyper",
  "kv",
  "lightning",
  "lightning-signer-core",
@@ -1294,10 +1295,11 @@ checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
 
 [[package]]
 name = "socket2"
-version = "0.4.0"
+version = "0.3.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e3dfc207c526015c632472a77be09cf1b6e46866581aecae5cc38fb4235dea2"
+checksum = "122e570113d28d773067fab24266b66753f6ea915758651696b6e35e49f88d6e"
 dependencies = [
+ "cfg-if",
  "libc",
  "winapi 0.3.9",
 ]

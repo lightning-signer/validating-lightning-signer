@@ -27,6 +27,7 @@ rand = "0.4"
 kv = { version = "0.22.0", features = ["json-value"], optional = true }
 tonic = { version = "0.4", optional = true }
 prost = { version = "0.7", optional = true }
+hyper = "=0.14.4"  # 0.14.5 depends on socket2 0.4 which requires a higher MSRV
 tokio = { version = "1.6", features = ["macros", "rt-multi-thread"], optional = true }
 serde = { version = "1.0.105", features = ["derive"], optional = true }
 serde_json = { version = "1.0.48", optional = true }
@@ -38,7 +39,7 @@ triggered = "0.1.1"
 
 [dependencies.lightning]
 git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "0b1f0a7edc7d836e75e69442e84038f6c4116174"
+rev = "ee29bc4096897e5309a95927a287f183db300e8d"
 version = "0.0.14"
 
 # we need this for integration testing
