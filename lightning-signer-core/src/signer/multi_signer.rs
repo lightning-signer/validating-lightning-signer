@@ -388,7 +388,8 @@ mod tests {
     use bitcoin::{OutPoint, Script, TxIn, TxOut};
     use lightning::ln::chan_utils::{
         build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
-        make_funding_redeemscript, ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys,
+        make_funding_redeemscript, BuiltCommitmentTransaction, ChannelPublicKeys,
+        HTLCOutputInCommitment, TxCreationKeys,
     };
     use lightning::ln::PaymentHash;
 
@@ -408,6 +409,15 @@ mod tests {
     use crate::util::status::{Code, Status};
     use bitcoin::hashes::Hash;
     use lightning::chain::keysinterface::BaseSign;
+
+    macro_rules! assert_invalid_argument_err {
+        ($status: ident, $msg:expr) => {
+            assert!($status.is_err());
+            let err = $status.unwrap_err();
+            assert_eq!(err.code(), Code::InvalidArgument);
+            assert_eq!(err.message(), $msg);
+        };
+    }
 
     fn init_node(signer: &MultiSigner, node_config: NodeConfig, seedstr: &str) -> PublicKey {
         let mut seed = [0; 32];
@@ -2828,5 +2838,217 @@ mod tests {
             hex::encode(sighash),
             "c37af31116d1b27caf68aae9e3ac82f1477929014d5b917657d0eb49478cb670"
         );
+    }
+
+    fn sign_counterparty_commitment_tx_with_mutators<KeysMutator, TxMutator>(
+        keysmut: KeysMutator,
+        txmut: TxMutator,
+    ) -> Result<(), Status>
+    where
+        KeysMutator: Fn(&mut TxCreationKeys),
+        TxMutator: Fn(&mut BuiltCommitmentTransaction),
+    {
+        let signer = MultiSigner::new();
+        let setup = make_static_test_channel_setup();
+        let (node_id, channel_id) =
+            init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
+        let remote_percommitment_point = make_test_pubkey(10);
+        let counterparty_points = make_test_counterparty_points();
+
+        let htlc1 = HTLCOutputInCommitment {
+            offered: true,
+            amount_msat: 1000,
+            payment_hash: PaymentHash([1; 32]),
+            cltv_expiry: 2 << 16,
+            transaction_output_index: None,
+        };
+
+        let htlc2 = HTLCOutputInCommitment {
+            offered: false,
+            amount_msat: 1000,
+            payment_hash: PaymentHash([3; 32]),
+            cltv_expiry: 3 << 16,
+            transaction_output_index: None,
+        };
+
+        let htlc3 = HTLCOutputInCommitment {
+            offered: false,
+            amount_msat: 1000,
+            payment_hash: PaymentHash([5; 32]),
+            cltv_expiry: 4 << 16,
+            transaction_output_index: None,
+        };
+
+        let (ser_signature, tx) = signer.with_ready_channel(&node_id, &channel_id, |chan| {
+            let channel_parameters = chan.make_channel_parameters();
+            let parameters = channel_parameters.as_counterparty_broadcastable();
+            let mut htlcs = vec![htlc1.clone(), htlc2.clone(), htlc3.clone()];
+            let mut payment_hashmap = Map::new();
+            for htlc in &htlcs {
+                payment_hashmap.insert(
+                    Ripemd160Hash::hash(&htlc.payment_hash.0).into_inner(),
+                    htlc.payment_hash,
+                );
+            }
+            let mut keys = chan
+                .make_counterparty_tx_keys(&remote_percommitment_point)
+                .unwrap();
+
+            // Mutate the tx creation keys.
+            keysmut(&mut keys);
+
+            let redeem_scripts =
+                build_tx_scripts(&keys, 100, 197, &mut htlcs, &parameters).expect("scripts");
+            let commit_num = 23;
+            let feerate_per_kw = 0;
+            let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
+                keys,
+                commit_num,
+                feerate_per_kw,
+                197,
+                100,
+                htlcs,
+            );
+            // rebuild to get the scripts
+            let trusted_tx = commitment_tx.trust();
+            let mut tx = trusted_tx.built_transaction().clone();
+
+            // Mutate the transaction and recalculate the txid.
+            txmut(&mut tx);
+            tx.txid = tx.transaction.txid();
+
+            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let ser_signature = chan.sign_counterparty_commitment_tx(
+                &tx.transaction,
+                &output_witscripts,
+                &remote_percommitment_point,
+                setup.channel_value_sat,
+                &payment_hashmap,
+                commit_num,
+            )?;
+            Ok((ser_signature, tx.transaction.clone()))
+        })?;
+
+        assert_eq!(
+            hex::encode(tx.txid()),
+            "433e14a7560ffe7d724267c2c0068c2e183e06057004407dda1bd863160ae5b6"
+        );
+
+        let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
+        let channel_funding_redeemscript =
+            make_funding_redeemscript(&funding_pubkey, &counterparty_points.funding_pubkey);
+
+        check_signature(
+            &tx,
+            0,
+            ser_signature,
+            &funding_pubkey,
+            setup.channel_value_sat,
+            &channel_funding_redeemscript,
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn sign_counterparty_commitment_tx_with_no_mut_test() {
+        let status = sign_counterparty_commitment_tx_with_mutators(
+            |_keys| {
+                // don't mutate the keys, should pass
+            },
+            |_tx| {
+                // don't mutate the tx, should pass
+            },
+        );
+        assert!(status.is_ok());
+    }
+
+    #[test]
+    // policy-v1-commitment-version
+    fn sign_counterparty_commitment_tx_with_bad_version_test() {
+        let status = sign_counterparty_commitment_tx_with_mutators(
+            |_keys| {},
+            |tx| {
+                tx.transaction.version = 3;
+            },
+        );
+        assert_invalid_argument_err!(status, "policy failure: bad commitment version: 3");
+    }
+
+    #[test]
+    // policy-v1-commitment-locktime
+    fn sign_counterparty_commitment_tx_with_bad_locktime_test() {
+        let status = sign_counterparty_commitment_tx_with_mutators(
+            |_keys| {
+                // don't mutate the keys
+            },
+            |tx| {
+                tx.transaction.lock_time = 42;
+            },
+        );
+        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+    }
+
+    #[test]
+    // policy-v1-commitment-nsequence
+    fn sign_counterparty_commitment_tx_with_bad_nsequence_test() {
+        let status = sign_counterparty_commitment_tx_with_mutators(
+            |_keys| {},
+            |tx| {
+                tx.transaction.input[0].sequence = 42;
+            },
+        );
+        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+    }
+
+    #[test]
+    // policy-v1-commitment-input-single
+    fn sign_counterparty_commitment_tx_with_bad_numinputs_test() {
+        let status = sign_counterparty_commitment_tx_with_mutators(
+            |_keys| {},
+            |tx| {
+                let mut inp2 = tx.transaction.input[0].clone();
+                inp2.previous_output.txid = bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
+                tx.transaction.input.push(inp2);
+            },
+        );
+        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+    }
+
+    #[test]
+    // policy-v1-commitment-input-match-funding
+    fn sign_counterparty_commitment_tx_with_input_mismatch_test() {
+        let status = sign_counterparty_commitment_tx_with_mutators(
+            |_keys| {},
+            |tx| {
+                tx.transaction.input[0].previous_output.txid =
+                    bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
+            },
+        );
+        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+    }
+
+    #[test]
+    // policy-v1-commitment-revocation-pubkey
+    fn sign_counterparty_commitment_tx_with_bad_revpubkey_test() {
+        let status = sign_counterparty_commitment_tx_with_mutators(
+            |keys| {
+                keys.revocation_key = make_test_pubkey(42);
+            },
+            |_tx| {},
+        );
+        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+    }
+
+    #[test]
+    // policy-v1-commitment-htlc-pubkey
+    fn sign_counterparty_commitment_tx_with_bad_htlcpubkey_test() {
+        let status = sign_counterparty_commitment_tx_with_mutators(
+            |keys| {
+                keys.countersignatory_htlc_key = make_test_pubkey(42);
+            },
+            |_tx| {},
+        );
+        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
     }
 }

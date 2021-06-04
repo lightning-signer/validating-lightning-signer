@@ -483,19 +483,16 @@ impl Channel {
         Ok((sig, htlc_sigs))
     }
 
-    pub(crate) fn make_counterparty_commitment_tx(
+    // This function is needed for testing with mutated keys.
+    pub(crate) fn make_counterparty_commitment_tx_with_keys(
         &self,
-        remote_per_commitment_point: &PublicKey,
+        keys: TxCreationKeys,
         commitment_number: u64,
         feerate_per_kw: u32,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
         htlcs: Vec<HTLCOutputInCommitment>,
     ) -> CommitmentTransaction {
-        let keys = self
-            .make_counterparty_tx_keys(remote_per_commitment_point)
-            .unwrap();
-
         let mut htlcs_with_aux = htlcs.iter().map(|h| (h.clone(), ())).collect();
         let channel_parameters = self.make_channel_parameters();
         let parameters = channel_parameters.as_counterparty_broadcastable();
@@ -509,6 +506,28 @@ impl Channel {
             &parameters,
         );
         commitment_tx
+    }
+
+    pub(crate) fn make_counterparty_commitment_tx(
+        &self,
+        remote_per_commitment_point: &PublicKey,
+        commitment_number: u64,
+        feerate_per_kw: u32,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
+        htlcs: Vec<HTLCOutputInCommitment>,
+    ) -> CommitmentTransaction {
+        let keys = self
+            .make_counterparty_tx_keys(remote_per_commitment_point)
+            .unwrap();
+        self.make_counterparty_commitment_tx_with_keys(
+            keys,
+            commitment_number,
+            feerate_per_kw,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            htlcs,
+        )
     }
 
     /// Sign a holder commitment transaction after rebuilding it
@@ -1026,6 +1045,16 @@ impl Channel {
             );
             // END NOT TESTED
         }
+
+        // The sighash comparison in the previous block will fail if any of the
+        // following policies are violated:
+        // - policy-v1-commitment-version
+        // - policy-v1-commitment-locktime
+        // - policy-v1-commitment-nsequence
+        // - policy-v1-commitment-input-single
+        // - policy-v1-commitment-input-match-funding
+        // - policy-v1-commitment-revocation-pubkey
+        // - policy-v1-commitment-htlc-pubkey
 
         // Sign the commitment.  Discard the htlc signatures for now.
         let sigs = self
