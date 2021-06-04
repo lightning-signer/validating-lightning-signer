@@ -149,19 +149,13 @@ impl SimpleValidator {
 // TODO - policy-v2-funding-change-to-wallet
 
 // sign_commitment_tx has some, missing these
-// TODO - policy-v1-commitment-input-single
-// TODO - policy-v1-commitment-input-match-funding
-// TODO - policy-v1-commitment-locktime
-// TODO - policy-v1-commitment-nsequence
 // TODO - policy-v2-commitment-initial-funding-value
 // TODO - policy-v2-commitment-spends-active-utxo
 // TODO - policy-v2-commitment-htlc-routing-balance
 // TODO - policy-v2-commitment-htlc-received-spends-active-utxo
-// TODO - policy-v1-commitment-revocation-pubkey
 // TODO - policy-v1-commitment-htlc-delay-range
 // TODO - policy-v1-commitment-payment-pubkey
 // TODO - policy-v1-commitment-delayed-pubkey
-// TODO - policy-v1-commitment-htlc-pubkey
 // TODO - policy-v2-commitment-htlc-offered-hash-matches
 // TODO - policy-v1-commitment-outputs-trimmed
 // TODO - policy-v2-commitment-previous-revoked
