@@ -19,6 +19,7 @@ pub trait Validator {
     ) -> Result<CommitmentInfo, ValidationError>;
 
     /// Phase 1 remote tx validation
+    // FIXME - shouldn't this be validate_counterparty_tx_phase1?
     fn validate_remote_tx_phase1(
         &self,
         setup: &ChannelSetup,
@@ -27,14 +28,15 @@ pub trait Validator {
         our_address: &Payload,
     ) -> Result<(), ValidationError>;
     /// Phase 2 remote tx validation
-    fn validate_remote_tx(
+    fn validate_commitment_tx(
         &self,
         setup: &ChannelSetup,
         state: &ValidatorState,
         info2: &CommitmentInfo2,
+        is_counterparty: bool,
     ) -> Result<(), ValidationError>;
     /// Validate channel open
-    fn validate_channel_open(&self) -> Result<(), ValidationError>;
+    fn validate_channel_open(&self, setup: &ChannelSetup) -> Result<(), ValidationError>;
 }
 
 // BEGIN NOT TESTED
@@ -155,7 +157,6 @@ impl SimpleValidator {
 // TODO - policy-v2-commitment-htlc-received-spends-active-utxo
 // TODO - policy-v1-commitment-htlc-delay-range
 // TODO - policy-v1-commitment-payment-pubkey
-// TODO - policy-v1-commitment-delayed-pubkey
 // TODO - policy-v2-commitment-htlc-offered-hash-matches
 // TODO - policy-v1-commitment-outputs-trimmed
 // TODO - policy-v2-commitment-previous-revoked
@@ -348,32 +349,45 @@ impl Validator for SimpleValidator {
         Ok(())
     }
 
-    fn validate_remote_tx(
+    fn validate_commitment_tx(
         &self,
-        _setup: &ChannelSetup,
+        setup: &ChannelSetup,
         state: &ValidatorState,
         info: &CommitmentInfo2,
+        is_counterparty: bool,
     ) -> Result<(), ValidationError> {
         let policy = &self.policy;
 
         // policy-v1-commitment-to-self-delay-range
-        self.validate_delay("to_broadcaster", info.to_self_delay as u32)?;
+        if is_counterparty {
+            if info.to_self_delay != setup.counterparty_to_self_delay {
+                return Err(Policy("counterparty to_self delay mismatch".to_string()));
+            }
+        } else {
+            if info.to_self_delay != setup.holder_to_self_delay {
+                return Err(Policy("holder to_self delay mismatch".to_string()));
+            }
+        }
 
         // policy-v2-commitment-htlc-count-limit
         if info.offered_htlcs.len() + info.received_htlcs.len() > policy.max_htlcs {
             return Err(Policy("too many HTLCs".to_string()));
         }
 
-        let mut htlc_value_sat = 0;
+        let mut htlc_value_sat: u64 = 0;
 
         for htlc in &info.offered_htlcs {
             self.validate_expiry("offered HTLC", htlc.cltv_expiry, state.current_height)?;
-            htlc_value_sat += htlc.value_sat;
+            htlc_value_sat = htlc_value_sat
+                .checked_add(htlc.value_sat)
+                .ok_or_else(|| Policy("offered HTLC value overflow".to_string()))?;
         }
 
         for htlc in &info.received_htlcs {
             self.validate_expiry("received HTLC", htlc.cltv_expiry, state.current_height)?;
-            htlc_value_sat += htlc.value_sat;
+            htlc_value_sat = htlc_value_sat
+                .checked_add(htlc.value_sat)
+                .ok_or_else(|| Policy("received HTLC value overflow".to_string()))?;
         }
 
         // policy-v2-commitment-htlc-inflight-limit
@@ -385,8 +399,16 @@ impl Validator for SimpleValidator {
         }
 
         // policy-v2-commitment-fee-range
-        let shortage = self.channel_value_sat
-            - (info.to_broadcaster_value_sat + info.to_countersigner_value_sat + htlc_value_sat);
+        let consumed = info
+            .to_broadcaster_value_sat
+            .checked_add(info.to_countersigner_value_sat)
+            .ok_or_else(|| Policy("channel value overflow".to_string()))?
+            .checked_add(htlc_value_sat)
+            .ok_or_else(|| Policy("channel value overflow on HTLC".to_string()))?;
+        let shortage = self
+            .channel_value_sat
+            .checked_sub(consumed)
+            .ok_or_else(|| Policy("channel shortage underflow".to_string()))?;
         if shortage > policy.epsilon_sat {
             return Err(Policy(format!(
                 "channel value short by {} > {}",
@@ -399,13 +421,18 @@ impl Validator for SimpleValidator {
 
     // TODO - policy-v3-velocity-funding
     // TODO - this implementation is incomplete
-    fn validate_channel_open(&self) -> Result<(), ValidationError> {
+    fn validate_channel_open(&self, setup: &ChannelSetup) -> Result<(), ValidationError> {
         if self.channel_value_sat > self.policy.max_channel_size_sat {
             return Err(Policy(format!(
                 "channel value {} too large",
                 self.channel_value_sat
             )));
         }
+        self.validate_delay(
+            "counterparty_to_self_delay",
+            setup.counterparty_to_self_delay as u32,
+        )?;
+        self.validate_delay("holder_to_self_delay", setup.holder_to_self_delay as u32)?;
         Ok(())
     }
 }
@@ -511,10 +538,11 @@ mod tests {
 
     #[test]
     fn validate_channel_open_test() {
+        let setup = make_test_channel_setup();
         let validator = make_test_validator(100_000_000);
-        assert!(validator.validate_channel_open().is_ok());
+        assert!(validator.validate_channel_open(&setup).is_ok());
         let validator_large = make_test_validator(100_000_001);
-        assert!(validator_large.validate_channel_open().is_err());
+        assert!(validator_large.validate_channel_open(&setup).is_err());
     }
 
     fn make_counterparty_info(
@@ -622,46 +650,64 @@ mod tests {
     }
 
     #[test]
-    fn validate_remote_tx_test() {
+    fn validate_commitment_tx_test() {
         let validator = make_validator();
         let state = make_validator_state();
         let info = make_counterparty_info(99_000_000, 900_000, 6, vec![], vec![]);
         assert!(validator
-            .validate_remote_tx(&make_test_channel_setup(), &state, &info)
+            .validate_commitment_tx(&make_test_channel_setup(), &state, &info, true)
             .is_ok());
     }
 
     #[test]
-    fn validate_remote_tx_to_broadcaster_min_delay_test() {
-        let validator = make_validator();
-        let state = make_validator_state();
-        // 5 is ok ...
-        let info = make_counterparty_info(99_000_000, 900_000, 5, vec![], vec![]);
-        assert!(validator
-            .validate_remote_tx(&make_test_channel_setup(), &state, &info)
-            .is_ok());
-        // but 4 is right out
-        let info_bad = make_counterparty_info(99_000_000, 900_000, 4, vec![], vec![]);
+    fn validate_to_holder_min_delay_test() {
+        let mut setup = make_test_channel_setup();
+        let validator = make_test_validator(1_000_000);
+        setup.holder_to_self_delay = 5;
+        assert!(validator.validate_channel_open(&setup).is_ok());
+        setup.holder_to_self_delay = 4;
         assert_policy_error!(
-            validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
-            "to_broadcaster delay too small"
+            validator.validate_channel_open(&setup),
+            "holder_to_self_delay delay too small"
         );
     }
 
     #[test]
-    fn validate_remote_tx_to_broadcaster_max_delay_test() {
-        let validator = make_validator();
-        let state = make_validator_state();
-        // 1440 is ok ...
-        let info = make_counterparty_info(99_000_000, 900_000, 1440, vec![], vec![]);
-        assert!(validator
-            .validate_remote_tx(&make_test_channel_setup(), &state, &info)
-            .is_ok());
-        // but 1441 is right out
-        let info_bad = make_counterparty_info(99_000_000, 900_000, 1441, vec![], vec![]);
+    fn validate_to_holder_max_delay_test() {
+        let mut setup = make_test_channel_setup();
+        let validator = make_test_validator(1_000_000);
+        setup.holder_to_self_delay = 1440;
+        assert!(validator.validate_channel_open(&setup).is_ok());
+        setup.holder_to_self_delay = 1441;
         assert_policy_error!(
-            validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
-            "to_broadcaster delay too large"
+            validator.validate_channel_open(&setup),
+            "holder_to_self_delay delay too large"
+        );
+    }
+
+    #[test]
+    fn validate_to_counterparty_min_delay_test() {
+        let mut setup = make_test_channel_setup();
+        let validator = make_test_validator(1_000_000);
+        setup.counterparty_to_self_delay = 5;
+        assert!(validator.validate_channel_open(&setup).is_ok());
+        setup.counterparty_to_self_delay = 4;
+        assert_policy_error!(
+            validator.validate_channel_open(&setup),
+            "counterparty_to_self_delay delay too small"
+        );
+    }
+
+    #[test]
+    fn validate_to_counterparty_max_delay_test() {
+        let mut setup = make_test_channel_setup();
+        let validator = make_test_validator(1_000_000);
+        setup.counterparty_to_self_delay = 1440;
+        assert!(validator.validate_channel_open(&setup).is_ok());
+        setup.counterparty_to_self_delay = 1441;
+        assert_policy_error!(
+            validator.validate_channel_open(&setup),
+            "counterparty_to_self_delay delay too large"
         );
     }
 
@@ -758,12 +804,12 @@ mod tests {
     }
 
     #[test]
-    fn validate_remote_tx_shortage_test() {
+    fn validate_commitment_tx_shortage_test() {
         let validator = make_validator();
         let state = make_validator_state();
         let info_bad = make_counterparty_info(99_000_000, 900_000 - 1, 6, vec![], vec![]);
         assert_policy_error!(
-            validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
+            validator.validate_commitment_tx(&make_test_channel_setup(), &state, &info_bad, true),
             "channel value short by 100001 > 100000"
         );
     }
@@ -1021,7 +1067,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_remote_tx_htlc_shortage_test() {
+    fn validate_commitment_tx_htlc_shortage_test() {
         let validator = make_validator();
         let htlc = HTLCInfo2 {
             value_sat: 100_000,
@@ -1031,30 +1077,30 @@ mod tests {
         let state = make_validator_state();
         let info = make_counterparty_info(99_000_000, 800_000, 6, vec![htlc.clone()], vec![]);
         assert!(validator
-            .validate_remote_tx(&make_test_channel_setup(), &state, &info)
+            .validate_commitment_tx(&make_test_channel_setup(), &state, &info, true)
             .is_ok());
         let info_bad =
             make_counterparty_info(99_000_000, 800_000 - 1, 6, vec![htlc.clone()], vec![]);
         assert_policy_error!(
-            validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
+            validator.validate_commitment_tx(&make_test_channel_setup(), &state, &info_bad, true),
             "channel value short by 100001 > 100000"
         );
     }
 
     #[test]
-    fn validate_remote_tx_htlc_count_test() {
+    fn validate_commitment_tx_htlc_count_test() {
         let validator = make_validator();
         let state = make_validator_state();
         let htlcs = (0..1001).map(|_| make_htlc_info2(1100)).collect();
         let info_bad = make_counterparty_info(99_000_000, 900_000, 6, vec![], htlcs);
         assert_policy_error!(
-            validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
+            validator.validate_commitment_tx(&make_test_channel_setup(), &state, &info_bad, true),
             "too many HTLCs"
         );
     }
 
     #[test]
-    fn validate_remote_tx_htlc_value_test() {
+    fn validate_commitment_tx_htlc_value_test() {
         let validator = make_validator();
         let state = make_validator_state();
         let htlcs = (0..1000)
@@ -1066,35 +1112,35 @@ mod tests {
             .collect();
         let info_bad = make_counterparty_info(99_000_000, 900_000, 6, vec![], htlcs);
         assert_policy_error!(
-            validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
+            validator.validate_commitment_tx(&make_test_channel_setup(), &state, &info_bad, true),
             "sum of HTLC values 10001000 too large"
         );
     }
 
     #[test]
-    fn validate_remote_tx_htlc_delay_test() {
+    fn validate_commitment_tx_htlc_delay_test() {
         let validator = make_validator();
         let state = make_validator_state();
         let info_good =
             make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info2(1005)]);
         assert!(validator
-            .validate_remote_tx(&make_test_channel_setup(), &state, &info_good)
+            .validate_commitment_tx(&make_test_channel_setup(), &state, &info_good, true)
             .is_ok());
         let info_good =
             make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info2(2440)]);
         assert!(validator
-            .validate_remote_tx(&make_test_channel_setup(), &state, &info_good)
+            .validate_commitment_tx(&make_test_channel_setup(), &state, &info_good, true)
             .is_ok());
         let info_bad =
             make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info2(1004)]);
         assert_policy_error!(
-            validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
+            validator.validate_commitment_tx(&make_test_channel_setup(), &state, &info_bad, true),
             "received HTLC expiry too early"
         );
         let info_bad =
             make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info2(2441)]);
         assert_policy_error!(
-            validator.validate_remote_tx(&make_test_channel_setup(), &state, &info_bad),
+            validator.validate_commitment_tx(&make_test_channel_setup(), &state, &info_bad, true),
             "received HTLC expiry too late"
         );
     }
