@@ -144,15 +144,21 @@ impl SimpleValidator {
 // sign_commitment_tx has some, missing these
 // TODO - policy-v2-commitment-initial-funding-value
 // TODO - policy-v2-commitment-spends-active-utxo
+// TODO - policy-v2-commitment-fee-range
 // TODO - policy-v2-commitment-htlc-routing-balance
 // TODO - policy-v2-commitment-htlc-received-spends-active-utxo
 // TODO - policy-v1-commitment-htlc-delay-range
+// TODO - policy-v2-commitment-htlc-count-limit
 // TODO - policy-v1-commitment-payment-pubkey
 // TODO - policy-v2-commitment-htlc-offered-hash-matches
+// TODO - policy-v2-commitment-htlc-inflight-limit
 // TODO - policy-v1-commitment-outputs-trimmed
 // TODO - policy-v2-commitment-previous-revoked
 // TODO - policy-v2-commitment-local-not-revoked
 // TODO - policy-v1-commitment-anchor-static-remotekey
+// TODO - policy-v1-commitment-anchor-to-local
+// TODO - policy-v1-commitment-anchor-to-remote
+// TODO - policy-v1-commitment-anchors-not-when-off
 
 // not yet implemented
 // TODO - policy-v2-revoke-new-commitment-signed
@@ -166,6 +172,7 @@ impl SimpleValidator {
 // TODO - policy-v1-htlc-locktime
 // TODO - policy-v1-htlc-nsequence
 // TODO - policy-v1-htlc-fee-range
+// TODO - policy-v2-htlc-delay-range
 
 // not yet implemented
 // TODO - policy-v2-mutual-destination-whitelisted
@@ -288,10 +295,12 @@ impl Validator for SimpleValidator {
                 self.channel_value_sat
             )));
         }
+        // policy-v1-commitment-to-self-delay-range
         self.validate_delay(
             "counterparty_to_self_delay",
             setup.counterparty_to_self_delay as u32,
         )?;
+        // policy-v1-commitment-to-self-delay-range
         self.validate_delay("holder_to_self_delay", setup.holder_to_self_delay as u32)?;
         Ok(())
     }
@@ -449,6 +458,7 @@ mod tests {
     }
 
     #[test]
+    // policy-v1-commitment-to-self-delay-range
     fn validate_to_holder_min_delay_test() {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator(1_000_000);
@@ -462,6 +472,7 @@ mod tests {
     }
 
     #[test]
+    // policy-v1-commitment-to-self-delay-range
     fn validate_to_holder_max_delay_test() {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator(1_000_000);
@@ -475,6 +486,7 @@ mod tests {
     }
 
     #[test]
+    // policy-v1-commitment-to-self-delay-range
     fn validate_to_counterparty_min_delay_test() {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator(1_000_000);
@@ -488,6 +500,7 @@ mod tests {
     }
 
     #[test]
+    // policy-v1-commitment-to-self-delay-range
     fn validate_to_counterparty_max_delay_test() {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator(1_000_000);
