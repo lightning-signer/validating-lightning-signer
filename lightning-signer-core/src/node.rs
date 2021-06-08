@@ -593,17 +593,16 @@ impl Channel {
         Ok((sig_vec, htlc_sig_vecs))
     }
 
-    pub(crate) fn make_holder_commitment_tx(
+    // This function is needed for testing with mutated keys.
+    pub(crate) fn make_holder_commitment_tx_with_keys(
         &self,
+        keys: TxCreationKeys,
         commitment_number: u64,
         feerate_per_kw: u32,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
         htlcs: Vec<HTLCOutputInCommitment>,
     ) -> CommitmentTransaction {
-        let per_commitment_point = self.get_per_commitment_point(commitment_number);
-        let keys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
-
         let mut htlcs_with_aux = htlcs.iter().map(|h| (h.clone(), ())).collect();
         let channel_parameters = self.make_channel_parameters();
         let parameters = channel_parameters.as_holder_broadcastable();
@@ -617,6 +616,26 @@ impl Channel {
             &parameters,
         );
         commitment_tx
+    }
+
+    pub(crate) fn make_holder_commitment_tx(
+        &self,
+        commitment_number: u64,
+        feerate_per_kw: u32,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
+        htlcs: Vec<HTLCOutputInCommitment>,
+    ) -> CommitmentTransaction {
+        let per_commitment_point = self.get_per_commitment_point(commitment_number);
+        let keys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
+        self.make_holder_commitment_tx_with_keys(
+            keys,
+            commitment_number,
+            feerate_per_kw,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            htlcs,
+        )
     }
 
     fn htlcs_info2_to_oic(
@@ -867,7 +886,7 @@ impl Channel {
             revocation_pubkey,
             to_broadcaster_delayed_pubkey: to_counterparty_delayed_pubkey,
             to_broadcaster_value_sat: to_counterparty_value_sat,
-            to_self_delay: self.setup.holder_to_self_delay,
+            to_self_delay: self.setup.counterparty_to_self_delay,
             offered_htlcs,
             received_htlcs,
         })
@@ -929,7 +948,7 @@ impl Channel {
             revocation_pubkey,
             to_broadcaster_delayed_pubkey: to_holder_delayed_pubkey,
             to_broadcaster_value_sat: to_holder_value_sat,
-            to_self_delay: self.setup.counterparty_to_self_delay,
+            to_self_delay: self.setup.holder_to_self_delay,
             offered_htlcs,
             received_htlcs,
         })
@@ -945,7 +964,7 @@ impl Channel {
         channel_value_sat: u64,
         payment_hashmap: &Map<[u8; 20], PaymentHash>,
         commitment_number: u64,
-    ) -> Result<Vec<u8>, Status> {
+    ) -> Result<Signature, Status> {
         // Set the feerate_per_kw to 0 because it is only used to
         // generate the htlc success/timeout tx signatures and these
         // signatures are discarded.
@@ -966,7 +985,7 @@ impl Channel {
 
         // Since we didn't have the value at the real open, validate it now.
         validator
-            .validate_channel_open()
+            .validate_channel_open(&self.setup)
             .map_err(|ve| self.validation_error(ve))?;
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
@@ -995,7 +1014,7 @@ impl Channel {
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let state = ValidatorState { current_height: 0 };
         validator
-            .validate_remote_tx(&self.setup, &state, &info2)
+            .validate_commitment_tx(&self.setup, &state, &info2, true)
             .map_err(|ve| {
                 // BEGIN NOT TESTED
                 log_debug!(
@@ -1012,7 +1031,7 @@ impl Channel {
 
         let htlcs = Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
 
-        let commitment_tx = self.make_counterparty_commitment_tx(
+        let recomposed_tx = self.make_counterparty_commitment_tx(
             remote_per_commitment_point,
             commitment_number,
             feerate_per_kw,
@@ -1027,7 +1046,7 @@ impl Channel {
         );
         let original_tx_sighash =
             tx.signature_hash(0, &funding_redeemscript, SigHashType::All as u32);
-        let recomposed_tx_sighash = commitment_tx
+        let recomposed_tx_sighash = recomposed_tx
             .trust()
             .built_transaction()
             .transaction
@@ -1038,7 +1057,7 @@ impl Channel {
             log_debug!(
                 self,
                 "RECOMPOSED_TX={:#?}",
-                &commitment_tx.trust().built_transaction().transaction
+                &recomposed_tx.trust().built_transaction().transaction
             );
             return Err(
                 self.validation_error(ValidationError::Policy("sighash mismatch".to_string()))
@@ -1055,18 +1074,18 @@ impl Channel {
         // - policy-v1-commitment-input-match-funding
         // - policy-v1-commitment-revocation-pubkey
         // - policy-v1-commitment-htlc-pubkey
+        // - policy-v1-commitment-delayed-pubkey
 
-        // Sign the commitment.  Discard the htlc signatures for now.
+        // Sign the recomposed commitment.
         let sigs = self
             .keys
-            .sign_counterparty_commitment(&commitment_tx, &self.secp_ctx)
+            .sign_counterparty_commitment(&recomposed_tx, &self.secp_ctx)
             .map_err(|_| self.internal_error("failed to sign"))?;
-        let mut sig = sigs.0.serialize_der().to_vec();
-        sig.push(SigHashType::All as u8);
 
         self.persist()?;
 
-        Ok(sig)
+        // Discard the htlc signatures for now.
+        Ok(sigs.0)
     }
 
     fn htlcs_info1_to_info2(
@@ -1090,16 +1109,151 @@ impl Channel {
     pub fn sign_holder_commitment_tx(
         &self,
         tx: &bitcoin::Transaction,
-        funding_amount_sat: u64,
+        output_witscripts: &Vec<Vec<u8>>,
+        channel_value_sat: u64,
+        payment_hashmap: &Map<[u8; 20], PaymentHash>,
+        commitment_number: u64,
     ) -> Result<Signature, Status> {
-        sign_commitment(
-            &self.secp_ctx,
-            &self.keys,
-            &self.setup.counterparty_points.funding_pubkey,
-            &tx,
-            funding_amount_sat,
-        )
-        .map_err(|_| Status::internal("failed to sign"))
+        // Set the feerate_per_kw to 0 because it is only used to
+        // generate the htlc success/timeout tx signatures and these
+        // signatures are discarded.
+        let feerate_per_kw = 0;
+
+        if tx.output.len() != output_witscripts.len() {
+            // BEGIN NOT TESTED
+            return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
+            // END NOT TESTED
+        }
+
+        let validator = self
+            .node
+            .upgrade()
+            .unwrap()
+            .validator_factory
+            .make_validator_phase1(self, channel_value_sat);
+
+        // Since we didn't have the value at the real open, validate it now.
+        validator
+            .validate_channel_open(&self.setup)
+            .map_err(|ve| self.validation_error(ve))?;
+
+        // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
+        let is_counterparty = false;
+        let info = validator
+            .make_info(
+                &self.keys,
+                &self.setup,
+                is_counterparty,
+                tx,
+                output_witscripts,
+            )
+            .map_err(|err| self.validation_error(err))?;
+
+        let offered_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.offered_htlcs)?;
+        let received_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.received_htlcs)?;
+
+        let info2 = self.build_holder_commitment_info(
+            &self.get_per_commitment_point(commitment_number),
+            info.to_broadcaster_value_sat,
+            info.to_countersigner_value_sat,
+            offered_htlcs,
+            received_htlcs,
+        )?;
+
+        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
+        let state = ValidatorState { current_height: 0 };
+        validator
+            .validate_commitment_tx(&self.setup, &state, &info2, false)
+            .map_err(|ve| {
+                // BEGIN NOT TESTED
+                log_debug!(
+                    self,
+                    "VALIDATION FAILED:\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
+                    &tx,
+                    &self.setup,
+                    &state,
+                    &info2,
+                );
+                self.validation_error(ve)
+                // END NOT TESTED
+            })?;
+
+        let htlcs = Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
+
+        // We provide a dummy signature for the remote, since we don't require that sig
+        // to be passed in to this call.  It would have been better if HolderCommitmentTransaction
+        // didn't require the remote sig.
+        // TODO consider if we actually want the sig for policy checks
+        let dummy_sig = Secp256k1::new().sign(
+            &secp256k1::Message::from_slice(&[42; 32]).unwrap(),
+            &SecretKey::from_slice(&[42; 32]).unwrap(),
+        );
+        let mut htlc_dummy_sigs = Vec::with_capacity(htlcs.len());
+        htlc_dummy_sigs.resize(htlcs.len(), dummy_sig);
+
+        let recomposed_tx = self.make_holder_commitment_tx(
+            commitment_number,
+            feerate_per_kw,
+            info.to_broadcaster_value_sat,
+            info.to_countersigner_value_sat,
+            htlcs,
+        );
+
+        let funding_redeemscript = make_funding_redeemscript(
+            &self.keys.pubkeys().funding_pubkey,
+            &self.keys.counterparty_pubkeys().funding_pubkey,
+        );
+        let original_tx_sighash =
+            tx.signature_hash(0, &funding_redeemscript, SigHashType::All as u32);
+        let recomposed_tx_sighash = recomposed_tx
+            .trust()
+            .built_transaction()
+            .transaction
+            .signature_hash(0, &funding_redeemscript, SigHashType::All as u32);
+        if recomposed_tx_sighash != original_tx_sighash {
+            // BEGIN NOT TESTED
+            log_debug!(self, "ORIGINAL_TX={:#?}", &tx);
+            log_debug!(
+                self,
+                "RECOMPOSED_TX={:#?}",
+                &recomposed_tx.trust().built_transaction().transaction
+            );
+            return Err(
+                self.validation_error(ValidationError::Policy("sighash mismatch".to_string()))
+            );
+            // END NOT TESTED
+        }
+
+        // Holder commitments need an extra wrapper for the LDK signature routine.
+        let recomposed_holder_tx = HolderCommitmentTransaction::new(
+            recomposed_tx,
+            dummy_sig,
+            htlc_dummy_sigs,
+            &self.keys.pubkeys().funding_pubkey,
+            &self.keys.counterparty_pubkeys().funding_pubkey,
+        );
+
+        // The sighash comparison in the previous block will fail if any of the
+        // following policies are violated:
+        // - policy-v1-commitment-version
+        // - policy-v1-commitment-locktime
+        // - policy-v1-commitment-nsequence
+        // - policy-v1-commitment-input-single
+        // - policy-v1-commitment-input-match-funding
+        // - policy-v1-commitment-revocation-pubkey
+        // - policy-v1-commitment-htlc-pubkey
+        // - policy-v1-commitment-delayed-pubkey
+
+        // Sign the recomposed commitment.
+        let sigs = self
+            .keys
+            .sign_holder_commitment_and_htlcs(&recomposed_holder_tx, &self.secp_ctx)
+            .map_err(|_| self.internal_error("failed to sign"))?;
+
+        self.persist()?;
+
+        // Discard the htlc signatures for now.
+        Ok(sigs.0)
     }
 
     /// Phase 1
@@ -1569,14 +1723,14 @@ impl Node {
                 logger: Arc::clone(&stub.logger),
                 secp_ctx: stub.secp_ctx.clone(),
                 keys: EnforcingSigner::new(inmem_keys),
-                setup,
+                setup: setup.clone(),
                 id0: channel_id0,
                 id: opt_channel_id,
             }
         };
         let validator = self.validator_factory.make_validator(&chan);
         validator
-            .validate_channel_open()
+            .validate_channel_open(&setup)
             .map_err(|ve| chan.validation_error(ve))?;
 
         let mut channels = self.channels.lock().unwrap();

@@ -791,32 +791,44 @@ mod tests {
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
         let remote_percommitment_point = make_test_pubkey(10);
         let counterparty_points = make_test_counterparty_points();
-        let (ser_signature, tx) = signer
+        let (sig, tx) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let channel_parameters = chan.make_channel_parameters();
                 let parameters = channel_parameters.as_counterparty_broadcastable();
-                let mut htlcs = vec![];
                 let keys = chan
                     .make_counterparty_tx_keys(&remote_percommitment_point)
                     .unwrap();
-                let redeem_scripts =
-                    build_tx_scripts(&keys, 100, 197, &mut htlcs, &parameters).expect("scripts");
                 let commit_num = 23;
                 let feerate_per_kw = 0;
+                let to_broadcaster = 200;
+                let to_countersignatory = 100;
+                let mut htlcs = vec![];
+
                 let commitment_tx = chan.make_counterparty_commitment_tx(
                     &remote_percommitment_point,
                     commit_num,
                     feerate_per_kw,
-                    200,
-                    100,
-                    htlcs,
+                    to_broadcaster,
+                    to_countersignatory,
+                    htlcs.clone(),
                 );
+
+                let redeem_scripts = build_tx_scripts(
+                    &keys,
+                    to_countersignatory,
+                    to_broadcaster,
+                    &mut htlcs,
+                    &parameters,
+                )
+                .expect("scripts");
+                let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+
                 // rebuild to get the scripts
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
-                let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
                 let payment_hashmap = Map::new();
-                let ser_signature = chan
+
+                let sig = chan
                     .sign_counterparty_commitment_tx(
                         &tx.transaction,
                         &output_witscripts,
@@ -826,7 +838,7 @@ mod tests {
                         commit_num,
                     )
                     .expect("sign");
-                Ok((ser_signature, tx.transaction.clone()))
+                Ok((sig, tx.transaction.clone()))
             })
             .expect("build_commitment_tx");
 
@@ -842,7 +854,7 @@ mod tests {
         check_signature(
             &tx,
             0,
-            ser_signature,
+            signature_to_bitcoin_vec(sig),
             &funding_pubkey,
             setup.channel_value_sat,
             &channel_funding_redeemscript,
@@ -863,7 +875,7 @@ mod tests {
         let to_counterparty_value_sat = 2_000_000;
         let to_holder_value_sat =
             setup.channel_value_sat - to_counterparty_value_sat - (2 * ANCHOR_SAT);
-        let (ser_signature, tx) = signer
+        let (sig, tx) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let info = chan.build_counterparty_commitment_info(
                     &remote_percommitment_point,
@@ -877,7 +889,7 @@ mod tests {
                     chan.build_commitment_tx(&remote_percommitment_point, commit_num, &info)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
                 let payment_hashmap = Map::new();
-                let ser_signature = chan
+                let sig = chan
                     .sign_counterparty_commitment_tx(
                         &tx,
                         &output_witscripts,
@@ -887,7 +899,7 @@ mod tests {
                         commit_num,
                     )
                     .expect("sign");
-                Ok((ser_signature, tx))
+                Ok((sig, tx))
             })
             .expect("build_commitment_tx");
 
@@ -903,7 +915,7 @@ mod tests {
         check_signature(
             &tx,
             0,
-            ser_signature,
+            signature_to_bitcoin_vec(sig),
             &funding_pubkey,
             setup.channel_value_sat,
             &channel_funding_redeemscript,
@@ -945,7 +957,7 @@ mod tests {
             transaction_output_index: None,
         };
 
-        let (ser_signature, tx) = signer
+        let (sig, tx) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let channel_parameters = chan.make_channel_parameters();
                 let parameters = channel_parameters.as_counterparty_broadcastable();
@@ -976,7 +988,7 @@ mod tests {
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
                 let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
-                let ser_signature = chan
+                let sig = chan
                     .sign_counterparty_commitment_tx(
                         &tx.transaction,
                         &output_witscripts,
@@ -986,7 +998,7 @@ mod tests {
                         commit_num,
                     )
                     .expect("sign");
-                Ok((ser_signature, tx.transaction.clone()))
+                Ok((sig, tx.transaction.clone()))
             })
             .expect("build_commitment_tx");
 
@@ -1002,7 +1014,7 @@ mod tests {
         check_signature(
             &tx,
             0,
-            ser_signature,
+            signature_to_bitcoin_vec(sig),
             &funding_pubkey,
             setup.channel_value_sat,
             &channel_funding_redeemscript,
@@ -1052,7 +1064,7 @@ mod tests {
             );
         }
 
-        let (ser_signature, tx) = signer
+        let (sig, tx) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let info = chan.build_counterparty_commitment_info(
                     &remote_percommitment_point,
@@ -1065,7 +1077,7 @@ mod tests {
                 let (tx, output_scripts, _) =
                     chan.build_commitment_tx(&remote_percommitment_point, commit_num, &info)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
-                let ser_signature = chan
+                let sig = chan
                     .sign_counterparty_commitment_tx(
                         &tx,
                         &output_witscripts,
@@ -1075,7 +1087,7 @@ mod tests {
                         commit_num,
                     )
                     .expect("sign");
-                Ok((ser_signature, tx))
+                Ok((sig, tx))
             })
             .expect("build_commitment_tx");
 
@@ -1091,7 +1103,7 @@ mod tests {
         check_signature(
             &tx,
             0,
-            ser_signature,
+            signature_to_bitcoin_vec(sig),
             &funding_pubkey,
             setup.channel_value_sat,
             &channel_funding_redeemscript,
@@ -2422,35 +2434,69 @@ mod tests {
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
-        let tx = signer
+        let (sig, tx) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let commitment_tx = chan.make_holder_commitment_tx(23, 0, 200, 100, vec![]);
-                Ok(commitment_tx
-                    .trust()
-                    .built_transaction()
-                    .transaction
-                    .clone())
-            })
-            .expect("tx");
+                let channel_parameters = chan.make_channel_parameters();
+                let commit_num = 23;
+                let feerate_per_kw = 0;
+                let to_broadcaster = 200;
+                let to_countersignatory = 100;
+                let mut htlcs = vec![];
 
-        let sigvec = signer
-            .with_ready_channel(&node_id, &channel_id, |chan| {
+                let parameters = channel_parameters.as_holder_broadcastable();
+
+                let per_commitment_point = chan.get_per_commitment_point(commit_num);
+                let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+
+                let redeem_scripts = build_tx_scripts(
+                    &keys,
+                    to_broadcaster,
+                    to_countersignatory,
+                    &mut htlcs,
+                    &parameters,
+                )
+                .expect("scripts");
+                let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+
+                let commitment_tx = chan.make_holder_commitment_tx(
+                    commit_num,
+                    feerate_per_kw,
+                    to_broadcaster,
+                    to_countersignatory,
+                    htlcs.clone(),
+                );
+
+                // rebuild to get the scripts
+                let trusted_tx = commitment_tx.trust();
+                let tx = trusted_tx.built_transaction();
+                let payment_hashmap = Map::new();
+
                 let sig = chan
-                    .sign_holder_commitment_tx(&tx, setup.channel_value_sat)
-                    .unwrap();
-                Ok(signature_to_bitcoin_vec(sig))
+                    .sign_holder_commitment_tx(
+                        &tx.transaction,
+                        &output_witscripts,
+                        setup.channel_value_sat,
+                        &payment_hashmap,
+                        commit_num,
+                    )
+                    .expect("sign");
+                Ok((sig, tx.transaction.clone()))
             })
-            .unwrap();
+            .expect("build_commitment_tx");
+
+        assert_eq!(
+            hex::encode(tx.txid()),
+            "1e5b3d4626a90146c24edcf673039d8852b6ed4cbd64e08b80643e20575108d5"
+        );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
-
         let channel_funding_redeemscript =
             make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
 
         check_signature(
             &tx,
             0,
-            sigvec,
+            signature_to_bitcoin_vec(sig),
             &funding_pubkey,
             setup.channel_value_sat,
             &channel_funding_redeemscript,
@@ -2840,20 +2886,18 @@ mod tests {
         );
     }
 
-    fn sign_counterparty_commitment_tx_with_mutators<KeysMutator, TxMutator>(
-        keysmut: KeysMutator,
-        txmut: TxMutator,
-    ) -> Result<(), Status>
-    where
-        KeysMutator: Fn(&mut TxCreationKeys),
-        TxMutator: Fn(&mut BuiltCommitmentTransaction),
-    {
+    fn sign_commitment_tx_with_mutators_setup() -> (
+        MultiSigner,
+        ChannelSetup,
+        PublicKey,
+        ChannelId,
+        Vec<HTLCOutputInCommitment>,
+        hashbrown::HashMap<[u8; 20], PaymentHash>,
+    ) {
         let signer = MultiSigner::new();
         let setup = make_static_test_channel_setup();
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
-        let remote_percommitment_point = make_test_pubkey(10);
-        let counterparty_points = make_test_counterparty_points();
 
         let htlc1 = HTLCOutputInCommitment {
             offered: true,
@@ -2878,37 +2922,63 @@ mod tests {
             cltv_expiry: 4 << 16,
             transaction_output_index: None,
         };
+        let htlcs = vec![htlc1.clone(), htlc2.clone(), htlc3.clone()];
+        let mut payment_hashmap = Map::new();
+        for htlc in &htlcs {
+            payment_hashmap.insert(
+                Ripemd160Hash::hash(&htlc.payment_hash.0).into_inner(),
+                htlc.payment_hash,
+            );
+        }
+        (signer, setup, node_id, channel_id, htlcs, payment_hashmap)
+    }
 
-        let (ser_signature, tx) = signer.with_ready_channel(&node_id, &channel_id, |chan| {
+    fn sign_counterparty_commitment_tx_with_mutators<KeysMutator, TxMutator>(
+        keysmut: KeysMutator,
+        txmut: TxMutator,
+    ) -> Result<(), Status>
+    where
+        KeysMutator: Fn(&mut TxCreationKeys),
+        TxMutator: Fn(&mut BuiltCommitmentTransaction),
+    {
+        let (signer, setup, node_id, channel_id, htlcs, payment_hashmap) =
+            sign_commitment_tx_with_mutators_setup();
+
+        let remote_percommitment_point = make_test_pubkey(10);
+
+        let (sig, tx) = signer.with_ready_channel(&node_id, &channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
+
+            let commit_num = 23;
+            let feerate_per_kw = 0;
+            let to_broadcaster = 197;
+            let to_countersignatory = 100;
+
             let parameters = channel_parameters.as_counterparty_broadcastable();
-            let mut htlcs = vec![htlc1.clone(), htlc2.clone(), htlc3.clone()];
-            let mut payment_hashmap = Map::new();
-            for htlc in &htlcs {
-                payment_hashmap.insert(
-                    Ripemd160Hash::hash(&htlc.payment_hash.0).into_inner(),
-                    htlc.payment_hash,
-                );
-            }
-            let mut keys = chan
-                .make_counterparty_tx_keys(&remote_percommitment_point)
-                .unwrap();
+            let mut keys = chan.make_counterparty_tx_keys(&remote_percommitment_point)?;
 
             // Mutate the tx creation keys.
             keysmut(&mut keys);
 
-            let redeem_scripts =
-                build_tx_scripts(&keys, 100, 197, &mut htlcs, &parameters).expect("scripts");
-            let commit_num = 23;
-            let feerate_per_kw = 0;
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                to_countersignatory,
+                to_broadcaster,
+                &htlcs,
+                &parameters,
+            )
+            .expect("scripts");
+            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
                 keys,
                 commit_num,
                 feerate_per_kw,
-                197,
-                100,
-                htlcs,
+                to_broadcaster,
+                to_countersignatory,
+                htlcs.clone(),
             );
+
             // rebuild to get the scripts
             let trusted_tx = commitment_tx.trust();
             let mut tx = trusted_tx.built_transaction().clone();
@@ -2917,8 +2987,7 @@ mod tests {
             txmut(&mut tx);
             tx.txid = tx.transaction.txid();
 
-            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
-            let ser_signature = chan.sign_counterparty_commitment_tx(
+            let sig = chan.sign_counterparty_commitment_tx(
                 &tx.transaction,
                 &output_witscripts,
                 &remote_percommitment_point,
@@ -2926,7 +2995,7 @@ mod tests {
                 &payment_hashmap,
                 commit_num,
             )?;
-            Ok((ser_signature, tx.transaction.clone()))
+            Ok((sig, tx.transaction.clone()))
         })?;
 
         assert_eq!(
@@ -2936,12 +3005,96 @@ mod tests {
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
         let channel_funding_redeemscript =
-            make_funding_redeemscript(&funding_pubkey, &counterparty_points.funding_pubkey);
+            make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
 
         check_signature(
             &tx,
             0,
-            ser_signature,
+            signature_to_bitcoin_vec(sig),
+            &funding_pubkey,
+            setup.channel_value_sat,
+            &channel_funding_redeemscript,
+        );
+
+        Ok(())
+    }
+
+    fn sign_holder_commitment_tx_with_mutators<KeysMutator, TxMutator>(
+        keysmut: KeysMutator,
+        txmut: TxMutator,
+    ) -> Result<(), Status>
+    where
+        KeysMutator: Fn(&mut TxCreationKeys),
+        TxMutator: Fn(&mut BuiltCommitmentTransaction),
+    {
+        let (signer, setup, node_id, channel_id, htlcs, payment_hashmap) =
+            sign_commitment_tx_with_mutators_setup();
+
+        let (sig, tx) = signer.with_ready_channel(&node_id, &channel_id, |chan| {
+            let channel_parameters = chan.make_channel_parameters();
+
+            let commit_num = 23;
+            let feerate_per_kw = 0;
+            let to_broadcaster = 197;
+            let to_countersignatory = 100;
+
+            let parameters = channel_parameters.as_holder_broadcastable();
+
+            let per_commitment_point = chan.get_per_commitment_point(commit_num);
+            let mut keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+
+            // Mutate the tx creation keys.
+            keysmut(&mut keys);
+
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                to_broadcaster,
+                to_countersignatory,
+                &htlcs,
+                &parameters,
+            )
+            .expect("scripts");
+            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+
+            let commitment_tx = chan.make_holder_commitment_tx_with_keys(
+                keys,
+                commit_num,
+                feerate_per_kw,
+                to_broadcaster,
+                to_countersignatory,
+                htlcs.clone(),
+            );
+            // rebuild to get the scripts
+            let trusted_tx = commitment_tx.trust();
+            let mut tx = trusted_tx.built_transaction().clone();
+
+            // Mutate the transaction and recalculate the txid.
+            txmut(&mut tx);
+            tx.txid = tx.transaction.txid();
+
+            let sig = chan.sign_holder_commitment_tx(
+                &tx.transaction,
+                &output_witscripts,
+                setup.channel_value_sat,
+                &payment_hashmap,
+                commit_num,
+            )?;
+            Ok((sig, tx.transaction.clone()))
+        })?;
+
+        assert_eq!(
+            hex::encode(tx.txid()),
+            "dae4b2a7fb42b16372d3e215e987dc1995605ca418a750e6c6182f83c4ff58c9"
+        );
+
+        let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
+        let channel_funding_redeemscript =
+            make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
+
+        check_signature(
+            &tx,
+            0,
+            signature_to_bitcoin_vec(sig),
             &funding_pubkey,
             setup.channel_value_sat,
             &channel_funding_redeemscript,
@@ -2953,6 +3106,19 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_with_no_mut_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
+            |_keys| {
+                // don't mutate the keys, should pass
+            },
+            |_tx| {
+                // don't mutate the tx, should pass
+            },
+        );
+        assert!(status.is_ok());
+    }
+
+    #[test]
+    fn sign_holder_commitment_tx_with_no_mut_test() {
+        let status = sign_holder_commitment_tx_with_mutators(
             |_keys| {
                 // don't mutate the keys, should pass
             },
@@ -2976,9 +3142,35 @@ mod tests {
     }
 
     #[test]
+    // policy-v1-commitment-version
+    fn sign_holder_commitment_tx_with_bad_version_test() {
+        let status = sign_holder_commitment_tx_with_mutators(
+            |_keys| {},
+            |tx| {
+                tx.transaction.version = 3;
+            },
+        );
+        assert_invalid_argument_err!(status, "policy failure: bad commitment version: 3");
+    }
+
+    #[test]
     // policy-v1-commitment-locktime
     fn sign_counterparty_commitment_tx_with_bad_locktime_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
+            |_keys| {
+                // don't mutate the keys
+            },
+            |tx| {
+                tx.transaction.lock_time = 42;
+            },
+        );
+        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+    }
+
+    #[test]
+    // policy-v1-commitment-locktime
+    fn sign_holder_commitment_tx_with_bad_locktime_test() {
+        let status = sign_holder_commitment_tx_with_mutators(
             |_keys| {
                 // don't mutate the keys
             },
@@ -3002,9 +3194,35 @@ mod tests {
     }
 
     #[test]
+    // policy-v1-commitment-nsequence
+    fn sign_holder_commitment_tx_with_bad_nsequence_test() {
+        let status = sign_holder_commitment_tx_with_mutators(
+            |_keys| {},
+            |tx| {
+                tx.transaction.input[0].sequence = 42;
+            },
+        );
+        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+    }
+
+    #[test]
     // policy-v1-commitment-input-single
     fn sign_counterparty_commitment_tx_with_bad_numinputs_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
+            |_keys| {},
+            |tx| {
+                let mut inp2 = tx.transaction.input[0].clone();
+                inp2.previous_output.txid = bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
+                tx.transaction.input.push(inp2);
+            },
+        );
+        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+    }
+
+    #[test]
+    // policy-v1-commitment-input-single
+    fn sign_holder_commitment_tx_with_bad_numinputs_test() {
+        let status = sign_holder_commitment_tx_with_mutators(
             |_keys| {},
             |tx| {
                 let mut inp2 = tx.transaction.input[0].clone();
@@ -3029,9 +3247,34 @@ mod tests {
     }
 
     #[test]
+    // policy-v1-commitment-input-match-funding
+    fn sign_holder_commitment_tx_with_input_mismatch_test() {
+        let status = sign_holder_commitment_tx_with_mutators(
+            |_keys| {},
+            |tx| {
+                tx.transaction.input[0].previous_output.txid =
+                    bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
+            },
+        );
+        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+    }
+
+    #[test]
     // policy-v1-commitment-revocation-pubkey
     fn sign_counterparty_commitment_tx_with_bad_revpubkey_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
+            |keys| {
+                keys.revocation_key = make_test_pubkey(42);
+            },
+            |_tx| {},
+        );
+        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+    }
+
+    #[test]
+    // policy-v1-commitment-revocation-pubkey
+    fn sign_holder_commitment_tx_with_bad_revpubkey_test() {
+        let status = sign_holder_commitment_tx_with_mutators(
             |keys| {
                 keys.revocation_key = make_test_pubkey(42);
             },
@@ -3046,6 +3289,42 @@ mod tests {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |keys| {
                 keys.countersignatory_htlc_key = make_test_pubkey(42);
+            },
+            |_tx| {},
+        );
+        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+    }
+
+    #[test]
+    // policy-v1-commitment-htlc-pubkey
+    fn sign_holder_commitment_tx_with_bad_htlcpubkey_test() {
+        let status = sign_holder_commitment_tx_with_mutators(
+            |keys| {
+                keys.countersignatory_htlc_key = make_test_pubkey(42);
+            },
+            |_tx| {},
+        );
+        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+    }
+
+    #[test]
+    // policy-v1-commitment-delayed-pubkey
+    fn sign_counterparty_commitment_tx_with_bad_delayed_pubkey_test() {
+        let status = sign_counterparty_commitment_tx_with_mutators(
+            |keys| {
+                keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
+            },
+            |_tx| {},
+        );
+        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+    }
+
+    #[test]
+    // policy-v1-commitment-delayed-pubkey
+    fn sign_holder_commitment_tx_with_bad_delayed_pubkey_test() {
+        let status = sign_holder_commitment_tx_with_mutators(
+            |keys| {
+                keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
             },
             |_tx| {},
         );

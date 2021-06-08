@@ -790,10 +790,6 @@ impl CommitmentInfo {
         out: &TxOut,
         script_bytes: &[u8],
     ) -> Result<(), ValidationError> {
-        // FIXME - This routine is only called on "remote" commitments. Remove this
-        // assert when that is not the case ...
-        assert!(self.is_counterparty_broadcaster);
-
         if out.script_pubkey.is_v0_p2wpkh() {
             // FIXME - Does this need it's own policy tag?
             if setup.option_anchor_outputs() {

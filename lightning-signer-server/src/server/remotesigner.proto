@@ -408,6 +408,10 @@ message SignHolderCommitmentTxRequest {
   ChannelNonce channel_nonce = 2;
     
   Transaction tx = 3;
+
+  // These are needed in addition to the tx to recompose.
+  repeated bytes payment_hashes = 4;
+  uint64 commit_num = 5;
 }
 
 // As part of a force close, sweep a holder-broadcast HTLC output hanging off the

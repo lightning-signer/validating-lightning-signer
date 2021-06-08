@@ -766,7 +766,7 @@ impl Signer for SignServer {
             payment_hashmap.insert(Ripemd160Hash::hash(hash).into_inner(), PaymentHash(phash));
         }
 
-        let sig_data = self
+        let sig = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 chan.sign_counterparty_commitment_tx(
@@ -780,7 +780,9 @@ impl Signer for SignServer {
             })?;
 
         let reply = SignatureReply {
-            signature: Some(BitcoinSignature { data: sig_data }),
+            signature: Some(BitcoinSignature {
+                data: signature_to_bitcoin_vec(sig),
+            }),
         };
         log_info!(
             self,
@@ -798,12 +800,18 @@ impl Signer for SignServer {
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
         log_debug!(self, "req={}", json!(&req));
-        let node_id = self.node_id(req.node_id)?;
+        let node_id = self.node_id(req.node_id.clone())?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_commitment_tx({}/{})", node_id, channel_id);
+        log_info!(
+            self,
+            "ENTER sign_holder_commitment_tx({}/{})",
+            node_id,
+            channel_id
+        );
 
         let reqtx = req
             .tx
+            .clone()
             .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
@@ -818,18 +826,35 @@ impl Signer for SignServer {
 
         let funding_amount_sat = reqtx.input_descs[0].value_sat as u64;
 
-        let sigvec = self
+        let witscripts = reqtx
+            .output_descs
+            .iter()
+            .map(|odsc| odsc.witscript.clone())
+            .collect();
+
+        let mut payment_hashmap = Map::new();
+        for hash in req.payment_hashes.iter() {
+            let phash = hash.as_slice().try_into().map_err(|err| {
+                self.invalid_grpc_argument(format!("could not decode payment hash: {}", err))
+            })?;
+            payment_hashmap.insert(Ripemd160Hash::hash(hash).into_inner(), PaymentHash(phash));
+        }
+
+        let sig = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let commitment_sig = chan.sign_holder_commitment_tx(&tx, funding_amount_sat)?;
-
-                Ok(signature_to_bitcoin_vec(commitment_sig))
-            })
-            .map_err(|_| self.internal_error("signing holder commitment failed"))?;
+                chan.sign_holder_commitment_tx(
+                    &tx,
+                    &witscripts,
+                    funding_amount_sat,
+                    &payment_hashmap,
+                    req.commit_num,
+                )
+            })?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
-                data: sigvec.clone(),
+                data: signature_to_bitcoin_vec(sig),
             }),
         };
         log_info!(

@@ -225,7 +225,7 @@ pub fn make_test_channel_setup() -> ChannelSetup {
         holder_to_self_delay: 6,
         holder_shutdown_script: None,
         counterparty_points: make_test_counterparty_points(),
-        counterparty_to_self_delay: 5,
+        counterparty_to_self_delay: 6,
         counterparty_shutdown_script: Script::new(),
         commitment_type: CommitmentType::Legacy,
     }
@@ -356,7 +356,7 @@ pub fn build_tx_scripts(
     keys: &TxCreationKeys,
     to_broadcaster_value_sat: u64,
     to_countersignatory_value_sat: u64,
-    htlcs: &mut Vec<HTLCOutputInCommitment>,
+    htlcs: &Vec<HTLCOutputInCommitment>,
     channel_parameters: &DirectedChannelTransactionParameters,
 ) -> Result<Vec<Script>, ()> {
     let countersignatory_pubkeys = channel_parameters.countersignatory_pubkeys();
