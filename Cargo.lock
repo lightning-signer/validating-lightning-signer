@@ -605,7 +605,7 @@ checksum = "18794a8ad5b29321f790b55d93dfba91e125cb1a9edbd4f8e3150acc771c1a5e"
 [[package]]
 name = "lightning"
 version = "0.0.14"
-source = "git+https://github.com/rust-bitcoin/rust-lightning.git?rev=ee29bc4096897e5309a95927a287f183db300e8d#ee29bc4096897e5309a95927a287f183db300e8d"
+source = "git+https://github.com/rust-bitcoin/rust-lightning.git?rev=a8038a8234b70bc261f633a9e2b40adebebcd8d4#a8038a8234b70bc261f633a9e2b40adebebcd8d4"
 dependencies = [
  "bitcoin",
  "hex 0.3.2",
