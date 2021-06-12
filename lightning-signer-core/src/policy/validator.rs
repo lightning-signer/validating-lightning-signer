@@ -1,12 +1,16 @@
-use bitcoin::{self, Network};
+use bitcoin::{self, Network, Transaction, Script, SigHash, SigHashType};
 
-use lightning::ln::chan_utils::HTLCOutputInCommitment;
+use lightning::ln::chan_utils::{HTLCOutputInCommitment, TxCreationKeys, build_htlc_transaction};
 
 use crate::node::{Channel, ChannelSetup};
-use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
+use crate::tx::tx::{CommitmentInfo, CommitmentInfo2, parse_offered_htlc_script, parse_received_htlc_script, HTLC_TIMEOUT_TX_WEIGHT, HTLC_SUCCESS_TX_WEIGHT, parse_revokeable_redeemscript};
 use crate::util::enforcing_trait_impls::EnforcingSigner;
 
 use super::error::ValidationError::{self, Policy};
+use bitcoin::util::bip143::SigHashCache;
+use lightning::ln::PaymentHash;
+use crate::Arc;
+use crate::signer::multi_signer::SyncLogger;
 
 pub trait Validator {
     /// Phase 1 CommitmentInfo
@@ -27,12 +31,23 @@ pub trait Validator {
         is_counterparty: bool,
     ) -> Result<(), ValidationError>;
 
+    /// Phase 1 decoding of 2nd level HTLC tx and validation by recomposition
+    fn decode_and_validate_htlc_tx(&self,
+                                   is_counterparty: bool,
+                                   setup: &ChannelSetup,
+                                   txkeys: &TxCreationKeys,
+                                   tx: &Transaction,
+                                   redeemscript: &Script,
+                                   htlc_amount_sat: u64,
+                                   output_witscript: &Script,
+    ) -> Result<(u32, HTLCOutputInCommitment, SigHash), ValidationError>;
+
+    /// Phase 2 validation of 2nd level HTLC tx
     fn validate_htlc_tx(
         &self,
         setup: &ChannelSetup,
         state: &ValidatorState,
         is_counterparty: bool,
-        tx: &bitcoin::Transaction,
         htlc: &HTLCOutputInCommitment,
         feerate_per_kw: u32,
     ) -> Result<(), ValidationError>;
@@ -59,10 +74,11 @@ pub trait ValidatorFactory: Send + Sync {
 
 pub struct SimpleValidatorFactory {}
 
-fn simple_validator(network: Network, channel_value_sat: u64) -> SimpleValidator {
+fn simple_validator(network: Network, channel_value_sat: u64, logger: &Arc<SyncLogger>) -> SimpleValidator {
     SimpleValidator {
         policy: make_simple_policy(network),
         channel_value_sat,
+        logger: Arc::clone(logger),
     }
 }
 
@@ -71,6 +87,7 @@ impl ValidatorFactory for SimpleValidatorFactory {
         Box::new(simple_validator(
             channel.network(),
             channel.setup.channel_value_sat,
+            &channel.logger
         ))
     }
 
@@ -81,7 +98,11 @@ impl ValidatorFactory for SimpleValidatorFactory {
         channel: &Channel,
         channel_value_sat: u64,
     ) -> Box<dyn Validator> {
-        Box::new(simple_validator(channel.network(), channel_value_sat))
+        Box::new(simple_validator(
+            channel.network(),
+            channel_value_sat,
+            &channel.logger
+        ))
     }
 }
 
@@ -112,6 +133,7 @@ pub struct SimplePolicy {
 pub struct SimpleValidator {
     pub policy: SimplePolicy,
     pub channel_value_sat: u64,
+    pub logger: Arc<SyncLogger>,
 }
 
 impl SimpleValidator {
@@ -295,20 +317,140 @@ impl Validator for SimpleValidator {
         Ok(())
     }
 
+    // Phase 1
+    // setup and txkeys must come from a trusted source
+    fn decode_and_validate_htlc_tx(&self,
+                                   is_counterparty: bool,
+                                   setup: &ChannelSetup,
+                                   txkeys: &TxCreationKeys,
+                                   tx: &Transaction,
+                                   redeemscript: &Script,
+                                   htlc_amount_sat: u64,
+                                   output_witscript: &Script,
+    ) -> Result<(u32, HTLCOutputInCommitment, SigHash), ValidationError> {
+        let to_self_delay =
+            if is_counterparty { setup.counterparty_to_self_delay }
+            else { setup.holder_to_self_delay };
+        let sighash_type = if setup.option_anchor_outputs() {
+            SigHashType::SinglePlusAnyoneCanPay
+        } else {
+            SigHashType::All
+        };
+        let original_tx_sighash =
+            SigHashCache::new(tx).signature_hash(0, &redeemscript, htlc_amount_sat, sighash_type);
+
+        let offered = if parse_offered_htlc_script(redeemscript, setup.option_anchor_outputs())
+            .is_ok()
+        {
+            true
+        } else if parse_received_htlc_script(redeemscript, setup.option_anchor_outputs())
+            .is_ok()
+        {
+            false
+        } else {
+            return Err(ValidationError::Policy("invalid redeemscript".to_string()));
+        };
+
+        // Extract some parameters from the submitted transaction.
+        let cltv_expiry = if offered { tx.lock_time } else { 0 };
+        let transaction_output_index = tx.input[0].previous_output.vout;
+        let commitment_txid = tx.input[0].previous_output.txid;
+        let total_fee = htlc_amount_sat - tx.output[0].value;
+
+        // Derive the feerate_per_kw used to generate this
+        // transaction.  Compensate for the total_fee being rounded
+        // down when computed.
+        let weight = if offered {
+            HTLC_TIMEOUT_TX_WEIGHT
+        } else {
+            HTLC_SUCCESS_TX_WEIGHT
+        };
+        let feerate_per_kw = (((total_fee * 1000) + weight - 1) / weight) as u32;
+
+        let htlc = HTLCOutputInCommitment {
+            offered,
+            amount_msat: htlc_amount_sat * 1000,
+            cltv_expiry,
+            payment_hash: PaymentHash([0; 32]), // isn't used
+            transaction_output_index: Some(transaction_output_index),
+        };
+
+        // Recompose the transaction.
+        let recomposed_tx = build_htlc_transaction(
+            &commitment_txid,
+            feerate_per_kw,
+            to_self_delay,
+            &htlc,
+            &txkeys.broadcaster_delayed_payment_key,
+            &txkeys.revocation_key,
+        );
+
+        let recomposed_tx_sighash = SigHashCache::new(&recomposed_tx).signature_hash(
+            0,
+            &redeemscript,
+            htlc_amount_sat,
+            SigHashType::All,
+        );
+
+        if recomposed_tx_sighash != original_tx_sighash {
+            let (revocation_key, contest_delay, delayed_pubkey) =
+                parse_revokeable_redeemscript(output_witscript, setup.option_anchor_outputs())
+                    .unwrap_or_else(|_| (vec![], 0, vec![]));
+            log_debug!(
+                self,
+                "ORIGINAL_TX={:#?}\n\
+                              output witscript params: [\n\
+                              \x20  revocation_pubkey: {},\n\
+                              \x20  to_self_delay: {},\n\
+                              \x20  delayed_pubkey: {},\n\
+                              ]",
+                &tx,
+                hex::encode(&revocation_key),
+                contest_delay,
+                hex::encode(&delayed_pubkey)
+            );
+            log_debug!(
+                self,
+                "RECOMPOSED_TX={:#?}\n\
+                              output witscript params: [\n\
+                              \x20  revocation_pubkey: {},\n\
+                              \x20  to_self_delay: {},\n\
+                              \x20  delayed_pubkey: {},\n\
+                              ]",
+                &recomposed_tx,
+                &txkeys.revocation_key,
+                to_self_delay,
+                &txkeys.broadcaster_delayed_payment_key
+            );
+            return Err(ValidationError::Policy("sighash mismatch".to_string()));
+        }
+
+        // The sighash comparison in the previous block will fail if any of the
+        // following policies are violated:
+        // - policy-v1-htlc-version
+        // - policy-v1-htlc-locktime (for received HTLC)
+        // - policy-v1-htlc-nsequence
+        // - policy-v1-htlc-to-self-delay
+        // - policy-v1-htlc-revocation-pubkey
+        // - policy-v1-htlc-payment-pubkey
+
+        Ok((feerate_per_kw, htlc, recomposed_tx_sighash))
+    }
+
     fn validate_htlc_tx(
         &self,
         _setup: &ChannelSetup,
         _state: &ValidatorState,
         _is_counterparty: bool,
-        tx: &bitcoin::Transaction,
         htlc: &HTLCOutputInCommitment,
         feerate_per_kw: u32,
     ) -> Result<(), ValidationError> {
-        // NOTE - the tx.lock_time must be equal to the `cltv_expiry` which
-        // is determined from the submitted transaction's locktime and must
-        // be further checked with policy-v1-htlc-cltv-range.
-        // policy-v2-htlc-locktime (for offered HTLC)
-        if htlc.offered && tx.lock_time == 0 {
+        // This must be further checked with policy-v2-htlc-cltv-range.
+        // Note that we can't check cltv_expiry for non-offered 2nd level
+        // HTLC txs in phase 1, because they don't mention the cltv_expiry
+        // there, only in the commitment tx output.
+        // policy-v1-htlc-locktime
+        if htlc.offered && htlc.cltv_expiry == 0 {
             return Err(Policy(format!("offered lock_time must be non-zero")));
         }
 
@@ -389,6 +531,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::util::test_logger::TestLogger;
 
     macro_rules! assert_policy_error {
         ($res: expr, $expected: expr) => {
@@ -412,6 +555,7 @@ mod tests {
         SimpleValidator {
             policy,
             channel_value_sat,
+            logger: Arc::new(TestLogger::new())
         }
     }
 

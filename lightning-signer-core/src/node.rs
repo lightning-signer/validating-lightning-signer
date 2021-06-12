@@ -22,7 +22,7 @@ use lightning::chain::keysinterface::{
     BaseSign, InMemorySigner, KeysInterface, SpendableOutputDescriptor,
 };
 use lightning::ln::chan_utils::{
-    build_htlc_transaction, derive_private_key, make_funding_redeemscript, ChannelPublicKeys,
+    derive_private_key, make_funding_redeemscript, ChannelPublicKeys,
     ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters,
     HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys,
 };
@@ -36,9 +36,7 @@ use crate::signer::multi_signer::SyncLogger;
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::tx::tx::{
     build_close_tx, build_commitment_tx, get_commitment_transaction_number_obscure_factor,
-    parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
-    sign_commitment, CommitmentInfo2, HTLCInfo, HTLCInfo2, HTLC_SUCCESS_TX_WEIGHT,
-    HTLC_TIMEOUT_TX_WEIGHT,
+    sign_commitment, CommitmentInfo2, HTLCInfo, HTLCInfo2,
 };
 use crate::util::crypto_utils::{
     derive_private_revocation_key, derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh,
@@ -1292,11 +1290,6 @@ impl Channel {
             .make_holder_tx_keys(&per_commitment_point)
             .expect("failed to make txkeys");
 
-        let to_self_delay = self
-            .make_channel_parameters()
-            .as_holder_broadcastable()
-            .contest_delay();
-
         self.sign_htlc_tx(
             tx,
             &per_commitment_point,
@@ -1305,7 +1298,6 @@ impl Channel {
             output_witscript,
             false, // is_counterparty
             txkeys,
-            to_self_delay,
         )
     }
 
@@ -1322,11 +1314,6 @@ impl Channel {
             .make_counterparty_tx_keys(&remote_per_commitment_point)
             .expect("failed to make txkeys");
 
-        let to_self_delay = self
-            .make_channel_parameters()
-            .as_counterparty_broadcastable()
-            .contest_delay();
-
         self.sign_htlc_tx(
             tx,
             remote_per_commitment_point,
@@ -1335,7 +1322,6 @@ impl Channel {
             output_witscript,
             true, // is_counterparty
             txkeys,
-            to_self_delay,
         )
     }
 
@@ -1348,60 +1334,17 @@ impl Channel {
         output_witscript: &Script,
         is_counterparty: bool,
         txkeys: TxCreationKeys,
-        to_self_delay: u16,
     ) -> Result<Signature, Status> {
-        let sighash_type = if self.setup.option_anchor_outputs() {
-            SigHashType::SinglePlusAnyoneCanPay
-        } else {
-            SigHashType::All
-        };
-        let original_tx_sighash =
-            SigHashCache::new(tx).signature_hash(0, &redeemscript, htlc_amount_sat, sighash_type);
-
-        let offered = if parse_offered_htlc_script(redeemscript, self.setup.option_anchor_outputs())
-            .is_ok()
-        {
-            true
-        } else if parse_received_htlc_script(redeemscript, self.setup.option_anchor_outputs())
-            .is_ok()
-        {
-            false
-        } else {
-            return Err(
-                self.validation_error(ValidationError::Policy("invalid redeemscript".to_string()))
-            );
-        };
-
-        // Extract some parameters from the submitted transaction.
-        let cltv_expiry = if offered { tx.lock_time } else { 0 };
-        let transaction_output_index = tx.input[0].previous_output.vout;
-        let commitment_txid = tx.input[0].previous_output.txid;
-        let total_fee = htlc_amount_sat - tx.output[0].value;
-
-        // Derive the feerate_per_kw used to generate this
-        // transaction.  Compensate for the total_fee being rounded
-        // down when computed.
-        let weight = if offered {
-            HTLC_TIMEOUT_TX_WEIGHT
-        } else {
-            HTLC_SUCCESS_TX_WEIGHT
-        };
-        let feerate_per_kw = (((total_fee * 1000) + weight - 1) / weight) as u32;
-
-        let htlc = HTLCOutputInCommitment {
-            offered,
-            amount_msat: htlc_amount_sat * 1000,
-            cltv_expiry,
-            payment_hash: PaymentHash([0; 32]), // isn't used
-            transaction_output_index: Some(transaction_output_index),
-        };
-
         let validator = self
             .node
             .upgrade()
             .unwrap()
             .validator_factory
             .make_validator(self);
+
+        let (feerate_per_kw, htlc, recomposed_tx_sighash) =
+            validator.decode_and_validate_htlc_tx(is_counterparty, &self.setup, &txkeys, tx, &redeemscript, htlc_amount_sat, output_witscript)
+                .map_err(|e| self.validation_error(e))?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let state = ValidatorState { current_height: 0 };
@@ -1410,7 +1353,6 @@ impl Channel {
                 &self.setup,
                 &state,
                 is_counterparty,
-                tx,
                 &htlc,
                 feerate_per_kw,
             )
@@ -1435,67 +1377,6 @@ impl Channel {
                 self.validation_error(ve)
                 // END NOT TESTED
             })?;
-
-        // Recompose the transaction.
-        let recomposed_tx = build_htlc_transaction(
-            &commitment_txid,
-            feerate_per_kw,
-            to_self_delay,
-            &htlc,
-            &txkeys.broadcaster_delayed_payment_key,
-            &txkeys.revocation_key,
-        );
-
-        let recomposed_tx_sighash = SigHashCache::new(&recomposed_tx).signature_hash(
-            0,
-            &redeemscript,
-            htlc_amount_sat,
-            SigHashType::All,
-        );
-
-        if recomposed_tx_sighash != original_tx_sighash {
-            let (revocation_key, contest_delay, delayed_pubkey) =
-                parse_revokeable_redeemscript(output_witscript, self.setup.option_anchor_outputs())
-                    .unwrap_or_else(|_| (vec![], 0, vec![]));
-            log_debug!(
-                self,
-                "ORIGINAL_TX={:#?}\n\
-                              output witscript params: [\n\
-                              \x20  revocation_pubkey: {},\n\
-                              \x20  to_self_delay: {},\n\
-                              \x20  delayed_pubkey: {},\n\
-                              ]",
-                &tx,
-                hex::encode(&revocation_key),
-                contest_delay,
-                hex::encode(&delayed_pubkey)
-            );
-            log_debug!(
-                self,
-                "RECOMPOSED_TX={:#?}\n\
-                              output witscript params: [\n\
-                              \x20  revocation_pubkey: {},\n\
-                              \x20  to_self_delay: {},\n\
-                              \x20  delayed_pubkey: {},\n\
-                              ]",
-                &recomposed_tx,
-                &txkeys.revocation_key,
-                to_self_delay,
-                &txkeys.broadcaster_delayed_payment_key
-            );
-            return Err(
-                self.validation_error(ValidationError::Policy("sighash mismatch".to_string()))
-            );
-        }
-
-        // The sighash comparison in the previous block will fail if any of the
-        // following policies are violated:
-        // - policy-v1-htlc-version
-        // - policy-v1-htlc-locktime (for received HTLC)
-        // - policy-v1-htlc-nsequence
-        // - policy-v1-htlc-to-self-delay
-        // - policy-v1-htlc-revocation-pubkey
-        // - policy-v1-htlc-payment-pubkey
 
         let htlc_privkey = derive_private_key(
             &self.secp_ctx,
