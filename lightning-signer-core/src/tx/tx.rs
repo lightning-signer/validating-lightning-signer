@@ -35,6 +35,10 @@ use crate::util::enforcing_trait_impls::EnforcingSigner;
 const MAX_DELAY: i64 = 1000;
 pub const ANCHOR_SAT: u64 = 330;
 
+// Copied from lightning::ln::chan_utils where they are not public enough.
+pub const HTLC_SUCCESS_TX_WEIGHT: u64 = 703;
+pub const HTLC_TIMEOUT_TX_WEIGHT: u64 = 663;
+
 // BEGIN NOT TESTED
 pub fn get_commitment_transaction_number_obscure_factor(
     local_payment_basepoint: &PublicKey,
@@ -418,6 +422,128 @@ impl fmt::Debug for CommitmentInfo {
 }
 // END NOT TESTED
 
+pub fn parse_received_htlc_script(
+    script: &Script,
+    option_anchor_outputs: bool,
+) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i64), ValidationError> {
+    let iter = &mut script.instructions();
+    expect_op(iter, OP_DUP)?;
+    expect_op(iter, OP_HASH160)?;
+    let revocation_hash = expect_data(iter)?;
+    expect_op(iter, OP_EQUAL)?;
+    expect_op(iter, OP_IF)?;
+    expect_op(iter, OP_CHECKSIG)?;
+    expect_op(iter, OP_ELSE)?;
+    let remote_htlc_pubkey = expect_data(iter)?;
+    expect_op(iter, OP_SWAP)?;
+    expect_op(iter, OP_SIZE)?;
+    let thirty_two = expect_number(iter)?;
+    if thirty_two != 32 {
+        return Err(Mismatch(format!("expected 32, saw {}", thirty_two))); // NOT TESTED
+    }
+    expect_op(iter, OP_EQUAL)?;
+    expect_op(iter, OP_IF)?;
+    expect_op(iter, OP_HASH160)?;
+    let payment_hash_vec = expect_data(iter)?;
+    expect_op(iter, OP_EQUALVERIFY)?;
+    expect_op(iter, OP_PUSHNUM_2)?;
+    expect_op(iter, OP_SWAP)?;
+    let local_htlc_pubkey = expect_data(iter)?;
+    expect_op(iter, OP_PUSHNUM_2)?;
+    expect_op(iter, OP_CHECKMULTISIG)?;
+    expect_op(iter, OP_ELSE)?;
+    expect_op(iter, OP_DROP)?;
+    let cltv_expiry = expect_number(iter)?;
+    expect_op(iter, OP_CLTV)?;
+    expect_op(iter, OP_DROP)?;
+    expect_op(iter, OP_CHECKSIG)?;
+    expect_op(iter, OP_ENDIF)?;
+    if option_anchor_outputs {
+        // BEGIN NOT TESTED
+        expect_op(iter, OP_PUSHNUM_1)?;
+        expect_op(iter, OP_CSV)?;
+        expect_op(iter, OP_DROP)?;
+        // END NOT TESTED
+    }
+    expect_op(iter, OP_ENDIF)?;
+    expect_script_end(iter)?;
+    Ok((
+        revocation_hash,
+        remote_htlc_pubkey,
+        payment_hash_vec,
+        local_htlc_pubkey,
+        cltv_expiry,
+    ))
+}
+
+pub fn parse_offered_htlc_script(
+    script: &Script,
+    option_anchor_outputs: bool,
+) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), ValidationError> {
+    let iter = &mut script.instructions();
+    expect_op(iter, OP_DUP)?;
+    expect_op(iter, OP_HASH160)?;
+    let revocation_hash = expect_data(iter)?;
+    expect_op(iter, OP_EQUAL)?;
+    expect_op(iter, OP_IF)?;
+    expect_op(iter, OP_CHECKSIG)?;
+    expect_op(iter, OP_ELSE)?;
+    let remote_htlc_pubkey = expect_data(iter)?;
+    expect_op(iter, OP_SWAP)?;
+    expect_op(iter, OP_SIZE)?;
+    let thirty_two = expect_number(iter)?;
+    if thirty_two != 32 {
+        return Err(Mismatch(format!("expected 32, saw {}", thirty_two))); // NOT TESTED
+    }
+    expect_op(iter, OP_EQUAL)?;
+    expect_op(iter, OP_NOTIF)?;
+    expect_op(iter, OP_DROP)?;
+    expect_op(iter, OP_PUSHNUM_2)?;
+    expect_op(iter, OP_SWAP)?;
+    let local_htlc_pubkey = expect_data(iter)?;
+    expect_op(iter, OP_PUSHNUM_2)?;
+    expect_op(iter, OP_CHECKMULTISIG)?;
+    expect_op(iter, OP_ELSE)?;
+    expect_op(iter, OP_HASH160)?;
+    let payment_hash_vec = expect_data(iter)?;
+    expect_op(iter, OP_EQUALVERIFY)?;
+    expect_op(iter, OP_CHECKSIG)?;
+    expect_op(iter, OP_ENDIF)?;
+    if option_anchor_outputs {
+        // BEGIN NOT TESTED
+        expect_op(iter, OP_PUSHNUM_1)?;
+        expect_op(iter, OP_CSV)?;
+        expect_op(iter, OP_DROP)?;
+        // END NOT TESTED
+    }
+    expect_op(iter, OP_ENDIF)?;
+    expect_script_end(iter)?;
+    Ok((
+        revocation_hash,
+        remote_htlc_pubkey,
+        local_htlc_pubkey,
+        payment_hash_vec,
+    ))
+}
+
+pub fn parse_revokeable_redeemscript(
+    script: &Script,
+    _option_anchor_outputs: bool,
+) -> Result<(Vec<u8>, i64, Vec<u8>), ValidationError> {
+    let iter = &mut script.instructions();
+    expect_op(iter, OP_IF)?;
+    let revocation_key = expect_data(iter)?;
+    expect_op(iter, OP_ELSE)?;
+    let contest_delay = expect_number(iter)?;
+    expect_op(iter, OP_CSV)?;
+    expect_op(iter, OP_DROP)?;
+    let delayed_pubkey = expect_data(iter)?;
+    expect_op(iter, OP_ENDIF)?;
+    expect_op(iter, OP_CHECKSIG)?;
+    expect_script_end(iter)?;
+    Ok((revocation_key, contest_delay, delayed_pubkey))
+}
+
 impl CommitmentInfo {
     // FIXME - should the new_for_{holder,counterparty} wrappers move
     // to Validator::make_info_for_{holder,counterparty}?
@@ -561,61 +687,6 @@ impl CommitmentInfo {
     }
     // END NOT TESTED
 
-    fn parse_received_htlc_script(
-        &self,
-        script: &Script,
-        option_anchor_outputs: bool,
-    ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i64), ValidationError> {
-        let iter = &mut script.instructions();
-        expect_op(iter, OP_DUP)?;
-        expect_op(iter, OP_HASH160)?;
-        let revocation_hash = expect_data(iter)?;
-        expect_op(iter, OP_EQUAL)?;
-        expect_op(iter, OP_IF)?;
-        expect_op(iter, OP_CHECKSIG)?;
-        expect_op(iter, OP_ELSE)?;
-        let remote_htlc_pubkey = expect_data(iter)?;
-        expect_op(iter, OP_SWAP)?;
-        expect_op(iter, OP_SIZE)?;
-        let thirty_two = expect_number(iter)?;
-        if thirty_two != 32 {
-            return Err(Mismatch(format!("expected 32, saw {}", thirty_two))); // NOT TESTED
-        }
-        expect_op(iter, OP_EQUAL)?;
-        expect_op(iter, OP_IF)?;
-        expect_op(iter, OP_HASH160)?;
-        let payment_hash_vec = expect_data(iter)?;
-        expect_op(iter, OP_EQUALVERIFY)?;
-        expect_op(iter, OP_PUSHNUM_2)?;
-        expect_op(iter, OP_SWAP)?;
-        let local_htlc_pubkey = expect_data(iter)?;
-        expect_op(iter, OP_PUSHNUM_2)?;
-        expect_op(iter, OP_CHECKMULTISIG)?;
-        expect_op(iter, OP_ELSE)?;
-        expect_op(iter, OP_DROP)?;
-        let cltv_expiry = expect_number(iter)?;
-        expect_op(iter, OP_CLTV)?;
-        expect_op(iter, OP_DROP)?;
-        expect_op(iter, OP_CHECKSIG)?;
-        expect_op(iter, OP_ENDIF)?;
-        if option_anchor_outputs {
-            // BEGIN NOT TESTED
-            expect_op(iter, OP_PUSHNUM_1)?;
-            expect_op(iter, OP_CSV)?;
-            expect_op(iter, OP_DROP)?;
-            // END NOT TESTED
-        }
-        expect_op(iter, OP_ENDIF)?;
-        expect_script_end(iter)?;
-        Ok((
-            revocation_hash,
-            remote_htlc_pubkey,
-            payment_hash_vec,
-            local_htlc_pubkey,
-            cltv_expiry,
-        ))
-    }
-
     fn handle_received_htlc_output(
         &mut self,
         out: &TxOut,
@@ -647,57 +718,6 @@ impl CommitmentInfo {
         self.received_htlcs.push(htlc);
 
         Ok(())
-    }
-
-    fn parse_offered_htlc_script(
-        &self,
-        script: &Script,
-        option_anchor_outputs: bool,
-    ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), ValidationError> {
-        let iter = &mut script.instructions();
-        expect_op(iter, OP_DUP)?;
-        expect_op(iter, OP_HASH160)?;
-        let revocation_hash = expect_data(iter)?;
-        expect_op(iter, OP_EQUAL)?;
-        expect_op(iter, OP_IF)?;
-        expect_op(iter, OP_CHECKSIG)?;
-        expect_op(iter, OP_ELSE)?;
-        let remote_htlc_pubkey = expect_data(iter)?;
-        expect_op(iter, OP_SWAP)?;
-        expect_op(iter, OP_SIZE)?;
-        let thirty_two = expect_number(iter)?;
-        if thirty_two != 32 {
-            return Err(Mismatch(format!("expected 32, saw {}", thirty_two))); // NOT TESTED
-        }
-        expect_op(iter, OP_EQUAL)?;
-        expect_op(iter, OP_NOTIF)?;
-        expect_op(iter, OP_DROP)?;
-        expect_op(iter, OP_PUSHNUM_2)?;
-        expect_op(iter, OP_SWAP)?;
-        let local_htlc_pubkey = expect_data(iter)?;
-        expect_op(iter, OP_PUSHNUM_2)?;
-        expect_op(iter, OP_CHECKMULTISIG)?;
-        expect_op(iter, OP_ELSE)?;
-        expect_op(iter, OP_HASH160)?;
-        let payment_hash_vec = expect_data(iter)?;
-        expect_op(iter, OP_EQUALVERIFY)?;
-        expect_op(iter, OP_CHECKSIG)?;
-        expect_op(iter, OP_ENDIF)?;
-        if option_anchor_outputs {
-            // BEGIN NOT TESTED
-            expect_op(iter, OP_PUSHNUM_1)?;
-            expect_op(iter, OP_CSV)?;
-            expect_op(iter, OP_DROP)?;
-            // END NOT TESTED
-        }
-        expect_op(iter, OP_ENDIF)?;
-        expect_script_end(iter)?;
-        Ok((
-            revocation_hash,
-            remote_htlc_pubkey,
-            local_htlc_pubkey,
-            payment_hash_vec,
-        ))
     }
 
     fn handle_offered_htlc_output(
@@ -820,11 +840,11 @@ impl CommitmentInfo {
             if vals.is_ok() {
                 return self.handle_to_broadcaster_output(out, vals.unwrap());
             }
-            let vals = self.parse_received_htlc_script(&script, setup.option_anchor_outputs());
+            let vals = parse_received_htlc_script(&script, setup.option_anchor_outputs());
             if vals.is_ok() {
                 return self.handle_received_htlc_output(out, vals.unwrap());
             }
-            let vals = self.parse_offered_htlc_script(&script, setup.option_anchor_outputs());
+            let vals = parse_offered_htlc_script(&script, setup.option_anchor_outputs());
             if vals.is_ok() {
                 return self.handle_offered_htlc_output(out, vals.unwrap());
             }

@@ -904,6 +904,9 @@ impl Signer for SignServer {
             Some(p) => Some(self.public_key(Some(p))?),
             _ => None,
         };
+
+        let output_witscript = Script::from(reqtx.output_descs[0].witscript.clone());
+
         let sigvec = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
@@ -913,6 +916,7 @@ impl Signer for SignServer {
                     opt_per_commitment_point,
                     &redeemscript,
                     htlc_amount_sat,
+                    &output_witscript,
                 )?;
                 Ok(signature_to_bitcoin_vec(sig))
             })
@@ -1024,6 +1028,8 @@ impl Signer for SignServer {
             return Err(Status::invalid_argument("len(tx.output) != 1")); // NOT TESTED
         }
 
+        let output_witscript = Script::from(reqtx.output_descs[0].witscript.clone());
+
         let sig_vec = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
@@ -1032,6 +1038,7 @@ impl Signer for SignServer {
                     &remote_per_commitment_point,
                     &redeemscript,
                     htlc_amount_sat,
+                    &output_witscript,
                 )?;
                 Ok(signature_to_bitcoin_vec(sig))
             })
