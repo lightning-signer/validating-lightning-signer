@@ -385,11 +385,11 @@ mod tests {
     use bitcoin::secp256k1::recovery::{RecoverableSignature, RecoveryId};
     use bitcoin::secp256k1::Signature;
     use bitcoin::util::psbt::serialize::Serialize;
-    use bitcoin::{OutPoint, Script, TxIn, TxOut};
+    use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut};
     use lightning::ln::chan_utils::{
         build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
         make_funding_redeemscript, BuiltCommitmentTransaction, ChannelPublicKeys,
-        HTLCOutputInCommitment, TxCreationKeys,
+        ChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
     };
     use lightning::ln::PaymentHash;
 
@@ -411,7 +411,7 @@ mod tests {
     use lightning::chain::keysinterface::BaseSign;
 
     macro_rules! assert_invalid_argument_err {
-        ($status: ident, $msg:expr) => {
+        ($status: expr, $msg: expr) => {
             assert!($status.is_err());
             let err = $status.unwrap_err();
             assert_eq!(err.code(), Code::InvalidArgument);
@@ -1976,63 +1976,50 @@ mod tests {
             make_test_channel_setup(),
         );
 
+        let htlc_amount_sat = 10 * 1000;
+
         let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let feerate_per_kw = 1000;
-        let to_self_delay = 32;
         let htlc = HTLCOutputInCommitment {
             offered: true,
-            amount_msat: 1 * 1000 * 1000,
+            amount_msat: htlc_amount_sat * 1000,
             cltv_expiry: 2 << 16,
             payment_hash: PaymentHash([1; 32]),
             transaction_output_index: Some(0),
         };
 
-        let secp_ctx_all = Secp256k1::new();
-
         let n: u64 = 1;
 
-        let per_commitment_point = signer
+        let (per_commitment_point, txkeys, to_self_delay) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                Ok(chan.get_per_commitment_point(n))
+                let per_commitment_point = chan.get_per_commitment_point(n);
+                let txkeys = chan
+                    .make_holder_tx_keys(&per_commitment_point)
+                    .expect("failed to make txkeys");
+                let to_self_delay = chan
+                    .make_channel_parameters()
+                    .as_holder_broadcastable()
+                    .contest_delay();
+                Ok((per_commitment_point, txkeys, to_self_delay))
             })
             .expect("point");
-
-        let a_delayed_payment_base = make_test_pubkey(2);
-        let b_revocation_base = make_test_pubkey(3);
-
-        let keys = TxCreationKeys::derive_new(
-            &secp_ctx_all,
-            &per_commitment_point,
-            &a_delayed_payment_base,
-            &make_test_pubkey(4), // a_htlc_base
-            &b_revocation_base,
-            &make_test_pubkey(6),
-        ) // b_htlc_base
-        .expect("new TxCreationKeys");
-
-        let a_delayed_payment_key = derive_public_key(
-            &secp_ctx_all,
-            &per_commitment_point,
-            &a_delayed_payment_base,
-        )
-        .expect("a_delayed_payment_key");
-
-        let revocation_key =
-            derive_revocation_pubkey(&secp_ctx_all, &per_commitment_point, &b_revocation_base)
-                .expect("revocation_key");
 
         let htlc_tx = build_htlc_transaction(
             &commitment_txid,
             feerate_per_kw,
             to_self_delay,
             &htlc,
-            &a_delayed_payment_key,
-            &revocation_key,
+            &txkeys.broadcaster_delayed_payment_key,
+            &txkeys.revocation_key,
         );
 
-        let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
+        let htlc_redeemscript = get_htlc_redeemscript(&htlc, &txkeys);
 
-        let htlc_amount_sat = 10 * 1000;
+        let output_witscript = get_revokeable_redeemscript(
+            &txkeys.revocation_key,
+            to_self_delay,
+            &txkeys.broadcaster_delayed_payment_key,
+        );
 
         let htlc_pubkey =
             get_channel_htlc_pubkey(&signer, &node_id, &channel_id, &per_commitment_point);
@@ -2040,7 +2027,14 @@ mod tests {
         let sigvec = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let sig = chan
-                    .sign_holder_htlc_tx(&htlc_tx, n, None, &htlc_redeemscript, htlc_amount_sat)
+                    .sign_holder_htlc_tx(
+                        &htlc_tx,
+                        n,
+                        None,
+                        &htlc_redeemscript,
+                        htlc_amount_sat,
+                        &output_witscript,
+                    )
                     .unwrap();
                 Ok(signature_to_bitcoin_vec(sig))
             })
@@ -2064,6 +2058,7 @@ mod tests {
                         Some(per_commitment_point),
                         &htlc_redeemscript,
                         htlc_amount_sat,
+                        &output_witscript,
                     )
                     .unwrap();
                 Ok(signature_to_bitcoin_vec(sig))
@@ -2165,8 +2160,17 @@ mod tests {
         );
     }
 
-    #[test]
-    fn sign_remote_htlc_tx_test() {
+    fn sign_counterparty_htlc_tx_with_mutators<ChanParamMutator, KeysMutator, TxMutator>(
+        is_offered: bool,
+        chanparammut: ChanParamMutator,
+        keysmut: KeysMutator,
+        txmut: TxMutator,
+    ) -> Result<(), Status>
+    where
+        ChanParamMutator: Fn(&mut ChannelTransactionParameters),
+        KeysMutator: Fn(&mut TxCreationKeys),
+        TxMutator: Fn(&mut Transaction),
+    {
         let signer = MultiSigner::new();
         let (node_id, channel_id) = init_node_and_channel(
             &signer,
@@ -2175,69 +2179,76 @@ mod tests {
             make_test_channel_setup(),
         );
 
-        let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
-        let feerate_per_kw = 1000;
-        let to_self_delay = 32;
-        let htlc = HTLCOutputInCommitment {
-            offered: true,
-            amount_msat: 1 * 1000 * 1000,
-            cltv_expiry: 2 << 16,
-            payment_hash: PaymentHash([1; 32]),
-            transaction_output_index: Some(0),
-        };
-
         let remote_per_commitment_point = make_test_pubkey(10);
+        let htlc_amount_sat = 1_000_000;
 
-        let per_commitment_point = make_test_pubkey(1);
-        let a_delayed_payment_base = make_test_pubkey(2);
-        let b_revocation_base = make_test_pubkey(3);
+        let (sig, htlc_tx, htlc_redeemscript) =
+            signer.with_ready_channel(&node_id, &channel_id, |chan| {
+                let mut channel_parameters = chan.make_channel_parameters();
 
-        let secp_ctx = Secp256k1::new();
+                // Mutate the channel parameters
+                chanparammut(&mut channel_parameters);
 
-        let keys = TxCreationKeys::derive_new(
-            &secp_ctx,
-            &per_commitment_point,
-            &a_delayed_payment_base,
-            &make_test_pubkey(4), // a_htlc_base
-            &b_revocation_base,
-            &make_test_pubkey(6),
-        ) // b_htlc_base
-        .expect("new TxCreationKeys");
+                let mut keys = chan.make_counterparty_tx_keys(&remote_per_commitment_point)?;
 
-        let a_delayed_payment_key =
-            derive_public_key(&secp_ctx, &per_commitment_point, &a_delayed_payment_base)
-                .expect("a_delayed_payment_key");
+                // Mutate the tx creation keys.
+                keysmut(&mut keys);
 
-        let revocation_key =
-            derive_revocation_pubkey(&secp_ctx, &per_commitment_point, &b_revocation_base)
-                .expect("revocation_key");
+                let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
+                let feerate_per_kw = 1000;
+                let to_self_delay = channel_parameters
+                    .as_counterparty_broadcastable()
+                    .contest_delay();
 
-        let htlc_tx = build_htlc_transaction(
-            &commitment_txid,
-            feerate_per_kw,
-            to_self_delay,
-            &htlc,
-            &a_delayed_payment_key,
-            &revocation_key,
-        );
+                let htlc = HTLCOutputInCommitment {
+                    offered: is_offered,
+                    amount_msat: htlc_amount_sat * 1000,
+                    cltv_expiry: if is_offered { 2 << 16 } else { 0 },
+                    payment_hash: PaymentHash([1; 32]),
+                    transaction_output_index: Some(0),
+                };
 
-        let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
+                let mut htlc_tx = build_htlc_transaction(
+                    &commitment_txid,
+                    feerate_per_kw,
+                    to_self_delay,
+                    &htlc,
+                    &keys.broadcaster_delayed_payment_key,
+                    &keys.revocation_key,
+                );
 
-        let htlc_amount_sat = 10 * 1000;
+                // Mutate the transaction.
+                txmut(&mut htlc_tx);
 
-        let ser_signature = signer
-            .with_ready_channel(&node_id, &channel_id, |chan| {
-                let sig = chan
-                    .sign_counterparty_htlc_tx(
-                        &htlc_tx,
-                        &remote_per_commitment_point,
-                        &htlc_redeemscript,
-                        htlc_amount_sat,
-                    )
-                    .unwrap();
-                Ok(signature_to_bitcoin_vec(sig))
-            })
-            .unwrap();
+                let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
+
+                let output_witscript = get_revokeable_redeemscript(
+                    &keys.revocation_key,
+                    to_self_delay,
+                    &keys.broadcaster_delayed_payment_key,
+                );
+
+                let sig = chan.sign_counterparty_htlc_tx(
+                    &htlc_tx,
+                    &remote_per_commitment_point,
+                    &htlc_redeemscript,
+                    htlc_amount_sat,
+                    &output_witscript,
+                )?;
+                Ok((sig, htlc_tx, htlc_redeemscript))
+            })?;
+
+        if is_offered {
+            assert_eq!(
+                hex::encode(htlc_tx.txid()),
+                "b55afa31b9a5d4dd5c840c1c4274019e3cc0495a07ba060216db2f72d708a166"
+            );
+        } else {
+            assert_eq!(
+                hex::encode(htlc_tx.txid()),
+                "14b759430de58d1636714a75aff4d46722294157b1727d10b18eba7c8dc452a0"
+            );
+        }
 
         let htlc_pubkey =
             get_channel_htlc_pubkey(&signer, &node_id, &channel_id, &remote_per_commitment_point);
@@ -2245,14 +2256,583 @@ mod tests {
         check_signature(
             &htlc_tx,
             0,
-            ser_signature,
+            signature_to_bitcoin_vec(sig),
             &htlc_pubkey,
             htlc_amount_sat,
             &htlc_redeemscript,
         );
+
+        Ok(())
+    }
+
+    fn sign_holder_htlc_tx_with_mutators<ChanParamMutator, KeysMutator, TxMutator>(
+        is_offered: bool,
+        chanparammut: ChanParamMutator,
+        keysmut: KeysMutator,
+        txmut: TxMutator,
+    ) -> Result<(), Status>
+    where
+        ChanParamMutator: Fn(&mut ChannelTransactionParameters),
+        KeysMutator: Fn(&mut TxCreationKeys),
+        TxMutator: Fn(&mut Transaction),
+    {
+        let signer = MultiSigner::new();
+        let (node_id, channel_id) = init_node_and_channel(
+            &signer,
+            TEST_NODE_CONFIG,
+            TEST_SEED[1],
+            make_test_channel_setup(),
+        );
+
+        let commit_num = 23;
+        let htlc_amount_sat = 1_000_000;
+
+        let (sig, per_commitment_point, htlc_tx, htlc_redeemscript) =
+            signer.with_ready_channel(&node_id, &channel_id, |chan| {
+                let mut channel_parameters = chan.make_channel_parameters();
+
+                // Mutate the channel parameters
+                chanparammut(&mut channel_parameters);
+
+                let per_commitment_point = chan.get_per_commitment_point(commit_num);
+                let mut keys = chan.make_holder_tx_keys(&per_commitment_point)?;
+
+                // Mutate the tx creation keys.
+                keysmut(&mut keys);
+
+                let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
+                let feerate_per_kw = 1000;
+                let to_self_delay = channel_parameters.as_holder_broadcastable().contest_delay();
+
+                let htlc = HTLCOutputInCommitment {
+                    offered: is_offered,
+                    amount_msat: htlc_amount_sat * 1000,
+                    cltv_expiry: if is_offered { 2 << 16 } else { 0 },
+                    payment_hash: PaymentHash([1; 32]),
+                    transaction_output_index: Some(0),
+                };
+
+                let mut htlc_tx = build_htlc_transaction(
+                    &commitment_txid,
+                    feerate_per_kw,
+                    to_self_delay,
+                    &htlc,
+                    &keys.broadcaster_delayed_payment_key,
+                    &keys.revocation_key,
+                );
+
+                // Mutate the transaction.
+                txmut(&mut htlc_tx);
+
+                let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
+
+                let output_witscript = get_revokeable_redeemscript(
+                    &keys.revocation_key,
+                    to_self_delay,
+                    &keys.broadcaster_delayed_payment_key,
+                );
+
+                let sig = chan.sign_holder_htlc_tx(
+                    &htlc_tx,
+                    commit_num,
+                    Some(per_commitment_point),
+                    &htlc_redeemscript,
+                    htlc_amount_sat,
+                    &output_witscript,
+                )?;
+                Ok((sig, per_commitment_point, htlc_tx, htlc_redeemscript))
+            })?;
+
+        if is_offered {
+            assert_eq!(
+                hex::encode(htlc_tx.txid()),
+                "f74e59ee1f97da9d29e3b371dde9cbb0e043bf248e085aad6f6235f10b2445c2"
+            );
+        } else {
+            assert_eq!(
+                hex::encode(htlc_tx.txid()),
+                "58d8f50c079f04acaffa6c33651e967ae9cabe227dc932d30da17597b7e79edd"
+            );
+        }
+
+        let htlc_pubkey =
+            get_channel_htlc_pubkey(&signer, &node_id, &channel_id, &per_commitment_point);
+
+        check_signature(
+            &htlc_tx,
+            0,
+            signature_to_bitcoin_vec(sig),
+            &htlc_pubkey,
+            htlc_amount_sat,
+            &htlc_redeemscript,
+        );
+
+        Ok(())
+    }
+
+    macro_rules! sign_counterparty_offered_htlc_tx_with_mutators {
+        ($pm: expr, $km: expr, $tm: expr) => {
+            sign_counterparty_htlc_tx_with_mutators(true, $pm, $km, $tm)
+        };
+    }
+
+    macro_rules! sign_counterparty_received_htlc_tx_with_mutators {
+        ($pm: expr, $km: expr, $tm: expr) => {
+            sign_counterparty_htlc_tx_with_mutators(false, $pm, $km, $tm)
+        };
+    }
+
+    macro_rules! sign_holder_offered_htlc_tx_with_mutators {
+        ($pm: expr, $km: expr, $tm: expr) => {
+            sign_holder_htlc_tx_with_mutators(true, $pm, $km, $tm)
+        };
+    }
+
+    macro_rules! sign_holder_received_htlc_tx_with_mutators {
+        ($pm: expr, $km: expr, $tm: expr) => {
+            sign_holder_htlc_tx_with_mutators(false, $pm, $km, $tm)
+        };
     }
 
     #[test]
+    fn sign_counterparty_offered_htlc_tx_with_no_mut_test() {
+        let status = sign_counterparty_offered_htlc_tx_with_mutators!(
+            |_param| {
+                // don't mutate the channel parameters, should pass
+            },
+            |_keys| {
+                // don't mutate the keys, should pass
+            },
+            |_tx| {
+                // don't mutate the tx, should pass
+            }
+        );
+        assert!(status.is_ok());
+    }
+
+    #[test]
+    fn sign_counterparty_received_htlc_tx_with_no_mut_test() {
+        let status = sign_counterparty_received_htlc_tx_with_mutators!(
+            |_param| {
+                // don't mutate the channel parameters, should pass
+            },
+            |_keys| {
+                // don't mutate the keys, should pass
+            },
+            |_tx| {
+                // don't mutate the tx, should pass
+            }
+        );
+        assert!(status.is_ok());
+    }
+
+    #[test]
+    fn sign_holder_offered_htlc_tx_with_no_mut_test() {
+        let status = sign_holder_offered_htlc_tx_with_mutators!(
+            |_param| {
+                // don't mutate the channel parameters, should pass
+            },
+            |_keys| {
+                // don't mutate the keys, should pass
+            },
+            |_tx| {
+                // don't mutate the tx, should pass
+            }
+        );
+        assert!(status.is_ok());
+    }
+
+    #[test]
+    fn sign_holder_received_htlc_tx_with_no_mut_test() {
+        let status = sign_holder_received_htlc_tx_with_mutators!(
+            |_param| {
+                // don't mutate the channel parameters, should pass
+            },
+            |_keys| {
+                // don't mutate the keys, should pass
+            },
+            |_tx| {
+                // don't mutate the tx, should pass
+            }
+        );
+        assert!(status.is_ok());
+    }
+
+    #[test]
+    // policy-v1-htlc-version
+    fn sign_counterparty_offered_htlc_tx_with_bad_version_test() {
+        assert_invalid_argument_err!(
+            sign_counterparty_offered_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.version = 3 // only version 2 allowed
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-version
+    fn sign_counterparty_received_htlc_tx_with_bad_version_test() {
+        assert_invalid_argument_err!(
+            sign_counterparty_received_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.version = 3 // only version 2 allowed
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-version
+    fn sign_holder_offered_htlc_tx_with_bad_version_test() {
+        assert_invalid_argument_err!(
+            sign_holder_offered_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.version = 3 // only version 2 allowed
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-version
+    fn sign_holder_received_htlc_tx_with_bad_version_test() {
+        assert_invalid_argument_err!(
+            sign_holder_received_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.version = 3 // only version 2 allowed
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-locktime
+    fn sign_counterparty_offered_htlc_tx_with_bad_locktime_test() {
+        assert_invalid_argument_err!(
+            sign_counterparty_offered_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.lock_time = 0 // offered must have non-zero locktime
+            ),
+            "policy failure: offered lock_time must be non-zero"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-locktime
+    fn sign_counterparty_received_htlc_tx_with_bad_locktime_test() {
+        assert_invalid_argument_err!(
+            sign_counterparty_received_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.lock_time = 42 // received must have zero locktime
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-locktime
+    fn sign_holder_offered_htlc_tx_with_bad_locktime_test() {
+        assert_invalid_argument_err!(
+            sign_holder_offered_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.lock_time = 0 // offered must have non-zero locktime
+            ),
+            "policy failure: offered lock_time must be non-zero"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-locktime
+    fn sign_holder_received_htlc_tx_with_bad_locktime_test() {
+        assert_invalid_argument_err!(
+            sign_holder_received_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.lock_time = 42 // received must have zero locktime
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-nsequence
+    fn sign_counterparty_offered_htlc_tx_with_bad_nsequence_test() {
+        assert_invalid_argument_err!(
+            sign_counterparty_offered_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-nsequence
+    fn sign_counterparty_received_htlc_tx_with_bad_nsequence_test() {
+        assert_invalid_argument_err!(
+            sign_counterparty_received_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-nsequence
+    fn sign_holder_offered_htlc_tx_with_bad_nsequence_test() {
+        assert_invalid_argument_err!(
+            sign_holder_offered_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-nsequence
+    fn sign_holder_received_htlc_tx_with_bad_nsequence_test() {
+        assert_invalid_argument_err!(
+            sign_holder_received_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-to-self-delay
+    fn sign_counterparty_offered_htlc_tx_with_bad_to_self_delay_test() {
+        assert_invalid_argument_err!(
+            sign_counterparty_offered_htlc_tx_with_mutators!(
+                |param| param.holder_selected_contest_delay = 42,
+                |_keys| {},
+                |_tx| {}
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-to-self-delay
+    fn sign_counterparty_received_htlc_tx_with_bad_to_self_delay_test() {
+        assert_invalid_argument_err!(
+            sign_counterparty_received_htlc_tx_with_mutators!(
+                |param| param.holder_selected_contest_delay = 42,
+                |_keys| {},
+                |_tx| {}
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-to-self-delay
+    fn sign_holder_offered_htlc_tx_with_bad_to_self_delay_test() {
+        assert_invalid_argument_err!(
+            sign_holder_offered_htlc_tx_with_mutators!(
+                |param| {
+                    let mut cptp = param.counterparty_parameters.as_ref().unwrap().clone();
+                    cptp.selected_contest_delay = 42;
+                    param.counterparty_parameters = Some(cptp);
+                },
+                |_keys| {},
+                |_tx| {}
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-to-self-delay
+    fn sign_holder_received_htlc_tx_with_bad_to_self_delay_test() {
+        assert_invalid_argument_err!(
+            sign_holder_received_htlc_tx_with_mutators!(
+                |param| {
+                    let mut cptp = param.counterparty_parameters.as_ref().unwrap().clone();
+                    cptp.selected_contest_delay = 42;
+                    param.counterparty_parameters = Some(cptp);
+                },
+                |_keys| {},
+                |_tx| {}
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-revocation-pubkey
+    fn sign_counterparty_offered_htlc_tx_with_bad_revpubkey_test() {
+        assert_invalid_argument_err!(
+            sign_counterparty_offered_htlc_tx_with_mutators!(
+                |_param| {},
+                |keys| keys.revocation_key = make_test_pubkey(42),
+                |_tx| {}
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-revocation-pubkey
+    fn sign_counterparty_received_htlc_tx_with_bad_revpubkey_test() {
+        assert_invalid_argument_err!(
+            sign_counterparty_received_htlc_tx_with_mutators!(
+                |_param| {},
+                |keys| keys.revocation_key = make_test_pubkey(42),
+                |_tx| {}
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-revocation-pubkey
+    fn sign_holder_offered_htlc_tx_with_bad_revpubkey_test() {
+        assert_invalid_argument_err!(
+            sign_holder_offered_htlc_tx_with_mutators!(
+                |_param| {},
+                |keys| keys.revocation_key = make_test_pubkey(42),
+                |_tx| {}
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-revocation-pubkey
+    fn sign_holder_received_htlc_tx_with_bad_revpubkey_test() {
+        assert_invalid_argument_err!(
+            sign_holder_received_htlc_tx_with_mutators!(
+                |_param| {},
+                |keys| keys.revocation_key = make_test_pubkey(42),
+                |_tx| {}
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-payment-pubkey
+    fn sign_counterparty_offered_htlc_tx_with_bad_delayedpubkey_test() {
+        assert_invalid_argument_err!(
+            sign_counterparty_offered_htlc_tx_with_mutators!(
+                |_param| {},
+                |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
+                |_tx| {}
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-payment-pubkey
+    fn sign_counterparty_received_htlc_tx_with_bad_delayedpubkey_test() {
+        assert_invalid_argument_err!(
+            sign_counterparty_received_htlc_tx_with_mutators!(
+                |_param| {},
+                |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
+                |_tx| {}
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-payment-pubkey
+    fn sign_holder_offered_htlc_tx_with_bad_delayedpubkey_test() {
+        assert_invalid_argument_err!(
+            sign_holder_offered_htlc_tx_with_mutators!(
+                |_param| {},
+                |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
+                |_tx| {}
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-payment-pubkey
+    fn sign_holder_received_htlc_tx_with_bad_delayedpubkey_test() {
+        assert_invalid_argument_err!(
+            sign_holder_received_htlc_tx_with_mutators!(
+                |_param| {},
+                |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
+                |_tx| {}
+            ),
+            "policy failure: sighash mismatch"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-fee-range
+    fn sign_counterparty_offered_htlc_tx_with_low_feerate_test() {
+        assert_invalid_argument_err!(
+            sign_counterparty_offered_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.output[0].value = 999_900 // htlc_amount_sat is 1_000_000
+            ),
+            "policy failure: feerate_per_kw of 151 is smaller than the minimum of 500"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-fee-range
+    fn sign_counterparty_offered_htlc_tx_with_high_feerate_test() {
+        assert_invalid_argument_err!(
+            sign_counterparty_offered_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.output[0].value = 980_000 // htlc_amount_sat is 1_000_000
+            ),
+            "policy failure: feerate_per_kw of 30166 is larger than the maximum of 16000"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-fee-range
+    fn sign_holder_received_htlc_tx_with_low_feerate_test() {
+        assert_invalid_argument_err!(
+            sign_holder_received_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.output[0].value = 999_900 // htlc_amount_sat is 1_000_000
+            ),
+            "policy failure: feerate_per_kw of 143 is smaller than the minimum of 500"
+        );
+    }
+
+    #[test]
+    // policy-v1-htlc-fee-range
+    fn sign_holder_received_htlc_tx_with_high_feerate_test() {
+        assert_invalid_argument_err!(
+            sign_holder_received_htlc_tx_with_mutators!(
+                |_param| {},
+                |_keys| {},
+                |tx| tx.output[0].value = 980_000 // htlc_amount_sat is 1_000_000
+            ),
+            "policy failure: feerate_per_kw of 28450 is larger than the maximum of 16000"
+        );
+    }
+
+    #[test]
+    #[ignore] // we don't support anchors yet
+              // BEGIN NOT TESTED
     fn sign_remote_htlc_tx_with_anchors_test() {
         let signer = MultiSigner::new();
         let mut setup = make_test_channel_setup();
@@ -2260,12 +2840,14 @@ mod tests {
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
+        let htlc_amount_sat = 10 * 1000;
+
         let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let feerate_per_kw = 1000;
         let to_self_delay = 32;
         let htlc = HTLCOutputInCommitment {
             offered: true,
-            amount_msat: 1 * 1000 * 1000,
+            amount_msat: htlc_amount_sat * 1000,
             cltv_expiry: 2 << 16,
             payment_hash: PaymentHash([1; 32]),
             transaction_output_index: Some(0),
@@ -2308,7 +2890,8 @@ mod tests {
 
         let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
 
-        let htlc_amount_sat = 10 * 1000;
+        let output_witscript =
+            get_revokeable_redeemscript(&revocation_key, to_self_delay, &a_delayed_payment_key);
 
         let ser_signature = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
@@ -2318,6 +2901,7 @@ mod tests {
                         &remote_per_commitment_point,
                         &htlc_redeemscript,
                         htlc_amount_sat,
+                        &output_witscript,
                     )
                     .unwrap();
                 Ok(signature_to_bitcoin_vec(sig))
@@ -2337,6 +2921,7 @@ mod tests {
             &setup,
         );
     }
+    // END NOT TESTED
 
     #[test]
     fn sign_counterparty_htlc_sweep_test() {
@@ -3041,7 +3626,7 @@ mod tests {
             let parameters = channel_parameters.as_holder_broadcastable();
 
             let per_commitment_point = chan.get_per_commitment_point(commit_num);
-            let mut keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+            let mut keys = chan.make_holder_tx_keys(&per_commitment_point)?;
 
             // Mutate the tx creation keys.
             keysmut(&mut keys);

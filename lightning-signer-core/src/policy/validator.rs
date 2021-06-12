@@ -1,5 +1,7 @@
 use bitcoin::{self, Network};
 
+use lightning::ln::chan_utils::HTLCOutputInCommitment;
+
 use crate::node::{Channel, ChannelSetup};
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
 use crate::util::enforcing_trait_impls::EnforcingSigner;
@@ -17,13 +19,22 @@ pub trait Validator {
         output_witscripts: &Vec<Vec<u8>>,
     ) -> Result<CommitmentInfo, ValidationError>;
 
-    /// Phase 2 remote tx validation
     fn validate_commitment_tx(
         &self,
         setup: &ChannelSetup,
         state: &ValidatorState,
         info2: &CommitmentInfo2,
         is_counterparty: bool,
+    ) -> Result<(), ValidationError>;
+
+    fn validate_htlc_tx(
+        &self,
+        setup: &ChannelSetup,
+        state: &ValidatorState,
+        is_counterparty: bool,
+        tx: &bitcoin::Transaction,
+        htlc: &HTLCOutputInCommitment,
+        feerate_per_kw: u32,
     ) -> Result<(), ValidationError>;
 
     /// Validate channel open
@@ -91,6 +102,10 @@ pub struct SimplePolicy {
     pub max_htlc_value_sat: u64,
     /// Whether to use knowledge of chain state (e.g. current_height)
     pub use_chain_state: bool,
+    /// Minimum feerate
+    pub min_feerate_per_kw: u32,
+    /// Maximum feerate
+    pub max_feerate_per_kw: u32,
 }
 // END NOT TESTED
 
@@ -142,23 +157,23 @@ impl SimpleValidator {
 // TODO - policy-v2-funding-change-to-wallet
 
 // sign_commitment_tx has some, missing these
-// TODO - policy-v2-commitment-initial-funding-value
-// TODO - policy-v2-commitment-spends-active-utxo
-// TODO - policy-v2-commitment-fee-range
-// TODO - policy-v2-commitment-htlc-routing-balance
-// TODO - policy-v2-commitment-htlc-received-spends-active-utxo
-// TODO - policy-v1-commitment-htlc-delay-range
-// TODO - policy-v2-commitment-htlc-count-limit
-// TODO - policy-v1-commitment-payment-pubkey
-// TODO - policy-v2-commitment-htlc-offered-hash-matches
-// TODO - policy-v2-commitment-htlc-inflight-limit
-// TODO - policy-v1-commitment-outputs-trimmed
-// TODO - policy-v2-commitment-previous-revoked
-// TODO - policy-v2-commitment-local-not-revoked
 // TODO - policy-v1-commitment-anchor-static-remotekey
 // TODO - policy-v1-commitment-anchor-to-local
 // TODO - policy-v1-commitment-anchor-to-remote
 // TODO - policy-v1-commitment-anchors-not-when-off
+// TODO - policy-v1-commitment-htlc-delay-range
+// TODO - policy-v1-commitment-outputs-trimmed
+// TODO - policy-v1-commitment-payment-pubkey
+// TODO - policy-v2-commitment-fee-range
+// TODO - policy-v2-commitment-htlc-count-limit
+// TODO - policy-v2-commitment-htlc-inflight-limit
+// TODO - policy-v2-commitment-htlc-offered-hash-matches
+// TODO - policy-v2-commitment-htlc-received-spends-active-utxo
+// TODO - policy-v2-commitment-htlc-routing-balance
+// TODO - policy-v2-commitment-initial-funding-value
+// TODO - policy-v2-commitment-local-not-revoked
+// TODO - policy-v2-commitment-previous-revoked
+// TODO - policy-v2-commitment-spends-active-utxo
 
 // not yet implemented
 // TODO - policy-v2-revoke-new-commitment-signed
@@ -166,12 +181,6 @@ impl SimpleValidator {
 // TODO - policy-v2-revoke-not-closed
 
 // not yet implemented
-// TODO - policy-v1-htlc-revocation-pubkey
-// TODO - policy-v1-htlc-payment-pubkey
-// TODO - policy-v1-htlc-version
-// TODO - policy-v1-htlc-locktime
-// TODO - policy-v1-htlc-nsequence
-// TODO - policy-v1-htlc-fee-range
 // TODO - policy-v2-htlc-delay-range
 
 // not yet implemented
@@ -286,6 +295,40 @@ impl Validator for SimpleValidator {
         Ok(())
     }
 
+    fn validate_htlc_tx(
+        &self,
+        _setup: &ChannelSetup,
+        _state: &ValidatorState,
+        _is_counterparty: bool,
+        tx: &bitcoin::Transaction,
+        htlc: &HTLCOutputInCommitment,
+        feerate_per_kw: u32,
+    ) -> Result<(), ValidationError> {
+        // NOTE - the tx.lock_time must be equal to the `cltv_expiry` which
+        // is determined from the submitted transaction's locktime and must
+        // be further checked with policy-v1-htlc-cltv-range.
+        // policy-v2-htlc-locktime (for offered HTLC)
+        if htlc.offered && tx.lock_time == 0 {
+            return Err(Policy(format!("offered lock_time must be non-zero")));
+        }
+
+        // policy-v1-htlc-fee-range
+        if feerate_per_kw < self.policy.min_feerate_per_kw {
+            return Err(Policy(format!(
+                "feerate_per_kw of {} is smaller than the minimum of {}",
+                feerate_per_kw, self.policy.min_feerate_per_kw
+            )));
+        }
+        if feerate_per_kw > self.policy.max_feerate_per_kw {
+            return Err(Policy(format!(
+                "feerate_per_kw of {} is larger than the maximum of {}",
+                feerate_per_kw, self.policy.max_feerate_per_kw
+            )));
+        }
+
+        Ok(())
+    }
+
     // TODO - policy-v3-velocity-funding
     // TODO - this implementation is incomplete
     fn validate_channel_open(&self, setup: &ChannelSetup) -> Result<(), ValidationError> {
@@ -317,6 +360,8 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_htlcs: 1000,
             max_htlc_value_sat: 16_777_216,
             use_chain_state: false,
+            min_feerate_per_kw: 1000,
+            max_feerate_per_kw: 1000 * 1000,
         }
     // END NOT TESTED
     } else {
@@ -328,6 +373,8 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_htlcs: 1000,
             max_htlc_value_sat: 16_777_216, // lnd itest: multi-hop_htlc_error_propagation
             use_chain_state: false,
+            min_feerate_per_kw: 500,    // c-lightning integration
+            max_feerate_per_kw: 16_000, // c-lightning integration
         }
     }
 }
@@ -358,6 +405,8 @@ mod tests {
             max_htlcs: 1000,
             max_htlc_value_sat: 10_000_000,
             use_chain_state: true,
+            min_feerate_per_kw: 1000,
+            max_feerate_per_kw: 1000 * 1000,
         };
 
         SimpleValidator {

@@ -1,5 +1,5 @@
 use bitcoin::util::address::Payload;
-use lightning::ln::chan_utils::ChannelPublicKeys;
+use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 
 // Debug printer for ChannelPublicKeys which doesn't have one.
 // BEGIN NOT TESTED
@@ -45,3 +45,17 @@ impl<'a> core::fmt::Debug for DebugPayload<'a> {
     }
 }
 // END NOT TESTED
+
+// Debug printer for HTLCOutputInCommitment which doesn't have one.
+pub struct DebugHTLCOutputInCommitment<'a>(pub &'a HTLCOutputInCommitment);
+impl<'a> core::fmt::Debug for DebugHTLCOutputInCommitment<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_struct("HTLCOutputInCommitment")
+            .field("offered", &self.0.offered)
+            .field("amount_msat", &self.0.amount_msat)
+            .field("cltv_expiry", &self.0.cltv_expiry)
+            .field("payment_hash", &hex::encode(&self.0.payment_hash.0[..]))
+            .field("transaction_output_index", &self.0.transaction_output_index)
+            .finish()
+    }
+}
