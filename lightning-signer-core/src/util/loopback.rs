@@ -317,8 +317,14 @@ impl BaseSign for LoopbackChannelSigner {
             .map_err(|_s| ()) // NOT TESTED
     }
 
-
-    fn sign_justice_revoked_output(&self, justice_tx: &Transaction, input: usize, amount: u64, per_commitment_key: &SecretKey, secp_ctx: &Secp256k1<All>) -> Result<Signature, ()> {
+    fn sign_justice_revoked_output(
+        &self,
+        justice_tx: &Transaction,
+        input: usize,
+        amount: u64,
+        per_commitment_key: &SecretKey,
+        secp_ctx: &Secp256k1<All>,
+    ) -> Result<Signature, ()> {
         let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
         let counterparty_pubkeys = self.counterparty_pubkeys.as_ref().unwrap();
 
@@ -328,12 +334,11 @@ impl BaseSign for LoopbackChannelSigner {
             counterparty_pubkeys,
             &self.pubkeys,
         )?;
-        let redeem_script =
-            chan_utils::get_revokeable_redeemscript(
-                &revocation_key,
-                self.local_to_self_delay,
-                &delayed_payment_key,
-            );
+        let redeem_script = chan_utils::get_revokeable_redeemscript(
+            &revocation_key,
+            self.local_to_self_delay,
+            &delayed_payment_key,
+        );
 
         // TODO phase 2
         let res = self
@@ -353,7 +358,15 @@ impl BaseSign for LoopbackChannelSigner {
         bitcoin_sig_to_signature(res)
     }
 
-    fn sign_justice_revoked_htlc(&self, justice_tx: &Transaction, input: usize, amount: u64, per_commitment_key: &SecretKey, htlc: &HTLCOutputInCommitment, secp_ctx: &Secp256k1<All>) -> Result<Signature, ()> {
+    fn sign_justice_revoked_htlc(
+        &self,
+        justice_tx: &Transaction,
+        input: usize,
+        amount: u64,
+        per_commitment_key: &SecretKey,
+        htlc: &HTLCOutputInCommitment,
+        secp_ctx: &Secp256k1<All>,
+    ) -> Result<Signature, ()> {
         let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
 
         let tx_keys = self.make_counterparty_tx_keys(&per_commitment_point, secp_ctx)?;

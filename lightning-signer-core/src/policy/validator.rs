@@ -1,16 +1,19 @@
-use bitcoin::{self, Network, Transaction, Script, SigHash, SigHashType};
+use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
 
-use lightning::ln::chan_utils::{HTLCOutputInCommitment, TxCreationKeys, build_htlc_transaction};
+use lightning::ln::chan_utils::{build_htlc_transaction, HTLCOutputInCommitment, TxCreationKeys};
 
 use crate::node::{Channel, ChannelSetup};
-use crate::tx::tx::{CommitmentInfo, CommitmentInfo2, parse_offered_htlc_script, parse_received_htlc_script, HTLC_TIMEOUT_TX_WEIGHT, HTLC_SUCCESS_TX_WEIGHT, parse_revokeable_redeemscript};
+use crate::tx::tx::{
+    parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
+    CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT, HTLC_TIMEOUT_TX_WEIGHT,
+};
 use crate::util::enforcing_trait_impls::EnforcingSigner;
 
 use super::error::ValidationError::{self, Policy};
+use crate::signer::multi_signer::SyncLogger;
+use crate::Arc;
 use bitcoin::util::bip143::SigHashCache;
 use lightning::ln::PaymentHash;
-use crate::Arc;
-use crate::signer::multi_signer::SyncLogger;
 
 pub trait Validator {
     /// Phase 1 CommitmentInfo
@@ -32,14 +35,15 @@ pub trait Validator {
     ) -> Result<(), ValidationError>;
 
     /// Phase 1 decoding of 2nd level HTLC tx and validation by recomposition
-    fn decode_and_validate_htlc_tx(&self,
-                                   is_counterparty: bool,
-                                   setup: &ChannelSetup,
-                                   txkeys: &TxCreationKeys,
-                                   tx: &Transaction,
-                                   redeemscript: &Script,
-                                   htlc_amount_sat: u64,
-                                   output_witscript: &Script,
+    fn decode_and_validate_htlc_tx(
+        &self,
+        is_counterparty: bool,
+        setup: &ChannelSetup,
+        txkeys: &TxCreationKeys,
+        tx: &Transaction,
+        redeemscript: &Script,
+        htlc_amount_sat: u64,
+        output_witscript: &Script,
     ) -> Result<(u32, HTLCOutputInCommitment, SigHash), ValidationError>;
 
     /// Phase 2 validation of 2nd level HTLC tx
@@ -74,7 +78,11 @@ pub trait ValidatorFactory: Send + Sync {
 
 pub struct SimpleValidatorFactory {}
 
-fn simple_validator(network: Network, channel_value_sat: u64, logger: &Arc<SyncLogger>) -> SimpleValidator {
+fn simple_validator(
+    network: Network,
+    channel_value_sat: u64,
+    logger: &Arc<SyncLogger>,
+) -> SimpleValidator {
     SimpleValidator {
         policy: make_simple_policy(network),
         channel_value_sat,
@@ -87,7 +95,7 @@ impl ValidatorFactory for SimpleValidatorFactory {
         Box::new(simple_validator(
             channel.network(),
             channel.setup.channel_value_sat,
-            &channel.logger
+            &channel.logger,
         ))
     }
 
@@ -101,7 +109,7 @@ impl ValidatorFactory for SimpleValidatorFactory {
         Box::new(simple_validator(
             channel.network(),
             channel_value_sat,
-            &channel.logger
+            &channel.logger,
         ))
     }
 }
@@ -319,18 +327,21 @@ impl Validator for SimpleValidator {
 
     // Phase 1
     // setup and txkeys must come from a trusted source
-    fn decode_and_validate_htlc_tx(&self,
-                                   is_counterparty: bool,
-                                   setup: &ChannelSetup,
-                                   txkeys: &TxCreationKeys,
-                                   tx: &Transaction,
-                                   redeemscript: &Script,
-                                   htlc_amount_sat: u64,
-                                   output_witscript: &Script,
+    fn decode_and_validate_htlc_tx(
+        &self,
+        is_counterparty: bool,
+        setup: &ChannelSetup,
+        txkeys: &TxCreationKeys,
+        tx: &Transaction,
+        redeemscript: &Script,
+        htlc_amount_sat: u64,
+        output_witscript: &Script,
     ) -> Result<(u32, HTLCOutputInCommitment, SigHash), ValidationError> {
-        let to_self_delay =
-            if is_counterparty { setup.counterparty_to_self_delay }
-            else { setup.holder_to_self_delay };
+        let to_self_delay = if is_counterparty {
+            setup.counterparty_to_self_delay
+        } else {
+            setup.holder_to_self_delay
+        };
         let sighash_type = if setup.option_anchor_outputs() {
             SigHashType::SinglePlusAnyoneCanPay
         } else {
@@ -343,9 +354,7 @@ impl Validator for SimpleValidator {
             .is_ok()
         {
             true
-        } else if parse_received_htlc_script(redeemscript, setup.option_anchor_outputs())
-            .is_ok()
-        {
+        } else if parse_received_htlc_script(redeemscript, setup.option_anchor_outputs()).is_ok() {
             false
         } else {
             return Err(ValidationError::Policy("invalid redeemscript".to_string()));
@@ -555,7 +564,7 @@ mod tests {
         SimpleValidator {
             policy,
             channel_value_sat,
-            logger: Arc::new(TestLogger::new())
+            logger: Arc::new(TestLogger::new()),
         }
     }
 

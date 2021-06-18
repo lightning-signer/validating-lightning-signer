@@ -22,9 +22,9 @@ use lightning::chain::keysinterface::{
     BaseSign, InMemorySigner, KeysInterface, SpendableOutputDescriptor,
 };
 use lightning::ln::chan_utils::{
-    derive_private_key, make_funding_redeemscript, ChannelPublicKeys,
-    ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters,
-    HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys,
+    derive_private_key, make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters,
+    CommitmentTransaction, CounterpartyChannelTransactionParameters, HTLCOutputInCommitment,
+    HolderCommitmentTransaction, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
 
@@ -1342,20 +1342,22 @@ impl Channel {
             .validator_factory
             .make_validator(self);
 
-        let (feerate_per_kw, htlc, recomposed_tx_sighash) =
-            validator.decode_and_validate_htlc_tx(is_counterparty, &self.setup, &txkeys, tx, &redeemscript, htlc_amount_sat, output_witscript)
-                .map_err(|e| self.validation_error(e))?;
+        let (feerate_per_kw, htlc, recomposed_tx_sighash) = validator
+            .decode_and_validate_htlc_tx(
+                is_counterparty,
+                &self.setup,
+                &txkeys,
+                tx,
+                &redeemscript,
+                htlc_amount_sat,
+                output_witscript,
+            )
+            .map_err(|e| self.validation_error(e))?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let state = ValidatorState { current_height: 0 };
         validator
-            .validate_htlc_tx(
-                &self.setup,
-                &state,
-                is_counterparty,
-                &htlc,
-                feerate_per_kw,
-            )
+            .validate_htlc_tx(&self.setup, &state, is_counterparty, &htlc, feerate_per_kw)
             .map_err(|ve| {
                 // BEGIN NOT TESTED
                 log_debug!(
