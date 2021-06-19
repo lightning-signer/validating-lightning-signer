@@ -833,7 +833,6 @@ mod tests {
                         &tx.transaction,
                         &output_witscripts,
                         &remote_percommitment_point,
-                        setup.channel_value_sat,
                         &payment_hashmap,
                         commit_num,
                     )
@@ -894,7 +893,6 @@ mod tests {
                         &tx,
                         &output_witscripts,
                         &remote_percommitment_point,
-                        setup.channel_value_sat,
                         &payment_hashmap,
                         commit_num,
                     )
@@ -993,7 +991,6 @@ mod tests {
                         &tx.transaction,
                         &output_witscripts,
                         &remote_percommitment_point,
-                        setup.channel_value_sat,
                         &payment_hashmap,
                         commit_num,
                     )
@@ -1082,7 +1079,6 @@ mod tests {
                         &tx,
                         &output_witscripts,
                         &remote_percommitment_point,
-                        setup.channel_value_sat,
                         &payment_hashmap,
                         commit_num,
                     )
@@ -3060,7 +3056,6 @@ mod tests {
                     .sign_holder_commitment_tx(
                         &tx.transaction,
                         &output_witscripts,
-                        setup.channel_value_sat,
                         &payment_hashmap,
                         commit_num,
                     )
@@ -3576,7 +3571,6 @@ mod tests {
                 &tx.transaction,
                 &output_witscripts,
                 &remote_percommitment_point,
-                setup.channel_value_sat,
                 &payment_hashmap,
                 commit_num,
             )?;
@@ -3660,7 +3654,6 @@ mod tests {
             let sig = chan.sign_holder_commitment_tx(
                 &tx.transaction,
                 &output_witscripts,
-                setup.channel_value_sat,
                 &payment_hashmap,
                 commit_num,
             )?;

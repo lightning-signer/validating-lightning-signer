@@ -2,7 +2,7 @@ use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
 
 use lightning::ln::chan_utils::{build_htlc_transaction, HTLCOutputInCommitment, TxCreationKeys};
 
-use crate::node::{Channel, ChannelSetup};
+use crate::node::ChannelSetup;
 use crate::tx::tx::{
     parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
     CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT, HTLC_TIMEOUT_TX_WEIGHT,
@@ -68,49 +68,21 @@ pub struct ValidatorState {
 // END NOT TESTED
 
 pub trait ValidatorFactory: Send + Sync {
-    fn make_validator(&self, channel: &Channel) -> Box<dyn Validator>;
-    fn make_validator_phase1(
-        &self,
-        channel: &Channel,
-        channel_value_sat: u64,
-    ) -> Box<dyn Validator>;
+    fn make_validator(&self, network: Network, logger: &Arc<SyncLogger>) -> Box<dyn Validator>;
 }
 
 pub struct SimpleValidatorFactory {}
 
-fn simple_validator(
-    network: Network,
-    channel_value_sat: u64,
-    logger: &Arc<SyncLogger>,
-) -> SimpleValidator {
+fn simple_validator(network: Network, logger: &Arc<SyncLogger>) -> SimpleValidator {
     SimpleValidator {
         policy: make_simple_policy(network),
-        channel_value_sat,
         logger: Arc::clone(logger),
     }
 }
 
 impl ValidatorFactory for SimpleValidatorFactory {
-    fn make_validator(&self, channel: &Channel) -> Box<dyn Validator> {
-        Box::new(simple_validator(
-            channel.network(),
-            channel.setup.channel_value_sat,
-            &channel.logger,
-        ))
-    }
-
-    /// In phase 1 we don't have the channel value populated in the Channel object,
-    /// so supply it separately
-    fn make_validator_phase1(
-        &self,
-        channel: &Channel,
-        channel_value_sat: u64,
-    ) -> Box<dyn Validator> {
-        Box::new(simple_validator(
-            channel.network(),
-            channel_value_sat,
-            &channel.logger,
-        ))
+    fn make_validator(&self, network: Network, logger: &Arc<SyncLogger>) -> Box<dyn Validator> {
+        Box::new(simple_validator(network, &logger))
     }
 }
 
@@ -140,7 +112,6 @@ pub struct SimplePolicy {
 
 pub struct SimpleValidator {
     pub policy: SimplePolicy,
-    pub channel_value_sat: u64,
     pub logger: Arc<SyncLogger>,
 }
 
@@ -311,7 +282,7 @@ impl Validator for SimpleValidator {
             .ok_or_else(|| Policy("channel value overflow".to_string()))?
             .checked_add(htlc_value_sat)
             .ok_or_else(|| Policy("channel value overflow on HTLC".to_string()))?;
-        let shortage = self
+        let shortage = setup
             .channel_value_sat
             .checked_sub(consumed)
             .ok_or_else(|| Policy("channel shortage underflow".to_string()))?;
@@ -483,10 +454,10 @@ impl Validator for SimpleValidator {
     // TODO - policy-v3-velocity-funding
     // TODO - this implementation is incomplete
     fn validate_channel_open(&self, setup: &ChannelSetup) -> Result<(), ValidationError> {
-        if self.channel_value_sat > self.policy.max_channel_size_sat {
+        if setup.channel_value_sat > self.policy.max_channel_size_sat {
             return Err(Policy(format!(
                 "channel value {} too large",
-                self.channel_value_sat
+                setup.channel_value_sat
             )));
         }
         // policy-v1-commitment-to-self-delay-range
@@ -536,7 +507,8 @@ mod tests {
 
     use crate::tx::tx::HTLCInfo2;
     use crate::util::test_utils::{
-        make_test_channel_keys, make_test_channel_setup, make_test_commitment_tx, make_test_pubkey,
+        make_reasonable_test_channel_setup, make_test_channel_keys, make_test_commitment_tx,
+        make_test_pubkey,
     };
 
     use super::*;
@@ -548,7 +520,7 @@ mod tests {
         };
     }
 
-    fn make_test_validator(channel_value_sat: u64) -> SimpleValidator {
+    fn make_test_validator() -> SimpleValidator {
         let policy = SimplePolicy {
             min_delay: 5,
             max_delay: 1440,
@@ -563,18 +535,17 @@ mod tests {
 
         SimpleValidator {
             policy,
-            channel_value_sat,
             logger: Arc::new(TestLogger::new()),
         }
     }
 
     #[test]
     fn make_info_test() {
-        let validator = make_test_validator(100_000_000);
+        let validator = make_test_validator();
         let info = validator
             .make_info(
                 &make_test_channel_keys(),
-                &make_test_channel_setup(),
+                &make_reasonable_test_channel_setup(),
                 true,
                 &make_test_commitment_tx(),
                 &vec![vec![]],
@@ -585,12 +556,12 @@ mod tests {
 
     #[test]
     fn validate_policy_commitment_version() {
-        let validator = make_test_validator(100_000_000);
+        let validator = make_test_validator();
         let mut tx = make_test_commitment_tx();
         tx.version = 1;
         let res = validator.make_info(
             &make_test_channel_keys(),
-            &make_test_channel_setup(),
+            &make_reasonable_test_channel_setup(),
             true,
             &tx,
             &vec![vec![]],
@@ -600,11 +571,12 @@ mod tests {
 
     #[test]
     fn validate_channel_open_test() {
-        let setup = make_test_channel_setup();
-        let validator = make_test_validator(100_000_000);
+        let mut setup = make_reasonable_test_channel_setup();
+        let validator = make_test_validator();
+        setup.channel_value_sat = 100_000_000;
         assert!(validator.validate_channel_open(&setup).is_ok());
-        let validator_large = make_test_validator(100_000_001);
-        assert!(validator_large.validate_channel_open(&setup).is_err());
+        setup.channel_value_sat = 100_000_001;
+        assert!(validator.validate_channel_open(&setup).is_err());
     }
 
     fn make_counterparty_info(
@@ -631,11 +603,7 @@ mod tests {
         }
     }
 
-    fn make_validator() -> SimpleValidator {
-        make_test_validator(100_000_000)
-    }
-
-    fn make_validator_state() -> ValidatorState {
+    fn make_test_validator_state() -> ValidatorState {
         ValidatorState {
             current_height: 1000,
         }
@@ -651,19 +619,20 @@ mod tests {
 
     #[test]
     fn validate_commitment_tx_test() {
-        let validator = make_validator();
-        let state = make_validator_state();
-        let info = make_counterparty_info(99_000_000, 900_000, 6, vec![], vec![]);
+        let validator = make_test_validator();
+        let state = make_test_validator_state();
+        let setup = make_reasonable_test_channel_setup();
+        let info = make_counterparty_info(2_000_000, 900_000, 6, vec![], vec![]);
         assert!(validator
-            .validate_commitment_tx(&make_test_channel_setup(), &state, &info, true)
+            .validate_commitment_tx(&setup, &state, &info, true)
             .is_ok());
     }
 
     #[test]
     // policy-v1-commitment-to-self-delay-range
     fn validate_to_holder_min_delay_test() {
-        let mut setup = make_test_channel_setup();
-        let validator = make_test_validator(1_000_000);
+        let mut setup = make_reasonable_test_channel_setup();
+        let validator = make_test_validator();
         setup.holder_to_self_delay = 5;
         assert!(validator.validate_channel_open(&setup).is_ok());
         setup.holder_to_self_delay = 4;
@@ -676,8 +645,8 @@ mod tests {
     #[test]
     // policy-v1-commitment-to-self-delay-range
     fn validate_to_holder_max_delay_test() {
-        let mut setup = make_test_channel_setup();
-        let validator = make_test_validator(1_000_000);
+        let mut setup = make_reasonable_test_channel_setup();
+        let validator = make_test_validator();
         setup.holder_to_self_delay = 1440;
         assert!(validator.validate_channel_open(&setup).is_ok());
         setup.holder_to_self_delay = 1441;
@@ -690,8 +659,8 @@ mod tests {
     #[test]
     // policy-v1-commitment-to-self-delay-range
     fn validate_to_counterparty_min_delay_test() {
-        let mut setup = make_test_channel_setup();
-        let validator = make_test_validator(1_000_000);
+        let mut setup = make_reasonable_test_channel_setup();
+        let validator = make_test_validator();
         setup.counterparty_to_self_delay = 5;
         assert!(validator.validate_channel_open(&setup).is_ok());
         setup.counterparty_to_self_delay = 4;
@@ -704,8 +673,8 @@ mod tests {
     #[test]
     // policy-v1-commitment-to-self-delay-range
     fn validate_to_counterparty_max_delay_test() {
-        let mut setup = make_test_channel_setup();
-        let validator = make_test_validator(1_000_000);
+        let mut setup = make_reasonable_test_channel_setup();
+        let validator = make_test_validator();
         setup.counterparty_to_self_delay = 1440;
         assert!(validator.validate_channel_open(&setup).is_ok());
         setup.counterparty_to_self_delay = 1441;
@@ -717,52 +686,56 @@ mod tests {
 
     #[test]
     fn validate_commitment_tx_shortage_test() {
-        let validator = make_validator();
-        let state = make_validator_state();
-        let info_bad = make_counterparty_info(99_000_000, 900_000 - 1, 6, vec![], vec![]);
+        let validator = make_test_validator();
+        let state = make_test_validator_state();
+        let setup = make_reasonable_test_channel_setup();
+        let info_bad = make_counterparty_info(2_000_000, 900_000 - 1, 6, vec![], vec![]);
         assert_policy_error!(
-            validator.validate_commitment_tx(&make_test_channel_setup(), &state, &info_bad, true),
+            validator.validate_commitment_tx(&setup, &state, &info_bad, true),
             "channel value short by 100001 > 100000"
         );
     }
 
     #[test]
     fn validate_commitment_tx_htlc_shortage_test() {
-        let validator = make_validator();
+        let validator = make_test_validator();
         let htlc = HTLCInfo2 {
             value_sat: 100_000,
             payment_hash: PaymentHash([0; 32]),
             cltv_expiry: 1005,
         };
-        let state = make_validator_state();
-        let info = make_counterparty_info(99_000_000, 800_000, 6, vec![htlc.clone()], vec![]);
+        let state = make_test_validator_state();
+        let setup = make_reasonable_test_channel_setup();
+        let info = make_counterparty_info(2_000_000, 800_000, 6, vec![htlc.clone()], vec![]);
         assert!(validator
-            .validate_commitment_tx(&make_test_channel_setup(), &state, &info, true)
+            .validate_commitment_tx(&setup, &state, &info, true)
             .is_ok());
         let info_bad =
-            make_counterparty_info(99_000_000, 800_000 - 1, 6, vec![htlc.clone()], vec![]);
+            make_counterparty_info(2_000_000, 800_000 - 1, 6, vec![htlc.clone()], vec![]);
         assert_policy_error!(
-            validator.validate_commitment_tx(&make_test_channel_setup(), &state, &info_bad, true),
+            validator.validate_commitment_tx(&setup, &state, &info_bad, true),
             "channel value short by 100001 > 100000"
         );
     }
 
     #[test]
     fn validate_commitment_tx_htlc_count_test() {
-        let validator = make_validator();
-        let state = make_validator_state();
+        let validator = make_test_validator();
+        let state = make_test_validator_state();
+        let setup = make_reasonable_test_channel_setup();
         let htlcs = (0..1001).map(|_| make_htlc_info2(1100)).collect();
         let info_bad = make_counterparty_info(99_000_000, 900_000, 6, vec![], htlcs);
         assert_policy_error!(
-            validator.validate_commitment_tx(&make_test_channel_setup(), &state, &info_bad, true),
+            validator.validate_commitment_tx(&setup, &state, &info_bad, true),
             "too many HTLCs"
         );
     }
 
     #[test]
     fn validate_commitment_tx_htlc_value_test() {
-        let validator = make_validator();
-        let state = make_validator_state();
+        let validator = make_test_validator();
+        let state = make_test_validator_state();
+        let setup = make_reasonable_test_channel_setup();
         let htlcs = (0..1000)
             .map(|_| HTLCInfo2 {
                 value_sat: 10001,
@@ -772,35 +745,36 @@ mod tests {
             .collect();
         let info_bad = make_counterparty_info(99_000_000, 900_000, 6, vec![], htlcs);
         assert_policy_error!(
-            validator.validate_commitment_tx(&make_test_channel_setup(), &state, &info_bad, true),
+            validator.validate_commitment_tx(&setup, &state, &info_bad, true),
             "sum of HTLC values 10001000 too large"
         );
     }
 
     #[test]
     fn validate_commitment_tx_htlc_delay_test() {
-        let validator = make_validator();
-        let state = make_validator_state();
+        let validator = make_test_validator();
+        let state = make_test_validator_state();
+        let setup = make_reasonable_test_channel_setup();
         let info_good =
-            make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info2(1005)]);
+            make_counterparty_info(2_000_000, 990_000, 6, vec![], vec![make_htlc_info2(1005)]);
         assert!(validator
-            .validate_commitment_tx(&make_test_channel_setup(), &state, &info_good, true)
+            .validate_commitment_tx(&setup, &state, &info_good, true)
             .is_ok());
         let info_good =
-            make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info2(2440)]);
+            make_counterparty_info(2_000_000, 990_000, 6, vec![], vec![make_htlc_info2(2440)]);
         assert!(validator
-            .validate_commitment_tx(&make_test_channel_setup(), &state, &info_good, true)
+            .validate_commitment_tx(&setup, &state, &info_good, true)
             .is_ok());
         let info_bad =
-            make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info2(1004)]);
+            make_counterparty_info(2_000_000, 990_000, 6, vec![], vec![make_htlc_info2(1004)]);
         assert_policy_error!(
-            validator.validate_commitment_tx(&make_test_channel_setup(), &state, &info_bad, true),
+            validator.validate_commitment_tx(&setup, &state, &info_bad, true),
             "received HTLC expiry too early"
         );
         let info_bad =
-            make_counterparty_info(99_000_000, 990_000, 6, vec![], vec![make_htlc_info2(2441)]);
+            make_counterparty_info(2_000_000, 990_000, 6, vec![], vec![make_htlc_info2(2441)]);
         assert_policy_error!(
-            validator.validate_commitment_tx(&make_test_channel_setup(), &state, &info_bad, true),
+            validator.validate_commitment_tx(&setup, &state, &info_bad, true),
             "received HTLC expiry too late"
         );
     }
