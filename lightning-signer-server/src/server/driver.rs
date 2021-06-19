@@ -751,7 +751,6 @@ impl Signer for SignServer {
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
         let remote_per_commitment_point = self.public_key(req.remote_per_commit_point.clone())?;
-        let channel_value_sat = reqtx.input_descs[0].value_sat as u64;
         let witscripts = reqtx
             .output_descs
             .iter()
@@ -773,7 +772,6 @@ impl Signer for SignServer {
                     &tx,
                     &witscripts,
                     &remote_per_commitment_point,
-                    channel_value_sat,
                     &payment_hashmap,
                     req.commit_num,
                 )
@@ -824,8 +822,6 @@ impl Signer for SignServer {
             return Err(self.invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
         }
 
-        let funding_amount_sat = reqtx.input_descs[0].value_sat as u64;
-
         let witscripts = reqtx
             .output_descs
             .iter()
@@ -843,13 +839,7 @@ impl Signer for SignServer {
         let sig = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                chan.sign_holder_commitment_tx(
-                    &tx,
-                    &witscripts,
-                    funding_amount_sat,
-                    &payment_hashmap,
-                    req.commit_num,
-                )
+                chan.sign_holder_commitment_tx(&tx, &witscripts, &payment_hashmap, req.commit_num)
             })?;
 
         let reply = SignatureReply {

@@ -962,7 +962,6 @@ impl Channel {
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
         remote_per_commitment_point: &PublicKey,
-        channel_value_sat: u64,
         payment_hashmap: &Map<[u8; 20], PaymentHash>,
         commitment_number: u64,
     ) -> Result<Signature, Status> {
@@ -982,7 +981,7 @@ impl Channel {
             .upgrade()
             .unwrap()
             .validator_factory
-            .make_validator_phase1(self, channel_value_sat);
+            .make_validator(self.network(), &self.logger);
 
         // Since we didn't have the value at the real open, validate it now.
         validator
@@ -1111,7 +1110,6 @@ impl Channel {
         &self,
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
-        channel_value_sat: u64,
         payment_hashmap: &Map<[u8; 20], PaymentHash>,
         commitment_number: u64,
     ) -> Result<Signature, Status> {
@@ -1131,7 +1129,7 @@ impl Channel {
             .upgrade()
             .unwrap()
             .validator_factory
-            .make_validator_phase1(self, channel_value_sat);
+            .make_validator(self.network(), &self.logger);
 
         // Since we didn't have the value at the real open, validate it now.
         validator
@@ -1340,7 +1338,7 @@ impl Channel {
             .upgrade()
             .unwrap()
             .validator_factory
-            .make_validator(self);
+            .make_validator(self.network(), &self.logger);
 
         let (feerate_per_kw, htlc, recomposed_tx_sighash) = validator
             .decode_and_validate_htlc_tx(
@@ -1778,7 +1776,10 @@ impl Node {
                 id: opt_channel_id,
             }
         };
-        let validator = self.validator_factory.make_validator(&chan);
+        let validator = self
+            .validator_factory
+            .make_validator(chan.network(), &self.logger);
+
         validator
             .validate_channel_open(&setup)
             .map_err(|ve| chan.validation_error(ve))?;

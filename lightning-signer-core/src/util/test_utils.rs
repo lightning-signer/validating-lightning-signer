@@ -258,10 +258,10 @@ pub fn make_reasonable_test_channel_setup() -> ChannelSetup {
             txid: Txid::from_slice(&[2u8; 32]).unwrap(),
             vout: 0,
         },
-        holder_to_self_delay: 5,
+        holder_to_self_delay: 6,
         holder_shutdown_script: None,
         counterparty_points: make_test_counterparty_points(),
-        counterparty_to_self_delay: 5,
+        counterparty_to_self_delay: 6,
         counterparty_shutdown_script: Script::new(),
         commitment_type: CommitmentType::Legacy,
     }
