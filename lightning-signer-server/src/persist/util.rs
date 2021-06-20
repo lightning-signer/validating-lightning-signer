@@ -59,7 +59,7 @@ pub fn create_test_channel_setup(dummy_pubkey: PublicKey) -> ChannelSetup {
         channel_value_sat: 123456,
         push_value_msat: 555,
         funding_outpoint: Default::default(),
-        holder_to_self_delay: 10,
+        holder_selected_contest_delay: 10,
         holder_shutdown_script: None,
         counterparty_points: ChannelPublicKeys {
             funding_pubkey: dummy_pubkey,
@@ -68,7 +68,7 @@ pub fn create_test_channel_setup(dummy_pubkey: PublicKey) -> ChannelSetup {
             delayed_payment_basepoint: dummy_pubkey,
             htlc_basepoint: dummy_pubkey,
         },
-        counterparty_to_self_delay: 11,
+        counterparty_selected_contest_delay: 11,
         counterparty_shutdown_script: Default::default(),
         commitment_type: CommitmentType::Legacy,
     }

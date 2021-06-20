@@ -433,10 +433,10 @@ impl Signer for SignServer {
             channel_value_sat: req.channel_value_sat,
             push_value_msat: req.push_value_msat,
             funding_outpoint,
-            holder_to_self_delay: req.holder_to_self_delay as u16,
+            holder_selected_contest_delay: req.holder_selected_contest_delay as u16,
             counterparty_points,
             holder_shutdown_script,
-            counterparty_to_self_delay: req.counterparty_to_self_delay as u16,
+            counterparty_selected_contest_delay: req.counterparty_selected_contest_delay as u16,
             counterparty_shutdown_script,
             commitment_type: convert_commitment_type(req.commitment_type),
         };

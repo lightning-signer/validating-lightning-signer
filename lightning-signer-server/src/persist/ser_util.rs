@@ -233,12 +233,12 @@ pub struct ChannelSetupDef {
     pub push_value_msat: u64,
     #[serde_as(as = "OutPointDef")]
     pub funding_outpoint: OutPoint,
-    pub holder_to_self_delay: u16,
+    pub holder_selected_contest_delay: u16,
     #[serde_as(as = "Option<ScriptDef>")]
     pub holder_shutdown_script: Option<Script>,
     #[serde(with = "ChannelPublicKeysDef")]
     pub counterparty_points: ChannelPublicKeys,
-    pub counterparty_to_self_delay: u16,
+    pub counterparty_selected_contest_delay: u16,
     #[serde(with = "ScriptDef")]
     pub counterparty_shutdown_script: Script,
     #[serde_as(as = "CommitmentTypeDef")]

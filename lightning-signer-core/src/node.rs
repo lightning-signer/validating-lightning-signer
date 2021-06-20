@@ -86,13 +86,13 @@ pub struct ChannelSetup {
     /// The funding outpoint
     pub funding_outpoint: OutPoint,
     /// locally imposed requirement on the remote commitment transaction to_self_delay
-    pub holder_to_self_delay: u16,
+    pub holder_selected_contest_delay: u16,
     /// Maybe be None if we should generate it inside the signer
     pub holder_shutdown_script: Option<Script>,
     /// The counterparty's basepoints and pubkeys
     pub counterparty_points: ChannelPublicKeys, // DUP keys.inner.remote_channel_pubkeys
     /// remotely imposed requirement on the local commitment transaction to_self_delay
-    pub counterparty_to_self_delay: u16,
+    pub counterparty_selected_contest_delay: u16,
     /// The counterparty's shutdown script, for mutual close
     pub counterparty_shutdown_script: Script,
     /// The negotiated commitment type
@@ -108,15 +108,18 @@ impl fmt::Debug for ChannelSetup {
             .field("channel_value_sat", &self.channel_value_sat)
             .field("push_value_msat", &self.push_value_msat)
             .field("funding_outpoint", &self.funding_outpoint)
-            .field("holder_to_self_delay", &self.holder_to_self_delay)
+            .field(
+                "holder_selected_contest_delay",
+                &self.holder_selected_contest_delay,
+            )
             .field("holder_shutdown_script", &self.holder_shutdown_script)
             .field(
                 "counterparty_points",
                 log_channel_public_keys!(&self.counterparty_points),
             )
             .field(
-                "counterparty_to_self_delay",
-                &self.counterparty_to_self_delay,
+                "counterparty_selected_contest_delay",
+                &self.counterparty_selected_contest_delay,
             )
             .field(
                 "counterparty_shutdown_script",
@@ -673,11 +676,11 @@ impl Channel {
         };
         let channel_parameters = ChannelTransactionParameters {
             holder_pubkeys: self.get_channel_basepoints(),
-            holder_selected_contest_delay: self.setup.holder_to_self_delay,
+            holder_selected_contest_delay: self.setup.holder_selected_contest_delay,
             is_outbound_from_holder: self.setup.is_outbound,
             counterparty_parameters: Some(CounterpartyChannelTransactionParameters {
                 pubkeys: self.setup.counterparty_points.clone(),
-                selected_contest_delay: self.setup.counterparty_to_self_delay,
+                selected_contest_delay: self.setup.counterparty_selected_contest_delay,
             }),
             funding_outpoint: Some(funding_outpoint),
         };
@@ -887,7 +890,7 @@ impl Channel {
             revocation_pubkey,
             to_broadcaster_delayed_pubkey: to_counterparty_delayed_pubkey,
             to_broadcaster_value_sat: to_counterparty_value_sat,
-            to_self_delay: self.setup.counterparty_to_self_delay,
+            to_self_delay: self.setup.holder_selected_contest_delay,
             offered_htlcs,
             received_htlcs,
         })
@@ -949,7 +952,7 @@ impl Channel {
             revocation_pubkey,
             to_broadcaster_delayed_pubkey: to_holder_delayed_pubkey,
             to_broadcaster_value_sat: to_holder_value_sat,
-            to_self_delay: self.setup.holder_to_self_delay,
+            to_self_delay: self.setup.counterparty_selected_contest_delay,
             offered_htlcs,
             received_htlcs,
         })
@@ -1822,11 +1825,11 @@ impl Node {
         });
         let channel_transaction_parameters = ChannelTransactionParameters {
             holder_pubkeys: holder_pubkeys.clone(),
-            holder_selected_contest_delay: setup.holder_to_self_delay,
+            holder_selected_contest_delay: setup.holder_selected_contest_delay,
             is_outbound_from_holder: setup.is_outbound,
             counterparty_parameters: Some(CounterpartyChannelTransactionParameters {
                 pubkeys: setup.counterparty_points.clone(),
-                selected_contest_delay: setup.counterparty_to_self_delay,
+                selected_contest_delay: setup.counterparty_selected_contest_delay,
             }),
             funding_outpoint,
         };

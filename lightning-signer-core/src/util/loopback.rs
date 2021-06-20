@@ -515,10 +515,10 @@ impl BaseSign for LoopbackChannelSigner {
             channel_value_sat: self.channel_value_sat,
             push_value_msat: 0, // TODO
             funding_outpoint,
-            holder_to_self_delay: parameters.holder_selected_contest_delay,
+            holder_selected_contest_delay: parameters.holder_selected_contest_delay,
             holder_shutdown_script: None, // use the signer's shutdown script
             counterparty_points: counterparty_parameters.pubkeys.clone(),
-            counterparty_to_self_delay: counterparty_parameters.selected_contest_delay,
+            counterparty_selected_contest_delay: counterparty_parameters.selected_contest_delay,
             counterparty_shutdown_script: Default::default(), // TODO
             commitment_type: CommitmentType::StaticRemoteKey, // TODO
         };
