@@ -878,7 +878,7 @@ mod tests {
 
     use crate::node::CommitmentType;
     use crate::util::test_utils::{
-        make_reasonable_test_channel_setup, make_test_channel_keys, make_test_pubkey,
+        make_test_channel_keys, make_test_channel_setup, make_test_pubkey,
     };
 
     use super::*;
@@ -965,7 +965,7 @@ mod tests {
     fn handle_output_unknown_output_type_test() {
         let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
-        let setup = make_reasonable_test_channel_setup();
+        let setup = make_test_channel_setup();
         let out = TxOut {
             value: 42,
             script_pubkey: Default::default(),
@@ -983,7 +983,7 @@ mod tests {
     fn handle_output_unknown_p2wsh_script_test() {
         let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
-        let setup = make_reasonable_test_channel_setup();
+        let setup = make_test_channel_setup();
         let script = Builder::new()
             .push_slice(&[0u8; 42]) // invalid
             .into_script();
@@ -1003,7 +1003,7 @@ mod tests {
     fn handle_output_p2wpkh_to_countersigner_with_anchors_test() {
         let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
-        let mut setup = make_reasonable_test_channel_setup();
+        let mut setup = make_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
         let pubkey = bitcoin::PublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
         let out = TxOut {
@@ -1024,7 +1024,7 @@ mod tests {
     fn handle_output_more_than_one_to_countersigner_test() {
         let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
-        let setup = make_reasonable_test_channel_setup();
+        let setup = make_test_channel_setup();
         let pubkey = bitcoin::PublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
         let address = Address::p2wpkh(&pubkey, Network::Testnet).unwrap();
         let out = TxOut {
@@ -1047,7 +1047,7 @@ mod tests {
     fn handle_output_missing_witscript_test() {
         let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
-        let setup = make_reasonable_test_channel_setup();
+        let setup = make_test_channel_setup();
         let script = Builder::new().into_script();
         let out = TxOut {
             value: 42,
@@ -1065,7 +1065,7 @@ mod tests {
     fn handle_output_script_pubkey_doesnt_match_test() {
         let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
-        let setup = make_reasonable_test_channel_setup();
+        let setup = make_test_channel_setup();
         let script0 = Builder::new().into_script();
         let script1 = Builder::new().push_slice(&[0u8; 42]).into_script();
         let out = TxOut {

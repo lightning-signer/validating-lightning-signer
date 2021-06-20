@@ -212,44 +212,7 @@ pub fn make_test_counterparty_points() -> ChannelPublicKeys {
     }
 }
 
-// FIXME - this channel setup is unreasonably small, 300 is less than dust limit ...
 pub fn make_test_channel_setup() -> ChannelSetup {
-    ChannelSetup {
-        is_outbound: true,
-        channel_value_sat: 300,
-        push_value_msat: 0,
-        funding_outpoint: BitcoinOutPoint {
-            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
-            vout: 0,
-        },
-        holder_to_self_delay: 6,
-        holder_shutdown_script: None,
-        counterparty_points: make_test_counterparty_points(),
-        counterparty_to_self_delay: 6,
-        counterparty_shutdown_script: Script::new(),
-        commitment_type: CommitmentType::Legacy,
-    }
-}
-
-pub fn make_static_test_channel_setup() -> ChannelSetup {
-    ChannelSetup {
-        is_outbound: true,
-        channel_value_sat: 300,
-        push_value_msat: 0,
-        funding_outpoint: BitcoinOutPoint {
-            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
-            vout: 0,
-        },
-        holder_to_self_delay: 5,
-        holder_shutdown_script: None,
-        counterparty_points: make_test_counterparty_points(),
-        counterparty_to_self_delay: 5,
-        counterparty_shutdown_script: Script::new(),
-        commitment_type: CommitmentType::StaticRemoteKey,
-    }
-}
-
-pub fn make_reasonable_test_channel_setup() -> ChannelSetup {
     ChannelSetup {
         is_outbound: true,
         channel_value_sat: 3_000_000,
@@ -258,12 +221,12 @@ pub fn make_reasonable_test_channel_setup() -> ChannelSetup {
             txid: Txid::from_slice(&[2u8; 32]).unwrap(),
             vout: 0,
         },
-        holder_to_self_delay: 6,
+        holder_selected_contest_delay: 6,
         holder_shutdown_script: None,
         counterparty_points: make_test_counterparty_points(),
-        counterparty_to_self_delay: 6,
+        counterparty_selected_contest_delay: 7,
         counterparty_shutdown_script: Script::new(),
-        commitment_type: CommitmentType::Legacy,
+        commitment_type: CommitmentType::StaticRemoteKey,
     }
 }
 

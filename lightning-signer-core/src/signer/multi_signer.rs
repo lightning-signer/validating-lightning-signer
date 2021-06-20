@@ -784,9 +784,20 @@ mod tests {
     }
 
     #[test]
-    fn sign_counterparty_commitment_tx_test() {
+    fn sign_counterparty_commitment_tx_static_test() {
+        let setup = make_test_channel_setup();
+        sign_counterparty_commitment_tx_test(&setup);
+    }
+
+    #[test]
+    fn sign_counterparty_commitment_tx_legacy_test() {
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = CommitmentType::Legacy;
+        sign_counterparty_commitment_tx_test(&setup);
+    }
+
+    fn sign_counterparty_commitment_tx_test(setup: &ChannelSetup) {
         let signer = MultiSigner::new();
-        let setup = make_static_test_channel_setup();
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
         let remote_percommitment_point = make_test_pubkey(10);
@@ -800,8 +811,8 @@ mod tests {
                     .unwrap();
                 let commit_num = 23;
                 let feerate_per_kw = 0;
-                let to_broadcaster = 200;
-                let to_countersignatory = 100;
+                let to_broadcaster = 2_000_000;
+                let to_countersignatory = 1_000_000;
                 let mut htlcs = vec![];
 
                 let commitment_tx = chan.make_counterparty_commitment_tx(
@@ -843,7 +854,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(tx.txid()),
-            "af218d148bec83f7091c18898718bfe3553f158178b869347a3b41e4b9be34e2"
+            "382b13a4b614178101e798ca5c01004295cf2b155fc07d3ced103d09e5450f77"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -865,7 +876,7 @@ mod tests {
               // BEGIN NOT TESTED
     fn sign_counterparty_commitment_tx_with_anchors_test() {
         let signer = MultiSigner::new();
-        let mut setup = make_reasonable_test_channel_setup();
+        let mut setup = make_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
@@ -922,9 +933,20 @@ mod tests {
     // END NOT TESTED
 
     #[test]
-    fn sign_counterparty_commitment_tx_with_htlc_test() {
+    fn sign_counterparty_commitment_tx_with_htlc_static_test() {
+        let setup = make_test_channel_setup();
+        sign_counterparty_commitment_tx_with_htlc_test(&setup);
+    }
+
+    #[test]
+    fn sign_counterparty_commitment_tx_with_htlc_legacy_test() {
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = CommitmentType::Legacy;
+        sign_counterparty_commitment_tx_with_htlc_test(&setup);
+    }
+
+    fn sign_counterparty_commitment_tx_with_htlc_test(setup: &ChannelSetup) {
         let signer = MultiSigner::new();
-        let setup = make_static_test_channel_setup();
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
@@ -970,16 +992,24 @@ mod tests {
                 let keys = chan
                     .make_counterparty_tx_keys(&remote_percommitment_point)
                     .unwrap();
-                let redeem_scripts =
-                    build_tx_scripts(&keys, 100, 197, &mut htlcs, &parameters).expect("scripts");
+                let to_broadcaster_value_sat = 1_000_000;
+                let to_countersignatory_value_sat = 1_999_997;
+                let redeem_scripts = build_tx_scripts(
+                    &keys,
+                    to_broadcaster_value_sat,
+                    to_countersignatory_value_sat,
+                    &mut htlcs,
+                    &parameters,
+                )
+                .expect("scripts");
                 let commit_num = 23;
                 let feerate_per_kw = 0;
                 let commitment_tx = chan.make_counterparty_commitment_tx(
                     &remote_percommitment_point,
                     commit_num,
                     feerate_per_kw,
-                    197,
-                    100,
+                    to_countersignatory_value_sat,
+                    to_broadcaster_value_sat,
                     htlcs,
                 );
                 // rebuild to get the scripts
@@ -1001,7 +1031,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(tx.txid()),
-            "433e14a7560ffe7d724267c2c0068c2e183e06057004407dda1bd863160ae5b6"
+            "fb9746e0400fc13139a130950f08a2ec5b1ee8b68e3df41cab133a03ed38323f"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -1023,7 +1053,7 @@ mod tests {
               // BEGIN NOT TESTED
     fn sign_counterparty_commitment_tx_with_htlc_and_anchors_test() {
         let signer = MultiSigner::new();
-        let mut setup = make_reasonable_test_channel_setup();
+        let mut setup = make_test_channel_setup();
         setup.commitment_type = CommitmentType::Anchors;
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
@@ -1108,30 +1138,43 @@ mod tests {
     // END NOT TESTED
 
     #[test]
-    fn sign_counterparty_commitment_tx_phase2_test() {
+    fn sign_counterparty_commitment_tx_phase2_static_test() {
+        let setup = make_test_channel_setup();
+        sign_counterparty_commitment_tx_phase2_test(&setup);
+    }
+
+    #[test]
+    fn sign_counterparty_commitment_tx_phase2_legacy_test() {
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = CommitmentType::Legacy;
+        sign_counterparty_commitment_tx_phase2_test(&setup);
+    }
+
+    fn sign_counterparty_commitment_tx_phase2_test(setup: &ChannelSetup) {
         let signer = MultiSigner::new();
-        let setup = make_static_test_channel_setup();
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
         let remote_percommitment_point = make_test_pubkey(10);
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
 
+        let to_holder_value_sat = 1_000_000;
+        let to_counterparty_value_sat = 2_000_000;
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let commitment_tx = chan.make_counterparty_commitment_tx(
                     &remote_percommitment_point,
                     23,
                     0,
-                    100,
-                    200,
+                    to_holder_value_sat,
+                    to_counterparty_value_sat,
                     vec![],
                 );
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
                 assert_eq!(
                     hex::encode(tx.txid),
-                    "eca4bec8c50a4498c5fa5cb34ec4aaafc3b46e879a3cdad6ab4954922e08cabd"
+                    "51e93fe1e72c78bf0818f3e50508a42168525e37be862cc6f2178013137da875"
                 );
                 Ok(tx.transaction.clone())
             })
@@ -1142,8 +1185,8 @@ mod tests {
                     &remote_percommitment_point,
                     23,
                     0, // we are not looking at HTLCs yet
-                    100,
-                    200,
+                    to_holder_value_sat,
+                    to_counterparty_value_sat,
                     vec![],
                     vec![],
                 )
@@ -1163,15 +1206,34 @@ mod tests {
     }
 
     #[test]
-    fn sign_holder_commitment_tx_phase2_test() {
+    fn sign_holder_commitment_tx_phase2_static_test() {
+        let setup = make_test_channel_setup();
+        sign_holder_commitment_tx_phase2_test(&setup);
+    }
+
+    #[test]
+    fn sign_holder_commitment_tx_phase2_legacy_test() {
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = CommitmentType::Legacy;
+        sign_holder_commitment_tx_phase2_test(&setup);
+    }
+
+    fn sign_holder_commitment_tx_phase2_test(setup: &ChannelSetup) {
         let signer = MultiSigner::new();
-        let setup = make_static_test_channel_setup();
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
+        let to_holder_value_sat = 1_000_000;
+        let to_counterparty_value_sat = 2_000_000;
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let commitment_tx = chan.make_holder_commitment_tx(23, 0, 100, 200, vec![]);
+                let commitment_tx = chan.make_holder_commitment_tx(
+                    23,
+                    0,
+                    to_holder_value_sat,
+                    to_counterparty_value_sat,
+                    vec![],
+                );
                 Ok(commitment_tx
                     .trust()
                     .built_transaction()
@@ -1184,8 +1246,8 @@ mod tests {
                 chan.sign_holder_commitment_tx_phase2(
                     23,
                     0, // feerate not used
-                    100,
-                    200,
+                    to_holder_value_sat,
+                    to_counterparty_value_sat,
                     vec![],
                     vec![],
                 )
@@ -1193,7 +1255,7 @@ mod tests {
             .expect("sign");
         assert_eq!(
             hex::encode(tx.txid()),
-            "57ac467fdcf17d64c6c6a4d37e6b4b618cc688f69dc56698bc9ac0a874a5ae1c"
+            "fc0338fa8ccb55b797dbb6c035d894d78fce0d150a33d8ec3fa4d075aa63b0de"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -1963,14 +2025,22 @@ mod tests {
     }
 
     #[test]
-    fn sign_local_htlc_tx_test() {
+    fn sign_local_htlc_tx_static_test() {
+        let setup = make_test_channel_setup();
+        sign_local_htlc_tx_test(&setup);
+    }
+
+    #[test]
+    fn sign_local_htlc_tx_legacy_test() {
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = CommitmentType::Legacy;
+        sign_local_htlc_tx_test(&setup);
+    }
+
+    fn sign_local_htlc_tx_test(setup: &ChannelSetup) {
         let signer = MultiSigner::new();
-        let (node_id, channel_id) = init_node_and_channel(
-            &signer,
-            TEST_NODE_CONFIG,
-            TEST_SEED[1],
-            make_test_channel_setup(),
-        );
+        let (node_id, channel_id) =
+            init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
         let htlc_amount_sat = 10 * 1000;
 
@@ -2072,14 +2142,22 @@ mod tests {
     }
 
     #[test]
-    fn sign_delayed_sweep_test() {
+    fn sign_delayed_sweep_static_test() {
+        let setup = make_test_channel_setup();
+        sign_delayed_sweep_test(&setup);
+    }
+
+    #[test]
+    fn sign_delayed_sweep_legacy_test() {
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = CommitmentType::Legacy;
+        sign_delayed_sweep_test(&setup);
+    }
+
+    fn sign_delayed_sweep_test(setup: &ChannelSetup) {
         let signer = MultiSigner::new();
-        let (node_id, channel_id) = init_node_and_channel(
-            &signer,
-            TEST_NODE_CONFIG,
-            TEST_SEED[1],
-            make_test_channel_setup(),
-        );
+        let (node_id, channel_id) =
+            init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
         let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let feerate_per_kw = 1000;
@@ -2342,12 +2420,12 @@ mod tests {
         if is_offered {
             assert_eq!(
                 hex::encode(htlc_tx.txid()),
-                "f74e59ee1f97da9d29e3b371dde9cbb0e043bf248e085aad6f6235f10b2445c2"
+                "5c8e91cb861d4eb26230c7dc068f5ae1e2ba0defda431d3012c70d36bba23c78"
             );
         } else {
             assert_eq!(
                 hex::encode(htlc_tx.txid()),
-                "58d8f50c079f04acaffa6c33651e967ae9cabe227dc932d30da17597b7e79edd"
+                "ab2174f5621f009ca3e1b8bb1476860b81177dc62ce391728231f2aedd05cf89"
             );
         }
 
@@ -3011,7 +3089,7 @@ mod tests {
     // TODO - same as sign_mutual_close_tx_test
     fn sign_holder_commitment_tx_test() {
         let signer = MultiSigner::new();
-        let setup = make_static_test_channel_setup();
+        let setup = make_test_channel_setup();
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
@@ -3020,8 +3098,8 @@ mod tests {
                 let channel_parameters = chan.make_channel_parameters();
                 let commit_num = 23;
                 let feerate_per_kw = 0;
-                let to_broadcaster = 200;
-                let to_countersignatory = 100;
+                let to_broadcaster = 2_000_000;
+                let to_countersignatory = 1_000_000;
                 let mut htlcs = vec![];
 
                 let parameters = channel_parameters.as_holder_broadcastable();
@@ -3066,7 +3144,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(tx.txid()),
-            "1e5b3d4626a90146c24edcf673039d8852b6ed4cbd64e08b80643e20575108d5"
+            "5e6ade984f0a45d1a16d647df1c0a04312a0ba93ee6d5151cd96263bb6336356"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -3087,7 +3165,7 @@ mod tests {
     // TODO - same as sign_commitment_tx_test
     fn sign_mutual_close_tx_test() {
         let signer = MultiSigner::new();
-        let setup = make_static_test_channel_setup();
+        let setup = make_test_channel_setup();
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
@@ -3095,7 +3173,8 @@ mod tests {
 
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let commitment_tx = chan.make_holder_commitment_tx(23, 0, 200, 100, vec![]);
+                let commitment_tx =
+                    chan.make_holder_commitment_tx(23, 0, 2_000_000, 1_000_000, vec![]);
                 Ok(commitment_tx
                     .trust()
                     .built_transaction()
@@ -3475,7 +3554,7 @@ mod tests {
         hashbrown::HashMap<[u8; 20], PaymentHash>,
     ) {
         let signer = MultiSigner::new();
-        let setup = make_static_test_channel_setup();
+        let setup = make_test_channel_setup();
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
@@ -3531,8 +3610,8 @@ mod tests {
 
             let commit_num = 23;
             let feerate_per_kw = 0;
-            let to_broadcaster = 197;
-            let to_countersignatory = 100;
+            let to_broadcaster = 1_999_997;
+            let to_countersignatory = 1_000_000;
 
             let parameters = channel_parameters.as_counterparty_broadcastable();
             let mut keys = chan.make_counterparty_tx_keys(&remote_percommitment_point)?;
@@ -3579,7 +3658,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(tx.txid()),
-            "433e14a7560ffe7d724267c2c0068c2e183e06057004407dda1bd863160ae5b6"
+            "fb9746e0400fc13139a130950f08a2ec5b1ee8b68e3df41cab133a03ed38323f"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -3614,8 +3693,8 @@ mod tests {
 
             let commit_num = 23;
             let feerate_per_kw = 0;
-            let to_broadcaster = 197;
-            let to_countersignatory = 100;
+            let to_broadcaster = 1_999_997;
+            let to_countersignatory = 1_000_000;
 
             let parameters = channel_parameters.as_holder_broadcastable();
 
@@ -3662,7 +3741,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(tx.txid()),
-            "dae4b2a7fb42b16372d3e215e987dc1995605ca418a750e6c6182f83c4ff58c9"
+            "9fef9a3e4e4a9163e50acbbe812dfbfe27740e63a874ddf7176ef88ac1ea38f4"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
