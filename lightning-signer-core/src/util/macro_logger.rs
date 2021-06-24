@@ -56,18 +56,6 @@ macro_rules! log_trace {
 	)
 }
 
-pub struct DebugBytes<'a>(pub &'a [u8]);
-impl<'a> core::fmt::Display for DebugBytes<'a> {
-    // BEGIN NOT TESTED
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
-        for i in self.0 {
-            write!(f, "{:02x}", i)?;
-        }
-        Ok(())
-    }
-    // END NOT TESTED
-}
-
 #[macro_export]
 macro_rules! log_bytes {
     ($obj: expr) => {

@@ -1,5 +1,5 @@
 use crate::Map;
-use crate::Mutex;
+use crate::{Arc, Mutex};
 use core::cmp;
 
 use bitcoin;
@@ -9,8 +9,8 @@ use bitcoin::hash_types::Txid;
 use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::Hash;
 use bitcoin::network::constants::Network;
-use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
-use bitcoin::{OutPoint as BitcoinOutPoint, TxIn, TxOut};
+use bitcoin::secp256k1::{self, PublicKey, Secp256k1, SecretKey, SignOnly};
+use bitcoin::{Address, OutPoint as BitcoinOutPoint, TxIn, TxOut};
 use chain::chaininterface;
 use lightning::chain;
 use lightning::chain::channelmonitor::MonitorEvent;
@@ -18,18 +18,20 @@ use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::chain::transaction::OutPoint;
 use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{
-    get_htlc_redeemscript, get_revokeable_redeemscript, ChannelPublicKeys,
-    ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
+    get_htlc_redeemscript, get_revokeable_redeemscript, make_funding_redeemscript,
+    ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
     DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::util::test_utils;
 
-use crate::node::{ChannelSetup, CommitmentType, NodeConfig};
+use crate::node::{ChannelId, ChannelSetup, CommitmentType, Node, NodeConfig};
+use crate::signer::multi_signer::{channel_nonce_to_id, MultiSigner, SpendType};
 use crate::signer::my_keys_manager::KeyDerivationStyle;
 use crate::tx::tx::sort_outputs;
-use crate::util::crypto_utils::payload_for_p2wpkh;
+use crate::util::crypto_utils::{payload_for_p2wpkh, payload_for_p2wsh};
 use crate::util::enforcing_trait_impls::EnforcingSigner;
 use crate::util::loopback::LoopbackChannelSigner;
+use crate::util::status::Status;
 
 pub struct TestPersister {
     pub update_ret: Mutex<Result<(), channelmonitor::ChannelMonitorUpdateErr>>,
@@ -261,18 +263,374 @@ pub fn make_test_channel_keys() -> EnforcingSigner {
     EnforcingSigner::new(inmemkeys)
 }
 
-pub fn make_test_funding_tx(inputs: Vec<TxIn>, value: u64) -> bitcoin::Transaction {
+pub fn init_node(signer: &MultiSigner, node_config: NodeConfig, seedstr: &str) -> PublicKey {
+    let mut seed = [0; 32];
+    seed.copy_from_slice(hex::decode(seedstr).unwrap().as_slice());
+    signer.new_node_from_seed(node_config, &seed).unwrap()
+}
+
+pub fn init_node_and_channel(
+    signer: &MultiSigner,
+    node_config: NodeConfig,
+    seedstr: &str,
+    setup: ChannelSetup,
+) -> (PublicKey, ChannelId) {
+    let node_id = init_node(signer, node_config, seedstr);
+    let channel_nonce = "nonce1".as_bytes().to_vec();
+    let channel_id = channel_nonce_to_id(&channel_nonce);
+    let node = signer.get_node(&node_id).expect("node does not exist");
+    signer
+        .new_channel(&node_id, Some(channel_nonce), Some(channel_id))
+        .expect("new_channel");
+    node.ready_channel(channel_id, None, setup)
+        .expect("ready channel");
+    (node_id, channel_id)
+}
+
+pub fn make_test_funding_wallet_addr(
+    secp_ctx: &Secp256k1<secp256k1::SignOnly>,
+    node: &Node,
+    i: u32,
+    is_p2sh: bool,
+) -> Address {
+    let child_path = vec![i];
+    let pubkey = node
+        .get_wallet_key(&secp_ctx, &child_path)
+        .unwrap()
+        .public_key(&secp_ctx);
+
+    // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
+    if !is_p2sh {
+        Address::p2wpkh(&pubkey, node.network).unwrap()
+    } else {
+        Address::p2shwpkh(&pubkey, node.network).unwrap()
+    }
+}
+
+pub fn make_test_funding_wallet_input() -> TxIn {
+    TxIn {
+        previous_output: bitcoin::OutPoint {
+            txid: Default::default(),
+            vout: 0,
+        },
+        script_sig: Script::new(),
+        sequence: 0,
+        witness: vec![],
+    }
+}
+
+pub fn make_test_funding_wallet_output(
+    secp_ctx: &Secp256k1<secp256k1::SignOnly>,
+    node: &Node,
+    i: u32,
+    value: u64,
+    is_p2sh: bool,
+) -> TxOut {
+    let child_path = vec![i];
+    let pubkey = node
+        .get_wallet_key(&secp_ctx, &child_path)
+        .unwrap()
+        .public_key(&secp_ctx);
+
+    // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
+    let addr = if !is_p2sh {
+        Address::p2wpkh(&pubkey, node.network).unwrap()
+    } else {
+        Address::p2shwpkh(&pubkey, node.network).unwrap()
+    };
+
+    TxOut {
+        value,
+        script_pubkey: addr.script_pubkey(),
+    }
+}
+
+pub fn make_test_funding_channel_outpoint(
+    signer: &MultiSigner,
+    node_id: &PublicKey,
+    setup: &ChannelSetup,
+    channel_id: &ChannelId,
+    value: u64,
+) -> TxOut {
+    signer
+        .with_channel_base(node_id, channel_id, |base| {
+            let funding_redeemscript = make_funding_redeemscript(
+                &base.get_channel_basepoints().funding_pubkey,
+                &setup.counterparty_points.funding_pubkey,
+            );
+            let script_pubkey = payload_for_p2wsh(&funding_redeemscript).script_pubkey();
+            Ok(TxOut {
+                value,
+                script_pubkey,
+            })
+        })
+        .expect("TxOut")
+}
+
+pub fn make_test_funding_tx_with_ins_outs(
+    inputs: Vec<TxIn>,
+    outputs: Vec<TxOut>,
+) -> bitcoin::Transaction {
     bitcoin::Transaction {
         version: 2,
         lock_time: 0,
         input: inputs,
-        output: vec![TxOut {
-            script_pubkey: Builder::new()
-                .push_opcode(opcodes::all::OP_RETURN)
-                .into_script(),
-            value,
-        }],
+        output: outputs,
     }
+}
+
+pub struct TestFundingNodeContext {
+    pub secp_ctx: Secp256k1<secp256k1::SignOnly>,
+    pub signer: MultiSigner,
+    pub node_id: PublicKey,
+    pub node: Arc<Node>,
+}
+
+pub struct TestFundingChannelContext {
+    pub setup: ChannelSetup,
+    pub channel_id: ChannelId,
+}
+
+pub struct TestFundingTxContext {
+    pub inputs: Vec<TxIn>,
+    pub ipaths: Vec<Vec<u32>>,
+    pub ivals: Vec<u64>,
+    pub ispnds: Vec<SpendType>,
+    pub iuckeys: Vec<Option<SecretKey>>,
+    pub outputs: Vec<TxOut>,
+    pub opaths: Vec<Vec<u32>>,
+}
+
+pub fn funding_tx_node_ctx() -> TestFundingNodeContext {
+    let secp_ctx = Secp256k1::signing_only();
+    let signer = MultiSigner::new();
+    let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
+    let node = signer.get_node(&node_id).unwrap();
+    TestFundingNodeContext {
+        secp_ctx,
+        signer,
+        node_id,
+        node,
+    }
+}
+
+pub fn funding_tx_chan_ctx(
+    node_ctx: &TestFundingNodeContext,
+    nn: usize,
+) -> TestFundingChannelContext {
+    let setup = make_test_channel_setup();
+    let channel_nonce0 = format!("nonce{}", nn).as_bytes().to_vec();
+    let channel_id = channel_nonce_to_id(&channel_nonce0);
+    node_ctx
+        .signer
+        .new_channel(&node_ctx.node_id, Some(channel_nonce0), Some(channel_id))
+        .expect("new_channel");
+    TestFundingChannelContext { setup, channel_id }
+}
+
+pub fn funding_tx_ctx() -> TestFundingTxContext {
+    TestFundingTxContext {
+        inputs: vec![],
+        ipaths: vec![],
+        ivals: vec![],
+        ispnds: vec![],
+        iuckeys: vec![],
+        outputs: vec![],
+        opaths: vec![],
+    }
+}
+
+pub fn funding_tx_add_wallet_input(
+    tx_ctx: &mut TestFundingTxContext,
+    is_p2sh: bool,
+    wallet_ndx: u32,
+    value_sat: u64,
+) {
+    let ndx = tx_ctx.inputs.len();
+    let mut txin = make_test_funding_wallet_input();
+    // hack, we collude w/ funding_tx_validate_sig, vout signals which input
+    txin.previous_output.vout = ndx as u32;
+    tx_ctx.inputs.push(txin);
+    tx_ctx.ipaths.push(vec![wallet_ndx]);
+    tx_ctx.ivals.push(value_sat);
+    tx_ctx.ispnds.push(if is_p2sh {
+        SpendType::P2shP2wpkh
+    } else {
+        SpendType::P2wpkh
+    });
+    tx_ctx.iuckeys.push(None);
+}
+
+pub fn funding_tx_add_wallet_output(
+    node_ctx: &TestFundingNodeContext,
+    tx_ctx: &mut TestFundingTxContext,
+    is_p2sh: bool,
+    wallet_ndx: u32,
+    value_sat: u64,
+) {
+    tx_ctx.outputs.push(make_test_funding_wallet_output(
+        &node_ctx.secp_ctx,
+        &node_ctx.node,
+        wallet_ndx,
+        value_sat,
+        is_p2sh,
+    ));
+    tx_ctx.opaths.push(vec![wallet_ndx]);
+}
+
+pub fn funding_tx_add_channel_outpoint(
+    node_ctx: &TestFundingNodeContext,
+    chan_ctx: &TestFundingChannelContext,
+    tx_ctx: &mut TestFundingTxContext,
+    value_sat: u64,
+) -> u32 {
+    let ndx = tx_ctx.outputs.len();
+    tx_ctx.outputs.push(make_test_funding_channel_outpoint(
+        &node_ctx.signer,
+        &node_ctx.node_id,
+        &chan_ctx.setup,
+        &chan_ctx.channel_id,
+        value_sat,
+    ));
+    tx_ctx.opaths.push(vec![]);
+    ndx as u32
+}
+
+pub fn funding_tx_add_unknown_output(
+    node_ctx: &TestFundingNodeContext,
+    tx_ctx: &mut TestFundingTxContext,
+    is_p2sh: bool,
+    unknown_ndx: u32,
+    value_sat: u64,
+) {
+    tx_ctx.outputs.push(make_test_funding_wallet_output(
+        &node_ctx.secp_ctx,
+        &node_ctx.node,
+        unknown_ndx + 10_000, // lazy, it's really in the wallet
+        value_sat,
+        is_p2sh,
+    ));
+    tx_ctx.opaths.push(vec![]); // this is what makes it unknown
+}
+
+pub fn funding_tx_from_ctx(tx_ctx: &TestFundingTxContext) -> bitcoin::Transaction {
+    make_test_funding_tx_with_ins_outs(tx_ctx.inputs.clone(), tx_ctx.outputs.clone())
+}
+
+pub fn funding_tx_ready_channel(
+    node_ctx: &TestFundingNodeContext,
+    chan_ctx: &mut TestFundingChannelContext,
+    tx: &bitcoin::Transaction,
+    vout: u32,
+) {
+    // Replace the funding outpoint placeholder.
+    let txid = tx.txid();
+    chan_ctx.setup.funding_outpoint = BitcoinOutPoint { txid, vout };
+
+    node_ctx
+        .node
+        .ready_channel(chan_ctx.channel_id, None, chan_ctx.setup.clone())
+        .expect("Channel");
+}
+
+pub fn funding_tx_sign(
+    node_ctx: &TestFundingNodeContext,
+    tx_ctx: &TestFundingTxContext,
+    tx: &bitcoin::Transaction,
+) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Status> {
+    node_ctx.node.sign_funding_tx(
+        &tx,
+        &tx_ctx.ipaths,
+        &tx_ctx.ivals,
+        &tx_ctx.ispnds,
+        &tx_ctx.iuckeys,
+        &tx_ctx.opaths,
+    )
+}
+
+pub fn funding_tx_validate_sig(
+    node_ctx: &TestFundingNodeContext,
+    tx_ctx: &TestFundingTxContext,
+    tx: &mut bitcoin::Transaction,
+    witvec: &Vec<(Vec<u8>, Vec<u8>)>,
+) {
+    for ndx in 0..tx.input.len() {
+        tx.input[ndx].witness = vec![witvec[ndx].0.clone(), witvec[ndx].1.clone()];
+    }
+    let verify_result = tx.verify(|outpoint| {
+        // hack, we collude w/ funding_tx_add_wallet_input
+        let input_ndx = outpoint.vout as usize;
+        let txout = TxOut {
+            value: tx_ctx.ivals[input_ndx],
+            script_pubkey: make_test_funding_wallet_addr(
+                &node_ctx.secp_ctx,
+                &node_ctx.node,
+                tx_ctx.ipaths[input_ndx][0],
+                false,
+            )
+            .script_pubkey(),
+        };
+        Some(txout)
+    });
+    assert!(verify_result.is_ok());
+}
+
+// Try and use the funding tx helpers before this comment, the following are compat.
+
+pub fn make_test_funding_tx_with_change(
+    inputs: Vec<TxIn>,
+    value: u64,
+    opath: Vec<u32>,
+    change_addr: &Address,
+) -> (Vec<u32>, bitcoin::Transaction) {
+    let outputs = vec![TxOut {
+        value,
+        script_pubkey: change_addr.script_pubkey(),
+    }];
+    let tx = make_test_funding_tx_with_ins_outs(inputs, outputs);
+    (opath, tx)
+}
+
+pub fn make_test_funding_tx(
+    secp_ctx: &Secp256k1<secp256k1::SignOnly>,
+    signer: &MultiSigner,
+    node_id: &PublicKey,
+    inputs: Vec<TxIn>,
+    value: u64,
+) -> (Vec<u32>, bitcoin::Transaction) {
+    let opath = vec![0];
+    let change_addr = Address::p2wpkh(
+        &signer
+            .get_node(&node_id)
+            .unwrap()
+            .get_wallet_key(&secp_ctx, &opath)
+            .unwrap()
+            .public_key(&secp_ctx),
+        Network::Testnet,
+    )
+    .unwrap();
+    make_test_funding_tx_with_change(inputs, value, opath, &change_addr)
+}
+
+pub fn make_test_funding_tx_with_p2shwpkh_change(
+    secp_ctx: &Secp256k1<secp256k1::SignOnly>,
+    signer: &MultiSigner,
+    node_id: &PublicKey,
+    inputs: Vec<TxIn>,
+    value: u64,
+) -> (Vec<u32>, bitcoin::Transaction) {
+    let opath = vec![0];
+    let change_addr = Address::p2shwpkh(
+        &signer
+            .get_node(&node_id)
+            .unwrap()
+            .get_wallet_key(&secp_ctx, &opath)
+            .unwrap()
+            .public_key(&secp_ctx),
+        Network::Testnet,
+    )
+    .unwrap();
+    make_test_funding_tx_with_change(inputs, value, opath, &change_addr)
 }
 
 pub fn make_test_commitment_tx() -> bitcoin::Transaction {

@@ -59,3 +59,38 @@ impl<'a> core::fmt::Debug for DebugHTLCOutputInCommitment<'a> {
             .finish()
     }
 }
+
+pub struct DebugBytes<'a>(pub &'a [u8]);
+impl<'a> core::fmt::Debug for DebugBytes<'a> {
+    // BEGIN NOT TESTED
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        for i in self.0 {
+            write!(f, "{:02x}", i)?;
+        }
+        Ok(())
+    }
+    // END NOT TESTED
+}
+
+pub struct DebugWitness<'a>(pub &'a (Vec<u8>, Vec<u8>));
+impl<'a> core::fmt::Debug for DebugWitness<'a> {
+    // BEGIN NOT TESTED
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_tuple("Witness")
+            .field(&DebugBytes(&self.0 .0))
+            .field(&DebugBytes(&self.0 .1))
+            .finish()
+    }
+    // END NOT TESTED
+}
+
+pub struct DebugWitVec<'a>(pub &'a Vec<(Vec<u8>, Vec<u8>)>);
+impl<'a> core::fmt::Debug for DebugWitVec<'a> {
+    // BEGIN NOT TESTED
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_list()
+            .entries(self.0.iter().map(|ww| DebugWitness(ww)))
+            .finish()
+    }
+    // END NOT TESTED
+}

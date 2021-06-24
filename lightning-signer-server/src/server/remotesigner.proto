@@ -368,13 +368,17 @@ message GetPerCommitmentPointReply {
 }
 
 // Sign a funding tx for this channel
-// The channel must have been readied
+// The channel(s) must have been readied
 message SignFundingTxRequest {
   NodeId node_id = 1;
-  
-  ChannelNonce channel_nonce = 2;
 
-  Transaction tx = 3;
+  // No channel_nonce.  Funding tx are not associated with a
+  // particular channel; they may fund multiple channels at the same
+  // time.
+
+  // For validation, tx outputs that are in the wallet (change) should
+  // should have the [OutputDescriptor::key_loc.key_path] set.
+  Transaction tx = 2;
 }
 
 message SignFundingTxReply {
@@ -808,7 +812,7 @@ message CommitmentInfo {
 
 // A Bitcoin outpoint, used for the funding output
 message Outpoint {
-  bytes txid = 1;
+  bytes txid = 1;	// byte order is same as txhash, reverse to display
   uint32 index = 2;
 }
 

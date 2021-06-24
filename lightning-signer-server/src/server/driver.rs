@@ -30,6 +30,7 @@ use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::signer::multi_signer::{channel_nonce_to_id, MultiSigner};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::crypto_utils::signature_to_bitcoin_vec;
+use lightning_signer::util::debug_utils::DebugBytes;
 use lightning_signer::util::status;
 use std::sync::Arc;
 
@@ -308,7 +309,7 @@ impl Signer for SignServer {
             "ENTER new_channel({}/{:?}/{:?})",
             node_id,
             opt_channel_id,
-            opt_channel_nonce0
+            opt_channel_nonce0.as_ref().map(|vv| DebugBytes(&vv[..]))
         );
 
         let node = self.signer.get_node(&node_id)?;
@@ -659,8 +660,7 @@ impl Signer for SignServer {
         let req = request.into_inner();
         log_debug!(self, "req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
-        let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_funding_tx({}/{})", node_id, channel_id);
+        log_info!(self, "ENTER sign_funding_tx({})", node_id);
         let reqtx = req
             .tx
             .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
@@ -668,7 +668,7 @@ impl Signer for SignServer {
             deserialize(reqtx.raw_tx_bytes.as_slice());
         let tx = tx_res
             .map_err(|e| self.invalid_grpc_argument(format!("could not deserialize tx - {}", e)))?;
-        let mut paths: Vec<Vec<u32>> = Vec::new();
+        let mut ipaths: Vec<Vec<u32>> = Vec::new();
         let mut values_sat = Vec::new();
         let mut spendtypes: Vec<SpendType> = Vec::new();
         let mut uniclosekeys: Vec<Option<SecretKey>> = Vec::new();
@@ -679,7 +679,7 @@ impl Signer for SignServer {
             let spendtype = SpendType::try_from(reqtx.input_descs[idx].spend_type)
                 .map_err(|_| self.invalid_grpc_argument("bad spend_type"))?;
             if spendtype == SpendType::Invalid {
-                paths.push(vec![]);
+                ipaths.push(vec![]);
                 values_sat.push(0);
                 spendtypes.push(spendtype);
                 uniclosekeys.push(None);
@@ -687,16 +687,18 @@ impl Signer for SignServer {
                 let child_path = &reqtx.input_descs[idx]
                     .key_loc
                     .as_ref()
-                    .ok_or_else(|| self.invalid_grpc_argument("missing key_loc desc"))?
+                    .ok_or_else(|| self.invalid_grpc_argument("missing input key_loc desc"))?
                     .key_path;
-                paths.push(child_path.to_vec());
+                ipaths.push(child_path.to_vec());
                 let value_sat = reqtx.input_descs[idx].value_sat as u64;
                 values_sat.push(value_sat);
                 spendtypes.push(spendtype);
                 let closeinfo = reqtx.input_descs[idx]
                     .key_loc
                     .as_ref()
-                    .ok_or_else(|| self.invalid_grpc_argument("missing key_loc desc"))?
+                    .ok_or_else(|| {
+                        self.invalid_grpc_argument("missing input closeinfo key_loc desc")
+                    })?
                     .close_info
                     .as_ref();
                 let uck = self.get_unilateral_close_key(&node_id, closeinfo)?;
@@ -704,14 +706,28 @@ impl Signer for SignServer {
             }
         }
 
-        let witvec = self.signer.sign_funding_tx(
-            &node_id,
-            &channel_id,
+        let opaths = reqtx
+            .output_descs
+            .into_iter()
+            .map(|od| {
+                let key_loc = od.key_loc.as_ref();
+                if key_loc.is_some() {
+                    key_loc.unwrap().key_path.to_vec()
+                } else {
+                    vec![]
+                }
+            })
+            .collect();
+
+        let node = self.signer.get_node(&node_id)?;
+
+        let witvec = node.sign_funding_tx(
             &tx,
-            &paths,
+            &ipaths,
             &values_sat,
             &spendtypes,
             &uniclosekeys,
+            &opaths,
         )?;
 
         let wits = witvec
@@ -723,7 +739,7 @@ impl Signer for SignServer {
             .collect();
 
         let reply = SignFundingTxReply { witnesses: wits };
-        log_info!(self, "REPLY sign_funding_tx({}/{})", node_id, channel_id);
+        log_info!(self, "REPLY sign_funding_tx({})", node_id);
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
     }

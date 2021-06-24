@@ -2,22 +2,17 @@ use crate::Map;
 use crate::{Arc, Mutex};
 use core::convert::TryFrom;
 
-use bitcoin::secp256k1::SignOnly;
-
 #[cfg(feature = "backtrace")]
 use backtrace::Backtrace;
 use bitcoin;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
-use bitcoin::secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
-use bitcoin::util::bip143::SigHashCache;
-use bitcoin::util::bip32::ChildNumber;
-use bitcoin::{Address, Network, OutPoint, SigHashType};
+use bitcoin::secp256k1::{PublicKey, Secp256k1};
+use bitcoin::{Network, OutPoint};
 use lightning::chain::keysinterface::KeysInterface;
 use lightning::util::logger::Logger;
 
 use crate::node::{Channel, ChannelBase, ChannelId, ChannelSlot, Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
-use crate::util::crypto_utils::signature_to_bitcoin_vec;
 use crate::util::status::Status;
 use crate::util::test_logger::TestLogger;
 use crate::SendSync;
@@ -241,114 +236,10 @@ impl MultiSigner {
         }
     }
 
-    pub(crate) fn get_wallet_key(
-        &self,
-        secp_ctx: &Secp256k1<SignOnly>,
-        node_id: &PublicKey,
-        child_path: &Vec<u32>,
-    ) -> Result<bitcoin::PrivateKey, Status> {
-        let node = self.get_node(node_id)?;
-        if child_path.len() != node.node_config.key_derivation_style.get_key_path_len() {
-            // BEGIN NOT TESTED
-            self.invalid_argument(format!(
-                "get_wallet_key: bad child_path len : {}",
-                child_path.len()
-            ));
-            // END NOT TESTED
-        }
-        // Start with the base xpriv for this wallet.
-        let mut xkey = node.get_account_extended_key().clone();
-
-        // Derive the rest of the child_path.
-        for elem in child_path {
-            xkey = xkey
-                .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(*elem).unwrap())
-                .map_err(|err| {
-                    // BEGIN NOT TESTED
-                    self.internal_error(format!("derive child_path failed: {}", err))
-                    // END NOT TESTED
-                })?;
-        }
-        Ok(xkey.private_key)
-    }
-
     fn persist_channel(&self, node_id: &PublicKey, chan: &Channel) {
         self.persister
             .update_channel(&node_id, &chan)
             .expect("channel was in storage but not in memory");
-    }
-
-    // TODO(devrandom) does this go in Node or Channel?
-    pub fn sign_funding_tx(
-        &self,
-        node_id: &PublicKey,
-        _channel_id: &ChannelId,
-        tx: &bitcoin::Transaction,
-        paths: &Vec<Vec<u32>>,
-        values_sat: &Vec<u64>,
-        spendtypes: &Vec<SpendType>,
-        uniclosekeys: &Vec<Option<SecretKey>>,
-    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Status> {
-        let secp_ctx = Secp256k1::signing_only();
-
-        let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
-        for idx in 0..tx.input.len() {
-            if spendtypes[idx] == SpendType::Invalid {
-                // If we are signing a PSBT some of the inputs may be
-                // marked as SpendType::Invalid (we skip these), push
-                // an empty witness element instead.
-                witvec.push((vec![], vec![]));
-            } else {
-                let value_sat = values_sat[idx];
-                let privkey = match uniclosekeys[idx] {
-                    // There was a unilateral_close_key.
-                    Some(sk) => bitcoin::PrivateKey {
-                        compressed: true,
-                        network: Network::Testnet,
-                        key: sk,
-                    },
-                    // Derive the HD key.
-                    None => {
-                        let child_path = &paths[idx];
-                        self.get_wallet_key(&secp_ctx, node_id, child_path)
-                            .map_err(|err| {
-                                // BEGIN NOT TESTED
-                                self.internal_error(format!("get_wallet_key failed: {}", err))
-                                // END NOT TESTED
-                            })?
-                    }
-                };
-                let pubkey = privkey.public_key(&secp_ctx);
-                let script_code = Address::p2pkh(&pubkey, privkey.network).script_pubkey();
-                let sighash = match spendtypes[idx] {
-                    SpendType::P2pkh => Message::from_slice(
-                        &tx.signature_hash(0, &script_code, 0x01)[..],
-                    )
-                    .map_err(|err| self.internal_error(format!("p2pkh sighash failed: {}", err))),
-                    SpendType::P2wpkh | SpendType::P2shP2wpkh => Message::from_slice(
-                        &SigHashCache::new(tx).signature_hash(
-                            idx,
-                            &script_code,
-                            value_sat,
-                            SigHashType::All,
-                        )[..],
-                    )
-                    .map_err(|err| self.internal_error(format!("p2wpkh sighash failed: {}", err))),
-                    // BEGIN NOT TESTED
-                    _ => Err(self.invalid_argument(format!(
-                        "unsupported spend_type: {}",
-                        spendtypes[idx] as i32
-                    ))),
-                    // END NOT TESTED
-                }?;
-                let sig = secp_ctx.sign(&sighash, &privkey.key);
-                let sigvec = signature_to_bitcoin_vec(sig);
-
-                witvec.push((sigvec, pubkey.key.serialize().to_vec()));
-            }
-        }
-        // TODO(devrandom) self.persist_channel(node_id, chan);
-        Ok(witvec)
     }
 
     // Convenience for tests
@@ -383,9 +274,10 @@ mod tests {
     use bitcoin::hashes::sha256d::Hash as Sha256dHash;
     use bitcoin::secp256k1;
     use bitcoin::secp256k1::recovery::{RecoverableSignature, RecoveryId};
-    use bitcoin::secp256k1::Signature;
+    use bitcoin::secp256k1::{Message, SecretKey, Signature};
+    use bitcoin::util::bip143::SigHashCache;
     use bitcoin::util::psbt::serialize::Serialize;
-    use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut};
+    use bitcoin::{Address, OutPoint, Script, SigHashType, Transaction, TxIn, TxOut};
     use lightning::ln::chan_utils::{
         build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
         make_funding_redeemscript, BuiltCommitmentTransaction, ChannelPublicKeys,
@@ -398,15 +290,20 @@ mod tests {
     use crate::tx::tx::{build_close_tx, HTLCInfo2, ANCHOR_SAT};
     use crate::util::crypto_utils::{
         derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
-        payload_for_p2wpkh,
+        payload_for_p2wpkh, signature_to_bitcoin_vec,
     };
+    use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
     use crate::util::test_utils::{
+        funding_tx_add_channel_outpoint, funding_tx_add_unknown_output,
+        funding_tx_add_wallet_input, funding_tx_add_wallet_output, funding_tx_chan_ctx,
+        funding_tx_ctx, funding_tx_from_ctx, funding_tx_node_ctx, funding_tx_ready_channel,
+        funding_tx_sign, funding_tx_validate_sig, init_node, init_node_and_channel,
         make_test_channel_setup, make_test_counterparty_points, TEST_SEED,
     };
 
     use super::*;
-    use crate::util::status::{Code, Status};
+
     use bitcoin::hashes::Hash;
     use lightning::chain::keysinterface::BaseSign;
 
@@ -417,30 +314,6 @@ mod tests {
             assert_eq!(err.code(), Code::InvalidArgument);
             assert_eq!(err.message(), $msg);
         };
-    }
-
-    fn init_node(signer: &MultiSigner, node_config: NodeConfig, seedstr: &str) -> PublicKey {
-        let mut seed = [0; 32];
-        seed.copy_from_slice(hex::decode(seedstr).unwrap().as_slice());
-        signer.new_node_from_seed(node_config, &seed).unwrap()
-    }
-
-    fn init_node_and_channel(
-        signer: &MultiSigner,
-        node_config: NodeConfig,
-        seedstr: &str,
-        setup: ChannelSetup,
-    ) -> (PublicKey, ChannelId) {
-        let node_id = init_node(signer, node_config, seedstr);
-        let channel_nonce = "nonce1".as_bytes().to_vec();
-        let channel_id = channel_nonce_to_id(&channel_nonce);
-        let node = signer.get_node(&node_id).expect("node does not exist");
-        signer
-            .new_channel(&node_id, Some(channel_nonce), Some(channel_id))
-            .expect("new_channel");
-        node.ready_channel(channel_id, None, setup)
-            .expect("ready channel");
-        (node_id, channel_id)
     }
 
     #[test]
@@ -1611,8 +1484,7 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
-        let channel_id = ChannelId([1; 32]);
-        let indices = vec![vec![0u32], vec![1u32]];
+        let ipaths = vec![vec![0u32], vec![1u32]];
         let values_sat = vec![100u64, 200u64];
 
         let input1 = TxIn {
@@ -1634,19 +1506,21 @@ mod tests {
             sequence: 0,
             witness: vec![],
         };
-        let mut tx = make_test_funding_tx(vec![input1, input2], 300);
+        let (opath, mut tx) =
+            make_test_funding_tx(&secp_ctx, &signer, &node_id, vec![input1, input2], 300);
         let spendtypes = vec![SpendType::P2wpkh, SpendType::P2wpkh];
         let uniclosekeys = vec![None, None];
 
         let witvec = signer
+            .get_node(&node_id)
+            .unwrap()
             .sign_funding_tx(
-                &node_id,
-                &channel_id,
                 &tx,
-                &indices,
+                &ipaths,
                 &values_sat,
                 &spendtypes,
                 &uniclosekeys,
+                &vec![opath],
             )
             .expect("good sigs");
         assert_eq!(witvec.len(), 2);
@@ -1654,7 +1528,9 @@ mod tests {
         let address = |n: u32| {
             Address::p2wpkh(
                 &signer
-                    .get_wallet_key(&secp_ctx, &node_id, &vec![n])
+                    .get_node(&node_id)
+                    .unwrap()
+                    .get_wallet_key(&secp_ctx, &vec![n])
                     .unwrap()
                     .public_key(&secp_ctx),
                 Network::Testnet,
@@ -1675,7 +1551,6 @@ mod tests {
                 script_pubkey: address(1).script_pubkey(),
             },
         ];
-        println!("{:?}", address(0).script_pubkey());
         let verify_result = tx.verify(|p| Some(outs[p.vout as usize].clone()));
 
         assert!(verify_result.is_ok());
@@ -1688,9 +1563,8 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
-        let channel_id = ChannelId([1; 32]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
-        let indices = vec![vec![0u32]];
+        let ipaths = vec![vec![0u32]];
         let values_sat = vec![100u64];
 
         let input1 = TxIn {
@@ -1700,19 +1574,20 @@ mod tests {
             witness: vec![],
         };
 
-        let mut tx = make_test_funding_tx(vec![input1], 100);
+        let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &signer, &node_id, vec![input1], 100);
         let spendtypes = vec![SpendType::P2wpkh];
         let uniclosekeys = vec![None];
 
         let witvec = signer
+            .get_node(&node_id)
+            .unwrap()
             .sign_funding_tx(
-                &node_id,
-                &channel_id,
                 &tx,
-                &indices,
+                &ipaths,
                 &values_sat,
                 &spendtypes,
                 &uniclosekeys,
+                &vec![opath],
             )
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
@@ -1720,7 +1595,9 @@ mod tests {
         let address = |n: u32| {
             Address::p2wpkh(
                 &signer
-                    .get_wallet_key(&secp_ctx, &node_id, &vec![n])
+                    .get_node(&node_id)
+                    .unwrap()
+                    .get_wallet_key(&secp_ctx, &vec![n])
                     .unwrap()
                     .public_key(&secp_ctx),
                 Network::Testnet,
@@ -1748,9 +1625,8 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
-        let channel_id = ChannelId([1; 32]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
-        let indices = vec![vec![0u32]];
+        let ipaths = vec![vec![0u32]];
         let values_sat = vec![100u64];
 
         let input1 = TxIn {
@@ -1760,7 +1636,7 @@ mod tests {
             witness: vec![],
         };
 
-        let mut tx = make_test_funding_tx(vec![input1], 200);
+        let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &signer, &node_id, vec![input1], 200);
         let spendtypes = vec![SpendType::P2wpkh];
 
         let uniclosekey = SecretKey::from_slice(
@@ -1776,14 +1652,15 @@ mod tests {
         let uniclosekeys = vec![Some(uniclosekey)];
 
         let witvec = signer
+            .get_node(&node_id)
+            .unwrap()
             .sign_funding_tx(
-                &node_id,
-                &channel_id,
                 &tx,
-                &indices,
+                &ipaths,
                 &values_sat,
                 &spendtypes,
                 &uniclosekeys,
+                &vec![opath],
             )
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
@@ -1811,9 +1688,8 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
-        let channel_id = ChannelId([1; 32]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
-        let indices = vec![vec![0u32]];
+        let ipaths = vec![vec![0u32]];
         let values_sat = vec![100u64];
 
         let input1 = TxIn {
@@ -1823,19 +1699,20 @@ mod tests {
             witness: vec![],
         };
 
-        let mut tx = make_test_funding_tx(vec![input1], 100);
+        let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &signer, &node_id, vec![input1], 100);
         let spendtypes = vec![SpendType::P2pkh];
         let uniclosekeys = vec![None];
 
         let witvec = signer
+            .get_node(&node_id)
+            .unwrap()
             .sign_funding_tx(
-                &node_id,
-                &channel_id,
                 &tx,
-                &indices,
+                &ipaths,
                 &values_sat,
                 &spendtypes,
                 &uniclosekeys,
+                &vec![opath],
             )
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
@@ -1843,7 +1720,9 @@ mod tests {
         let address = |n: u32| {
             Address::p2pkh(
                 &signer
-                    .get_wallet_key(&secp_ctx, &node_id, &vec![n])
+                    .get_node(&node_id)
+                    .unwrap()
+                    .get_wallet_key(&secp_ctx, &vec![n])
                     .unwrap()
                     .public_key(&secp_ctx),
                 Network::Testnet,
@@ -1871,9 +1750,8 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
-        let channel_id = ChannelId([1; 32]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
-        let indices = vec![vec![0u32]];
+        let ipaths = vec![vec![0u32]];
         let values_sat = vec![100u64];
 
         let input1 = TxIn {
@@ -1883,19 +1761,26 @@ mod tests {
             witness: vec![],
         };
 
-        let mut tx = make_test_funding_tx(vec![input1], 100);
+        let (opath, mut tx) = make_test_funding_tx_with_p2shwpkh_change(
+            &secp_ctx,
+            &signer,
+            &node_id,
+            vec![input1],
+            100,
+        );
         let spendtypes = vec![SpendType::P2shP2wpkh];
         let uniclosekeys = vec![None];
 
         let witvec = signer
+            .get_node(&node_id)
+            .unwrap()
             .sign_funding_tx(
-                &node_id,
-                &channel_id,
                 &tx,
-                &indices,
+                &ipaths,
                 &values_sat,
                 &spendtypes,
                 &uniclosekeys,
+                &vec![opath],
             )
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
@@ -1903,7 +1788,9 @@ mod tests {
         let address = |n: u32| {
             Address::p2shwpkh(
                 &signer
-                    .get_wallet_key(&secp_ctx, &node_id, &vec![n])
+                    .get_node(&node_id)
+                    .unwrap()
+                    .get_wallet_key(&secp_ctx, &vec![n])
                     .unwrap()
                     .public_key(&secp_ctx),
                 Network::Testnet,
@@ -1912,7 +1799,9 @@ mod tests {
         };
 
         let pubkey = &signer
-            .get_wallet_key(&secp_ctx, &node_id, &indices[0])
+            .get_node(&node_id)
+            .unwrap()
+            .get_wallet_key(&secp_ctx, &ipaths[0])
             .unwrap()
             .public_key(&secp_ctx);
 
@@ -1945,9 +1834,9 @@ mod tests {
 
     #[test]
     fn sign_funding_tx_psbt_test() -> Result<(), ()> {
+        let secp_ctx = Secp256k1::signing_only();
         let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
-        let channel_id = ChannelId([1; 32]);
         let txids = vec![
             bitcoin::Txid::from_slice(&[2u8; 32]).unwrap(),
             bitcoin::Txid::from_slice(&[4u8; 32]).unwrap(),
@@ -1984,8 +1873,8 @@ mod tests {
             }, // NOT TESTED
         ];
 
-        let tx = make_test_funding_tx(inputs, 100);
-        let indices = vec![vec![0u32], vec![1u32], vec![2u32]];
+        let (opath, tx) = make_test_funding_tx(&secp_ctx, &signer, &node_id, inputs, 100);
+        let ipaths = vec![vec![0u32], vec![1u32], vec![2u32]];
         let values_sat = vec![100u64, 101u64, 102u64];
         let spendtypes = vec![
             SpendType::Invalid,
@@ -1995,14 +1884,15 @@ mod tests {
         let uniclosekeys = vec![None, None, None];
 
         let witvec = signer
+            .get_node(&node_id)
+            .unwrap()
             .sign_funding_tx(
-                &node_id,
-                &channel_id,
                 &tx,
-                &indices,
+                &ipaths,
                 &values_sat,
                 &spendtypes,
                 &uniclosekeys,
+                &vec![opath],
             )
             .expect("good sigs");
         // Should have three witness stack items.
@@ -2022,6 +1912,334 @@ mod tests {
 
         // Doesn't verify, not fully signed.
         Ok(())
+    }
+
+    fn sign_funding_tx_with_output_and_change(is_p2sh: bool) {
+        let node_ctx = funding_tx_node_ctx();
+        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
+        let mut tx_ctx = funding_tx_ctx();
+
+        let incoming = 5_000_000;
+        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let fee = 1000;
+        let change = incoming - channel_amount - fee;
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx =
+            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+
+        let mut tx = funding_tx_from_ctx(&tx_ctx);
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
+        funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+    }
+
+    #[test]
+    fn sign_funding_tx_with_p2wpkh_wallet() {
+        sign_funding_tx_with_output_and_change(false);
+    }
+
+    #[test]
+    fn sign_funding_tx_with_p2sh_wallet() {
+        sign_funding_tx_with_output_and_change(true);
+    }
+
+    #[test]
+    fn sign_funding_tx_with_multiple_wallet_inputs() {
+        let is_p2sh = false;
+        let node_ctx = funding_tx_node_ctx();
+        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
+        let mut tx_ctx = funding_tx_ctx();
+
+        let incoming0 = 2_000_000;
+        let incoming1 = 3_000_000;
+        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let fee = 1000;
+        let change = incoming0 + incoming1 - channel_amount - fee;
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming0);
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 2, incoming0);
+
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx =
+            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+
+        let mut tx = funding_tx_from_ctx(&tx_ctx);
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
+        funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+    }
+
+    #[test]
+    fn sign_funding_tx_with_output_and_multiple_change() {
+        let is_p2sh = false;
+        let node_ctx = funding_tx_node_ctx();
+        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
+        let mut tx_ctx = funding_tx_ctx();
+
+        let incoming = 5_000_000;
+        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let fee = 1000;
+        let change0 = 1_000_000;
+        let change1 = incoming - channel_amount - fee - change0;
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change0);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change1);
+        let outpoint_ndx =
+            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+
+        let mut tx = funding_tx_from_ctx(&tx_ctx);
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
+        funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+    }
+
+    #[test]
+    fn sign_funding_tx_with_multiple_outputs_and_change() {
+        let is_p2sh = false;
+        let node_ctx = funding_tx_node_ctx();
+        let mut chan_ctx0 = funding_tx_chan_ctx(&node_ctx, 1);
+        let mut chan_ctx1 = funding_tx_chan_ctx(&node_ctx, 2);
+        let mut tx_ctx = funding_tx_ctx();
+
+        let incoming = 10_000_000;
+        let channel_amount0 = chan_ctx0.setup.channel_value_sat;
+        let channel_amount1 = chan_ctx1.setup.channel_value_sat;
+        let fee = 1000;
+        let change = incoming - channel_amount0 - channel_amount1 - fee;
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+
+        let outpoint_ndx0 =
+            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx0, &mut tx_ctx, channel_amount0);
+
+        let outpoint_ndx1 =
+            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx1, &mut tx_ctx, channel_amount1);
+
+        let mut tx = funding_tx_from_ctx(&tx_ctx);
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
+
+        let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
+        funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+    }
+
+    #[test]
+    fn sign_funding_tx_with_unknown_output() {
+        let is_p2sh = false;
+        let node_ctx = funding_tx_node_ctx();
+        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
+        let mut tx_ctx = funding_tx_ctx();
+
+        let incoming = 5_000_000;
+        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let unknown = 500_000;
+        let fee = 1000;
+        let change = incoming - channel_amount - unknown - fee;
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        funding_tx_add_unknown_output(&node_ctx, &mut tx_ctx, is_p2sh, 42, unknown);
+        let outpoint_ndx =
+            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+
+        let tx = funding_tx_from_ctx(&tx_ctx);
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        assert_invalid_argument_err!(
+            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            "policy failure: unknown output: status: InvalidArgument, message: \"channel with Outpoint a5b4d12cf257a92e0536ddfce77635f92283f1e81e4d4f5ce7239bd36cfe925c:1 not found\"");
+    }
+
+    #[test]
+    fn sign_funding_tx_with_bad_input_path() {
+        let is_p2sh = false;
+        let node_ctx = funding_tx_node_ctx();
+        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
+        let mut tx_ctx = funding_tx_ctx();
+
+        let incoming = 5_000_000;
+        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let fee = 1000;
+        let change = incoming - channel_amount - fee;
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx =
+            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+
+        let tx = funding_tx_from_ctx(&tx_ctx);
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        tx_ctx.ipaths[0] = vec![42, 42]; // bad input path
+
+        assert_invalid_argument_err!(
+            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            "get_wallet_key: bad child_path len : 2"
+        );
+    }
+
+    #[test]
+    fn sign_funding_tx_with_bad_output_path() {
+        let is_p2sh = false;
+        let node_ctx = funding_tx_node_ctx();
+        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
+        let mut tx_ctx = funding_tx_ctx();
+
+        let incoming = 5_000_000;
+        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let fee = 1000;
+        let change = incoming - channel_amount - fee;
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx =
+            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+
+        let tx = funding_tx_from_ctx(&tx_ctx);
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        tx_ctx.opaths[0] = vec![42, 42]; // bad output path
+
+        assert_invalid_argument_err!(
+            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            "policy failure: output[0]: wallet_can_spend error: \
+             status: InvalidArgument, message: \"get_wallet_key: bad child_path len : 2\""
+        );
+    }
+
+    #[test]
+    fn sign_funding_tx_with_bad_output_value() {
+        let is_p2sh = false;
+        let node_ctx = funding_tx_node_ctx();
+        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
+        let mut tx_ctx = funding_tx_ctx();
+
+        let incoming = 5_000_000;
+        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let fee = 1000;
+        let change = incoming - channel_amount - fee;
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx =
+            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+
+        let mut tx = funding_tx_from_ctx(&tx_ctx);
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        tx.output[1].value = 42; // bad output value
+
+        assert_invalid_argument_err!(
+            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            "policy failure: unknown output: status: InvalidArgument, message: \"channel with Outpoint f1eae74c7d684c0abafacd9da58234f754ab27fbeb6b357d9d8cfd822e740b43:1 not found\"");
+    }
+
+    #[test]
+    fn sign_funding_tx_with_bad_output_value2() {
+        let is_p2sh = false;
+        let node_ctx = funding_tx_node_ctx();
+        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
+        let mut tx_ctx = funding_tx_ctx();
+
+        let incoming = 5_000_000;
+        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let fee = 1000;
+        let change = incoming - channel_amount - fee;
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx =
+            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+
+        let mut tx = funding_tx_from_ctx(&tx_ctx);
+
+        tx.output[1].value = 42; // bad output value
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        assert_invalid_argument_err!(
+            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            "policy failure: funding output amount mismatch w/ channel: 42 != 3000000"
+        );
+    }
+
+    #[test]
+    fn sign_funding_tx_with_bad_output_script_pubkey() {
+        let is_p2sh = false;
+        let node_ctx = funding_tx_node_ctx();
+        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
+        let mut tx_ctx = funding_tx_ctx();
+
+        let incoming = 5_000_000;
+        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let fee = 1000;
+        let change = incoming - channel_amount - fee;
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx =
+            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+
+        let mut tx = funding_tx_from_ctx(&tx_ctx);
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        // very bogus script
+        tx.output[1].script_pubkey = Builder::new()
+            .push_opcode(opcodes::all::OP_PUSHBYTES_0)
+            .push_slice(&[27; 32])
+            .into_script();
+
+        assert_invalid_argument_err!(
+            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            "policy failure: unknown output: status: InvalidArgument, message: \"channel with Outpoint 81fe91f5705b1a893494726cc9019614aa108fd02809e9f23673c83ea6404bce:1 not found\"");
+    }
+
+    #[test]
+    fn sign_funding_tx_with_bad_output_script_pubkey2() {
+        let is_p2sh = false;
+        let node_ctx = funding_tx_node_ctx();
+        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
+        let mut tx_ctx = funding_tx_ctx();
+
+        let incoming = 5_000_000;
+        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let fee = 1000;
+        let change = incoming - channel_amount - fee;
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx =
+            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+
+        let mut tx = funding_tx_from_ctx(&tx_ctx);
+
+        // very bogus script
+        tx.output[1].script_pubkey = Builder::new()
+            .push_opcode(opcodes::all::OP_PUSHBYTES_0)
+            .push_slice(&[27; 32])
+            .into_script();
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        assert_invalid_argument_err!(
+            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            "policy failure: funding script_pubkey mismatch w/ channel: Script(OP_0 OP_PUSHBYTES_32 1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b) != Script(OP_0 OP_PUSHBYTES_32 7ac8486233edd675a9745d9eefd4386880312b3930a2195567b4b89220b5c833)");
     }
 
     #[test]

@@ -6,7 +6,7 @@ use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly, Signature};
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::Network;
-use bitcoin::{bech32, SigHashType};
+use bitcoin::{bech32, Script, SigHashType};
 
 fn hkdf_extract_expand(salt: &[u8], secret: &[u8], info: &[u8], output: &mut [u8]) {
     let mut hmac = HmacEngine::<BitcoinSha256>::new(salt);
@@ -224,6 +224,15 @@ pub fn payload_for_p2wpkh(key: &PublicKey) -> Payload {
     Payload::WitnessProgram {
         version: bech32::u5::try_from_u8(0).expect("0<32"),
         program: BitcoinHash160::from_engine(hash_engine)[..].to_vec(),
+    }
+}
+
+pub fn payload_for_p2wsh(script: &Script) -> Payload {
+    let mut hash_engine = BitcoinSha256::engine();
+    hash_engine.input(&script[..]);
+    Payload::WitnessProgram {
+        version: bech32::u5::try_from_u8(0).expect("0<32"),
+        program: BitcoinSha256::from_engine(hash_engine)[..].to_vec(),
     }
 }
 

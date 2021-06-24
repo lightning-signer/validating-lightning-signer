@@ -1,12 +1,16 @@
-use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
+use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
 
-use lightning::ln::chan_utils::{build_htlc_transaction, HTLCOutputInCommitment, TxCreationKeys};
+use lightning::chain::keysinterface::BaseSign;
+use lightning::ln::chan_utils::{
+    build_htlc_transaction, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
+};
 
-use crate::node::ChannelSetup;
+use crate::node::{ChannelSetup, ChannelSlot, Node};
 use crate::tx::tx::{
     parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
     CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT, HTLC_TIMEOUT_TX_WEIGHT,
 };
+use crate::util::crypto_utils::payload_for_p2wsh;
 use crate::util::enforcing_trait_impls::EnforcingSigner;
 
 use super::error::ValidationError::{self, Policy};
@@ -58,6 +62,14 @@ pub trait Validator {
 
     /// Validate channel open
     fn validate_channel_open(&self, setup: &ChannelSetup) -> Result<(), ValidationError>;
+
+    fn validate_funding_tx(
+        &self,
+        node: &Node,
+        state: &ValidatorState,
+        tx: &Transaction,
+        opaths: &Vec<Vec<u32>>,
+    ) -> Result<(), ValidationError>;
 }
 
 // BEGIN NOT TESTED
@@ -472,6 +484,67 @@ impl Validator for SimpleValidator {
             "holder_selected_contest_delay",
             setup.holder_selected_contest_delay as u32,
         )?;
+        Ok(())
+    }
+
+    fn validate_funding_tx(
+        &self,
+        node: &Node,
+        _state: &ValidatorState,
+        tx: &Transaction,
+        opaths: &Vec<Vec<u32>>,
+    ) -> Result<(), ValidationError> {
+        for outndx in 0..tx.output.len() {
+            let output = &tx.output[outndx];
+            let opath = &opaths[outndx];
+
+            // All outputs must either be wallet (change) or channel funding.
+            if opath.len() > 0 {
+                let spendable = node.wallet_can_spend(opath, output).map_err(|err| {
+                    Policy(format!(
+                        "output[{}]: wallet_can_spend error: {}",
+                        outndx, err
+                    ))
+                })?;
+                if !spendable {
+                    return Err(Policy(format!("wallet cannot spend output[{}]", outndx)));
+                }
+            } else {
+                let outpoint = OutPoint {
+                    txid: tx.txid(),
+                    vout: outndx as u32,
+                };
+                let slot = node
+                    .find_channel_with_funding_outpoint(&outpoint)
+                    .map_err(|err| Policy(format!("unknown output: {}", err)))?;
+                match &*slot.lock().unwrap() {
+                    ChannelSlot::Ready(chan) => {
+                        // policy-v1-funding-output-match-commitment
+                        if output.value != chan.setup.channel_value_sat {
+                            return Err(Policy(format!(
+                                "funding output amount mismatch w/ channel: {} != {}",
+                                output.value, chan.setup.channel_value_sat
+                            )));
+                        }
+
+                        // policy-v1-funding-output-scriptpubkey
+                        let funding_redeemscript = make_funding_redeemscript(
+                            &chan.keys.pubkeys().funding_pubkey,
+                            &chan.keys.counterparty_pubkeys().funding_pubkey,
+                        );
+                        let script_pubkey =
+                            payload_for_p2wsh(&funding_redeemscript).script_pubkey();
+                        if output.script_pubkey != script_pubkey {
+                            return Err(Policy(format!(
+                                "funding script_pubkey mismatch w/ channel: {} != {}",
+                                output.script_pubkey, script_pubkey
+                            )));
+                        }
+                    }
+                    _ => panic!("this can't happen"),
+                };
+            }
+        }
         Ok(())
     }
 }
