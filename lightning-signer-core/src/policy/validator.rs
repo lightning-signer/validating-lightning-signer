@@ -540,6 +540,13 @@ impl Validator for SimpleValidator {
                                 output.script_pubkey, script_pubkey
                             )));
                         }
+
+                        // policy-v1-funding-initial-commitment-countersigned
+                        if chan.keys.next_holder_commitment_number() != 1 {
+                            return Err(Policy(
+                                format!("initial holder commitment not validated",),
+                            ));
+                        }
                     }
                     _ => panic!("this can't happen"),
                 };

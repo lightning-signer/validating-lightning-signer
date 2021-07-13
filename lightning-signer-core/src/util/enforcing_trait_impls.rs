@@ -18,6 +18,8 @@ use lightning::util::ser::{Readable, Writeable, Writer};
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 use ln::msgs;
 
+use crate::policy::error::ValidationError;
+
 /// Enforces some rules on Sign calls. Eventually we will
 /// probably want to expose a variant of this which would essentially
 /// be what you'd want to run on a hardware wallet.
@@ -30,12 +32,14 @@ pub struct EnforcingSigner {
 #[derive(Clone, Debug)]
 pub struct EnforcementState {
     pub last_commitment_number: Option<u64>,
+    pub next_holder_commitment_number: u64,
 }
 
 impl EnforcingSigner {
     pub fn new(inner: InMemorySigner) -> Self {
         let state = EnforcementState {
             last_commitment_number: None,
+            next_holder_commitment_number: 0,
         };
         EnforcingSigner::new_with_state(inner, state)
     }
@@ -64,6 +68,23 @@ impl EnforcingSigner {
         self.state.lock().unwrap().last_commitment_number
     }
     // END NOT TESTED
+
+    pub fn next_holder_commitment_number(&self) -> u64 {
+        self.state.lock().unwrap().next_holder_commitment_number
+    }
+
+    pub fn set_next_holder_commitment_number(&self, num: u64) -> Result<(), ValidationError> {
+        let mut state = self.state.lock().unwrap();
+        let current = state.next_holder_commitment_number;
+        if num != current && num != current + 1 {
+            return Err(ValidationError::Policy(format!(
+                "invalid next_holder_commitment_number progression: {} to {}",
+                current, num
+            )));
+        }
+        state.next_holder_commitment_number = num;
+        Ok(())
+    }
 }
 
 impl EnforcingSigner {
@@ -262,8 +283,9 @@ impl BaseSign for EnforcingSigner {
 impl Writeable for EnforcingSigner {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), IOError> {
         self.inner.write(writer)?;
-        let last = self.state.lock().unwrap().last_commitment_number;
-        last.write(writer)?;
+        let state = self.state.lock().unwrap();
+        state.last_commitment_number.write(writer)?;
+        state.next_holder_commitment_number.write(writer)?;
         Ok(())
     }
 }
@@ -273,8 +295,10 @@ impl Readable for EnforcingSigner {
     fn read<R: IORead>(reader: &mut R) -> Result<Self, DecodeError> {
         let inner = Readable::read(reader)?;
         let last = Readable::read(reader)?;
+        let next_holder_commitment_number = Readable::read(reader)?;
         let state = EnforcementState {
             last_commitment_number: last,
+            next_holder_commitment_number,
         };
         Ok(EnforcingSigner {
             inner,

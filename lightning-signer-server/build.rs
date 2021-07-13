@@ -66,6 +66,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "SignCounterpartyCommitmentTxRequest.payment_hashes",
             "#[serde(serialize_with = \"crate::util::as_hex_vec\")]",
         )
+        .field_attribute(
+            "ValidateHolderCommitmentTxRequest.payment_hashes",
+            "#[serde(serialize_with = \"crate::util::as_hex_vec\")]",
+        )
+        .field_attribute(
+            "SignHolderCommitmentTxRequest.payment_hashes",
+            "#[serde(serialize_with = \"crate::util::as_hex_vec\")]",
+        )
         .out_dir("src/server")
         .compile(&["src/server/remotesigner.proto"], &["src/server"])?;
     Ok(())

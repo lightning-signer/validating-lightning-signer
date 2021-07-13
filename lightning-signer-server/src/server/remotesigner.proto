@@ -101,6 +101,21 @@ service Signer {
   rpc SignCounterpartyCommitmentTxPhase2 (SignCounterpartyCommitmentTxPhase2Request)
     returns (CommitmentTxSignatureReply);
 
+  // BOLT #3 - Commitment Transaction and attached HTLCs
+  // Validate the counterparty's commitment and HTLC signatures when
+  // commitment_signed received.  Returns the next
+  // per_commitment_point and the holder's revocation secret for the
+  // prior commitment.  This method advances the expected next
+  // commitment number in the signer's state.
+  rpc ValidateHolderCommitmentTx (ValidateHolderCommitmentTxRequest)
+    returns (ValidateHolderCommitmentTxReply);
+
+  // BOLT #2 Validate the counterparty's per_commitment_secret from
+  // the revoke_and_ack message.
+  // TODO - describe the signer state change when this method is invoked.
+  rpc ValidateCounterpartyRevocation (ValidateCounterpartyRevocationRequest)
+    returns (ValidateCounterpartyRevocationReply);
+  
   // BOLT #3 - Commitment Transaction, , phase 1
   // Sign the holder's commitment tx, at force-close time.  No further
   // commitments can be signed on this channel.  The commitment must
@@ -402,6 +417,52 @@ message SignCounterpartyCommitmentTxRequest {
   // These are needed in addition to the tx to recompose.
   repeated bytes payment_hashes = 5;
   uint64 commit_num = 6;
+}
+
+// Validate the counterparty's signatures
+message ValidateHolderCommitmentTxRequest {
+  NodeId node_id = 1;
+
+  ChannelNonce channel_nonce = 2;
+
+  Transaction tx = 3;
+
+  // These are needed in addition to the tx to recompose.
+  uint64 commit_num = 5;
+  uint32 feerate_sat_per_kw = 6;
+  repeated HTLCInfo offered_htlcs = 10;
+  repeated HTLCInfo received_htlcs = 11;
+
+  // These signatures for the holder's commitment are provided by the
+  // channel peer in the BOLT #2 commitment_signed message.
+  BitcoinSignature commit_signature = 20;
+  repeated BitcoinSignature htlc_signatures = 21;
+}
+
+message ValidateHolderCommitmentTxReply {
+  PubKey next_per_commitment_point = 1;
+
+  // The revocation of the secret of the n-2 commitment, or None if n < 2
+  Secret old_secret = 2;
+}
+
+// Validate the counterparty's revealed per_commitment_secret.
+message ValidateCounterpartyRevocationRequest {
+  NodeId node_id = 1;
+  
+  ChannelNonce channel_nonce = 2;
+
+  // The commitment number of the counterparty commitment that the
+  // old_secret applied to.  This is generally two less than the
+  // expected next counterparty commitment number.
+  // TODO - confirm that this interpretation of commit_num works for
+  // the first call; commit_num can't be negative.
+  uint64 commit_num = 3;
+
+  Secret old_secret = 4;
+}
+
+message ValidateCounterpartyRevocationReply {
 }
 
 // Force close a channel by signing a holder commitment tx.  The
