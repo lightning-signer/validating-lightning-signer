@@ -29,7 +29,7 @@ use super::remotesigner;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::signer::multi_signer::{channel_nonce_to_id, MultiSigner};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
-use lightning_signer::util::crypto_utils::signature_to_bitcoin_vec;
+use lightning_signer::util::crypto_utils::{bitcoin_vec_to_signature, signature_to_bitcoin_vec};
 use lightning_signer::util::debug_utils::DebugBytes;
 use lightning_signer::util::status;
 use std::sync::Arc;
@@ -806,6 +806,115 @@ impl Signer for SignServer {
         );
         log_debug!(self, "reply={}", json!(reply));
         Ok(Response::new(reply))
+    }
+
+    async fn validate_holder_commitment_tx(
+        &self,
+        request: Request<ValidateHolderCommitmentTxRequest>,
+    ) -> Result<Response<ValidateHolderCommitmentTxReply>, Status> {
+        let req = request.into_inner();
+        log_debug!(self, "req={}", json!(&req));
+        let node_id = self.node_id(req.node_id.clone())?;
+        let channel_id = self.channel_id(&req.channel_nonce)?;
+        log_info!(
+            self,
+            "ENTER validate_holder_commitment_tx({}/{})",
+            node_id,
+            channel_id
+        );
+
+        let reqtx = req
+            .tx
+            .clone()
+            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+
+        let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
+            .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
+
+        if tx.input.len() != 1 {
+            return Err(self.invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
+        }
+        if tx.output.len() == 0 {
+            return Err(self.invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
+        }
+
+        let witscripts = reqtx
+            .output_descs
+            .iter()
+            .map(|odsc| odsc.witscript.clone())
+            .collect();
+
+        let offered_htlcs = self.convert_htlcs(&req.offered_htlcs)?;
+        let received_htlcs = self.convert_htlcs(&req.received_htlcs)?;
+
+        let commit_sig = bitcoin_vec_to_signature(
+            &req.commit_signature
+                .ok_or_else(|| self.invalid_grpc_argument("missing commit_signature"))?
+                .data,
+        )
+        .map_err(|err| {
+            self.invalid_grpc_argument(format!("trouble in bitcoin_vec_to_signature: {}", err))
+        })?;
+        let htlc_sigs = req
+            .htlc_signatures
+            .iter()
+            .map(|sig| {
+                bitcoin_vec_to_signature(&sig.data).map_err(|err| {
+                    self.internal_error(format!("bitcoin_vec_to_signature trouble: {}", err))
+                })
+            })
+            .collect::<Result<Vec<_>, Status>>()?;
+        let commit_num = req.commit_num;
+        let feerate_sat_per_kw = req.feerate_sat_per_kw;
+        let (next_per_commitment_point, old_secret) =
+            self.signer
+                .with_ready_channel(&node_id, &channel_id, |chan| {
+                    chan.validate_holder_commitment_tx(
+                        &tx,
+                        &witscripts,
+                        commit_num,
+                        feerate_sat_per_kw,
+                        offered_htlcs.clone(),
+                        received_htlcs.clone(),
+                        &commit_sig,
+                        &htlc_sigs,
+                    )
+                })?;
+
+        let pointdata = next_per_commitment_point.serialize().to_vec();
+        let old_secret_data: Option<Vec<u8>> = old_secret.map(|s| s[..].to_vec());
+        let old_secret_reply = old_secret_data.clone().map(|s| Secret { data: s.clone() });
+        let reply = ValidateHolderCommitmentTxReply {
+            next_per_commitment_point: Some(PubKey {
+                data: pointdata.clone(),
+            }),
+            old_secret: old_secret_reply,
+        };
+        log_info!(
+            self,
+            "REPLY validate_holder_commitment_tx({}/{})",
+            node_id,
+            channel_id
+        );
+        log_debug!(self, "reply={}", json!(reply));
+        Ok(Response::new(reply))
+    }
+
+    async fn validate_counterparty_revocation(
+        &self,
+        request: Request<ValidateCounterpartyRevocationRequest>,
+    ) -> Result<Response<ValidateCounterpartyRevocationReply>, Status> {
+        let req = request.into_inner();
+        log_debug!(self, "req={}", json!(&req));
+        let node_id = self.node_id(req.node_id.clone())?;
+        let channel_id = self.channel_id(&req.channel_nonce)?;
+        log_info!(
+            self,
+            "ENTER validate_counterparty_revocation({}/{})",
+            node_id,
+            channel_id
+        );
+        return Err(self.internal_error("validate_counterparty_revocation UNIMPLEMENTED"));
     }
 
     async fn sign_holder_commitment_tx(

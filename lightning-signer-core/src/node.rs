@@ -22,21 +22,24 @@ use lightning::chain::keysinterface::{
     BaseSign, InMemorySigner, KeysInterface, SpendableOutputDescriptor,
 };
 use lightning::ln::chan_utils::{
-    derive_private_key, make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters,
-    CommitmentTransaction, CounterpartyChannelTransactionParameters, HTLCOutputInCommitment,
-    HolderCommitmentTransaction, TxCreationKeys,
+    build_htlc_transaction, derive_private_key, get_htlc_redeemscript, make_funding_redeemscript,
+    ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction,
+    CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
+    TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
 
 use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
-use crate::policy::error::ValidationError;
-use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
+use crate::policy::error::ValidationError::{self, Policy};
+use crate::policy::validator::{
+    SimpleValidatorFactory, Validator, ValidatorFactory, ValidatorState,
+};
 use crate::signer::multi_signer::{SpendType, SyncLogger};
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::tx::tx::{
     build_close_tx, build_commitment_tx, get_commitment_transaction_number_obscure_factor,
-    sign_commitment, CommitmentInfo2, HTLCInfo, HTLCInfo2,
+    sign_commitment, CommitmentInfo, CommitmentInfo2, HTLCInfo, HTLCInfo2,
 };
 use crate::util::crypto_utils::{
     derive_private_revocation_key, derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh,
@@ -643,7 +646,7 @@ impl Channel {
         )
     }
 
-    fn htlcs_info2_to_oic(
+    pub(crate) fn htlcs_info2_to_oic(
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Vec<HTLCOutputInCommitment> {
@@ -1044,18 +1047,7 @@ impl Channel {
             htlcs,
         );
 
-        let funding_redeemscript = make_funding_redeemscript(
-            &self.keys.pubkeys().funding_pubkey,
-            &self.keys.counterparty_pubkeys().funding_pubkey,
-        );
-        let original_tx_sighash =
-            tx.signature_hash(0, &funding_redeemscript, SigHashType::All as u32);
-        let recomposed_tx_sighash = recomposed_tx
-            .trust()
-            .built_transaction()
-            .transaction
-            .signature_hash(0, &funding_redeemscript, SigHashType::All as u32);
-        if recomposed_tx_sighash != original_tx_sighash {
+        if recomposed_tx.trust().built_transaction().transaction != *tx {
             // BEGIN NOT TESTED
             log_debug!(self, "ORIGINAL_TX={:#?}", &tx);
             log_debug!(
@@ -1063,13 +1055,13 @@ impl Channel {
                 "RECOMPOSED_TX={:#?}",
                 &recomposed_tx.trust().built_transaction().transaction
             );
-            return Err(
-                self.validation_error(ValidationError::Policy("sighash mismatch".to_string()))
-            );
+            return Err(self.validation_error(ValidationError::Policy(
+                "recomposed tx mismatch".to_string(),
+            )));
             // END NOT TESTED
         }
 
-        // The sighash comparison in the previous block will fail if any of the
+        // The comparison in the previous block will fail if any of the
         // following policies are violated:
         // - policy-v1-commitment-version
         // - policy-v1-commitment-locktime
@@ -1110,13 +1102,17 @@ impl Channel {
         Ok(htlcs2)
     }
 
-    pub fn sign_holder_commitment_tx(
+    // This routine can be replaced with
+    // make_recomposed_holder_commitment_tx_improved below when we
+    // upgrade the sign_holder_commitment_tx signature to have real
+    // HTLCInfo instead of just the payment_hashmap workaround.
+    fn make_recomposed_holder_commitment_tx(
         &self,
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
         payment_hashmap: &Map<[u8; 20], PaymentHash>,
         commitment_number: u64,
-    ) -> Result<Signature, Status> {
+    ) -> Result<CommitmentTransaction, Status> {
         // Set the feerate_per_kw to 0 because it is only used to
         // generate the htlc success/timeout tx signatures and these
         // signatures are discarded.
@@ -1155,6 +1151,80 @@ impl Channel {
         let offered_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.offered_htlcs)?;
         let received_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.received_htlcs)?;
 
+        self.make_recomposed_holder_commitment_tx_common(
+            tx,
+            commitment_number,
+            feerate_per_kw,
+            offered_htlcs,
+            received_htlcs,
+            validator,
+            info,
+        )
+    }
+
+    // This version is better because:
+    // 1. It has full HTLCInfo2 information (payment_hash and offerer cltv_expiry).
+    // 2, It has a real feerate_per_kw.
+    fn make_recomposed_holder_commitment_tx_improved(
+        &self,
+        tx: &bitcoin::Transaction,
+        output_witscripts: &Vec<Vec<u8>>,
+        commitment_number: u64,
+        feerate_per_kw: u32,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
+    ) -> Result<CommitmentTransaction, Status> {
+        if tx.output.len() != output_witscripts.len() {
+            // BEGIN NOT TESTED
+            return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
+            // END NOT TESTED
+        }
+
+        let validator = self
+            .node
+            .upgrade()
+            .unwrap()
+            .validator_factory
+            .make_validator(self.network(), &self.logger);
+
+        // Since we didn't have the value at the real open, validate it now.
+        validator
+            .validate_channel_open(&self.setup)
+            .map_err(|ve| self.validation_error(ve))?;
+
+        // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
+        let is_counterparty = false;
+        let info = validator
+            .make_info(
+                &self.keys,
+                &self.setup,
+                is_counterparty,
+                tx,
+                output_witscripts,
+            )
+            .map_err(|err| self.validation_error(err))?;
+
+        self.make_recomposed_holder_commitment_tx_common(
+            tx,
+            commitment_number,
+            feerate_per_kw,
+            offered_htlcs,
+            received_htlcs,
+            validator,
+            info,
+        )
+    }
+
+    fn make_recomposed_holder_commitment_tx_common(
+        &self,
+        tx: &bitcoin::Transaction,
+        commitment_number: u64,
+        feerate_per_kw: u32,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
+        validator: Box<dyn Validator>,
+        info: CommitmentInfo,
+    ) -> Result<CommitmentTransaction, Status> {
         let info2 = self.build_holder_commitment_info(
             &self.get_per_commitment_point(commitment_number),
             info.to_broadcaster_value_sat,
@@ -1183,6 +1253,187 @@ impl Channel {
 
         let htlcs = Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
 
+        let recomposed_tx = self.make_holder_commitment_tx(
+            commitment_number,
+            feerate_per_kw,
+            info.to_broadcaster_value_sat,
+            info.to_countersigner_value_sat,
+            htlcs.clone(),
+        );
+
+        if recomposed_tx.trust().built_transaction().transaction != *tx {
+            // BEGIN NOT TESTED
+            log_debug!(self, "ORIGINAL_TX={:#?}", &tx);
+            log_debug!(
+                self,
+                "RECOMPOSED_TX={:#?}",
+                &recomposed_tx.trust().built_transaction().transaction
+            );
+            return Err(self.validation_error(ValidationError::Policy(
+                "recomposed tx mismatch".to_string(),
+            )));
+            // END NOT TESTED
+        }
+
+        // The comparison in the previous block will fail if any of the
+        // following policies are violated:
+        // - policy-v1-commitment-version
+        // - policy-v1-commitment-locktime
+        // - policy-v1-commitment-nsequence
+        // - policy-v1-commitment-input-single
+        // - policy-v1-commitment-input-match-funding
+        // - policy-v1-commitment-revocation-pubkey
+        // - policy-v1-commitment-htlc-pubkey
+        // - policy-v1-commitment-delayed-pubkey
+
+        Ok(recomposed_tx)
+    }
+
+    /// Validate the counterparty's signatures on the holder's
+    /// commitment and HTLCs when the commitment_signed message is
+    /// received.  Returns the next per_commitment_point and the
+    /// holder's revocation secret for the prior commitment.  This
+    /// method advances the expected next holder commitment number in
+    /// the signer's state.
+    pub fn validate_holder_commitment_tx(
+        &self,
+        tx: &bitcoin::Transaction,
+        output_witscripts: &Vec<Vec<u8>>,
+        commitment_number: u64,
+        feerate_per_kw: u32,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
+        counterparty_commit_sig: &Signature,
+        counterparty_htlc_sigs: &Vec<Signature>,
+    ) -> Result<(PublicKey, Option<SecretKey>), Status> {
+        let recomposed_tx = self.make_recomposed_holder_commitment_tx_improved(
+            tx,
+            output_witscripts,
+            commitment_number,
+            feerate_per_kw,
+            offered_htlcs,
+            received_htlcs,
+        )?;
+
+        let redeemscript = make_funding_redeemscript(
+            &self.keys.pubkeys().funding_pubkey,
+            &self.setup.counterparty_points.funding_pubkey,
+        );
+
+        let sig_hash_type = if self.setup.option_anchor_outputs() {
+            SigHashType::SinglePlusAnyoneCanPay
+        } else {
+            SigHashType::All
+        };
+
+        let sighash = Message::from_slice(
+            &SigHashCache::new(&recomposed_tx.trust().built_transaction().transaction)
+                .signature_hash(
+                    0,
+                    &redeemscript,
+                    self.setup.channel_value_sat,
+                    sig_hash_type,
+                )[..],
+        )
+        .map_err(|ve| self.invalid_argument(format!("sighash failed: {}", ve)))?;
+
+        let secp_ctx = Secp256k1::new();
+        secp_ctx
+            .verify(
+                &sighash,
+                &counterparty_commit_sig,
+                &self.setup.counterparty_points.funding_pubkey,
+            )
+            .map_err(|ve| {
+                self.validation_error(Policy(format!("commit sig verify failed: {}", ve)))
+            })?;
+
+        let per_commitment_point = self.get_per_commitment_point(commitment_number);
+        let txkeys = self
+            .make_holder_tx_keys(&per_commitment_point)
+            .map_err(|err| self.internal_error(format!("make_holder_tx_keys failed: {}", err)))?;
+        let commitment_txid = recomposed_tx.trust().txid();
+        let to_self_delay = self.setup.counterparty_selected_contest_delay;
+
+        let htlc_pubkey = derive_public_key(
+            &secp_ctx,
+            &per_commitment_point,
+            &self.keys.counterparty_pubkeys().htlc_basepoint,
+        )
+        .map_err(|err| self.internal_error(format!("derive_public_key failed: {}", err)))?;
+
+        for ndx in 0..recomposed_tx.htlcs().len() {
+            let htlc = &recomposed_tx.htlcs()[ndx];
+
+            let htlc_redeemscript = get_htlc_redeemscript(htlc, &txkeys);
+
+            let recomposed_htlc_tx = build_htlc_transaction(
+                &commitment_txid,
+                feerate_per_kw,
+                to_self_delay,
+                htlc,
+                &txkeys.broadcaster_delayed_payment_key,
+                &txkeys.revocation_key,
+            );
+
+            let recomposed_tx_sighash = Message::from_slice(
+                &SigHashCache::new(&recomposed_htlc_tx).signature_hash(
+                    0,
+                    &htlc_redeemscript,
+                    htlc.amount_msat / 1000,
+                    SigHashType::All,
+                )[..],
+            )
+            .map_err(|err| {
+                self.invalid_argument(format!("sighash failed for htlc {}: {}", ndx, err))
+            })?;
+
+            secp_ctx
+                .verify(
+                    &recomposed_tx_sighash,
+                    &counterparty_htlc_sigs[ndx],
+                    &htlc_pubkey,
+                )
+                .map_err(|err| {
+                    self.validation_error(Policy(format!(
+                        "commit sig verify failed for htlc {}: {}",
+                        ndx, err
+                    )))
+                })?;
+        }
+
+        // Advance the local commitment number state.
+        self.keys
+            .set_next_holder_commitment_number(commitment_number + 1)
+            .map_err(|ve| self.validation_error(ve))?;
+
+        self.persist()?;
+
+        Ok((
+            self.get_per_commitment_point(commitment_number + 1),
+            if commitment_number >= 1 {
+                Some(self.get_per_commitment_secret(commitment_number - 1))
+            } else {
+                None
+            },
+        ))
+    }
+
+    pub fn sign_holder_commitment_tx(
+        &self,
+        tx: &bitcoin::Transaction,
+        output_witscripts: &Vec<Vec<u8>>,
+        payment_hashmap: &Map<[u8; 20], PaymentHash>,
+        commitment_number: u64,
+    ) -> Result<Signature, Status> {
+        let recomposed_tx = self.make_recomposed_holder_commitment_tx(
+            tx,
+            output_witscripts,
+            payment_hashmap,
+            commitment_number,
+        )?;
+        let htlcs = recomposed_tx.htlcs();
+
         // We provide a dummy signature for the remote, since we don't require that sig
         // to be passed in to this call.  It would have been better if HolderCommitmentTransaction
         // didn't require the remote sig.
@@ -1194,39 +1445,6 @@ impl Channel {
         let mut htlc_dummy_sigs = Vec::with_capacity(htlcs.len());
         htlc_dummy_sigs.resize(htlcs.len(), dummy_sig);
 
-        let recomposed_tx = self.make_holder_commitment_tx(
-            commitment_number,
-            feerate_per_kw,
-            info.to_broadcaster_value_sat,
-            info.to_countersigner_value_sat,
-            htlcs,
-        );
-
-        let funding_redeemscript = make_funding_redeemscript(
-            &self.keys.pubkeys().funding_pubkey,
-            &self.keys.counterparty_pubkeys().funding_pubkey,
-        );
-        let original_tx_sighash =
-            tx.signature_hash(0, &funding_redeemscript, SigHashType::All as u32);
-        let recomposed_tx_sighash = recomposed_tx
-            .trust()
-            .built_transaction()
-            .transaction
-            .signature_hash(0, &funding_redeemscript, SigHashType::All as u32);
-        if recomposed_tx_sighash != original_tx_sighash {
-            // BEGIN NOT TESTED
-            log_debug!(self, "ORIGINAL_TX={:#?}", &tx);
-            log_debug!(
-                self,
-                "RECOMPOSED_TX={:#?}",
-                &recomposed_tx.trust().built_transaction().transaction
-            );
-            return Err(
-                self.validation_error(ValidationError::Policy("sighash mismatch".to_string()))
-            );
-            // END NOT TESTED
-        }
-
         // Holder commitments need an extra wrapper for the LDK signature routine.
         let recomposed_holder_tx = HolderCommitmentTransaction::new(
             recomposed_tx,
@@ -1235,17 +1453,6 @@ impl Channel {
             &self.keys.pubkeys().funding_pubkey,
             &self.keys.counterparty_pubkeys().funding_pubkey,
         );
-
-        // The sighash comparison in the previous block will fail if any of the
-        // following policies are violated:
-        // - policy-v1-commitment-version
-        // - policy-v1-commitment-locktime
-        // - policy-v1-commitment-nsequence
-        // - policy-v1-commitment-input-single
-        // - policy-v1-commitment-input-match-funding
-        // - policy-v1-commitment-revocation-pubkey
-        // - policy-v1-commitment-htlc-pubkey
-        // - policy-v1-commitment-delayed-pubkey
 
         // Sign the recomposed commitment.
         let sigs = self

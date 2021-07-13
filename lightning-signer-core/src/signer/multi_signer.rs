@@ -296,10 +296,10 @@ mod tests {
     use crate::util::test_utils::*;
     use crate::util::test_utils::{
         funding_tx_add_channel_outpoint, funding_tx_add_unknown_output,
-        funding_tx_add_wallet_input, funding_tx_add_wallet_output, funding_tx_chan_ctx,
-        funding_tx_ctx, funding_tx_from_ctx, funding_tx_node_ctx, funding_tx_ready_channel,
-        funding_tx_sign, funding_tx_validate_sig, init_node, init_node_and_channel,
-        make_test_channel_setup, make_test_counterparty_points, TEST_SEED,
+        funding_tx_add_wallet_input, funding_tx_add_wallet_output, funding_tx_from_ctx,
+        funding_tx_ready_channel, funding_tx_sign, funding_tx_validate_sig, init_node,
+        init_node_and_channel, make_test_channel_setup, make_test_counterparty_points,
+        test_chan_ctx, test_funding_tx_ctx, test_node_ctx, TEST_SEED,
     };
 
     use super::*;
@@ -1915,26 +1915,50 @@ mod tests {
     }
 
     fn sign_funding_tx_with_output_and_change(is_p2sh: bool) {
-        let node_ctx = funding_tx_node_ctx();
-        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
-        let mut tx_ctx = funding_tx_ctx();
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
 
         let incoming = 5_000_000;
-        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let channel_amount = 3_000_000;
         let fee = 1000;
         let change = incoming - channel_amount - fee;
 
+        let mut chan_ctx = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount);
+        let mut tx_ctx = test_funding_tx_ctx();
+
         funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut tx_ctx,
+            channel_amount,
+        );
 
         let mut tx = funding_tx_from_ctx(&tx_ctx);
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
+        let mut commit_tx_ctx = channel_initial_commitment(&chan_ctx);
+        let (csig, hsigs) = counterparty_sign_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut commit_tx_ctx,
+        );
+        validate_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &commit_tx_ctx,
+            &csig,
+            &hsigs,
+        )
+        .expect("valid holder commitment");
+
         let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
-        funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+        funding_tx_validate_sig(&sign_ctx, &node_ctx, &tx_ctx, &mut tx, &witvec);
     }
 
     #[test]
@@ -1950,108 +1974,275 @@ mod tests {
     #[test]
     fn sign_funding_tx_with_multiple_wallet_inputs() {
         let is_p2sh = false;
-        let node_ctx = funding_tx_node_ctx();
-        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
-        let mut tx_ctx = funding_tx_ctx();
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
 
         let incoming0 = 2_000_000;
         let incoming1 = 3_000_000;
-        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let channel_amount = 3_000_000;
         let fee = 1000;
         let change = incoming0 + incoming1 - channel_amount - fee;
+
+        let mut chan_ctx = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount);
+        let mut tx_ctx = test_funding_tx_ctx();
 
         funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming0);
         funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 2, incoming0);
 
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut tx_ctx,
+            channel_amount,
+        );
 
         let mut tx = funding_tx_from_ctx(&tx_ctx);
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
+        let mut commit_tx_ctx = channel_initial_commitment(&chan_ctx);
+        let (csig, hsigs) = counterparty_sign_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut commit_tx_ctx,
+        );
+        validate_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &commit_tx_ctx,
+            &csig,
+            &hsigs,
+        )
+        .expect("valid holder commitment");
+
         let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
-        funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+        funding_tx_validate_sig(&sign_ctx, &node_ctx, &tx_ctx, &mut tx, &witvec);
     }
 
     #[test]
     fn sign_funding_tx_with_output_and_multiple_change() {
         let is_p2sh = false;
-        let node_ctx = funding_tx_node_ctx();
-        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
-        let mut tx_ctx = funding_tx_ctx();
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
 
         let incoming = 5_000_000;
-        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let channel_amount = 3_000_000;
         let fee = 1000;
         let change0 = 1_000_000;
         let change1 = incoming - channel_amount - fee - change0;
 
+        let mut chan_ctx = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount);
+        let mut tx_ctx = test_funding_tx_ctx();
+
         funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change0);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change1);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change0);
+        funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change1);
+        let outpoint_ndx = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut tx_ctx,
+            channel_amount,
+        );
 
         let mut tx = funding_tx_from_ctx(&tx_ctx);
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
+        let mut commit_tx_ctx = channel_initial_commitment(&chan_ctx);
+        let (csig, hsigs) = counterparty_sign_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut commit_tx_ctx,
+        );
+        validate_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &commit_tx_ctx,
+            &csig,
+            &hsigs,
+        )
+        .expect("valid holder commitment");
+
         let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
-        funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+        funding_tx_validate_sig(&sign_ctx, &node_ctx, &tx_ctx, &mut tx, &witvec);
     }
 
     #[test]
     fn sign_funding_tx_with_multiple_outputs_and_change() {
         let is_p2sh = false;
-        let node_ctx = funding_tx_node_ctx();
-        let mut chan_ctx0 = funding_tx_chan_ctx(&node_ctx, 1);
-        let mut chan_ctx1 = funding_tx_chan_ctx(&node_ctx, 2);
-        let mut tx_ctx = funding_tx_ctx();
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
 
         let incoming = 10_000_000;
-        let channel_amount0 = chan_ctx0.setup.channel_value_sat;
-        let channel_amount1 = chan_ctx1.setup.channel_value_sat;
+        let channel_amount0 = 3_000_000;
+        let channel_amount1 = 4_000_000;
         let fee = 1000;
         let change = incoming - channel_amount0 - channel_amount1 - fee;
 
+        let mut chan_ctx0 = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount0);
+        let mut chan_ctx1 = test_chan_ctx(&sign_ctx, &node_ctx, 2, channel_amount1);
+        let mut tx_ctx = test_funding_tx_ctx();
+
         funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change);
 
-        let outpoint_ndx0 =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx0, &mut tx_ctx, channel_amount0);
+        let outpoint_ndx0 = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx0,
+            &mut tx_ctx,
+            channel_amount0,
+        );
 
-        let outpoint_ndx1 =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx1, &mut tx_ctx, channel_amount1);
+        let outpoint_ndx1 = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx1,
+            &mut tx_ctx,
+            channel_amount1,
+        );
 
         let mut tx = funding_tx_from_ctx(&tx_ctx);
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
 
+        let mut commit_tx_ctx0 = channel_initial_commitment(&chan_ctx0);
+        let (csig0, hsigs0) = counterparty_sign_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx0,
+            &mut commit_tx_ctx0,
+        );
+        validate_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx0,
+            &commit_tx_ctx0,
+            &csig0,
+            &hsigs0,
+        )
+        .expect("valid holder commitment");
+
+        let mut commit_tx_ctx1 = channel_initial_commitment(&chan_ctx1);
+        let (csig1, hsigs1) = counterparty_sign_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx1,
+            &mut commit_tx_ctx1,
+        );
+        validate_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx1,
+            &commit_tx_ctx1,
+            &csig1,
+            &hsigs1,
+        )
+        .expect("valid holder commitment");
+
         let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
-        funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+        funding_tx_validate_sig(&sign_ctx, &node_ctx, &tx_ctx, &mut tx, &witvec);
+    }
+
+    // policy-v1-funding-initial-commitment-countersigned
+    #[test]
+    fn sign_funding_tx_with_missing_initial_commitment_validation() {
+        let is_p2sh = false;
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
+
+        let incoming = 10_000_000;
+        let channel_amount0 = 3_000_000;
+        let channel_amount1 = 4_000_000;
+        let fee = 1000;
+        let change = incoming - channel_amount0 - channel_amount1 - fee;
+
+        let mut chan_ctx0 = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount0);
+        let mut chan_ctx1 = test_chan_ctx(&sign_ctx, &node_ctx, 2, channel_amount1);
+        let mut tx_ctx = test_funding_tx_ctx();
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+        funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+
+        let outpoint_ndx0 = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx0,
+            &mut tx_ctx,
+            channel_amount0,
+        );
+
+        let outpoint_ndx1 = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx1,
+            &mut tx_ctx,
+            channel_amount1,
+        );
+
+        let tx = funding_tx_from_ctx(&tx_ctx);
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
+
+        let mut commit_tx_ctx0 = channel_initial_commitment(&chan_ctx0);
+        let (csig0, hsigs0) = counterparty_sign_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx0,
+            &mut commit_tx_ctx0,
+        );
+        validate_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx0,
+            &commit_tx_ctx0,
+            &csig0,
+            &hsigs0,
+        )
+        .expect("valid holder commitment");
+
+        // Don't validate the second channel's holder commitment.
+
+        assert_invalid_argument_err!(
+            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            "policy failure: initial holder commitment not validated"
+        );
     }
 
     #[test]
     fn sign_funding_tx_with_unknown_output() {
         let is_p2sh = false;
-        let node_ctx = funding_tx_node_ctx();
-        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
-        let mut tx_ctx = funding_tx_ctx();
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
 
         let incoming = 5_000_000;
-        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let channel_amount = 3_000_000;
         let unknown = 500_000;
         let fee = 1000;
         let change = incoming - channel_amount - unknown - fee;
 
+        let mut chan_ctx = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount);
+        let mut tx_ctx = test_funding_tx_ctx();
+
         funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
-        funding_tx_add_unknown_output(&node_ctx, &mut tx_ctx, is_p2sh, 42, unknown);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        funding_tx_add_unknown_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 42, unknown);
+        let outpoint_ndx = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut tx_ctx,
+            channel_amount,
+        );
 
         let tx = funding_tx_from_ctx(&tx_ctx);
 
@@ -2065,23 +2256,47 @@ mod tests {
     #[test]
     fn sign_funding_tx_with_bad_input_path() {
         let is_p2sh = false;
-        let node_ctx = funding_tx_node_ctx();
-        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
-        let mut tx_ctx = funding_tx_ctx();
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
 
         let incoming = 5_000_000;
-        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let channel_amount = 3_000_000;
         let fee = 1000;
         let change = incoming - channel_amount - fee;
 
+        let mut chan_ctx = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount);
+        let mut tx_ctx = test_funding_tx_ctx();
+
         funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut tx_ctx,
+            channel_amount,
+        );
 
         let tx = funding_tx_from_ctx(&tx_ctx);
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        let mut commit_tx_ctx = channel_initial_commitment(&chan_ctx);
+        let (csig, hsigs) = counterparty_sign_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut commit_tx_ctx,
+        );
+        validate_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &commit_tx_ctx,
+            &csig,
+            &hsigs,
+        )
+        .expect("valid holder commitment");
 
         tx_ctx.ipaths[0] = vec![42, 42]; // bad input path
 
@@ -2094,19 +2309,26 @@ mod tests {
     #[test]
     fn sign_funding_tx_with_bad_output_path() {
         let is_p2sh = false;
-        let node_ctx = funding_tx_node_ctx();
-        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
-        let mut tx_ctx = funding_tx_ctx();
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
 
         let incoming = 5_000_000;
-        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let channel_amount = 3_000_000;
         let fee = 1000;
         let change = incoming - channel_amount - fee;
 
+        let mut chan_ctx = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount);
+        let mut tx_ctx = test_funding_tx_ctx();
+
         funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut tx_ctx,
+            channel_amount,
+        );
 
         let tx = funding_tx_from_ctx(&tx_ctx);
 
@@ -2124,19 +2346,26 @@ mod tests {
     #[test]
     fn sign_funding_tx_with_bad_output_value() {
         let is_p2sh = false;
-        let node_ctx = funding_tx_node_ctx();
-        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
-        let mut tx_ctx = funding_tx_ctx();
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
 
         let incoming = 5_000_000;
-        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let channel_amount = 3_000_000;
         let fee = 1000;
         let change = incoming - channel_amount - fee;
 
+        let mut chan_ctx = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount);
+        let mut tx_ctx = test_funding_tx_ctx();
+
         funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut tx_ctx,
+            channel_amount,
+        );
 
         let mut tx = funding_tx_from_ctx(&tx_ctx);
 
@@ -2152,19 +2381,26 @@ mod tests {
     #[test]
     fn sign_funding_tx_with_bad_output_value2() {
         let is_p2sh = false;
-        let node_ctx = funding_tx_node_ctx();
-        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
-        let mut tx_ctx = funding_tx_ctx();
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
 
         let incoming = 5_000_000;
-        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let channel_amount = 3_000_000;
         let fee = 1000;
         let change = incoming - channel_amount - fee;
 
+        let mut chan_ctx = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount);
+        let mut tx_ctx = test_funding_tx_ctx();
+
         funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut tx_ctx,
+            channel_amount,
+        );
 
         let mut tx = funding_tx_from_ctx(&tx_ctx);
 
@@ -2181,19 +2417,26 @@ mod tests {
     #[test]
     fn sign_funding_tx_with_bad_output_script_pubkey() {
         let is_p2sh = false;
-        let node_ctx = funding_tx_node_ctx();
-        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
-        let mut tx_ctx = funding_tx_ctx();
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
 
         let incoming = 5_000_000;
-        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let channel_amount = 3_000_000;
         let fee = 1000;
         let change = incoming - channel_amount - fee;
 
+        let mut tx_ctx = test_funding_tx_ctx();
+        let mut chan_ctx = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount);
+
         funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut tx_ctx,
+            channel_amount,
+        );
 
         let mut tx = funding_tx_from_ctx(&tx_ctx);
 
@@ -2213,19 +2456,26 @@ mod tests {
     #[test]
     fn sign_funding_tx_with_bad_output_script_pubkey2() {
         let is_p2sh = false;
-        let node_ctx = funding_tx_node_ctx();
-        let mut chan_ctx = funding_tx_chan_ctx(&node_ctx, 1);
-        let mut tx_ctx = funding_tx_ctx();
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
 
         let incoming = 5_000_000;
-        let channel_amount = chan_ctx.setup.channel_value_sat;
+        let channel_amount = 3_000_000;
         let fee = 1000;
         let change = incoming - channel_amount - fee;
 
+        let mut chan_ctx = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount);
+        let mut tx_ctx = test_funding_tx_ctx();
+
         funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut tx_ctx,
+            channel_amount,
+        );
 
         let mut tx = funding_tx_from_ctx(&tx_ctx);
 
@@ -2240,6 +2490,174 @@ mod tests {
         assert_invalid_argument_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: funding script_pubkey mismatch w/ channel: Script(OP_0 OP_PUSHBYTES_32 1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b) != Script(OP_0 OP_PUSHBYTES_32 7ac8486233edd675a9745d9eefd4386880312b3930a2195567b4b89220b5c833)");
+    }
+
+    #[test]
+    fn validate_holder_commitment_with_htlcs() {
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
+
+        let channel_amount = 3_000_000;
+        let chan_ctx = fund_test_channel(&sign_ctx, &node_ctx, channel_amount);
+
+        let offered_htlcs = vec![
+            HTLCInfo2 {
+                value_sat: 1000,
+                payment_hash: PaymentHash([1; 32]),
+                cltv_expiry: 1 << 16,
+            },
+            HTLCInfo2 {
+                value_sat: 1000,
+                payment_hash: PaymentHash([2; 32]),
+                cltv_expiry: 2 << 16,
+            },
+        ];
+        let received_htlcs = vec![
+            HTLCInfo2 {
+                value_sat: 1000,
+                payment_hash: PaymentHash([3; 32]),
+                cltv_expiry: 3 << 16,
+            },
+            HTLCInfo2 {
+                value_sat: 1000,
+                payment_hash: PaymentHash([4; 32]),
+                cltv_expiry: 4 << 16,
+            },
+            HTLCInfo2 {
+                value_sat: 1000,
+                payment_hash: PaymentHash([5; 32]),
+                cltv_expiry: 5 << 16,
+            },
+        ];
+        let sum_htlc = 5000;
+
+        let commit_num = 1;
+        let feerate_per_kw = 1100;
+        let fees = 20_000;
+        let to_broadcaster = 1_000_000;
+        let to_countersignatory = channel_amount - to_broadcaster - sum_htlc - fees;
+
+        let mut commit_tx_ctx = channel_commitment(
+            &chan_ctx,
+            commit_num,
+            feerate_per_kw,
+            to_broadcaster,
+            to_countersignatory,
+            offered_htlcs,
+            received_htlcs,
+        );
+        let (csig, hsigs) = counterparty_sign_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut commit_tx_ctx,
+        );
+        validate_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &commit_tx_ctx,
+            &csig,
+            &hsigs,
+        )
+        .expect("valid holder commitment");
+    }
+
+    #[test]
+    fn validate_holder_commitment_with_bad_commit_num() {
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
+
+        let channel_amount = 3_000_000;
+        let chan_ctx = fund_test_channel(&sign_ctx, &node_ctx, channel_amount);
+        let offered_htlcs = vec![];
+        let received_htlcs = vec![];
+
+        let commit_num = 2;
+        let feerate_per_kw = 1100;
+        let fees = 20_000;
+        let to_broadcaster = 1_000_000;
+        let to_countersignatory = channel_amount - to_broadcaster - fees;
+
+        let mut commit_tx_ctx = channel_commitment(
+            &chan_ctx,
+            commit_num,
+            feerate_per_kw,
+            to_broadcaster,
+            to_countersignatory,
+            offered_htlcs,
+            received_htlcs,
+        );
+        let (csig, hsigs) = counterparty_sign_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut commit_tx_ctx,
+        );
+        assert_invalid_argument_err!(
+            validate_holder_commitment(
+                &sign_ctx,
+                &node_ctx,
+                &chan_ctx,
+                &commit_tx_ctx,
+                &csig,
+                &hsigs,
+            ),
+            "policy failure: invalid next_holder_commitment_number progression: 1 to 3"
+        );
+    }
+
+    #[test]
+    fn validate_holder_commitment_with_same_commit_num() {
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
+
+        let channel_amount = 3_000_000;
+        let chan_ctx = fund_test_channel(&sign_ctx, &node_ctx, channel_amount);
+        let offered_htlcs = vec![];
+        let received_htlcs = vec![];
+
+        let commit_num = 1;
+        let feerate_per_kw = 1100;
+        let fees = 20_000;
+        let to_broadcaster = 1_000_000;
+        let to_countersignatory = channel_amount - to_broadcaster - fees;
+
+        let mut commit_tx_ctx = channel_commitment(
+            &chan_ctx,
+            commit_num,
+            feerate_per_kw,
+            to_broadcaster,
+            to_countersignatory,
+            offered_htlcs,
+            received_htlcs,
+        );
+        let (csig, hsigs) = counterparty_sign_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut commit_tx_ctx,
+        );
+        validate_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &commit_tx_ctx,
+            &csig,
+            &hsigs,
+        )
+        .expect("valid holder commitment");
+
+        // You can do it again w/ same commit num.
+        validate_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &commit_tx_ctx,
+            &csig,
+            &hsigs,
+        )
+        .expect("valid holder commitment");
     }
 
     #[test]
@@ -2750,8 +3168,8 @@ mod tests {
         assert!(status.is_ok());
     }
 
-    #[test]
     // policy-v1-htlc-version
+    #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_version_test() {
         assert_invalid_argument_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
@@ -2763,8 +3181,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-version
+    #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_version_test() {
         assert_invalid_argument_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
@@ -2776,8 +3194,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-version
+    #[test]
     fn sign_holder_offered_htlc_tx_with_bad_version_test() {
         assert_invalid_argument_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
@@ -2789,8 +3207,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-version
+    #[test]
     fn sign_holder_received_htlc_tx_with_bad_version_test() {
         assert_invalid_argument_err!(
             sign_holder_received_htlc_tx_with_mutators!(
@@ -2802,8 +3220,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-locktime
+    #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_locktime_test() {
         assert_invalid_argument_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
@@ -2815,8 +3233,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-locktime
+    #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_locktime_test() {
         assert_invalid_argument_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
@@ -2828,8 +3246,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-locktime
+    #[test]
     fn sign_holder_offered_htlc_tx_with_bad_locktime_test() {
         assert_invalid_argument_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
@@ -2841,8 +3259,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-locktime
+    #[test]
     fn sign_holder_received_htlc_tx_with_bad_locktime_test() {
         assert_invalid_argument_err!(
             sign_holder_received_htlc_tx_with_mutators!(
@@ -2854,8 +3272,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-nsequence
+    #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_nsequence_test() {
         assert_invalid_argument_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
@@ -2867,8 +3285,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-nsequence
+    #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_nsequence_test() {
         assert_invalid_argument_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
@@ -2880,8 +3298,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-nsequence
+    #[test]
     fn sign_holder_offered_htlc_tx_with_bad_nsequence_test() {
         assert_invalid_argument_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
@@ -2893,8 +3311,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-nsequence
+    #[test]
     fn sign_holder_received_htlc_tx_with_bad_nsequence_test() {
         assert_invalid_argument_err!(
             sign_holder_received_htlc_tx_with_mutators!(
@@ -2906,8 +3324,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-to-self-delay
+    #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_to_self_delay_test() {
         assert_invalid_argument_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
@@ -2919,8 +3337,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-to-self-delay
+    #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_to_self_delay_test() {
         assert_invalid_argument_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
@@ -2932,8 +3350,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-to-self-delay
+    #[test]
     fn sign_holder_offered_htlc_tx_with_bad_to_self_delay_test() {
         assert_invalid_argument_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
@@ -2949,8 +3367,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-to-self-delay
+    #[test]
     fn sign_holder_received_htlc_tx_with_bad_to_self_delay_test() {
         assert_invalid_argument_err!(
             sign_holder_received_htlc_tx_with_mutators!(
@@ -2966,8 +3384,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-revocation-pubkey
+    #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_revpubkey_test() {
         assert_invalid_argument_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
@@ -2979,8 +3397,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-revocation-pubkey
+    #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_revpubkey_test() {
         assert_invalid_argument_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
@@ -2992,8 +3410,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-revocation-pubkey
+    #[test]
     fn sign_holder_offered_htlc_tx_with_bad_revpubkey_test() {
         assert_invalid_argument_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
@@ -3005,8 +3423,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-revocation-pubkey
+    #[test]
     fn sign_holder_received_htlc_tx_with_bad_revpubkey_test() {
         assert_invalid_argument_err!(
             sign_holder_received_htlc_tx_with_mutators!(
@@ -3018,8 +3436,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-payment-pubkey
+    #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_delayedpubkey_test() {
         assert_invalid_argument_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
@@ -3031,8 +3449,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-payment-pubkey
+    #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_delayedpubkey_test() {
         assert_invalid_argument_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
@@ -3044,8 +3462,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-payment-pubkey
+    #[test]
     fn sign_holder_offered_htlc_tx_with_bad_delayedpubkey_test() {
         assert_invalid_argument_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
@@ -3057,8 +3475,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-payment-pubkey
+    #[test]
     fn sign_holder_received_htlc_tx_with_bad_delayedpubkey_test() {
         assert_invalid_argument_err!(
             sign_holder_received_htlc_tx_with_mutators!(
@@ -3070,8 +3488,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-fee-range
+    #[test]
     fn sign_counterparty_offered_htlc_tx_with_low_feerate_test() {
         assert_invalid_argument_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
@@ -3083,8 +3501,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-fee-range
+    #[test]
     fn sign_counterparty_offered_htlc_tx_with_high_feerate_test() {
         assert_invalid_argument_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
@@ -3096,8 +3514,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-fee-range
+    #[test]
     fn sign_holder_received_htlc_tx_with_low_feerate_test() {
         assert_invalid_argument_err!(
             sign_holder_received_htlc_tx_with_mutators!(
@@ -3109,8 +3527,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-htlc-fee-range
+    #[test]
     fn sign_holder_received_htlc_tx_with_high_feerate_test() {
         assert_invalid_argument_err!(
             sign_holder_received_htlc_tx_with_mutators!(
@@ -4004,8 +4422,8 @@ mod tests {
         assert!(status.is_ok());
     }
 
-    #[test]
     // policy-v1-commitment-version
+    #[test]
     fn sign_counterparty_commitment_tx_with_bad_version_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |_keys| {},
@@ -4016,8 +4434,8 @@ mod tests {
         assert_invalid_argument_err!(status, "policy failure: bad commitment version: 3");
     }
 
-    #[test]
     // policy-v1-commitment-version
+    #[test]
     fn sign_holder_commitment_tx_with_bad_version_test() {
         let status = sign_holder_commitment_tx_with_mutators(
             |_keys| {},
@@ -4028,8 +4446,8 @@ mod tests {
         assert_invalid_argument_err!(status, "policy failure: bad commitment version: 3");
     }
 
-    #[test]
     // policy-v1-commitment-locktime
+    #[test]
     fn sign_counterparty_commitment_tx_with_bad_locktime_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |_keys| {
@@ -4039,11 +4457,11 @@ mod tests {
                 tx.transaction.lock_time = 42;
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    #[test]
     // policy-v1-commitment-locktime
+    #[test]
     fn sign_holder_commitment_tx_with_bad_locktime_test() {
         let status = sign_holder_commitment_tx_with_mutators(
             |_keys| {
@@ -4053,11 +4471,11 @@ mod tests {
                 tx.transaction.lock_time = 42;
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    #[test]
     // policy-v1-commitment-nsequence
+    #[test]
     fn sign_counterparty_commitment_tx_with_bad_nsequence_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |_keys| {},
@@ -4065,11 +4483,11 @@ mod tests {
                 tx.transaction.input[0].sequence = 42;
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    #[test]
     // policy-v1-commitment-nsequence
+    #[test]
     fn sign_holder_commitment_tx_with_bad_nsequence_test() {
         let status = sign_holder_commitment_tx_with_mutators(
             |_keys| {},
@@ -4077,11 +4495,11 @@ mod tests {
                 tx.transaction.input[0].sequence = 42;
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    #[test]
     // policy-v1-commitment-input-single
+    #[test]
     fn sign_counterparty_commitment_tx_with_bad_numinputs_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |_keys| {},
@@ -4091,11 +4509,11 @@ mod tests {
                 tx.transaction.input.push(inp2);
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    #[test]
     // policy-v1-commitment-input-single
+    #[test]
     fn sign_holder_commitment_tx_with_bad_numinputs_test() {
         let status = sign_holder_commitment_tx_with_mutators(
             |_keys| {},
@@ -4105,11 +4523,11 @@ mod tests {
                 tx.transaction.input.push(inp2);
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    #[test]
     // policy-v1-commitment-input-match-funding
+    #[test]
     fn sign_counterparty_commitment_tx_with_input_mismatch_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |_keys| {},
@@ -4118,11 +4536,11 @@ mod tests {
                     bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    #[test]
     // policy-v1-commitment-input-match-funding
+    #[test]
     fn sign_holder_commitment_tx_with_input_mismatch_test() {
         let status = sign_holder_commitment_tx_with_mutators(
             |_keys| {},
@@ -4131,11 +4549,11 @@ mod tests {
                     bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    #[test]
     // policy-v1-commitment-revocation-pubkey
+    #[test]
     fn sign_counterparty_commitment_tx_with_bad_revpubkey_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |keys| {
@@ -4143,11 +4561,11 @@ mod tests {
             },
             |_tx| {},
         );
-        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    #[test]
     // policy-v1-commitment-revocation-pubkey
+    #[test]
     fn sign_holder_commitment_tx_with_bad_revpubkey_test() {
         let status = sign_holder_commitment_tx_with_mutators(
             |keys| {
@@ -4155,11 +4573,11 @@ mod tests {
             },
             |_tx| {},
         );
-        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    #[test]
     // policy-v1-commitment-htlc-pubkey
+    #[test]
     fn sign_counterparty_commitment_tx_with_bad_htlcpubkey_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |keys| {
@@ -4167,11 +4585,11 @@ mod tests {
             },
             |_tx| {},
         );
-        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    #[test]
     // policy-v1-commitment-htlc-pubkey
+    #[test]
     fn sign_holder_commitment_tx_with_bad_htlcpubkey_test() {
         let status = sign_holder_commitment_tx_with_mutators(
             |keys| {
@@ -4179,11 +4597,11 @@ mod tests {
             },
             |_tx| {},
         );
-        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    #[test]
     // policy-v1-commitment-delayed-pubkey
+    #[test]
     fn sign_counterparty_commitment_tx_with_bad_delayed_pubkey_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |keys| {
@@ -4191,11 +4609,11 @@ mod tests {
             },
             |_tx| {},
         );
-        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    #[test]
     // policy-v1-commitment-delayed-pubkey
+    #[test]
     fn sign_holder_commitment_tx_with_bad_delayed_pubkey_test() {
         let status = sign_holder_commitment_tx_with_mutators(
             |keys| {
@@ -4203,6 +4621,6 @@ mod tests {
             },
             |_tx| {},
         );
-        assert_invalid_argument_err!(status, "policy failure: sighash mismatch");
+        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
     }
 }

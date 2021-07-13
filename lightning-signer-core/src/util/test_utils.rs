@@ -9,8 +9,10 @@ use bitcoin::hash_types::Txid;
 use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::Hash;
 use bitcoin::network::constants::Network;
-use bitcoin::secp256k1::{self, PublicKey, Secp256k1, SecretKey, SignOnly};
-use bitcoin::{Address, OutPoint as BitcoinOutPoint, TxIn, TxOut};
+use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1, SecretKey, SignOnly, Signature};
+use bitcoin::util::bip143::SigHashCache;
+use bitcoin::util::psbt::serialize::Serialize;
+use bitcoin::{Address, OutPoint as BitcoinOutPoint, SigHashType, TxIn, TxOut};
 use chain::chaininterface;
 use lightning::chain;
 use lightning::chain::channelmonitor::MonitorEvent;
@@ -18,16 +20,19 @@ use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::chain::transaction::OutPoint;
 use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{
-    get_htlc_redeemscript, get_revokeable_redeemscript, make_funding_redeemscript,
-    ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
+    build_htlc_transaction, derive_private_key, get_htlc_redeemscript, get_revokeable_redeemscript,
+    make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters,
+    CommitmentTransaction, CounterpartyChannelTransactionParameters,
     DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::util::test_utils;
 
-use crate::node::{ChannelId, ChannelSetup, CommitmentType, Node, NodeConfig};
+use crate::node::{
+    Channel, ChannelBase, ChannelId, ChannelSetup, CommitmentType, Node, NodeConfig,
+};
 use crate::signer::multi_signer::{channel_nonce_to_id, MultiSigner, SpendType};
 use crate::signer::my_keys_manager::KeyDerivationStyle;
-use crate::tx::tx::sort_outputs;
+use crate::tx::tx::{sort_outputs, HTLCInfo2};
 use crate::util::crypto_utils::{payload_for_p2wpkh, payload_for_p2wsh};
 use crate::util::enforcing_trait_impls::EnforcingSigner;
 use crate::util::loopback::LoopbackChannelSigner;
@@ -379,18 +384,26 @@ pub fn make_test_funding_tx_with_ins_outs(
     }
 }
 
-pub struct TestFundingNodeContext {
+// Bundles global context used for unit tests.
+pub struct TestSignerContext {
     pub secp_ctx: Secp256k1<secp256k1::SignOnly>,
     pub signer: MultiSigner,
+}
+
+// Bundles node-specific context used for unit tests.
+pub struct TestNodeContext {
     pub node_id: PublicKey,
     pub node: Arc<Node>,
 }
 
-pub struct TestFundingChannelContext {
-    pub setup: ChannelSetup,
+// Bundles channel-specific context used for unit tests.
+pub struct TestChannelContext {
     pub channel_id: ChannelId,
+    pub setup: ChannelSetup,
+    pub counterparty_keys: EnforcingSigner,
 }
 
+// Bundles funding tx context used for unit tests.
 pub struct TestFundingTxContext {
     pub inputs: Vec<TxIn>,
     pub ipaths: Vec<Vec<u32>>,
@@ -401,34 +414,99 @@ pub struct TestFundingTxContext {
     pub opaths: Vec<Vec<u32>>,
 }
 
-pub fn funding_tx_node_ctx() -> TestFundingNodeContext {
-    let secp_ctx = Secp256k1::signing_only();
-    let signer = MultiSigner::new();
-    let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
-    let node = signer.get_node(&node_id).unwrap();
-    TestFundingNodeContext {
-        secp_ctx,
-        signer,
-        node_id,
-        node,
-    }
+// Bundles commitment tx context used for unit tests.
+pub struct TestCommitmentTxContext {
+    commit_num: u64,
+    feerate_per_kw: u32,
+    to_broadcaster: u64,
+    to_countersignatory: u64,
+    offered_htlcs: Vec<HTLCInfo2>,
+    received_htlcs: Vec<HTLCInfo2>,
+    tx: Option<CommitmentTransaction>,
 }
 
-pub fn funding_tx_chan_ctx(
-    node_ctx: &TestFundingNodeContext,
+pub fn test_sign_ctx() -> TestSignerContext {
+    let secp_ctx = Secp256k1::signing_only();
+    let signer = MultiSigner::new();
+    TestSignerContext { secp_ctx, signer }
+}
+
+pub fn test_node_ctx(sign_ctx: &TestSignerContext, ndx: usize) -> TestNodeContext {
+    let node_id = init_node(&sign_ctx.signer, TEST_NODE_CONFIG, TEST_SEED[ndx]);
+    let node = sign_ctx.signer.get_node(&node_id).unwrap();
+    TestNodeContext { node_id, node }
+}
+
+pub fn test_chan_ctx(
+    sign_ctx: &TestSignerContext,
+    node_ctx: &TestNodeContext,
     nn: usize,
-) -> TestFundingChannelContext {
-    let setup = make_test_channel_setup();
+    value_sat: u64,
+) -> TestChannelContext {
     let channel_nonce0 = format!("nonce{}", nn).as_bytes().to_vec();
     let channel_id = channel_nonce_to_id(&channel_nonce0);
-    node_ctx
+    let setup = ChannelSetup {
+        is_outbound: true,
+        channel_value_sat: value_sat,
+        push_value_msat: 0,
+        funding_outpoint: BitcoinOutPoint {
+            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
+            vout: 0,
+        },
+        holder_selected_contest_delay: 6,
+        holder_shutdown_script: None,
+        counterparty_points: make_test_counterparty_points(),
+        counterparty_selected_contest_delay: 7,
+        counterparty_shutdown_script: Script::new(),
+        commitment_type: CommitmentType::StaticRemoteKey,
+    };
+
+    sign_ctx
         .signer
         .new_channel(&node_ctx.node_id, Some(channel_nonce0), Some(channel_id))
         .expect("new_channel");
-    TestFundingChannelContext { setup, channel_id }
+
+    // Make counterparty keys that match.
+    let counterparty_keys = sign_ctx
+        .signer
+        .with_channel_base(&node_ctx.node_id, &channel_id, |stub| {
+            // These need to match make_test_counterparty_points() above ...
+            let mut cpinmemkeys = InMemorySigner::new(
+                &sign_ctx.secp_ctx,
+                make_test_privkey(104), // funding_key
+                make_test_privkey(100), // revocation_base_key
+                make_test_privkey(101), // payment_key
+                make_test_privkey(102), // delayed_payment_base_key
+                make_test_privkey(103), // htlc_base_key
+                [3u8; 32],              // commitment_seed
+                value_sat,              // channel_value
+                [0u8; 32],              // Key derivation parameters
+            );
+            // This needs to match make_test_channel_setup above.
+            cpinmemkeys.ready_channel(&ChannelTransactionParameters {
+                holder_pubkeys: cpinmemkeys.pubkeys().clone(),
+                holder_selected_contest_delay: 7,
+                is_outbound_from_holder: false,
+                counterparty_parameters: Some(CounterpartyChannelTransactionParameters {
+                    pubkeys: stub.get_channel_basepoints(),
+                    selected_contest_delay: 6,
+                }),
+                funding_outpoint: Some(OutPoint {
+                    txid: Default::default(),
+                    index: 0,
+                }),
+            });
+            Ok(EnforcingSigner::new(cpinmemkeys))
+        })
+        .unwrap();
+    TestChannelContext {
+        channel_id,
+        setup,
+        counterparty_keys,
+    }
 }
 
-pub fn funding_tx_ctx() -> TestFundingTxContext {
+pub fn test_funding_tx_ctx() -> TestFundingTxContext {
     TestFundingTxContext {
         inputs: vec![],
         ipaths: vec![],
@@ -462,14 +540,15 @@ pub fn funding_tx_add_wallet_input(
 }
 
 pub fn funding_tx_add_wallet_output(
-    node_ctx: &TestFundingNodeContext,
+    sign_ctx: &TestSignerContext,
+    node_ctx: &TestNodeContext,
     tx_ctx: &mut TestFundingTxContext,
     is_p2sh: bool,
     wallet_ndx: u32,
     value_sat: u64,
 ) {
     tx_ctx.outputs.push(make_test_funding_wallet_output(
-        &node_ctx.secp_ctx,
+        &sign_ctx.secp_ctx,
         &node_ctx.node,
         wallet_ndx,
         value_sat,
@@ -479,14 +558,15 @@ pub fn funding_tx_add_wallet_output(
 }
 
 pub fn funding_tx_add_channel_outpoint(
-    node_ctx: &TestFundingNodeContext,
-    chan_ctx: &TestFundingChannelContext,
+    sign_ctx: &TestSignerContext,
+    node_ctx: &TestNodeContext,
+    chan_ctx: &TestChannelContext,
     tx_ctx: &mut TestFundingTxContext,
     value_sat: u64,
 ) -> u32 {
     let ndx = tx_ctx.outputs.len();
     tx_ctx.outputs.push(make_test_funding_channel_outpoint(
-        &node_ctx.signer,
+        &sign_ctx.signer,
         &node_ctx.node_id,
         &chan_ctx.setup,
         &chan_ctx.channel_id,
@@ -497,14 +577,15 @@ pub fn funding_tx_add_channel_outpoint(
 }
 
 pub fn funding_tx_add_unknown_output(
-    node_ctx: &TestFundingNodeContext,
+    sign_ctx: &TestSignerContext,
+    node_ctx: &TestNodeContext,
     tx_ctx: &mut TestFundingTxContext,
     is_p2sh: bool,
     unknown_ndx: u32,
     value_sat: u64,
 ) {
     tx_ctx.outputs.push(make_test_funding_wallet_output(
-        &node_ctx.secp_ctx,
+        &sign_ctx.secp_ctx,
         &node_ctx.node,
         unknown_ndx + 10_000, // lazy, it's really in the wallet
         value_sat,
@@ -518,15 +599,13 @@ pub fn funding_tx_from_ctx(tx_ctx: &TestFundingTxContext) -> bitcoin::Transactio
 }
 
 pub fn funding_tx_ready_channel(
-    node_ctx: &TestFundingNodeContext,
-    chan_ctx: &mut TestFundingChannelContext,
+    node_ctx: &TestNodeContext,
+    chan_ctx: &mut TestChannelContext,
     tx: &bitcoin::Transaction,
     vout: u32,
 ) {
-    // Replace the funding outpoint placeholder.
     let txid = tx.txid();
     chan_ctx.setup.funding_outpoint = BitcoinOutPoint { txid, vout };
-
     node_ctx
         .node
         .ready_channel(chan_ctx.channel_id, None, chan_ctx.setup.clone())
@@ -534,7 +613,7 @@ pub fn funding_tx_ready_channel(
 }
 
 pub fn funding_tx_sign(
-    node_ctx: &TestFundingNodeContext,
+    node_ctx: &TestNodeContext,
     tx_ctx: &TestFundingTxContext,
     tx: &bitcoin::Transaction,
 ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Status> {
@@ -549,7 +628,8 @@ pub fn funding_tx_sign(
 }
 
 pub fn funding_tx_validate_sig(
-    node_ctx: &TestFundingNodeContext,
+    sign_ctx: &TestSignerContext,
+    node_ctx: &TestNodeContext,
     tx_ctx: &TestFundingTxContext,
     tx: &mut bitcoin::Transaction,
     witvec: &Vec<(Vec<u8>, Vec<u8>)>,
@@ -563,7 +643,7 @@ pub fn funding_tx_validate_sig(
         let txout = TxOut {
             value: tx_ctx.ivals[input_ndx],
             script_pubkey: make_test_funding_wallet_addr(
-                &node_ctx.secp_ctx,
+                &sign_ctx.secp_ctx,
                 &node_ctx.node,
                 tx_ctx.ipaths[input_ndx][0],
                 false,
@@ -573,6 +653,215 @@ pub fn funding_tx_validate_sig(
         Some(txout)
     });
     assert!(verify_result.is_ok());
+}
+
+pub fn fund_test_channel(
+    sign_ctx: &TestSignerContext,
+    node_ctx: &TestNodeContext,
+    channel_amount: u64,
+) -> TestChannelContext {
+    let is_p2sh = false;
+    let incoming = channel_amount + 2_000_000;
+    let fee = 1000;
+    let change = incoming - channel_amount - fee;
+
+    let mut chan_ctx = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount);
+    let mut tx_ctx = test_funding_tx_ctx();
+
+    funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+    funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+    let outpoint_ndx = funding_tx_add_channel_outpoint(
+        &sign_ctx,
+        &node_ctx,
+        &chan_ctx,
+        &mut tx_ctx,
+        channel_amount,
+    );
+
+    let mut tx = funding_tx_from_ctx(&tx_ctx);
+
+    funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+    let mut commit_tx_ctx = channel_initial_commitment(&chan_ctx);
+    let (csig, hsigs) =
+        counterparty_sign_holder_commitment(&sign_ctx, &node_ctx, &chan_ctx, &mut commit_tx_ctx);
+    validate_holder_commitment(
+        &sign_ctx,
+        &node_ctx,
+        &chan_ctx,
+        &commit_tx_ctx,
+        &csig,
+        &hsigs,
+    )
+    .expect("valid holder commitment");
+
+    let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
+    funding_tx_validate_sig(&sign_ctx, &node_ctx, &tx_ctx, &mut tx, &witvec);
+
+    chan_ctx
+}
+
+pub fn channel_initial_commitment(chan_ctx: &TestChannelContext) -> TestCommitmentTxContext {
+    let fee = 1000;
+    TestCommitmentTxContext {
+        commit_num: 0,
+        feerate_per_kw: 0,
+        to_broadcaster: chan_ctx.setup.channel_value_sat - fee,
+        to_countersignatory: 0,
+        offered_htlcs: vec![],
+        received_htlcs: vec![],
+        tx: None,
+    }
+}
+
+pub fn channel_commitment(
+    _chan_ctx: &TestChannelContext,
+    commit_num: u64,
+    feerate_per_kw: u32,
+    to_broadcaster: u64,
+    to_countersignatory: u64,
+    offered_htlcs: Vec<HTLCInfo2>,
+    received_htlcs: Vec<HTLCInfo2>,
+) -> TestCommitmentTxContext {
+    TestCommitmentTxContext {
+        commit_num,
+        feerate_per_kw,
+        to_broadcaster,
+        to_countersignatory,
+        offered_htlcs,
+        received_htlcs,
+        tx: None,
+    }
+}
+
+// Construct counterparty signatures for a holder commitment.
+// Mimics InMemorySigner::sign_counterparty_commitment w/ transposition.
+pub fn counterparty_sign_holder_commitment(
+    sign_ctx: &TestSignerContext,
+    node_ctx: &TestNodeContext,
+    chan_ctx: &TestChannelContext,
+    commit_tx_ctx: &mut TestCommitmentTxContext,
+) -> (Signature, Vec<Signature>) {
+    let htlcs = Channel::htlcs_info2_to_oic(
+        commit_tx_ctx.offered_htlcs.clone(),
+        commit_tx_ctx.received_htlcs.clone(),
+    );
+    let (tx, commitment_sig, htlc_sigs) = sign_ctx
+        .signer
+        .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
+            let tx = chan.make_holder_commitment_tx(
+                commit_tx_ctx.commit_num,
+                commit_tx_ctx.feerate_per_kw,
+                commit_tx_ctx.to_broadcaster,
+                commit_tx_ctx.to_countersignatory,
+                htlcs.clone(),
+            );
+            let funding_redeemscript = make_funding_redeemscript(
+                &chan.keys.pubkeys().funding_pubkey,
+                &chan.keys.counterparty_pubkeys().funding_pubkey,
+            );
+            let trusted_tx = tx.trust();
+            let keys = trusted_tx.keys();
+            let built_tx = trusted_tx.built_transaction();
+            let commitment_sig = built_tx.sign(
+                &chan_ctx.counterparty_keys.funding_key(),
+                &funding_redeemscript,
+                chan_ctx.setup.channel_value_sat,
+                &sign_ctx.secp_ctx,
+            );
+            let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num);
+            let txkeys = chan
+                .make_holder_tx_keys(&per_commitment_point)
+                .expect("txkeys");
+            let commitment_txid = built_tx.txid;
+
+            let counterparty_htlc_key = derive_private_key(
+                &sign_ctx.secp_ctx,
+                &per_commitment_point,
+                &chan_ctx.counterparty_keys.htlc_base_key(),
+            )
+            .expect("counterparty_htlc_key");
+
+            let mut htlc_sigs = Vec::with_capacity(tx.htlcs().len());
+            for htlc in tx.htlcs() {
+                let htlc_tx = build_htlc_transaction(
+                    &commitment_txid,
+                    tx.feerate_per_kw(),
+                    chan_ctx.setup.counterparty_selected_contest_delay,
+                    htlc,
+                    &txkeys.broadcaster_delayed_payment_key,
+                    &txkeys.revocation_key,
+                );
+                let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
+                let htlc_sighash = Message::from_slice(
+                    &SigHashCache::new(&htlc_tx).signature_hash(
+                        0,
+                        &htlc_redeemscript,
+                        htlc.amount_msat / 1000,
+                        SigHashType::All,
+                    )[..],
+                )
+                .unwrap();
+                htlc_sigs.push(
+                    sign_ctx
+                        .secp_ctx
+                        .sign(&htlc_sighash, &counterparty_htlc_key),
+                );
+            }
+            Ok((tx, commitment_sig, htlc_sigs))
+        })
+        .unwrap();
+    commit_tx_ctx.tx = Some(tx);
+    (commitment_sig, htlc_sigs)
+}
+
+pub fn validate_holder_commitment(
+    sign_ctx: &TestSignerContext,
+    node_ctx: &TestNodeContext,
+    chan_ctx: &TestChannelContext,
+    commit_tx_ctx: &TestCommitmentTxContext,
+    commit_sig: &Signature,
+    htlc_sigs: &Vec<Signature>,
+) -> Result<(PublicKey, Option<SecretKey>), Status> {
+    let htlcs = Channel::htlcs_info2_to_oic(
+        commit_tx_ctx.offered_htlcs.clone(),
+        commit_tx_ctx.received_htlcs.clone(),
+    );
+    sign_ctx
+        .signer
+        .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
+            let channel_parameters = chan.make_channel_parameters();
+            let parameters = channel_parameters.as_holder_broadcastable();
+            let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num);
+            let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                commit_tx_ctx.to_broadcaster,
+                commit_tx_ctx.to_countersignatory,
+                &htlcs,
+                &parameters,
+            )
+            .expect("scripts");
+            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+
+            chan.validate_holder_commitment_tx(
+                &commit_tx_ctx
+                    .tx
+                    .as_ref()
+                    .unwrap()
+                    .trust()
+                    .built_transaction()
+                    .transaction,
+                &output_witscripts,
+                commit_tx_ctx.commit_num,
+                commit_tx_ctx.feerate_per_kw,
+                commit_tx_ctx.offered_htlcs.clone(),
+                commit_tx_ctx.received_htlcs.clone(),
+                &commit_sig,
+                &htlc_sigs,
+            )
+        })
 }
 
 // Try and use the funding tx helpers before this comment, the following are compat.

@@ -271,6 +271,7 @@ impl<'de> DeserializeAs<'de, ChannelSetup> for ChannelSetupDef {
 #[serde(remote = "EnforcementState")]
 pub struct EnforcementStateDef {
     pub last_commitment_number: Option<u64>,
+    pub next_holder_commitment_number: u64,
 }
 
 #[derive(Deserialize)]
