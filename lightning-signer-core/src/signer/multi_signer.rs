@@ -294,13 +294,6 @@ mod tests {
     };
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
-    use crate::util::test_utils::{
-        funding_tx_add_channel_outpoint, funding_tx_add_unknown_output,
-        funding_tx_add_wallet_input, funding_tx_add_wallet_output, funding_tx_from_ctx,
-        funding_tx_ready_channel, funding_tx_sign, funding_tx_validate_sig, init_node,
-        init_node_and_channel, make_test_channel_setup, make_test_counterparty_points,
-        test_chan_ctx, test_funding_tx_ctx, test_node_ctx, TEST_SEED,
-    };
 
     use super::*;
 
@@ -544,12 +537,23 @@ mod tests {
             format!("channel not ready: {}", TEST_CHANNEL_ID[0]),
         );
 
-        // get_per_commitment_{point,secret} should work.
         let _: Result<(), Status> = signer.with_channel_base(&node_id, &channel_id, |base| {
-            let point = base.get_per_commitment_point(1);
-            let secret = base.get_per_commitment_secret(1);
-            let derived_point = PublicKey::from_secret_key(&Secp256k1::new(), &secret);
-            assert_eq!(point, derived_point);
+            // get_per_commitment_point for the first commitment should work.
+            let result = base.get_per_commitment_point(0);
+            assert!(result.is_ok());
+
+            // get_per_commitment_point for future commit_num should policy-fail.
+            assert_invalid_argument_err!(
+                base.get_per_commitment_point(1),
+                "policy failure: channel stub can only return point for commitment number zero"
+            );
+
+            // get_per_commitment_secret never works for a stub.
+            assert_invalid_argument_err!(
+                base.get_per_commitment_secret(0),
+                "policy failure: channel stub cannot release commitment secret"
+            );
+
             Ok(())
         });
 
@@ -571,16 +575,14 @@ mod tests {
         .unwrap();
         let correct = signer
             .with_channel_base(&node_id, &channel_id, |base| {
-                let secret = base.get_per_commitment_secret(n);
-                Ok(suggested[..] == secret[..])
+                base.check_future_secret(n, &suggested)
             })
             .unwrap();
         assert_eq!(correct, true);
 
         let notcorrect = signer
             .with_channel_base(&node_id, &channel_id, |base| {
-                let secret = base.get_per_commitment_secret(n + 1);
-                Ok(suggested[..] == secret[..])
+                base.check_future_secret(n + 1, &suggested)
             })
             .unwrap();
         assert_eq!(notcorrect, false);
@@ -1096,17 +1098,23 @@ mod tests {
         let (node_id, channel_id) =
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
+        let commit_num = 23;
         let to_holder_value_sat = 1_000_000;
         let to_counterparty_value_sat = 2_000_000;
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let commitment_tx = chan.make_holder_commitment_tx(
-                    23,
-                    0,
-                    to_holder_value_sat,
-                    to_counterparty_value_sat,
-                    vec![],
-                );
+                chan.keys
+                    .set_next_holder_commitment_number_for_testing(commit_num);
+
+                let commitment_tx = chan
+                    .make_holder_commitment_tx(
+                        commit_num,
+                        0,
+                        to_holder_value_sat,
+                        to_counterparty_value_sat,
+                        vec![],
+                    )
+                    .expect("holder_commitment_tx");
                 Ok(commitment_tx
                     .trust()
                     .built_transaction()
@@ -1117,7 +1125,7 @@ mod tests {
         let (ser_signature, _) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 chan.sign_holder_commitment_tx_phase2(
-                    23,
+                    commit_num,
                     0, // feerate not used
                     to_holder_value_sat,
                     to_counterparty_value_sat,
@@ -1429,12 +1437,17 @@ mod tests {
             make_test_channel_setup(),
         );
 
+        let commit_num = 23;
+
         let (point, secret) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                Ok((
-                    chan.get_per_commitment_point(1),
-                    chan.get_per_commitment_secret(1),
-                ))
+                // The channel next_holder_commitment_number must be 2 past the
+                // requested commit_num for get_per_commitment_secret.
+                chan.keys
+                    .set_next_holder_commitment_number_for_testing(commit_num + 2);
+                let point = chan.get_per_commitment_point(commit_num)?;
+                let secret = chan.get_per_commitment_secret(commit_num)?;
+                Ok((point, secret))
             })
             .expect("point");
 
@@ -1464,16 +1477,14 @@ mod tests {
 
         let correct = signer
             .with_channel_base(&node_id, &channel_id, |base| {
-                let secret = base.get_per_commitment_secret(n);
-                Ok(suggested[..] == secret[..])
+                base.check_future_secret(n, &suggested)
             })
             .unwrap();
         assert_eq!(correct, true);
 
         let notcorrect = signer
             .with_channel_base(&node_id, &channel_id, |base| {
-                let secret = base.get_per_commitment_secret(n + 1);
-                Ok(suggested[..] == secret[..])
+                base.check_future_secret(n + 1, &suggested)
             })
             .unwrap();
         assert_eq!(notcorrect, false);
@@ -1940,7 +1951,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        let mut commit_tx_ctx = channel_initial_commitment(&chan_ctx);
+        let mut commit_tx_ctx = channel_initial_commitment(&sign_ctx, &node_ctx, &chan_ctx);
         let (csig, hsigs) = counterparty_sign_holder_commitment(
             &sign_ctx,
             &node_ctx,
@@ -2002,7 +2013,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        let mut commit_tx_ctx = channel_initial_commitment(&chan_ctx);
+        let mut commit_tx_ctx = channel_initial_commitment(&sign_ctx, &node_ctx, &chan_ctx);
         let (csig, hsigs) = counterparty_sign_holder_commitment(
             &sign_ctx,
             &node_ctx,
@@ -2053,7 +2064,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        let mut commit_tx_ctx = channel_initial_commitment(&chan_ctx);
+        let mut commit_tx_ctx = channel_initial_commitment(&sign_ctx, &node_ctx, &chan_ctx);
         let (csig, hsigs) = counterparty_sign_holder_commitment(
             &sign_ctx,
             &node_ctx,
@@ -2114,7 +2125,7 @@ mod tests {
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
 
-        let mut commit_tx_ctx0 = channel_initial_commitment(&chan_ctx0);
+        let mut commit_tx_ctx0 = channel_initial_commitment(&sign_ctx, &node_ctx, &chan_ctx0);
         let (csig0, hsigs0) = counterparty_sign_holder_commitment(
             &sign_ctx,
             &node_ctx,
@@ -2131,7 +2142,7 @@ mod tests {
         )
         .expect("valid holder commitment");
 
-        let mut commit_tx_ctx1 = channel_initial_commitment(&chan_ctx1);
+        let mut commit_tx_ctx1 = channel_initial_commitment(&sign_ctx, &node_ctx, &chan_ctx1);
         let (csig1, hsigs1) = counterparty_sign_holder_commitment(
             &sign_ctx,
             &node_ctx,
@@ -2193,7 +2204,7 @@ mod tests {
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
 
-        let mut commit_tx_ctx0 = channel_initial_commitment(&chan_ctx0);
+        let mut commit_tx_ctx0 = channel_initial_commitment(&sign_ctx, &node_ctx, &chan_ctx0);
         let (csig0, hsigs0) = counterparty_sign_holder_commitment(
             &sign_ctx,
             &node_ctx,
@@ -2281,7 +2292,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        let mut commit_tx_ctx = channel_initial_commitment(&chan_ctx);
+        let mut commit_tx_ctx = channel_initial_commitment(&sign_ctx, &node_ctx, &chan_ctx);
         let (csig, hsigs) = counterparty_sign_holder_commitment(
             &sign_ctx,
             &node_ctx,
@@ -2538,6 +2549,8 @@ mod tests {
         let to_countersignatory = channel_amount - to_broadcaster - sum_htlc - fees;
 
         let mut commit_tx_ctx = channel_commitment(
+            &sign_ctx,
+            &node_ctx,
             &chan_ctx,
             commit_num,
             feerate_per_kw,
@@ -2563,6 +2576,7 @@ mod tests {
         .expect("valid holder commitment");
     }
 
+    // policy-v2-revoke-new-commitment-signed
     #[test]
     fn validate_holder_commitment_with_bad_commit_num() {
         let sign_ctx = test_sign_ctx();
@@ -2579,7 +2593,12 @@ mod tests {
         let to_broadcaster = 1_000_000;
         let to_countersignatory = channel_amount - to_broadcaster - fees;
 
+        // Force the channel to commit_num 2 to build the bogus commitment ...
+        set_next_holder_commitment_number_for_testing(&sign_ctx, &node_ctx, &chan_ctx, commit_num);
+
         let mut commit_tx_ctx = channel_commitment(
+            &sign_ctx,
+            &node_ctx,
             &chan_ctx,
             commit_num,
             feerate_per_kw,
@@ -2594,6 +2613,9 @@ mod tests {
             &chan_ctx,
             &mut commit_tx_ctx,
         );
+
+        set_next_holder_commitment_number_for_testing(&sign_ctx, &node_ctx, &chan_ctx, 1);
+
         assert_invalid_argument_err!(
             validate_holder_commitment(
                 &sign_ctx,
@@ -2603,7 +2625,78 @@ mod tests {
                 &csig,
                 &hsigs,
             ),
-            "policy failure: invalid next_holder_commitment_number progression: 1 to 3"
+            "policy failure: get_per_commitment_point: \
+             commitment_number 2 invalid when next_holder_commitment_number is 1"
+        );
+    }
+
+    // policy-v2-commitment-local-not-revoked
+    #[test]
+    fn validate_holder_commitment_with_revoked_commit_num() {
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
+
+        let channel_amount = 3_000_000;
+        let chan_ctx = fund_test_channel(&sign_ctx, &node_ctx, channel_amount);
+        let offered_htlcs = vec![];
+        let received_htlcs = vec![];
+
+        let feerate_per_kw = 1100;
+        let fees = 20_000;
+        let to_broadcaster = 1_000_000;
+        let to_countersignatory = channel_amount - to_broadcaster - fees;
+
+        // Start by validating holder commitment #10 (which revokes #9)
+        let commit_num = 10;
+        set_next_holder_commitment_number_for_testing(&sign_ctx, &node_ctx, &chan_ctx, commit_num);
+
+        let mut commit_tx_ctx = channel_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            commit_num,
+            feerate_per_kw,
+            to_broadcaster,
+            to_countersignatory,
+            offered_htlcs.clone(),
+            received_htlcs.clone(),
+        );
+        let (csig, hsigs) = counterparty_sign_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut commit_tx_ctx,
+        );
+
+        validate_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &commit_tx_ctx,
+            &csig,
+            &hsigs,
+        )
+        .expect("valid holder commitment");
+
+        let revoked_commit_num = commit_num - 1;
+
+        // Now attempt to holder sign holder commitment #9
+        let commit_tx_ctx = channel_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            revoked_commit_num,
+            feerate_per_kw,
+            to_broadcaster,
+            to_countersignatory,
+            offered_htlcs,
+            received_htlcs,
+        );
+
+        assert_invalid_argument_err!(
+            sign_holder_commitment(&sign_ctx, &node_ctx, &chan_ctx, &commit_tx_ctx,),
+            "policy failure: can\'t sign revoked commitment_number 9, \
+             next_holder_commitment_number is 11"
         );
     }
 
@@ -2624,6 +2717,8 @@ mod tests {
         let to_countersignatory = channel_amount - to_broadcaster - fees;
 
         let mut commit_tx_ctx = channel_commitment(
+            &sign_ctx,
+            &node_ctx,
             &chan_ctx,
             commit_num,
             feerate_per_kw,
@@ -2694,7 +2789,8 @@ mod tests {
 
         let (per_commitment_point, txkeys, to_self_delay) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let per_commitment_point = chan.get_per_commitment_point(n);
+                chan.keys.set_next_holder_commitment_number_for_testing(n);
+                let per_commitment_point = chan.get_per_commitment_point(n).expect("point");
                 let txkeys = chan
                     .make_holder_tx_keys(&per_commitment_point)
                     .expect("failed to make txkeys");
@@ -2812,7 +2908,8 @@ mod tests {
 
         let per_commitment_point = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                Ok(chan.get_per_commitment_point(n))
+                chan.keys.set_next_holder_commitment_number_for_testing(n);
+                chan.get_per_commitment_point(n)
             })
             .expect("point");
 
@@ -2999,12 +3096,15 @@ mod tests {
 
         let (sig, per_commitment_point, htlc_tx, htlc_redeemscript) =
             signer.with_ready_channel(&node_id, &channel_id, |chan| {
+                chan.keys
+                    .set_next_holder_commitment_number_for_testing(commit_num);
                 let mut channel_parameters = chan.make_channel_parameters();
 
                 // Mutate the channel parameters
                 chanparammut(&mut channel_parameters);
 
-                let per_commitment_point = chan.get_per_commitment_point(commit_num);
+                let per_commitment_point =
+                    chan.get_per_commitment_point(commit_num).expect("point");
                 let mut keys = chan.make_holder_tx_keys(&per_commitment_point)?;
 
                 // Mutate the tx creation keys.
@@ -3738,9 +3838,13 @@ mod tests {
                 let to_countersignatory = 1_000_000;
                 let mut htlcs = vec![];
 
+                chan.keys
+                    .set_next_holder_commitment_number_for_testing(commit_num);
+
                 let parameters = channel_parameters.as_holder_broadcastable();
 
-                let per_commitment_point = chan.get_per_commitment_point(commit_num);
+                let per_commitment_point =
+                    chan.get_per_commitment_point(commit_num).expect("point");
                 let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 
                 let redeem_scripts = build_tx_scripts(
@@ -3753,13 +3857,15 @@ mod tests {
                 .expect("scripts");
                 let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
-                let commitment_tx = chan.make_holder_commitment_tx(
-                    commit_num,
-                    feerate_per_kw,
-                    to_broadcaster,
-                    to_countersignatory,
-                    htlcs.clone(),
-                );
+                let commitment_tx = chan
+                    .make_holder_commitment_tx(
+                        commit_num,
+                        feerate_per_kw,
+                        to_broadcaster,
+                        to_countersignatory,
+                        htlcs.clone(),
+                    )
+                    .expect("holder_commitment_tx");
 
                 // rebuild to get the scripts
                 let trusted_tx = commitment_tx.trust();
@@ -3809,8 +3915,12 @@ mod tests {
 
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let commitment_tx =
-                    chan.make_holder_commitment_tx(23, 0, 2_000_000, 1_000_000, vec![]);
+                let commit_num = 23;
+                chan.keys
+                    .set_next_holder_commitment_number_for_testing(commit_num);
+                let commitment_tx = chan
+                    .make_holder_commitment_tx(commit_num, 0, 2_000_000, 1_000_000, vec![])
+                    .expect("holder_commitment_tx");
                 Ok(commitment_tx
                     .trust()
                     .built_transaction()
@@ -3871,10 +3981,12 @@ mod tests {
 
         let (per_commitment_point, per_commitment_secret) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                Ok((
-                    chan.get_per_commitment_point(n),
-                    chan.get_per_commitment_secret(n),
-                ))
+                chan.keys.set_next_holder_commitment_number_for_testing(n);
+                let point = chan.get_per_commitment_point(n)?;
+                chan.keys
+                    .set_next_holder_commitment_number_for_testing(n + 2);
+                let secret = chan.get_per_commitment_secret(n)?;
+                Ok((point, secret))
             })
             .expect("point");
 
@@ -4332,9 +4444,12 @@ mod tests {
             let to_broadcaster = 1_999_997;
             let to_countersignatory = 1_000_000;
 
+            chan.keys
+                .set_next_holder_commitment_number_for_testing(commit_num);
+
             let parameters = channel_parameters.as_holder_broadcastable();
 
-            let per_commitment_point = chan.get_per_commitment_point(commit_num);
+            let per_commitment_point = chan.get_per_commitment_point(commit_num).expect("point");
             let mut keys = chan.make_holder_tx_keys(&per_commitment_point)?;
 
             // Mutate the tx creation keys.

@@ -585,8 +585,7 @@ impl Signer for SignServer {
         let correct = self
             .signer
             .with_channel_base(&node_id, &channel_id, |base| {
-                let secret = base.get_per_commitment_secret(commitment_number);
-                Ok(suggested[..] == secret[..])
+                Ok(base.check_future_secret(commitment_number, &suggested)?)
             })?;
 
         let reply = CheckFutureSecretReply { correct };
@@ -620,9 +619,9 @@ impl Signer for SignServer {
         let res: Result<(PublicKey, Option<SecretKey>), status::Status> = self
             .signer
             .with_channel_base(&node_id, &channel_id, |base| {
-                let point = base.get_per_commitment_point(commitment_number);
+                let point = base.get_per_commitment_point(commitment_number)?;
                 let secret = if commitment_number >= 2 {
-                    Some(base.get_per_commitment_secret(commitment_number - 2))
+                    Some(base.get_per_commitment_secret(commitment_number - 2)?)
                 } else {
                     None
                 };

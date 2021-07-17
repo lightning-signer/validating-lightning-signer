@@ -214,22 +214,31 @@ fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
 
 impl BaseSign for LoopbackChannelSigner {
     fn get_per_commitment_point(&self, idx: u64, _secp_ctx: &Secp256k1<All>) -> PublicKey {
-        // signer layer expect forward counting commitment number, but we are passed a backwards counting one
+        // signer layer expect forward counting commitment number, but
+        // we are passed a backwards counting one
         self.signer
             .with_channel_base(&self.node_id, &self.channel_id, |base| {
-                Ok(base.get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - idx))
+                // TODO - remove the following hack when loopback makes the
+                // appropriate validate_holder_commitment_tx calls ...
+                base.set_next_holder_commitment_number_for_testing(INITIAL_COMMITMENT_NUMBER - idx);
+
+                Ok(base
+                    .get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - idx)
+                    .unwrap())
             })
             .map_err(|s| self.bad_status(s))
             .unwrap()
     }
 
     fn release_commitment_secret(&self, commitment_number: u64) -> [u8; 32] {
-        // signer layer expect forward counting commitment number, but we are passed a backwards counting one
+        // signer layer expect forward counting commitment number, but
+        // we are passed a backwards counting one
         let secret = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 let secret = chan
-                    .get_per_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number)[..]
+                    .get_per_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number)
+                    .unwrap()[..]
                     .try_into()
                     .unwrap();
                 Ok(secret)
