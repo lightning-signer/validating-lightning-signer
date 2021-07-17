@@ -38,6 +38,12 @@ pub trait Validator {
         is_counterparty: bool,
     ) -> Result<(), ValidationError>;
 
+    fn validate_holder_commitment_tx(
+        &self,
+        keys: &EnforcingSigner,
+        commit_num: u64,
+    ) -> Result<(), ValidationError>;
+
     /// Phase 1 decoding of 2nd level HTLC tx and validation by recomposition
     fn decode_and_validate_htlc_tx(
         &self,
@@ -184,13 +190,10 @@ impl SimpleValidator {
 // TODO - policy-v2-commitment-htlc-received-spends-active-utxo
 // TODO - policy-v2-commitment-htlc-routing-balance
 // TODO - policy-v2-commitment-initial-funding-value
-// TODO - policy-v2-commitment-local-not-revoked
 // TODO - policy-v2-commitment-previous-revoked
 // TODO - policy-v2-commitment-spends-active-utxo
 
 // not yet implemented
-// TODO - policy-v2-revoke-new-commitment-signed
-// TODO - policy-v2-revoke-new-commitment-valid
 // TODO - policy-v2-revoke-not-closed
 
 // not yet implemented
@@ -307,6 +310,23 @@ impl Validator for SimpleValidator {
             )));
         }
 
+        Ok(())
+    }
+
+    fn validate_holder_commitment_tx(
+        &self,
+        keys: &EnforcingSigner,
+        commit_num: u64,
+    ) -> Result<(), ValidationError> {
+        // policy-v2-commitment-local-not-revoked
+        if commit_num + 2 <= keys.next_holder_commitment_number() {
+            return Err(Policy(format!(
+                "can't sign revoked commitment_number {}, \
+                 next_holder_commitment_number is {}",
+                commit_num,
+                keys.next_holder_commitment_number()
+            )));
+        };
         Ok(())
     }
 

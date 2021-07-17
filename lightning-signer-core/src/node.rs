@@ -213,13 +213,18 @@ pub trait ChannelBase {
     /// Get the channel basepoints and public keys
     fn get_channel_basepoints(&self) -> ChannelPublicKeys;
     /// Get the per-commitment point for a holder commitment transaction
-    fn get_per_commitment_point(&self, commitment_number: u64) -> PublicKey;
+    fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status>;
     /// Get the per-commitment secret for a holder commitment transaction
     // TODO leaking secret
-    fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey;
+    fn get_per_commitment_secret(&self, commitment_number: u64) -> Result<SecretKey, Status>;
+    /// Check a future secret to support `option_data_loss_protect`
+    fn check_future_secret(&self, commit_num: u64, suggested: &SecretKey) -> Result<bool, Status>;
     /// Get the channel nonce, used to derive the channel keys
     // TODO should this be exposed?
     fn nonce(&self) -> Vec<u8>;
+
+    #[cfg(feature = "test_utils")]
+    fn set_next_holder_commitment_number_for_testing(&self, num: u64);
 }
 
 impl Debug for Channel {
@@ -233,18 +238,34 @@ impl ChannelBase for ChannelStub {
         self.keys.pubkeys().clone()
     }
 
-    fn get_per_commitment_point(&self, commitment_number: u64) -> PublicKey {
-        self.keys.get_per_commitment_point(
+    fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status> {
+        if commitment_number != 0 {
+            return Err(self.validation_error(ValidationError::Policy(format!(
+                "channel stub can only return point for commitment number zero",
+            ))));
+        }
+        Ok(self.keys.get_per_commitment_point(
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             &self.secp_ctx,
-        )
+        ))
     }
 
-    fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey {
-        let secret = self
+    fn get_per_commitment_secret(&self, _commitment_number: u64) -> Result<SecretKey, Status> {
+        // We can't release a commitment_secret from a ChannelStub ever.
+        Err(self.validation_error(ValidationError::Policy(format!(
+            "channel stub cannot release commitment secret"
+        ))))
+    }
+
+    fn check_future_secret(
+        &self,
+        commitment_number: u64,
+        suggested: &SecretKey,
+    ) -> Result<bool, Status> {
+        let secret_data = self
             .keys
             .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
-        SecretKey::from_slice(&secret).unwrap()
+        Ok(suggested[..] == secret_data)
     }
 
     // BEGIN NOT TESTED
@@ -252,6 +273,11 @@ impl ChannelBase for ChannelStub {
         self.nonce.clone()
     }
     // END NOT TESTED
+
+    #[cfg(feature = "test_utils")]
+    fn set_next_holder_commitment_number_for_testing(&self, num: u64) {
+        self.keys.set_next_holder_commitment_number_for_testing(num);
+    }
 }
 
 impl ChannelBase for Channel {
@@ -259,19 +285,46 @@ impl ChannelBase for Channel {
         self.keys.pubkeys().clone()
     }
 
-    fn get_per_commitment_point(&self, commitment_number: u64) -> PublicKey {
-        self.keys.get_per_commitment_point(
+    fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status> {
+        let next_holder_commitment_number = self.keys.next_holder_commitment_number();
+        if commitment_number > next_holder_commitment_number {
+            return Err(self.validation_error(ValidationError::Policy(format!(
+                "get_per_commitment_point: \
+                 commitment_number {} invalid when next_holder_commitment_number is {}",
+                commitment_number, next_holder_commitment_number,
+            ))));
+        }
+        Ok(self.keys.get_per_commitment_point(
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             &self.secp_ctx,
-        )
+        ))
     }
 
-    fn get_per_commitment_secret(&self, commitment_number: u64) -> SecretKey {
+    fn get_per_commitment_secret(&self, commitment_number: u64) -> Result<SecretKey, Status> {
+        let next_holder_commitment_number = self.keys.next_holder_commitment_number();
+        // policy-v2-revoke-new-commitment-signed
+        if commitment_number + 2 > next_holder_commitment_number {
+            return Err(self.validation_error(ValidationError::Policy(format!(
+                "get_per_commitment_secret: \
+                 commitment_number {} invalid when next_holder_commitment_number is {}",
+                commitment_number, next_holder_commitment_number,
+            ))));
+        }
         let secret = self
             .keys
             .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
-        self.persist().unwrap();
-        SecretKey::from_slice(&secret).unwrap()
+        Ok(SecretKey::from_slice(&secret).unwrap())
+    }
+
+    fn check_future_secret(
+        &self,
+        commitment_number: u64,
+        suggested: &SecretKey,
+    ) -> Result<bool, Status> {
+        let secret_data = self
+            .keys
+            .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+        Ok(suggested[..] == secret_data)
     }
 
     // BEGIN NOT TESTED
@@ -279,6 +332,11 @@ impl ChannelBase for Channel {
         self.nonce.clone()
     }
     // END NOT TESTED
+
+    #[cfg(feature = "test_utils")]
+    fn set_next_holder_commitment_number_for_testing(&self, num: u64) {
+        self.keys.set_next_holder_commitment_number_for_testing(num);
+    }
 }
 
 impl ChannelStub {
@@ -296,6 +354,14 @@ impl ChannelStub {
             channel_value_sat,
             keys0.channel_keys_id(),
         )
+    }
+
+    pub(crate) fn validation_error(&self, ve: ValidationError) -> Status {
+        let s: String = ve.into();
+        log_error!(self, "VALIDATION ERROR: {}", &s);
+        #[cfg(feature = "backtrace")]
+        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
+        Status::invalid_argument(s)
     }
 }
 
@@ -569,7 +635,7 @@ impl Channel {
             to_holder_value_sat,
             to_counterparty_value_sat,
             htlcs,
-        );
+        )?;
         log_debug!(
             self,
             "channel: sign holder txid {}",
@@ -633,17 +699,17 @@ impl Channel {
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
         htlcs: Vec<HTLCOutputInCommitment>,
-    ) -> CommitmentTransaction {
-        let per_commitment_point = self.get_per_commitment_point(commitment_number);
+    ) -> Result<CommitmentTransaction, Status> {
+        let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
         let keys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
-        self.make_holder_commitment_tx_with_keys(
+        Ok(self.make_holder_commitment_tx_with_keys(
             keys,
             commitment_number,
             feerate_per_kw,
             to_holder_value_sat,
             to_counterparty_value_sat,
             htlcs,
-        )
+        ))
     }
 
     pub(crate) fn htlcs_info2_to_oic(
@@ -744,7 +810,7 @@ impl Channel {
         redeemscript: &Script,
         htlc_amount_sat: u64,
     ) -> Result<Signature, Status> {
-        let per_commitment_point = self.get_per_commitment_point(commitment_number);
+        let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         let htlc_sighash = Message::from_slice(
             &SigHashCache::new(tx).signature_hash(
@@ -1226,7 +1292,7 @@ impl Channel {
         info: CommitmentInfo,
     ) -> Result<CommitmentTransaction, Status> {
         let info2 = self.build_holder_commitment_info(
-            &self.get_per_commitment_point(commitment_number),
+            &self.get_per_commitment_point(commitment_number)?,
             info.to_broadcaster_value_sat,
             info.to_countersigner_value_sat,
             offered_htlcs,
@@ -1259,7 +1325,7 @@ impl Channel {
             info.to_broadcaster_value_sat,
             info.to_countersigner_value_sat,
             htlcs.clone(),
-        );
+        )?;
 
         if recomposed_tx.trust().built_transaction().transaction != *tx {
             // BEGIN NOT TESTED
@@ -1285,6 +1351,7 @@ impl Channel {
         // - policy-v1-commitment-revocation-pubkey
         // - policy-v1-commitment-htlc-pubkey
         // - policy-v1-commitment-delayed-pubkey
+        // - policy-v2-revoke-new-commitment-valid
 
         Ok(recomposed_tx)
     }
@@ -1348,7 +1415,7 @@ impl Channel {
                 self.validation_error(Policy(format!("commit sig verify failed: {}", ve)))
             })?;
 
-        let per_commitment_point = self.get_per_commitment_point(commitment_number);
+        let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
         let txkeys = self
             .make_holder_tx_keys(&per_commitment_point)
             .map_err(|err| self.internal_error(format!("make_holder_tx_keys failed: {}", err)))?;
@@ -1410,9 +1477,15 @@ impl Channel {
         self.persist()?;
 
         Ok((
-            self.get_per_commitment_point(commitment_number + 1),
+            // These calls are guaranteed to pass the commitment_number check because
+            // we just advanced it to the right spot above.
+            self.get_per_commitment_point(commitment_number + 1)
+                .unwrap(),
             if commitment_number >= 1 {
-                Some(self.get_per_commitment_secret(commitment_number - 1))
+                Some(
+                    self.get_per_commitment_secret(commitment_number - 1)
+                        .unwrap(),
+                )
             } else {
                 None
             },
@@ -1426,6 +1499,17 @@ impl Channel {
         payment_hashmap: &Map<[u8; 20], PaymentHash>,
         commitment_number: u64,
     ) -> Result<Signature, Status> {
+        let validator = self
+            .node
+            .upgrade()
+            .unwrap()
+            .validator_factory
+            .make_validator(self.network(), &self.logger);
+
+        validator
+            .validate_holder_commitment_tx(&self.keys, commitment_number)
+            .map_err(|ve| self.validation_error(ve))?;
+
         let recomposed_tx = self.make_recomposed_holder_commitment_tx(
             tx,
             output_witscripts,
@@ -1492,8 +1576,11 @@ impl Channel {
         htlc_amount_sat: u64,
         output_witscript: &Script,
     ) -> Result<Signature, Status> {
-        let per_commitment_point = opt_per_commitment_point
-            .unwrap_or_else(|| self.get_per_commitment_point(commitment_number));
+        let per_commitment_point = if opt_per_commitment_point.is_some() {
+            opt_per_commitment_point.unwrap()
+        } else {
+            self.get_per_commitment_point(commitment_number)?
+        };
 
         let txkeys = self
             .make_holder_tx_keys(&per_commitment_point)

@@ -85,6 +85,11 @@ impl EnforcingSigner {
         state.next_holder_commitment_number = num;
         Ok(())
     }
+
+    #[cfg(feature = "test_utils")]
+    pub fn set_next_holder_commitment_number_for_testing(&self, num: u64) {
+        self.state.lock().unwrap().next_holder_commitment_number = num;
+    }
 }
 
 impl EnforcingSigner {
