@@ -8,6 +8,7 @@ extern crate hex;
 #[cfg(feature = "grpc")]
 extern crate tonic;
 
+pub mod fslogger;
 pub mod persist;
 pub mod util;
 #[macro_use]

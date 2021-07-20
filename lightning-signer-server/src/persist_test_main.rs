@@ -1,11 +1,8 @@
-use std::sync::Arc;
-
 use bitcoin::Network;
 use kv::Json;
 
 use lightning_signer::persist::Persist;
-use lightning_signer::signer::multi_signer::{channel_nonce_to_id, SyncLogger};
-use lightning_signer::util::test_logger::TestLogger;
+use lightning_signer::signer::multi_signer::channel_nonce_to_id;
 use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
 use lightning_signer_server::persist::model::{ChannelEntry, NodeChannelId, NodeEntry};
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
@@ -20,9 +17,7 @@ pub fn main() {
     let channel_nonce1 = "nonce1".as_bytes().to_vec();
     let channel_id1 = channel_nonce_to_id(&channel_nonce1);
 
-    let logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::with_id("server".to_owned()));
-    let (node_id, node_arc, stub, _seed) =
-        util::make_node_and_channel(&logger, &channel_nonce, channel_id);
+    let (node_id, node_arc, stub, _seed) = util::make_node_and_channel(&channel_nonce, channel_id);
     let node = &*node_arc;
 
     persister.new_node(&node_id, &TEST_NODE_CONFIG, &[3u8; 32], Network::Regtest);

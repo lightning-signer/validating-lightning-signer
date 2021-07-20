@@ -1,10 +1,10 @@
+use log::{debug, info};
+
 use core::convert::TryFrom;
 use core::fmt::{self, Debug, Error, Formatter};
 use core::str::FromStr;
 use core::time::Duration;
 
-#[cfg(feature = "backtrace")]
-use backtrace::Backtrace;
 use bitcoin;
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
@@ -35,7 +35,7 @@ use crate::policy::error::ValidationError::{self, Policy};
 use crate::policy::validator::{
     SimpleValidatorFactory, Validator, ValidatorFactory, ValidatorState,
 };
-use crate::signer::multi_signer::{SpendType, SyncLogger};
+use crate::signer::multi_signer::SpendType;
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::tx::tx::{
     build_close_tx, build_commitment_tx, get_commitment_transaction_number_obscure_factor,
@@ -47,7 +47,7 @@ use crate::util::crypto_utils::{
 };
 use crate::util::debug_utils::DebugHTLCOutputInCommitment;
 use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
-use crate::util::status::Status;
+use crate::util::status::{internal_error, invalid_argument, validation_error, Status};
 use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
 use crate::Map;
 use crate::{Arc, Mutex, MutexGuard, Weak};
@@ -152,8 +152,6 @@ pub struct ChannelStub {
     pub node: Weak<Node>,
     /// The channel nonce, used to derive keys
     pub nonce: Vec<u8>,
-    /// The logger
-    pub logger: Arc<SyncLogger>,
     pub(crate) secp_ctx: Secp256k1<All>,
     /// The signer for this channel
     pub keys: EnforcingSigner, // Incomplete, channel_value_sat is placeholder.
@@ -169,7 +167,6 @@ pub struct Channel {
     /// The channel nonce, used to derive keys
     pub nonce: Vec<u8>,
     /// The logger
-    pub logger: Arc<SyncLogger>,
     pub(crate) secp_ctx: Secp256k1<All>,
     /// The signer for this channel
     pub keys: EnforcingSigner,
@@ -240,7 +237,7 @@ impl ChannelBase for ChannelStub {
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status> {
         if commitment_number != 0 {
-            return Err(self.validation_error(ValidationError::Policy(format!(
+            return Err(validation_error(ValidationError::Policy(format!(
                 "channel stub can only return point for commitment number zero",
             ))));
         }
@@ -252,7 +249,7 @@ impl ChannelBase for ChannelStub {
 
     fn get_per_commitment_secret(&self, _commitment_number: u64) -> Result<SecretKey, Status> {
         // We can't release a commitment_secret from a ChannelStub ever.
-        Err(self.validation_error(ValidationError::Policy(format!(
+        Err(validation_error(ValidationError::Policy(format!(
             "channel stub cannot release commitment secret"
         ))))
     }
@@ -288,7 +285,7 @@ impl ChannelBase for Channel {
     fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status> {
         let next_holder_commitment_number = self.keys.next_holder_commitment_number();
         if commitment_number > next_holder_commitment_number {
-            return Err(self.validation_error(ValidationError::Policy(format!(
+            return Err(validation_error(ValidationError::Policy(format!(
                 "get_per_commitment_point: \
                  commitment_number {} invalid when next_holder_commitment_number is {}",
                 commitment_number, next_holder_commitment_number,
@@ -304,7 +301,7 @@ impl ChannelBase for Channel {
         let next_holder_commitment_number = self.keys.next_holder_commitment_number();
         // policy-v2-revoke-new-commitment-signed
         if commitment_number + 2 > next_holder_commitment_number {
-            return Err(self.validation_error(ValidationError::Policy(format!(
+            return Err(validation_error(ValidationError::Policy(format!(
                 "get_per_commitment_secret: \
                  commitment_number {} invalid when next_holder_commitment_number is {}",
                 commitment_number, next_holder_commitment_number,
@@ -355,42 +352,10 @@ impl ChannelStub {
             keys0.channel_keys_id(),
         )
     }
-
-    pub(crate) fn validation_error(&self, ve: ValidationError) -> Status {
-        let s: String = ve.into();
-        log_error!(self, "VALIDATION ERROR: {}", &s);
-        #[cfg(feature = "backtrace")]
-        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
-        Status::invalid_argument(s)
-    }
 }
 
 // Phase 2
 impl Channel {
-    pub(crate) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
-        let s = msg.into();
-        log_error!(self, "INVALID ARGUMENT: {}", &s);
-        #[cfg(feature = "backtrace")]
-        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
-        Status::invalid_argument(s)
-    }
-
-    pub(crate) fn internal_error(&self, msg: impl Into<String>) -> Status {
-        let s = msg.into();
-        log_error!(self, "INTERNAL ERROR: {}", &s);
-        #[cfg(feature = "backtrace")]
-        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
-        Status::internal(s)
-    }
-
-    pub(crate) fn validation_error(&self, ve: ValidationError) -> Status {
-        let s: String = ve.into();
-        log_error!(self, "VALIDATION ERROR: {}", &s);
-        #[cfg(feature = "backtrace")]
-        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
-        Status::invalid_argument(s)
-    }
-
     // Phase 2
     pub(crate) fn make_counterparty_tx_keys(
         &self,
@@ -445,9 +410,7 @@ impl Channel {
                 &remote_per_commitment_point,
                 &holder_points.payment_point,
             )
-            .map_err(|err| {
-                self.internal_error(format!("could not derive counterparty_key: {}", err))
-            })?
+            .map_err(|err| internal_error(format!("could not derive counterparty_key: {}", err)))?
             // END NOT TESTED
         };
         Ok(counterparty_key)
@@ -536,8 +499,7 @@ impl Channel {
             htlcs,
         );
 
-        log_debug!(
-            self,
+        debug!(
             "channel: sign counterparty txid {}",
             commitment_tx.trust().built_transaction().txid
         );
@@ -545,7 +507,7 @@ impl Channel {
         let sigs = self
             .keys
             .sign_counterparty_commitment(&commitment_tx, &self.secp_ctx)
-            .map_err(|_| self.internal_error("failed to sign"))?;
+            .map_err(|_| internal_error("failed to sign"))?;
         let mut sig = sigs.0.serialize_der().to_vec();
         sig.push(SigHashType::All as u8);
         let mut htlc_sigs = Vec::new();
@@ -636,8 +598,7 @@ impl Channel {
             to_counterparty_value_sat,
             htlcs,
         )?;
-        log_debug!(
-            self,
+        debug!(
             "channel: sign holder txid {}",
             commitment_tx.trust().built_transaction().txid
         );
@@ -653,7 +614,7 @@ impl Channel {
         let (sig, htlc_sigs) = self
             .keys
             .sign_holder_commitment_and_htlcs(&holder_commitment_tx, &self.secp_ctx)
-            .map_err(|_| self.internal_error("failed to sign"))?;
+            .map_err(|_| internal_error("failed to sign"))?;
         let mut sig_vec = sig.serialize_der().to_vec();
         sig_vec.push(SigHashType::All as u8);
 
@@ -941,7 +902,7 @@ impl Channel {
         )
         .map_err(|err| {
             // BEGIN NOT TESTED
-            self.internal_error(format!("could not derive to_holder_delayed_key: {}", err))
+            internal_error(format!("could not derive to_holder_delayed_key: {}", err))
             // END NOT TESTED
         })?;
         let counterparty_payment_pubkey =
@@ -951,7 +912,7 @@ impl Channel {
             &remote_per_commitment_point,
             &holder_points.revocation_basepoint,
         )
-        .map_err(|err| self.internal_error(format!("could not derive revocation key: {}", err)))?;
+        .map_err(|err| internal_error(format!("could not derive revocation key: {}", err)))?;
         let to_holder_pubkey = counterparty_payment_pubkey.clone();
         Ok(CommitmentInfo2 {
             is_counterparty_broadcaster: true,
@@ -987,7 +948,7 @@ impl Channel {
             &holder_points.delayed_payment_basepoint,
         )
         .map_err(|err| {
-            self.internal_error(format!(
+            internal_error(format!(
                 "could not derive to_holder_delayed_pubkey: {}",
                 err
             ))
@@ -1002,7 +963,7 @@ impl Channel {
                 &counterparty_points.payment_point,
             )
             .map_err(|err| {
-                self.internal_error(format!("could not derive counterparty_pubkey: {}", err))
+                internal_error(format!("could not derive counterparty_pubkey: {}", err))
             })?
         };
 
@@ -1011,9 +972,7 @@ impl Channel {
             &per_commitment_point,
             &counterparty_points.revocation_basepoint,
         )
-        .map_err(|err| {
-            self.internal_error(format!("could not derive revocation_pubkey: {}", err))
-        })?;
+        .map_err(|err| internal_error(format!("could not derive revocation_pubkey: {}", err)))?;
         let to_counterparty_pubkey = counterparty_pubkey.clone();
         Ok(CommitmentInfo2 {
             is_counterparty_broadcaster: false,
@@ -1045,7 +1004,7 @@ impl Channel {
 
         if tx.output.len() != output_witscripts.len() {
             // BEGIN NOT TESTED
-            return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
+            return Err(invalid_argument("len(tx.output) != len(witscripts)"));
             // END NOT TESTED
         }
 
@@ -1054,12 +1013,12 @@ impl Channel {
             .upgrade()
             .unwrap()
             .validator_factory
-            .make_validator(self.network(), &self.logger);
+            .make_validator(self.network());
 
         // Since we didn't have the value at the real open, validate it now.
         validator
             .validate_channel_open(&self.setup)
-            .map_err(|ve| self.validation_error(ve))?;
+            .map_err(|ve| validation_error(ve))?;
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = true;
@@ -1071,7 +1030,7 @@ impl Channel {
                 tx,
                 output_witscripts,
             )
-            .map_err(|err| self.validation_error(err))?;
+            .map_err(|err| validation_error(err))?;
 
         let offered_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.offered_htlcs)?;
         let received_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.received_htlcs)?;
@@ -1090,15 +1049,11 @@ impl Channel {
             .validate_commitment_tx(&self.setup, &state, &info2, true)
             .map_err(|ve| {
                 // BEGIN NOT TESTED
-                log_debug!(
-                    self,
+                debug!(
                     "VALIDATION FAILED:\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
-                    &tx,
-                    &self.setup,
-                    &state,
-                    &info2,
+                    &tx, &self.setup, &state, &info2,
                 );
-                self.validation_error(ve)
+                validation_error(ve)
                 // END NOT TESTED
             })?;
 
@@ -1115,13 +1070,12 @@ impl Channel {
 
         if recomposed_tx.trust().built_transaction().transaction != *tx {
             // BEGIN NOT TESTED
-            log_debug!(self, "ORIGINAL_TX={:#?}", &tx);
-            log_debug!(
-                self,
+            debug!("ORIGINAL_TX={:#?}", &tx);
+            debug!(
                 "RECOMPOSED_TX={:#?}",
                 &recomposed_tx.trust().built_transaction().transaction
             );
-            return Err(self.validation_error(ValidationError::Policy(
+            return Err(validation_error(ValidationError::Policy(
                 "recomposed tx mismatch".to_string(),
             )));
             // END NOT TESTED
@@ -1142,7 +1096,7 @@ impl Channel {
         let sigs = self
             .keys
             .sign_counterparty_commitment(&recomposed_tx, &self.secp_ctx)
-            .map_err(|_| self.internal_error("failed to sign"))?;
+            .map_err(|_| internal_error("failed to sign"))?;
 
         self.persist()?;
 
@@ -1186,7 +1140,7 @@ impl Channel {
 
         if tx.output.len() != output_witscripts.len() {
             // BEGIN NOT TESTED
-            return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
+            return Err(invalid_argument("len(tx.output) != len(witscripts)"));
             // END NOT TESTED
         }
 
@@ -1195,12 +1149,12 @@ impl Channel {
             .upgrade()
             .unwrap()
             .validator_factory
-            .make_validator(self.network(), &self.logger);
+            .make_validator(self.network());
 
         // Since we didn't have the value at the real open, validate it now.
         validator
             .validate_channel_open(&self.setup)
-            .map_err(|ve| self.validation_error(ve))?;
+            .map_err(|ve| validation_error(ve))?;
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = false;
@@ -1212,7 +1166,7 @@ impl Channel {
                 tx,
                 output_witscripts,
             )
-            .map_err(|err| self.validation_error(err))?;
+            .map_err(|err| validation_error(err))?;
 
         let offered_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.offered_htlcs)?;
         let received_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.received_htlcs)?;
@@ -1242,7 +1196,7 @@ impl Channel {
     ) -> Result<CommitmentTransaction, Status> {
         if tx.output.len() != output_witscripts.len() {
             // BEGIN NOT TESTED
-            return Err(self.invalid_argument("len(tx.output) != len(witscripts)"));
+            return Err(invalid_argument("len(tx.output) != len(witscripts)"));
             // END NOT TESTED
         }
 
@@ -1251,12 +1205,12 @@ impl Channel {
             .upgrade()
             .unwrap()
             .validator_factory
-            .make_validator(self.network(), &self.logger);
+            .make_validator(self.network());
 
         // Since we didn't have the value at the real open, validate it now.
         validator
             .validate_channel_open(&self.setup)
-            .map_err(|ve| self.validation_error(ve))?;
+            .map_err(|ve| validation_error(ve))?;
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = false;
@@ -1268,7 +1222,7 @@ impl Channel {
                 tx,
                 output_witscripts,
             )
-            .map_err(|err| self.validation_error(err))?;
+            .map_err(|err| validation_error(err))?;
 
         self.make_recomposed_holder_commitment_tx_common(
             tx,
@@ -1305,15 +1259,11 @@ impl Channel {
             .validate_commitment_tx(&self.setup, &state, &info2, false)
             .map_err(|ve| {
                 // BEGIN NOT TESTED
-                log_debug!(
-                    self,
+                debug!(
                     "VALIDATION FAILED:\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
-                    &tx,
-                    &self.setup,
-                    &state,
-                    &info2,
+                    &tx, &self.setup, &state, &info2,
                 );
-                self.validation_error(ve)
+                validation_error(ve)
                 // END NOT TESTED
             })?;
 
@@ -1329,13 +1279,12 @@ impl Channel {
 
         if recomposed_tx.trust().built_transaction().transaction != *tx {
             // BEGIN NOT TESTED
-            log_debug!(self, "ORIGINAL_TX={:#?}", &tx);
-            log_debug!(
-                self,
+            debug!("ORIGINAL_TX={:#?}", &tx);
+            debug!(
                 "RECOMPOSED_TX={:#?}",
                 &recomposed_tx.trust().built_transaction().transaction
             );
-            return Err(self.validation_error(ValidationError::Policy(
+            return Err(validation_error(ValidationError::Policy(
                 "recomposed tx mismatch".to_string(),
             )));
             // END NOT TESTED
@@ -1402,7 +1351,7 @@ impl Channel {
                     sig_hash_type,
                 )[..],
         )
-        .map_err(|ve| self.invalid_argument(format!("sighash failed: {}", ve)))?;
+        .map_err(|ve| invalid_argument(format!("sighash failed: {}", ve)))?;
 
         let secp_ctx = Secp256k1::new();
         secp_ctx
@@ -1411,14 +1360,12 @@ impl Channel {
                 &counterparty_commit_sig,
                 &self.setup.counterparty_points.funding_pubkey,
             )
-            .map_err(|ve| {
-                self.validation_error(Policy(format!("commit sig verify failed: {}", ve)))
-            })?;
+            .map_err(|ve| validation_error(Policy(format!("commit sig verify failed: {}", ve))))?;
 
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
         let txkeys = self
             .make_holder_tx_keys(&per_commitment_point)
-            .map_err(|err| self.internal_error(format!("make_holder_tx_keys failed: {}", err)))?;
+            .map_err(|err| internal_error(format!("make_holder_tx_keys failed: {}", err)))?;
         let commitment_txid = recomposed_tx.trust().txid();
         let to_self_delay = self.setup.counterparty_selected_contest_delay;
 
@@ -1427,7 +1374,7 @@ impl Channel {
             &per_commitment_point,
             &self.keys.counterparty_pubkeys().htlc_basepoint,
         )
-        .map_err(|err| self.internal_error(format!("derive_public_key failed: {}", err)))?;
+        .map_err(|err| internal_error(format!("derive_public_key failed: {}", err)))?;
 
         for ndx in 0..recomposed_tx.htlcs().len() {
             let htlc = &recomposed_tx.htlcs()[ndx];
@@ -1451,9 +1398,7 @@ impl Channel {
                     SigHashType::All,
                 )[..],
             )
-            .map_err(|err| {
-                self.invalid_argument(format!("sighash failed for htlc {}: {}", ndx, err))
-            })?;
+            .map_err(|err| invalid_argument(format!("sighash failed for htlc {}: {}", ndx, err)))?;
 
             secp_ctx
                 .verify(
@@ -1462,7 +1407,7 @@ impl Channel {
                     &htlc_pubkey,
                 )
                 .map_err(|err| {
-                    self.validation_error(Policy(format!(
+                    validation_error(Policy(format!(
                         "commit sig verify failed for htlc {}: {}",
                         ndx, err
                     )))
@@ -1472,7 +1417,7 @@ impl Channel {
         // Advance the local commitment number state.
         self.keys
             .set_next_holder_commitment_number(commitment_number + 1)
-            .map_err(|ve| self.validation_error(ve))?;
+            .map_err(|ve| validation_error(ve))?;
 
         self.persist()?;
 
@@ -1504,11 +1449,11 @@ impl Channel {
             .upgrade()
             .unwrap()
             .validator_factory
-            .make_validator(self.network(), &self.logger);
+            .make_validator(self.network());
 
         validator
             .validate_holder_commitment_tx(&self.keys, commitment_number)
-            .map_err(|ve| self.validation_error(ve))?;
+            .map_err(|ve| validation_error(ve))?;
 
         let recomposed_tx = self.make_recomposed_holder_commitment_tx(
             tx,
@@ -1542,7 +1487,7 @@ impl Channel {
         let sigs = self
             .keys
             .sign_holder_commitment_and_htlcs(&recomposed_holder_tx, &self.secp_ctx)
-            .map_err(|_| self.internal_error("failed to sign"))?;
+            .map_err(|_| internal_error("failed to sign"))?;
 
         self.persist()?;
 
@@ -1636,7 +1581,7 @@ impl Channel {
             .upgrade()
             .unwrap()
             .validator_factory
-            .make_validator(self.network(), &self.logger);
+            .make_validator(self.network());
 
         let (feerate_per_kw, htlc, recomposed_tx_sighash) = validator
             .decode_and_validate_htlc_tx(
@@ -1648,7 +1593,7 @@ impl Channel {
                 htlc_amount_sat,
                 output_witscript,
             )
-            .map_err(|e| self.validation_error(e))?;
+            .map_err(|e| validation_error(e))?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let state = ValidatorState { current_height: 0 };
@@ -1656,8 +1601,7 @@ impl Channel {
             .validate_htlc_tx(&self.setup, &state, is_counterparty, &htlc, feerate_per_kw)
             .map_err(|ve| {
                 // BEGIN NOT TESTED
-                log_debug!(
-                    self,
+                debug!(
                     "VALIDATION FAILED:\n\
                      setup={:#?}\n\
                      state={:#?}\n\
@@ -1672,7 +1616,7 @@ impl Channel {
                     DebugHTLCOutputInCommitment(&htlc),
                     feerate_per_kw,
                 );
-                self.validation_error(ve)
+                validation_error(ve)
                 // END NOT TESTED
             })?;
 
@@ -1730,8 +1674,7 @@ pub struct NodeConfig {
 /// let network = Network::Testnet;
 /// let seed = [0; 32];
 /// let config = TEST_NODE_CONFIG;
-/// let logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::new());
-/// let node = Arc::new(Node::new(&logger, config, &seed, network, &persister));
+/// let node = Arc::new(Node::new(config, &seed, network, &persister));
 /// let (channel_id, opt_stub) = node.new_channel(None, None, &node).expect("new channel");
 /// assert!(opt_stub.is_some());
 /// let channel_slot_mutex = node.get_channel(&channel_id).expect("get channel");
@@ -1745,7 +1688,6 @@ pub struct NodeConfig {
 /// }
 /// ```
 pub struct Node {
-    pub logger: Arc<SyncLogger>,
     pub(crate) node_config: NodeConfig,
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<Map<ChannelId, Arc<Mutex<ChannelSlot>>>>,
@@ -1759,7 +1701,6 @@ impl Node {
     ///
     /// NOTE: you must persist the node yourself if it is new.
     pub fn new(
-        logger: &Arc<SyncLogger>,
         node_config: NodeConfig,
         seed: &[u8],
         network: Network,
@@ -1768,12 +1709,10 @@ impl Node {
         let now = Duration::from_secs(genesis_block(network).header.time as u64);
 
         Node {
-            logger: Arc::clone(logger),
             keys_manager: MyKeysManager::new(
                 node_config.key_derivation_style,
                 seed,
                 network,
-                Arc::clone(logger),
                 now.as_secs(),
                 now.subsec_nanos(),
             ),
@@ -1821,32 +1760,10 @@ impl Node {
                 }
             }
         }
-        Err(self.invalid_argument(format!("channel with Outpoint {} not found", &outpoint)))
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
-        let s = msg.into();
-        log_error!(self, "INVALID ARGUMENT: {}", &s);
-        #[cfg(feature = "backtrace")]
-        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
-        Status::invalid_argument(s)
-    }
-
-    pub(crate) fn internal_error(&self, msg: impl Into<String>) -> Status {
-        let s = msg.into();
-        log_error!(self, "INTERNAL ERROR: {}", &s);
-        #[cfg(feature = "backtrace")]
-        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
-        Status::internal(s)
-    }
-
-    pub(crate) fn validation_error(&self, ve: ValidationError) -> Status {
-        let s: String = ve.into();
-        log_error!(self, "VALIDATION ERROR: {}", &s);
-        #[cfg(feature = "backtrace")]
-        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
-        Status::invalid_argument(s)
+        Err(invalid_argument(format!(
+            "channel with Outpoint {} not found",
+            &outpoint
+        )))
     }
 
     /// Create a new channel, which starts out as a stub.
@@ -1880,7 +1797,7 @@ impl Node {
             match &*maybe_slot.unwrap().lock().unwrap() {
                 ChannelSlot::Stub(stub) => {
                     if channel_nonce0 != stub.nonce {
-                        return Err(self.invalid_argument(format!(
+                        return Err(invalid_argument(format!(
                             "new_channel nonce mismatch with existing stub: \
                              channel_id={} channel_nonce0={} stub.nonce={}",
                             channel_id,
@@ -1896,9 +1813,10 @@ impl Node {
                 ChannelSlot::Ready(_) => {
                     // Calling new_channel on a channel that's already been marked
                     // ready is not allowed.
-                    return Err(
-                        self.invalid_argument(format!("channel already ready: {}", channel_id))
-                    );
+                    return Err(invalid_argument(format!(
+                        "channel already ready: {}",
+                        channel_id
+                    )));
                 }
             };
         }
@@ -1912,7 +1830,6 @@ impl Node {
         let stub = ChannelStub {
             node: Arc::downgrade(arc_self),
             nonce: channel_nonce0,
-            logger: Arc::clone(&self.logger),
             secp_ctx: Secp256k1::new(),
             keys: EnforcingSigner::new(inmem_keys),
             id0: channel_id,
@@ -1954,7 +1871,6 @@ impl Node {
                 let stub = ChannelStub {
                     node: Arc::downgrade(arc_self),
                     nonce,
-                    logger: Arc::clone(&self.logger),
                     secp_ctx: Secp256k1::new(),
                     keys: enforcing_signer,
                     id0: channel_id0,
@@ -1975,7 +1891,6 @@ impl Node {
                 let channel = Channel {
                     node: Arc::downgrade(arc_self),
                     nonce,
-                    logger: Arc::clone(&self.logger),
                     secp_ctx: Secp256k1::new(),
                     keys: enforcing_signer,
                     setup,
@@ -2002,7 +1917,6 @@ impl Node {
         node_id: &PublicKey,
         node_entry: NodeEntry,
         persister: Arc<dyn Persist>,
-        logger: Arc<dyn SyncLogger>,
     ) -> Arc<Node> {
         // BEGIN NOT TESTED
         let config = NodeConfig {
@@ -2011,7 +1925,6 @@ impl Node {
         };
         let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
         let node = Arc::new(Node::new(
-            &logger,
             config,
             node_entry
                 .seed
@@ -2022,9 +1935,9 @@ impl Node {
             &persister,
         ));
         assert_eq!(&node.get_id(), node_id);
-        log_info!(node, "Restore node {}", node_id);
+        info!("Restore node {}", node_id);
         for (channel_id0, channel_entry) in persister.get_node_channels(node_id) {
-            log_info!(node, "  Restore channel {}", channel_id0);
+            info!("  Restore channel {}", channel_id0);
             node.restore_channel(
                 channel_id0,
                 channel_entry.id,
@@ -2042,18 +1955,10 @@ impl Node {
     /// Restore all nodes from `persister`.
     ///
     /// The channels of each node are also restored.
-    pub fn restore_nodes(
-        persister: Arc<dyn Persist>,
-        logger: Arc<dyn SyncLogger>,
-    ) -> Map<PublicKey, Arc<Node>> {
+    pub fn restore_nodes(persister: Arc<dyn Persist>) -> Map<PublicKey, Arc<Node>> {
         let mut nodes = Map::new();
         for (node_id, node_entry) in persister.get_nodes() {
-            let node = Node::restore_node(
-                &node_id,
-                node_entry,
-                Arc::clone(&persister),
-                Arc::clone(&logger),
-            );
+            let node = Node::restore_node(&node_id, node_entry, Arc::clone(&persister));
             nodes.insert(node_id, node);
         }
         nodes
@@ -2078,14 +1983,15 @@ impl Node {
         let chan = {
             let channels = self.channels.lock().unwrap();
             let arcobj = channels.get(&channel_id0).ok_or_else(|| {
-                self.invalid_argument(format!("channel does not exist: {}", channel_id0))
+                invalid_argument(format!("channel does not exist: {}", channel_id0))
             })?;
             let slot = arcobj.lock().unwrap();
             let stub = match &*slot {
                 ChannelSlot::Stub(stub) => Ok(stub),
-                ChannelSlot::Ready(_) => {
-                    Err(self.invalid_argument(format!("channel already ready: {}", channel_id0)))
-                }
+                ChannelSlot::Ready(_) => Err(invalid_argument(format!(
+                    "channel already ready: {}",
+                    channel_id0
+                ))),
             }?;
             let mut inmem_keys = stub.channel_keys_with_channel_value(setup.channel_value_sat);
             let holder_pubkeys = inmem_keys.pubkeys();
@@ -2095,7 +2001,6 @@ impl Node {
             Channel {
                 node: Weak::clone(&stub.node),
                 nonce: stub.nonce.clone(),
-                logger: Arc::clone(&stub.logger),
                 secp_ctx: stub.secp_ctx.clone(),
                 keys: EnforcingSigner::new(inmem_keys),
                 setup: setup.clone(),
@@ -2103,13 +2008,11 @@ impl Node {
                 id: opt_channel_id,
             }
         };
-        let validator = self
-            .validator_factory
-            .make_validator(chan.network(), &self.logger);
+        let validator = self.validator_factory.make_validator(chan.network());
 
         validator
             .validate_channel_open(&setup)
-            .map_err(|ve| chan.validation_error(ve))?;
+            .map_err(|ve| validation_error(ve))?;
 
         let mut channels = self.channels.lock().unwrap();
 
@@ -2153,15 +2056,13 @@ impl Node {
         // Funding transactions cannot be associated with a single channel; a single
         // transaction may fund multiple channels
 
-        let validator = self
-            .validator_factory
-            .make_validator(self.network, &self.logger);
+        let validator = self.validator_factory.make_validator(self.network);
 
         // TODO - initialize the state
         let state = ValidatorState { current_height: 0 };
         validator
             .validate_funding_tx(self, &state, tx, opaths)
-            .map_err(|err| self.validation_error(err))?;
+            .map_err(|err| validation_error(err))?;
 
         let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for idx in 0..tx.input.len() {
@@ -2187,9 +2088,8 @@ impl Node {
                 let sighash = match spendtypes[idx] {
                     SpendType::P2pkh => {
                         // legacy address
-                        Message::from_slice(&tx.signature_hash(0, &script_code, 0x01)[..]).map_err(
-                            |err| self.internal_error(format!("p2pkh sighash failed: {}", err)),
-                        )
+                        Message::from_slice(&tx.signature_hash(0, &script_code, 0x01)[..])
+                            .map_err(|err| internal_error(format!("p2pkh sighash failed: {}", err)))
                     }
                     SpendType::P2wpkh | SpendType::P2shP2wpkh => {
                         // segwit native and wrapped
@@ -2201,12 +2101,10 @@ impl Node {
                                 SigHashType::All,
                             )[..],
                         )
-                        .map_err(|err| {
-                            self.internal_error(format!("p2wpkh sighash failed: {}", err))
-                        })
+                        .map_err(|err| internal_error(format!("p2wpkh sighash failed: {}", err)))
                     }
                     // BEGIN NOT TESTED
-                    _ => Err(self.invalid_argument(format!(
+                    _ => Err(invalid_argument(format!(
                         "unsupported spend_type: {}",
                         spendtypes[idx] as i32
                     ))),
@@ -2250,7 +2148,7 @@ impl Node {
     ) -> Result<bitcoin::PrivateKey, Status> {
         if child_path.len() != self.node_config.key_derivation_style.get_key_path_len() {
             // BEGIN NOT TESTED
-            return Err(self.invalid_argument(format!(
+            return Err(invalid_argument(format!(
                 "get_wallet_key: bad child_path len : {}",
                 child_path.len()
             )));
@@ -2265,7 +2163,7 @@ impl Node {
                 .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(*elem).unwrap())
                 .map_err(|err| {
                     // BEGIN NOT TESTED
-                    self.internal_error(format!("derive child_path failed: {}", err))
+                    internal_error(format!("derive child_path failed: {}", err))
                     // END NOT TESTED
                 })?;
         }
@@ -2284,9 +2182,9 @@ impl Node {
 
         // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
         let native_addr = Address::p2wpkh(&pubkey, self.network)
-            .map_err(|err| self.internal_error(format!("p2wpkh failed: {}", err)))?;
+            .map_err(|err| internal_error(format!("p2wpkh failed: {}", err)))?;
         let wrapped_addr = Address::p2shwpkh(&pubkey, self.network)
-            .map_err(|err| self.internal_error(format!("p2shwpkh failed: {}", err)))?;
+            .map_err(|err| internal_error(format!("p2shwpkh failed: {}", err)))?;
 
         Ok(output.script_pubkey == native_addr.script_pubkey()
             || output.script_pubkey == wrapped_addr.script_pubkey())
@@ -2327,7 +2225,7 @@ impl Node {
         let secp_ctx = Secp256k1::signing_only();
         let na_hash = Sha256dHash::hash(na);
         let encmsg = secp256k1::Message::from_slice(&na_hash[..])
-            .map_err(|err| self.internal_error(format!("encmsg failed: {}", err)))?;
+            .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign(&encmsg, &self.get_node_secret());
         let res = sig.serialize_der().to_vec();
         Ok(res)
@@ -2338,7 +2236,7 @@ impl Node {
         let secp_ctx = Secp256k1::signing_only();
         let cu_hash = Sha256dHash::hash(cu);
         let encmsg = secp256k1::Message::from_slice(&cu_hash[..])
-            .map_err(|err| self.internal_error(format!("encmsg failed: {}", err)))?;
+            .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign(&encmsg, &self.get_node_secret());
         let res = sig.serialize_der().to_vec();
         Ok(res)
@@ -2359,7 +2257,7 @@ impl Node {
 
         let secp_ctx = Secp256k1::signing_only();
         let encmsg = secp256k1::Message::from_slice(&hash[..])
-            .map_err(|err| self.internal_error(format!("encmsg failed: {}", err)))?;
+            .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
         let node_secret = SecretKey::from_slice(self.get_node_secret().as_ref()).unwrap();
         let sig = secp_ctx.sign_recoverable(&encmsg, &node_secret);
         let (rid, sig) = sig.serialize_compact();
@@ -2383,7 +2281,7 @@ impl Node {
         let secp_ctx = Secp256k1::signing_only();
         let hash = Sha256dHash::hash(&buffer);
         let encmsg = secp256k1::Message::from_slice(&hash[..])
-            .map_err(|err| self.internal_error(format!("encmsg failed: {}", err)))?;
+            .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign_recoverable(&encmsg, &self.get_node_secret());
         let (rid, sig) = sig.serialize_compact();
         let mut res = sig.to_vec();

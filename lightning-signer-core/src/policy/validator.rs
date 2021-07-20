@@ -1,3 +1,5 @@
+use log::debug;
+
 use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
 
 use lightning::chain::keysinterface::BaseSign;
@@ -14,8 +16,6 @@ use crate::util::crypto_utils::payload_for_p2wsh;
 use crate::util::enforcing_trait_impls::EnforcingSigner;
 
 use super::error::ValidationError::{self, Policy};
-use crate::signer::multi_signer::SyncLogger;
-use crate::Arc;
 use bitcoin::util::bip143::SigHashCache;
 use lightning::ln::PaymentHash;
 
@@ -86,21 +86,20 @@ pub struct ValidatorState {
 // END NOT TESTED
 
 pub trait ValidatorFactory: Send + Sync {
-    fn make_validator(&self, network: Network, logger: &Arc<SyncLogger>) -> Box<dyn Validator>;
+    fn make_validator(&self, network: Network) -> Box<dyn Validator>;
 }
 
 pub struct SimpleValidatorFactory {}
 
-fn simple_validator(network: Network, logger: &Arc<SyncLogger>) -> SimpleValidator {
+fn simple_validator(network: Network) -> SimpleValidator {
     SimpleValidator {
         policy: make_simple_policy(network),
-        logger: Arc::clone(logger),
     }
 }
 
 impl ValidatorFactory for SimpleValidatorFactory {
-    fn make_validator(&self, network: Network, logger: &Arc<SyncLogger>) -> Box<dyn Validator> {
-        Box::new(simple_validator(network, &logger))
+    fn make_validator(&self, network: Network) -> Box<dyn Validator> {
+        Box::new(simple_validator(network))
     }
 }
 
@@ -130,7 +129,6 @@ pub struct SimplePolicy {
 
 pub struct SimpleValidator {
     pub policy: SimplePolicy,
-    pub logger: Arc<SyncLogger>,
 }
 
 impl SimpleValidator {
@@ -410,8 +408,7 @@ impl Validator for SimpleValidator {
             let (revocation_key, contest_delay, delayed_pubkey) =
                 parse_revokeable_redeemscript(output_witscript, setup.option_anchor_outputs())
                     .unwrap_or_else(|_| (vec![], 0, vec![]));
-            log_debug!(
-                self,
+            debug!(
                 "ORIGINAL_TX={:#?}\n\
                               output witscript params: [\n\
                               \x20  revocation_pubkey: {},\n\
@@ -423,8 +420,7 @@ impl Validator for SimpleValidator {
                 contest_delay,
                 hex::encode(&delayed_pubkey)
             );
-            log_debug!(
-                self,
+            debug!(
                 "RECOMPOSED_TX={:#?}\n\
                               output witscript params: [\n\
                               \x20  revocation_pubkey: {},\n\
@@ -616,7 +612,8 @@ mod tests {
     };
 
     use super::*;
-    use crate::util::test_logger::TestLogger;
+
+    use test_env_log::test;
 
     macro_rules! assert_policy_error {
         ($res: expr, $expected: expr) => {
@@ -637,10 +634,7 @@ mod tests {
             max_feerate_per_kw: 1000 * 1000,
         };
 
-        SimpleValidator {
-            policy,
-            logger: Arc::new(TestLogger::new()),
-        }
+        SimpleValidator { policy }
     }
 
     #[test]
@@ -733,8 +727,8 @@ mod tests {
             .is_ok());
     }
 
-    #[test]
     // policy-v1-commitment-to-self-delay-range
+    #[test]
     fn validate_to_holder_min_delay_test() {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
@@ -747,8 +741,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-commitment-to-self-delay-range
+    #[test]
     fn validate_to_holder_max_delay_test() {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
@@ -761,8 +755,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-commitment-to-self-delay-range
+    #[test]
     fn validate_to_counterparty_min_delay_test() {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
@@ -775,8 +769,8 @@ mod tests {
         );
     }
 
-    #[test]
     // policy-v1-commitment-to-self-delay-range
+    #[test]
     fn validate_to_counterparty_max_delay_test() {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();

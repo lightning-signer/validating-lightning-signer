@@ -19,6 +19,9 @@ name = "lightning_signer_server"
 path = "src/lib.rs"
 
 [dependencies]
+anyhow = "1.0"
+log = { version="0.4.14", features = [ "std" ] }
+time = "0.2"
 lightning-signer-core = { path = "../lightning-signer-core", features = ["debug"] }
 backtrace = "0.3"
 bip39 = {version = "1.0.0", features = ["rand"] }
@@ -36,6 +39,10 @@ clap = { version = "3.0.0-beta.2", optional = true }
 bitcoin = { version = "0.26", features = ["bitcoinconsensus"]}
 ctrlc = { version = "3.1.9", features = ["termination"] }
 triggered = "0.1.1"
+
+# For logging in unit tests
+test-env-log = "0.2.3"
+env_logger = "0.9.0"
 
 [dependencies.lightning]
 git = "https://github.com/rust-bitcoin/rust-lightning.git"

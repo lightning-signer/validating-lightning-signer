@@ -1,5 +1,11 @@
 use core::fmt;
 
+#[cfg(feature = "backtrace")]
+use backtrace::Backtrace;
+use log::error;
+
+use crate::policy::error::ValidationError;
+
 // BEGIN NOT TESTED
 #[derive(Clone)]
 pub struct Status {
@@ -92,4 +98,28 @@ impl From<Status> for tonic::Status {
         let code = s.code() as i32;
         tonic::Status::new(code.try_into().unwrap(), s.message())
     }
+}
+
+pub fn invalid_argument(msg: impl Into<String>) -> Status {
+    let s = msg.into();
+    error!("INVALID ARGUMENT: {}", &s);
+    #[cfg(feature = "backtrace")]
+    error!("BACKTRACE:\n{:?}", Backtrace::new());
+    Status::invalid_argument(s)
+}
+
+pub fn internal_error(msg: impl Into<String>) -> Status {
+    let s = msg.into();
+    error!("INTERNAL ERROR: {}", &s);
+    #[cfg(feature = "backtrace")]
+    error!("BACKTRACE:\n{:?}", Backtrace::new());
+    Status::internal(s)
+}
+
+pub fn validation_error(ve: ValidationError) -> Status {
+    let s: String = ve.into();
+    error!("VALIDATION ERROR: {}", &s);
+    #[cfg(feature = "backtrace")]
+    error!("BACKTRACE:\n{:?}", Backtrace::new());
+    Status::invalid_argument(s)
 }

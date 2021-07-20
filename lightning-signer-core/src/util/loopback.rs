@@ -1,5 +1,7 @@
 use crate::Arc;
 
+use log::{debug, error, info};
+
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::{Script, Transaction, TxOut};
 use lightning::chain::keysinterface::{BaseSign, KeysInterface, Sign, SpendableOutputDescriptor};
@@ -75,14 +77,14 @@ impl LoopbackChannelSigner {
         is_outbound: bool,
         channel_value_sat: u64,
     ) -> LoopbackChannelSigner {
-        log_info!(signer, "new channel {:?} {:?}", node_id, channel_id);
+        info!("new channel {:?} {:?}", node_id, channel_id);
         let pubkeys = signer
             .with_channel_base(&node_id, &channel_id, |base| {
                 Ok(base.get_channel_basepoints())
             })
             .map_err(|s| {
                 // BEGIN NOT TESTED
-                log_error!(signer, "bad status {:?} on channel {}", s, channel_id);
+                error!("bad status {:?} on channel {}", s, channel_id);
                 ()
                 // END NOT TESTED
             })
@@ -121,8 +123,7 @@ impl LoopbackChannelSigner {
 
     // BEGIN NOT TESTED
     fn bad_status(&self, s: Status) {
-        let signer = &self.signer;
-        log_error!(signer, "bad status {:?} on channel {}", s, self.channel_id);
+        error!("bad status {:?} on channel {}", s, self.channel_id);
     }
     // END NOT TESTED
 
@@ -130,11 +131,9 @@ impl LoopbackChannelSigner {
         &self,
         hct: &HolderCommitmentTransaction,
     ) -> Result<(Signature, Vec<Signature>), ()> {
-        let signer = &self.signer;
         let commitment_tx = hct.trust();
 
-        log_debug!(
-            signer,
+        debug!(
             "loopback: sign local txid {}",
             commitment_tx.built_transaction().txid
         );
@@ -260,10 +259,8 @@ impl BaseSign for LoopbackChannelSigner {
         commitment_tx: &CommitmentTransaction,
         _secp_ctx: &Secp256k1<All>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
-        let signer = &self.signer;
         let trusted_tx = commitment_tx.trust();
-        log_info!(
-            signer,
+        info!(
             "sign_counterparty_commitment {:?} {:?} txid {}",
             self.node_id,
             self.channel_id,
@@ -435,12 +432,9 @@ impl BaseSign for LoopbackChannelSigner {
         closing_tx: &Transaction,
         _secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
-        let signer = &self.signer;
-        log_info!(
-            signer,
+        info!(
             "sign_closing_transaction {:?} {:?}",
-            self.node_id,
-            self.channel_id
+            self.node_id, self.channel_id
         );
         let mut to_holder_value = 0;
         let mut to_counterparty_value = 0;
@@ -451,7 +445,7 @@ impl BaseSign for LoopbackChannelSigner {
             if out.script_pubkey == local_script {
                 if to_holder_value > 0 {
                     // BEGIN NOT TESTED
-                    log_error!(signer, "multiple to_holder outputs");
+                    error!("multiple to_holder outputs");
                     return Err(());
                     // END NOT TESTED
                 }
@@ -459,7 +453,7 @@ impl BaseSign for LoopbackChannelSigner {
             } else {
                 if to_counterparty_value > 0 {
                     // BEGIN NOT TESTED
-                    log_error!(signer, "multiple to_counterparty outputs");
+                    error!("multiple to_counterparty outputs");
                     return Err(());
                     // END NOT TESTED
                 }
@@ -485,12 +479,9 @@ impl BaseSign for LoopbackChannelSigner {
         msg: &UnsignedChannelAnnouncement,
         _secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
-        let signer = &self.signer;
-        log_info!(
-            signer,
+        info!(
             "sign_counterparty_commitment {:?} {:?}",
-            self.node_id,
-            self.channel_id
+            self.node_id, self.channel_id
         );
 
         let (_nsig, bsig) = self
@@ -508,12 +499,9 @@ impl BaseSign for LoopbackChannelSigner {
     }
 
     fn ready_channel(&mut self, parameters: &ChannelTransactionParameters) {
-        let signer = &self.signer;
-        log_info!(
-            signer,
+        info!(
             "set_remote_channel_pubkeys {:?} {:?}",
-            self.node_id,
-            self.channel_id
+            self.node_id, self.channel_id
         );
 
         // TODO cover local vs remote to_self_delay with a test

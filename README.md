@@ -47,6 +47,10 @@ or if you want to disable grpc (grpc is the only default feature):
 
     cargo test
     
+To enable logging for a failing test (adjust log level to preference):
+
+    RUST_LOG=trace cargo test
+    
 ### Running the Server
 
     cargo run --bin server
