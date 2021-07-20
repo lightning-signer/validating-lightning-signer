@@ -1,4 +1,4 @@
-use crate::{Arc, Map, Mutex};
+use crate::{Map, Mutex};
 use core::convert::{TryFrom, TryInto};
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
@@ -18,7 +18,6 @@ use lightning::chain::keysinterface::{
 };
 
 use crate::node::ChannelId;
-use crate::signer::multi_signer::SyncLogger;
 use crate::util::crypto_utils::{
     channels_seed, derive_key_lnd, get_account_extended_key_lnd, get_account_extended_key_native,
     hkdf_sha256, hkdf_sha256_keys, node_keys_lnd, node_keys_native,
@@ -107,9 +106,6 @@ pub struct MyKeysManager {
     unique_start: Sha256State,
 
     id_to_nonce: Mutex<Map<ChannelId, Vec<u8>>>,
-
-    #[allow(dead_code)]
-    logger: Arc<SyncLogger>,
 }
 
 impl MyKeysManager {
@@ -117,7 +113,6 @@ impl MyKeysManager {
         key_derivation_style: KeyDerivationStyle,
         seed: &[u8],
         network: Network,
-        logger: Arc<SyncLogger>,
         starting_time_secs: u64,
         starting_time_nanos: u32,
     ) -> MyKeysManager {
@@ -202,7 +197,6 @@ impl MyKeysManager {
                     lnd_basepoint_index: AtomicU32::new(0),
                     unique_start,
                     id_to_nonce: Mutex::new(Map::new()),
-                    logger,
                 };
 
                 let secp_seed = res.get_secure_random_bytes();
@@ -618,15 +612,12 @@ impl KeysInterface for MyKeysManager {
 
 #[cfg(test)]
 mod tests {
-    use crate::util::test_logger::TestLogger;
     use crate::util::INITIAL_COMMITMENT_NUMBER;
 
     use super::*;
     use lightning::chain::keysinterface::BaseSign;
 
-    fn logger() -> Arc<SyncLogger> {
-        Arc::new(TestLogger::with_id("server".to_owned()))
-    }
+    use test_env_log::test;
 
     #[test]
     fn keys_test_native() -> Result<(), ()> {
@@ -634,7 +625,6 @@ mod tests {
             KeyDerivationStyle::Native,
             &[0u8; 32],
             Network::Testnet,
-            logger(),
             0,
             0,
         );
@@ -675,14 +665,8 @@ mod tests {
 
     #[test]
     fn keys_test_lnd() -> Result<(), ()> {
-        let manager = MyKeysManager::new(
-            KeyDerivationStyle::Lnd,
-            &[0u8; 32],
-            Network::Testnet,
-            logger(),
-            0,
-            0,
-        );
+        let manager =
+            MyKeysManager::new(KeyDerivationStyle::Lnd, &[0u8; 32], Network::Testnet, 0, 0);
         assert_eq!(
             hex::encode(manager.channel_seed_base),
             "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53"
@@ -719,7 +703,6 @@ mod tests {
             KeyDerivationStyle::Native,
             &[0u8; 32],
             Network::Testnet,
-            logger(),
             0,
             0,
         );

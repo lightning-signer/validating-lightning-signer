@@ -1,7 +1,10 @@
 use std::convert::{TryFrom, TryInto};
-use std::process;
+use std::sync::Arc;
+use std::{cmp, process};
 
 use backtrace::Backtrace;
+use log::{debug, error, info};
+
 use bitcoin;
 use bitcoin::consensus::{deserialize, encode};
 use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
@@ -16,14 +19,11 @@ use tonic::{transport::Server, Request, Response, Status};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
 use lightning_signer::node::{self, ChannelId, ChannelSetup, CommitmentType};
-use lightning_signer::signer::multi_signer::{SpendType, SyncLogger};
+use lightning_signer::signer::multi_signer::SpendType;
 use lightning_signer::tx::tx::HTLCInfo2;
-use lightning_signer::{log_debug, log_error, log_info, log_internal, Map};
+use lightning_signer::Map;
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
-
-use crate::persist::persist_json::KVJsonPersister;
-use crate::server::remotesigner::version_server::Version;
 
 use super::remotesigner;
 use lightning_signer::persist::{DummyPersister, Persist};
@@ -31,64 +31,64 @@ use lightning_signer::signer::multi_signer::{channel_nonce_to_id, MultiSigner};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::crypto_utils::{bitcoin_vec_to_signature, signature_to_bitcoin_vec};
 use lightning_signer::util::debug_utils::DebugBytes;
+use lightning_signer::util::log_utils::{parse_log_level_filter, LOG_LEVEL_FILTER_NAMES};
 use lightning_signer::util::status;
-use std::sync::Arc;
+
+use crate::fslogger::FilesystemLogger;
+use crate::persist::persist_json::KVJsonPersister;
+use crate::server::remotesigner::version_server::Version;
 
 struct SignServer {
-    pub logger: Arc<dyn SyncLogger>,
     pub signer: MultiSigner,
 }
 
+pub(super) fn invalid_grpc_argument(msg: impl Into<String>) -> Status {
+    let s = msg.into();
+    error!("INVALID ARGUMENT: {}", &s);
+    error!("BACKTRACE:\n{:?}", Backtrace::new());
+    Status::invalid_argument(s)
+}
+
+pub(super) fn internal_error(msg: impl Into<String>) -> Status {
+    let s = msg.into();
+    error!("INTERNAL ERROR: {}", &s);
+    #[cfg(feature = "backtrace")]
+    error!("BACKTRACE:\n{:?}", Backtrace::new());
+    Status::internal(s)
+}
+
 impl SignServer {
-    pub(super) fn invalid_grpc_argument(&self, msg: impl Into<String>) -> Status {
-        let s = msg.into();
-        log_error!(self, "INVALID ARGUMENT: {}", &s);
-        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
-        Status::invalid_argument(s)
-    }
-
-    pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
-        let s = msg.into();
-        log_error!(self, "INTERNAL ERROR: {}", &s);
-        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
-        Status::internal(s)
-    }
-
     fn node_id(&self, arg: Option<NodeId>) -> Result<PublicKey, Status> {
         let der_vec = &arg
-            .ok_or_else(|| self.invalid_grpc_argument("missing node ID"))?
+            .ok_or_else(|| invalid_grpc_argument("missing node ID"))?
             .data;
         let slice: &[u8] = der_vec.as_slice();
         if slice.len() != 33 {
-            return Err(self.invalid_grpc_argument(format!("nodeid must be 33 bytes")));
+            return Err(invalid_grpc_argument(format!("nodeid must be 33 bytes")));
         }
-        PublicKey::from_slice(slice).map_err(|err| {
-            self.invalid_grpc_argument(format!("could not deserialize nodeid: {}", err))
-        })
+        PublicKey::from_slice(slice)
+            .map_err(|err| invalid_grpc_argument(format!("could not deserialize nodeid: {}", err)))
     }
 
     fn public_key(&self, arg: Option<PubKey>) -> Result<PublicKey, Status> {
         let der_vec = &arg
-            .ok_or_else(|| self.invalid_grpc_argument("missing pubkey"))?
+            .ok_or_else(|| invalid_grpc_argument("missing pubkey"))?
             .data;
         let slice: &[u8] = der_vec.as_slice();
         if slice.len() != 33 {
-            return Err(self.invalid_grpc_argument(format!("pubkey must be 33 bytes")));
+            return Err(invalid_grpc_argument(format!("pubkey must be 33 bytes")));
         }
-        PublicKey::from_slice(slice).map_err(|err| {
-            self.invalid_grpc_argument(format!("could not deserialize pubkey: {}", err))
-        })
+        PublicKey::from_slice(slice)
+            .map_err(|err| invalid_grpc_argument(format!("could not deserialize pubkey: {}", err)))
     }
 
     fn secret_key(&self, arg: Option<Secret>) -> Result<SecretKey, Status> {
         return SecretKey::from_slice(
-            arg.ok_or_else(|| self.invalid_grpc_argument("missing secret"))?
+            arg.ok_or_else(|| invalid_grpc_argument("missing secret"))?
                 .data
                 .as_slice(),
         )
-        .map_err(|err| {
-            self.invalid_grpc_argument(format!("could not deserialize secret: {}", err))
-        });
+        .map_err(|err| invalid_grpc_argument(format!("could not deserialize secret: {}", err)));
     }
 
     // Converts secp256k1::PublicKey into remotesigner::PubKey
@@ -103,7 +103,7 @@ impl SignServer {
     fn channel_id(&self, channel_nonce: &Option<ChannelNonce>) -> Result<ChannelId, Status> {
         let nonce = channel_nonce
             .as_ref()
-            .ok_or_else(|| self.invalid_grpc_argument("missing channel nonce"))?
+            .ok_or_else(|| invalid_grpc_argument("missing channel nonce"))?
             .data
             .clone();
         let res = channel_nonce_to_id(&nonce);
@@ -114,7 +114,7 @@ impl SignServer {
         let mut htlcs = Vec::new();
         for h in msg_htlcs.iter() {
             let hash = h.payment_hash.as_slice().try_into().map_err(|err| {
-                self.invalid_grpc_argument(format!("could not decode payment hash: {}", err))
+                invalid_grpc_argument(format!("could not decode payment hash: {}", err))
             })?;
             htlcs.push(HTLCInfo2 {
                 value_sat: h.value_sat,
@@ -210,41 +210,45 @@ fn convert_node_config(proto_node_config: NodeConfig) -> node::NodeConfig {
 impl Signer for SignServer {
     async fn ping(&self, request: Request<PingRequest>) -> Result<Response<PingReply>, Status> {
         let req = request.into_inner();
-        log_info!(self, "ENTER ping");
-        log_debug!(self, "req={}", json!(&req));
+        info!("ENTER ping");
+        debug!("req={}", json!(&req));
         let reply = PingReply {
             // We must use .into_inner() as the fields of gRPC requests and responses are private
             message: format!("Hello {}!", req.message),
         };
-        log_info!(self, "REPLY ping");
-        log_debug!(self, "reply={}", json!(&reply));
+        info!("REPLY ping");
+        debug!("reply={}", json!(&reply));
         Ok(Response::new(reply))
     }
 
     async fn init(&self, request: Request<InitRequest>) -> Result<Response<InitReply>, Status> {
         let req = request.into_inner();
-        log_info!(self, "ENTER init");
+        info!("ENTER init");
         // We don't want to log the secret, so comment this out by default
-        //log_debug!(self, "req={}", json!(&req));
+        //debug!("req={}", json!(&req));
         let proto_node_config = req
             .node_config
-            .ok_or_else(|| self.invalid_grpc_argument("missing node_config"))?;
+            .ok_or_else(|| invalid_grpc_argument("missing node_config"))?;
         if proto_node_config.key_derivation_style != node_config::KeyDerivationStyle::Native as i32
             && proto_node_config.key_derivation_style != node_config::KeyDerivationStyle::Lnd as i32
         {
-            return Err(self.invalid_grpc_argument("unknown node_config.key_derivation_style"));
+            return Err(invalid_grpc_argument(
+                "unknown node_config.key_derivation_style",
+            ));
         }
         let hsm_secret = req.hsm_secret.map(|o| o.data).unwrap_or_else(|| Vec::new());
 
         let hsm_secret = hsm_secret.as_slice();
         if hsm_secret.len() > 0 {
             if hsm_secret.len() < 16 {
-                return Err(self.invalid_grpc_argument("hsm_secret must be at least 16 bytes"));
+                return Err(invalid_grpc_argument(
+                    "hsm_secret must be at least 16 bytes",
+                ));
             }
             if hsm_secret.len() > 64 {
-                return Err(
-                    self.invalid_grpc_argument("hsm_secret must be no larger than 64 bytes")
-                );
+                return Err(invalid_grpc_argument(
+                    "hsm_secret must be no larger than 64 bytes",
+                ));
             }
         }
         let node_config = convert_node_config(proto_node_config);
@@ -264,8 +268,8 @@ impl Signer for SignServer {
         let reply = InitReply {
             node_id: Some(NodeId { data: node_id }),
         };
-        log_info!(self, "REPLY init");
-        log_debug!(self, "reply={}", json!(&reply));
+        info!("REPLY init");
+        debug!("reply={}", json!(&reply));
         Ok(Response::new(reply))
     }
 
@@ -274,9 +278,9 @@ impl Signer for SignServer {
         request: Request<GetExtPubKeyRequest>,
     ) -> Result<Response<GetExtPubKeyReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
-        log_info!(self, "ENTER get_ext_pub_key({})", node_id);
+        info!("ENTER get_ext_pub_key({})", node_id);
         let node = self.signer.get_node(&node_id)?;
         let extpubkey = node.get_account_extended_pubkey();
         let reply = GetExtPubKeyReply {
@@ -284,8 +288,8 @@ impl Signer for SignServer {
                 encoded: format!("{}", extpubkey),
             }),
         };
-        log_info!(self, "REPLY get_ext_pub_key({})", node_id);
-        log_debug!(self, "reply={}", json!(&reply));
+        info!("REPLY get_ext_pub_key({})", node_id);
+        debug!("reply={}", json!(&reply));
         Ok(Response::new(reply))
     }
 
@@ -294,7 +298,7 @@ impl Signer for SignServer {
         request: Request<NewChannelRequest>,
     ) -> Result<Response<NewChannelReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         // If the nonce is specified, the channel ID is the sha256 of the nonce
         // If the nonce is not specified, the channel ID is the nonce, per Node::new_channel
@@ -304,8 +308,7 @@ impl Signer for SignServer {
             .as_ref()
             .map(|n| channel_nonce_to_id(&n.data));
         let opt_channel_nonce0 = req.channel_nonce0.as_ref().map(|cn| cn.data.clone());
-        log_info!(
-            self,
+        info!(
             "ENTER new_channel({}/{:?}/{:?})",
             node_id,
             opt_channel_id,
@@ -314,13 +317,13 @@ impl Signer for SignServer {
 
         let node = self.signer.get_node(&node_id)?;
         let (channel_id, stub) = node.new_channel(opt_channel_id, opt_channel_nonce0, &node)?;
-        let stub = stub.ok_or_else(|| self.invalid_grpc_argument("channel already exists"))?;
+        let stub = stub.ok_or_else(|| invalid_grpc_argument("channel already exists"))?;
 
         let reply = NewChannelReply {
             channel_nonce0: Some(ChannelNonce { data: stub.nonce }),
         };
-        log_info!(self, "REPLY new_channel({}/{})", node_id, channel_id);
-        log_debug!(self, "reply={}", json!(&reply));
+        info!("REPLY new_channel({}/{})", node_id, channel_id);
+        debug!("reply={}", json!(&reply));
         Ok(Response::new(reply))
     }
 
@@ -329,15 +332,10 @@ impl Signer for SignServer {
         request: Request<GetChannelBasepointsRequest>,
     ) -> Result<Response<GetChannelBasepointsReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(
-            self,
-            "ENTER get_channel_basepoints({}/{})",
-            node_id,
-            channel_id
-        );
+        info!("ENTER get_channel_basepoints({}/{})", node_id, channel_id);
 
         let bps = self
             .signer
@@ -356,13 +354,8 @@ impl Signer for SignServer {
         let reply = GetChannelBasepointsReply {
             basepoints: Some(basepoints),
         };
-        log_info!(
-            self,
-            "REPLY get_channel_basepoints({}/{})",
-            node_id,
-            channel_id
-        );
-        log_debug!(self, "reply={}", json!(reply));
+        info!("REPLY get_channel_basepoints({}/{})", node_id, channel_id);
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -371,26 +364,22 @@ impl Signer for SignServer {
         request: Request<ReadyChannelRequest>,
     ) -> Result<Response<ReadyChannelReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id0 = self.channel_id(&req.channel_nonce0)?;
         let opt_channel_id = req
             .option_channel_nonce
             .map_or(None, |nonce| Some(channel_nonce_to_id(&nonce.data)));
-        log_info!(
-            self,
+        info!(
             "ENTER ready_channel({}/{})->({}/{:?})",
-            node_id,
-            channel_id0,
-            node_id,
-            opt_channel_id
+            node_id, channel_id0, node_id, opt_channel_id
         );
 
         let req_outpoint = req
             .funding_outpoint
-            .ok_or_else(|| self.invalid_grpc_argument("missing funding outpoint"))?;
+            .ok_or_else(|| invalid_grpc_argument("missing funding outpoint"))?;
         let txid = bitcoin::Txid::from_slice(&req_outpoint.txid).map_err(|err| {
-            self.invalid_grpc_argument(format!("cannot decode funding outpoint txid: {}", err))
+            invalid_grpc_argument(format!("cannot decode funding outpoint txid: {}", err))
         })?;
         let funding_outpoint = OutPoint {
             txid,
@@ -402,7 +391,7 @@ impl Signer for SignServer {
         } else {
             Some(
                 Script::deserialize(&req.holder_shutdown_script.as_slice()).map_err(|err| {
-                    self.invalid_grpc_argument(format!(
+                    invalid_grpc_argument(format!(
                         "could not parse holder_shutdown_script: {}",
                         err
                     ))
@@ -412,7 +401,7 @@ impl Signer for SignServer {
 
         let points = req
             .counterparty_basepoints
-            .ok_or_else(|| self.invalid_grpc_argument("missing counterparty_basepoints"))?;
+            .ok_or_else(|| invalid_grpc_argument("missing counterparty_basepoints"))?;
         let counterparty_points = ChannelPublicKeys {
             funding_pubkey: self.public_key(points.funding_pubkey)?,
             revocation_basepoint: self.public_key(points.revocation)?,
@@ -423,7 +412,7 @@ impl Signer for SignServer {
 
         let counterparty_shutdown_script =
             Script::deserialize(&req.counterparty_shutdown_script.as_slice()).map_err(|err| {
-                self.invalid_grpc_argument(format!(
+                invalid_grpc_argument(format!(
                     "could not parse counterparty_shutdown_script: {}",
                     err
                 ))
@@ -444,15 +433,11 @@ impl Signer for SignServer {
         let node = self.signer.get_node(&node_id)?;
         node.ready_channel(channel_id0, opt_channel_id, setup)?;
         let reply = ReadyChannelReply {};
-        log_info!(
-            self,
+        info!(
             "REPLY ready_channel({}/{})->({}/{:?})",
-            node_id,
-            channel_id0,
-            node_id,
-            opt_channel_id
+            node_id, channel_id0, node_id, opt_channel_id
         );
-        log_debug!(self, "reply={}", json!(reply));
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -461,27 +446,20 @@ impl Signer for SignServer {
         request: Request<SignMutualCloseTxRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(
-            self,
-            "ENTER sign_mutual_close_tx({}/{})",
-            node_id,
-            channel_id
-        );
-        let reqtx = req
-            .tx
-            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+        info!("ENTER sign_mutual_close_tx({}/{})", node_id, channel_id);
+        let reqtx = req.tx.ok_or_else(|| invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
-            .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
+            .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
         if tx.input.len() != 1 {
-            return Err(self.invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
         }
         if tx.output.len() == 0 {
-            return Err(self.invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
         }
 
         let funding_amount_sat = reqtx.input_descs[0].value_sat as u64;
@@ -493,20 +471,15 @@ impl Signer for SignServer {
 
                 Ok(signature_to_bitcoin_vec(sig))
             })
-            .map_err(|_| self.internal_error("signing mutual close failed"))?;
+            .map_err(|_| internal_error("signing mutual close failed"))?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
                 data: sigvec.clone(),
             }),
         };
-        log_info!(
-            self,
-            "REPLY sign_mutual_close_tx({}/{})",
-            node_id,
-            channel_id
-        );
-        log_debug!(self, "reply={}", json!(reply));
+        info!("REPLY sign_mutual_close_tx({}/{})", node_id, channel_id);
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -515,26 +488,17 @@ impl Signer for SignServer {
         request: Request<SignMutualCloseTxPhase2Request>,
     ) -> Result<Response<CloseTxSignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id.clone())?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(
-            self,
-            "ENTER sign_mutual_tx_phase2({}/{})",
-            node_id,
-            channel_id
-        );
+        info!("ENTER sign_mutual_tx_phase2({}/{})", node_id, channel_id);
 
         let opt_counterparty_shutdown_script = if req.counterparty_shutdown_script.is_empty() {
             None
         } else {
             Some(
                 Script::deserialize(&req.counterparty_shutdown_script.as_slice()).map_err(
-                    |_| {
-                        self.invalid_grpc_argument(
-                            "could not deserialize counterparty_shutdown_script",
-                        )
-                    },
+                    |_| invalid_grpc_argument("could not deserialize counterparty_shutdown_script"),
                 )?,
             )
         };
@@ -555,13 +519,11 @@ impl Signer for SignServer {
         let reply = CloseTxSignatureReply {
             signature: Some(BitcoinSignature { data: sig_data }),
         };
-        log_info!(
-            self,
+        info!(
             "REPLY sign_mutual_close_tx_phase2({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
-        log_debug!(self, "reply={}", json!(reply));
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -570,15 +532,10 @@ impl Signer for SignServer {
         request: Request<CheckFutureSecretRequest>,
     ) -> Result<Response<CheckFutureSecretReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(
-            self,
-            "ENTER check_future_secret({}/{})",
-            node_id,
-            channel_id
-        );
+        info!("ENTER check_future_secret({}/{})", node_id, channel_id);
         let commitment_number = req.n;
         let suggested = self.secret_key(req.suggested)?;
 
@@ -589,13 +546,8 @@ impl Signer for SignServer {
             })?;
 
         let reply = CheckFutureSecretReply { correct };
-        log_info!(
-            self,
-            "REPLY check_future_secret({}/{})",
-            node_id,
-            channel_id
-        );
-        log_debug!(self, "reply={}", json!(reply));
+        info!("REPLY check_future_secret({}/{})", node_id, channel_id);
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -604,15 +556,10 @@ impl Signer for SignServer {
         request: Request<GetPerCommitmentPointRequest>,
     ) -> Result<Response<GetPerCommitmentPointReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(
-            self,
-            "ENTER get_per_commitment_point({}/{})",
-            node_id,
-            channel_id
-        );
+        info!("ENTER get_per_commitment_point({}/{})", node_id, channel_id);
         let commitment_number = req.n;
 
         // This API call can be made on a channel stub as well as a ready channel.
@@ -642,13 +589,8 @@ impl Signer for SignServer {
             }),
             old_secret: old_secret_reply,
         };
-        log_info!(
-            self,
-            "REPLY get_per_commitment_point({}/{})",
-            node_id,
-            channel_id
-        );
-        log_debug!(self, "reply={}", json!(reply));
+        info!("REPLY get_per_commitment_point({}/{})", node_id, channel_id);
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -657,16 +599,14 @@ impl Signer for SignServer {
         request: Request<SignFundingTxRequest>,
     ) -> Result<Response<SignFundingTxReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
-        log_info!(self, "ENTER sign_funding_tx({})", node_id);
-        let reqtx = req
-            .tx
-            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+        info!("ENTER sign_funding_tx({})", node_id);
+        let reqtx = req.tx.ok_or_else(|| invalid_grpc_argument("missing tx"))?;
         let tx_res: Result<bitcoin::Transaction, encode::Error> =
             deserialize(reqtx.raw_tx_bytes.as_slice());
         let tx = tx_res
-            .map_err(|e| self.invalid_grpc_argument(format!("could not deserialize tx - {}", e)))?;
+            .map_err(|e| invalid_grpc_argument(format!("could not deserialize tx - {}", e)))?;
         let mut ipaths: Vec<Vec<u32>> = Vec::new();
         let mut values_sat = Vec::new();
         let mut spendtypes: Vec<SpendType> = Vec::new();
@@ -676,7 +616,7 @@ impl Signer for SignServer {
             // Use SpendType::Invalid to flag/designate inputs we are not
             // signing (PSBT case).
             let spendtype = SpendType::try_from(reqtx.input_descs[idx].spend_type)
-                .map_err(|_| self.invalid_grpc_argument("bad spend_type"))?;
+                .map_err(|_| invalid_grpc_argument("bad spend_type"))?;
             if spendtype == SpendType::Invalid {
                 ipaths.push(vec![]);
                 values_sat.push(0);
@@ -686,7 +626,7 @@ impl Signer for SignServer {
                 let child_path = &reqtx.input_descs[idx]
                     .key_loc
                     .as_ref()
-                    .ok_or_else(|| self.invalid_grpc_argument("missing input key_loc desc"))?
+                    .ok_or_else(|| invalid_grpc_argument("missing input key_loc desc"))?
                     .key_path;
                 ipaths.push(child_path.to_vec());
                 let value_sat = reqtx.input_descs[idx].value_sat as u64;
@@ -695,9 +635,7 @@ impl Signer for SignServer {
                 let closeinfo = reqtx.input_descs[idx]
                     .key_loc
                     .as_ref()
-                    .ok_or_else(|| {
-                        self.invalid_grpc_argument("missing input closeinfo key_loc desc")
-                    })?
+                    .ok_or_else(|| invalid_grpc_argument("missing input closeinfo key_loc desc"))?
                     .close_info
                     .as_ref();
                 let uck = self.get_unilateral_close_key(&node_id, closeinfo)?;
@@ -738,8 +676,8 @@ impl Signer for SignServer {
             .collect();
 
         let reply = SignFundingTxReply { witnesses: wits };
-        log_info!(self, "REPLY sign_funding_tx({})", node_id);
-        log_debug!(self, "reply={}", json!(reply));
+        info!("REPLY sign_funding_tx({})", node_id);
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -748,23 +686,21 @@ impl Signer for SignServer {
         request: Request<SignCounterpartyCommitmentTxRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id.clone())?;
         let channel_id = self.channel_id(&req.channel_nonce.clone())?;
-        log_info!(
-            self,
+        info!(
             "ENTER sign_counterparty_commitment_tx({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
 
         let reqtx = req
             .tx
             .clone()
-            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+            .ok_or_else(|| invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
-            .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
+            .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
         let remote_per_commitment_point = self.public_key(req.remote_per_commit_point.clone())?;
         let witscripts = reqtx
             .output_descs
@@ -775,7 +711,7 @@ impl Signer for SignServer {
         let mut payment_hashmap = Map::new();
         for hash in req.payment_hashes.iter() {
             let phash = hash.as_slice().try_into().map_err(|err| {
-                self.invalid_grpc_argument(format!("could not decode payment hash: {}", err))
+                invalid_grpc_argument(format!("could not decode payment hash: {}", err))
             })?;
             payment_hashmap.insert(Ripemd160Hash::hash(hash).into_inner(), PaymentHash(phash));
         }
@@ -797,13 +733,11 @@ impl Signer for SignServer {
                 data: signature_to_bitcoin_vec(sig),
             }),
         };
-        log_info!(
-            self,
+        info!(
             "REPLY sign_counterparty_commitment_tx({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
-        log_debug!(self, "reply={}", json!(reply));
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -812,29 +746,27 @@ impl Signer for SignServer {
         request: Request<ValidateHolderCommitmentTxRequest>,
     ) -> Result<Response<ValidateHolderCommitmentTxReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id.clone())?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(
-            self,
+        info!(
             "ENTER validate_holder_commitment_tx({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
 
         let reqtx = req
             .tx
             .clone()
-            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+            .ok_or_else(|| invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
-            .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
+            .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
         if tx.input.len() != 1 {
-            return Err(self.invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
         }
         if tx.output.len() == 0 {
-            return Err(self.invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
         }
 
         let witscripts = reqtx
@@ -848,18 +780,18 @@ impl Signer for SignServer {
 
         let commit_sig = bitcoin_vec_to_signature(
             &req.commit_signature
-                .ok_or_else(|| self.invalid_grpc_argument("missing commit_signature"))?
+                .ok_or_else(|| invalid_grpc_argument("missing commit_signature"))?
                 .data,
         )
         .map_err(|err| {
-            self.invalid_grpc_argument(format!("trouble in bitcoin_vec_to_signature: {}", err))
+            invalid_grpc_argument(format!("trouble in bitcoin_vec_to_signature: {}", err))
         })?;
         let htlc_sigs = req
             .htlc_signatures
             .iter()
             .map(|sig| {
                 bitcoin_vec_to_signature(&sig.data).map_err(|err| {
-                    self.internal_error(format!("bitcoin_vec_to_signature trouble: {}", err))
+                    internal_error(format!("bitcoin_vec_to_signature trouble: {}", err))
                 })
             })
             .collect::<Result<Vec<_>, Status>>()?;
@@ -889,13 +821,11 @@ impl Signer for SignServer {
             }),
             old_secret: old_secret_reply,
         };
-        log_info!(
-            self,
+        info!(
             "REPLY validate_holder_commitment_tx({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
-        log_debug!(self, "reply={}", json!(reply));
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -904,16 +834,16 @@ impl Signer for SignServer {
         request: Request<ValidateCounterpartyRevocationRequest>,
     ) -> Result<Response<ValidateCounterpartyRevocationReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id.clone())?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(
-            self,
+        info!(
             "ENTER validate_counterparty_revocation({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
-        return Err(self.internal_error("validate_counterparty_revocation UNIMPLEMENTED"));
+        return Err(internal_error(
+            "validate_counterparty_revocation UNIMPLEMENTED",
+        ));
     }
 
     async fn sign_holder_commitment_tx(
@@ -921,29 +851,27 @@ impl Signer for SignServer {
         request: Request<SignHolderCommitmentTxRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id.clone())?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(
-            self,
+        info!(
             "ENTER sign_holder_commitment_tx({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
 
         let reqtx = req
             .tx
             .clone()
-            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+            .ok_or_else(|| invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
-            .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
+            .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
         if tx.input.len() != 1 {
-            return Err(self.invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
         }
         if tx.output.len() == 0 {
-            return Err(self.invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
         }
 
         let witscripts = reqtx
@@ -955,7 +883,7 @@ impl Signer for SignServer {
         let mut payment_hashmap = Map::new();
         for hash in req.payment_hashes.iter() {
             let phash = hash.as_slice().try_into().map_err(|err| {
-                self.invalid_grpc_argument(format!("could not decode payment hash: {}", err))
+                invalid_grpc_argument(format!("could not decode payment hash: {}", err))
             })?;
             payment_hashmap.insert(Ripemd160Hash::hash(hash).into_inner(), PaymentHash(phash));
         }
@@ -971,13 +899,11 @@ impl Signer for SignServer {
                 data: signature_to_bitcoin_vec(sig),
             }),
         };
-        log_info!(
-            self,
+        info!(
             "REPLY sign_holder_commitment_tx({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
-        log_debug!(self, "reply={}", json!(reply));
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -986,28 +912,23 @@ impl Signer for SignServer {
         request: Request<SignHolderHtlcTxRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id.clone())?;
         let channel_id = self.channel_id(&req.channel_nonce.clone())?;
-        log_info!(
-            self,
-            "ENTER sign_holder_htlc_tx({}/{})",
-            node_id,
-            channel_id
-        );
+        info!("ENTER sign_holder_htlc_tx({}/{})", node_id, channel_id);
         let reqtx = req
             .tx
             .clone()
-            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+            .ok_or_else(|| invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
-            .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
+            .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
         if tx.input.len() != 1 {
-            return Err(self.invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
         }
         if tx.output.len() == 0 {
-            return Err(self.invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
         }
 
         let input_desc = reqtx.input_descs[0].clone();
@@ -1041,13 +962,8 @@ impl Signer for SignServer {
                 data: sigvec.clone(),
             }),
         };
-        log_info!(
-            self,
-            "REPLY sign_holder_htlc_tx({}/{})",
-            node_id,
-            channel_id
-        );
-        log_debug!(self, "reply={}", json!(reply));
+        info!("REPLY sign_holder_htlc_tx({}/{})", node_id, channel_id);
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -1056,18 +972,18 @@ impl Signer for SignServer {
         request: Request<SignDelayedSweepRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id.clone())?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_delayed_sweep({}/{})", node_id, channel_id);
+        info!("ENTER sign_delayed_sweep({}/{})", node_id, channel_id);
 
         let reqtx = req
             .tx
             .clone()
-            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+            .ok_or_else(|| invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
-            .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
+            .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
         let input_desc = reqtx.input_descs[0].clone();
         let htlc_amount_sat = input_desc.value_sat as u64;
@@ -1076,7 +992,7 @@ impl Signer for SignServer {
         let input: usize = req
             .input
             .try_into()
-            .map_err(|_| self.invalid_grpc_argument("bad input index"))?;
+            .map_err(|_| invalid_grpc_argument("bad input index"))?;
 
         if tx.output.len() != 1 {
             return Err(Status::invalid_argument("tx.output.len() != 1")); // NOT TESTED
@@ -1103,8 +1019,8 @@ impl Signer for SignServer {
                 data: sigvec.clone(),
             }),
         };
-        log_info!(self, "REPLY sign_delayed_sweep({}/{})", node_id, channel_id);
-        log_debug!(self, "reply={}", json!(reply));
+        info!("REPLY sign_delayed_sweep({}/{})", node_id, channel_id);
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -1113,24 +1029,22 @@ impl Signer for SignServer {
         request: Request<SignCounterpartyHtlcTxRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(
-            self,
+        info!(
             "ENTER sign_counterparty_htlc_tx({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
         let reqtx = req
             .tx
             .clone()
-            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+            .ok_or_else(|| invalid_grpc_argument("missing tx"))?;
 
         let tx_res: Result<bitcoin::Transaction, encode::Error> =
             deserialize(reqtx.raw_tx_bytes.as_slice());
-        let tx = tx_res
-            .map_err(|e| self.invalid_grpc_argument(format!("deserialize tx fail: {}", e)))?;
+        let tx =
+            tx_res.map_err(|e| invalid_grpc_argument(format!("deserialize tx fail: {}", e)))?;
 
         let remote_per_commitment_point = self.public_key(req.remote_per_commit_point)?;
 
@@ -1161,13 +1075,11 @@ impl Signer for SignServer {
         let reply = SignatureReply {
             signature: Some(BitcoinSignature { data: sig_vec }),
         };
-        log_info!(
-            self,
+        info!(
             "REPLY sign_counterparty_htlc_tx({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
-        log_debug!(self, "reply={}", json!(reply));
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -1176,21 +1088,17 @@ impl Signer for SignServer {
         request: Request<SignCounterpartyHtlcSweepRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(
-            self,
+        info!(
             "ENTER sign_counterparty_htlc_sweep({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
-        let reqtx = req
-            .tx
-            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+        let reqtx = req.tx.ok_or_else(|| invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
-            .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
+            .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
         let input_desc = reqtx.input_descs[0].clone();
         let htlc_amount_sat = input_desc.value_sat as u64;
@@ -1201,7 +1109,7 @@ impl Signer for SignServer {
         let input: usize = req
             .input
             .try_into()
-            .map_err(|_| self.invalid_grpc_argument("bad input index"))?;
+            .map_err(|_| invalid_grpc_argument("bad input index"))?;
 
         if tx.output.len() != 1 {
             return Err(Status::invalid_argument("tx.output.len() != 1")); // NOT TESTED
@@ -1226,13 +1134,11 @@ impl Signer for SignServer {
                 data: sigvec.clone(),
             }),
         };
-        log_info!(
-            self,
+        info!(
             "REPLY sign_counterparty_htlc_sweep({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
-        log_debug!(self, "reply={}", json!(reply));
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -1241,16 +1147,14 @@ impl Signer for SignServer {
         request: Request<SignJusticeSweepRequest>,
     ) -> Result<Response<SignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(self, "ENTER sign_justice_sweep({}/{})", node_id, channel_id);
-        let reqtx = req
-            .tx
-            .ok_or_else(|| self.invalid_grpc_argument("missing tx"))?;
+        info!("ENTER sign_justice_sweep({}/{})", node_id, channel_id);
+        let reqtx = req.tx.ok_or_else(|| invalid_grpc_argument("missing tx"))?;
 
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
-            .map_err(|e| self.invalid_grpc_argument(format!("bad tx: {}", e)))?;
+            .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
         let input_desc = reqtx.input_descs[0].clone();
         let htlc_amount_sat = input_desc.value_sat as u64;
@@ -1261,7 +1165,7 @@ impl Signer for SignServer {
         let input: usize = req
             .input
             .try_into()
-            .map_err(|_| self.invalid_grpc_argument("bad input index"))?;
+            .map_err(|_| invalid_grpc_argument("bad input index"))?;
 
         let sigvec = self
             .signer
@@ -1282,8 +1186,8 @@ impl Signer for SignServer {
                 data: sigvec.clone(),
             }),
         };
-        log_info!(self, "REPLY sign_justice_sweep({}/{})", node_id, channel_id);
-        log_debug!(self, "reply={}", json!(reply));
+        info!("REPLY sign_justice_sweep({}/{})", node_id, channel_id);
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -1292,14 +1196,12 @@ impl Signer for SignServer {
         request: Request<SignChannelAnnouncementRequest>,
     ) -> Result<Response<SignChannelAnnouncementReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(
-            self,
+        info!(
             "ENTER sign_channel_announcement({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
 
         let ca = req.channel_announcement;
@@ -1317,13 +1219,11 @@ impl Signer for SignServer {
                 data: bsig.serialize_der().to_vec(),
             }),
         };
-        log_info!(
-            self,
+        info!(
             "REPLY sign_channel_announcement({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
-        log_debug!(self, "reply={}", json!(reply));
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -1332,18 +1232,18 @@ impl Signer for SignServer {
         request: Request<SignNodeAnnouncementRequest>,
     ) -> Result<Response<NodeSignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let na = req.node_announcement;
-        log_info!(self, "ENTER sign_node_announcement({})", node_id);
+        info!("ENTER sign_node_announcement({})", node_id);
 
         let node = self.signer.get_node(&node_id)?;
         let sig_data = node.sign_node_announcement(&na)?;
         let reply = NodeSignatureReply {
             signature: Some(EcdsaSignature { data: sig_data }),
         };
-        log_info!(self, "REPLY sign_node_announcement({})", node_id);
-        log_debug!(self, "reply={}", json!(reply));
+        info!("REPLY sign_node_announcement({})", node_id);
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -1352,34 +1252,34 @@ impl Signer for SignServer {
         request: Request<SignChannelUpdateRequest>,
     ) -> Result<Response<NodeSignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let cu = req.channel_update;
-        log_info!(self, "ENTER sign_channel_update({})", node_id);
+        info!("ENTER sign_channel_update({})", node_id);
         let node = self.signer.get_node(&node_id)?;
         let sig_data = node.sign_channel_update(&cu)?;
         let reply = NodeSignatureReply {
             signature: Some(EcdsaSignature { data: sig_data }),
         };
-        log_info!(self, "REPLY sign_channel_update({})", node_id);
-        log_debug!(self, "reply={}", json!(reply));
+        info!("REPLY sign_channel_update({})", node_id);
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
     async fn ecdh(&self, request: Request<EcdhRequest>) -> Result<Response<EcdhReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let other_key = self.public_key(req.point.clone())?;
-        log_info!(self, "ENTER ecdh({} + {})", node_id, other_key);
+        info!("ENTER ecdh({} + {})", node_id, other_key);
 
         let node = self.signer.get_node(&node_id)?;
         let data = node.ecdh(&other_key);
         let reply = EcdhReply {
             shared_secret: Some(Secret { data }),
         };
-        log_info!(self, "REPLY ecdh({} + {})", node_id, other_key);
-        log_debug!(self, "reply={}", json!(reply));
+        info!("REPLY ecdh({} + {})", node_id, other_key);
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -1388,11 +1288,11 @@ impl Signer for SignServer {
         request: Request<SignInvoiceRequest>,
     ) -> Result<Response<RecoverableNodeSignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let data_part = req.data_part;
         let human_readable_part = req.human_readable_part;
-        log_info!(self, "ENTER sign_invoice({})", node_id);
+        info!("ENTER sign_invoice({})", node_id);
 
         let node = self.signer.get_node(&node_id)?;
         let sig_data = node.sign_invoice_in_parts(&data_part, &human_readable_part)?;
@@ -1401,8 +1301,8 @@ impl Signer for SignServer {
                 data: sig_data.clone(),
             }),
         };
-        log_info!(self, "REPLY sign_invoice({})", node_id);
-        log_debug!(self, "reply={}", json!(reply));
+        info!("REPLY sign_invoice({})", node_id);
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -1411,10 +1311,10 @@ impl Signer for SignServer {
         request: Request<SignMessageRequest>,
     ) -> Result<Response<RecoverableNodeSignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let message = req.message;
-        log_info!(self, "ENTER sign_message({})", node_id);
+        info!("ENTER sign_message({})", node_id);
 
         let node = self.signer.get_node(&node_id)?;
         let rsigvec = node.sign_message(&message)?;
@@ -1423,8 +1323,8 @@ impl Signer for SignServer {
                 data: rsigvec.clone(),
             }),
         };
-        log_info!(self, "REPLY sign_message({})", node_id);
-        log_debug!(self, "reply={}", json!(reply));
+        info!("REPLY sign_message({})", node_id);
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -1433,19 +1333,17 @@ impl Signer for SignServer {
         request: Request<SignCounterpartyCommitmentTxPhase2Request>,
     ) -> Result<Response<CommitmentTxSignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(
-            self,
+        info!(
             "ENTER sign_counterparty_commitment_tx_phase2({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
 
         let req_info = req
             .commitment_info
-            .ok_or_else(|| self.invalid_grpc_argument("missing commitment info"))?;
+            .ok_or_else(|| invalid_grpc_argument("missing commitment info"))?;
         let remote_per_commitment_point = self.public_key(req_info.per_commitment_point.clone())?;
 
         let offered_htlcs = self.convert_htlcs(&req_info.offered_htlcs)?;
@@ -1473,13 +1371,11 @@ impl Signer for SignServer {
             signature: Some(BitcoinSignature { data: sig }),
             htlc_signatures: htlc_bitcoin_sigs,
         };
-        log_info!(
-            self,
+        info!(
             "REPLY sign_counterparty_commitment_tx_phase2({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
-        log_debug!(self, "reply={}", json!(reply));
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -1488,21 +1384,19 @@ impl Signer for SignServer {
         request: Request<SignHolderCommitmentTxPhase2Request>,
     ) -> Result<Response<CommitmentTxSignatureReply>, Status> {
         let req = request.into_inner();
-        log_debug!(self, "req={}", json!(&req));
+        debug!("req={}", json!(&req));
         let node_id = self.node_id(req.node_id)?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_info!(
-            self,
+        info!(
             "ENTER sign_holder_commitment_tx_phase2({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
 
         let req_info = req
             .commitment_info
-            .ok_or_else(|| self.invalid_grpc_argument("missing commitment info"))?;
+            .ok_or_else(|| invalid_grpc_argument("missing commitment info"))?;
         if req_info.per_commitment_point.is_some() {
-            return Err(self.invalid_grpc_argument(
+            return Err(invalid_grpc_argument(
                 "per-commitment point must not be provided for holder txs",
             ));
         }
@@ -1532,13 +1426,11 @@ impl Signer for SignServer {
             signature: Some(BitcoinSignature { data: sig }),
             htlc_signatures: htlc_bitcoin_sigs,
         };
-        log_info!(
-            self,
+        info!(
             "REPLY sign_holder_commitment_tx_phase2({}/{})",
-            node_id,
-            channel_id
+            node_id, channel_id
         );
-        log_debug!(self, "reply={}", json!(reply));
+        debug!("reply={}", json!(reply));
         Ok(Response::new(reply))
     }
 
@@ -1570,8 +1462,7 @@ impl Signer for SignServer {
             .iter()
             .map(|(id, chan_mutex)| {
                 let chan = chan_mutex.lock().unwrap();
-                log_info!(
-                    self,
+                info!(
                     "chan id={} nonce={} id_in_obj={}",
                     id,
                     hex::encode(chan.nonce()),
@@ -1629,6 +1520,24 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .long("port")
                 .takes_value(true)
                 .default_value("50051"),
+        )
+        .arg(
+            Arg::new("logleveldisk")
+                .about("logging level to disk")
+                .short('v')
+                .long("log-level-disk")
+                .possible_values(&LOG_LEVEL_FILTER_NAMES)
+                .default_value("TRACE")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::new("loglevelconsole")
+                .about("logging level to console")
+                .short('V')
+                .long("log-level-console")
+                .possible_values(&LOG_LEVEL_FILTER_NAMES)
+                .default_value("INFO")
+                .takes_value(true),
         );
     let matches = app.get_matches();
     let addr = format!(
@@ -1638,18 +1547,28 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     )
     .parse()?;
 
-    let path = format!("{}/{}", matches.value_of("datadir").unwrap(), "data");
+    let data_path = format!("{}/{}", matches.value_of("datadir").unwrap(), "data");
+
+    let console_log_level = parse_log_level_filter(matches.value_of_t("loglevelconsole").unwrap())
+        .expect("loglevelconsole");
+    let disk_log_level =
+        parse_log_level_filter(matches.value_of_t("logleveldisk").unwrap()).expect("logleveldisk");
+    log::set_boxed_logger(Box::new(FilesystemLogger::new(
+        data_path.clone(),
+        disk_log_level,
+        console_log_level,
+    )))
+    .unwrap_or_else(|e| panic!("Failed to create FilesystemLogger: {}", e));
+    log::set_max_level(cmp::max(disk_log_level, console_log_level));
+
     let test_mode = matches.is_present("test-mode");
     let persister: Arc<dyn Persist> = if matches.is_present("no-persist") {
         Arc::new(DummyPersister)
     } else {
-        Arc::new(KVJsonPersister::new(path.as_str()))
+        Arc::new(KVJsonPersister::new(data_path.as_str()))
     };
     let signer = MultiSigner::new_with_persister(persister, test_mode);
-    let server = SignServer {
-        logger: Arc::clone(&signer.logger),
-        signer,
-    };
+    let server = SignServer { signer };
 
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
     ctrlc::set_handler(move || {

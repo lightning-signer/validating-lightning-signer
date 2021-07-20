@@ -2,8 +2,8 @@ use crate::Map;
 use crate::{Arc, Mutex};
 use core::convert::TryFrom;
 
-#[cfg(feature = "backtrace")]
-use backtrace::Backtrace;
+use log::info;
+
 use bitcoin;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::secp256k1::{PublicKey, Secp256k1};
@@ -13,8 +13,7 @@ use lightning::util::logger::Logger;
 
 use crate::node::{Channel, ChannelBase, ChannelId, ChannelSlot, Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
-use crate::util::status::Status;
-use crate::util::test_logger::TestLogger;
+use crate::util::status::{invalid_argument, Status};
 use crate::SendSync;
 use bitcoin::hashes::Hash;
 use rand::{OsRng, Rng};
@@ -51,44 +50,22 @@ pub trait SyncLogger: Logger + SendSync {}
 ///
 /// If you need just one node, use [Node] directly.
 pub struct MultiSigner {
-    pub logger: Arc<dyn SyncLogger>,
     pub(crate) nodes: Mutex<Map<PublicKey, Arc<Node>>>,
     pub(crate) persister: Arc<dyn Persist>,
     pub(crate) test_mode: bool,
 }
 
 impl MultiSigner {
-    pub(super) fn invalid_argument(&self, msg: impl Into<String>) -> Status {
-        let s = msg.into();
-        log_error!(self, "INVALID ARGUMENT: {}", &s);
-        #[cfg(feature = "backtrace")]
-        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
-        Status::invalid_argument(s)
-    }
-
-    // BEGIN NOT TESTED
-    #[allow(dead_code)]
-    pub(super) fn internal_error(&self, msg: impl Into<String>) -> Status {
-        let s = msg.into();
-        log_error!(self, "INTERNAL ERROR: {}", &s);
-        #[cfg(feature = "backtrace")]
-        log_error!(self, "BACKTRACE:\n{:?}", Backtrace::new());
-        Status::internal(s)
-    }
-    // END NOT TESTED
-
     pub fn new() -> MultiSigner {
         let signer = MultiSigner::new_with_persister(Arc::new(DummyPersister), true);
-        log_info!(signer, "new MySigner");
+        info!("new MySigner");
         signer
     }
 
     pub fn new_with_persister(persister: Arc<dyn Persist>, test_mode: bool) -> MultiSigner {
-        let test_logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::with_id("server".to_owned()));
         println!("Start restore");
-        let nodes = Node::restore_nodes(Arc::clone(&persister), Arc::clone(&test_logger));
+        let nodes = Node::restore_nodes(Arc::clone(&persister));
         MultiSigner {
-            logger: test_logger,
             nodes: Mutex::new(nodes),
             persister,
             test_mode,
@@ -103,7 +80,7 @@ impl MultiSigner {
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);
 
-        let node = Node::new(&self.logger, node_config, &seed, network, &self.persister);
+        let node = Node::new(node_config, &seed, network, &self.persister);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         nodes.insert(node_id, Arc::new(node));
@@ -120,7 +97,7 @@ impl MultiSigner {
         let secp_ctx = Secp256k1::signing_only();
         let network = Network::Testnet;
 
-        let node = Node::new(&self.logger, node_config, seed, network, &self.persister);
+        let node = Node::new(node_config, seed, network, &self.persister);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         if self.test_mode {
@@ -130,7 +107,7 @@ impl MultiSigner {
             // In production, the node must not have existed
             // BEGIN NOT TESTED
             if nodes.contains_key(&node_id) {
-                return Err(self.invalid_argument("node_exists"));
+                return Err(invalid_argument("node_exists"));
             }
             // END NOT TESTED
         }
@@ -153,11 +130,11 @@ impl MultiSigner {
         let secp_ctx = Secp256k1::signing_only();
         let network = Network::Testnet;
 
-        let node = Node::new(&self.logger, node_config, seed, network, &self.persister);
+        let node = Node::new(node_config, seed, network, &self.persister);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let nodes = self.nodes.lock().unwrap();
         nodes.get(&node_id).ok_or_else(|| {
-            self.invalid_argument(format!("warmstart failed: no such node: {}", node_id))
+            invalid_argument(format!("warmstart failed: no such node: {}", node_id))
         })?;
         Ok(node_id)
     }
@@ -213,7 +190,7 @@ impl MultiSigner {
         let nodes = self.nodes.lock().unwrap();
         let node = nodes
             .get(node_id)
-            .ok_or_else(|| self.invalid_argument("no such node"))?;
+            .ok_or_else(|| invalid_argument("no such node"))?;
         Ok(Arc::clone(node))
     }
 
@@ -229,9 +206,10 @@ impl MultiSigner {
         let slot_arc = self.get_channel(&node_id, &channel_id)?;
         let mut slot = slot_arc.lock().unwrap();
         match &mut *slot {
-            ChannelSlot::Stub(_) => {
-                Err(self.invalid_argument(format!("channel not ready: {}", &channel_id)))
-            }
+            ChannelSlot::Stub(_) => Err(invalid_argument(format!(
+                "channel not ready: {}",
+                &channel_id
+            ))),
             ChannelSlot::Ready(chan) => f(chan),
         }
     }
@@ -286,19 +264,20 @@ mod tests {
     use lightning::ln::PaymentHash;
 
     use crate::node::{ChannelSetup, CommitmentType};
-    use crate::policy::error::ValidationError;
     use crate::tx::tx::{build_close_tx, HTLCInfo2, ANCHOR_SAT};
     use crate::util::crypto_utils::{
         derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
         payload_for_p2wpkh, signature_to_bitcoin_vec,
     };
-    use crate::util::status::{Code, Status};
+    use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::*;
 
     use super::*;
 
     use bitcoin::hashes::Hash;
     use lightning::chain::keysinterface::BaseSign;
+
+    use test_env_log::test;
 
     macro_rules! assert_invalid_argument_err {
         ($status: expr, $msg: expr) => {
@@ -414,59 +393,6 @@ mod tests {
     }
 
     #[test]
-    fn channel_invalid_argument_test() {
-        let signer = MultiSigner::new();
-        let (node_id, channel_id) = init_node_and_channel(
-            &signer,
-            TEST_NODE_CONFIG,
-            TEST_SEED[1],
-            make_test_channel_setup(),
-        );
-        let status: Result<(), Status> = signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            Err(chan.invalid_argument("testing invalid_argument"))
-        });
-        assert!(status.is_err());
-        let err = status.unwrap_err();
-        assert_eq!(err.code(), Code::InvalidArgument);
-        assert_eq!(err.message(), "testing invalid_argument");
-    }
-
-    #[test]
-    fn channel_internal_error_test() {
-        let signer = MultiSigner::new();
-        let (node_id, channel_id) = init_node_and_channel(
-            &signer,
-            TEST_NODE_CONFIG,
-            TEST_SEED[1],
-            make_test_channel_setup(),
-        );
-        let status: Result<(), Status> = signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            Err(chan.internal_error("testing internal_error"))
-        });
-        assert!(status.is_err());
-        let err = status.unwrap_err();
-        assert_eq!(err.code(), Code::Internal);
-        assert_eq!(err.message(), "testing internal_error");
-    }
-
-    #[test]
-    fn channel_validation_error_test() {
-        let signer = MultiSigner::new();
-        let (node_id, channel_id) = init_node_and_channel(
-            &signer,
-            TEST_NODE_CONFIG,
-            TEST_SEED[1],
-            make_test_channel_setup(),
-        );
-        let status: Result<(), Status> = signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            Err(chan.validation_error(ValidationError::Policy("testing".to_string())))
-        });
-        assert!(status.is_err());
-        let err = status.unwrap_err();
-        assert_eq!(err.message(), "policy failure: testing");
-    }
-
-    #[test]
     fn node_debug_test() {
         let signer = MultiSigner::new();
         let (node_id, _channel_id) = init_node_and_channel(
@@ -481,32 +407,14 @@ mod tests {
 
     #[test]
     fn node_invalid_argument_test() {
-        let signer = MultiSigner::new();
-        let (node_id, _channel_id) = init_node_and_channel(
-            &signer,
-            TEST_NODE_CONFIG,
-            TEST_SEED[1],
-            make_test_channel_setup(),
-        );
-        let node = signer.get_node(&node_id).unwrap();
-        let err = node.invalid_argument("testing invalid_argument");
-
+        let err = invalid_argument("testing invalid_argument");
         assert_eq!(err.code(), Code::InvalidArgument);
         assert_eq!(err.message(), "testing invalid_argument");
     }
 
     #[test]
     fn node_internal_error_test() {
-        let signer = MultiSigner::new();
-        let (node_id, _channel_id) = init_node_and_channel(
-            &signer,
-            TEST_NODE_CONFIG,
-            TEST_SEED[1],
-            make_test_channel_setup(),
-        );
-        let node = signer.get_node(&node_id).unwrap();
-        let err = node.internal_error("testing internal_error");
-
+        let err = internal_error("testing internal_error");
         assert_eq!(err.code(), Code::Internal);
         assert_eq!(err.message(), "testing internal_error");
     }
@@ -3821,8 +3729,8 @@ mod tests {
         );
     }
 
-    #[test]
     // TODO - same as sign_mutual_close_tx_test
+    #[test]
     fn sign_holder_commitment_tx_test() {
         let signer = MultiSigner::new();
         let setup = make_test_channel_setup();
@@ -3903,8 +3811,8 @@ mod tests {
         );
     }
 
-    #[test]
     // TODO - same as sign_commitment_tx_test
+    #[test]
     fn sign_mutual_close_tx_test() {
         let signer = MultiSigner::new();
         let setup = make_test_channel_setup();

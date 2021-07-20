@@ -174,7 +174,7 @@ mod tests {
     use lightning::chain::keysinterface::InMemorySigner;
     use lightning::util::ser::Writeable;
     use lightning_signer::node::{ChannelSlot, Node};
-    use lightning_signer::signer::multi_signer::{channel_nonce_to_id, SyncLogger};
+    use lightning_signer::signer::multi_signer::channel_nonce_to_id;
     use lightning_signer::util::enforcing_trait_impls::EnforcingSigner;
     use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
 
@@ -182,7 +182,8 @@ mod tests {
     use crate::persist::util::*;
 
     use super::*;
-    use lightning_signer::util::test_logger::TestLogger;
+
+    use test_env_log::test;
 
     fn make_temp_persister<'a>() -> (KVJsonPersister<'a>, TempDir, String) {
         let dir = TempDir::new().unwrap();
@@ -199,9 +200,7 @@ mod tests {
         let channel_nonce = "nonce0".as_bytes().to_vec();
         let channel_id0 = channel_nonce_to_id(&channel_nonce);
 
-        let logger: Arc<dyn SyncLogger> = Arc::new(TestLogger::with_id("server".to_owned()));
-        let (node_id, node_arc, stub, seed) =
-            make_node_and_channel(&logger, &channel_nonce, channel_id0);
+        let (node_id, node_arc, stub, seed) = make_node_and_channel(&channel_nonce, channel_id0);
 
         let node = &*node_arc;
 
@@ -211,7 +210,7 @@ mod tests {
             persister.new_node(&node_id, &TEST_NODE_CONFIG, &seed, Network::Regtest);
             persister.new_channel(&node_id, &stub).unwrap();
 
-            let nodes = Node::restore_nodes(Arc::clone(&persister), Arc::clone(&logger));
+            let nodes = Node::restore_nodes(Arc::clone(&persister));
             let restored_node = nodes.get(&node_id).unwrap();
 
             {
@@ -238,7 +237,7 @@ mod tests {
                     .unwrap();
                 persister.update_channel(&node_id, &channel).unwrap();
 
-                let nodes = Node::restore_nodes(Arc::clone(&persister), Arc::clone(&logger));
+                let nodes = Node::restore_nodes(Arc::clone(&persister));
                 let restored_node_arc = nodes.get(&node_id).unwrap();
                 let slot = restored_node_arc.get_channel(&stub.id0).unwrap();
                 assert!(node.channels().contains_key(&channel_id0));

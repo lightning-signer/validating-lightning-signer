@@ -42,6 +42,8 @@ use self::lightning_signer::util::functional_test_utils::{
     claim_payment, create_announced_chan_between_nodes_with_value, route_payment,
 };
 
+use test_env_log::test;
+
 pub fn create_node_cfgs_with_signer<'a>(
     node_count: usize,
     signer: &Arc<MultiSigner>,

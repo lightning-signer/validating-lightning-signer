@@ -883,6 +883,8 @@ mod tests {
 
     use super::*;
 
+    use test_env_log::test;
+
     #[test]
     fn parse_test_err() {
         let info = CommitmentInfo::new_for_holder();
