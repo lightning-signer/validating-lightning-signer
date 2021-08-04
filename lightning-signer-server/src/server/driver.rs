@@ -21,7 +21,7 @@ use lightning::ln::PaymentHash;
 use lightning_signer::node::{self, ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::signer::multi_signer::SpendType;
 use lightning_signer::tx::tx::HTLCInfo2;
-use lightning_signer::Map;
+use lightning_signer::prelude::Map;
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
 

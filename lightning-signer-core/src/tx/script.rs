@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::opcodes::Class;
 use bitcoin::blockdata::script::{read_scriptint, Builder, Instruction, Instructions};

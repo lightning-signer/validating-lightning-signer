@@ -2,7 +2,8 @@
 //! nodes for functional tests.
 
 use core::cell::RefCell;
-use crate::{Rc, Mutex};
+use crate::Rc;
+use crate::sync::Mutex;
 
 use bitcoin;
 use bitcoin::{Block, Network, Transaction, TxOut};
@@ -16,7 +17,8 @@ use chain::transaction::OutPoint;
 use lightning::chain;
 use lightning::chain::{Confirm, Listen, chaininterface};
 use lightning::ln;
-use lightning::ln::channelmanager::{BestBlock, ChainParameters};
+use lightning::ln::channelmanager::ChainParameters;
+use lightning::chain::BestBlock;
 use lightning::ln::features::InvoiceFeatures;
 use lightning::ln::functional_test_utils::ConnectStyle;
 use lightning::ln::PaymentSecret;
@@ -35,6 +37,7 @@ use util::events::{Event, MessageSendEvent, MessageSendEventsProvider};
 use crate::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use crate::util::test_utils::{TestChainMonitor, TestPersister};
 use core::cmp;
+use lightning::util::events::PaymentPurpose;
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 10;
 
@@ -958,12 +961,17 @@ pub fn pass_along_path<'a, 'b, 'c>(
             if payment_received_expected {
                 assert_eq!(events_2.len(), 1);
                 match events_2[0] {
-                    Event::PaymentReceived { ref payment_hash, ref payment_preimage, ref payment_secret, amt, user_payment_id: _ } => {
+                    Event::PaymentReceived { ref payment_hash, ref purpose, amt } => {
                         assert_eq!(our_payment_hash, *payment_hash);
-                        assert!(payment_preimage.is_none());
-                        assert_eq!(our_payment_secret, *payment_secret);
-                        assert_eq!(amt, recv_value);
-                    }
+                        assert_eq!(recv_value, amt);
+                        match purpose {
+                            PaymentPurpose::InvoicePayment { payment_preimage, payment_secret, .. } => {
+                                assert!(payment_preimage.is_none());
+                                assert_eq!(our_payment_secret, *payment_secret);
+                            },
+                            _ => {},
+                        }
+                    },
                     _ => panic!("Unexpected event"), // NOT TESTED
                 }
             } else {
@@ -1139,7 +1147,7 @@ pub fn create_chanmon_cfgs(node_count: usize) -> Vec<TestChanMonCfg> {
         let tx_broadcaster = TestBroadcaster {
             txn_broadcasted: Mutex::new(Vec::new()),
         };
-        let fee_estimator = test_utils::TestFeeEstimator { sat_per_kw: 253 };
+        let fee_estimator = test_utils::TestFeeEstimator { sat_per_kw: Mutex::new(253) };
         let chain_source = test_utils::TestChainSource::new(Network::Testnet);
         let logger = test_utils::TestLogger::with_id(format!("node {}", i));
         let persister = TestPersister::new();

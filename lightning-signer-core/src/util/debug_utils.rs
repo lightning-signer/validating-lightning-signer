@@ -1,5 +1,8 @@
+use crate::prelude::*;
+use bitcoin::hashes::hex;
 use bitcoin::util::address::Payload;
 use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
+use bitcoin::hashes::hex::ToHex;
 
 // Debug printer for ChannelPublicKeys which doesn't have one.
 // BEGIN NOT TESTED
@@ -31,15 +34,15 @@ pub struct DebugPayload<'a>(pub &'a Payload);
 impl<'a> core::fmt::Debug for DebugPayload<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
         match *self.0 {
-            Payload::PubkeyHash(ref hash) => write!(f, "{}", hex::encode(&hash)),
-            Payload::ScriptHash(ref hash) => write!(f, "{}", hex::encode(&hash)),
+            Payload::PubkeyHash(ref hash) => hex::format_hex(hash, f),
+            Payload::ScriptHash(ref hash) => hex::format_hex(hash, f),
             Payload::WitnessProgram {
                 version: ver,
                 program: ref prog,
             } => f
                 .debug_struct("WitnessProgram")
                 .field("version", &ver.to_u8())
-                .field("program", &hex::encode(&prog))
+                .field("program", &prog.to_hex())
                 .finish(),
         }
     }
@@ -54,7 +57,7 @@ impl<'a> core::fmt::Debug for DebugHTLCOutputInCommitment<'a> {
             .field("offered", &self.0.offered)
             .field("amount_msat", &self.0.amount_msat)
             .field("cltv_expiry", &self.0.cltv_expiry)
-            .field("payment_hash", &hex::encode(&self.0.payment_hash.0[..]))
+            .field("payment_hash", &self.0.payment_hash.0[..].to_hex())
             .field("transaction_output_index", &self.0.transaction_output_index)
             .finish()
     }

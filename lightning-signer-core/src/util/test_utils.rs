@@ -1,5 +1,5 @@
-use crate::Map;
-use crate::{Arc, Mutex};
+use crate::prelude::*;
+use crate::Arc;
 use core::cmp;
 
 use bitcoin;
@@ -8,7 +8,7 @@ use bitcoin::blockdata::script::{Builder, Script};
 use bitcoin::hash_types::Txid;
 use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
-use bitcoin::hashes::Hash;
+use bitcoin::hashes::{Hash, hex::FromHex, hex};
 use bitcoin::network::constants::Network;
 use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1, SecretKey, SignOnly, Signature};
 use bitcoin::util::bip143::SigHashCache;
@@ -38,6 +38,7 @@ use crate::util::crypto_utils::{payload_for_p2wpkh, payload_for_p2wsh};
 use crate::util::enforcing_trait_impls::EnforcingSigner;
 use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
+use bitcoin::hashes::hex::ToHex;
 
 pub struct TestPersister {
     pub update_ret: Mutex<Result<(), channelmonitor::ChannelMonitorUpdateErr>>,
@@ -174,7 +175,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
 pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> PublicKey {
     PublicKey::from_secret_key(
         secp_ctx,
-        &SecretKey::from_slice(&hex::decode(h).unwrap()[..]).unwrap(),
+        &SecretKey::from_slice(&Vec::from_hex(h).unwrap()[..]).unwrap(),
     )
 }
 
@@ -271,7 +272,7 @@ pub fn make_test_channel_keys() -> EnforcingSigner {
 
 pub fn init_node(signer: &MultiSigner, node_config: NodeConfig, seedstr: &str) -> PublicKey {
     let mut seed = [0; 32];
-    seed.copy_from_slice(hex::decode(seedstr).unwrap().as_slice());
+    seed.copy_from_slice(Vec::from_hex(seedstr).unwrap().as_slice());
     signer.new_node_from_seed(node_config, &seed).unwrap()
 }
 
@@ -1151,4 +1152,12 @@ pub fn build_tx_scripts(
         scripts.push(script);
     }
     Ok(scripts)
+}
+
+pub fn hex_decode(s: &str) -> Result<Vec<u8>, hex::Error> {
+    Vec::from_hex(s)
+}
+
+pub fn hex_encode(o: &[u8]) -> String {
+    o.to_hex()
 }

@@ -1,3 +1,4 @@
+use crate::io_extras::sink;
 use bitcoin::consensus::Encodable;
 use bitcoin::{Script, Transaction, TxOut, VarInt};
 
@@ -34,7 +35,7 @@ pub fn maybe_add_change_output(
         value: 0,
     };
     let change_len = change_output
-        .consensus_encode(&mut std::io::sink())
+        .consensus_encode(&mut sink())
         .map_err(|_| ())?;
     let mut weight_with_change: i64 =
         tx.get_weight() as i64 + 2 + witness_max_weight as i64 + change_len as i64 * 4;

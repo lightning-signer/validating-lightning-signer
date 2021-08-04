@@ -2,5 +2,6 @@
 /cobertura.xml
 /coverage.txt
 /lightning-signer-server/src/server/remotesigner.rs
-/target
+/target/
 /.lightning-signer/
+/embedded/target/

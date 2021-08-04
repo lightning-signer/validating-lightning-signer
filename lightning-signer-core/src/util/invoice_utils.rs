@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use bitcoin::bech32::{u5, FromBase32};
 use bitcoin::hashes::{sha256, Hash};
 

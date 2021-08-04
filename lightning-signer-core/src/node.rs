@@ -1,3 +1,5 @@
+use crate::prelude::*;
+use crate::sync::{Arc, Weak};
 use log::{debug, info};
 
 use core::convert::TryFrom;
@@ -10,6 +12,7 @@ use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
+use bitcoin::hashes::hex;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
 use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signature};
@@ -49,9 +52,8 @@ use crate::util::debug_utils::DebugHTLCOutputInCommitment;
 use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
 use crate::util::status::{internal_error, invalid_argument, validation_error, Status};
 use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
-use crate::Map;
-use crate::{Arc, Mutex, MutexGuard, Weak};
-use std::convert::TryInto;
+use core::convert::TryInto;
+use bitcoin::hashes::hex::ToHex;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
@@ -60,13 +62,13 @@ pub struct ChannelId(pub [u8; 32]);
 
 impl Debug for ChannelId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        f.write_str(hex::encode(self.0).as_str())
+        hex::format_hex(&self.0, f)
     }
 }
 
 impl fmt::Display for ChannelId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(hex::encode(self.0).as_str())
+        hex::format_hex(&self.0, f)
     }
 }
 
@@ -1801,8 +1803,8 @@ impl Node {
                             "new_channel nonce mismatch with existing stub: \
                              channel_id={} channel_nonce0={} stub.nonce={}",
                             channel_id,
-                            hex::encode(channel_nonce0),
-                            hex::encode(&stub.nonce)
+                            channel_nonce0.to_hex(),
+                            stub.nonce.to_hex()
                         )));
                     }
                     // This stub is "embryonic" (hasn't signed a commitment).  This

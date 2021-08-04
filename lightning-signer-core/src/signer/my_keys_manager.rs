@@ -1,4 +1,4 @@
-use crate::{Map, Mutex};
+use crate::prelude::*;
 use core::convert::{TryFrom, TryInto};
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
@@ -27,7 +27,7 @@ use crate::util::{byte_utils, transaction_utils};
 use bitcoin::secp256k1::recovery::RecoverableSignature;
 use bitcoin::util::bip143;
 use lightning::ln::msgs::DecodeError;
-use std::collections::HashSet;
+use hashbrown::HashSet;
 
 #[derive(Clone, Copy, Debug)] // NOT TESTED
 pub enum KeyDerivationStyle {
@@ -618,6 +618,7 @@ mod tests {
     use lightning::chain::keysinterface::BaseSign;
 
     use test_env_log::test;
+    use crate::util::test_utils::hex_encode;
 
     #[test]
     fn keys_test_native() -> Result<(), ()> {
@@ -629,28 +630,28 @@ mod tests {
             0,
         );
         assert_eq!(
-            hex::encode(manager.channel_seed_base),
+            hex_encode(&manager.channel_seed_base),
             "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53"
         );
         let keys = make_test_keys(manager);
         assert_eq!(
-            hex::encode(&keys.funding_key[..]),
+            hex_encode(&keys.funding_key[..]),
             "bf36bee09cc5dd64c8f19e10b258efb1f606722e9ff6fe3267b63e2dbe33dcfc"
         );
         assert_eq!(
-            hex::encode(&keys.revocation_base_key[..]),
+            hex_encode(&keys.revocation_base_key[..]),
             "203612ab8275bab7916b8bf895d45b9dbb639b43d904b34d6449214e9855d345"
         );
         assert_eq!(
-            hex::encode(&keys.htlc_base_key[..]),
+            hex_encode(&keys.htlc_base_key[..]),
             "517c009452b4baa9df42d6c8cddc966e017d49606524ce7728681b593a5659c1"
         );
         assert_eq!(
-            hex::encode(&keys.payment_key[..]),
+            hex_encode(&keys.payment_key[..]),
             "54ce3b75dcc2731604f3db55ecd1520d797a154cc757d6d98c3ffd1e90a9a25a"
         );
         assert_eq!(
-            hex::encode(&keys.delayed_payment_base_key[..]),
+            hex_encode(&keys.delayed_payment_base_key[..]),
             "9f5c122778b12ad35f555437d88b76b726ae4e472897af33e22616fb0d0b0a44"
         );
         Ok(())
@@ -668,30 +669,30 @@ mod tests {
         let manager =
             MyKeysManager::new(KeyDerivationStyle::Lnd, &[0u8; 32], Network::Testnet, 0, 0);
         assert_eq!(
-            hex::encode(manager.channel_seed_base),
+            hex_encode(&manager.channel_seed_base),
             "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53"
         );
         let mut channel_id = [0u8; 32];
         channel_id[0] = 1u8;
         let keys = make_test_keys(manager);
         assert_eq!(
-            hex::encode(&keys.funding_key[..]),
+            hex_encode(&keys.funding_key[..]),
             "0b2f20d28e705daea86a93e6d5646e2f8989956d73c61752e7cf6c4421071e99"
         );
         assert_eq!(
-            hex::encode(&keys.revocation_base_key[..]),
+            hex_encode(&keys.revocation_base_key[..]),
             "920c0b18c7d0979dc7119efb1ca520cf6899c92a3236d146968b521a901eac63"
         );
         assert_eq!(
-            hex::encode(&keys.htlc_base_key[..]),
+            hex_encode(&keys.htlc_base_key[..]),
             "60deb71963b8574f3c8bf5df2d7b851f9c31a866a1c14bd00dae1263a5f27c55"
         );
         assert_eq!(
-            hex::encode(&keys.payment_key[..]),
+            hex_encode(&keys.payment_key[..]),
             "064e32a51f3ed0a41936bd788a80dc91b7521a85da00f02196eddbd32c3d5631"
         );
         assert_eq!(
-            hex::encode(&keys.delayed_payment_base_key[..]),
+            hex_encode(&keys.delayed_payment_base_key[..]),
             "47a6c0532b9e593e84d91451104dc6fe10ba4aa30cd7c95ed039916d3e908b10"
         );
         Ok(())
@@ -710,7 +711,7 @@ mod tests {
         channel_id[0] = 1u8;
         let keys = make_test_keys(manager);
         assert_eq!(
-            hex::encode(&keys.commitment_seed),
+            hex_encode(&keys.commitment_seed),
             "9fc48da6bc75058283b860d5989ffb802b6395ca28c4c3bb9d1da02df6bb0cb3"
         );
 
@@ -720,7 +721,7 @@ mod tests {
             &keys.release_commitment_secret(INITIAL_COMMITMENT_NUMBER - 3),
         );
         assert_eq!(
-            hex::encode(per_commit_point.serialize().to_vec()),
+            hex_encode(&per_commit_point.serialize().to_vec()),
             "03b5497ca60ff3165908c521ea145e742c25dedd14f5602f3f502d1296c39618a5"
         );
         Ok(())
