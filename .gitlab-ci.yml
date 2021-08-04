@@ -5,7 +5,7 @@ rust-latest:
   stage: build
   image: rust:latest
   script:
-    - cd lightning-signer-core && cargo build --no-default-features  # make sure it builds without test_utils enabled
+    - cd lightning-signer-core && cargo build --no-default-features --features=std  # make sure it builds without test_utils enabled
     - cargo build
     - cargo test
 
@@ -13,9 +13,18 @@ rust-1.45.2:
   stage: build
   image: rust:1.45.2
   script:
-    - cd lightning-signer-core && cargo build --no-default-features  # make sure it builds without test_utils enabled
+    - cd lightning-signer-core && cargo build --no-default-features --features=std  # make sure it builds without test_utils enabled
     - cargo build
     - cargo test
+
+embedded:
+  stage: build
+  image: devrandom01/rust-qemu:nightly
+  variables:
+    RUSTFLAGS: "-C link-arg=-Tlink.x"
+    CARGO_TARGET_THUMBV7M_NONE_EABI_RUNNER: "qemu-system-arm -cpu cortex-m3 -machine mps2-an385 -nographic -semihosting-config enable=on,target=native -kernel"
+  script:
+    - cd embedded && cargo run --target thumbv7m-none-eabi
 
 coverage:
   stage: build

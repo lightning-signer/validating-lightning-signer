@@ -1,6 +1,6 @@
 [package]
 name = "lightning-signer-server"
-version = "0.1.0-1"
+version = "0.1.0-3"
 authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
 edition = "2018"
 license = "Apache-2.0"
@@ -36,7 +36,7 @@ serde = { version = "1.0.105", features = ["derive"], optional = true }
 serde_json = { version = "1.0.48", optional = true }
 serde_with = { version = "1.6.4", features = ["hex"], optional = true }
 clap = { version = "3.0.0-beta.2", optional = true }
-bitcoin = { version = "0.26", features = ["bitcoinconsensus"]}
+bitcoin = { version = "0.27", features = ["bitcoinconsensus"]}
 ctrlc = { version = "3.1.9", features = ["termination"] }
 triggered = "0.1.1"
 
@@ -46,8 +46,8 @@ env_logger = "0.9.0"
 
 [dependencies.lightning]
 git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "a8038a8234b70bc261f633a9e2b40adebebcd8d4"
-version = "0.0.14"
+rev = "09e167019589dcfc5ee9675ad243b337659eafc7"
+version = "0.0.99"
 
 # we need this for integration testing
 features = ["unsafe_revoked_tx_signing", "_test_utils"]

@@ -21,7 +21,7 @@ use crate::util::crypto_utils::{
 };
 use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
-use crate::IOError;
+use crate::io_extras::Error as IOError;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
 use std::convert::TryInto;
 

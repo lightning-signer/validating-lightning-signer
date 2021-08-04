@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::Network;
 

@@ -4,3 +4,7 @@ members = [
     "lightning-signer-core",
     "lightning-signer-server",
 ]
+
+exclude = [
+    "embedded"
+]

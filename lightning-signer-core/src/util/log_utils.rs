@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use anyhow::{anyhow, Result};
 use log;
 
@@ -18,23 +19,4 @@ pub fn parse_log_level_filter(lvlstr: String) -> Result<log::LevelFilter> {
 		.iter()
 		.find(|ll| lvlstr == ll.as_str())
 		.ok_or_else(|| anyhow!("invalid log level: {}", lvlstr))?)
-}
-
-pub struct ConsoleLogger;
-
-impl log::Log for ConsoleLogger {
-	fn enabled(&self, _metadata: &log::Metadata) -> bool {
-		true
-	}
-	fn log(&self, record: &log::Record) {
-		println!(
-			"{:<5} [{} : {}, {}] {}",
-			record.level().to_string(),
-			record.module_path().unwrap_or_else(|| ""),
-			record.file().unwrap_or_else(|| ""),
-			record.line().unwrap_or_else(|| 0),
-			record.args()
-		);
-	}
-	fn flush(&self) {}
 }

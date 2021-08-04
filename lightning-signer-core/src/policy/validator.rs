@@ -1,6 +1,8 @@
+use crate::prelude::*;
 use log::debug;
 
 use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
+use bitcoin::hashes::hex::ToHex;
 
 use lightning::chain::keysinterface::BaseSign;
 use lightning::ln::chan_utils::{
@@ -416,9 +418,9 @@ impl Validator for SimpleValidator {
                               \x20  delayed_pubkey: {},\n\
                               ]",
                 &tx,
-                hex::encode(&revocation_key),
+                revocation_key.to_hex(),
                 contest_delay,
-                hex::encode(&delayed_pubkey)
+                delayed_pubkey.to_hex()
             );
             debug!(
                 "RECOMPOSED_TX={:#?}\n\

@@ -1,11 +1,10 @@
 use crate::signer::multi_signer::SyncLogger;
-use crate::Map;
-use crate::Mutex;
-use crate::SendSync;
+use crate::prelude::*;
 use lightning::util::logger::{Level, Logger, Record};
 
 pub struct TestLogger {
     level: Level,
+    #[allow(unused)]
     id: String,
     pub lines: Mutex<Map<(String, String), usize>>,
 }
@@ -17,10 +16,10 @@ impl SyncLogger for TestLogger {}
 impl TestLogger {
     // BEGIN NOT TESTED
     pub fn new() -> TestLogger {
-        Self::with_id("".to_owned())
+        Self::new_with_id("".to_owned())
     }
     // END NOT TESTED
-    pub fn with_id(id: String) -> TestLogger {
+    pub fn new_with_id(id: String) -> TestLogger {
         TestLogger {
             level: Level::Trace,
             id,
@@ -47,6 +46,7 @@ impl Logger for TestLogger {
             .entry((record.module_path.to_string(), format!("{}", record.args)))
             .or_insert(0) += 1;
         if self.level >= record.level {
+            #[cfg(feature = "std")]
             println!(
                 "{:<5} {} [{} : {}, {}] {}",
                 record.level.to_string(),

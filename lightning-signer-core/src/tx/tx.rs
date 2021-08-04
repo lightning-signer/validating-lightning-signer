@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use core::cmp;
 use core::convert::TryInto;
 use core::fmt;
@@ -31,6 +32,7 @@ use crate::tx::script::{
 use crate::util::crypto_utils::payload_for_p2wpkh;
 use crate::util::debug_utils::DebugPayload;
 use crate::util::enforcing_trait_impls::EnforcingSigner;
+use bitcoin::hashes::hex::ToHex;
 
 const MAX_DELAY: i64 = 1000;
 pub const ANCHOR_SAT: u64 = 330;
@@ -329,7 +331,7 @@ impl fmt::Debug for HTLCInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HTLCInfo")
             .field("value_sat", &self.value_sat)
-            .field("payment_hash_hash", &hex::encode(&self.payment_hash_hash))
+            .field("payment_hash_hash", &self.payment_hash_hash.to_hex())
             .field("cltv_expiry", &self.cltv_expiry)
             .finish()
     }
@@ -797,7 +799,7 @@ impl CommitmentInfo {
             // policy-v1-commitment-anchor-match-fundingkey
             return Err(Mismatch(format!(
                 "anchor to_pubkey {} doesn't match local or remote",
-                hex::encode(to_pubkey_data)
+                to_pubkey_data.to_hex()
             )));
         }
         Ok(()) // NOT TESTED
@@ -877,9 +879,7 @@ mod tests {
     use bitcoin::{Address, Network};
 
     use crate::node::CommitmentType;
-    use crate::util::test_utils::{
-        make_test_channel_keys, make_test_channel_setup, make_test_pubkey,
-    };
+    use crate::util::test_utils::{make_test_channel_keys, make_test_channel_setup, make_test_pubkey, hex_encode};
 
     use super::*;
 
@@ -958,7 +958,7 @@ mod tests {
             res.unwrap_err(),
             Mismatch(format!(
                 "anchor to_pubkey {} doesn\'t match local or remote",
-                hex::encode(to_pubkey_data)
+                hex_encode(&to_pubkey_data)
             ))
         );
     }

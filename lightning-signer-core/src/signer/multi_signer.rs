@@ -1,5 +1,5 @@
-use crate::Map;
-use crate::{Arc, Mutex};
+use crate::prelude::*;
+use crate::sync::Arc;
 use core::convert::TryFrom;
 
 use log::info;
@@ -14,8 +14,8 @@ use lightning::util::logger::Logger;
 use crate::node::{Channel, ChannelBase, ChannelId, ChannelSlot, Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
 use crate::util::status::{invalid_argument, Status};
-use crate::SendSync;
 use bitcoin::hashes::Hash;
+#[cfg(feature = "std")]
 use rand::{OsRng, Rng};
 
 #[derive(PartialEq, Clone, Copy)]
@@ -63,7 +63,6 @@ impl MultiSigner {
     }
 
     pub fn new_with_persister(persister: Arc<dyn Persist>, test_mode: bool) -> MultiSigner {
-        println!("Start restore");
         let nodes = Node::restore_nodes(Arc::clone(&persister));
         MultiSigner {
             nodes: Mutex::new(nodes),
@@ -72,6 +71,7 @@ impl MultiSigner {
         }
     }
 
+    #[cfg(feature = "std")]
     pub fn new_node(&self, node_config: NodeConfig) -> PublicKey {
         let secp_ctx = Secp256k1::signing_only();
         let network = Network::Testnet;
@@ -278,6 +278,8 @@ mod tests {
     use lightning::chain::keysinterface::BaseSign;
 
     use test_env_log::test;
+    use crate::util::test_utils::{hex_decode, hex_encode};
+    use bitcoin::hashes::hex::ToHex;
 
     macro_rules! assert_invalid_argument_err {
         ($status: expr, $msg: expr) => {
@@ -476,7 +478,7 @@ mod tests {
         // check_future_secret should work.
         let n: u64 = 10;
         let suggested = SecretKey::from_slice(
-            hex::decode("4220531d6c8b15d66953c46b5c4d67c921943431452d5543d8805b9903c6b858")
+            hex_decode("4220531d6c8b15d66953c46b5c4d67c921943431452d5543d8805b9903c6b858")
                 .unwrap()
                 .as_slice(),
         )
@@ -548,7 +550,7 @@ mod tests {
     fn warmstart_with_seed_test() {
         let signer = MultiSigner::new();
         let mut seed = [0; 32];
-        seed.copy_from_slice(hex::decode(TEST_SEED[1]).unwrap().as_slice());
+        seed.copy_from_slice(hex_decode(TEST_SEED[1]).unwrap().as_slice());
 
         // First try a warmstart w/ no existing node.
         let result = signer.warmstart_with_seed(TEST_NODE_CONFIG, &seed);
@@ -636,8 +638,8 @@ mod tests {
             .expect("build_commitment_tx");
 
         assert_eq!(
-            hex::encode(tx.txid()),
-            "382b13a4b614178101e798ca5c01004295cf2b155fc07d3ced103d09e5450f77"
+            tx.txid().to_hex(),
+            "770f45e5093d10ed3c7dc05f152bcf954200015cca98e701811714b6a4132b38"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -696,7 +698,7 @@ mod tests {
             .expect("build_commitment_tx");
 
         assert_eq!(
-            hex::encode(tx.txid()),
+            tx.txid().to_hex(),
             "68a0916cea22e66438f0cd2c50f667866ebd16f59ba395352602bd817d6c0fd9"
         );
 
@@ -813,8 +815,8 @@ mod tests {
             .expect("build_commitment_tx");
 
         assert_eq!(
-            hex::encode(tx.txid()),
-            "fb9746e0400fc13139a130950f08a2ec5b1ee8b68e3df41cab133a03ed38323f"
+            tx.txid().to_hex(),
+            "3f3238ed033a13ab1cf43d8eb6e81e5beca2080f9530a13931c10f40e04697fb"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -901,7 +903,7 @@ mod tests {
             .expect("build_commitment_tx");
 
         assert_eq!(
-            hex::encode(tx.txid()),
+            tx.txid().to_hex(),
             "52aa09518edbdbd77ca56790efbb9392710c3bed10d7d27b04d98f6f6d8a207d"
         );
 
@@ -956,8 +958,8 @@ mod tests {
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
                 assert_eq!(
-                    hex::encode(tx.txid),
-                    "51e93fe1e72c78bf0818f3e50508a42168525e37be862cc6f2178013137da875"
+                    tx.txid.to_hex(),
+                    "75a87d13138017f2c62c86be375e526821a40805e5f31808bf782ce7e13fe951"
                 );
                 Ok(tx.transaction.clone())
             })
@@ -1043,8 +1045,8 @@ mod tests {
             })
             .expect("sign");
         assert_eq!(
-            hex::encode(tx.txid()),
-            "fc0338fa8ccb55b797dbb6c035d894d78fce0d150a33d8ec3fa4d075aa63b0de"
+            tx.txid().to_hex(),
+            "deb063aa75d0a43fecd8330a150dce8fd794d835c0b6db97b755cb8cfa3803fc"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -1105,8 +1107,8 @@ mod tests {
             })
             .expect("sign");
         assert_eq!(
-            hex::encode(tx.txid()),
-            "7d1618688e8a9a4cc09c94f5385a05c92a8b6662ac6e7e77eeb19a0e19070a56"
+            tx.txid().to_hex(),
+            "560a07190e9ab1ee777e6eac62668b2ac9055a38f5949cc04c9a8a8e6818167d"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -1295,23 +1297,23 @@ mod tests {
 
     fn check_basepoints(basepoints: &ChannelPublicKeys) {
         assert_eq!(
-            hex::encode(basepoints.funding_pubkey.serialize().to_vec()),
+            basepoints.funding_pubkey.serialize().to_vec().to_hex(),
             "02868b7bc9b6d307509ed97758636d2d3628970bbd3bd36d279f8d3cde8ccd45ae"
         );
         assert_eq!(
-            hex::encode(basepoints.revocation_basepoint.serialize().to_vec()),
+            basepoints.revocation_basepoint.serialize().to_vec().to_hex(),
             "02982b69bb2d70b083921cbc862c0bcf7761b55d7485769ddf81c2947155b1afe4"
         );
         assert_eq!(
-            hex::encode(basepoints.payment_point.serialize().to_vec()),
+            basepoints.payment_point.serialize().to_vec().to_hex(),
             "026bb6655b5e0b5ff80d078d548819f57796013b09de8085ddc04b49854ae1e483"
         );
         assert_eq!(
-            hex::encode(basepoints.delayed_payment_basepoint.serialize().to_vec()),
+            basepoints.delayed_payment_basepoint.serialize().to_vec().to_hex(),
             "0291dfb201bc87a2da8c7ffe0a7cf9691962170896535a7fd00d8ee4406a405e98"
         );
         assert_eq!(
-            hex::encode(basepoints.htlc_basepoint.serialize().to_vec()),
+            basepoints.htlc_basepoint.serialize().to_vec().to_hex(),
             "02c0c8ff7278e50bd07d7b80c109621d44f895e216400a7e95b09f544eb3fafee2"
         );
     }
@@ -1377,7 +1379,7 @@ mod tests {
         let n: u64 = 10;
 
         let suggested = SecretKey::from_slice(
-            hex::decode("4220531d6c8b15d66953c46b5c4d67c921943431452d5543d8805b9903c6b858")
+            hex_decode("4220531d6c8b15d66953c46b5c4d67c921943431452d5543d8805b9903c6b858")
                 .unwrap()
                 .as_slice(),
         )
@@ -1559,7 +1561,7 @@ mod tests {
         let spendtypes = vec![SpendType::P2wpkh];
 
         let uniclosekey = SecretKey::from_slice(
-            hex::decode("4220531d6c8b15d66953c46b5c4d67c921943431452d5543d8805b9903c6b858")
+            hex_decode("4220531d6c8b15d66953c46b5c4d67c921943431452d5543d8805b9903c6b858")
                 .unwrap()
                 .as_slice(),
         )
@@ -2955,13 +2957,13 @@ mod tests {
 
         if is_offered {
             assert_eq!(
-                hex::encode(htlc_tx.txid()),
-                "b55afa31b9a5d4dd5c840c1c4274019e3cc0495a07ba060216db2f72d708a166"
+                htlc_tx.txid().to_hex(),
+                "66a108d7722fdb160206ba075a49c03c9e0174421c0c845cddd4a5b931fa5ab5"
             );
         } else {
             assert_eq!(
-                hex::encode(htlc_tx.txid()),
-                "14b759430de58d1636714a75aff4d46722294157b1727d10b18eba7c8dc452a0"
+                htlc_tx.txid().to_hex(),
+                "a052c48d7cba8eb1107d72b15741292267d4f4af754a7136168de50d4359b714"
             );
         }
 
@@ -3063,13 +3065,13 @@ mod tests {
 
         if is_offered {
             assert_eq!(
-                hex::encode(htlc_tx.txid()),
-                "5c8e91cb861d4eb26230c7dc068f5ae1e2ba0defda431d3012c70d36bba23c78"
+                htlc_tx.txid().to_hex(),
+                "783ca2bb360dc712301d43daef0dbae2e15a8f06dcc73062b24e1d86cb918e5c"
             );
         } else {
             assert_eq!(
-                hex::encode(htlc_tx.txid()),
-                "ab2174f5621f009ca3e1b8bb1476860b81177dc62ce391728231f2aedd05cf89"
+                htlc_tx.txid().to_hex(),
+                "89cf05ddaef231827291e32cc67d17810b867614bbb8e1a39c001f62f57421ab"
             );
         }
 
@@ -3793,8 +3795,8 @@ mod tests {
             .expect("build_commitment_tx");
 
         assert_eq!(
-            hex::encode(tx.txid()),
-            "5e6ade984f0a45d1a16d647df1c0a04312a0ba93ee6d5151cd96263bb6336356"
+            tx.txid().to_hex(),
+            "566333b63b2696cd51516dee93baa01243a0c0f17d646da1d1450a4f98de6a5e"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -3967,7 +3969,7 @@ mod tests {
             make_test_channel_setup(),
         );
 
-        let ann = hex::decode("0123456789abcdef").unwrap();
+        let ann = hex_decode("0123456789abcdef").unwrap();
         let (nsig, bsig) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 Ok(chan.sign_channel_announcement(&ann))
@@ -3992,13 +3994,13 @@ mod tests {
     fn sign_node_announcement_test() -> Result<(), ()> {
         let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
-        let ann = hex::decode("000302aaa25e445fef0265b6ab5ec860cd257865d61ef0bbf5b3339c36cbda8b26b74e7f1dca490b65180265b64c4f554450484f544f2d2e302d3139392d67613237336639642d6d6f646465640000").unwrap();
+        let ann = hex_decode("000302aaa25e445fef0265b6ab5ec860cd257865d61ef0bbf5b3339c36cbda8b26b74e7f1dca490b65180265b64c4f554450484f544f2d2e302d3139392d67613237336639642d6d6f646465640000").unwrap();
         let sigvec = signer
             .get_node(&node_id)
             .unwrap()
             .sign_node_announcement(&ann)
             .unwrap();
-        assert_eq!(sigvec, hex::decode("30450221008ef1109b95f127a7deec63b190b72180f0c2692984eaf501c44b6bfc5c4e915502207a6fa2f250c5327694967be95ff42a94a9c3d00b7fa0fbf7daa854ceb872e439").unwrap());
+        assert_eq!(sigvec, hex_decode("30450221008ef1109b95f127a7deec63b190b72180f0c2692984eaf501c44b6bfc5c4e915502207a6fa2f250c5327694967be95ff42a94a9c3d00b7fa0fbf7daa854ceb872e439").unwrap());
         Ok(())
     }
 
@@ -4006,13 +4008,13 @@ mod tests {
     fn sign_channel_update_test() -> Result<(), ()> {
         let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
-        let cu = hex::decode("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00006700000100015e42ddc6010000060000000000000000000000010000000a000000003b023380").unwrap();
+        let cu = hex_decode("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00006700000100015e42ddc6010000060000000000000000000000010000000a000000003b023380").unwrap();
         let sigvec = signer
             .get_node(&node_id)
             .unwrap()
             .sign_channel_update(&cu)
             .unwrap();
-        assert_eq!(sigvec, hex::decode("3045022100be9840696c868b161aaa997f9fa91a899e921ea06c8083b2e1ea32b8b511948d0220352eec7a74554f97c2aed26950b8538ca7d7d7568b42fd8c6f195bd749763fa5").unwrap());
+        assert_eq!(sigvec, hex_decode("3045022100be9840696c868b161aaa997f9fa91a899e921ea06c8083b2e1ea32b8b511948d0220352eec7a74554f97c2aed26950b8538ca7d7d7568b42fd8c6f195bd749763fa5").unwrap());
         Ok(())
     }
 
@@ -4021,13 +4023,13 @@ mod tests {
         let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let human_readable_part = String::from("lnbcrt1230n");
-        let data_part = hex::decode("010f0418090a010101141917110f01040e050f06100003021e1b0e13161c150301011415060204130c0018190d07070a18070a1c1101111e111f130306000d00120c11121706181b120d051807081a0b0f0d18060004120e140018000105100114000b130b01110c001a05041a181716020007130c091d11170d10100d0b1a1b00030e05190208171e16080d00121a00110719021005000405001000").unwrap();
+        let data_part = hex_decode("010f0418090a010101141917110f01040e050f06100003021e1b0e13161c150301011415060204130c0018190d07070a18070a1c1101111e111f130306000d00120c11121706181b120d051807081a0b0f0d18060004120e140018000105100114000b130b01110c001a05041a181716020007130c091d11170d10100d0b1a1b00030e05190208171e16080d00121a00110719021005000405001000").unwrap();
         let rsig = signer
             .get_node(&node_id)
             .unwrap()
             .sign_invoice_in_parts(&data_part, &human_readable_part)
             .unwrap();
-        assert_eq!(rsig, hex::decode("739ffb91aa7c0b3d3c92de1600f7a9afccedc5597977095228232ee4458685531516451b84deb35efad27a311ea99175d10c6cdb458cd27ce2ed104eb6cf806400").unwrap());
+        assert_eq!(rsig, hex_decode("739ffb91aa7c0b3d3c92de1600f7a9afccedc5597977095228232ee4458685531516451b84deb35efad27a311ea99175d10c6cdb458cd27ce2ed104eb6cf806400").unwrap());
         Ok(())
     }
 
@@ -4036,7 +4038,7 @@ mod tests {
         let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let human_readable_part = String::from("lnbcrt2m");
-        let data_part = hex::decode("010f0a001d051e0101140c0c000006140009160c09051a0d1a190708020d17141106171f0f07131616111f1910070b0d0e150c0c0c0d010d1a01181c15100d010009181a06101a0a0309181b040a111a0a06111705100c0b18091909030e151b14060004120e14001800010510011419080f1307000a0a0517021c171410101a1e101605050a08180d0d110e13150409051d02091d181502020f050e1a1f161a09130005000405001000").unwrap();
+        let data_part = hex_decode("010f0a001d051e0101140c0c000006140009160c09051a0d1a190708020d17141106171f0f07131616111f1910070b0d0e150c0c0c0d010d1a01181c15100d010009181a06101a0a0309181b040a111a0a06111705100c0b18091909030e151b14060004120e14001800010510011419080f1307000a0a0517021c171410101a1e101605050a08180d0d110e13150409051d02091d181502020f050e1a1f161a09130005000405001000").unwrap();
         // The data_part is 170 bytes.
         // overhang = (data_part.len() * 5) % 8 = 2
         // looking for a verified invoice where overhang is in 1..3
@@ -4045,7 +4047,7 @@ mod tests {
             .unwrap()
             .sign_invoice_in_parts(&data_part, &human_readable_part)
             .unwrap();
-        assert_eq!(rsig, hex::decode("f278cdba3fd4a37abf982cee5a66f52e142090631ef57763226f1232eead78b43da7962fcfe29ffae9bd918c588df71d6d7b92a4787de72801594b22f0e7e62a00").unwrap());
+        assert_eq!(rsig, hex_decode("f278cdba3fd4a37abf982cee5a66f52e142090631ef57763226f1232eead78b43da7962fcfe29ffae9bd918c588df71d6d7b92a4787de72801594b22f0e7e62a00").unwrap());
         Ok(())
     }
 
@@ -4054,14 +4056,14 @@ mod tests {
         let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[1]);
         let pointvec =
-            hex::decode("0330febba06ba074378dec994669cf5ebf6b15e24a04ec190fb93a9482e841a0ca")
+            hex_decode("0330febba06ba074378dec994669cf5ebf6b15e24a04ec190fb93a9482e841a0ca")
                 .unwrap();
         let other_key = PublicKey::from_slice(pointvec.as_slice()).unwrap();
 
         let ssvec = signer.get_node(&node_id).unwrap().ecdh(&other_key);
         assert_eq!(
             ssvec,
-            hex::decode("48db1582f4b42a0068b5727fd37090a65fbf1f9bd842f4393afc2e794719ae47")
+            hex_decode("48db1582f4b42a0068b5727fd37090a65fbf1f9bd842f4393afc2e794719ae47")
                 .unwrap()
         );
     }
@@ -4070,7 +4072,7 @@ mod tests {
     fn get_unilateral_close_key_test() {
         let signer = MultiSigner::new();
         let node_id = init_node(&signer, TEST_NODE_CONFIG, TEST_SEED[0]);
-        let channel_nonce = hex::decode(
+        let channel_nonce = hex_decode(
             "022d223620a359a47ff7f7ac447c85c46c923da53389221a0054c11c1e3ca31d590100000000000000",
         )
         .unwrap();
@@ -4091,7 +4093,7 @@ mod tests {
         assert_eq!(
             uck,
             SecretKey::from_slice(
-                &hex::decode("d5f8a9fdd0e4be18c33656944b91dc1f6f2c38ce2a4bbd0ef330ffe4e106127c")
+                &hex_decode("d5f8a9fdd0e4be18c33656944b91dc1f6f2c38ce2a4bbd0ef330ffe4e106127c")
                     .unwrap()[..]
             )
             .unwrap()
@@ -4136,7 +4138,6 @@ mod tests {
     // TODO move this elsewhere
     #[test]
     fn transaction_verify_test() {
-        use hex::decode as hex_decode;
         // a random recent segwit transaction from blockchain using both old and segwit inputs
         let spending: bitcoin::Transaction = deserialize(hex_decode("020000000001031cfbc8f54fbfa4a33a30068841371f80dbfe166211242213188428f437445c91000000006a47304402206fbcec8d2d2e740d824d3d36cc345b37d9f65d665a99f5bd5c9e8d42270a03a8022013959632492332200c2908459547bf8dbf97c65ab1a28dec377d6f1d41d3d63e012103d7279dfb90ce17fe139ba60a7c41ddf605b25e1c07a4ddcb9dfef4e7d6710f48feffffff476222484f5e35b3f0e43f65fc76e21d8be7818dd6a989c160b1e5039b7835fc00000000171600140914414d3c94af70ac7e25407b0689e0baa10c77feffffffa83d954a62568bbc99cc644c62eb7383d7c2a2563041a0aeb891a6a4055895570000000017160014795d04cc2d4f31480d9a3710993fbd80d04301dffeffffff06fef72f000000000017a91476fd7035cd26f1a32a5ab979e056713aac25796887a5000f00000000001976a914b8332d502a529571c6af4be66399cd33379071c588ac3fda0500000000001976a914fc1d692f8de10ae33295f090bea5fe49527d975c88ac522e1b00000000001976a914808406b54d1044c429ac54c0e189b0d8061667e088ac6eb68501000000001976a914dfab6085f3a8fb3e6710206a5a959313c5618f4d88acbba20000000000001976a914eb3026552d7e3f3073457d0bee5d4757de48160d88ac0002483045022100bee24b63212939d33d513e767bc79300051f7a0d433c3fcf1e0e3bf03b9eb1d70220588dc45a9ce3a939103b4459ce47500b64e23ab118dfc03c9caa7d6bfc32b9c601210354fd80328da0f9ae6eef2b3a81f74f9a6f66761fadf96f1d1d22b1fd6845876402483045022100e29c7e3a5efc10da6269e5fc20b6a1cb8beb92130cc52c67e46ef40aaa5cac5f0220644dd1b049727d991aece98a105563416e10a5ac4221abac7d16931842d5c322012103960b87412d6e169f30e12106bdf70122aabb9eb61f455518322a18b920a4dfa887d30700")
             .unwrap().as_slice()).unwrap();
@@ -4172,11 +4173,11 @@ mod tests {
     // TODO move this elsewhere
     #[test]
     fn bip143_p2wpkh_test() {
-        let tx: bitcoin::Transaction = deserialize(hex::decode("0100000002fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f0000000000eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac11000000")
+        let tx: bitcoin::Transaction = deserialize(hex_decode("0100000002fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f0000000000eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac11000000")
             .unwrap().as_slice()).unwrap();
         let secp_ctx = Secp256k1::signing_only();
         let priv2 = SecretKey::from_slice(
-            hex::decode("619c335025c7f4012e556c2a58b2506e30b8511b53ade95ea316fd8c3286feb9")
+            hex_decode("619c335025c7f4012e556c2a58b2506e30b8511b53ade95ea316fd8c3286feb9")
                 .unwrap()
                 .as_slice(),
         )
@@ -4188,7 +4189,7 @@ mod tests {
 
         let script_code = Address::p2pkh(&pub2, Network::Testnet).script_pubkey();
         assert_eq!(
-            hex::encode(script_code.as_bytes()),
+            hex_encode(script_code.as_bytes()),
             "76a9141d0f172a0ecb48aee1be1f2687d2963ae33f71a188ac"
         );
         let value = 600_000_000;
@@ -4196,7 +4197,7 @@ mod tests {
         let sighash =
             &SigHashCache::new(&tx).signature_hash(1, &script_code, value, SigHashType::All)[..];
         assert_eq!(
-            hex::encode(sighash),
+            hex_encode(sighash),
             "c37af31116d1b27caf68aae9e3ac82f1477929014d5b917657d0eb49478cb670"
         );
     }
@@ -4313,8 +4314,8 @@ mod tests {
         })?;
 
         assert_eq!(
-            hex::encode(tx.txid()),
-            "fb9746e0400fc13139a130950f08a2ec5b1ee8b68e3df41cab133a03ed38323f"
+            tx.txid().to_hex(),
+            "3f3238ed033a13ab1cf43d8eb6e81e5beca2080f9530a13931c10f40e04697fb"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
@@ -4399,8 +4400,8 @@ mod tests {
         })?;
 
         assert_eq!(
-            hex::encode(tx.txid()),
-            "9fef9a3e4e4a9163e50acbbe812dfbfe27740e63a874ddf7176ef88ac1ea38f4"
+            tx.txid().to_hex(),
+            "f438eac18af86e17f7dd74a8630e7427fefb2d81becb0ae563914a4e3e9aef9f"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);

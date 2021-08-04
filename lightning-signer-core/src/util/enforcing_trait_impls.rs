@@ -1,5 +1,6 @@
-use crate::{Arc, Mutex};
-use crate::{IOError, IORead};
+use crate::prelude::*;
+use crate::io_extras::{Error as IOError, Read as IORead};
+use crate::sync::Arc;
 
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::secp256k1::key::{PublicKey, SecretKey};
