@@ -1,5 +1,5 @@
-use crate::prelude::*;
 use crate::io_extras::{Error as IOError, Read as IORead};
+use crate::prelude::*;
 use crate::sync::Arc;
 
 use log::debug;

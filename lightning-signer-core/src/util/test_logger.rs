@@ -1,5 +1,5 @@
-use crate::signer::multi_signer::SyncLogger;
 use crate::prelude::*;
+use crate::signer::multi_signer::SyncLogger;
 use lightning::util::logger::{Level, Logger, Record};
 
 pub struct TestLogger {

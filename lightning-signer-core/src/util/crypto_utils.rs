@@ -261,8 +261,8 @@ pub fn bitcoin_vec_to_signature(sigvec: &Vec<u8>) -> Result<Signature, bitcoin::
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin::Network::Testnet;
     use bitcoin::hashes::hex::ToHex;
+    use bitcoin::Network::Testnet;
 
     #[test]
     fn node_keys_native_test() -> Result<(), ()> {
