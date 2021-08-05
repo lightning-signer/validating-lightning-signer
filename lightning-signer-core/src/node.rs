@@ -2109,7 +2109,7 @@ impl Node {
 
         // TODO - initialize the state
         let state = ValidatorState { current_height: 0 };
-        validator.validate_funding_tx(self, &state, tx, opaths)?;
+        validator.validate_funding_tx(self, &state, tx, values_sat, opaths)?;
 
         let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for idx in 0..tx.input.len() {

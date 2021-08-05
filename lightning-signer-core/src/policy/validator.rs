@@ -87,6 +87,7 @@ pub trait Validator {
         node: &Node,
         state: &ValidatorState,
         tx: &Transaction,
+        values_sat: &Vec<u64>,
         opaths: &Vec<Vec<u32>>,
     ) -> Result<(), ValidationError>;
 }
@@ -137,6 +138,10 @@ pub struct SimplePolicy {
     pub min_feerate_per_kw: u32,
     /// Maximum feerate
     pub max_feerate_per_kw: u32,
+    /// Minimum fee
+    pub min_fee: u64,
+    /// Maximum fee
+    pub max_fee: u64,
 }
 // END NOT TESTED
 
@@ -177,11 +182,18 @@ impl SimpleValidator {
 
         Ok(())
     }
-}
 
-// not yet implemented
-// TODO - policy-v1-funding-fee-range
-// TODO - policy-v1-funding-format-standard
+    fn validate_fee(&self, name: &str, fee: u64, _tx: &Transaction) -> Result<(), ValidationError> {
+        if fee < self.policy.min_fee {
+            return Err(policy_error(format!("{}: fee {} below minimum", name, fee)));
+        }
+        if fee > self.policy.max_fee {
+            return Err(policy_error(format!("{}: fee {} above maximum", name, fee)));
+        }
+        // TODO - apply min/max fee rate heurustic (incorporating tx size) as well.
+        Ok(())
+    }
+}
 
 // sign_commitment_tx has some, missing these
 // TODO - policy-v1-commitment-anchor-static-remotekey
@@ -488,11 +500,11 @@ impl Validator for SimpleValidator {
                     .unwrap_or_else(|_| (vec![], 0, vec![]));
             debug!(
                 "ORIGINAL_TX={:#?}\n\
-                              output witscript params: [\n\
-                              \x20  revocation_pubkey: {},\n\
-                              \x20  to_self_delay: {},\n\
-                              \x20  delayed_pubkey: {},\n\
-                              ]",
+                     output witscript params: [\n\
+                     \x20  revocation_pubkey: {},\n\
+                     \x20  to_self_delay: {},\n\
+                     \x20  delayed_pubkey: {},\n\
+                     ]",
                 &tx,
                 revocation_key.to_hex(),
                 contest_delay,
@@ -500,11 +512,11 @@ impl Validator for SimpleValidator {
             );
             debug!(
                 "RECOMPOSED_TX={:#?}\n\
-                              output witscript params: [\n\
-                              \x20  revocation_pubkey: {},\n\
-                              \x20  to_self_delay: {},\n\
-                              \x20  delayed_pubkey: {},\n\
-                              ]",
+                     output witscript params: [\n\
+                     \x20  revocation_pubkey: {},\n\
+                     \x20  to_self_delay: {},\n\
+                     \x20  delayed_pubkey: {},\n\
+                     ]",
                 &recomposed_tx,
                 &txkeys.revocation_key,
                 to_self_delay,
@@ -586,8 +598,35 @@ impl Validator for SimpleValidator {
         node: &Node,
         _state: &ValidatorState,
         tx: &Transaction,
+        values_sat: &Vec<u64>,
         opaths: &Vec<Vec<u32>>,
     ) -> Result<(), ValidationError> {
+        // policy-v1-funding-fee-range
+        let mut sum_inputs: u64 = 0;
+        for val in values_sat {
+            sum_inputs = sum_inputs
+                .checked_add(*val)
+                .ok_or_else(|| policy_error(format!("funding sum inputs overflow")))?;
+        }
+        let mut sum_outputs: u64 = 0;
+        for outp in &tx.output {
+            sum_outputs = sum_outputs
+                .checked_add(outp.value)
+                .ok_or_else(|| policy_error(format!("funding sum outputs overflow")))?;
+        }
+        let fee = sum_inputs
+            .checked_sub(sum_outputs)
+            .ok_or_else(|| policy_error(format!("funding fee overflow")))?;
+        self.validate_fee("validate_funding_tx", fee, tx)?;
+
+        // policy-v1-funding-format-standard
+        if tx.version != 2 {
+            return Err(policy_error(format!(
+                "invalid funding tx version: {}",
+                tx.version
+            )));
+        }
+
         for outndx in 0..tx.output.len() {
             let output = &tx.output[outndx];
             let opath = &opaths[outndx];
@@ -668,6 +707,8 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             use_chain_state: false,
             min_feerate_per_kw: 1000,
             max_feerate_per_kw: 1000 * 1000,
+            min_fee: 100,
+            max_fee: 1000,
         }
     // END NOT TESTED
     } else {
@@ -681,6 +722,8 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             use_chain_state: false,
             min_feerate_per_kw: 500,    // c-lightning integration
             max_feerate_per_kw: 16_000, // c-lightning integration
+            min_fee: 100,
+            max_fee: 17664, // c-lightning integration
         }
     }
 }
@@ -715,6 +758,8 @@ mod tests {
             use_chain_state: true,
             min_feerate_per_kw: 1000,
             max_feerate_per_kw: 1000 * 1000,
+            min_fee: 100,
+            max_fee: 1000,
         };
 
         SimpleValidator { policy }
