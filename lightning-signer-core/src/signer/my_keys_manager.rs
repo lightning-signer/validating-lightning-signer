@@ -26,8 +26,8 @@ use crate::util::transaction_utils::MAX_VALUE_MSAT;
 use crate::util::{byte_utils, transaction_utils};
 use bitcoin::secp256k1::recovery::RecoverableSignature;
 use bitcoin::util::bip143;
-use lightning::ln::msgs::DecodeError;
 use hashbrown::HashSet;
+use lightning::ln::msgs::DecodeError;
 
 #[derive(Clone, Copy, Debug)] // NOT TESTED
 pub enum KeyDerivationStyle {
@@ -617,8 +617,8 @@ mod tests {
     use super::*;
     use lightning::chain::keysinterface::BaseSign;
 
-    use test_env_log::test;
     use crate::util::test_utils::hex_encode;
+    use test_env_log::test;
 
     #[test]
     fn keys_test_native() -> Result<(), ()> {

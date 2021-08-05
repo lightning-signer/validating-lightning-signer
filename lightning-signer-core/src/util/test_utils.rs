@@ -8,7 +8,7 @@ use bitcoin::blockdata::script::{Builder, Script};
 use bitcoin::hash_types::Txid;
 use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
-use bitcoin::hashes::{Hash, hex::FromHex, hex};
+use bitcoin::hashes::{hex, hex::FromHex, Hash};
 use bitcoin::network::constants::Network;
 use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1, SecretKey, SignOnly, Signature};
 use bitcoin::util::bip143::SigHashCache;

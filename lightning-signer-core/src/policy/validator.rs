@@ -1,9 +1,9 @@
 use crate::prelude::*;
 use log::debug;
 
+use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
-use bitcoin::hashes::hex::ToHex;
 
 use lightning::chain::keysinterface::BaseSign;
 use lightning::ln::chan_utils::{

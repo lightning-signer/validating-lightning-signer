@@ -140,7 +140,7 @@ fn _alt_config() -> UserConfig {
         },
         peer_channel_config_limits: Default::default(),
         channel_options: Default::default(),
-        accept_forwards_to_priv_channels: true
+        accept_forwards_to_priv_channels: true,
     };
     cfg1.channel_options.announced_channel = true;
     cfg1.peer_channel_config_limits

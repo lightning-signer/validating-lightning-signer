@@ -1,5 +1,5 @@
-use crate::prelude::*;
 use crate::node::{ChannelId, ChannelSetup};
+use crate::prelude::*;
 
 use crate::util::enforcing_trait_impls::EnforcementState;
 
