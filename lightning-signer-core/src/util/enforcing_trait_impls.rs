@@ -22,7 +22,7 @@ use ln::msgs;
 
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 
-use crate::policy::error::ValidationError::{self, Policy};
+use crate::policy::error::{policy_error, ValidationError};
 
 /// Enforces some rules on Sign calls. Eventually we will
 /// probably want to expose a variant of this which would essentially
@@ -48,7 +48,7 @@ impl EnforcementState {
     pub fn set_next_holder_commit_num(&mut self, num: u64) -> Result<(), ValidationError> {
         let current = self.next_holder_commit_num;
         if num != current && num != current + 1 {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "invalid next_holder_commit_num progression: {} to {}",
                 current, num
             )));
@@ -64,7 +64,7 @@ impl EnforcementState {
         current_point: PublicKey,
     ) -> Result<(), ValidationError> {
         if num == 0 {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "set_next_counterparty_commit_num: can't set next to 0"
             )));
         }
@@ -74,14 +74,14 @@ impl EnforcementState {
 
         // Ensure that next_commit is ok relative to next_revoke
         if num < self.next_counterparty_revoke_num + delta {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "next_counterparty_commit_num {} too small \
                  relative to next_counterparty_revoke_num {}",
                 num, self.next_counterparty_revoke_num
             )));
         }
         if num > self.next_counterparty_revoke_num + 2 {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "next_counterparty_commit_num {} too large \
                  relative to next_counterparty_revoke_num {}",
                 num, self.next_counterparty_revoke_num
@@ -105,7 +105,7 @@ impl EnforcementState {
                     current_point,
                     self.current_counterparty_point.unwrap()
                 );
-                return Err(Policy(format!(
+                return Err(policy_error(format!(
                     "set_next_counterparty_commit_num {} retry: \
                      point different than prior",
                     num
@@ -115,7 +115,7 @@ impl EnforcementState {
             self.previous_counterparty_point = self.current_counterparty_point;
             self.current_counterparty_point = Some(current_point);
         } else {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "invalid next_counterparty_commit_num progression: {} to {}",
                 current, num
             )));
@@ -135,7 +135,7 @@ impl EnforcementState {
         } else if num + 2 == self.next_counterparty_commit_num {
             &self.previous_counterparty_point
         } else {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "get_previous_counterparty_point {} out of range",
                 num
             )));
@@ -152,21 +152,21 @@ impl EnforcementState {
 
     pub fn set_next_counterparty_revoke_num(&mut self, num: u64) -> Result<(), ValidationError> {
         if num == 0 {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "set_next_counterparty_revoke_num: can't set next to 0"
             )));
         }
 
         // Ensure that next_revoke is ok relative to next_commit.
         if num + 2 < self.next_counterparty_commit_num {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "next_counterparty_revoke_num {} too small \
                  relative to next_counterparty_commit_num {}",
                 num, self.next_counterparty_commit_num
             )));
         }
         if num + 1 > self.next_counterparty_commit_num {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "next_counterparty_revoke_num {} too large \
                  relative to next_counterparty_commit_num {}",
                 num, self.next_counterparty_commit_num
@@ -175,7 +175,7 @@ impl EnforcementState {
 
         let current = self.next_counterparty_revoke_num;
         if num != current && num != current + 1 {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "invalid next_counterparty_revoke_num progression: {} to {}",
                 current, num
             )));
@@ -343,7 +343,7 @@ impl EnforcingSigner {
         Ok(self
             .inner
             .sign_counterparty_commitment(commitment_tx, secp_ctx)
-            .map_err(|_| Policy(format!("sign_counterparty_commitment failed")))?)
+            .map_err(|_| policy_error(format!("sign_counterparty_commitment failed")))?)
     }
 }
 
@@ -526,10 +526,7 @@ mod tests {
     macro_rules! assert_policy_err {
         ($status: expr, $msg: expr) => {
             assert!($status.is_err());
-            assert_eq!(
-                $status.unwrap_err(),
-                ValidationError::Policy($msg.to_string())
-            );
+            assert_eq!($status.unwrap_err(), policy_error($msg.to_string()));
         };
     }
 
