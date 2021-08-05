@@ -1460,7 +1460,10 @@ mod tests {
         let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let ipaths = vec![vec![0u32], vec![1u32]];
-        let values_sat = vec![100u64, 200u64];
+        let ival0 = 100u64;
+        let ival1 = 300u64;
+        let chanamt = 300u64;
+        let values_sat = vec![ival0, ival1];
 
         let input1 = TxIn {
             previous_output: OutPoint {
@@ -1482,7 +1485,7 @@ mod tests {
             witness: vec![],
         };
         let (opath, mut tx) =
-            make_test_funding_tx(&secp_ctx, &signer, &node_id, vec![input1, input2], 300);
+            make_test_funding_tx(&secp_ctx, &signer, &node_id, vec![input1, input2], chanamt);
         let spendtypes = vec![SpendType::P2wpkh, SpendType::P2wpkh];
         let uniclosekeys = vec![None, None];
 
@@ -1518,11 +1521,11 @@ mod tests {
 
         let outs = vec![
             TxOut {
-                value: 100,
+                value: ival0,
                 script_pubkey: address(0).script_pubkey(),
             },
             TxOut {
-                value: 200,
+                value: ival1,
                 script_pubkey: address(1).script_pubkey(),
             },
         ];
@@ -1540,7 +1543,9 @@ mod tests {
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let ipaths = vec![vec![0u32]];
-        let values_sat = vec![100u64];
+        let ival0 = 200u64;
+        let chanamt = 100u64;
+        let values_sat = vec![ival0];
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
@@ -1549,7 +1554,8 @@ mod tests {
             witness: vec![],
         };
 
-        let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &signer, &node_id, vec![input1], 100);
+        let (opath, mut tx) =
+            make_test_funding_tx(&secp_ctx, &signer, &node_id, vec![input1], chanamt);
         let spendtypes = vec![SpendType::P2wpkh];
         let uniclosekeys = vec![None];
 
@@ -1584,7 +1590,7 @@ mod tests {
 
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec![TxOut {
-            value: 100,
+            value: ival0,
             script_pubkey: address(0).script_pubkey(),
         }]; // NOT TESTED
         println!("{:?}", &outs[0].script_pubkey);
@@ -1595,14 +1601,17 @@ mod tests {
         Ok(())
     }
 
+    // policy-v1-funding-fee-range
     #[test]
-    fn sign_funding_tx_unilateral_close_info_test() -> Result<(), ()> {
+    fn sign_funding_tx_fee_too_low() {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MultiSigner::new();
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let ipaths = vec![vec![0u32]];
-        let values_sat = vec![100u64];
+        let ival0 = 199u64;
+        let chanamt = 100u64;
+        let values_sat = vec![ival0];
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
@@ -1611,7 +1620,79 @@ mod tests {
             witness: vec![],
         };
 
-        let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &signer, &node_id, vec![input1], 200);
+        let (opath, tx) = make_test_funding_tx(&secp_ctx, &signer, &node_id, vec![input1], chanamt);
+        let spendtypes = vec![SpendType::P2wpkh];
+        let uniclosekeys = vec![None];
+
+        assert_failed_precondition_err!(
+            signer.get_node(&node_id).unwrap().sign_funding_tx(
+                &tx,
+                &ipaths,
+                &values_sat,
+                &spendtypes,
+                &uniclosekeys,
+                &vec![opath.clone()],
+            ),
+            "policy failure: validate_funding_tx: fee 99 below minimum"
+        );
+    }
+
+    // policy-v1-funding-fee-range
+    #[test]
+    fn sign_funding_tx_fee_too_high() {
+        let secp_ctx = Secp256k1::signing_only();
+        let signer = MultiSigner::new();
+        let node_id = signer.new_node(TEST_NODE_CONFIG);
+        let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
+        let ipaths = vec![vec![0u32]];
+        let ival0 = 100u64 + 20_000u64;
+        let chanamt = 100u64;
+        let values_sat = vec![ival0];
+
+        let input1 = TxIn {
+            previous_output: OutPoint { txid, vout: 0 },
+            script_sig: Script::new(),
+            sequence: 0,
+            witness: vec![],
+        };
+
+        let (opath, tx) = make_test_funding_tx(&secp_ctx, &signer, &node_id, vec![input1], chanamt);
+        let spendtypes = vec![SpendType::P2wpkh];
+        let uniclosekeys = vec![None];
+
+        assert_failed_precondition_err!(
+            signer.get_node(&node_id).unwrap().sign_funding_tx(
+                &tx,
+                &ipaths,
+                &values_sat,
+                &spendtypes,
+                &uniclosekeys,
+                &vec![opath.clone()],
+            ),
+            "policy failure: validate_funding_tx: fee 20000 above maximum"
+        );
+    }
+
+    #[test]
+    fn sign_funding_tx_unilateral_close_info_test() -> Result<(), ()> {
+        let secp_ctx = Secp256k1::signing_only();
+        let signer = MultiSigner::new();
+        let node_id = signer.new_node(TEST_NODE_CONFIG);
+        let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
+        let ival0 = 300u64;
+        let chanamt = 200u64;
+        let ipaths = vec![vec![0u32]];
+        let values_sat = vec![ival0];
+
+        let input1 = TxIn {
+            previous_output: OutPoint { txid, vout: 0 },
+            script_sig: Script::new(),
+            sequence: 0,
+            witness: vec![],
+        };
+
+        let (opath, mut tx) =
+            make_test_funding_tx(&secp_ctx, &signer, &node_id, vec![input1], chanamt);
         let spendtypes = vec![SpendType::P2wpkh];
 
         let uniclosekey = SecretKey::from_slice(
@@ -1647,7 +1728,7 @@ mod tests {
         tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec![TxOut {
-            value: 100,
+            value: ival0,
             script_pubkey: address.script_pubkey(),
         }];
         println!("{:?}", &outs[0].script_pubkey);
@@ -1665,7 +1746,7 @@ mod tests {
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let ipaths = vec![vec![0u32]];
-        let values_sat = vec![100u64];
+        let values_sat = vec![200u64];
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
@@ -1727,7 +1808,9 @@ mod tests {
         let node_id = signer.new_node(TEST_NODE_CONFIG);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let ipaths = vec![vec![0u32]];
-        let values_sat = vec![100u64];
+        let ival0 = 200u64;
+        let chanamt = 100u64;
+        let values_sat = vec![ival0];
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
@@ -1741,7 +1824,7 @@ mod tests {
             &signer,
             &node_id,
             vec![input1],
-            100,
+            chanamt,
         );
         let spendtypes = vec![SpendType::P2shP2wpkh];
         let uniclosekeys = vec![None];
@@ -1796,7 +1879,7 @@ mod tests {
 
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec![TxOut {
-            value: 100,
+            value: ival0,
             script_pubkey: address(0).script_pubkey(),
         }]; // NOT TESTED
         println!("{:?}", &outs[0].script_pubkey);
@@ -1889,6 +1972,90 @@ mod tests {
         Ok(())
     }
 
+    fn sign_funding_tx_with_mutator<TxMutator>(txmut: TxMutator) -> Result<(), Status>
+    where
+        TxMutator: Fn(&mut Transaction),
+    {
+        let is_p2sh = false;
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
+
+        let incoming = 5_000_000;
+        let channel_amount = 3_000_000;
+        let fee = 1000;
+        let change = incoming - channel_amount - fee;
+
+        let mut chan_ctx = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount);
+        let mut tx_ctx = test_funding_tx_ctx();
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+        funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx = funding_tx_add_channel_outpoint(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut tx_ctx,
+            channel_amount,
+        );
+
+        let mut tx = funding_tx_from_ctx(&tx_ctx);
+
+        // mutate the tx before calling funding_tx_ready_channel so txid will be valid
+        txmut(&mut tx);
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        let mut commit_tx_ctx = channel_initial_commitment(&sign_ctx, &node_ctx, &chan_ctx);
+        let (csig, hsigs) = counterparty_sign_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut commit_tx_ctx,
+        );
+        validate_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &commit_tx_ctx,
+            &csig,
+            &hsigs,
+        )?;
+
+        let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx)?;
+        funding_tx_validate_sig(&sign_ctx, &node_ctx, &tx_ctx, &mut tx, &witvec);
+        Ok(())
+    }
+
+    #[test]
+    fn sign_funding_tx_with_no_mut_test() {
+        let status = sign_funding_tx_with_mutator(|_tx| {
+            // don't mutate the tx, should pass
+        });
+        assert!(status.is_ok());
+    }
+
+    // policy-v1-funding-format-standard
+    #[test]
+    fn sign_funding_tx_with_version_1() {
+        assert_failed_precondition_err!(
+            sign_funding_tx_with_mutator(|tx| {
+                tx.version = 1;
+            }),
+            "policy failure: invalid funding tx version: 1"
+        );
+    }
+
+    // policy-v1-funding-format-standard
+    #[test]
+    fn sign_funding_tx_with_version_3() {
+        assert_failed_precondition_err!(
+            sign_funding_tx_with_mutator(|tx| {
+                tx.version = 3;
+            }),
+            "policy failure: invalid funding tx version: 3"
+        );
+    }
+
     fn sign_funding_tx_with_output_and_change(is_p2sh: bool) {
         let sign_ctx = test_sign_ctx();
         let node_ctx = test_node_ctx(&sign_ctx, 1);
@@ -1962,7 +2129,7 @@ mod tests {
         let mut tx_ctx = test_funding_tx_ctx();
 
         funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming0);
-        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 2, incoming0);
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 2, incoming1);
 
         funding_tx_add_wallet_output(&sign_ctx, &node_ctx, &mut tx_ctx, is_p2sh, 1, change);
         let outpoint_ndx = funding_tx_add_channel_outpoint(
@@ -2227,7 +2394,10 @@ mod tests {
 
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: unknown output: status: InvalidArgument, message: \"channel with Outpoint a5b4d12cf257a92e0536ddfce77635f92283f1e81e4d4f5ce7239bd36cfe925c:1 not found\"");
+            "policy failure: unknown output: status: InvalidArgument, \
+             message: \"channel with Outpoint \
+             a5b4d12cf257a92e0536ddfce77635f92283f1e81e4d4f5ce7239bd36cfe925c:1 not found\""
+        );
     }
 
     #[test]
@@ -2348,11 +2518,15 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        tx.output[1].value = 42; // bad output value
+        // Modify the output value after funding_tx_ready_channel
+        tx.output[1].value = channel_amount + 42; // bad output value
 
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: unknown output: status: InvalidArgument, message: \"channel with Outpoint f1eae74c7d684c0abafacd9da58234f754ab27fbeb6b357d9d8cfd822e740b43:1 not found\"");
+            "policy failure: unknown output: status: \
+             InvalidArgument, message: \"channel with Outpoint \
+             445f380db31cb6647304fefe17d69df19d0a7e8840394a295cb99a98dfce2b73:1 not found\""
+        );
     }
 
     #[test]
@@ -2381,13 +2555,14 @@ mod tests {
 
         let mut tx = funding_tx_from_ctx(&tx_ctx);
 
-        tx.output[1].value = 42; // bad output value
+        // Modify the output value before funding_tx_ready_channel
+        tx.output[1].value = channel_amount + 42; // bad output value
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: funding output amount mismatch w/ channel: 42 != 3000000"
+            "policy failure: funding output amount mismatch w/ channel: 3000042 != 3000000"
         );
     }
 
@@ -2427,7 +2602,10 @@ mod tests {
 
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: unknown output: status: InvalidArgument, message: \"channel with Outpoint 81fe91f5705b1a893494726cc9019614aa108fd02809e9f23673c83ea6404bce:1 not found\"");
+            "policy failure: unknown output: status: InvalidArgument, \
+             message: \"channel with Outpoint \
+             81fe91f5705b1a893494726cc9019614aa108fd02809e9f23673c83ea6404bce:1 not found\""
+        );
     }
 
     // policy-v1-funding-output-scriptpubkey
@@ -2593,7 +2771,7 @@ mod tests {
                 &hsigs,
             ),
             "policy failure: get_per_commitment_point: \
-             commitment_number 2 invalid when next_holder_commit_num is 1"
+                commitment_number 2 invalid when next_holder_commit_num is 1"
         );
     }
 
