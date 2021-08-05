@@ -841,9 +841,19 @@ impl Signer for SignServer {
             "ENTER validate_counterparty_revocation({}/{})",
             node_id, channel_id
         );
-        return Err(internal_error(
-            "validate_counterparty_revocation UNIMPLEMENTED",
-        ));
+        let revoke_num = req.revoke_num;
+        let old_secret = self.secret_key(req.old_secret)?;
+        self.signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                chan.validate_counterparty_revocation(revoke_num, &old_secret)
+            })?;
+        let reply = ValidateCounterpartyRevocationReply {};
+        info!(
+            "REPLY validate_counterparty_revocation({}/{})",
+            node_id, channel_id
+        );
+        debug!("reply={}", json!(reply));
+        Ok(Response::new(reply))
     }
 
     async fn sign_holder_commitment_tx(

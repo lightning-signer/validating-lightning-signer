@@ -9,10 +9,10 @@ use core::time::Duration;
 
 use bitcoin;
 use bitcoin::blockdata::constants::genesis_block;
+use bitcoin::hashes::hex;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
-use bitcoin::hashes::hex;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
 use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signature};
@@ -52,8 +52,8 @@ use crate::util::debug_utils::DebugHTLCOutputInCommitment;
 use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
 use crate::util::status::{internal_error, invalid_argument, validation_error, Status};
 use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
-use core::convert::TryInto;
 use bitcoin::hashes::hex::ToHex;
+use core::convert::TryInto;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
@@ -223,7 +223,11 @@ pub trait ChannelBase {
     fn nonce(&self) -> Vec<u8>;
 
     #[cfg(feature = "test_utils")]
-    fn set_next_holder_commitment_number_for_testing(&self, num: u64);
+    fn set_next_holder_commit_num_for_testing(&self, num: u64);
+    #[cfg(feature = "test_utils")]
+    fn set_next_counterparty_commit_num_for_testing(&self, num: u64, current_point: PublicKey);
+    #[cfg(feature = "test_utils")]
+    fn set_next_counterparty_revoke_num_for_testing(&self, num: u64);
 }
 
 impl Debug for Channel {
@@ -274,8 +278,19 @@ impl ChannelBase for ChannelStub {
     // END NOT TESTED
 
     #[cfg(feature = "test_utils")]
-    fn set_next_holder_commitment_number_for_testing(&self, num: u64) {
-        self.keys.set_next_holder_commitment_number_for_testing(num);
+    fn set_next_holder_commit_num_for_testing(&self, num: u64) {
+        self.keys.set_next_holder_commit_num_for_testing(num);
+    }
+
+    #[cfg(feature = "test_utils")]
+    fn set_next_counterparty_commit_num_for_testing(&self, num: u64, current_point: PublicKey) {
+        self.keys
+            .set_next_counterparty_commit_num_for_testing(num, current_point);
+    }
+
+    #[cfg(feature = "test_utils")]
+    fn set_next_counterparty_revoke_num_for_testing(&self, num: u64) {
+        self.keys.set_next_counterparty_revoke_num_for_testing(num);
     }
 }
 
@@ -285,12 +300,12 @@ impl ChannelBase for Channel {
     }
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status> {
-        let next_holder_commitment_number = self.keys.next_holder_commitment_number();
-        if commitment_number > next_holder_commitment_number {
+        let next_holder_commit_num = self.keys.next_holder_commit_num();
+        if commitment_number > next_holder_commit_num {
             return Err(validation_error(ValidationError::Policy(format!(
                 "get_per_commitment_point: \
-                 commitment_number {} invalid when next_holder_commitment_number is {}",
-                commitment_number, next_holder_commitment_number,
+                 commitment_number {} invalid when next_holder_commit_num is {}",
+                commitment_number, next_holder_commit_num,
             ))));
         }
         Ok(self.keys.get_per_commitment_point(
@@ -300,13 +315,13 @@ impl ChannelBase for Channel {
     }
 
     fn get_per_commitment_secret(&self, commitment_number: u64) -> Result<SecretKey, Status> {
-        let next_holder_commitment_number = self.keys.next_holder_commitment_number();
+        let next_holder_commit_num = self.keys.next_holder_commit_num();
         // policy-v2-revoke-new-commitment-signed
-        if commitment_number + 2 > next_holder_commitment_number {
+        if commitment_number + 2 > next_holder_commit_num {
             return Err(validation_error(ValidationError::Policy(format!(
                 "get_per_commitment_secret: \
-                 commitment_number {} invalid when next_holder_commitment_number is {}",
-                commitment_number, next_holder_commitment_number,
+                 commitment_number {} invalid when next_holder_commit_num is {}",
+                commitment_number, next_holder_commit_num,
             ))));
         }
         let secret = self
@@ -333,8 +348,19 @@ impl ChannelBase for Channel {
     // END NOT TESTED
 
     #[cfg(feature = "test_utils")]
-    fn set_next_holder_commitment_number_for_testing(&self, num: u64) {
-        self.keys.set_next_holder_commitment_number_for_testing(num);
+    fn set_next_holder_commit_num_for_testing(&self, num: u64) {
+        self.keys.set_next_holder_commit_num_for_testing(num);
+    }
+
+    #[cfg(feature = "test_utils")]
+    fn set_next_counterparty_commit_num_for_testing(&self, num: u64, current_point: PublicKey) {
+        self.keys
+            .set_next_counterparty_commit_num_for_testing(num, current_point);
+    }
+
+    #[cfg(feature = "test_utils")]
+    fn set_next_counterparty_revoke_num_for_testing(&self, num: u64) {
+        self.keys.set_next_counterparty_revoke_num_for_testing(num);
     }
 }
 
@@ -1046,14 +1072,22 @@ impl Channel {
         )?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
-        let state = ValidatorState { current_height: 0 };
+        let vstate = ValidatorState { current_height: 0 };
         validator
-            .validate_commitment_tx(&self.setup, &state, &info2, true)
+            .validate_commitment_tx(
+                &self.keys.state.lock().unwrap(),
+                commitment_number,
+                &remote_per_commitment_point,
+                &self.setup,
+                &vstate,
+                &info2,
+                true,
+            )
             .map_err(|ve| {
                 // BEGIN NOT TESTED
                 debug!(
-                    "VALIDATION FAILED:\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
-                    &tx, &self.setup, &state, &info2,
+                    "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\nvstate={:#?}\ninfo={:#?}",
+                    ve, &tx, &self.setup, &vstate, &info2,
                 );
                 validation_error(ve)
                 // END NOT TESTED
@@ -1097,8 +1131,8 @@ impl Channel {
         // Sign the recomposed commitment.
         let sigs = self
             .keys
-            .sign_counterparty_commitment(&recomposed_tx, &self.secp_ctx)
-            .map_err(|_| internal_error("failed to sign"))?;
+            .sign_counterparty_commitment_with_result(&recomposed_tx, &self.secp_ctx)
+            .map_err(|ve| validation_error(ve))?;
 
         self.persist()?;
 
@@ -1247,8 +1281,9 @@ impl Channel {
         validator: Box<dyn Validator>,
         info: CommitmentInfo,
     ) -> Result<CommitmentTransaction, Status> {
+        let commitment_point = &self.get_per_commitment_point(commitment_number)?;
         let info2 = self.build_holder_commitment_info(
-            &self.get_per_commitment_point(commitment_number)?,
+            &commitment_point,
             info.to_broadcaster_value_sat,
             info.to_countersigner_value_sat,
             offered_htlcs,
@@ -1258,12 +1293,20 @@ impl Channel {
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let state = ValidatorState { current_height: 0 };
         validator
-            .validate_commitment_tx(&self.setup, &state, &info2, false)
+            .validate_commitment_tx(
+                &self.keys.state.lock().unwrap(),
+                commitment_number,
+                commitment_point,
+                &self.setup,
+                &state,
+                &info2,
+                false,
+            )
             .map_err(|ve| {
                 // BEGIN NOT TESTED
                 debug!(
-                    "VALIDATION FAILED:\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
-                    &tx, &self.setup, &state, &info2,
+                    "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
+                    ve, &tx, &self.setup, &state, &info2,
                 );
                 validation_error(ve)
                 // END NOT TESTED
@@ -1418,25 +1461,55 @@ impl Channel {
 
         // Advance the local commitment number state.
         self.keys
-            .set_next_holder_commitment_number(commitment_number + 1)
+            .set_next_holder_commit_num(commitment_number + 1)
             .map_err(|ve| validation_error(ve))?;
+
+        // These calls are guaranteed to pass the commitment_number
+        // check because we just advanced it to the right spot above.
+        let next_holder_commitment_point = self
+            .get_per_commitment_point(commitment_number + 1)
+            .unwrap();
+        let maybe_old_secret = if commitment_number >= 1 {
+            Some(
+                self.get_per_commitment_secret(commitment_number - 1)
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
 
         self.persist()?;
 
-        Ok((
-            // These calls are guaranteed to pass the commitment_number check because
-            // we just advanced it to the right spot above.
-            self.get_per_commitment_point(commitment_number + 1)
-                .unwrap(),
-            if commitment_number >= 1 {
-                Some(
-                    self.get_per_commitment_secret(commitment_number - 1)
-                        .unwrap(),
-                )
-            } else {
-                None
-            },
-        ))
+        Ok((next_holder_commitment_point, maybe_old_secret))
+    }
+
+    pub fn validate_counterparty_revocation(
+        &self,
+        revoke_num: u64,
+        old_secret: &SecretKey,
+    ) -> Result<(), Status> {
+        let validator = self
+            .node
+            .upgrade()
+            .unwrap()
+            .validator_factory
+            .make_validator(self.network());
+
+        // TODO - need to store the revealed secret.
+
+        {
+            // Hold the state mutex for the entire operation, but release before the persist.
+            let mut estate = self.keys.state.lock().unwrap();
+            validator
+                .validate_counterparty_revocation(&estate, revoke_num, old_secret)
+                .map_err(|ve| validation_error(ve))?;
+            estate
+                .set_next_counterparty_revoke_num(revoke_num + 1)
+                .map_err(|ve| validation_error(ve))?;
+        }
+
+        self.persist()?;
+        Ok(())
     }
 
     pub fn sign_holder_commitment_tx(
@@ -1604,13 +1677,14 @@ impl Channel {
             .map_err(|ve| {
                 // BEGIN NOT TESTED
                 debug!(
-                    "VALIDATION FAILED:\n\
+                    "VALIDATION FAILED: {}\n\
                      setup={:#?}\n\
                      state={:#?}\n\
                      is_counterparty={}\n\
                      tx={:#?}\n\
                      htlc={:#?}\n\
                      feerate_per_kw={}",
+                    ve,
                     &self.setup,
                     &state,
                     is_counterparty,

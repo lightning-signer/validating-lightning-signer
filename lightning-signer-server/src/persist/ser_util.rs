@@ -270,8 +270,11 @@ impl<'de> DeserializeAs<'de, ChannelSetup> for ChannelSetupDef {
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "EnforcementState")]
 pub struct EnforcementStateDef {
-    pub last_commitment_number: Option<u64>,
-    pub next_holder_commitment_number: u64,
+    pub next_holder_commit_num: u64,
+    pub next_counterparty_commit_num: u64,
+    pub next_counterparty_revoke_num: u64,
+    pub current_counterparty_point: Option<PublicKey>,
+    pub previous_counterparty_point: Option<PublicKey>,
 }
 
 #[derive(Deserialize)]
