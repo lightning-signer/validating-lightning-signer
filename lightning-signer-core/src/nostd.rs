@@ -1,7 +1,6 @@
 use core::cell::{RefCell, RefMut};
 use core::ops::{Deref, DerefMut};
 
-#[cfg(not(feature = "std"))]
 pub trait SendSync {}
 
 pub struct MutexGuard<'a, T>(RefMut<'a, T>);
