@@ -23,8 +23,9 @@ use lightning::ln::chan_utils::{
 use lightning::ln::PaymentHash;
 
 use crate::node::ChannelSetup;
-use crate::policy::error::ValidationError;
-use crate::policy::error::ValidationError::{Mismatch, ScriptFormat, TransactionFormat};
+use crate::policy::error::{
+    mismatch_error, script_format_error, transaction_format_error, ValidationError,
+};
 use crate::tx::script::{
     expect_data, expect_number, expect_op, expect_script_end, get_anchor_redeemscript,
     get_delayed_redeemscript, get_htlc_anchor_redeemscript,
@@ -454,7 +455,7 @@ pub fn parse_received_htlc_script(
     expect_op(iter, OP_SIZE)?;
     let thirty_two = expect_number(iter)?;
     if thirty_two != 32 {
-        return Err(Mismatch(format!("expected 32, saw {}", thirty_two))); // NOT TESTED
+        return Err(mismatch_error(format!("expected 32, saw {}", thirty_two))); // NOT TESTED
     }
     expect_op(iter, OP_EQUAL)?;
     expect_op(iter, OP_IF)?;
@@ -508,7 +509,7 @@ pub fn parse_offered_htlc_script(
     expect_op(iter, OP_SIZE)?;
     let thirty_two = expect_number(iter)?;
     if thirty_two != 32 {
-        return Err(Mismatch(format!("expected 32, saw {}", thirty_two))); // NOT TESTED
+        return Err(mismatch_error(format!("expected 32, saw {}", thirty_two))); // NOT TESTED
     }
     expect_op(iter, OP_EQUAL)?;
     expect_op(iter, OP_NOTIF)?;
@@ -638,14 +639,16 @@ impl CommitmentInfo {
         let (revocation_pubkey, delay, delayed_pubkey) = vals;
         // policy-v1-commitment-singular-to-local
         if self.has_to_broadcaster() {
-            return Err(TransactionFormat("already have to local".to_string()));
+            return Err(transaction_format_error(
+                "already have to local".to_string(),
+            ));
         }
 
         if delay < 0 {
-            return Err(ScriptFormat("negative delay".to_string())); // NOT TESTED
+            return Err(script_format_error("negative delay".to_string())); // NOT TESTED
         }
         if delay > MAX_DELAY {
-            return Err(ScriptFormat("delay too large".to_string())); // NOT TESTED
+            return Err(script_format_error("delay too large".to_string())); // NOT TESTED
         }
 
         // This is safe because we checked for negative
@@ -653,11 +656,11 @@ impl CommitmentInfo {
         self.to_broadcaster_value_sat = out.value;
         self.to_broadcaster_delayed_pubkey = Some(
             PublicKey::from_slice(delayed_pubkey.as_slice())
-                .map_err(|err| Mismatch(format!("delayed_pubkey malformed: {}", err)))?,
+                .map_err(|err| mismatch_error(format!("delayed_pubkey malformed: {}", err)))?,
         ); // NOT TESTED
         self.revocation_pubkey = Some(
             PublicKey::from_slice(revocation_pubkey.as_slice())
-                .map_err(|err| Mismatch(format!("revocation_pubkey malformed: {}", err)))?,
+                .map_err(|err| mismatch_error(format!("revocation_pubkey malformed: {}", err)))?,
         ); // NOT TESTED
 
         Ok(())
@@ -685,12 +688,14 @@ impl CommitmentInfo {
     ) -> Result<(), ValidationError> {
         // policy-v1-commitment-singular-to-remote
         if self.has_to_countersigner() {
-            return Err(TransactionFormat("more than one to remote".to_string()));
+            return Err(transaction_format_error(
+                "more than one to remote".to_string(),
+            ));
         }
         self.to_countersigner_pubkey = Some(
             PublicKey::from_slice(to_countersigner_delayed_pubkey_data.as_slice()).map_err(
                 |err| {
-                    Mismatch(format!(
+                    mismatch_error(format!(
                         "to_countersigner delayed pubkey malformed: {}",
                         err
                     ))
@@ -717,10 +722,10 @@ impl CommitmentInfo {
         let payment_hash_hash = payment_hash_vec
             .as_slice()
             .try_into()
-            .map_err(|_| Mismatch("payment hash RIPEMD160 must be length 20".to_string()))?;
+            .map_err(|_| mismatch_error("payment hash RIPEMD160 must be length 20".to_string()))?;
 
         if cltv_expiry < 0 {
-            return Err(ScriptFormat("negative CLTV".to_string())); // NOT TESTED
+            return Err(script_format_error("negative CLTV".to_string())); // NOT TESTED
         }
 
         let cltv_expiry = cltv_expiry as u32;
@@ -745,7 +750,7 @@ impl CommitmentInfo {
         let payment_hash_hash = payment_hash_vec
             .as_slice()
             .try_into()
-            .map_err(|_| Mismatch("payment hash RIPEMD160 must be length 20".to_string()))?;
+            .map_err(|_| mismatch_error("payment hash RIPEMD160 must be length 20".to_string()))?;
 
         let htlc = HTLCInfo {
             value_sat: out.value,
@@ -779,7 +784,7 @@ impl CommitmentInfo {
         to_pubkey_data: Vec<u8>,
     ) -> Result<(), ValidationError> {
         let to_pubkey = PublicKey::from_slice(to_pubkey_data.as_slice())
-            .map_err(|err| Mismatch(format!("anchor to_pubkey malformed: {}", err)))?;
+            .map_err(|err| mismatch_error(format!("anchor to_pubkey malformed: {}", err)))?;
 
         // These are dependent on which side owns this commitment.
         let (to_broadcaster_funding_pubkey, to_countersigner_funding_pubkey) =
@@ -799,7 +804,7 @@ impl CommitmentInfo {
 
         // policy-v1-commitment-anchor-amount
         if out.value != ANCHOR_SAT {
-            return Err(Mismatch(format!("anchor wrong size: {}", out.value)));
+            return Err(mismatch_error(format!("anchor wrong size: {}", out.value)));
         }
 
         if to_pubkey == to_broadcaster_funding_pubkey {
@@ -810,7 +815,7 @@ impl CommitmentInfo {
             self.to_countersigner_anchor_count += 1; // NOT TESTED
         } else {
             // policy-v1-commitment-anchor-match-fundingkey
-            return Err(Mismatch(format!(
+            return Err(mismatch_error(format!(
                 "anchor to_pubkey {} doesn't match local or remote",
                 to_pubkey_data.to_hex()
             )));
@@ -828,13 +833,13 @@ impl CommitmentInfo {
         if out.script_pubkey.is_v0_p2wpkh() {
             // FIXME - Does this need it's own policy tag?
             if setup.option_anchor_outputs() {
-                return Err(TransactionFormat(
+                return Err(transaction_format_error(
                     "p2wpkh to_countersigner not valid with anchors".to_string(),
                 ));
             }
             // policy-v1-commitment-singular-to-remote
             if self.has_to_countersigner() {
-                return Err(TransactionFormat(
+                return Err(transaction_format_error(
                     "more than one to_countersigner".to_string(),
                 ));
             }
@@ -842,12 +847,14 @@ impl CommitmentInfo {
             self.to_countersigner_value_sat = out.value;
         } else if out.script_pubkey.is_v0_p2wsh() {
             if script_bytes.is_empty() {
-                return Err(TransactionFormat("missing witscript for p2wsh".to_string()));
+                return Err(transaction_format_error(
+                    "missing witscript for p2wsh".to_string(),
+                ));
             }
             let script = Script::from(script_bytes.to_vec());
             // FIXME - Does this need it's own policy tag?
             if out.script_pubkey != script.to_v0_p2wsh() {
-                return Err(TransactionFormat(
+                return Err(transaction_format_error(
                     "script pubkey doesn't match inner script".to_string(),
                 ));
             }
@@ -876,10 +883,10 @@ impl CommitmentInfo {
                 // END NOT TESTED
             }
             // policy-v1-commitment-no-unrecognized-outputs
-            return Err(TransactionFormat("unknown p2wsh script".to_string()));
+            return Err(transaction_format_error("unknown p2wsh script".to_string()));
         } else {
             // policy-v1-commitment-no-unrecognized-outputs
-            return Err(TransactionFormat("unknown output type".to_string()));
+            return Err(transaction_format_error("unknown output type".to_string()));
         }
         Ok(())
     }
@@ -936,7 +943,7 @@ mod tests {
         assert!(res.is_err());
         #[rustfmt::skip]
         assert_eq!( // NOT TESTED
-            TransactionFormat("already have to local".to_string()),
+            transaction_format_error("already have to local".to_string()),
                     res.expect_err("expecting err")
         );
     }
@@ -954,7 +961,7 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
-            Mismatch(format!("anchor wrong size: {}", out.value))
+            mismatch_error(format!("anchor wrong size: {}", out.value))
         );
     }
 
@@ -971,7 +978,7 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
-            Mismatch(format!(
+            mismatch_error(format!(
                 "anchor to_pubkey {} doesn\'t match local or remote",
                 hex_encode(&to_pubkey_data)
             ))
@@ -992,7 +999,7 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
-            TransactionFormat("unknown output type".to_string())
+            transaction_format_error("unknown output type".to_string())
         );
     }
 
@@ -1012,7 +1019,7 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
-            TransactionFormat("unknown p2wsh script".to_string())
+            transaction_format_error("unknown p2wsh script".to_string())
         );
     }
 
@@ -1033,7 +1040,7 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
-            TransactionFormat("p2wpkh to_countersigner not valid with anchors".to_string())
+            transaction_format_error("p2wpkh to_countersigner not valid with anchors".to_string())
         );
     }
 
@@ -1056,7 +1063,7 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
-            TransactionFormat("more than one to_countersigner".to_string())
+            transaction_format_error("more than one to_countersigner".to_string())
         );
     }
 
@@ -1074,7 +1081,7 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
-            TransactionFormat("missing witscript for p2wsh".to_string())
+            transaction_format_error("missing witscript for p2wsh".to_string())
         );
     }
 
@@ -1093,7 +1100,7 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
-            TransactionFormat("script pubkey doesn\'t match inner script".to_string())
+            transaction_format_error("script pubkey doesn\'t match inner script".to_string())
         );
     }
 }

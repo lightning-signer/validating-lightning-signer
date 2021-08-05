@@ -265,7 +265,7 @@ mod tests {
     use lightning::ln::PaymentHash;
 
     use crate::node::{ChannelSetup, CommitmentType};
-    use crate::policy::error::ValidationError;
+    use crate::policy::error::policy_error;
     use crate::tx::tx::{build_close_tx, HTLCInfo2, ANCHOR_SAT};
     use crate::util::crypto_utils::{
         derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
@@ -293,13 +293,19 @@ mod tests {
         };
     }
 
+    macro_rules! assert_failed_precondition_err {
+        ($status: expr, $msg: expr) => {
+            assert!($status.is_err());
+            let err = $status.unwrap_err();
+            assert_eq!(err.code(), Code::FailedPrecondition);
+            assert_eq!(err.message(), $msg);
+        };
+    }
+
     macro_rules! assert_policy_err {
         ($status: expr, $msg: expr) => {
             assert!($status.is_err());
-            assert_eq!(
-                $status.unwrap_err(),
-                ValidationError::Policy($msg.to_string())
-            );
+            assert_eq!($status.unwrap_err(), policy_error($msg.to_string()));
         };
     }
 
@@ -466,13 +472,13 @@ mod tests {
             assert!(result.is_ok());
 
             // get_per_commitment_point for future commit_num should policy-fail.
-            assert_invalid_argument_err!(
+            assert_failed_precondition_err!(
                 base.get_per_commitment_point(1),
                 "policy failure: channel stub can only return point for commitment number zero"
             );
 
             // get_per_commitment_secret never works for a stub.
-            assert_invalid_argument_err!(
+            assert_failed_precondition_err!(
                 base.get_per_commitment_secret(0),
                 "policy failure: channel stub cannot release commitment secret"
             );
@@ -2181,7 +2187,7 @@ mod tests {
 
         // Don't validate the second channel's holder commitment.
 
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: initial holder commitment not validated"
         );
@@ -2219,7 +2225,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: unknown output: status: InvalidArgument, message: \"channel with Outpoint a5b4d12cf257a92e0536ddfce77635f92283f1e81e4d4f5ce7239bd36cfe925c:1 not found\"");
     }
@@ -2307,7 +2313,7 @@ mod tests {
 
         tx_ctx.opaths[0] = vec![42, 42]; // bad output path
 
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: output[0]: wallet_can_spend error: \
              status: InvalidArgument, message: \"get_wallet_key: bad child_path len : 2\""
@@ -2344,7 +2350,7 @@ mod tests {
 
         tx.output[1].value = 42; // bad output value
 
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: unknown output: status: InvalidArgument, message: \"channel with Outpoint f1eae74c7d684c0abafacd9da58234f754ab27fbeb6b357d9d8cfd822e740b43:1 not found\"");
     }
@@ -2379,7 +2385,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: funding output amount mismatch w/ channel: 42 != 3000000"
         );
@@ -2419,7 +2425,7 @@ mod tests {
             .push_slice(&[27; 32])
             .into_script();
 
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: unknown output: status: InvalidArgument, message: \"channel with Outpoint 81fe91f5705b1a893494726cc9019614aa108fd02809e9f23673c83ea6404bce:1 not found\"");
     }
@@ -2459,7 +2465,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: funding script_pubkey mismatch w/ channel: Script(OP_0 OP_PUSHBYTES_32 1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b) != Script(OP_0 OP_PUSHBYTES_32 7ac8486233edd675a9745d9eefd4386880312b3930a2195567b4b89220b5c833)");
     }
@@ -2577,7 +2583,7 @@ mod tests {
 
         set_next_holder_commit_num_for_testing(&sign_ctx, &node_ctx, &chan_ctx, 1);
 
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             validate_holder_commitment(
                 &sign_ctx,
                 &node_ctx,
@@ -2654,7 +2660,7 @@ mod tests {
             received_htlcs,
         );
 
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_commitment(&sign_ctx, &node_ctx, &chan_ctx, &commit_tx_ctx,),
             "policy failure: can\'t sign revoked commitment_number 9, \
              next_holder_commit_num is 11"
@@ -3231,7 +3237,7 @@ mod tests {
     // policy-v1-htlc-version
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_version_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3244,7 +3250,7 @@ mod tests {
     // policy-v1-htlc-version
     #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_version_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3257,7 +3263,7 @@ mod tests {
     // policy-v1-htlc-version
     #[test]
     fn sign_holder_offered_htlc_tx_with_bad_version_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3270,7 +3276,7 @@ mod tests {
     // policy-v1-htlc-version
     #[test]
     fn sign_holder_received_htlc_tx_with_bad_version_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3283,7 +3289,7 @@ mod tests {
     // policy-v1-htlc-locktime
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_locktime_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3296,7 +3302,7 @@ mod tests {
     // policy-v1-htlc-locktime
     #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_locktime_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3309,7 +3315,7 @@ mod tests {
     // policy-v1-htlc-locktime
     #[test]
     fn sign_holder_offered_htlc_tx_with_bad_locktime_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3322,7 +3328,7 @@ mod tests {
     // policy-v1-htlc-locktime
     #[test]
     fn sign_holder_received_htlc_tx_with_bad_locktime_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3335,7 +3341,7 @@ mod tests {
     // policy-v1-htlc-nsequence
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_nsequence_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3348,7 +3354,7 @@ mod tests {
     // policy-v1-htlc-nsequence
     #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_nsequence_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3361,7 +3367,7 @@ mod tests {
     // policy-v1-htlc-nsequence
     #[test]
     fn sign_holder_offered_htlc_tx_with_bad_nsequence_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3374,7 +3380,7 @@ mod tests {
     // policy-v1-htlc-nsequence
     #[test]
     fn sign_holder_received_htlc_tx_with_bad_nsequence_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3387,7 +3393,7 @@ mod tests {
     // policy-v1-htlc-to-self-delay
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_to_self_delay_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |param| param.holder_selected_contest_delay = 42,
                 |_keys| {},
@@ -3400,7 +3406,7 @@ mod tests {
     // policy-v1-htlc-to-self-delay
     #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_to_self_delay_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
                 |param| param.holder_selected_contest_delay = 42,
                 |_keys| {},
@@ -3413,7 +3419,7 @@ mod tests {
     // policy-v1-htlc-to-self-delay
     #[test]
     fn sign_holder_offered_htlc_tx_with_bad_to_self_delay_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
                 |param| {
                     let mut cptp = param.counterparty_parameters.as_ref().unwrap().clone();
@@ -3430,7 +3436,7 @@ mod tests {
     // policy-v1-htlc-to-self-delay
     #[test]
     fn sign_holder_received_htlc_tx_with_bad_to_self_delay_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
                 |param| {
                     let mut cptp = param.counterparty_parameters.as_ref().unwrap().clone();
@@ -3447,7 +3453,7 @@ mod tests {
     // policy-v1-htlc-revocation-pubkey
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_revpubkey_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.revocation_key = make_test_pubkey(42),
@@ -3460,7 +3466,7 @@ mod tests {
     // policy-v1-htlc-revocation-pubkey
     #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_revpubkey_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.revocation_key = make_test_pubkey(42),
@@ -3473,7 +3479,7 @@ mod tests {
     // policy-v1-htlc-revocation-pubkey
     #[test]
     fn sign_holder_offered_htlc_tx_with_bad_revpubkey_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.revocation_key = make_test_pubkey(42),
@@ -3486,7 +3492,7 @@ mod tests {
     // policy-v1-htlc-revocation-pubkey
     #[test]
     fn sign_holder_received_htlc_tx_with_bad_revpubkey_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.revocation_key = make_test_pubkey(42),
@@ -3499,7 +3505,7 @@ mod tests {
     // policy-v1-htlc-payment-pubkey
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_delayedpubkey_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
@@ -3512,7 +3518,7 @@ mod tests {
     // policy-v1-htlc-payment-pubkey
     #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_delayedpubkey_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
@@ -3525,7 +3531,7 @@ mod tests {
     // policy-v1-htlc-payment-pubkey
     #[test]
     fn sign_holder_offered_htlc_tx_with_bad_delayedpubkey_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
@@ -3538,7 +3544,7 @@ mod tests {
     // policy-v1-htlc-payment-pubkey
     #[test]
     fn sign_holder_received_htlc_tx_with_bad_delayedpubkey_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
@@ -3551,7 +3557,7 @@ mod tests {
     // policy-v1-htlc-fee-range
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_low_feerate_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3564,7 +3570,7 @@ mod tests {
     // policy-v1-htlc-fee-range
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_high_feerate_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3577,7 +3583,7 @@ mod tests {
     // policy-v1-htlc-fee-range
     #[test]
     fn sign_holder_received_htlc_tx_with_low_feerate_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -3590,7 +3596,7 @@ mod tests {
     // policy-v1-htlc-fee-range
     #[test]
     fn sign_holder_received_htlc_tx_with_high_feerate_test() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
@@ -4522,7 +4528,7 @@ mod tests {
                 tx.transaction.version = 3;
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: bad commitment version: 3");
+        assert_failed_precondition_err!(status, "policy failure: bad commitment version: 3");
     }
 
     // policy-v1-commitment-version
@@ -4535,7 +4541,7 @@ mod tests {
                 tx.transaction.version = 3;
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: bad commitment version: 3");
+        assert_failed_precondition_err!(status, "policy failure: bad commitment version: 3");
     }
 
     // policy-v1-commitment-locktime
@@ -4550,7 +4556,7 @@ mod tests {
                 tx.transaction.lock_time = 42;
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-v1-commitment-locktime
@@ -4565,7 +4571,7 @@ mod tests {
                 tx.transaction.lock_time = 42;
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-v1-commitment-nsequence
@@ -4578,7 +4584,7 @@ mod tests {
                 tx.transaction.input[0].sequence = 42;
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-v1-commitment-nsequence
@@ -4591,7 +4597,7 @@ mod tests {
                 tx.transaction.input[0].sequence = 42;
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-v1-commitment-input-single
@@ -4606,7 +4612,7 @@ mod tests {
                 tx.transaction.input.push(inp2);
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-v1-commitment-input-single
@@ -4621,7 +4627,7 @@ mod tests {
                 tx.transaction.input.push(inp2);
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-v1-commitment-input-match-funding
@@ -4635,7 +4641,7 @@ mod tests {
                     bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-v1-commitment-input-match-funding
@@ -4649,7 +4655,7 @@ mod tests {
                     bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
             },
         );
-        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-v1-commitment-revocation-pubkey
@@ -4662,7 +4668,7 @@ mod tests {
             },
             |_tx| {},
         );
-        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-v1-commitment-revocation-pubkey
@@ -4675,7 +4681,7 @@ mod tests {
             },
             |_tx| {},
         );
-        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-v1-commitment-htlc-pubkey
@@ -4688,7 +4694,7 @@ mod tests {
             },
             |_tx| {},
         );
-        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-v1-commitment-htlc-pubkey
@@ -4701,7 +4707,7 @@ mod tests {
             },
             |_tx| {},
         );
-        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-v1-commitment-delayed-pubkey
@@ -4714,7 +4720,7 @@ mod tests {
             },
             |_tx| {},
         );
-        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-v1-commitment-delayed-pubkey
@@ -4727,7 +4733,7 @@ mod tests {
             },
             |_tx| {},
         );
-        assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-v2-commitment-previous-revoked
@@ -4740,7 +4746,7 @@ mod tests {
             |_keys| {},
             |_tx| {},
         );
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             status,
             "policy failure: \
              invalid attempt to sign counterparty commit_num 23 \
@@ -4759,7 +4765,7 @@ mod tests {
             |_keys| {},
             |_tx| {},
         );
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             status,
             "policy failure: next_counterparty_commit_num 24 too small \
              relative to next_counterparty_revoke_num 24"
@@ -4865,7 +4871,7 @@ mod tests {
     // policy-v2-commitment-retry-same (remote_percommitment_point)
     #[test]
     fn sign_counterparty_commitment_tx_retry_with_bad_point() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_retry_with_mutator(
                 |_tx, _output_witscripts, remote_percommitment_point, _payment_hashmap| {
                     *remote_percommitment_point = make_test_pubkey(42);
@@ -5025,7 +5031,7 @@ mod tests {
 
     #[test]
     fn validate_counterparty_revocation_not_ahead() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             validate_counterparty_revocation_with_mutator(
                 |chan, _old_secret| {
                     // Set the channel's next_revoke_num ahead two, past the retry ...
@@ -5044,7 +5050,7 @@ mod tests {
 
     #[test]
     fn validate_counterparty_revocation_not_behind() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             validate_counterparty_revocation_with_mutator(
                 |chan, _old_secret| {
                     // Set the channel's next_revoke_num behind 1, in the past ...
@@ -5064,7 +5070,7 @@ mod tests {
     // policy-v2-commitment-previous-revoked (invalid secret on revoke)
     #[test]
     fn validate_counterparty_revocation_with_bad_secret() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             validate_counterparty_revocation_with_mutator(
                 |_chan, old_secret| {
                     *old_secret = make_test_privkey(42);
@@ -5222,7 +5228,7 @@ mod tests {
 
     #[test]
     fn validate_holder_commitment_not_ahead() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
                 |chan, _commit_tx_ctx, _commit_sig, _htlc_sigs| {
                     // Set the channel's next_holder_commit_num ahead two, past the retry ...
@@ -5240,7 +5246,7 @@ mod tests {
 
     #[test]
     fn validate_holder_commitment_not_behind() {
-        assert_invalid_argument_err!(
+        assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
                 |chan, _commit_tx_ctx, _commit_sig, _htlc_sigs| {
                     // Set the channel's next_holder_commit_num ahead two behind 1, in the past ...

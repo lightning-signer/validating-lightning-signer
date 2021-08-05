@@ -34,7 +34,7 @@ use lightning::ln::PaymentHash;
 
 use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
-use crate::policy::error::ValidationError::{self, Policy};
+use crate::policy::error::policy_error;
 use crate::policy::validator::{
     SimpleValidatorFactory, Validator, ValidatorFactory, ValidatorState,
 };
@@ -50,7 +50,7 @@ use crate::util::crypto_utils::{
 };
 use crate::util::debug_utils::DebugHTLCOutputInCommitment;
 use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
-use crate::util::status::{internal_error, invalid_argument, validation_error, Status};
+use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
 use bitcoin::hashes::hex::ToHex;
 use core::convert::TryInto;
@@ -243,9 +243,10 @@ impl ChannelBase for ChannelStub {
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status> {
         if commitment_number != 0 {
-            return Err(validation_error(ValidationError::Policy(format!(
+            return Err(policy_error(format!(
                 "channel stub can only return point for commitment number zero",
-            ))));
+            ))
+            .into());
         }
         Ok(self.keys.get_per_commitment_point(
             INITIAL_COMMITMENT_NUMBER - commitment_number,
@@ -255,9 +256,7 @@ impl ChannelBase for ChannelStub {
 
     fn get_per_commitment_secret(&self, _commitment_number: u64) -> Result<SecretKey, Status> {
         // We can't release a commitment_secret from a ChannelStub ever.
-        Err(validation_error(ValidationError::Policy(format!(
-            "channel stub cannot release commitment secret"
-        ))))
+        Err(policy_error(format!("channel stub cannot release commitment secret")).into())
     }
 
     fn check_future_secret(
@@ -302,11 +301,12 @@ impl ChannelBase for Channel {
     fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status> {
         let next_holder_commit_num = self.keys.next_holder_commit_num();
         if commitment_number > next_holder_commit_num {
-            return Err(validation_error(ValidationError::Policy(format!(
+            return Err(policy_error(format!(
                 "get_per_commitment_point: \
                  commitment_number {} invalid when next_holder_commit_num is {}",
                 commitment_number, next_holder_commit_num,
-            ))));
+            ))
+            .into());
         }
         Ok(self.keys.get_per_commitment_point(
             INITIAL_COMMITMENT_NUMBER - commitment_number,
@@ -318,11 +318,12 @@ impl ChannelBase for Channel {
         let next_holder_commit_num = self.keys.next_holder_commit_num();
         // policy-v2-revoke-new-commitment-signed
         if commitment_number + 2 > next_holder_commit_num {
-            return Err(validation_error(ValidationError::Policy(format!(
+            return Err(policy_error(format!(
                 "get_per_commitment_secret: \
                  commitment_number {} invalid when next_holder_commit_num is {}",
                 commitment_number, next_holder_commit_num,
-            ))));
+            ))
+            .into());
         }
         let secret = self
             .keys
@@ -1044,21 +1045,17 @@ impl Channel {
             .make_validator(self.network());
 
         // Since we didn't have the value at the real open, validate it now.
-        validator
-            .validate_channel_open(&self.setup)
-            .map_err(|ve| validation_error(ve))?;
+        validator.validate_channel_open(&self.setup)?;
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = true;
-        let info = validator
-            .make_info(
-                &self.keys,
-                &self.setup,
-                is_counterparty,
-                tx,
-                output_witscripts,
-            )
-            .map_err(|err| validation_error(err))?;
+        let info = validator.make_info(
+            &self.keys,
+            &self.setup,
+            is_counterparty,
+            tx,
+            output_witscripts,
+        )?;
 
         let offered_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.offered_htlcs)?;
         let received_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.received_htlcs)?;
@@ -1089,7 +1086,7 @@ impl Channel {
                     "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\nvstate={:#?}\ninfo={:#?}",
                     ve, &tx, &self.setup, &vstate, &info2,
                 );
-                validation_error(ve)
+                ve
                 // END NOT TESTED
             })?;
 
@@ -1111,9 +1108,7 @@ impl Channel {
                 "RECOMPOSED_TX={:#?}",
                 &recomposed_tx.trust().built_transaction().transaction
             );
-            return Err(validation_error(ValidationError::Policy(
-                "recomposed tx mismatch".to_string(),
-            )));
+            return Err(policy_error("recomposed tx mismatch".to_string()).into());
             // END NOT TESTED
         }
 
@@ -1131,8 +1126,7 @@ impl Channel {
         // Sign the recomposed commitment.
         let sigs = self
             .keys
-            .sign_counterparty_commitment_with_result(&recomposed_tx, &self.secp_ctx)
-            .map_err(|ve| validation_error(ve))?;
+            .sign_counterparty_commitment_with_result(&recomposed_tx, &self.secp_ctx)?;
 
         self.persist()?;
 
@@ -1188,21 +1182,17 @@ impl Channel {
             .make_validator(self.network());
 
         // Since we didn't have the value at the real open, validate it now.
-        validator
-            .validate_channel_open(&self.setup)
-            .map_err(|ve| validation_error(ve))?;
+        validator.validate_channel_open(&self.setup)?;
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = false;
-        let info = validator
-            .make_info(
-                &self.keys,
-                &self.setup,
-                is_counterparty,
-                tx,
-                output_witscripts,
-            )
-            .map_err(|err| validation_error(err))?;
+        let info = validator.make_info(
+            &self.keys,
+            &self.setup,
+            is_counterparty,
+            tx,
+            output_witscripts,
+        )?;
 
         let offered_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.offered_htlcs)?;
         let received_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.received_htlcs)?;
@@ -1244,21 +1234,17 @@ impl Channel {
             .make_validator(self.network());
 
         // Since we didn't have the value at the real open, validate it now.
-        validator
-            .validate_channel_open(&self.setup)
-            .map_err(|ve| validation_error(ve))?;
+        validator.validate_channel_open(&self.setup)?;
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = false;
-        let info = validator
-            .make_info(
-                &self.keys,
-                &self.setup,
-                is_counterparty,
-                tx,
-                output_witscripts,
-            )
-            .map_err(|err| validation_error(err))?;
+        let info = validator.make_info(
+            &self.keys,
+            &self.setup,
+            is_counterparty,
+            tx,
+            output_witscripts,
+        )?;
 
         self.make_recomposed_holder_commitment_tx_common(
             tx,
@@ -1308,7 +1294,7 @@ impl Channel {
                     "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
                     ve, &tx, &self.setup, &state, &info2,
                 );
-                validation_error(ve)
+                ve
                 // END NOT TESTED
             })?;
 
@@ -1329,9 +1315,7 @@ impl Channel {
                 "RECOMPOSED_TX={:#?}",
                 &recomposed_tx.trust().built_transaction().transaction
             );
-            return Err(validation_error(ValidationError::Policy(
-                "recomposed tx mismatch".to_string(),
-            )));
+            return Err(policy_error("recomposed tx mismatch".to_string()).into());
             // END NOT TESTED
         }
 
@@ -1405,7 +1389,7 @@ impl Channel {
                 &counterparty_commit_sig,
                 &self.setup.counterparty_points.funding_pubkey,
             )
-            .map_err(|ve| validation_error(Policy(format!("commit sig verify failed: {}", ve))))?;
+            .map_err(|ve| policy_error(format!("commit sig verify failed: {}", ve)))?;
 
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
         let txkeys = self
@@ -1452,17 +1436,16 @@ impl Channel {
                     &htlc_pubkey,
                 )
                 .map_err(|err| {
-                    validation_error(Policy(format!(
+                    policy_error(format!(
                         "commit sig verify failed for htlc {}: {}",
                         ndx, err
-                    )))
+                    ))
                 })?;
         }
 
         // Advance the local commitment number state.
         self.keys
-            .set_next_holder_commit_num(commitment_number + 1)
-            .map_err(|ve| validation_error(ve))?;
+            .set_next_holder_commit_num(commitment_number + 1)?;
 
         // These calls are guaranteed to pass the commitment_number
         // check because we just advanced it to the right spot above.
@@ -1500,12 +1483,8 @@ impl Channel {
         {
             // Hold the state mutex for the entire operation, but release before the persist.
             let mut estate = self.keys.state.lock().unwrap();
-            validator
-                .validate_counterparty_revocation(&estate, revoke_num, old_secret)
-                .map_err(|ve| validation_error(ve))?;
-            estate
-                .set_next_counterparty_revoke_num(revoke_num + 1)
-                .map_err(|ve| validation_error(ve))?;
+            validator.validate_counterparty_revocation(&estate, revoke_num, old_secret)?;
+            estate.set_next_counterparty_revoke_num(revoke_num + 1)?;
         }
 
         self.persist()?;
@@ -1526,9 +1505,7 @@ impl Channel {
             .validator_factory
             .make_validator(self.network());
 
-        validator
-            .validate_holder_commitment_tx(&self.keys, commitment_number)
-            .map_err(|ve| validation_error(ve))?;
+        validator.validate_holder_commitment_tx(&self.keys, commitment_number)?;
 
         let recomposed_tx = self.make_recomposed_holder_commitment_tx(
             tx,
@@ -1658,17 +1635,15 @@ impl Channel {
             .validator_factory
             .make_validator(self.network());
 
-        let (feerate_per_kw, htlc, recomposed_tx_sighash) = validator
-            .decode_and_validate_htlc_tx(
-                is_counterparty,
-                &self.setup,
-                &txkeys,
-                tx,
-                &redeemscript,
-                htlc_amount_sat,
-                output_witscript,
-            )
-            .map_err(|e| validation_error(e))?;
+        let (feerate_per_kw, htlc, recomposed_tx_sighash) = validator.decode_and_validate_htlc_tx(
+            is_counterparty,
+            &self.setup,
+            &txkeys,
+            tx,
+            &redeemscript,
+            htlc_amount_sat,
+            output_witscript,
+        )?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let state = ValidatorState { current_height: 0 };
@@ -1692,7 +1667,7 @@ impl Channel {
                     DebugHTLCOutputInCommitment(&htlc),
                     feerate_per_kw,
                 );
-                validation_error(ve)
+                ve
                 // END NOT TESTED
             })?;
 
@@ -2086,9 +2061,7 @@ impl Node {
         };
         let validator = self.validator_factory.make_validator(chan.network());
 
-        validator
-            .validate_channel_open(&setup)
-            .map_err(|ve| validation_error(ve))?;
+        validator.validate_channel_open(&setup)?;
 
         let mut channels = self.channels.lock().unwrap();
 
@@ -2136,9 +2109,7 @@ impl Node {
 
         // TODO - initialize the state
         let state = ValidatorState { current_height: 0 };
-        validator
-            .validate_funding_tx(self, &state, tx, opaths)
-            .map_err(|err| validation_error(err))?;
+        validator.validate_funding_tx(self, &state, tx, opaths)?;
 
         let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for idx in 0..tx.input.len() {

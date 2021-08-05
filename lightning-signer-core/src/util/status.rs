@@ -25,6 +25,9 @@ pub enum Code {
     /// Client specified an invalid argument.
     InvalidArgument = 3,
 
+    /// The system is not in a state required for the operation’s execution.
+    FailedPrecondition = 9,
+
     /// Internal error.
     Internal = 13,
 }
@@ -50,6 +53,10 @@ impl Status {
 
     pub fn invalid_argument(message: impl Into<String>) -> Status {
         Self::new(Code::InvalidArgument, message)
+    }
+
+    pub fn failed_precondition(message: impl Into<String>) -> Status {
+        Self::new(Code::FailedPrecondition, message)
     }
 
     pub fn internal(message: impl Into<String>) -> Status {
@@ -117,10 +124,24 @@ pub fn internal_error(msg: impl Into<String>) -> Status {
     Status::internal(s)
 }
 
-pub fn validation_error(ve: ValidationError) -> Status {
-    let s: String = ve.into();
-    error!("VALIDATION ERROR: {}", &s);
-    #[cfg(feature = "backtrace")]
-    error!("BACKTRACE:\n{:?}", Backtrace::new());
-    Status::invalid_argument(s)
+pub fn failed_precondition(msg: impl Into<String>) -> Status {
+    let s = msg.into();
+    error!("FAILED PRECONDITION: {}", &s);
+    // Skip backtrace since ValidationError handled already ...
+    Status::failed_precondition(s)
+}
+
+impl From<ValidationError> for Status {
+    fn from(ve: ValidationError) -> Self {
+        let s: String = ve.clone().into();
+        error!("FAILED PRECONDITION: {}", &s);
+        #[cfg(feature = "backtrace")]
+        {
+            // Resolve the backtrace for symbolic display.
+            let mut mve = ve.clone();
+            mve.bt.resolve();
+            error!("BACKTRACE:\n{:?}", &mve.bt);
+        }
+        Status::failed_precondition(s)
+    }
 }

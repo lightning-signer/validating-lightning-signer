@@ -18,7 +18,7 @@ use crate::tx::tx::{
 use crate::util::crypto_utils::payload_for_p2wsh;
 use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
 
-use super::error::ValidationError::{self, Policy};
+use super::error::{policy_error, ValidationError};
 use bitcoin::util::bip143::SigHashCache;
 use lightning::ln::PaymentHash;
 
@@ -149,10 +149,10 @@ impl SimpleValidator {
         let policy = &self.policy;
 
         if delay < policy.min_delay as u32 {
-            return Err(Policy(format!("{} too small", name)));
+            return Err(policy_error(format!("{} too small", name)));
         }
         if delay > policy.max_delay as u32 {
-            return Err(Policy(format!("{} too large", name)));
+            return Err(policy_error(format!("{} too large", name)));
         }
 
         Ok(())
@@ -168,10 +168,10 @@ impl SimpleValidator {
 
         if policy.use_chain_state {
             if expiry < current_height + policy.min_delay as u32 {
-                return Err(Policy(format!("{} expiry too early", name)));
+                return Err(policy_error(format!("{} expiry too early", name)));
             }
             if expiry > current_height + policy.max_delay as u32 {
-                return Err(Policy(format!("{} expiry too late", name)));
+                return Err(policy_error(format!("{} expiry too late", name)));
             }
         }
 
@@ -234,7 +234,10 @@ impl Validator for SimpleValidator {
     ) -> Result<CommitmentInfo, ValidationError> {
         // policy-v1-commitment-version
         if tx.version != 2 {
-            return Err(Policy(format!("bad commitment version: {}", tx.version)));
+            return Err(policy_error(format!(
+                "bad commitment version: {}",
+                tx.version
+            )));
         }
 
         let mut info = CommitmentInfo::new(is_counterparty);
@@ -245,7 +248,7 @@ impl Validator for SimpleValidator {
                 &tx.output[ind],
                 output_witscripts[ind].as_slice(),
             )
-            .map_err(|ve| Policy(format!("tx output[{}]: {}", ind, ve)))?;
+            .map_err(|ve| policy_error(format!("tx output[{}]: {}", ind, ve)))?;
         }
         Ok(info)
     }
@@ -265,11 +268,13 @@ impl Validator for SimpleValidator {
         // policy-v1-commitment-to-self-delay-range
         if is_counterparty {
             if info.to_self_delay != setup.holder_selected_contest_delay {
-                return Err(Policy("holder_selected_contest_delay mismatch".to_string()));
+                return Err(policy_error(
+                    "holder_selected_contest_delay mismatch".to_string(),
+                ));
             }
         } else {
             if info.to_self_delay != setup.counterparty_selected_contest_delay {
-                return Err(Policy(
+                return Err(policy_error(
                     "counterparty_selected_contest_delay mismatch".to_string(),
                 ));
             }
@@ -277,7 +282,7 @@ impl Validator for SimpleValidator {
 
         // policy-v2-commitment-htlc-count-limit
         if info.offered_htlcs.len() + info.received_htlcs.len() > policy.max_htlcs {
-            return Err(Policy("too many HTLCs".to_string()));
+            return Err(policy_error("too many HTLCs".to_string()));
         }
 
         let mut htlc_value_sat: u64 = 0;
@@ -286,19 +291,19 @@ impl Validator for SimpleValidator {
             self.validate_expiry("offered HTLC", htlc.cltv_expiry, vstate.current_height)?;
             htlc_value_sat = htlc_value_sat
                 .checked_add(htlc.value_sat)
-                .ok_or_else(|| Policy("offered HTLC value overflow".to_string()))?;
+                .ok_or_else(|| policy_error("offered HTLC value overflow".to_string()))?;
         }
 
         for htlc in &info.received_htlcs {
             self.validate_expiry("received HTLC", htlc.cltv_expiry, vstate.current_height)?;
             htlc_value_sat = htlc_value_sat
                 .checked_add(htlc.value_sat)
-                .ok_or_else(|| Policy("received HTLC value overflow".to_string()))?;
+                .ok_or_else(|| policy_error("received HTLC value overflow".to_string()))?;
         }
 
         // policy-v2-commitment-htlc-inflight-limit
         if htlc_value_sat > policy.max_htlc_value_sat {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "sum of HTLC values {} too large",
                 htlc_value_sat
             )));
@@ -308,15 +313,15 @@ impl Validator for SimpleValidator {
         let consumed = info
             .to_broadcaster_value_sat
             .checked_add(info.to_countersigner_value_sat)
-            .ok_or_else(|| Policy("channel value overflow".to_string()))?
+            .ok_or_else(|| policy_error("channel value overflow".to_string()))?
             .checked_add(htlc_value_sat)
-            .ok_or_else(|| Policy("channel value overflow on HTLC".to_string()))?;
+            .ok_or_else(|| policy_error("channel value overflow on HTLC".to_string()))?;
         let shortage = setup
             .channel_value_sat
             .checked_sub(consumed)
-            .ok_or_else(|| Policy("channel shortage underflow".to_string()))?;
+            .ok_or_else(|| policy_error("channel shortage underflow".to_string()))?;
         if shortage > policy.epsilon_sat {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "channel value short by {} > {}",
                 shortage, policy.epsilon_sat
             )));
@@ -330,7 +335,7 @@ impl Validator for SimpleValidator {
             // - commit_num 21 is ok to sign, advances the state
             // - commit_num 22 is not ok to sign
             if commit_num > estate.next_counterparty_revoke_num + 1 {
-                return Err(Policy(format!(
+                return Err(policy_error(format!(
                     "invalid attempt to sign counterparty commit_num {} \
                          with next_counterparty_revoke_num {}",
                     commit_num, estate.next_counterparty_revoke_num
@@ -342,7 +347,7 @@ impl Validator for SimpleValidator {
             if commit_num + 1 == estate.next_counterparty_commit_num {
                 let prev_commit_point = estate.get_previous_counterparty_point(commit_num)?;
                 if *commitment_point != prev_commit_point {
-                    return Err(Policy(format!(
+                    return Err(policy_error(format!(
                         "retry of sign_counterparty_commitment {} with changed point: \
                              prev {} != new {}",
                         commit_num, &prev_commit_point, &commitment_point
@@ -361,7 +366,7 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         // policy-v2-commitment-local-not-revoked
         if commit_num + 2 <= keys.next_holder_commit_num() {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "can't sign revoked commitment_number {}, \
                  next_holder_commit_num is {}",
                 commit_num,
@@ -383,7 +388,7 @@ impl Validator for SimpleValidator {
         if revoke_num != state.next_counterparty_revoke_num
             && revoke_num + 1 != state.next_counterparty_revoke_num
         {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "invalid counterparty revoke_num {} with next_counterparty_revoke_num {}",
                 revoke_num, state.next_counterparty_revoke_num
             )));
@@ -393,7 +398,7 @@ impl Validator for SimpleValidator {
         let supplied_commit_point = PublicKey::from_secret_key(&secp_ctx, &commitment_secret);
         let prev_commit_point = state.get_previous_counterparty_point(revoke_num)?;
         if supplied_commit_point != prev_commit_point {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "revocation commit point mismatch for commit_num {}: supplied {}, previous {}",
                 revoke_num, supplied_commit_point, prev_commit_point
             )));
@@ -433,7 +438,7 @@ impl Validator for SimpleValidator {
         } else if parse_received_htlc_script(redeemscript, setup.option_anchor_outputs()).is_ok() {
             false
         } else {
-            return Err(ValidationError::Policy("invalid redeemscript".to_string()));
+            return Err(policy_error("invalid redeemscript".to_string()));
         };
 
         // Extract some parameters from the submitted transaction.
@@ -505,7 +510,7 @@ impl Validator for SimpleValidator {
                 to_self_delay,
                 &txkeys.broadcaster_delayed_payment_key
             );
-            return Err(ValidationError::Policy("sighash mismatch".to_string()));
+            return Err(policy_error("sighash mismatch".to_string()));
         }
 
         // The sighash comparison in the previous block will fail if any of the
@@ -534,18 +539,18 @@ impl Validator for SimpleValidator {
         // there, only in the commitment tx output.
         // policy-v1-htlc-locktime
         if htlc.offered && htlc.cltv_expiry == 0 {
-            return Err(Policy(format!("offered lock_time must be non-zero")));
+            return Err(policy_error(format!("offered lock_time must be non-zero")));
         }
 
         // policy-v1-htlc-fee-range
         if feerate_per_kw < self.policy.min_feerate_per_kw {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "feerate_per_kw of {} is smaller than the minimum of {}",
                 feerate_per_kw, self.policy.min_feerate_per_kw
             )));
         }
         if feerate_per_kw > self.policy.max_feerate_per_kw {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "feerate_per_kw of {} is larger than the maximum of {}",
                 feerate_per_kw, self.policy.max_feerate_per_kw
             )));
@@ -558,7 +563,7 @@ impl Validator for SimpleValidator {
     // TODO - this implementation is incomplete
     fn validate_channel_open(&self, setup: &ChannelSetup) -> Result<(), ValidationError> {
         if setup.channel_value_sat > self.policy.max_channel_size_sat {
-            return Err(Policy(format!(
+            return Err(policy_error(format!(
                 "channel value {} too large",
                 setup.channel_value_sat
             )));
@@ -592,13 +597,16 @@ impl Validator for SimpleValidator {
             // All outputs must either be wallet (change) or channel funding.
             if opath.len() > 0 {
                 let spendable = node.wallet_can_spend(opath, output).map_err(|err| {
-                    Policy(format!(
+                    policy_error(format!(
                         "output[{}]: wallet_can_spend error: {}",
                         outndx, err
                     ))
                 })?;
                 if !spendable {
-                    return Err(Policy(format!("wallet cannot spend output[{}]", outndx)));
+                    return Err(policy_error(format!(
+                        "wallet cannot spend output[{}]",
+                        outndx
+                    )));
                 }
             } else {
                 let outpoint = OutPoint {
@@ -607,12 +615,12 @@ impl Validator for SimpleValidator {
                 };
                 let slot = node
                     .find_channel_with_funding_outpoint(&outpoint)
-                    .map_err(|err| Policy(format!("unknown output: {}", err)))?;
+                    .map_err(|err| policy_error(format!("unknown output: {}", err)))?;
                 match &*slot.lock().unwrap() {
                     ChannelSlot::Ready(chan) => {
                         // policy-v1-funding-output-match-commitment
                         if output.value != chan.setup.channel_value_sat {
-                            return Err(Policy(format!(
+                            return Err(policy_error(format!(
                                 "funding output amount mismatch w/ channel: {} != {}",
                                 output.value, chan.setup.channel_value_sat
                             )));
@@ -626,7 +634,7 @@ impl Validator for SimpleValidator {
                         let script_pubkey =
                             payload_for_p2wsh(&funding_redeemscript).script_pubkey();
                         if output.script_pubkey != script_pubkey {
-                            return Err(Policy(format!(
+                            return Err(policy_error(format!(
                                 "funding script_pubkey mismatch w/ channel: {} != {}",
                                 output.script_pubkey, script_pubkey
                             )));
@@ -634,9 +642,9 @@ impl Validator for SimpleValidator {
 
                         // policy-v1-funding-initial-commitment-countersigned
                         if chan.keys.next_holder_commit_num() != 1 {
-                            return Err(Policy(
-                                format!("initial holder commitment not validated",),
-                            ));
+                            return Err(policy_error(format!(
+                                "initial holder commitment not validated",
+                            )));
                         }
                     }
                     _ => panic!("this can't happen"),
@@ -692,7 +700,7 @@ mod tests {
 
     macro_rules! assert_policy_error {
         ($res: expr, $expected: expr) => {
-            assert_eq!($res.unwrap_err(), Policy($expected.to_string()));
+            assert_eq!($res.unwrap_err(), policy_error($expected.to_string()));
         };
     }
 

@@ -8,15 +8,14 @@ use bitcoin::secp256k1::PublicKey;
 use bitcoin::{blockdata, Script};
 use lightning::ln::chan_utils::{HTLCOutputInCommitment, TxCreationKeys};
 
-use crate::policy::error::ValidationError;
-use crate::policy::error::ValidationError::Mismatch;
+use crate::policy::error::{mismatch_error, ValidationError};
 use bitcoin::hashes::Hash;
 
 #[inline]
 fn expect_next<'a>(iter: &'a mut Instructions) -> Result<Instruction<'a>, ValidationError> {
     iter.next()
-        .ok_or(Mismatch("unexpected end".to_string()))?
-        .map_err(|_| Mismatch("unparseable opcode".to_string())) // NOT TESTED
+        .ok_or(mismatch_error("unexpected end".to_string()))?
+        .map_err(|_| mismatch_error("unparseable opcode".to_string())) // NOT TESTED
 }
 
 #[inline]
@@ -27,10 +26,10 @@ pub fn expect_op(iter: &mut Instructions, op: opcodes::All) -> Result<(), Valida
             if o == op {
                 Ok(())
             } else {
-                Err(Mismatch(format!("expected op {}, saw {}", op, o)))
+                Err(mismatch_error(format!("expected op {}, saw {}", op, o)))
             }
         }
-        _ => Err(Mismatch(format!("expected op, saw {:?}", ins))),
+        _ => Err(mismatch_error(format!("expected op, saw {:?}", ins))),
     }
 }
 
@@ -42,12 +41,11 @@ pub fn expect_number(iter: &mut Instructions) -> Result<i64, ValidationError> {
             let cls = op.classify();
             match cls {
                 Class::PushNum(i) => Ok(i as i64),
-                _ => Err(Mismatch(format!("expected PushNum, saw {:?}", cls))), // NOT TESTED
+                _ => Err(mismatch_error(format!("expected PushNum, saw {:?}", cls))), // NOT TESTED
             }
         }
-        blockdata::script::Instruction::PushBytes(d) => {
-            read_scriptint(&d).map_err(|err| Mismatch(format!("read_scriptint failed: {:?}", err)))
-        }
+        blockdata::script::Instruction::PushBytes(d) => read_scriptint(&d)
+            .map_err(|err| mismatch_error(format!("read_scriptint failed: {:?}", err))),
     }
 }
 
@@ -57,7 +55,10 @@ pub fn expect_script_end(iter: &mut Instructions) -> Result<(), ValidationError>
     if ins == None {
         Ok(())
     } else {
-        Err(Mismatch(format!("expected script end, saw {:?}", ins))) // NOT TESTED
+        Err(mismatch_error(format!(
+            "expected script end, saw {:?}",
+            ins
+        ))) // NOT TESTED
     }
 }
 
@@ -66,7 +67,7 @@ pub fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, ValidationError> 
     let ins = expect_next(iter)?;
     match ins {
         blockdata::script::Instruction::PushBytes(d) => Ok(d.to_vec()),
-        _ => Err(Mismatch(format!("expected data, saw {:?}", ins))), // NOT TESTED
+        _ => Err(mismatch_error(format!("expected data, saw {:?}", ins))), // NOT TESTED
     }
 }
 
