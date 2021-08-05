@@ -1,8 +1,8 @@
 use crate::prelude::*;
 use bitcoin::hashes::hex;
+use bitcoin::hashes::hex::ToHex;
 use bitcoin::util::address::Payload;
 use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
-use bitcoin::hashes::hex::ToHex;
 
 // Debug printer for ChannelPublicKeys which doesn't have one.
 // BEGIN NOT TESTED

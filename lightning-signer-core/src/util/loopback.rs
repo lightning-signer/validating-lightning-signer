@@ -13,6 +13,7 @@ use lightning::ln::chan_utils::{
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
 use lightning::util::ser::{Writeable, Writer};
 
+use crate::io_extras::Error as IOError;
 use crate::node::{ChannelBase, ChannelId, ChannelSetup, CommitmentType, Node};
 use crate::signer::multi_signer::MultiSigner;
 use crate::tx::tx::HTLCInfo2;
@@ -21,7 +22,6 @@ use crate::util::crypto_utils::{
 };
 use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
-use crate::io_extras::Error as IOError;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
 use std::convert::TryInto;
 
@@ -219,7 +219,7 @@ impl BaseSign for LoopbackChannelSigner {
             .with_channel_base(&self.node_id, &self.channel_id, |base| {
                 // TODO - remove the following hack when loopback makes the
                 // appropriate validate_holder_commitment_tx calls ...
-                base.set_next_holder_commitment_number_for_testing(INITIAL_COMMITMENT_NUMBER - idx);
+                base.set_next_holder_commit_num_for_testing(INITIAL_COMMITMENT_NUMBER - idx);
 
                 Ok(base
                     .get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - idx)
@@ -281,6 +281,12 @@ impl BaseSign for LoopbackChannelSigner {
         let (sig_vec, htlc_sigs_vecs) = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                // FIXME - LDK isn't making the necessary validate_counterparty_revocation
+                // calls, WORKAROUND by forcing the next_revoke to a good value here ...
+                if commitment_number > 1 {
+                    chan.set_next_counterparty_revoke_num_for_testing(commitment_number - 1);
+                }
+
                 chan.sign_counterparty_commitment_tx_phase2(
                     &per_commitment_point,
                     commitment_number,

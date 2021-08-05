@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use log::debug;
 
+use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
 use bitcoin::hashes::hex::ToHex;
 
@@ -15,7 +16,7 @@ use crate::tx::tx::{
     CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT, HTLC_TIMEOUT_TX_WEIGHT,
 };
 use crate::util::crypto_utils::payload_for_p2wsh;
-use crate::util::enforcing_trait_impls::EnforcingSigner;
+use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
 
 use super::error::ValidationError::{self, Policy};
 use bitcoin::util::bip143::SigHashCache;
@@ -34,8 +35,11 @@ pub trait Validator {
 
     fn validate_commitment_tx(
         &self,
+        estate: &EnforcementState,
+        commit_num: u64,
+        commitment_point: &PublicKey,
         setup: &ChannelSetup,
-        state: &ValidatorState,
+        vstate: &ValidatorState,
         info2: &CommitmentInfo2,
         is_counterparty: bool,
     ) -> Result<(), ValidationError>;
@@ -44,6 +48,13 @@ pub trait Validator {
         &self,
         keys: &EnforcingSigner,
         commit_num: u64,
+    ) -> Result<(), ValidationError>;
+
+    fn validate_counterparty_revocation(
+        &self,
+        state: &EnforcementState,
+        revoke_num: u64,
+        commitment_secret: &SecretKey,
     ) -> Result<(), ValidationError>;
 
     /// Phase 1 decoding of 2nd level HTLC tx and validation by recomposition
@@ -169,11 +180,8 @@ impl SimpleValidator {
 }
 
 // not yet implemented
-// TODO - policy-v1-funding-output-scriptpubkey
-// TODO - policy-v1-funding-output-match-commitment
 // TODO - policy-v1-funding-fee-range
 // TODO - policy-v1-funding-format-standard
-// TODO - policy-v2-funding-change-to-wallet
 
 // sign_commitment_tx has some, missing these
 // TODO - policy-v1-commitment-anchor-static-remotekey
@@ -191,6 +199,7 @@ impl SimpleValidator {
 // TODO - policy-v2-commitment-htlc-routing-balance
 // TODO - policy-v2-commitment-initial-funding-value
 // TODO - policy-v2-commitment-previous-revoked
+// TODO - policy-v2-commitment-retry-same
 // TODO - policy-v2-commitment-spends-active-utxo
 
 // not yet implemented
@@ -243,8 +252,11 @@ impl Validator for SimpleValidator {
 
     fn validate_commitment_tx(
         &self,
+        estate: &EnforcementState,
+        commit_num: u64,
+        commitment_point: &PublicKey,
         setup: &ChannelSetup,
-        state: &ValidatorState,
+        vstate: &ValidatorState,
         info: &CommitmentInfo2,
         is_counterparty: bool,
     ) -> Result<(), ValidationError> {
@@ -271,14 +283,14 @@ impl Validator for SimpleValidator {
         let mut htlc_value_sat: u64 = 0;
 
         for htlc in &info.offered_htlcs {
-            self.validate_expiry("offered HTLC", htlc.cltv_expiry, state.current_height)?;
+            self.validate_expiry("offered HTLC", htlc.cltv_expiry, vstate.current_height)?;
             htlc_value_sat = htlc_value_sat
                 .checked_add(htlc.value_sat)
                 .ok_or_else(|| Policy("offered HTLC value overflow".to_string()))?;
         }
 
         for htlc in &info.received_htlcs {
-            self.validate_expiry("received HTLC", htlc.cltv_expiry, state.current_height)?;
+            self.validate_expiry("received HTLC", htlc.cltv_expiry, vstate.current_height)?;
             htlc_value_sat = htlc_value_sat
                 .checked_add(htlc.value_sat)
                 .ok_or_else(|| Policy("received HTLC value overflow".to_string()))?;
@@ -310,6 +322,35 @@ impl Validator for SimpleValidator {
             )));
         }
 
+        if is_counterparty {
+            // policy-v2-commitment-previous-revoked
+            // if next_counterparty_revoke_num is 20:
+            // - commit_num 19 has been revoked
+            // - commit_num 20 is current, previously signed, ok to resign
+            // - commit_num 21 is ok to sign, advances the state
+            // - commit_num 22 is not ok to sign
+            if commit_num > estate.next_counterparty_revoke_num + 1 {
+                return Err(Policy(format!(
+                    "invalid attempt to sign counterparty commit_num {} \
+                         with next_counterparty_revoke_num {}",
+                    commit_num, estate.next_counterparty_revoke_num
+                )));
+            }
+
+            // policy-v2-commitment-retry-same
+            // If this is a retry the commit_point must be the same
+            if commit_num + 1 == estate.next_counterparty_commit_num {
+                let prev_commit_point = estate.get_previous_counterparty_point(commit_num)?;
+                if *commitment_point != prev_commit_point {
+                    return Err(Policy(format!(
+                        "retry of sign_counterparty_commitment {} with changed point: \
+                             prev {} != new {}",
+                        commit_num, &prev_commit_point, &commitment_point
+                    )));
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -319,14 +360,44 @@ impl Validator for SimpleValidator {
         commit_num: u64,
     ) -> Result<(), ValidationError> {
         // policy-v2-commitment-local-not-revoked
-        if commit_num + 2 <= keys.next_holder_commitment_number() {
+        if commit_num + 2 <= keys.next_holder_commit_num() {
             return Err(Policy(format!(
                 "can't sign revoked commitment_number {}, \
-                 next_holder_commitment_number is {}",
+                 next_holder_commit_num is {}",
                 commit_num,
-                keys.next_holder_commitment_number()
+                keys.next_holder_commit_num()
             )));
         };
+        Ok(())
+    }
+
+    fn validate_counterparty_revocation(
+        &self,
+        state: &EnforcementState,
+        revoke_num: u64,
+        commitment_secret: &SecretKey,
+    ) -> Result<(), ValidationError> {
+        let secp_ctx = Secp256k1::signing_only();
+
+        // Only allowed to revoke expected next or retry.
+        if revoke_num != state.next_counterparty_revoke_num
+            && revoke_num + 1 != state.next_counterparty_revoke_num
+        {
+            return Err(Policy(format!(
+                "invalid counterparty revoke_num {} with next_counterparty_revoke_num {}",
+                revoke_num, state.next_counterparty_revoke_num
+            )));
+        }
+
+        // policy-v2-commitment-previous-revoked (partial: secret validated, but not stored here)
+        let supplied_commit_point = PublicKey::from_secret_key(&secp_ctx, &commitment_secret);
+        let prev_commit_point = state.get_previous_counterparty_point(revoke_num)?;
+        if supplied_commit_point != prev_commit_point {
+            return Err(Policy(format!(
+                "revocation commit point mismatch for commit_num {}: supplied {}, previous {}",
+                revoke_num, supplied_commit_point, prev_commit_point
+            )));
+        }
         Ok(())
     }
 
@@ -516,6 +587,8 @@ impl Validator for SimpleValidator {
             let output = &tx.output[outndx];
             let opath = &opaths[outndx];
 
+            // policy-v1-funding-output-match-commitment
+            // policy-v2-funding-change-to-wallet
             // All outputs must either be wallet (change) or channel funding.
             if opath.len() > 0 {
                 let spendable = node.wallet_can_spend(opath, output).map_err(|err| {
@@ -560,7 +633,7 @@ impl Validator for SimpleValidator {
                         }
 
                         // policy-v1-funding-initial-commitment-countersigned
-                        if chan.keys.next_holder_commitment_number() != 1 {
+                        if chan.keys.next_holder_commit_num() != 1 {
                             return Err(Policy(
                                 format!("initial holder commitment not validated",),
                             ));
@@ -720,12 +793,23 @@ mod tests {
     #[test]
     fn validate_commitment_tx_test() {
         let validator = make_test_validator();
-        let state = make_test_validator_state();
+        let keys = make_test_channel_keys();
+        let commit_num = 0;
+        let commit_point = make_test_pubkey(0x12);
+        let vstate = make_test_validator_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
         let info = make_counterparty_info(2_000_000, 900_000, delay, vec![], vec![]);
         assert!(validator
-            .validate_commitment_tx(&setup, &state, &info, true)
+            .validate_commitment_tx(
+                &keys.state.lock().unwrap(),
+                commit_num,
+                &commit_point,
+                &setup,
+                &vstate,
+                &info,
+                true
+            )
             .is_ok());
     }
 
@@ -788,12 +872,23 @@ mod tests {
     #[test]
     fn validate_commitment_tx_shortage_test() {
         let validator = make_test_validator();
+        let keys = make_test_channel_keys();
+        let commit_num = 0;
+        let commit_point = make_test_pubkey(0x12);
         let state = make_test_validator_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
         let info_bad = make_counterparty_info(2_000_000, 900_000 - 1, delay, vec![], vec![]);
         assert_policy_error!(
-            validator.validate_commitment_tx(&setup, &state, &info_bad, true),
+            validator.validate_commitment_tx(
+                &keys.state.lock().unwrap(),
+                commit_num,
+                &commit_point,
+                &setup,
+                &state,
+                &info_bad,
+                true
+            ),
             "channel value short by 100001 > 100000"
         );
     }
@@ -806,17 +901,36 @@ mod tests {
             payment_hash: PaymentHash([0; 32]),
             cltv_expiry: 1005,
         };
+        let keys = make_test_channel_keys();
+        let commit_num = 0;
+        let commit_point = make_test_pubkey(0x12);
         let state = make_test_validator_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
         let info = make_counterparty_info(2_000_000, 800_000, delay, vec![htlc.clone()], vec![]);
         assert!(validator
-            .validate_commitment_tx(&setup, &state, &info, true)
+            .validate_commitment_tx(
+                &keys.state.lock().unwrap(),
+                commit_num,
+                &commit_point,
+                &setup,
+                &state,
+                &info,
+                true
+            )
             .is_ok());
         let info_bad =
             make_counterparty_info(2_000_000, 800_000 - 1, delay, vec![htlc.clone()], vec![]);
         assert_policy_error!(
-            validator.validate_commitment_tx(&setup, &state, &info_bad, true),
+            validator.validate_commitment_tx(
+                &keys.state.lock().unwrap(),
+                commit_num,
+                &commit_point,
+                &setup,
+                &state,
+                &info_bad,
+                true
+            ),
             "channel value short by 100001 > 100000"
         );
     }
@@ -824,13 +938,24 @@ mod tests {
     #[test]
     fn validate_commitment_tx_htlc_count_test() {
         let validator = make_test_validator();
+        let keys = make_test_channel_keys();
+        let commit_num = 0;
+        let commit_point = make_test_pubkey(0x12);
         let state = make_test_validator_state();
         let setup = make_test_channel_setup();
         let htlcs = (0..1001).map(|_| make_htlc_info2(1100)).collect();
         let delay = setup.holder_selected_contest_delay;
         let info_bad = make_counterparty_info(99_000_000, 900_000, delay, vec![], htlcs);
         assert_policy_error!(
-            validator.validate_commitment_tx(&setup, &state, &info_bad, true),
+            validator.validate_commitment_tx(
+                &keys.state.lock().unwrap(),
+                commit_num,
+                &commit_point,
+                &setup,
+                &state,
+                &info_bad,
+                true
+            ),
             "too many HTLCs"
         );
     }
@@ -838,6 +963,9 @@ mod tests {
     #[test]
     fn validate_commitment_tx_htlc_value_test() {
         let validator = make_test_validator();
+        let keys = make_test_channel_keys();
+        let commit_num = 0;
+        let commit_point = make_test_pubkey(0x12);
         let state = make_test_validator_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
@@ -850,7 +978,15 @@ mod tests {
             .collect();
         let info_bad = make_counterparty_info(99_000_000, 900_000, delay, vec![], htlcs);
         assert_policy_error!(
-            validator.validate_commitment_tx(&setup, &state, &info_bad, true),
+            validator.validate_commitment_tx(
+                &keys.state.lock().unwrap(),
+                commit_num,
+                &commit_point,
+                &setup,
+                &state,
+                &info_bad,
+                true
+            ),
             "sum of HTLC values 10001000 too large"
         );
     }
@@ -858,6 +994,9 @@ mod tests {
     #[test]
     fn validate_commitment_tx_htlc_delay_test() {
         let validator = make_test_validator();
+        let keys = make_test_channel_keys();
+        let commit_num = 0;
+        let commit_point = make_test_pubkey(0x12);
         let state = make_test_validator_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
@@ -869,7 +1008,15 @@ mod tests {
             vec![make_htlc_info2(1005)],
         );
         assert!(validator
-            .validate_commitment_tx(&setup, &state, &info_good, true)
+            .validate_commitment_tx(
+                &keys.state.lock().unwrap(),
+                commit_num,
+                &commit_point,
+                &setup,
+                &state,
+                &info_good,
+                true
+            )
             .is_ok());
         let info_good = make_counterparty_info(
             2_000_000,
@@ -879,7 +1026,15 @@ mod tests {
             vec![make_htlc_info2(2440)],
         );
         assert!(validator
-            .validate_commitment_tx(&setup, &state, &info_good, true)
+            .validate_commitment_tx(
+                &keys.state.lock().unwrap(),
+                commit_num,
+                &commit_point,
+                &setup,
+                &state,
+                &info_good,
+                true
+            )
             .is_ok());
         let info_bad = make_counterparty_info(
             2_000_000,
@@ -889,7 +1044,15 @@ mod tests {
             vec![make_htlc_info2(1004)],
         );
         assert_policy_error!(
-            validator.validate_commitment_tx(&setup, &state, &info_bad, true),
+            validator.validate_commitment_tx(
+                &keys.state.lock().unwrap(),
+                commit_num,
+                &commit_point,
+                &setup,
+                &state,
+                &info_bad,
+                true
+            ),
             "received HTLC expiry too early"
         );
         let info_bad = make_counterparty_info(
@@ -900,7 +1063,15 @@ mod tests {
             vec![make_htlc_info2(2441)],
         );
         assert_policy_error!(
-            validator.validate_commitment_tx(&setup, &state, &info_bad, true),
+            validator.validate_commitment_tx(
+                &keys.state.lock().unwrap(),
+                commit_num,
+                &commit_point,
+                &setup,
+                &state,
+                &info_bad,
+                true
+            ),
             "received HTLC expiry too late"
         );
     }

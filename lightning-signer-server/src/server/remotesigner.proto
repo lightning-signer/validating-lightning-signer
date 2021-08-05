@@ -455,9 +455,7 @@ message ValidateCounterpartyRevocationRequest {
   // The commitment number of the counterparty commitment that the
   // old_secret applied to.  This is generally two less than the
   // expected next counterparty commitment number.
-  // TODO - confirm that this interpretation of commit_num works for
-  // the first call; commit_num can't be negative.
-  uint64 commit_num = 3;
+  uint64 revoke_num = 3;
 
   Secret old_secret = 4;
 }

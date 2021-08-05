@@ -2,11 +2,12 @@ use crate::prelude::*;
 use crate::io_extras::{Error as IOError, Read as IORead};
 use crate::sync::Arc;
 
+use log::debug;
+
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::secp256k1::key::{PublicKey, SecretKey};
 use bitcoin::secp256k1::{All, Secp256k1, Signature};
 use chain::keysinterface::InMemorySigner;
-use core::cmp;
 use lightning::chain;
 use lightning::chain::keysinterface::BaseSign;
 use lightning::ln;
@@ -19,7 +20,9 @@ use lightning::util::ser::{Readable, Writeable, Writer};
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 use ln::msgs;
 
-use crate::policy::error::ValidationError;
+use crate::util::INITIAL_COMMITMENT_NUMBER;
+
+use crate::policy::error::ValidationError::{self, Policy};
 
 /// Enforces some rules on Sign calls. Eventually we will
 /// probably want to expose a variant of this which would essentially
@@ -27,20 +30,171 @@ use crate::policy::error::ValidationError;
 #[derive(Clone)]
 pub struct EnforcingSigner {
     inner: InMemorySigner,
-    state: Arc<Mutex<EnforcementState>>,
+    pub state: Arc<Mutex<EnforcementState>>,
 }
+
+pub const NUM_COUNTERPARTY_POINTS: usize = 2;
 
 #[derive(Clone, Debug)]
 pub struct EnforcementState {
-    pub last_commitment_number: Option<u64>,
-    pub next_holder_commitment_number: u64,
+    pub next_holder_commit_num: u64,
+    pub next_counterparty_commit_num: u64,
+    pub next_counterparty_revoke_num: u64,
+    pub current_counterparty_point: Option<PublicKey>, // next_counterparty_commit_num - 1
+    pub previous_counterparty_point: Option<PublicKey>, // next_counterparty_commit_num - 2
+}
+
+impl EnforcementState {
+    pub fn set_next_holder_commit_num(&mut self, num: u64) -> Result<(), ValidationError> {
+        let current = self.next_holder_commit_num;
+        if num != current && num != current + 1 {
+            return Err(Policy(format!(
+                "invalid next_holder_commit_num progression: {} to {}",
+                current, num
+            )));
+        }
+        self.next_holder_commit_num = num;
+        debug!("next_holder_commit_num {} -> {}", current, num);
+        Ok(())
+    }
+
+    pub fn set_next_counterparty_commit_num(
+        &mut self,
+        num: u64,
+        current_point: PublicKey,
+    ) -> Result<(), ValidationError> {
+        if num == 0 {
+            return Err(Policy(format!(
+                "set_next_counterparty_commit_num: can't set next to 0"
+            )));
+        }
+
+        // The initial commitment is special, it can advance even though next_revoke is 0.
+        let delta = if num == 1 { 1 } else { 2 };
+
+        // Ensure that next_commit is ok relative to next_revoke
+        if num < self.next_counterparty_revoke_num + delta {
+            return Err(Policy(format!(
+                "next_counterparty_commit_num {} too small \
+                 relative to next_counterparty_revoke_num {}",
+                num, self.next_counterparty_revoke_num
+            )));
+        }
+        if num > self.next_counterparty_revoke_num + 2 {
+            return Err(Policy(format!(
+                "next_counterparty_commit_num {} too large \
+                 relative to next_counterparty_revoke_num {}",
+                num, self.next_counterparty_revoke_num
+            )));
+        }
+
+        let current = self.next_counterparty_commit_num;
+        if num == current {
+            // This is a retry.
+            assert!(
+                self.current_counterparty_point.is_some(),
+                "set_next_counterparty_commit_num {} retry: \
+                     current_counterparty_point not set, \
+                     this shouldn't be possible",
+                num
+            );
+            // policy-v2-commitment-retry-same
+            if current_point != self.current_counterparty_point.unwrap() {
+                debug!(
+                    "current_point {} != prior {}",
+                    current_point,
+                    self.current_counterparty_point.unwrap()
+                );
+                return Err(Policy(format!(
+                    "set_next_counterparty_commit_num {} retry: \
+                     point different than prior",
+                    num
+                )));
+            }
+        } else if num == current + 1 {
+            self.previous_counterparty_point = self.current_counterparty_point;
+            self.current_counterparty_point = Some(current_point);
+        } else {
+            return Err(Policy(format!(
+                "invalid next_counterparty_commit_num progression: {} to {}",
+                current, num
+            )));
+        }
+
+        self.next_counterparty_commit_num = num;
+        debug!(
+            "next_counterparty_commit_num {} -> {} current {}",
+            current, num, current_point
+        );
+        Ok(())
+    }
+
+    pub fn get_previous_counterparty_point(&self, num: u64) -> Result<PublicKey, ValidationError> {
+        let point = if num + 1 == self.next_counterparty_commit_num {
+            &self.current_counterparty_point
+        } else if num + 2 == self.next_counterparty_commit_num {
+            &self.previous_counterparty_point
+        } else {
+            return Err(Policy(format!(
+                "get_previous_counterparty_point {} out of range",
+                num
+            )));
+        }
+        .unwrap_or_else(|| {
+            panic!(
+                "counterparty point for commit_num {} not set, \
+                 next_commitment_number is {}",
+                num, self.next_counterparty_commit_num
+            );
+        });
+        Ok(point)
+    }
+
+    pub fn set_next_counterparty_revoke_num(&mut self, num: u64) -> Result<(), ValidationError> {
+        if num == 0 {
+            return Err(Policy(format!(
+                "set_next_counterparty_revoke_num: can't set next to 0"
+            )));
+        }
+
+        // Ensure that next_revoke is ok relative to next_commit.
+        if num + 2 < self.next_counterparty_commit_num {
+            return Err(Policy(format!(
+                "next_counterparty_revoke_num {} too small \
+                 relative to next_counterparty_commit_num {}",
+                num, self.next_counterparty_commit_num
+            )));
+        }
+        if num + 1 > self.next_counterparty_commit_num {
+            return Err(Policy(format!(
+                "next_counterparty_revoke_num {} too large \
+                 relative to next_counterparty_commit_num {}",
+                num, self.next_counterparty_commit_num
+            )));
+        }
+
+        let current = self.next_counterparty_revoke_num;
+        if num != current && num != current + 1 {
+            return Err(Policy(format!(
+                "invalid next_counterparty_revoke_num progression: {} to {}",
+                current, num
+            )));
+        }
+
+        self.next_counterparty_revoke_num = num;
+        debug!("next_counterparty_revoke_num {} -> {}", current, num);
+        Ok(())
+    }
 }
 
 impl EnforcingSigner {
     pub fn new(inner: InMemorySigner) -> Self {
         let state = EnforcementState {
-            last_commitment_number: None,
-            next_holder_commitment_number: 0,
+            next_holder_commit_num: 0,
+            next_counterparty_commit_num: 0,
+            next_counterparty_revoke_num: 0,
+            current_counterparty_point: None,
+            previous_counterparty_point: None,
         };
         EnforcingSigner::new_with_state(inner, state)
     }
@@ -64,36 +218,69 @@ impl EnforcingSigner {
         self.inner.clone()
     }
 
-    // BEGIN NOT TESTED
-    pub fn last_commitment_number(&self) -> Option<u64> {
-        self.state.lock().unwrap().last_commitment_number
-    }
-    // END NOT TESTED
-
-    pub fn next_holder_commitment_number(&self) -> u64 {
-        self.state.lock().unwrap().next_holder_commitment_number
+    pub fn next_holder_commit_num(&self) -> u64 {
+        self.state.lock().unwrap().next_holder_commit_num
     }
 
-    pub fn set_next_holder_commitment_number(&self, num: u64) -> Result<(), ValidationError> {
+    pub fn next_counterparty_commit_num(&self) -> u64 {
+        self.state.lock().unwrap().next_counterparty_commit_num
+    }
+
+    pub fn next_counterparty_revoke_num(&self) -> u64 {
+        self.state.lock().unwrap().next_counterparty_revoke_num
+    }
+
+    pub fn set_next_holder_commit_num(&self, num: u64) -> Result<(), ValidationError> {
         let mut state = self.state.lock().unwrap();
-        let current = state.next_holder_commitment_number;
-        if num != current && num != current + 1 {
-            return Err(ValidationError::Policy(format!(
-                "invalid next_holder_commitment_number progression: {} to {}",
-                current, num
-            )));
-        }
-        state.next_holder_commitment_number = num;
-        Ok(())
+        state.set_next_holder_commit_num(num)
+    }
+
+    pub fn set_next_counterparty_commit_num(
+        &self,
+        num: u64,
+        current_point: PublicKey,
+    ) -> Result<(), ValidationError> {
+        let mut state = self.state.lock().unwrap();
+        state.set_next_counterparty_commit_num(num, current_point)
+    }
+
+    pub fn set_next_counterparty_revoke_num(&self, num: u64) -> Result<(), ValidationError> {
+        let mut state = self.state.lock().unwrap();
+        state.set_next_counterparty_revoke_num(num)
     }
 
     #[cfg(feature = "test_utils")]
-    pub fn set_next_holder_commitment_number_for_testing(&self, num: u64) {
-        self.state.lock().unwrap().next_holder_commitment_number = num;
+    pub fn set_next_holder_commit_num_for_testing(&self, num: u64) {
+        let mut state = self.state.lock().unwrap();
+        debug!(
+            "set_next_holder_commit_num_for_testing: {} -> {}",
+            state.next_holder_commit_num, num
+        );
+        state.next_holder_commit_num = num;
     }
-}
 
-impl EnforcingSigner {
+    #[cfg(feature = "test_utils")]
+    pub fn set_next_counterparty_commit_num_for_testing(&self, num: u64, current_point: PublicKey) {
+        let mut state = self.state.lock().unwrap();
+        debug!(
+            "set_next_counterparty_commit_num_for_testing: {} -> {}",
+            state.next_counterparty_commit_num, num
+        );
+        state.previous_counterparty_point = state.current_counterparty_point;
+        state.current_counterparty_point = Some(current_point);
+        state.next_counterparty_commit_num = num;
+    }
+
+    #[cfg(feature = "test_utils")]
+    pub fn set_next_counterparty_revoke_num_for_testing(&self, num: u64) {
+        let mut state = self.state.lock().unwrap();
+        debug!(
+            "set_next_counterparty_revoke_num_for_testing: {} -> {}",
+            state.next_counterparty_revoke_num, num
+        );
+        state.next_counterparty_revoke_num = num;
+    }
+
     // BEGIN NOT TESTED
     #[allow(dead_code)]
     fn check_keys(&self, secp_ctx: &Secp256k1<All>, keys: &TxCreationKeys) {
@@ -136,6 +323,28 @@ impl EnforcingSigner {
     pub fn htlc_base_key(&self) -> &SecretKey {
         &self.inner.htlc_base_key
     }
+
+    // BaseSign doesn't provide useful result signatures ...
+    pub fn sign_counterparty_commitment_with_result(
+        &self,
+        commitment_tx: &CommitmentTransaction,
+        secp_ctx: &Secp256k1<All>,
+    ) -> Result<(Signature, Vec<Signature>), ValidationError> {
+        // FIXME bypass while integrating with c-lightning
+        // self.check_keys(secp_ctx, keys);
+
+        // Convert from backwards counting.
+        let commit_num = INITIAL_COMMITMENT_NUMBER - commitment_tx.trust().commitment_number();
+
+        let point = commitment_tx.trust().keys().per_commitment_point;
+
+        self.set_next_counterparty_commit_num(commit_num + 1, point)?;
+
+        Ok(self
+            .inner
+            .sign_counterparty_commitment(commitment_tx, secp_ctx)
+            .map_err(|_| Policy(format!("sign_counterparty_commitment failed")))?)
+    }
 }
 
 impl BaseSign for EnforcingSigner {
@@ -162,27 +371,11 @@ impl BaseSign for EnforcingSigner {
         commitment_tx: &CommitmentTransaction,
         secp_ctx: &Secp256k1<All>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
-        // FIXME bypass while integrating with c-lightning
-        // self.check_keys(secp_ctx, keys);
-        let commitment_number = commitment_tx.commitment_number();
-        let mut state = self.state.lock().unwrap();
-        let last_commitment_number = state.last_commitment_number;
-        if let Some(last) = last_commitment_number {
-            assert!(
-                last == commitment_number || last - 1 == commitment_number,
-                "{} doesn't come after {} (backwards counting)", // NOT TESTED
-                commitment_number,
-                last
-            );
-            state.last_commitment_number = Some(cmp::min(last, commitment_number));
-        } else {
-            state.last_commitment_number = Some(commitment_number);
-        }
-
-        Ok(self
-            .inner
-            .sign_counterparty_commitment(commitment_tx, secp_ctx)
-            .unwrap())
+        self.sign_counterparty_commitment_with_result(commitment_tx, secp_ctx)
+            .map_err(|err| {
+                debug!("sign_counterparty_commitment_with_result failed: {}", err);
+                ()
+            })
     }
 
     fn sign_holder_commitment_and_htlcs(
@@ -290,8 +483,11 @@ impl Writeable for EnforcingSigner {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), IOError> {
         self.inner.write(writer)?;
         let state = self.state.lock().unwrap();
-        state.last_commitment_number.write(writer)?;
-        state.next_holder_commitment_number.write(writer)?;
+        state.next_holder_commit_num.write(writer)?;
+        state.next_counterparty_commit_num.write(writer)?;
+        state.next_counterparty_revoke_num.write(writer)?;
+        state.current_counterparty_point.write(writer)?;
+        state.previous_counterparty_point.write(writer)?;
         Ok(())
     }
 }
@@ -300,15 +496,181 @@ impl Writeable for EnforcingSigner {
 impl Readable for EnforcingSigner {
     fn read<R: IORead>(reader: &mut R) -> Result<Self, DecodeError> {
         let inner = Readable::read(reader)?;
-        let last = Readable::read(reader)?;
-        let next_holder_commitment_number = Readable::read(reader)?;
+        let next_holder_commit_num = Readable::read(reader)?;
+        let next_counterparty_commit_num = Readable::read(reader)?;
+        let next_counterparty_revoke_num = Readable::read(reader)?;
+        let current_counterparty_point = Readable::read(reader)?;
+        let previous_counterparty_point = Readable::read(reader)?;
         let state = EnforcementState {
-            last_commitment_number: last,
-            next_holder_commitment_number,
+            next_holder_commit_num,
+            next_counterparty_commit_num,
+            next_counterparty_revoke_num,
+            current_counterparty_point,
+            previous_counterparty_point,
         };
         Ok(EnforcingSigner {
             inner,
             state: Arc::new(Mutex::new(state)),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::util::test_utils::make_test_pubkey;
+
+    use test_env_log::test;
+
+    macro_rules! assert_policy_err {
+        ($status: expr, $msg: expr) => {
+            assert!($status.is_err());
+            assert_eq!(
+                $status.unwrap_err(),
+                ValidationError::Policy($msg.to_string())
+            );
+        };
+    }
+
+    #[test]
+    fn enforcement_state_previous_counterparty_point_test() {
+        let mut state = EnforcementState {
+            next_holder_commit_num: 0,
+            next_counterparty_commit_num: 0,
+            next_counterparty_revoke_num: 0,
+            current_counterparty_point: None,
+            previous_counterparty_point: None,
+        };
+
+        let point0 = make_test_pubkey(0x12);
+
+        // you can never set next to 0
+        assert_policy_err!(
+            state.set_next_counterparty_commit_num(0, point0.clone()),
+            "set_next_counterparty_commit_num: can\'t set next to 0"
+        );
+
+        // point for 0 is not set yet
+        assert_policy_err!(
+            state.get_previous_counterparty_point(0),
+            "get_previous_counterparty_point 0 out of range"
+        );
+
+        // can't look forward either
+        assert_policy_err!(
+            state.get_previous_counterparty_point(1),
+            "get_previous_counterparty_point 1 out of range"
+        );
+
+        // can't skip forward
+        assert_policy_err!(
+            state.set_next_counterparty_commit_num(2, point0.clone()),
+            "invalid next_counterparty_commit_num progression: 0 to 2"
+        );
+
+        // set point 0
+        assert!(state
+            .set_next_counterparty_commit_num(1, point0.clone())
+            .is_ok());
+
+        // and now you can get it.
+        assert_eq!(
+            state.get_previous_counterparty_point(0).unwrap(),
+            point0.clone()
+        );
+
+        // you can set it again to the same thing (retry)
+        // policy-v2-commitment-retry-same
+        assert!(state
+            .set_next_counterparty_commit_num(1, point0.clone())
+            .is_ok());
+        assert_eq!(state.next_counterparty_commit_num, 1);
+
+        // but setting it to something else is an error
+        // policy-v2-commitment-retry-same
+        let point1 = make_test_pubkey(0x16);
+        assert_policy_err!(
+            state.set_next_counterparty_commit_num(1, point1.clone()),
+            "set_next_counterparty_commit_num 1 retry: point different than prior"
+        );
+        assert_eq!(state.next_counterparty_commit_num, 1);
+
+        // can't get commit_num 1 yet
+        assert_policy_err!(
+            state.get_previous_counterparty_point(1),
+            "get_previous_counterparty_point 1 out of range"
+        );
+
+        // can't skip forward
+        assert_policy_err!(
+            state.set_next_counterparty_commit_num(3, point1.clone()),
+            "next_counterparty_commit_num 3 too large relative to next_counterparty_revoke_num 0"
+        );
+        assert_eq!(state.next_counterparty_commit_num, 1);
+
+        // set point 1
+        assert!(state
+            .set_next_counterparty_commit_num(2, point1.clone())
+            .is_ok());
+        assert_eq!(state.next_counterparty_commit_num, 2);
+
+        // you can still get commit_num 0
+        assert_eq!(
+            state.get_previous_counterparty_point(0).unwrap(),
+            point0.clone()
+        );
+
+        // Now you can get commit_num 1
+        assert_eq!(
+            state.get_previous_counterparty_point(1).unwrap(),
+            point1.clone()
+        );
+
+        // can't look forward
+        assert_policy_err!(
+            state.get_previous_counterparty_point(2),
+            "get_previous_counterparty_point 2 out of range"
+        );
+
+        // can't skip forward
+        assert_policy_err!(
+            state.set_next_counterparty_commit_num(4, point1.clone()),
+            "next_counterparty_commit_num 4 too large relative to next_counterparty_revoke_num 0"
+        );
+        assert_eq!(state.next_counterparty_commit_num, 2);
+
+        assert!(state.set_next_counterparty_revoke_num(1).is_ok());
+
+        // set point 2
+        let point2 = make_test_pubkey(0x20);
+        assert!(state
+            .set_next_counterparty_commit_num(3, point2.clone())
+            .is_ok());
+        assert_eq!(state.next_counterparty_commit_num, 3);
+
+        // You can't get commit_num 0 anymore
+        assert_policy_err!(
+            state.get_previous_counterparty_point(0),
+            "get_previous_counterparty_point 0 out of range"
+        );
+
+        // you can still get commit_num 1
+        assert_eq!(
+            state.get_previous_counterparty_point(1).unwrap(),
+            point1.clone()
+        );
+
+        // now you can get commit_num 2
+        assert_eq!(
+            state.get_previous_counterparty_point(2).unwrap(),
+            point2.clone()
+        );
+
+        // can't look forward
+        assert_policy_err!(
+            state.get_previous_counterparty_point(3),
+            "get_previous_counterparty_point 3 out of range"
+        );
     }
 }

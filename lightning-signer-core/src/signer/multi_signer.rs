@@ -247,6 +247,7 @@ mod tests {
     use bitcoin::blockdata::opcodes;
     use bitcoin::blockdata::script::Builder;
     use bitcoin::consensus::deserialize;
+    use bitcoin::hash_types::Txid;
     use bitcoin::hashes::hash160::Hash as Hash160;
     use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
     use bitcoin::hashes::sha256d::Hash as Sha256dHash;
@@ -264,11 +265,13 @@ mod tests {
     use lightning::ln::PaymentHash;
 
     use crate::node::{ChannelSetup, CommitmentType};
+    use crate::policy::error::ValidationError;
     use crate::tx::tx::{build_close_tx, HTLCInfo2, ANCHOR_SAT};
     use crate::util::crypto_utils::{
         derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
         payload_for_p2wpkh, signature_to_bitcoin_vec,
     };
+    use crate::util::enforcing_trait_impls::EnforcingSigner;
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::*;
 
@@ -277,9 +280,9 @@ mod tests {
     use bitcoin::hashes::Hash;
     use lightning::chain::keysinterface::BaseSign;
 
-    use test_env_log::test;
     use crate::util::test_utils::{hex_decode, hex_encode};
     use bitcoin::hashes::hex::ToHex;
+    use test_env_log::test;
 
     macro_rules! assert_invalid_argument_err {
         ($status: expr, $msg: expr) => {
@@ -287,6 +290,16 @@ mod tests {
             let err = $status.unwrap_err();
             assert_eq!(err.code(), Code::InvalidArgument);
             assert_eq!(err.message(), $msg);
+        };
+    }
+
+    macro_rules! assert_policy_err {
+        ($status: expr, $msg: expr) => {
+            assert!($status.is_err());
+            assert_eq!(
+                $status.unwrap_err(),
+                ValidationError::Policy($msg.to_string())
+            );
         };
     }
 
@@ -600,6 +613,14 @@ mod tests {
                 let to_countersignatory = 1_000_000;
                 let mut htlcs = vec![];
 
+                // Set the commit_num and revoke_num.
+                chan.keys.set_next_counterparty_commit_num_for_testing(
+                    commit_num,
+                    make_test_pubkey(0x10),
+                );
+                chan.keys
+                    .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
+
                 let commitment_tx = chan.make_counterparty_commitment_tx(
                     &remote_percommitment_point,
                     commit_num,
@@ -787,8 +808,18 @@ mod tests {
                     &parameters,
                 )
                 .expect("scripts");
+
                 let commit_num = 23;
                 let feerate_per_kw = 0;
+
+                // Set the commit_num and revoke_num.
+                chan.keys.set_next_counterparty_commit_num_for_testing(
+                    commit_num,
+                    make_test_pubkey(0x10),
+                );
+                chan.keys
+                    .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
+
                 let commitment_tx = chan.make_counterparty_commitment_tx(
                     &remote_percommitment_point,
                     commit_num,
@@ -943,13 +974,23 @@ mod tests {
         let remote_percommitment_point = make_test_pubkey(10);
         let funding_pubkey = get_channel_funding_pubkey(&signer, &node_id, &channel_id);
 
+        let commit_num = 23;
         let to_holder_value_sat = 1_000_000;
         let to_counterparty_value_sat = 2_000_000;
+
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
+                // Set the commit_num and revoke_num.
+                chan.keys.set_next_counterparty_commit_num_for_testing(
+                    commit_num,
+                    make_test_pubkey(0x10),
+                );
+                chan.keys
+                    .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
+
                 let commitment_tx = chan.make_counterparty_commitment_tx(
                     &remote_percommitment_point,
-                    23,
+                    commit_num,
                     0,
                     to_holder_value_sat,
                     to_counterparty_value_sat,
@@ -968,7 +1009,7 @@ mod tests {
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 chan.sign_counterparty_commitment_tx_phase2(
                     &remote_percommitment_point,
-                    23,
+                    commit_num,
                     0, // we are not looking at HTLCs yet
                     to_holder_value_sat,
                     to_counterparty_value_sat,
@@ -1013,8 +1054,7 @@ mod tests {
         let to_counterparty_value_sat = 2_000_000;
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                chan.keys
-                    .set_next_holder_commitment_number_for_testing(commit_num);
+                chan.keys.set_next_holder_commit_num_for_testing(commit_num);
 
                 let commitment_tx = chan
                     .make_holder_commitment_tx(
@@ -1301,7 +1341,11 @@ mod tests {
             "02868b7bc9b6d307509ed97758636d2d3628970bbd3bd36d279f8d3cde8ccd45ae"
         );
         assert_eq!(
-            basepoints.revocation_basepoint.serialize().to_vec().to_hex(),
+            basepoints
+                .revocation_basepoint
+                .serialize()
+                .to_vec()
+                .to_hex(),
             "02982b69bb2d70b083921cbc862c0bcf7761b55d7485769ddf81c2947155b1afe4"
         );
         assert_eq!(
@@ -1309,7 +1353,11 @@ mod tests {
             "026bb6655b5e0b5ff80d078d548819f57796013b09de8085ddc04b49854ae1e483"
         );
         assert_eq!(
-            basepoints.delayed_payment_basepoint.serialize().to_vec().to_hex(),
+            basepoints
+                .delayed_payment_basepoint
+                .serialize()
+                .to_vec()
+                .to_hex(),
             "0291dfb201bc87a2da8c7ffe0a7cf9691962170896535a7fd00d8ee4406a405e98"
         );
         assert_eq!(
@@ -1351,10 +1399,10 @@ mod tests {
 
         let (point, secret) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                // The channel next_holder_commitment_number must be 2 past the
+                // The channel next_holder_commit_num must be 2 past the
                 // requested commit_num for get_per_commitment_secret.
                 chan.keys
-                    .set_next_holder_commitment_number_for_testing(commit_num + 2);
+                    .set_next_holder_commit_num_for_testing(commit_num + 2);
                 let point = chan.get_per_commitment_point(commit_num)?;
                 let secret = chan.get_per_commitment_secret(commit_num)?;
                 Ok((point, secret))
@@ -2139,6 +2187,8 @@ mod tests {
         );
     }
 
+    // policy-v1-funding-output-match-commitment
+    // policy-v2-funding-change-to-wallet
     #[test]
     fn sign_funding_tx_with_unknown_output() {
         let is_p2sh = false;
@@ -2374,6 +2424,7 @@ mod tests {
             "policy failure: unknown output: status: InvalidArgument, message: \"channel with Outpoint 81fe91f5705b1a893494726cc9019614aa108fd02809e9f23673c83ea6404bce:1 not found\"");
     }
 
+    // policy-v1-funding-output-scriptpubkey
     #[test]
     fn sign_funding_tx_with_bad_output_script_pubkey2() {
         let is_p2sh = false;
@@ -2504,7 +2555,7 @@ mod tests {
         let to_countersignatory = channel_amount - to_broadcaster - fees;
 
         // Force the channel to commit_num 2 to build the bogus commitment ...
-        set_next_holder_commitment_number_for_testing(&sign_ctx, &node_ctx, &chan_ctx, commit_num);
+        set_next_holder_commit_num_for_testing(&sign_ctx, &node_ctx, &chan_ctx, commit_num);
 
         let mut commit_tx_ctx = channel_commitment(
             &sign_ctx,
@@ -2524,7 +2575,7 @@ mod tests {
             &mut commit_tx_ctx,
         );
 
-        set_next_holder_commitment_number_for_testing(&sign_ctx, &node_ctx, &chan_ctx, 1);
+        set_next_holder_commit_num_for_testing(&sign_ctx, &node_ctx, &chan_ctx, 1);
 
         assert_invalid_argument_err!(
             validate_holder_commitment(
@@ -2536,7 +2587,7 @@ mod tests {
                 &hsigs,
             ),
             "policy failure: get_per_commitment_point: \
-             commitment_number 2 invalid when next_holder_commitment_number is 1"
+             commitment_number 2 invalid when next_holder_commit_num is 1"
         );
     }
 
@@ -2558,7 +2609,7 @@ mod tests {
 
         // Start by validating holder commitment #10 (which revokes #9)
         let commit_num = 10;
-        set_next_holder_commitment_number_for_testing(&sign_ctx, &node_ctx, &chan_ctx, commit_num);
+        set_next_holder_commit_num_for_testing(&sign_ctx, &node_ctx, &chan_ctx, commit_num);
 
         let mut commit_tx_ctx = channel_commitment(
             &sign_ctx,
@@ -2606,7 +2657,7 @@ mod tests {
         assert_invalid_argument_err!(
             sign_holder_commitment(&sign_ctx, &node_ctx, &chan_ctx, &commit_tx_ctx,),
             "policy failure: can\'t sign revoked commitment_number 9, \
-             next_holder_commitment_number is 11"
+             next_holder_commit_num is 11"
         );
     }
 
@@ -2699,7 +2750,7 @@ mod tests {
 
         let (per_commitment_point, txkeys, to_self_delay) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                chan.keys.set_next_holder_commitment_number_for_testing(n);
+                chan.keys.set_next_holder_commit_num_for_testing(n);
                 let per_commitment_point = chan.get_per_commitment_point(n).expect("point");
                 let txkeys = chan
                     .make_holder_tx_keys(&per_commitment_point)
@@ -2818,7 +2869,7 @@ mod tests {
 
         let per_commitment_point = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                chan.keys.set_next_holder_commitment_number_for_testing(n);
+                chan.keys.set_next_holder_commit_num_for_testing(n);
                 chan.get_per_commitment_point(n)
             })
             .expect("point");
@@ -3006,8 +3057,7 @@ mod tests {
 
         let (sig, per_commitment_point, htlc_tx, htlc_redeemscript) =
             signer.with_ready_channel(&node_id, &channel_id, |chan| {
-                chan.keys
-                    .set_next_holder_commitment_number_for_testing(commit_num);
+                chan.keys.set_next_holder_commit_num_for_testing(commit_num);
                 let mut channel_parameters = chan.make_channel_parameters();
 
                 // Mutate the channel parameters
@@ -3748,8 +3798,7 @@ mod tests {
                 let to_countersignatory = 1_000_000;
                 let mut htlcs = vec![];
 
-                chan.keys
-                    .set_next_holder_commitment_number_for_testing(commit_num);
+                chan.keys.set_next_holder_commit_num_for_testing(commit_num);
 
                 let parameters = channel_parameters.as_holder_broadcastable();
 
@@ -3826,8 +3875,7 @@ mod tests {
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let commit_num = 23;
-                chan.keys
-                    .set_next_holder_commitment_number_for_testing(commit_num);
+                chan.keys.set_next_holder_commit_num_for_testing(commit_num);
                 let commitment_tx = chan
                     .make_holder_commitment_tx(commit_num, 0, 2_000_000, 1_000_000, vec![])
                     .expect("holder_commitment_tx");
@@ -3891,10 +3939,9 @@ mod tests {
 
         let (per_commitment_point, per_commitment_secret) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                chan.keys.set_next_holder_commitment_number_for_testing(n);
+                chan.keys.set_next_holder_commit_num_for_testing(n);
                 let point = chan.get_per_commitment_point(n)?;
-                chan.keys
-                    .set_next_holder_commitment_number_for_testing(n + 2);
+                chan.keys.set_next_holder_commit_num_for_testing(n + 2);
                 let secret = chan.get_per_commitment_secret(n)?;
                 Ok((point, secret))
             })
@@ -4063,8 +4110,7 @@ mod tests {
         let ssvec = signer.get_node(&node_id).unwrap().ecdh(&other_key);
         assert_eq!(
             ssvec,
-            hex_decode("48db1582f4b42a0068b5727fd37090a65fbf1f9bd842f4393afc2e794719ae47")
-                .unwrap()
+            hex_decode("48db1582f4b42a0068b5727fd37090a65fbf1f9bd842f4393afc2e794719ae47").unwrap()
         );
     }
 
@@ -4249,11 +4295,13 @@ mod tests {
         (signer, setup, node_id, channel_id, htlcs, payment_hashmap)
     }
 
-    fn sign_counterparty_commitment_tx_with_mutators<KeysMutator, TxMutator>(
+    fn sign_counterparty_commitment_tx_with_mutators<SignerMutator, KeysMutator, TxMutator>(
+        signmut: SignerMutator,
         keysmut: KeysMutator,
         txmut: TxMutator,
     ) -> Result<(), Status>
     where
+        SignerMutator: Fn(&mut EnforcingSigner),
         KeysMutator: Fn(&mut TxCreationKeys),
         TxMutator: Fn(&mut BuiltCommitmentTransaction),
     {
@@ -4269,6 +4317,14 @@ mod tests {
             let feerate_per_kw = 0;
             let to_broadcaster = 1_999_997;
             let to_countersignatory = 1_000_000;
+
+            chan.keys
+                .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
+            chan.keys
+                .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
+
+            // Mutate the signer state.
+            signmut(&mut chan.keys);
 
             let parameters = channel_parameters.as_counterparty_broadcastable();
             let mut keys = chan.make_counterparty_tx_keys(&remote_percommitment_point)?;
@@ -4334,11 +4390,13 @@ mod tests {
         Ok(())
     }
 
-    fn sign_holder_commitment_tx_with_mutators<KeysMutator, TxMutator>(
+    fn sign_holder_commitment_tx_with_mutators<SignerMutator, KeysMutator, TxMutator>(
+        signmut: SignerMutator,
         keysmut: KeysMutator,
         txmut: TxMutator,
     ) -> Result<(), Status>
     where
+        SignerMutator: Fn(&mut EnforcingSigner),
         KeysMutator: Fn(&mut TxCreationKeys),
         TxMutator: Fn(&mut BuiltCommitmentTransaction),
     {
@@ -4353,8 +4411,10 @@ mod tests {
             let to_broadcaster = 1_999_997;
             let to_countersignatory = 1_000_000;
 
-            chan.keys
-                .set_next_holder_commitment_number_for_testing(commit_num);
+            chan.keys.set_next_holder_commit_num_for_testing(commit_num);
+
+            // Mutate the signer state.
+            signmut(&mut chan.keys);
 
             let parameters = channel_parameters.as_holder_broadcastable();
 
@@ -4423,6 +4483,9 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_with_no_mut_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
+            |_signer| {
+                // don't mutate the signer, should pass
+            },
             |_keys| {
                 // don't mutate the keys, should pass
             },
@@ -4436,6 +4499,9 @@ mod tests {
     #[test]
     fn sign_holder_commitment_tx_with_no_mut_test() {
         let status = sign_holder_commitment_tx_with_mutators(
+            |_signer| {
+                // don't mutate the signer, should pass
+            },
             |_keys| {
                 // don't mutate the keys, should pass
             },
@@ -4450,6 +4516,7 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_version_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
+            |_signer| {},
             |_keys| {},
             |tx| {
                 tx.transaction.version = 3;
@@ -4462,6 +4529,7 @@ mod tests {
     #[test]
     fn sign_holder_commitment_tx_with_bad_version_test() {
         let status = sign_holder_commitment_tx_with_mutators(
+            |_signer| {},
             |_keys| {},
             |tx| {
                 tx.transaction.version = 3;
@@ -4474,6 +4542,7 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_locktime_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
+            |_signer| {},
             |_keys| {
                 // don't mutate the keys
             },
@@ -4488,6 +4557,7 @@ mod tests {
     #[test]
     fn sign_holder_commitment_tx_with_bad_locktime_test() {
         let status = sign_holder_commitment_tx_with_mutators(
+            |_signer| {},
             |_keys| {
                 // don't mutate the keys
             },
@@ -4502,6 +4572,7 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_nsequence_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
+            |_signer| {},
             |_keys| {},
             |tx| {
                 tx.transaction.input[0].sequence = 42;
@@ -4514,6 +4585,7 @@ mod tests {
     #[test]
     fn sign_holder_commitment_tx_with_bad_nsequence_test() {
         let status = sign_holder_commitment_tx_with_mutators(
+            |_signer| {},
             |_keys| {},
             |tx| {
                 tx.transaction.input[0].sequence = 42;
@@ -4526,6 +4598,7 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_numinputs_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
+            |_signer| {},
             |_keys| {},
             |tx| {
                 let mut inp2 = tx.transaction.input[0].clone();
@@ -4540,6 +4613,7 @@ mod tests {
     #[test]
     fn sign_holder_commitment_tx_with_bad_numinputs_test() {
         let status = sign_holder_commitment_tx_with_mutators(
+            |_signer| {},
             |_keys| {},
             |tx| {
                 let mut inp2 = tx.transaction.input[0].clone();
@@ -4554,6 +4628,7 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_with_input_mismatch_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
+            |_signer| {},
             |_keys| {},
             |tx| {
                 tx.transaction.input[0].previous_output.txid =
@@ -4567,6 +4642,7 @@ mod tests {
     #[test]
     fn sign_holder_commitment_tx_with_input_mismatch_test() {
         let status = sign_holder_commitment_tx_with_mutators(
+            |_signer| {},
             |_keys| {},
             |tx| {
                 tx.transaction.input[0].previous_output.txid =
@@ -4580,6 +4656,7 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_revpubkey_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
+            |_signer| {},
             |keys| {
                 keys.revocation_key = make_test_pubkey(42);
             },
@@ -4592,6 +4669,7 @@ mod tests {
     #[test]
     fn sign_holder_commitment_tx_with_bad_revpubkey_test() {
         let status = sign_holder_commitment_tx_with_mutators(
+            |_signer| {},
             |keys| {
                 keys.revocation_key = make_test_pubkey(42);
             },
@@ -4604,6 +4682,7 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_htlcpubkey_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
+            |_signer| {},
             |keys| {
                 keys.countersignatory_htlc_key = make_test_pubkey(42);
             },
@@ -4616,6 +4695,7 @@ mod tests {
     #[test]
     fn sign_holder_commitment_tx_with_bad_htlcpubkey_test() {
         let status = sign_holder_commitment_tx_with_mutators(
+            |_signer| {},
             |keys| {
                 keys.countersignatory_htlc_key = make_test_pubkey(42);
             },
@@ -4628,6 +4708,7 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_delayed_pubkey_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
+            |_signer| {},
             |keys| {
                 keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
             },
@@ -4640,11 +4721,806 @@ mod tests {
     #[test]
     fn sign_holder_commitment_tx_with_bad_delayed_pubkey_test() {
         let status = sign_holder_commitment_tx_with_mutators(
+            |_signer| {},
             |keys| {
                 keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
             },
             |_tx| {},
         );
         assert_invalid_argument_err!(status, "policy failure: recomposed tx mismatch");
+    }
+
+    // policy-v2-commitment-previous-revoked
+    #[test]
+    fn sign_counterparty_commitment_tx_with_unrevoked_prior() {
+        let status = sign_counterparty_commitment_tx_with_mutators(
+            |signer| {
+                signer.set_next_counterparty_revoke_num_for_testing(21);
+            },
+            |_keys| {},
+            |_tx| {},
+        );
+        assert_invalid_argument_err!(
+            status,
+            "policy failure: \
+             invalid attempt to sign counterparty commit_num 23 \
+             with next_counterparty_revoke_num 21"
+        );
+    }
+
+    #[test]
+    fn sign_counterparty_commitment_tx_with_old_commit_num() {
+        let status = sign_counterparty_commitment_tx_with_mutators(
+            |signer| {
+                // Advance both commit_num and revoke_num:
+                signer.set_next_counterparty_commit_num_for_testing(25, make_test_pubkey(0x10));
+                signer.set_next_counterparty_revoke_num_for_testing(24);
+            },
+            |_keys| {},
+            |_tx| {},
+        );
+        assert_invalid_argument_err!(
+            status,
+            "policy failure: next_counterparty_commit_num 24 too small \
+             relative to next_counterparty_revoke_num 24"
+        );
+    }
+
+    fn sign_counterparty_commitment_tx_retry_with_mutator<SignCommitmentMutator>(
+        sign_comm_mut: SignCommitmentMutator,
+    ) -> Result<(), Status>
+    where
+        SignCommitmentMutator: Fn(
+            &mut bitcoin::Transaction,
+            &mut Vec<Vec<u8>>,
+            &mut PublicKey,
+            &mut Map<[u8; 20], PaymentHash>,
+        ),
+    {
+        let (signer, _setup, node_id, channel_id, htlcs, payment_hashmap0) =
+            sign_commitment_tx_with_mutators_setup();
+
+        signer.with_ready_channel(&node_id, &channel_id, |chan| {
+            let channel_parameters = chan.make_channel_parameters();
+
+            let mut payment_hashmap = payment_hashmap0.clone();
+            let mut remote_percommitment_point = make_test_pubkey(10);
+
+            let commit_num = 23;
+            let feerate_per_kw = 0;
+            let to_broadcaster = 1_999_997;
+            let to_countersignatory = 1_000_000;
+
+            chan.keys
+                .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
+            chan.keys
+                .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
+
+            let parameters = channel_parameters.as_counterparty_broadcastable();
+            let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point)?;
+
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                to_countersignatory,
+                to_broadcaster,
+                &htlcs,
+                &parameters,
+            )
+            .expect("scripts");
+            let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+
+            let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
+                keys,
+                commit_num,
+                feerate_per_kw,
+                to_broadcaster,
+                to_countersignatory,
+                htlcs.clone(),
+            );
+
+            // rebuild to get the scripts
+            let trusted_tx = commitment_tx.trust();
+            let mut tx = trusted_tx.built_transaction().clone();
+
+            // Sign the commitment the first time.
+            let _sig = chan.sign_counterparty_commitment_tx(
+                &tx.transaction,
+                &output_witscripts,
+                &remote_percommitment_point,
+                &payment_hashmap,
+                commit_num,
+            )?;
+
+            // Mutate the arguments to the commitment.
+            sign_comm_mut(
+                &mut tx.transaction,
+                &mut output_witscripts,
+                &mut remote_percommitment_point,
+                &mut payment_hashmap,
+            );
+
+            // Sign it again (retry).
+            let _sig = chan.sign_counterparty_commitment_tx(
+                &tx.transaction,
+                &output_witscripts,
+                &remote_percommitment_point,
+                &payment_hashmap,
+                commit_num,
+            )?;
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn sign_counterparty_commitment_tx_retry_same() {
+        assert!(sign_counterparty_commitment_tx_retry_with_mutator(
+            |_tx, _output_witscripts, _remote_percommitment_point, _payment_hashmap| {
+                // If we don't mutate anything it should succeed.
+            }
+        )
+        .is_ok());
+    }
+
+    // policy-v2-commitment-retry-same (remote_percommitment_point)
+    #[test]
+    fn sign_counterparty_commitment_tx_retry_with_bad_point() {
+        assert_invalid_argument_err!(
+            sign_counterparty_commitment_tx_retry_with_mutator(
+                |_tx, _output_witscripts, remote_percommitment_point, _payment_hashmap| {
+                    *remote_percommitment_point = make_test_pubkey(42);
+                }
+            ),
+            "policy failure: retry of sign_counterparty_commitment 23 with changed point: \
+             prev 03f76a39d05686e34a4420897e359371836145dd3973e3982568b60f8433adde6e != \
+             new 035be5e9478209674a96e60f1f037f6176540fd001fa1d64694770c56a7709c42c"
+        );
+    }
+
+    // TODO - policy-v2-commitment-retry-same (tx)
+    // TODO - policy-v2-commitment-retry-same (output_witscripts)
+    // TODO - policy-v2-commitment-retry-same (payment_hashmap)
+
+    const REV_COMMIT_NUM: u64 = 23;
+
+    fn validate_counterparty_revocation_with_mutator<RevocationMutator, ChannelStateValidator>(
+        mutate_revocation_input: RevocationMutator,
+        validate_channel_state: ChannelStateValidator,
+    ) -> Result<(), Status>
+    where
+        RevocationMutator: Fn(&mut Channel, &mut SecretKey),
+        ChannelStateValidator: Fn(&Channel),
+    {
+        let (signer, _setup, node_id, channel_id, htlcs, payment_hashmap0) =
+            sign_commitment_tx_with_mutators_setup();
+
+        signer.with_ready_channel(&node_id, &channel_id, |chan| {
+            let channel_parameters = chan.make_channel_parameters();
+
+            let payment_hashmap = payment_hashmap0.clone();
+            let remote_percommit_point = make_test_pubkey(10);
+            let mut remote_percommit_secret = make_test_privkey(10);
+
+            let feerate_per_kw = 0;
+            let to_broadcaster = 1_999_997;
+            let to_countersignatory = 1_000_000;
+
+            chan.keys
+                .set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM - 1);
+            chan.keys.set_next_counterparty_commit_num_for_testing(
+                REV_COMMIT_NUM,
+                make_test_pubkey(0x10),
+            );
+
+            // commit 21: revoked
+            // commit 22: current  <- next revoke
+            // commit 23: next     <- next commit
+
+            let parameters = channel_parameters.as_counterparty_broadcastable();
+            let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
+
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                to_countersignatory,
+                to_broadcaster,
+                &htlcs,
+                &parameters,
+            )
+            .expect("scripts");
+            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+
+            let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
+                keys,
+                REV_COMMIT_NUM,
+                feerate_per_kw,
+                to_broadcaster,
+                to_countersignatory,
+                htlcs.clone(),
+            );
+
+            let trusted_tx = commitment_tx.trust();
+            let tx = trusted_tx.built_transaction().clone();
+
+            let _sig = chan.sign_counterparty_commitment_tx(
+                &tx.transaction,
+                &output_witscripts,
+                &remote_percommit_point,
+                &payment_hashmap,
+                REV_COMMIT_NUM,
+            )?;
+
+            // commit 21: revoked
+            // commit 22: unrevoked <- next revoke
+            // commit 23: current
+            // commit 24: next      <- next commit
+
+            // Advance the state one full cycle:
+            // - validate_counterparty_revocation(22, ..)
+            // - sign_counterparty_commitment_tx(.., 24)
+            chan.set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM);
+            chan.set_next_counterparty_commit_num_for_testing(
+                REV_COMMIT_NUM + 2,
+                make_test_pubkey(0x10),
+            );
+
+            // commit 23: unrevoked <- next revoke
+            // commit 24: current
+            // commit 25: next      <- next commit
+
+            // Let unit tests mess with stuff.
+            mutate_revocation_input(chan, &mut remote_percommit_secret);
+
+            // Validate the revocation, but defer error returns till after we've had
+            // a chance to validate the channel state for side-effects
+            let deferred_rv =
+                chan.validate_counterparty_revocation(REV_COMMIT_NUM, &remote_percommit_secret);
+
+            // commit 23: revoked
+            // commit 24: current   <- next revoke
+            // commit 25: next      <- next commit
+
+            // Make sure the revocation state is as expected for each test.
+            validate_channel_state(chan);
+            deferred_rv?;
+
+            assert_eq!(
+                tx.txid.to_hex(),
+                "3f3238ed033a13ab1cf43d8eb6e81e5beca2080f9530a13931c10f40e04697fb"
+            );
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn validate_counterparty_revocation_success() {
+        assert!(validate_counterparty_revocation_with_mutator(
+            |_chan, _old_secret| {
+                // If we don't mutate anything it should succeed.
+            },
+            |chan| {
+                // Channel state should advance.
+                assert_eq!(chan.keys.next_counterparty_revoke_num(), REV_COMMIT_NUM + 1);
+            }
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn validate_counterparty_revocation_can_retry() {
+        assert!(validate_counterparty_revocation_with_mutator(
+            |chan, _old_secret| {
+                // Set the channel's next_revoke_num ahead one;
+                // pretend we already revoked it.
+                chan.keys
+                    .set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM + 1);
+            },
+            |chan| {
+                // Channel state should stay where we advanced it..
+                assert_eq!(chan.keys.next_counterparty_revoke_num(), REV_COMMIT_NUM + 1);
+            }
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn validate_counterparty_revocation_not_ahead() {
+        assert_invalid_argument_err!(
+            validate_counterparty_revocation_with_mutator(
+                |chan, _old_secret| {
+                    // Set the channel's next_revoke_num ahead two, past the retry ...
+                    chan.keys
+                        .set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM + 2);
+                },
+                |chan| {
+                    // Channel state should stay where we advanced it..
+                    assert_eq!(chan.keys.next_counterparty_revoke_num(), REV_COMMIT_NUM + 2);
+                }
+            ),
+            "policy failure: \
+             invalid counterparty revoke_num 23 with next_counterparty_revoke_num 25"
+        );
+    }
+
+    #[test]
+    fn validate_counterparty_revocation_not_behind() {
+        assert_invalid_argument_err!(
+            validate_counterparty_revocation_with_mutator(
+                |chan, _old_secret| {
+                    // Set the channel's next_revoke_num behind 1, in the past ...
+                    chan.keys
+                        .set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM - 1);
+                },
+                |chan| {
+                    // Channel state should stay where we set it..
+                    assert_eq!(chan.keys.next_counterparty_revoke_num(), REV_COMMIT_NUM - 1);
+                }
+            ),
+            "policy failure: \
+             invalid counterparty revoke_num 23 with next_counterparty_revoke_num 22"
+        );
+    }
+
+    // policy-v2-commitment-previous-revoked (invalid secret on revoke)
+    #[test]
+    fn validate_counterparty_revocation_with_bad_secret() {
+        assert_invalid_argument_err!(
+            validate_counterparty_revocation_with_mutator(
+                |_chan, old_secret| {
+                    *old_secret = make_test_privkey(42);
+                },
+                |chan| {
+                    // Channel state should NOT advance.
+                    assert_eq!(chan.keys.next_counterparty_revoke_num(), REV_COMMIT_NUM);
+                }
+            ),
+            "policy failure: revocation commit point mismatch for commit_num 23: \
+             supplied 035be5e9478209674a96e60f1f037f6176540fd001fa1d64694770c56a7709c42c, \
+             previous 03f76a39d05686e34a4420897e359371836145dd3973e3982568b60f8433adde6e"
+        );
+    }
+
+    const HOLD_COMMIT_NUM: u64 = 43;
+
+    fn validate_holder_commitment_with_mutator<ValidationMutator, ChannelStateValidator>(
+        mutate_validation_input: ValidationMutator,
+        validate_channel_state: ChannelStateValidator,
+    ) -> Result<(), Status>
+    where
+        ValidationMutator:
+            Fn(&mut Channel, &mut TestCommitmentTxContext, &mut Signature, &mut Vec<Signature>),
+        ChannelStateValidator: Fn(&Channel),
+    {
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
+
+        let channel_amount = 3_000_000;
+
+        let mut chan_ctx = test_chan_ctx(&sign_ctx, &node_ctx, 1, channel_amount);
+
+        // Pretend we funded the channel and ran for a while ...
+        synthesize_ready_channel(
+            &sign_ctx,
+            &node_ctx,
+            &mut chan_ctx,
+            bitcoin::OutPoint {
+                txid: Txid::from_slice(&[2u8; 32]).unwrap(),
+                vout: 0,
+            },
+            HOLD_COMMIT_NUM,
+        );
+
+        let fee = 1000;
+        let to_broadcaster = 1_000_000;
+        let to_countersignatory = channel_amount - to_broadcaster - fee;
+        let offered_htlcs = vec![];
+        let received_htlcs = vec![];
+
+        let feerate_per_kw = 1200;
+
+        let mut commit_tx_ctx0 = channel_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            HOLD_COMMIT_NUM,
+            feerate_per_kw,
+            to_broadcaster,
+            to_countersignatory,
+            offered_htlcs.clone(),
+            received_htlcs.clone(),
+        );
+
+        let (commit_sig0, htlc_sigs0) = counterparty_sign_holder_commitment(
+            &sign_ctx,
+            &node_ctx,
+            &chan_ctx,
+            &mut commit_tx_ctx0,
+        );
+
+        sign_ctx
+            .signer
+            .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
+                let mut commit_tx_ctx = commit_tx_ctx0.clone();
+                let mut commit_sig = commit_sig0.clone();
+                let mut htlc_sigs = htlc_sigs0.clone();
+
+                let htlcs = Channel::htlcs_info2_to_oic(
+                    commit_tx_ctx.offered_htlcs.clone(),
+                    commit_tx_ctx.received_htlcs.clone(),
+                );
+                let channel_parameters = chan.make_channel_parameters();
+                let parameters = channel_parameters.as_holder_broadcastable();
+                let per_commitment_point =
+                    chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
+                let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+                let redeem_scripts = build_tx_scripts(
+                    &keys,
+                    commit_tx_ctx.to_broadcaster,
+                    commit_tx_ctx.to_countersignatory,
+                    &htlcs,
+                    &parameters,
+                )
+                .expect("scripts");
+                let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+
+                mutate_validation_input(chan, &mut commit_tx_ctx, &mut commit_sig, &mut htlc_sigs);
+
+                // Validate the holder_commitment, but defer error returns till after we've had
+                // a chance to validate the channel state for side-effects
+                let deferred_rv = chan.validate_holder_commitment_tx(
+                    &commit_tx_ctx
+                        .tx
+                        .as_ref()
+                        .unwrap()
+                        .trust()
+                        .built_transaction()
+                        .transaction,
+                    &output_witscripts,
+                    commit_tx_ctx.commit_num,
+                    commit_tx_ctx.feerate_per_kw,
+                    commit_tx_ctx.offered_htlcs.clone(),
+                    commit_tx_ctx.received_htlcs.clone(),
+                    &commit_sig,
+                    &htlc_sigs,
+                );
+                validate_channel_state(chan);
+                deferred_rv?;
+                Ok(())
+            })
+    }
+
+    #[test]
+    fn validate_holder_commitment_success() {
+        assert!(validate_holder_commitment_with_mutator(
+            |_chan, _commit_tx_ctx, _commit_sig, _htlc_sigs| {
+                // If we don't mutate anything it should succeed.
+            },
+            |chan| {
+                // Channel state should advance.
+                assert_eq!(chan.keys.next_holder_commit_num(), HOLD_COMMIT_NUM + 1);
+            }
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn validate_holder_commitment_can_retry() {
+        assert!(validate_holder_commitment_with_mutator(
+            |chan, _commit_tx_ctx, _commit_sig, _htlc_sigs| {
+                // Set the channel's next_holder_commit_num ahead one;
+                // pretend we've already seen it ...
+                chan.keys
+                    .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM + 1);
+            },
+            |chan| {
+                // Channel state should stay where we advanced it..
+                assert_eq!(chan.keys.next_holder_commit_num(), HOLD_COMMIT_NUM + 1);
+            }
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn validate_holder_commitment_not_ahead() {
+        assert_invalid_argument_err!(
+            validate_holder_commitment_with_mutator(
+                |chan, _commit_tx_ctx, _commit_sig, _htlc_sigs| {
+                    // Set the channel's next_holder_commit_num ahead two, past the retry ...
+                    chan.keys
+                        .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM + 2);
+                },
+                |chan| {
+                    // Channel state should stay where we advanced it..
+                    assert_eq!(chan.keys.next_holder_commit_num(), HOLD_COMMIT_NUM + 2);
+                }
+            ),
+            "policy failure: invalid next_holder_commit_num progression: 45 to 44"
+        );
+    }
+
+    #[test]
+    fn validate_holder_commitment_not_behind() {
+        assert_invalid_argument_err!(
+            validate_holder_commitment_with_mutator(
+                |chan, _commit_tx_ctx, _commit_sig, _htlc_sigs| {
+                    // Set the channel's next_holder_commit_num ahead two behind 1, in the past ...
+                    chan.keys
+                        .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM - 1);
+                },
+                |chan| {
+                    // Channel state should stay where we set it..
+                    assert_eq!(chan.keys.next_holder_commit_num(), HOLD_COMMIT_NUM - 1);
+                }
+            ),
+            "policy failure: get_per_commitment_point: \
+             commitment_number 43 invalid when next_holder_commit_num is 42"
+        );
+    }
+
+    #[test]
+    fn channel_state_counterparty_commit_and_revoke_test() {
+        let sign_ctx = test_sign_ctx();
+        let node_ctx = test_node_ctx(&sign_ctx, 1);
+        let mut chan_ctx = test_chan_ctx(&sign_ctx, &node_ctx, 1, 3_000_000);
+        synthesize_ready_channel(
+            &sign_ctx,
+            &node_ctx,
+            &mut chan_ctx,
+            bitcoin::OutPoint {
+                txid: Txid::from_slice(&[2u8; 32]).unwrap(),
+                vout: 0,
+            },
+            HOLD_COMMIT_NUM,
+        );
+        sign_ctx
+            .signer
+            .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
+                let mut state = chan.keys.state.lock().unwrap();
+
+                // confirm initial state
+                assert_eq!(state.next_counterparty_revoke_num, 0);
+                assert_eq!(state.next_counterparty_commit_num, 0);
+                // commit 0: unitialized <- next_revoke, <- next_commit
+
+                // can't set next_commit to 0 (what would current point be?)
+                assert_policy_err!(
+                    state.set_next_counterparty_commit_num(0, make_test_pubkey(0x08)),
+                    "set_next_counterparty_commit_num: can\'t set next to 0"
+                );
+                assert_eq!(state.next_counterparty_commit_num, 0);
+
+                // can't set next_revoke to 0 either
+                assert_policy_err!(
+                    state.set_next_counterparty_revoke_num(0),
+                    "set_next_counterparty_revoke_num: can\'t set next to 0"
+                );
+                assert_eq!(state.next_counterparty_revoke_num, 0);
+
+                // ADVANCE next_commit to 1
+                assert!(state
+                    .set_next_counterparty_commit_num(1, make_test_pubkey(0x10))
+                    .is_ok());
+                assert_eq!(state.next_counterparty_revoke_num, 0);
+                assert_eq!(state.next_counterparty_commit_num, 1);
+                // commit 0: current <- next_revoke
+                // commit 1: next    <- next_commit
+
+                // retries are ok
+                assert!(state
+                    .set_next_counterparty_commit_num(1, make_test_pubkey(0x10))
+                    .is_ok());
+                assert_eq!(state.next_counterparty_revoke_num, 0);
+                assert_eq!(state.next_counterparty_commit_num, 1);
+
+                // can't skip next_commit forward
+                assert_policy_err!(
+                    state.set_next_counterparty_commit_num(3, make_test_pubkey(0x14)),
+                    "next_counterparty_commit_num 3 too large relative to \
+                     next_counterparty_revoke_num 0"
+                );
+                assert_eq!(state.next_counterparty_commit_num, 1);
+
+                // can't skip next_revoke forward
+                assert_policy_err!(
+                    state.set_next_counterparty_revoke_num(1),
+                    "next_counterparty_revoke_num 1 too large relative to \
+                     next_counterparty_commit_num 1"
+                );
+                assert_eq!(state.next_counterparty_revoke_num, 0);
+
+                // ADVANCE next_commit to 2
+                assert!(state
+                    .set_next_counterparty_commit_num(2, make_test_pubkey(0x12))
+                    .is_ok());
+                assert_eq!(state.next_counterparty_revoke_num, 0);
+                assert_eq!(state.next_counterparty_commit_num, 2);
+                // commit 0: unrevoked <- next_revoke
+                // commit 1: current
+                // commit 2: next    <- next_commit
+
+                // retries are ok
+                assert!(state
+                    .set_next_counterparty_commit_num(2, make_test_pubkey(0x12))
+                    .is_ok());
+                assert_eq!(state.next_counterparty_revoke_num, 0);
+                assert_eq!(state.next_counterparty_commit_num, 2);
+
+                // can't commit old thing
+                assert_policy_err!(
+                    state.set_next_counterparty_commit_num(1, make_test_pubkey(0x10)),
+                    "invalid next_counterparty_commit_num progression: 2 to 1"
+                );
+                assert_eq!(state.next_counterparty_commit_num, 2);
+
+                // can't advance commit again
+                assert_policy_err!(
+                    state.set_next_counterparty_commit_num(3, make_test_pubkey(0x14)),
+                    "next_counterparty_commit_num 3 too large \
+                     relative to next_counterparty_revoke_num 0"
+                );
+                assert_eq!(state.next_counterparty_commit_num, 2);
+
+                // can't (ever) set next_revoke to 0
+                assert_policy_err!(
+                    state.set_next_counterparty_revoke_num(0),
+                    "set_next_counterparty_revoke_num: can\'t set next to 0"
+                );
+                assert_eq!(state.next_counterparty_revoke_num, 0);
+
+                // can't skip revoke ahead
+                assert_policy_err!(
+                    state.set_next_counterparty_revoke_num(2),
+                    "next_counterparty_revoke_num 2 too large relative to \
+                     next_counterparty_commit_num 2"
+                );
+                assert_eq!(state.next_counterparty_revoke_num, 0);
+
+                // REVOKE commit 0
+                assert!(state.set_next_counterparty_revoke_num(1).is_ok());
+                assert_eq!(state.next_counterparty_revoke_num, 1);
+                assert_eq!(state.next_counterparty_commit_num, 2);
+                // commit 0: revoked
+                // commit 1: current   <- next_revoke
+                // commit 2: next      <- next_commit
+
+                // retries are ok
+                assert!(state.set_next_counterparty_revoke_num(1).is_ok());
+                assert_eq!(state.next_counterparty_revoke_num, 1);
+                assert_eq!(state.next_counterparty_commit_num, 2);
+
+                // can't retry the previous commit anymore
+                assert_policy_err!(
+                    state.set_next_counterparty_commit_num(2, make_test_pubkey(0x12)),
+                    "next_counterparty_commit_num 2 too small relative to \
+                     next_counterparty_revoke_num 1"
+                );
+                assert_eq!(state.next_counterparty_commit_num, 2);
+
+                // can't skip commit ahead
+                assert_policy_err!(
+                    state.set_next_counterparty_commit_num(4, make_test_pubkey(0x16)),
+                    "next_counterparty_commit_num 4 too large relative to \
+                     next_counterparty_revoke_num 1"
+                );
+                assert_eq!(state.next_counterparty_commit_num, 2);
+
+                // can't revoke backwards
+                assert_policy_err!(
+                    state.set_next_counterparty_revoke_num(0),
+                    "set_next_counterparty_revoke_num: can\'t set next to 0"
+                );
+                assert_eq!(state.next_counterparty_revoke_num, 1);
+
+                // can't skip revoke ahead
+                assert_policy_err!(
+                    state.set_next_counterparty_revoke_num(2),
+                    "next_counterparty_revoke_num 2 too large \
+                     relative to next_counterparty_commit_num 2"
+                );
+                assert_eq!(state.next_counterparty_revoke_num, 1);
+
+                // ADVANCE next_commit to 3
+                assert!(state
+                    .set_next_counterparty_commit_num(3, make_test_pubkey(0x14))
+                    .is_ok());
+                // commit 0: revoked
+                // commit 1: unrevoked <- next_revoke
+                // commit 2: current
+                // commit 3: next      <- next_commit
+                assert_eq!(state.next_counterparty_revoke_num, 1);
+                assert_eq!(state.next_counterparty_commit_num, 3);
+
+                // retries ok
+                assert!(state
+                    .set_next_counterparty_commit_num(3, make_test_pubkey(0x14))
+                    .is_ok());
+                assert_eq!(state.next_counterparty_commit_num, 3);
+
+                // Can still retry the old revoke (they may not have seen our commit).
+                assert!(state.set_next_counterparty_revoke_num(1).is_ok());
+                assert_eq!(state.next_counterparty_revoke_num, 1);
+                assert_eq!(state.next_counterparty_commit_num, 3);
+
+                // Can't skip revoke ahead
+                assert_policy_err!(
+                    state.set_next_counterparty_revoke_num(3),
+                    "next_counterparty_revoke_num 3 too large relative to \
+                     next_counterparty_commit_num 3"
+                );
+                assert_eq!(state.next_counterparty_revoke_num, 1);
+
+                // can't commit ahead until revoke catches up
+                assert_policy_err!(
+                    state.set_next_counterparty_commit_num(4, make_test_pubkey(0x16)),
+                    "next_counterparty_commit_num 4 too large relative to \
+                     next_counterparty_revoke_num 1"
+                );
+                assert_eq!(state.next_counterparty_commit_num, 3);
+
+                // can't commit behind
+                assert_policy_err!(
+                    state.set_next_counterparty_commit_num(2, make_test_pubkey(0x12)),
+                    "next_counterparty_commit_num 2 too small relative to \
+                     next_counterparty_revoke_num 1"
+                );
+                assert_eq!(state.next_counterparty_commit_num, 3);
+
+                // REVOKE commit 1
+                assert!(state.set_next_counterparty_revoke_num(2).is_ok());
+                // commit 1: revoked
+                // commit 2: current   <- next_revoke
+                // commit 3: next      <- next_commit
+                assert_eq!(state.next_counterparty_revoke_num, 2);
+                assert_eq!(state.next_counterparty_commit_num, 3);
+
+                // revoke retries ok
+                assert!(state.set_next_counterparty_revoke_num(2).is_ok());
+                assert_eq!(state.next_counterparty_revoke_num, 2);
+                assert_eq!(state.next_counterparty_commit_num, 3);
+
+                // can't revoke backwards
+                assert_policy_err!(
+                    state.set_next_counterparty_revoke_num(1),
+                    "invalid next_counterparty_revoke_num progression: 2 to 1"
+                );
+                assert_eq!(state.next_counterparty_revoke_num, 2);
+
+                // can't revoke ahead until next commit
+                assert_policy_err!(
+                    state.set_next_counterparty_revoke_num(3),
+                    "next_counterparty_revoke_num 3 too large relative to \
+                     next_counterparty_commit_num 3"
+                );
+                assert_eq!(state.next_counterparty_revoke_num, 2);
+
+                // commit retry not ok anymore
+                assert_policy_err!(
+                    state.set_next_counterparty_commit_num(3, make_test_pubkey(0x14)),
+                    "next_counterparty_commit_num 3 too small relative to \
+                     next_counterparty_revoke_num 2"
+                );
+                assert_eq!(state.next_counterparty_commit_num, 3);
+
+                // can't skip commit ahead
+                assert_policy_err!(
+                    state.set_next_counterparty_commit_num(5, make_test_pubkey(0x18)),
+                    "next_counterparty_commit_num 5 too large relative to \
+                     next_counterparty_revoke_num 2"
+                );
+                assert_eq!(state.next_counterparty_commit_num, 3);
+
+                // ADVANCE next_commit to 4
+                assert!(state
+                    .set_next_counterparty_commit_num(4, make_test_pubkey(0x16))
+                    .is_ok());
+                // commit 2: unrevoked <- next_revoke
+                // commit 3: current
+                // commit 4: next      <- next_commit
+                assert_eq!(state.next_counterparty_revoke_num, 2);
+                assert_eq!(state.next_counterparty_commit_num, 4);
+
+                Ok(())
+            })
+            .expect("success");
     }
 }

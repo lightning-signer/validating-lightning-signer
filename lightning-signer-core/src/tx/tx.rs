@@ -339,13 +339,26 @@ impl fmt::Debug for HTLCInfo {
 // END NOT TESTED
 
 /// Phase 2 HTLC info
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct HTLCInfo2 {
     pub value_sat: u64,
     pub payment_hash: PaymentHash,
     /// This is zero for offered HTLCs in phase 1
     pub cltv_expiry: u32,
 }
+
+// Implement manually so we can have hex encoded payment_hash.
+// BEGIN NOT TESTED
+impl fmt::Debug for HTLCInfo2 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HTLCInfo2")
+            .field("value_sat", &self.value_sat)
+            .field("payment_hash", &self.payment_hash.0.to_hex())
+            .field("cltv_expiry", &self.cltv_expiry)
+            .finish()
+    }
+}
+// END NOT TESTED
 
 // BEGIN NOT TESTED
 #[derive(Debug, Clone)]
@@ -879,7 +892,9 @@ mod tests {
     use bitcoin::{Address, Network};
 
     use crate::node::CommitmentType;
-    use crate::util::test_utils::{make_test_channel_keys, make_test_channel_setup, make_test_pubkey, hex_encode};
+    use crate::util::test_utils::{
+        hex_encode, make_test_channel_keys, make_test_channel_setup, make_test_pubkey,
+    };
 
     use super::*;
 

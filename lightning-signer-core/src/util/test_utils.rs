@@ -417,14 +417,15 @@ pub struct TestFundingTxContext {
 }
 
 // Bundles commitment tx context used for unit tests.
+#[derive(Clone)]
 pub struct TestCommitmentTxContext {
-    commit_num: u64,
-    feerate_per_kw: u32,
-    to_broadcaster: u64,
-    to_countersignatory: u64,
-    offered_htlcs: Vec<HTLCInfo2>,
-    received_htlcs: Vec<HTLCInfo2>,
-    tx: Option<CommitmentTransaction>,
+    pub commit_num: u64,
+    pub feerate_per_kw: u32,
+    pub to_broadcaster: u64,
+    pub to_countersignatory: u64,
+    pub offered_htlcs: Vec<HTLCInfo2>,
+    pub received_htlcs: Vec<HTLCInfo2>,
+    pub tx: Option<CommitmentTransaction>,
 }
 
 pub fn test_sign_ctx() -> TestSignerContext {
@@ -508,7 +509,7 @@ pub fn test_chan_ctx(
     }
 }
 
-pub fn set_next_holder_commitment_number_for_testing(
+pub fn set_next_holder_commit_num_for_testing(
     sign_ctx: &TestSignerContext,
     node_ctx: &TestNodeContext,
     chan_ctx: &TestChannelContext,
@@ -517,8 +518,40 @@ pub fn set_next_holder_commitment_number_for_testing(
     sign_ctx
         .signer
         .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
+            chan.keys.set_next_holder_commit_num_for_testing(commit_num);
+            Ok(())
+        })
+        .unwrap();
+}
+
+pub fn set_next_counterparty_commit_num_for_testing(
+    sign_ctx: &TestSignerContext,
+    node_ctx: &TestNodeContext,
+    chan_ctx: &TestChannelContext,
+    commit_num: u64,
+    current_point: PublicKey,
+) {
+    sign_ctx
+        .signer
+        .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
             chan.keys
-                .set_next_holder_commitment_number_for_testing(commit_num);
+                .set_next_counterparty_commit_num_for_testing(commit_num, current_point);
+            Ok(())
+        })
+        .unwrap();
+}
+
+pub fn set_next_counterparty_revoke_num_for_testing(
+    sign_ctx: &TestSignerContext,
+    node_ctx: &TestNodeContext,
+    chan_ctx: &TestChannelContext,
+    revoke_num: u64,
+) {
+    sign_ctx
+        .signer
+        .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
+            chan.keys
+                .set_next_counterparty_revoke_num_for_testing(revoke_num);
             Ok(())
         })
         .unwrap();
@@ -628,6 +661,28 @@ pub fn funding_tx_ready_channel(
         .node
         .ready_channel(chan_ctx.channel_id, None, chan_ctx.setup.clone())
         .expect("Channel");
+}
+
+pub fn synthesize_ready_channel(
+    sign_ctx: &TestSignerContext,
+    node_ctx: &TestNodeContext,
+    chan_ctx: &mut TestChannelContext,
+    outpoint: BitcoinOutPoint,
+    next_holder_commit_num: u64,
+) {
+    chan_ctx.setup.funding_outpoint = outpoint;
+    node_ctx
+        .node
+        .ready_channel(chan_ctx.channel_id, None, chan_ctx.setup.clone())
+        .expect("Channel");
+    sign_ctx
+        .signer
+        .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
+            chan.keys
+                .set_next_holder_commit_num_for_testing(next_holder_commit_num);
+            Ok(())
+        })
+        .expect("synthesized channel");
 }
 
 pub fn funding_tx_sign(
@@ -875,14 +930,14 @@ pub fn validate_holder_commitment(
             // setting up a commitment with a bogus
             // commitment_number on purpose.  To allow this we
             // need to temporarily set the channel's
-            // next_holder_commitment_number while fetching the
+            // next_holder_commit_num while fetching the
             // commitment_point and then restore it.
-            let save_commit_num = chan.keys.next_holder_commitment_number();
+            let save_commit_num = chan.keys.next_holder_commit_num();
             chan.keys
-                .set_next_holder_commitment_number_for_testing(commit_tx_ctx.commit_num);
+                .set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
             let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
             chan.keys
-                .set_next_holder_commitment_number_for_testing(save_commit_num);
+                .set_next_holder_commit_num_for_testing(save_commit_num);
 
             let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 
@@ -942,14 +997,14 @@ pub fn sign_holder_commitment(
             // setting up a commitment with a bogus
             // commitment_number on purpose.  To allow this we
             // need to temporarily set the channel's
-            // next_holder_commitment_number while fetching the
+            // next_holder_commit_num while fetching the
             // commitment_point and then restore it.
-            let save_commit_num = chan.keys.next_holder_commitment_number();
+            let save_commit_num = chan.keys.next_holder_commit_num();
             chan.keys
-                .set_next_holder_commitment_number_for_testing(commit_tx_ctx.commit_num);
+                .set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
             let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
             chan.keys
-                .set_next_holder_commitment_number_for_testing(save_commit_num);
+                .set_next_holder_commit_num_for_testing(save_commit_num);
 
             let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 
