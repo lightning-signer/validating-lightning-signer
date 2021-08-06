@@ -79,7 +79,3 @@ Run coverage:
 View Coverage Report:
 
     [target/kcov/cov/index.html](target/kcov/cov/index.html)
-
-Check coverage annotations in source files:
-
-    cargo coverage-annotations

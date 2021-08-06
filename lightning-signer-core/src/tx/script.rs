@@ -15,7 +15,7 @@ use bitcoin::hashes::Hash;
 fn expect_next<'a>(iter: &'a mut Instructions) -> Result<Instruction<'a>, ValidationError> {
     iter.next()
         .ok_or(mismatch_error("unexpected end".to_string()))?
-        .map_err(|_| mismatch_error("unparseable opcode".to_string())) // NOT TESTED
+        .map_err(|_| mismatch_error("unparseable opcode".to_string()))
 }
 
 #[inline]
@@ -41,7 +41,7 @@ pub fn expect_number(iter: &mut Instructions) -> Result<i64, ValidationError> {
             let cls = op.classify();
             match cls {
                 Class::PushNum(i) => Ok(i as i64),
-                _ => Err(mismatch_error(format!("expected PushNum, saw {:?}", cls))), // NOT TESTED
+                _ => Err(mismatch_error(format!("expected PushNum, saw {:?}", cls))),
             }
         }
         blockdata::script::Instruction::PushBytes(d) => read_scriptint(&d)
@@ -58,7 +58,7 @@ pub fn expect_script_end(iter: &mut Instructions) -> Result<(), ValidationError>
         Err(mismatch_error(format!(
             "expected script end, saw {:?}",
             ins
-        ))) // NOT TESTED
+        )))
     }
 }
 
@@ -67,11 +67,9 @@ pub fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, ValidationError> 
     let ins = expect_next(iter)?;
     match ins {
         blockdata::script::Instruction::PushBytes(d) => Ok(d.to_vec()),
-        _ => Err(mismatch_error(format!("expected data, saw {:?}", ins))), // NOT TESTED
+        _ => Err(mismatch_error(format!("expected data, saw {:?}", ins))),
     }
 }
-
-// BEGIN NOT TESTED
 
 /// To-counterparty redeem script when anchors are enabled - one block delay
 // FIXME - This should be in chan_utils.
@@ -189,8 +187,6 @@ fn get_htlc_anchor_redeemscript_with_explicit_keys(
             .into_script()
     }
 }
-
-// END NOT TESTED
 
 #[cfg(test)]
 mod tests {

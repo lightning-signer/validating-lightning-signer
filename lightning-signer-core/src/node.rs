@@ -107,7 +107,6 @@ pub struct ChannelSetup {
 }
 
 // Need to define manually because ChannelPublicKeys doesn't derive Debug.
-// BEGIN NOT TESTED
 impl fmt::Debug for ChannelSetup {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ChannelSetup")
@@ -136,7 +135,6 @@ impl fmt::Debug for ChannelSetup {
             .finish()
     }
 }
-// END NOT TESTED
 
 impl ChannelSetup {
     pub(crate) fn option_static_remotekey(&self) -> bool {
@@ -192,7 +190,6 @@ pub enum ChannelSlot {
 }
 
 impl ChannelSlot {
-    // BEGIN NOT TESTED
     /// Get the channel nonce, used to derive the channel keys
     pub fn nonce(&self) -> Vec<u8> {
         match self {
@@ -207,7 +204,6 @@ impl ChannelSlot {
             ChannelSlot::Ready(chan) => chan.id0,
         }
     }
-    // END NOT TESTED
 }
 
 /// A trait implemented by both channel states.  See [ChannelSlot]
@@ -272,11 +268,9 @@ impl ChannelBase for ChannelStub {
         Ok(suggested[..] == secret_data)
     }
 
-    // BEGIN NOT TESTED
     fn nonce(&self) -> Vec<u8> {
         self.nonce.clone()
     }
-    // END NOT TESTED
 }
 
 impl ChannelBase for Channel {
@@ -335,11 +329,9 @@ impl ChannelBase for Channel {
         Ok(suggested[..] == secret_data)
     }
 
-    // BEGIN NOT TESTED
     fn nonce(&self) -> Vec<u8> {
         self.nonce.clone()
     }
-    // END NOT TESTED
 }
 
 impl ChannelStub {
@@ -428,19 +420,16 @@ impl Channel {
         let counterparty_key = if self.setup.option_static_remotekey() {
             holder_points.payment_point
         } else {
-            // BEGIN NOT TESTED
             derive_public_key(
                 &self.secp_ctx,
                 &remote_per_commitment_point,
                 &holder_points.payment_point,
             )
             .map_err(|err| internal_error(format!("could not derive counterparty_key: {}", err)))?
-            // END NOT TESTED
         };
         Ok(counterparty_key)
     }
 
-    // BEGIN NOT TESTED
     fn get_commitment_transaction_number_obscure_factor(&self) -> u64 {
         get_commitment_transaction_number_obscure_factor(
             &self.keys.pubkeys().payment_point,
@@ -496,8 +485,6 @@ impl Channel {
             workaround_remote_funding_pubkey,
         ))
     }
-
-    // END NOT TESTED
 
     /// Sign a counterparty commitment transaction after rebuilding it
     /// from the supplied arguments.
@@ -925,9 +912,7 @@ impl Channel {
             &self.setup.counterparty_points.delayed_payment_basepoint,
         )
         .map_err(|err| {
-            // BEGIN NOT TESTED
             internal_error(format!("could not derive to_holder_delayed_key: {}", err))
-            // END NOT TESTED
         })?;
         let counterparty_payment_pubkey =
             self.derive_counterparty_payment_pubkey(remote_per_commitment_point)?;
@@ -952,7 +937,6 @@ impl Channel {
     }
 
     // TODO dead code
-    // BEGIN NOT TESTED
     #[allow(dead_code)]
     pub fn build_holder_commitment_info(
         &self,
@@ -1010,7 +994,6 @@ impl Channel {
             received_htlcs,
         })
     }
-    // END NOT TESTED
 
     /// Phase 1
     pub fn sign_counterparty_commitment_tx(
@@ -1027,9 +1010,7 @@ impl Channel {
         let feerate_per_kw = 0;
 
         if tx.output.len() != output_witscripts.len() {
-            // BEGIN NOT TESTED
             return Err(invalid_argument("len(tx.output) != len(witscripts)"));
-            // END NOT TESTED
         }
 
         let validator = self
@@ -1076,13 +1057,11 @@ impl Channel {
                 true,
             )
             .map_err(|ve| {
-                // BEGIN NOT TESTED
                 debug!(
                     "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\nvstate={:#?}\ninfo={:#?}",
                     ve, &tx, &self.setup, &vstate, &info2,
                 );
                 ve
-                // END NOT TESTED
             })?;
 
         let htlcs = Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
@@ -1097,14 +1076,12 @@ impl Channel {
         );
 
         if recomposed_tx.trust().built_transaction().transaction != *tx {
-            // BEGIN NOT TESTED
             debug!("ORIGINAL_TX={:#?}", &tx);
             debug!(
                 "RECOMPOSED_TX={:#?}",
                 &recomposed_tx.trust().built_transaction().transaction
             );
             return Err(policy_error("recomposed tx mismatch".to_string()).into());
-            // END NOT TESTED
         }
 
         // The comparison in the previous block will fail if any of the
@@ -1173,9 +1150,7 @@ impl Channel {
         let feerate_per_kw = 0;
 
         if tx.output.len() != output_witscripts.len() {
-            // BEGIN NOT TESTED
             return Err(invalid_argument("len(tx.output) != len(witscripts)"));
-            // END NOT TESTED
         }
 
         let validator = self
@@ -1225,9 +1200,7 @@ impl Channel {
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<CommitmentTransaction, Status> {
         if tx.output.len() != output_witscripts.len() {
-            // BEGIN NOT TESTED
             return Err(invalid_argument("len(tx.output) != len(witscripts)"));
-            // END NOT TESTED
         }
 
         let validator = self
@@ -1293,13 +1266,11 @@ impl Channel {
                 false,
             )
             .map_err(|ve| {
-                // BEGIN NOT TESTED
                 debug!(
                     "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
                     ve, &tx, &self.setup, &state, &info2,
                 );
                 ve
-                // END NOT TESTED
             })?;
 
         let htlcs = Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
@@ -1313,14 +1284,12 @@ impl Channel {
         )?;
 
         if recomposed_tx.trust().built_transaction().transaction != *tx {
-            // BEGIN NOT TESTED
             debug!("ORIGINAL_TX={:#?}", &tx);
             debug!(
                 "RECOMPOSED_TX={:#?}",
                 &recomposed_tx.trust().built_transaction().transaction
             );
             return Err(policy_error("recomposed tx mismatch".to_string()).into());
-            // END NOT TESTED
         }
 
         // The comparison in the previous block will fail if any of the
@@ -1651,7 +1620,6 @@ impl Channel {
         validator
             .validate_htlc_tx(&self.setup, &state, is_counterparty, &htlc, feerate_per_kw)
             .map_err(|ve| {
-                // BEGIN NOT TESTED
                 debug!(
                     "VALIDATION FAILED: {}\n\
                      setup={:#?}\n\
@@ -1669,7 +1637,6 @@ impl Channel {
                     feerate_per_kw,
                 );
                 ve
-                // END NOT TESTED
             })?;
 
         let htlc_privkey = derive_private_key(
@@ -1705,7 +1672,7 @@ impl Channel {
     }
 }
 
-#[derive(Copy, Clone)] // NOT TESTED
+#[derive(Copy, Clone)]
 pub struct NodeConfig {
     pub key_derivation_style: KeyDerivationStyle,
 }
@@ -1968,7 +1935,6 @@ impl Node {
         node_entry: NodeEntry,
         persister: Arc<dyn Persist>,
     ) -> Arc<Node> {
-        // BEGIN NOT TESTED
         let config = NodeConfig {
             key_derivation_style: KeyDerivationStyle::try_from(node_entry.key_derivation_style)
                 .unwrap(),
@@ -2150,12 +2116,11 @@ impl Node {
                         )
                         .map_err(|err| internal_error(format!("p2wpkh sighash failed: {}", err)))
                     }
-                    // BEGIN NOT TESTED
+
                     _ => Err(invalid_argument(format!(
                         "unsupported spend_type: {}",
                         spendtypes[idx] as i32
                     ))),
-                    // END NOT TESTED
                 }?;
                 let sig = secp_ctx.sign(&sighash, &privkey.key);
                 let sigvec = signature_to_bitcoin_vec(sig);
@@ -2194,12 +2159,10 @@ impl Node {
         child_path: &Vec<u32>,
     ) -> Result<bitcoin::PrivateKey, Status> {
         if child_path.len() != self.node_config.key_derivation_style.get_key_path_len() {
-            // BEGIN NOT TESTED
             return Err(invalid_argument(format!(
                 "get_wallet_key: bad child_path len : {}",
                 child_path.len()
             )));
-            // END NOT TESTED
         }
         // Start with the base xpriv for this wallet.
         let mut xkey = self.get_account_extended_key().clone();
@@ -2208,11 +2171,7 @@ impl Node {
         for elem in child_path {
             xkey = xkey
                 .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(*elem).unwrap())
-                .map_err(|err| {
-                    // BEGIN NOT TESTED
-                    internal_error(format!("derive child_path failed: {}", err))
-                    // END NOT TESTED
-                })?;
+                .map_err(|err| internal_error(format!("derive child_path failed: {}", err)))?;
         }
         Ok(xkey.private_key)
     }

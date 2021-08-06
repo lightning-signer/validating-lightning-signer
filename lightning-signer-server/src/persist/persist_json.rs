@@ -46,7 +46,6 @@ impl<'a> Persist for KVJsonPersister<'a> {
         self.node_bucket.flush().expect("flush");
     }
 
-    // BEGIN NOT TESTED
     fn delete_node(&self, node_id: &PublicKey) {
         for item_res in self
             .channel_bucket
@@ -59,7 +58,6 @@ impl<'a> Persist for KVJsonPersister<'a> {
             .remove(node_id.serialize().to_vec())
             .unwrap();
     }
-    // END NOT TESTED
 
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()> {
         let channel_value_satoshis = 0; // TODO not known yet
@@ -75,11 +73,9 @@ impl<'a> Persist for KVJsonPersister<'a> {
                     enforcement_state: EnforcementState::new(),
                 };
                 if txn.get(id.clone()).unwrap().is_some() {
-                    // BEGIN NOT TESTED
                     return Err(TransactionError::Abort(kv::Error::Message(
                         "already exists".to_string(),
                     )));
-                    // END NOT TESTED
                 }
                 txn.set(id, Json(entry)).expect("insert channel");
                 Ok(())
@@ -103,11 +99,9 @@ impl<'a> Persist for KVJsonPersister<'a> {
                     enforcement_state: channel.enforcement_state.clone(),
                 };
                 if txn.get(node_channel_id.clone()).unwrap().is_none() {
-                    // BEGIN NOT TESTED
                     return Err(TransactionError::Abort(kv::Error::Message(
                         "not found".to_string(),
                     )));
-                    // END NOT TESTED
                 }
                 let json = Json(entry);
                 txn.set(node_channel_id, json).expect("update channel");
@@ -129,7 +123,6 @@ impl<'a> Persist for KVJsonPersister<'a> {
         Ok(entry)
     }
 
-    // BEGIN NOT TESTED
     fn get_node_channels(&self, node_id: &PublicKey) -> Vec<(ChannelId, CoreChannelEntry)> {
         let mut res = Vec::new();
         for item_res in self
@@ -144,7 +137,6 @@ impl<'a> Persist for KVJsonPersister<'a> {
         }
         res
     }
-    // END NOT TESTED
 
     fn get_nodes(&self) -> Vec<(PublicKey, CoreNodeEntry)> {
         let mut res = Vec::new();
@@ -218,7 +210,7 @@ mod tests {
                 if let ChannelSlot::Stub(s) = &*guard {
                     check_signer_roundtrip(&stub.keys, &s.keys);
                 } else {
-                    panic!() // NOT TESTED
+                    panic!()
                 }
             }
 
@@ -244,7 +236,7 @@ mod tests {
                 if let ChannelSlot::Ready(s) = &*guard {
                     check_signer_roundtrip(&channel.keys, &s.keys);
                 } else {
-                    panic!() // NOT TESTED
+                    panic!()
                 }
             }
             (temp_dir, path)

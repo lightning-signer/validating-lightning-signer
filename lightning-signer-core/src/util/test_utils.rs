@@ -50,11 +50,9 @@ impl TestPersister {
         }
     }
 
-    // BEGIN NOT TESTED
     pub fn set_update_ret(&self, ret: Result<(), channelmonitor::ChannelMonitorUpdateErr>) {
         *self.update_ret.lock().unwrap() = ret;
     }
-    // END NOT TESTED
 }
 
 impl channelmonitor::Persist<LoopbackChannelSigner> for TestPersister {
@@ -130,13 +128,11 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
 
         let ret = self.update_ret.lock().unwrap().clone();
         if let Some(next_ret) = self.next_update_ret.lock().unwrap().take() {
-            *self.update_ret.lock().unwrap() = Some(next_ret); // NOT TESTED
+            *self.update_ret.lock().unwrap() = Some(next_ret);
         }
         if ret.is_some() {
-            // BEGIN NOT TESTED
             assert!(watch_res.is_ok());
             return ret.unwrap();
-            // END NOT TESTED
         }
         watch_res
     }
@@ -155,13 +151,11 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
 
         let ret = self.update_ret.lock().unwrap().clone();
         if let Some(next_ret) = self.next_update_ret.lock().unwrap().take() {
-            *self.update_ret.lock().unwrap() = Some(next_ret); // NOT TESTED
+            *self.update_ret.lock().unwrap() = Some(next_ret);
         }
         if ret.is_some() {
-            // BEGIN NOT TESTED
             assert!(update_res.is_ok());
             return ret.unwrap();
-            // END NOT TESTED
         }
         update_res
     }
@@ -1151,7 +1145,7 @@ pub fn build_tx_scripts(
                 value: to_countersignatory_value_sat,
             },
             (None, Script::new()),
-        )) // NOT TESTED
+        ))
     }
 
     if to_broadcaster_value_sat > 0 {
@@ -1181,7 +1175,6 @@ pub fn build_tx_scripts(
     // Sort output in BIP-69 order (amount, scriptPubkey).  Tie-breaks based on HTLC
     // CLTV expiration height.
     sort_outputs(&mut txouts, |a, b| {
-        // BEGIN NOT TESTED
         if let &(Some(ref a_htlcout), _) = a {
             if let &(Some(ref b_htlcout), _) = b {
                 a_htlcout
@@ -1199,7 +1192,6 @@ pub fn build_tx_scripts(
         } else {
             cmp::Ordering::Equal
         }
-        // END NOT TESTED
     });
 
     let mut scripts = Vec::with_capacity(txouts.len());

@@ -1,5 +1,3 @@
-// BEGIN NOT TESTED
-
 extern crate clap;
 use clap::{App, Arg, ArgMatches};
 
@@ -133,5 +131,3 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     Ok(())
 }
-
-// END NOT TESTED

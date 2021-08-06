@@ -31,7 +31,7 @@ pub fn make_node_and_channel(
             Some(channel_nonce.clone()),
             &Arc::clone(&node),
         )
-        .unwrap(); // NOT TESTED
+        .unwrap();
     (node_id, node, channel.unwrap(), seed)
 }
 

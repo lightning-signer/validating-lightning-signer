@@ -13,7 +13,7 @@ use serde_with::{DeserializeAs, SerializeAs};
 use lightning_signer::node::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::policy::validator::EnforcementState;
 
-#[derive(Copy, Clone, Debug, Default)] // NOT TESTED
+#[derive(Copy, Clone, Debug, Default)]
 pub struct PublicKeyHandler;
 
 impl SerializeAs<PublicKey> for PublicKeyHandler {
@@ -74,7 +74,7 @@ pub struct ChannelPublicKeysDef {
     pub htlc_basepoint: PublicKey,
 }
 
-#[derive(Deserialize)] // NOT TESTED
+#[derive(Deserialize)]
 struct ChannelPublicKeysHelper(#[serde(with = "ChannelPublicKeysDef")] ChannelPublicKeys);
 
 impl SerializeAs<ChannelPublicKeys> for ChannelPublicKeysDef {
@@ -199,8 +199,6 @@ impl From<ScriptDef> for Script {
     }
 }
 
-// BEGIN NOT TESTED
-
 #[derive(Deserialize)]
 struct ScriptHelper(#[serde(with = "ScriptDef")] Script);
 
@@ -221,8 +219,6 @@ impl<'de> DeserializeAs<'de, Script> for ScriptDef {
         ScriptHelper::deserialize(deserializer).map(|h| h.0)
     }
 }
-
-// END NOT TESTED
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]

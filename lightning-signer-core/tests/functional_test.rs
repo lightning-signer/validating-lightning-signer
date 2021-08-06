@@ -128,7 +128,6 @@ fn fake_network_with_signer_test() {
     close_channel(&nodes[0], &nodes[1], &chan_1.2, chan_1.3, true);
 }
 
-// BEGIN NOT TESTED
 // Not currently used, but may be interesting for testing different to_self_delay values
 // for peering nodes.
 fn _alt_config() -> UserConfig {
@@ -147,7 +146,6 @@ fn _alt_config() -> UserConfig {
         .force_announced_channel_preference = false;
     cfg1
 }
-// END NOT TESTED
 
 #[test]
 fn channel_force_close_test() {

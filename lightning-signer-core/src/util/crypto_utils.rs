@@ -77,11 +77,11 @@ pub fn derive_key_lnd(
 ) -> (PublicKey, SecretKey) {
     let bip43purpose = 1017;
     #[rustfmt::skip]
-    let coin_type = match network { // NOT TESTED
+    let coin_type = match network { 
         bitcoin::Network::Bitcoin => 0,
         bitcoin::Network::Testnet => 1,
-        bitcoin::Network::Regtest => 1, // NOT TESTED
-        bitcoin::Network::Signet => 1, // NOT TESTED
+        bitcoin::Network::Regtest => 1, 
+        bitcoin::Network::Signet => 1, 
     };
     let branch = 0;
     let node_ext_prv = master

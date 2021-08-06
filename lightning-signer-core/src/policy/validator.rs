@@ -91,12 +91,10 @@ pub trait Validator {
     ) -> Result<(), ValidationError>;
 }
 
-// BEGIN NOT TESTED
 #[derive(Debug)]
 pub struct ValidatorState {
     pub current_height: u32,
 }
-// END NOT TESTED
 
 pub trait ValidatorFactory: Send + Sync {
     fn make_validator(&self, network: Network) -> Box<dyn Validator>;
@@ -116,7 +114,6 @@ impl ValidatorFactory for SimpleValidatorFactory {
     }
 }
 
-// BEGIN NOT TESTED
 #[derive(Clone)]
 pub struct SimplePolicy {
     /// Minimum delay in blocks
@@ -142,7 +139,6 @@ pub struct SimplePolicy {
     /// Maximum fee
     pub max_fee: u64,
 }
-// END NOT TESTED
 
 pub struct SimpleValidator {
     pub policy: SimplePolicy,
@@ -694,7 +690,6 @@ impl Validator for SimpleValidator {
 
 pub fn make_simple_policy(network: Network) -> SimplePolicy {
     if network == Network::Bitcoin {
-        // BEGIN NOT TESTED
         SimplePolicy {
             min_delay: 60,
             max_delay: 1440,
@@ -708,7 +703,6 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             min_fee: 100,
             max_fee: 1000,
         }
-    // END NOT TESTED
     } else {
         SimplePolicy {
             min_delay: 4,
@@ -984,7 +978,7 @@ mod tests {
             true,
             &tx,
             &vec![vec![]],
-        ); // NOT TESTED
+        );
         assert_policy_error!(res, "bad commitment version: 1");
     }
 

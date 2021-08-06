@@ -8,7 +8,6 @@ use lightning_signer_server::persist::model::{ChannelEntry, NodeChannelId, NodeE
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
 use lightning_signer_server::persist::util;
 
-// BEGIN NOT TESTED
 pub fn main() {
     let persister = KVJsonPersister::new("/tmp/signer.kv");
     persister.clear_database();
@@ -54,4 +53,3 @@ pub fn main() {
         println!("{}: {}", id, entry_json);
     }
 }
-// END NOT TESTED

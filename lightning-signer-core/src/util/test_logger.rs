@@ -14,11 +14,10 @@ impl SendSync for TestLogger {}
 impl SyncLogger for TestLogger {}
 
 impl TestLogger {
-    // BEGIN NOT TESTED
     pub fn new() -> TestLogger {
         Self::new_with_id("".to_owned())
     }
-    // END NOT TESTED
+
     pub fn new_with_id(id: String) -> TestLogger {
         TestLogger {
             level: Level::Trace,
@@ -26,15 +25,15 @@ impl TestLogger {
             lines: Mutex::new(Map::new()),
         }
     }
-    // BEGIN NOT TESTED
+
     pub fn enable(&mut self, level: Level) {
         self.level = level;
     }
+
     pub fn assert_log(&self, module: String, line: String, count: usize) {
         let log_entries = self.lines.lock().unwrap();
         assert_eq!(log_entries.get(&(module, line)), Some(&count));
     }
-    // END NOT TESTED
 }
 
 impl Logger for TestLogger {

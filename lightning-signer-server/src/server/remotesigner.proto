@@ -200,8 +200,6 @@ service Version {
 
 // ----------------------------------------------------------------
 
-// BEGIN NOT TESTED
-
 message ListNodesRequest {
 }
 
@@ -875,4 +873,3 @@ message Outpoint {
   uint32 index = 2;
 }
 
-// END NOT TESTED

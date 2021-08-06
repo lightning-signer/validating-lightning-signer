@@ -41,7 +41,6 @@ pub const ANCHOR_SAT: u64 = 330;
 pub const HTLC_SUCCESS_TX_WEIGHT: u64 = 703;
 pub const HTLC_TIMEOUT_TX_WEIGHT: u64 = 663;
 
-// BEGIN NOT TESTED
 pub fn get_commitment_transaction_number_obscure_factor(
     local_payment_basepoint: &PublicKey,
     counterparty_payment_basepoint: &PublicKey,
@@ -66,7 +65,6 @@ pub fn get_commitment_transaction_number_obscure_factor(
         | ((res[30] as u64) << 1 * 8)
         | ((res[31] as u64) << 0 * 8)
 }
-// END NOT TESTED
 
 pub fn build_close_tx(
     to_holder_value_sat: u64,
@@ -123,7 +121,6 @@ pub fn build_close_tx(
     }
 }
 
-// BEGIN NOT TESTED
 pub fn build_commitment_tx(
     keys: &TxCreationKeys,
     info: &CommitmentInfo2,
@@ -276,7 +273,6 @@ pub fn build_commitment_tx(
         htlcs,
     )
 }
-// END NOT TESTED
 
 // Sign a Bitcoin commitment tx or a mutual-close tx
 pub(crate) fn sign_commitment(
@@ -326,7 +322,6 @@ pub struct HTLCInfo {
 }
 
 // Implement manually so we can have hex encoded payment_hash_hash.
-// BEGIN NOT TESTED
 impl fmt::Debug for HTLCInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HTLCInfo")
@@ -336,7 +331,6 @@ impl fmt::Debug for HTLCInfo {
             .finish()
     }
 }
-// END NOT TESTED
 
 /// Phase 2 HTLC info
 #[derive(Clone)]
@@ -348,7 +342,6 @@ pub struct HTLCInfo2 {
 }
 
 // Implement manually so we can have hex encoded payment_hash.
-// BEGIN NOT TESTED
 impl fmt::Debug for HTLCInfo2 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HTLCInfo2")
@@ -358,9 +351,7 @@ impl fmt::Debug for HTLCInfo2 {
             .finish()
     }
 }
-// END NOT TESTED
 
-// BEGIN NOT TESTED
 #[derive(Debug, Clone)]
 pub struct CommitmentInfo2 {
     pub is_counterparty_broadcaster: bool,
@@ -374,7 +365,6 @@ pub struct CommitmentInfo2 {
     pub offered_htlcs: Vec<HTLCInfo2>,
     pub received_htlcs: Vec<HTLCInfo2>,
 }
-// END NOT TESTED
 
 #[allow(dead_code)]
 pub struct CommitmentInfo {
@@ -394,7 +384,6 @@ pub struct CommitmentInfo {
 }
 
 // Define manually because Payload's fmt::Debug is lame.
-// BEGIN NOT TESTED
 impl fmt::Debug for CommitmentInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CommitmentInfo")
@@ -435,7 +424,6 @@ impl fmt::Debug for CommitmentInfo {
             .finish()
     }
 }
-// END NOT TESTED
 
 pub fn parse_received_htlc_script(
     script: &Script,
@@ -454,7 +442,7 @@ pub fn parse_received_htlc_script(
     expect_op(iter, OP_SIZE)?;
     let thirty_two = expect_number(iter)?;
     if thirty_two != 32 {
-        return Err(mismatch_error(format!("expected 32, saw {}", thirty_two))); // NOT TESTED
+        return Err(mismatch_error(format!("expected 32, saw {}", thirty_two)));
     }
     expect_op(iter, OP_EQUAL)?;
     expect_op(iter, OP_IF)?;
@@ -474,11 +462,9 @@ pub fn parse_received_htlc_script(
     expect_op(iter, OP_CHECKSIG)?;
     expect_op(iter, OP_ENDIF)?;
     if option_anchor_outputs {
-        // BEGIN NOT TESTED
         expect_op(iter, OP_PUSHNUM_1)?;
         expect_op(iter, OP_CSV)?;
         expect_op(iter, OP_DROP)?;
-        // END NOT TESTED
     }
     expect_op(iter, OP_ENDIF)?;
     expect_script_end(iter)?;
@@ -508,7 +494,7 @@ pub fn parse_offered_htlc_script(
     expect_op(iter, OP_SIZE)?;
     let thirty_two = expect_number(iter)?;
     if thirty_two != 32 {
-        return Err(mismatch_error(format!("expected 32, saw {}", thirty_two))); // NOT TESTED
+        return Err(mismatch_error(format!("expected 32, saw {}", thirty_two)));
     }
     expect_op(iter, OP_EQUAL)?;
     expect_op(iter, OP_NOTIF)?;
@@ -525,11 +511,9 @@ pub fn parse_offered_htlc_script(
     expect_op(iter, OP_CHECKSIG)?;
     expect_op(iter, OP_ENDIF)?;
     if option_anchor_outputs {
-        // BEGIN NOT TESTED
         expect_op(iter, OP_PUSHNUM_1)?;
         expect_op(iter, OP_CSV)?;
         expect_op(iter, OP_DROP)?;
-        // END NOT TESTED
     }
     expect_op(iter, OP_ENDIF)?;
     expect_script_end(iter)?;
@@ -644,10 +628,10 @@ impl CommitmentInfo {
         }
 
         if delay < 0 {
-            return Err(script_format_error("negative delay".to_string())); // NOT TESTED
+            return Err(script_format_error("negative delay".to_string()));
         }
         if delay > MAX_DELAY {
-            return Err(script_format_error("delay too large".to_string())); // NOT TESTED
+            return Err(script_format_error("delay too large".to_string()));
         }
 
         // This is safe because we checked for negative
@@ -656,16 +640,15 @@ impl CommitmentInfo {
         self.to_broadcaster_delayed_pubkey = Some(
             PublicKey::from_slice(delayed_pubkey.as_slice())
                 .map_err(|err| mismatch_error(format!("delayed_pubkey malformed: {}", err)))?,
-        ); // NOT TESTED
+        );
         self.revocation_pubkey = Some(
             PublicKey::from_slice(revocation_pubkey.as_slice())
                 .map_err(|err| mismatch_error(format!("revocation_pubkey malformed: {}", err)))?,
-        ); // NOT TESTED
+        );
 
         Ok(())
     }
 
-    // BEGIN NOT TESTED
     fn parse_to_countersigner_delayed_script(
         &self,
         script: &Script,
@@ -704,7 +687,6 @@ impl CommitmentInfo {
         self.to_countersigner_value_sat = out.value;
         Ok(())
     }
-    // END NOT TESTED
 
     fn handle_received_htlc_output(
         &mut self,
@@ -724,7 +706,7 @@ impl CommitmentInfo {
             .map_err(|_| mismatch_error("payment hash RIPEMD160 must be length 20".to_string()))?;
 
         if cltv_expiry < 0 {
-            return Err(script_format_error("negative CLTV".to_string())); // NOT TESTED
+            return Err(script_format_error("negative CLTV".to_string()));
         }
 
         let cltv_expiry = cltv_expiry as u32;
@@ -765,7 +747,6 @@ impl CommitmentInfo {
         let iter = &mut script.instructions();
         let to_pubkey_data = expect_data(iter)?;
         expect_op(iter, OP_CHECKSIG)?;
-        // BEGIN NOT TESTED
         expect_op(iter, OP_IFDUP)?;
         expect_op(iter, OP_NOTIF)?;
         expect_op(iter, OP_PUSHNUM_16)?;
@@ -773,7 +754,6 @@ impl CommitmentInfo {
         expect_op(iter, OP_ENDIF)?;
         expect_script_end(iter)?;
         Ok(to_pubkey_data)
-        // END NOT TESTED
     }
 
     fn handle_anchor_output(
@@ -788,12 +768,10 @@ impl CommitmentInfo {
         // These are dependent on which side owns this commitment.
         let (to_broadcaster_funding_pubkey, to_countersigner_funding_pubkey) =
             if self.is_counterparty_broadcaster {
-                // BEGIN NOT TESTED
                 (
                     keys.counterparty_pubkeys().funding_pubkey,
                     keys.pubkeys().funding_pubkey,
                 )
-            // END NOT TESTED
             } else {
                 (
                     keys.pubkeys().funding_pubkey,
@@ -808,10 +786,10 @@ impl CommitmentInfo {
 
         if to_pubkey == to_broadcaster_funding_pubkey {
             // local anchor
-            self.to_broadcaster_anchor_count += 1; // NOT TESTED
+            self.to_broadcaster_anchor_count += 1;
         } else if to_pubkey == to_countersigner_funding_pubkey {
             // remote anchor
-            self.to_countersigner_anchor_count += 1; // NOT TESTED
+            self.to_countersigner_anchor_count += 1;
         } else {
             // policy-v1-commitment-anchor-match-fundingkey
             return Err(mismatch_error(format!(
@@ -819,7 +797,7 @@ impl CommitmentInfo {
                 to_pubkey_data.to_hex()
             )));
         }
-        Ok(()) // NOT TESTED
+        Ok(())
     }
 
     pub fn handle_output(
@@ -874,12 +852,10 @@ impl CommitmentInfo {
                 return self.handle_anchor_output(keys, out, vals.unwrap());
             }
             if setup.option_anchor_outputs() {
-                // BEGIN NOT TESTED
                 let vals = self.parse_to_countersigner_delayed_script(&script);
                 if vals.is_ok() {
                     return self.handle_to_countersigner_delayed_output(out, vals.unwrap());
                 }
-                // END NOT TESTED
             }
             // policy-v1-commitment-no-unrecognized-outputs
             return Err(transaction_format_error("unknown p2wsh script".to_string()));
@@ -941,7 +917,7 @@ mod tests {
         let res = info.handle_to_broadcaster_output(&out, vals.unwrap());
         assert!(res.is_err());
         #[rustfmt::skip]
-        assert_eq!( // NOT TESTED
+        assert_eq!(
             transaction_format_error("already have to local".to_string()),
                     res.expect_err("expecting err")
         );

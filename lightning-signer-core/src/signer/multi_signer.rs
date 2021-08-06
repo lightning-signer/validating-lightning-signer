@@ -30,7 +30,6 @@ pub enum SpendType {
 impl TryFrom<i32> for SpendType {
     type Error = ();
 
-    // BEGIN NOT TESTED
     fn try_from(i: i32) -> Result<Self, Self::Error> {
         let res = match i {
             x if x == SpendType::Invalid as i32 => SpendType::Invalid,
@@ -41,7 +40,6 @@ impl TryFrom<i32> for SpendType {
         };
         Ok(res)
     }
-    // END NOT TESTED
 }
 
 pub trait SyncLogger: Logger + SendSync {}
@@ -105,11 +103,10 @@ impl MultiSigner {
             self.persister.delete_node(&node_id);
         } else {
             // In production, the node must not have existed
-            // BEGIN NOT TESTED
+
             if nodes.contains_key(&node_id) {
                 return Err(invalid_argument("node_exists"));
             }
-            // END NOT TESTED
         }
         nodes.insert(node_id, Arc::new(node));
         self.persister
@@ -140,7 +137,7 @@ impl MultiSigner {
     }
 
     /// Temporary, until phase 2 is fully implemented
-    // BEGIN NOT TESTED
+
     pub fn additional_setup(
         &self,
         node_id: &PublicKey,
@@ -157,7 +154,6 @@ impl MultiSigner {
             Ok(())
         })
     }
-    // END NOT TESTED
 
     pub fn with_channel_base<F: Sized, T>(
         &self,
@@ -452,10 +448,8 @@ mod tests {
         // with_ready_channel should return not ready.
         let result: Result<(), Status> =
             signer.with_ready_channel(&node_id, &channel_id, |_chan| {
-                // BEGIN NOT TESTED
                 assert!(false); // shouldn't get here
                 Ok(())
-                // END NOT TESTED
             });
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -517,7 +511,6 @@ mod tests {
     }
 
     #[ignore] // Ignore this test while we allow extra NewChannel calls.
-    // BEGIN NOT TESTED
     #[test]
     fn node_new_channel_already_exists_test() {
         let signer = MultiSigner::new();
@@ -540,7 +533,6 @@ mod tests {
             format!("channel already exists: {}", TEST_CHANNEL_ID[0])
         );
     }
-    // END NOT TESTED
 
     #[test]
     fn ready_channel_already_ready_test() {
@@ -685,7 +677,6 @@ mod tests {
 
     #[test]
     #[ignore] // we don't support anchors yet
-              // BEGIN NOT TESTED
     fn sign_counterparty_commitment_tx_with_anchors_test() {
         let signer = MultiSigner::new();
         let mut setup = make_test_channel_setup();
@@ -742,7 +733,6 @@ mod tests {
             &channel_funding_redeemscript,
         );
     }
-    // END NOT TESTED
 
     #[test]
     fn sign_counterparty_commitment_tx_with_htlc_static_test() {
@@ -873,7 +863,6 @@ mod tests {
 
     #[test]
     #[ignore] // we don't support anchors yet
-              // BEGIN NOT TESTED
     fn sign_counterparty_commitment_tx_with_htlc_and_anchors_test() {
         let signer = MultiSigner::new();
         let mut setup = make_test_channel_setup();
@@ -958,7 +947,6 @@ mod tests {
             &channel_funding_redeemscript,
         );
     }
-    // END NOT TESTED
 
     #[test]
     fn sign_counterparty_commitment_tx_phase2_static_test() {
@@ -1262,7 +1250,7 @@ mod tests {
             input_value_sat,
             redeemscript,
             &make_test_channel_setup(),
-        ) // NOT TESTED
+        )
     }
 
     fn check_signature_with_setup(
@@ -1595,7 +1583,7 @@ mod tests {
         let outs = vec![TxOut {
             value: ival0,
             script_pubkey: address(0).script_pubkey(),
-        }]; // NOT TESTED
+        }];
         println!("{:?}", &outs[0].script_pubkey);
         let verify_result = tx.verify(|p| Some(outs[p.vout as usize].clone()));
 
@@ -1796,7 +1784,7 @@ mod tests {
         let outs = vec![TxOut {
             value: 100,
             script_pubkey: address(0).script_pubkey(),
-        }]; // NOT TESTED
+        }];
         println!("{:?}", &outs[0].script_pubkey);
         let verify_result = tx.verify(|p| Some(outs[p.vout as usize].clone()));
         assert!(verify_result.is_ok());
@@ -1884,7 +1872,7 @@ mod tests {
         let outs = vec![TxOut {
             value: ival0,
             script_pubkey: address(0).script_pubkey(),
-        }]; // NOT TESTED
+        }];
         println!("{:?}", &outs[0].script_pubkey);
         let verify_result = tx.verify(|p| Some(outs[p.vout as usize].clone()));
 
@@ -1913,7 +1901,7 @@ mod tests {
                 script_sig: Script::new(),
                 sequence: 0,
                 witness: vec![],
-            }, // NOT TESTED
+            },
             TxIn {
                 previous_output: OutPoint {
                     txid: txids[1],
@@ -1922,7 +1910,7 @@ mod tests {
                 script_sig: Script::new(),
                 sequence: 0,
                 witness: vec![],
-            }, // NOT TESTED
+            },
             TxIn {
                 previous_output: OutPoint {
                     txid: txids[2],
@@ -1931,7 +1919,7 @@ mod tests {
                 script_sig: Script::new(),
                 sequence: 0,
                 witness: vec![],
-            }, // NOT TESTED
+            },
         ];
 
         let (opath, tx) = make_test_funding_tx(&secp_ctx, &signer, &node_id, inputs, 100);
@@ -3792,7 +3780,6 @@ mod tests {
 
     #[test]
     #[ignore] // we don't support anchors yet
-              // BEGIN NOT TESTED
     fn sign_remote_htlc_tx_with_anchors_test() {
         let signer = MultiSigner::new();
         let mut setup = make_test_channel_setup();
@@ -3881,7 +3868,6 @@ mod tests {
             &setup,
         );
     }
-    // END NOT TESTED
 
     #[test]
     fn sign_counterparty_htlc_sweep_test() {
@@ -4405,7 +4391,7 @@ mod tests {
                 if let Some(tx) = spent.remove(&point.txid) {
                     return tx.output.get(point.vout as usize).cloned();
                 }
-                None // NOT TESTED
+                None
             })
             .unwrap();
     }

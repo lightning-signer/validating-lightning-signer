@@ -456,10 +456,10 @@ impl Signer for SignServer {
             .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
         if tx.input.len() != 1 {
-            return Err(invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.input.len() != 1"));
         }
         if tx.output.len() == 0 {
-            return Err(invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.output.len() == 0"));
         }
 
         let funding_amount_sat = reqtx.input_descs[0].value_sat as u64;
@@ -763,10 +763,10 @@ impl Signer for SignServer {
             .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
         if tx.input.len() != 1 {
-            return Err(invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.input.len() != 1"));
         }
         if tx.output.len() == 0 {
-            return Err(invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.output.len() == 0"));
         }
 
         let witscripts = reqtx
@@ -878,10 +878,10 @@ impl Signer for SignServer {
             .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
         if tx.input.len() != 1 {
-            return Err(invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.input.len() != 1"));
         }
         if tx.output.len() == 0 {
-            return Err(invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.output.len() == 0"));
         }
 
         let witscripts = reqtx
@@ -935,10 +935,10 @@ impl Signer for SignServer {
             .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
 
         if tx.input.len() != 1 {
-            return Err(invalid_grpc_argument("tx.input.len() != 1")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.input.len() != 1"));
         }
         if tx.output.len() == 0 {
-            return Err(invalid_grpc_argument("tx.output.len() == 0")); // NOT TESTED
+            return Err(invalid_grpc_argument("tx.output.len() == 0"));
         }
 
         let input_desc = reqtx.input_descs[0].clone();
@@ -1005,7 +1005,7 @@ impl Signer for SignServer {
             .map_err(|_| invalid_grpc_argument("bad input index"))?;
 
         if tx.output.len() != 1 {
-            return Err(Status::invalid_argument("tx.output.len() != 1")); // NOT TESTED
+            return Err(Status::invalid_argument("tx.output.len() != 1"));
         }
 
         let htlc_redeemscript = Script::from(redeemscript.clone());
@@ -1063,7 +1063,7 @@ impl Signer for SignServer {
         let redeemscript = Script::from(input_desc.redeem_script);
 
         if tx.output.len() != 1 {
-            return Err(Status::invalid_argument("len(tx.output) != 1")); // NOT TESTED
+            return Err(Status::invalid_argument("len(tx.output) != 1"));
         }
 
         let output_witscript = Script::from(reqtx.output_descs[0].witscript.clone());
@@ -1122,7 +1122,7 @@ impl Signer for SignServer {
             .map_err(|_| invalid_grpc_argument("bad input index"))?;
 
         if tx.output.len() != 1 {
-            return Err(Status::invalid_argument("tx.output.len() != 1")); // NOT TESTED
+            return Err(Status::invalid_argument("tx.output.len() != 1"));
         }
 
         let sigvec = self

@@ -12,8 +12,6 @@ use crate::server::remotesigner::{
 use bip39::{Language, Mnemonic};
 use rand::{OsRng, Rng};
 
-// BEGIN NOT TESTED
-
 pub async fn connect() -> Result<SignerClient<transport::Channel>, Box<dyn std::error::Error>> {
     Ok(SignerClient::connect("http://[::1]:50051").await?)
 }
@@ -191,5 +189,3 @@ pub async fn integration_test(
 
     Ok(())
 }
-
-// END NOT TESTED

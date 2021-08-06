@@ -29,7 +29,7 @@ use bitcoin::util::bip143;
 use hashbrown::HashSet;
 use lightning::ln::msgs::DecodeError;
 
-#[derive(Clone, Copy, Debug)] // NOT TESTED
+#[derive(Clone, Copy, Debug)]
 pub enum KeyDerivationStyle {
     Native = 1,
     Lnd = 2,
@@ -38,7 +38,6 @@ pub enum KeyDerivationStyle {
 impl TryFrom<u8> for KeyDerivationStyle {
     type Error = ();
 
-    // BEGIN NOT TESTED
     fn try_from(v: u8) -> Result<Self, Self::Error> {
         use KeyDerivationStyle::{Lnd, Native};
         match v {
@@ -47,7 +46,6 @@ impl TryFrom<u8> for KeyDerivationStyle {
             _ => Err(()),
         }
     }
-    // END NOT TESTED
 }
 
 pub trait KeyDerivationParam {
@@ -56,15 +54,13 @@ pub trait KeyDerivationParam {
 
 impl KeyDerivationStyle {
     pub fn get_key_path_len(&self) -> usize {
-        // BEGIN NOT TESTED
         match self {
-            // END NOT TESTED
             // c-lightning uses a single BIP32 chain for both external
             // and internal (change) addresses.
             KeyDerivationStyle::Native => 1,
             // lnd uses two BIP32 branches, one for external and one
             // for internal (change) addresses.
-            KeyDerivationStyle::Lnd => 2, // NOT TESTED
+            KeyDerivationStyle::Lnd => 2,
         }
     }
 
@@ -140,7 +136,7 @@ impl MyKeysManager {
                             .push_slice(&pubkey_hash160.into_inner())
                             .into_script()
                     }
-                    Err(_) => panic!("Your RNG is busted"), // NOT TESTED
+                    Err(_) => panic!("Your RNG is busted"),
                 };
                 let shutdown_pubkey = match master_key
                     .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(2).unwrap())
@@ -150,7 +146,7 @@ impl MyKeysManager {
                             .public_key
                             .key
                     }
-                    Err(_) => panic!("Your RNG is busted"), // NOT TESTED
+                    Err(_) => panic!("Your RNG is busted"),
                 };
                 let channel_master_key = master_key
                     .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(3).unwrap())
@@ -203,7 +199,7 @@ impl MyKeysManager {
                 res.secp_ctx.seeded_randomize(&secp_seed);
                 res
             }
-            Err(_) => panic!("Your rng is busted"), // NOT TESTED
+            Err(_) => panic!("Your rng is busted"),
         }
     }
 
@@ -578,7 +574,6 @@ impl KeysInterface for MyKeysManager {
         self.shutdown_pubkey.clone()
     }
 
-    // BEGIN NOT TESTED
     fn get_channel_signer(&self, _inbound: bool, _channel_value_sat: u64) -> InMemorySigner {
         unimplemented!();
     }
@@ -607,7 +602,6 @@ impl KeysInterface for MyKeysManager {
     fn sign_invoice(&self, _invoice_preimage: Vec<u8>) -> Result<RecoverableSignature, ()> {
         unimplemented!()
     }
-    // END NOT TESTED
 }
 
 #[cfg(test)]

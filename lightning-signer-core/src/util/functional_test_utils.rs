@@ -126,7 +126,6 @@ fn do_connect_block<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, block: &Block, s
 }
 
 
-// BEGIN NOT TESTED
 pub fn disconnect_block<'a, 'b, 'c, 'd>(
     node: &'a Node<'b, 'c, 'd>,
     header: &BlockHeader,
@@ -137,7 +136,6 @@ pub fn disconnect_block<'a, 'b, 'c, 'd>(
         .block_disconnected(header, height);
     node.node.block_disconnected(header, height);
 }
-// END NOT TESTED
 
 pub struct TestChanMonCfg {
     pub tx_broadcaster: TestBroadcaster,
@@ -199,7 +197,6 @@ impl<'a, 'b, 'c> Drop for Node<'a, 'b, 'c> {
     }
 }
 
-// BEGIN NOT TESTED
 pub fn create_chan_between_nodes<'a, 'b, 'c, 'd>(
     node_a: &'a Node<'b, 'c, 'd>,
     node_b: &'a Node<'b, 'c, 'd>,
@@ -214,7 +211,6 @@ pub fn create_chan_between_nodes<'a, 'b, 'c, 'd>(
 ) {
     create_chan_between_nodes_with_value(node_a, node_b, 100000, 10001, a_flags, b_flags)
 }
-// END NOT TESTED
 
 pub fn create_chan_between_nodes_with_value<'a, 'b, 'c, 'd>(
     node_a: &'a Node<'b, 'c, 'd>,
@@ -629,18 +625,16 @@ pub fn close_channel<'a, 'b, 'c>(
             inbound_node,
         )
     } else {
-        // BEGIN NOT TESTED
         (
             &outbound_node.node,
             &outbound_node.tx_broadcaster,
             outbound_node,
         )
-        // END NOT TESTED
     };
     let (node_b, broadcaster_b) = if close_inbound_first {
         (&outbound_node.node, &outbound_node.tx_broadcaster)
     } else {
-        (&inbound_node.node, &inbound_node.tx_broadcaster) // NOT TESTED
+        (&inbound_node.node, &inbound_node.tx_broadcaster)
     };
     let (tx_a, tx_b);
 
@@ -665,12 +659,12 @@ pub fn close_channel<'a, 'b, 'c>(
             assert_eq!(node_id, &node_a.get_our_node_id());
             msg.clone()
         }
-        _ => panic!("Unexpected event"), // NOT TESTED
+        _ => panic!("Unexpected event"),
     };
 
     let closing_signed_b = if !close_inbound_first {
-        assert_eq!(events_1.len(), 1); // NOT TESTED
-        None // NOT TESTED
+        assert_eq!(events_1.len(), 1);
+        None
     } else {
         Some(match events_1[1] {
             MessageSendEvent::SendClosingSigned {
@@ -680,7 +674,7 @@ pub fn close_channel<'a, 'b, 'c>(
                 assert_eq!(node_id, &node_a.get_our_node_id());
                 msg.clone()
             }
-            _ => panic!("Unexpected event"), // NOT TESTED
+            _ => panic!("Unexpected event"),
         })
     };
 
@@ -700,7 +694,6 @@ pub fn close_channel<'a, 'b, 'c>(
         tx_b = broadcaster_b.txn_broadcasted.lock().unwrap().remove(0);
         (as_update, bs_update)
     } else {
-        // BEGIN NOT TESTED
         let closing_signed_a = get_event_msg!(
             struct_a,
             MessageSendEvent::SendClosingSigned,
@@ -719,7 +712,6 @@ pub fn close_channel<'a, 'b, 'c>(
         assert_eq!(broadcaster_a.txn_broadcasted.lock().unwrap().len(), 1);
         tx_a = broadcaster_a.txn_broadcasted.lock().unwrap().remove(0);
         (as_update, bs_update)
-        // END NOT TESTED
     };
     assert_eq!(tx_a, tx_b);
     check_spends!(tx_a, funding_tx);
@@ -754,17 +746,15 @@ impl SendEvent {
             MessageSendEvent::UpdateHTLCs { node_id, updates } => {
                 SendEvent::from_commitment_update(node_id, updates)
             }
-            _ => panic!("Unexpected event type!"), // NOT TESTED
+            _ => panic!("Unexpected event type!"),
         }
     }
 
-    // BEGIN NOT TESTED
     pub fn from_node<'a, 'b, 'c>(node: &Node<'a, 'b, 'c>) -> SendEvent {
         let mut events = node.node.get_and_clear_pending_msg_events();
         assert_eq!(events.len(), 1);
         SendEvent::from_event(events.pop().unwrap())
     }
-    // END NOT TESTED
 }
 
 macro_rules! commitment_signed_dance {
@@ -804,7 +794,7 @@ macro_rules! commitment_signed_dance {
                     }
                     _ => panic!("Unexpected event"),
                 },
-                events.get(1).map(|e| e.clone()), // NOT TESTED
+                events.get(1).map(|e| e.clone()),
             )
         };
         check_added_monitors!($node_b, 1);
@@ -972,10 +962,10 @@ pub fn pass_along_path<'a, 'b, 'c>(
                             _ => {},
                         }
                     },
-                    _ => panic!("Unexpected event"), // NOT TESTED
+                    _ => panic!("Unexpected event"),
                 }
             } else {
-                assert!(events_2.is_empty()); // NOT TESTED
+                assert!(events_2.is_empty());
             }
         } else {
             let mut events_2 = node.node.get_and_clear_pending_msg_events();
@@ -1238,7 +1228,6 @@ pub fn create_network<'a, 'b: 'a, 'c: 'b>(
     nodes
 }
 
-// BEGIN NOT TESTED
 pub fn dump_node_txn(prefix: &str, node: &Node) {
     let node_txn = node.tx_broadcaster.txn_broadcasted.lock().unwrap();
     dump_txn(prefix, &*node_txn);
@@ -1250,7 +1239,6 @@ pub fn dump_txn(prefix: &str, txn: &Vec<Transaction>) {
         println!("{} {} {:?}", prefix, x.txid(), x);
     }
 }
-// END NOT TESTED
 
 pub fn get_announce_close_broadcast_events<'a, 'b, 'c>(nodes: &Vec<Node<'a, 'b, 'c>>, a: usize, b: usize)  {
     let events_1 = nodes[a].node.get_and_clear_pending_msg_events();

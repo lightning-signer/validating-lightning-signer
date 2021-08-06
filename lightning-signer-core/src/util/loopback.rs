@@ -83,10 +83,8 @@ impl LoopbackChannelSigner {
                 Ok(base.get_channel_basepoints())
             })
             .map_err(|s| {
-                // BEGIN NOT TESTED
                 error!("bad status {:?} on channel {}", s, channel_id);
                 ()
-                // END NOT TESTED
             })
             .expect("must be able to get basepoints");
         LoopbackChannelSigner {
@@ -121,11 +119,9 @@ impl LoopbackChannelSigner {
         Ok(keys)
     }
 
-    // BEGIN NOT TESTED
     fn bad_status(&self, s: Status) {
         error!("bad status {:?} on channel {}", s, self.channel_id);
     }
-    // END NOT TESTED
 
     fn sign_holder_commitment_and_htlcs(
         &self,
@@ -195,18 +191,16 @@ impl LoopbackChannelSigner {
     }
 }
 
-// BEGIN NOT TESTED
 impl Writeable for LoopbackChannelSigner {
     fn write<W: Writer>(&self, _writer: &mut W) -> Result<(), IOError> {
         unimplemented!()
     }
 }
-// END NOT TESTED
 
 fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
     res.pop();
     let sig = Signature::from_der(res.as_slice())
-        .map_err(|_e| ()) // NOT TESTED
+        .map_err(|_e| ())
         .expect("failed to parse the signature we just created");
     Ok(sig)
 }
@@ -323,9 +317,9 @@ impl BaseSign for LoopbackChannelSigner {
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 chan.keys
                     .unsafe_sign_holder_commitment_and_htlcs(hct, secp_ctx)
-                    .map_err(|_| Status::internal("could not unsafe-sign")) // NOT TESTED
+                    .map_err(|_| Status::internal("could not unsafe-sign"))
             })
-            .map_err(|_s| ()) // NOT TESTED
+            .map_err(|_s| ())
     }
 
     fn sign_justice_revoked_output(
@@ -449,18 +443,14 @@ impl BaseSign for LoopbackChannelSigner {
         for out in &closing_tx.output {
             if out.script_pubkey == local_script {
                 if to_holder_value > 0 {
-                    // BEGIN NOT TESTED
                     error!("multiple to_holder outputs");
                     return Err(());
-                    // END NOT TESTED
                 }
                 to_holder_value = out.value;
             } else {
                 if to_counterparty_value > 0 {
-                    // BEGIN NOT TESTED
                     error!("multiple to_counterparty outputs");
                     return Err(());
-                    // END NOT TESTED
                 }
                 to_counterparty_value = out.value;
                 to_counterparty_script = out.script_pubkey.clone();
@@ -569,7 +559,6 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         self.get_node().get_secure_random_bytes()
     }
 
-    // BEGIN NOT TESTED
     fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::Signer, DecodeError> {
         unimplemented!()
     }
@@ -577,7 +566,6 @@ impl KeysInterface for LoopbackSignerKeysInterface {
     fn sign_invoice(&self, invoice_preimage: Vec<u8>) -> Result<RecoverableSignature, ()> {
         Ok(self.get_node().sign_invoice(&invoice_preimage))
     }
-    // END NOT TESTED
 }
 
 fn get_delayed_payment_keys(

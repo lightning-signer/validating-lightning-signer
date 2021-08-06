@@ -7,7 +7,6 @@ use log::error;
 
 use crate::policy::error::ValidationError;
 
-// BEGIN NOT TESTED
 #[derive(Clone)]
 pub struct Status {
     /// The gRPC status code, found in the `grpc-status` header.
@@ -15,7 +14,6 @@ pub struct Status {
     /// A relevant error message, found in the `grpc-message` header.
     message: String,
 }
-// END NOT TESTED
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Code {
@@ -64,8 +62,6 @@ impl Status {
     }
 }
 
-// BEGIN NOT TESTED
-
 impl fmt::Debug for Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // A manual impl to reduce the noise of frequently empty fields.
@@ -91,8 +87,6 @@ impl fmt::Display for Status {
         )
     }
 }
-
-// END NOT TESTED
 
 #[cfg(feature = "grpc")]
 impl std::error::Error for Status {}

@@ -45,8 +45,6 @@ impl Persist for DummyPersister {
         Ok(())
     }
 
-    // BEGIN NOT TESTED
-
     fn get_channel(
         &self,
         node_id: &PublicKey,
@@ -59,11 +57,9 @@ impl Persist for DummyPersister {
         Vec::new()
     }
 
-    // END NOT TESTED
-
     fn get_nodes(&self) -> Vec<(PublicKey, model::NodeEntry)> {
         Vec::new()
     }
 
-    fn clear_database(&self) {} // NOT TESTED
+    fn clear_database(&self) {}
 }
