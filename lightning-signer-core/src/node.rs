@@ -6,6 +6,7 @@ use core::convert::TryFrom;
 use core::fmt::{self, Debug, Error, Formatter};
 use core::str::FromStr;
 use core::time::Duration;
+use core::any::Any;
 
 use bitcoin;
 use bitcoin::blockdata::constants::genesis_block;
@@ -49,7 +50,7 @@ use crate::util::crypto_utils::{
     signature_to_bitcoin_vec,
 };
 use crate::util::debug_utils::DebugHTLCOutputInCommitment;
-use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
+use crate::util::enforcing_trait_impls::EnforcementState;
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
 use bitcoin::hashes::hex::ToHex;
@@ -156,7 +157,7 @@ pub struct ChannelStub {
     pub nonce: Vec<u8>,
     pub(crate) secp_ctx: Secp256k1<All>,
     /// The signer for this channel
-    pub keys: EnforcingSigner, // Incomplete, channel_value_sat is placeholder.
+    pub keys: InMemorySigner, // Incomplete, channel_value_sat is placeholder.
     /// The initial channel ID, used to find the channel in the node
     pub id0: ChannelId,
 }
@@ -171,7 +172,9 @@ pub struct Channel {
     /// The logger
     pub(crate) secp_ctx: Secp256k1<All>,
     /// The signer for this channel
-    pub keys: EnforcingSigner,
+    pub keys: InMemorySigner,
+    // Channel state for policy enforcement purposes
+    pub enforcement_state: EnforcementState,
     /// The negotiated channel setup
     pub setup: ChannelSetup,
     /// The initial channel ID
@@ -208,7 +211,7 @@ impl ChannelSlot {
 }
 
 /// A trait implemented by both channel states.  See [ChannelSlot]
-pub trait ChannelBase {
+pub trait ChannelBase: Any {
     /// Get the channel basepoints and public keys
     fn get_channel_basepoints(&self) -> ChannelPublicKeys;
     /// Get the per-commitment point for a holder commitment transaction
@@ -222,12 +225,11 @@ pub trait ChannelBase {
     // TODO should this be exposed?
     fn nonce(&self) -> Vec<u8>;
 
+    // TODO remove when LDK workaround is removed in LoopbackSigner
     #[cfg(feature = "test_utils")]
-    fn set_next_holder_commit_num_for_testing(&self, num: u64);
-    #[cfg(feature = "test_utils")]
-    fn set_next_counterparty_commit_num_for_testing(&self, num: u64, current_point: PublicKey);
-    #[cfg(feature = "test_utils")]
-    fn set_next_counterparty_revoke_num_for_testing(&self, num: u64);
+    fn set_next_holder_commit_num_for_testing(&mut self, _num: u64) {
+        // Do nothing for ChannelStub.  Channel will override.
+    }
 }
 
 impl Debug for Channel {
@@ -275,31 +277,21 @@ impl ChannelBase for ChannelStub {
         self.nonce.clone()
     }
     // END NOT TESTED
-
-    #[cfg(feature = "test_utils")]
-    fn set_next_holder_commit_num_for_testing(&self, num: u64) {
-        self.keys.set_next_holder_commit_num_for_testing(num);
-    }
-
-    #[cfg(feature = "test_utils")]
-    fn set_next_counterparty_commit_num_for_testing(&self, num: u64, current_point: PublicKey) {
-        self.keys
-            .set_next_counterparty_commit_num_for_testing(num, current_point);
-    }
-
-    #[cfg(feature = "test_utils")]
-    fn set_next_counterparty_revoke_num_for_testing(&self, num: u64) {
-        self.keys.set_next_counterparty_revoke_num_for_testing(num);
-    }
 }
 
 impl ChannelBase for Channel {
+    // TODO move out to impl Channel {} once LDK workaround is removed
+    #[cfg(feature = "test_utils")]
+    fn set_next_holder_commit_num_for_testing(&mut self, num: u64) {
+        self.enforcement_state.set_next_holder_commit_num_for_testing(num);
+    }
+
     fn get_channel_basepoints(&self) -> ChannelPublicKeys {
         self.keys.pubkeys().clone()
     }
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status> {
-        let next_holder_commit_num = self.keys.next_holder_commit_num();
+        let next_holder_commit_num = self.enforcement_state.next_holder_commit_num;
         if commitment_number > next_holder_commit_num {
             return Err(policy_error(format!(
                 "get_per_commitment_point: \
@@ -315,7 +307,7 @@ impl ChannelBase for Channel {
     }
 
     fn get_per_commitment_secret(&self, commitment_number: u64) -> Result<SecretKey, Status> {
-        let next_holder_commit_num = self.keys.next_holder_commit_num();
+        let next_holder_commit_num = self.enforcement_state.next_holder_commit_num;
         // policy-v2-revoke-new-commitment-signed
         if commitment_number + 2 > next_holder_commit_num {
             return Err(policy_error(format!(
@@ -347,39 +339,36 @@ impl ChannelBase for Channel {
         self.nonce.clone()
     }
     // END NOT TESTED
-
-    #[cfg(feature = "test_utils")]
-    fn set_next_holder_commit_num_for_testing(&self, num: u64) {
-        self.keys.set_next_holder_commit_num_for_testing(num);
-    }
-
-    #[cfg(feature = "test_utils")]
-    fn set_next_counterparty_commit_num_for_testing(&self, num: u64, current_point: PublicKey) {
-        self.keys
-            .set_next_counterparty_commit_num_for_testing(num, current_point);
-    }
-
-    #[cfg(feature = "test_utils")]
-    fn set_next_counterparty_revoke_num_for_testing(&self, num: u64) {
-        self.keys.set_next_counterparty_revoke_num_for_testing(num);
-    }
 }
 
 impl ChannelStub {
     pub(crate) fn channel_keys_with_channel_value(&self, channel_value_sat: u64) -> InMemorySigner {
         let secp_ctx = Secp256k1::signing_only();
-        let keys0 = self.keys.inner();
+        let keys = &self.keys;
         InMemorySigner::new(
             &secp_ctx,
-            keys0.funding_key,
-            keys0.revocation_base_key,
-            keys0.payment_key,
-            keys0.delayed_payment_base_key,
-            keys0.htlc_base_key,
-            keys0.commitment_seed,
+            keys.funding_key,
+            keys.revocation_base_key,
+            keys.payment_key,
+            keys.delayed_payment_base_key,
+            keys.htlc_base_key,
+            keys.commitment_seed,
             channel_value_sat,
-            keys0.channel_keys_id(),
+            keys.channel_keys_id(),
         )
+    }
+}
+
+impl Channel {
+    #[cfg(feature = "test_utils")]
+    pub fn set_next_counterparty_commit_num_for_testing(&mut self, num: u64, current_point: PublicKey) {
+        self.enforcement_state
+            .set_next_counterparty_commit_num_for_testing(num, current_point);
+    }
+
+    #[cfg(feature = "test_utils")]
+    pub fn set_next_counterparty_revoke_num_for_testing(&mut self, num: u64) {
+        self.enforcement_state.set_next_counterparty_revoke_num_for_testing(num);
     }
 }
 
@@ -815,7 +804,7 @@ impl Channel {
         let htlc_privkey = derive_private_key(
             &self.secp_ctx,
             &per_commitment_point,
-            &self.keys.delayed_payment_base_key(),
+            &self.keys.delayed_payment_base_key,
         )
         .map_err(|_| Status::internal("failed to derive key"))?;
 
@@ -846,7 +835,7 @@ impl Channel {
         let htlc_privkey = derive_private_key(
             &self.secp_ctx,
             &remote_per_commitment_point,
-            &self.keys.htlc_base_key(),
+            &self.keys.htlc_base_key,
         )
         .map_err(|_| Status::internal("failed to derive key"))?;
 
@@ -877,7 +866,7 @@ impl Channel {
         let privkey = derive_private_revocation_key(
             &self.secp_ctx,
             revocation_secret,
-            self.keys.revocation_base_key(),
+            &self.keys.revocation_base_key,
         )
         .map_err(|_| Status::internal("failed to derive key"))?;
 
@@ -894,7 +883,7 @@ impl Channel {
         (
             self.secp_ctx
                 .sign(&encmsg, &self.get_node().get_node_secret()),
-            self.secp_ctx.sign(&encmsg, &self.keys.funding_key()),
+            self.secp_ctx.sign(&encmsg, &self.keys.funding_key),
         )
     }
 
@@ -1019,7 +1008,7 @@ impl Channel {
 
     /// Phase 1
     pub fn sign_counterparty_commitment_tx(
-        &self,
+        &mut self,
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
         remote_per_commitment_point: &PublicKey,
@@ -1072,7 +1061,7 @@ impl Channel {
         let vstate = ValidatorState { current_height: 0 };
         validator
             .validate_commitment_tx(
-                &self.keys.state.lock().unwrap(),
+                &self.enforcement_state,
                 commitment_number,
                 &remote_per_commitment_point,
                 &self.setup,
@@ -1128,11 +1117,11 @@ impl Channel {
 
         let point = recomposed_tx.trust().keys().per_commitment_point;
 
-        self.keys.set_next_counterparty_commit_num(commit_num + 1, point)?;
+        self.enforcement_state.set_next_counterparty_commit_num(commit_num + 1, point)?;
 
         // Sign the recomposed commitment.
         let sigs = self
-            .keys.inner()
+            .keys
             .sign_counterparty_commitment(&recomposed_tx, &self.secp_ctx)
             .map_err(|_| internal_error(format!("sign_counterparty_commitment failed")))?;
 
@@ -1288,7 +1277,7 @@ impl Channel {
         let state = ValidatorState { current_height: 0 };
         validator
             .validate_commitment_tx(
-                &self.keys.state.lock().unwrap(),
+                &self.enforcement_state,
                 commitment_number,
                 commitment_point,
                 &self.setup,
@@ -1349,7 +1338,7 @@ impl Channel {
     /// method advances the expected next holder commitment number in
     /// the signer's state.
     pub fn validate_holder_commitment_tx(
-        &self,
+        &mut self,
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
         commitment_number: u64,
@@ -1452,7 +1441,7 @@ impl Channel {
         }
 
         // Advance the local commitment number state.
-        self.keys
+        self.enforcement_state
             .set_next_holder_commit_num(commitment_number + 1)?;
 
         // These calls are guaranteed to pass the commitment_number
@@ -1475,7 +1464,7 @@ impl Channel {
     }
 
     pub fn validate_counterparty_revocation(
-        &self,
+        &mut self,
         revoke_num: u64,
         old_secret: &SecretKey,
     ) -> Result<(), Status> {
@@ -1488,12 +1477,9 @@ impl Channel {
 
         // TODO - need to store the revealed secret.
 
-        {
-            // Hold the state mutex for the entire operation, but release before the persist.
-            let mut estate = self.keys.state.lock().unwrap();
-            validator.validate_counterparty_revocation(&estate, revoke_num, old_secret)?;
-            estate.set_next_counterparty_revoke_num(revoke_num + 1)?;
-        }
+        let estate = &mut self.enforcement_state;
+        validator.validate_counterparty_revocation(&estate, revoke_num, old_secret)?;
+        estate.set_next_counterparty_revoke_num(revoke_num + 1)?;
 
         self.persist()?;
         Ok(())
@@ -1513,7 +1499,7 @@ impl Channel {
             .validator_factory
             .make_validator(self.network());
 
-        validator.validate_holder_commitment_tx(&self.keys, commitment_number)?;
+        validator.validate_holder_commitment_tx(&self.enforcement_state, commitment_number)?;
 
         let recomposed_tx = self.make_recomposed_holder_commitment_tx(
             tx,
@@ -1682,7 +1668,7 @@ impl Channel {
         let htlc_privkey = derive_private_key(
             &self.secp_ctx,
             &per_commitment_point,
-            &self.keys.htlc_base_key(),
+            &self.keys.htlc_base_key,
         )
         .map_err(|_| Status::internal("failed to derive key"))?;
 
@@ -1699,14 +1685,14 @@ impl Channel {
     ) -> Result<SecretKey, Status> {
         Ok(match commitment_point {
             Some(commitment_point) => {
-                derive_private_key(&self.secp_ctx, &commitment_point, &self.keys.payment_key())
+                derive_private_key(&self.secp_ctx, &commitment_point, &self.keys.payment_key)
                     .map_err(|err| {
                         Status::internal(format!("derive_private_key failed: {}", err))
                     })?
             }
             None => {
                 // option_static_remotekey in effect
-                self.keys.payment_key().clone()
+                self.keys.payment_key.clone()
             }
         })
     }
@@ -1881,16 +1867,17 @@ impl Node {
         }
 
         let channel_value_sat = 0; // Placeholder value, not known yet.
-        let inmem_keys = self.keys_manager.get_channel_keys_with_id(
+        let keys = self.keys_manager.get_channel_keys_with_id(
             channel_id,
             channel_nonce0.as_slice(),
             channel_value_sat,
         );
+
         let stub = ChannelStub {
             node: Arc::downgrade(arc_self),
             nonce: channel_nonce0,
             secp_ctx: Secp256k1::new(),
-            keys: EnforcingSigner::new(inmem_keys),
+            keys,
             id0: channel_id,
         };
         // TODO this clone is expensive
@@ -1918,12 +1905,11 @@ impl Node {
     ) -> Result<Arc<Mutex<ChannelSlot>>, ()> {
         let mut channels = self.channels.lock().unwrap();
         assert!(!channels.contains_key(&channel_id0));
-        let signer = self.keys_manager.get_channel_keys_with_id(
+        let mut keys = self.keys_manager.get_channel_keys_with_id(
             channel_id0,
             nonce.as_slice(),
             channel_value_sat,
         );
-        let mut enforcing_signer = EnforcingSigner::new_with_state(signer, enforcement_state);
 
         let slot = match channel_setup {
             None => {
@@ -1931,7 +1917,7 @@ impl Node {
                     node: Arc::downgrade(arc_self),
                     nonce,
                     secp_ctx: Secp256k1::new(),
-                    keys: enforcing_signer,
+                    keys,
                     id0: channel_id0,
                 };
                 // TODO this clone is expensive
@@ -1944,14 +1930,15 @@ impl Node {
                 let channel_transaction_parameters =
                     Node::channel_setup_to_channel_transaction_parameters(
                         &setup,
-                        enforcing_signer.inner().pubkeys(),
+                        keys.pubkeys(),
                     );
-                enforcing_signer.ready_channel(&channel_transaction_parameters);
+                keys.ready_channel(&channel_transaction_parameters);
                 let channel = Channel {
                     node: Arc::downgrade(arc_self),
                     nonce,
                     secp_ctx: Secp256k1::new(),
-                    keys: enforcing_signer,
+                    keys,
+                    enforcement_state,
                     setup,
                     id0: channel_id0,
                     id: channel_id,
@@ -2052,16 +2039,17 @@ impl Node {
                     channel_id0
                 ))),
             }?;
-            let mut inmem_keys = stub.channel_keys_with_channel_value(setup.channel_value_sat);
-            let holder_pubkeys = inmem_keys.pubkeys();
+            let mut keys = stub.channel_keys_with_channel_value(setup.channel_value_sat);
+            let holder_pubkeys = keys.pubkeys();
             let channel_transaction_parameters =
                 Node::channel_setup_to_channel_transaction_parameters(&setup, holder_pubkeys);
-            inmem_keys.ready_channel(&channel_transaction_parameters);
+            keys.ready_channel(&channel_transaction_parameters);
             Channel {
                 node: Weak::clone(&stub.node),
                 nonce: stub.nonce.clone(),
                 secp_ctx: stub.secp_ctx.clone(),
-                keys: EnforcingSigner::new(inmem_keys),
+                keys,
+                enforcement_state: EnforcementState::new(),
                 setup: setup.clone(),
                 id0: channel_id0,
                 id: opt_channel_id,

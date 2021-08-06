@@ -15,7 +15,7 @@ use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, Signature};
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip143;
 use bitcoin::{OutPoint, Script, SigHashType, Transaction, TxIn, TxOut};
-use lightning::chain::keysinterface::BaseSign;
+use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     get_revokeable_redeemscript, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
@@ -32,7 +32,6 @@ use crate::tx::script::{
 };
 use crate::util::crypto_utils::payload_for_p2wpkh;
 use crate::util::debug_utils::DebugPayload;
-use crate::util::enforcing_trait_impls::EnforcingSigner;
 use bitcoin::hashes::hex::ToHex;
 
 const MAX_DELAY: i64 = 1000;
@@ -282,12 +281,12 @@ pub fn build_commitment_tx(
 // Sign a Bitcoin commitment tx or a mutual-close tx
 pub(crate) fn sign_commitment(
     secp_ctx: &Secp256k1<All>,
-    keys: &EnforcingSigner,
+    keys: &InMemorySigner,
     counterparty_funding_pubkey: &PublicKey,
     tx: &Transaction,
     channel_value_sat: u64,
 ) -> Result<Signature, secp256k1::Error> {
-    let funding_key = keys.funding_key();
+    let funding_key = keys.funding_key;
     let funding_pubkey = keys.pubkeys().funding_pubkey;
     let channel_funding_redeemscript =
         make_funding_redeemscript(&funding_pubkey, &counterparty_funding_pubkey);
@@ -300,7 +299,7 @@ pub(crate) fn sign_commitment(
             SigHashType::All,
         )[..],
     )?;
-    Ok(secp_ctx.sign(&commitment_sighash, funding_key))
+    Ok(secp_ctx.sign(&commitment_sighash, &funding_key))
 }
 
 pub fn sort_outputs<T, C: Fn(&T, &T) -> cmp::Ordering>(
@@ -779,7 +778,7 @@ impl CommitmentInfo {
 
     fn handle_anchor_output(
         &mut self,
-        keys: &EnforcingSigner,
+        keys: &InMemorySigner,
         out: &TxOut,
         to_pubkey_data: Vec<u8>,
     ) -> Result<(), ValidationError> {
@@ -825,7 +824,7 @@ impl CommitmentInfo {
 
     pub fn handle_output(
         &mut self,
-        keys: &EnforcingSigner,
+        keys: &InMemorySigner,
         setup: &ChannelSetup,
         out: &TxOut,
         script_bytes: &[u8],

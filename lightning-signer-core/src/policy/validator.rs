@@ -5,7 +5,7 @@ use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
 
-use lightning::chain::keysinterface::BaseSign;
+use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
 };
@@ -16,7 +16,7 @@ use crate::tx::tx::{
     CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT, HTLC_TIMEOUT_TX_WEIGHT,
 };
 use crate::util::crypto_utils::payload_for_p2wsh;
-use crate::util::enforcing_trait_impls::{EnforcementState, EnforcingSigner};
+use crate::util::enforcing_trait_impls::EnforcementState;
 
 use super::error::{policy_error, ValidationError};
 use bitcoin::util::bip143::SigHashCache;
@@ -26,7 +26,7 @@ pub trait Validator {
     /// Phase 1 CommitmentInfo
     fn make_info(
         &self,
-        keys: &EnforcingSigner,
+        keys: &InMemorySigner,
         setup: &ChannelSetup,
         is_counterparty: bool,
         tx: &bitcoin::Transaction,
@@ -46,7 +46,7 @@ pub trait Validator {
 
     fn validate_holder_commitment_tx(
         &self,
-        keys: &EnforcingSigner,
+        enforcement_state: &EnforcementState,
         commit_num: u64,
     ) -> Result<(), ValidationError>;
 
@@ -238,7 +238,7 @@ impl SimpleValidator {
 impl Validator for SimpleValidator {
     fn make_info(
         &self,
-        keys: &EnforcingSigner,
+        keys: &InMemorySigner,
         setup: &ChannelSetup,
         is_counterparty: bool,
         tx: &bitcoin::Transaction,
@@ -373,16 +373,16 @@ impl Validator for SimpleValidator {
 
     fn validate_holder_commitment_tx(
         &self,
-        keys: &EnforcingSigner,
+        enforcement_state: &EnforcementState,
         commit_num: u64,
     ) -> Result<(), ValidationError> {
         // policy-v2-commitment-local-not-revoked
-        if commit_num + 2 <= keys.next_holder_commit_num() {
+        if commit_num + 2 <= enforcement_state.next_holder_commit_num {
             return Err(policy_error(format!(
                 "can't sign revoked commitment_number {}, \
                  next_holder_commit_num is {}",
                 commit_num,
-                keys.next_holder_commit_num()
+                enforcement_state.next_holder_commit_num
             )));
         };
         Ok(())
@@ -680,7 +680,7 @@ impl Validator for SimpleValidator {
                         }
 
                         // policy-v1-funding-initial-commitment-countersigned
-                        if chan.keys.next_holder_commit_num() != 1 {
+                        if chan.enforcement_state.next_holder_commit_num != 1 {
                             return Err(policy_error(format!(
                                 "initial holder commitment not validated",
                             )));
@@ -846,7 +846,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_test() {
         let validator = make_test_validator();
-        let keys = make_test_channel_keys();
+        let enforcement_state = EnforcementState::new();
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let vstate = make_test_validator_state();
@@ -855,7 +855,7 @@ mod tests {
         let info = make_counterparty_info(2_000_000, 900_000, delay, vec![], vec![]);
         assert!(validator
             .validate_commitment_tx(
-                &keys.state.lock().unwrap(),
+                &enforcement_state,
                 commit_num,
                 &commit_point,
                 &setup,
@@ -925,7 +925,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_shortage_test() {
         let validator = make_test_validator();
-        let keys = make_test_channel_keys();
+        let enforcement_state = EnforcementState::new();
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let state = make_test_validator_state();
@@ -934,7 +934,7 @@ mod tests {
         let info_bad = make_counterparty_info(2_000_000, 900_000 - 1, delay, vec![], vec![]);
         assert_policy_error!(
             validator.validate_commitment_tx(
-                &keys.state.lock().unwrap(),
+                &enforcement_state,
                 commit_num,
                 &commit_point,
                 &setup,
@@ -954,7 +954,7 @@ mod tests {
             payment_hash: PaymentHash([0; 32]),
             cltv_expiry: 1005,
         };
-        let keys = make_test_channel_keys();
+        let enforcement_state = EnforcementState::new();
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let state = make_test_validator_state();
@@ -963,7 +963,7 @@ mod tests {
         let info = make_counterparty_info(2_000_000, 800_000, delay, vec![htlc.clone()], vec![]);
         assert!(validator
             .validate_commitment_tx(
-                &keys.state.lock().unwrap(),
+                &enforcement_state,
                 commit_num,
                 &commit_point,
                 &setup,
@@ -976,7 +976,7 @@ mod tests {
             make_counterparty_info(2_000_000, 800_000 - 1, delay, vec![htlc.clone()], vec![]);
         assert_policy_error!(
             validator.validate_commitment_tx(
-                &keys.state.lock().unwrap(),
+                &enforcement_state,
                 commit_num,
                 &commit_point,
                 &setup,
@@ -991,7 +991,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_htlc_count_test() {
         let validator = make_test_validator();
-        let keys = make_test_channel_keys();
+        let enforcement_state = EnforcementState::new();
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let state = make_test_validator_state();
@@ -1001,7 +1001,7 @@ mod tests {
         let info_bad = make_counterparty_info(99_000_000, 900_000, delay, vec![], htlcs);
         assert_policy_error!(
             validator.validate_commitment_tx(
-                &keys.state.lock().unwrap(),
+                &enforcement_state,
                 commit_num,
                 &commit_point,
                 &setup,
@@ -1016,7 +1016,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_htlc_value_test() {
         let validator = make_test_validator();
-        let keys = make_test_channel_keys();
+        let enforcement_state = EnforcementState::new();
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let state = make_test_validator_state();
@@ -1032,7 +1032,7 @@ mod tests {
         let info_bad = make_counterparty_info(99_000_000, 900_000, delay, vec![], htlcs);
         assert_policy_error!(
             validator.validate_commitment_tx(
-                &keys.state.lock().unwrap(),
+                &enforcement_state,
                 commit_num,
                 &commit_point,
                 &setup,
@@ -1047,7 +1047,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_htlc_delay_test() {
         let validator = make_test_validator();
-        let keys = make_test_channel_keys();
+        let enforcement_state = EnforcementState::new();
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let state = make_test_validator_state();
@@ -1062,7 +1062,7 @@ mod tests {
         );
         assert!(validator
             .validate_commitment_tx(
-                &keys.state.lock().unwrap(),
+                &enforcement_state,
                 commit_num,
                 &commit_point,
                 &setup,
@@ -1080,7 +1080,7 @@ mod tests {
         );
         assert!(validator
             .validate_commitment_tx(
-                &keys.state.lock().unwrap(),
+                &enforcement_state,
                 commit_num,
                 &commit_point,
                 &setup,
@@ -1098,7 +1098,7 @@ mod tests {
         );
         assert_policy_error!(
             validator.validate_commitment_tx(
-                &keys.state.lock().unwrap(),
+                &enforcement_state,
                 commit_num,
                 &commit_point,
                 &setup,
@@ -1117,7 +1117,7 @@ mod tests {
         );
         assert_policy_error!(
             validator.validate_commitment_tx(
-                &keys.state.lock().unwrap(),
+                &enforcement_state,
                 commit_num,
                 &commit_point,
                 &setup,
