@@ -10,6 +10,7 @@ use crate::persist::model::{ChannelEntry, NodeEntry};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
+use lightning_signer::policy::validator::EnforcementState;
 
 /// A persister that uses the kv crate and JSON serialization for values.
 pub struct KVJsonPersister<'a> {
@@ -61,7 +62,6 @@ impl<'a> Persist for KVJsonPersister<'a> {
     // END NOT TESTED
 
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()> {
-        let enforcing_keys = &stub.keys;
         let channel_value_satoshis = 0; // TODO not known yet
 
         self.channel_bucket
@@ -72,7 +72,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
                     channel_value_satoshis,
                     channel_setup: None,
                     id: None,
-                    enforcement_state: enforcing_keys.enforcement_state(),
+                    enforcement_state: EnforcementState::new(),
                 };
                 if txn.get(id.clone()).unwrap().is_some() {
                     // BEGIN NOT TESTED
@@ -90,7 +90,6 @@ impl<'a> Persist for KVJsonPersister<'a> {
     }
 
     fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), ()> {
-        let enforcing_keys = &channel.keys;
         let channel_value_satoshis = channel.setup.channel_value_sat;
 
         self.channel_bucket
@@ -101,7 +100,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
                     channel_value_satoshis,
                     channel_setup: Some(channel.setup.clone()),
                     id: channel.id,
-                    enforcement_state: enforcing_keys.enforcement_state(),
+                    enforcement_state: channel.enforcement_state.clone(),
                 };
                 if txn.get(node_channel_id.clone()).unwrap().is_none() {
                     // BEGIN NOT TESTED
@@ -175,7 +174,6 @@ mod tests {
     use lightning::util::ser::Writeable;
     use lightning_signer::node::{ChannelSlot, Node};
     use lightning_signer::signer::multi_signer::channel_nonce_to_id;
-    use lightning_signer::util::enforcing_trait_impls::EnforcingSigner;
     use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
 
     use crate::persist::ser_util::VecWriter;
@@ -218,7 +216,7 @@ mod tests {
 
                 let guard = slot.lock().unwrap();
                 if let ChannelSlot::Stub(s) = &*guard {
-                    check_signer_roundtrip(&stub.keys, &s.keys.inner());
+                    check_signer_roundtrip(&stub.keys, &s.keys);
                 } else {
                     panic!() // NOT TESTED
                 }
@@ -244,7 +242,7 @@ mod tests {
                 assert!(node.channels().contains_key(&channel_id1));
                 let guard = slot.lock().unwrap();
                 if let ChannelSlot::Ready(s) = &*guard {
-                    check_signer_roundtrip(&channel.keys, &s.keys.inner());
+                    check_signer_roundtrip(&channel.keys, &s.keys);
                 } else {
                     panic!() // NOT TESTED
                 }
@@ -268,10 +266,9 @@ mod tests {
     }
 
     fn check_signer_roundtrip(
-        existing_enforcing_signer: &EnforcingSigner,
+        existing_signer: &InMemorySigner,
         signer: &InMemorySigner,
     ) {
-        let existing_signer = existing_enforcing_signer.inner();
         let mut existing_w = VecWriter(Vec::new());
         existing_signer.write(&mut existing_w).unwrap();
         let mut w = VecWriter(Vec::new());

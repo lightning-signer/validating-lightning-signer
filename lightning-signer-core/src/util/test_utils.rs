@@ -35,7 +35,6 @@ use crate::signer::multi_signer::{channel_nonce_to_id, MultiSigner, SpendType};
 use crate::signer::my_keys_manager::KeyDerivationStyle;
 use crate::tx::tx::{sort_outputs, HTLCInfo2};
 use crate::util::crypto_utils::{payload_for_p2wpkh, payload_for_p2wsh};
-use crate::util::enforcing_trait_impls::EnforcingSigner;
 use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
 use bitcoin::hashes::hex::ToHex;
@@ -239,7 +238,7 @@ pub fn make_test_channel_setup() -> ChannelSetup {
     }
 }
 
-pub fn make_test_channel_keys() -> EnforcingSigner {
+pub fn make_test_channel_keys() -> InMemorySigner {
     let secp_ctx = Secp256k1::signing_only();
     let channel_value_sat = 3_000_000;
     let mut inmemkeys = InMemorySigner::new(
@@ -267,7 +266,7 @@ pub fn make_test_channel_keys() -> EnforcingSigner {
             index: 0,
         }),
     });
-    EnforcingSigner::new(inmemkeys)
+    inmemkeys
 }
 
 pub fn init_node(signer: &MultiSigner, node_config: NodeConfig, seedstr: &str) -> PublicKey {
@@ -402,7 +401,7 @@ pub struct TestNodeContext {
 pub struct TestChannelContext {
     pub channel_id: ChannelId,
     pub setup: ChannelSetup,
-    pub counterparty_keys: EnforcingSigner,
+    pub counterparty_keys: InMemorySigner,
 }
 
 // Bundles funding tx context used for unit tests.
@@ -474,7 +473,7 @@ pub fn test_chan_ctx(
         .signer
         .with_channel_base(&node_ctx.node_id, &channel_id, |stub| {
             // These need to match make_test_counterparty_points() above ...
-            let mut cpinmemkeys = InMemorySigner::new(
+            let mut cpkeys = InMemorySigner::new(
                 &sign_ctx.secp_ctx,
                 make_test_privkey(104), // funding_key
                 make_test_privkey(100), // revocation_base_key
@@ -486,8 +485,8 @@ pub fn test_chan_ctx(
                 [0u8; 32],              // Key derivation parameters
             );
             // This needs to match make_test_channel_setup above.
-            cpinmemkeys.ready_channel(&ChannelTransactionParameters {
-                holder_pubkeys: cpinmemkeys.pubkeys().clone(),
+            cpkeys.ready_channel(&ChannelTransactionParameters {
+                holder_pubkeys: cpkeys.pubkeys().clone(),
                 holder_selected_contest_delay: 7,
                 is_outbound_from_holder: false,
                 counterparty_parameters: Some(CounterpartyChannelTransactionParameters {
@@ -499,7 +498,7 @@ pub fn test_chan_ctx(
                     index: 0,
                 }),
             });
-            Ok(EnforcingSigner::new(cpinmemkeys))
+            Ok(cpkeys)
         })
         .unwrap();
     TestChannelContext {
@@ -518,7 +517,7 @@ pub fn set_next_holder_commit_num_for_testing(
     sign_ctx
         .signer
         .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
-            chan.keys.set_next_holder_commit_num_for_testing(commit_num);
+            chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
             Ok(())
         })
         .unwrap();
@@ -534,8 +533,7 @@ pub fn set_next_counterparty_commit_num_for_testing(
     sign_ctx
         .signer
         .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
-            chan.keys
-                .set_next_counterparty_commit_num_for_testing(commit_num, current_point);
+            chan.enforcement_state.set_next_counterparty_commit_num_for_testing(commit_num, current_point);
             Ok(())
         })
         .unwrap();
@@ -550,8 +548,7 @@ pub fn set_next_counterparty_revoke_num_for_testing(
     sign_ctx
         .signer
         .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
-            chan.keys
-                .set_next_counterparty_revoke_num_for_testing(revoke_num);
+            chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(revoke_num);
             Ok(())
         })
         .unwrap();
@@ -678,8 +675,7 @@ pub fn synthesize_ready_channel(
     sign_ctx
         .signer
         .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
-            chan.keys
-                .set_next_holder_commit_num_for_testing(next_holder_commit_num);
+            chan.enforcement_state.set_next_holder_commit_num_for_testing(next_holder_commit_num);
             Ok(())
         })
         .expect("synthesized channel");
@@ -851,12 +847,12 @@ pub fn counterparty_sign_holder_commitment(
                 &chan.keys.pubkeys().funding_pubkey,
                 &chan.keys.counterparty_pubkeys().funding_pubkey,
             );
-            let tx = &commit_tx_ctx.tx.as_ref().unwrap();
+            let tx = commit_tx_ctx.tx.as_ref().unwrap();
             let trusted_tx = tx.trust();
             let keys = trusted_tx.keys();
             let built_tx = trusted_tx.built_transaction();
             let commitment_sig = built_tx.sign(
-                &chan_ctx.counterparty_keys.funding_key(),
+                &chan_ctx.counterparty_keys.funding_key,
                 &funding_redeemscript,
                 chan_ctx.setup.channel_value_sat,
                 &sign_ctx.secp_ctx,
@@ -872,7 +868,7 @@ pub fn counterparty_sign_holder_commitment(
             let counterparty_htlc_key = derive_private_key(
                 &sign_ctx.secp_ctx,
                 &per_commitment_point,
-                &chan_ctx.counterparty_keys.htlc_base_key(),
+                &chan_ctx.counterparty_keys.htlc_base_key,
             )
             .expect("counterparty_htlc_key");
 
@@ -932,12 +928,10 @@ pub fn validate_holder_commitment(
             // need to temporarily set the channel's
             // next_holder_commit_num while fetching the
             // commitment_point and then restore it.
-            let save_commit_num = chan.keys.next_holder_commit_num();
-            chan.keys
-                .set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
+            let save_commit_num = chan.enforcement_state.next_holder_commit_num;
+            chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
             let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
-            chan.keys
-                .set_next_holder_commit_num_for_testing(save_commit_num);
+            chan.enforcement_state.set_next_holder_commit_num_for_testing(save_commit_num);
 
             let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 
@@ -999,12 +993,10 @@ pub fn sign_holder_commitment(
             // need to temporarily set the channel's
             // next_holder_commit_num while fetching the
             // commitment_point and then restore it.
-            let save_commit_num = chan.keys.next_holder_commit_num();
-            chan.keys
-                .set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
+            let save_commit_num = chan.enforcement_state.next_holder_commit_num;
+            chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
             let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
-            chan.keys
-                .set_next_holder_commit_num_for_testing(save_commit_num);
+            chan.enforcement_state.set_next_holder_commit_num_for_testing(save_commit_num);
 
             let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 

@@ -7,7 +7,6 @@ pub mod crypto_utils;
 pub mod macro_logger;
 #[macro_use]
 pub mod debug_utils;
-pub mod enforcing_trait_impls;
 pub mod invoice_utils;
 pub mod log_utils;
 #[cfg(feature = "test_utils")]

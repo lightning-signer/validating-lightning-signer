@@ -13,7 +13,7 @@ use lightning_signer::node::{ChannelId, ChannelSetup};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
-use lightning_signer::util::enforcing_trait_impls::EnforcementState;
+use lightning_signer::policy::validator::EnforcementState;
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
