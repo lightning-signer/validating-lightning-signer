@@ -1123,10 +1123,18 @@ impl Channel {
         // - policy-v1-commitment-htlc-pubkey
         // - policy-v1-commitment-delayed-pubkey
 
+        // Convert from backwards counting.
+        let commit_num = INITIAL_COMMITMENT_NUMBER - recomposed_tx.trust().commitment_number();
+
+        let point = recomposed_tx.trust().keys().per_commitment_point;
+
+        self.keys.set_next_counterparty_commit_num(commit_num + 1, point)?;
+
         // Sign the recomposed commitment.
         let sigs = self
-            .keys
-            .sign_counterparty_commitment_with_result(&recomposed_tx, &self.secp_ctx)?;
+            .keys.inner()
+            .sign_counterparty_commitment(&recomposed_tx, &self.secp_ctx)
+            .map_err(|_| internal_error(format!("sign_counterparty_commitment failed")))?;
 
         self.persist()?;
 

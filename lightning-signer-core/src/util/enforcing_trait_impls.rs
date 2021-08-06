@@ -13,14 +13,11 @@ use lightning::chain::keysinterface::BaseSign;
 use lightning::ln;
 use lightning::ln::chan_utils::{
     ChannelTransactionParameters, CommitmentTransaction, HolderCommitmentTransaction,
-    TxCreationKeys,
 };
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
 use ln::msgs;
-
-use crate::util::INITIAL_COMMITMENT_NUMBER;
 
 use crate::policy::error::{policy_error, ValidationError};
 
@@ -32,8 +29,6 @@ pub struct EnforcingSigner {
     inner: InMemorySigner,
     pub state: Arc<Mutex<EnforcementState>>,
 }
-
-pub const NUM_COUNTERPARTY_POINTS: usize = 2;
 
 #[derive(Clone, Debug)]
 pub struct EnforcementState {
@@ -281,30 +276,6 @@ impl EnforcingSigner {
         state.next_counterparty_revoke_num = num;
     }
 
-    // BEGIN NOT TESTED
-    #[allow(dead_code)]
-    fn check_keys(&self, secp_ctx: &Secp256k1<All>, keys: &TxCreationKeys) {
-        // FIXME
-        let revocation_base = PublicKey::from_secret_key(secp_ctx, &self.revocation_base_key());
-        let htlc_base = PublicKey::from_secret_key(secp_ctx, &self.htlc_base_key());
-
-        let counterparty_pubkeys = self.counterparty_pubkeys();
-
-        let keys_expected = TxCreationKeys::derive_new(
-            secp_ctx,
-            &keys.per_commitment_point,
-            &counterparty_pubkeys.delayed_payment_basepoint,
-            &counterparty_pubkeys.htlc_basepoint,
-            &revocation_base,
-            &htlc_base,
-        )
-        .unwrap();
-        if keys != &keys_expected {
-            panic!("derived different per-tx keys")
-        }
-    }
-    // END NOT TESTED
-
     // TODO leaking secrets below.
     // We don't take advantage of the signing operations in InMemorySigner because that
     // requires phase 2. In particular, the commitment and HTLCs must be signed in one operation.
@@ -322,28 +293,6 @@ impl EnforcingSigner {
     }
     pub fn htlc_base_key(&self) -> &SecretKey {
         &self.inner.htlc_base_key
-    }
-
-    // BaseSign doesn't provide useful result signatures ...
-    pub fn sign_counterparty_commitment_with_result(
-        &self,
-        commitment_tx: &CommitmentTransaction,
-        secp_ctx: &Secp256k1<All>,
-    ) -> Result<(Signature, Vec<Signature>), ValidationError> {
-        // FIXME bypass while integrating with c-lightning
-        // self.check_keys(secp_ctx, keys);
-
-        // Convert from backwards counting.
-        let commit_num = INITIAL_COMMITMENT_NUMBER - commitment_tx.trust().commitment_number();
-
-        let point = commitment_tx.trust().keys().per_commitment_point;
-
-        self.set_next_counterparty_commit_num(commit_num + 1, point)?;
-
-        Ok(self
-            .inner
-            .sign_counterparty_commitment(commitment_tx, secp_ctx)
-            .map_err(|_| policy_error(format!("sign_counterparty_commitment failed")))?)
     }
 }
 
@@ -371,11 +320,7 @@ impl BaseSign for EnforcingSigner {
         commitment_tx: &CommitmentTransaction,
         secp_ctx: &Secp256k1<All>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
-        self.sign_counterparty_commitment_with_result(commitment_tx, secp_ctx)
-            .map_err(|err| {
-                debug!("sign_counterparty_commitment_with_result failed: {}", err);
-                ()
-            })
+        self.inner.sign_counterparty_commitment(commitment_tx, secp_ctx)
     }
 
     fn sign_holder_commitment_and_htlcs(
