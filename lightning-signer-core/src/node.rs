@@ -1377,7 +1377,7 @@ impl Channel {
                     sig_hash_type,
                 )[..],
         )
-        .map_err(|ve| invalid_argument(format!("sighash failed: {}", ve)))?;
+        .map_err(|ve| internal_error(format!("sighash failed: {}", ve)))?;
 
         let secp_ctx = Secp256k1::new();
         secp_ctx
