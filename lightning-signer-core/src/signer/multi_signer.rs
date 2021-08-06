@@ -271,7 +271,7 @@ mod tests {
         derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
         payload_for_p2wpkh, signature_to_bitcoin_vec,
     };
-    use crate::util::enforcing_trait_impls::EnforcementState;
+    use crate::policy::validator::EnforcementState;
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::*;
 

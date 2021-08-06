@@ -50,7 +50,7 @@ use crate::util::crypto_utils::{
     signature_to_bitcoin_vec,
 };
 use crate::util::debug_utils::DebugHTLCOutputInCommitment;
-use crate::util::enforcing_trait_impls::EnforcementState;
+use crate::policy::validator::EnforcementState;
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
 use bitcoin::hashes::hex::ToHex;
