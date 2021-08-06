@@ -195,9 +195,8 @@ impl SimpleValidator {
 // TODO - policy-v1-commitment-anchor-to-local
 // TODO - policy-v1-commitment-anchor-to-remote
 // TODO - policy-v1-commitment-anchors-not-when-off
-// TODO - policy-v1-commitment-htlc-delay-range
+// TODO - policy-v1-commitment-htlc-cltv-range
 // TODO - policy-v1-commitment-outputs-trimmed
-// TODO - policy-v1-commitment-payment-pubkey
 // TODO - policy-v2-commitment-fee-range
 // TODO - policy-v2-commitment-htlc-count-limit
 // TODO - policy-v2-commitment-htlc-inflight-limit
@@ -205,15 +204,14 @@ impl SimpleValidator {
 // TODO - policy-v2-commitment-htlc-received-spends-active-utxo
 // TODO - policy-v2-commitment-htlc-routing-balance
 // TODO - policy-v2-commitment-initial-funding-value
-// TODO - policy-v2-commitment-previous-revoked
-// TODO - policy-v2-commitment-retry-same
+// TODO - policy-v2-commitment-previous-revoked (still need secret storage)
 // TODO - policy-v2-commitment-spends-active-utxo
 
 // not yet implemented
 // TODO - policy-v2-revoke-not-closed
 
 // not yet implemented
-// TODO - policy-v2-htlc-delay-range
+// TODO - policy-v2-htlc-cltv-range
 
 // not yet implemented
 // TODO - policy-v2-mutual-destination-whitelisted
