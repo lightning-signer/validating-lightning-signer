@@ -271,6 +271,7 @@ pub struct EnforcementStateDef {
     pub next_counterparty_revoke_num: u64,
     pub current_counterparty_point: Option<PublicKey>,
     pub previous_counterparty_point: Option<PublicKey>,
+    pub mutual_close_signed: bool,
 }
 
 #[derive(Deserialize)]

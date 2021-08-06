@@ -312,6 +312,13 @@ impl ChannelBase for Channel {
             ))
             .into());
         }
+        // policy-v2-revoke-not-closed
+        if self.enforcement_state.mutual_close_signed {
+            return Err(policy_error(format!(
+                "get_per_commitment_secret: mutual close already signed"
+            ))
+            .into());
+        }
         let secret = self
             .keys
             .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
@@ -1519,18 +1526,20 @@ impl Channel {
 
     /// Phase 1
     pub fn sign_mutual_close_tx(
-        &self,
+        &mut self,
         tx: &bitcoin::Transaction,
         funding_amount_sat: u64,
     ) -> Result<Signature, Status> {
-        sign_commitment(
+        let sig = sign_commitment(
             &self.secp_ctx,
             &self.keys,
             &self.setup.counterparty_points.funding_pubkey,
             &tx,
             funding_amount_sat,
         )
-        .map_err(|_| Status::internal("failed to sign"))
+        .map_err(|_| Status::internal("failed to sign"))?;
+        self.enforcement_state.mutual_close_signed = true;
+        Ok(sig)
     }
 
     /// Phase 1

@@ -3957,7 +3957,6 @@ mod tests {
         );
     }
 
-    // TODO - same as sign_mutual_close_tx_test
     #[test]
     fn sign_holder_commitment_tx_test() {
         let signer = MultiSigner::new();
@@ -4039,7 +4038,7 @@ mod tests {
         );
     }
 
-    // TODO - same as sign_commitment_tx_test
+    // policy-v2-revoke-not-closed
     #[test]
     fn sign_mutual_close_tx_test() {
         let signer = MultiSigner::new();
@@ -4048,12 +4047,16 @@ mod tests {
             init_node_and_channel(&signer, TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
         let counterparty_points = make_test_counterparty_points();
+        let commit_num = 23;
 
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let commit_num = 23;
                 chan.enforcement_state
                     .set_next_holder_commit_num_for_testing(commit_num);
+
+                // Secrets can be released before the mutual close.
+                assert!(chan.get_per_commitment_secret(commit_num - 2).is_ok());
+
                 let commitment_tx = chan
                     .make_holder_commitment_tx(commit_num, 0, 2_000_000, 1_000_000, vec![])
                     .expect("holder_commitment_tx");
@@ -4087,6 +4090,14 @@ mod tests {
             &funding_pubkey,
             setup.channel_value_sat,
             &channel_funding_redeemscript,
+        );
+
+        // Can't release secrets anymore.
+        assert_failed_precondition_err!(
+            signer.with_ready_channel(&node_id, &channel_id, |chan| {
+                chan.get_per_commitment_secret(commit_num - 2)
+            }),
+            "policy failure: get_per_commitment_secret: mutual close already signed"
         );
     }
 

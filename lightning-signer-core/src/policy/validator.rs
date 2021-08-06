@@ -208,9 +208,6 @@ impl SimpleValidator {
 // TODO - policy-v2-commitment-spends-active-utxo
 
 // not yet implemented
-// TODO - policy-v2-revoke-not-closed
-
-// not yet implemented
 // TODO - policy-v2-htlc-cltv-range
 
 // not yet implemented
@@ -725,6 +722,7 @@ pub struct EnforcementState {
     pub next_counterparty_revoke_num: u64,
     pub current_counterparty_point: Option<PublicKey>, // next_counterparty_commit_num - 1
     pub previous_counterparty_point: Option<PublicKey>, // next_counterparty_commit_num - 2
+    pub mutual_close_signed: bool,
 }
 
 impl EnforcementState {
@@ -735,6 +733,7 @@ impl EnforcementState {
             next_counterparty_revoke_num: 0,
             current_counterparty_point: None,
             previous_counterparty_point: None,
+            mutual_close_signed: false,
         }
     }
 
