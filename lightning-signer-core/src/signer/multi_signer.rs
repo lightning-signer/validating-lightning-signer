@@ -266,12 +266,12 @@ mod tests {
 
     use crate::node::{ChannelSetup, CommitmentType};
     use crate::policy::error::policy_error;
+    use crate::policy::validator::EnforcementState;
     use crate::tx::tx::{build_close_tx, HTLCInfo2, ANCHOR_SAT};
     use crate::util::crypto_utils::{
         derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
         payload_for_p2wpkh, signature_to_bitcoin_vec,
     };
-    use crate::policy::validator::EnforcementState;
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::*;
 
@@ -619,10 +619,11 @@ mod tests {
                 let mut htlcs = vec![];
 
                 // Set the commit_num and revoke_num.
-                chan.enforcement_state.set_next_counterparty_commit_num_for_testing(
-                    commit_num,
-                    make_test_pubkey(0x10),
-                );
+                chan.enforcement_state
+                    .set_next_counterparty_commit_num_for_testing(
+                        commit_num,
+                        make_test_pubkey(0x10),
+                    );
                 chan.enforcement_state
                     .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
 
@@ -818,10 +819,11 @@ mod tests {
                 let feerate_per_kw = 0;
 
                 // Set the commit_num and revoke_num.
-                chan.enforcement_state.set_next_counterparty_commit_num_for_testing(
-                    commit_num,
-                    make_test_pubkey(0x10),
-                );
+                chan.enforcement_state
+                    .set_next_counterparty_commit_num_for_testing(
+                        commit_num,
+                        make_test_pubkey(0x10),
+                    );
                 chan.enforcement_state
                     .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
 
@@ -986,10 +988,11 @@ mod tests {
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 // Set the commit_num and revoke_num.
-                chan.enforcement_state.set_next_counterparty_commit_num_for_testing(
-                    commit_num,
-                    make_test_pubkey(0x10),
-                );
+                chan.enforcement_state
+                    .set_next_counterparty_commit_num_for_testing(
+                        commit_num,
+                        make_test_pubkey(0x10),
+                    );
                 chan.enforcement_state
                     .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
 
@@ -1059,7 +1062,8 @@ mod tests {
         let to_counterparty_value_sat = 2_000_000;
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
+                chan.enforcement_state
+                    .set_next_holder_commit_num_for_testing(commit_num);
 
                 let commitment_tx = chan
                     .make_holder_commitment_tx(
@@ -2933,7 +2937,8 @@ mod tests {
 
         let (per_commitment_point, txkeys, to_self_delay) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                chan.enforcement_state.set_next_holder_commit_num_for_testing(n);
+                chan.enforcement_state
+                    .set_next_holder_commit_num_for_testing(n);
                 let per_commitment_point = chan.get_per_commitment_point(n).expect("point");
                 let txkeys = chan
                     .make_holder_tx_keys(&per_commitment_point)
@@ -3052,7 +3057,8 @@ mod tests {
 
         let per_commitment_point = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                chan.enforcement_state.set_next_holder_commit_num_for_testing(n);
+                chan.enforcement_state
+                    .set_next_holder_commit_num_for_testing(n);
                 chan.get_per_commitment_point(n)
             })
             .expect("point");
@@ -3240,7 +3246,8 @@ mod tests {
 
         let (sig, per_commitment_point, htlc_tx, htlc_redeemscript) =
             signer.with_ready_channel(&node_id, &channel_id, |chan| {
-                chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
+                chan.enforcement_state
+                    .set_next_holder_commit_num_for_testing(commit_num);
                 let mut channel_parameters = chan.make_channel_parameters();
 
                 // Mutate the channel parameters
@@ -3981,7 +3988,8 @@ mod tests {
                 let to_countersignatory = 1_000_000;
                 let mut htlcs = vec![];
 
-                chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
+                chan.enforcement_state
+                    .set_next_holder_commit_num_for_testing(commit_num);
 
                 let parameters = channel_parameters.as_holder_broadcastable();
 
@@ -4058,7 +4066,8 @@ mod tests {
         let tx = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let commit_num = 23;
-                chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
+                chan.enforcement_state
+                    .set_next_holder_commit_num_for_testing(commit_num);
                 let commitment_tx = chan
                     .make_holder_commitment_tx(commit_num, 0, 2_000_000, 1_000_000, vec![])
                     .expect("holder_commitment_tx");
@@ -4122,9 +4131,11 @@ mod tests {
 
         let (per_commitment_point, per_commitment_secret) = signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                chan.enforcement_state.set_next_holder_commit_num_for_testing(n);
+                chan.enforcement_state
+                    .set_next_holder_commit_num_for_testing(n);
                 let point = chan.get_per_commitment_point(n)?;
-                chan.enforcement_state.set_next_holder_commit_num_for_testing(n + 2);
+                chan.enforcement_state
+                    .set_next_holder_commit_num_for_testing(n + 2);
                 let secret = chan.get_per_commitment_secret(n)?;
                 Ok((point, secret))
             })
@@ -4594,7 +4605,8 @@ mod tests {
             let to_broadcaster = 1_999_997;
             let to_countersignatory = 1_000_000;
 
-            chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
+            chan.enforcement_state
+                .set_next_holder_commit_num_for_testing(commit_num);
 
             // Mutate the signer state.
             statemut(&mut chan.enforcement_state);
@@ -5090,10 +5102,11 @@ mod tests {
 
             chan.enforcement_state
                 .set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM - 1);
-            chan.enforcement_state.set_next_counterparty_commit_num_for_testing(
-                REV_COMMIT_NUM,
-                make_test_pubkey(0x10),
-            );
+            chan.enforcement_state
+                .set_next_counterparty_commit_num_for_testing(
+                    REV_COMMIT_NUM,
+                    make_test_pubkey(0x10),
+                );
 
             // commit 21: revoked
             // commit 22: current  <- next revoke
@@ -5183,7 +5196,10 @@ mod tests {
             },
             |chan| {
                 // Channel state should advance.
-                assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM + 1);
+                assert_eq!(
+                    chan.enforcement_state.next_counterparty_revoke_num,
+                    REV_COMMIT_NUM + 1
+                );
             }
         )
         .is_ok());
@@ -5200,7 +5216,10 @@ mod tests {
             },
             |chan| {
                 // Channel state should stay where we advanced it..
-                assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM + 1);
+                assert_eq!(
+                    chan.enforcement_state.next_counterparty_revoke_num,
+                    REV_COMMIT_NUM + 1
+                );
             }
         )
         .is_ok());
@@ -5217,7 +5236,10 @@ mod tests {
                 },
                 |chan| {
                     // Channel state should stay where we advanced it..
-                    assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM + 2);
+                    assert_eq!(
+                        chan.enforcement_state.next_counterparty_revoke_num,
+                        REV_COMMIT_NUM + 2
+                    );
                 }
             ),
             "policy failure: \
@@ -5236,7 +5258,10 @@ mod tests {
                 },
                 |chan| {
                     // Channel state should stay where we set it..
-                    assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM - 1);
+                    assert_eq!(
+                        chan.enforcement_state.next_counterparty_revoke_num,
+                        REV_COMMIT_NUM - 1
+                    );
                 }
             ),
             "policy failure: \
@@ -5254,7 +5279,10 @@ mod tests {
                 },
                 |chan| {
                     // Channel state should NOT advance.
-                    assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM);
+                    assert_eq!(
+                        chan.enforcement_state.next_counterparty_revoke_num,
+                        REV_COMMIT_NUM
+                    );
                 }
             ),
             "policy failure: revocation commit point mismatch for commit_num 23: \
@@ -5380,7 +5408,10 @@ mod tests {
             },
             |chan| {
                 // Channel state should advance.
-                assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 1);
+                assert_eq!(
+                    chan.enforcement_state.next_holder_commit_num,
+                    HOLD_COMMIT_NUM + 1
+                );
             }
         )
         .is_ok());
@@ -5397,7 +5428,10 @@ mod tests {
             },
             |chan| {
                 // Channel state should stay where we advanced it..
-                assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 1);
+                assert_eq!(
+                    chan.enforcement_state.next_holder_commit_num,
+                    HOLD_COMMIT_NUM + 1
+                );
             }
         )
         .is_ok());
@@ -5414,7 +5448,10 @@ mod tests {
                 },
                 |chan| {
                     // Channel state should stay where we advanced it..
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 2);
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM + 2
+                    );
                 }
             ),
             "policy failure: invalid next_holder_commit_num progression: 45 to 44"
@@ -5432,7 +5469,10 @@ mod tests {
                 },
                 |chan| {
                     // Channel state should stay where we set it..
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM - 1);
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM - 1
+                    );
                 }
             ),
             "policy failure: get_per_commitment_point: \

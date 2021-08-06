@@ -517,7 +517,8 @@ pub fn set_next_holder_commit_num_for_testing(
     sign_ctx
         .signer
         .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
-            chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
+            chan.enforcement_state
+                .set_next_holder_commit_num_for_testing(commit_num);
             Ok(())
         })
         .unwrap();
@@ -533,7 +534,8 @@ pub fn set_next_counterparty_commit_num_for_testing(
     sign_ctx
         .signer
         .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
-            chan.enforcement_state.set_next_counterparty_commit_num_for_testing(commit_num, current_point);
+            chan.enforcement_state
+                .set_next_counterparty_commit_num_for_testing(commit_num, current_point);
             Ok(())
         })
         .unwrap();
@@ -548,7 +550,8 @@ pub fn set_next_counterparty_revoke_num_for_testing(
     sign_ctx
         .signer
         .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
-            chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(revoke_num);
+            chan.enforcement_state
+                .set_next_counterparty_revoke_num_for_testing(revoke_num);
             Ok(())
         })
         .unwrap();
@@ -675,7 +678,8 @@ pub fn synthesize_ready_channel(
     sign_ctx
         .signer
         .with_ready_channel(&node_ctx.node_id, &chan_ctx.channel_id, |chan| {
-            chan.enforcement_state.set_next_holder_commit_num_for_testing(next_holder_commit_num);
+            chan.enforcement_state
+                .set_next_holder_commit_num_for_testing(next_holder_commit_num);
             Ok(())
         })
         .expect("synthesized channel");
@@ -929,9 +933,11 @@ pub fn validate_holder_commitment(
             // next_holder_commit_num while fetching the
             // commitment_point and then restore it.
             let save_commit_num = chan.enforcement_state.next_holder_commit_num;
-            chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
+            chan.enforcement_state
+                .set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
             let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
-            chan.enforcement_state.set_next_holder_commit_num_for_testing(save_commit_num);
+            chan.enforcement_state
+                .set_next_holder_commit_num_for_testing(save_commit_num);
 
             let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 
@@ -994,9 +1000,11 @@ pub fn sign_holder_commitment(
             // next_holder_commit_num while fetching the
             // commitment_point and then restore it.
             let save_commit_num = chan.enforcement_state.next_holder_commit_num;
-            chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
+            chan.enforcement_state
+                .set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
             let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
-            chan.enforcement_state.set_next_holder_commit_num_for_testing(save_commit_num);
+            chan.enforcement_state
+                .set_next_holder_commit_num_for_testing(save_commit_num);
 
             let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 

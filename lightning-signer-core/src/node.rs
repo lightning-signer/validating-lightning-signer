@@ -2,11 +2,11 @@ use crate::prelude::*;
 use crate::sync::{Arc, Weak};
 use log::{debug, info};
 
+use core::any::Any;
 use core::convert::TryFrom;
 use core::fmt::{self, Debug, Error, Formatter};
 use core::str::FromStr;
 use core::time::Duration;
-use core::any::Any;
 
 use bitcoin;
 use bitcoin::blockdata::constants::genesis_block;
@@ -36,6 +36,7 @@ use lightning::ln::PaymentHash;
 use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
 use crate::policy::error::policy_error;
+use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{
     SimpleValidatorFactory, Validator, ValidatorFactory, ValidatorState,
 };
@@ -50,7 +51,6 @@ use crate::util::crypto_utils::{
     signature_to_bitcoin_vec,
 };
 use crate::util::debug_utils::DebugHTLCOutputInCommitment;
-use crate::policy::validator::EnforcementState;
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
 use bitcoin::hashes::hex::ToHex;
@@ -283,7 +283,8 @@ impl ChannelBase for Channel {
     // TODO move out to impl Channel {} once LDK workaround is removed
     #[cfg(feature = "test_utils")]
     fn set_next_holder_commit_num_for_testing(&mut self, num: u64) {
-        self.enforcement_state.set_next_holder_commit_num_for_testing(num);
+        self.enforcement_state
+            .set_next_holder_commit_num_for_testing(num);
     }
 
     fn get_channel_basepoints(&self) -> ChannelPublicKeys {
@@ -361,14 +362,19 @@ impl ChannelStub {
 
 impl Channel {
     #[cfg(feature = "test_utils")]
-    pub fn set_next_counterparty_commit_num_for_testing(&mut self, num: u64, current_point: PublicKey) {
+    pub fn set_next_counterparty_commit_num_for_testing(
+        &mut self,
+        num: u64,
+        current_point: PublicKey,
+    ) {
         self.enforcement_state
             .set_next_counterparty_commit_num_for_testing(num, current_point);
     }
 
     #[cfg(feature = "test_utils")]
     pub fn set_next_counterparty_revoke_num_for_testing(&mut self, num: u64) {
-        self.enforcement_state.set_next_counterparty_revoke_num_for_testing(num);
+        self.enforcement_state
+            .set_next_counterparty_revoke_num_for_testing(num);
     }
 }
 
@@ -1117,7 +1123,8 @@ impl Channel {
 
         let point = recomposed_tx.trust().keys().per_commitment_point;
 
-        self.enforcement_state.set_next_counterparty_commit_num(commit_num + 1, point)?;
+        self.enforcement_state
+            .set_next_counterparty_commit_num(commit_num + 1, point)?;
 
         // Sign the recomposed commitment.
         let sigs = self
@@ -1928,10 +1935,7 @@ impl Node {
             }
             Some(setup) => {
                 let channel_transaction_parameters =
-                    Node::channel_setup_to_channel_transaction_parameters(
-                        &setup,
-                        keys.pubkeys(),
-                    );
+                    Node::channel_setup_to_channel_transaction_parameters(&setup, keys.pubkeys());
                 keys.ready_channel(&channel_transaction_parameters);
                 let channel = Channel {
                     node: Arc::downgrade(arc_self),

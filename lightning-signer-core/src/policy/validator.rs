@@ -380,8 +380,7 @@ impl Validator for SimpleValidator {
             return Err(policy_error(format!(
                 "can't sign revoked commitment_number {}, \
                  next_holder_commit_num is {}",
-                commit_num,
-                enforcement_state.next_holder_commit_num
+                commit_num, enforcement_state.next_holder_commit_num
             )));
         };
         Ok(())
@@ -743,7 +742,7 @@ impl EnforcementState {
             next_counterparty_commit_num: 0,
             next_counterparty_revoke_num: 0,
             current_counterparty_point: None,
-            previous_counterparty_point: None
+            previous_counterparty_point: None,
         }
     }
 
@@ -842,13 +841,13 @@ impl EnforcementState {
                 num
             )));
         }
-            .unwrap_or_else(|| {
-                panic!(
-                    "counterparty point for commit_num {} not set, \
+        .unwrap_or_else(|| {
+            panic!(
+                "counterparty point for commit_num {} not set, \
                  next_commitment_number is {}",
-                    num, self.next_counterparty_commit_num
-                );
-            });
+                num, self.next_counterparty_commit_num
+            );
+        });
         Ok(point)
     }
 
@@ -898,7 +897,11 @@ impl EnforcementState {
     }
 
     #[cfg(feature = "test_utils")]
-    pub fn set_next_counterparty_commit_num_for_testing(&mut self, num: u64, current_point: PublicKey) {
+    pub fn set_next_counterparty_commit_num_for_testing(
+        &mut self,
+        num: u64,
+        current_point: PublicKey,
+    ) {
         debug!(
             "set_next_counterparty_commit_num_for_testing: {} -> {}",
             self.next_counterparty_commit_num, num
@@ -1338,124 +1341,124 @@ mod tests {
             "set_next_counterparty_commit_num: can\'t set next to 0"
         );
 
-            // point for 0 is not set yet
-            assert_policy_err!(
+        // point for 0 is not set yet
+        assert_policy_err!(
             state.get_previous_counterparty_point(0),
             "get_previous_counterparty_point 0 out of range"
         );
 
-            // can't look forward either
-            assert_policy_err!(
+        // can't look forward either
+        assert_policy_err!(
             state.get_previous_counterparty_point(1),
             "get_previous_counterparty_point 1 out of range"
         );
 
-            // can't skip forward
-            assert_policy_err!(
+        // can't skip forward
+        assert_policy_err!(
             state.set_next_counterparty_commit_num(2, point0.clone()),
             "invalid next_counterparty_commit_num progression: 0 to 2"
         );
 
-            // set point 0
-            assert!(state
-                .set_next_counterparty_commit_num(1, point0.clone())
-                .is_ok());
+        // set point 0
+        assert!(state
+            .set_next_counterparty_commit_num(1, point0.clone())
+            .is_ok());
 
-            // and now you can get it.
-            assert_eq!(
-                state.get_previous_counterparty_point(0).unwrap(),
-                point0.clone()
-            );
+        // and now you can get it.
+        assert_eq!(
+            state.get_previous_counterparty_point(0).unwrap(),
+            point0.clone()
+        );
 
-            // you can set it again to the same thing (retry)
-            // policy-v2-commitment-retry-same
-            assert!(state
-                .set_next_counterparty_commit_num(1, point0.clone())
-                .is_ok());
-            assert_eq!(state.next_counterparty_commit_num, 1);
+        // you can set it again to the same thing (retry)
+        // policy-v2-commitment-retry-same
+        assert!(state
+            .set_next_counterparty_commit_num(1, point0.clone())
+            .is_ok());
+        assert_eq!(state.next_counterparty_commit_num, 1);
 
-            // but setting it to something else is an error
-            // policy-v2-commitment-retry-same
-            let point1 = make_test_pubkey(0x16);
-            assert_policy_err!(
+        // but setting it to something else is an error
+        // policy-v2-commitment-retry-same
+        let point1 = make_test_pubkey(0x16);
+        assert_policy_err!(
             state.set_next_counterparty_commit_num(1, point1.clone()),
             "set_next_counterparty_commit_num 1 retry: point different than prior"
         );
-            assert_eq!(state.next_counterparty_commit_num, 1);
+        assert_eq!(state.next_counterparty_commit_num, 1);
 
-            // can't get commit_num 1 yet
-            assert_policy_err!(
+        // can't get commit_num 1 yet
+        assert_policy_err!(
             state.get_previous_counterparty_point(1),
             "get_previous_counterparty_point 1 out of range"
         );
 
-            // can't skip forward
-            assert_policy_err!(
+        // can't skip forward
+        assert_policy_err!(
             state.set_next_counterparty_commit_num(3, point1.clone()),
             "next_counterparty_commit_num 3 too large relative to next_counterparty_revoke_num 0"
         );
-            assert_eq!(state.next_counterparty_commit_num, 1);
+        assert_eq!(state.next_counterparty_commit_num, 1);
 
-            // set point 1
-            assert!(state
-                .set_next_counterparty_commit_num(2, point1.clone())
-                .is_ok());
-            assert_eq!(state.next_counterparty_commit_num, 2);
+        // set point 1
+        assert!(state
+            .set_next_counterparty_commit_num(2, point1.clone())
+            .is_ok());
+        assert_eq!(state.next_counterparty_commit_num, 2);
 
-            // you can still get commit_num 0
-            assert_eq!(
-                state.get_previous_counterparty_point(0).unwrap(),
-                point0.clone()
-            );
+        // you can still get commit_num 0
+        assert_eq!(
+            state.get_previous_counterparty_point(0).unwrap(),
+            point0.clone()
+        );
 
-            // Now you can get commit_num 1
-            assert_eq!(
-                state.get_previous_counterparty_point(1).unwrap(),
-                point1.clone()
-            );
+        // Now you can get commit_num 1
+        assert_eq!(
+            state.get_previous_counterparty_point(1).unwrap(),
+            point1.clone()
+        );
 
-            // can't look forward
-            assert_policy_err!(
+        // can't look forward
+        assert_policy_err!(
             state.get_previous_counterparty_point(2),
             "get_previous_counterparty_point 2 out of range"
         );
 
-            // can't skip forward
-            assert_policy_err!(
+        // can't skip forward
+        assert_policy_err!(
             state.set_next_counterparty_commit_num(4, point1.clone()),
             "next_counterparty_commit_num 4 too large relative to next_counterparty_revoke_num 0"
         );
-            assert_eq!(state.next_counterparty_commit_num, 2);
+        assert_eq!(state.next_counterparty_commit_num, 2);
 
-            assert!(state.set_next_counterparty_revoke_num(1).is_ok());
+        assert!(state.set_next_counterparty_revoke_num(1).is_ok());
 
-            // set point 2
-            let point2 = make_test_pubkey(0x20);
-            assert!(state
-                .set_next_counterparty_commit_num(3, point2.clone())
-                .is_ok());
-            assert_eq!(state.next_counterparty_commit_num, 3);
+        // set point 2
+        let point2 = make_test_pubkey(0x20);
+        assert!(state
+            .set_next_counterparty_commit_num(3, point2.clone())
+            .is_ok());
+        assert_eq!(state.next_counterparty_commit_num, 3);
 
-            // You can't get commit_num 0 anymore
-            assert_policy_err!(
+        // You can't get commit_num 0 anymore
+        assert_policy_err!(
             state.get_previous_counterparty_point(0),
             "get_previous_counterparty_point 0 out of range"
         );
 
-            // you can still get commit_num 1
-            assert_eq!(
-                state.get_previous_counterparty_point(1).unwrap(),
-                point1.clone()
-            );
+        // you can still get commit_num 1
+        assert_eq!(
+            state.get_previous_counterparty_point(1).unwrap(),
+            point1.clone()
+        );
 
-            // now you can get commit_num 2
-            assert_eq!(
-                state.get_previous_counterparty_point(2).unwrap(),
-                point2.clone()
-            );
+        // now you can get commit_num 2
+        assert_eq!(
+            state.get_previous_counterparty_point(2).unwrap(),
+            point2.clone()
+        );
 
-            // can't look forward
-            assert_policy_err!(
+        // can't look forward
+        assert_policy_err!(
             state.get_previous_counterparty_point(3),
             "get_previous_counterparty_point 3 out of range"
         );

@@ -265,10 +265,7 @@ mod tests {
         }
     }
 
-    fn check_signer_roundtrip(
-        existing_signer: &InMemorySigner,
-        signer: &InMemorySigner,
-    ) {
+    fn check_signer_roundtrip(existing_signer: &InMemorySigner, signer: &InMemorySigner) {
         let mut existing_w = VecWriter(Vec::new());
         existing_signer.write(&mut existing_w).unwrap();
         let mut w = VecWriter(Vec::new());
