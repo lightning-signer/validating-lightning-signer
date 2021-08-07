@@ -55,6 +55,7 @@ use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::{invoice_utils, INITIAL_COMMITMENT_NUMBER};
 use bitcoin::hashes::hex::ToHex;
 use core::convert::TryInto;
+use crate::wallet::Wallet;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
@@ -1725,6 +1726,28 @@ pub struct Node {
     pub(crate) persister: Arc<dyn Persist>,
 }
 
+impl Wallet for Node {
+    fn wallet_can_spend(
+        &self,
+        child_path: &Vec<u32>,
+        output: &TxOut,
+    ) -> Result<bool, Status> {
+        let secp_ctx = Secp256k1::signing_only();
+        let pubkey = self
+            .get_wallet_key(&secp_ctx, child_path)?
+            .public_key(&secp_ctx);
+
+        // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
+        let native_addr = Address::p2wpkh(&pubkey, self.network)
+            .expect("p2wpkh failed");
+        let wrapped_addr = Address::p2shwpkh(&pubkey, self.network)
+            .expect("p2shwpkh failed");
+
+        Ok(output.script_pubkey == native_addr.script_pubkey()
+            || output.script_pubkey == wrapped_addr.script_pubkey())
+    }
+}
+
 impl Node {
     /// Create a node.
     ///
@@ -1774,14 +1797,14 @@ impl Node {
     pub fn find_channel_with_funding_outpoint(
         &self,
         outpoint: &OutPoint,
-    ) -> Result<Arc<Mutex<ChannelSlot>>, Status> {
+    ) -> Option<Arc<Mutex<ChannelSlot>>> {
         let guard = self.channels.lock().unwrap();
         for (_, slot_arc) in guard.iter() {
             let slot = slot_arc.lock().unwrap();
             match &*slot {
                 ChannelSlot::Ready(chan) => {
                     if chan.setup.funding_outpoint == *outpoint {
-                        return Ok(Arc::clone(slot_arc));
+                        return Some(Arc::clone(slot_arc));
                     }
                 }
                 ChannelSlot::Stub(_stub) => {
@@ -1789,10 +1812,7 @@ impl Node {
                 }
             }
         }
-        Err(invalid_argument(format!(
-            "channel with Outpoint {} not found",
-            &outpoint
-        )))
+        None
     }
 
     /// Create a new channel, which starts out as a stub.
@@ -2083,9 +2103,18 @@ impl Node {
 
         let validator = self.validator_factory.make_validator(self.network);
 
+        let channels: Vec<Option<Arc<Mutex<ChannelSlot>>>> =
+            tx.output.iter().enumerate()
+                .map(|(ndx, _)| {
+                    let outpoint = OutPoint {
+                        txid: tx.txid(),
+                        vout: ndx as u32,
+                    };
+                    self.find_channel_with_funding_outpoint(&outpoint)
+                }).collect();
         // TODO - initialize the state
         let state = ValidatorState { current_height: 0 };
-        validator.validate_funding_tx(self, &state, tx, values_sat, opaths)?;
+        validator.validate_funding_tx(self, channels, &state, tx, values_sat, opaths)?;
 
         let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for idx in 0..tx.input.len() {
@@ -2184,26 +2213,6 @@ impl Node {
                 .map_err(|err| internal_error(format!("derive child_path failed: {}", err)))?;
         }
         Ok(xkey.private_key)
-    }
-
-    pub(crate) fn wallet_can_spend(
-        &self,
-        child_path: &Vec<u32>,
-        output: &TxOut,
-    ) -> Result<bool, Status> {
-        let secp_ctx = Secp256k1::signing_only();
-        let pubkey = self
-            .get_wallet_key(&secp_ctx, child_path)?
-            .public_key(&secp_ctx);
-
-        // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
-        let native_addr = Address::p2wpkh(&pubkey, self.network)
-            .map_err(|err| internal_error(format!("p2wpkh failed: {}", err)))?;
-        let wrapped_addr = Address::p2shwpkh(&pubkey, self.network)
-            .map_err(|err| internal_error(format!("p2shwpkh failed: {}", err)))?;
-
-        Ok(output.script_pubkey == native_addr.script_pubkey()
-            || output.script_pubkey == wrapped_addr.script_pubkey())
     }
 
     /// Get the node secret key

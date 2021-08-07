@@ -1,16 +1,17 @@
 use crate::prelude::*;
+use crate::sync::Arc;
 use log::debug;
 
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
+use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction, OutPoint};
 
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
 };
 
-use crate::node::{ChannelSetup, ChannelSlot, Node};
+use crate::node::{ChannelSetup, ChannelSlot};
 use crate::tx::tx::{
     parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
     CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT, HTLC_TIMEOUT_TX_WEIGHT,
@@ -20,6 +21,7 @@ use crate::util::crypto_utils::payload_for_p2wsh;
 use super::error::{policy_error, ValidationError};
 use bitcoin::util::bip143::SigHashCache;
 use lightning::ln::PaymentHash;
+use crate::wallet::Wallet;
 
 pub trait Validator {
     /// Phase 1 CommitmentInfo
@@ -83,7 +85,8 @@ pub trait Validator {
 
     fn validate_funding_tx(
         &self,
-        node: &Node,
+        wallet: &Wallet,
+        channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         state: &ValidatorState,
         tx: &Transaction,
         values_sat: &Vec<u64>,
@@ -584,7 +587,8 @@ impl Validator for SimpleValidator {
 
     fn validate_funding_tx(
         &self,
-        node: &Node,
+        wallet: &Wallet,
+        channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         _state: &ValidatorState,
         tx: &Transaction,
         values_sat: &Vec<u64>,
@@ -619,12 +623,13 @@ impl Validator for SimpleValidator {
         for outndx in 0..tx.output.len() {
             let output = &tx.output[outndx];
             let opath = &opaths[outndx];
+            let channel_slot = channels[outndx].as_ref();
 
             // policy-v1-funding-output-match-commitment
             // policy-v2-funding-change-to-wallet
             // All outputs must either be wallet (change) or channel funding.
             if opath.len() > 0 {
-                let spendable = node.wallet_can_spend(opath, output).map_err(|err| {
+                let spendable = wallet.wallet_can_spend(opath, output).map_err(|err| {
                     policy_error(format!(
                         "output[{}]: wallet_can_spend error: {}",
                         outndx, err
@@ -637,13 +642,14 @@ impl Validator for SimpleValidator {
                     )));
                 }
             } else {
-                let outpoint = OutPoint {
-                    txid: tx.txid(),
-                    vout: outndx as u32,
-                };
-                let slot = node
-                    .find_channel_with_funding_outpoint(&outpoint)
-                    .map_err(|err| policy_error(format!("unknown output: {}", err)))?;
+                let slot = channel_slot
+                    .ok_or_else(|| {
+                        let outpoint = OutPoint {
+                            txid: tx.txid(),
+                            vout: outndx as u32,
+                        };
+                        policy_error(format!("unknown output: {}", outpoint))
+                    })?;
                 match &*slot.lock().unwrap() {
                     ChannelSlot::Ready(chan) => {
                         // policy-v1-funding-output-match-commitment

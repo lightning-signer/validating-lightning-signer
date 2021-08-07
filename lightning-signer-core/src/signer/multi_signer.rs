@@ -2385,9 +2385,7 @@ mod tests {
 
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: unknown output: status: InvalidArgument, \
-             message: \"channel with Outpoint \
-             a5b4d12cf257a92e0536ddfce77635f92283f1e81e4d4f5ce7239bd36cfe925c:1 not found\""
+            "policy failure: unknown output: a5b4d12cf257a92e0536ddfce77635f92283f1e81e4d4f5ce7239bd36cfe925c:1"
         );
     }
 
@@ -2514,9 +2512,7 @@ mod tests {
 
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: unknown output: status: \
-             InvalidArgument, message: \"channel with Outpoint \
-             445f380db31cb6647304fefe17d69df19d0a7e8840394a295cb99a98dfce2b73:1 not found\""
+            "policy failure: unknown output: 445f380db31cb6647304fefe17d69df19d0a7e8840394a295cb99a98dfce2b73:1"
         );
     }
 
@@ -2593,9 +2589,7 @@ mod tests {
 
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: unknown output: status: InvalidArgument, \
-             message: \"channel with Outpoint \
-             81fe91f5705b1a893494726cc9019614aa108fd02809e9f23673c83ea6404bce:1 not found\""
+            "policy failure: unknown output: 81fe91f5705b1a893494726cc9019614aa108fd02809e9f23673c83ea6404bce:1"
         );
     }
 
