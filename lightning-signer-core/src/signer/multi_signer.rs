@@ -1,22 +1,22 @@
-use crate::prelude::*;
-use crate::sync::Arc;
 use core::convert::TryFrom;
 
-use log::info;
-
 use bitcoin;
+use bitcoin::{Network, OutPoint};
+use bitcoin::hashes::Hash;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::secp256k1::{PublicKey, Secp256k1};
-use bitcoin::{Network, OutPoint};
 use lightning::chain::keysinterface::KeysInterface;
 use lightning::util::logger::Logger;
-
-use crate::node::{Channel, ChannelBase, ChannelId, ChannelSlot, Node, NodeConfig};
-use crate::persist::{DummyPersister, Persist};
-use crate::util::status::{invalid_argument, Status};
-use bitcoin::hashes::Hash;
+use log::info;
 #[cfg(feature = "std")]
 use rand::{OsRng, Rng};
+
+use crate::channel::{Channel, ChannelId};
+use crate::node::{ChannelBase, ChannelSlot, Node, NodeConfig};
+use crate::persist::{DummyPersister, Persist};
+use crate::prelude::*;
+use crate::sync::Arc;
+use crate::util::status::{invalid_argument, Status};
 
 #[derive(PartialEq, Clone, Copy)]
 #[repr(i32)]
@@ -240,45 +240,43 @@ pub fn channel_nonce_to_id(nonce: &Vec<u8>) -> ChannelId {
 #[cfg(test)]
 mod tests {
     use bitcoin;
+    use bitcoin::{Address, OutPoint, Script, SigHashType, Transaction, TxIn, TxOut};
     use bitcoin::blockdata::opcodes;
     use bitcoin::blockdata::script::Builder;
     use bitcoin::consensus::deserialize;
     use bitcoin::hash_types::Txid;
+    use bitcoin::hashes::Hash;
     use bitcoin::hashes::hash160::Hash as Hash160;
+    use bitcoin::hashes::hex::ToHex;
     use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
     use bitcoin::hashes::sha256d::Hash as Sha256dHash;
     use bitcoin::secp256k1;
-    use bitcoin::secp256k1::recovery::{RecoverableSignature, RecoveryId};
     use bitcoin::secp256k1::{Message, SecretKey, Signature};
+    use bitcoin::secp256k1::recovery::{RecoverableSignature, RecoveryId};
     use bitcoin::util::bip143::SigHashCache;
     use bitcoin::util::psbt::serialize::Serialize;
-    use bitcoin::{Address, OutPoint, Script, SigHashType, Transaction, TxIn, TxOut};
+    use lightning::chain::keysinterface::BaseSign;
     use lightning::ln::chan_utils::{
-        build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
-        make_funding_redeemscript, BuiltCommitmentTransaction, ChannelPublicKeys,
-        ChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
+        build_htlc_transaction, BuiltCommitmentTransaction, ChannelPublicKeys,
+        ChannelTransactionParameters, get_htlc_redeemscript, get_revokeable_redeemscript,
+        HTLCOutputInCommitment, make_funding_redeemscript, TxCreationKeys,
     };
     use lightning::ln::PaymentHash;
+    use test_env_log::test;
 
-    use crate::node::{ChannelSetup, CommitmentType};
+    use crate::channel::{ChannelSetup, CommitmentType};
     use crate::policy::error::policy_error;
     use crate::policy::validator::EnforcementState;
-    use crate::tx::tx::{build_close_tx, HTLCInfo2, ANCHOR_SAT};
+    use crate::tx::tx::{ANCHOR_SAT, build_close_tx, HTLCInfo2};
     use crate::util::crypto_utils::{
         derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
         payload_for_p2wpkh, signature_to_bitcoin_vec,
     };
-    use crate::util::status::{internal_error, invalid_argument, Code, Status};
+    use crate::util::status::{Code, internal_error, invalid_argument, Status};
     use crate::util::test_utils::*;
+    use crate::util::test_utils::{hex_decode, hex_encode};
 
     use super::*;
-
-    use bitcoin::hashes::Hash;
-    use lightning::chain::keysinterface::BaseSign;
-
-    use crate::util::test_utils::{hex_decode, hex_encode};
-    use bitcoin::hashes::hex::ToHex;
-    use test_env_log::test;
 
     macro_rules! assert_invalid_argument_err {
         ($status: expr, $msg: expr) => {

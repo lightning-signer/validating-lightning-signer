@@ -22,7 +22,7 @@ use lightning::ln::chan_utils::{
 };
 use lightning::ln::PaymentHash;
 
-use crate::node::ChannelSetup;
+use crate::channel::ChannelSetup;
 use crate::policy::error::{
     mismatch_error, script_format_error, transaction_format_error, ValidationError,
 };
@@ -873,7 +873,7 @@ mod tests {
     use bitcoin::secp256k1::{Secp256k1, SecretKey};
     use bitcoin::{Address, Network};
 
-    use crate::node::CommitmentType;
+    use crate::channel::CommitmentType;
     use crate::util::test_utils::{
         hex_encode, make_test_channel_keys, make_test_channel_setup, make_test_pubkey,
     };

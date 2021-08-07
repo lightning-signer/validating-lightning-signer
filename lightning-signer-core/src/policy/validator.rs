@@ -1,27 +1,26 @@
-use crate::prelude::*;
-use crate::sync::Arc;
-use log::debug;
-
+use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction, OutPoint};
-
+use bitcoin::util::bip143::SigHashCache;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils::{
-    build_htlc_transaction, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
+    build_htlc_transaction, HTLCOutputInCommitment, make_funding_redeemscript, TxCreationKeys,
 };
+use lightning::ln::PaymentHash;
+use log::debug;
 
-use crate::node::{ChannelSetup, ChannelSlot};
+use crate::channel::ChannelSetup;
+use crate::node::ChannelSlot;
+use crate::prelude::*;
+use crate::sync::Arc;
 use crate::tx::tx::{
-    parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
-    CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT, HTLC_TIMEOUT_TX_WEIGHT,
+    CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT,
+    HTLC_TIMEOUT_TX_WEIGHT, parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
 };
 use crate::util::crypto_utils::payload_for_p2wsh;
+use crate::wallet::Wallet;
 
 use super::error::{policy_error, ValidationError};
-use bitcoin::util::bip143::SigHashCache;
-use lightning::ln::PaymentHash;
-use crate::wallet::Wallet;
 
 pub trait Validator {
     /// Phase 1 CommitmentInfo
@@ -921,6 +920,7 @@ impl EnforcementState {
 #[cfg(test)]
 mod tests {
     use lightning::ln::PaymentHash;
+    use test_env_log::test;
 
     use crate::tx::tx::HTLCInfo2;
     use crate::util::test_utils::{
@@ -928,8 +928,6 @@ mod tests {
     };
 
     use super::*;
-
-    use test_env_log::test;
 
     macro_rules! assert_policy_error {
         ($res: expr, $expected: expr) => {

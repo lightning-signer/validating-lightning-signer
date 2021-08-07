@@ -1,43 +1,44 @@
-use crate::prelude::*;
-use crate::Arc;
 use core::cmp;
 
 use bitcoin;
+use bitcoin::{Address, OutPoint as BitcoinOutPoint, SigHashType, TxIn, TxOut};
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::{Builder, Script};
 use bitcoin::hash_types::Txid;
 use bitcoin::hash_types::WPubkeyHash;
+use bitcoin::hashes::{Hash, hex, hex::FromHex};
+use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
-use bitcoin::hashes::{hex, hex::FromHex, Hash};
 use bitcoin::network::constants::Network;
-use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1, SecretKey, SignOnly, Signature};
+use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1, SecretKey, Signature, SignOnly};
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::psbt::serialize::Serialize;
-use bitcoin::{Address, OutPoint as BitcoinOutPoint, SigHashType, TxIn, TxOut};
 use chain::chaininterface;
 use lightning::chain;
+use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::chain::channelmonitor::MonitorEvent;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::chain::transaction::OutPoint;
-use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{
-    build_htlc_transaction, derive_private_key, get_htlc_redeemscript, get_revokeable_redeemscript,
-    make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters,
-    CommitmentTransaction, CounterpartyChannelTransactionParameters,
-    DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
+    build_htlc_transaction, ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction,
+    CounterpartyChannelTransactionParameters, derive_private_key, DirectedChannelTransactionParameters,
+    get_htlc_redeemscript, get_revokeable_redeemscript,
+    HTLCOutputInCommitment, make_funding_redeemscript, TxCreationKeys,
 };
 use lightning::util::test_utils;
 
+use crate::Arc;
+use crate::channel::{Channel, ChannelId, ChannelSetup, CommitmentType};
 use crate::node::{
-    Channel, ChannelBase, ChannelId, ChannelSetup, CommitmentType, Node, NodeConfig,
+    ChannelBase, Node, NodeConfig,
 };
+use crate::prelude::*;
 use crate::signer::multi_signer::{channel_nonce_to_id, MultiSigner, SpendType};
 use crate::signer::my_keys_manager::KeyDerivationStyle;
-use crate::tx::tx::{sort_outputs, HTLCInfo2};
+use crate::tx::tx::{HTLCInfo2, sort_outputs};
 use crate::util::crypto_utils::{payload_for_p2wpkh, payload_for_p2wsh};
 use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
-use bitcoin::hashes::hex::ToHex;
 
 pub struct TestPersister {
     pub update_ret: Mutex<Result<(), channelmonitor::ChannelMonitorUpdateErr>>,

@@ -1,16 +1,17 @@
-use bitcoin::secp256k1::PublicKey;
 use bitcoin::Network;
+use bitcoin::secp256k1::PublicKey;
 use kv::{Bucket, Config, Json, Store, TransactionError};
 
-use lightning_signer::node::{Channel, ChannelId, ChannelStub, NodeConfig};
-use lightning_signer::persist::Persist;
-
-use crate::persist::model::NodeChannelId;
-use crate::persist::model::{ChannelEntry, NodeEntry};
+use lightning_signer::channel::{Channel, ChannelId, ChannelStub};
+use lightning_signer::node::NodeConfig;
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
+use lightning_signer::persist::Persist;
 use lightning_signer::policy::validator::EnforcementState;
+
+use crate::persist::model::{ChannelEntry, NodeEntry};
+use crate::persist::model::NodeChannelId;
 
 /// A persister that uses the kv crate and JSON serialization for values.
 pub struct KVJsonPersister<'a> {
@@ -160,10 +161,11 @@ impl<'a> Persist for KVJsonPersister<'a> {
 mod tests {
     use std::sync::Arc;
 
-    use tempfile::TempDir;
-
     use lightning::chain::keysinterface::InMemorySigner;
     use lightning::util::ser::Writeable;
+    use tempfile::TempDir;
+    use test_env_log::test;
+
     use lightning_signer::node::{ChannelSlot, Node};
     use lightning_signer::signer::multi_signer::channel_nonce_to_id;
     use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
@@ -172,8 +174,6 @@ mod tests {
     use crate::persist::util::*;
 
     use super::*;
-
-    use test_env_log::test;
 
     fn make_temp_persister<'a>() -> (KVJsonPersister<'a>, TempDir, String) {
         let dir = TempDir::new().unwrap();

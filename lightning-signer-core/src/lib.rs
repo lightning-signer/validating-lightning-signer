@@ -23,6 +23,7 @@ extern crate tonic;
 
 #[macro_use]
 pub mod util;
+pub mod channel;
 pub mod node;
 pub mod persist;
 pub mod policy;
