@@ -205,6 +205,43 @@ impl Node {
         Ok(Arc::clone(slot_arc))
     }
 
+    pub fn with_channel_base<F: Sized, T>(
+        &self,
+        channel_id: &ChannelId,
+        f: F,
+    ) -> Result<T, Status>
+        where
+            F: Fn(&mut ChannelBase) -> Result<T, Status>,
+    {
+        let slot_arc = self.get_channel(channel_id)?;
+        let mut slot = slot_arc.lock().unwrap();
+        let base = match &mut *slot {
+            ChannelSlot::Stub(stub) => stub as &mut ChannelBase,
+            ChannelSlot::Ready(chan) => chan as &mut ChannelBase,
+        };
+        f(base)
+    }
+
+
+    pub fn with_ready_channel<F: Sized, T>(
+        &self,
+        channel_id: &ChannelId,
+        f: F,
+    ) -> Result<T, Status>
+        where
+            F: Fn(&mut Channel) -> Result<T, Status>,
+    {
+        let slot_arc = self.get_channel(channel_id)?;
+        let mut slot = slot_arc.lock().unwrap();
+        match &mut *slot {
+            ChannelSlot::Stub(_) => Err(invalid_argument(format!(
+                "channel not ready: {}",
+                &channel_id
+            ))),
+            ChannelSlot::Ready(chan) => f(chan),
+        }
+    }
+
     pub fn find_channel_with_funding_outpoint(
         &self,
         outpoint: &OutPoint,
