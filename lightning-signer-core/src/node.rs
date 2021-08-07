@@ -1539,6 +1539,7 @@ impl Channel {
         )
         .map_err(|_| Status::internal("failed to sign"))?;
         self.enforcement_state.mutual_close_signed = true;
+        self.persist()?;
         Ok(sig)
     }
 
