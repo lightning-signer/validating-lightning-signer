@@ -6,8 +6,8 @@ use log::info;
 #[cfg(feature = "std")]
 use rand::{OsRng, Rng};
 
-use crate::channel::{Channel, ChannelId};
-use crate::node::{ChannelBase, ChannelSlot, Node, NodeConfig};
+use crate::channel::{Channel, ChannelId, ChannelBase, ChannelSlot};
+use crate::node::{Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
 use crate::prelude::*;
 use crate::sync::Arc;

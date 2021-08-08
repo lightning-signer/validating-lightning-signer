@@ -9,8 +9,7 @@ use lightning::ln::chan_utils::{
 use lightning::ln::PaymentHash;
 use log::debug;
 
-use crate::channel::ChannelSetup;
-use crate::node::ChannelSlot;
+use crate::channel::{ChannelSetup, ChannelSlot};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{

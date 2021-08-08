@@ -1,3 +1,4 @@
+use core::any::Any;
 use core::fmt;
 use core::fmt::{Debug, Error, Formatter};
 
@@ -16,7 +17,7 @@ use lightning::ln::PaymentHash;
 use log::debug;
 
 use crate::{Arc, Weak};
-use crate::node::{ChannelBase, Node};
+use crate::node::Node;
 use crate::policy::error::policy_error;
 use crate::policy::validator::{EnforcementState, Validator, ValidatorState};
 use crate::prelude::{Box, ToString, Vec};
@@ -55,7 +56,8 @@ pub struct ChannelSetup {
     /// Whether the channel is outbound
     pub is_outbound: bool,
     /// The total the channel was funded with
-    pub channel_value_sat: u64, // DUP keys.inner.channel_value_satoshis
+    pub channel_value_sat: u64,
+    // DUP keys.inner.channel_value_satoshis
     /// How much was pushed to the counterparty
     pub push_value_msat: u64,
     /// The funding outpoint
@@ -111,6 +113,54 @@ impl ChannelSetup {
 
     pub(crate) fn option_anchor_outputs(&self) -> bool {
         self.commitment_type == CommitmentType::Anchors
+    }
+}
+
+
+/// A trait implemented by both channel states.  See [ChannelSlot]
+pub trait ChannelBase: Any {
+    /// Get the channel basepoints and public keys
+    fn get_channel_basepoints(&self) -> ChannelPublicKeys;
+    /// Get the per-commitment point for a holder commitment transaction
+    fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status>;
+    /// Get the per-commitment secret for a holder commitment transaction
+    // TODO leaking secret
+    fn get_per_commitment_secret(&self, commitment_number: u64) -> Result<SecretKey, Status>;
+    /// Check a future secret to support `option_data_loss_protect`
+    fn check_future_secret(&self, commit_num: u64, suggested: &SecretKey) -> Result<bool, Status>;
+    /// Get the channel nonce, used to derive the channel keys
+    // TODO should this be exposed?
+    fn nonce(&self) -> Vec<u8>;
+
+    // TODO remove when LDK workaround is removed in LoopbackSigner
+    #[cfg(feature = "test_utils")]
+    fn set_next_holder_commit_num_for_testing(&mut self, _num: u64) {
+        // Do nothing for ChannelStub.  Channel will override.
+    }
+}
+
+/// A channel can be in two states - before [Node::ready_channel] it's a
+/// [ChannelStub], afterwards it's a [Channel].  This enum keeps track
+/// of the two different states.
+pub enum ChannelSlot {
+    Stub(ChannelStub),
+    Ready(Channel),
+}
+
+impl ChannelSlot {
+    /// Get the channel nonce, used to derive the channel keys
+    pub fn nonce(&self) -> Vec<u8> {
+        match self {
+            ChannelSlot::Stub(stub) => stub.nonce(),
+            ChannelSlot::Ready(chan) => chan.nonce(),
+        }
+    }
+
+    pub fn id(&self) -> ChannelId {
+        match self {
+            ChannelSlot::Stub(stub) => stub.id0,
+            ChannelSlot::Ready(chan) => chan.id0,
+        }
     }
 }
 

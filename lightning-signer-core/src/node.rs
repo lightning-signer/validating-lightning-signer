@@ -1,4 +1,3 @@
-use core::any::Any;
 use core::convert::TryFrom;
 use core::convert::TryInto;
 use core::fmt::{self, Debug, Formatter};
@@ -29,7 +28,7 @@ use lightning::ln::chan_utils::{
 use lightning::util::logger::Logger;
 use log::info;
 
-use crate::channel::{Channel, ChannelId, ChannelSetup, ChannelStub};
+use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub};
 use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
 use crate::policy::validator::{
@@ -47,53 +46,6 @@ use crate::wallet::Wallet;
 // NOTE - this "ChannelId" does *not* correspond to the "channel_id"
 // defined in BOLT #2.
 
-/// A channel can be in two states - before [Node::ready_channel] it's a
-/// [ChannelStub], afterwards it's a [Channel].  This enum keeps track
-/// of the two different states.
-pub enum ChannelSlot {
-    Stub(ChannelStub),
-    Ready(Channel),
-}
-
-impl ChannelSlot {
-    /// Get the channel nonce, used to derive the channel keys
-    pub fn nonce(&self) -> Vec<u8> {
-        match self {
-            ChannelSlot::Stub(stub) => stub.nonce(),
-            ChannelSlot::Ready(chan) => chan.nonce(),
-        }
-    }
-
-    pub fn id(&self) -> ChannelId {
-        match self {
-            ChannelSlot::Stub(stub) => stub.id0,
-            ChannelSlot::Ready(chan) => chan.id0,
-        }
-    }
-}
-
-/// A trait implemented by both channel states.  See [ChannelSlot]
-pub trait ChannelBase: Any {
-    /// Get the channel basepoints and public keys
-    fn get_channel_basepoints(&self) -> ChannelPublicKeys;
-    /// Get the per-commitment point for a holder commitment transaction
-    fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status>;
-    /// Get the per-commitment secret for a holder commitment transaction
-    // TODO leaking secret
-    fn get_per_commitment_secret(&self, commitment_number: u64) -> Result<SecretKey, Status>;
-    /// Check a future secret to support `option_data_loss_protect`
-    fn check_future_secret(&self, commit_num: u64, suggested: &SecretKey) -> Result<bool, Status>;
-    /// Get the channel nonce, used to derive the channel keys
-    // TODO should this be exposed?
-    fn nonce(&self) -> Vec<u8>;
-
-    // TODO remove when LDK workaround is removed in LoopbackSigner
-    #[cfg(feature = "test_utils")]
-    fn set_next_holder_commit_num_for_testing(&mut self, _num: u64) {
-        // Do nothing for ChannelStub.  Channel will override.
-    }
-}
-
 #[derive(Copy, Clone)]
 pub struct NodeConfig {
     pub key_derivation_style: KeyDerivationStyle,
@@ -102,7 +54,8 @@ pub struct NodeConfig {
 /// A signer for one Lightning node.
 ///
 /// ```rust
-/// use lightning_signer::node::{Node, NodeConfig, ChannelSlot, ChannelBase};
+/// use lightning_signer::node::{Node, NodeConfig};
+/// use lightning_signer::channel::{ChannelSlot, ChannelBase};
 /// use lightning_signer::persist::{DummyPersister, Persist};
 /// use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
 /// use lightning_signer::util::test_logger::TestLogger;
@@ -221,7 +174,6 @@ impl Node {
         };
         f(base)
     }
-
 
     pub fn with_ready_channel<F: Sized, T>(
         &self,
@@ -800,7 +752,6 @@ impl Debug for Node {
     }
 }
 
-
 #[derive(PartialEq, Clone, Copy)]
 #[repr(i32)]
 pub enum SpendType {
@@ -854,7 +805,7 @@ mod tests {
     use lightning::ln::PaymentHash;
     use test_env_log::test;
 
-    use crate::channel::{ChannelSetup, CommitmentType};
+    use crate::channel::{ChannelBase, ChannelSetup, CommitmentType};
     use crate::channel::channel_nonce_to_id;
     use crate::policy::error::policy_error;
     use crate::policy::validator::EnforcementState;

@@ -166,8 +166,8 @@ mod tests {
     use tempfile::TempDir;
     use test_env_log::test;
 
-    use lightning_signer::node::{ChannelSlot, Node};
-    use lightning_signer::channel::channel_nonce_to_id;
+    use lightning_signer::node::Node;
+    use lightning_signer::channel::{channel_nonce_to_id, ChannelSlot};
     use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
 
     use crate::persist::ser_util::VecWriter;

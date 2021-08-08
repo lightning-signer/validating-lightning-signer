@@ -14,9 +14,9 @@ use lightning::util::ser::{Writeable, Writer};
 use log::{debug, error, info};
 
 use crate::Arc;
-use crate::channel::{ChannelId, ChannelSetup, CommitmentType};
+use crate::channel::{ChannelId, ChannelSetup, CommitmentType, ChannelBase};
 use crate::io_extras::Error as IOError;
-use crate::node::{ChannelBase, Node};
+use crate::node::Node;
 use crate::signer::multi_signer::MultiSigner;
 use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::{

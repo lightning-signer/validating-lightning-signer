@@ -28,13 +28,11 @@ use lightning::ln::chan_utils::{
 use lightning::util::test_utils;
 
 use crate::Arc;
-use crate::channel::{Channel, channel_nonce_to_id, ChannelId, ChannelSetup, CommitmentType};
-use crate::node::{
-    ChannelBase, Node, NodeConfig,
-};
+use crate::channel::{Channel, channel_nonce_to_id, ChannelBase, ChannelId, ChannelSetup, CommitmentType};
+use crate::node::{Node, NodeConfig};
+use crate::node::SpendType;
 use crate::persist::{DummyPersister, Persist};
 use crate::prelude::*;
-use crate::node::SpendType;
 use crate::signer::my_keys_manager::KeyDerivationStyle;
 use crate::tx::tx::{HTLCInfo2, sort_outputs};
 use crate::util::crypto_utils::{payload_for_p2wpkh, payload_for_p2wsh};
