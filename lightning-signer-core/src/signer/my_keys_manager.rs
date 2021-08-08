@@ -17,7 +17,7 @@ use lightning::chain::keysinterface::{
     StaticPaymentOutputDescriptor,
 };
 
-use crate::node::ChannelId;
+use crate::channel::ChannelId;
 use crate::util::crypto_utils::{
     channels_seed, derive_key_lnd, get_account_extended_key_lnd, get_account_extended_key_native,
     hkdf_sha256, hkdf_sha256_keys, node_keys_lnd, node_keys_native,

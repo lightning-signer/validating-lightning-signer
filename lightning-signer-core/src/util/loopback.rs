@@ -1,29 +1,29 @@
-use crate::Arc;
+use std::convert::TryInto;
 
-use log::{debug, error, info};
-
-use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::{Script, Transaction, TxOut};
+use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
+use bitcoin::secp256k1::recovery::RecoverableSignature;
 use lightning::chain::keysinterface::{BaseSign, KeysInterface, Sign, SpendableOutputDescriptor};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
-    ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, HTLCOutputInCommitment,
-    HolderCommitmentTransaction, TxCreationKeys,
+    ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, HolderCommitmentTransaction,
+    HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
 use lightning::util::ser::{Writeable, Writer};
+use log::{debug, error, info};
 
+use crate::Arc;
+use crate::channel::{ChannelId, ChannelSetup, CommitmentType, ChannelBase};
 use crate::io_extras::Error as IOError;
-use crate::node::{ChannelBase, ChannelId, ChannelSetup, CommitmentType, Node};
+use crate::node::Node;
 use crate::signer::multi_signer::MultiSigner;
 use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::{
     derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, signature_to_bitcoin_vec,
 };
-use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
-use bitcoin::secp256k1::recovery::RecoverableSignature;
-use std::convert::TryInto;
+use crate::util::status::Status;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {

@@ -8,12 +8,14 @@ use serde::{Deserialize, Serialize};
 use serde_with::hex::Hex;
 use serde_with::serde_as;
 
-use super::ser_util::{ChannelIdHandler, ChannelSetupDef, EnforcementStateDef};
-use lightning_signer::node::{ChannelId, ChannelSetup};
+use lightning_signer::channel::ChannelId;
+use lightning_signer::channel::ChannelSetup;
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
 use lightning_signer::policy::validator::EnforcementState;
+
+use super::ser_util::{ChannelIdHandler, ChannelSetupDef, EnforcementStateDef};
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]

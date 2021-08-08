@@ -1,7 +1,7 @@
-use crate::node::{ChannelId, ChannelSetup};
-use crate::prelude::*;
-
+use crate::channel::ChannelId;
+use crate::channel::ChannelSetup;
 use crate::policy::validator::EnforcementState;
+use crate::prelude::*;
 
 pub struct NodeEntry {
     pub seed: Vec<u8>,

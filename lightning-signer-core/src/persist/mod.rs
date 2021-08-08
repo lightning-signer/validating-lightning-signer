@@ -1,8 +1,9 @@
-use crate::prelude::*;
-use bitcoin::secp256k1::PublicKey;
 use bitcoin::Network;
+use bitcoin::secp256k1::PublicKey;
 
-use crate::node::{Channel, ChannelId, ChannelStub, NodeConfig};
+use crate::channel::{Channel, ChannelId, ChannelStub};
+use crate::node::NodeConfig;
+use crate::prelude::*;
 
 pub mod model;
 

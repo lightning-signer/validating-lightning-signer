@@ -13,18 +13,19 @@ use core::panic::PanicInfo;
 
 use alloc_cortex_m::CortexMHeap;
 // use panic_halt as _;
-use bitcoin::{Address, Network, PrivateKey, Txid, Script, OutPoint};
-use bitcoin::secp256k1::{Secp256k1, SecretKey, PublicKey};
-
+use bitcoin::{Address, Network, OutPoint, PrivateKey, Script, Txid};
+use bitcoin::hashes::Hash;
+use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use cortex_m::asm;
 use cortex_m_rt::entry;
 use cortex_m_semihosting::{debug, hprintln};
-use lightning_signer::node::{Node, NodeConfig, ChannelSetup, CommitmentType};
-use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
-use lightning_signer::Arc;
-use lightning_signer::persist::{DummyPersister, Persist};
-use bitcoin::hashes::Hash;
 use lightning::ln::chan_utils::ChannelPublicKeys;
+
+use lightning_signer::Arc;
+use lightning_signer::channel::{ChannelSetup, CommitmentType};
+use lightning_signer::node::{Node, NodeConfig};
+use lightning_signer::persist::{DummyPersister, Persist};
+use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 
 // this is the allocator the application will use
 #[global_allocator]
