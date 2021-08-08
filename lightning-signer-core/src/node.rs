@@ -26,6 +26,7 @@ use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters,
     CounterpartyChannelTransactionParameters
 };
+use lightning::util::logger::Logger;
 use log::info;
 
 use crate::channel::{Channel, ChannelId, ChannelSetup, ChannelStub};
@@ -36,7 +37,6 @@ use crate::policy::validator::{
 };
 use crate::policy::validator::EnforcementState;
 use crate::prelude::*;
-use crate::signer::multi_signer::SpendType;
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::sync::{Arc, Weak};
 use crate::util::crypto_utils::signature_to_bitcoin_vec;
@@ -106,7 +106,7 @@ pub struct NodeConfig {
 /// use lightning_signer::persist::{DummyPersister, Persist};
 /// use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
 /// use lightning_signer::util::test_logger::TestLogger;
-/// use lightning_signer::signer::multi_signer::SyncLogger;
+/// use lightning_signer::node::SyncLogger;
 ///
 /// use bitcoin::Network;
 /// use std::sync::Arc;
@@ -800,6 +800,33 @@ impl Debug for Node {
     }
 }
 
+
+#[derive(PartialEq, Clone, Copy)]
+#[repr(i32)]
+pub enum SpendType {
+    Invalid = 0,
+    P2pkh = 1,
+    P2wpkh = 3,
+    P2shP2wpkh = 4,
+}
+
+impl TryFrom<i32> for SpendType {
+    type Error = ();
+
+    fn try_from(i: i32) -> Result<Self, Self::Error> {
+        let res = match i {
+            x if x == SpendType::Invalid as i32 => SpendType::Invalid,
+            x if x == SpendType::P2pkh as i32 => SpendType::P2pkh,
+            x if x == SpendType::P2wpkh as i32 => SpendType::P2wpkh,
+            x if x == SpendType::P2shP2wpkh as i32 => SpendType::P2shP2wpkh,
+            _ => return Err(()),
+        };
+        Ok(res)
+    }
+}
+
+pub trait SyncLogger: Logger + SendSync {}
+
 #[cfg(test)]
 mod tests {
     use bitcoin;
@@ -828,6 +855,7 @@ mod tests {
     use test_env_log::test;
 
     use crate::channel::{ChannelSetup, CommitmentType};
+    use crate::channel::channel_nonce_to_id;
     use crate::policy::error::policy_error;
     use crate::policy::validator::EnforcementState;
     use crate::tx::tx::{ANCHOR_SAT, build_close_tx, HTLCInfo2};
@@ -840,7 +868,6 @@ mod tests {
     use crate::util::test_utils::{hex_decode, hex_encode};
 
     use super::*;
-    use crate::signer::multi_signer::channel_nonce_to_id;
 
     macro_rules! assert_invalid_argument_err {
         ($status: expr, $msg: expr) => {

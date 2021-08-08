@@ -17,13 +17,13 @@ use log::{debug, error, info};
 use serde_json::json;
 use tonic::{Request, Response, Status, transport::Server};
 
-use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
+use lightning_signer::channel::{channel_nonce_to_id, ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::channel;
 use lightning_signer::node::{self};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::prelude::Map;
-use lightning_signer::signer::multi_signer::{channel_nonce_to_id, MultiSigner};
-use lightning_signer::signer::multi_signer::SpendType;
+use lightning_signer::signer::multi_signer::MultiSigner;
+use lightning_signer::node::SpendType;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::crypto_utils::{bitcoin_vec_to_signature, signature_to_bitcoin_vec};

@@ -28,18 +28,18 @@ use lightning::ln::chan_utils::{
 use lightning::util::test_utils;
 
 use crate::Arc;
-use crate::channel::{Channel, ChannelId, ChannelSetup, CommitmentType};
+use crate::channel::{Channel, channel_nonce_to_id, ChannelId, ChannelSetup, CommitmentType};
 use crate::node::{
     ChannelBase, Node, NodeConfig,
 };
+use crate::persist::{DummyPersister, Persist};
 use crate::prelude::*;
-use crate::signer::multi_signer::{channel_nonce_to_id, SpendType};
+use crate::node::SpendType;
 use crate::signer::my_keys_manager::KeyDerivationStyle;
 use crate::tx::tx::{HTLCInfo2, sort_outputs};
 use crate::util::crypto_utils::{payload_for_p2wpkh, payload_for_p2wsh};
 use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
-use crate::persist::{DummyPersister, Persist};
 
 pub struct TestPersister {
     pub update_ret: Mutex<Result<(), channelmonitor::ChannelMonitorUpdateErr>>,

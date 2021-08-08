@@ -1,12 +1,7 @@
-use core::convert::TryFrom;
-
 use bitcoin;
 use bitcoin::{Network, OutPoint};
-use bitcoin::hashes::Hash;
-use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::secp256k1::{PublicKey, Secp256k1};
 use lightning::chain::keysinterface::KeysInterface;
-use lightning::util::logger::Logger;
 use log::info;
 #[cfg(feature = "std")]
 use rand::{OsRng, Rng};
@@ -17,32 +12,6 @@ use crate::persist::{DummyPersister, Persist};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::util::status::{invalid_argument, Status};
-
-#[derive(PartialEq, Clone, Copy)]
-#[repr(i32)]
-pub enum SpendType {
-    Invalid = 0,
-    P2pkh = 1,
-    P2wpkh = 3,
-    P2shP2wpkh = 4,
-}
-
-impl TryFrom<i32> for SpendType {
-    type Error = ();
-
-    fn try_from(i: i32) -> Result<Self, Self::Error> {
-        let res = match i {
-            x if x == SpendType::Invalid as i32 => SpendType::Invalid,
-            x if x == SpendType::P2pkh as i32 => SpendType::P2pkh,
-            x if x == SpendType::P2wpkh as i32 => SpendType::P2wpkh,
-            x if x == SpendType::P2shP2wpkh as i32 => SpendType::P2shP2wpkh,
-            _ => return Err(()),
-        };
-        Ok(res)
-    }
-}
-
-pub trait SyncLogger: Logger + SendSync {}
 
 /// A signer for multiple nodes.
 ///
@@ -161,8 +130,8 @@ impl MultiSigner {
         channel_id: &ChannelId,
         f: F,
     ) -> Result<T, Status>
-    where
-        F: Fn(&mut ChannelBase) -> Result<T, Status>,
+        where
+            F: Fn(&mut ChannelBase) -> Result<T, Status>,
     {
         let slot_arc = self.get_channel(&node_id, &channel_id)?;
         let mut slot = slot_arc.lock().unwrap();
@@ -196,8 +165,8 @@ impl MultiSigner {
         channel_id: &ChannelId,
         f: F,
     ) -> Result<T, Status>
-    where
-        F: Fn(&mut Channel) -> Result<T, Status>,
+        where
+            F: Fn(&mut Channel) -> Result<T, Status>,
     {
         let slot_arc = self.get_channel(&node_id, &channel_id)?;
         let mut slot = slot_arc.lock().unwrap();
@@ -217,19 +186,13 @@ impl MultiSigner {
     }
 }
 
-pub fn channel_nonce_to_id(nonce: &Vec<u8>) -> ChannelId {
-    // Impedance mismatch - we want a 32 byte channel ID for internal use
-    // Hash the client supplied channel nonce
-    let hash = Sha256Hash::hash(nonce);
-    ChannelId(hash.into_inner())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::util::status::Code;
     use crate::util::test_utils::*;
     use crate::util::test_utils::hex_decode;
-    use crate::util::status::Code;
+
+    use super::*;
 
     #[test]
     fn warmstart_with_seed_test() {

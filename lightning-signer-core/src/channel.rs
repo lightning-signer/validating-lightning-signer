@@ -4,6 +4,7 @@ use core::fmt::{Debug, Error, Formatter};
 use bitcoin::{Network, OutPoint, Script, SigHashType};
 use bitcoin::hashes::Hash;
 use bitcoin::hashes::hex;
+use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::secp256k1::{self, All, Message, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::bip143::SigHashCache;
@@ -1600,4 +1601,11 @@ impl Channel {
             }
         })
     }
+}
+
+pub fn channel_nonce_to_id(nonce: &Vec<u8>) -> ChannelId {
+    // Impedance mismatch - we want a 32 byte channel ID for internal use
+    // Hash the client supplied channel nonce
+    let hash = Sha256Hash::hash(nonce);
+    ChannelId(hash.into_inner())
 }
