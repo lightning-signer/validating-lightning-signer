@@ -1463,7 +1463,7 @@ impl Channel {
             .validator_factory
             .make_validator(self.network());
 
-        validator.validate_holder_commitment_tx(&self.enforcement_state, commitment_number)?;
+        validator.validate_sign_holder_commitment_tx(&self.enforcement_state, commitment_number)?;
 
         let recomposed_tx = self.make_recomposed_holder_commitment_tx(
             tx,

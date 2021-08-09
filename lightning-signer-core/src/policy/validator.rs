@@ -43,7 +43,7 @@ pub trait Validator {
         is_counterparty: bool,
     ) -> Result<(), ValidationError>;
 
-    fn validate_holder_commitment_tx(
+    fn validate_sign_holder_commitment_tx(
         &self,
         enforcement_state: &EnforcementState,
         commit_num: u64,
@@ -362,7 +362,7 @@ impl Validator for SimpleValidator {
         Ok(())
     }
 
-    fn validate_holder_commitment_tx(
+    fn validate_sign_holder_commitment_tx(
         &self,
         enforcement_state: &EnforcementState,
         commit_num: u64,
