@@ -4166,13 +4166,20 @@ mod tests {
             &channel_funding_redeemscript,
         );
 
-        // Can't release secrets anymore.
-        assert_failed_precondition_err!(
-            node.with_ready_channel(&channel_id, |chan| {
+        // Secrets can still be released if they are old enough.
+        assert!(node
+            .with_ready_channel(&channel_id, |chan| {
                 chan.get_per_commitment_secret(commit_num - 2)
-            }),
-            "policy failure: get_per_commitment_secret: mutual close already signed"
-        );
+            })
+            .is_ok());
+
+        // Channel is marked closed.
+        assert!(node
+            .with_ready_channel(&channel_id, |chan| {
+                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+                Ok(())
+            })
+            .is_ok());
     }
 
     #[test]
@@ -4990,6 +4997,16 @@ mod tests {
         );
     }
 
+    #[test]
+    fn sign_holder_commitment_tx_after_mutual_close() {
+        let status = sign_holder_commitment_tx_with_mutators(
+            |state| state.mutual_close_signed = true,
+            |_keys| {},
+            |_tx| {},
+        );
+        assert!(status.is_ok());
+    }
+
     fn sign_counterparty_commitment_tx_retry_with_mutator<SignCommitmentMutator>(
         sign_comm_mut: SignCommitmentMutator,
     ) -> Result<(), Status>
@@ -5449,7 +5466,7 @@ mod tests {
                     .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM + 1);
             },
             |chan| {
-                // Channel state should stay where we advanced it..
+                // Channel state should stay where we advanced it.
                 assert_eq!(
                     chan.enforcement_state.next_holder_commit_num,
                     HOLD_COMMIT_NUM + 1
@@ -5469,7 +5486,7 @@ mod tests {
                         .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM + 2);
                 },
                 |chan| {
-                    // Channel state should stay where we advanced it..
+                    // Channel state should stay where we advanced it.
                     assert_eq!(
                         chan.enforcement_state.next_holder_commit_num,
                         HOLD_COMMIT_NUM + 2
@@ -5490,7 +5507,7 @@ mod tests {
                         .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM - 1);
                 },
                 |chan| {
-                    // Channel state should stay where we set it..
+                    // Channel state should stay where we set it.
                     assert_eq!(
                         chan.enforcement_state.next_holder_commit_num,
                         HOLD_COMMIT_NUM - 1
@@ -5499,6 +5516,26 @@ mod tests {
             ),
             "policy failure: get_per_commitment_point: \
              commitment_number 43 invalid when next_holder_commit_num is 42"
+        );
+    }
+
+    // policy-v2-revoke-not-closed
+    #[test]
+    fn validate_holder_commitment_not_closed() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |chan, _commit_tx_ctx, _commit_sig, _htlc_sigs| {
+                    chan.enforcement_state.mutual_close_signed = true;
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: validate_holder_commitment_state: mutual close already signed"
         );
     }
 

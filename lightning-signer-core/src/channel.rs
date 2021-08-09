@@ -310,13 +310,6 @@ impl ChannelBase for Channel {
             ))
             .into());
         }
-        // policy-v2-revoke-not-closed
-        if self.enforcement_state.mutual_close_signed {
-            return Err(policy_error(format!(
-                "get_per_commitment_secret: mutual close already signed"
-            ))
-            .into());
-        }
         let secret = self
             .keys
             .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
@@ -1311,6 +1304,15 @@ impl Channel {
         counterparty_commit_sig: &Signature,
         counterparty_htlc_sigs: &Vec<Signature>,
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
+        let validator = self
+            .node
+            .upgrade()
+            .unwrap()
+            .validator_factory
+            .make_validator(self.network());
+
+        validator.validate_holder_commitment_state(&self.enforcement_state)?;
+
         let recomposed_tx = self.make_recomposed_holder_commitment_tx_improved(
             tx,
             output_witscripts,
@@ -1462,7 +1464,7 @@ impl Channel {
             .validator_factory
             .make_validator(self.network());
 
-        validator.validate_holder_commitment_tx(&self.enforcement_state, commitment_number)?;
+        validator.validate_sign_holder_commitment_tx(&self.enforcement_state, commitment_number)?;
 
         let recomposed_tx = self.make_recomposed_holder_commitment_tx(
             tx,

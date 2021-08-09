@@ -43,10 +43,17 @@ pub trait Validator {
         is_counterparty: bool,
     ) -> Result<(), ValidationError>;
 
-    fn validate_holder_commitment_tx(
+    /// Ensures that signing a holder commitment is valid.
+    fn validate_sign_holder_commitment_tx(
         &self,
         enforcement_state: &EnforcementState,
         commit_num: u64,
+    ) -> Result<(), ValidationError>;
+
+    /// Ensures that a counterparty signed holder commitment is valid.
+    fn validate_holder_commitment_state(
+        &self,
+        enforcement_state: &EnforcementState,
     ) -> Result<(), ValidationError>;
 
     fn validate_counterparty_revocation(
@@ -362,7 +369,7 @@ impl Validator for SimpleValidator {
         Ok(())
     }
 
-    fn validate_holder_commitment_tx(
+    fn validate_sign_holder_commitment_tx(
         &self,
         enforcement_state: &EnforcementState,
         commit_num: u64,
@@ -375,6 +382,19 @@ impl Validator for SimpleValidator {
                 commit_num, enforcement_state.next_holder_commit_num
             )));
         };
+        Ok(())
+    }
+
+    fn validate_holder_commitment_state(
+        &self,
+        enforcement_state: &EnforcementState,
+    ) -> Result<(), ValidationError> {
+        // policy-v2-revoke-not-closed
+        if enforcement_state.mutual_close_signed {
+            return Err(policy_error(format!(
+                "validate_holder_commitment_state: mutual close already signed"
+            )));
+        }
         Ok(())
     }
 
