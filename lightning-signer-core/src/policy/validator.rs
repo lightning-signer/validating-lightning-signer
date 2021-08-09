@@ -745,6 +745,9 @@ pub struct EnforcementState {
     pub next_counterparty_revoke_num: u64,
     pub current_counterparty_point: Option<PublicKey>, // next_counterparty_commit_num - 1
     pub previous_counterparty_point: Option<PublicKey>, // next_counterparty_commit_num - 2
+    pub current_holder_commit_info: Option<CommitmentInfo2>,
+    pub current_counterparty_commit_info: Option<CommitmentInfo2>,
+    pub previous_counterparty_commit_info: Option<CommitmentInfo2>,
     pub mutual_close_signed: bool,
 }
 
@@ -756,6 +759,9 @@ impl EnforcementState {
             next_counterparty_revoke_num: 0,
             current_counterparty_point: None,
             previous_counterparty_point: None,
+            current_holder_commit_info: None,
+            current_counterparty_commit_info: None,
+            previous_counterparty_commit_info: None,
             mutual_close_signed: false,
         }
     }
