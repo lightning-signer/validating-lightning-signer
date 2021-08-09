@@ -5535,7 +5535,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: mutual close already signed"
+            "policy failure: validate_holder_commitment_state: mutual close already signed"
         );
     }
 

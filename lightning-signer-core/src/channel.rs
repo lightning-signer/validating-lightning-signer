@@ -1304,13 +1304,14 @@ impl Channel {
         counterparty_commit_sig: &Signature,
         counterparty_htlc_sigs: &Vec<Signature>,
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
-        // policy-v2-revoke-not-closed
-        if self.enforcement_state.mutual_close_signed {
-            return Err(policy_error(format!(
-                "validate_commitment_tx: mutual close already signed"
-            ))
-            .into());
-        }
+        let validator = self
+            .node
+            .upgrade()
+            .unwrap()
+            .validator_factory
+            .make_validator(self.network());
+
+        validator.validate_holder_commitment_state(&self.enforcement_state)?;
 
         let recomposed_tx = self.make_recomposed_holder_commitment_tx_improved(
             tx,
