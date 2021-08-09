@@ -357,15 +357,6 @@ impl Validator for SimpleValidator {
                     )));
                 }
             }
-        } else {
-            // Holder Commitment
-            // policy-v2-revoke-not-closed
-            if estate.mutual_close_signed {
-                return Err(policy_error(format!(
-                    "validate_commitment_tx: mutual close already signed"
-                ))
-                .into());
-            }
         }
 
         Ok(())

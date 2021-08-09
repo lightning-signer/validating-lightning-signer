@@ -4997,6 +4997,16 @@ mod tests {
         );
     }
 
+    #[test]
+    fn sign_holder_commitment_tx_after_mutual_close() {
+        let status = sign_holder_commitment_tx_with_mutators(
+            |state| state.mutual_close_signed = true,
+            |_keys| {},
+            |_tx| {},
+        );
+        assert!(status.is_ok());
+    }
+
     fn sign_counterparty_commitment_tx_retry_with_mutator<SignCommitmentMutator>(
         sign_comm_mut: SignCommitmentMutator,
     ) -> Result<(), Status>
