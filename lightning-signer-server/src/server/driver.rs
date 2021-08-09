@@ -1,37 +1,37 @@
-use std::{cmp, process};
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
+use std::{cmp, process};
 
 use backtrace::Backtrace;
 use bitcoin;
-use bitcoin::{OutPoint, Script, SigHashType};
 use bitcoin::consensus::{deserialize, encode};
-use bitcoin::hashes::Hash as BitcoinHash;
 use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
+use bitcoin::hashes::Hash as BitcoinHash;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::util::psbt::serialize::Deserialize;
+use bitcoin::{OutPoint, Script, SigHashType};
 use clap::{App, Arg};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
 use log::{debug, error, info};
 use serde_json::json;
-use tonic::{Request, Response, Status, transport::Server};
+use tonic::{transport::Server, Request, Response, Status};
 
-use lightning_signer::channel::{channel_nonce_to_id, ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::channel;
+use lightning_signer::channel::{channel_nonce_to_id, ChannelId, ChannelSetup, CommitmentType};
+use lightning_signer::node::SpendType;
 use lightning_signer::node::{self};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::prelude::Map;
 use lightning_signer::signer::multi_signer::MultiSigner;
-use lightning_signer::node::SpendType;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::crypto_utils::{bitcoin_vec_to_signature, signature_to_bitcoin_vec};
 use lightning_signer::util::debug_utils::DebugBytes;
-use lightning_signer::util::log_utils::{LOG_LEVEL_FILTER_NAMES, parse_log_level_filter};
+use lightning_signer::util::log_utils::{parse_log_level_filter, LOG_LEVEL_FILTER_NAMES};
 use lightning_signer::util::status;
-use remotesigner::*;
 use remotesigner::signer_server::{Signer, SignerServer};
+use remotesigner::*;
 
 use crate::fslogger::FilesystemLogger;
 use crate::persist::persist_json::KVJsonPersister;

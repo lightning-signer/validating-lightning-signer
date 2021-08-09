@@ -1,43 +1,45 @@
 use core::cmp;
 
 use bitcoin;
-use bitcoin::{Address, OutPoint as BitcoinOutPoint, SigHashType, TxIn, TxOut};
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::{Builder, Script};
 use bitcoin::hash_types::Txid;
 use bitcoin::hash_types::WPubkeyHash;
-use bitcoin::hashes::{Hash, hex, hex::FromHex};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
+use bitcoin::hashes::{hex, hex::FromHex, Hash};
 use bitcoin::network::constants::Network;
-use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1, SecretKey, Signature, SignOnly};
+use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1, SecretKey, SignOnly, Signature};
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::psbt::serialize::Serialize;
+use bitcoin::{Address, OutPoint as BitcoinOutPoint, SigHashType, TxIn, TxOut};
 use chain::chaininterface;
 use lightning::chain;
-use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::chain::channelmonitor::MonitorEvent;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::chain::transaction::OutPoint;
+use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{
-    build_htlc_transaction, ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction,
-    CounterpartyChannelTransactionParameters, derive_private_key, DirectedChannelTransactionParameters,
-    get_htlc_redeemscript, get_revokeable_redeemscript,
-    HTLCOutputInCommitment, make_funding_redeemscript, TxCreationKeys,
+    build_htlc_transaction, derive_private_key, get_htlc_redeemscript, get_revokeable_redeemscript,
+    make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters,
+    CommitmentTransaction, CounterpartyChannelTransactionParameters,
+    DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::util::test_utils;
 
-use crate::Arc;
-use crate::channel::{Channel, channel_nonce_to_id, ChannelBase, ChannelId, ChannelSetup, CommitmentType};
-use crate::node::{Node, NodeConfig};
+use crate::channel::{
+    channel_nonce_to_id, Channel, ChannelBase, ChannelId, ChannelSetup, CommitmentType,
+};
 use crate::node::SpendType;
+use crate::node::{Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
 use crate::prelude::*;
 use crate::signer::my_keys_manager::KeyDerivationStyle;
-use crate::tx::tx::{HTLCInfo2, sort_outputs};
+use crate::tx::tx::{sort_outputs, HTLCInfo2};
 use crate::util::crypto_utils::{payload_for_p2wpkh, payload_for_p2wsh};
 use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
+use crate::Arc;
 
 pub struct TestPersister {
     pub update_ret: Mutex<Result<(), channelmonitor::ChannelMonitorUpdateErr>>,
@@ -268,7 +270,12 @@ pub fn init_node(node_config: NodeConfig, seedstr: &str) -> Arc<Node> {
     seed.copy_from_slice(Vec::from_hex(seedstr).unwrap().as_slice());
     let network = Network::Testnet;
 
-    let node = Node::new(node_config, &seed, network, &(Arc::new(DummyPersister) as Arc<Persist>));
+    let node = Node::new(
+        node_config,
+        &seed,
+        network,
+        &(Arc::new(DummyPersister) as Arc<Persist>),
+    );
     Arc::new(node)
 }
 
@@ -351,19 +358,18 @@ pub fn make_test_funding_channel_outpoint(
     channel_id: &ChannelId,
     value: u64,
 ) -> TxOut {
-    node
-        .with_channel_base(channel_id, |base| {
-            let funding_redeemscript = make_funding_redeemscript(
-                &base.get_channel_basepoints().funding_pubkey,
-                &setup.counterparty_points.funding_pubkey,
-            );
-            let script_pubkey = payload_for_p2wsh(&funding_redeemscript).script_pubkey();
-            Ok(TxOut {
-                value,
-                script_pubkey,
-            })
+    node.with_channel_base(channel_id, |base| {
+        let funding_redeemscript = make_funding_redeemscript(
+            &base.get_channel_basepoints().funding_pubkey,
+            &setup.counterparty_points.funding_pubkey,
+        );
+        let script_pubkey = payload_for_p2wsh(&funding_redeemscript).script_pubkey();
+        Ok(TxOut {
+            value,
+            script_pubkey,
         })
-        .expect("TxOut")
+    })
+    .expect("TxOut")
 }
 
 pub fn make_test_funding_tx_with_ins_outs(
@@ -421,11 +427,7 @@ pub fn test_node_ctx(ndx: usize) -> TestNodeContext {
     TestNodeContext { node, secp_ctx }
 }
 
-pub fn test_chan_ctx(
-    node_ctx: &TestNodeContext,
-    nn: usize,
-    value_sat: u64,
-) -> TestChannelContext {
+pub fn test_chan_ctx(node_ctx: &TestNodeContext, nn: usize, value_sat: u64) -> TestChannelContext {
     let channel_nonce0 = format!("nonce{}", nn).as_bytes().to_vec();
     let channel_id = channel_nonce_to_id(&channel_nonce0);
     let setup = ChannelSetup {
@@ -444,12 +446,14 @@ pub fn test_chan_ctx(
         commitment_type: CommitmentType::StaticRemoteKey,
     };
 
-    node_ctx.node
+    node_ctx
+        .node
         .new_channel(Some(channel_id), Some(channel_nonce0), &node_ctx.node)
         .expect("new_channel");
 
     // Make counterparty keys that match.
-    let counterparty_keys = node_ctx.node
+    let counterparty_keys = node_ctx
+        .node
         .with_channel_base(&channel_id, |stub| {
             // These need to match make_test_counterparty_points() above ...
             let mut cpkeys = InMemorySigner::new(
@@ -492,7 +496,8 @@ pub fn set_next_holder_commit_num_for_testing(
     chan_ctx: &TestChannelContext,
     commit_num: u64,
 ) {
-    node_ctx.node
+    node_ctx
+        .node
         .with_ready_channel(&chan_ctx.channel_id, |chan| {
             chan.enforcement_state
                 .set_next_holder_commit_num_for_testing(commit_num);
@@ -507,11 +512,14 @@ pub fn set_next_counterparty_commit_num_for_testing(
     commit_num: u64,
     current_point: PublicKey,
 ) {
-    node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
-        chan.enforcement_state
-            .set_next_counterparty_commit_num_for_testing(commit_num, current_point);
-        Ok(())
-    }).unwrap();
+    node_ctx
+        .node
+        .with_ready_channel(&chan_ctx.channel_id, |chan| {
+            chan.enforcement_state
+                .set_next_counterparty_commit_num_for_testing(commit_num, current_point);
+            Ok(())
+        })
+        .unwrap();
 }
 
 pub fn set_next_counterparty_revoke_num_for_testing(
@@ -519,11 +527,14 @@ pub fn set_next_counterparty_revoke_num_for_testing(
     chan_ctx: &TestChannelContext,
     revoke_num: u64,
 ) {
-    node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
-        chan.enforcement_state
-            .set_next_counterparty_revoke_num_for_testing(revoke_num);
-        Ok(())
-    }).unwrap();
+    node_ctx
+        .node
+        .with_ready_channel(&chan_ctx.channel_id, |chan| {
+            chan.enforcement_state
+                .set_next_counterparty_revoke_num_for_testing(revoke_num);
+            Ok(())
+        })
+        .unwrap();
 }
 
 pub fn test_funding_tx_ctx() -> TestFundingTxContext {
@@ -639,11 +650,14 @@ pub fn synthesize_ready_channel(
         .node
         .ready_channel(chan_ctx.channel_id, None, chan_ctx.setup.clone())
         .expect("Channel");
-    node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
-        chan.enforcement_state
-            .set_next_holder_commit_num_for_testing(next_holder_commit_num);
-        Ok(())
-    }).expect("synthesized channel");
+    node_ctx
+        .node
+        .with_ready_channel(&chan_ctx.channel_id, |chan| {
+            chan.enforcement_state
+                .set_next_holder_commit_num_for_testing(next_holder_commit_num);
+            Ok(())
+        })
+        .expect("synthesized channel");
 }
 
 pub fn funding_tx_sign(
@@ -688,10 +702,7 @@ pub fn funding_tx_validate_sig(
     assert!(verify_result.is_ok());
 }
 
-pub fn fund_test_channel(
-    node_ctx: &TestNodeContext,
-    channel_amount: u64,
-) -> TestChannelContext {
+pub fn fund_test_channel(node_ctx: &TestNodeContext, channel_amount: u64) -> TestChannelContext {
     let is_p2sh = false;
     let incoming = channel_amount + 2_000_000;
     let fee = 1000;
@@ -702,12 +713,8 @@ pub fn fund_test_channel(
 
     funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
     funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
-    let outpoint_ndx = funding_tx_add_channel_outpoint(
-        &node_ctx,
-        &chan_ctx,
-        &mut tx_ctx,
-        channel_amount,
-    );
+    let outpoint_ndx =
+        funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
 
     let mut tx = funding_tx_from_ctx(&tx_ctx);
 
@@ -716,14 +723,8 @@ pub fn fund_test_channel(
     let mut commit_tx_ctx = channel_initial_commitment(&node_ctx, &chan_ctx);
     let (csig, hsigs) =
         counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
-    validate_holder_commitment(
-        &node_ctx,
-        &chan_ctx,
-        &commit_tx_ctx,
-        &csig,
-        &hsigs,
-    )
-    .expect("valid holder commitment");
+    validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
+        .expect("valid holder commitment");
 
     let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
     funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
@@ -765,26 +766,29 @@ pub fn channel_commitment(
     received_htlcs: Vec<HTLCInfo2>,
 ) -> TestCommitmentTxContext {
     let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
-    node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
-        let tx = chan
-            .make_holder_commitment_tx(
+    node_ctx
+        .node
+        .with_ready_channel(&chan_ctx.channel_id, |chan| {
+            let tx = chan
+                .make_holder_commitment_tx(
+                    commit_num,
+                    feerate_per_kw,
+                    to_broadcaster,
+                    to_countersignatory,
+                    htlcs.clone(),
+                )
+                .expect("holder_commitment_tx");
+            Ok(TestCommitmentTxContext {
                 commit_num,
                 feerate_per_kw,
                 to_broadcaster,
                 to_countersignatory,
-                htlcs.clone(),
-            )
-            .expect("holder_commitment_tx");
-        Ok(TestCommitmentTxContext {
-            commit_num,
-            feerate_per_kw,
-            to_broadcaster,
-            to_countersignatory,
-            offered_htlcs: offered_htlcs.clone(),
-            received_htlcs: received_htlcs.clone(),
-            tx: Some(tx),
+                offered_htlcs: offered_htlcs.clone(),
+                received_htlcs: received_htlcs.clone(),
+                tx: Some(tx),
+            })
         })
-    }).expect("TestCommitmentTxContext")
+        .expect("TestCommitmentTxContext")
 }
 
 // Construct counterparty signatures for a holder commitment.
@@ -794,8 +798,9 @@ pub fn counterparty_sign_holder_commitment(
     chan_ctx: &TestChannelContext,
     commit_tx_ctx: &mut TestCommitmentTxContext,
 ) -> (Signature, Vec<Signature>) {
-    let (commitment_sig, htlc_sigs) =
-        node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
+    let (commitment_sig, htlc_sigs) = node_ctx
+        .node
+        .with_ready_channel(&chan_ctx.channel_id, |chan| {
             let funding_redeemscript = make_funding_redeemscript(
                 &chan.keys.pubkeys().funding_pubkey,
                 &chan.keys.counterparty_pubkeys().funding_pubkey,
@@ -846,7 +851,8 @@ pub fn counterparty_sign_holder_commitment(
                 )
                 .unwrap();
                 htlc_sigs.push(
-                    node_ctx.secp_ctx
+                    node_ctx
+                        .secp_ctx
                         .sign(&htlc_sighash, &counterparty_htlc_key),
                 );
             }
@@ -867,52 +873,54 @@ pub fn validate_holder_commitment(
         commit_tx_ctx.offered_htlcs.clone(),
         commit_tx_ctx.received_htlcs.clone(),
     );
-    node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
-        let channel_parameters = chan.make_channel_parameters();
-        let parameters = channel_parameters.as_holder_broadcastable();
+    node_ctx
+        .node
+        .with_ready_channel(&chan_ctx.channel_id, |chan| {
+            let channel_parameters = chan.make_channel_parameters();
+            let parameters = channel_parameters.as_holder_broadcastable();
 
-        // NOTE - the unit tests calling this method may be
-        // setting up a commitment with a bogus
-        // commitment_number on purpose.  To allow this we
-        // need to temporarily set the channel's
-        // next_holder_commit_num while fetching the
-        // commitment_point and then restore it.
-        let save_commit_num = chan.enforcement_state.next_holder_commit_num;
-        chan.enforcement_state
-            .set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
-        let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
-        chan.enforcement_state
-            .set_next_holder_commit_num_for_testing(save_commit_num);
+            // NOTE - the unit tests calling this method may be
+            // setting up a commitment with a bogus
+            // commitment_number on purpose.  To allow this we
+            // need to temporarily set the channel's
+            // next_holder_commit_num while fetching the
+            // commitment_point and then restore it.
+            let save_commit_num = chan.enforcement_state.next_holder_commit_num;
+            chan.enforcement_state
+                .set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
+            let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
+            chan.enforcement_state
+                .set_next_holder_commit_num_for_testing(save_commit_num);
 
-        let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+            let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 
-        let redeem_scripts = build_tx_scripts(
-            &keys,
-            commit_tx_ctx.to_broadcaster,
-            commit_tx_ctx.to_countersignatory,
-            &htlcs,
-            &parameters,
-        )
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                commit_tx_ctx.to_broadcaster,
+                commit_tx_ctx.to_countersignatory,
+                &htlcs,
+                &parameters,
+            )
             .expect("scripts");
-        let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
-        chan.validate_holder_commitment_tx(
-            &commit_tx_ctx
-                .tx
-                .as_ref()
-                .unwrap()
-                .trust()
-                .built_transaction()
-                .transaction,
-            &output_witscripts,
-            commit_tx_ctx.commit_num,
-            commit_tx_ctx.feerate_per_kw,
-            commit_tx_ctx.offered_htlcs.clone(),
-            commit_tx_ctx.received_htlcs.clone(),
-            &commit_sig,
-            &htlc_sigs,
-        )
-    })
+            chan.validate_holder_commitment_tx(
+                &commit_tx_ctx
+                    .tx
+                    .as_ref()
+                    .unwrap()
+                    .trust()
+                    .built_transaction()
+                    .transaction,
+                &output_witscripts,
+                commit_tx_ctx.commit_num,
+                commit_tx_ctx.feerate_per_kw,
+                commit_tx_ctx.offered_htlcs.clone(),
+                commit_tx_ctx.received_htlcs.clone(),
+                &commit_sig,
+                &htlc_sigs,
+            )
+        })
 }
 
 pub fn sign_holder_commitment(
@@ -931,48 +939,50 @@ pub fn sign_holder_commitment(
             htlc.payment_hash,
         );
     }
-    node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
-        let channel_parameters = chan.make_channel_parameters();
-        let parameters = channel_parameters.as_holder_broadcastable();
+    node_ctx
+        .node
+        .with_ready_channel(&chan_ctx.channel_id, |chan| {
+            let channel_parameters = chan.make_channel_parameters();
+            let parameters = channel_parameters.as_holder_broadcastable();
 
-        // NOTE - the unit tests calling this method may be
-        // setting up a commitment with a bogus
-        // commitment_number on purpose.  To allow this we
-        // need to temporarily set the channel's
-        // next_holder_commit_num while fetching the
-        // commitment_point and then restore it.
-        let save_commit_num = chan.enforcement_state.next_holder_commit_num;
-        chan.enforcement_state
-            .set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
-        let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
-        chan.enforcement_state
-            .set_next_holder_commit_num_for_testing(save_commit_num);
+            // NOTE - the unit tests calling this method may be
+            // setting up a commitment with a bogus
+            // commitment_number on purpose.  To allow this we
+            // need to temporarily set the channel's
+            // next_holder_commit_num while fetching the
+            // commitment_point and then restore it.
+            let save_commit_num = chan.enforcement_state.next_holder_commit_num;
+            chan.enforcement_state
+                .set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
+            let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
+            chan.enforcement_state
+                .set_next_holder_commit_num_for_testing(save_commit_num);
 
-        let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+            let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 
-        let redeem_scripts = build_tx_scripts(
-            &keys,
-            commit_tx_ctx.to_broadcaster,
-            commit_tx_ctx.to_countersignatory,
-            &htlcs,
-            &parameters,
-        )
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                commit_tx_ctx.to_broadcaster,
+                commit_tx_ctx.to_countersignatory,
+                &htlcs,
+                &parameters,
+            )
             .expect("scripts");
-        let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
-        chan.sign_holder_commitment_tx(
-            &commit_tx_ctx
-                .tx
-                .as_ref()
-                .unwrap()
-                .trust()
-                .built_transaction()
-                .transaction,
-            &output_witscripts,
-            &payment_hashmap,
-            commit_tx_ctx.commit_num,
-        )
-    })
+            chan.sign_holder_commitment_tx(
+                &commit_tx_ctx
+                    .tx
+                    .as_ref()
+                    .unwrap()
+                    .trust()
+                    .built_transaction()
+                    .transaction,
+                &output_witscripts,
+                &payment_hashmap,
+                commit_tx_ctx.commit_num,
+            )
+        })
 }
 
 // Try and use the funding tx helpers before this comment, the following are compat.

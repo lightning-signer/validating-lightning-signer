@@ -1,10 +1,10 @@
-use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::bip143::SigHashCache;
+use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils::{
-    build_htlc_transaction, HTLCOutputInCommitment, make_funding_redeemscript, TxCreationKeys,
+    build_htlc_transaction, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
 use log::debug;
@@ -13,8 +13,8 @@ use crate::channel::{ChannelSetup, ChannelSlot};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
-    CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT,
-    HTLC_TIMEOUT_TX_WEIGHT, parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
+    parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
+    CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT, HTLC_TIMEOUT_TX_WEIGHT,
 };
 use crate::util::crypto_utils::payload_for_p2wsh;
 use crate::wallet::Wallet;
@@ -640,14 +640,13 @@ impl Validator for SimpleValidator {
                     )));
                 }
             } else {
-                let slot = channel_slot
-                    .ok_or_else(|| {
-                        let outpoint = OutPoint {
-                            txid: tx.txid(),
-                            vout: outndx as u32,
-                        };
-                        policy_error(format!("unknown output: {}", outpoint))
-                    })?;
+                let slot = channel_slot.ok_or_else(|| {
+                    let outpoint = OutPoint {
+                        txid: tx.txid(),
+                        vout: outndx as u32,
+                    };
+                    policy_error(format!("unknown output: {}", outpoint))
+                })?;
                 match &*slot.lock().unwrap() {
                     ChannelSlot::Ready(chan) => {
                         // policy-v1-funding-output-match-commitment

@@ -2,30 +2,40 @@ use core::any::Any;
 use core::fmt;
 use core::fmt::{Debug, Error, Formatter};
 
-use bitcoin::{Network, OutPoint, Script, SigHashType};
-use bitcoin::hashes::Hash;
 use bitcoin::hashes::hex;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
+use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{self, All, Message, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::bip143::SigHashCache;
+use bitcoin::{Network, OutPoint, Script, SigHashType};
 use hashbrown::HashMap as Map;
 use lightning::chain;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface};
-use lightning::ln::chan_utils::{build_htlc_transaction, ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters, derive_private_key, get_htlc_redeemscript, HolderCommitmentTransaction, HTLCOutputInCommitment, make_funding_redeemscript, TxCreationKeys};
+use lightning::ln::chan_utils::{
+    build_htlc_transaction, derive_private_key, get_htlc_redeemscript, make_funding_redeemscript,
+    ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction,
+    CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
+    TxCreationKeys,
+};
 use lightning::ln::PaymentHash;
 use log::debug;
 
-use crate::{Arc, Weak};
 use crate::node::Node;
 use crate::policy::error::policy_error;
 use crate::policy::validator::{EnforcementState, Validator, ValidatorState};
 use crate::prelude::{Box, ToString, Vec};
-use crate::tx::tx::{build_close_tx, build_commitment_tx, CommitmentInfo, CommitmentInfo2, get_commitment_transaction_number_obscure_factor, HTLCInfo, HTLCInfo2, sign_commitment};
-use crate::util::crypto_utils::{derive_private_revocation_key, derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh};
+use crate::tx::tx::{
+    build_close_tx, build_commitment_tx, get_commitment_transaction_number_obscure_factor,
+    sign_commitment, CommitmentInfo, CommitmentInfo2, HTLCInfo, HTLCInfo2,
+};
+use crate::util::crypto_utils::{
+    derive_private_revocation_key, derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh,
+};
 use crate::util::debug_utils::DebugHTLCOutputInCommitment;
-use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::util::status::{internal_error, invalid_argument, Status};
+use crate::util::INITIAL_COMMITMENT_NUMBER;
+use crate::{Arc, Weak};
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
@@ -115,7 +125,6 @@ impl ChannelSetup {
         self.commitment_type == CommitmentType::Anchors
     }
 }
-
 
 /// A trait implemented by both channel states.  See [ChannelSlot]
 pub trait ChannelBase: Any {

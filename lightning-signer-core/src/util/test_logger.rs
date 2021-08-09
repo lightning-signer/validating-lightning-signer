@@ -1,5 +1,5 @@
-use crate::prelude::*;
 use crate::node::SyncLogger;
+use crate::prelude::*;
 use lightning::util::logger::{Level, Logger, Record};
 
 pub struct TestLogger {

@@ -1,5 +1,5 @@
-use bitcoin::Network;
 use bitcoin::secp256k1::PublicKey;
+use bitcoin::Network;
 use kv::{Bucket, Config, Json, Store, TransactionError};
 
 use lightning_signer::channel::{Channel, ChannelId, ChannelStub};
@@ -10,8 +10,8 @@ use lightning_signer::persist::model::{
 use lightning_signer::persist::Persist;
 use lightning_signer::policy::validator::EnforcementState;
 
-use crate::persist::model::{ChannelEntry, NodeEntry};
 use crate::persist::model::NodeChannelId;
+use crate::persist::model::{ChannelEntry, NodeEntry};
 
 /// A persister that uses the kv crate and JSON serialization for values.
 pub struct KVJsonPersister<'a> {
@@ -166,8 +166,8 @@ mod tests {
     use tempfile::TempDir;
     use test_env_log::test;
 
-    use lightning_signer::node::Node;
     use lightning_signer::channel::{channel_nonce_to_id, ChannelSlot};
+    use lightning_signer::node::Node;
     use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
 
     use crate::persist::ser_util::VecWriter;

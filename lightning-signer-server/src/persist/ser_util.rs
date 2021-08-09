@@ -1,14 +1,14 @@
 use std::borrow::Cow;
 use std::convert::TryInto;
 
-use bitcoin::{OutPoint, Script, Txid};
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::key::PublicKey;
+use bitcoin::{OutPoint, Script, Txid};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::util::ser::Writer;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_with::{DeserializeAs, SerializeAs};
 use serde_with::serde_as;
+use serde_with::{DeserializeAs, SerializeAs};
 
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::policy::validator::EnforcementState;

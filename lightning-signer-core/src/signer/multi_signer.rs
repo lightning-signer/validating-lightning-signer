@@ -1,12 +1,12 @@
 use bitcoin;
-use bitcoin::{Network, OutPoint};
 use bitcoin::secp256k1::{PublicKey, Secp256k1};
+use bitcoin::{Network, OutPoint};
 use lightning::chain::keysinterface::KeysInterface;
 use log::info;
 #[cfg(feature = "std")]
 use rand::{OsRng, Rng};
 
-use crate::channel::{Channel, ChannelId, ChannelBase, ChannelSlot};
+use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSlot};
 use crate::node::{Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
 use crate::prelude::*;
@@ -130,8 +130,8 @@ impl MultiSigner {
         channel_id: &ChannelId,
         f: F,
     ) -> Result<T, Status>
-        where
-            F: Fn(&mut ChannelBase) -> Result<T, Status>,
+    where
+        F: Fn(&mut ChannelBase) -> Result<T, Status>,
     {
         let slot_arc = self.get_channel(&node_id, &channel_id)?;
         let mut slot = slot_arc.lock().unwrap();
@@ -165,8 +165,8 @@ impl MultiSigner {
         channel_id: &ChannelId,
         f: F,
     ) -> Result<T, Status>
-        where
-            F: Fn(&mut Channel) -> Result<T, Status>,
+    where
+        F: Fn(&mut Channel) -> Result<T, Status>,
     {
         let slot_arc = self.get_channel(&node_id, &channel_id)?;
         let mut slot = slot_arc.lock().unwrap();
@@ -189,8 +189,8 @@ impl MultiSigner {
 #[cfg(test)]
 mod tests {
     use crate::util::status::Code;
-    use crate::util::test_utils::*;
     use crate::util::test_utils::hex_decode;
+    use crate::util::test_utils::*;
 
     use super::*;
 
