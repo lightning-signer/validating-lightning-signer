@@ -310,13 +310,6 @@ impl ChannelBase for Channel {
             ))
             .into());
         }
-        // policy-v2-revoke-not-closed
-        if self.enforcement_state.mutual_close_signed {
-            return Err(policy_error(format!(
-                "get_per_commitment_secret: mutual close already signed"
-            ))
-            .into());
-        }
         let secret = self
             .keys
             .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
