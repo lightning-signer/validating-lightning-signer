@@ -766,7 +766,11 @@ impl EnforcementState {
         }
     }
 
-    pub fn set_next_holder_commit_num(&mut self, num: u64) -> Result<(), ValidationError> {
+    pub fn set_next_holder_commit_num(
+        &mut self,
+        num: u64,
+        current_info: CommitmentInfo2,
+    ) -> Result<(), ValidationError> {
         let current = self.next_holder_commit_num;
         if num != current && num != current + 1 {
             return Err(policy_error(format!(
@@ -774,8 +778,11 @@ impl EnforcementState {
                 current, num
             )));
         }
-        self.next_holder_commit_num = num;
+        // TODO - should we enforce policy-v1-commitment-retry-same here?
         debug!("next_holder_commit_num {} -> {}", current, num);
+        debug!("current_holder_commit_info: {:#?}", &current_info);
+        self.next_holder_commit_num = num;
+        self.current_holder_commit_info = Some(current_info);
         Ok(())
     }
 
@@ -783,6 +790,7 @@ impl EnforcementState {
         &mut self,
         num: u64,
         current_point: PublicKey,
+        current_info: CommitmentInfo2,
     ) -> Result<(), ValidationError> {
         if num == 0 {
             return Err(policy_error(format!(
@@ -819,7 +827,8 @@ impl EnforcementState {
                      this shouldn't be possible",
                 num
             );
-            // policy-v2-commitment-retry-same
+            // policy-v2-commitment-retry-same (FIXME - not currently in policy-controls.md)
+            // FIXME - need to compare current_info with current_counterparty_commit_info
             if current_point != self.current_counterparty_point.unwrap() {
                 debug!(
                     "current_point {} != prior {}",
@@ -834,7 +843,9 @@ impl EnforcementState {
             }
         } else if num == current + 1 {
             self.previous_counterparty_point = self.current_counterparty_point;
+            self.previous_counterparty_commit_info = self.current_counterparty_commit_info.clone();
             self.current_counterparty_point = Some(current_point);
+            self.current_counterparty_commit_info = Some(current_info);
         } else {
             return Err(policy_error(format!(
                 "invalid next_counterparty_commit_num progression: {} to {}",
@@ -948,7 +959,8 @@ mod tests {
 
     use crate::tx::tx::HTLCInfo2;
     use crate::util::test_utils::{
-        make_test_channel_keys, make_test_channel_setup, make_test_commitment_tx, make_test_pubkey,
+        make_test_channel_keys, make_test_channel_setup, make_test_commitment_info,
+        make_test_commitment_tx, make_test_pubkey,
     };
 
     use super::*;
@@ -1353,10 +1365,11 @@ mod tests {
         let mut state = EnforcementState::new();
 
         let point0 = make_test_pubkey(0x12);
+        let commit_info = make_test_commitment_info();
 
         // you can never set next to 0
         assert_policy_err!(
-            state.set_next_counterparty_commit_num(0, point0.clone()),
+            state.set_next_counterparty_commit_num(0, point0.clone(), commit_info.clone()),
             "set_next_counterparty_commit_num: can\'t set next to 0"
         );
 
@@ -1374,13 +1387,13 @@ mod tests {
 
         // can't skip forward
         assert_policy_err!(
-            state.set_next_counterparty_commit_num(2, point0.clone()),
+            state.set_next_counterparty_commit_num(2, point0.clone(), commit_info.clone()),
             "invalid next_counterparty_commit_num progression: 0 to 2"
         );
 
         // set point 0
         assert!(state
-            .set_next_counterparty_commit_num(1, point0.clone())
+            .set_next_counterparty_commit_num(1, point0.clone(), commit_info.clone())
             .is_ok());
 
         // and now you can get it.
@@ -1392,7 +1405,7 @@ mod tests {
         // you can set it again to the same thing (retry)
         // policy-v2-commitment-retry-same
         assert!(state
-            .set_next_counterparty_commit_num(1, point0.clone())
+            .set_next_counterparty_commit_num(1, point0.clone(), commit_info.clone())
             .is_ok());
         assert_eq!(state.next_counterparty_commit_num, 1);
 
@@ -1400,7 +1413,7 @@ mod tests {
         // policy-v2-commitment-retry-same
         let point1 = make_test_pubkey(0x16);
         assert_policy_err!(
-            state.set_next_counterparty_commit_num(1, point1.clone()),
+            state.set_next_counterparty_commit_num(1, point1.clone(), commit_info.clone()),
             "set_next_counterparty_commit_num 1 retry: point different than prior"
         );
         assert_eq!(state.next_counterparty_commit_num, 1);
@@ -1413,14 +1426,14 @@ mod tests {
 
         // can't skip forward
         assert_policy_err!(
-            state.set_next_counterparty_commit_num(3, point1.clone()),
+            state.set_next_counterparty_commit_num(3, point1.clone(), commit_info.clone()),
             "next_counterparty_commit_num 3 too large relative to next_counterparty_revoke_num 0"
         );
         assert_eq!(state.next_counterparty_commit_num, 1);
 
         // set point 1
         assert!(state
-            .set_next_counterparty_commit_num(2, point1.clone())
+            .set_next_counterparty_commit_num(2, point1.clone(), commit_info.clone())
             .is_ok());
         assert_eq!(state.next_counterparty_commit_num, 2);
 
@@ -1444,7 +1457,7 @@ mod tests {
 
         // can't skip forward
         assert_policy_err!(
-            state.set_next_counterparty_commit_num(4, point1.clone()),
+            state.set_next_counterparty_commit_num(4, point1.clone(), commit_info.clone()),
             "next_counterparty_commit_num 4 too large relative to next_counterparty_revoke_num 0"
         );
         assert_eq!(state.next_counterparty_commit_num, 2);
@@ -1454,7 +1467,7 @@ mod tests {
         // set point 2
         let point2 = make_test_pubkey(0x20);
         assert!(state
-            .set_next_counterparty_commit_num(3, point2.clone())
+            .set_next_counterparty_commit_num(3, point2.clone(), commit_info.clone())
             .is_ok());
         assert_eq!(state.next_counterparty_commit_num, 3);
 

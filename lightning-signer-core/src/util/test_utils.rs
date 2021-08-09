@@ -35,7 +35,7 @@ use crate::node::{Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
 use crate::prelude::*;
 use crate::signer::my_keys_manager::KeyDerivationStyle;
-use crate::tx::tx::{sort_outputs, HTLCInfo2};
+use crate::tx::tx::{sort_outputs, CommitmentInfo2, HTLCInfo2};
 use crate::util::crypto_utils::{payload_for_p2wpkh, payload_for_p2wsh};
 use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
@@ -1055,6 +1055,20 @@ pub fn make_test_commitment_tx() -> bitcoin::Transaction {
             script_pubkey: payload_for_p2wpkh(&make_test_bitcoin_pubkey(1).key).script_pubkey(),
             value: 300,
         }],
+    }
+}
+
+pub fn make_test_commitment_info() -> CommitmentInfo2 {
+    CommitmentInfo2 {
+        is_counterparty_broadcaster: true,
+        to_countersigner_pubkey: make_test_pubkey(0x20),
+        to_countersigner_value_sat: 3_000_000,
+        revocation_pubkey: make_test_pubkey(0x21),
+        to_broadcaster_delayed_pubkey: make_test_pubkey(0x22),
+        to_broadcaster_value_sat: 2_000_000,
+        to_self_delay: 10,
+        offered_htlcs: vec![],
+        received_htlcs: vec![],
     }
 }
 
