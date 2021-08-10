@@ -20,16 +20,41 @@ impl PartialEq for ValidationError {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ValidationError {
     pub kind: ValidationErrorKind,
     #[cfg(feature = "backtrace")]
     pub bt: Backtrace,
 }
 
+impl ValidationError {
+    #[cfg(feature = "backtrace")]
+    pub fn resolved_backtrace(&self) -> Backtrace {
+        let mut mve = self.clone();
+        mve.bt.resolve();
+        mve.bt
+    }
+}
+
 impl core::fmt::Display for ValidationError {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "{:?}", self.kind)
+    }
+}
+
+impl core::fmt::Debug for ValidationError {
+    #[cfg(not(feature = "backtrace"))]
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("ValidationError")
+            .field("kind", &self.kind)
+            .finish()
+    }
+    #[cfg(feature = "backtrace")]
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("ValidationError")
+            .field("kind", &self.kind)
+            .field("bt", &self.resolved_backtrace())
+            .finish()
     }
 }
 

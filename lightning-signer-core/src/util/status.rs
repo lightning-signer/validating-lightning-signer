@@ -130,12 +130,7 @@ impl From<ValidationError> for Status {
         let s: String = ve.clone().into();
         error!("FAILED PRECONDITION: {}", &s);
         #[cfg(feature = "backtrace")]
-        {
-            // Resolve the backtrace for symbolic display.
-            let mut mve = ve.clone();
-            mve.bt.resolve();
-            error!("BACKTRACE:\n{:?}", &mve.bt);
-        }
+        error!("BACKTRACE:\n{:?}", &ve.resolved_backtrace());
         Status::failed_precondition(s)
     }
 }
