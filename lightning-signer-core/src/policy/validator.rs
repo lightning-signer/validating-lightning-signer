@@ -7,7 +7,7 @@ use lightning::ln::chan_utils::{
     build_htlc_transaction, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
-use log::debug;
+use log::{debug, trace};
 
 use crate::channel::{ChannelSetup, ChannelSlot};
 use crate::prelude::*;
@@ -130,6 +130,8 @@ pub struct SimplePolicy {
     pub max_delay: u16,
     /// Maximum channel value in satoshi
     pub max_channel_size_sat: u64,
+    /// Maximum amount allowed to be pushed
+    pub max_push_sat: u64,
     /// amounts below this number of satoshi are not considered important
     pub epsilon_sat: u64,
     /// Maximum number of in-flight HTLCs
@@ -211,7 +213,6 @@ impl SimpleValidator {
 // TODO - policy-v2-commitment-htlc-offered-hash-matches
 // TODO - policy-v2-commitment-htlc-received-spends-active-utxo
 // TODO - policy-v2-commitment-htlc-routing-balance
-// TODO - policy-v2-commitment-initial-funding-value
 // TODO - policy-v2-commitment-previous-revoked (still need secret storage)
 // TODO - policy-v2-commitment-spends-active-utxo
 
@@ -273,6 +274,9 @@ impl Validator for SimpleValidator {
         info: &CommitmentInfo2,
         is_counterparty: bool,
     ) -> Result<(), ValidationError> {
+        // FIXME - since this appears true we should either lose the argument or the field
+        assert!(is_counterparty == info.is_counterparty_broadcaster);
+
         let policy = &self.policy;
 
         // policy-v1-commitment-to-self-delay-range
@@ -361,6 +365,33 @@ impl Validator for SimpleValidator {
                         "retry of sign_counterparty_commitment {} with changed point: \
                              prev {} != new {}",
                         commit_num, &prev_commit_point, &commitment_point
+                    )));
+                }
+            }
+        }
+
+        // Enforce additional requirements on initial commitments.
+        if commit_num == 0 {
+            if info.offered_htlcs.len() + info.received_htlcs.len() > 0 {
+                return Err(policy_error(format!(
+                    "initial commitment may not have HTLCS"
+                )));
+            }
+
+            // policy-v2-commitment-initial-funding-value
+            // If we are the funder, the value to us of the initial
+            // commitment transaction should be equal to our funding
+            // value.
+            if setup.is_outbound {
+                // Ensure that no extra value is sent to fundee, the
+                // no-initial-htlcs and fee checks above will ensure
+                // that our share is valid.
+
+                // The fundee is only entitled to push_value
+                if info.to_countersigner_value_sat > setup.push_value_msat / 1000 {
+                    return Err(policy_error(format!(
+                        "initial commitment may only send push_value_msat ({}) to fundee",
+                        setup.push_value_msat
                     )));
                 }
             }
@@ -590,6 +621,12 @@ impl Validator for SimpleValidator {
                 setup.channel_value_sat
             )));
         }
+        if setup.push_value_msat / 1000 > self.policy.max_push_sat {
+            return Err(policy_error(format!(
+                "push_value_msat {} greater than max_push_sat {}",
+                setup.push_value_msat, self.policy.max_push_sat
+            )));
+        }
         // policy-v1-commitment-to-self-delay-range
         self.validate_delay(
             "counterparty_selected_contest_delay",
@@ -712,6 +749,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             min_delay: 60,
             max_delay: 1440,
             max_channel_size_sat: 1_000_000_001,
+            max_push_sat: 0,
             epsilon_sat: 1_600_000,
             max_htlcs: 1000,
             max_htlc_value_sat: 16_777_216,
@@ -726,6 +764,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             min_delay: 4,
             max_delay: 1440,
             max_channel_size_sat: 1_000_000_001, // lnd itest: wumbu default + 1
+            max_push_sat: 20_000,
             epsilon_sat: 1_600_000, // lnd itest: async_bidirectional_payments (large amount of dust HTLCs)
             max_htlcs: 1000,
             max_htlc_value_sat: 16_777_216, // lnd itest: multi-hop_htlc_error_propagation
@@ -769,7 +808,7 @@ impl EnforcementState {
     pub fn set_next_holder_commit_num(
         &mut self,
         num: u64,
-        current_info: CommitmentInfo2,
+        current_commitment_info: CommitmentInfo2,
     ) -> Result<(), ValidationError> {
         let current = self.next_holder_commit_num;
         if num != current && num != current + 1 {
@@ -780,9 +819,12 @@ impl EnforcementState {
         }
         // TODO - should we enforce policy-v1-commitment-retry-same here?
         debug!("next_holder_commit_num {} -> {}", current, num);
-        debug!("current_holder_commit_info: {:#?}", &current_info);
+        trace!(
+            "current_holder_commit_info: {:#?}",
+            &current_commitment_info
+        );
         self.next_holder_commit_num = num;
-        self.current_holder_commit_info = Some(current_info);
+        self.current_holder_commit_info = Some(current_commitment_info);
         Ok(())
     }
 
@@ -790,7 +832,7 @@ impl EnforcementState {
         &mut self,
         num: u64,
         current_point: PublicKey,
-        current_info: CommitmentInfo2,
+        current_commitment_info: CommitmentInfo2,
     ) -> Result<(), ValidationError> {
         if num == 0 {
             return Err(policy_error(format!(
@@ -828,7 +870,7 @@ impl EnforcementState {
                 num
             );
             // policy-v2-commitment-retry-same (FIXME - not currently in policy-controls.md)
-            // FIXME - need to compare current_info with current_counterparty_commit_info
+            // FIXME - need to compare current_commitment_info with current_counterparty_commit_info
             if current_point != self.current_counterparty_point.unwrap() {
                 debug!(
                     "current_point {} != prior {}",
@@ -843,9 +885,9 @@ impl EnforcementState {
             }
         } else if num == current + 1 {
             self.previous_counterparty_point = self.current_counterparty_point;
-            self.previous_counterparty_commit_info = self.current_counterparty_commit_info.clone();
+            self.previous_counterparty_commit_info = self.current_counterparty_commit_info.take();
             self.current_counterparty_point = Some(current_point);
-            self.current_counterparty_commit_info = Some(current_info);
+            self.current_counterparty_commit_info = Some(current_commitment_info);
         } else {
             return Err(policy_error(format!(
                 "invalid next_counterparty_commit_num progression: {} to {}",
@@ -857,6 +899,10 @@ impl EnforcementState {
         debug!(
             "next_counterparty_commit_num {} -> {} current {}",
             current, num, current_point
+        );
+        trace!(
+            "current_counterparty_commit_info: {:#?}",
+            &self.current_counterparty_commit_info
         );
         Ok(())
     }
@@ -976,6 +1022,7 @@ mod tests {
             min_delay: 5,
             max_delay: 1440,
             max_channel_size_sat: 100_000_000,
+            max_push_sat: 0,
             epsilon_sat: 100_000,
             max_htlcs: 1000,
             max_htlc_value_sat: 10_000_000,
@@ -1029,6 +1076,19 @@ mod tests {
         assert!(validator.validate_channel_open(&setup).is_err());
     }
 
+    #[test]
+    fn validate_channel_open_bad_push_val() {
+        let mut setup = make_test_channel_setup();
+        let validator = make_test_validator();
+        setup.push_value_msat = 0;
+        assert!(validator.validate_channel_open(&setup).is_ok());
+        setup.push_value_msat = 1000;
+        assert_policy_err!(
+            validator.validate_channel_open(&setup),
+            "push_value_msat 1000 greater than max_push_sat 0"
+        );
+    }
+
     fn make_counterparty_info(
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
@@ -1070,8 +1130,11 @@ mod tests {
     #[test]
     fn validate_commitment_tx_test() {
         let validator = make_test_validator();
-        let enforcement_state = EnforcementState::new();
-        let commit_num = 0;
+        let mut enforcement_state = EnforcementState::new();
+        let commit_num = 23;
+        enforcement_state
+            .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
+        enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
         let commit_point = make_test_pubkey(0x12);
         let vstate = make_test_validator_state();
         let setup = make_test_channel_setup();
@@ -1178,24 +1241,27 @@ mod tests {
             payment_hash: PaymentHash([0; 32]),
             cltv_expiry: 1005,
         };
-        let enforcement_state = EnforcementState::new();
-        let commit_num = 0;
+        let mut enforcement_state = EnforcementState::new();
+        let commit_num = 23;
+        enforcement_state
+            .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
+        enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
         let commit_point = make_test_pubkey(0x12);
         let state = make_test_validator_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
         let info = make_counterparty_info(2_000_000, 800_000, delay, vec![htlc.clone()], vec![]);
-        assert!(validator
-            .validate_commitment_tx(
-                &enforcement_state,
-                commit_num,
-                &commit_point,
-                &setup,
-                &state,
-                &info,
-                true
-            )
-            .is_ok());
+
+        let status = validator.validate_commitment_tx(
+            &enforcement_state,
+            commit_num,
+            &commit_point,
+            &setup,
+            &state,
+            &info,
+            true,
+        );
+        assert!(status.is_ok());
         let info_bad =
             make_counterparty_info(2_000_000, 800_000 - 1, delay, vec![htlc.clone()], vec![]);
         assert_policy_error!(
@@ -1209,6 +1275,61 @@ mod tests {
                 true
             ),
             "channel value short by 100001 > 100000"
+        );
+    }
+
+    #[test]
+    fn validate_commitment_tx_initial_with_htlcs() {
+        let validator = make_test_validator();
+        let htlc = HTLCInfo2 {
+            value_sat: 100_000,
+            payment_hash: PaymentHash([0; 32]),
+            cltv_expiry: 1005,
+        };
+        let enforcement_state = EnforcementState::new();
+        let commit_num = 0;
+        let commit_point = make_test_pubkey(0x12);
+        let state = make_test_validator_state();
+        let setup = make_test_channel_setup();
+        let delay = setup.holder_selected_contest_delay;
+        let info = make_counterparty_info(2_000_000, 800_000, delay, vec![htlc.clone()], vec![]);
+
+        let status = validator.validate_commitment_tx(
+            &enforcement_state,
+            commit_num,
+            &commit_point,
+            &setup,
+            &state,
+            &info,
+            true,
+        );
+        assert_policy_error!(status, "initial commitment may not have HTLCS");
+    }
+
+    // policy-v2-commitment-initial-funding-value
+    #[test]
+    fn validate_commitment_tx_initial_with_bad_fundee_output() {
+        let validator = make_test_validator();
+        let enforcement_state = EnforcementState::new();
+        let commit_num = 0;
+        let commit_point = make_test_pubkey(0x12);
+        let state = make_test_validator_state();
+        let setup = make_test_channel_setup();
+        let delay = setup.holder_selected_contest_delay;
+        let info = make_counterparty_info(2_000_000, 950_000, delay, vec![], vec![]);
+
+        let status = validator.validate_commitment_tx(
+            &enforcement_state,
+            commit_num,
+            &commit_point,
+            &setup,
+            &state,
+            &info,
+            true,
+        );
+        assert_policy_err!(
+            status,
+            "initial commitment may only send push_value_msat (0) to fundee"
         );
     }
 
@@ -1271,8 +1392,11 @@ mod tests {
     #[test]
     fn validate_commitment_tx_htlc_delay_test() {
         let validator = make_test_validator();
-        let enforcement_state = EnforcementState::new();
-        let commit_num = 0;
+        let mut enforcement_state = EnforcementState::new();
+        let commit_num = 23;
+        enforcement_state
+            .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
+        enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
         let commit_point = make_test_pubkey(0x12);
         let state = make_test_validator_state();
         let setup = make_test_channel_setup();
@@ -1284,17 +1408,16 @@ mod tests {
             vec![],
             vec![make_htlc_info2(1005)],
         );
-        assert!(validator
-            .validate_commitment_tx(
-                &enforcement_state,
-                commit_num,
-                &commit_point,
-                &setup,
-                &state,
-                &info_good,
-                true
-            )
-            .is_ok());
+        let status = validator.validate_commitment_tx(
+            &enforcement_state,
+            commit_num,
+            &commit_point,
+            &setup,
+            &state,
+            &info_good,
+            true,
+        );
+        assert!(status.is_ok());
         let info_good = make_counterparty_info(
             2_000_000,
             990_000,
