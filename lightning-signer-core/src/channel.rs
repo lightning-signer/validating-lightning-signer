@@ -1034,7 +1034,6 @@ impl Channel {
                 &self.setup,
                 &vstate,
                 &info2,
-                true,
             )
             .map_err(|ve| {
                 debug!(
@@ -1044,7 +1043,8 @@ impl Channel {
                 ve
             })?;
 
-        let htlcs = Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
+        let htlcs =
+            Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
 
         let recomposed_tx = self.make_counterparty_commitment_tx(
             remote_per_commitment_point,
@@ -1081,7 +1081,7 @@ impl Channel {
         let point = recomposed_tx.trust().keys().per_commitment_point;
 
         self.enforcement_state
-            .set_next_counterparty_commit_num(commit_num + 1, point)?;
+            .set_next_counterparty_commit_num(commit_num + 1, point, info2)?;
 
         // Sign the recomposed commitment.
         let sigs = self
@@ -1123,7 +1123,7 @@ impl Channel {
         output_witscripts: &Vec<Vec<u8>>,
         payment_hashmap: &Map<[u8; 20], PaymentHash>,
         commitment_number: u64,
-    ) -> Result<CommitmentTransaction, Status> {
+    ) -> Result<(CommitmentTransaction, CommitmentInfo2), Status> {
         // Set the feerate_per_kw to 0 because it is only used to
         // generate the htlc success/timeout tx signatures and these
         // signatures are discarded.
@@ -1178,7 +1178,7 @@ impl Channel {
         feerate_per_kw: u32,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
-    ) -> Result<CommitmentTransaction, Status> {
+    ) -> Result<(CommitmentTransaction, CommitmentInfo2), Status> {
         if tx.output.len() != output_witscripts.len() {
             return Err(invalid_argument("len(tx.output) != len(witscripts)"));
         }
@@ -1223,7 +1223,7 @@ impl Channel {
         received_htlcs: Vec<HTLCInfo2>,
         validator: Box<dyn Validator>,
         info: CommitmentInfo,
-    ) -> Result<CommitmentTransaction, Status> {
+    ) -> Result<(CommitmentTransaction, CommitmentInfo2), Status> {
         let commitment_point = &self.get_per_commitment_point(commitment_number)?;
         let info2 = self.build_holder_commitment_info(
             &commitment_point,
@@ -1243,7 +1243,6 @@ impl Channel {
                 &self.setup,
                 &state,
                 &info2,
-                false,
             )
             .map_err(|ve| {
                 debug!(
@@ -1253,7 +1252,8 @@ impl Channel {
                 ve
             })?;
 
-        let htlcs = Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
+        let htlcs =
+            Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
 
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
@@ -1284,7 +1284,7 @@ impl Channel {
         // - policy-v1-commitment-delayed-pubkey
         // - policy-v2-revoke-new-commitment-valid
 
-        Ok(recomposed_tx)
+        Ok((recomposed_tx, info2))
     }
 
     /// Validate the counterparty's signatures on the holder's
@@ -1313,7 +1313,7 @@ impl Channel {
 
         validator.validate_holder_commitment_state(&self.enforcement_state)?;
 
-        let recomposed_tx = self.make_recomposed_holder_commitment_tx_improved(
+        let (recomposed_tx, info2) = self.make_recomposed_holder_commitment_tx_improved(
             tx,
             output_witscripts,
             commitment_number,
@@ -1407,7 +1407,7 @@ impl Channel {
 
         // Advance the local commitment number state.
         self.enforcement_state
-            .set_next_holder_commit_num(commitment_number + 1)?;
+            .set_next_holder_commit_num(commitment_number + 1, info2)?;
 
         // These calls are guaranteed to pass the commitment_number
         // check because we just advanced it to the right spot above.
@@ -1466,7 +1466,7 @@ impl Channel {
 
         validator.validate_sign_holder_commitment_tx(&self.enforcement_state, commitment_number)?;
 
-        let recomposed_tx = self.make_recomposed_holder_commitment_tx(
+        let (recomposed_tx, _info2) = self.make_recomposed_holder_commitment_tx(
             tx,
             output_witscripts,
             payment_hashmap,

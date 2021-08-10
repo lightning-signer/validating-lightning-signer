@@ -11,6 +11,7 @@ pub mod log_utils;
 pub mod loopback;
 pub mod test_logger;
 #[cfg(feature = "test_utils")]
+#[macro_use]
 pub mod test_utils;
 #[cfg(feature = "test_utils")]
 #[rustfmt::skip]
