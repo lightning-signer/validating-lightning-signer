@@ -41,6 +41,34 @@ use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
 use crate::Arc;
 
+#[macro_export]
+macro_rules! assert_invalid_argument_err {
+    ($status: expr, $msg: expr) => {
+        assert!($status.is_err());
+        let err = $status.unwrap_err();
+        assert_eq!(err.code(), Code::InvalidArgument);
+        assert_eq!(err.message(), $msg);
+    };
+}
+
+#[macro_export]
+macro_rules! assert_failed_precondition_err {
+    ($status: expr, $msg: expr) => {
+        assert!($status.is_err());
+        let err = $status.unwrap_err();
+        assert_eq!(err.code(), Code::FailedPrecondition);
+        assert_eq!(err.message(), $msg);
+    };
+}
+
+#[macro_export]
+macro_rules! assert_policy_err {
+    ($res: expr, $msg: expr) => {
+        assert!($res.is_err());
+        assert_eq!($res.unwrap_err().kind, policy_error($msg.to_string()).kind);
+    };
+}
+
 pub struct TestPersister {
     pub update_ret: Mutex<Result<(), channelmonitor::ChannelMonitorUpdateErr>>,
 }

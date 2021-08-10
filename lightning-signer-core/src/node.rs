@@ -804,31 +804,6 @@ mod tests {
 
     use super::*;
 
-    macro_rules! assert_invalid_argument_err {
-        ($status: expr, $msg: expr) => {
-            assert!($status.is_err());
-            let err = $status.unwrap_err();
-            assert_eq!(err.code(), Code::InvalidArgument);
-            assert_eq!(err.message(), $msg);
-        };
-    }
-
-    macro_rules! assert_failed_precondition_err {
-        ($status: expr, $msg: expr) => {
-            assert!($status.is_err());
-            let err = $status.unwrap_err();
-            assert_eq!(err.code(), Code::FailedPrecondition);
-            assert_eq!(err.message(), $msg);
-        };
-    }
-
-    macro_rules! assert_policy_err {
-        ($status: expr, $msg: expr) => {
-            assert!($status.is_err());
-            assert_eq!($status.unwrap_err(), policy_error($msg.to_string()));
-        };
-    }
-
     #[test]
     fn channel_debug_test() {
         let (node, channel_id) =

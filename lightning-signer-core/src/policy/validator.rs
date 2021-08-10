@@ -1011,12 +1011,6 @@ mod tests {
 
     use super::*;
 
-    macro_rules! assert_policy_error {
-        ($res: expr, $expected: expr) => {
-            assert_eq!($res.unwrap_err(), policy_error($expected.to_string()));
-        };
-    }
-
     fn make_test_validator() -> SimpleValidator {
         let policy = SimplePolicy {
             min_delay: 5,
@@ -1063,7 +1057,7 @@ mod tests {
             &tx,
             &vec![vec![]],
         );
-        assert_policy_error!(res, "bad commitment version: 1");
+        assert_policy_err!(res, "bad commitment version: 1");
     }
 
     #[test]
@@ -1161,7 +1155,7 @@ mod tests {
         setup.holder_selected_contest_delay = 5;
         assert!(validator.validate_channel_open(&setup).is_ok());
         setup.holder_selected_contest_delay = 4;
-        assert_policy_error!(
+        assert_policy_err!(
             validator.validate_channel_open(&setup),
             "holder_selected_contest_delay too small"
         );
@@ -1175,7 +1169,7 @@ mod tests {
         setup.holder_selected_contest_delay = 1440;
         assert!(validator.validate_channel_open(&setup).is_ok());
         setup.holder_selected_contest_delay = 1441;
-        assert_policy_error!(
+        assert_policy_err!(
             validator.validate_channel_open(&setup),
             "holder_selected_contest_delay too large"
         );
@@ -1189,7 +1183,7 @@ mod tests {
         setup.counterparty_selected_contest_delay = 5;
         assert!(validator.validate_channel_open(&setup).is_ok());
         setup.counterparty_selected_contest_delay = 4;
-        assert_policy_error!(
+        assert_policy_err!(
             validator.validate_channel_open(&setup),
             "counterparty_selected_contest_delay too small"
         );
@@ -1203,7 +1197,7 @@ mod tests {
         setup.counterparty_selected_contest_delay = 1440;
         assert!(validator.validate_channel_open(&setup).is_ok());
         setup.counterparty_selected_contest_delay = 1441;
-        assert_policy_error!(
+        assert_policy_err!(
             validator.validate_channel_open(&setup),
             "counterparty_selected_contest_delay too large"
         );
@@ -1219,7 +1213,7 @@ mod tests {
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
         let info_bad = make_counterparty_info(2_000_000, 900_000 - 1, delay, vec![], vec![]);
-        assert_policy_error!(
+        assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,
                 commit_num,
@@ -1264,7 +1258,7 @@ mod tests {
         assert!(status.is_ok());
         let info_bad =
             make_counterparty_info(2_000_000, 800_000 - 1, delay, vec![htlc.clone()], vec![]);
-        assert_policy_error!(
+        assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,
                 commit_num,
@@ -1303,7 +1297,7 @@ mod tests {
             &info,
             true,
         );
-        assert_policy_error!(status, "initial commitment may not have HTLCS");
+        assert_policy_err!(status, "initial commitment may not have HTLCS");
     }
 
     // policy-v2-commitment-initial-funding-value
@@ -1344,7 +1338,7 @@ mod tests {
         let htlcs = (0..1001).map(|_| make_htlc_info2(1100)).collect();
         let delay = setup.holder_selected_contest_delay;
         let info_bad = make_counterparty_info(99_000_000, 900_000, delay, vec![], htlcs);
-        assert_policy_error!(
+        assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,
                 commit_num,
@@ -1375,7 +1369,7 @@ mod tests {
             })
             .collect();
         let info_bad = make_counterparty_info(99_000_000, 900_000, delay, vec![], htlcs);
-        assert_policy_error!(
+        assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,
                 commit_num,
@@ -1443,7 +1437,7 @@ mod tests {
             vec![],
             vec![make_htlc_info2(1004)],
         );
-        assert_policy_error!(
+        assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,
                 commit_num,
@@ -1462,7 +1456,7 @@ mod tests {
             vec![],
             vec![make_htlc_info2(2441)],
         );
-        assert_policy_error!(
+        assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,
                 commit_num,
