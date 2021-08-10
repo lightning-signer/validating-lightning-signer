@@ -1034,7 +1034,6 @@ impl Channel {
                 &self.setup,
                 &vstate,
                 &info2,
-                true,
             )
             .map_err(|ve| {
                 debug!(
@@ -1244,7 +1243,6 @@ impl Channel {
                 &self.setup,
                 &state,
                 &info2,
-                false,
             )
             .map_err(|ve| {
                 debug!(

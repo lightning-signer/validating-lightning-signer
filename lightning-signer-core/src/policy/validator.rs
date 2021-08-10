@@ -40,7 +40,6 @@ pub trait Validator {
         setup: &ChannelSetup,
         vstate: &ValidatorState,
         info2: &CommitmentInfo2,
-        is_counterparty: bool,
     ) -> Result<(), ValidationError>;
 
     /// Ensures that signing a holder commitment is valid.
@@ -272,10 +271,8 @@ impl Validator for SimpleValidator {
         setup: &ChannelSetup,
         vstate: &ValidatorState,
         info: &CommitmentInfo2,
-        is_counterparty: bool,
     ) -> Result<(), ValidationError> {
-        // FIXME - since this appears true we should either lose the argument or the field
-        assert!(is_counterparty == info.is_counterparty_broadcaster);
+        let is_counterparty = info.is_counterparty_broadcaster;
 
         let policy = &self.policy;
 
@@ -1142,7 +1139,6 @@ mod tests {
                 &setup,
                 &vstate,
                 &info,
-                true
             )
             .is_ok());
     }
@@ -1221,7 +1217,6 @@ mod tests {
                 &setup,
                 &state,
                 &info_bad,
-                true
             ),
             "channel value short by 100001 > 100000"
         );
@@ -1253,7 +1248,6 @@ mod tests {
             &setup,
             &state,
             &info,
-            true,
         );
         assert!(status.is_ok());
         let info_bad =
@@ -1266,7 +1260,6 @@ mod tests {
                 &setup,
                 &state,
                 &info_bad,
-                true
             ),
             "channel value short by 100001 > 100000"
         );
@@ -1295,7 +1288,6 @@ mod tests {
             &setup,
             &state,
             &info,
-            true,
         );
         assert_policy_err!(status, "initial commitment may not have HTLCS");
     }
@@ -1319,7 +1311,6 @@ mod tests {
             &setup,
             &state,
             &info,
-            true,
         );
         assert_policy_err!(
             status,
@@ -1346,7 +1337,6 @@ mod tests {
                 &setup,
                 &state,
                 &info_bad,
-                true
             ),
             "too many HTLCs"
         );
@@ -1377,7 +1367,6 @@ mod tests {
                 &setup,
                 &state,
                 &info_bad,
-                true
             ),
             "sum of HTLC values 10001000 too large"
         );
@@ -1409,7 +1398,6 @@ mod tests {
             &setup,
             &state,
             &info_good,
-            true,
         );
         assert!(status.is_ok());
         let info_good = make_counterparty_info(
@@ -1427,7 +1415,6 @@ mod tests {
                 &setup,
                 &state,
                 &info_good,
-                true
             )
             .is_ok());
         let info_bad = make_counterparty_info(
@@ -1445,7 +1432,6 @@ mod tests {
                 &setup,
                 &state,
                 &info_bad,
-                true
             ),
             "received HTLC expiry too early"
         );
@@ -1464,7 +1450,6 @@ mod tests {
                 &setup,
                 &state,
                 &info_bad,
-                true
             ),
             "received HTLC expiry too late"
         );
