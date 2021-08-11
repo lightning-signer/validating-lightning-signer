@@ -23,7 +23,7 @@ use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
 };
 use lightning::util::logger::Logger;
-use log::info;
+use log::{info, trace};
 
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub};
 use crate::persist::model::NodeEntry;
@@ -461,6 +461,7 @@ impl Node {
             channels.insert(channel_id0, arcobj.clone());
         }
 
+        trace_enforcement_state!(&chan.enforcement_state);
         self.persister
             .update_channel(&self.get_id(), &chan)
             .map_err(|_| Status::internal("persist failed"))?;

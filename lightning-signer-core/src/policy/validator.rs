@@ -7,7 +7,7 @@ use lightning::ln::chan_utils::{
     build_htlc_transaction, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
-use log::{debug, trace};
+use log::debug;
 
 use crate::channel::{ChannelSetup, ChannelSlot};
 use crate::prelude::*;
@@ -816,10 +816,6 @@ impl EnforcementState {
         }
         // TODO - should we enforce policy-v1-commitment-retry-same here?
         debug!("next_holder_commit_num {} -> {}", current, num);
-        trace!(
-            "current_holder_commit_info: {:#?}",
-            &current_commitment_info
-        );
         self.next_holder_commit_num = num;
         self.current_holder_commit_info = Some(current_commitment_info);
         Ok(())
@@ -896,10 +892,6 @@ impl EnforcementState {
         debug!(
             "next_counterparty_commit_num {} -> {} current {}",
             current, num, current_point
-        );
-        trace!(
-            "current_counterparty_commit_info: {:#?}",
-            &self.current_counterparty_commit_info
         );
         Ok(())
     }
