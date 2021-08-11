@@ -2312,7 +2312,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        let mut commit_tx_ctx = channel_initial_commitment(&node_ctx, &chan_ctx);
+        let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)?;
@@ -2372,7 +2372,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        let mut commit_tx_ctx = channel_initial_commitment(&node_ctx, &chan_ctx);
+        let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
@@ -2417,7 +2417,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        let mut commit_tx_ctx = channel_initial_commitment(&node_ctx, &chan_ctx);
+        let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
@@ -2451,7 +2451,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        let mut commit_tx_ctx = channel_initial_commitment(&node_ctx, &chan_ctx);
+        let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
@@ -2490,13 +2490,13 @@ mod tests {
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
 
-        let mut commit_tx_ctx0 = channel_initial_commitment(&node_ctx, &chan_ctx0);
+        let mut commit_tx_ctx0 = channel_initial_holder_commitment(&node_ctx, &chan_ctx0);
         let (csig0, hsigs0) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx0, &mut commit_tx_ctx0);
         validate_holder_commitment(&node_ctx, &chan_ctx0, &commit_tx_ctx0, &csig0, &hsigs0)
             .expect("valid holder commitment");
 
-        let mut commit_tx_ctx1 = channel_initial_commitment(&node_ctx, &chan_ctx1);
+        let mut commit_tx_ctx1 = channel_initial_holder_commitment(&node_ctx, &chan_ctx1);
         let (csig1, hsigs1) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx1, &mut commit_tx_ctx1);
         validate_holder_commitment(&node_ctx, &chan_ctx1, &commit_tx_ctx1, &csig1, &hsigs1)
@@ -2536,7 +2536,7 @@ mod tests {
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
 
-        let mut commit_tx_ctx0 = channel_initial_commitment(&node_ctx, &chan_ctx0);
+        let mut commit_tx_ctx0 = channel_initial_holder_commitment(&node_ctx, &chan_ctx0);
         let (csig0, hsigs0) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx0, &mut commit_tx_ctx0);
         validate_holder_commitment(&node_ctx, &chan_ctx0, &commit_tx_ctx0, &csig0, &hsigs0)
@@ -2604,7 +2604,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        let mut commit_tx_ctx = channel_initial_commitment(&node_ctx, &chan_ctx);
+        let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
