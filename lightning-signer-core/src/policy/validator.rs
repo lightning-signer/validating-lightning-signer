@@ -384,8 +384,14 @@ impl Validator for SimpleValidator {
                 // no-initial-htlcs and fee checks above will ensure
                 // that our share is valid.
 
+                let fundee_value_sat = if is_counterparty {
+                    info.to_broadcaster_value_sat
+                } else {
+                    info.to_countersigner_value_sat
+                };
+
                 // The fundee is only entitled to push_value
-                if info.to_broadcaster_value_sat > setup.push_value_msat / 1000 {
+                if fundee_value_sat > setup.push_value_msat / 1000 {
                     return Err(policy_error(format!(
                         "initial commitment may only send push_value_msat ({}) to fundee",
                         setup.push_value_msat
