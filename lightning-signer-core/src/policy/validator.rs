@@ -385,7 +385,7 @@ impl Validator for SimpleValidator {
                 // that our share is valid.
 
                 // The fundee is only entitled to push_value
-                if info.to_countersigner_value_sat > setup.push_value_msat / 1000 {
+                if info.to_broadcaster_value_sat > setup.push_value_msat / 1000 {
                     return Err(policy_error(format!(
                         "initial commitment may only send push_value_msat ({}) to fundee",
                         setup.push_value_msat
@@ -1079,17 +1079,16 @@ mod tests {
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> CommitmentInfo2 {
-        let to_counterparty_pubkey = make_test_pubkey(1);
+        let to_holder_pubkey = make_test_pubkey(1);
         let revocation_pubkey = make_test_pubkey(2);
         let to_broadcaster_delayed_pubkey = make_test_pubkey(3);
-        let to_counterparty_pubkey = to_counterparty_pubkey.clone();
         CommitmentInfo2 {
             is_counterparty_broadcaster: true,
-            to_countersigner_pubkey: to_counterparty_pubkey,
-            to_countersigner_value_sat: to_counterparty_value_sat,
+            to_countersigner_pubkey: to_holder_pubkey,
+            to_countersigner_value_sat: to_holder_value_sat,
             revocation_pubkey,
             to_broadcaster_delayed_pubkey: to_broadcaster_delayed_pubkey,
-            to_broadcaster_value_sat: to_holder_value_sat,
+            to_broadcaster_value_sat: to_counterparty_value_sat,
             to_self_delay,
             offered_htlcs,
             received_htlcs,

@@ -2930,7 +2930,7 @@ mod tests {
         );
 
         assert_failed_precondition_err!(
-            sign_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx,),
+            sign_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx),
             "policy failure: can\'t sign revoked commitment_number 9, \
              next_holder_commit_num is 11"
         );

@@ -1021,8 +1021,8 @@ impl Channel {
 
         let info2 = self.build_counterparty_commitment_info(
             remote_per_commitment_point,
-            info.to_broadcaster_value_sat,
             info.to_countersigner_value_sat,
+            info.to_broadcaster_value_sat,
             offered_htlcs,
             received_htlcs,
         )?;
