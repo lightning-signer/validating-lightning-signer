@@ -508,6 +508,7 @@ impl Channel {
             htlc_sigs.push(htlc_sig);
         }
         trace_enforcement_state!(&self.enforcement_state);
+        self.persist()?;
         Ok((sig, htlc_sigs))
     }
 
