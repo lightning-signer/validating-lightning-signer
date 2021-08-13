@@ -954,6 +954,12 @@ impl EnforcementState {
             )));
         }
 
+        // Remove any revoked commitment state.
+        if num + 1 == self.next_counterparty_commit_num {
+            // We can't remove the previous_counterparty_point, needed for retries.
+            self.previous_counterparty_commit_info = None;
+        }
+
         self.next_counterparty_revoke_num = num;
         debug!("next_counterparty_revoke_num {} -> {}", current, num);
         Ok(())
