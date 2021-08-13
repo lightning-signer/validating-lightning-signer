@@ -1452,13 +1452,6 @@ mod tests {
         );
     }
 
-    macro_rules! assert_policy_err {
-        ($status: expr, $msg: expr) => {
-            assert!($status.is_err());
-            assert_eq!($status.unwrap_err(), policy_error($msg.to_string()));
-        };
-    }
-
     #[test]
     fn enforcement_state_previous_counterparty_point_test() {
         let mut state = EnforcementState::new();

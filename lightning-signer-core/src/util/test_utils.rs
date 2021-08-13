@@ -41,6 +41,17 @@ use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
 use crate::Arc;
 
+// Status assertions:
+
+#[macro_export]
+macro_rules! assert_status_ok {
+    ($status: expr) => {
+        if $status.is_err() {
+            panic!("unexpected Status: {:#?}", $status.unwrap_err());
+        }
+    };
+}
+
 #[macro_export]
 macro_rules! assert_invalid_argument_err {
     ($status: expr, $msg: expr) => {
@@ -63,9 +74,25 @@ macro_rules! assert_failed_precondition_err {
 
 #[macro_export]
 macro_rules! assert_policy_err {
-    ($res: expr, $msg: expr) => {
-        assert!($res.is_err());
-        assert_eq!($res.unwrap_err().kind, policy_error($msg.to_string()).kind);
+    ($status: expr, $msg: expr) => {
+        assert!($status.is_err());
+        // avoid printing the backtrace ...
+        assert_eq!(
+            $status.unwrap_err().kind,
+            policy_error($msg.to_string()).kind
+        );
+    };
+}
+
+// ValidationError assertions:
+
+#[macro_export]
+macro_rules! assert_validation_ok {
+    ($res: expr) => {
+        if $res.is_err() {
+            // avoid printing the backtrace ...
+            panic!("unexepected ValidationError: {:#?}", $res.unwrap_err().kind);
+        }
     };
 }
 
