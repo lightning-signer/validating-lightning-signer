@@ -7,7 +7,7 @@ use lightning::ln::chan_utils::{
     build_htlc_transaction, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
-use log::{debug, trace};
+use log::debug;
 
 use crate::channel::{ChannelSetup, ChannelSlot};
 use crate::prelude::*;
@@ -384,8 +384,14 @@ impl Validator for SimpleValidator {
                 // no-initial-htlcs and fee checks above will ensure
                 // that our share is valid.
 
+                let fundee_value_sat = if is_counterparty {
+                    info.to_broadcaster_value_sat
+                } else {
+                    info.to_countersigner_value_sat
+                };
+
                 // The fundee is only entitled to push_value
-                if info.to_countersigner_value_sat > setup.push_value_msat / 1000 {
+                if fundee_value_sat > setup.push_value_msat / 1000 {
                     return Err(policy_error(format!(
                         "initial commitment may only send push_value_msat ({}) to fundee",
                         setup.push_value_msat
@@ -816,10 +822,6 @@ impl EnforcementState {
         }
         // TODO - should we enforce policy-v1-commitment-retry-same here?
         debug!("next_holder_commit_num {} -> {}", current, num);
-        trace!(
-            "current_holder_commit_info: {:#?}",
-            &current_commitment_info
-        );
         self.next_holder_commit_num = num;
         self.current_holder_commit_info = Some(current_commitment_info);
         Ok(())
@@ -896,10 +898,6 @@ impl EnforcementState {
         debug!(
             "next_counterparty_commit_num {} -> {} current {}",
             current, num, current_point
-        );
-        trace!(
-            "current_counterparty_commit_info: {:#?}",
-            &self.current_counterparty_commit_info
         );
         Ok(())
     }
@@ -1087,17 +1085,16 @@ mod tests {
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> CommitmentInfo2 {
-        let to_counterparty_pubkey = make_test_pubkey(1);
+        let to_holder_pubkey = make_test_pubkey(1);
         let revocation_pubkey = make_test_pubkey(2);
         let to_broadcaster_delayed_pubkey = make_test_pubkey(3);
-        let to_counterparty_pubkey = to_counterparty_pubkey.clone();
         CommitmentInfo2 {
             is_counterparty_broadcaster: true,
-            to_countersigner_pubkey: to_counterparty_pubkey,
-            to_countersigner_value_sat: to_counterparty_value_sat,
+            to_countersigner_pubkey: to_holder_pubkey,
+            to_countersigner_value_sat: to_holder_value_sat,
             revocation_pubkey,
             to_broadcaster_delayed_pubkey: to_broadcaster_delayed_pubkey,
-            to_broadcaster_value_sat: to_holder_value_sat,
+            to_broadcaster_value_sat: to_counterparty_value_sat,
             to_self_delay,
             offered_htlcs,
             received_htlcs,

@@ -748,7 +748,7 @@ pub fn fund_test_channel(node_ctx: &TestNodeContext, channel_amount: u64) -> Tes
 
     funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-    let mut commit_tx_ctx = channel_initial_commitment(&node_ctx, &chan_ctx);
+    let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
     let (csig, hsigs) =
         counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
     validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
@@ -760,7 +760,7 @@ pub fn fund_test_channel(node_ctx: &TestNodeContext, channel_amount: u64) -> Tes
     chan_ctx
 }
 
-pub fn channel_initial_commitment(
+pub fn channel_initial_holder_commitment(
     node_ctx: &TestNodeContext,
     chan_ctx: &TestChannelContext,
 ) -> TestCommitmentTxContext {

@@ -27,6 +27,13 @@ macro_rules! log_channel_public_keys {
     };
 }
 
+#[macro_export]
+macro_rules! trace_enforcement_state {
+    ($estate: expr) => {
+        trace!("{}:\n{:#?}", function!(), $estate);
+    };
+}
+
 // Debug printer for Payload which uses hex encoded strings.
 pub struct DebugPayload<'a>(pub &'a Payload);
 impl<'a> core::fmt::Debug for DebugPayload<'a> {

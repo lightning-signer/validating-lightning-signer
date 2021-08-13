@@ -23,7 +23,7 @@ use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
 };
 use lightning::util::logger::Logger;
-use log::info;
+use log::{info, trace};
 
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub};
 use crate::persist::model::NodeEntry;
@@ -461,6 +461,7 @@ impl Node {
             channels.insert(channel_id0, arcobj.clone());
         }
 
+        trace_enforcement_state!(&chan.enforcement_state);
         self.persister
             .update_channel(&self.get_id(), &chan)
             .map_err(|_| Status::internal("persist failed"))?;
@@ -2311,7 +2312,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        let mut commit_tx_ctx = channel_initial_commitment(&node_ctx, &chan_ctx);
+        let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)?;
@@ -2371,7 +2372,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        let mut commit_tx_ctx = channel_initial_commitment(&node_ctx, &chan_ctx);
+        let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
@@ -2416,7 +2417,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        let mut commit_tx_ctx = channel_initial_commitment(&node_ctx, &chan_ctx);
+        let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
@@ -2450,7 +2451,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        let mut commit_tx_ctx = channel_initial_commitment(&node_ctx, &chan_ctx);
+        let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
@@ -2489,13 +2490,13 @@ mod tests {
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
 
-        let mut commit_tx_ctx0 = channel_initial_commitment(&node_ctx, &chan_ctx0);
+        let mut commit_tx_ctx0 = channel_initial_holder_commitment(&node_ctx, &chan_ctx0);
         let (csig0, hsigs0) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx0, &mut commit_tx_ctx0);
         validate_holder_commitment(&node_ctx, &chan_ctx0, &commit_tx_ctx0, &csig0, &hsigs0)
             .expect("valid holder commitment");
 
-        let mut commit_tx_ctx1 = channel_initial_commitment(&node_ctx, &chan_ctx1);
+        let mut commit_tx_ctx1 = channel_initial_holder_commitment(&node_ctx, &chan_ctx1);
         let (csig1, hsigs1) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx1, &mut commit_tx_ctx1);
         validate_holder_commitment(&node_ctx, &chan_ctx1, &commit_tx_ctx1, &csig1, &hsigs1)
@@ -2535,7 +2536,7 @@ mod tests {
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
 
-        let mut commit_tx_ctx0 = channel_initial_commitment(&node_ctx, &chan_ctx0);
+        let mut commit_tx_ctx0 = channel_initial_holder_commitment(&node_ctx, &chan_ctx0);
         let (csig0, hsigs0) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx0, &mut commit_tx_ctx0);
         validate_holder_commitment(&node_ctx, &chan_ctx0, &commit_tx_ctx0, &csig0, &hsigs0)
@@ -2603,7 +2604,7 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        let mut commit_tx_ctx = channel_initial_commitment(&node_ctx, &chan_ctx);
+        let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
@@ -2929,7 +2930,7 @@ mod tests {
         );
 
         assert_failed_precondition_err!(
-            sign_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx,),
+            sign_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx),
             "policy failure: can\'t sign revoked commitment_number 9, \
              next_holder_commit_num is 11"
         );

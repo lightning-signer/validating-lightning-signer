@@ -19,7 +19,7 @@ use lightning::ln::chan_utils::{
     TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
-use log::debug;
+use log::{debug, trace};
 
 use crate::node::Node;
 use crate::policy::error::policy_error;
@@ -507,6 +507,8 @@ impl Channel {
             htlc_sig.push(SigHashType::All as u8);
             htlc_sigs.push(htlc_sig);
         }
+        trace_enforcement_state!(&self.enforcement_state);
+        self.persist()?;
         Ok((sig, htlc_sigs))
     }
 
@@ -615,6 +617,7 @@ impl Channel {
             htlc_sig_vec.push(SigHashType::All as u8);
             htlc_sig_vecs.push(htlc_sig_vec);
         }
+        trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok((sig_vec, htlc_sig_vecs))
     }
@@ -749,6 +752,7 @@ impl Channel {
             .keys
             .sign_closing_transaction(&tx, &self.secp_ctx)
             .map_err(|_| Status::internal("failed to sign"));
+        trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         res
     }
@@ -1018,8 +1022,8 @@ impl Channel {
 
         let info2 = self.build_counterparty_commitment_info(
             remote_per_commitment_point,
-            info.to_broadcaster_value_sat,
             info.to_countersigner_value_sat,
+            info.to_broadcaster_value_sat,
             offered_htlcs,
             received_htlcs,
         )?;
@@ -1089,6 +1093,7 @@ impl Channel {
             .sign_counterparty_commitment(&recomposed_tx, &self.secp_ctx)
             .map_err(|_| internal_error(format!("sign_counterparty_commitment failed")))?;
 
+        trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
 
         // Discard the htlc signatures for now.
@@ -1423,6 +1428,7 @@ impl Channel {
             None
         };
 
+        trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
 
         Ok((next_holder_commitment_point, maybe_old_secret))
@@ -1446,6 +1452,7 @@ impl Channel {
         validator.validate_counterparty_revocation(&estate, revoke_num, old_secret)?;
         estate.set_next_counterparty_revoke_num(revoke_num + 1)?;
 
+        trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok(())
     }
@@ -1500,6 +1507,7 @@ impl Channel {
             .sign_holder_commitment_and_htlcs(&recomposed_holder_tx, &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
 
+        trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
 
         // Discard the htlc signatures for now.
@@ -1521,6 +1529,7 @@ impl Channel {
         )
         .map_err(|_| Status::internal("failed to sign"))?;
         self.enforcement_state.mutual_close_signed = true;
+        trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok(sig)
     }
