@@ -954,6 +954,12 @@ impl EnforcementState {
             )));
         }
 
+        // Remove any revoked commitment state.
+        if num + 1 == self.next_counterparty_commit_num {
+            // We can't remove the previous_counterparty_point, needed for retries.
+            self.previous_counterparty_commit_info = None;
+        }
+
         self.next_counterparty_revoke_num = num;
         debug!("next_counterparty_revoke_num {} -> {}", current, num);
         Ok(())
@@ -1450,13 +1456,6 @@ mod tests {
             ),
             "received HTLC expiry too late"
         );
-    }
-
-    macro_rules! assert_policy_err {
-        ($status: expr, $msg: expr) => {
-            assert!($status.is_err());
-            assert_eq!($status.unwrap_err(), policy_error($msg.to_string()));
-        };
     }
 
     #[test]
