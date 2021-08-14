@@ -33,6 +33,13 @@ pub async fn new_node(
     client: &mut SignerClient<transport::Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mnemonic = Mnemonic::generate_in(Language::English, 12).unwrap();
+    new_node_with_mnemonic(client, mnemonic).await
+}
+
+pub async fn new_node_with_mnemonic(
+    client: &mut SignerClient<transport::Channel>,
+    mnemonic: Mnemonic,
+) -> Result<(), Box<dyn std::error::Error>> {
     let secret = mnemonic.to_seed("");
     let init_request = Request::new(InitRequest {
         node_config: Some(NodeConfig {
