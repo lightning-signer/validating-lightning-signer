@@ -1,7 +1,11 @@
 extern crate clap;
+
+use std::io;
+
 use clap::{App, Arg, ArgMatches};
 
 use lightning_signer_server::client::driver;
+use bip39::Mnemonic;
 
 fn make_test_subapp() -> App<'static> {
     App::new("test")
@@ -33,7 +37,15 @@ async fn ping_subcommand() -> Result<(), Box<dyn std::error::Error>> {
 fn make_node_subapp() -> App<'static> {
     App::new("node")
         .about("control a node")
-        .subcommand(App::new("new").about("Add a new node to the signer.  Outputs the node ID to stdout and the mnemonic to stderr."))
+        .subcommand(
+            App::new("new")
+                .about("Add a new node to the signer.  Outputs the node ID to stdout and the mnemonic to stderr.")
+                .arg(Arg::new("mnemonic")
+                    .about("read mnemonic from stdin")
+                    .long("mnemonic")
+                    .short('m')
+                    .takes_value(false))
+        )
         .subcommand(App::new("list").about("List configured nodes."))
 }
 
@@ -42,7 +54,16 @@ async fn node_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
     let mut client = driver::connect().await?;
 
     match matches.subcommand() {
-        Some(("new", _)) => driver::new_node(&mut client).await?,
+        Some(("new", matches)) => {
+            if matches.is_present("mnemonic") {
+                let mut buf = String::new();
+                io::stdin().read_line(&mut buf).expect("stdin");
+                let mnemonic = Mnemonic::parse(buf.trim())?;
+                driver::new_node_with_mnemonic(&mut client, mnemonic).await?
+            } else {
+                driver::new_node(&mut client).await?
+            }
+        },
         Some(("list", _)) => driver::list_nodes(&mut client).await?,
         Some((name, _)) => panic!("unimplemented command {}", name),
         None => {

@@ -19,7 +19,10 @@ Assuming the server is running (see above), the admin CLI can be invoked as foll
 Here is an example session:
 
 ```shell
+# this outputs the new mnemonic phrase to stderr
 node_id=$(cargo run --bin client -- node new)
+# alternatively, supply the mnemonic phrase on stdin
+# cargo run --bin client -- node new --mnemonic
 channel_id=$(cargo run --bin client -- channel new -n $node_id)
 cargo run --bin client -- channel list -n $node_id
 ```
