@@ -5,7 +5,6 @@ use std::{cmp, process};
 use backtrace::Backtrace;
 use bitcoin;
 use bitcoin::consensus::{deserialize, encode};
-use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
 use bitcoin::hashes::Hash as BitcoinHash;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::util::psbt::serialize::Deserialize;
@@ -22,7 +21,6 @@ use lightning_signer::channel::{channel_nonce_to_id, ChannelId, ChannelSetup, Co
 use lightning_signer::node::SpendType;
 use lightning_signer::node::{self};
 use lightning_signer::persist::{DummyPersister, Persist};
-use lightning_signer::prelude::Map;
 use lightning_signer::signer::multi_signer::MultiSigner;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
@@ -709,13 +707,10 @@ impl Signer for SignServer {
             .map(|odsc| odsc.witscript.clone())
             .collect();
 
-        let mut payment_hashmap = Map::new();
-        for hash in req.payment_hashes.iter() {
-            let phash = hash.as_slice().try_into().map_err(|err| {
-                invalid_grpc_argument(format!("could not decode payment hash: {}", err))
-            })?;
-            payment_hashmap.insert(Ripemd160Hash::hash(hash).into_inner(), PaymentHash(phash));
-        }
+        let commit_num = req.commit_num;
+        let offered_htlcs = self.convert_htlcs(&req.offered_htlcs)?;
+        let received_htlcs = self.convert_htlcs(&req.received_htlcs)?;
+        let feerate_sat_per_kw = req.feerate_sat_per_kw;
 
         let sig = self
             .signer
@@ -724,8 +719,10 @@ impl Signer for SignServer {
                     &tx,
                     &witscripts,
                     &remote_per_commitment_point,
-                    &payment_hashmap,
-                    req.commit_num,
+                    commit_num,
+                    feerate_sat_per_kw,
+                    offered_htlcs.clone(),
+                    received_htlcs.clone(),
                 )
             })?;
 
@@ -891,18 +888,22 @@ impl Signer for SignServer {
             .map(|odsc| odsc.witscript.clone())
             .collect();
 
-        let mut payment_hashmap = Map::new();
-        for hash in req.payment_hashes.iter() {
-            let phash = hash.as_slice().try_into().map_err(|err| {
-                invalid_grpc_argument(format!("could not decode payment hash: {}", err))
-            })?;
-            payment_hashmap.insert(Ripemd160Hash::hash(hash).into_inner(), PaymentHash(phash));
-        }
+        let commit_num = req.commit_num;
+        let offered_htlcs = self.convert_htlcs(&req.offered_htlcs)?;
+        let received_htlcs = self.convert_htlcs(&req.received_htlcs)?;
+        let feerate_per_kw = req.feerate_sat_per_kw;
 
         let sig = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                chan.sign_holder_commitment_tx(&tx, &witscripts, &payment_hashmap, req.commit_num)
+                chan.sign_holder_commitment_tx(
+                    &tx,
+                    &witscripts,
+                    commit_num,
+                    feerate_per_kw,
+                    offered_htlcs.clone(),
+                    received_htlcs.clone(),
+                )
             })?;
 
         let reply = SignatureReply {

@@ -9,7 +9,6 @@ use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{self, All, Message, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::{Network, OutPoint, Script, SigHashType};
-use hashbrown::HashMap as Map;
 use lightning::chain;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface};
 use lightning::ln::chan_utils::{
@@ -18,7 +17,6 @@ use lightning::ln::chan_utils::{
     CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
     TxCreationKeys,
 };
-use lightning::ln::PaymentHash;
 use log::{debug, trace};
 
 use crate::node::Node;
@@ -27,7 +25,7 @@ use crate::policy::validator::{EnforcementState, Validator, ValidatorState};
 use crate::prelude::{Box, ToString, Vec};
 use crate::tx::tx::{
     build_close_tx, build_commitment_tx, get_commitment_transaction_number_obscure_factor,
-    sign_commitment, CommitmentInfo, CommitmentInfo2, HTLCInfo, HTLCInfo2,
+    sign_commitment, CommitmentInfo, CommitmentInfo2, HTLCInfo2,
 };
 use crate::util::crypto_utils::{
     derive_private_revocation_key, derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh,
@@ -985,14 +983,11 @@ impl Channel {
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
         remote_per_commitment_point: &PublicKey,
-        payment_hashmap: &Map<[u8; 20], PaymentHash>,
         commitment_number: u64,
+        feerate_per_kw: u32,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<Signature, Status> {
-        // Set the feerate_per_kw to 0 because it is only used to
-        // generate the htlc success/timeout tx signatures and these
-        // signatures are discarded.
-        let feerate_per_kw = 0;
-
         if tx.output.len() != output_witscripts.len() {
             return Err(invalid_argument("len(tx.output) != len(witscripts)"));
         }
@@ -1016,9 +1011,6 @@ impl Channel {
             tx,
             output_witscripts,
         )?;
-
-        let offered_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.offered_htlcs)?;
-        let received_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.received_htlcs)?;
 
         let info2 = self.build_counterparty_commitment_info(
             remote_per_commitment_point,
@@ -1100,82 +1092,7 @@ impl Channel {
         Ok(sigs.0)
     }
 
-    fn htlcs_info1_to_info2(
-        payment_hashmap: &Map<[u8; 20], PaymentHash>,
-        htlcs: &Vec<HTLCInfo>,
-    ) -> Result<Vec<HTLCInfo2>, Status> {
-        let mut htlcs2 = Vec::new();
-        for htlc in htlcs.iter() {
-            let payment_hash = payment_hashmap
-                .get(&htlc.payment_hash_hash)
-                .ok_or_else(|| Status::invalid_argument("unmappable htlc payment_hash"))?;
-            htlcs2.push(HTLCInfo2 {
-                value_sat: htlc.value_sat,
-                payment_hash: payment_hash.clone(),
-                cltv_expiry: htlc.cltv_expiry,
-            });
-        }
-        Ok(htlcs2)
-    }
-
-    // This routine can be replaced with
-    // make_recomposed_holder_commitment_tx_improved below when we
-    // upgrade the sign_holder_commitment_tx signature to have real
-    // HTLCInfo instead of just the payment_hashmap workaround.
     fn make_recomposed_holder_commitment_tx(
-        &self,
-        tx: &bitcoin::Transaction,
-        output_witscripts: &Vec<Vec<u8>>,
-        payment_hashmap: &Map<[u8; 20], PaymentHash>,
-        commitment_number: u64,
-    ) -> Result<(CommitmentTransaction, CommitmentInfo2), Status> {
-        // Set the feerate_per_kw to 0 because it is only used to
-        // generate the htlc success/timeout tx signatures and these
-        // signatures are discarded.
-        let feerate_per_kw = 0;
-
-        if tx.output.len() != output_witscripts.len() {
-            return Err(invalid_argument("len(tx.output) != len(witscripts)"));
-        }
-
-        let validator = self
-            .node
-            .upgrade()
-            .unwrap()
-            .validator_factory
-            .make_validator(self.network());
-
-        // Since we didn't have the value at the real open, validate it now.
-        validator.validate_channel_open(&self.setup)?;
-
-        // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
-        let is_counterparty = false;
-        let info = validator.make_info(
-            &self.keys,
-            &self.setup,
-            is_counterparty,
-            tx,
-            output_witscripts,
-        )?;
-
-        let offered_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.offered_htlcs)?;
-        let received_htlcs = Self::htlcs_info1_to_info2(payment_hashmap, &info.received_htlcs)?;
-
-        self.make_recomposed_holder_commitment_tx_common(
-            tx,
-            commitment_number,
-            feerate_per_kw,
-            offered_htlcs,
-            received_htlcs,
-            validator,
-            info,
-        )
-    }
-
-    // This version is better because:
-    // 1. It has full HTLCInfo2 information (payment_hash and offerer cltv_expiry).
-    // 2, It has a real feerate_per_kw.
-    fn make_recomposed_holder_commitment_tx_improved(
         &self,
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
@@ -1185,7 +1102,11 @@ impl Channel {
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(CommitmentTransaction, CommitmentInfo2), Status> {
         if tx.output.len() != output_witscripts.len() {
-            return Err(invalid_argument("len(tx.output) != len(witscripts)"));
+            return Err(invalid_argument(format!(
+                "len(tx.output):{} != len(witscripts):{}",
+                tx.output.len(),
+                output_witscripts.len()
+            )));
         }
 
         let validator = self
@@ -1318,7 +1239,7 @@ impl Channel {
 
         validator.validate_holder_commitment_state(&self.enforcement_state)?;
 
-        let (recomposed_tx, info2) = self.make_recomposed_holder_commitment_tx_improved(
+        let (recomposed_tx, info2) = self.make_recomposed_holder_commitment_tx(
             tx,
             output_witscripts,
             commitment_number,
@@ -1461,8 +1382,10 @@ impl Channel {
         &self,
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
-        payment_hashmap: &Map<[u8; 20], PaymentHash>,
         commitment_number: u64,
+        feerate_per_kw: u32,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<Signature, Status> {
         let validator = self
             .node
@@ -1476,8 +1399,10 @@ impl Channel {
         let (recomposed_tx, _info2) = self.make_recomposed_holder_commitment_tx(
             tx,
             output_witscripts,
-            payment_hashmap,
             commitment_number,
+            feerate_per_kw,
+            offered_htlcs,
+            received_htlcs,
         )?;
         let htlcs = recomposed_tx.htlcs();
 

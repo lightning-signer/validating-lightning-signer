@@ -413,8 +413,10 @@ message SignCounterpartyCommitmentTxRequest {
   Transaction tx = 4;
 
   // These are needed in addition to the tx to recompose.
-  repeated bytes payment_hashes = 5;
-  uint64 commit_num = 6;
+  uint64 commit_num = 5;
+  uint32 feerate_sat_per_kw = 6;
+  repeated HTLCInfo offered_htlcs = 10;
+  repeated HTLCInfo received_htlcs = 11;
 }
 
 // Validate the counterparty's signatures
@@ -471,8 +473,10 @@ message SignHolderCommitmentTxRequest {
   Transaction tx = 3;
 
   // These are needed in addition to the tx to recompose.
-  repeated bytes payment_hashes = 4;
   uint64 commit_num = 5;
+  uint32 feerate_sat_per_kw = 6;
+  repeated HTLCInfo offered_htlcs = 10;
+  repeated HTLCInfo received_htlcs = 11;
 }
 
 // As part of a force close, sweep a holder-broadcast HTLC output hanging off the

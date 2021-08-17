@@ -330,7 +330,12 @@ impl Validator for SimpleValidator {
         let shortage = setup
             .channel_value_sat
             .checked_sub(consumed)
-            .ok_or_else(|| policy_error("channel shortage underflow".to_string()))?;
+            .ok_or_else(|| {
+                policy_error(format!(
+                    "channel shortage underflow: {} - {}",
+                    setup.channel_value_sat, consumed
+                ))
+            })?;
         if shortage > policy.epsilon_sat {
             return Err(policy_error(format!(
                 "channel value short by {} > {}",

@@ -772,7 +772,6 @@ mod tests {
     use bitcoin::hash_types::Txid;
     use bitcoin::hashes::hash160::Hash as Hash160;
     use bitcoin::hashes::hex::ToHex;
-    use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
     use bitcoin::hashes::sha256d::Hash as Sha256dHash;
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1;
@@ -1070,15 +1069,16 @@ mod tests {
                 // rebuild to get the scripts
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
-                let payment_hashmap = Map::new();
 
                 let sig = chan
                     .sign_counterparty_commitment_tx(
                         &tx.transaction,
                         &output_witscripts,
                         &remote_percommitment_point,
-                        &payment_hashmap,
                         commit_num,
+                        feerate_per_kw,
+                        vec![],
+                        vec![],
                     )
                     .expect("sign");
                 Ok((sig, tx.transaction.clone()))
@@ -1116,6 +1116,7 @@ mod tests {
         let to_counterparty_value_sat = 2_000_000;
         let to_holder_value_sat =
             setup.channel_value_sat - to_counterparty_value_sat - (2 * ANCHOR_SAT);
+        let feerate_per_kw = 0;
         let (sig, tx) = node
             .with_ready_channel(&channel_id, |chan| {
                 let info = chan.build_counterparty_commitment_info(
@@ -1129,14 +1130,15 @@ mod tests {
                 let (tx, output_scripts, _) =
                     chan.build_commitment_tx(&remote_percommitment_point, commit_num, &info)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
-                let payment_hashmap = Map::new();
                 let sig = chan
                     .sign_counterparty_commitment_tx(
                         &tx,
                         &output_witscripts,
                         &remote_percommitment_point,
-                        &payment_hashmap,
                         commit_num,
+                        feerate_per_kw,
+                        vec![],
+                        vec![],
                     )
                     .expect("sign");
                 Ok((sig, tx))
@@ -1182,42 +1184,33 @@ mod tests {
         let remote_percommitment_point = make_test_pubkey(10);
         let counterparty_points = make_test_counterparty_points();
 
-        let htlc1 = HTLCOutputInCommitment {
-            offered: true,
-            amount_msat: 1000,
+        let htlc1 = HTLCInfo2 {
+            value_sat: 1,
             payment_hash: PaymentHash([1; 32]),
             cltv_expiry: 2 << 16,
-            transaction_output_index: None,
         };
 
-        let htlc2 = HTLCOutputInCommitment {
-            offered: false,
-            amount_msat: 1000,
+        let htlc2 = HTLCInfo2 {
+            value_sat: 1,
             payment_hash: PaymentHash([3; 32]),
             cltv_expiry: 3 << 16,
-            transaction_output_index: None,
         };
 
-        let htlc3 = HTLCOutputInCommitment {
-            offered: false,
-            amount_msat: 1000,
+        let htlc3 = HTLCInfo2 {
+            value_sat: 1,
             payment_hash: PaymentHash([5; 32]),
             cltv_expiry: 4 << 16,
-            transaction_output_index: None,
         };
+
+        let offered_htlcs = vec![htlc1];
+        let received_htlcs = vec![htlc2, htlc3];
 
         let (sig, tx) = node
             .with_ready_channel(&channel_id, |chan| {
                 let channel_parameters = chan.make_channel_parameters();
                 let parameters = channel_parameters.as_counterparty_broadcastable();
-                let mut htlcs = vec![htlc1.clone(), htlc2.clone(), htlc3.clone()];
-                let mut payment_hashmap = Map::new();
-                for htlc in &htlcs {
-                    payment_hashmap.insert(
-                        Ripemd160Hash::hash(&htlc.payment_hash.0).into_inner(),
-                        htlc.payment_hash,
-                    );
-                }
+                let mut htlcs =
+                    Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
                 let keys = chan
                     .make_counterparty_tx_keys(&remote_percommitment_point)
                     .unwrap();
@@ -1261,8 +1254,10 @@ mod tests {
                         &tx.transaction,
                         &output_witscripts,
                         &remote_percommitment_point,
-                        &payment_hashmap,
                         commit_num,
+                        feerate_per_kw,
+                        offered_htlcs.clone(),
+                        received_htlcs.clone(),
                     )
                     .expect("sign");
                 Ok((sig, tx.transaction.clone()))
@@ -1317,17 +1312,13 @@ mod tests {
             cltv_expiry: 4 << 16,
         };
 
+        let offered_htlcs = vec![htlc1.clone()];
+        let received_htlcs = vec![htlc2.clone(), htlc3.clone()];
+        let feerate_per_kw = 0;
+
         let to_counterparty_value_sat = 2_000_000;
         let to_holder_value_sat =
             setup.channel_value_sat - to_counterparty_value_sat - 3 - (2 * ANCHOR_SAT);
-
-        let mut payment_hashmap = Map::new();
-        for htlc in &vec![htlc1.clone(), htlc2.clone(), htlc3.clone()] {
-            payment_hashmap.insert(
-                Ripemd160Hash::hash(&htlc.payment_hash.0).into_inner(),
-                htlc.payment_hash,
-            );
-        }
 
         let (sig, tx) = node
             .with_ready_channel(&channel_id, |chan| {
@@ -1335,8 +1326,8 @@ mod tests {
                     &remote_percommitment_point,
                     to_holder_value_sat,
                     to_counterparty_value_sat,
-                    vec![htlc1.clone()],
-                    vec![htlc2.clone(), htlc3.clone()],
+                    offered_htlcs.clone(),
+                    received_htlcs.clone(),
                 )?;
                 let commit_num = 23;
                 let (tx, output_scripts, _) =
@@ -1347,8 +1338,10 @@ mod tests {
                         &tx,
                         &output_witscripts,
                         &remote_percommitment_point,
-                        &payment_hashmap,
                         commit_num,
+                        feerate_per_kw,
+                        offered_htlcs.clone(),
+                        received_htlcs.clone(),
                     )
                     .expect("sign");
                 Ok((sig, tx))
@@ -4022,7 +4015,10 @@ mod tests {
                 let feerate_per_kw = 0;
                 let to_broadcaster = 2_000_000;
                 let to_countersignatory = 1_000_000;
-                let mut htlcs = vec![];
+                let offered_htlcs = vec![];
+                let received_htlcs = vec![];
+                let mut htlcs =
+                    Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
                 chan.enforcement_state
                     .set_next_holder_commit_num_for_testing(commit_num);
@@ -4056,14 +4052,15 @@ mod tests {
                 // rebuild to get the scripts
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
-                let payment_hashmap = Map::new();
 
                 let sig = chan
                     .sign_holder_commitment_tx(
                         &tx.transaction,
                         &output_witscripts,
-                        &payment_hashmap,
                         commit_num,
+                        feerate_per_kw,
+                        offered_htlcs,
+                        received_htlcs,
                     )
                     .expect("sign");
                 Ok((sig, tx.transaction.clone()))
@@ -4460,45 +4457,33 @@ mod tests {
         Arc<Node>,
         ChannelSetup,
         ChannelId,
-        Vec<HTLCOutputInCommitment>,
-        hashbrown::HashMap<[u8; 20], PaymentHash>,
+        Vec<HTLCInfo2>,
+        Vec<HTLCInfo2>,
     ) {
         let setup = make_test_channel_setup();
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
-        let htlc1 = HTLCOutputInCommitment {
-            offered: true,
-            amount_msat: 1000,
+        let htlc1 = HTLCInfo2 {
+            value_sat: 1,
             payment_hash: PaymentHash([1; 32]),
             cltv_expiry: 2 << 16,
-            transaction_output_index: None,
         };
 
-        let htlc2 = HTLCOutputInCommitment {
-            offered: false,
-            amount_msat: 1000,
+        let htlc2 = HTLCInfo2 {
+            value_sat: 1,
             payment_hash: PaymentHash([3; 32]),
             cltv_expiry: 3 << 16,
-            transaction_output_index: None,
         };
 
-        let htlc3 = HTLCOutputInCommitment {
-            offered: false,
-            amount_msat: 1000,
+        let htlc3 = HTLCInfo2 {
+            value_sat: 1,
             payment_hash: PaymentHash([5; 32]),
             cltv_expiry: 4 << 16,
-            transaction_output_index: None,
         };
-        let htlcs = vec![htlc1.clone(), htlc2.clone(), htlc3.clone()];
-        let mut payment_hashmap = Map::new();
-        for htlc in &htlcs {
-            payment_hashmap.insert(
-                Ripemd160Hash::hash(&htlc.payment_hash.0).into_inner(),
-                htlc.payment_hash,
-            );
-        }
-        (node, setup, channel_id, htlcs, payment_hashmap)
+        let offered_htlcs = vec![htlc1];
+        let received_htlcs = vec![htlc2, htlc3];
+        (node, setup, channel_id, offered_htlcs, received_htlcs)
     }
 
     fn sign_counterparty_commitment_tx_with_mutators<StateMutator, KeysMutator, TxMutator>(
@@ -4511,7 +4496,7 @@ mod tests {
         KeysMutator: Fn(&mut TxCreationKeys),
         TxMutator: Fn(&mut BuiltCommitmentTransaction),
     {
-        let (node, setup, channel_id, htlcs, payment_hashmap) =
+        let (node, setup, channel_id, offered_htlcs, received_htlcs) =
             sign_commitment_tx_with_mutators_setup();
 
         let remote_percommitment_point = make_test_pubkey(10);
@@ -4537,6 +4522,8 @@ mod tests {
 
             // Mutate the tx creation keys.
             keysmut(&mut keys);
+
+            let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
             let redeem_scripts = build_tx_scripts(
                 &keys,
@@ -4569,8 +4556,10 @@ mod tests {
                 &tx.transaction,
                 &output_witscripts,
                 &remote_percommitment_point,
-                &payment_hashmap,
                 commit_num,
+                feerate_per_kw,
+                offered_htlcs.clone(),
+                received_htlcs.clone(),
             )?;
             Ok((sig, tx.transaction.clone()))
         })?;
@@ -4606,7 +4595,7 @@ mod tests {
         KeysMutator: Fn(&mut TxCreationKeys),
         TxMutator: Fn(&mut BuiltCommitmentTransaction),
     {
-        let (node, setup, channel_id, htlcs, payment_hashmap) =
+        let (node, setup, channel_id, offered_htlcs, received_htlcs) =
             sign_commitment_tx_with_mutators_setup();
 
         let (sig, tx) = node.with_ready_channel(&channel_id, |chan| {
@@ -4630,6 +4619,8 @@ mod tests {
 
             // Mutate the tx creation keys.
             keysmut(&mut keys);
+
+            let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
             let redeem_scripts = build_tx_scripts(
                 &keys,
@@ -4660,8 +4651,10 @@ mod tests {
             let sig = chan.sign_holder_commitment_tx(
                 &tx.transaction,
                 &output_witscripts,
-                &payment_hashmap,
                 commit_num,
+                feerate_per_kw,
+                offered_htlcs.clone(),
+                received_htlcs.clone(),
             )?;
             Ok((sig, tx.transaction.clone()))
         })?;
@@ -4991,22 +4984,26 @@ mod tests {
             &mut bitcoin::Transaction,
             &mut Vec<Vec<u8>>,
             &mut PublicKey,
-            &mut Map<[u8; 20], PaymentHash>,
+            &mut u32,
+            &mut Vec<HTLCInfo2>,
+            &mut Vec<HTLCInfo2>,
         ),
     {
-        let (node, _setup, channel_id, htlcs, payment_hashmap0) =
+        let (node, _setup, channel_id, offered_htlcs0, received_htlcs0) =
             sign_commitment_tx_with_mutators_setup();
 
         node.with_ready_channel(&channel_id, |chan| {
+            let mut offered_htlcs = offered_htlcs0.clone();
+            let mut received_htlcs = received_htlcs0.clone();
             let channel_parameters = chan.make_channel_parameters();
 
-            let mut payment_hashmap = payment_hashmap0.clone();
             let mut remote_percommitment_point = make_test_pubkey(10);
 
             let commit_num = 23;
-            let feerate_per_kw = 0;
+            let mut feerate_per_kw = 0;
             let to_broadcaster = 1_999_997;
             let to_countersignatory = 1_000_000;
+            let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
             chan.enforcement_state
                 .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
@@ -5044,8 +5041,10 @@ mod tests {
                 &tx.transaction,
                 &output_witscripts,
                 &remote_percommitment_point,
-                &payment_hashmap,
                 commit_num,
+                feerate_per_kw,
+                offered_htlcs.clone(),
+                received_htlcs.clone(),
             )?;
 
             // Mutate the arguments to the commitment.
@@ -5053,7 +5052,9 @@ mod tests {
                 &mut tx.transaction,
                 &mut output_witscripts,
                 &mut remote_percommitment_point,
-                &mut payment_hashmap,
+                &mut feerate_per_kw,
+                &mut offered_htlcs,
+                &mut received_htlcs,
             );
 
             // Sign it again (retry).
@@ -5061,8 +5062,10 @@ mod tests {
                 &tx.transaction,
                 &output_witscripts,
                 &remote_percommitment_point,
-                &payment_hashmap,
                 commit_num,
+                feerate_per_kw,
+                offered_htlcs,
+                received_htlcs,
             )?;
 
             Ok(())
@@ -5072,7 +5075,12 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_retry_same() {
         assert!(sign_counterparty_commitment_tx_retry_with_mutator(
-            |_tx, _output_witscripts, _remote_percommitment_point, _payment_hashmap| {
+            |_tx,
+             _output_witscripts,
+             _remote_percommitment_point,
+             _feerate_per_kw,
+             _offered_htlcs,
+             _received_htlcs| {
                 // If we don't mutate anything it should succeed.
             }
         )
@@ -5084,7 +5092,12 @@ mod tests {
     fn sign_counterparty_commitment_tx_retry_with_bad_point() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_retry_with_mutator(
-                |_tx, _output_witscripts, remote_percommitment_point, _payment_hashmap| {
+                |_tx,
+                 _output_witscripts,
+                 remote_percommitment_point,
+                 _feerate_per_kw,
+                 _offered_htlcs,
+                 _received_htlcs| {
                     *remote_percommitment_point = make_test_pubkey(42);
                 }
             ),
@@ -5108,13 +5121,12 @@ mod tests {
         RevocationMutator: Fn(&mut Channel, &mut SecretKey),
         ChannelStateValidator: Fn(&Channel),
     {
-        let (node, _setup, channel_id, htlcs, payment_hashmap0) =
+        let (node, _setup, channel_id, offered_htlcs, received_htlcs) =
             sign_commitment_tx_with_mutators_setup();
 
         node.with_ready_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
 
-            let payment_hashmap = payment_hashmap0.clone();
             let remote_percommit_point = make_test_pubkey(10);
             let mut remote_percommit_secret = make_test_privkey(10);
 
@@ -5136,6 +5148,7 @@ mod tests {
 
             let parameters = channel_parameters.as_counterparty_broadcastable();
             let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
+            let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
             let redeem_scripts = build_tx_scripts(
                 &keys,
@@ -5163,8 +5176,10 @@ mod tests {
                 &tx.transaction,
                 &output_witscripts,
                 &remote_percommit_point,
-                &payment_hashmap,
                 REV_COMMIT_NUM,
+                feerate_per_kw,
+                offered_htlcs.clone(),
+                received_htlcs.clone(),
             )?;
 
             // commit 21: revoked
@@ -5315,7 +5330,7 @@ mod tests {
 
     #[test]
     fn validate_counterparty_revocation_with_retry() {
-        let (node, _setup, channel_id, htlcs, payment_hashmap0) =
+        let (node, _setup, channel_id, offered_htlcs, received_htlcs) =
             sign_commitment_tx_with_mutators_setup();
 
         // Setup enforcement state
@@ -5337,7 +5352,6 @@ mod tests {
         assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
 
-            let payment_hashmap = payment_hashmap0.clone();
             let remote_percommit_point = make_test_pubkey(REV_COMMIT_NUM as u8);
 
             let feerate_per_kw = 0;
@@ -5346,6 +5360,7 @@ mod tests {
 
             let parameters = channel_parameters.as_counterparty_broadcastable();
             let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
+            let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
             let redeem_scripts = build_tx_scripts(
                 &keys,
@@ -5373,8 +5388,10 @@ mod tests {
                 &tx.transaction,
                 &output_witscripts,
                 &remote_percommit_point,
-                &payment_hashmap,
                 REV_COMMIT_NUM,
+                feerate_per_kw,
+                offered_htlcs.clone(),
+                received_htlcs.clone(),
             )?;
 
             // commit 21: revoked
@@ -5401,7 +5418,6 @@ mod tests {
         assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
 
-            let payment_hashmap = payment_hashmap0.clone();
             let remote_percommit_point = make_test_pubkey((REV_COMMIT_NUM + 1) as u8);
 
             let feerate_per_kw = 0;
@@ -5410,6 +5426,7 @@ mod tests {
 
             let parameters = channel_parameters.as_counterparty_broadcastable();
             let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
+            let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
             let redeem_scripts = build_tx_scripts(
                 &keys,
@@ -5437,8 +5454,10 @@ mod tests {
                 &tx.transaction,
                 &output_witscripts,
                 &remote_percommit_point,
-                &payment_hashmap,
                 REV_COMMIT_NUM + 1,
+                feerate_per_kw,
+                offered_htlcs.clone(),
+                received_htlcs.clone(),
             )?;
 
             // commit 22: revoked
