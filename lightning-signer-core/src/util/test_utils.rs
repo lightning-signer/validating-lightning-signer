@@ -6,7 +6,6 @@ use bitcoin::blockdata::script::{Builder, Script};
 use bitcoin::hash_types::Txid;
 use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::hex::ToHex;
-use bitcoin::hashes::ripemd160::Hash as Ripemd160Hash;
 use bitcoin::hashes::{hex, hex::FromHex, Hash};
 use bitcoin::network::constants::Network;
 use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1, SecretKey, SignOnly, Signature};
@@ -987,13 +986,6 @@ pub fn sign_holder_commitment(
         commit_tx_ctx.offered_htlcs.clone(),
         commit_tx_ctx.received_htlcs.clone(),
     );
-    let mut payment_hashmap = Map::new();
-    for htlc in &htlcs {
-        payment_hashmap.insert(
-            Ripemd160Hash::hash(&htlc.payment_hash.0).into_inner(),
-            htlc.payment_hash,
-        );
-    }
     node_ctx
         .node
         .with_ready_channel(&chan_ctx.channel_id, |chan| {
@@ -1034,8 +1026,10 @@ pub fn sign_holder_commitment(
                     .built_transaction()
                     .transaction,
                 &output_witscripts,
-                &payment_hashmap,
                 commit_tx_ctx.commit_num,
+                commit_tx_ctx.feerate_per_kw,
+                commit_tx_ctx.offered_htlcs.clone(),
+                commit_tx_ctx.received_htlcs.clone(),
             )
         })
 }
