@@ -38,10 +38,8 @@ use crate::util::invoice_utils;
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::wallet::Wallet;
 
-// NOTE - this "ChannelId" does *not* correspond to the "channel_id"
-// defined in BOLT #2.
+/// Node configuration parameters.
 
-/// Node configuration
 #[derive(Copy, Clone)]
 pub struct NodeConfig {
     /// The derivation style to use when deriving purpose-specific keys
