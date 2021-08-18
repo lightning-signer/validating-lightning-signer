@@ -1,6 +1,7 @@
-use bitcoin::secp256k1::PublicKey;
-use bitcoin::Network;
 use kv::{Bucket, Config, Json, Store, TransactionError};
+
+use bitcoin::secp256k1::PublicKey;
+use bitcoin::{Network, Script};
 
 use lightning_signer::channel::{Channel, ChannelId, ChannelStub};
 use lightning_signer::node::NodeConfig;
@@ -11,12 +12,13 @@ use lightning_signer::persist::Persist;
 use lightning_signer::policy::validator::EnforcementState;
 
 use crate::persist::model::NodeChannelId;
-use crate::persist::model::{ChannelEntry, NodeEntry};
+use crate::persist::model::{Allowlist, ChannelEntry, NodeEntry};
 
 /// A persister that uses the kv crate and JSON serialization for values.
 pub struct KVJsonPersister<'a> {
     pub node_bucket: Bucket<'a, Vec<u8>, Json<NodeEntry>>,
     pub channel_bucket: Bucket<'a, NodeChannelId, Json<ChannelEntry>>,
+    pub allowlist_bucket: Bucket<'a, Vec<u8>, Json<Allowlist>>,
 }
 
 impl KVJsonPersister<'_> {
@@ -27,9 +29,13 @@ impl KVJsonPersister<'_> {
         let channel_bucket = store
             .bucket(Some("channels"))
             .expect("create channel bucket");
+        let allowlist_bucket = store
+            .bucket(Some("allowlists"))
+            .expect("create allowlist bucket");
         Self {
             node_bucket,
             channel_bucket,
+            allowlist_bucket,
         }
     }
 }
@@ -137,6 +143,30 @@ impl<'a> Persist for KVJsonPersister<'a> {
             res.push((key.channel_id(), entry));
         }
         res
+    }
+
+    fn update_node_allowlist(&self, node_id: &PublicKey, allowlist: Vec<Script>) -> Result<(), ()> {
+        let key = node_id.serialize().to_vec();
+        let entry = Allowlist { allowlist };
+        self.allowlist_bucket
+            .set(key, Json(entry))
+            .expect("update transaction");
+        self.allowlist_bucket.flush().expect("flush");
+
+        Ok(())
+    }
+
+    fn get_node_allowlist(&self, node_id: &PublicKey) -> Vec<Script> {
+        let key = node_id.serialize().to_vec();
+        let entry = self.allowlist_bucket.get(key);
+        if entry.is_err() {
+            return vec![];
+        }
+        let entry2 = entry.unwrap();
+        if entry2.is_none() {
+            return vec![];
+        }
+        entry2.unwrap().0.allowlist
     }
 
     fn get_nodes(&self) -> Vec<(PublicKey, CoreNodeEntry)> {

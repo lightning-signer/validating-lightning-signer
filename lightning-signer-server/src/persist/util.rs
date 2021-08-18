@@ -46,6 +46,7 @@ pub(crate) fn make_node() -> (PublicKey, Arc<Node>, [u8; 32]) {
         &seed,
         Network::Testnet,
         &persister,
+        vec![],
     ));
     let node_id = node.get_id();
     (node_id, node, seed)

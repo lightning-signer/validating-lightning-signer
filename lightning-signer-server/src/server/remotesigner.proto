@@ -35,6 +35,18 @@ service Signer {
   rpc ListChannels (ListChannelsRequest)
       returns (ListChannelsReply);
 
+  // List allowlisted addresses for a node
+  rpc ListAllowlist (ListAllowlistRequest)
+      returns (ListAllowlistReply);
+
+  // Add addresses to a node's allowlist
+  rpc AddAllowlist (AddAllowlistRequest)
+      returns (AddAllowlistReply);
+
+  // Remove addresses from a node's allowlist
+  rpc RemoveAllowlist (RemoveAllowlistRequest)
+      returns (RemoveAllowlistReply);
+
   // Get layer-1 XPUB for a node.
   rpc GetExtPubKey (GetExtPubKeyRequest)
     returns (GetExtPubKeyReply);
@@ -213,6 +225,30 @@ message ListChannelsRequest {
 
 message ListChannelsReply {
   repeated ChannelNonce channel_nonces = 1;
+}
+
+message ListAllowlistRequest {
+  NodeId node_id = 1;
+}
+
+message ListAllowlistReply {
+  repeated string addresses = 1;
+}
+
+message AddAllowlistRequest {
+  NodeId node_id = 1;
+  repeated string addresses = 2;
+}
+
+message AddAllowlistReply {
+}
+
+message RemoveAllowlistRequest {
+  NodeId node_id = 1;
+  repeated string addresses = 2;
+}
+
+message RemoveAllowlistReply {
 }
 
 message PingRequest {

@@ -3,6 +3,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 
 use bitcoin::secp256k1::PublicKey;
+use bitcoin::Script;
 use kv::{Key, Raw};
 use serde::{Deserialize, Serialize};
 use serde_with::hex::Hex;
@@ -15,7 +16,7 @@ use lightning_signer::persist::model::{
 };
 use lightning_signer::policy::validator::EnforcementState;
 
-use super::ser_util::{ChannelIdHandler, ChannelSetupDef, EnforcementStateDef};
+use super::ser_util::{ChannelIdHandler, ChannelSetupDef, EnforcementStateDef, ScriptDef};
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
@@ -61,6 +62,13 @@ impl From<ChannelEntry> for CoreChannelEntry {
             enforcement_state: e.enforcement_state,
         }
     }
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Allowlist {
+    #[serde_as(as = "Vec<ScriptDef>")]
+    pub allowlist: Vec<Script>,
 }
 
 /// Fully qualified channel ID

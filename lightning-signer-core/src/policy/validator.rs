@@ -240,13 +240,13 @@ impl SimpleValidator {
 // TODO - policy-v2-htlc-cltv-range
 
 // not yet implemented
-// TODO - policy-v2-mutual-destination-whitelisted
+// TODO - policy-v2-mutual-destination-allowlisted
 // TODO - policy-v2-mutual-value-matches-commitment
 // TODO - policy-v2-mutual-fee-range
 // TODO - policy-v2-mutual-no-pending-htlcs
 
 // not yet implemented
-// TODO - policy-v2-forced-destination-whitelisted
+// TODO - policy-v2-forced-destination-allowlisted
 // TODO - policy-v2-forced-fee-range
 
 // not yet implemented

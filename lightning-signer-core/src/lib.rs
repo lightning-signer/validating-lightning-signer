@@ -85,6 +85,7 @@ mod nostd;
 pub(crate) mod prelude {
     pub use alloc::{boxed::Box, string::String, vec, vec::Vec};
     pub use hashbrown::HashMap as Map;
+    pub use hashbrown::HashSet;
 
     pub use alloc::borrow::ToOwned;
     pub use alloc::string::ToString;
