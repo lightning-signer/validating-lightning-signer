@@ -82,7 +82,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
                 Ok(())
             })
             .expect("new transaction");
-        self.node_bucket.flush().expect("flush");
+        self.channel_bucket.flush().expect("flush");
         Ok(())
     }
 
@@ -109,7 +109,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
                 Ok(())
             })
             .expect("update transaction");
-        self.node_bucket.flush().expect("flush");
+        self.channel_bucket.flush().expect("flush");
         Ok(())
     }
 
