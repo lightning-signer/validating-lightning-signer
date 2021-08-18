@@ -5,8 +5,13 @@ use crate::channel::{Channel, ChannelId, ChannelStub};
 use crate::node::NodeConfig;
 use crate::prelude::*;
 
+/// Models for persistence
 pub mod model;
 
+/// Persister of nodes and channels
+///
+/// A Node will call the relevant methods here as needed.
+/// The persister should durably persist before returning, for safety.
 pub trait Persist: Sync + Send {
     /// Create a new node
     fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8], network: Network);
@@ -19,17 +24,21 @@ pub trait Persist: Sync + Send {
     /// * `id0` original channel ID supplied to [`Persist::new_channel()`]
     /// * `id` an optional additional permanent channel ID
     fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), ()>;
+    /// Get a channel from store
     fn get_channel(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
     ) -> Result<model::ChannelEntry, ()>;
+    /// Get all channels for a node from store
     fn get_node_channels(&self, node_id: &PublicKey) -> Vec<(ChannelId, model::ChannelEntry)>;
+    /// Get all nodes from store
     fn get_nodes(&self) -> Vec<(PublicKey, model::NodeEntry)>;
     /// Clears the database.  Not for production use.
     fn clear_database(&self);
 }
 
+/// A null persister for testing
 pub struct DummyPersister;
 
 #[allow(unused_variables)]

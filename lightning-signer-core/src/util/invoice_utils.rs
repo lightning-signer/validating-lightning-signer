@@ -2,7 +2,7 @@ use crate::prelude::*;
 use bitcoin::bech32::{u5, FromBase32};
 use bitcoin::hashes::{sha256, Hash};
 
-// from rust-lightning-invoice
+/// See rust-lightning-invoice
 pub fn hash_from_parts(hrp_bytes: &[u8], data_without_signature: &[u5]) -> [u8; 32] {
     let mut preimage = Vec::<u8>::from(hrp_bytes);
 

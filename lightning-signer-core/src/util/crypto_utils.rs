@@ -30,25 +30,25 @@ fn hkdf_extract_expand(salt: &[u8], secret: &[u8], info: &[u8], output: &mut [u8
     }
 }
 
-pub fn hkdf_sha256(secret: &[u8], info: &[u8], salt: &[u8]) -> [u8; 32] {
+pub(crate) fn hkdf_sha256(secret: &[u8], info: &[u8], salt: &[u8]) -> [u8; 32] {
     let mut result = [0u8; 32];
     hkdf_extract_expand(salt, secret, info, &mut result);
     result
 }
 
-pub fn hkdf_sha256_keys(secret: &[u8], info: &[u8], salt: &[u8]) -> [u8; 32 * 6] {
+pub(crate) fn hkdf_sha256_keys(secret: &[u8], info: &[u8], salt: &[u8]) -> [u8; 32 * 6] {
     let mut result = [0u8; 32 * 6];
     hkdf_extract_expand(salt, secret, info, &mut result);
     result
 }
 
-pub fn channels_seed(node_seed: &[u8]) -> [u8; 32] {
+pub(crate) fn channels_seed(node_seed: &[u8]) -> [u8; 32] {
     hkdf_sha256(node_seed, "peer seed".as_bytes(), &[])
 }
 
 // This function will panic if the SecretKey::from_slice fails.  Only
 // use where failure is an option (ie, startup).
-pub fn node_keys_native(
+pub(crate) fn node_keys_native(
     secp_ctx: &Secp256k1<SignOnly>,
     node_seed: &[u8],
 ) -> (PublicKey, SecretKey) {
@@ -58,7 +58,7 @@ pub fn node_keys_native(
     (node_id, node_secret_key)
 }
 
-pub fn node_keys_lnd(
+pub(crate) fn node_keys_lnd(
     secp_ctx: &Secp256k1<SignOnly>,
     network: Network,
     master: ExtendedPrivKey,
@@ -68,7 +68,7 @@ pub fn node_keys_lnd(
     derive_key_lnd(secp_ctx, network, master, key_family_node_key, index)
 }
 
-pub fn derive_key_lnd(
+pub(crate) fn derive_key_lnd(
     secp_ctx: &Secp256k1<SignOnly>,
     network: Network,
     master: ExtendedPrivKey,
@@ -110,7 +110,7 @@ pub fn derive_key_lnd(
 
 // This function will panic if the ExtendedPrivKey::new_master fails.
 // Only use where failure is an option (ie, startup).
-pub fn get_account_extended_key_native(
+pub(crate) fn get_account_extended_key_native(
     secp_ctx: &Secp256k1<SignOnly>,
     network: Network,
     node_seed: &[u8],
@@ -126,7 +126,7 @@ pub fn get_account_extended_key_native(
 
 // This function will panic if the ExtendedPrivKey::new_master fails.
 // Only use where failure is an option (ie, startup).
-pub fn get_account_extended_key_lnd(
+pub(crate) fn get_account_extended_key_lnd(
     secp_ctx: &Secp256k1<SignOnly>,
     network: Network,
     node_seed: &[u8],
@@ -145,7 +145,7 @@ pub fn get_account_extended_key_lnd(
         .unwrap()
 }
 
-pub fn derive_public_key<T: secp256k1::Signing>(
+pub(crate) fn derive_public_key<T: secp256k1::Signing>(
     secp_ctx: &Secp256k1<T>,
     per_commitment_point: &PublicKey,
     base_point: &PublicKey,
@@ -160,7 +160,7 @@ pub fn derive_public_key<T: secp256k1::Signing>(
 }
 
 // FIXME - copied from chan_utils.derive_public_revocation_key, lobby to increase visibility.
-pub fn derive_revocation_pubkey<T: secp256k1::Verification>(
+pub(crate) fn derive_revocation_pubkey<T: secp256k1::Verification>(
     secp_ctx: &Secp256k1<T>,
     per_commitment_point: &PublicKey,
     revocation_base_point: &PublicKey,
@@ -188,7 +188,7 @@ pub fn derive_revocation_pubkey<T: secp256k1::Verification>(
 }
 
 // FIXME - copied from chan_utils, lobby to increase visibility.
-pub fn derive_private_revocation_key<T: secp256k1::Signing>(
+pub(crate) fn derive_private_revocation_key<T: secp256k1::Signing>(
     secp_ctx: &Secp256k1<T>,
     per_commitment_secret: &SecretKey,
     revocation_base_secret: &SecretKey,
@@ -219,7 +219,7 @@ pub fn derive_private_revocation_key<T: secp256k1::Signing>(
     Ok(part_a)
 }
 
-pub fn payload_for_p2wpkh(key: &PublicKey) -> Payload {
+pub(crate) fn payload_for_p2wpkh(key: &PublicKey) -> Payload {
     let mut hash_engine = BitcoinHash160::engine();
     hash_engine.input(&key.serialize());
     Payload::WitnessProgram {
@@ -228,7 +228,7 @@ pub fn payload_for_p2wpkh(key: &PublicKey) -> Payload {
     }
 }
 
-pub fn payload_for_p2wsh(script: &Script) -> Payload {
+pub(crate) fn payload_for_p2wsh(script: &Script) -> Payload {
     let mut hash_engine = BitcoinSha256::engine();
     hash_engine.input(&script[..]);
     Payload::WitnessProgram {
@@ -237,12 +237,14 @@ pub fn payload_for_p2wsh(script: &Script) -> Payload {
     }
 }
 
+/// Convert a [Signature] to Bitcoin signature bytes, with SIGHASH_ALL
 pub fn signature_to_bitcoin_vec(sig: Signature) -> Vec<u8> {
     let mut sigvec = sig.serialize_der().to_vec();
     sigvec.push(SigHashType::All as u8);
     sigvec
 }
 
+/// Convert a Bitcoin signature bytes, with SIGHASH_ALL, to [Signature]
 pub fn bitcoin_vec_to_signature(sigvec: &Vec<u8>) -> Result<Signature, bitcoin::secp256k1::Error> {
     let len = sigvec.len();
     if len == 0 {

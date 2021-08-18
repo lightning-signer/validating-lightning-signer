@@ -42,7 +42,7 @@ use crate::Arc;
 
 // Status assertions:
 
-#[macro_export]
+#[cfg(test)]
 macro_rules! assert_status_ok {
     ($status: expr) => {
         if $status.is_err() {
@@ -51,7 +51,7 @@ macro_rules! assert_status_ok {
     };
 }
 
-#[macro_export]
+#[cfg(test)]
 macro_rules! assert_invalid_argument_err {
     ($status: expr, $msg: expr) => {
         assert!($status.is_err());
@@ -61,7 +61,7 @@ macro_rules! assert_invalid_argument_err {
     };
 }
 
-#[macro_export]
+#[cfg(test)]
 macro_rules! assert_failed_precondition_err {
     ($status: expr, $msg: expr) => {
         assert!($status.is_err());
@@ -71,7 +71,7 @@ macro_rules! assert_failed_precondition_err {
     };
 }
 
-#[macro_export]
+#[cfg(test)]
 macro_rules! assert_policy_err {
     ($status: expr, $msg: expr) => {
         assert!($status.is_err());
@@ -85,7 +85,8 @@ macro_rules! assert_policy_err {
 
 // ValidationError assertions:
 
-#[macro_export]
+#[allow(unused)]
+#[cfg(test)]
 macro_rules! assert_validation_ok {
     ($res: expr) => {
         if $res.is_err() {

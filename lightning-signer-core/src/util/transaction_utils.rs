@@ -2,6 +2,7 @@ use crate::io_extras::sink;
 use bitcoin::consensus::Encodable;
 use bitcoin::{Script, Transaction, TxOut, VarInt};
 
+/// The maximum value of an input or output in milli satoshi
 pub const MAX_VALUE_MSAT: u64 = 21_000_000_0000_0000_000;
 
 /// Possibly adds a change output to the given transaction, always doing so if there are excess

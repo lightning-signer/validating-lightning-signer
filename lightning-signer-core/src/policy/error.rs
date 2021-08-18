@@ -1,15 +1,20 @@
 #[cfg(feature = "backtrace")]
 use backtrace::Backtrace;
 
-use crate::prelude::*;
-
 use ValidationErrorKind::{Mismatch, Policy, ScriptFormat, TransactionFormat};
 
+use crate::prelude::*;
+
+/// Kind of validation error
 #[derive(Clone, Debug, PartialEq)]
 pub enum ValidationErrorKind {
+    /// The transaction could not be parsed or had non-standard elements
     TransactionFormat(String),
+    /// A scriptPubkey could not be parsed or was non-standard for Lightning
     ScriptFormat(String),
+    /// A script element didn't match the channel setup
     Mismatch(String),
+    /// A policy was violated
     Policy(String),
 }
 
@@ -20,14 +25,18 @@ impl PartialEq for ValidationError {
     }
 }
 
+/// Validation error
 #[derive(Clone)]
 pub struct ValidationError {
+    /// The kind of error
     pub kind: ValidationErrorKind,
+    /// A non-resolved backtrace
     #[cfg(feature = "backtrace")]
     pub bt: Backtrace,
 }
 
 impl ValidationError {
+    /// Resolve the backtrace for display to the user
     #[cfg(feature = "backtrace")]
     pub fn resolved_backtrace(&self) -> Backtrace {
         let mut mve = self.clone();
@@ -69,7 +78,7 @@ impl Into<String> for ValidationError {
     }
 }
 
-pub fn transaction_format_error(msg: impl Into<String>) -> ValidationError {
+pub(crate) fn transaction_format_error(msg: impl Into<String>) -> ValidationError {
     ValidationError {
         kind: TransactionFormat(msg.into()),
         #[cfg(feature = "backtrace")]
@@ -77,7 +86,7 @@ pub fn transaction_format_error(msg: impl Into<String>) -> ValidationError {
     }
 }
 
-pub fn script_format_error(msg: impl Into<String>) -> ValidationError {
+pub(crate) fn script_format_error(msg: impl Into<String>) -> ValidationError {
     ValidationError {
         kind: ScriptFormat(msg.into()),
         #[cfg(feature = "backtrace")]
@@ -85,7 +94,7 @@ pub fn script_format_error(msg: impl Into<String>) -> ValidationError {
     }
 }
 
-pub fn mismatch_error(msg: impl Into<String>) -> ValidationError {
+pub(crate) fn mismatch_error(msg: impl Into<String>) -> ValidationError {
     ValidationError {
         kind: Mismatch(msg.into()),
         #[cfg(feature = "backtrace")]
@@ -93,7 +102,7 @@ pub fn mismatch_error(msg: impl Into<String>) -> ValidationError {
     }
 }
 
-pub fn policy_error(msg: impl Into<String>) -> ValidationError {
+pub(crate) fn policy_error(msg: impl Into<String>) -> ValidationError {
     ValidationError {
         kind: Policy(msg.into()),
         #[cfg(feature = "backtrace")]

@@ -7,6 +7,7 @@ use log::error;
 
 use crate::policy::error::ValidationError;
 
+/// gRPC compatible error status
 #[derive(Clone)]
 pub struct Status {
     /// The gRPC status code, found in the `grpc-status` header.
@@ -15,6 +16,7 @@ pub struct Status {
     message: String,
 }
 
+/// gRPC compatible error status code
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Code {
     /// The operation completed successfully.
@@ -49,14 +51,17 @@ impl Status {
         &self.message
     }
 
+    /// Construct an invalid argument status
     pub fn invalid_argument(message: impl Into<String>) -> Status {
         Self::new(Code::InvalidArgument, message)
     }
 
+    /// Construct a failed precondition status, used for policy violation
     pub fn failed_precondition(message: impl Into<String>) -> Status {
         Self::new(Code::FailedPrecondition, message)
     }
 
+    /// Construct an internal error status
     pub fn internal(message: impl Into<String>) -> Status {
         Self::new(Code::Internal, message)
     }
@@ -102,7 +107,7 @@ impl From<Status> for tonic::Status {
     }
 }
 
-pub fn invalid_argument(msg: impl Into<String>) -> Status {
+pub(crate) fn invalid_argument(msg: impl Into<String>) -> Status {
     let s = msg.into();
     error!("INVALID ARGUMENT: {}", &s);
     #[cfg(feature = "backtrace")]
@@ -110,7 +115,7 @@ pub fn invalid_argument(msg: impl Into<String>) -> Status {
     Status::invalid_argument(s)
 }
 
-pub fn internal_error(msg: impl Into<String>) -> Status {
+pub(crate) fn internal_error(msg: impl Into<String>) -> Status {
     let s = msg.into();
     error!("INTERNAL ERROR: {}", &s);
     #[cfg(feature = "backtrace")]
@@ -118,7 +123,8 @@ pub fn internal_error(msg: impl Into<String>) -> Status {
     Status::internal(s)
 }
 
-pub fn failed_precondition(msg: impl Into<String>) -> Status {
+#[allow(unused)]
+pub(crate) fn failed_precondition(msg: impl Into<String>) -> Status {
     let s = msg.into();
     error!("FAILED PRECONDITION: {}", &s);
     // Skip backtrace since ValidationError handled already ...

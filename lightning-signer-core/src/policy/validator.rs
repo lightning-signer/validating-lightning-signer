@@ -21,6 +21,9 @@ use crate::wallet::Wallet;
 
 use super::error::{policy_error, ValidationError};
 
+/// A policy checker
+///
+/// Called by Node / Channel as needed.
 pub trait Validator {
     /// Phase 1 CommitmentInfo
     fn make_info(
@@ -32,6 +35,7 @@ pub trait Validator {
         output_witscripts: &Vec<Vec<u8>>,
     ) -> Result<CommitmentInfo, ValidationError>;
 
+    /// General validation applicable to both holder and counterparty txs
     fn validate_commitment_tx(
         &self,
         estate: &EnforcementState,
@@ -55,6 +59,9 @@ pub trait Validator {
         enforcement_state: &EnforcementState,
     ) -> Result<(), ValidationError>;
 
+    /// Check a counterparty's revocation of an old state.
+    /// This also makes a note that the counterparty has committed to their
+    /// current commitment transaction.
     fn validate_counterparty_revocation(
         &self,
         state: &EnforcementState,
@@ -87,6 +94,13 @@ pub trait Validator {
     /// Validate channel open
     fn validate_channel_open(&self, setup: &ChannelSetup) -> Result<(), ValidationError>;
 
+    /// Validate a funding transaction, which may fund multiple channels
+    ///
+    /// * `channels` the funded channel for each funding output, or None for
+    ///   change outputs
+    /// * `values_sat` - the amount in satoshi per input
+    /// * `opaths` - derivation path for change, one per output.  Empty for
+    ///   non-change outputs.
     fn validate_funding_tx(
         &self,
         wallet: &Wallet,
@@ -98,15 +112,20 @@ pub trait Validator {
     ) -> Result<(), ValidationError>;
 }
 
+/// Blockchain state used by the validator
 #[derive(Debug)]
 pub struct ValidatorState {
+    /// The current blockchain height
     pub current_height: u32,
 }
 
+/// A factory for validators
 pub trait ValidatorFactory: Send + Sync {
+    /// Construct a validator
     fn make_validator(&self, network: Network) -> Box<dyn Validator>;
 }
 
+/// A factor for SimpleValidator
 pub struct SimpleValidatorFactory {}
 
 fn simple_validator(network: Network) -> SimpleValidator {
@@ -121,6 +140,7 @@ impl ValidatorFactory for SimpleValidatorFactory {
     }
 }
 
+/// A simple policy to configure a SimpleValidator
 #[derive(Clone)]
 pub struct SimplePolicy {
     /// Minimum delay in blocks
@@ -149,8 +169,9 @@ pub struct SimplePolicy {
     pub max_fee: u64,
 }
 
+/// A simple validator
 pub struct SimpleValidator {
-    pub policy: SimplePolicy,
+    policy: SimplePolicy,
 }
 
 impl SimpleValidator {
@@ -751,6 +772,7 @@ impl Validator for SimpleValidator {
     }
 }
 
+/// Construct a default simple policy
 pub fn make_simple_policy(network: Network) -> SimplePolicy {
     if network == Network::Bitcoin {
         SimplePolicy {
@@ -785,6 +807,11 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
     }
 }
 
+/// Enforcement state for a signer
+///
+/// This keeps track of commitments on both sides and whether the channel
+/// was closed.
+#[allow(missing_docs)]
 #[derive(Clone, Debug)]
 pub struct EnforcementState {
     pub next_holder_commit_num: u64,
@@ -799,6 +826,7 @@ pub struct EnforcementState {
 }
 
 impl EnforcementState {
+    /// Create state for a new channel
     pub fn new() -> EnforcementState {
         EnforcementState {
             next_holder_commit_num: 0,
@@ -813,6 +841,7 @@ impl EnforcementState {
         }
     }
 
+    /// Set next holder commitment number
     pub fn set_next_holder_commit_num(
         &mut self,
         num: u64,
@@ -832,6 +861,7 @@ impl EnforcementState {
         Ok(())
     }
 
+    /// Set next counterparty commitment number
     pub fn set_next_counterparty_commit_num(
         &mut self,
         num: u64,
@@ -907,6 +937,7 @@ impl EnforcementState {
         Ok(())
     }
 
+    /// Previous counterparty commitment point
     pub fn get_previous_counterparty_point(&self, num: u64) -> Result<PublicKey, ValidationError> {
         let point = if num + 1 == self.next_counterparty_commit_num {
             &self.current_counterparty_point
@@ -928,6 +959,7 @@ impl EnforcementState {
         Ok(point)
     }
 
+    /// Set next counterparty revoked commitment number
     pub fn set_next_counterparty_revoke_num(&mut self, num: u64) -> Result<(), ValidationError> {
         if num == 0 {
             return Err(policy_error(format!(
@@ -970,6 +1002,7 @@ impl EnforcementState {
         Ok(())
     }
 
+    #[allow(missing_docs)]
     #[cfg(feature = "test_utils")]
     pub fn set_next_holder_commit_num_for_testing(&mut self, num: u64) {
         debug!(
@@ -979,6 +1012,7 @@ impl EnforcementState {
         self.next_holder_commit_num = num;
     }
 
+    #[allow(missing_docs)]
     #[cfg(feature = "test_utils")]
     pub fn set_next_counterparty_commit_num_for_testing(
         &mut self,
@@ -994,6 +1028,7 @@ impl EnforcementState {
         self.next_counterparty_commit_num = num;
     }
 
+    #[allow(missing_docs)]
     #[cfg(feature = "test_utils")]
     pub fn set_next_counterparty_revoke_num_for_testing(&mut self, num: u64) {
         debug!(

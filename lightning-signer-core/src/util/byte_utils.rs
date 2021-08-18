@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 // FIXME - this is copied from rust-lightning, get them to expose instead.
 
 #[inline]
