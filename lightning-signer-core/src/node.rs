@@ -41,8 +41,10 @@ use crate::wallet::Wallet;
 // NOTE - this "ChannelId" does *not* correspond to the "channel_id"
 // defined in BOLT #2.
 
+/// Node configuration
 #[derive(Copy, Clone)]
 pub struct NodeConfig {
+    /// The derivation style to use when deriving purpose-specific keys
     pub key_derivation_style: KeyDerivationStyle,
 }
 
@@ -135,6 +137,7 @@ impl Node {
         PublicKey::from_secret_key(&secp_ctx, &self.keys_manager.get_node_secret())
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get_secure_random_bytes(&self) -> [u8; 32] {
         self.keys_manager.get_secure_random_bytes()
     }
@@ -147,6 +150,10 @@ impl Node {
         Ok(Arc::clone(slot_arc))
     }
 
+    /// Execute a function with an existing channel.
+    ///
+    /// The channel may be a stub or a ready channel.
+    /// An invalid_argument [Status] will be returned if the channel does not exist.
     pub fn with_channel_base<F: Sized, T>(&self, channel_id: &ChannelId, f: F) -> Result<T, Status>
     where
         F: Fn(&mut ChannelBase) -> Result<T, Status>,
@@ -160,6 +167,9 @@ impl Node {
         f(base)
     }
 
+    /// Execute a function with an existing ready channel.
+    ///
+    /// An invalid_argument [Status] will be returned if the channel does not exist.
     pub fn with_ready_channel<F: Sized, T>(&self, channel_id: &ChannelId, f: F) -> Result<T, Status>
     where
         F: Fn(&mut Channel) -> Result<T, Status>,
@@ -175,6 +185,7 @@ impl Node {
         }
     }
 
+    /// Get a channel given its funding outpoint, or None if no such channel exists.
     pub fn find_channel_with_funding_outpoint(
         &self,
         outpoint: &OutPoint,
@@ -203,7 +214,9 @@ impl Node {
     ///
     /// If unspecified, the channel nonce will default to the channel ID.
     ///
-    /// This function is currently infallible.
+    /// This function will return an invalid_argument [Status] if there is
+    /// an existing channel with this ID and it's not a compatible stub
+    /// channel.
     ///
     /// Returns the channel ID and the stub.
     // TODO the relationship between nonce and ID is different from
@@ -469,6 +482,20 @@ impl Node {
         Ok(chan)
     }
 
+    /// Sign a funding transaction.
+    ///
+    /// The transaction may fund multiple channels at once.
+    /// Returns a witness stack for each input.  Inputs that are marked
+    /// as [SpendType::Invalid] are not signed and get an empty witness stack.
+    /// * `ipaths` - derivation path for the wallet key per input
+    /// * `values_sat` - the amount in satoshi per input
+    /// * `spendtypes` - spend type per input, or `Invalid` if this input is
+    ///   to be signed by someone else.
+    /// * `uniclosekeys` - an optional unilateral close key to use instead of the
+    ///   wallet key.  Takes precedence over the `ipaths` entry.  This is used when
+    ///   we are sweeping a unilateral close and funding a channel in a single tx.
+    /// * `opaths` - derivation path for change, one per output.  Empty for
+    ///   non-change outputs.
     pub fn sign_funding_tx(
         &self,
         tx: &bitcoin::Transaction,
@@ -713,6 +740,9 @@ impl Node {
         ss[..].to_vec()
     }
 
+    /// See [`MyKeysManager::spend_spendable_outputs`].
+    ///
+    /// For LDK compatibility.
     pub fn spend_spendable_outputs(
         &self,
         descriptors: &[&SpendableOutputDescriptor],
@@ -737,12 +767,17 @@ impl Debug for Node {
     }
 }
 
+/// The type of address, for layer-1 input signing
 #[derive(PartialEq, Clone, Copy)]
 #[repr(i32)]
 pub enum SpendType {
+    /// To be signed by someone else
     Invalid = 0,
+    /// Pay to public key hash
     P2pkh = 1,
+    /// Pay to witness public key hash
     P2wpkh = 3,
+    /// Pay to p2sh wrapped p2wpkh
     P2shP2wpkh = 4,
 }
 
@@ -761,6 +796,7 @@ impl TryFrom<i32> for SpendType {
     }
 }
 
+/// Marker trait for LDK compatible logger
 pub trait SyncLogger: Logger + SendSync {}
 
 #[cfg(test)]

@@ -35,13 +35,15 @@ use crate::util::debug_utils::DebugPayload;
 use bitcoin::hashes::hex::ToHex;
 
 const MAX_DELAY: i64 = 1000;
-pub const ANCHOR_SAT: u64 = 330;
+/// Value for anchor outputs
+pub(crate) const ANCHOR_SAT: u64 = 330;
 
-// Copied from lightning::ln::chan_utils where they are not public enough.
-pub const HTLC_SUCCESS_TX_WEIGHT: u64 = 703;
-pub const HTLC_TIMEOUT_TX_WEIGHT: u64 = 663;
+/// Copied from lightning::ln::chan_utils where they are not public enough.
+pub(crate) const HTLC_SUCCESS_TX_WEIGHT: u64 = 703;
+/// Copied from lightning::ln::chan_utils where they are not public enough.
+pub(crate) const HTLC_TIMEOUT_TX_WEIGHT: u64 = 663;
 
-pub fn get_commitment_transaction_number_obscure_factor(
+pub(crate) fn get_commitment_transaction_number_obscure_factor(
     local_payment_basepoint: &PublicKey,
     counterparty_payment_basepoint: &PublicKey,
     outbound: bool,
@@ -66,7 +68,7 @@ pub fn get_commitment_transaction_number_obscure_factor(
         | ((res[31] as u64) << 0 * 8)
 }
 
-pub fn build_close_tx(
+pub(crate) fn build_close_tx(
     to_holder_value_sat: u64,
     to_counterparty_value_sat: u64,
     local_shutdown_script: &Script,
@@ -121,7 +123,7 @@ pub fn build_close_tx(
     }
 }
 
-pub fn build_commitment_tx(
+pub(crate) fn build_commitment_tx(
     keys: &TxCreationKeys,
     info: &CommitmentInfo2,
     obscured_commitment_transaction_number: u64,
@@ -298,7 +300,7 @@ pub(crate) fn sign_commitment(
     Ok(secp_ctx.sign(&commitment_sighash, &funding_key))
 }
 
-pub fn sort_outputs<T, C: Fn(&T, &T) -> cmp::Ordering>(
+pub(crate) fn sort_outputs<T, C: Fn(&T, &T) -> cmp::Ordering>(
     outputs: &mut Vec<(TxOut, T)>,
     tie_breaker: C,
 ) {
@@ -314,6 +316,7 @@ pub fn sort_outputs<T, C: Fn(&T, &T) -> cmp::Ordering>(
 /// Phase 1 HTLC info
 #[derive(Clone)]
 pub struct HTLCInfo {
+    /// HTLC value
     pub value_sat: u64,
     /// RIPEMD160 of 32 bytes hash
     pub payment_hash_hash: [u8; 20],
@@ -335,7 +338,9 @@ impl fmt::Debug for HTLCInfo {
 /// Phase 2 HTLC info
 #[derive(Clone)]
 pub struct HTLCInfo2 {
+    /// The value in satoshi
     pub value_sat: u64,
+    /// The payment hash
     pub payment_hash: PaymentHash,
     /// This is zero for offered HTLCs in phase 1
     pub cltv_expiry: u32,
@@ -353,6 +358,7 @@ impl fmt::Debug for HTLCInfo2 {
 }
 
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct CommitmentInfo2 {
     pub is_counterparty_broadcaster: bool,
     pub to_countersigner_pubkey: PublicKey,
@@ -367,6 +373,7 @@ pub struct CommitmentInfo2 {
 }
 
 #[allow(dead_code)]
+#[allow(missing_docs)]
 pub struct CommitmentInfo {
     pub is_counterparty_broadcaster: bool,
     pub to_countersigner_address: Option<Payload>,
@@ -425,7 +432,7 @@ impl fmt::Debug for CommitmentInfo {
     }
 }
 
-pub fn parse_received_htlc_script(
+pub(crate) fn parse_received_htlc_script(
     script: &Script,
     option_anchor_outputs: bool,
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i64), ValidationError> {
@@ -477,7 +484,7 @@ pub fn parse_received_htlc_script(
     ))
 }
 
-pub fn parse_offered_htlc_script(
+pub(crate) fn parse_offered_htlc_script(
     script: &Script,
     option_anchor_outputs: bool,
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), ValidationError> {
@@ -525,7 +532,7 @@ pub fn parse_offered_htlc_script(
     ))
 }
 
-pub fn parse_revokeable_redeemscript(
+pub(crate) fn parse_revokeable_redeemscript(
     script: &Script,
     _option_anchor_outputs: bool,
 ) -> Result<(Vec<u8>, i64, Vec<u8>), ValidationError> {
@@ -546,15 +553,17 @@ pub fn parse_revokeable_redeemscript(
 impl CommitmentInfo {
     // FIXME - should the new_for_{holder,counterparty} wrappers move
     // to Validator::make_info_for_{holder,counterparty}?
-
-    pub fn new_for_holder() -> Self {
+    #[cfg(test)]
+    pub(crate) fn new_for_holder() -> Self {
         CommitmentInfo::new(false)
     }
 
-    pub fn new_for_counterparty() -> Self {
+    #[cfg(test)]
+    pub(crate) fn new_for_counterparty() -> Self {
         CommitmentInfo::new(true)
     }
 
+    /// Construct
     pub fn new(is_counterparty_broadcaster: bool) -> Self {
         CommitmentInfo {
             is_counterparty_broadcaster,
@@ -572,14 +581,15 @@ impl CommitmentInfo {
         }
     }
 
-    pub fn has_to_broadcaster(&self) -> bool {
+    pub(crate) fn has_to_broadcaster(&self) -> bool {
         self.to_broadcaster_delayed_pubkey.is_some()
     }
 
-    pub fn has_to_countersigner(&self) -> bool {
+    pub(crate) fn has_to_countersigner(&self) -> bool {
         self.to_countersigner_address.is_some() || self.to_countersigner_pubkey.is_some()
     }
 
+    /// The amount used by the broadcaster anchor
     pub fn to_broadcaster_anchor_value_sat(&self) -> u64 {
         if self.to_broadcaster_anchor_count == 1 {
             ANCHOR_SAT
@@ -588,6 +598,7 @@ impl CommitmentInfo {
         }
     }
 
+    /// The amount used by the countersigner anchor
     pub fn to_countersigner_anchor_value_sat(&self) -> u64 {
         if self.to_countersigner_anchor_count == 1 {
             ANCHOR_SAT
@@ -800,7 +811,7 @@ impl CommitmentInfo {
         Ok(())
     }
 
-    pub fn handle_output(
+    pub(crate) fn handle_output(
         &mut self,
         keys: &InMemorySigner,
         setup: &ChannelSetup,

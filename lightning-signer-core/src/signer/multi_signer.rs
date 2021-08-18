@@ -23,12 +23,14 @@ pub struct MultiSigner {
 }
 
 impl MultiSigner {
+    /// Construct with a null persister
     pub fn new() -> MultiSigner {
         let signer = MultiSigner::new_with_persister(Arc::new(DummyPersister), true);
         info!("new MultiSigner");
         signer
     }
 
+    /// Construct
     pub fn new_with_persister(persister: Arc<dyn Persist>, test_mode: bool) -> MultiSigner {
         let nodes = Node::restore_nodes(Arc::clone(&persister));
         MultiSigner {
@@ -38,6 +40,7 @@ impl MultiSigner {
         }
     }
 
+    /// Create a node with a random seed
     #[cfg(feature = "std")]
     pub fn new_node(&self, node_config: NodeConfig) -> PublicKey {
         let secp_ctx = Secp256k1::signing_only();
@@ -56,6 +59,7 @@ impl MultiSigner {
         node_id
     }
 
+    /// Create a node with a specific seed
     pub fn new_node_from_seed(
         &self,
         node_config: NodeConfig,
@@ -83,11 +87,13 @@ impl MultiSigner {
         Ok(node_id)
     }
 
+    /// Get all node IDs
     pub fn get_node_ids(&self) -> Vec<PublicKey> {
         let nodes = self.nodes.lock().unwrap();
         nodes.keys().map(|k| k.clone()).collect()
     }
 
+    /// Ensure that a node exists given its seed
     pub fn warmstart_with_seed(
         &self,
         node_config: NodeConfig,
@@ -106,7 +112,6 @@ impl MultiSigner {
     }
 
     /// Temporary, until phase 2 is fully implemented
-
     pub fn additional_setup(
         &self,
         node_id: &PublicKey,
@@ -124,6 +129,7 @@ impl MultiSigner {
         })
     }
 
+    /// See [`Node::with_channel_base`]
     pub fn with_channel_base<F: Sized, T>(
         &self,
         node_id: &PublicKey,
@@ -150,6 +156,7 @@ impl MultiSigner {
         self.get_node(node_id)?.get_channel(channel_id)
     }
 
+    /// Get a node
     pub fn get_node(&self, node_id: &PublicKey) -> Result<Arc<Node>, Status> {
         // Grab a reference to the node and release the nodes mutex
         let nodes = self.nodes.lock().unwrap();
@@ -159,6 +166,7 @@ impl MultiSigner {
         Ok(Arc::clone(node))
     }
 
+    /// See [`Node::with_ready_channel`]
     pub fn with_ready_channel<F: Sized, T>(
         &self,
         node_id: &PublicKey,

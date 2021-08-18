@@ -19,7 +19,7 @@ fn expect_next<'a>(iter: &'a mut Instructions) -> Result<Instruction<'a>, Valida
 }
 
 #[inline]
-pub fn expect_op(iter: &mut Instructions, op: opcodes::All) -> Result<(), ValidationError> {
+pub(crate) fn expect_op(iter: &mut Instructions, op: opcodes::All) -> Result<(), ValidationError> {
     let ins = expect_next(iter)?;
     match ins {
         blockdata::script::Instruction::Op(o) => {
@@ -34,7 +34,7 @@ pub fn expect_op(iter: &mut Instructions, op: opcodes::All) -> Result<(), Valida
 }
 
 #[inline]
-pub fn expect_number(iter: &mut Instructions) -> Result<i64, ValidationError> {
+pub(crate) fn expect_number(iter: &mut Instructions) -> Result<i64, ValidationError> {
     let ins = expect_next(iter)?;
     match ins {
         blockdata::script::Instruction::Op(op) => {
@@ -50,7 +50,7 @@ pub fn expect_number(iter: &mut Instructions) -> Result<i64, ValidationError> {
 }
 
 #[inline]
-pub fn expect_script_end(iter: &mut Instructions) -> Result<(), ValidationError> {
+pub(crate) fn expect_script_end(iter: &mut Instructions) -> Result<(), ValidationError> {
     let ins = iter.next();
     if ins == None {
         Ok(())
@@ -63,7 +63,7 @@ pub fn expect_script_end(iter: &mut Instructions) -> Result<(), ValidationError>
 }
 
 #[inline]
-pub fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, ValidationError> {
+pub(crate) fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, ValidationError> {
     let ins = expect_next(iter)?;
     match ins {
         blockdata::script::Instruction::PushBytes(d) => Ok(d.to_vec()),
@@ -73,7 +73,7 @@ pub fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, ValidationError> 
 
 /// To-counterparty redeem script when anchors are enabled - one block delay
 // FIXME - This should be in chan_utils.
-pub fn get_delayed_redeemscript(delayed_key: &PublicKey) -> Script {
+pub(crate) fn get_delayed_redeemscript(delayed_key: &PublicKey) -> Script {
     Builder::new()
         .push_slice(&delayed_key.serialize())
         .push_opcode(opcodes::all::OP_CHECKSIGVERIFY)
@@ -84,7 +84,7 @@ pub fn get_delayed_redeemscript(delayed_key: &PublicKey) -> Script {
 
 /// Anchor redeem script
 // FIXME - This should be in chan_utils.
-pub fn get_anchor_redeemscript(funding_key: &PublicKey) -> Script {
+pub(crate) fn get_anchor_redeemscript(funding_key: &PublicKey) -> Script {
     Builder::new()
         .push_slice(&funding_key.serialize())
         .push_opcode(opcodes::all::OP_CHECKSIG)
@@ -99,7 +99,7 @@ pub fn get_anchor_redeemscript(funding_key: &PublicKey) -> Script {
 /// HTLC redeem script when anchors are enabled
 // FIXME - yup, chan_utils.
 #[inline]
-pub fn get_htlc_anchor_redeemscript(
+pub(crate) fn get_htlc_anchor_redeemscript(
     htlc: &HTLCOutputInCommitment,
     keys: &TxCreationKeys,
 ) -> Script {

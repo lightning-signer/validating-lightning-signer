@@ -29,9 +29,12 @@ use bitcoin::util::bip143;
 use hashbrown::HashSet;
 use lightning::ln::msgs::DecodeError;
 
+/// The key derivation style
 #[derive(Clone, Copy, Debug)]
 pub enum KeyDerivationStyle {
+    /// Our preferred style, C-lightning compatible
     Native = 1,
+    /// The LND style
     Lnd = 2,
 }
 
@@ -48,12 +51,8 @@ impl TryFrom<u8> for KeyDerivationStyle {
     }
 }
 
-pub trait KeyDerivationParam {
-    fn get_key_path_len(&self) -> usize;
-}
-
 impl KeyDerivationStyle {
-    pub fn get_key_path_len(&self) -> usize {
+    pub(crate) fn get_key_path_len(&self) -> usize {
         match self {
             // c-lightning uses a single BIP32 chain for both external
             // and internal (change) addresses.
@@ -64,7 +63,7 @@ impl KeyDerivationStyle {
         }
     }
 
-    pub fn get_account_extended_key(
+    pub(crate) fn get_account_extended_key(
         &self,
         secp_ctx: &Secp256k1<secp256k1::SignOnly>,
         network: Network,
@@ -77,6 +76,7 @@ impl KeyDerivationStyle {
     }
 }
 
+/// An implementation of [`KeysInterace`]
 pub struct MyKeysManager {
     secp_ctx: Secp256k1<secp256k1::SignOnly>,
     seed: Vec<u8>,
@@ -105,6 +105,7 @@ pub struct MyKeysManager {
 }
 
 impl MyKeysManager {
+    /// Construct
     pub fn new(
         key_derivation_style: KeyDerivationStyle,
         seed: &[u8],
@@ -353,7 +354,7 @@ impl MyKeysManager {
         )
     }
 
-    pub fn get_channel_id(&self) -> [u8; 32] {
+    pub(crate) fn get_channel_id(&self) -> [u8; 32] {
         let mut sha = self.unique_start.clone();
 
         let child_ix = self.increment_channel_id_child_index();
@@ -369,7 +370,7 @@ impl MyKeysManager {
         Sha256::from_engine(sha).into_inner()
     }
 
-    pub fn increment_channel_id_child_index(&self) -> usize {
+    pub(crate) fn increment_channel_id_child_index(&self) -> usize {
         self.channel_id_child_index.fetch_add(1, Ordering::AcqRel)
     }
 

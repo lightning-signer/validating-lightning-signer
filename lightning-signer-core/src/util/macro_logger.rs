@@ -9,6 +9,7 @@ macro_rules! function {
     }};
 }
 
+/// Log bytes
 #[macro_export]
 macro_rules! log_bytes {
     ($obj: expr) => {

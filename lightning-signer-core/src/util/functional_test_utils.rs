@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 //! A bunch of useful utilities for building networks of nodes and exchanging messages between
 //! nodes for functional tests.
 
@@ -290,6 +291,7 @@ macro_rules! get_event_msg {
     }};
 }
 
+///
 #[macro_export]
 macro_rules! get_htlc_update_msgs {
 	($node: expr, $node_id: expr) => {
@@ -307,6 +309,7 @@ macro_rules! get_htlc_update_msgs {
 	}
 }
 
+///
 #[macro_export]
 macro_rules! get_local_commitment_txn {
     ($node: expr, $channel_id: expr) => {{
@@ -351,6 +354,7 @@ macro_rules! check_closed_broadcast {
 	}}
 }
 
+///
 #[macro_export]
 macro_rules! check_added_monitors {
     ($node: expr, $count: expr) => {{
@@ -556,6 +560,7 @@ pub fn update_nodes_with_chan_announce<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'b, '
     }
 }
 
+///
 #[macro_export]
 macro_rules! check_spends {
 	($tx: expr, $($spends_txn: expr),*) => {
@@ -881,6 +886,7 @@ macro_rules! expect_payment_sent {
     };
 }
 
+///
 #[macro_export]
 macro_rules! expect_pending_htlcs_forwardable_ignore {
 	($node: expr) => {{
@@ -895,6 +901,7 @@ macro_rules! expect_pending_htlcs_forwardable_ignore {
 	}}
 }
 
+///
 #[macro_export]
 macro_rules! expect_payment_failed {
 	($node: expr, $expected_payment_hash: expr, $rejected_by_dest: expr $(, $expected_error_code: expr, $expected_error_data: expr)*) => {

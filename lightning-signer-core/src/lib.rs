@@ -1,9 +1,13 @@
 #![crate_name = "lightning_signer"]
+
+//! A policy-enforcing signer for Lightning
+//! See [`node::Node`] for the entry point.
+
 #![forbid(unsafe_code)]
 #![allow(bare_trait_objects)]
 #![allow(ellipsis_inclusive_range_patterns)]
 #![warn(broken_intra_doc_links)]
-// #![warn(missing_docs)]
+#![warn(missing_docs)]
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 
 #[cfg(not(any(feature = "std", feature = "no-std")))]
@@ -21,14 +25,22 @@ extern crate rand;
 #[cfg(feature = "grpc")]
 extern crate tonic;
 
+/// Various utilities
 #[macro_use]
 pub mod util;
+/// Channel
 pub mod channel;
+/// Node
 pub mod node;
+/// Persistence
 pub mod persist;
+/// Policy enforcement
 pub mod policy;
+/// KeysManager
 pub mod signer;
+/// Transaction parsing and construction
 pub mod tx;
+/// Layer-1 wallet
 pub mod wallet;
 
 #[cfg(not(feature = "std"))]
@@ -70,7 +82,7 @@ pub use alloc::sync::{Arc, Weak};
 #[cfg(not(feature = "std"))]
 mod nostd;
 
-pub mod prelude {
+pub(crate) mod prelude {
     pub use alloc::{boxed::Box, string::String, vec, vec::Vec};
     pub use hashbrown::HashMap as Map;
 

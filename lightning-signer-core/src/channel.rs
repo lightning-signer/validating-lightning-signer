@@ -35,6 +35,13 @@ use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::{Arc, Weak};
 
+/// Channel identifier
+///
+/// This ID is not related to the channel IDs in the Lightning protocol.
+///
+/// A channel may have more than one ID.
+///
+// TODO document how channel IDs are supplied / derived
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ChannelId(pub [u8; 32]);
 
@@ -53,8 +60,11 @@ impl fmt::Display for ChannelId {
 /// The commitment type, based on the negotiated option
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CommitmentType {
+    /// No longer used - dynamic to-remote key
     Legacy,
+    /// Static to-remote key
     StaticRemoteKey,
+    /// Anchors
     Anchors,
 }
 
@@ -140,6 +150,7 @@ pub trait ChannelBase: Any {
     fn nonce(&self) -> Vec<u8>;
 
     // TODO remove when LDK workaround is removed in LoopbackSigner
+    #[allow(missing_docs)]
     #[cfg(feature = "test_utils")]
     fn set_next_holder_commit_num_for_testing(&mut self, _num: u64) {
         // Do nothing for ChannelStub.  Channel will override.
@@ -150,7 +161,9 @@ pub trait ChannelBase: Any {
 /// [ChannelStub], afterwards it's a [Channel].  This enum keeps track
 /// of the two different states.
 pub enum ChannelSlot {
+    /// Initial state, not ready
     Stub(ChannelStub),
+    /// Ready after negotiation is complete
     Ready(Channel),
 }
 
@@ -163,6 +176,7 @@ impl ChannelSlot {
         }
     }
 
+    /// The initial channel ID
     pub fn id(&self) -> ChannelId {
         match self {
             ChannelSlot::Stub(stub) => stub.id0,
@@ -253,7 +267,7 @@ pub struct Channel {
     pub(crate) secp_ctx: Secp256k1<All>,
     /// The signer for this channel
     pub keys: InMemorySigner,
-    // Channel state for policy enforcement purposes
+    /// Channel state for policy enforcement purposes
     pub enforcement_state: EnforcementState,
     /// The negotiated channel setup
     pub setup: ChannelSetup,
@@ -331,6 +345,7 @@ impl ChannelBase for Channel {
 }
 
 impl Channel {
+    #[allow(missing_docs)]
     #[cfg(feature = "test_utils")]
     pub fn set_next_counterparty_commit_num_for_testing(
         &mut self,
@@ -341,6 +356,7 @@ impl Channel {
             .set_next_counterparty_commit_num_for_testing(num, current_point);
     }
 
+    #[allow(missing_docs)]
     #[cfg(feature = "test_utils")]
     pub fn set_next_counterparty_revoke_num_for_testing(&mut self, num: u64) {
         self.enforcement_state
@@ -870,6 +886,7 @@ impl Channel {
             .map_err(|_| Status::internal("persist failed"))
     }
 
+    /// The node's network
     pub fn network(&self) -> Network {
         self.get_node().network
     }
@@ -918,9 +935,7 @@ impl Channel {
         })
     }
 
-    // TODO dead code
-    #[allow(dead_code)]
-    pub fn build_holder_commitment_info(
+    fn build_holder_commitment_info(
         &self,
         per_commitment_point: &PublicKey,
         to_holder_value_sat: u64,
@@ -1355,6 +1370,10 @@ impl Channel {
         Ok((next_holder_commitment_point, maybe_old_secret))
     }
 
+    /// Process the counterparty's revocation
+    ///
+    /// When this is provided, we know that the counterparty has committed to
+    /// the next state.
     pub fn validate_counterparty_revocation(
         &mut self,
         revoke_num: u64,
@@ -1378,6 +1397,7 @@ impl Channel {
         Ok(())
     }
 
+    /// Sign a holder commitment when force-closing
     pub fn sign_holder_commitment_tx(
         &self,
         tx: &bitcoin::Transaction,
@@ -1514,6 +1534,7 @@ impl Channel {
         )
     }
 
+    /// Sign a 2nd level HTLC transaction hanging off a commitment transaction
     pub fn sign_htlc_tx(
         &self,
         tx: &bitcoin::Transaction,
@@ -1578,6 +1599,8 @@ impl Channel {
         Ok(self.secp_ctx.sign(&htlc_sighash, &htlc_privkey))
     }
 
+    /// Get the unilateral close key, for sweeping the to-remote output
+    /// of a counterparty's force-close
     // TODO(devrandom) key leaking from this layer
     pub fn get_unilateral_close_key(
         &self,
@@ -1598,6 +1621,7 @@ impl Channel {
     }
 }
 
+/// Convert a nonce to a channel ID, by hashing via SHA256
 pub fn channel_nonce_to_id(nonce: &Vec<u8>) -> ChannelId {
     // Impedance mismatch - we want a 32 byte channel ID for internal use
     // Hash the client supplied channel nonce

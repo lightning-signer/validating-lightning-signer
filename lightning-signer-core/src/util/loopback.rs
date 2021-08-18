@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use std::convert::TryInto;
 
 use bitcoin::secp256k1::recovery::RecoverableSignature;
