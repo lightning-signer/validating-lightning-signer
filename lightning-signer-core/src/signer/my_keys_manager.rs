@@ -26,7 +26,7 @@ use crate::util::transaction_utils::MAX_VALUE_MSAT;
 use crate::util::{byte_utils, transaction_utils};
 use bitcoin::secp256k1::recovery::RecoverableSignature;
 use bitcoin::util::bip143;
-use hashbrown::HashSet;
+use hashbrown::HashSet as UnorderedSet;
 use lightning::ln::msgs::DecodeError;
 
 /// The key derivation style
@@ -396,7 +396,7 @@ impl MyKeysManager {
         let mut input = Vec::new();
         let mut input_value = 0;
         let mut witness_weight = 0;
-        let mut output_set = HashSet::with_capacity(descriptors.len());
+        let mut output_set = UnorderedSet::with_capacity(descriptors.len());
         for outp in descriptors {
             match outp {
                 SpendableOutputDescriptor::StaticPaymentOutput(descriptor) => {

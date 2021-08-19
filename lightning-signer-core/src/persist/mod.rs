@@ -1,5 +1,5 @@
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::Network;
+use bitcoin::{Network, Script};
 
 use crate::channel::{Channel, ChannelId, ChannelStub};
 use crate::node::NodeConfig;
@@ -32,6 +32,10 @@ pub trait Persist: Sync + Send {
     ) -> Result<model::ChannelEntry, ()>;
     /// Get all channels for a node from store
     fn get_node_channels(&self, node_id: &PublicKey) -> Vec<(ChannelId, model::ChannelEntry)>;
+    /// Persist the allowlist to the store.
+    fn update_node_allowlist(&self, node_id: &PublicKey, allowlist: Vec<Script>) -> Result<(), ()>;
+    /// Get the allowlist from the store.
+    fn get_node_allowlist(&self, node_id: &PublicKey) -> Vec<Script>;
     /// Get all nodes from store
     fn get_nodes(&self) -> Vec<(PublicKey, model::NodeEntry)>;
     /// Clears the database.  Not for production use.
@@ -64,6 +68,14 @@ impl Persist for DummyPersister {
     }
 
     fn get_node_channels(&self, node_id: &PublicKey) -> Vec<(ChannelId, model::ChannelEntry)> {
+        Vec::new()
+    }
+
+    fn update_node_allowlist(&self, node_id: &PublicKey, allowlist: Vec<Script>) -> Result<(), ()> {
+        Ok(())
+    }
+
+    fn get_node_allowlist(&self, node_id: &PublicKey) -> Vec<Script> {
         Vec::new()
     }
 

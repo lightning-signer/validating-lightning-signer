@@ -8,21 +8,37 @@ for more information.
 
 The gRPC server is a reference implementation of a signer which listens for requests from the node and from the admin CLI over gRPC.
 
-It can be started via: `cargo run --bin server`
+It can be started via:
+```
+cargo run --bin server
+```
 
 The server will persist it's state to `.lightning-signer` in the current directory.
 
 # Using the admin CLI
 
-Assuming the server is running (see above), the admin CLI can be invoked as follows: `cargo run --bin client -- [ARGUMENTS]`.  For example, to get help, run `cargo run --bin client -- help`.
+Assuming the server is running (see above), the admin CLI can be invoked as follows:
+```shell
+cargo run --bin client -- [ARGUMENTS]
+```
+For example, to get help, run:
+```
+cargo run --bin client -- help`
+```
 
 Here is an example session:
 
 ```shell
 # this outputs the new mnemonic phrase to stderr
 node_id=$(cargo run --bin client -- node new)
+
 # alternatively, supply the mnemonic phrase on stdin
 # cargo run --bin client -- node new --mnemonic
+
+# insert an address into the allowlist
+cargo run --bin client -- -n $node_id allowlist add tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z
+cargo run --bin client -- -n $node_id allowlist list
+
 channel_id=$(cargo run --bin client -- channel new -n $node_id)
 cargo run --bin client -- channel list -n $node_id
 ```

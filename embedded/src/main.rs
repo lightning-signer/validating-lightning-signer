@@ -8,24 +8,25 @@ extern crate bitcoin;
 extern crate lightning;
 
 use alloc::string::ToString;
+use alloc::vec::Vec;
 use core::alloc::Layout;
 use core::panic::PanicInfo;
 
 use alloc_cortex_m::CortexMHeap;
 // use panic_halt as _;
-use bitcoin::{Address, Network, OutPoint, PrivateKey, Script, Txid};
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
+use bitcoin::{Address, Network, OutPoint, PrivateKey, Script, Txid};
 use cortex_m::asm;
 use cortex_m_rt::entry;
 use cortex_m_semihosting::{debug, hprintln};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 
-use lightning_signer::Arc;
 use lightning_signer::channel::{ChannelSetup, CommitmentType};
 use lightning_signer::node::{Node, NodeConfig};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
+use lightning_signer::Arc;
 
 // this is the allocator the application will use
 #[global_allocator]
@@ -40,7 +41,7 @@ fn main() -> ! {
     unsafe { ALLOCATOR.init(cortex_m_rt::heap_start() as usize, HEAP_SIZE) }
 
     let size = Secp256k1::preallocate_size();
-    hprintln!("secp buf size {}", size*16).unwrap();
+    hprintln!("secp buf size {}", size * 16).unwrap();
 
     test_bitcoin();
     test_lightning_signer();
@@ -97,18 +98,18 @@ pub fn make_test_channel_setup() -> ChannelSetup {
     }
 }
 
-
 fn test_lightning_signer() {
     let config = NodeConfig {
-        key_derivation_style: KeyDerivationStyle::Native
+        key_derivation_style: KeyDerivationStyle::Native,
     };
     let network = bitcoin::Network::Signet;
     let seed = [0u8; 32];
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
-    let node = Arc::new(Node::new(config, &seed, network, &persister));
+    let node = Arc::new(Node::new(config, &seed, network, &persister, Vec::new()));
     let (channel_id, _) = node.new_channel(None, None, &node).unwrap();
     hprintln!("stub channel ID: {}", channel_id).unwrap();
-    let channel = node.ready_channel(channel_id, None, make_test_channel_setup())
+    let channel = node
+        .ready_channel(channel_id, None, make_test_channel_setup())
         .expect("ready_channel");
     hprintln!("channel ID: {}", channel.id0).unwrap();
     hprintln!("used memory {}", ALLOCATOR.used()).unwrap();
@@ -127,7 +128,10 @@ fn test_bitcoin() {
     let address = Address::p2wpkh(&pubkey, Network::Bitcoin).unwrap();
     hprintln!("Address: {}", address).unwrap();
 
-    assert_eq!(address.to_string(), "bc1qpx9t9pzzl4qsydmhyt6ctrxxjd4ep549np9993".to_string());
+    assert_eq!(
+        address.to_string(),
+        "bc1qpx9t9pzzl4qsydmhyt6ctrxxjd4ep549np9993".to_string()
+    );
 }
 
 // define what happens in an Out Of Memory (OOM) condition

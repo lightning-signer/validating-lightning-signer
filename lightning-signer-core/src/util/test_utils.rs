@@ -330,6 +330,7 @@ pub fn init_node(node_config: NodeConfig, seedstr: &str) -> Arc<Node> {
         &seed,
         network,
         &(Arc::new(DummyPersister) as Arc<Persist>),
+        vec![],
     );
     Arc::new(node)
 }

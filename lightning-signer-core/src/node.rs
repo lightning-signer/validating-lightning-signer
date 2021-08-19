@@ -1,6 +1,7 @@
 use core::convert::TryFrom;
 use core::convert::TryInto;
 use core::fmt::{self, Debug, Formatter};
+use core::iter::FromIterator;
 use core::str::FromStr;
 use core::time::Duration;
 
@@ -38,10 +39,8 @@ use crate::util::invoice_utils;
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::wallet::Wallet;
 
-// NOTE - this "ChannelId" does *not* correspond to the "channel_id"
-// defined in BOLT #2.
+/// Node configuration parameters.
 
-/// Node configuration
 #[derive(Copy, Clone)]
 pub struct NodeConfig {
     /// The derivation style to use when deriving purpose-specific keys
@@ -65,7 +64,7 @@ pub struct NodeConfig {
 /// let network = Network::Testnet;
 /// let seed = [0; 32];
 /// let config = TEST_NODE_CONFIG;
-/// let node = Arc::new(Node::new(config, &seed, network, &persister));
+/// let node = Arc::new(Node::new(config, &seed, network, &persister, vec![]));
 /// let (channel_id, opt_stub) = node.new_channel(None, None, &node).expect("new channel");
 /// assert!(opt_stub.is_some());
 /// let channel_slot_mutex = node.get_channel(&channel_id).expect("get channel");
@@ -85,6 +84,7 @@ pub struct Node {
     pub(crate) network: Network,
     pub(crate) validator_factory: Box<dyn ValidatorFactory>,
     pub(crate) persister: Arc<dyn Persist>,
+    allowlist: Mutex<UnorderedSet<Script>>,
 }
 
 impl Wallet for Node {
@@ -112,6 +112,7 @@ impl Node {
         seed: &[u8],
         network: Network,
         persister: &Arc<Persist>,
+        allowlist: Vec<Script>,
     ) -> Node {
         let now = Duration::from_secs(genesis_block(network).header.time as u64);
 
@@ -128,6 +129,7 @@ impl Node {
             network,
             validator_factory: Box::new(SimpleValidatorFactory {}),
             persister: Arc::clone(persister),
+            allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
         }
     }
 
@@ -373,6 +375,7 @@ impl Node {
                 .expect("seed wrong length"),
             network,
             &persister,
+            persister.get_node_allowlist(node_id),
         ));
         assert_eq!(&node.get_id(), node_id);
         info!("Restore node {}", node_id);
@@ -758,6 +761,80 @@ impl Node {
             feerate_sat_per_1000_weight,
             secp_ctx,
         )
+    }
+
+    /// Returns the node's current allowlist.
+    pub fn allowlist(&self) -> Result<Vec<String>, Status> {
+        let alset = self.allowlist.lock().unwrap();
+        (*alset)
+            .iter()
+            .map(|script_pubkey| {
+                let addr = Address::from_script(&script_pubkey, self.network);
+                if addr.is_none() {
+                    return Err(invalid_argument(format!(
+                        "address from script faied on {}",
+                        &script_pubkey
+                    )));
+                }
+                Ok(addr.unwrap().to_string())
+            })
+            .collect::<Result<Vec<String>, Status>>()
+    }
+
+    /// Adds addresses to the node's current allowlist.
+    pub fn add_allowlist(&self, addlist: &Vec<String>) -> Result<(), Status> {
+        let addresses = addlist
+            .iter()
+            .map(|addrstr| {
+                let addr = addrstr.parse::<Address>().map_err(|err| {
+                    invalid_argument(format!("parse address {} failed: {}", addrstr, err))
+                })?;
+                if addr.network != self.network {
+                    return Err(invalid_argument(format!(
+                        "network mismatch for addr {}: addr={}, node={}",
+                        addr, addr.network, self.network
+                    )));
+                }
+                Ok(addr)
+            })
+            .collect::<Result<Vec<Address>, Status>>()?;
+        let mut alset = self.allowlist.lock().unwrap();
+        for addr in addresses {
+            alset.insert(addr.script_pubkey());
+        }
+        let wlvec = (*alset).iter().cloned().collect();
+        self.persister
+            .update_node_allowlist(&self.get_id(), wlvec)
+            .map_err(|_| Status::internal("persist failed"))?;
+        Ok(())
+    }
+
+    /// Removes addresses from the node's current allowlist.
+    pub fn remove_allowlist(&self, rmlist: &Vec<String>) -> Result<(), Status> {
+        let addresses = rmlist
+            .iter()
+            .map(|addrstr| {
+                let addr = addrstr.parse::<Address>().map_err(|err| {
+                    invalid_argument(format!("parse address {} failed: {}", addrstr, err))
+                })?;
+                if addr.network != self.network {
+                    return Err(invalid_argument(format!(
+                        "network mismatch for addr {}: addr={}, node={}",
+                        addr, addr.network, self.network
+                    )));
+                }
+                Ok(addr)
+            })
+            .collect::<Result<Vec<Address>, Status>>()?;
+        let mut alset = self.allowlist.lock().unwrap();
+        for addr in addresses {
+            alset.remove(&addr.script_pubkey());
+        }
+        let wlvec = (*alset).iter().cloned().collect();
+        self.persister
+            .update_node_allowlist(&self.get_id(), wlvec)
+            .map_err(|_| Status::internal("persist failed"))?;
+        Ok(())
     }
 }
 
@@ -6167,5 +6244,71 @@ mod tests {
                 Ok(())
             })
             .expect("success");
+    }
+
+    fn vecs_match<T: PartialEq + std::cmp::Ord>(mut a: Vec<T>, mut b: Vec<T>) -> bool {
+        a.sort();
+        b.sort();
+        let matching = a.iter().zip(b.iter()).filter(|&(a, b)| a == b).count();
+        matching == a.len() && matching == b.len()
+    }
+
+    #[test]
+    fn node_allowlist_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+
+        // initial allowlist should be empty
+        assert!(node.allowlist().expect("allowlist").len() == 0);
+
+        // can insert some entries
+        let adds0 = vec![
+            "mv4rnyY3Su5gjcDNzbMLKBQkBicCtHUtFB",
+            "2N6i2gfgTonx88yvYm32PRhnHxqxtEfocbt",
+            "tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z",
+            "tb1qycu764qwuvhn7u0enpg0x8gwumyuw565f3mspnn58rsgar5hkjmqtjegrh",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_status_ok!(node.add_allowlist(&adds0));
+
+        // now allowlist should have the added entries
+        assert!(vecs_match(
+            node.allowlist().expect("allowlist").clone(),
+            adds0.clone()
+        ));
+
+        // adding duplicates shouldn't change the node allowlist
+        assert_status_ok!(node.add_allowlist(&adds0));
+        assert!(vecs_match(
+            node.allowlist().expect("allowlist").clone(),
+            adds0.clone()
+        ));
+
+        // can remove some elements from the allowlist
+        let removes0 = vec![adds0[0].clone(), adds0[3].clone()];
+        assert_status_ok!(node.remove_allowlist(&removes0));
+        assert!(vecs_match(
+            node.allowlist().expect("allowlist").clone(),
+            vec![adds0[1].clone(), adds0[2].clone()]
+        ));
+
+        // can't add bogus addresses
+        assert_invalid_argument_err!(
+            node.add_allowlist(&vec!["1234567890".to_string()]),
+            "parse address 1234567890 failed: base58: invalid base58 character 0x30"
+        );
+
+        // can't add w/ wrong network
+        assert_invalid_argument_err!(
+            node.add_allowlist(&vec!["1287uUybCYgf7Tb76qnfPf8E1ohCgSZATp".to_string()]),
+            "network mismatch for addr 1287uUybCYgf7Tb76qnfPf8E1ohCgSZATp: addr=bitcoin, node=testnet"
+        );
+
+        // can't remove w/ wrong network
+        assert_invalid_argument_err!(
+            node.remove_allowlist(&vec!["1287uUybCYgf7Tb76qnfPf8E1ohCgSZATp".to_string()]),
+            "network mismatch for addr 1287uUybCYgf7Tb76qnfPf8E1ohCgSZATp: addr=bitcoin, node=testnet"
+        );
     }
 }

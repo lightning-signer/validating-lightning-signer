@@ -5,8 +5,9 @@ use remotesigner::signer_client::SignerClient;
 use crate::server::remotesigner;
 use crate::server::remotesigner::node_config::KeyDerivationStyle;
 use crate::server::remotesigner::{
-    Bip32Seed, ChannelNonce, GetPerCommitmentPointRequest, InitRequest, ListChannelsRequest,
-    ListNodesRequest, NewChannelRequest, NodeConfig, NodeId, PingRequest,
+    AddAllowlistRequest, Bip32Seed, ChannelNonce, GetPerCommitmentPointRequest, InitRequest,
+    ListAllowlistRequest, ListChannelsRequest, ListNodesRequest, NewChannelRequest, NodeConfig,
+    NodeId, PingRequest, RemoveAllowlistRequest,
 };
 
 use bip39::{Language, Mnemonic};
@@ -91,6 +92,49 @@ pub async fn list_channels(
     for channel_nonce in channel_ids {
         println!("{}", hex::encode(channel_nonce));
     }
+    Ok(())
+}
+
+pub async fn list_allowlist(
+    client: &mut SignerClient<transport::Channel>,
+    node_id: Vec<u8>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let list_request = Request::new(ListAllowlistRequest {
+        node_id: Some(NodeId { data: node_id }),
+    });
+
+    let response = client.list_allowlist(list_request).await?.into_inner();
+    for addr in response.addresses {
+        println!("{}", addr);
+    }
+    Ok(())
+}
+
+pub async fn add_allowlist(
+    client: &mut SignerClient<transport::Channel>,
+    node_id: Vec<u8>,
+    addresses: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let add_request = Request::new(AddAllowlistRequest {
+        node_id: Some(NodeId { data: node_id }),
+        addresses,
+    });
+
+    client.add_allowlist(add_request).await?.into_inner();
+    Ok(())
+}
+
+pub async fn remove_allowlist(
+    client: &mut SignerClient<transport::Channel>,
+    node_id: Vec<u8>,
+    addresses: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let remove_request = Request::new(RemoveAllowlistRequest {
+        node_id: Some(NodeId { data: node_id }),
+        addresses,
+    });
+
+    client.remove_allowlist(remove_request).await?.into_inner();
     Ok(())
 }
 

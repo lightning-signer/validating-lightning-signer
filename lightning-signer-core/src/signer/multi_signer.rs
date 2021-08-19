@@ -50,7 +50,7 @@ impl MultiSigner {
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);
 
-        let node = Node::new(node_config, &seed, network, &self.persister);
+        let node = Node::new(node_config, &seed, network, &self.persister, vec![]);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         nodes.insert(node_id, Arc::new(node));
@@ -68,7 +68,7 @@ impl MultiSigner {
         let secp_ctx = Secp256k1::signing_only();
         let network = Network::Testnet;
 
-        let node = Node::new(node_config, seed, network, &self.persister);
+        let node = Node::new(node_config, seed, network, &self.persister, vec![]);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         if self.test_mode {
@@ -102,7 +102,7 @@ impl MultiSigner {
         let secp_ctx = Secp256k1::signing_only();
         let network = Network::Testnet;
 
-        let node = Node::new(node_config, seed, network, &self.persister);
+        let node = Node::new(node_config, seed, network, &self.persister, vec![]);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let nodes = self.nodes.lock().unwrap();
         nodes.get(&node_id).ok_or_else(|| {

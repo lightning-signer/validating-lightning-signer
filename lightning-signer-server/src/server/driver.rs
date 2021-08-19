@@ -3,18 +3,20 @@ use std::sync::Arc;
 use std::{cmp, process};
 
 use backtrace::Backtrace;
+use clap::{App, Arg};
+use log::{debug, error, info};
+use serde_json::json;
+use tonic::{transport::Server, Request, Response, Status};
+
 use bitcoin;
 use bitcoin::consensus::{deserialize, encode};
 use bitcoin::hashes::Hash as BitcoinHash;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::util::psbt::serialize::Deserialize;
 use bitcoin::{OutPoint, Script, SigHashType};
-use clap::{App, Arg};
+
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
-use log::{debug, error, info};
-use serde_json::json;
-use tonic::{transport::Server, Request, Response, Status};
 
 use lightning_signer::channel;
 use lightning_signer::channel::{channel_nonce_to_id, ChannelId, ChannelSetup, CommitmentType};
@@ -1485,6 +1487,54 @@ impl Signer for SignServer {
             .map(|nonce| ChannelNonce { data: nonce })
             .collect();
         Ok(Response::new(ListChannelsReply { channel_nonces }))
+    }
+
+    async fn list_allowlist(
+        &self,
+        request: Request<ListAllowlistRequest>,
+    ) -> Result<Response<ListAllowlistReply>, Status> {
+        let req = request.into_inner();
+        debug!("req={}", json!(&req));
+        let node_id = self.node_id(req.node_id)?;
+        info!("ENTER list_allowlist({})", node_id);
+        let node = self.signer.get_node(&node_id)?;
+        let addresses = node.allowlist()?;
+        let reply = ListAllowlistReply { addresses };
+        info!("REPLY list_allowlist({})", node_id);
+        debug!("reply={}", json!(reply));
+        Ok(Response::new(reply))
+    }
+
+    async fn add_allowlist(
+        &self,
+        request: Request<AddAllowlistRequest>,
+    ) -> Result<Response<AddAllowlistReply>, Status> {
+        let req = request.into_inner();
+        debug!("req={}", json!(&req));
+        let node_id = self.node_id(req.node_id)?;
+        info!("ENTER add_allowlist({})", node_id);
+        let node = self.signer.get_node(&node_id)?;
+        node.add_allowlist(&req.addresses)?;
+        let reply = AddAllowlistReply {};
+        info!("REPLY add_allowlist({})", node_id);
+        debug!("reply={}", json!(reply));
+        Ok(Response::new(reply))
+    }
+
+    async fn remove_allowlist(
+        &self,
+        request: Request<RemoveAllowlistRequest>,
+    ) -> Result<Response<RemoveAllowlistReply>, Status> {
+        let req = request.into_inner();
+        debug!("req={}", json!(&req));
+        let node_id = self.node_id(req.node_id)?;
+        info!("ENTER remove_allowlist({})", node_id);
+        let node = self.signer.get_node(&node_id)?;
+        node.remove_allowlist(&req.addresses)?;
+        let reply = RemoveAllowlistReply {};
+        info!("REPLY remove_allowlist({})", node_id);
+        debug!("reply={}", json!(reply));
+        Ok(Response::new(reply))
     }
 }
 

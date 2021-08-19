@@ -4,7 +4,7 @@ extern crate lightning_signer;
 
 use core::time::Duration;
 use lightning_signer::Arc;
-use lightning_signer::Set;
+use lightning_signer::OrderedSet;
 
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::consensus::serialize;
@@ -299,7 +299,7 @@ fn claim_htlc_outputs_single_tx() {
         check_spends!(node_txn[3], revoked_local_txn[0]);
         check_spends!(node_txn[4], revoked_local_txn[0]);
 
-        let mut witness_lens = Set::new();
+        let mut witness_lens = OrderedSet::new();
         witness_lens.insert(node_txn[2].input[0].witness.last().unwrap().len());
         witness_lens.insert(node_txn[3].input[0].witness.last().unwrap().len());
         witness_lens.insert(node_txn[4].input[0].witness.last().unwrap().len());

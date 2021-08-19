@@ -4,8 +4,8 @@ use std::io;
 
 use clap::{App, Arg, ArgMatches};
 
-use lightning_signer_server::client::driver;
 use bip39::Mnemonic;
+use lightning_signer_server::client::driver;
 
 fn make_test_subapp() -> App<'static> {
     App::new("test")
@@ -63,7 +63,7 @@ async fn node_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
             } else {
                 driver::new_node(&mut client).await?
             }
-        },
+        }
         Some(("list", _)) => driver::list_nodes(&mut client).await?,
         Some((name, _)) => panic!("unimplemented command {}", name),
         None => {
@@ -122,10 +122,69 @@ async fn chan_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
     Ok(())
 }
 
+fn make_allowlist_subapp() -> App<'static> {
+    App::new("allowlist")
+        .alias("alst")
+        .about("manage allowlists")
+        .subcommand(App::new("list").about("List allowlisted addresses for a node"))
+        .subcommand(
+            App::new("add")
+                .about("Add address to the node's allowlist")
+                .arg(
+                    Arg::new("address")
+                        .takes_value(true)
+                        .required(true)
+                        .about("address to add to the allowlist"),
+                ),
+        )
+        .subcommand(
+            App::new("remove")
+                .about("Remove address from the node's allowlist")
+                .arg(
+                    Arg::new("address")
+                        .takes_value(true)
+                        .required(true)
+                        .about("address to remove from the allowlist"),
+                ),
+        )
+}
+
+#[tokio::main]
+async fn alst_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = driver::connect().await?;
+    // TODO give a nice error message if node_id is missing
+    let node_id = hex::decode(matches.value_of("node").expect("missing node_id"))?;
+
+    match matches.subcommand() {
+        Some(("list", _)) => driver::list_allowlist(&mut client, node_id).await?,
+        Some(("add", matches)) => {
+            let addrs = vec![matches
+                .value_of("address")
+                .expect("missing address")
+                .to_string()];
+            driver::add_allowlist(&mut client, node_id, addrs).await?
+        }
+        Some(("remove", matches)) => {
+            let addrs = vec![matches
+                .value_of("address")
+                .expect("missing address")
+                .to_string()];
+            driver::remove_allowlist(&mut client, node_id, addrs).await?
+        }
+        Some((name, _)) => panic!("unimplemented command {}", name),
+        None => {
+            println!("missing sub-command");
+            make_allowlist_subapp().print_help()?
+        }
+    };
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let test_subapp = make_test_subapp();
     let node_subapp = make_node_subapp();
     let chan_subapp = make_chan_subapp();
+    let alst_subapp = make_allowlist_subapp();
     let app = App::new("client")
         .about("a CLI utility which communicates with a running Lightning Signer server via gRPC")
         .arg(
@@ -139,6 +198,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .subcommand(test_subapp)
         .subcommand(node_subapp)
         .subcommand(chan_subapp)
+        .subcommand(alst_subapp)
         .subcommand(App::new("ping"));
     let matches = app.clone().get_matches();
 
@@ -147,6 +207,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(("ping", _)) => ping_subcommand()?,
         Some(("node", submatches)) => node_subcommand(submatches)?,
         Some(("channel", submatches)) => chan_subcommand(submatches)?,
+        Some(("allowlist", submatches)) => alst_subcommand(submatches)?,
         Some((name, _)) => panic!("unimplemented command {}", name),
         None => panic!("unmatched command?!"),
     };
