@@ -84,7 +84,7 @@ pub struct Node {
     pub(crate) network: Network,
     pub(crate) validator_factory: Box<dyn ValidatorFactory>,
     pub(crate) persister: Arc<dyn Persist>,
-    allowlist: Mutex<HashSet<Script>>,
+    allowlist: Mutex<UnorderedSet<Script>>,
 }
 
 impl Wallet for Node {
@@ -129,7 +129,7 @@ impl Node {
             network,
             validator_factory: Box::new(SimpleValidatorFactory {}),
             persister: Arc::clone(persister),
-            allowlist: Mutex::new(HashSet::from_iter(allowlist)),
+            allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
         }
     }
 

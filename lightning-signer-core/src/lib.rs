@@ -75,7 +75,7 @@ mod io_extras {
     pub use std::io::{sink, Error, Read};
 }
 
-pub use alloc::collections::BTreeSet as Set;
+pub use alloc::collections::BTreeSet as OrderedSet;
 pub use alloc::rc::Rc;
 pub use alloc::sync::{Arc, Weak};
 
@@ -85,7 +85,7 @@ mod nostd;
 pub(crate) mod prelude {
     pub use alloc::{boxed::Box, string::String, vec, vec::Vec};
     pub use hashbrown::HashMap as Map;
-    pub use hashbrown::HashSet;
+    pub use hashbrown::HashSet as UnorderedSet;
 
     pub use alloc::borrow::ToOwned;
     pub use alloc::string::ToString;
