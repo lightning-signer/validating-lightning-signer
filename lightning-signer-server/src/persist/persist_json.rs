@@ -12,13 +12,13 @@ use lightning_signer::persist::Persist;
 use lightning_signer::policy::validator::EnforcementState;
 
 use crate::persist::model::NodeChannelId;
-use crate::persist::model::{Allowlist, ChannelEntry, NodeEntry};
+use crate::persist::model::{AllowlistItemEntry, ChannelEntry, NodeEntry};
 
 /// A persister that uses the kv crate and JSON serialization for values.
 pub struct KVJsonPersister<'a> {
     pub node_bucket: Bucket<'a, Vec<u8>, Json<NodeEntry>>,
     pub channel_bucket: Bucket<'a, NodeChannelId, Json<ChannelEntry>>,
-    pub allowlist_bucket: Bucket<'a, Vec<u8>, Json<Allowlist>>,
+    pub allowlist_bucket: Bucket<'a, Vec<u8>, Json<AllowlistItemEntry>>,
 }
 
 impl KVJsonPersister<'_> {
@@ -147,7 +147,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
 
     fn update_node_allowlist(&self, node_id: &PublicKey, allowlist: Vec<Script>) -> Result<(), ()> {
         let key = node_id.serialize().to_vec();
-        let entry = Allowlist { allowlist };
+        let entry = AllowlistItemEntry { allowlist };
         self.allowlist_bucket
             .set(key, Json(entry))
             .expect("update transaction");
