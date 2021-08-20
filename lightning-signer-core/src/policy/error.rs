@@ -110,6 +110,50 @@ pub(crate) fn policy_error(msg: impl Into<String>) -> ValidationError {
     }
 }
 
+#[allow(unused)]
+macro_rules! transaction_format_err {
+	($($arg:tt)*) => (
+            Err(transaction_format_error(format!(
+                "{}: {}",
+                short_function!(),
+                format!($($arg)*)
+            )));
+        )
+}
+
+#[allow(unused)]
+macro_rules! script_format_err {
+	($($arg:tt)*) => (
+            Err(script_format_error(format!(
+                "{}: {}",
+                short_function!(),
+                format!($($arg)*)
+            )));
+        )
+}
+
+#[allow(unused)]
+macro_rules! mismatch_err {
+	($($arg:tt)*) => (
+            Err(mismatch_error(format!(
+                "{}: {}",
+                short_function!(),
+                format!($($arg)*)
+            )));
+        )
+}
+
+#[allow(unused)]
+macro_rules! policy_err {
+	($($arg:tt)*) => (
+            Err(policy_error(format!(
+                "{}: {}",
+                short_function!(),
+                format!($($arg)*)
+            )));
+        )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
