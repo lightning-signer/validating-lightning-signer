@@ -13,6 +13,7 @@ readme = "../README.md"
 default = ["grpc", "persist_kv_json"]
 grpc = ["tokio", "tonic", "prost", "serde", "serde_json", "clap", "lightning-signer-core/grpc"]
 persist_kv_json = [ "kv", "serde_with", "bitcoin/use-serde" ]
+log_pretty_print = []
 
 [lib]
 name = "lightning_signer_server"
