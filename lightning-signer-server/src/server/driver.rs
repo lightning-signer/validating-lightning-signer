@@ -520,8 +520,7 @@ impl Signer for SignServer {
                 let sig = chan.sign_mutual_close_tx(&tx, funding_amount_sat)?;
 
                 Ok(signature_to_bitcoin_vec(sig))
-            })
-            .map_err(|_| internal_error("signing mutual close failed"))?;
+            })?;
 
         let reply = SignatureReply {
             signature: Some(BitcoinSignature {
