@@ -1,4 +1,6 @@
 use std::convert::{TryFrom, TryInto};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::sync::Arc;
 use std::{cmp, process};
 
@@ -1560,6 +1562,13 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .possible_values(&LOG_LEVEL_FILTER_NAMES)
                 .default_value("INFO")
                 .takes_value(true),
+        )
+        .arg(
+            Arg::new("initial-allowlist-file")
+                .about("specify file containing initial allowlist")
+                .short('A')
+                .long("initial-allowlist-file")
+                .takes_value(true),
         );
     let matches = app.get_matches();
     let addr = format!(
@@ -1589,7 +1598,18 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         Arc::new(KVJsonPersister::new(data_path.as_str()))
     };
-    let signer = MultiSigner::new_with_persister(persister, test_mode);
+    let mut initial_allowlist = vec![];
+    if matches.is_present("initial-allowlist-file") {
+        let alfp: String = matches
+            .value_of_t("initial-allowlist-file")
+            .expect("allowlist file path");
+        let file = File::open(&alfp).expect(format!("open {} failed", &alfp).as_str());
+        initial_allowlist = BufReader::new(file)
+            .lines()
+            .map(|l| l.expect("line"))
+            .collect()
+    }
+    let signer = MultiSigner::new_with_persister(persister, test_mode, initial_allowlist);
     let server = SignServer { signer };
 
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
