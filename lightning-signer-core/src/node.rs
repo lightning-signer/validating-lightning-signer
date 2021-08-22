@@ -89,7 +89,12 @@ pub struct Node {
 }
 
 impl Wallet for Node {
-    fn wallet_can_spend(&self, child_path: &Vec<u32>, output: &TxOut) -> Result<bool, Status> {
+    fn can_spend(&self, child_path: &Vec<u32>, script_pubkey: &Script) -> Result<bool, Status> {
+        // If there is no path we can't spend it ...
+        if child_path.len() == 0 {
+            return Ok(false);
+        }
+
         let secp_ctx = Secp256k1::signing_only();
         let pubkey = self
             .get_wallet_key(&secp_ctx, child_path)?
@@ -99,8 +104,17 @@ impl Wallet for Node {
         let native_addr = Address::p2wpkh(&pubkey, self.network).expect("p2wpkh failed");
         let wrapped_addr = Address::p2shwpkh(&pubkey, self.network).expect("p2shwpkh failed");
 
-        Ok(output.script_pubkey == native_addr.script_pubkey()
-            || output.script_pubkey == wrapped_addr.script_pubkey())
+        Ok(*script_pubkey == native_addr.script_pubkey()
+            || *script_pubkey == wrapped_addr.script_pubkey())
+    }
+
+    /// Returns true if script_pubkey is in the node's allowlist.
+    fn allowlist_contains(&self, script_pubkey: &Script) -> bool {
+        self.allowlist.lock().unwrap().contains(script_pubkey)
+    }
+
+    fn network(&self) -> Network {
+        self.network
     }
 }
 

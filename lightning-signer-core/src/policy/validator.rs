@@ -713,12 +713,14 @@ impl Validator for SimpleValidator {
             // policy-v2-funding-change-to-wallet
             // All outputs must either be wallet (change) or channel funding.
             if opath.len() > 0 {
-                let spendable = wallet.wallet_can_spend(opath, output).map_err(|err| {
-                    policy_error(format!(
-                        "output[{}]: wallet_can_spend error: {}",
-                        outndx, err
-                    ))
-                })?;
+                let spendable = wallet
+                    .can_spend(opath, &output.script_pubkey)
+                    .map_err(|err| {
+                        policy_error(format!(
+                            "output[{}]: wallet_can_spend error: {}",
+                            outndx, err
+                        ))
+                    })?;
                 if !spendable {
                     return Err(policy_error(format!(
                         "wallet cannot spend output[{}]",
