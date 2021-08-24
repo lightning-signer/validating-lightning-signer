@@ -466,13 +466,20 @@ impl Signer for SignServer {
             htlc_basepoint: self.public_key(points.htlc)?,
         };
 
-        let counterparty_shutdown_script =
-            Script::deserialize(&req.counterparty_shutdown_script.as_slice()).map_err(|err| {
-                invalid_grpc_argument(format!(
-                    "could not parse counterparty_shutdown_script: {}",
-                    err
-                ))
-            })?;
+        let counterparty_shutdown_script = if req.counterparty_shutdown_script.is_empty() {
+            None
+        } else {
+            Some(
+                Script::deserialize(&req.counterparty_shutdown_script.as_slice()).map_err(
+                    |err| {
+                        invalid_grpc_argument(format!(
+                            "could not parse counterparty_shutdown_script: {}",
+                            err
+                        ))
+                    },
+                )?,
+            )
+        };
 
         let setup = ChannelSetup {
             is_outbound: req.is_outbound,
@@ -514,12 +521,23 @@ impl Signer for SignServer {
             return Err(invalid_grpc_argument("tx.output.len() == 0"));
         }
 
-        let funding_amount_sat = reqtx.input_descs[0].value_sat as u64;
+        let opaths = reqtx
+            .output_descs
+            .into_iter()
+            .map(|od| {
+                let key_loc = od.key_loc.as_ref();
+                if key_loc.is_some() {
+                    key_loc.unwrap().key_path.to_vec()
+                } else {
+                    vec![]
+                }
+            })
+            .collect();
 
         let sigvec = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let sig = chan.sign_mutual_close_tx(&tx, funding_amount_sat)?;
+                let sig = chan.sign_mutual_close_tx(&tx, &opaths)?;
 
                 Ok(signature_to_bitcoin_vec(sig))
             })?;
@@ -542,14 +560,12 @@ impl Signer for SignServer {
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_req_enter!(&node_id, &channel_id, &req);
 
-        let opt_counterparty_shutdown_script = if req.counterparty_shutdown_script.is_empty() {
-            None
+        let counterparty_shutdown_script = if req.counterparty_shutdown_script.is_empty() {
+            Script::default()
         } else {
-            Some(
-                Script::deserialize(&req.counterparty_shutdown_script.as_slice()).map_err(
-                    |_| invalid_grpc_argument("could not deserialize counterparty_shutdown_script"),
-                )?,
-            )
+            Script::deserialize(&req.counterparty_shutdown_script.as_slice()).map_err(|_| {
+                invalid_grpc_argument("could not deserialize counterparty_shutdown_script")
+            })?
         };
 
         let sig_data = self
@@ -558,7 +574,8 @@ impl Signer for SignServer {
                 let sig = chan.sign_mutual_close_tx_phase2(
                     req.to_holder_value_sat,
                     req.to_counterparty_value_sat,
-                    opt_counterparty_shutdown_script.clone(),
+                    &chan.get_shutdown_script(),
+                    &counterparty_shutdown_script,
                 )?;
                 let mut bitcoin_sig = sig.serialize_der().to_vec();
                 bitcoin_sig.push(SigHashType::All as u8);

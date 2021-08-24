@@ -1,7 +1,7 @@
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::bip143::SigHashCache;
-use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
+use bitcoin::{self, Address, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
@@ -13,13 +13,14 @@ use crate::channel::{ChannelSetup, ChannelSlot};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
-    parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
-    CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT, HTLC_TIMEOUT_TX_WEIGHT,
+    build_close_tx, parse_offered_htlc_script, parse_received_htlc_script,
+    parse_revokeable_redeemscript, CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT,
+    HTLC_TIMEOUT_TX_WEIGHT,
 };
 use crate::util::crypto_utils::payload_for_p2wsh;
 use crate::wallet::Wallet;
 
-use super::error::{policy_error, ValidationError};
+use super::error::{policy_error, transaction_format_error, ValidationError};
 
 /// A policy checker
 ///
@@ -109,6 +110,28 @@ pub trait Validator {
         tx: &Transaction,
         values_sat: &Vec<u64>,
         opaths: &Vec<Vec<u32>>,
+    ) -> Result<(), ValidationError>;
+
+    /// Phase 1 decoding and recomposition of mutual_close
+    fn decode_and_validate_mutual_close_tx(
+        &self,
+        wallet: &Wallet,
+        setup: &ChannelSetup,
+        state: &EnforcementState,
+        tx: &Transaction,
+        opaths: &Vec<Vec<u32>>,
+    ) -> Result<Transaction, ValidationError>;
+
+    /// Phase 2 Validatation of mutual_close
+    fn validate_mutual_close_tx(
+        &self,
+        wallet: &Wallet,
+        setup: &ChannelSetup,
+        state: &EnforcementState,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
+        holder_shutdown_script: &Script,
+        counterparty_shutdown_script: &Script,
     ) -> Result<(), ValidationError>;
 }
 
@@ -770,6 +793,176 @@ impl Validator for SimpleValidator {
                 };
             }
         }
+        Ok(())
+    }
+
+    fn decode_and_validate_mutual_close_tx(
+        &self,
+        wallet: &Wallet,
+        setup: &ChannelSetup,
+        estate: &EnforcementState,
+        tx: &Transaction,
+        wallet_paths: &Vec<Vec<u32>>,
+    ) -> Result<Transaction, ValidationError> {
+        debug!("{}: setup:\n{:#?}", short_function!(), setup);
+        debug!("{}: estate:\n{:#?}", short_function!(), estate);
+        debug!("{}: tx:\n{:#?}", short_function!(), tx);
+        debug!("{}: wallet_paths:\n{:#?}", short_function!(), wallet_paths);
+
+        if tx.output.len() > 2 {
+            return Err(transaction_format_error(format!(
+                "mutual_close_tx: invalid number of outputs: {}",
+                tx.output.len()
+            )));
+        }
+
+        // The caller checked, this shouldn't happen
+        assert_eq!(wallet_paths.len(), tx.output.len());
+
+        // Establish which output belongs to the holder.
+        let mut holder_index: Option<usize> = None;
+
+        if log::log_enabled!(log::Level::Debug) {
+            for ndx in 0..tx.output.len() {
+                let script_pubkey = &tx.output[ndx].script_pubkey;
+                debug!(
+                    "txout[{}]: address {}:{} regtest:{}",
+                    ndx,
+                    wallet.network(),
+                    Address::from_script(script_pubkey, wallet.network())
+                        .unwrap()
+                        .to_string(),
+                    Address::from_script(script_pubkey, bitcoin::Network::Regtest)
+                        .unwrap()
+                        .to_string()
+                );
+            }
+        }
+
+        // We prefer output matches in this order:
+        // 1. upfront holder_shutdown_script
+        // 2. wallet addresses
+        // 3. allowlist
+        //
+        // We can't check in the same loop because we need to consider
+        // all of the outputs on each pass; ie, the first output
+        // should not be assigned to holder via allowlist if the
+        // second output would assign it via upfront_shutdown_script
+
+        // 1. Check upfront holder_shutdown_script.
+        if let Some(holder_shutdown_script) = &setup.holder_shutdown_script {
+            for ndx in 0..tx.output.len() {
+                let script_pubkey = &tx.output[ndx].script_pubkey;
+                if script_pubkey == holder_shutdown_script {
+                    debug!("txout[{}]: is holder output via upfront script", ndx);
+                    if holder_index.is_some() {
+                        return policy_err!("both outputs match holder upfront shutdown script");
+                    }
+                    holder_index = Some(ndx);
+                }
+            }
+        }
+
+        // 2. Check wallet addresses.
+        if holder_index.is_none() {
+            for ndx in 0..tx.output.len() {
+                let script_pubkey = &tx.output[ndx].script_pubkey;
+                if wallet
+                    .can_spend(&wallet_paths[ndx], script_pubkey)
+                    .map_err(|err| {
+                        policy_error(format!("output[{}]: wallet_can_spend error: {}", ndx, err))
+                    })?
+                {
+                    debug!("txout[{}]: is holder output via wallet path hint", ndx);
+                    if holder_index.is_some() {
+                        return policy_err!("both outputs match wallet hint address");
+                    }
+                    holder_index = Some(ndx);
+                }
+            }
+        }
+
+        // 3. Check the allowlist
+        if holder_index.is_none() {
+            for ndx in 0..tx.output.len() {
+                let script_pubkey = &tx.output[ndx].script_pubkey;
+                if wallet.allowlist_contains(script_pubkey) {
+                    debug!("txout[{}]: is holder output via allowlist", ndx);
+                    if holder_index.is_some() {
+                        return policy_err!("both outputs match the allowlist");
+                    }
+                    holder_index = Some(ndx);
+                }
+            }
+        }
+
+        let mut to_holder_value_sat = 0;
+        let mut to_counterparty_value_sat = 0;
+        let mut holder_script: Script = Default::default();
+        let mut counterparty_script: Script = Default::default();
+
+        if tx.output.len() == 2 {
+            if holder_index.is_none() {
+                return Err(policy_error(format!(
+                    "{}: unable to establish holder output",
+                    short_function!()
+                )));
+            }
+            let hndx = holder_index.unwrap();
+            to_holder_value_sat = tx.output[hndx].value;
+            holder_script = tx.output[hndx].script_pubkey.clone();
+            let cndx = 1 - hndx;
+            to_counterparty_value_sat = tx.output[cndx].value;
+            counterparty_script = tx.output[cndx].script_pubkey.clone();
+        } else {
+            // There is only one output
+            if holder_index.is_some() {
+                to_holder_value_sat = tx.output[0].value;
+                holder_script = tx.output[0].script_pubkey.clone();
+            } else {
+                to_counterparty_value_sat = tx.output[0].value;
+                counterparty_script = tx.output[0].script_pubkey.clone();
+            }
+        }
+
+        self.validate_mutual_close_tx(
+            wallet,
+            setup,
+            estate,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            &holder_script,
+            &counterparty_script,
+        )?;
+
+        let recomposed_tx = build_close_tx(
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            &holder_script,
+            &counterparty_script,
+            setup.funding_outpoint,
+        );
+
+        if recomposed_tx != *tx {
+            debug!("ORIGINAL_TX={:#?}", &tx);
+            debug!("RECOMPOSED_TX={:#?}", &recomposed_tx);
+            return policy_err!("recomposed tx mismatch");
+        }
+
+        Ok(recomposed_tx)
+    }
+
+    fn validate_mutual_close_tx(
+        &self,
+        _wallet: &Wallet,
+        _setup: &ChannelSetup,
+        estate: &EnforcementState,
+        _to_holder_value_sat: u64,
+        _to_counterparty_value_sat: u64,
+        _holder_script: &Script,
+        _counterparty_script: &Script,
+    ) -> Result<(), ValidationError> {
+        debug!("{}: estate:\n{:#?}", short_function!(), estate);
         Ok(())
     }
 }

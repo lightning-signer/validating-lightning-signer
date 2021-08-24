@@ -281,7 +281,7 @@ pub fn make_test_channel_setup() -> ChannelSetup {
         holder_shutdown_script: None,
         counterparty_points: make_test_counterparty_points(),
         counterparty_selected_contest_delay: 7,
-        counterparty_shutdown_script: Script::new(),
+        counterparty_shutdown_script: None,
         commitment_type: CommitmentType::StaticRemoteKey,
     }
 }
@@ -495,7 +495,7 @@ pub fn test_chan_ctx(node_ctx: &TestNodeContext, nn: usize, value_sat: u64) -> T
         holder_shutdown_script: None,
         counterparty_points: make_test_counterparty_points(),
         counterparty_selected_contest_delay: 7,
-        counterparty_shutdown_script: Script::new(),
+        counterparty_shutdown_script: None,
         commitment_type: CommitmentType::StaticRemoteKey,
     };
 
