@@ -266,7 +266,6 @@ impl SimpleValidator {
 // TODO - policy-v2-mutual-destination-allowlisted
 // TODO - policy-v2-mutual-value-matches-commitment
 // TODO - policy-v2-mutual-fee-range
-// TODO - policy-v2-mutual-no-pending-htlcs
 
 // not yet implemented
 // TODO - policy-v2-forced-destination-allowlisted
@@ -808,6 +807,13 @@ impl Validator for SimpleValidator {
         // The caller checked, this shouldn't happen
         assert_eq!(wallet_paths.len(), tx.output.len());
 
+        if estate.current_holder_commit_info.is_none() {
+            return policy_err!("current_holder_commit_info missing");
+        }
+        if estate.current_counterparty_commit_info.is_none() {
+            return policy_err!("current_counterparty_commit_info missing");
+        }
+
         // Establish which output belongs to the holder.
         let mut holder_index: Option<usize> = None;
 
@@ -949,6 +955,22 @@ impl Validator for SimpleValidator {
         _counterparty_script: &Option<Script>,
     ) -> Result<(), ValidationError> {
         debug!("{}: estate:\n{:#?}", short_function!(), estate);
+
+        let holder_info = estate
+            .current_holder_commit_info
+            .as_ref()
+            .ok_or_else(|| policy_error("current_holder_commit_info missing"))?;
+
+        let counterparty_info = estate
+            .current_counterparty_commit_info
+            .as_ref()
+            .ok_or_else(|| policy_error("current_counterparty_commit_info missing"))?;
+
+        // policy-v2-mutual-no-pending-htlcs
+        if !holder_info.htlcs_is_empty() || !counterparty_info.htlcs_is_empty() {
+            return policy_err!("cannot close with pending htlcs");
+        }
+
         Ok(())
     }
 }

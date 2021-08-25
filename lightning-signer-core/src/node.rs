@@ -4724,6 +4724,170 @@ mod tests {
     }
 
     #[test]
+    fn sign_mutual_close_tx_without_holder_commitment() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    chan.enforcement_state.current_holder_commit_info = None;
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: decode_and_validate_mutual_close_tx: \
+             current_holder_commit_info missing"
+        );
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_without_counterparty_commitment() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    chan.enforcement_state.current_counterparty_commit_info = None;
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: decode_and_validate_mutual_close_tx: \
+             current_counterparty_commit_info missing"
+        );
+    }
+
+    // policy-v2-mutual-no-pending-htlcs
+    #[test]
+    fn sign_mutual_close_tx_with_holder_offered_htlcs() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut holder = chan
+                        .enforcement_state
+                        .current_holder_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    holder.offered_htlcs.push(HTLCInfo2 {
+                        value_sat: 1,
+                        payment_hash: PaymentHash([1; 32]),
+                        cltv_expiry: 2 << 16,
+                    });
+                    chan.enforcement_state.current_holder_commit_info = Some(holder);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: cannot close with pending htlcs"
+        );
+    }
+
+    // policy-v2-mutual-no-pending-htlcs
+    #[test]
+    fn sign_mutual_close_tx_with_holder_received_htlcs() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut holder = chan
+                        .enforcement_state
+                        .current_holder_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    holder.received_htlcs.push(HTLCInfo2 {
+                        value_sat: 1,
+                        payment_hash: PaymentHash([1; 32]),
+                        cltv_expiry: 2 << 16,
+                    });
+                    chan.enforcement_state.current_holder_commit_info = Some(holder);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: cannot close with pending htlcs"
+        );
+    }
+
+    // policy-v2-mutual-no-pending-htlcs
+    #[test]
+    fn sign_mutual_close_tx_with_counterparty_offered_htlcs() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut cparty = chan
+                        .enforcement_state
+                        .current_counterparty_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    cparty.offered_htlcs.push(HTLCInfo2 {
+                        value_sat: 1,
+                        payment_hash: PaymentHash([1; 32]),
+                        cltv_expiry: 2 << 16,
+                    });
+                    chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: cannot close with pending htlcs"
+        );
+    }
+
+    // policy-v2-mutual-no-pending-htlcs
+    #[test]
+    fn sign_mutual_close_tx_with_counterparty_received_htlcs() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut cparty = chan
+                        .enforcement_state
+                        .current_counterparty_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    cparty.received_htlcs.push(HTLCInfo2 {
+                        value_sat: 1,
+                        payment_hash: PaymentHash([1; 32]),
+                        cltv_expiry: 2 << 16,
+                    });
+                    chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: cannot close with pending htlcs"
+        );
+    }
+
+    #[test]
     fn sign_justice_sweep_test() {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
