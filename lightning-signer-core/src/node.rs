@@ -2098,7 +2098,7 @@ mod tests {
                 &uniclosekeys,
                 &vec![opath.clone()],
             ),
-            "policy failure: validate_funding_tx: fee 99 below minimum"
+            "policy failure: validate_fee: validate_funding_tx: fee 99 below minimum"
         );
     }
 
@@ -2133,7 +2133,7 @@ mod tests {
                 &uniclosekeys,
                 &vec![opath.clone()],
             ),
-            "policy failure: validate_funding_tx: fee 20000 above maximum"
+            "policy failure: validate_fee: validate_funding_tx: fee 20000 above maximum"
         );
     }
 
@@ -2464,7 +2464,7 @@ mod tests {
             sign_funding_tx_with_mutator(|tx| {
                 tx.version = 1;
             }),
-            "policy failure: invalid funding tx version: 1"
+            "policy failure: validate_funding_tx: invalid version: 1"
         );
     }
 
@@ -2475,7 +2475,7 @@ mod tests {
             sign_funding_tx_with_mutator(|tx| {
                 tx.version = 3;
             }),
-            "policy failure: invalid funding tx version: 3"
+            "policy failure: validate_funding_tx: invalid version: 3"
         );
     }
 
@@ -2673,7 +2673,7 @@ mod tests {
 
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: initial holder commitment not validated"
+            "policy failure: validate_funding_tx: initial holder commitment not validated"
         );
     }
 
@@ -2834,7 +2834,8 @@ mod tests {
 
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: funding output amount mismatch w/ channel: 3000042 != 3000000"
+            "policy failure: validate_funding_tx: \
+             funding output amount mismatch w/ channel: 3000042 != 3000000"
         );
     }
 
@@ -2903,7 +2904,8 @@ mod tests {
 
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: funding script_pubkey mismatch w/ channel: Script(OP_0 OP_PUSHBYTES_32 1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b) != Script(OP_0 OP_PUSHBYTES_32 7ac8486233edd675a9745d9eefd4386880312b3930a2195567b4b89220b5c833)");
+            "policy failure: validate_funding_tx: funding script_pubkey mismatch w/ channel: Script(OP_0 OP_PUSHBYTES_32 1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b) != Script(OP_0 OP_PUSHBYTES_32 7ac8486233edd675a9745d9eefd4386880312b3930a2195567b4b89220b5c833)"
+        );
     }
 
     #[test]
@@ -3058,8 +3060,8 @@ mod tests {
 
         assert_failed_precondition_err!(
             sign_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx),
-            "policy failure: can\'t sign revoked commitment_number 9, \
-             next_holder_commit_num is 11"
+            "policy failure: validate_sign_holder_commitment_tx: \
+             can't sign revoked commitment_number 9, next_holder_commit_num is 11"
         );
     }
 
@@ -3654,7 +3656,7 @@ mod tests {
                 |_keys| {},
                 |tx| tx.lock_time = 0 // offered must have non-zero locktime
             ),
-            "policy failure: offered lock_time must be non-zero"
+            "policy failure: validate_htlc_tx: offered lock_time must be non-zero"
         );
     }
 
@@ -3680,7 +3682,7 @@ mod tests {
                 |_keys| {},
                 |tx| tx.lock_time = 0 // offered must have non-zero locktime
             ),
-            "policy failure: offered lock_time must be non-zero"
+            "policy failure: validate_htlc_tx: offered lock_time must be non-zero"
         );
     }
 
@@ -3922,7 +3924,8 @@ mod tests {
                 |_keys| {},
                 |tx| tx.output[0].value = 999_900 // htlc_amount_sat is 1_000_000
             ),
-            "policy failure: feerate_per_kw of 151 is smaller than the minimum of 500"
+            "policy failure: validate_htlc_tx: \
+             feerate_per_kw of 151 is smaller than the minimum of 500"
         );
     }
 
@@ -3935,7 +3938,8 @@ mod tests {
                 |_keys| {},
                 |tx| tx.output[0].value = 980_000 // htlc_amount_sat is 1_000_000
             ),
-            "policy failure: feerate_per_kw of 30166 is larger than the maximum of 16000"
+            "policy failure: validate_htlc_tx: \
+             feerate_per_kw of 30166 is larger than the maximum of 16000"
         );
     }
 
@@ -3948,7 +3952,8 @@ mod tests {
                 |_keys| {},
                 |tx| tx.output[0].value = 999_900 // htlc_amount_sat is 1_000_000
             ),
-            "policy failure: feerate_per_kw of 143 is smaller than the minimum of 500"
+            "policy failure: validate_htlc_tx: \
+             feerate_per_kw of 143 is smaller than the minimum of 500"
         );
     }
 
@@ -3961,7 +3966,8 @@ mod tests {
                 |_keys| {},
                 |tx| tx.output[0].value = 980_000 // htlc_amount_sat is 1_000_000
             ),
-            "policy failure: feerate_per_kw of 28450 is larger than the maximum of 16000"
+            "policy failure: validate_htlc_tx: \
+             feerate_per_kw of 28450 is larger than the maximum of 16000"
         );
     }
 
@@ -4530,11 +4536,11 @@ mod tests {
                     wallet_paths.push(vec![]); // needs to match
                 },
                 |chan| {
-                    // Channel should be marked closed
+                    // Channel should not be marked closed
                     assert_eq!(chan.enforcement_state.mutual_close_signed, false);
                 }
             ),
-            "transaction format: mutual_close_tx: invalid number of outputs: 3"
+            "transaction format: decode_and_validate_mutual_close_tx: invalid number of outputs: 3"
         );
     }
 
@@ -4554,7 +4560,7 @@ mod tests {
                     wallet_paths.push(vec![]); // an extra opath element
                 },
                 |chan| {
-                    // Channel should be marked closed
+                    // Channel should be not marked closed
                     assert_eq!(chan.enforcement_state.mutual_close_signed, false);
                 }
             ),
@@ -4581,7 +4587,7 @@ mod tests {
                     wallet_paths.push(vec![]);
                 },
                 |chan| {
-                    // Channel should be marked closed
+                    // Channel should not be marked closed
                     assert_eq!(chan.enforcement_state.mutual_close_signed, false);
                 }
             ),
@@ -5156,7 +5162,10 @@ mod tests {
                 tx.transaction.version = 3;
             },
         );
-        assert_failed_precondition_err!(status, "policy failure: bad commitment version: 3");
+        assert_failed_precondition_err!(
+            status,
+            "policy failure: make_info: bad commitment version: 3"
+        );
     }
 
     // policy-v1-commitment-version
@@ -5169,7 +5178,10 @@ mod tests {
                 tx.transaction.version = 3;
             },
         );
-        assert_failed_precondition_err!(status, "policy failure: bad commitment version: 3");
+        assert_failed_precondition_err!(
+            status,
+            "policy failure: make_info: bad commitment version: 3"
+        );
     }
 
     // policy-v1-commitment-locktime
@@ -5376,8 +5388,8 @@ mod tests {
         );
         assert_failed_precondition_err!(
             status,
-            "policy failure: \
-             invalid attempt to sign counterparty commit_num 23 \
+            "policy failure: validate_commitment_tx: invalid attempt \
+             to sign counterparty commit_num 23 \
              with next_counterparty_revoke_num 21"
         );
     }
@@ -5395,8 +5407,8 @@ mod tests {
         );
         assert_failed_precondition_err!(
             status,
-            "policy failure: next_counterparty_commit_num 24 too small \
-             relative to next_counterparty_revoke_num 24"
+            "policy failure: set_next_counterparty_commit_num: \
+             24 too small relative to next_counterparty_revoke_num 24"
         );
     }
 
@@ -5535,7 +5547,8 @@ mod tests {
                     *remote_percommitment_point = make_test_pubkey(42);
                 }
             ),
-            "policy failure: retry of sign_counterparty_commitment 23 with changed point: \
+            "policy failure: validate_commitment_tx: \
+             retry of sign_counterparty_commitment 23 with changed point: \
              prev 03f76a39d05686e34a4420897e359371836145dd3973e3982568b60f8433adde6e != \
              new 035be5e9478209674a96e60f1f037f6176540fd001fa1d64694770c56a7709c42c"
         );
@@ -5713,7 +5726,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: \
+            "policy failure: validate_counterparty_revocation: \
              invalid counterparty revoke_num 23 with next_counterparty_revoke_num 25"
         );
     }
@@ -5735,7 +5748,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: \
+            "policy failure: validate_counterparty_revocation: \
              invalid counterparty revoke_num 23 with next_counterparty_revoke_num 22"
         );
     }
@@ -5756,7 +5769,8 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: revocation commit point mismatch for commit_num 23: \
+            "policy failure: validate_counterparty_revocation: \
+             revocation commit point mismatch for commit_num 23: \
              supplied 035be5e9478209674a96e60f1f037f6176540fd001fa1d64694770c56a7709c42c, \
              previous 03f76a39d05686e34a4420897e359371836145dd3973e3982568b60f8433adde6e"
         );
@@ -5919,8 +5933,8 @@ mod tests {
                     REV_COMMIT_NUM - 2,
                     &make_test_privkey((REV_COMMIT_NUM - 2) as u8)
                 ),
-                "policy failure: invalid counterparty revoke_num 21 \
-                 with next_counterparty_revoke_num 23"
+                "policy failure: validate_counterparty_revocation: \
+                 invalid counterparty revoke_num 21 with next_counterparty_revoke_num 23"
             );
 
             // state is unchanged
@@ -5939,8 +5953,8 @@ mod tests {
                     REV_COMMIT_NUM + 1,
                     &make_test_privkey((REV_COMMIT_NUM + 1) as u8)
                 ),
-                "policy failure: invalid counterparty revoke_num 24 \
-                 with next_counterparty_revoke_num 23"
+                "policy failure: validate_counterparty_revocation: \
+                 invalid counterparty revoke_num 24 with next_counterparty_revoke_num 23"
             );
 
             // state is unchanged
@@ -5991,8 +6005,8 @@ mod tests {
                     REV_COMMIT_NUM - 1,
                     &make_test_privkey((REV_COMMIT_NUM - 1) as u8)
                 ),
-                "policy failure: invalid counterparty revoke_num 22 \
-                 with next_counterparty_revoke_num 24"
+                "policy failure: validate_counterparty_revocation: \
+                 invalid counterparty revoke_num 22 with next_counterparty_revoke_num 24"
             );
 
             // state is unchanged
@@ -6011,8 +6025,8 @@ mod tests {
                     REV_COMMIT_NUM + 2,
                     &make_test_privkey((REV_COMMIT_NUM + 2) as u8)
                 ),
-                "policy failure: invalid counterparty revoke_num 25 \
-                 with next_counterparty_revoke_num 24"
+                "policy failure: validate_counterparty_revocation: \
+                 invalid counterparty revoke_num 25 with next_counterparty_revoke_num 24"
             );
 
             // state is unchanged
@@ -6185,7 +6199,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: invalid next_holder_commit_num progression: 45 to 44"
+            "policy failure: set_next_holder_commit_num: invalid progression: 45 to 44"
         );
     }
 
@@ -6306,16 +6320,16 @@ mod tests {
                         make_test_pubkey(0x14),
                         commit_info.clone()
                     ),
-                    "next_counterparty_commit_num 3 too large relative to \
-                     next_counterparty_revoke_num 0"
+                    "set_next_counterparty_commit_num: 3 too large \
+                     relative to next_counterparty_revoke_num 0"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 1);
 
                 // can't skip next_revoke forward
                 assert_policy_err!(
                     state.set_next_counterparty_revoke_num(1),
-                    "next_counterparty_revoke_num 1 too large relative to \
-                     next_counterparty_commit_num 1"
+                    "set_next_counterparty_revoke_num: \
+                     1 too large relative to next_counterparty_commit_num 1"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 0);
 
@@ -6351,7 +6365,7 @@ mod tests {
                         make_test_pubkey(0x10),
                         commit_info.clone()
                     ),
-                    "invalid next_counterparty_commit_num progression: 2 to 1"
+                    "set_next_counterparty_commit_num: invalid progression: 2 to 1"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 2);
 
@@ -6362,7 +6376,7 @@ mod tests {
                         make_test_pubkey(0x14),
                         commit_info.clone()
                     ),
-                    "next_counterparty_commit_num 3 too large \
+                    "set_next_counterparty_commit_num: 3 too large \
                      relative to next_counterparty_revoke_num 0"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 2);
@@ -6377,7 +6391,7 @@ mod tests {
                 // can't skip revoke ahead
                 assert_policy_err!(
                     state.set_next_counterparty_revoke_num(2),
-                    "next_counterparty_revoke_num 2 too large relative to \
+                    "set_next_counterparty_revoke_num: 2 too large relative to \
                      next_counterparty_commit_num 2"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 0);
@@ -6402,7 +6416,7 @@ mod tests {
                         make_test_pubkey(0x12),
                         commit_info.clone()
                     ),
-                    "next_counterparty_commit_num 2 too small relative to \
+                    "set_next_counterparty_commit_num: 2 too small relative to \
                      next_counterparty_revoke_num 1"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 2);
@@ -6414,7 +6428,7 @@ mod tests {
                         make_test_pubkey(0x16),
                         commit_info.clone()
                     ),
-                    "next_counterparty_commit_num 4 too large relative to \
+                    "set_next_counterparty_commit_num: 4 too large relative to \
                      next_counterparty_revoke_num 1"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 2);
@@ -6429,7 +6443,7 @@ mod tests {
                 // can't skip revoke ahead
                 assert_policy_err!(
                     state.set_next_counterparty_revoke_num(2),
-                    "next_counterparty_revoke_num 2 too large \
+                    "set_next_counterparty_revoke_num: 2 too large \
                      relative to next_counterparty_commit_num 2"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 1);
@@ -6467,7 +6481,7 @@ mod tests {
                 // Can't skip revoke ahead
                 assert_policy_err!(
                     state.set_next_counterparty_revoke_num(3),
-                    "next_counterparty_revoke_num 3 too large relative to \
+                    "set_next_counterparty_revoke_num: 3 too large relative to \
                      next_counterparty_commit_num 3"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 1);
@@ -6479,7 +6493,7 @@ mod tests {
                         make_test_pubkey(0x16),
                         commit_info.clone()
                     ),
-                    "next_counterparty_commit_num 4 too large relative to \
+                    "set_next_counterparty_commit_num: 4 too large relative to \
                      next_counterparty_revoke_num 1"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 3);
@@ -6491,7 +6505,7 @@ mod tests {
                         make_test_pubkey(0x12),
                         commit_info.clone()
                     ),
-                    "next_counterparty_commit_num 2 too small relative to \
+                    "set_next_counterparty_commit_num: 2 too small relative to \
                      next_counterparty_revoke_num 1"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 3);
@@ -6512,14 +6526,14 @@ mod tests {
                 // can't revoke backwards
                 assert_policy_err!(
                     state.set_next_counterparty_revoke_num(1),
-                    "invalid next_counterparty_revoke_num progression: 2 to 1"
+                    "set_next_counterparty_revoke_num: invalid progression: 2 to 1"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 2);
 
                 // can't revoke ahead until next commit
                 assert_policy_err!(
                     state.set_next_counterparty_revoke_num(3),
-                    "next_counterparty_revoke_num 3 too large relative to \
+                    "set_next_counterparty_revoke_num: 3 too large relative to \
                      next_counterparty_commit_num 3"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 2);
@@ -6531,7 +6545,7 @@ mod tests {
                         make_test_pubkey(0x14),
                         commit_info.clone()
                     ),
-                    "next_counterparty_commit_num 3 too small relative to \
+                    "set_next_counterparty_commit_num: 3 too small relative to \
                      next_counterparty_revoke_num 2"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 3);
@@ -6543,7 +6557,7 @@ mod tests {
                         make_test_pubkey(0x18),
                         commit_info.clone()
                     ),
-                    "next_counterparty_commit_num 5 too large relative to \
+                    "set_next_counterparty_commit_num: 5 too large relative to \
                      next_counterparty_revoke_num 2"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 3);
