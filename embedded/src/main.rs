@@ -108,8 +108,14 @@ fn test_lightning_signer() {
     let node = Arc::new(Node::new(config, &seed, network, &persister, Vec::new()));
     let (channel_id, _) = node.new_channel(None, None, &node).unwrap();
     hprintln!("stub channel ID: {}", channel_id).unwrap();
+    let holder_shutdown_key_path = Vec::new();
     let channel = node
-        .ready_channel(channel_id, None, make_test_channel_setup())
+        .ready_channel(
+            channel_id,
+            None,
+            make_test_channel_setup(),
+            &holder_shutdown_key_path,
+        )
         .expect("ready_channel");
     hprintln!("channel ID: {}", channel.id0).unwrap();
     hprintln!("used memory {}", ALLOCATOR.used()).unwrap();

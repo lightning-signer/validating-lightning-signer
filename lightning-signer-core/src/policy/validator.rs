@@ -7,7 +7,7 @@ use lightning::ln::chan_utils::{
     build_htlc_transaction, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
-use log::debug;
+use log::{debug, info};
 
 use crate::channel::{ChannelSetup, ChannelSlot};
 use crate::prelude::*;
@@ -35,6 +35,20 @@ pub trait Validator {
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
     ) -> Result<CommitmentInfo, ValidationError>;
+
+    /// Validate ready channel parameters.
+    /// The holder_shutdown_key_path should be an empty vector if the
+    /// setup.holder_shutdown_script is not set or the address is in
+    /// the allowlist.
+    fn validate_ready_channel(
+        &self,
+        wallet: &Wallet,
+        setup: &ChannelSetup,
+        holder_shutdown_key_path: &Vec<u32>,
+    ) -> Result<(), ValidationError>;
+
+    /// Validate channel value after it is late-filled
+    fn validate_channel_value(&self, setup: &ChannelSetup) -> Result<(), ValidationError>;
 
     /// General validation applicable to both holder and counterparty txs
     fn validate_commitment_tx(
@@ -91,9 +105,6 @@ pub trait Validator {
         htlc: &HTLCOutputInCommitment,
         feerate_per_kw: u32,
     ) -> Result<(), ValidationError>;
-
-    /// Validate channel open
-    fn validate_channel_open(&self, setup: &ChannelSetup) -> Result<(), ValidationError>;
 
     /// Validate a funding transaction, which may fund multiple channels
     ///
@@ -292,6 +303,7 @@ impl SimpleValidator {
 // TODO - policy-v3-velocity-transferred
 // TODO - policy-v3-merchant-no-sends
 // TODO - policy-v3-routing-deltas-only-htlc
+// TODO - policy-v3-velocity-funding
 
 impl Validator for SimpleValidator {
     fn make_info(
@@ -318,6 +330,68 @@ impl Validator for SimpleValidator {
             .map_err(|ve| policy_error(format!("tx output[{}]: {}", ind, ve)))?;
         }
         Ok(info)
+    }
+
+    fn validate_ready_channel(
+        &self,
+        wallet: &Wallet,
+        setup: &ChannelSetup,
+        holder_shutdown_key_path: &Vec<u32>,
+    ) -> Result<(), ValidationError> {
+        // NOTE - setup.channel_value_sat is not valid, set later on.
+
+        if setup.push_value_msat / 1000 > self.policy.max_push_sat {
+            return policy_err!(
+                "push_value_msat {} greater than max_push_sat {}",
+                setup.push_value_msat,
+                self.policy.max_push_sat
+            );
+        }
+        // policy-v1-commitment-to-self-delay-range
+        self.validate_delay(
+            "counterparty_selected_contest_delay",
+            setup.counterparty_selected_contest_delay as u32,
+        )?;
+        // policy-v1-commitment-to-self-delay-range
+        self.validate_delay(
+            "holder_selected_contest_delay",
+            setup.holder_selected_contest_delay as u32,
+        )?;
+
+        // policy-v2-mutual-destination-whitelisted
+        if let Some(holder_shutdown_script) = &setup.holder_shutdown_script {
+            if !wallet
+                .can_spend(holder_shutdown_key_path, &holder_shutdown_script)
+                .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
+                && !wallet.allowlist_contains(&holder_shutdown_script)
+            {
+                info!(
+                    "not matched: path={:?}, holder_shutdown_script={} regtest={}",
+                    holder_shutdown_key_path,
+                    Address::from_script(
+                        &setup.holder_shutdown_script.as_ref().unwrap(),
+                        wallet.network()
+                    )
+                    .unwrap()
+                    .to_string(),
+                    Address::from_script(
+                        &setup.holder_shutdown_script.as_ref().unwrap(),
+                        bitcoin::Network::Regtest
+                    )
+                    .unwrap()
+                    .to_string()
+                );
+                return policy_err!("holder_shutdown_script is not in wallet or allowlist");
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_channel_value(&self, setup: &ChannelSetup) -> Result<(), ValidationError> {
+        if setup.channel_value_sat > self.policy.max_channel_size_sat {
+            return policy_err!("channel value {} too large", setup.channel_value_sat);
+        }
+        Ok(())
     }
 
     fn validate_commitment_tx(
@@ -677,32 +751,6 @@ impl Validator for SimpleValidator {
             );
         }
 
-        Ok(())
-    }
-
-    // TODO - policy-v3-velocity-funding
-    // TODO - this implementation is incomplete
-    fn validate_channel_open(&self, setup: &ChannelSetup) -> Result<(), ValidationError> {
-        if setup.channel_value_sat > self.policy.max_channel_size_sat {
-            return policy_err!("channel value {} too large", setup.channel_value_sat);
-        }
-        if setup.push_value_msat / 1000 > self.policy.max_push_sat {
-            return policy_err!(
-                "push_value_msat {} greater than max_push_sat {}",
-                setup.push_value_msat,
-                self.policy.max_push_sat
-            );
-        }
-        // policy-v1-commitment-to-self-delay-range
-        self.validate_delay(
-            "counterparty_selected_contest_delay",
-            setup.counterparty_selected_contest_delay as u32,
-        )?;
-        // policy-v1-commitment-to-self-delay-range
-        self.validate_delay(
-            "holder_selected_contest_delay",
-            setup.holder_selected_contest_delay as u32,
-        )?;
         Ok(())
     }
 
@@ -1291,10 +1339,7 @@ mod tests {
     use test_env_log::test;
 
     use crate::tx::tx::HTLCInfo2;
-    use crate::util::test_utils::{
-        make_test_channel_keys, make_test_channel_setup, make_test_commitment_info,
-        make_test_commitment_tx, make_test_pubkey,
-    };
+    use crate::util::test_utils::*;
 
     use super::*;
 
@@ -1348,25 +1393,28 @@ mod tests {
     }
 
     #[test]
-    fn validate_channel_open_test() {
+    fn validate_channel_value_test() {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.channel_value_sat = 100_000_000;
-        assert!(validator.validate_channel_open(&setup).is_ok());
+        assert!(validator.validate_channel_value(&setup).is_ok());
         setup.channel_value_sat = 100_000_001;
-        assert!(validator.validate_channel_open(&setup).is_err());
+        assert!(validator.validate_channel_value(&setup).is_err());
     }
 
     #[test]
     fn validate_channel_open_bad_push_val() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.push_value_msat = 0;
-        assert!(validator.validate_channel_open(&setup).is_ok());
+        assert!(validator
+            .validate_ready_channel(&*node, &setup, &vec![])
+            .is_ok());
         setup.push_value_msat = 1000;
         assert_policy_err!(
-            validator.validate_channel_open(&setup),
-            "validate_channel_open: push_value_msat 1000 greater than max_push_sat 0"
+            validator.validate_ready_channel(&*node, &setup, &vec![]),
+            "validate_ready_channel: push_value_msat 1000 greater than max_push_sat 0"
         );
     }
 
@@ -1435,13 +1483,16 @@ mod tests {
     // policy-v1-commitment-to-self-delay-range
     #[test]
     fn validate_to_holder_min_delay_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.holder_selected_contest_delay = 5;
-        assert!(validator.validate_channel_open(&setup).is_ok());
+        assert!(validator
+            .validate_ready_channel(&*node, &setup, &vec![])
+            .is_ok());
         setup.holder_selected_contest_delay = 4;
         assert_policy_err!(
-            validator.validate_channel_open(&setup),
+            validator.validate_ready_channel(&*node, &setup, &vec![]),
             "validate_delay: holder_selected_contest_delay too small"
         );
     }
@@ -1449,13 +1500,16 @@ mod tests {
     // policy-v1-commitment-to-self-delay-range
     #[test]
     fn validate_to_holder_max_delay_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.holder_selected_contest_delay = 1440;
-        assert!(validator.validate_channel_open(&setup).is_ok());
+        assert!(validator
+            .validate_ready_channel(&*node, &setup, &vec![])
+            .is_ok());
         setup.holder_selected_contest_delay = 1441;
         assert_policy_err!(
-            validator.validate_channel_open(&setup),
+            validator.validate_ready_channel(&*node, &setup, &vec![]),
             "validate_delay: holder_selected_contest_delay too large"
         );
     }
@@ -1463,13 +1517,16 @@ mod tests {
     // policy-v1-commitment-to-self-delay-range
     #[test]
     fn validate_to_counterparty_min_delay_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.counterparty_selected_contest_delay = 5;
-        assert!(validator.validate_channel_open(&setup).is_ok());
+        assert!(validator
+            .validate_ready_channel(&*node, &setup, &vec![])
+            .is_ok());
         setup.counterparty_selected_contest_delay = 4;
         assert_policy_err!(
-            validator.validate_channel_open(&setup),
+            validator.validate_ready_channel(&*node, &setup, &vec![]),
             "validate_delay: counterparty_selected_contest_delay too small"
         );
     }
@@ -1477,13 +1534,16 @@ mod tests {
     // policy-v1-commitment-to-self-delay-range
     #[test]
     fn validate_to_counterparty_max_delay_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.counterparty_selected_contest_delay = 1440;
-        assert!(validator.validate_channel_open(&setup).is_ok());
+        assert!(validator
+            .validate_ready_channel(&*node, &setup, &vec![])
+            .is_ok());
         setup.counterparty_selected_contest_delay = 1441;
         assert_policy_err!(
-            validator.validate_channel_open(&setup),
+            validator.validate_ready_channel(&*node, &setup, &vec![]),
             "validate_delay: counterparty_selected_contest_delay too large"
         );
     }

@@ -26,7 +26,7 @@ pub fn main() {
     let dummy_pubkey = util::make_dummy_pubkey(0x12);
     let setup = util::create_test_channel_setup(dummy_pubkey);
     let channel = node
-        .ready_channel(channel_id, Some(channel_id1), setup)
+        .ready_channel(channel_id, Some(channel_id1), setup, &vec![])
         .unwrap();
 
     for (id, entry) in persister.get_node_channels(&node_id) {

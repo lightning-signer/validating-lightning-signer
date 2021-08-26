@@ -342,7 +342,8 @@ pub fn init_node_and_channel(
     let channel_id = channel_nonce_to_id(&channel_nonce);
     node.new_channel(Some(channel_id), Some(channel_nonce), &node)
         .expect("new_channel");
-    node.ready_channel(channel_id, None, setup)
+    let holder_shutdown_key_path = vec![];
+    node.ready_channel(channel_id, None, setup, &holder_shutdown_key_path)
         .expect("ready channel");
     (node, channel_id)
 }
@@ -686,9 +687,15 @@ pub fn funding_tx_ready_channel(
 ) {
     let txid = tx.txid();
     chan_ctx.setup.funding_outpoint = BitcoinOutPoint { txid, vout };
+    let holder_shutdown_key_path = vec![];
     node_ctx
         .node
-        .ready_channel(chan_ctx.channel_id, None, chan_ctx.setup.clone())
+        .ready_channel(
+            chan_ctx.channel_id,
+            None,
+            chan_ctx.setup.clone(),
+            &holder_shutdown_key_path,
+        )
         .expect("Channel");
 }
 
@@ -699,9 +706,15 @@ pub fn synthesize_ready_channel(
     next_holder_commit_num: u64,
 ) {
     chan_ctx.setup.funding_outpoint = outpoint;
+    let holder_shutdown_key_path = vec![];
     node_ctx
         .node
-        .ready_channel(chan_ctx.channel_id, None, chan_ctx.setup.clone())
+        .ready_channel(
+            chan_ctx.channel_id,
+            None,
+            chan_ctx.setup.clone(),
+            &holder_shutdown_key_path,
+        )
         .expect("Channel");
     node_ctx
         .node

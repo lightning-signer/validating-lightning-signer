@@ -553,7 +553,8 @@ impl BaseSign for LoopbackChannelSigner {
         };
         let node = self.signer.get_node(&self.node_id).expect("no such node");
 
-        node.ready_channel(self.channel_id, None, setup)
+        let holder_shutdown_key_path = vec![];
+        node.ready_channel(self.channel_id, None, setup, &holder_shutdown_key_path)
             .expect("channel already ready or does not exist");
         // Copy some parameters that we need here
         self.counterparty_pubkeys = Some(counterparty_parameters.pubkeys.clone());

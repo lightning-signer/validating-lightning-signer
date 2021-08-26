@@ -437,6 +437,7 @@ impl Node {
         channel_id0: ChannelId,
         opt_channel_id: Option<ChannelId>,
         setup: ChannelSetup,
+        holder_shutdown_key_path: &Vec<u32>,
     ) -> Result<Channel, Status> {
         let chan = {
             let channels = self.channels.lock().unwrap();
@@ -469,7 +470,7 @@ impl Node {
         };
         let validator = self.validator_factory.make_validator(chan.network());
 
-        validator.validate_channel_open(&setup)?;
+        validator.validate_ready_channel(self, &setup, holder_shutdown_key_path)?;
 
         let mut channels = self.channels.lock().unwrap();
 
@@ -965,7 +966,7 @@ mod tests {
         let channel_nonce_x = "nonceX".as_bytes().to_vec();
         let channel_id_x = channel_nonce_to_id(&channel_nonce_x);
         let status: Result<_, Status> =
-            node.ready_channel(channel_id_x, None, make_test_channel_setup());
+            node.ready_channel(channel_id_x, None, make_test_channel_setup(), &vec![]);
         assert!(status.is_err());
         let err = status.unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
@@ -986,8 +987,13 @@ mod tests {
         // Issue ready_channel w/ an alternate id.
         let channel_nonce_x = "nonceX".as_bytes().to_vec();
         let channel_id_x = channel_nonce_to_id(&channel_nonce_x);
-        node.ready_channel(channel_id, Some(channel_id_x), make_test_channel_setup())
-            .expect("ready_channel");
+        node.ready_channel(
+            channel_id,
+            Some(channel_id_x),
+            make_test_channel_setup(),
+            &vec![],
+        )
+        .expect("ready_channel");
 
         // Original channel_id should work with_ready_channel.
         let val = node
@@ -1129,7 +1135,7 @@ mod tests {
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
 
         // Trying to ready it again should fail.
-        let result = node.ready_channel(channel_id, None, make_test_channel_setup());
+        let result = node.ready_channel(channel_id, None, make_test_channel_setup(), &vec![]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
@@ -1137,6 +1143,66 @@ mod tests {
             err.message(),
             format!("channel already ready: {}", TEST_CHANNEL_ID[0])
         );
+    }
+
+    #[test]
+    fn ready_channel_unknown_holder_shutdown_script() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_id = channel_nonce_to_id(&channel_nonce);
+        node.new_channel(Some(channel_id), Some(channel_nonce), &node)
+            .expect("new_channel");
+        let mut setup = make_test_channel_setup();
+        setup.holder_shutdown_script =
+            Some(hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565"));
+        let holder_shutdown_key_path = vec![];
+        assert_failed_precondition_err!(
+            node.ready_channel(channel_id, None, setup.clone(), &holder_shutdown_key_path),
+            "policy failure: validate_ready_channel: \
+             holder_shutdown_script is not in wallet or allowlist"
+        );
+    }
+
+    #[test]
+    fn ready_channel_holder_shutdown_script_in_allowlist() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_id = channel_nonce_to_id(&channel_nonce);
+        node.new_channel(Some(channel_id), Some(channel_nonce), &node)
+            .expect("new_channel");
+        let mut setup = make_test_channel_setup();
+        setup.holder_shutdown_script =
+            Some(hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565"));
+        node.add_allowlist(&vec![
+            "tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z".to_string()
+        ])
+        .expect("added allowlist");
+        let holder_shutdown_key_path = vec![];
+        assert_status_ok!(node.ready_channel(
+            channel_id,
+            None,
+            setup.clone(),
+            &holder_shutdown_key_path
+        ));
+    }
+
+    #[test]
+    fn ready_channel_holder_shutdown_script_in_wallet() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_id = channel_nonce_to_id(&channel_nonce);
+        node.new_channel(Some(channel_id), Some(channel_nonce), &node)
+            .expect("new_channel");
+        let mut setup = make_test_channel_setup();
+        setup.holder_shutdown_script =
+            Some(hex_script!("0014b76dd61e41b5ef052af21cda3260888c070bb9af"));
+        let holder_shutdown_key_path = vec![7];
+        assert_status_ok!(node.ready_channel(
+            channel_id,
+            None,
+            setup.clone(),
+            &holder_shutdown_key_path
+        ));
     }
 
     #[test]
@@ -5229,7 +5295,7 @@ mod tests {
         .unwrap();
         let (channel_id, _) = node.new_channel(None, Some(channel_nonce), &node).unwrap();
 
-        node.ready_channel(channel_id, None, make_test_channel_setup())
+        node.ready_channel(channel_id, None, make_test_channel_setup(), &vec![])
             .expect("ready channel");
 
         let uck = node

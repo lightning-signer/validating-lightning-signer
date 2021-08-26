@@ -338,18 +338,20 @@ message ReadyChannelRequest {
 
   bytes holder_shutdown_script = 9;
 
-  Basepoints counterparty_basepoints = 10;
+  repeated uint32 holder_shutdown_key_path = 10;
 
-  uint32 counterparty_selected_contest_delay = 11; // remote imposed local to_self_delay
+  Basepoints counterparty_basepoints = 11;
 
-  bytes counterparty_shutdown_script = 12;
+  uint32 counterparty_selected_contest_delay = 12; // remote imposed local to_self_delay
+
+  bytes counterparty_shutdown_script = 13;
 
   enum CommitmentType {
     LEGACY = 0;
     STATIC_REMOTEKEY = 1;
     ANCHORS = 2;
   }
-  CommitmentType commitment_type = 13;
+  CommitmentType commitment_type = 14;
 }
 
 message ReadyChannelReply {

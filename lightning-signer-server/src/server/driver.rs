@@ -481,6 +481,7 @@ impl Signer for SignServer {
             )
         };
 
+        let holder_shutdown_key_path = req.holder_shutdown_key_path.to_vec();
         let setup = ChannelSetup {
             is_outbound: req.is_outbound,
             channel_value_sat: req.channel_value_sat,
@@ -494,7 +495,12 @@ impl Signer for SignServer {
             commitment_type: convert_commitment_type(req.commitment_type),
         };
         let node = self.signer.get_node(&node_id)?;
-        node.ready_channel(channel_id0, opt_channel_id, setup)?;
+        node.ready_channel(
+            channel_id0,
+            opt_channel_id,
+            setup,
+            &holder_shutdown_key_path,
+        )?;
         let reply = ReadyChannelReply {};
         log_req_reply!(&node_id, &channel_id0, opt_channel_id, &reply);
         Ok(Response::new(reply))
