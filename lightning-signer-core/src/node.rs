@@ -2037,7 +2037,7 @@ mod tests {
                 &uniclosekeys,
                 &vec![opath.clone()],
             ),
-            "policy failure: validate_fee: validate_funding_tx: fee 99 below minimum"
+            "policy failure: validate_fee: validate_funding_tx: fee below minimum: 99 < 100"
         );
     }
 
@@ -2048,7 +2048,8 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let ipaths = vec![vec![0u32]];
-        let ival0 = 100u64 + 20_000u64;
+        let fee = 22_000u64;
+        let ival0 = 100u64 + fee;
         let chanamt = 100u64;
         let values_sat = vec![ival0];
 
@@ -2072,7 +2073,7 @@ mod tests {
                 &uniclosekeys,
                 &vec![opath.clone()],
             ),
-            "policy failure: validate_fee: validate_funding_tx: fee 20000 above maximum"
+            "policy failure: validate_fee: validate_funding_tx: above maximum: 22000 > 21000"
         );
     }
 
@@ -4646,7 +4647,7 @@ mod tests {
             sign_mutual_close_tx_phase2_with_mutators(
                 |_chan, to_holder, to_counterparty, _holder_script, _counter_script, _outpoint| {
                     *to_holder -= 10_000;
-                    *to_counterparty -= 6_000;
+                    *to_counterparty -= 10_000;
                 },
                 |_allowlist| {
                     // don't need to change allowlist
@@ -4656,7 +4657,7 @@ mod tests {
                     assert_eq!(chan.enforcement_state.mutual_close_signed, false);
                 }
             ),
-            "policy failure: validate_mutual_close_tx: fee too large 18000 > 17664"
+            "policy failure: validate_mutual_close_tx: fee too large 22000 > 21000"
         );
     }
 

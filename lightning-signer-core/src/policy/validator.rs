@@ -233,10 +233,15 @@ impl SimpleValidator {
 
     fn validate_fee(&self, name: &str, fee: u64, _tx: &Transaction) -> Result<(), ValidationError> {
         if fee < self.policy.min_fee {
-            return policy_err!("{}: fee {} below minimum", name, fee);
+            return policy_err!(
+                "{}: fee below minimum: {} < {}",
+                name,
+                fee,
+                self.policy.min_fee
+            );
         }
         if fee > self.policy.max_fee {
-            return policy_err!("{}: fee {} above maximum", name, fee);
+            return policy_err!("{}: above maximum: {} > {}", name, fee, self.policy.max_fee);
         }
         // TODO - apply min/max fee rate heurustic (incorporating tx size) as well.
         Ok(())
@@ -1017,14 +1022,15 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_delay: 1440,
             max_channel_size_sat: 1_000_000_001, // lnd itest: wumbu default + 1
             max_push_sat: 20_000,
-            epsilon_sat: 1_600_000, // lnd itest: async_bidirectional_payments (large amount of dust HTLCs)
+            // lnd itest: async_bidirectional_payments (large amount of dust HTLCs) 1_600_000
+            epsilon_sat: 79641, // c-lighting integration
             max_htlcs: 1000,
             max_htlc_value_sat: 16_777_216, // lnd itest: multi-hop_htlc_error_propagation
             use_chain_state: false,
             min_feerate_per_kw: 500,    // c-lightning integration
             max_feerate_per_kw: 16_000, // c-lightning integration
             min_fee: 100,
-            max_fee: 17664, // c-lightning integration
+            max_fee: 21_000, // c-lightning integration 21000
         }
     }
 }
