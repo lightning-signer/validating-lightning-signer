@@ -4639,6 +4639,48 @@ mod tests {
         ));
     }
 
+    // policy-v2-mutual-fee-range
+    #[test]
+    fn sign_mutual_close_tx_phase2_with_fee_too_large() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_phase2_with_mutators(
+                |_chan, to_holder, to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    *to_holder -= 10_000;
+                    *to_counterparty -= 6_000;
+                },
+                |_allowlist| {
+                    // don't need to change allowlist
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: fee too large 18000 > 17664"
+        );
+    }
+
+    // policy-v2-mutual-fee-range
+    #[test]
+    fn sign_mutual_close_tx_phase2_with_fee_too_small() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_phase2_with_mutators(
+                |_chan, to_holder, to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    *to_holder += 1_000;
+                    *to_counterparty += 950;
+                },
+                |_allowlist| {
+                    // don't need to change allowlist
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: fee too small 50 < 100"
+        );
+    }
+
     #[test]
     fn sign_mutual_close_tx_with_bad_num_txout() {
         assert_failed_precondition_err!(

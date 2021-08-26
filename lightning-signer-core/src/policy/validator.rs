@@ -265,7 +265,6 @@ impl SimpleValidator {
 // not yet implemented
 // TODO - policy-v2-mutual-destination-allowlisted
 // TODO - policy-v2-mutual-value-matches-commitment
-// TODO - policy-v2-mutual-fee-range
 
 // not yet implemented
 // TODO - policy-v2-forced-destination-allowlisted
@@ -947,10 +946,10 @@ impl Validator for SimpleValidator {
     fn validate_mutual_close_tx(
         &self,
         _wallet: &Wallet,
-        _setup: &ChannelSetup,
+        setup: &ChannelSetup,
         estate: &EnforcementState,
-        _to_holder_value_sat: u64,
-        _to_counterparty_value_sat: u64,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
         _holder_script: &Option<Script>,
         _counterparty_script: &Option<Script>,
     ) -> Result<(), ValidationError> {
@@ -969,6 +968,26 @@ impl Validator for SimpleValidator {
         // policy-v2-mutual-no-pending-htlcs
         if !holder_info.htlcs_is_empty() || !counterparty_info.htlcs_is_empty() {
             return policy_err!("cannot close with pending htlcs");
+        }
+
+        // policy-v2-mutual-fee-range
+        let consumed = to_holder_value_sat
+            .checked_add(to_counterparty_value_sat)
+            .ok_or_else(|| policy_error("consumed overflow".to_string()))?;
+        let fee = setup
+            .channel_value_sat
+            .checked_sub(consumed)
+            .ok_or_else(|| {
+                policy_error(format!(
+                    "mutual_close_tx: fee underflow: {} - {}",
+                    setup.channel_value_sat, consumed
+                ))
+            })?;
+        if fee > self.policy.max_fee {
+            return policy_err!("fee too large {} > {}", fee, self.policy.max_fee);
+        }
+        if fee < self.policy.min_fee {
+            return policy_err!("fee too small {} < {}", fee, self.policy.min_fee);
         }
 
         Ok(())
