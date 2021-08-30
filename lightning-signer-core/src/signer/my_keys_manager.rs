@@ -8,6 +8,7 @@ use bitcoin::hashes::hash160::Hash as Hash160;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::sha256::HashEngine as Sha256State;
 use bitcoin::hashes::{Hash, HashEngine};
+use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signing};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, SigHashType, Transaction, TxIn, TxOut};
@@ -28,6 +29,7 @@ use bitcoin::secp256k1::recovery::RecoverableSignature;
 use bitcoin::util::bip143;
 use hashbrown::HashSet as UnorderedSet;
 use lightning::ln::msgs::DecodeError;
+use lightning::ln::script::ShutdownScript;
 
 /// The key derivation style
 #[derive(Clone, Copy, Debug)]
@@ -571,8 +573,8 @@ impl KeysInterface for MyKeysManager {
         self.destination_script.clone()
     }
 
-    fn get_shutdown_pubkey(&self) -> PublicKey {
-        self.shutdown_pubkey.clone()
+    fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {
+        ShutdownScript::new_p2wpkh(&WPubkeyHash::hash(&self.shutdown_pubkey.serialize()))
     }
 
     fn get_channel_signer(&self, _inbound: bool, _channel_value_sat: u64) -> InMemorySigner {

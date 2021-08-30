@@ -28,7 +28,7 @@ use crate::tx::tx::{
     sign_commitment, CommitmentInfo, CommitmentInfo2, HTLCInfo2,
 };
 use crate::util::crypto_utils::{
-    derive_private_revocation_key, derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh,
+    derive_private_revocation_key, derive_public_key, derive_revocation_pubkey
 };
 use crate::util::debug_utils::DebugHTLCOutputInCommitment;
 use crate::util::status::{internal_error, invalid_argument, Status};
@@ -484,7 +484,7 @@ impl Channel {
     /// from the supplied arguments.
     // TODO anchors support once LDK supports it
     pub fn sign_counterparty_commitment_tx_phase2(
-        &self,
+        &mut self,
         remote_per_commitment_point: &PublicKey,
         commitment_number: u64,
         feerate_per_kw: u32,
@@ -493,6 +493,14 @@ impl Channel {
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+        let info2 = self.build_counterparty_commitment_info(
+            remote_per_commitment_point,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            offered_htlcs.clone(),
+            received_htlcs.clone(),
+        )?;
+
         let htlcs = Self::htlcs_info2_to_oic(offered_htlcs, received_htlcs);
 
         let commitment_tx = self.make_counterparty_commitment_tx(
@@ -503,6 +511,11 @@ impl Channel {
             to_counterparty_value_sat,
             htlcs,
         );
+
+        // TODO validation missing?
+
+        self.enforcement_state
+            .set_next_counterparty_commit_num(commitment_number + 1, remote_per_commitment_point.clone(), info2)?;
 
         debug!(
             "channel: sign counterparty txid {}",
@@ -731,10 +744,9 @@ impl Channel {
         self.setup
             .holder_shutdown_script
             .clone()
-            .unwrap_or_else(|| {
-                payload_for_p2wpkh(&self.get_node().keys_manager.get_shutdown_pubkey())
-                    .script_pubkey()
-            })
+            .unwrap_or_else(||
+                self.get_node().keys_manager.get_shutdown_scriptpubkey().into()
+            )
     }
 
     fn get_node(&self) -> Arc<Node> {

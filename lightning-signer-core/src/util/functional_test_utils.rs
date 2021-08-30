@@ -616,54 +616,21 @@ macro_rules! get_closing_signed_broadcast {
     }};
 }
 
-pub fn close_channel<'a, 'b, 'c>(
-    outbound_node: &Node<'a, 'b, 'c>,
-    inbound_node: &Node<'a, 'b, 'c>,
-    channel_id: &[u8; 32],
-    funding_tx: Transaction,
-    close_inbound_first: bool,
-) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, Transaction) {
-    let (node_a, broadcaster_a, struct_a) = if close_inbound_first {
-        (
-            &inbound_node.node,
-            &inbound_node.tx_broadcaster,
-            inbound_node,
-        )
-    } else {
-        (
-            &outbound_node.node,
-            &outbound_node.tx_broadcaster,
-            outbound_node,
-        )
-    };
-    let (node_b, broadcaster_b) = if close_inbound_first {
-        (&outbound_node.node, &outbound_node.tx_broadcaster)
-    } else {
-        (&inbound_node.node, &inbound_node.tx_broadcaster)
-    };
+pub fn close_channel<'a, 'b, 'c>(outbound_node: &Node<'a, 'b, 'c>, inbound_node: &Node<'a, 'b, 'c>, channel_id: &[u8; 32], funding_tx: Transaction, close_inbound_first: bool) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, Transaction) {
+    let (node_a, broadcaster_a, struct_a) = if close_inbound_first { (&inbound_node.node, &inbound_node.tx_broadcaster, inbound_node) } else { (&outbound_node.node, &outbound_node.tx_broadcaster, outbound_node) };
+    let (node_b, broadcaster_b, struct_b) = if close_inbound_first { (&outbound_node.node, &outbound_node.tx_broadcaster, outbound_node) } else { (&inbound_node.node, &inbound_node.tx_broadcaster, inbound_node) };
     let (tx_a, tx_b);
 
     node_a.close_channel(channel_id).unwrap();
-    node_b.handle_shutdown(
-        &node_a.get_our_node_id(),
-        &InitFeatures::known(),
-        &get_event_msg!(
-            struct_a,
-            MessageSendEvent::SendShutdown,
-            node_b.get_our_node_id()
-        ),
-    );
+    node_b.handle_shutdown(&node_a.get_our_node_id(), &InitFeatures::known(), &get_event_msg!(struct_a, MessageSendEvent::SendShutdown, node_b.get_our_node_id()));
 
     let events_1 = node_b.get_and_clear_pending_msg_events();
     assert!(events_1.len() >= 1);
     let shutdown_b = match events_1[0] {
-        MessageSendEvent::SendShutdown {
-            ref node_id,
-            ref msg,
-        } => {
+        MessageSendEvent::SendShutdown { ref node_id, ref msg } => {
             assert_eq!(node_id, &node_a.get_our_node_id());
             msg.clone()
-        }
+        },
         _ => panic!("Unexpected event"),
     };
 
@@ -672,13 +639,10 @@ pub fn close_channel<'a, 'b, 'c>(
         None
     } else {
         Some(match events_1[1] {
-            MessageSendEvent::SendClosingSigned {
-                ref node_id,
-                ref msg,
-            } => {
+            MessageSendEvent::SendClosingSigned { ref node_id, ref msg } => {
                 assert_eq!(node_id, &node_a.get_our_node_id());
                 msg.clone()
-            }
+            },
             _ => panic!("Unexpected event"),
         })
     };
@@ -687,35 +651,33 @@ pub fn close_channel<'a, 'b, 'c>(
     let (as_update, bs_update) = if close_inbound_first {
         assert!(node_a.get_and_clear_pending_msg_events().is_empty());
         node_a.handle_closing_signed(&node_b.get_our_node_id(), &closing_signed_b.unwrap());
-        assert_eq!(broadcaster_a.txn_broadcasted.lock().unwrap().len(), 1);
-        tx_a = broadcaster_a.txn_broadcasted.lock().unwrap().remove(0);
-        let (as_update, closing_signed_a) =
-            get_closing_signed_broadcast!(node_a, node_b.get_our_node_id());
 
-        node_b.handle_closing_signed(&node_a.get_our_node_id(), &closing_signed_a.unwrap());
-        let (bs_update, none_b) = get_closing_signed_broadcast!(node_b, node_a.get_our_node_id());
-        assert!(none_b.is_none());
+        node_b.handle_closing_signed(&node_a.get_our_node_id(), &get_event_msg!(struct_a, MessageSendEvent::SendClosingSigned, node_b.get_our_node_id()));
         assert_eq!(broadcaster_b.txn_broadcasted.lock().unwrap().len(), 1);
         tx_b = broadcaster_b.txn_broadcasted.lock().unwrap().remove(0);
-        (as_update, bs_update)
-    } else {
-        let closing_signed_a = get_event_msg!(
-            struct_a,
-            MessageSendEvent::SendClosingSigned,
-            node_b.get_our_node_id()
-        );
-
-        node_b.handle_closing_signed(&node_a.get_our_node_id(), &closing_signed_a);
-        assert_eq!(broadcaster_b.txn_broadcasted.lock().unwrap().len(), 1);
-        tx_b = broadcaster_b.txn_broadcasted.lock().unwrap().remove(0);
-        let (bs_update, closing_signed_b) =
-            get_closing_signed_broadcast!(node_b, node_a.get_our_node_id());
+        let (bs_update, closing_signed_b) = get_closing_signed_broadcast!(node_b, node_a.get_our_node_id());
 
         node_a.handle_closing_signed(&node_b.get_our_node_id(), &closing_signed_b.unwrap());
         let (as_update, none_a) = get_closing_signed_broadcast!(node_a, node_b.get_our_node_id());
         assert!(none_a.is_none());
         assert_eq!(broadcaster_a.txn_broadcasted.lock().unwrap().len(), 1);
         tx_a = broadcaster_a.txn_broadcasted.lock().unwrap().remove(0);
+        (as_update, bs_update)
+    } else {
+        let closing_signed_a = get_event_msg!(struct_a, MessageSendEvent::SendClosingSigned, node_b.get_our_node_id());
+
+        node_b.handle_closing_signed(&node_a.get_our_node_id(), &closing_signed_a);
+        node_a.handle_closing_signed(&node_b.get_our_node_id(), &get_event_msg!(struct_b, MessageSendEvent::SendClosingSigned, node_a.get_our_node_id()));
+
+        assert_eq!(broadcaster_a.txn_broadcasted.lock().unwrap().len(), 1);
+        tx_a = broadcaster_a.txn_broadcasted.lock().unwrap().remove(0);
+        let (as_update, closing_signed_a) = get_closing_signed_broadcast!(node_a, node_b.get_our_node_id());
+
+        node_b.handle_closing_signed(&node_a.get_our_node_id(), &closing_signed_a.unwrap());
+        let (bs_update, none_b) = get_closing_signed_broadcast!(node_b, node_a.get_our_node_id());
+        assert!(none_b.is_none());
+        assert_eq!(broadcaster_b.txn_broadcasted.lock().unwrap().len(), 1);
+        tx_b = broadcaster_b.txn_broadcasted.lock().unwrap().remove(0);
         (as_update, bs_update)
     };
     assert_eq!(tx_a, tx_b);
@@ -931,23 +893,14 @@ pub fn send_along_route_with_secret<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, 
     pass_along_route(origin_node, expected_paths, recv_value, our_payment_hash, our_payment_secret);
 }
 
-pub fn pass_along_path<'a, 'b, 'c>(
-    origin_node: &Node<'a, 'b, 'c>,
-    expected_path: &[&Node<'a, 'b, 'c>],
-    recv_value: u64,
-    our_payment_hash: PaymentHash,
-    our_payment_secret: PaymentSecret,
-    ev: MessageSendEvent,
-    payment_received_expected: bool,
-) {
+pub fn pass_along_path<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_path: &[&Node<'a, 'b, 'c>], recv_value: u64, our_payment_hash: PaymentHash, our_payment_secret: Option<PaymentSecret>, ev: MessageSendEvent, payment_received_expected: bool, expected_preimage: Option<PaymentPreimage>) {
     let mut payment_event = SendEvent::from_event(ev);
     let mut prev_node = origin_node;
 
     for (idx, &node) in expected_path.iter().enumerate() {
         assert_eq!(node.node.get_our_node_id(), payment_event.node_id);
 
-        node.node
-            .handle_update_add_htlc(&prev_node.node.get_our_node_id(), &payment_event.msgs[0]);
+        node.node.handle_update_add_htlc(&prev_node.node.get_our_node_id(), &payment_event.msgs[0]);
         check_added_monitors!(node, 0);
         commitment_signed_dance!(node, prev_node, payment_event.commitment_msg, false);
 
@@ -958,16 +911,19 @@ pub fn pass_along_path<'a, 'b, 'c>(
             if payment_received_expected {
                 assert_eq!(events_2.len(), 1);
                 match events_2[0] {
-                    Event::PaymentReceived { ref payment_hash, ref purpose, amt } => {
+                    Event::PaymentReceived { ref payment_hash, ref purpose, amt} => {
                         assert_eq!(our_payment_hash, *payment_hash);
-                        assert_eq!(recv_value, amt);
-                        match purpose {
+                        match &purpose {
                             PaymentPurpose::InvoicePayment { payment_preimage, payment_secret, .. } => {
-                                assert!(payment_preimage.is_none());
-                                assert_eq!(our_payment_secret, *payment_secret);
+                                assert_eq!(expected_preimage, *payment_preimage);
+                                assert_eq!(our_payment_secret.unwrap(), *payment_secret);
                             },
-                            _ => {},
+                            PaymentPurpose::SpontaneousPayment(payment_preimage) => {
+                                assert_eq!(expected_preimage.unwrap(), *payment_preimage);
+                                assert!(our_payment_secret.is_none());
+                            },
                         }
+                        assert_eq!(amt, recv_value);
                     },
                     _ => panic!("Unexpected event"),
                 }
@@ -986,28 +942,14 @@ pub fn pass_along_path<'a, 'b, 'c>(
     }
 }
 
-pub fn pass_along_route<'a, 'b, 'c>(
-    origin_node: &Node<'a, 'b, 'c>,
-    expected_route: &[&[&Node<'a, 'b, 'c>]],
-    recv_value: u64,
-    our_payment_hash: PaymentHash,
-    our_payment_secret: PaymentSecret,
-) {
+pub fn pass_along_route<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_route: &[&[&Node<'a, 'b, 'c>]], recv_value: u64, our_payment_hash: PaymentHash, our_payment_secret: PaymentSecret) {
     let mut events = origin_node.node.get_and_clear_pending_msg_events();
     assert_eq!(events.len(), expected_route.len());
     for (path_idx, (ev, expected_path)) in events.drain(..).zip(expected_route.iter()).enumerate() {
         // Once we've gotten through all the HTLCs, the last one should result in a
         // PaymentReceived (but each previous one should not!), .
         let expect_payment = path_idx == expected_route.len() - 1;
-        pass_along_path(
-            origin_node,
-            expected_path,
-            recv_value,
-            our_payment_hash.clone(),
-            our_payment_secret,
-            ev,
-            expect_payment,
-        );
+        pass_along_path(origin_node, expected_path, recv_value, our_payment_hash.clone(), Some(our_payment_secret), ev, expect_payment, None);
     }
 }
 
@@ -1064,6 +1006,8 @@ pub fn claim_payment_along_route<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, exp
 			($node: expr, $prev_node: expr, $new_msgs: expr) => {
 				{
 					$node.node.handle_update_fulfill_htlc(&$prev_node.node.get_our_node_id(), &next_msgs.as_ref().unwrap().0);
+            		let events = $node.node.get_and_clear_pending_events();
+            		assert_eq!(events.len(), 1);
 					check_added_monitors!($node, 1);
 					let new_next_msgs = if $new_msgs {
 						let events = $node.node.get_and_clear_pending_msg_events();
@@ -1230,6 +1174,13 @@ pub fn create_network<'a, 'b: 'a, 'c: 'b>(
             blocks: RefCell::new(vec![(genesis_block(Network::Testnet).header, 0)]),
             connect_style: Rc::clone(&connect_style),
         })
+    }
+
+    for i in 0..node_count {
+        for j in (i+1)..node_count {
+            nodes[i].node.peer_connected(&nodes[j].node.get_our_node_id(), &msgs::Init { features: InitFeatures::known() });
+            nodes[j].node.peer_connected(&nodes[i].node.get_our_node_id(), &msgs::Init { features: InitFeatures::known() });
+        }
     }
 
     nodes

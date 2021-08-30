@@ -20,11 +20,12 @@ use crate::node::Node;
 use crate::signer::multi_signer::MultiSigner;
 use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::{
-    derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, signature_to_bitcoin_vec,
+    derive_public_key, derive_revocation_pubkey, signature_to_bitcoin_vec,
 };
 use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::Arc;
+use lightning::ln::script::ShutdownScript;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -239,6 +240,11 @@ impl BaseSign for LoopbackChannelSigner {
         secret.expect("missing channel")
     }
 
+    fn validate_holder_commitment(&self, holder_tx: &HolderCommitmentTransaction) -> Result<(), ()> {
+        // TODO validate the tx in a phase 2 manner
+        Ok(())
+    }
+
     fn pubkeys(&self) -> &ChannelPublicKeys {
         &self.pubkeys
     }
@@ -275,12 +281,6 @@ impl BaseSign for LoopbackChannelSigner {
         let (sig_vec, htlc_sigs_vecs) = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-                // FIXME - LDK isn't making the necessary validate_counterparty_revocation
-                // calls, WORKAROUND by forcing the next_revoke to a good value here ...
-                if commitment_number > 1 {
-                    chan.set_next_counterparty_revoke_num_for_testing(commitment_number - 1);
-                }
-
                 chan.sign_counterparty_commitment_tx_phase2(
                     &per_commitment_point,
                     commitment_number,
@@ -298,6 +298,17 @@ impl BaseSign for LoopbackChannelSigner {
             htlc_sigs.push(bitcoin_sig_to_signature(htlc_sig_vec)?);
         }
         Ok((commitment_sig, htlc_sigs))
+    }
+
+    fn validate_counterparty_revocation(&self, idx: u64, secret: &SecretKey) -> Result<(), ()> {
+        let forward_idx = INITIAL_COMMITMENT_NUMBER - idx;
+        self.signer
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                chan.validate_counterparty_revocation(forward_idx, secret)
+            })
+            .map_err(|s| self.bad_status(s))?;
+
+        Ok(())
     }
 
     fn sign_holder_commitment_and_htlcs(
@@ -439,7 +450,7 @@ impl BaseSign for LoopbackChannelSigner {
         let mut to_holder_value = 0;
         let mut to_counterparty_value = 0;
         let local_script =
-            payload_for_p2wpkh(&self.get_node().get_shutdown_pubkey()).script_pubkey();
+            self.get_node().get_shutdown_scriptpubkey().into();
         let mut to_counterparty_script = Script::default();
         for out in &closing_tx.output {
             if out.script_pubkey == local_script {
@@ -540,8 +551,8 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         self.get_node().get_destination_script()
     }
 
-    fn get_shutdown_pubkey(&self) -> PublicKey {
-        self.get_node().get_shutdown_pubkey()
+    fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {
+        self.get_node().get_shutdown_scriptpubkey()
     }
 
     fn get_channel_signer(&self, is_inbound: bool, channel_value_sat: u64) -> Self::Signer {

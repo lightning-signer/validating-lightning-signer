@@ -52,8 +52,8 @@ tempfile = "3.2.0"
 
 [dependencies.lightning]
 git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "09e167019589dcfc5ee9675ad243b337659eafc7"
-version = "0.0.99"
+rev = "731773cad252ba1720dd3f47335406b6bc06c198"
+version = "0.0.100"
 default-features = false
 
 

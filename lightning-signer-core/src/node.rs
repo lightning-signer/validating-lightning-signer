@@ -38,6 +38,7 @@ use crate::util::crypto_utils::signature_to_bitcoin_vec;
 use crate::util::invoice_utils;
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::wallet::Wallet;
+use lightning::ln::script::ShutdownScript;
 
 /// Node configuration parameters.
 
@@ -644,8 +645,8 @@ impl Node {
     }
 
     /// Get shutdown_pubkey to use as PublicKey at channel closure
-    pub fn get_shutdown_pubkey(&self) -> PublicKey {
-        self.keys_manager.get_shutdown_pubkey()
+    pub fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {
+        self.keys_manager.get_shutdown_scriptpubkey()
     }
 
     /// Get the layer-1 xprv
@@ -1644,7 +1645,7 @@ mod tests {
         setup.counterparty_shutdown_script =
             payload_for_p2wpkh(&make_test_pubkey(11)).script_pubkey();
 
-        let local_shutdown_script = payload_for_p2wpkh(&node.get_shutdown_pubkey()).script_pubkey();
+        let local_shutdown_script = node.get_shutdown_scriptpubkey().into();
 
         node.ready_channel(channel_id, None, setup.clone())
             .expect("ready channel");
