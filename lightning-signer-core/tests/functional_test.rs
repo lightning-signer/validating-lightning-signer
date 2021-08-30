@@ -437,6 +437,9 @@ fn do_test_onchain_htlc_settlement_after_close(
         &nodes[2].node.get_our_node_id(),
         &carol_updates.update_fulfill_htlcs[0],
     );
+    let events = nodes[1].node.get_and_clear_pending_events();
+    assert_eq!(events.len(), 1);
+
     // If Alice broadcasted but Bob doesn't know yet, here he prepares to tell her about the preimage.
     if !go_onchain_before_fulfill && broadcast_alice {
         let events = nodes[1].node.get_and_clear_pending_msg_events();

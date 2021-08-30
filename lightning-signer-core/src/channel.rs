@@ -28,7 +28,7 @@ use crate::tx::tx::{
     sign_commitment, CommitmentInfo, CommitmentInfo2, HTLCInfo2,
 };
 use crate::util::crypto_utils::{
-    derive_private_revocation_key, derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh,
+    derive_private_revocation_key, derive_public_key, derive_revocation_pubkey
 };
 use crate::util::debug_utils::DebugHTLCOutputInCommitment;
 use crate::util::status::{internal_error, invalid_argument, Status};
@@ -731,10 +731,9 @@ impl Channel {
         self.setup
             .holder_shutdown_script
             .clone()
-            .unwrap_or_else(|| {
-                payload_for_p2wpkh(&self.get_node().keys_manager.get_shutdown_pubkey())
-                    .script_pubkey()
-            })
+            .unwrap_or_else(||
+                self.get_node().keys_manager.get_shutdown_scriptpubkey().into()
+            )
     }
 
     fn get_node(&self) -> Arc<Node> {
