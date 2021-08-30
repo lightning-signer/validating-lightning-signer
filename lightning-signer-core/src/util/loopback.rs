@@ -241,6 +241,7 @@ impl BaseSign for LoopbackChannelSigner {
     }
 
     fn validate_holder_commitment(&self, holder_tx: &HolderCommitmentTransaction) -> Result<(), ()> {
+        // TODO validate the tx in a phase 2 manner
         Ok(())
     }
 
@@ -280,12 +281,6 @@ impl BaseSign for LoopbackChannelSigner {
         let (sig_vec, htlc_sigs_vecs) = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-                // FIXME - LDK isn't making the necessary validate_counterparty_revocation
-                // calls, WORKAROUND by forcing the next_revoke to a good value here ...
-                if commitment_number > 1 {
-                    chan.set_next_counterparty_revoke_num_for_testing(commitment_number - 1);
-                }
-
                 chan.sign_counterparty_commitment_tx_phase2(
                     &per_commitment_point,
                     commitment_number,
@@ -306,6 +301,13 @@ impl BaseSign for LoopbackChannelSigner {
     }
 
     fn validate_counterparty_revocation(&self, idx: u64, secret: &SecretKey) -> Result<(), ()> {
+        let forward_idx = INITIAL_COMMITMENT_NUMBER - idx;
+        self.signer
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                chan.validate_counterparty_revocation(forward_idx, secret)
+            })
+            .map_err(|s| self.bad_status(s))?;
+
         Ok(())
     }
 

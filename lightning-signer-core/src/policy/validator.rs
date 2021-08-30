@@ -945,8 +945,8 @@ impl EnforcementState {
             &self.previous_counterparty_point
         } else {
             return Err(policy_error(format!(
-                "get_previous_counterparty_point {} out of range",
-                num
+                "get_previous_counterparty_point {} out of range, next is {}",
+                num, self.next_counterparty_commit_num
             )));
         }
         .unwrap_or_else(|| {
@@ -1514,13 +1514,13 @@ mod tests {
         // point for 0 is not set yet
         assert_policy_err!(
             state.get_previous_counterparty_point(0),
-            "get_previous_counterparty_point 0 out of range"
+            "get_previous_counterparty_point 0 out of range, next is 0"
         );
 
         // can't look forward either
         assert_policy_err!(
             state.get_previous_counterparty_point(1),
-            "get_previous_counterparty_point 1 out of range"
+            "get_previous_counterparty_point 1 out of range, next is 0"
         );
 
         // can't skip forward
@@ -1559,7 +1559,7 @@ mod tests {
         // can't get commit_num 1 yet
         assert_policy_err!(
             state.get_previous_counterparty_point(1),
-            "get_previous_counterparty_point 1 out of range"
+            "get_previous_counterparty_point 1 out of range, next is 1"
         );
 
         // can't skip forward
@@ -1590,7 +1590,7 @@ mod tests {
         // can't look forward
         assert_policy_err!(
             state.get_previous_counterparty_point(2),
-            "get_previous_counterparty_point 2 out of range"
+            "get_previous_counterparty_point 2 out of range, next is 2"
         );
 
         // can't skip forward
@@ -1612,7 +1612,7 @@ mod tests {
         // You can't get commit_num 0 anymore
         assert_policy_err!(
             state.get_previous_counterparty_point(0),
-            "get_previous_counterparty_point 0 out of range"
+            "get_previous_counterparty_point 0 out of range, next is 3"
         );
 
         // you can still get commit_num 1
@@ -1630,7 +1630,7 @@ mod tests {
         // can't look forward
         assert_policy_err!(
             state.get_previous_counterparty_point(3),
-            "get_previous_counterparty_point 3 out of range"
+            "get_previous_counterparty_point 3 out of range, next is 3"
         );
     }
 }
