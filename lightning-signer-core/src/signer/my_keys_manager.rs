@@ -89,7 +89,7 @@ pub struct MyKeysManager {
     channel_seed_base: [u8; 32],
     account_extended_key: ExtendedPrivKey,
     destination_script: Script,
-    shutdown_pubkey: PublicKey,
+    ldk_shutdown_pubkey: PublicKey,
     #[allow(dead_code)]
     channel_master_key: ExtendedPrivKey,
     channel_id_master_key: ExtendedPrivKey,
@@ -141,7 +141,7 @@ impl MyKeysManager {
                     }
                     Err(_) => panic!("Your RNG is busted"),
                 };
-                let shutdown_pubkey = match master_key
+                let ldk_shutdown_pubkey = match master_key
                     .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(2).unwrap())
                 {
                     Ok(shutdown_key) => {
@@ -186,7 +186,7 @@ impl MyKeysManager {
                     channel_seed_base,
                     account_extended_key,
                     destination_script,
-                    shutdown_pubkey,
+                    ldk_shutdown_pubkey,
                     channel_master_key,
                     channel_id_master_key,
                     channel_id_child_index: AtomicUsize::new(0),
@@ -533,7 +533,7 @@ impl MyKeysManager {
                     };
                     let pubkey = ExtendedPubKey::from_private(&secp_ctx, &secret).public_key;
                     if derivation_idx == 2 {
-                        assert_eq!(pubkey.key, self.shutdown_pubkey);
+                        assert_eq!(pubkey.key, self.ldk_shutdown_pubkey);
                     }
                     let witness_script =
                         bitcoin::Address::p2pkh(&pubkey, Network::Testnet).script_pubkey();
@@ -574,7 +574,7 @@ impl KeysInterface for MyKeysManager {
     }
 
     fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {
-        ShutdownScript::new_p2wpkh(&WPubkeyHash::hash(&self.shutdown_pubkey.serialize()))
+        ShutdownScript::new_p2wpkh(&WPubkeyHash::hash(&self.ldk_shutdown_pubkey.serialize()))
     }
 
     fn get_channel_signer(&self, _inbound: bool, _channel_value_sat: u64) -> InMemorySigner {

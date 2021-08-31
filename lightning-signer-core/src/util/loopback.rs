@@ -27,6 +27,8 @@ use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::Arc;
 use lightning::ln::script::ShutdownScript;
 
+use crate::policy::error::transaction_format_error;
+
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
     pub node_id: PublicKey,
@@ -184,12 +186,6 @@ impl LoopbackChannelSigner {
             }
         }
         (offered_htlcs, received_htlcs)
-    }
-
-    fn get_node(&self) -> Arc<Node> {
-        self.signer
-            .get_node(&self.node_id)
-            .expect("our node is missing")
     }
 }
 
@@ -468,34 +464,43 @@ impl BaseSign for LoopbackChannelSigner {
             "sign_closing_transaction {:?} {:?}",
             self.node_id, self.channel_id
         );
-        let mut to_holder_value = 0;
-        let mut to_counterparty_value = 0;
-        let local_script = self.get_node().get_shutdown_scriptpubkey().into();
-        let mut to_counterparty_script = Script::default();
-        for out in &closing_tx.output {
-            if out.script_pubkey == local_script {
-                if to_holder_value > 0 {
-                    error!("multiple to_holder outputs");
-                    return Err(());
-                }
-                to_holder_value = out.value;
-            } else {
-                if to_counterparty_value > 0 {
-                    error!("multiple to_counterparty outputs");
-                    return Err(());
-                }
-                to_counterparty_value = out.value;
-                to_counterparty_script = out.script_pubkey.clone();
-            }
-        }
 
         // TODO error handling is awkward
         self.signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                let mut to_holder_value = 0;
+                let mut to_counterparty_value = 0;
+                let mut holder_script = Script::default();
+                let mut counterparty_script = Script::default();
+
+                for out in &closing_tx.output {
+                    // FIXME - get_ldk_shutdown_script is deprecated.
+                    if out.script_pubkey == chan.get_ldk_shutdown_script() {
+                        if to_holder_value > 0 {
+                            return Err(transaction_format_error(format!(
+                                "multiple to_holder outputs"
+                            ))
+                            .into());
+                        }
+                        to_holder_value = out.value;
+                        holder_script = out.script_pubkey.clone();
+                    } else {
+                        if to_counterparty_value > 0 {
+                            return Err(transaction_format_error(format!(
+                                "multiple to_counterparty outputs"
+                            ))
+                            .into());
+                        }
+                        to_counterparty_value = out.value;
+                        counterparty_script = out.script_pubkey.clone();
+                    }
+                }
+
                 chan.sign_mutual_close_tx_phase2(
                     to_holder_value,
                     to_counterparty_value,
-                    Some(to_counterparty_script.clone()),
+                    &holder_script,
+                    &counterparty_script,
                 )
             })
             .map_err(|_| ())
@@ -543,7 +548,7 @@ impl BaseSign for LoopbackChannelSigner {
             holder_shutdown_script: None, // use the signer's shutdown script
             counterparty_points: counterparty_parameters.pubkeys.clone(),
             counterparty_selected_contest_delay: counterparty_parameters.selected_contest_delay,
-            counterparty_shutdown_script: Default::default(), // TODO
+            counterparty_shutdown_script: None, // TODO
             commitment_type: CommitmentType::StaticRemoteKey, // TODO
         };
         let node = self.signer.get_node(&self.node_id).expect("no such node");
@@ -572,7 +577,8 @@ impl KeysInterface for LoopbackSignerKeysInterface {
     }
 
     fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {
-        self.get_node().get_shutdown_scriptpubkey()
+        // FIXME - this method is deprecated
+        self.get_node().get_ldk_shutdown_scriptpubkey()
     }
 
     fn get_channel_signer(&self, is_inbound: bool, channel_value_sat: u64) -> Self::Signer {

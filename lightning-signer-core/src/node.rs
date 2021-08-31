@@ -659,7 +659,8 @@ impl Node {
     }
 
     /// Get shutdown_pubkey to use as PublicKey at channel closure
-    pub fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {
+    // FIXME - this method is deprecated
+    pub fn get_ldk_shutdown_scriptpubkey(&self) -> ShutdownScript {
         self.keys_manager.get_shutdown_scriptpubkey()
     }
 
@@ -931,6 +932,9 @@ mod tests {
     use crate::util::test_utils::{hex_decode, hex_encode};
 
     use super::*;
+
+    macro_rules! hex (($hex:expr) => (Vec::from_hex($hex).unwrap()));
+    macro_rules! hex_script (($hex:expr) => (Script::from(hex!($hex))));
 
     #[test]
     fn channel_debug_test() {
@@ -1657,9 +1661,10 @@ mod tests {
 
         let mut setup = make_test_channel_setup();
         setup.counterparty_shutdown_script =
-            payload_for_p2wpkh(&make_test_pubkey(11)).script_pubkey();
+            Some(payload_for_p2wpkh(&make_test_pubkey(11)).script_pubkey());
 
-        let local_shutdown_script = node.get_shutdown_scriptpubkey().into();
+        // FIXME - this method is deprecated
+        let local_shutdown_script = node.get_ldk_shutdown_scriptpubkey().into();
 
         node.ready_channel(channel_id, None, setup.clone())
             .expect("ready channel");
@@ -1669,7 +1674,7 @@ mod tests {
                 100,
                 200,
                 &local_shutdown_script,
-                &setup.counterparty_shutdown_script,
+                &setup.counterparty_shutdown_script.as_ref().unwrap(),
                 setup.funding_outpoint,
             )
         };
@@ -1679,7 +1684,8 @@ mod tests {
                     .sign_mutual_close_tx_phase2(
                         100,
                         200,
-                        Some(setup.counterparty_shutdown_script.clone()),
+                        &local_shutdown_script,
+                        &setup.counterparty_shutdown_script.as_ref().unwrap(),
                     )
                     .unwrap();
                 Ok(signature_to_bitcoin_vec(sig))
@@ -4226,9 +4232,10 @@ mod tests {
     where
         MutualCloseInputMutator:
             Fn(&mut Channel, &mut u64, &mut u64, &mut Script, &mut Script, &mut OutPoint),
-        MutualCloseTxMutator: Fn(&mut Transaction),
+        MutualCloseTxMutator: Fn(&mut Transaction, &mut Vec<Vec<u32>>, &mut Vec<String>),
         ChannelStateValidator: Fn(&Channel),
     {
+        let secp_ctx = Secp256k1::signing_only();
         let setup = make_test_channel_setup();
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
@@ -4236,6 +4243,7 @@ mod tests {
         let counterparty_points = make_test_counterparty_points();
         let holder_commit_num = 22;
         let counterparty_commit_num = 43;
+        let wallet_path = vec![7];
 
         let tx = node
             .with_ready_channel(&channel_id, |chan| {
@@ -4284,7 +4292,15 @@ mod tests {
                 estate.mutual_close_signed = false;
 
                 // Construct the mutual close transaction.
-                let mut local_shutdown_script = chan.get_shutdown_script();
+                let mut holder_shutdown_script = Address::p2wpkh(
+                    &node
+                        .get_wallet_key(&secp_ctx, &wallet_path)
+                        .unwrap()
+                        .public_key(&secp_ctx),
+                    Network::Testnet,
+                )
+                .expect("Address")
+                .script_pubkey();
                 let mut counterparty_shutdown_script =
                     Script::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
                         .expect("script_pubkey");
@@ -4294,7 +4310,7 @@ mod tests {
                     chan,
                     &mut to_holder_value_sat,
                     &mut to_counterparty_value_sat,
-                    &mut local_shutdown_script,
+                    &mut holder_shutdown_script,
                     &mut counterparty_shutdown_script,
                     &mut outpoint,
                 );
@@ -4302,7 +4318,7 @@ mod tests {
                 let tx = build_close_tx(
                     to_holder_value_sat,
                     to_counterparty_value_sat,
-                    &local_shutdown_script,
+                    &holder_shutdown_script,
                     &counterparty_shutdown_script,
                     outpoint,
                 );
@@ -4317,11 +4333,16 @@ mod tests {
                 .is_ok());
 
             let mut mtx = tx.clone();
-            mutate_close_tx(&mut mtx);
+            let mut wallet_paths = vec![vec![], wallet_path.clone()];
+            let mut allowlist = vec![];
+
+            mutate_close_tx(&mut mtx, &mut wallet_paths, &mut allowlist);
+
+            node.add_allowlist(&allowlist)?;
 
             // Sign the mutual close, but defer error returns till after
             // we check the state of the channel for side-effects.
-            let deferred_rv = chan.sign_mutual_close_tx(&mtx, setup.channel_value_sat);
+            let deferred_rv = chan.sign_mutual_close_tx(&mtx, &wallet_paths);
 
             // This will panic if the state is not good.
             validate_channel_state(chan);
@@ -4362,10 +4383,10 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_success() {
         assert_status_ok!(sign_mutual_close_tx_with_mutator(
-            |_chan, _to_holder, _to_counterparty, _local_script, _counter_script, _outpoint| {
+            |_chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
                 // If we don't mutate anything it should succeed.
             },
-            |_tx| {
+            |_tx, _wallet_paths, _allowlist| {
                 // If we don't mutate anything it should succeed.
             },
             |chan| {
@@ -4373,6 +4394,199 @@ mod tests {
                 assert_eq!(chan.enforcement_state.mutual_close_signed, true);
             }
         ));
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_only_holder_success() {
+        assert_status_ok!(sign_mutual_close_tx_with_mutator(
+            |chan, to_holder, to_counterparty, _holder_script, counter_script, _outpoint| {
+                // remove the counterparty from current_holder_commit_info
+                let mut holder = chan
+                    .enforcement_state
+                    .current_holder_commit_info
+                    .as_ref()
+                    .unwrap()
+                    .clone();
+                holder.to_broadcaster_value_sat += holder.to_countersigner_value_sat;
+                holder.to_countersigner_value_sat = 0;
+                chan.enforcement_state.current_holder_commit_info = Some(holder);
+
+                // remove the counterparty from current_counterparty_commit_info
+                let mut cparty = chan
+                    .enforcement_state
+                    .current_counterparty_commit_info
+                    .as_ref()
+                    .unwrap()
+                    .clone();
+                cparty.to_countersigner_value_sat += cparty.to_broadcaster_value_sat;
+                cparty.to_broadcaster_value_sat = 0;
+                chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
+
+                // from the constructed tx
+                *to_holder += *to_counterparty;
+                *to_counterparty = 0;
+                *counter_script = Script::default();
+            },
+            |_tx, wallet_paths, _allowlist| {
+                // remove the counterparties wallet_path
+                wallet_paths[0] = wallet_paths[1].clone();
+                wallet_paths.pop();
+            },
+            |chan| {
+                // Channel should be marked closed
+                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+            }
+        ));
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_only_counterparty_success() {
+        assert_status_ok!(sign_mutual_close_tx_with_mutator(
+            |chan, to_holder, to_counterparty, holder_script, _counter_script, _outpoint| {
+                let fee = 2000;
+
+                // remove the holder from current_holder_commit_info
+                let mut holder = chan
+                    .enforcement_state
+                    .current_holder_commit_info
+                    .as_ref()
+                    .unwrap()
+                    .clone();
+                holder.to_countersigner_value_sat += holder.to_broadcaster_value_sat - fee;
+                holder.to_broadcaster_value_sat = 0;
+                chan.enforcement_state.current_holder_commit_info = Some(holder);
+
+                // remove the holder from current_counterparty_commit_info
+                let mut cparty = chan
+                    .enforcement_state
+                    .current_counterparty_commit_info
+                    .as_ref()
+                    .unwrap()
+                    .clone();
+                cparty.to_broadcaster_value_sat += cparty.to_countersigner_value_sat - fee;
+                cparty.to_countersigner_value_sat = 0;
+                chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
+
+                // from the constructed tx
+                *to_counterparty += *to_holder - fee;
+                *to_holder = 0;
+                *holder_script = Script::default();
+            },
+            |_tx, wallet_paths, _allowlist| {
+                // remove the holders wallet_path
+                wallet_paths.pop();
+            },
+            |chan| {
+                // Channel should be marked closed
+                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+            }
+        ));
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_with_allowlist_success() {
+        assert_status_ok!(sign_mutual_close_tx_with_mutator(
+            |_chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                // If we don't mutate anything it should succeed.
+            },
+            |_tx, wallet_paths, allowlist| {
+                // empty the wallet paths
+                wallet_paths.pop();
+                wallet_paths.pop();
+                wallet_paths.push(vec![]);
+                wallet_paths.push(vec![]);
+                // use the allowlist
+                allowlist.push("tb1qkakav8jpkhhs22hjrndrycyg3srshwd09gax07".to_string());
+            },
+            |chan| {
+                // Channel should be marked closed
+                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+            }
+        ));
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_with_bad_num_txout() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutator(
+                |_chan,
+                 _to_holder,
+                 _to_counterparty,
+                 _holder_script,
+                 _counter_script,
+                 _outpoint| {
+                    // don't need to mutate these
+                },
+                |tx, wallet_paths, _allowlist| {
+                    // Steal some of the first output and make a new output.
+                    let steal_amt = 1_000;
+                    tx.output[0].value -= steal_amt;
+                    tx.output.push(TxOut {
+                        value: steal_amt,
+                        script_pubkey: hex_script!(
+                            "76a9149f9a7abd600c0caa03983a77c8c3df8e062cb2fa88ac"
+                        ),
+                    });
+                    wallet_paths.push(vec![]); // needs to match
+                },
+                |chan| {
+                    // Channel should be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "transaction format: mutual_close_tx: invalid number of outputs: 3"
+        );
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_with_opath_len_mismatch() {
+        assert_invalid_argument_err!(
+            sign_mutual_close_tx_with_mutator(
+                |_chan,
+                 _to_holder,
+                 _to_counterparty,
+                 _holder_script,
+                 _counter_script,
+                 _outpoint| {
+                    // don't need to mutate these
+                },
+                |_tx, wallet_paths, _allowlist| {
+                    wallet_paths.push(vec![]); // an extra opath element
+                },
+                |chan| {
+                    // Channel should be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "sign_mutual_close_tx: bad opath len 3 with tx.output len 2"
+        );
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_with_unestablished_holder() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutator(
+                |_chan,
+                 _to_holder,
+                 _to_counterparty,
+                 _holder_script,
+                 _counter_script,
+                 _outpoint| {
+                    // don't need to mutate these
+                },
+                |_tx, wallet_paths, _allowlist| {
+                    wallet_paths.pop();
+                    wallet_paths.pop();
+                    wallet_paths.push(vec![]);
+                    wallet_paths.push(vec![]);
+                },
+                |chan| {
+                    // Channel should be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: decode_and_validate_mutual_close_tx: unable to establish holder output"
+        );
     }
 
     #[test]

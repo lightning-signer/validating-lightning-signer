@@ -20,23 +20,29 @@ pub struct MultiSigner {
     pub(crate) nodes: Mutex<Map<PublicKey, Arc<Node>>>,
     pub(crate) persister: Arc<dyn Persist>,
     pub(crate) test_mode: bool,
+    pub(crate) initial_allowlist: Vec<String>,
 }
 
 impl MultiSigner {
     /// Construct with a null persister
     pub fn new() -> MultiSigner {
-        let signer = MultiSigner::new_with_persister(Arc::new(DummyPersister), true);
+        let signer = MultiSigner::new_with_persister(Arc::new(DummyPersister), true, vec![]);
         info!("new MultiSigner");
         signer
     }
 
     /// Construct
-    pub fn new_with_persister(persister: Arc<dyn Persist>, test_mode: bool) -> MultiSigner {
+    pub fn new_with_persister(
+        persister: Arc<dyn Persist>,
+        test_mode: bool,
+        initial_allowlist: Vec<String>,
+    ) -> MultiSigner {
         let nodes = Node::restore_nodes(Arc::clone(&persister));
         MultiSigner {
             nodes: Mutex::new(nodes),
             persister,
             test_mode,
+            initial_allowlist,
         }
     }
 
@@ -53,6 +59,8 @@ impl MultiSigner {
         let node = Node::new(node_config, &seed, network, &self.persister, vec![]);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
+        node.add_allowlist(&self.initial_allowlist)
+            .expect("valid initialallowlist");
         nodes.insert(node_id, Arc::new(node));
         self.persister
             .new_node(&node_id, &node_config, &seed, network);
@@ -81,6 +89,8 @@ impl MultiSigner {
                 return Err(invalid_argument("node_exists"));
             }
         }
+        node.add_allowlist(&self.initial_allowlist)
+            .expect("valid initialallowlist");
         nodes.insert(node_id, Arc::new(node));
         self.persister
             .new_node(&node_id, &node_config, seed, network);

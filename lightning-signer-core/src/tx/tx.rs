@@ -10,15 +10,13 @@ use bitcoin::blockdata::opcodes::all::{
 };
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::{Hash, HashEngine};
-use bitcoin::secp256k1;
-use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, Signature};
+use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::address::Payload;
-use bitcoin::util::bip143;
-use bitcoin::{OutPoint, Script, SigHashType, Transaction, TxIn, TxOut};
+use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut};
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
-    get_revokeable_redeemscript, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
+    get_revokeable_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
 
@@ -274,30 +272,6 @@ pub(crate) fn build_commitment_tx(
         scripts,
         htlcs,
     )
-}
-
-// Sign a Bitcoin commitment tx or a mutual-close tx
-pub(crate) fn sign_commitment(
-    secp_ctx: &Secp256k1<All>,
-    keys: &InMemorySigner,
-    counterparty_funding_pubkey: &PublicKey,
-    tx: &Transaction,
-    channel_value_sat: u64,
-) -> Result<Signature, secp256k1::Error> {
-    let funding_key = keys.funding_key;
-    let funding_pubkey = keys.pubkeys().funding_pubkey;
-    let channel_funding_redeemscript =
-        make_funding_redeemscript(&funding_pubkey, &counterparty_funding_pubkey);
-
-    let commitment_sighash = Message::from_slice(
-        &bip143::SigHashCache::new(tx).signature_hash(
-            0,
-            &channel_funding_redeemscript,
-            channel_value_sat,
-            SigHashType::All,
-        )[..],
-    )?;
-    Ok(secp_ctx.sign(&commitment_sighash, &funding_key))
 }
 
 pub(crate) fn sort_outputs<T, C: Fn(&T, &T) -> cmp::Ordering>(

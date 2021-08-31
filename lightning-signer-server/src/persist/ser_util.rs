@@ -237,8 +237,8 @@ pub struct ChannelSetupDef {
     #[serde(with = "ChannelPublicKeysDef")]
     pub counterparty_points: ChannelPublicKeys,
     pub counterparty_selected_contest_delay: u16,
-    #[serde(with = "ScriptDef")]
-    pub counterparty_shutdown_script: Script,
+    #[serde_as(as = "Option<ScriptDef>")]
+    pub counterparty_shutdown_script: Option<Script>,
     #[serde_as(as = "CommitmentTypeDef")]
     pub commitment_type: CommitmentType,
 }

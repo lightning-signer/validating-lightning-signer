@@ -25,7 +25,7 @@ use crate::policy::validator::{EnforcementState, Validator, ValidatorState};
 use crate::prelude::{Box, ToString, Vec};
 use crate::tx::tx::{
     build_close_tx, build_commitment_tx, get_commitment_transaction_number_obscure_factor,
-    sign_commitment, CommitmentInfo, CommitmentInfo2, HTLCInfo2,
+    CommitmentInfo, CommitmentInfo2, HTLCInfo2,
 };
 use crate::util::crypto_utils::{
     derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
@@ -82,14 +82,14 @@ pub struct ChannelSetup {
     pub funding_outpoint: OutPoint,
     /// locally imposed requirement on the remote commitment transaction to_self_delay
     pub holder_selected_contest_delay: u16,
-    /// Maybe be None if we should generate it inside the signer
+    /// The holder's optional upfront shutdown script
     pub holder_shutdown_script: Option<Script>,
     /// The counterparty's basepoints and pubkeys
     pub counterparty_points: ChannelPublicKeys, // DUP keys.inner.remote_channel_pubkeys
     /// remotely imposed requirement on the local commitment transaction to_self_delay
     pub counterparty_selected_contest_delay: u16,
-    /// The counterparty's shutdown script, for mutual close
-    pub counterparty_shutdown_script: Script,
+    /// The counterparty's optional upfront shutdown script
+    pub counterparty_shutdown_script: Option<Script>,
     /// The negotiated commitment type
     pub commitment_type: CommitmentType,
 }
@@ -939,7 +939,8 @@ impl Channel {
     }
 
     /// Get the shutdown script where our funds will go when we mutual-close
-    pub fn get_shutdown_script(&self) -> Script {
+    // FIXME - this method is deprecated
+    pub fn get_ldk_shutdown_script(&self) -> Script {
         self.setup
             .holder_shutdown_script
             .clone()
@@ -957,32 +958,45 @@ impl Channel {
 
     /// Sign a mutual close transaction after rebuilding it from the supplied arguments
     pub fn sign_mutual_close_tx_phase2(
-        &self,
+        &mut self,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
-        counterparty_shutdown_script: Option<Script>,
+        holder_script: &Script,
+        counterparty_script: &Script,
     ) -> Result<Signature, Status> {
-        let holder_script = self.get_shutdown_script();
+        let validator = self
+            .node
+            .upgrade()
+            .unwrap()
+            .validator_factory
+            .make_validator(self.network());
 
-        let counterparty_script = counterparty_shutdown_script
-            .as_ref()
-            .unwrap_or(&self.setup.counterparty_shutdown_script);
+        validator.validate_mutual_close_tx(
+            &*self.node.upgrade().unwrap(),
+            &self.setup,
+            &self.enforcement_state,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            holder_script,
+            counterparty_script,
+        )?;
 
         let tx = build_close_tx(
             to_holder_value_sat,
             to_counterparty_value_sat,
-            &holder_script,
+            holder_script,
             counterparty_script,
             self.setup.funding_outpoint,
         );
 
-        let res = self
+        let sig = self
             .keys
             .sign_closing_transaction(&tx, &self.secp_ctx)
-            .map_err(|_| Status::internal("failed to sign"));
+            .map_err(|_| Status::internal("failed to sign"))?;
+        self.enforcement_state.mutual_close_signed = true;
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
-        res
+        Ok(sig)
     }
 
     /// Sign a delayed output that goes to us while sweeping a transaction we broadcast
@@ -1588,16 +1602,41 @@ impl Channel {
     pub fn sign_mutual_close_tx(
         &mut self,
         tx: &bitcoin::Transaction,
-        funding_amount_sat: u64,
+        opaths: &Vec<Vec<u32>>,
     ) -> Result<Signature, Status> {
-        let sig = sign_commitment(
-            &self.secp_ctx,
-            &self.keys,
-            &self.setup.counterparty_points.funding_pubkey,
-            &tx,
-            funding_amount_sat,
-        )
-        .map_err(|_| Status::internal("failed to sign"))?;
+        debug!(
+            "{}: allowlist: {:#?}",
+            short_function!(),
+            self.node.upgrade().unwrap().allowlist().expect("allowlist")
+        );
+        let validator = self
+            .node
+            .upgrade()
+            .unwrap()
+            .validator_factory
+            .make_validator(self.network());
+
+        if opaths.len() != tx.output.len() {
+            return Err(invalid_argument(format!(
+                "{}: bad opath len {} with tx.output len {}",
+                short_function!(),
+                opaths.len(),
+                tx.output.len()
+            )));
+        }
+
+        let recomposed_tx = validator.decode_and_validate_mutual_close_tx(
+            &*self.node.upgrade().unwrap(),
+            &self.setup,
+            &self.enforcement_state,
+            tx,
+            opaths,
+        )?;
+
+        let sig = self
+            .keys
+            .sign_closing_transaction(&recomposed_tx, &self.secp_ctx)
+            .map_err(|_| Status::internal("failed to sign"))?;
         self.enforcement_state.mutual_close_signed = true;
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
