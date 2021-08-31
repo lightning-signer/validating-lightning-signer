@@ -939,7 +939,8 @@ impl Channel {
     }
 
     /// Get the shutdown script where our funds will go when we mutual-close
-    pub fn get_shutdown_script(&self) -> Script {
+    // FIXME - this method is deprecated
+    pub fn get_ldk_shutdown_script(&self) -> Script {
         self.setup
             .holder_shutdown_script
             .clone()

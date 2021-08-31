@@ -659,7 +659,8 @@ impl Node {
     }
 
     /// Get shutdown_pubkey to use as PublicKey at channel closure
-    pub fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {
+    // FIXME - this method is deprecated
+    pub fn get_ldk_shutdown_scriptpubkey(&self) -> ShutdownScript {
         self.keys_manager.get_shutdown_scriptpubkey()
     }
 
@@ -1662,7 +1663,8 @@ mod tests {
         setup.counterparty_shutdown_script =
             Some(payload_for_p2wpkh(&make_test_pubkey(11)).script_pubkey());
 
-        let local_shutdown_script = node.get_shutdown_scriptpubkey().into();
+        // FIXME - this method is deprecated
+        let local_shutdown_script = node.get_ldk_shutdown_scriptpubkey().into();
 
         node.ready_channel(channel_id, None, setup.clone())
             .expect("ready channel");

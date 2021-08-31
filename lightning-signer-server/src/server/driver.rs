@@ -574,7 +574,7 @@ impl Signer for SignServer {
                 let sig = chan.sign_mutual_close_tx_phase2(
                     req.to_holder_value_sat,
                     req.to_counterparty_value_sat,
-                    &chan.get_shutdown_script(),
+                    &chan.get_ldk_shutdown_script(), // FIXME - deprecated
                     &counterparty_shutdown_script,
                 )?;
                 let mut bitcoin_sig = sig.serialize_der().to_vec();
