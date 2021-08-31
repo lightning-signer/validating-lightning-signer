@@ -242,7 +242,7 @@ impl BaseSign for LoopbackChannelSigner {
 
     fn validate_holder_commitment(
         &self,
-        holder_tx: &HolderCommitmentTransaction,
+        _holder_tx: &HolderCommitmentTransaction,
     ) -> Result<(), ()> {
         // TODO validate the tx in a phase 2 manner
         Ok(())
