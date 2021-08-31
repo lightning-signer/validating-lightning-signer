@@ -71,18 +71,6 @@ macro_rules! assert_failed_precondition_err {
     };
 }
 
-#[cfg(test)]
-macro_rules! assert_policy_err {
-    ($status: expr, $msg: expr) => {
-        assert!($status.is_err());
-        // avoid printing the backtrace ...
-        assert_eq!(
-            $status.unwrap_err().kind,
-            policy_error($msg.to_string()).kind
-        );
-    };
-}
-
 // ValidationError assertions:
 
 #[allow(unused)]
@@ -93,6 +81,15 @@ macro_rules! assert_validation_ok {
             // avoid printing the backtrace ...
             panic!("unexepected ValidationError: {:#?}", $res.unwrap_err().kind);
         }
+    };
+}
+
+#[cfg(test)]
+macro_rules! assert_policy_err {
+    ($res: expr, $msg: expr) => {
+        assert!($res.is_err());
+        // avoid printing the backtrace ...
+        assert_eq!($res.unwrap_err().kind, policy_error($msg.to_string()).kind);
     };
 }
 

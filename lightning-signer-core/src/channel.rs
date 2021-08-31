@@ -28,7 +28,7 @@ use crate::tx::tx::{
     sign_commitment, CommitmentInfo, CommitmentInfo2, HTLCInfo2,
 };
 use crate::util::crypto_utils::{
-    derive_private_revocation_key, derive_public_key, derive_revocation_pubkey
+    derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
 };
 use crate::util::debug_utils::DebugHTLCOutputInCommitment;
 use crate::util::status::{internal_error, invalid_argument, Status};
@@ -514,8 +514,11 @@ impl Channel {
 
         // TODO validation missing?
 
-        self.enforcement_state
-            .set_next_counterparty_commit_num(commitment_number + 1, remote_per_commitment_point.clone(), info2)?;
+        self.enforcement_state.set_next_counterparty_commit_num(
+            commitment_number + 1,
+            remote_per_commitment_point.clone(),
+            info2,
+        )?;
 
         debug!(
             "channel: sign counterparty txid {}",
@@ -744,9 +747,12 @@ impl Channel {
         self.setup
             .holder_shutdown_script
             .clone()
-            .unwrap_or_else(||
-                self.get_node().keys_manager.get_shutdown_scriptpubkey().into()
-            )
+            .unwrap_or_else(|| {
+                self.get_node()
+                    .keys_manager
+                    .get_shutdown_scriptpubkey()
+                    .into()
+            })
     }
 
     fn get_node(&self) -> Arc<Node> {

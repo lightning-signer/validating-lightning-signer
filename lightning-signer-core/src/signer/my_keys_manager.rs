@@ -4,11 +4,11 @@ use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
+use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::hash160::Hash as Hash160;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::sha256::HashEngine as Sha256State;
 use bitcoin::hashes::{Hash, HashEngine};
-use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signing};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, SigHashType, Transaction, TxIn, TxOut};

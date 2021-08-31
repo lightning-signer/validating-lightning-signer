@@ -66,7 +66,7 @@ impl From<ChannelEntry> for CoreChannelEntry {
 
 #[serde_as]
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Allowlist {
+pub struct AllowlistItemEntry {
     #[serde_as(as = "Vec<ScriptDef>")]
     pub allowlist: Vec<Script>,
 }

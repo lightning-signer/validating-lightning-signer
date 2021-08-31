@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .field_attribute("data", "#[serde(serialize_with = \"crate::util::as_hex\")]")
         // All other protobuf "bytes" fields need to be listed below.
         .field_attribute(
-            "ReadyChannelRequest.local_shutdown_script",
+            "ReadyChannelRequest.holder_shutdown_script",
             "#[serde(serialize_with = \"crate::util::as_hex\")]",
         )
         .field_attribute(
