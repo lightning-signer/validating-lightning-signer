@@ -162,7 +162,7 @@ fn channel_force_close_test() {
         0,
         1,
         100000,
-        99000000,
+        990000,
         InitFeatures::known(),
         InitFeatures::known(),
     );

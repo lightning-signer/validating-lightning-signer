@@ -17,7 +17,7 @@ use lightning::ln::chan_utils::{
     CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
     TxCreationKeys,
 };
-use log::{debug, trace};
+use log::{debug, trace, warn};
 
 use crate::node::Node;
 use crate::policy::error::policy_error;
@@ -589,6 +589,202 @@ impl Channel {
         )
     }
 
+    fn check_holder_tx_signatures(
+        &self,
+        commitment_number: u64,
+        feerate_per_kw: u32,
+        counterparty_commit_sig: &Signature,
+        counterparty_htlc_sigs: &Vec<Signature>,
+        recomposed_tx: CommitmentTransaction,
+    ) -> Result<(), Status> {
+        let redeemscript = make_funding_redeemscript(
+            &self.keys.pubkeys().funding_pubkey,
+            &self.setup.counterparty_points.funding_pubkey,
+        );
+
+        let sig_hash_type = if self.setup.option_anchor_outputs() {
+            SigHashType::SinglePlusAnyoneCanPay
+        } else {
+            SigHashType::All
+        };
+
+        let sighash = Message::from_slice(
+            &SigHashCache::new(&recomposed_tx.trust().built_transaction().transaction)
+                .signature_hash(
+                    0,
+                    &redeemscript,
+                    self.setup.channel_value_sat,
+                    sig_hash_type,
+                )[..],
+        )
+        .map_err(|ve| internal_error(format!("sighash failed: {}", ve)))?;
+
+        let secp_ctx = Secp256k1::new();
+        secp_ctx
+            .verify(
+                &sighash,
+                &counterparty_commit_sig,
+                &self.setup.counterparty_points.funding_pubkey,
+            )
+            .map_err(|ve| policy_error(format!("commit sig verify failed: {}", ve)))?;
+
+        let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
+        let txkeys = self
+            .make_holder_tx_keys(&per_commitment_point)
+            .map_err(|err| internal_error(format!("make_holder_tx_keys failed: {}", err)))?;
+        let commitment_txid = recomposed_tx.trust().txid();
+        let to_self_delay = self.setup.counterparty_selected_contest_delay;
+
+        let htlc_pubkey = derive_public_key(
+            &secp_ctx,
+            &per_commitment_point,
+            &self.keys.counterparty_pubkeys().htlc_basepoint,
+        )
+        .map_err(|err| internal_error(format!("derive_public_key failed: {}", err)))?;
+
+        for ndx in 0..recomposed_tx.htlcs().len() {
+            let htlc = &recomposed_tx.htlcs()[ndx];
+
+            let htlc_redeemscript = get_htlc_redeemscript(htlc, &txkeys);
+
+            let recomposed_htlc_tx = build_htlc_transaction(
+                &commitment_txid,
+                feerate_per_kw,
+                to_self_delay,
+                htlc,
+                &txkeys.broadcaster_delayed_payment_key,
+                &txkeys.revocation_key,
+            );
+
+            let recomposed_tx_sighash = Message::from_slice(
+                &SigHashCache::new(&recomposed_htlc_tx).signature_hash(
+                    0,
+                    &htlc_redeemscript,
+                    htlc.amount_msat / 1000,
+                    SigHashType::All,
+                )[..],
+            )
+            .map_err(|err| invalid_argument(format!("sighash failed for htlc {}: {}", ndx, err)))?;
+
+            secp_ctx
+                .verify(
+                    &recomposed_tx_sighash,
+                    &counterparty_htlc_sigs[ndx],
+                    &htlc_pubkey,
+                )
+                .map_err(|err| {
+                    policy_error(format!(
+                        "commit sig verify failed for htlc {}: {}",
+                        ndx, err
+                    ))
+                })?;
+        }
+        Ok(())
+    }
+
+    fn advance_holder_commitment_state(
+        &mut self,
+        commitment_number: u64,
+        info2: CommitmentInfo2,
+    ) -> Result<(PublicKey, Option<SecretKey>), Status> {
+        // Advance the local commitment number state.
+        self.enforcement_state
+            .set_next_holder_commit_num(commitment_number + 1, info2)?;
+
+        // These calls are guaranteed to pass the commitment_number
+        // check because we just advanced it to the right spot above.
+        let next_holder_commitment_point = self
+            .get_per_commitment_point(commitment_number + 1)
+            .unwrap();
+        let maybe_old_secret = if commitment_number >= 1 {
+            Some(
+                self.get_per_commitment_secret(commitment_number - 1)
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        Ok((next_holder_commitment_point, maybe_old_secret))
+    }
+
+    /// Validate the counterparty's signatures on the holder's
+    /// commitment and HTLCs when the commitment_signed message is
+    /// received.  Returns the next per_commitment_point and the
+    /// holder's revocation secret for the prior commitment.  This
+    /// method advances the expected next holder commitment number in
+    /// the signer's state.
+    pub fn validate_holder_commitment_tx_phase2(
+        &mut self,
+        commitment_number: u64,
+        feerate_per_kw: u32,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
+        counterparty_commit_sig: &Signature,
+        counterparty_htlc_sigs: &Vec<Signature>,
+    ) -> Result<(PublicKey, Option<SecretKey>), Status> {
+        let commitment_point = &self.get_per_commitment_point(commitment_number)?;
+        let info2 = self.build_holder_commitment_info(
+            &commitment_point,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            offered_htlcs,
+            received_htlcs,
+        )?;
+
+        let validator = self
+            .node
+            .upgrade()
+            .unwrap()
+            .validator_factory
+            .make_validator(self.network());
+
+        let state = ValidatorState { current_height: 0 };
+        validator
+            .validate_commitment_tx(
+                &self.enforcement_state,
+                commitment_number,
+                commitment_point,
+                &self.setup,
+                &state,
+                &info2,
+            )
+            .map_err(|ve| {
+                warn!(
+                    "VALIDATION FAILED: {}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
+                    ve, &self.setup, &state, &info2,
+                );
+                ve
+            })?;
+
+        let htlcs =
+            Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
+
+        let recomposed_tx = self.make_holder_commitment_tx(
+            commitment_number,
+            feerate_per_kw,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            htlcs.clone(),
+        )?;
+
+        self.check_holder_tx_signatures(
+            commitment_number,
+            feerate_per_kw,
+            counterparty_commit_sig,
+            counterparty_htlc_sigs,
+            recomposed_tx,
+        )?;
+
+        let (next_holder_commitment_point, maybe_old_secret) =
+            self.advance_holder_commitment_state(commitment_number, info2)?;
+
+        trace_enforcement_state!(&self.enforcement_state);
+        self.persist()?;
+
+        Ok((next_holder_commitment_point, maybe_old_secret))
+    }
     /// Sign a holder commitment transaction after rebuilding it
     /// from the supplied arguments.
     // TODO anchors support once upstream supports it
@@ -1204,7 +1400,7 @@ impl Channel {
                 &info2,
             )
             .map_err(|ve| {
-                debug!(
+                warn!(
                     "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
                     ve, &tx, &self.setup, &state, &info2,
                 );
@@ -1223,8 +1419,9 @@ impl Channel {
         )?;
 
         if recomposed_tx.trust().built_transaction().transaction != *tx {
-            debug!("ORIGINAL_TX={:#?}", &tx);
-            debug!(
+            warn!("RECOMPOSITION FAILED");
+            warn!("ORIGINAL_TX={:#?}", &tx);
+            warn!(
                 "RECOMPOSED_TX={:#?}",
                 &recomposed_tx.trust().built_transaction().transaction
             );
@@ -1281,106 +1478,16 @@ impl Channel {
             received_htlcs,
         )?;
 
-        let redeemscript = make_funding_redeemscript(
-            &self.keys.pubkeys().funding_pubkey,
-            &self.setup.counterparty_points.funding_pubkey,
-        );
+        self.check_holder_tx_signatures(
+            commitment_number,
+            feerate_per_kw,
+            counterparty_commit_sig,
+            counterparty_htlc_sigs,
+            recomposed_tx,
+        )?;
 
-        let sig_hash_type = if self.setup.option_anchor_outputs() {
-            SigHashType::SinglePlusAnyoneCanPay
-        } else {
-            SigHashType::All
-        };
-
-        let sighash = Message::from_slice(
-            &SigHashCache::new(&recomposed_tx.trust().built_transaction().transaction)
-                .signature_hash(
-                    0,
-                    &redeemscript,
-                    self.setup.channel_value_sat,
-                    sig_hash_type,
-                )[..],
-        )
-        .map_err(|ve| internal_error(format!("sighash failed: {}", ve)))?;
-
-        let secp_ctx = Secp256k1::new();
-        secp_ctx
-            .verify(
-                &sighash,
-                &counterparty_commit_sig,
-                &self.setup.counterparty_points.funding_pubkey,
-            )
-            .map_err(|ve| policy_error(format!("commit sig verify failed: {}", ve)))?;
-
-        let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
-        let txkeys = self
-            .make_holder_tx_keys(&per_commitment_point)
-            .map_err(|err| internal_error(format!("make_holder_tx_keys failed: {}", err)))?;
-        let commitment_txid = recomposed_tx.trust().txid();
-        let to_self_delay = self.setup.counterparty_selected_contest_delay;
-
-        let htlc_pubkey = derive_public_key(
-            &secp_ctx,
-            &per_commitment_point,
-            &self.keys.counterparty_pubkeys().htlc_basepoint,
-        )
-        .map_err(|err| internal_error(format!("derive_public_key failed: {}", err)))?;
-
-        for ndx in 0..recomposed_tx.htlcs().len() {
-            let htlc = &recomposed_tx.htlcs()[ndx];
-
-            let htlc_redeemscript = get_htlc_redeemscript(htlc, &txkeys);
-
-            let recomposed_htlc_tx = build_htlc_transaction(
-                &commitment_txid,
-                feerate_per_kw,
-                to_self_delay,
-                htlc,
-                &txkeys.broadcaster_delayed_payment_key,
-                &txkeys.revocation_key,
-            );
-
-            let recomposed_tx_sighash = Message::from_slice(
-                &SigHashCache::new(&recomposed_htlc_tx).signature_hash(
-                    0,
-                    &htlc_redeemscript,
-                    htlc.amount_msat / 1000,
-                    SigHashType::All,
-                )[..],
-            )
-            .map_err(|err| invalid_argument(format!("sighash failed for htlc {}: {}", ndx, err)))?;
-
-            secp_ctx
-                .verify(
-                    &recomposed_tx_sighash,
-                    &counterparty_htlc_sigs[ndx],
-                    &htlc_pubkey,
-                )
-                .map_err(|err| {
-                    policy_error(format!(
-                        "commit sig verify failed for htlc {}: {}",
-                        ndx, err
-                    ))
-                })?;
-        }
-
-        // Advance the local commitment number state.
-        self.enforcement_state
-            .set_next_holder_commit_num(commitment_number + 1, info2)?;
-
-        // These calls are guaranteed to pass the commitment_number
-        // check because we just advanced it to the right spot above.
-        let next_holder_commitment_point = self
-            .get_per_commitment_point(commitment_number + 1)
-            .unwrap();
-        let maybe_old_secret = if commitment_number >= 1 {
-            Some(
-                self.get_per_commitment_secret(commitment_number - 1)
-                    .unwrap(),
-            )
-        } else {
-            None
-        };
+        let (next_holder_commitment_point, maybe_old_secret) =
+            self.advance_holder_commitment_state(commitment_number, info2)?;
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
