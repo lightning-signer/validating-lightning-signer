@@ -202,10 +202,10 @@ impl SimpleValidator {
         let policy = &self.policy;
 
         if delay < policy.min_delay as u32 {
-            return Err(policy_error(format!("{} too small", name)));
+            return policy_err!("{} too small", name);
         }
         if delay > policy.max_delay as u32 {
-            return Err(policy_error(format!("{} too large", name)));
+            return policy_err!("{} too large", name);
         }
 
         Ok(())
@@ -221,10 +221,10 @@ impl SimpleValidator {
 
         if policy.use_chain_state {
             if expiry < current_height + policy.min_delay as u32 {
-                return Err(policy_error(format!("{} expiry too early", name)));
+                return policy_err!("{} expiry too early", name);
             }
             if expiry > current_height + policy.max_delay as u32 {
-                return Err(policy_error(format!("{} expiry too late", name)));
+                return policy_err!("{} expiry too late", name);
             }
         }
 
@@ -233,10 +233,10 @@ impl SimpleValidator {
 
     fn validate_fee(&self, name: &str, fee: u64, _tx: &Transaction) -> Result<(), ValidationError> {
         if fee < self.policy.min_fee {
-            return Err(policy_error(format!("{}: fee {} below minimum", name, fee)));
+            return policy_err!("{}: fee {} below minimum", name, fee);
         }
         if fee > self.policy.max_fee {
-            return Err(policy_error(format!("{}: fee {} above maximum", name, fee)));
+            return policy_err!("{}: fee {} above maximum", name, fee);
         }
         // TODO - apply min/max fee rate heurustic (incorporating tx size) as well.
         Ok(())
@@ -288,10 +288,7 @@ impl Validator for SimpleValidator {
     ) -> Result<CommitmentInfo, ValidationError> {
         // policy-v1-commitment-version
         if tx.version != 2 {
-            return Err(policy_error(format!(
-                "bad commitment version: {}",
-                tx.version
-            )));
+            return policy_err!("bad commitment version: {}", tx.version);
         }
 
         let mut info = CommitmentInfo::new(is_counterparty);
@@ -358,10 +355,7 @@ impl Validator for SimpleValidator {
 
         // policy-v2-commitment-htlc-inflight-limit
         if htlc_value_sat > policy.max_htlc_value_sat {
-            return Err(policy_error(format!(
-                "sum of HTLC values {} too large",
-                htlc_value_sat
-            )));
+            return policy_err!("sum of HTLC values {} too large", htlc_value_sat);
         }
 
         // policy-v2-commitment-fee-range
@@ -381,10 +375,11 @@ impl Validator for SimpleValidator {
                 ))
             })?;
         if shortage > policy.epsilon_sat {
-            return Err(policy_error(format!(
+            return policy_err!(
                 "channel value short by {} > {}",
-                shortage, policy.epsilon_sat
-            )));
+                shortage,
+                policy.epsilon_sat
+            );
         }
 
         if is_counterparty {
@@ -395,11 +390,12 @@ impl Validator for SimpleValidator {
             // - commit_num 21 is ok to sign, advances the state
             // - commit_num 22 is not ok to sign
             if commit_num > estate.next_counterparty_revoke_num + 1 {
-                return Err(policy_error(format!(
+                return policy_err!(
                     "invalid attempt to sign counterparty commit_num {} \
                          with next_counterparty_revoke_num {}",
-                    commit_num, estate.next_counterparty_revoke_num
-                )));
+                    commit_num,
+                    estate.next_counterparty_revoke_num
+                );
             }
 
             // policy-v2-commitment-retry-same
@@ -407,11 +403,13 @@ impl Validator for SimpleValidator {
             if commit_num + 1 == estate.next_counterparty_commit_num {
                 let prev_commit_point = estate.get_previous_counterparty_point(commit_num)?;
                 if *commitment_point != prev_commit_point {
-                    return Err(policy_error(format!(
+                    return policy_err!(
                         "retry of sign_counterparty_commitment {} with changed point: \
                              prev {} != new {}",
-                        commit_num, &prev_commit_point, &commitment_point
-                    )));
+                        commit_num,
+                        &prev_commit_point,
+                        &commitment_point
+                    );
                 }
             }
         }
@@ -419,9 +417,7 @@ impl Validator for SimpleValidator {
         // Enforce additional requirements on initial commitments.
         if commit_num == 0 {
             if info.offered_htlcs.len() + info.received_htlcs.len() > 0 {
-                return Err(policy_error(format!(
-                    "initial commitment may not have HTLCS"
-                )));
+                return policy_err!("initial commitment may not have HTLCS");
             }
 
             // policy-v2-commitment-initial-funding-value
@@ -441,10 +437,10 @@ impl Validator for SimpleValidator {
 
                 // The fundee is only entitled to push_value
                 if fundee_value_sat > setup.push_value_msat / 1000 {
-                    return Err(policy_error(format!(
+                    return policy_err!(
                         "initial commitment may only send push_value_msat ({}) to fundee",
                         setup.push_value_msat
-                    )));
+                    );
                 }
             }
         }
@@ -459,11 +455,12 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         // policy-v2-commitment-local-not-revoked
         if commit_num + 2 <= enforcement_state.next_holder_commit_num {
-            return Err(policy_error(format!(
+            return policy_err!(
                 "can't sign revoked commitment_number {}, \
                  next_holder_commit_num is {}",
-                commit_num, enforcement_state.next_holder_commit_num
-            )));
+                commit_num,
+                enforcement_state.next_holder_commit_num
+            );
         };
         Ok(())
     }
@@ -474,9 +471,7 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         // policy-v2-revoke-not-closed
         if enforcement_state.mutual_close_signed {
-            return Err(policy_error(format!(
-                "validate_holder_commitment_state: mutual close already signed"
-            )));
+            return policy_err!("mutual close already signed");
         }
         Ok(())
     }
@@ -493,20 +488,23 @@ impl Validator for SimpleValidator {
         if revoke_num != state.next_counterparty_revoke_num
             && revoke_num + 1 != state.next_counterparty_revoke_num
         {
-            return Err(policy_error(format!(
+            return policy_err!(
                 "invalid counterparty revoke_num {} with next_counterparty_revoke_num {}",
-                revoke_num, state.next_counterparty_revoke_num
-            )));
+                revoke_num,
+                state.next_counterparty_revoke_num
+            );
         }
 
         // policy-v2-commitment-previous-revoked (partial: secret validated, but not stored here)
         let supplied_commit_point = PublicKey::from_secret_key(&secp_ctx, &commitment_secret);
         let prev_commit_point = state.get_previous_counterparty_point(revoke_num)?;
         if supplied_commit_point != prev_commit_point {
-            return Err(policy_error(format!(
+            return policy_err!(
                 "revocation commit point mismatch for commit_num {}: supplied {}, previous {}",
-                revoke_num, supplied_commit_point, prev_commit_point
-            )));
+                revoke_num,
+                supplied_commit_point,
+                prev_commit_point
+            );
         }
         Ok(())
     }
@@ -644,21 +642,23 @@ impl Validator for SimpleValidator {
         // there, only in the commitment tx output.
         // policy-v1-htlc-locktime
         if htlc.offered && htlc.cltv_expiry == 0 {
-            return Err(policy_error(format!("offered lock_time must be non-zero")));
+            return policy_err!("offered lock_time must be non-zero");
         }
 
         // policy-v1-htlc-fee-range
         if feerate_per_kw < self.policy.min_feerate_per_kw {
-            return Err(policy_error(format!(
+            return policy_err!(
                 "feerate_per_kw of {} is smaller than the minimum of {}",
-                feerate_per_kw, self.policy.min_feerate_per_kw
-            )));
+                feerate_per_kw,
+                self.policy.min_feerate_per_kw
+            );
         }
         if feerate_per_kw > self.policy.max_feerate_per_kw {
-            return Err(policy_error(format!(
+            return policy_err!(
                 "feerate_per_kw of {} is larger than the maximum of {}",
-                feerate_per_kw, self.policy.max_feerate_per_kw
-            )));
+                feerate_per_kw,
+                self.policy.max_feerate_per_kw
+            );
         }
 
         Ok(())
@@ -668,16 +668,14 @@ impl Validator for SimpleValidator {
     // TODO - this implementation is incomplete
     fn validate_channel_open(&self, setup: &ChannelSetup) -> Result<(), ValidationError> {
         if setup.channel_value_sat > self.policy.max_channel_size_sat {
-            return Err(policy_error(format!(
-                "channel value {} too large",
-                setup.channel_value_sat
-            )));
+            return policy_err!("channel value {} too large", setup.channel_value_sat);
         }
         if setup.push_value_msat / 1000 > self.policy.max_push_sat {
-            return Err(policy_error(format!(
+            return policy_err!(
                 "push_value_msat {} greater than max_push_sat {}",
-                setup.push_value_msat, self.policy.max_push_sat
-            )));
+                setup.push_value_msat,
+                self.policy.max_push_sat
+            );
         }
         // policy-v1-commitment-to-self-delay-range
         self.validate_delay(
@@ -721,10 +719,7 @@ impl Validator for SimpleValidator {
 
         // policy-v1-funding-format-standard
         if tx.version != 2 {
-            return Err(policy_error(format!(
-                "invalid funding tx version: {}",
-                tx.version
-            )));
+            return policy_err!("invalid version: {}", tx.version);
         }
 
         for outndx in 0..tx.output.len() {
@@ -745,10 +740,7 @@ impl Validator for SimpleValidator {
                         ))
                     })?;
                 if !spendable {
-                    return Err(policy_error(format!(
-                        "wallet cannot spend output[{}]",
-                        outndx
-                    )));
+                    return policy_err!("wallet cannot spend output[{}]", outndx);
                 }
             } else {
                 let slot = channel_slot.ok_or_else(|| {
@@ -762,10 +754,11 @@ impl Validator for SimpleValidator {
                     ChannelSlot::Ready(chan) => {
                         // policy-v1-funding-output-match-commitment
                         if output.value != chan.setup.channel_value_sat {
-                            return Err(policy_error(format!(
+                            return policy_err!(
                                 "funding output amount mismatch w/ channel: {} != {}",
-                                output.value, chan.setup.channel_value_sat
-                            )));
+                                output.value,
+                                chan.setup.channel_value_sat
+                            );
                         }
 
                         // policy-v1-funding-output-scriptpubkey
@@ -776,17 +769,16 @@ impl Validator for SimpleValidator {
                         let script_pubkey =
                             payload_for_p2wsh(&funding_redeemscript).script_pubkey();
                         if output.script_pubkey != script_pubkey {
-                            return Err(policy_error(format!(
+                            return policy_err!(
                                 "funding script_pubkey mismatch w/ channel: {} != {}",
-                                output.script_pubkey, script_pubkey
-                            )));
+                                output.script_pubkey,
+                                script_pubkey
+                            );
                         }
 
                         // policy-v1-funding-initial-commitment-countersigned
                         if chan.enforcement_state.next_holder_commit_num != 1 {
-                            return Err(policy_error(format!(
-                                "initial holder commitment not validated",
-                            )));
+                            return policy_err!("initial holder commitment not validated",);
                         }
                     }
                     _ => panic!("this can't happen"),
@@ -810,10 +802,7 @@ impl Validator for SimpleValidator {
         debug!("{}: wallet_paths:\n{:#?}", short_function!(), wallet_paths);
 
         if tx.output.len() > 2 {
-            return Err(transaction_format_error(format!(
-                "mutual_close_tx: invalid number of outputs: {}",
-                tx.output.len()
-            )));
+            return transaction_format_err!("invalid number of outputs: {}", tx.output.len(),);
         }
 
         // The caller checked, this shouldn't happen
@@ -903,10 +892,7 @@ impl Validator for SimpleValidator {
 
         if tx.output.len() == 2 {
             if holder_index.is_none() {
-                return Err(policy_error(format!(
-                    "{}: unable to establish holder output",
-                    short_function!()
-                )));
+                return policy_err!("unable to establish holder output",);
             }
             let hndx = holder_index.unwrap();
             to_holder_value_sat = tx.output[hndx].value;
@@ -1044,10 +1030,7 @@ impl EnforcementState {
     ) -> Result<(), ValidationError> {
         let current = self.next_holder_commit_num;
         if num != current && num != current + 1 {
-            return Err(policy_error(format!(
-                "invalid next_holder_commit_num progression: {} to {}",
-                current, num
-            )));
+            return policy_err!("invalid progression: {} to {}", current, num);
         }
         // TODO - should we enforce policy-v1-commitment-retry-same here?
         debug!("next_holder_commit_num {} -> {}", current, num);
@@ -1064,9 +1047,7 @@ impl EnforcementState {
         current_commitment_info: CommitmentInfo2,
     ) -> Result<(), ValidationError> {
         if num == 0 {
-            return Err(policy_error(format!(
-                "set_next_counterparty_commit_num: can't set next to 0"
-            )));
+            return policy_err!("can't set next to 0");
         }
 
         // The initial commitment is special, it can advance even though next_revoke is 0.
@@ -1074,18 +1055,18 @@ impl EnforcementState {
 
         // Ensure that next_commit is ok relative to next_revoke
         if num < self.next_counterparty_revoke_num + delta {
-            return Err(policy_error(format!(
-                "next_counterparty_commit_num {} too small \
-                 relative to next_counterparty_revoke_num {}",
-                num, self.next_counterparty_revoke_num
-            )));
+            return policy_err!(
+                "{} too small relative to next_counterparty_revoke_num {}",
+                num,
+                self.next_counterparty_revoke_num
+            );
         }
         if num > self.next_counterparty_revoke_num + 2 {
-            return Err(policy_error(format!(
-                "next_counterparty_commit_num {} too large \
-                 relative to next_counterparty_revoke_num {}",
-                num, self.next_counterparty_revoke_num
-            )));
+            return policy_err!(
+                "{} too large relative to next_counterparty_revoke_num {}",
+                num,
+                self.next_counterparty_revoke_num
+            );
         }
 
         let current = self.next_counterparty_commit_num;
@@ -1093,9 +1074,7 @@ impl EnforcementState {
             // This is a retry.
             assert!(
                 self.current_counterparty_point.is_some(),
-                "set_next_counterparty_commit_num {} retry: \
-                     current_counterparty_point not set, \
-                     this shouldn't be possible",
+                "retry {}: current_counterparty_point not set, this shouldn't be possible",
                 num
             );
             // policy-v2-commitment-retry-same (FIXME - not currently in policy-controls.md)
@@ -1106,11 +1085,7 @@ impl EnforcementState {
                     current_point,
                     self.current_counterparty_point.unwrap()
                 );
-                return Err(policy_error(format!(
-                    "set_next_counterparty_commit_num {} retry: \
-                     point different than prior",
-                    num
-                )));
+                return policy_err!("retry {}: point different than prior", num);
             }
         } else if num == current + 1 {
             self.previous_counterparty_point = self.current_counterparty_point;
@@ -1118,10 +1093,7 @@ impl EnforcementState {
             self.current_counterparty_point = Some(current_point);
             self.current_counterparty_commit_info = Some(current_commitment_info);
         } else {
-            return Err(policy_error(format!(
-                "invalid next_counterparty_commit_num progression: {} to {}",
-                current, num
-            )));
+            return policy_err!("invalid progression: {} to {}", current, num);
         }
 
         self.next_counterparty_commit_num = num;
@@ -1139,10 +1111,11 @@ impl EnforcementState {
         } else if num + 2 == self.next_counterparty_commit_num {
             &self.previous_counterparty_point
         } else {
-            return Err(policy_error(format!(
-                "get_previous_counterparty_point {} out of range, next is {}",
-                num, self.next_counterparty_commit_num
-            )));
+            return policy_err!(
+                "{} out of range, next is {}",
+                num,
+                self.next_counterparty_commit_num
+            );
         }
         .unwrap_or_else(|| {
             panic!(
@@ -1157,33 +1130,28 @@ impl EnforcementState {
     /// Set next counterparty revoked commitment number
     pub fn set_next_counterparty_revoke_num(&mut self, num: u64) -> Result<(), ValidationError> {
         if num == 0 {
-            return Err(policy_error(format!(
-                "set_next_counterparty_revoke_num: can't set next to 0"
-            )));
+            return policy_err!("can't set next to 0");
         }
 
         // Ensure that next_revoke is ok relative to next_commit.
         if num + 2 < self.next_counterparty_commit_num {
-            return Err(policy_error(format!(
-                "next_counterparty_revoke_num {} too small \
-                 relative to next_counterparty_commit_num {}",
-                num, self.next_counterparty_commit_num
-            )));
+            return policy_err!(
+                "{} too small relative to next_counterparty_commit_num {}",
+                num,
+                self.next_counterparty_commit_num
+            );
         }
         if num + 1 > self.next_counterparty_commit_num {
-            return Err(policy_error(format!(
-                "next_counterparty_revoke_num {} too large \
-                 relative to next_counterparty_commit_num {}",
-                num, self.next_counterparty_commit_num
-            )));
+            return policy_err!(
+                "{} too large relative to next_counterparty_commit_num {}",
+                num,
+                self.next_counterparty_commit_num
+            );
         }
 
         let current = self.next_counterparty_revoke_num;
         if num != current && num != current + 1 {
-            return Err(policy_error(format!(
-                "invalid next_counterparty_revoke_num progression: {} to {}",
-                current, num
-            )));
+            return policy_err!("invalid progression: {} to {}", current, num);
         }
 
         // Remove any revoked commitment state.
@@ -1293,7 +1261,7 @@ mod tests {
             &tx,
             &vec![vec![]],
         );
-        assert_policy_err!(res, "bad commitment version: 1");
+        assert_policy_err!(res, "make_info: bad commitment version: 1");
     }
 
     #[test]
@@ -1315,7 +1283,7 @@ mod tests {
         setup.push_value_msat = 1000;
         assert_policy_err!(
             validator.validate_channel_open(&setup),
-            "push_value_msat 1000 greater than max_push_sat 0"
+            "validate_channel_open: push_value_msat 1000 greater than max_push_sat 0"
         );
     }
 
@@ -1391,7 +1359,7 @@ mod tests {
         setup.holder_selected_contest_delay = 4;
         assert_policy_err!(
             validator.validate_channel_open(&setup),
-            "holder_selected_contest_delay too small"
+            "validate_delay: holder_selected_contest_delay too small"
         );
     }
 
@@ -1405,7 +1373,7 @@ mod tests {
         setup.holder_selected_contest_delay = 1441;
         assert_policy_err!(
             validator.validate_channel_open(&setup),
-            "holder_selected_contest_delay too large"
+            "validate_delay: holder_selected_contest_delay too large"
         );
     }
 
@@ -1419,7 +1387,7 @@ mod tests {
         setup.counterparty_selected_contest_delay = 4;
         assert_policy_err!(
             validator.validate_channel_open(&setup),
-            "counterparty_selected_contest_delay too small"
+            "validate_delay: counterparty_selected_contest_delay too small"
         );
     }
 
@@ -1433,7 +1401,7 @@ mod tests {
         setup.counterparty_selected_contest_delay = 1441;
         assert_policy_err!(
             validator.validate_channel_open(&setup),
-            "counterparty_selected_contest_delay too large"
+            "validate_delay: counterparty_selected_contest_delay too large"
         );
     }
 
@@ -1456,7 +1424,7 @@ mod tests {
                 &state,
                 &info_bad,
             ),
-            "channel value short by 100001 > 100000"
+            "validate_commitment_tx: channel value short by 100001 > 100000"
         );
     }
 
@@ -1499,7 +1467,7 @@ mod tests {
                 &state,
                 &info_bad,
             ),
-            "channel value short by 100001 > 100000"
+            "validate_commitment_tx: channel value short by 100001 > 100000"
         );
     }
 
@@ -1527,7 +1495,10 @@ mod tests {
             &state,
             &info,
         );
-        assert_policy_err!(status, "initial commitment may not have HTLCS");
+        assert_policy_err!(
+            status,
+            "validate_commitment_tx: initial commitment may not have HTLCS"
+        );
     }
 
     // policy-v2-commitment-initial-funding-value
@@ -1552,7 +1523,7 @@ mod tests {
         );
         assert_policy_err!(
             status,
-            "initial commitment may only send push_value_msat (0) to fundee"
+            "validate_commitment_tx: initial commitment may only send push_value_msat (0) to fundee"
         );
     }
 
@@ -1606,7 +1577,7 @@ mod tests {
                 &state,
                 &info_bad,
             ),
-            "sum of HTLC values 10001000 too large"
+            "validate_commitment_tx: sum of HTLC values 10001000 too large"
         );
     }
 
@@ -1671,7 +1642,7 @@ mod tests {
                 &state,
                 &info_bad,
             ),
-            "received HTLC expiry too early"
+            "validate_expiry: received HTLC expiry too early"
         );
         let info_bad = make_counterparty_info(
             2_000_000,
@@ -1689,7 +1660,7 @@ mod tests {
                 &state,
                 &info_bad,
             ),
-            "received HTLC expiry too late"
+            "validate_expiry: received HTLC expiry too late"
         );
     }
 
@@ -1709,19 +1680,19 @@ mod tests {
         // point for 0 is not set yet
         assert_policy_err!(
             state.get_previous_counterparty_point(0),
-            "get_previous_counterparty_point 0 out of range, next is 0"
+            "get_previous_counterparty_point: 0 out of range, next is 0"
         );
 
         // can't look forward either
         assert_policy_err!(
             state.get_previous_counterparty_point(1),
-            "get_previous_counterparty_point 1 out of range, next is 0"
+            "get_previous_counterparty_point: 1 out of range, next is 0"
         );
 
         // can't skip forward
         assert_policy_err!(
             state.set_next_counterparty_commit_num(2, point0.clone(), commit_info.clone()),
-            "invalid next_counterparty_commit_num progression: 0 to 2"
+            "set_next_counterparty_commit_num: invalid progression: 0 to 2"
         );
 
         // set point 0
@@ -1747,20 +1718,21 @@ mod tests {
         let point1 = make_test_pubkey(0x16);
         assert_policy_err!(
             state.set_next_counterparty_commit_num(1, point1.clone(), commit_info.clone()),
-            "set_next_counterparty_commit_num 1 retry: point different than prior"
+            "set_next_counterparty_commit_num: retry 1: point different than prior"
         );
         assert_eq!(state.next_counterparty_commit_num, 1);
 
         // can't get commit_num 1 yet
         assert_policy_err!(
             state.get_previous_counterparty_point(1),
-            "get_previous_counterparty_point 1 out of range, next is 1"
+            "get_previous_counterparty_point: 1 out of range, next is 1"
         );
 
         // can't skip forward
         assert_policy_err!(
             state.set_next_counterparty_commit_num(3, point1.clone(), commit_info.clone()),
-            "next_counterparty_commit_num 3 too large relative to next_counterparty_revoke_num 0"
+            "set_next_counterparty_commit_num: \
+             3 too large relative to next_counterparty_revoke_num 0"
         );
         assert_eq!(state.next_counterparty_commit_num, 1);
 
@@ -1785,13 +1757,14 @@ mod tests {
         // can't look forward
         assert_policy_err!(
             state.get_previous_counterparty_point(2),
-            "get_previous_counterparty_point 2 out of range, next is 2"
+            "get_previous_counterparty_point: 2 out of range, next is 2"
         );
 
         // can't skip forward
         assert_policy_err!(
             state.set_next_counterparty_commit_num(4, point1.clone(), commit_info.clone()),
-            "next_counterparty_commit_num 4 too large relative to next_counterparty_revoke_num 0"
+            "set_next_counterparty_commit_num: 4 too large \
+             relative to next_counterparty_revoke_num 0"
         );
         assert_eq!(state.next_counterparty_commit_num, 2);
 
@@ -1807,7 +1780,7 @@ mod tests {
         // You can't get commit_num 0 anymore
         assert_policy_err!(
             state.get_previous_counterparty_point(0),
-            "get_previous_counterparty_point 0 out of range, next is 3"
+            "get_previous_counterparty_point: 0 out of range, next is 3"
         );
 
         // you can still get commit_num 1
@@ -1825,7 +1798,7 @@ mod tests {
         // can't look forward
         assert_policy_err!(
             state.get_previous_counterparty_point(3),
-            "get_previous_counterparty_point 3 out of range, next is 3"
+            "get_previous_counterparty_point: 3 out of range, next is 3"
         );
     }
 }
