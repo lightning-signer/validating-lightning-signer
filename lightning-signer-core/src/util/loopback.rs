@@ -240,7 +240,10 @@ impl BaseSign for LoopbackChannelSigner {
         secret.expect("missing channel")
     }
 
-    fn validate_holder_commitment(&self, holder_tx: &HolderCommitmentTransaction) -> Result<(), ()> {
+    fn validate_holder_commitment(
+        &self,
+        holder_tx: &HolderCommitmentTransaction,
+    ) -> Result<(), ()> {
         // TODO validate the tx in a phase 2 manner
         Ok(())
     }
@@ -449,8 +452,7 @@ impl BaseSign for LoopbackChannelSigner {
         );
         let mut to_holder_value = 0;
         let mut to_counterparty_value = 0;
-        let local_script =
-            self.get_node().get_shutdown_scriptpubkey().into();
+        let local_script = self.get_node().get_shutdown_scriptpubkey().into();
         let mut to_counterparty_script = Script::default();
         for out in &closing_tx.output {
             if out.script_pubkey == local_script {
