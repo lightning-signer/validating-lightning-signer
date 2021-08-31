@@ -561,11 +561,13 @@ impl Signer for SignServer {
         log_req_enter!(&node_id, &channel_id, &req);
 
         let counterparty_shutdown_script = if req.counterparty_shutdown_script.is_empty() {
-            Script::default()
+            None
         } else {
-            Script::deserialize(&req.counterparty_shutdown_script.as_slice()).map_err(|_| {
-                invalid_grpc_argument("could not deserialize counterparty_shutdown_script")
-            })?
+            Some(
+                Script::deserialize(&req.counterparty_shutdown_script.as_slice()).map_err(
+                    |_| invalid_grpc_argument("could not deserialize counterparty_shutdown_script"),
+                )?,
+            )
         };
 
         let sig_data = self
@@ -574,7 +576,7 @@ impl Signer for SignServer {
                 let sig = chan.sign_mutual_close_tx_phase2(
                     req.to_holder_value_sat,
                     req.to_counterparty_value_sat,
-                    &chan.get_ldk_shutdown_script(), // FIXME - deprecated
+                    &Some(chan.get_ldk_shutdown_script().clone()), // FIXME - deprecated
                     &counterparty_shutdown_script,
                 )?;
                 let mut bitcoin_sig = sig.serialize_der().to_vec();

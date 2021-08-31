@@ -130,8 +130,8 @@ pub trait Validator {
         state: &EnforcementState,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
-        holder_shutdown_script: &Script,
-        counterparty_shutdown_script: &Script,
+        holder_shutdown_script: &Option<Script>,
+        counterparty_shutdown_script: &Option<Script>,
     ) -> Result<(), ValidationError>;
 }
 
@@ -887,8 +887,8 @@ impl Validator for SimpleValidator {
 
         let mut to_holder_value_sat = 0;
         let mut to_counterparty_value_sat = 0;
-        let mut holder_script: Script = Default::default();
-        let mut counterparty_script: Script = Default::default();
+        let mut holder_script = None;
+        let mut counterparty_script = None;
 
         if tx.output.len() == 2 {
             if holder_index.is_none() {
@@ -896,18 +896,18 @@ impl Validator for SimpleValidator {
             }
             let hndx = holder_index.unwrap();
             to_holder_value_sat = tx.output[hndx].value;
-            holder_script = tx.output[hndx].script_pubkey.clone();
+            holder_script = Some(tx.output[hndx].script_pubkey.clone());
             let cndx = 1 - hndx;
             to_counterparty_value_sat = tx.output[cndx].value;
-            counterparty_script = tx.output[cndx].script_pubkey.clone();
+            counterparty_script = Some(tx.output[cndx].script_pubkey.clone());
         } else {
             // There is only one output
             if holder_index.is_some() {
                 to_holder_value_sat = tx.output[0].value;
-                holder_script = tx.output[0].script_pubkey.clone();
+                holder_script = Some(tx.output[0].script_pubkey.clone());
             } else {
                 to_counterparty_value_sat = tx.output[0].value;
-                counterparty_script = tx.output[0].script_pubkey.clone();
+                counterparty_script = Some(tx.output[0].script_pubkey.clone());
             }
         }
 
@@ -927,7 +927,7 @@ impl Validator for SimpleValidator {
             &holder_script,
             &counterparty_script,
             setup.funding_outpoint,
-        );
+        )?;
 
         if recomposed_tx != *tx {
             debug!("ORIGINAL_TX={:#?}", &tx);
@@ -945,8 +945,8 @@ impl Validator for SimpleValidator {
         estate: &EnforcementState,
         _to_holder_value_sat: u64,
         _to_counterparty_value_sat: u64,
-        _holder_script: &Script,
-        _counterparty_script: &Script,
+        _holder_script: &Option<Script>,
+        _counterparty_script: &Option<Script>,
     ) -> Result<(), ValidationError> {
         debug!("{}: estate:\n{:#?}", short_function!(), estate);
         Ok(())

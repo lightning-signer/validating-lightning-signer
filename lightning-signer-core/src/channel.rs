@@ -961,8 +961,8 @@ impl Channel {
         &mut self,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
-        holder_script: &Script,
-        counterparty_script: &Script,
+        holder_script: &Option<Script>,
+        counterparty_script: &Option<Script>,
     ) -> Result<Signature, Status> {
         let validator = self
             .node
@@ -987,7 +987,7 @@ impl Channel {
             holder_script,
             counterparty_script,
             self.setup.funding_outpoint,
-        );
+        )?;
 
         let sig = self
             .keys
