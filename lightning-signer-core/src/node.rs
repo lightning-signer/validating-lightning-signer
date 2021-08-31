@@ -4930,6 +4930,122 @@ mod tests {
         );
     }
 
+    // policy-v2-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_with_holder_commitment_too_large() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut holder = chan
+                        .enforcement_state
+                        .current_holder_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    holder.to_broadcaster_value_sat += 80_000;
+                    holder.to_countersigner_value_sat -= 80_000;
+                    chan.enforcement_state.current_holder_commit_info = Some(holder);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_holder_value 1998000 is smaller than holder_info.broadcaster_value_sat 2078000"
+        );
+    }
+
+    // policy-v2-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_with_holder_commitment_too_small() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut holder = chan
+                        .enforcement_state
+                        .current_holder_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    holder.to_broadcaster_value_sat -= 80_000;
+                    holder.to_countersigner_value_sat += 80_000;
+                    chan.enforcement_state.current_holder_commit_info = Some(holder);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_holder_value 1998000 is larger than holder_info.broadcaster_value_sat 1918000"
+        );
+    }
+
+    // policy-v2-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_with_counterparty_commitment_too_small() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut counterparty = chan
+                        .enforcement_state
+                        .current_counterparty_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    counterparty.to_broadcaster_value_sat += 80_000;
+                    counterparty.to_countersigner_value_sat -= 80_000;
+                    chan.enforcement_state.current_counterparty_commit_info = Some(counterparty);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_holder_value 1998000 is larger than counterparty_info.countersigner_value_sat 1000000"
+        );
+    }
+
+    // policy-v2-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_with_counterparty_commitment_too_large() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut counterparty = chan
+                        .enforcement_state
+                        .current_counterparty_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    counterparty.to_broadcaster_value_sat -= 80_000;
+                    counterparty.to_countersigner_value_sat += 80_000;
+                    chan.enforcement_state.current_counterparty_commit_info = Some(counterparty);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_holder_value 1998000 is smaller than counterparty_info.countersigner_value_sat 1000000"
+        );
+    }
+
     #[test]
     fn sign_justice_sweep_test() {
         let (node, channel_id) =

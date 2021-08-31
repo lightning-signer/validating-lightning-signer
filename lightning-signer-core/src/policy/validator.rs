@@ -246,6 +246,20 @@ impl SimpleValidator {
         // TODO - apply min/max fee rate heurustic (incorporating tx size) as well.
         Ok(())
     }
+
+    fn outside_epsilon_range(&self, value0: u64, value1: u64) -> (bool, String) {
+        if value0 > value1 {
+            (
+                value0 - value1 > self.policy.epsilon_sat,
+                "larger".to_string(),
+            )
+        } else {
+            (
+                value1 - value0 > self.policy.epsilon_sat,
+                "smaller".to_string(),
+            )
+        }
+    }
 }
 
 // sign_commitment_tx has some, missing these
@@ -269,7 +283,6 @@ impl SimpleValidator {
 
 // not yet implemented
 // TODO - policy-v2-mutual-destination-allowlisted
-// TODO - policy-v2-mutual-value-matches-commitment
 
 // not yet implemented
 // TODO - policy-v2-forced-destination-allowlisted
@@ -993,6 +1006,29 @@ impl Validator for SimpleValidator {
         }
         if fee < self.policy.min_fee {
             return policy_err!("fee too small {} < {}", fee, self.policy.min_fee);
+        }
+
+        // policy-v2-mutual-value-matches-commitment
+        if let (true, descr) =
+            self.outside_epsilon_range(to_holder_value_sat, holder_info.to_broadcaster_value_sat)
+        {
+            return policy_err!(
+                "to_holder_value {} is {} than holder_info.broadcaster_value_sat {}",
+                to_holder_value_sat,
+                descr,
+                holder_info.to_broadcaster_value_sat
+            );
+        }
+        if let (true, descr) = self.outside_epsilon_range(
+            to_holder_value_sat,
+            counterparty_info.to_countersigner_value_sat,
+        ) {
+            return policy_err!(
+                "to_holder_value {} is {} than counterparty_info.countersigner_value_sat {}",
+                to_holder_value_sat,
+                descr,
+                holder_info.to_countersigner_value_sat
+            );
         }
 
         Ok(())
