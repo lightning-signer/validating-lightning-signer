@@ -470,8 +470,8 @@ impl BaseSign for LoopbackChannelSigner {
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 let mut to_holder_value = 0;
                 let mut to_counterparty_value = 0;
-                let mut holder_script = Script::default();
-                let mut counterparty_script = Script::default();
+                let mut holder_script = None;
+                let mut counterparty_script = None;
 
                 for out in &closing_tx.output {
                     // FIXME - get_ldk_shutdown_script is deprecated.
@@ -483,7 +483,7 @@ impl BaseSign for LoopbackChannelSigner {
                             .into());
                         }
                         to_holder_value = out.value;
-                        holder_script = out.script_pubkey.clone();
+                        holder_script = Some(out.script_pubkey.clone());
                     } else {
                         if to_counterparty_value > 0 {
                             return Err(transaction_format_error(format!(
@@ -492,7 +492,7 @@ impl BaseSign for LoopbackChannelSigner {
                             .into());
                         }
                         to_counterparty_value = out.value;
-                        counterparty_script = out.script_pubkey.clone();
+                        counterparty_script = Some(out.script_pubkey.clone());
                     }
                 }
 

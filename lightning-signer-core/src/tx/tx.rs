@@ -69,10 +69,10 @@ pub(crate) fn get_commitment_transaction_number_obscure_factor(
 pub(crate) fn build_close_tx(
     to_holder_value_sat: u64,
     to_counterparty_value_sat: u64,
-    local_shutdown_script: &Script,
-    counterparty_shutdown_script: &Script,
+    local_shutdown_script: &Option<Script>,
+    counterparty_shutdown_script: &Option<Script>,
     outpoint: OutPoint,
-) -> Transaction {
+) -> Result<Transaction, ValidationError> {
     let txins = {
         let mut ins: Vec<TxIn> = Vec::new();
         ins.push(TxIn {
@@ -87,9 +87,14 @@ pub(crate) fn build_close_tx(
     let mut txouts: Vec<(TxOut, ())> = Vec::new();
 
     if to_counterparty_value_sat > 0 {
+        if counterparty_shutdown_script.is_none() {
+            return Err(transaction_format_error(format!(
+                "missing counterparty_shutdown_script"
+            )));
+        }
         txouts.push((
             TxOut {
-                script_pubkey: counterparty_shutdown_script.clone(),
+                script_pubkey: counterparty_shutdown_script.as_ref().unwrap().clone(),
                 value: to_counterparty_value_sat,
             },
             (),
@@ -97,9 +102,14 @@ pub(crate) fn build_close_tx(
     }
 
     if to_holder_value_sat > 0 {
+        if local_shutdown_script.is_none() {
+            return Err(transaction_format_error(format!(
+                "missing holder_shutdown_script"
+            )));
+        }
         txouts.push((
             TxOut {
-                script_pubkey: local_shutdown_script.clone(),
+                script_pubkey: local_shutdown_script.as_ref().unwrap().clone(),
                 value: to_holder_value_sat,
             },
             (),
@@ -113,12 +123,12 @@ pub(crate) fn build_close_tx(
         outputs.push(out.0);
     }
 
-    Transaction {
+    Ok(Transaction {
         version: 2,
         lock_time: 0,
         input: txins,
         output: outputs,
-    }
+    })
 }
 
 pub(crate) fn build_commitment_tx(

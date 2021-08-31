@@ -925,7 +925,7 @@ mod tests {
     use crate::tx::tx::{build_close_tx, CommitmentInfo2, HTLCInfo2, ANCHOR_SAT};
     use crate::util::crypto_utils::{
         derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
-        payload_for_p2wpkh, signature_to_bitcoin_vec,
+        signature_to_bitcoin_vec,
     };
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::*;
@@ -1633,67 +1633,6 @@ mod tests {
         assert_eq!(
             tx.txid().to_hex(),
             "deb063aa75d0a43fecd8330a150dce8fd794d835c0b6db97b755cb8cfa3803fc"
-        );
-
-        let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
-        let channel_funding_redeemscript =
-            make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
-
-        check_signature(
-            &tx,
-            0,
-            ser_signature,
-            &funding_pubkey,
-            setup.channel_value_sat,
-            &channel_funding_redeemscript,
-        );
-    }
-
-    #[test]
-    fn sign_mutual_close_tx_phase2_test() {
-        // We can't use init_node_and_channel here because we need the node_id to construct
-        // the ChannelSetup.
-        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let channel_nonce = "nonce1".as_bytes().to_vec();
-        let (channel_id, _) = node
-            .new_channel(None, Some(channel_nonce), &node)
-            .expect("new_channel");
-
-        let mut setup = make_test_channel_setup();
-        setup.counterparty_shutdown_script =
-            Some(payload_for_p2wpkh(&make_test_pubkey(11)).script_pubkey());
-
-        // FIXME - this method is deprecated
-        let local_shutdown_script = node.get_ldk_shutdown_scriptpubkey().into();
-
-        node.ready_channel(channel_id, None, setup.clone())
-            .expect("ready channel");
-
-        let tx = {
-            build_close_tx(
-                100,
-                200,
-                &local_shutdown_script,
-                &setup.counterparty_shutdown_script.as_ref().unwrap(),
-                setup.funding_outpoint,
-            )
-        };
-        let ser_signature = node
-            .with_ready_channel(&channel_id, |chan| {
-                let sig = chan
-                    .sign_mutual_close_tx_phase2(
-                        100,
-                        200,
-                        &local_shutdown_script,
-                        &setup.counterparty_shutdown_script.as_ref().unwrap(),
-                    )
-                    .unwrap();
-                Ok(signature_to_bitcoin_vec(sig))
-            })
-            .expect("sign");
-        assert_eq!(
-            tx.txid().to_hex(),
-            "560a07190e9ab1ee777e6eac62668b2ac9055a38f5949cc04c9a8a8e6818167d"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -4226,7 +4165,87 @@ mod tests {
         );
     }
 
-    fn sign_mutual_close_tx_with_mutator<
+    fn setup_mutual_close_tx() -> Result<
+        (
+            Secp256k1<secp256k1::SignOnly>,
+            ChannelSetup,
+            Arc<Node>,
+            ChannelId,
+            u64,
+            u64,
+            u64,
+            Vec<u32>,
+            ChannelPublicKeys,
+        ),
+        Status,
+    > {
+        let secp_ctx = Secp256k1::signing_only();
+        let setup = make_test_channel_setup();
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
+
+        let counterparty_points = make_test_counterparty_points();
+        let holder_commit_num = 22;
+        let counterparty_commit_num = 43;
+        let holder_wallet_path_hint = vec![7];
+
+        let fee = 2000;
+        let to_counterparty_value_sat = 1_000_000;
+        let to_holder_value_sat = setup.channel_value_sat - to_counterparty_value_sat - fee;
+
+        node.with_ready_channel(&channel_id, |chan| {
+            // Construct the EnforcementState prior to the mutual_close.
+            let mut estate = &mut chan.enforcement_state;
+            estate.next_holder_commit_num = holder_commit_num + 1;
+            estate.next_counterparty_commit_num = counterparty_commit_num + 1;
+            estate.next_counterparty_revoke_num = counterparty_commit_num;
+            estate.current_counterparty_point =
+                Some(make_test_pubkey(counterparty_commit_num as u8));
+            estate.previous_counterparty_point = None;
+            estate.current_holder_commit_info = Some(CommitmentInfo2 {
+                is_counterparty_broadcaster: false,
+                to_countersigner_pubkey: make_test_pubkey((holder_commit_num + 100) as u8),
+                to_countersigner_value_sat: to_counterparty_value_sat,
+                revocation_pubkey: make_test_pubkey((holder_commit_num + 101) as u8),
+                to_broadcaster_delayed_pubkey: make_test_pubkey((holder_commit_num + 102) as u8),
+                to_broadcaster_value_sat: to_holder_value_sat,
+                to_self_delay: setup.counterparty_selected_contest_delay,
+                offered_htlcs: vec![],
+                received_htlcs: vec![],
+            });
+            estate.current_counterparty_commit_info = Some(CommitmentInfo2 {
+                is_counterparty_broadcaster: true,
+                to_countersigner_pubkey: make_test_pubkey((counterparty_commit_num + 100) as u8),
+                to_countersigner_value_sat: to_holder_value_sat,
+                revocation_pubkey: make_test_pubkey((counterparty_commit_num + 101) as u8),
+                to_broadcaster_delayed_pubkey: make_test_pubkey(
+                    (counterparty_commit_num + 102) as u8,
+                ),
+                to_broadcaster_value_sat: to_counterparty_value_sat,
+                to_self_delay: setup.holder_selected_contest_delay,
+                offered_htlcs: vec![],
+                received_htlcs: vec![],
+            });
+            estate.previous_counterparty_commit_info = None;
+            estate.mutual_close_signed = false;
+            Ok(())
+        })
+        .expect("state setup");
+
+        Ok((
+            secp_ctx,
+            setup,
+            node,
+            channel_id,
+            holder_commit_num,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            holder_wallet_path_hint,
+            counterparty_points,
+        ))
+    }
+
+    fn sign_mutual_close_tx_with_mutators<
         MutualCloseInputMutator,
         MutualCloseTxMutator,
         ChannelStateValidator,
@@ -4236,110 +4255,73 @@ mod tests {
         validate_channel_state: ChannelStateValidator,
     ) -> Result<(), Status>
     where
-        MutualCloseInputMutator:
-            Fn(&mut Channel, &mut u64, &mut u64, &mut Script, &mut Script, &mut OutPoint),
+        MutualCloseInputMutator: Fn(
+            &mut Channel,
+            &mut u64,
+            &mut u64,
+            &mut Option<Script>,
+            &mut Option<Script>,
+            &mut OutPoint,
+        ),
         MutualCloseTxMutator: Fn(&mut Transaction, &mut Vec<Vec<u32>>, &mut Vec<String>),
         ChannelStateValidator: Fn(&Channel),
     {
-        let secp_ctx = Secp256k1::signing_only();
-        let setup = make_test_channel_setup();
-        let (node, channel_id) =
-            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
+        let (
+            secp_ctx,
+            setup,
+            node,
+            channel_id,
+            holder_commit_num,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            holder_wallet_path_hint,
+            counterparty_points,
+        ) = setup_mutual_close_tx()?;
 
-        let counterparty_points = make_test_counterparty_points();
-        let holder_commit_num = 22;
-        let counterparty_commit_num = 43;
-        let wallet_path = vec![7];
-
-        let tx = node
-            .with_ready_channel(&channel_id, |chan| {
-                let fee = 2000;
-                let mut to_counterparty_value_sat = 1_000_000;
-                let mut to_holder_value_sat =
-                    setup.channel_value_sat - to_counterparty_value_sat - fee;
-
-                // Construct the EnforcementState prior to the mutual_close.
-                let mut estate = &mut chan.enforcement_state;
-                estate.next_holder_commit_num = holder_commit_num + 1;
-                estate.next_counterparty_commit_num = counterparty_commit_num + 1;
-                estate.next_counterparty_revoke_num = counterparty_commit_num;
-                estate.current_counterparty_point =
-                    Some(make_test_pubkey(counterparty_commit_num as u8));
-                estate.previous_counterparty_point = None;
-                estate.current_holder_commit_info = Some(CommitmentInfo2 {
-                    is_counterparty_broadcaster: false,
-                    to_countersigner_pubkey: make_test_pubkey((holder_commit_num + 100) as u8),
-                    to_countersigner_value_sat: to_counterparty_value_sat,
-                    revocation_pubkey: make_test_pubkey((holder_commit_num + 101) as u8),
-                    to_broadcaster_delayed_pubkey: make_test_pubkey(
-                        (holder_commit_num + 102) as u8,
-                    ),
-                    to_broadcaster_value_sat: to_holder_value_sat,
-                    to_self_delay: setup.counterparty_selected_contest_delay,
-                    offered_htlcs: vec![],
-                    received_htlcs: vec![],
-                });
-                estate.current_counterparty_commit_info = Some(CommitmentInfo2 {
-                    is_counterparty_broadcaster: true,
-                    to_countersigner_pubkey: make_test_pubkey(
-                        (counterparty_commit_num + 100) as u8,
-                    ),
-                    to_countersigner_value_sat: to_holder_value_sat,
-                    revocation_pubkey: make_test_pubkey((counterparty_commit_num + 101) as u8),
-                    to_broadcaster_delayed_pubkey: make_test_pubkey(
-                        (counterparty_commit_num + 102) as u8,
-                    ),
-                    to_broadcaster_value_sat: to_counterparty_value_sat,
-                    to_self_delay: setup.holder_selected_contest_delay,
-                    offered_htlcs: vec![],
-                    received_htlcs: vec![],
-                });
-                estate.previous_counterparty_commit_info = None;
-                estate.mutual_close_signed = false;
-
-                // Construct the mutual close transaction.
-                let mut holder_shutdown_script = Address::p2wpkh(
+        let (tx, sigvec) = node.with_ready_channel(&channel_id, |chan| {
+            let mut holder_value_sat = to_holder_value_sat;
+            let mut counterparty_value_sat = to_counterparty_value_sat;
+            let mut holder_shutdown_script = Some(
+                Address::p2wpkh(
                     &node
-                        .get_wallet_key(&secp_ctx, &wallet_path)
+                        .get_wallet_key(&secp_ctx, &holder_wallet_path_hint)
                         .unwrap()
                         .public_key(&secp_ctx),
                     Network::Testnet,
                 )
                 .expect("Address")
-                .script_pubkey();
-                let mut counterparty_shutdown_script =
-                    Script::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
-                        .expect("script_pubkey");
-                let mut outpoint = setup.funding_outpoint;
+                .script_pubkey(),
+            );
+            let mut counterparty_shutdown_script = Some(
+                Script::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
+                    .expect("script_pubkey"),
+            );
+            let mut funding_outpoint = setup.funding_outpoint;
 
-                mutate_close_input(
-                    chan,
-                    &mut to_holder_value_sat,
-                    &mut to_counterparty_value_sat,
-                    &mut holder_shutdown_script,
-                    &mut counterparty_shutdown_script,
-                    &mut outpoint,
-                );
+            mutate_close_input(
+                chan,
+                &mut holder_value_sat,
+                &mut counterparty_value_sat,
+                &mut holder_shutdown_script,
+                &mut counterparty_shutdown_script,
+                &mut funding_outpoint,
+            );
 
-                let tx = build_close_tx(
-                    to_holder_value_sat,
-                    to_counterparty_value_sat,
-                    &holder_shutdown_script,
-                    &counterparty_shutdown_script,
-                    outpoint,
-                );
-                Ok(tx)
-            })
-            .expect("tx");
+            let tx = build_close_tx(
+                holder_value_sat,
+                counterparty_value_sat,
+                &holder_shutdown_script,
+                &counterparty_shutdown_script,
+                funding_outpoint,
+            )?;
 
-        let sigvec = node.with_ready_channel(&channel_id, |chan| {
             // Secrets can be released before the mutual close.
             assert!(chan
                 .get_per_commitment_secret(holder_commit_num - 1)
                 .is_ok());
 
             let mut mtx = tx.clone();
-            let mut wallet_paths = vec![vec![], wallet_path.clone()];
+            let mut wallet_paths = vec![vec![], holder_wallet_path_hint.clone()];
             let mut allowlist = vec![];
 
             mutate_close_tx(&mut mtx, &mut wallet_paths, &mut allowlist);
@@ -4354,7 +4336,7 @@ mod tests {
             validate_channel_state(chan);
 
             let sig = deferred_rv?;
-            Ok(signature_to_bitcoin_vec(sig))
+            Ok((tx, signature_to_bitcoin_vec(sig)))
         })?;
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -4386,9 +4368,155 @@ mod tests {
         Ok(())
     }
 
+    fn sign_mutual_close_tx_phase2_with_mutators<
+        MutualCloseInputMutator,
+        AllowlistMutator,
+        ChannelStateValidator,
+    >(
+        mutate_close_input: MutualCloseInputMutator,
+        mutate_allowlist: AllowlistMutator,
+        validate_channel_state: ChannelStateValidator,
+    ) -> Result<(), Status>
+    where
+        MutualCloseInputMutator: Fn(
+            &mut Channel,
+            &mut u64,
+            &mut u64,
+            &mut Option<Script>,
+            &mut Option<Script>,
+            &mut OutPoint,
+        ),
+        AllowlistMutator: Fn(&mut Vec<String>),
+        ChannelStateValidator: Fn(&Channel),
+    {
+        let (
+            _secp_ctx,
+            setup,
+            node,
+            channel_id,
+            holder_commit_num,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            _wallet_path,
+            counterparty_points,
+        ) = setup_mutual_close_tx()?;
+
+        let (
+            holder_value_sat,
+            counterparty_value_sat,
+            holder_shutdown_script,
+            counterparty_shutdown_script,
+            funding_outpoint,
+            sigvec,
+        ) = node.with_ready_channel(&channel_id, |chan| {
+            let mut holder_value_sat = to_holder_value_sat;
+            let mut counterparty_value_sat = to_counterparty_value_sat;
+            // FIXME - get_ldk_shutdown_scriptpubkey deprecated
+            let mut holder_shutdown_script = Some(node.get_ldk_shutdown_scriptpubkey().into());
+            let mut counterparty_shutdown_script = Some(
+                Script::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
+                    .expect("script_pubkey"),
+            );
+            let mut funding_outpoint = setup.funding_outpoint;
+
+            // Secrets can be released before the mutual close.
+            assert!(chan
+                .get_per_commitment_secret(holder_commit_num - 1)
+                .is_ok());
+
+            let mut allowlist = vec![];
+            mutate_allowlist(&mut allowlist);
+            node.add_allowlist(&allowlist)?;
+
+            mutate_close_input(
+                chan,
+                &mut holder_value_sat,
+                &mut counterparty_value_sat,
+                &mut holder_shutdown_script,
+                &mut counterparty_shutdown_script,
+                &mut funding_outpoint,
+            );
+
+            // Sign the mutual close, but defer error returns till after
+            // we check the state of the channel for side-effects.
+            let deferred_rv = chan.sign_mutual_close_tx_phase2(
+                holder_value_sat,
+                counterparty_value_sat,
+                &holder_shutdown_script,
+                &counterparty_shutdown_script,
+            );
+            // This will panic if the state is not good.
+            validate_channel_state(chan);
+
+            let sig = deferred_rv?;
+            Ok((
+                holder_value_sat,
+                counterparty_value_sat,
+                holder_shutdown_script,
+                counterparty_shutdown_script,
+                funding_outpoint,
+                signature_to_bitcoin_vec(sig),
+            ))
+        })?;
+
+        let tx = {
+            build_close_tx(
+                holder_value_sat,
+                counterparty_value_sat,
+                &holder_shutdown_script,
+                &counterparty_shutdown_script,
+                funding_outpoint,
+            )
+        }?;
+
+        let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
+
+        let channel_funding_redeemscript =
+            make_funding_redeemscript(&funding_pubkey, &counterparty_points.funding_pubkey);
+
+        check_signature(
+            &tx,
+            0,
+            sigvec,
+            &funding_pubkey,
+            setup.channel_value_sat,
+            &channel_funding_redeemscript,
+        );
+
+        // Secrets can still be released if they are old enough.
+        assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
+            chan.get_per_commitment_secret(holder_commit_num - 1)
+        }));
+
+        // policy-v2-revoke-not-closed
+        // Channel is marked closed.
+        assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
+            assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+            Ok(())
+        }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_phase2_success() {
+        assert_status_ok!(sign_mutual_close_tx_phase2_with_mutators(
+            |_chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                // If we don't mutate anything it should succeed.
+            },
+            |_allowlist| {
+                // If we don't mutate anything it should succeed.
+            },
+            |chan| {
+                // Channel should be marked closed
+                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+            }
+        ));
+    }
+
     #[test]
     fn sign_mutual_close_tx_success() {
-        assert_status_ok!(sign_mutual_close_tx_with_mutator(
+        assert_status_ok!(sign_mutual_close_tx_with_mutators(
             |_chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
                 // If we don't mutate anything it should succeed.
             },
@@ -4404,7 +4532,7 @@ mod tests {
 
     #[test]
     fn sign_mutual_close_tx_only_holder_success() {
-        assert_status_ok!(sign_mutual_close_tx_with_mutator(
+        assert_status_ok!(sign_mutual_close_tx_with_mutators(
             |chan, to_holder, to_counterparty, _holder_script, counter_script, _outpoint| {
                 // remove the counterparty from current_holder_commit_info
                 let mut holder = chan
@@ -4431,7 +4559,7 @@ mod tests {
                 // from the constructed tx
                 *to_holder += *to_counterparty;
                 *to_counterparty = 0;
-                *counter_script = Script::default();
+                *counter_script = None;
             },
             |_tx, wallet_paths, _allowlist| {
                 // remove the counterparties wallet_path
@@ -4447,7 +4575,7 @@ mod tests {
 
     #[test]
     fn sign_mutual_close_tx_only_counterparty_success() {
-        assert_status_ok!(sign_mutual_close_tx_with_mutator(
+        assert_status_ok!(sign_mutual_close_tx_with_mutators(
             |chan, to_holder, to_counterparty, holder_script, _counter_script, _outpoint| {
                 let fee = 2000;
 
@@ -4476,7 +4604,7 @@ mod tests {
                 // from the constructed tx
                 *to_counterparty += *to_holder - fee;
                 *to_holder = 0;
-                *holder_script = Script::default();
+                *holder_script = None;
             },
             |_tx, wallet_paths, _allowlist| {
                 // remove the holders wallet_path
@@ -4491,7 +4619,7 @@ mod tests {
 
     #[test]
     fn sign_mutual_close_tx_with_allowlist_success() {
-        assert_status_ok!(sign_mutual_close_tx_with_mutator(
+        assert_status_ok!(sign_mutual_close_tx_with_mutators(
             |_chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
                 // If we don't mutate anything it should succeed.
             },
@@ -4514,7 +4642,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_with_bad_num_txout() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_with_mutator(
+            sign_mutual_close_tx_with_mutators(
                 |_chan,
                  _to_holder,
                  _to_counterparty,
@@ -4547,7 +4675,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_with_opath_len_mismatch() {
         assert_invalid_argument_err!(
-            sign_mutual_close_tx_with_mutator(
+            sign_mutual_close_tx_with_mutators(
                 |_chan,
                  _to_holder,
                  _to_counterparty,
@@ -4571,7 +4699,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_with_unestablished_holder() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_with_mutator(
+            sign_mutual_close_tx_with_mutators(
                 |_chan,
                  _to_holder,
                  _to_counterparty,
