@@ -242,9 +242,27 @@ impl BaseSign for LoopbackChannelSigner {
 
     fn validate_holder_commitment(
         &self,
-        _holder_tx: &HolderCommitmentTransaction,
+        holder_tx: &HolderCommitmentTransaction,
     ) -> Result<(), ()> {
-        // TODO validate the tx in a phase 2 manner
+        let commitment_number = INITIAL_COMMITMENT_NUMBER - holder_tx.commitment_number();
+        self.signer
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                let (offered_htlcs, received_htlcs) =
+                    LoopbackChannelSigner::convert_to_htlc_info2(holder_tx.htlcs());
+                chan.validate_holder_commitment_tx_phase2(
+                    commitment_number,
+                    holder_tx.feerate_per_kw(),
+                    holder_tx.to_broadcaster_value_sat(),
+                    holder_tx.to_countersignatory_value_sat(),
+                    offered_htlcs,
+                    received_htlcs,
+                    &holder_tx.counterparty_sig,
+                    &holder_tx.counterparty_htlc_sigs,
+                )?;
+                Ok(())
+            })
+            .map_err(|s| self.bad_status(s))?;
+
         Ok(())
     }
 
@@ -519,7 +537,7 @@ impl BaseSign for LoopbackChannelSigner {
         let setup = ChannelSetup {
             is_outbound: self.is_outbound,
             channel_value_sat: self.channel_value_sat,
-            push_value_msat: 0, // TODO
+            push_value_msat: 1_000_000, // TODO
             funding_outpoint,
             holder_selected_contest_delay: parameters.holder_selected_contest_delay,
             holder_shutdown_script: None, // use the signer's shutdown script
