@@ -1243,7 +1243,7 @@ impl Channel {
             .make_validator(self.network());
 
         // Since we didn't have the value at the real open, validate it now.
-        validator.validate_channel_open(&self.setup)?;
+        validator.validate_channel_value(&self.setup)?;
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = true;
@@ -1360,7 +1360,7 @@ impl Channel {
             .make_validator(self.network());
 
         // Since we didn't have the value at the real open, validate it now.
-        validator.validate_channel_open(&self.setup)?;
+        validator.validate_channel_value(&self.setup)?;
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = false;

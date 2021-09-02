@@ -437,6 +437,7 @@ impl Node {
         channel_id0: ChannelId,
         opt_channel_id: Option<ChannelId>,
         setup: ChannelSetup,
+        holder_shutdown_key_path: &Vec<u32>,
     ) -> Result<Channel, Status> {
         let chan = {
             let channels = self.channels.lock().unwrap();
@@ -469,7 +470,7 @@ impl Node {
         };
         let validator = self.validator_factory.make_validator(chan.network());
 
-        validator.validate_channel_open(&setup)?;
+        validator.validate_ready_channel(self, &setup, holder_shutdown_key_path)?;
 
         let mut channels = self.channels.lock().unwrap();
 
@@ -965,7 +966,7 @@ mod tests {
         let channel_nonce_x = "nonceX".as_bytes().to_vec();
         let channel_id_x = channel_nonce_to_id(&channel_nonce_x);
         let status: Result<_, Status> =
-            node.ready_channel(channel_id_x, None, make_test_channel_setup());
+            node.ready_channel(channel_id_x, None, make_test_channel_setup(), &vec![]);
         assert!(status.is_err());
         let err = status.unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
@@ -986,8 +987,13 @@ mod tests {
         // Issue ready_channel w/ an alternate id.
         let channel_nonce_x = "nonceX".as_bytes().to_vec();
         let channel_id_x = channel_nonce_to_id(&channel_nonce_x);
-        node.ready_channel(channel_id, Some(channel_id_x), make_test_channel_setup())
-            .expect("ready_channel");
+        node.ready_channel(
+            channel_id,
+            Some(channel_id_x),
+            make_test_channel_setup(),
+            &vec![],
+        )
+        .expect("ready_channel");
 
         // Original channel_id should work with_ready_channel.
         let val = node
@@ -1129,7 +1135,7 @@ mod tests {
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
 
         // Trying to ready it again should fail.
-        let result = node.ready_channel(channel_id, None, make_test_channel_setup());
+        let result = node.ready_channel(channel_id, None, make_test_channel_setup(), &vec![]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
@@ -1137,6 +1143,66 @@ mod tests {
             err.message(),
             format!("channel already ready: {}", TEST_CHANNEL_ID[0])
         );
+    }
+
+    #[test]
+    fn ready_channel_unknown_holder_shutdown_script() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_id = channel_nonce_to_id(&channel_nonce);
+        node.new_channel(Some(channel_id), Some(channel_nonce), &node)
+            .expect("new_channel");
+        let mut setup = make_test_channel_setup();
+        setup.holder_shutdown_script =
+            Some(hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565"));
+        let holder_shutdown_key_path = vec![];
+        assert_failed_precondition_err!(
+            node.ready_channel(channel_id, None, setup.clone(), &holder_shutdown_key_path),
+            "policy failure: validate_ready_channel: \
+             holder_shutdown_script is not in wallet or allowlist"
+        );
+    }
+
+    #[test]
+    fn ready_channel_holder_shutdown_script_in_allowlist() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_id = channel_nonce_to_id(&channel_nonce);
+        node.new_channel(Some(channel_id), Some(channel_nonce), &node)
+            .expect("new_channel");
+        let mut setup = make_test_channel_setup();
+        setup.holder_shutdown_script =
+            Some(hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565"));
+        node.add_allowlist(&vec![
+            "tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z".to_string()
+        ])
+        .expect("added allowlist");
+        let holder_shutdown_key_path = vec![];
+        assert_status_ok!(node.ready_channel(
+            channel_id,
+            None,
+            setup.clone(),
+            &holder_shutdown_key_path
+        ));
+    }
+
+    #[test]
+    fn ready_channel_holder_shutdown_script_in_wallet() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let channel_nonce = "nonce1".as_bytes().to_vec();
+        let channel_id = channel_nonce_to_id(&channel_nonce);
+        node.new_channel(Some(channel_id), Some(channel_nonce), &node)
+            .expect("new_channel");
+        let mut setup = make_test_channel_setup();
+        setup.holder_shutdown_script =
+            Some(hex_script!("0014b76dd61e41b5ef052af21cda3260888c070bb9af"));
+        let holder_shutdown_key_path = vec![7];
+        assert_status_ok!(node.ready_channel(
+            channel_id,
+            None,
+            setup.clone(),
+            &holder_shutdown_key_path
+        ));
     }
 
     #[test]
@@ -2037,7 +2103,7 @@ mod tests {
                 &uniclosekeys,
                 &vec![opath.clone()],
             ),
-            "policy failure: validate_fee: validate_funding_tx: fee 99 below minimum"
+            "policy failure: validate_fee: validate_funding_tx: fee below minimum: 99 < 100"
         );
     }
 
@@ -2048,7 +2114,8 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let ipaths = vec![vec![0u32]];
-        let ival0 = 100u64 + 20_000u64;
+        let fee = 22_000u64;
+        let ival0 = 100u64 + fee;
         let chanamt = 100u64;
         let values_sat = vec![ival0];
 
@@ -2072,7 +2139,7 @@ mod tests {
                 &uniclosekeys,
                 &vec![opath.clone()],
             ),
-            "policy failure: validate_fee: validate_funding_tx: fee 20000 above maximum"
+            "policy failure: validate_fee: validate_funding_tx: above maximum: 22000 > 21000"
         );
     }
 
@@ -4639,6 +4706,48 @@ mod tests {
         ));
     }
 
+    // policy-v2-mutual-fee-range
+    #[test]
+    fn sign_mutual_close_tx_phase2_with_fee_too_large() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_phase2_with_mutators(
+                |_chan, to_holder, to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    *to_holder -= 10_000;
+                    *to_counterparty -= 10_000;
+                },
+                |_allowlist| {
+                    // don't need to change allowlist
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: fee too large 22000 > 21000"
+        );
+    }
+
+    // policy-v2-mutual-fee-range
+    #[test]
+    fn sign_mutual_close_tx_phase2_with_fee_too_small() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_phase2_with_mutators(
+                |_chan, to_holder, to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    *to_holder += 1_000;
+                    *to_counterparty += 950;
+                },
+                |_allowlist| {
+                    // don't need to change allowlist
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: fee too small 50 < 100"
+        );
+    }
+
     #[test]
     fn sign_mutual_close_tx_with_bad_num_txout() {
         assert_failed_precondition_err!(
@@ -4720,6 +4829,286 @@ mod tests {
                 }
             ),
             "policy failure: decode_and_validate_mutual_close_tx: unable to establish holder output"
+        );
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_without_holder_commitment() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    chan.enforcement_state.current_holder_commit_info = None;
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: decode_and_validate_mutual_close_tx: \
+             current_holder_commit_info missing"
+        );
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_without_counterparty_commitment() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    chan.enforcement_state.current_counterparty_commit_info = None;
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: decode_and_validate_mutual_close_tx: \
+             current_counterparty_commit_info missing"
+        );
+    }
+
+    // policy-v2-mutual-no-pending-htlcs
+    #[test]
+    fn sign_mutual_close_tx_with_holder_offered_htlcs() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut holder = chan
+                        .enforcement_state
+                        .current_holder_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    holder.offered_htlcs.push(HTLCInfo2 {
+                        value_sat: 1,
+                        payment_hash: PaymentHash([1; 32]),
+                        cltv_expiry: 2 << 16,
+                    });
+                    chan.enforcement_state.current_holder_commit_info = Some(holder);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: cannot close with pending htlcs"
+        );
+    }
+
+    // policy-v2-mutual-no-pending-htlcs
+    #[test]
+    fn sign_mutual_close_tx_with_holder_received_htlcs() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut holder = chan
+                        .enforcement_state
+                        .current_holder_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    holder.received_htlcs.push(HTLCInfo2 {
+                        value_sat: 1,
+                        payment_hash: PaymentHash([1; 32]),
+                        cltv_expiry: 2 << 16,
+                    });
+                    chan.enforcement_state.current_holder_commit_info = Some(holder);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: cannot close with pending htlcs"
+        );
+    }
+
+    // policy-v2-mutual-no-pending-htlcs
+    #[test]
+    fn sign_mutual_close_tx_with_counterparty_offered_htlcs() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut cparty = chan
+                        .enforcement_state
+                        .current_counterparty_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    cparty.offered_htlcs.push(HTLCInfo2 {
+                        value_sat: 1,
+                        payment_hash: PaymentHash([1; 32]),
+                        cltv_expiry: 2 << 16,
+                    });
+                    chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: cannot close with pending htlcs"
+        );
+    }
+
+    // policy-v2-mutual-no-pending-htlcs
+    #[test]
+    fn sign_mutual_close_tx_with_counterparty_received_htlcs() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut cparty = chan
+                        .enforcement_state
+                        .current_counterparty_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    cparty.received_htlcs.push(HTLCInfo2 {
+                        value_sat: 1,
+                        payment_hash: PaymentHash([1; 32]),
+                        cltv_expiry: 2 << 16,
+                    });
+                    chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: cannot close with pending htlcs"
+        );
+    }
+
+    // policy-v2-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_with_holder_commitment_too_large() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut holder = chan
+                        .enforcement_state
+                        .current_holder_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    holder.to_broadcaster_value_sat += 80_000;
+                    holder.to_countersigner_value_sat -= 80_000;
+                    chan.enforcement_state.current_holder_commit_info = Some(holder);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_holder_value 1998000 is smaller than holder_info.broadcaster_value_sat 2078000"
+        );
+    }
+
+    // policy-v2-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_with_holder_commitment_too_small() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut holder = chan
+                        .enforcement_state
+                        .current_holder_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    holder.to_broadcaster_value_sat -= 80_000;
+                    holder.to_countersigner_value_sat += 80_000;
+                    chan.enforcement_state.current_holder_commit_info = Some(holder);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_holder_value 1998000 is larger than holder_info.broadcaster_value_sat 1918000"
+        );
+    }
+
+    // policy-v2-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_with_counterparty_commitment_too_small() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut counterparty = chan
+                        .enforcement_state
+                        .current_counterparty_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    counterparty.to_broadcaster_value_sat += 80_000;
+                    counterparty.to_countersigner_value_sat -= 80_000;
+                    chan.enforcement_state.current_counterparty_commit_info = Some(counterparty);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_holder_value 1998000 is larger than counterparty_info.countersigner_value_sat 1000000"
+        );
+    }
+
+    // policy-v2-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_with_counterparty_commitment_too_large() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut counterparty = chan
+                        .enforcement_state
+                        .current_counterparty_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    counterparty.to_broadcaster_value_sat -= 80_000;
+                    counterparty.to_countersigner_value_sat += 80_000;
+                    chan.enforcement_state.current_counterparty_commit_info = Some(counterparty);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_holder_value 1998000 is smaller than counterparty_info.countersigner_value_sat 1000000"
         );
     }
 
@@ -4906,7 +5295,7 @@ mod tests {
         .unwrap();
         let (channel_id, _) = node.new_channel(None, Some(channel_nonce), &node).unwrap();
 
-        node.ready_channel(channel_id, None, make_test_channel_setup())
+        node.ready_channel(channel_id, None, make_test_channel_setup(), &vec![])
             .expect("ready channel");
 
         let uck = node

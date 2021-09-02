@@ -356,6 +356,13 @@ pub struct CommitmentInfo2 {
     pub received_htlcs: Vec<HTLCInfo2>,
 }
 
+impl CommitmentInfo2 {
+    /// Returns true if there are no pending HTLCS
+    pub fn htlcs_is_empty(&self) -> bool {
+        self.offered_htlcs.is_empty() && self.received_htlcs.is_empty()
+    }
+}
+
 #[allow(dead_code)]
 #[allow(missing_docs)]
 pub struct CommitmentInfo {

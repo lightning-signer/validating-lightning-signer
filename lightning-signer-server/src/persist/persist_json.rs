@@ -253,7 +253,7 @@ mod tests {
                 let channel_id1 = channel_nonce_to_id(&channel_nonce1);
 
                 let channel = node
-                    .ready_channel(channel_id0, Some(channel_id1), setup)
+                    .ready_channel(channel_id0, Some(channel_id1), setup, &vec![])
                     .unwrap();
                 persister.update_channel(&node_id, &channel).unwrap();
 
