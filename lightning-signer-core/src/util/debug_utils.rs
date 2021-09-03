@@ -2,7 +2,9 @@ use crate::prelude::*;
 use bitcoin::hashes::hex;
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::util::address::Payload;
-use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment};
+use bitcoin::{Address, Network, Script};
+use lightning::chain::keysinterface::InMemorySigner;
+use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys};
 
 /// Debug printer for ChannelPublicKeys which doesn't have one.
 pub struct DebugChannelPublicKeys<'a>(pub &'a ChannelPublicKeys);
@@ -68,6 +70,41 @@ impl<'a> core::fmt::Debug for DebugHTLCOutputInCommitment<'a> {
     }
 }
 
+/// Debug printer for TxCreationKeys which doesn't have one.
+pub struct DebugTxCreationKeys<'a>(pub &'a TxCreationKeys);
+impl<'a> core::fmt::Debug for DebugTxCreationKeys<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_struct("TxCreationKeys")
+            .field("per_commitment_point", &self.0.per_commitment_point)
+            .field("revocation_key", &self.0.revocation_key)
+            .field("broadcaster_htlc_key", &self.0.broadcaster_htlc_key)
+            .field(
+                "countersignatory_htlc_key",
+                &self.0.countersignatory_htlc_key,
+            )
+            .field(
+                "broadcaster_delayed_payment_key",
+                &self.0.broadcaster_delayed_payment_key,
+            )
+            .finish()
+    }
+}
+
+/// Debug printer for InMemorySigner which doesn't have one.
+pub struct DebugInMemorySigner<'a>(pub &'a InMemorySigner);
+impl<'a> core::fmt::Debug for DebugInMemorySigner<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_struct("InMemorySigner")
+            .field("funding_key", &self.0.funding_key)
+            .field("revocation_base_key", &self.0.revocation_base_key)
+            .field("payment_key", &self.0.payment_key)
+            .field("delayed_payment_base_key", &self.0.delayed_payment_base_key)
+            .field("htlc_base_key", &self.0.htlc_base_key)
+            .field("commitment_seed", &self.0.commitment_seed)
+            .finish()
+    }
+}
+
 /// Debug support for bytes
 pub struct DebugBytes<'a>(pub &'a [u8]);
 impl<'a> core::fmt::Debug for DebugBytes<'a> {
@@ -98,4 +135,49 @@ impl<'a> core::fmt::Debug for DebugWitVec<'a> {
             .entries(self.0.iter().map(|ww| DebugWitness(ww)))
             .finish()
     }
+}
+
+/// Return a debug string for a bitcoin::Script
+pub fn script_debug(script: &Script, network: Network) -> String {
+    // We include regtest formated addresses because c-lighting uses
+    // them in their integration test suite.
+    format!(
+        "script={} {}={} regtest={}",
+        script.to_hex(),
+        network,
+        match Address::from_script(script, network) {
+            Some(addr) => addr.to_string(),
+            None => "<bad-address>".to_string(),
+        },
+        match Address::from_script(script, bitcoin::Network::Regtest) {
+            Some(addr) => addr.to_string(),
+            None => "<bad-address>".to_string(),
+        },
+    )
+}
+
+/// Logs the arguments at debug level.
+#[macro_export]
+macro_rules! debug_vals {
+    ( $($arg:tt)* ) => {
+        if log::log_enabled!(log::Level::Debug) {
+            debug!("{} failed: {}", short_function!(), vals_str!($($arg)*));
+        }
+    };
+}
+
+/// Return a scopeguard which debugs args on return unless disabled.
+#[macro_export]
+macro_rules! scoped_debug_return {
+    ( $($arg:tt)* ) => {{
+        let should_debug = true;
+        scopeguard::guard(should_debug, |should_debug| {
+            if should_debug {
+                if log::log_enabled!(log::Level::Debug) {
+                    debug!("{} failed: {}", containing_function!(), vals_str!($($arg)*),
+                    );
+                }
+            }
+        })
+    }};
 }

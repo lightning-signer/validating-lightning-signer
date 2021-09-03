@@ -1,7 +1,7 @@
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::bip143::SigHashCache;
-use bitcoin::{self, Address, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
+use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
@@ -18,7 +18,10 @@ use crate::tx::tx::{
     HTLC_TIMEOUT_TX_WEIGHT,
 };
 use crate::util::crypto_utils::payload_for_p2wsh;
+use crate::util::debug_utils::{script_debug, DebugHTLCOutputInCommitment, DebugTxCreationKeys};
 use crate::wallet::Wallet;
+
+extern crate scopeguard;
 
 use super::error::{policy_error, transaction_format_error, ValidationError};
 
@@ -336,6 +339,8 @@ impl Validator for SimpleValidator {
         setup: &ChannelSetup,
         holder_shutdown_key_path: &Vec<u32>,
     ) -> Result<(), ValidationError> {
+        let mut debug_on_return = scoped_debug_return!(setup, holder_shutdown_key_path);
+
         // NOTE - setup.channel_value_sat is not valid, set later on.
 
         if setup.push_value_msat / 1000 > self.policy.max_push_sat {
@@ -364,24 +369,14 @@ impl Validator for SimpleValidator {
                 && !wallet.allowlist_contains(&holder_shutdown_script)
             {
                 info!(
-                    "not matched: path={:?}, holder_shutdown_script={} regtest={}",
+                    "holder_shutdown_script not matched: path={:?}, {}",
                     holder_shutdown_key_path,
-                    Address::from_script(
-                        &setup.holder_shutdown_script.as_ref().unwrap(),
-                        wallet.network()
-                    )
-                    .unwrap()
-                    .to_string(),
-                    Address::from_script(
-                        &setup.holder_shutdown_script.as_ref().unwrap(),
-                        bitcoin::Network::Regtest
-                    )
-                    .unwrap()
-                    .to_string()
+                    script_debug(holder_shutdown_script, wallet.network())
                 );
                 return policy_err!("holder_shutdown_script is not in wallet or allowlist");
             }
         }
+        *debug_on_return = false;
         Ok(())
     }
 
@@ -401,6 +396,9 @@ impl Validator for SimpleValidator {
         vstate: &ValidatorState,
         info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
+        let mut debug_on_return =
+            scoped_debug_return!(estate, commit_num, commitment_point, setup, vstate, info);
+
         let is_counterparty = info.is_counterparty_broadcaster;
 
         let policy = &self.policy;
@@ -533,6 +531,7 @@ impl Validator for SimpleValidator {
             }
         }
 
+        *debug_on_return = false;
         Ok(())
     }
 
@@ -543,6 +542,7 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         // policy-v2-commitment-local-not-revoked
         if commit_num + 2 <= enforcement_state.next_holder_commit_num {
+            debug_vals!(enforcement_state, commit_num);
             return policy_err!(
                 "can't sign revoked commitment_number {}, \
                  next_holder_commit_num is {}",
@@ -550,6 +550,7 @@ impl Validator for SimpleValidator {
                 enforcement_state.next_holder_commit_num
             );
         };
+
         Ok(())
     }
 
@@ -559,8 +560,10 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         // policy-v2-revoke-not-closed
         if enforcement_state.mutual_close_signed {
+            debug_vals!(enforcement_state);
             return policy_err!("mutual close already signed");
         }
+
         Ok(())
     }
 
@@ -576,6 +579,7 @@ impl Validator for SimpleValidator {
         if revoke_num != state.next_counterparty_revoke_num
             && revoke_num + 1 != state.next_counterparty_revoke_num
         {
+            debug_vals!(state, revoke_num, commitment_secret);
             return policy_err!(
                 "invalid counterparty revoke_num {} with next_counterparty_revoke_num {}",
                 revoke_num,
@@ -587,6 +591,7 @@ impl Validator for SimpleValidator {
         let supplied_commit_point = PublicKey::from_secret_key(&secp_ctx, &commitment_secret);
         let prev_commit_point = state.get_previous_counterparty_point(revoke_num)?;
         if supplied_commit_point != prev_commit_point {
+            debug_vals!(state, revoke_num, commitment_secret);
             return policy_err!(
                 "revocation commit point mismatch for commit_num {}: supplied {}, previous {}",
                 revoke_num,
@@ -594,6 +599,7 @@ impl Validator for SimpleValidator {
                 prev_commit_point
             );
         }
+
         Ok(())
     }
 
@@ -629,6 +635,15 @@ impl Validator for SimpleValidator {
         } else if parse_received_htlc_script(redeemscript, setup.option_anchor_outputs()).is_ok() {
             false
         } else {
+            debug_vals!(
+                is_counterparty,
+                setup,
+                DebugTxCreationKeys(txkeys),
+                tx,
+                redeemscript,
+                htlc_amount_sat,
+                output_witscript
+            );
             return Err(policy_error("invalid redeemscript".to_string()));
         };
 
@@ -674,6 +689,15 @@ impl Validator for SimpleValidator {
         );
 
         if recomposed_tx_sighash != original_tx_sighash {
+            debug_vals!(
+                is_counterparty,
+                setup,
+                DebugTxCreationKeys(txkeys),
+                tx,
+                redeemscript,
+                htlc_amount_sat,
+                output_witscript
+            );
             let (revocation_key, contest_delay, delayed_pubkey) =
                 parse_revokeable_redeemscript(output_witscript, setup.option_anchor_outputs())
                     .unwrap_or_else(|_| (vec![], 0, vec![]));
@@ -724,6 +748,9 @@ impl Validator for SimpleValidator {
         htlc: &HTLCOutputInCommitment,
         feerate_per_kw: u32,
     ) -> Result<(), ValidationError> {
+        let mut debug_on_return =
+            scoped_debug_return!(DebugHTLCOutputInCommitment(htlc), feerate_per_kw);
+
         // This must be further checked with policy-v2-htlc-cltv-range.
         // Note that we can't check cltv_expiry for non-offered 2nd level
         // HTLC txs in phase 1, because they don't mention the cltv_expiry
@@ -749,6 +776,7 @@ impl Validator for SimpleValidator {
             );
         }
 
+        *debug_on_return = false;
         Ok(())
     }
 
@@ -756,11 +784,13 @@ impl Validator for SimpleValidator {
         &self,
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
-        _state: &ValidatorState,
+        state: &ValidatorState,
         tx: &Transaction,
         values_sat: &Vec<u64>,
         opaths: &Vec<Vec<u32>>,
     ) -> Result<(), ValidationError> {
+        let mut debug_on_return = scoped_debug_return!(state, tx, values_sat, opaths);
+
         // policy-v1-funding-fee-range
         let mut sum_inputs: u64 = 0;
         for val in values_sat {
@@ -847,6 +877,7 @@ impl Validator for SimpleValidator {
                 };
             }
         }
+        *debug_on_return = false;
         Ok(())
     }
 
@@ -858,10 +889,33 @@ impl Validator for SimpleValidator {
         tx: &Transaction,
         wallet_paths: &Vec<Vec<u32>>,
     ) -> Result<Transaction, ValidationError> {
-        debug!("{}: setup:\n{:#?}", short_function!(), setup);
-        debug!("{}: estate:\n{:#?}", short_function!(), estate);
-        debug!("{}: tx:\n{:#?}", short_function!(), tx);
-        debug!("{}: wallet_paths:\n{:#?}", short_function!(), wallet_paths);
+        // Log state and inputs if we don't succeed.
+        let should_debug = true;
+        let mut debug_on_return = scopeguard::guard(should_debug, |should_debug| {
+            if should_debug {
+                if log::log_enabled!(log::Level::Debug) {
+                    debug!(
+                        "{} failed: {}",
+                        containing_function!(),
+                        vals_str!(setup, estate, tx, wallet_paths)
+                    );
+
+                    // Log the addresses associated with the outputs
+                    let mut addrstrs = String::new();
+                    for ndx in 0..tx.output.len() {
+                        let script = &tx.output[ndx].script_pubkey;
+                        addrstrs.push_str(
+                            &format!(
+                                "\ntxout[{}]: {}",
+                                ndx,
+                                &script_debug(script, wallet.network())
+                            )[..],
+                        );
+                    }
+                    debug!("output addresses: {}", &addrstrs);
+                }
+            }
+        });
 
         if tx.output.len() > 2 {
             return transaction_format_err!("invalid number of outputs: {}", tx.output.len(),);
@@ -1014,6 +1068,7 @@ impl Validator for SimpleValidator {
             return policy_err!("recomposed tx mismatch");
         }
 
+        *debug_on_return = false; // don't debug when we succeed
         Ok(recomposed_tx)
     }
 
@@ -1028,7 +1083,14 @@ impl Validator for SimpleValidator {
         counterparty_script: &Option<Script>,
         holder_wallet_path_hint: &Vec<u32>,
     ) -> Result<(), ValidationError> {
-        debug!("{}: estate:\n{:#?}", short_function!(), estate);
+        let mut debug_on_return = scoped_debug_return!(
+            setup,
+            estate,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            holder_script,
+            counterparty_script
+        );
 
         let holder_info = estate
             .current_holder_commit_info
@@ -1121,6 +1183,7 @@ impl Validator for SimpleValidator {
             }
         }
 
+        *debug_on_return = false; // don't debug when we succeed
         Ok(())
     }
 }
