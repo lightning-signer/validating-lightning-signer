@@ -864,6 +864,9 @@ message SignMutualCloseTxPhase2Request {
 
   // Counterparty shutdown script, if not previously specified
   bytes counterparty_shutdown_script = 5;
+
+  // Path to the holder output in the wallet.
+  repeated uint32 holder_wallet_path_hint = 6;
 }
 
 message CloseTxSignatureReply {

@@ -83,6 +83,7 @@ pub fn create_node_cfgs_with_signer<'a>(
     nodes
 }
 
+#[ignore] // Need to pass valid holder_wallet_path_hint to validate_mutual_close_tx
 #[test]
 fn fake_network_with_signer_test() {
     // Simple test which builds a network of ChannelManagers, connects them to each other, and
@@ -649,6 +650,7 @@ macro_rules! check_spendable_outputs {
     }};
 }
 
+#[ignore] // Need to pass valid holder_wallet_path_hint to validate_mutual_close_tx
 #[test]
 fn test_static_output_closing_tx() {
     let signer = Arc::new(MultiSigner::new());

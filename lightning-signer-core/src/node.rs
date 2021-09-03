@@ -895,6 +895,8 @@ pub trait SyncLogger: Logger + SendSync {}
 
 #[cfg(test)]
 mod tests {
+    use std::mem;
+
     use bitcoin;
     use bitcoin::blockdata::opcodes;
     use bitcoin::blockdata::script::Builder;
@@ -4435,36 +4437,32 @@ mod tests {
         Ok(())
     }
 
-    fn sign_mutual_close_tx_phase2_with_mutators<
-        MutualCloseInputMutator,
-        AllowlistMutator,
-        ChannelStateValidator,
-    >(
-        mutate_close_input: MutualCloseInputMutator,
-        mutate_allowlist: AllowlistMutator,
+    fn sign_mutual_close_tx_phase2_with_mutators<MutualCloseInput2Mutator, ChannelStateValidator>(
+        mutate_close_input: MutualCloseInput2Mutator,
         validate_channel_state: ChannelStateValidator,
     ) -> Result<(), Status>
     where
-        MutualCloseInputMutator: Fn(
+        MutualCloseInput2Mutator: Fn(
             &mut Channel,
             &mut u64,
             &mut u64,
             &mut Option<Script>,
             &mut Option<Script>,
             &mut OutPoint,
+            &mut Vec<u32>,
+            &mut Vec<String>,
         ),
-        AllowlistMutator: Fn(&mut Vec<String>),
         ChannelStateValidator: Fn(&Channel),
     {
         let (
-            _secp_ctx,
+            secp_ctx,
             setup,
             node,
             channel_id,
             holder_commit_num,
             to_holder_value_sat,
             to_counterparty_value_sat,
-            _wallet_path,
+            init_holder_wallet_path_hint,
             counterparty_points,
         ) = setup_mutual_close_tx()?;
 
@@ -4476,10 +4474,20 @@ mod tests {
             funding_outpoint,
             sigvec,
         ) = node.with_ready_channel(&channel_id, |chan| {
+            let mut wallet_path = init_holder_wallet_path_hint.clone();
             let mut holder_value_sat = to_holder_value_sat;
             let mut counterparty_value_sat = to_counterparty_value_sat;
-            // FIXME - get_ldk_shutdown_scriptpubkey deprecated
-            let mut holder_shutdown_script = Some(node.get_ldk_shutdown_scriptpubkey().into());
+            let mut holder_shutdown_script = Some(
+                Address::p2wpkh(
+                    &node
+                        .get_wallet_key(&secp_ctx, &wallet_path)
+                        .unwrap()
+                        .public_key(&secp_ctx),
+                    Network::Testnet,
+                )
+                .expect("Address")
+                .script_pubkey(),
+            );
             let mut counterparty_shutdown_script = Some(
                 Script::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
                     .expect("script_pubkey"),
@@ -4492,8 +4500,6 @@ mod tests {
                 .is_ok());
 
             let mut allowlist = vec![];
-            mutate_allowlist(&mut allowlist);
-            node.add_allowlist(&allowlist)?;
 
             mutate_close_input(
                 chan,
@@ -4502,7 +4508,11 @@ mod tests {
                 &mut holder_shutdown_script,
                 &mut counterparty_shutdown_script,
                 &mut funding_outpoint,
+                &mut wallet_path,
+                &mut allowlist,
             );
+
+            node.add_allowlist(&allowlist)?;
 
             // Sign the mutual close, but defer error returns till after
             // we check the state of the channel for side-effects.
@@ -4511,6 +4521,7 @@ mod tests {
                 counterparty_value_sat,
                 &holder_shutdown_script,
                 &counterparty_shutdown_script,
+                &wallet_path,
             );
             // This will panic if the state is not good.
             validate_channel_state(chan);
@@ -4568,10 +4579,14 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_phase2_success() {
         assert_status_ok!(sign_mutual_close_tx_phase2_with_mutators(
-            |_chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
-                // If we don't mutate anything it should succeed.
-            },
-            |_allowlist| {
+            |_chan,
+             _to_holder,
+             _to_counterparty,
+             _holder_script,
+             _counter_script,
+             _outpoint,
+             _wallet_path,
+             _allowlist| {
                 // If we don't mutate anything it should succeed.
             },
             |chan| {
@@ -4685,6 +4700,64 @@ mod tests {
     }
 
     #[test]
+    fn sign_mutual_close_tx_catch_allowlist_bad_assign_success() {
+        // This could happen if:
+        // 1. A company used a common allowlist for all of it's nodes.
+        // 2. NodeA opens a channel to NodeB (both company nodes).
+        // 3. Channel is mutually closed immediately (only one output, to NodeA).
+        // 4. NodeB incorrectly assigns the output because it's in the allowlist.
+        assert_status_ok!(sign_mutual_close_tx_with_mutators(
+            |chan, to_holder, to_counterparty, holder_script, counter_script, _outpoint| {
+                let fee = 2000;
+
+                // remove the holder from current_holder_commit_info
+                let mut holder = chan
+                    .enforcement_state
+                    .current_holder_commit_info
+                    .as_ref()
+                    .unwrap()
+                    .clone();
+                holder.to_countersigner_value_sat += holder.to_broadcaster_value_sat - fee;
+                holder.to_broadcaster_value_sat = 0;
+                chan.enforcement_state.current_holder_commit_info = Some(holder);
+
+                // remove the holder from current_counterparty_commit_info
+                let mut cparty = chan
+                    .enforcement_state
+                    .current_counterparty_commit_info
+                    .as_ref()
+                    .unwrap()
+                    .clone();
+                cparty.to_broadcaster_value_sat += cparty.to_countersigner_value_sat - fee;
+                cparty.to_countersigner_value_sat = 0;
+                chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
+
+                // from the constructed tx
+                *to_counterparty += *to_holder - fee;
+                *to_holder = 0;
+                *holder_script = None;
+
+                // counterparty is using the allowlist
+                *counter_script = Some(hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565"));
+            },
+            |_tx, wallet_paths, allowlist| {
+                // remove all the walletpaths
+                wallet_paths.pop();
+                wallet_paths.pop();
+                wallet_paths.push(vec![]); // only push one back, one output
+
+                // add allowlist entry
+                allowlist.push("tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z".to_string());
+            },
+            |chan| {
+                // Channel should be marked closed
+                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+            }
+        ));
+    }
+
+    // policy-v2-mutual-destination-allowlisted
+    #[test]
     fn sign_mutual_close_tx_with_allowlist_success() {
         assert_status_ok!(sign_mutual_close_tx_with_mutators(
             |_chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
@@ -4706,17 +4779,97 @@ mod tests {
         ));
     }
 
+    // policy-v2-mutual-destination-allowlisted
+    #[test]
+    fn sign_mutual_close_tx_phase2_with_allowlist_success() {
+        assert_status_ok!(sign_mutual_close_tx_phase2_with_mutators(
+            |_chan,
+             _to_holder,
+             _to_counterparty,
+             _holder_script,
+             _counter_script,
+             _outpoint,
+             wallet_path,
+             allowlist| {
+                // Remove the wallet_path and use allowlist instead.
+                *wallet_path = vec![];
+                allowlist.push("tb1qkakav8jpkhhs22hjrndrycyg3srshwd09gax07".to_string());
+            },
+            |chan| {
+                // Channel should be marked closed
+                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+            }
+        ));
+    }
+
+    // policy-v2-mutual-destination-allowlisted
+    #[test]
+    fn sign_mutual_close_tx_phase2_no_wallet_path_or_allowlist() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_phase2_with_mutators(
+                |_chan,
+                 _to_holder,
+                 _to_counterparty,
+                 _holder_script,
+                 _counter_script,
+                 _outpoint,
+                 wallet_path,
+                 _allowlist| {
+                    // Remove the wallet_path
+                    *wallet_path = vec![];
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: holder output not to wallet or in allowlist"
+        );
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_phase2_holder_upfront_script_mismatch() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_phase2_with_mutators(
+                |chan,
+                 _to_holder,
+                 _to_counterparty,
+                 holder_script,
+                 _counter_script,
+                 _outpoint,
+                 _wallet_path,
+                 _allowlist| {
+                    chan.setup.holder_shutdown_script =
+                        Some(hex_script!("0014b76dd61e41b5ef052af21cda3260888c070bb9af"));
+                    *holder_script = Some(hex_script!(
+                        "76a9149f9a7abd600c0caa03983a77c8c3df8e062cb2fa88ac"
+                    ));
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             holder_script doesn't match upfront holder_shutdown_script"
+        );
+    }
+
     // policy-v2-mutual-fee-range
     #[test]
     fn sign_mutual_close_tx_phase2_with_fee_too_large() {
         assert_failed_precondition_err!(
             sign_mutual_close_tx_phase2_with_mutators(
-                |_chan, to_holder, to_counterparty, _holder_script, _counter_script, _outpoint| {
+                |_chan,
+                 to_holder,
+                 to_counterparty,
+                 _holder_script,
+                 _counter_script,
+                 _outpoint,
+                 _wallet_path,
+                 _allowlist| {
                     *to_holder -= 10_000;
                     *to_counterparty -= 10_000;
-                },
-                |_allowlist| {
-                    // don't need to change allowlist
                 },
                 |chan| {
                     // Channel should not be marked closed
@@ -4732,12 +4885,16 @@ mod tests {
     fn sign_mutual_close_tx_phase2_with_fee_too_small() {
         assert_failed_precondition_err!(
             sign_mutual_close_tx_phase2_with_mutators(
-                |_chan, to_holder, to_counterparty, _holder_script, _counter_script, _outpoint| {
+                |_chan,
+                 to_holder,
+                 to_counterparty,
+                 _holder_script,
+                 _counter_script,
+                 _outpoint,
+                 _wallet_path,
+                 _allowlist| {
                     *to_holder += 1_000;
                     *to_counterparty += 950;
-                },
-                |_allowlist| {
-                    // don't need to change allowlist
                 },
                 |chan| {
                     // Channel should not be marked closed
@@ -4805,6 +4962,7 @@ mod tests {
         );
     }
 
+    // policy-v2-mutual-destination-allowlisted
     #[test]
     fn sign_mutual_close_tx_with_unestablished_holder() {
         assert_failed_precondition_err!(
@@ -4828,8 +4986,64 @@ mod tests {
                     assert_eq!(chan.enforcement_state.mutual_close_signed, false);
                 }
             ),
-            "policy failure: decode_and_validate_mutual_close_tx: unable to establish holder output"
+            "policy failure: validate_mutual_close_tx: holder output not to wallet or in allowlist"
         );
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_with_ambiguous_holder_output() {
+        // Both outputs are allowlisted (common company allowlist,
+        // channel w/ two company nodes).  Need to use value to pick the output ...
+        assert_status_ok!(sign_mutual_close_tx_with_mutators(
+            |chan, to_holder, to_counterparty, _holder_script, _counter_script, _outpoint| {
+                // The hard case is when the holder's input is the first, so we need
+                // to swap the outputs and values here.
+
+                // Swap the setup values
+                mem::swap(to_holder, to_counterparty);
+
+                // Swap the holder commitment's values
+                let mut hinfo = chan
+                    .enforcement_state
+                    .current_holder_commit_info
+                    .as_ref()
+                    .unwrap()
+                    .clone();
+                mem::swap(
+                    &mut hinfo.to_broadcaster_value_sat,
+                    &mut hinfo.to_countersigner_value_sat,
+                );
+                chan.enforcement_state.current_holder_commit_info = Some(hinfo);
+
+                // Swap the counterparty commitment values
+                let mut cinfo = chan
+                    .enforcement_state
+                    .current_counterparty_commit_info
+                    .as_ref()
+                    .unwrap()
+                    .clone();
+                mem::swap(
+                    &mut cinfo.to_broadcaster_value_sat,
+                    &mut cinfo.to_countersigner_value_sat,
+                );
+                chan.enforcement_state.current_counterparty_commit_info = Some(cinfo);
+            },
+            |_tx, wallet_paths, allowlist| {
+                // remove the wallet paths
+                wallet_paths.pop();
+                wallet_paths.pop();
+                wallet_paths.push(vec![]);
+                wallet_paths.push(vec![]);
+
+                // add both outputs to the allowlist
+                allowlist.push("tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z".to_string());
+                allowlist.push("tb1qkakav8jpkhhs22hjrndrycyg3srshwd09gax07".to_string());
+            },
+            |chan| {
+                // Channel should be marked closed
+                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+            }
+        ));
     }
 
     #[test]
@@ -5021,7 +5235,7 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
-             to_holder_value 1998000 is smaller than holder_info.broadcaster_value_sat 2078000"
+             to_holder_value 1000000 is smaller than holder_info.broadcaster_value_sat 2078000"
         );
     }
 
@@ -5050,7 +5264,7 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
-             to_holder_value 1998000 is larger than holder_info.broadcaster_value_sat 1918000"
+             to_holder_value 1000000 is smaller than holder_info.broadcaster_value_sat 1918000"
         );
     }
 
@@ -5079,7 +5293,7 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
-             to_holder_value 1998000 is larger than counterparty_info.countersigner_value_sat 1000000"
+             to_holder_value 1000000 is smaller than holder_info.broadcaster_value_sat 1998000"
         );
     }
 
@@ -5108,7 +5322,7 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
-             to_holder_value 1998000 is smaller than counterparty_info.countersigner_value_sat 1000000"
+             to_holder_value 1000000 is smaller than holder_info.broadcaster_value_sat 1998000"
         );
     }
 
