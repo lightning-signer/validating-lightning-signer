@@ -584,6 +584,7 @@ impl Signer for SignServer {
                     req.to_counterparty_value_sat,
                     &Some(chan.get_ldk_shutdown_script().clone()), // FIXME - deprecated
                     &counterparty_shutdown_script,
+                    &req.holder_wallet_path_hint,
                 )?;
                 let mut bitcoin_sig = sig.serialize_der().to_vec();
                 bitcoin_sig.push(SigHashType::All as u8);

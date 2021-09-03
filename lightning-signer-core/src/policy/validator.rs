@@ -143,6 +143,7 @@ pub trait Validator {
         to_counterparty_value_sat: u64,
         holder_shutdown_script: &Option<Script>,
         counterparty_shutdown_script: &Option<Script>,
+        holder_wallet_path_hint: &Vec<u32>,
     ) -> Result<(), ValidationError>;
 }
 
@@ -291,9 +292,6 @@ impl SimpleValidator {
 
 // not yet implemented
 // TODO - policy-v2-htlc-cltv-range
-
-// not yet implemented
-// TODO - policy-v2-mutual-destination-allowlisted
 
 // not yet implemented
 // TODO - policy-v2-forced-destination-allowlisted
@@ -879,124 +877,134 @@ impl Validator for SimpleValidator {
             return policy_err!("current_counterparty_commit_info missing");
         }
 
-        // Establish which output belongs to the holder.
-        let mut holder_index: Option<usize> = None;
+        // Establish which output belongs to the holder by trying all possibilities
 
-        if log::log_enabled!(log::Level::Debug) {
-            for ndx in 0..tx.output.len() {
-                let script_pubkey = &tx.output[ndx].script_pubkey;
-                debug!(
-                    "txout[{}]: address {}:{} regtest:{}",
-                    ndx,
-                    wallet.network(),
-                    Address::from_script(script_pubkey, wallet.network())
-                        .unwrap()
-                        .to_string(),
-                    Address::from_script(script_pubkey, bitcoin::Network::Regtest)
-                        .unwrap()
-                        .to_string()
-                );
-            }
+        // Guess which ordering is most likely based on commitment values.
+        // - Makes it unlikely we'll have to call validate a second time.
+        // - Allows us to return the "better" validation error.
+
+        #[derive(Debug)]
+        struct ValidateArgs {
+            to_holder_value_sat: u64,
+            to_counterparty_value_sat: u64,
+            holder_script: Option<Script>,
+            counterparty_script: Option<Script>,
+            wallet_path: Vec<u32>,
         }
 
-        // We prefer output matches in this order:
-        // 1. upfront holder_shutdown_script
-        // 2. wallet addresses
-        // 3. allowlist
+        // If the commitments are not in the expected state, or the values
+        // are outside epsilon from each other the comparison won't be
+        // meaningful and an arbitrary order will have to do ...
         //
-        // We can't check in the same loop because we need to consider
-        // all of the outputs on each pass; ie, the first output
-        // should not be assigned to holder via allowlist if the
-        // second output would assign it via upfront_shutdown_script
+        let holder_value = estate.minimum_to_holder_value(self.policy.epsilon_sat);
+        let cparty_value = estate.minimum_to_counterparty_value(self.policy.epsilon_sat);
+        debug!(
+            "holder_value={:#?}, cparty_value={:#?}",
+            holder_value, cparty_value
+        );
+        let holder_value_is_larger = holder_value > cparty_value;
+        debug!("holder_value_is_larger={}", holder_value_is_larger);
 
-        // 1. Check upfront holder_shutdown_script.
-        if let Some(holder_shutdown_script) = &setup.holder_shutdown_script {
-            for ndx in 0..tx.output.len() {
-                let script_pubkey = &tx.output[ndx].script_pubkey;
-                if script_pubkey == holder_shutdown_script {
-                    debug!("txout[{}]: is holder output via upfront script", ndx);
-                    if holder_index.is_some() {
-                        return policy_err!("both outputs match holder upfront shutdown script");
-                    }
-                    holder_index = Some(ndx);
-                }
-            }
-        }
-
-        // 2. Check wallet addresses.
-        if holder_index.is_none() {
-            for ndx in 0..tx.output.len() {
-                let script_pubkey = &tx.output[ndx].script_pubkey;
-                if wallet
-                    .can_spend(&wallet_paths[ndx], script_pubkey)
-                    .map_err(|err| {
-                        policy_error(format!("output[{}]: wallet_can_spend error: {}", ndx, err))
-                    })?
-                {
-                    debug!("txout[{}]: is holder output via wallet path hint", ndx);
-                    if holder_index.is_some() {
-                        return policy_err!("both outputs match wallet hint address");
-                    }
-                    holder_index = Some(ndx);
-                }
-            }
-        }
-
-        // 3. Check the allowlist
-        if holder_index.is_none() {
-            for ndx in 0..tx.output.len() {
-                let script_pubkey = &tx.output[ndx].script_pubkey;
-                if wallet.allowlist_contains(script_pubkey) {
-                    debug!("txout[{}]: is holder output via allowlist", ndx);
-                    if holder_index.is_some() {
-                        return policy_err!("both outputs match the allowlist");
-                    }
-                    holder_index = Some(ndx);
-                }
-            }
-        }
-
-        let mut to_holder_value_sat = 0;
-        let mut to_counterparty_value_sat = 0;
-        let mut holder_script = None;
-        let mut counterparty_script = None;
-
-        if tx.output.len() == 2 {
-            if holder_index.is_none() {
-                return policy_err!("unable to establish holder output",);
-            }
-            let hndx = holder_index.unwrap();
-            to_holder_value_sat = tx.output[hndx].value;
-            holder_script = Some(tx.output[hndx].script_pubkey.clone());
-            let cndx = 1 - hndx;
-            to_counterparty_value_sat = tx.output[cndx].value;
-            counterparty_script = Some(tx.output[cndx].script_pubkey.clone());
-        } else {
-            // There is only one output
-            if holder_index.is_some() {
-                to_holder_value_sat = tx.output[0].value;
-                holder_script = Some(tx.output[0].script_pubkey.clone());
+        let (likely_args, unlikely_args) = if tx.output.len() == 1 {
+            let holders_output = ValidateArgs {
+                to_holder_value_sat: tx.output[0].value,
+                to_counterparty_value_sat: 0,
+                holder_script: Some(tx.output[0].script_pubkey.clone()),
+                counterparty_script: None,
+                wallet_path: wallet_paths[0].clone(),
+            };
+            let cpartys_output = ValidateArgs {
+                to_holder_value_sat: 0,
+                to_counterparty_value_sat: tx.output[0].value,
+                holder_script: None,
+                counterparty_script: Some(tx.output[0].script_pubkey.clone()),
+                wallet_path: vec![],
+            };
+            if holder_value_is_larger {
+                debug!("{}: likely the holder's output", short_function!());
+                (holders_output, cpartys_output)
             } else {
-                to_counterparty_value_sat = tx.output[0].value;
-                counterparty_script = Some(tx.output[0].script_pubkey.clone());
+                debug!("{}: likely the counterparty's output", short_function!());
+                (cpartys_output, holders_output)
             }
-        }
+        } else {
+            let holder_first = ValidateArgs {
+                to_holder_value_sat: tx.output[0].value,
+                to_counterparty_value_sat: tx.output[1].value,
+                holder_script: Some(tx.output[0].script_pubkey.clone()),
+                counterparty_script: Some(tx.output[1].script_pubkey.clone()),
+                wallet_path: wallet_paths[0].clone(),
+            };
+            let cparty_first = ValidateArgs {
+                to_holder_value_sat: tx.output[1].value,
+                to_counterparty_value_sat: tx.output[0].value,
+                holder_script: Some(tx.output[1].script_pubkey.clone()),
+                counterparty_script: Some(tx.output[0].script_pubkey.clone()),
+                wallet_path: wallet_paths[1].clone(),
+            };
+            if holder_value_is_larger {
+                debug!(
+                    "{}: likely output[0] is counterparty, output[1] is holder",
+                    short_function!()
+                );
+                (cparty_first, holder_first)
+            } else {
+                debug!(
+                    "{}: likely output[0] is holder, output[1] is counterparty",
+                    short_function!()
+                );
+                (holder_first, cparty_first)
+            }
+        };
 
-        self.validate_mutual_close_tx(
+        debug!(
+            "{}: trying likely args: {:#?}",
+            short_function!(),
+            &likely_args
+        );
+        let likely_rv = self.validate_mutual_close_tx(
             wallet,
             setup,
             estate,
-            to_holder_value_sat,
-            to_counterparty_value_sat,
-            &holder_script,
-            &counterparty_script,
-        )?;
+            likely_args.to_holder_value_sat,
+            likely_args.to_counterparty_value_sat,
+            &likely_args.holder_script,
+            &likely_args.counterparty_script,
+            &likely_args.wallet_path,
+        );
+
+        let good_args = if likely_rv.is_ok() {
+            likely_args
+        } else {
+            // Try the other case
+            debug!(
+                "{}: trying unlikely args: {:#?}",
+                short_function!(),
+                &unlikely_args
+            );
+            let unlikely_rv = self.validate_mutual_close_tx(
+                wallet,
+                setup,
+                estate,
+                unlikely_args.to_holder_value_sat,
+                unlikely_args.to_counterparty_value_sat,
+                &unlikely_args.holder_script,
+                &unlikely_args.counterparty_script,
+                &unlikely_args.wallet_path,
+            );
+            if unlikely_rv.is_ok() {
+                unlikely_args
+            } else {
+                // Return the error from the likely attempt, it's probably "better"
+                return Err(likely_rv.unwrap_err());
+            }
+        };
 
         let recomposed_tx = build_close_tx(
-            to_holder_value_sat,
-            to_counterparty_value_sat,
-            &holder_script,
-            &counterparty_script,
+            good_args.to_holder_value_sat,
+            good_args.to_counterparty_value_sat,
+            &good_args.holder_script,
+            &good_args.counterparty_script,
             setup.funding_outpoint,
         )?;
 
@@ -1011,13 +1019,14 @@ impl Validator for SimpleValidator {
 
     fn validate_mutual_close_tx(
         &self,
-        _wallet: &Wallet,
+        wallet: &Wallet,
         setup: &ChannelSetup,
         estate: &EnforcementState,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
-        _holder_script: &Option<Script>,
-        _counterparty_script: &Option<Script>,
+        holder_script: &Option<Script>,
+        counterparty_script: &Option<Script>,
+        holder_wallet_path_hint: &Vec<u32>,
     ) -> Result<(), ValidationError> {
         debug!("{}: estate:\n{:#?}", short_function!(), estate);
 
@@ -1030,6 +1039,28 @@ impl Validator for SimpleValidator {
             .current_counterparty_commit_info
             .as_ref()
             .ok_or_else(|| policy_error("current_counterparty_commit_info missing"))?;
+
+        if to_holder_value_sat > 0 && holder_script.is_none() {
+            return policy_err!(
+                "missing holder_script with {} to_holder_value_sat",
+                to_holder_value_sat
+            );
+        }
+
+        if to_counterparty_value_sat > 0 && counterparty_script.is_none() {
+            return policy_err!(
+                "missing counterparty_script with {} to_counterparty_value_sat",
+                to_counterparty_value_sat
+            );
+        }
+
+        // If the upfront holder_shutdown_script was in effect, make sure the
+        // holder script matches.
+        if setup.holder_shutdown_script.is_some() && to_holder_value_sat > 0 {
+            if *holder_script != setup.holder_shutdown_script {
+                return policy_err!("holder_script doesn't match upfront holder_shutdown_script");
+            }
+        }
 
         // policy-v2-mutual-no-pending-htlcs
         if !holder_info.htlcs_is_empty() || !counterparty_info.htlcs_is_empty() {
@@ -1075,8 +1106,19 @@ impl Validator for SimpleValidator {
                 "to_holder_value {} is {} than counterparty_info.countersigner_value_sat {}",
                 to_holder_value_sat,
                 descr,
-                holder_info.to_countersigner_value_sat
+                counterparty_info.to_countersigner_value_sat
             );
+        }
+
+        // policy-v2-mutual-destination-allowlisted
+        if let Some(script) = &holder_script {
+            if !wallet
+                .can_spend(holder_wallet_path_hint, script)
+                .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
+                && !wallet.allowlist_contains(script)
+            {
+                return policy_err!("holder output not to wallet or in allowlist");
+            }
         }
 
         Ok(())
@@ -1151,6 +1193,53 @@ impl EnforcementState {
             previous_counterparty_commit_info: None,
             mutual_close_signed: false,
         }
+    }
+
+    /// Returns the minimum amount to_holder from both commitments or
+    /// None if the amounts are not within epsilon_sat.
+    pub fn minimum_to_holder_value(&self, epsilon_sat: u64) -> Option<u64> {
+        if let Some(hinfo) = &self.current_holder_commit_info {
+            if let Some(cinfo) = &self.current_counterparty_commit_info {
+                let hval = hinfo.to_broadcaster_value_sat;
+                let cval = cinfo.to_countersigner_value_sat;
+                debug!("hval={}, cval={}", hval, cval);
+                if hval > cval {
+                    if hval - cval <= epsilon_sat {
+                        return Some(cval);
+                    }
+                } else
+                /* cval >= hval */
+                {
+                    if cval - hval <= epsilon_sat {
+                        return Some(hval);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Returns the minimum amount to_counterparty from both commitments or
+    /// None if the amounts are not within epsilon_sat.
+    pub fn minimum_to_counterparty_value(&self, epsilon_sat: u64) -> Option<u64> {
+        if let Some(hinfo) = &self.current_holder_commit_info {
+            if let Some(cinfo) = &self.current_counterparty_commit_info {
+                let hval = hinfo.to_countersigner_value_sat;
+                let cval = cinfo.to_broadcaster_value_sat;
+                if hval > cval {
+                    if hval - cval <= epsilon_sat {
+                        return Some(cval);
+                    }
+                } else
+                /* cval >= hval */
+                {
+                    if cval - hval <= epsilon_sat {
+                        return Some(hval);
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Set next holder commitment number

@@ -496,11 +496,15 @@ impl BaseSign for LoopbackChannelSigner {
                     }
                 }
 
+                // FIXME - this needs to be supplied
+                let holder_wallet_path_hint = vec![];
+
                 chan.sign_mutual_close_tx_phase2(
                     to_holder_value,
                     to_counterparty_value,
                     &holder_script,
                     &counterparty_script,
+                    &holder_wallet_path_hint,
                 )
             })
             .map_err(|_| ())

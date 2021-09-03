@@ -963,6 +963,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         holder_script: &Option<Script>,
         counterparty_script: &Option<Script>,
+        holder_wallet_path_hint: &Vec<u32>,
     ) -> Result<Signature, Status> {
         let validator = self
             .node
@@ -979,6 +980,7 @@ impl Channel {
             to_counterparty_value_sat,
             holder_script,
             counterparty_script,
+            holder_wallet_path_hint,
         )?;
 
         let tx = build_close_tx(
