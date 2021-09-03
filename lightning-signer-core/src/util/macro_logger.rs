@@ -50,6 +50,33 @@ macro_rules! containing_function {
     }};
 }
 
+/// Construct a string suitable for debugging from a list of arguments
+#[macro_export]
+macro_rules! vals_str {
+    ( $( $x:expr ),* ) => {{
+        let mut buffer = String::new();
+            $(
+                {
+                    #[cfg(not(feature = "log_pretty_print"))]
+                    {
+                        if buffer.len() > 0 {
+                            buffer.push_str(", ");
+                        }
+                        buffer.push_str(&format!("{}: {:?}", stringify!($x), $x)[..]);
+                    }
+
+                    #[cfg(feature = "log_pretty_print")] {
+                    }
+                    if buffer.len() > 0 {
+                            buffer.push_str(",");
+                    }
+                    buffer.push_str(&format!("\n{}: {:#?}", stringify!($x), $x)[..]);
+                }
+            )*
+            buffer
+        }};
+}
+
 /// Log bytes
 #[macro_export]
 macro_rules! log_bytes {

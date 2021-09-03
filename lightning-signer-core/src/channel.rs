@@ -30,7 +30,7 @@ use crate::tx::tx::{
 use crate::util::crypto_utils::{
     derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
 };
-use crate::util::debug_utils::DebugHTLCOutputInCommitment;
+use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner};
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::{Arc, Weak};
@@ -160,6 +160,7 @@ pub trait ChannelBase: Any {
 /// A channel can be in two states - before [Node::ready_channel] it's a
 /// [ChannelStub], afterwards it's a [Channel].  This enum keeps track
 /// of the two different states.
+#[derive(Debug)]
 pub enum ChannelSlot {
     /// Initial state, not ready
     Stub(ChannelStub),
@@ -197,6 +198,17 @@ pub struct ChannelStub {
     pub keys: InMemorySigner, // Incomplete, channel_value_sat is placeholder.
     /// The initial channel ID, used to find the channel in the node
     pub id0: ChannelId,
+}
+
+// Need to define manually because InMemorySigner doesn't derive Debug.
+impl fmt::Debug for ChannelStub {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ChannelStub")
+            .field("nonce", &self.nonce)
+            .field("keys", &DebugInMemorySigner(&self.keys))
+            .field("id0", &self.id0)
+            .finish()
+    }
 }
 
 impl ChannelBase for ChannelStub {

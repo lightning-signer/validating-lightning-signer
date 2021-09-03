@@ -12,7 +12,7 @@ readme = "../README.md"
 [features]
 
 # just so that `cargo test` runs the functional test by default, but you can disable this
-default = ["test_utils", "std", "test-env-log", "env_logger"]
+default = ["test_utils", "std", "test-env-log", "env_logger", "log_pretty_print"]
 
 no-std = ["lightning/no-std", "bitcoin/no-std", "core2/alloc"]
 std = ["lightning/std", "bitcoin/std", "bitcoin/bitcoinconsensus", "rand"]
@@ -25,6 +25,8 @@ test_utils = ["lightning/_test_utils", "lightning/unsafe_revoked_tx_signing"]
 
 debug = ["backtrace"]
 
+log_pretty_print = []
+
 [lib]
 name = "lightning_signer"
 path = "src/lib.rs"
@@ -34,6 +36,9 @@ core2 = { version = "0.3.0", optional = true, default-features = false }
 
 # Disable default enabled “std” feature
 anyhow = { version = "1.0", default-features = false }
+
+# Disable default enabled “use_std” feature
+scopeguard = { version = "1.1.0", default-features = false }
 
 # Don't use "std" feature
 log = "0.4.14"
