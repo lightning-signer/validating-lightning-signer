@@ -277,34 +277,53 @@ impl SimpleValidator {
     }
 }
 
-// sign_commitment_tx has some, missing these
-// TODO - policy-v1-commitment-anchor-static-remotekey
+// TODO - policy-v1-channel-local-contest-delay-range
+// TODO - policy-v1-channel-remote-contest-delay-range
+
+// TODO - policy-v2-funding-change-path-predictable
+
+// TODO - policy-v1-commitment-singular-to-local [NO TEST TAGGED]
+// TODO - policy-v1-commitment-singular-to-remote [NO TESTS TAGGED]
+// TODO - policy-v1-commitment-no-unrecognized-outputs [NO TESTS TAGGED]
+// TODO - policy-v2-commitment-spends-active-utxo
+// TODO - policy-v2-commitment-htlc-inflight-limit [NO TESTS TAGGED]
+// TODO - policy-v2-commitment-fee-range [NO TESTS TAGGED]
+// TODO - policy-v2-commitment-htlc-count-limit [NO TESTS TAGGED]
+// TODO - policy-v2-commitment-htlc-routing-balance
+// TODO - policy-v2-commitment-htlc-received-spends-active-utxo
+// TODO - policy-v1-commitment-remote-pubkey
+// TODO - policy-v1-commitment-htlc-revocation-pubkey
+// TODO - policy-v1-commitment-htlc-remote-htlc-pubkey
+// TODO - policy-v1-commitment-htlc-local-htlc-pubkey
+// TODO - policy-v1-commitment-htlc-cltv-range
+// TODO - policy-v2-commitment-htlc-offered-hash-matches
+// TODO - policy-v1-commitment-outputs-trimmed
+// TODO - policy-v2-commitment-previous-revoked [still need secret storage]
+// TODO - policy-v2-commitment-retry-same
+// TODO - policy-v1-commitment-anchors-not-when-off
 // TODO - policy-v1-commitment-anchor-to-local
 // TODO - policy-v1-commitment-anchor-to-remote
-// TODO - policy-v1-commitment-anchors-not-when-off
-// TODO - policy-v1-commitment-htlc-cltv-range
-// TODO - policy-v1-commitment-outputs-trimmed
-// TODO - policy-v2-commitment-fee-range
-// TODO - policy-v2-commitment-htlc-count-limit
-// TODO - policy-v2-commitment-htlc-inflight-limit
-// TODO - policy-v2-commitment-htlc-offered-hash-matches
-// TODO - policy-v2-commitment-htlc-received-spends-active-utxo
-// TODO - policy-v2-commitment-htlc-routing-balance
-// TODO - policy-v2-commitment-previous-revoked (still need secret storage)
-// TODO - policy-v2-commitment-spends-active-utxo
+// TODO - policy-v1-commitment-anchor-amount [NO TESTS TAGGED]
+// TODO - policy-v1-commitment-anchor-static-remotekey
+// TODO - policy-v1-commitment-anchor-match-fundingkey [NO TESTS TAGGED]
 
-// not yet implemented
+// TODO - policy-v2-commitment-payment-settled-preimage
+// TODO - policy-v2-commitment-payment-allowlisted
+// TODO - policy-v2-commitment-payment-velocity
+// TODO - policy-v2-commitment-payment-approved
+// TODO - policy-v2-commitment-payment-invoiced
+
+// TODO - policy-v2-revoke-new-commitment-valid [NO TESTS TAGGED]
+
 // TODO - policy-v2-htlc-cltv-range
 
-// not yet implemented
 // TODO - policy-v2-forced-destination-allowlisted
 // TODO - policy-v2-forced-fee-range
 
-// not yet implemented
+// TODO - policy-v3-velocity-funding
 // TODO - policy-v3-velocity-transferred
 // TODO - policy-v3-merchant-no-sends
 // TODO - policy-v3-routing-deltas-only-htlc
-// TODO - policy-v3-velocity-funding
 
 impl Validator for SimpleValidator {
     fn make_info(
@@ -361,7 +380,7 @@ impl Validator for SimpleValidator {
             setup.holder_selected_contest_delay as u32,
         )?;
 
-        // policy-v2-mutual-destination-whitelisted
+        // policy-v2-mutual-destination-allowlisted
         if let Some(holder_shutdown_script) = &setup.holder_shutdown_script {
             if !wallet
                 .can_spend(holder_shutdown_key_path, &holder_shutdown_script)
@@ -484,7 +503,6 @@ impl Validator for SimpleValidator {
                 );
             }
 
-            // policy-v2-commitment-retry-same
             // If this is a retry the commit_point must be the same
             if commit_num + 1 == estate.next_counterparty_commit_num {
                 let prev_commit_point = estate.get_previous_counterparty_point(commit_num)?;
@@ -731,11 +749,11 @@ impl Validator for SimpleValidator {
         // The sighash comparison in the previous block will fail if any of the
         // following policies are violated:
         // - policy-v1-htlc-version
-        // - policy-v1-htlc-locktime (for received HTLC)
-        // - policy-v1-htlc-nsequence
+        // - policy-v1-htlc-locktime
+        // - policy-v1-htlc-sequence
         // - policy-v1-htlc-to-self-delay
         // - policy-v1-htlc-revocation-pubkey
-        // - policy-v1-htlc-payment-pubkey
+        // - policy-v1-htlc-delayed-pubkey
 
         Ok((feerate_per_kw, htlc, recomposed_tx_sighash))
     }
@@ -1315,7 +1333,7 @@ impl EnforcementState {
         if num != current && num != current + 1 {
             return policy_err!("invalid progression: {} to {}", current, num);
         }
-        // TODO - should we enforce policy-v1-commitment-retry-same here?
+        // TODO - should we enforce policy-v2-commitment-retry-same here?
         debug!("next_holder_commit_num {} -> {}", current, num);
         self.next_holder_commit_num = num;
         self.current_holder_commit_info = Some(current_commitment_info);
@@ -1360,7 +1378,7 @@ impl EnforcementState {
                 "retry {}: current_counterparty_point not set, this shouldn't be possible",
                 num
             );
-            // policy-v2-commitment-retry-same (FIXME - not currently in policy-controls.md)
+            // policy-v2-commitment-retry-same
             // FIXME - need to compare current_commitment_info with current_counterparty_commit_info
             if current_point != self.current_counterparty_point.unwrap() {
                 debug!(

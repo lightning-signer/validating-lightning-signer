@@ -3707,9 +3707,9 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-nsequence
+    // policy-v1-htlc-sequence
     #[test]
-    fn sign_counterparty_offered_htlc_tx_with_bad_nsequence_test() {
+    fn sign_counterparty_offered_htlc_tx_with_bad_sequence_test() {
         assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
@@ -3720,9 +3720,9 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-nsequence
+    // policy-v1-htlc-sequence
     #[test]
-    fn sign_counterparty_received_htlc_tx_with_bad_nsequence_test() {
+    fn sign_counterparty_received_htlc_tx_with_bad_sequence_test() {
         assert_failed_precondition_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
                 |_param| {},
@@ -3733,9 +3733,9 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-nsequence
+    // policy-v1-htlc-sequence
     #[test]
-    fn sign_holder_offered_htlc_tx_with_bad_nsequence_test() {
+    fn sign_holder_offered_htlc_tx_with_bad_sequence_test() {
         assert_failed_precondition_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
                 |_param| {},
@@ -3746,9 +3746,9 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-nsequence
+    // policy-v1-htlc-sequence
     #[test]
-    fn sign_holder_received_htlc_tx_with_bad_nsequence_test() {
+    fn sign_holder_received_htlc_tx_with_bad_sequence_test() {
         assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
@@ -3871,7 +3871,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-payment-pubkey
+    // policy-v1-htlc-delayed-pubkey
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_delayedpubkey_test() {
         assert_failed_precondition_err!(
@@ -3884,7 +3884,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-payment-pubkey
+    // policy-v1-htlc-delayed-pubkey
     #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_delayedpubkey_test() {
         assert_failed_precondition_err!(
@@ -3897,7 +3897,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-payment-pubkey
+    // policy-v1-htlc-delayed-pubkey
     #[test]
     fn sign_holder_offered_htlc_tx_with_bad_delayedpubkey_test() {
         assert_failed_precondition_err!(
@@ -3910,7 +3910,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-payment-pubkey
+    // policy-v1-htlc-delayed-pubkey
     #[test]
     fn sign_holder_received_htlc_tx_with_bad_delayedpubkey_test() {
         assert_failed_precondition_err!(
@@ -5945,9 +5945,9 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-nsequence
+    // policy-v1-commitment-sequence
     #[test]
-    fn sign_counterparty_commitment_tx_with_bad_nsequence_test() {
+    fn sign_counterparty_commitment_tx_with_bad_sequence_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |_state| {},
             |_keys| {},
@@ -5958,9 +5958,9 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-nsequence
+    // policy-v1-commitment-sequence
     #[test]
-    fn sign_holder_commitment_tx_with_bad_nsequence_test() {
+    fn sign_holder_commitment_tx_with_bad_sequence_test() {
         let status = sign_holder_commitment_tx_with_mutators(
             |_state| {},
             |_keys| {},

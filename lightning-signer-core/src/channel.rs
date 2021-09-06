@@ -1327,7 +1327,7 @@ impl Channel {
         // following policies are violated:
         // - policy-v1-commitment-version
         // - policy-v1-commitment-locktime
-        // - policy-v1-commitment-nsequence
+        // - policy-v1-commitment-sequence
         // - policy-v1-commitment-input-single
         // - policy-v1-commitment-input-match-funding
         // - policy-v1-commitment-revocation-pubkey
@@ -1466,7 +1466,7 @@ impl Channel {
         // following policies are violated:
         // - policy-v1-commitment-version
         // - policy-v1-commitment-locktime
-        // - policy-v1-commitment-nsequence
+        // - policy-v1-commitment-sequence
         // - policy-v1-commitment-input-single
         // - policy-v1-commitment-input-match-funding
         // - policy-v1-commitment-revocation-pubkey
