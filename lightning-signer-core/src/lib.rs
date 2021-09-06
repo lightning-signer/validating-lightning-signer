@@ -108,3 +108,20 @@ mod sync {
 #[cfg(not(feature = "std"))]
 #[allow(unused)]
 mod sync;
+
+#[cfg(test)]
+mod ready_channel_tests;
+#[cfg(test)]
+mod sign_counterparty_commitment_tests;
+#[cfg(test)]
+mod sign_funding_tests;
+#[cfg(test)]
+mod sign_holder_commitment_tests;
+#[cfg(test)]
+mod sign_htlc_tx_tests;
+#[cfg(test)]
+mod sign_mutual_close_tests;
+#[cfg(test)]
+mod validate_counterparty_revocation_tests;
+#[cfg(test)]
+mod validate_holder_commitment_tests;
