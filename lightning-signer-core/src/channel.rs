@@ -325,7 +325,7 @@ impl ChannelBase for Channel {
 
     fn get_per_commitment_secret(&self, commitment_number: u64) -> Result<SecretKey, Status> {
         let next_holder_commit_num = self.enforcement_state.next_holder_commit_num;
-        // policy-v2-revoke-new-commitment-signed
+        // policy-revoke-new-commitment-signed
         if commitment_number + 2 > next_holder_commit_num {
             return Err(policy_error(format!(
                 "get_per_commitment_secret: \
@@ -1325,14 +1325,14 @@ impl Channel {
 
         // The comparison in the previous block will fail if any of the
         // following policies are violated:
-        // - policy-v1-commitment-version
-        // - policy-v1-commitment-locktime
-        // - policy-v1-commitment-sequence
-        // - policy-v1-commitment-input-single
-        // - policy-v1-commitment-input-match-funding
-        // - policy-v1-commitment-revocation-pubkey
-        // - policy-v1-commitment-htlc-pubkey
-        // - policy-v1-commitment-delayed-pubkey
+        // - policy-commitment-version
+        // - policy-commitment-locktime
+        // - policy-commitment-sequence
+        // - policy-commitment-input-single
+        // - policy-commitment-input-match-funding
+        // - policy-commitment-revocation-pubkey
+        // - policy-commitment-htlc-pubkey
+        // - policy-commitment-delayed-pubkey
 
         // Convert from backwards counting.
         let commit_num = INITIAL_COMMITMENT_NUMBER - recomposed_tx.trust().commitment_number();
@@ -1464,15 +1464,15 @@ impl Channel {
 
         // The comparison in the previous block will fail if any of the
         // following policies are violated:
-        // - policy-v1-commitment-version
-        // - policy-v1-commitment-locktime
-        // - policy-v1-commitment-sequence
-        // - policy-v1-commitment-input-single
-        // - policy-v1-commitment-input-match-funding
-        // - policy-v1-commitment-revocation-pubkey
-        // - policy-v1-commitment-htlc-pubkey
-        // - policy-v1-commitment-delayed-pubkey
-        // - policy-v2-revoke-new-commitment-valid
+        // - policy-commitment-version
+        // - policy-commitment-locktime
+        // - policy-commitment-sequence
+        // - policy-commitment-input-single
+        // - policy-commitment-input-match-funding
+        // - policy-commitment-revocation-pubkey
+        // - policy-commitment-htlc-pubkey
+        // - policy-commitment-delayed-pubkey
+        // - policy-revoke-new-commitment-valid
 
         Ok((recomposed_tx, info2))
     }

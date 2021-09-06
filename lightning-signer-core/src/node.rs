@@ -2074,7 +2074,7 @@ mod tests {
         Ok(())
     }
 
-    // policy-v1-funding-fee-range
+    // policy-funding-fee-range
     #[test]
     fn sign_funding_tx_fee_too_low() {
         let secp_ctx = Secp256k1::signing_only();
@@ -2109,7 +2109,7 @@ mod tests {
         );
     }
 
-    // policy-v1-funding-fee-range
+    // policy-funding-fee-range
     #[test]
     fn sign_funding_tx_fee_too_high() {
         let secp_ctx = Secp256k1::signing_only();
@@ -2465,7 +2465,7 @@ mod tests {
         assert!(status.is_ok());
     }
 
-    // policy-v1-funding-format-standard
+    // policy-funding-format-standard
     #[test]
     fn sign_funding_tx_with_version_1() {
         assert_failed_precondition_err!(
@@ -2476,7 +2476,7 @@ mod tests {
         );
     }
 
-    // policy-v1-funding-format-standard
+    // policy-funding-format-standard
     #[test]
     fn sign_funding_tx_with_version_3() {
         assert_failed_precondition_err!(
@@ -2641,7 +2641,7 @@ mod tests {
         funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
     }
 
-    // policy-v1-funding-initial-commitment-countersigned
+    // policy-funding-initial-commitment-countersigned
     #[test]
     fn sign_funding_tx_with_missing_initial_commitment_validation() {
         let is_p2sh = false;
@@ -2685,8 +2685,8 @@ mod tests {
         );
     }
 
-    // policy-v1-funding-output-match-commitment
-    // policy-v2-funding-change-to-wallet
+    // policy-funding-output-match-commitment
+    // policy-funding-change-to-wallet
     #[test]
     fn sign_funding_tx_with_unknown_output() {
         let is_p2sh = false;
@@ -2881,7 +2881,7 @@ mod tests {
         );
     }
 
-    // policy-v1-funding-output-scriptpubkey
+    // policy-funding-output-scriptpubkey
     #[test]
     fn sign_funding_tx_with_bad_output_script_pubkey2() {
         let is_p2sh = false;
@@ -2976,7 +2976,7 @@ mod tests {
             .expect("valid holder commitment");
     }
 
-    // policy-v2-revoke-new-commitment-signed
+    // policy-revoke-new-commitment-signed
     #[test]
     fn validate_holder_commitment_with_bad_commit_num() {
         let node_ctx = test_node_ctx(1);
@@ -3017,7 +3017,7 @@ mod tests {
         );
     }
 
-    // policy-v2-commitment-local-not-revoked
+    // policy-commitment-local-not-revoked
     #[test]
     fn validate_holder_commitment_with_revoked_commit_num() {
         let node_ctx = test_node_ctx(1);
@@ -3603,7 +3603,7 @@ mod tests {
         assert!(status.is_ok());
     }
 
-    // policy-v1-htlc-version
+    // policy-htlc-version
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_version_test() {
         assert_failed_precondition_err!(
@@ -3616,7 +3616,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-version
+    // policy-htlc-version
     #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_version_test() {
         assert_failed_precondition_err!(
@@ -3629,7 +3629,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-version
+    // policy-htlc-version
     #[test]
     fn sign_holder_offered_htlc_tx_with_bad_version_test() {
         assert_failed_precondition_err!(
@@ -3642,7 +3642,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-version
+    // policy-htlc-version
     #[test]
     fn sign_holder_received_htlc_tx_with_bad_version_test() {
         assert_failed_precondition_err!(
@@ -3655,7 +3655,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-locktime
+    // policy-htlc-locktime
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_locktime_test() {
         assert_failed_precondition_err!(
@@ -3668,7 +3668,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-locktime
+    // policy-htlc-locktime
     #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_locktime_test() {
         assert_failed_precondition_err!(
@@ -3681,7 +3681,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-locktime
+    // policy-htlc-locktime
     #[test]
     fn sign_holder_offered_htlc_tx_with_bad_locktime_test() {
         assert_failed_precondition_err!(
@@ -3694,7 +3694,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-locktime
+    // policy-htlc-locktime
     #[test]
     fn sign_holder_received_htlc_tx_with_bad_locktime_test() {
         assert_failed_precondition_err!(
@@ -3707,7 +3707,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-sequence
+    // policy-htlc-sequence
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_sequence_test() {
         assert_failed_precondition_err!(
@@ -3720,7 +3720,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-sequence
+    // policy-htlc-sequence
     #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_sequence_test() {
         assert_failed_precondition_err!(
@@ -3733,7 +3733,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-sequence
+    // policy-htlc-sequence
     #[test]
     fn sign_holder_offered_htlc_tx_with_bad_sequence_test() {
         assert_failed_precondition_err!(
@@ -3746,7 +3746,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-sequence
+    // policy-htlc-sequence
     #[test]
     fn sign_holder_received_htlc_tx_with_bad_sequence_test() {
         assert_failed_precondition_err!(
@@ -3759,7 +3759,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-to-self-delay
+    // policy-htlc-to-self-delay
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_to_self_delay_test() {
         assert_failed_precondition_err!(
@@ -3772,7 +3772,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-to-self-delay
+    // policy-htlc-to-self-delay
     #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_to_self_delay_test() {
         assert_failed_precondition_err!(
@@ -3785,7 +3785,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-to-self-delay
+    // policy-htlc-to-self-delay
     #[test]
     fn sign_holder_offered_htlc_tx_with_bad_to_self_delay_test() {
         assert_failed_precondition_err!(
@@ -3802,7 +3802,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-to-self-delay
+    // policy-htlc-to-self-delay
     #[test]
     fn sign_holder_received_htlc_tx_with_bad_to_self_delay_test() {
         assert_failed_precondition_err!(
@@ -3819,7 +3819,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-revocation-pubkey
+    // policy-htlc-revocation-pubkey
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_revpubkey_test() {
         assert_failed_precondition_err!(
@@ -3832,7 +3832,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-revocation-pubkey
+    // policy-htlc-revocation-pubkey
     #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_revpubkey_test() {
         assert_failed_precondition_err!(
@@ -3845,7 +3845,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-revocation-pubkey
+    // policy-htlc-revocation-pubkey
     #[test]
     fn sign_holder_offered_htlc_tx_with_bad_revpubkey_test() {
         assert_failed_precondition_err!(
@@ -3858,7 +3858,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-revocation-pubkey
+    // policy-htlc-revocation-pubkey
     #[test]
     fn sign_holder_received_htlc_tx_with_bad_revpubkey_test() {
         assert_failed_precondition_err!(
@@ -3871,7 +3871,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-delayed-pubkey
+    // policy-htlc-delayed-pubkey
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_bad_delayedpubkey_test() {
         assert_failed_precondition_err!(
@@ -3884,7 +3884,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-delayed-pubkey
+    // policy-htlc-delayed-pubkey
     #[test]
     fn sign_counterparty_received_htlc_tx_with_bad_delayedpubkey_test() {
         assert_failed_precondition_err!(
@@ -3897,7 +3897,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-delayed-pubkey
+    // policy-htlc-delayed-pubkey
     #[test]
     fn sign_holder_offered_htlc_tx_with_bad_delayedpubkey_test() {
         assert_failed_precondition_err!(
@@ -3910,7 +3910,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-delayed-pubkey
+    // policy-htlc-delayed-pubkey
     #[test]
     fn sign_holder_received_htlc_tx_with_bad_delayedpubkey_test() {
         assert_failed_precondition_err!(
@@ -3923,7 +3923,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-fee-range
+    // policy-htlc-fee-range
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_low_feerate_test() {
         assert_failed_precondition_err!(
@@ -3937,7 +3937,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-fee-range
+    // policy-htlc-fee-range
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_high_feerate_test() {
         assert_failed_precondition_err!(
@@ -3951,7 +3951,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-fee-range
+    // policy-htlc-fee-range
     #[test]
     fn sign_holder_received_htlc_tx_with_low_feerate_test() {
         assert_failed_precondition_err!(
@@ -3965,7 +3965,7 @@ mod tests {
         );
     }
 
-    // policy-v1-htlc-fee-range
+    // policy-htlc-fee-range
     #[test]
     fn sign_holder_received_htlc_tx_with_high_feerate_test() {
         assert_failed_precondition_err!(
@@ -4427,7 +4427,7 @@ mod tests {
             chan.get_per_commitment_secret(holder_commit_num - 1)
         }));
 
-        // policy-v2-revoke-not-closed
+        // policy-revoke-not-closed
         // Channel is marked closed.
         assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
             assert_eq!(chan.enforcement_state.mutual_close_signed, true);
@@ -4566,7 +4566,7 @@ mod tests {
             chan.get_per_commitment_secret(holder_commit_num - 1)
         }));
 
-        // policy-v2-revoke-not-closed
+        // policy-revoke-not-closed
         // Channel is marked closed.
         assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
             assert_eq!(chan.enforcement_state.mutual_close_signed, true);
@@ -4756,7 +4756,7 @@ mod tests {
         ));
     }
 
-    // policy-v2-mutual-destination-allowlisted
+    // policy-mutual-destination-allowlisted
     #[test]
     fn sign_mutual_close_tx_with_allowlist_success() {
         assert_status_ok!(sign_mutual_close_tx_with_mutators(
@@ -4779,7 +4779,7 @@ mod tests {
         ));
     }
 
-    // policy-v2-mutual-destination-allowlisted
+    // policy-mutual-destination-allowlisted
     #[test]
     fn sign_mutual_close_tx_phase2_with_allowlist_success() {
         assert_status_ok!(sign_mutual_close_tx_phase2_with_mutators(
@@ -4802,7 +4802,7 @@ mod tests {
         ));
     }
 
-    // policy-v2-mutual-destination-allowlisted
+    // policy-mutual-destination-allowlisted
     #[test]
     fn sign_mutual_close_tx_phase2_no_wallet_path_or_allowlist() {
         assert_failed_precondition_err!(
@@ -4855,7 +4855,7 @@ mod tests {
         );
     }
 
-    // policy-v2-mutual-fee-range
+    // policy-mutual-fee-range
     #[test]
     fn sign_mutual_close_tx_phase2_with_fee_too_large() {
         assert_failed_precondition_err!(
@@ -4880,7 +4880,7 @@ mod tests {
         );
     }
 
-    // policy-v2-mutual-fee-range
+    // policy-mutual-fee-range
     #[test]
     fn sign_mutual_close_tx_phase2_with_fee_too_small() {
         assert_failed_precondition_err!(
@@ -4962,7 +4962,7 @@ mod tests {
         );
     }
 
-    // policy-v2-mutual-destination-allowlisted
+    // policy-mutual-destination-allowlisted
     #[test]
     fn sign_mutual_close_tx_with_unestablished_holder() {
         assert_failed_precondition_err!(
@@ -5086,7 +5086,7 @@ mod tests {
         );
     }
 
-    // policy-v2-mutual-no-pending-htlcs
+    // policy-mutual-no-pending-htlcs
     #[test]
     fn sign_mutual_close_tx_with_holder_offered_htlcs() {
         assert_failed_precondition_err!(
@@ -5117,7 +5117,7 @@ mod tests {
         );
     }
 
-    // policy-v2-mutual-no-pending-htlcs
+    // policy-mutual-no-pending-htlcs
     #[test]
     fn sign_mutual_close_tx_with_holder_received_htlcs() {
         assert_failed_precondition_err!(
@@ -5148,7 +5148,7 @@ mod tests {
         );
     }
 
-    // policy-v2-mutual-no-pending-htlcs
+    // policy-mutual-no-pending-htlcs
     #[test]
     fn sign_mutual_close_tx_with_counterparty_offered_htlcs() {
         assert_failed_precondition_err!(
@@ -5179,7 +5179,7 @@ mod tests {
         );
     }
 
-    // policy-v2-mutual-no-pending-htlcs
+    // policy-mutual-no-pending-htlcs
     #[test]
     fn sign_mutual_close_tx_with_counterparty_received_htlcs() {
         assert_failed_precondition_err!(
@@ -5210,7 +5210,7 @@ mod tests {
         );
     }
 
-    // policy-v2-mutual-value-matches-commitment
+    // policy-mutual-value-matches-commitment
     #[test]
     fn sign_mutual_close_tx_with_holder_commitment_too_large() {
         assert_failed_precondition_err!(
@@ -5239,7 +5239,7 @@ mod tests {
         );
     }
 
-    // policy-v2-mutual-value-matches-commitment
+    // policy-mutual-value-matches-commitment
     #[test]
     fn sign_mutual_close_tx_with_holder_commitment_too_small() {
         assert_failed_precondition_err!(
@@ -5268,7 +5268,7 @@ mod tests {
         );
     }
 
-    // policy-v2-mutual-value-matches-commitment
+    // policy-mutual-value-matches-commitment
     #[test]
     fn sign_mutual_close_tx_with_counterparty_commitment_too_small() {
         assert_failed_precondition_err!(
@@ -5297,7 +5297,7 @@ mod tests {
         );
     }
 
-    // policy-v2-mutual-value-matches-commitment
+    // policy-mutual-value-matches-commitment
     #[test]
     fn sign_mutual_close_tx_with_counterparty_commitment_too_large() {
         assert_failed_precondition_err!(
@@ -5883,7 +5883,7 @@ mod tests {
         assert!(status.is_ok());
     }
 
-    // policy-v1-commitment-version
+    // policy-commitment-version
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_version_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
@@ -5899,7 +5899,7 @@ mod tests {
         );
     }
 
-    // policy-v1-commitment-version
+    // policy-commitment-version
     #[test]
     fn sign_holder_commitment_tx_with_bad_version_test() {
         let status = sign_holder_commitment_tx_with_mutators(
@@ -5915,7 +5915,7 @@ mod tests {
         );
     }
 
-    // policy-v1-commitment-locktime
+    // policy-commitment-locktime
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_locktime_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
@@ -5930,7 +5930,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-locktime
+    // policy-commitment-locktime
     #[test]
     fn sign_holder_commitment_tx_with_bad_locktime_test() {
         let status = sign_holder_commitment_tx_with_mutators(
@@ -5945,7 +5945,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-sequence
+    // policy-commitment-sequence
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_sequence_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
@@ -5958,7 +5958,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-sequence
+    // policy-commitment-sequence
     #[test]
     fn sign_holder_commitment_tx_with_bad_sequence_test() {
         let status = sign_holder_commitment_tx_with_mutators(
@@ -5971,7 +5971,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-input-single
+    // policy-commitment-input-single
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_numinputs_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
@@ -5986,7 +5986,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-input-single
+    // policy-commitment-input-single
     #[test]
     fn sign_holder_commitment_tx_with_bad_numinputs_test() {
         let status = sign_holder_commitment_tx_with_mutators(
@@ -6001,7 +6001,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-input-match-funding
+    // policy-commitment-input-match-funding
     #[test]
     fn sign_counterparty_commitment_tx_with_input_mismatch_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
@@ -6015,7 +6015,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-input-match-funding
+    // policy-commitment-input-match-funding
     #[test]
     fn sign_holder_commitment_tx_with_input_mismatch_test() {
         let status = sign_holder_commitment_tx_with_mutators(
@@ -6029,7 +6029,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-revocation-pubkey
+    // policy-commitment-revocation-pubkey
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_revpubkey_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
@@ -6042,7 +6042,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-revocation-pubkey
+    // policy-commitment-revocation-pubkey
     #[test]
     fn sign_holder_commitment_tx_with_bad_revpubkey_test() {
         let status = sign_holder_commitment_tx_with_mutators(
@@ -6055,7 +6055,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-htlc-pubkey
+    // policy-commitment-htlc-pubkey
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_htlcpubkey_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
@@ -6068,7 +6068,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-htlc-pubkey
+    // policy-commitment-htlc-pubkey
     #[test]
     fn sign_holder_commitment_tx_with_bad_htlcpubkey_test() {
         let status = sign_holder_commitment_tx_with_mutators(
@@ -6081,7 +6081,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-delayed-pubkey
+    // policy-commitment-delayed-pubkey
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_delayed_pubkey_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
@@ -6094,7 +6094,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v1-commitment-delayed-pubkey
+    // policy-commitment-delayed-pubkey
     #[test]
     fn sign_holder_commitment_tx_with_bad_delayed_pubkey_test() {
         let status = sign_holder_commitment_tx_with_mutators(
@@ -6107,7 +6107,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-v2-commitment-previous-revoked
+    // policy-commitment-previous-revoked
     #[test]
     fn sign_counterparty_commitment_tx_with_unrevoked_prior() {
         let status = sign_counterparty_commitment_tx_with_mutators(
@@ -6264,7 +6264,7 @@ mod tests {
         .is_ok());
     }
 
-    // policy-v2-commitment-retry-same (remote_percommitment_point)
+    // policy-commitment-retry-same (remote_percommitment_point)
     #[test]
     fn sign_counterparty_commitment_tx_retry_with_bad_point() {
         assert_failed_precondition_err!(
@@ -6484,7 +6484,7 @@ mod tests {
         );
     }
 
-    // policy-v2-commitment-previous-revoked (invalid secret on revoke)
+    // policy-commitment-previous-revoked (invalid secret on revoke)
     #[test]
     fn validate_counterparty_revocation_with_bad_secret() {
         assert_failed_precondition_err!(
@@ -6956,7 +6956,7 @@ mod tests {
         );
     }
 
-    // policy-v2-revoke-not-closed
+    // policy-revoke-not-closed
     #[test]
     fn validate_holder_commitment_not_closed() {
         assert_failed_precondition_err!(
