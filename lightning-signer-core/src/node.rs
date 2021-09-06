@@ -3017,7 +3017,7 @@ mod tests {
         );
     }
 
-    // policy-commitment-local-not-revoked
+    // policy-commitment-holder-not-revoked
     #[test]
     fn validate_holder_commitment_with_revoked_commit_num() {
         let node_ctx = test_node_ctx(1);

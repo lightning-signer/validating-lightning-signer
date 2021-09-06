@@ -277,13 +277,13 @@ impl SimpleValidator {
     }
 }
 
-// TODO - policy-channel-local-contest-delay-range
-// TODO - policy-channel-remote-contest-delay-range
+// TODO - policy-channel-holder-contest-delay-range
+// TODO - policy-channel-counterparty-contest-delay-range
 
 // TODO - policy-funding-change-path-predictable
 
-// TODO - policy-commitment-singular-to-local [NO TEST TAGGED]
-// TODO - policy-commitment-singular-to-remote [NO TESTS TAGGED]
+// TODO - policy-commitment-singular-to-holder [NO TEST TAGGED]
+// TODO - policy-commitment-singular-to-counterparty [NO TESTS TAGGED]
 // TODO - policy-commitment-no-unrecognized-outputs [NO TESTS TAGGED]
 // TODO - policy-commitment-spends-active-utxo
 // TODO - policy-commitment-htlc-inflight-limit [NO TESTS TAGGED]
@@ -291,18 +291,18 @@ impl SimpleValidator {
 // TODO - policy-commitment-htlc-count-limit [NO TESTS TAGGED]
 // TODO - policy-commitment-htlc-routing-balance
 // TODO - policy-commitment-htlc-received-spends-active-utxo
-// TODO - policy-commitment-remote-pubkey
+// TODO - policy-commitment-counterparty-pubkey
 // TODO - policy-commitment-htlc-revocation-pubkey
-// TODO - policy-commitment-htlc-remote-htlc-pubkey
-// TODO - policy-commitment-htlc-local-htlc-pubkey
+// TODO - policy-commitment-htlc-counterparty-htlc-pubkey
+// TODO - policy-commitment-htlc-holder-htlc-pubkey
 // TODO - policy-commitment-htlc-cltv-range
 // TODO - policy-commitment-htlc-offered-hash-matches
 // TODO - policy-commitment-outputs-trimmed
 // TODO - policy-commitment-previous-revoked [still need secret storage]
 // TODO - policy-commitment-retry-same
 // TODO - policy-commitment-anchors-not-when-off
-// TODO - policy-commitment-anchor-to-local
-// TODO - policy-commitment-anchor-to-remote
+// TODO - policy-commitment-anchor-to-holder
+// TODO - policy-commitment-anchor-to-counterparty
 // TODO - policy-commitment-anchor-amount [NO TESTS TAGGED]
 // TODO - policy-commitment-anchor-static-remotekey
 // TODO - policy-commitment-anchor-match-fundingkey [NO TESTS TAGGED]
@@ -558,7 +558,7 @@ impl Validator for SimpleValidator {
         enforcement_state: &EnforcementState,
         commit_num: u64,
     ) -> Result<(), ValidationError> {
-        // policy-commitment-local-not-revoked
+        // policy-commitment-holder-not-revoked
         if commit_num + 2 <= enforcement_state.next_holder_commit_num {
             debug_vals!(enforcement_state, commit_num);
             return policy_err!(

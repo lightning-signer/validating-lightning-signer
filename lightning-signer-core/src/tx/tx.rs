@@ -622,7 +622,7 @@ impl CommitmentInfo {
         vals: (Vec<u8>, i64, Vec<u8>),
     ) -> Result<(), ValidationError> {
         let (revocation_pubkey, delay, delayed_pubkey) = vals;
-        // policy-commitment-singular-to-local
+        // policy-commitment-singular-to-holder
         if self.has_to_broadcaster() {
             return Err(transaction_format_error(
                 "already have to local".to_string(),
@@ -670,7 +670,7 @@ impl CommitmentInfo {
         out: &TxOut,
         to_countersigner_delayed_pubkey_data: Vec<u8>,
     ) -> Result<(), ValidationError> {
-        // policy-commitment-singular-to-remote
+        // policy-commitment-singular-to-counterparty
         if self.has_to_countersigner() {
             return Err(transaction_format_error(
                 "more than one to remote".to_string(),
@@ -816,7 +816,7 @@ impl CommitmentInfo {
                     "p2wpkh to_countersigner not valid with anchors".to_string(),
                 ));
             }
-            // policy-commitment-singular-to-remote
+            // policy-commitment-singular-to-counterparty
             if self.has_to_countersigner() {
                 return Err(transaction_format_error(
                     "more than one to_countersigner".to_string(),
