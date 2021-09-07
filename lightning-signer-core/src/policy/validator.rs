@@ -277,34 +277,53 @@ impl SimpleValidator {
     }
 }
 
-// sign_commitment_tx has some, missing these
-// TODO - policy-v1-commitment-anchor-static-remotekey
-// TODO - policy-v1-commitment-anchor-to-local
-// TODO - policy-v1-commitment-anchor-to-remote
-// TODO - policy-v1-commitment-anchors-not-when-off
-// TODO - policy-v1-commitment-htlc-cltv-range
-// TODO - policy-v1-commitment-outputs-trimmed
-// TODO - policy-v2-commitment-fee-range
-// TODO - policy-v2-commitment-htlc-count-limit
-// TODO - policy-v2-commitment-htlc-inflight-limit
-// TODO - policy-v2-commitment-htlc-offered-hash-matches
-// TODO - policy-v2-commitment-htlc-received-spends-active-utxo
-// TODO - policy-v2-commitment-htlc-routing-balance
-// TODO - policy-v2-commitment-previous-revoked (still need secret storage)
-// TODO - policy-v2-commitment-spends-active-utxo
+// TODO - policy-channel-holder-contest-delay-range
+// TODO - policy-channel-counterparty-contest-delay-range
 
-// not yet implemented
-// TODO - policy-v2-htlc-cltv-range
+// TODO - policy-funding-change-path-predictable
 
-// not yet implemented
-// TODO - policy-v2-forced-destination-allowlisted
-// TODO - policy-v2-forced-fee-range
+// TODO - policy-commitment-singular-to-holder [NO TEST TAGGED]
+// TODO - policy-commitment-singular-to-counterparty [NO TESTS TAGGED]
+// TODO - policy-commitment-no-unrecognized-outputs [NO TESTS TAGGED]
+// TODO - policy-commitment-spends-active-utxo
+// TODO - policy-commitment-htlc-inflight-limit [NO TESTS TAGGED]
+// TODO - policy-commitment-fee-range [NO TESTS TAGGED]
+// TODO - policy-commitment-htlc-count-limit [NO TESTS TAGGED]
+// TODO - policy-commitment-htlc-routing-balance
+// TODO - policy-commitment-htlc-received-spends-active-utxo
+// TODO - policy-commitment-counterparty-pubkey
+// TODO - policy-commitment-htlc-revocation-pubkey
+// TODO - policy-commitment-htlc-counterparty-htlc-pubkey
+// TODO - policy-commitment-htlc-holder-htlc-pubkey
+// TODO - policy-commitment-htlc-cltv-range
+// TODO - policy-commitment-htlc-offered-hash-matches
+// TODO - policy-commitment-outputs-trimmed
+// TODO - policy-commitment-previous-revoked [still need secret storage]
+// TODO - policy-commitment-retry-same
+// TODO - policy-commitment-anchors-not-when-off
+// TODO - policy-commitment-anchor-to-holder
+// TODO - policy-commitment-anchor-to-counterparty
+// TODO - policy-commitment-anchor-amount [NO TESTS TAGGED]
+// TODO - policy-commitment-anchor-static-remotekey
+// TODO - policy-commitment-anchor-match-fundingkey [NO TESTS TAGGED]
 
-// not yet implemented
-// TODO - policy-v3-velocity-transferred
-// TODO - policy-v3-merchant-no-sends
-// TODO - policy-v3-routing-deltas-only-htlc
-// TODO - policy-v3-velocity-funding
+// TODO - policy-v2-commitment-payment-settled-preimage
+// TODO - policy-v2-commitment-payment-allowlisted
+// TODO - policy-v2-commitment-payment-velocity
+// TODO - policy-v2-commitment-payment-approved
+// TODO - policy-v2-commitment-payment-invoiced
+
+// TODO - policy-revoke-new-commitment-valid [NO TESTS TAGGED]
+
+// TODO - policy-htlc-cltv-range
+
+// TODO - policy-forced-destination-allowlisted
+// TODO - policy-forced-fee-range
+
+// TODO - policy-velocity-funding
+// TODO - policy-velocity-transferred
+// TODO - policy-merchant-no-sends
+// TODO - policy-routing-deltas-only-htlc
 
 impl Validator for SimpleValidator {
     fn make_info(
@@ -315,7 +334,7 @@ impl Validator for SimpleValidator {
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
     ) -> Result<CommitmentInfo, ValidationError> {
-        // policy-v1-commitment-version
+        // policy-commitment-version
         if tx.version != 2 {
             return policy_err!("bad commitment version: {}", tx.version);
         }
@@ -350,18 +369,18 @@ impl Validator for SimpleValidator {
                 self.policy.max_push_sat
             );
         }
-        // policy-v1-commitment-to-self-delay-range
+        // policy-commitment-to-self-delay-range
         self.validate_delay(
             "counterparty_selected_contest_delay",
             setup.counterparty_selected_contest_delay as u32,
         )?;
-        // policy-v1-commitment-to-self-delay-range
+        // policy-commitment-to-self-delay-range
         self.validate_delay(
             "holder_selected_contest_delay",
             setup.holder_selected_contest_delay as u32,
         )?;
 
-        // policy-v2-mutual-destination-whitelisted
+        // policy-mutual-destination-allowlisted
         if let Some(holder_shutdown_script) = &setup.holder_shutdown_script {
             if !wallet
                 .can_spend(holder_shutdown_key_path, &holder_shutdown_script)
@@ -403,7 +422,7 @@ impl Validator for SimpleValidator {
 
         let policy = &self.policy;
 
-        // policy-v1-commitment-to-self-delay-range
+        // policy-commitment-to-self-delay-range
         if is_counterparty {
             if info.to_self_delay != setup.holder_selected_contest_delay {
                 return Err(policy_error(
@@ -418,7 +437,7 @@ impl Validator for SimpleValidator {
             }
         }
 
-        // policy-v2-commitment-htlc-count-limit
+        // policy-commitment-htlc-count-limit
         if info.offered_htlcs.len() + info.received_htlcs.len() > policy.max_htlcs {
             return Err(policy_error("too many HTLCs".to_string()));
         }
@@ -439,12 +458,12 @@ impl Validator for SimpleValidator {
                 .ok_or_else(|| policy_error("received HTLC value overflow".to_string()))?;
         }
 
-        // policy-v2-commitment-htlc-inflight-limit
+        // policy-commitment-htlc-inflight-limit
         if htlc_value_sat > policy.max_htlc_value_sat {
             return policy_err!("sum of HTLC values {} too large", htlc_value_sat);
         }
 
-        // policy-v2-commitment-fee-range
+        // policy-commitment-fee-range
         let consumed = info
             .to_broadcaster_value_sat
             .checked_add(info.to_countersigner_value_sat)
@@ -469,7 +488,7 @@ impl Validator for SimpleValidator {
         }
 
         if is_counterparty {
-            // policy-v2-commitment-previous-revoked
+            // policy-commitment-previous-revoked
             // if next_counterparty_revoke_num is 20:
             // - commit_num 19 has been revoked
             // - commit_num 20 is current, previously signed, ok to resign
@@ -484,7 +503,6 @@ impl Validator for SimpleValidator {
                 );
             }
 
-            // policy-v2-commitment-retry-same
             // If this is a retry the commit_point must be the same
             if commit_num + 1 == estate.next_counterparty_commit_num {
                 let prev_commit_point = estate.get_previous_counterparty_point(commit_num)?;
@@ -506,7 +524,7 @@ impl Validator for SimpleValidator {
                 return policy_err!("initial commitment may not have HTLCS");
             }
 
-            // policy-v2-commitment-initial-funding-value
+            // policy-commitment-initial-funding-value
             // If we are the funder, the value to us of the initial
             // commitment transaction should be equal to our funding
             // value.
@@ -540,7 +558,7 @@ impl Validator for SimpleValidator {
         enforcement_state: &EnforcementState,
         commit_num: u64,
     ) -> Result<(), ValidationError> {
-        // policy-v2-commitment-local-not-revoked
+        // policy-commitment-holder-not-revoked
         if commit_num + 2 <= enforcement_state.next_holder_commit_num {
             debug_vals!(enforcement_state, commit_num);
             return policy_err!(
@@ -558,7 +576,7 @@ impl Validator for SimpleValidator {
         &self,
         enforcement_state: &EnforcementState,
     ) -> Result<(), ValidationError> {
-        // policy-v2-revoke-not-closed
+        // policy-revoke-not-closed
         if enforcement_state.mutual_close_signed {
             debug_vals!(enforcement_state);
             return policy_err!("mutual close already signed");
@@ -587,7 +605,7 @@ impl Validator for SimpleValidator {
             );
         }
 
-        // policy-v2-commitment-previous-revoked (partial: secret validated, but not stored here)
+        // policy-commitment-previous-revoked (partial: secret validated, but not stored here)
         let supplied_commit_point = PublicKey::from_secret_key(&secp_ctx, &commitment_secret);
         let prev_commit_point = state.get_previous_counterparty_point(revoke_num)?;
         if supplied_commit_point != prev_commit_point {
@@ -730,12 +748,12 @@ impl Validator for SimpleValidator {
 
         // The sighash comparison in the previous block will fail if any of the
         // following policies are violated:
-        // - policy-v1-htlc-version
-        // - policy-v1-htlc-locktime (for received HTLC)
-        // - policy-v1-htlc-nsequence
-        // - policy-v1-htlc-to-self-delay
-        // - policy-v1-htlc-revocation-pubkey
-        // - policy-v1-htlc-payment-pubkey
+        // - policy-htlc-version
+        // - policy-htlc-locktime
+        // - policy-htlc-sequence
+        // - policy-htlc-to-self-delay
+        // - policy-htlc-revocation-pubkey
+        // - policy-htlc-delayed-pubkey
 
         Ok((feerate_per_kw, htlc, recomposed_tx_sighash))
     }
@@ -751,16 +769,16 @@ impl Validator for SimpleValidator {
         let mut debug_on_return =
             scoped_debug_return!(DebugHTLCOutputInCommitment(htlc), feerate_per_kw);
 
-        // This must be further checked with policy-v2-htlc-cltv-range.
+        // This must be further checked with policy-htlc-cltv-range.
         // Note that we can't check cltv_expiry for non-offered 2nd level
         // HTLC txs in phase 1, because they don't mention the cltv_expiry
         // there, only in the commitment tx output.
-        // policy-v1-htlc-locktime
+        // policy-htlc-locktime
         if htlc.offered && htlc.cltv_expiry == 0 {
             return policy_err!("offered lock_time must be non-zero");
         }
 
-        // policy-v1-htlc-fee-range
+        // policy-htlc-fee-range
         if feerate_per_kw < self.policy.min_feerate_per_kw {
             return policy_err!(
                 "feerate_per_kw of {} is smaller than the minimum of {}",
@@ -791,7 +809,7 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         let mut debug_on_return = scoped_debug_return!(state, tx, values_sat, opaths);
 
-        // policy-v1-funding-fee-range
+        // policy-funding-fee-range
         let mut sum_inputs: u64 = 0;
         for val in values_sat {
             sum_inputs = sum_inputs
@@ -809,7 +827,7 @@ impl Validator for SimpleValidator {
             .ok_or_else(|| policy_error(format!("funding fee overflow")))?;
         self.validate_fee("validate_funding_tx", fee, tx)?;
 
-        // policy-v1-funding-format-standard
+        // policy-funding-format-standard
         if tx.version != 2 {
             return policy_err!("invalid version: {}", tx.version);
         }
@@ -819,8 +837,8 @@ impl Validator for SimpleValidator {
             let opath = &opaths[outndx];
             let channel_slot = channels[outndx].as_ref();
 
-            // policy-v1-funding-output-match-commitment
-            // policy-v2-funding-change-to-wallet
+            // policy-funding-output-match-commitment
+            // policy-funding-change-to-wallet
             // All outputs must either be wallet (change) or channel funding.
             if opath.len() > 0 {
                 let spendable = wallet
@@ -844,7 +862,7 @@ impl Validator for SimpleValidator {
                 })?;
                 match &*slot.lock().unwrap() {
                     ChannelSlot::Ready(chan) => {
-                        // policy-v1-funding-output-match-commitment
+                        // policy-funding-output-match-commitment
                         if output.value != chan.setup.channel_value_sat {
                             return policy_err!(
                                 "funding output amount mismatch w/ channel: {} != {}",
@@ -853,7 +871,7 @@ impl Validator for SimpleValidator {
                             );
                         }
 
-                        // policy-v1-funding-output-scriptpubkey
+                        // policy-funding-output-scriptpubkey
                         let funding_redeemscript = make_funding_redeemscript(
                             &chan.keys.pubkeys().funding_pubkey,
                             &chan.keys.counterparty_pubkeys().funding_pubkey,
@@ -868,7 +886,7 @@ impl Validator for SimpleValidator {
                             );
                         }
 
-                        // policy-v1-funding-initial-commitment-countersigned
+                        // policy-funding-initial-commitment-countersigned
                         if chan.enforcement_state.next_holder_commit_num != 1 {
                             return policy_err!("initial holder commitment not validated",);
                         }
@@ -1124,12 +1142,12 @@ impl Validator for SimpleValidator {
             }
         }
 
-        // policy-v2-mutual-no-pending-htlcs
+        // policy-mutual-no-pending-htlcs
         if !holder_info.htlcs_is_empty() || !counterparty_info.htlcs_is_empty() {
             return policy_err!("cannot close with pending htlcs");
         }
 
-        // policy-v2-mutual-fee-range
+        // policy-mutual-fee-range
         let consumed = to_holder_value_sat
             .checked_add(to_counterparty_value_sat)
             .ok_or_else(|| policy_error("consumed overflow".to_string()))?;
@@ -1149,7 +1167,7 @@ impl Validator for SimpleValidator {
             return policy_err!("fee too small {} < {}", fee, self.policy.min_fee);
         }
 
-        // policy-v2-mutual-value-matches-commitment
+        // policy-mutual-value-matches-commitment
         if let (true, descr) =
             self.outside_epsilon_range(to_holder_value_sat, holder_info.to_broadcaster_value_sat)
         {
@@ -1172,7 +1190,7 @@ impl Validator for SimpleValidator {
             );
         }
 
-        // policy-v2-mutual-destination-allowlisted
+        // policy-mutual-destination-allowlisted
         if let Some(script) = &holder_script {
             if !wallet
                 .can_spend(holder_wallet_path_hint, script)
@@ -1315,7 +1333,7 @@ impl EnforcementState {
         if num != current && num != current + 1 {
             return policy_err!("invalid progression: {} to {}", current, num);
         }
-        // TODO - should we enforce policy-v1-commitment-retry-same here?
+        // TODO - should we enforce policy-v2-commitment-retry-same here?
         debug!("next_holder_commit_num {} -> {}", current, num);
         self.next_holder_commit_num = num;
         self.current_holder_commit_info = Some(current_commitment_info);
@@ -1360,7 +1378,7 @@ impl EnforcementState {
                 "retry {}: current_counterparty_point not set, this shouldn't be possible",
                 num
             );
-            // policy-v2-commitment-retry-same (FIXME - not currently in policy-controls.md)
+            // policy-v2-commitment-retry-same
             // FIXME - need to compare current_commitment_info with current_counterparty_commit_info
             if current_point != self.current_counterparty_point.unwrap() {
                 debug!(
@@ -1632,7 +1650,7 @@ mod tests {
             .is_ok());
     }
 
-    // policy-v1-commitment-to-self-delay-range
+    // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_holder_min_delay_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
@@ -1649,7 +1667,7 @@ mod tests {
         );
     }
 
-    // policy-v1-commitment-to-self-delay-range
+    // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_holder_max_delay_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
@@ -1666,7 +1684,7 @@ mod tests {
         );
     }
 
-    // policy-v1-commitment-to-self-delay-range
+    // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_counterparty_min_delay_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
@@ -1683,7 +1701,7 @@ mod tests {
         );
     }
 
-    // policy-v1-commitment-to-self-delay-range
+    // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_counterparty_max_delay_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
@@ -1796,7 +1814,7 @@ mod tests {
         );
     }
 
-    // policy-v2-commitment-initial-funding-value
+    // policy-commitment-initial-funding-value
     #[test]
     fn validate_commitment_tx_initial_with_bad_fundee_output() {
         let validator = make_test_validator();

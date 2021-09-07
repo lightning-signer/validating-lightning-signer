@@ -24,6 +24,7 @@ use lightning::ln::chan_utils::{
     CommitmentTransaction, CounterpartyChannelTransactionParameters,
     DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
+use lightning::ln::PaymentHash;
 use lightning::util::test_utils;
 
 use crate::channel::{
@@ -35,7 +36,9 @@ use crate::persist::{DummyPersister, Persist};
 use crate::prelude::*;
 use crate::signer::my_keys_manager::KeyDerivationStyle;
 use crate::tx::tx::{sort_outputs, CommitmentInfo2, HTLCInfo2};
-use crate::util::crypto_utils::{payload_for_p2wpkh, payload_for_p2wsh};
+use crate::util::crypto_utils::{
+    derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, payload_for_p2wsh,
+};
 use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
 use crate::Arc;
@@ -1226,6 +1229,146 @@ pub fn build_tx_scripts(
         scripts.push(script);
     }
     Ok(scripts)
+}
+
+pub fn get_channel_funding_pubkey(node: &Node, channel_id: &ChannelId) -> PublicKey {
+    let res: Result<PublicKey, Status> =
+        node.with_ready_channel(&channel_id, |chan| Ok(chan.keys.pubkeys().funding_pubkey));
+    res.unwrap()
+}
+
+pub fn get_channel_htlc_pubkey(
+    node: &Node,
+    channel_id: &ChannelId,
+    remote_per_commitment_point: &PublicKey,
+) -> PublicKey {
+    let res: Result<PublicKey, Status> = node.with_ready_channel(&channel_id, |chan| {
+        let secp_ctx = &chan.secp_ctx;
+        let pubkey = derive_public_key(
+            &secp_ctx,
+            &remote_per_commitment_point,
+            &chan.keys.pubkeys().htlc_basepoint,
+        )
+        .unwrap();
+        Ok(pubkey)
+    });
+    res.unwrap()
+}
+
+pub fn get_channel_delayed_payment_pubkey(
+    node: &Node,
+    channel_id: &ChannelId,
+    remote_per_commitment_point: &PublicKey,
+) -> PublicKey {
+    let res: Result<PublicKey, Status> = node.with_ready_channel(&channel_id, |chan| {
+        let secp_ctx = &chan.secp_ctx;
+        let pubkey = derive_public_key(
+            &secp_ctx,
+            &remote_per_commitment_point,
+            &chan.keys.pubkeys().delayed_payment_basepoint,
+        )
+        .unwrap();
+        Ok(pubkey)
+    });
+    res.unwrap()
+}
+
+pub fn get_channel_revocation_pubkey(
+    node: &Node,
+    channel_id: &ChannelId,
+    revocation_point: &PublicKey,
+) -> PublicKey {
+    let res: Result<PublicKey, Status> = node.with_ready_channel(&channel_id, |chan| {
+        let secp_ctx = &chan.secp_ctx;
+        let pubkey = derive_revocation_pubkey(
+            secp_ctx,
+            revocation_point, // matches revocation_secret
+            &chan.keys.pubkeys().revocation_basepoint,
+        )
+        .unwrap();
+        Ok(pubkey)
+    });
+    res.unwrap()
+}
+
+pub fn check_signature(
+    tx: &bitcoin::Transaction,
+    input: usize,
+    ser_signature: Vec<u8>,
+    pubkey: &PublicKey,
+    input_value_sat: u64,
+    redeemscript: &Script,
+) {
+    check_signature_with_setup(
+        tx,
+        input,
+        ser_signature,
+        pubkey,
+        input_value_sat,
+        redeemscript,
+        &make_test_channel_setup(),
+    )
+}
+
+pub fn check_signature_with_setup(
+    tx: &bitcoin::Transaction,
+    input: usize,
+    ser_signature: Vec<u8>,
+    pubkey: &PublicKey,
+    input_value_sat: u64,
+    redeemscript: &Script,
+    setup: &ChannelSetup,
+) {
+    let sig_hash_type = if setup.option_anchor_outputs() {
+        SigHashType::SinglePlusAnyoneCanPay
+    } else {
+        SigHashType::All
+    };
+
+    let sighash = Message::from_slice(
+        &SigHashCache::new(tx).signature_hash(input, &redeemscript, input_value_sat, sig_hash_type)
+            [..],
+    )
+    .expect("sighash");
+    let mut der_signature = ser_signature.clone();
+    der_signature.pop(); // Pop the sighash type byte
+    let signature = Signature::from_der(&der_signature).expect("from_der");
+    let secp_ctx = Secp256k1::new();
+    secp_ctx
+        .verify(&sighash, &signature, &pubkey)
+        .expect("verify");
+}
+
+pub fn sign_commitment_tx_with_mutators_setup() -> (
+    Arc<Node>,
+    ChannelSetup,
+    ChannelId,
+    Vec<HTLCInfo2>,
+    Vec<HTLCInfo2>,
+) {
+    let setup = make_test_channel_setup();
+    let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
+
+    let htlc1 = HTLCInfo2 {
+        value_sat: 1,
+        payment_hash: PaymentHash([1; 32]),
+        cltv_expiry: 2 << 16,
+    };
+
+    let htlc2 = HTLCInfo2 {
+        value_sat: 1,
+        payment_hash: PaymentHash([3; 32]),
+        cltv_expiry: 3 << 16,
+    };
+
+    let htlc3 = HTLCInfo2 {
+        value_sat: 1,
+        payment_hash: PaymentHash([5; 32]),
+        cltv_expiry: 4 << 16,
+    };
+    let offered_htlcs = vec![htlc1];
+    let received_htlcs = vec![htlc2, htlc3];
+    (node, setup, channel_id, offered_htlcs, received_htlcs)
 }
 
 pub fn hex_decode(s: &str) -> Result<Vec<u8>, hex::Error> {
