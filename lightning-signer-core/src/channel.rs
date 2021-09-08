@@ -1333,6 +1333,7 @@ impl Channel {
         // - policy-commitment-revocation-pubkey
         // - policy-commitment-htlc-pubkey
         // - policy-commitment-broadcaster-pubkey
+        // - policy-commitment-countersignatory-pubkey
 
         // Convert from backwards counting.
         let commit_num = INITIAL_COMMITMENT_NUMBER - recomposed_tx.trust().commitment_number();

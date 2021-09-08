@@ -14,7 +14,7 @@ mod tests {
     use crate::channel::{Channel, ChannelSetup, CommitmentType};
     use crate::policy::validator::EnforcementState;
     use crate::tx::tx::{HTLCInfo2, ANCHOR_SAT};
-    use crate::util::crypto_utils::signature_to_bitcoin_vec;
+    use crate::util::crypto_utils::{payload_for_p2wpkh, signature_to_bitcoin_vec};
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
 
@@ -679,6 +679,20 @@ mod tests {
                 keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
             },
             |_tx, _witscripts| {},
+        );
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
+    }
+
+    // policy-commitment-countersignatory-pubkey
+    #[test]
+    fn sign_counterparty_commitment_tx_with_bad_countersignatory_pubkey_test() {
+        let status = sign_counterparty_commitment_tx_with_mutators(
+            |_state| {},
+            |_keys| {},
+            |tx, _witscripts| {
+                tx.transaction.output[3].script_pubkey =
+                    payload_for_p2wpkh(&make_test_pubkey(42)).script_pubkey();
+            },
         );
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }

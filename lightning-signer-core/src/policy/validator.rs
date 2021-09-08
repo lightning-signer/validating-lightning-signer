@@ -288,7 +288,6 @@ impl SimpleValidator {
 // TODO - policy-commitment-spends-active-utxo
 // TODO - policy-commitment-htlc-routing-balance
 // TODO - policy-commitment-htlc-received-spends-active-utxo
-// TODO - policy-commitment-counterparty-pubkey
 // TODO - policy-commitment-htlc-revocation-pubkey
 // TODO - policy-commitment-htlc-counterparty-htlc-pubkey
 // TODO - policy-commitment-htlc-holder-htlc-pubkey
