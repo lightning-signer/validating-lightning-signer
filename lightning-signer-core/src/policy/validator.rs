@@ -286,7 +286,6 @@ impl SimpleValidator {
 // TODO - policy-funding-change-path-predictable
 
 // TODO - policy-commitment-spends-active-utxo
-// TODO - policy-commitment-fee-range [NO TESTS TAGGED]
 // TODO - policy-commitment-htlc-count-limit [NO TESTS TAGGED]
 // TODO - policy-commitment-htlc-routing-balance
 // TODO - policy-commitment-htlc-received-spends-active-utxo
@@ -1727,6 +1726,7 @@ mod tests {
         );
     }
 
+    // policy-commitment-fee-range
     #[test]
     fn validate_commitment_tx_shortage_test() {
         let validator = make_test_validator();
@@ -1750,6 +1750,7 @@ mod tests {
         );
     }
 
+    // policy-commitment-fee-range
     #[test]
     fn validate_commitment_tx_htlc_shortage_test() {
         let validator = make_test_validator();
