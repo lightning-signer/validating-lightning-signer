@@ -464,7 +464,7 @@ mod tests {
     where
         StateMutator: Fn(&mut EnforcementState),
         KeysMutator: Fn(&mut TxCreationKeys),
-        TxMutator: Fn(&mut BuiltCommitmentTransaction),
+        TxMutator: Fn(&mut BuiltCommitmentTransaction, &mut Vec<Vec<u8>>),
     {
         let (node, setup, channel_id, offered_htlcs, received_htlcs) =
             sign_commitment_tx_with_mutators_setup();
@@ -503,7 +503,7 @@ mod tests {
                 &parameters,
             )
             .expect("scripts");
-            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
                 keys,
@@ -519,7 +519,7 @@ mod tests {
             let mut tx = trusted_tx.built_transaction().clone();
 
             // Mutate the transaction and recalculate the txid.
-            txmut(&mut tx);
+            txmut(&mut tx, &mut output_witscripts);
             tx.txid = tx.transaction.txid();
 
             let sig = chan.sign_counterparty_commitment_tx(
@@ -564,7 +564,7 @@ mod tests {
             |_keys| {
                 // don't mutate the keys, should pass
             },
-            |_tx| {
+            |_tx, _witscripts| {
                 // don't mutate the tx, should pass
             },
         );
@@ -577,7 +577,7 @@ mod tests {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |_state| {},
             |_keys| {},
-            |tx| {
+            |tx, _witscripts| {
                 tx.transaction.version = 3;
             },
         );
@@ -595,7 +595,7 @@ mod tests {
             |_keys| {
                 // don't mutate the keys
             },
-            |tx| {
+            |tx, _witscripts| {
                 tx.transaction.lock_time = 42;
             },
         );
@@ -608,7 +608,7 @@ mod tests {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |_state| {},
             |_keys| {},
-            |tx| {
+            |tx, _witscripts| {
                 tx.transaction.input[0].sequence = 42;
             },
         );
@@ -621,7 +621,7 @@ mod tests {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |_state| {},
             |_keys| {},
-            |tx| {
+            |tx, _witscripts| {
                 let mut inp2 = tx.transaction.input[0].clone();
                 inp2.previous_output.txid = bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
                 tx.transaction.input.push(inp2);
@@ -636,7 +636,7 @@ mod tests {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |_state| {},
             |_keys| {},
-            |tx| {
+            |tx, _witscripts| {
                 tx.transaction.input[0].previous_output.txid =
                     bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
             },
@@ -652,7 +652,7 @@ mod tests {
             |keys| {
                 keys.revocation_key = make_test_pubkey(42);
             },
-            |_tx| {},
+            |_tx, _witscripts| {},
         );
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
@@ -665,7 +665,7 @@ mod tests {
             |keys| {
                 keys.countersignatory_htlc_key = make_test_pubkey(42);
             },
-            |_tx| {},
+            |_tx, _witscripts| {},
         );
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
@@ -678,7 +678,7 @@ mod tests {
             |keys| {
                 keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
             },
-            |_tx| {},
+            |_tx, _witscripts| {},
         );
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
@@ -691,7 +691,7 @@ mod tests {
                 state.set_next_counterparty_revoke_num_for_testing(21);
             },
             |_keys| {},
-            |_tx| {},
+            |_tx, _witscripts| {},
         );
         assert_failed_precondition_err!(
             status,
@@ -710,7 +710,7 @@ mod tests {
                 state.set_next_counterparty_revoke_num_for_testing(24);
             },
             |_keys| {},
-            |_tx| {},
+            |_tx, _witscripts| {},
         );
         assert_failed_precondition_err!(
             status,
