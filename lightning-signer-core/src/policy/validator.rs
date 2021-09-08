@@ -18,7 +18,10 @@ use crate::tx::tx::{
     HTLC_TIMEOUT_TX_WEIGHT,
 };
 use crate::util::crypto_utils::payload_for_p2wsh;
-use crate::util::debug_utils::{script_debug, DebugHTLCOutputInCommitment, DebugTxCreationKeys};
+use crate::util::debug_utils::{
+    script_debug, DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugTxCreationKeys,
+    DebugVecVecU8,
+};
 use crate::wallet::Wallet;
 
 extern crate scopeguard;
@@ -334,6 +337,14 @@ impl Validator for SimpleValidator {
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
     ) -> Result<CommitmentInfo, ValidationError> {
+        let mut debug_on_return = scoped_debug_return!(
+            DebugInMemorySigner(keys),
+            setup,
+            is_counterparty,
+            tx,
+            DebugVecVecU8(output_witscripts)
+        );
+
         // policy-commitment-version
         if tx.version != 2 {
             return policy_err!("bad commitment version: {}", tx.version);
@@ -349,6 +360,8 @@ impl Validator for SimpleValidator {
             )
             .map_err(|ve| policy_error(format!("tx output[{}]: {}", ind, ve)))?;
         }
+
+        *debug_on_return = false;
         Ok(info)
     }
 

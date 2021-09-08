@@ -100,7 +100,7 @@ impl<'a> core::fmt::Debug for DebugInMemorySigner<'a> {
             .field("payment_key", &self.0.payment_key)
             .field("delayed_payment_base_key", &self.0.delayed_payment_base_key)
             .field("htlc_base_key", &self.0.htlc_base_key)
-            .field("commitment_seed", &self.0.commitment_seed)
+            .field("commitment_seed", &DebugBytes(&self.0.commitment_seed))
             .finish()
     }
 }
@@ -113,6 +113,16 @@ impl<'a> core::fmt::Debug for DebugBytes<'a> {
             write!(f, "{:02x}", i)?;
         }
         Ok(())
+    }
+}
+
+/// Debug support for Vec<Vec<u8>>
+pub struct DebugVecVecU8<'a>(pub &'a Vec<Vec<u8>>);
+impl<'a> core::fmt::Debug for DebugVecVecU8<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_list()
+            .entries(self.0.iter().map(|vv| DebugBytes(&vv[..])))
+            .finish()
     }
 }
 
