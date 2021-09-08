@@ -286,7 +286,6 @@ impl SimpleValidator {
 // TODO - policy-funding-change-path-predictable
 
 // TODO - policy-commitment-spends-active-utxo
-// TODO - policy-commitment-htlc-inflight-limit [NO TESTS TAGGED]
 // TODO - policy-commitment-fee-range [NO TESTS TAGGED]
 // TODO - policy-commitment-htlc-count-limit [NO TESTS TAGGED]
 // TODO - policy-commitment-htlc-routing-balance
@@ -1874,6 +1873,7 @@ mod tests {
         );
     }
 
+    // policy-commitment-htlc-inflight-limit
     #[test]
     fn validate_commitment_tx_htlc_value_test() {
         let validator = make_test_validator();
