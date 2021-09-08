@@ -441,6 +441,52 @@ mod tests {
         );
     }
 
+    // policy-revoke-new-commitment-valid
+    // policy-commitment-version
+    #[test]
+    fn validate_holder_commitment_bad_version() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                    tx.version = 3;
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: make_info: bad commitment version: 3"
+        );
+    }
+
+    // policy-revoke-new-commitment-valid
+    // policy-commitment-delayed-pubkey
+    #[test]
+    fn validate_holder_commitment_bad_delayed_pubkey() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |keys| {
+                    keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
+                },
+                |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: tx output[0]: \
+             TransactionFormat(\"script pubkey doesn't match inner script\")"
+        );
+    }
+
+    // policy-revoke-new-commitment-valid
     // policy-commitment-singular-to-holder
     #[test]
     fn validate_holder_commitment_with_multiple_to_holder() {
@@ -465,6 +511,7 @@ mod tests {
         );
     }
 
+    // policy-revoke-new-commitment-valid
     // policy-commitment-singular-to-counterparty
     #[test]
     fn validate_holder_commitment_with_multiple_to_counterparty() {

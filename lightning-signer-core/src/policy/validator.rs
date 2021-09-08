@@ -310,8 +310,6 @@ impl SimpleValidator {
 // TODO - policy-v2-commitment-payment-approved
 // TODO - policy-v2-commitment-payment-invoiced
 
-// TODO - policy-revoke-new-commitment-valid [NO TESTS TAGGED]
-
 // TODO - policy-htlc-cltv-range
 
 // TODO - policy-forced-destination-allowlisted
