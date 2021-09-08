@@ -1237,7 +1237,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             min_feerate_per_kw: 500,    // c-lightning integration
             max_feerate_per_kw: 16_000, // c-lightning integration
             min_fee: 100,
-            max_fee: 21_000, // c-lightning integration 21000
+            max_fee: 46_000, // c-lightning integration 45675
         }
     }
 }
