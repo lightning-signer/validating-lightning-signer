@@ -670,7 +670,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-commitment-delayed-pubkey
+    // policy-commitment-broadcaster-pubkey
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_delayed_pubkey_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(

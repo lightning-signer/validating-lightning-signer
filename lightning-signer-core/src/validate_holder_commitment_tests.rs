@@ -464,7 +464,7 @@ mod tests {
     }
 
     // policy-revoke-new-commitment-valid
-    // policy-commitment-delayed-pubkey
+    // policy-commitment-broadcaster-pubkey
     #[test]
     fn validate_holder_commitment_bad_delayed_pubkey() {
         assert_failed_precondition_err!(
