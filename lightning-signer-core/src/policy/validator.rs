@@ -285,8 +285,6 @@ impl SimpleValidator {
 
 // TODO - policy-funding-change-path-predictable
 
-// TODO - policy-commitment-singular-to-holder [NO TEST TAGGED]
-// TODO - policy-commitment-singular-to-counterparty [NO TESTS TAGGED]
 // TODO - policy-commitment-no-unrecognized-outputs [NO TESTS TAGGED]
 // TODO - policy-commitment-spends-active-utxo
 // TODO - policy-commitment-htlc-inflight-limit [NO TESTS TAGGED]

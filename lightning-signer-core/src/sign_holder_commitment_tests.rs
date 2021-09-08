@@ -404,4 +404,46 @@ mod tests {
         );
         assert!(status.is_ok());
     }
+
+    // policy-commitment-singular-to-holder
+    #[test]
+    fn sign_holder_commitment_tx_with_multiple_to_holder() {
+        assert_failed_precondition_err!(
+            sign_holder_commitment_tx_with_mutators(
+                |_state| {},
+                |_keys| {},
+                |tx, witscripts| {
+                    // Duplicate the to_holder output
+                    let ndx = 4;
+                    tx.transaction
+                        .output
+                        .push(tx.transaction.output[ndx].clone());
+                    witscripts.push(witscripts[ndx].clone());
+                },
+            ),
+            "policy failure: tx output[5]: \
+             TransactionFormat(\"more than one to_broadcaster output\")"
+        );
+    }
+
+    // policy-commitment-singular-to-counterparty
+    #[test]
+    fn sign_holder_commitment_tx_with_multiple_to_counterparty() {
+        assert_failed_precondition_err!(
+            sign_holder_commitment_tx_with_mutators(
+                |_state| {},
+                |_keys| {},
+                |tx, witscripts| {
+                    // Duplicate the to_counterparty output
+                    let ndx = 3;
+                    tx.transaction
+                        .output
+                        .push(tx.transaction.output[ndx].clone());
+                    witscripts.push(witscripts[ndx].clone());
+                },
+            ),
+            "policy failure: tx output[5]: \
+             TransactionFormat(\"more than one to_countersigner output\")"
+        );
+    }
 }

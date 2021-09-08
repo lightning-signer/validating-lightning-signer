@@ -425,6 +425,52 @@ mod tests {
         );
     }
 
+    // policy-commitment-singular-to-holder
+    #[test]
+    fn validate_holder_commitment_with_multiple_to_holder() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_chan, _commit_tx_ctx, tx, witscripts, _commit_sig, _htlc_sigs| {
+                    let ndx = 0;
+                    tx.output.push(tx.output[ndx].clone());
+                    witscripts.push(witscripts[ndx].clone());
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: tx output[2]: \
+             TransactionFormat(\"more than one to_broadcaster output\")"
+        );
+    }
+
+    // policy-commitment-singular-to-counterparty
+    #[test]
+    fn validate_holder_commitment_with_multiple_to_counterparty() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_chan, _commit_tx_ctx, tx, witscripts, _commit_sig, _htlc_sigs| {
+                    let ndx = 1;
+                    tx.output.push(tx.output[ndx].clone());
+                    witscripts.push(witscripts[ndx].clone());
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: tx output[2]: \
+             TransactionFormat(\"more than one to_countersigner output\")"
+        );
+    }
+
     #[test]
     fn channel_state_counterparty_commit_and_revoke_test() {
         let node_ctx = test_node_ctx(1);
