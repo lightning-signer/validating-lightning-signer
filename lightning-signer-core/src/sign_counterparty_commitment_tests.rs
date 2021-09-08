@@ -497,8 +497,8 @@ mod tests {
 
             let redeem_scripts = build_tx_scripts(
                 &keys,
-                to_countersignatory,
                 to_broadcaster,
+                to_countersignatory,
                 &htlcs,
                 &parameters,
             )
@@ -509,8 +509,8 @@ mod tests {
                 keys,
                 commit_num,
                 feerate_per_kw,
-                to_broadcaster,
                 to_countersignatory,
+                to_broadcaster,
                 htlcs.clone(),
             );
 
@@ -536,7 +536,7 @@ mod tests {
 
         assert_eq!(
             tx.txid().to_hex(),
-            "3f3238ed033a13ab1cf43d8eb6e81e5beca2080f9530a13931c10f40e04697fb"
+            "1a5988ac95fffa4f92cc22ea96cc0b6e4cbd2752dd796596b56c32baba1f792d"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
