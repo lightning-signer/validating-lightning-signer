@@ -965,6 +965,7 @@ mod tests {
         );
     }
 
+    // policy-commitment-no-unrecognized-outputs
     #[test]
     fn handle_output_unknown_output_type_test() {
         let mut info = CommitmentInfo::new_for_counterparty();
@@ -983,6 +984,7 @@ mod tests {
         );
     }
 
+    // policy-commitment-no-unrecognized-outputs
     #[test]
     fn handle_output_unknown_p2wsh_script_test() {
         let mut info = CommitmentInfo::new_for_counterparty();
