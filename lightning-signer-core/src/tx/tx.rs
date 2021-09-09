@@ -623,9 +623,10 @@ impl CommitmentInfo {
     ) -> Result<(), ValidationError> {
         let (revocation_pubkey, delay, delayed_pubkey) = vals;
         // policy-commitment-singular-to-holder
+        // policy-commitment-singular-to-counterparty
         if self.has_to_broadcaster() {
             return Err(transaction_format_error(
-                "already have to local".to_string(),
+                "more than one to_broadcaster output".to_string(),
             ));
         }
 
@@ -670,10 +671,11 @@ impl CommitmentInfo {
         out: &TxOut,
         to_countersigner_delayed_pubkey_data: Vec<u8>,
     ) -> Result<(), ValidationError> {
+        // policy-commitment-singular-to-holder
         // policy-commitment-singular-to-counterparty
         if self.has_to_countersigner() {
             return Err(transaction_format_error(
-                "more than one to remote".to_string(),
+                "more than one to_countersigner output".to_string(),
             ));
         }
         self.to_countersigner_pubkey = Some(
@@ -816,10 +818,11 @@ impl CommitmentInfo {
                     "p2wpkh to_countersigner not valid with anchors".to_string(),
                 ));
             }
+            // policy-commitment-singular-to-holder
             // policy-commitment-singular-to-counterparty
             if self.has_to_countersigner() {
                 return Err(transaction_format_error(
-                    "more than one to_countersigner".to_string(),
+                    "more than one to_countersigner output".to_string(),
                 ));
             }
             self.to_countersigner_address = Payload::from_script(&out.script_pubkey);
@@ -920,7 +923,7 @@ mod tests {
         assert!(res.is_err());
         #[rustfmt::skip]
         assert_eq!(
-            transaction_format_error("already have to local".to_string()),
+            transaction_format_error("more than one to_broadcaster output".to_string()),
                     res.expect_err("expecting err")
         );
     }
@@ -962,6 +965,7 @@ mod tests {
         );
     }
 
+    // policy-commitment-no-unrecognized-outputs
     #[test]
     fn handle_output_unknown_output_type_test() {
         let mut info = CommitmentInfo::new_for_counterparty();
@@ -980,6 +984,7 @@ mod tests {
         );
     }
 
+    // policy-commitment-no-unrecognized-outputs
     #[test]
     fn handle_output_unknown_p2wsh_script_test() {
         let mut info = CommitmentInfo::new_for_counterparty();
@@ -1040,7 +1045,7 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
-            transaction_format_error("more than one to_countersigner".to_string())
+            transaction_format_error("more than one to_countersigner output".to_string())
         );
     }
 

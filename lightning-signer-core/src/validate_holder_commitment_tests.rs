@@ -1,10 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin;
     use bitcoin::hash_types::Txid;
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::Signature;
     use bitcoin::util::psbt::serialize::Serialize;
+    use bitcoin::{self, Transaction};
+    use lightning::ln::chan_utils::TxCreationKeys;
     use lightning::ln::PaymentHash;
 
     use test_env_log::test;
@@ -209,13 +210,25 @@ mod tests {
 
     const HOLD_COMMIT_NUM: u64 = 43;
 
-    fn validate_holder_commitment_with_mutator<ValidationMutator, ChannelStateValidator>(
+    fn validate_holder_commitment_with_mutator<
+        KeysMutator,
+        ValidationMutator,
+        ChannelStateValidator,
+    >(
+        mutate_keys: KeysMutator,
         mutate_validation_input: ValidationMutator,
         validate_channel_state: ChannelStateValidator,
     ) -> Result<(), Status>
     where
-        ValidationMutator:
-            Fn(&mut Channel, &mut TestCommitmentTxContext, &mut Signature, &mut Vec<Signature>),
+        KeysMutator: Fn(&mut TxCreationKeys),
+        ValidationMutator: Fn(
+            &mut Channel,
+            &mut TestCommitmentTxContext,
+            &mut Transaction,
+            &mut Vec<Vec<u8>>,
+            &mut Signature,
+            &mut Vec<Signature>,
+        ),
         ChannelStateValidator: Fn(&Channel),
     {
         let node_ctx = test_node_ctx(1);
@@ -272,7 +285,11 @@ mod tests {
                 let parameters = channel_parameters.as_holder_broadcastable();
                 let per_commitment_point =
                     chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
-                let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+
+                let mut keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+
+                mutate_keys(&mut keys);
+
                 let redeem_scripts = build_tx_scripts(
                     &keys,
                     commit_tx_ctx.to_broadcaster,
@@ -281,20 +298,30 @@ mod tests {
                     &parameters,
                 )
                 .expect("scripts");
-                let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+                let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
-                mutate_validation_input(chan, &mut commit_tx_ctx, &mut commit_sig, &mut htlc_sigs);
+                let mut tx = commit_tx_ctx
+                    .tx
+                    .as_ref()
+                    .unwrap()
+                    .trust()
+                    .built_transaction()
+                    .transaction
+                    .clone();
+
+                mutate_validation_input(
+                    chan,
+                    &mut commit_tx_ctx,
+                    &mut tx,
+                    &mut output_witscripts,
+                    &mut commit_sig,
+                    &mut htlc_sigs,
+                );
 
                 // Validate the holder_commitment, but defer error returns till after we've had
                 // a chance to validate the channel state for side-effects
                 let deferred_rv = chan.validate_holder_commitment_tx(
-                    &commit_tx_ctx
-                        .tx
-                        .as_ref()
-                        .unwrap()
-                        .trust()
-                        .built_transaction()
-                        .transaction,
+                    &tx,
                     &output_witscripts,
                     commit_tx_ctx.commit_num,
                     commit_tx_ctx.feerate_per_kw,
@@ -312,7 +339,8 @@ mod tests {
     #[test]
     fn validate_holder_commitment_success() {
         assert!(validate_holder_commitment_with_mutator(
-            |_chan, _commit_tx_ctx, _commit_sig, _htlc_sigs| {
+            |_keys| {},
+            |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
                 // If we don't mutate anything it should succeed.
             },
             |chan| {
@@ -329,7 +357,8 @@ mod tests {
     #[test]
     fn validate_holder_commitment_can_retry() {
         assert!(validate_holder_commitment_with_mutator(
-            |chan, _commit_tx_ctx, _commit_sig, _htlc_sigs| {
+            |_keys| {},
+            |chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
                 // Set the channel's next_holder_commit_num ahead one;
                 // pretend we've already seen it ...
                 chan.enforcement_state
@@ -350,7 +379,8 @@ mod tests {
     fn validate_holder_commitment_not_ahead() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |chan, _commit_tx_ctx, _commit_sig, _htlc_sigs| {
+                |_keys| {},
+                |chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
                     // Set the channel's next_holder_commit_num ahead two, past the retry ...
                     chan.enforcement_state
                         .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM + 2);
@@ -371,7 +401,8 @@ mod tests {
     fn validate_holder_commitment_not_behind() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |chan, _commit_tx_ctx, _commit_sig, _htlc_sigs| {
+                |_keys| {},
+                |chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
                     // Set the channel's next_holder_commit_num ahead two behind 1, in the past ...
                     chan.enforcement_state
                         .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM - 1);
@@ -394,7 +425,8 @@ mod tests {
     fn validate_holder_commitment_not_closed() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |chan, _commit_tx_ctx, _commit_sig, _htlc_sigs| {
+                |_keys| {},
+                |chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
                     chan.enforcement_state.mutual_close_signed = true;
                 },
                 |chan| {
@@ -406,6 +438,98 @@ mod tests {
                 }
             ),
             "policy failure: validate_holder_commitment_state: mutual close already signed"
+        );
+    }
+
+    // policy-revoke-new-commitment-valid
+    // policy-commitment-version
+    #[test]
+    fn validate_holder_commitment_bad_version() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                    tx.version = 3;
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: make_info: bad commitment version: 3"
+        );
+    }
+
+    // policy-revoke-new-commitment-valid
+    // policy-commitment-broadcaster-pubkey
+    #[test]
+    fn validate_holder_commitment_bad_delayed_pubkey() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |keys| {
+                    keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
+                },
+                |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "transaction format: tx output[0]: script pubkey doesn't match inner script"
+        );
+    }
+
+    // policy-revoke-new-commitment-valid
+    // policy-commitment-singular-to-holder
+    #[test]
+    fn validate_holder_commitment_with_multiple_to_holder() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, _commit_tx_ctx, tx, witscripts, _commit_sig, _htlc_sigs| {
+                    let ndx = 0;
+                    tx.output.push(tx.output[ndx].clone());
+                    witscripts.push(witscripts[ndx].clone());
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "transaction format: tx output[2]: more than one to_broadcaster output"
+        );
+    }
+
+    // policy-revoke-new-commitment-valid
+    // policy-commitment-singular-to-counterparty
+    #[test]
+    fn validate_holder_commitment_with_multiple_to_counterparty() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, _commit_tx_ctx, tx, witscripts, _commit_sig, _htlc_sigs| {
+                    let ndx = 1;
+                    tx.output.push(tx.output[ndx].clone());
+                    witscripts.push(witscripts[ndx].clone());
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "transaction format: tx output[2]: more than one to_countersigner output"
         );
     }
 

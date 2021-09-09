@@ -43,6 +43,21 @@ impl ValidationError {
         mve.bt.resolve();
         mve.bt
     }
+
+    /// Return a new ValidationError with the message prepended
+    pub fn prepend_msg(&self, premsg: String) -> ValidationError {
+        let modkind = match &self.kind {
+            TransactionFormat(s0) => TransactionFormat(premsg + &s0),
+            ScriptFormat(s0) => ScriptFormat(premsg + &s0),
+            Mismatch(s0) => Mismatch(premsg + &s0),
+            Policy(s0) => Policy(premsg + &s0),
+        };
+        ValidationError {
+            kind: modkind,
+            #[cfg(feature = "backtrace")]
+            bt: self.bt.clone(),
+        }
+    }
 }
 
 impl core::fmt::Display for ValidationError {

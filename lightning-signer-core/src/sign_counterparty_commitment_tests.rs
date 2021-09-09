@@ -14,7 +14,7 @@ mod tests {
     use crate::channel::{Channel, ChannelSetup, CommitmentType};
     use crate::policy::validator::EnforcementState;
     use crate::tx::tx::{HTLCInfo2, ANCHOR_SAT};
-    use crate::util::crypto_utils::signature_to_bitcoin_vec;
+    use crate::util::crypto_utils::{payload_for_p2wpkh, signature_to_bitcoin_vec};
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
 
@@ -464,7 +464,7 @@ mod tests {
     where
         StateMutator: Fn(&mut EnforcementState),
         KeysMutator: Fn(&mut TxCreationKeys),
-        TxMutator: Fn(&mut BuiltCommitmentTransaction),
+        TxMutator: Fn(&mut BuiltCommitmentTransaction, &mut Vec<Vec<u8>>),
     {
         let (node, setup, channel_id, offered_htlcs, received_htlcs) =
             sign_commitment_tx_with_mutators_setup();
@@ -497,20 +497,20 @@ mod tests {
 
             let redeem_scripts = build_tx_scripts(
                 &keys,
-                to_countersignatory,
                 to_broadcaster,
+                to_countersignatory,
                 &htlcs,
                 &parameters,
             )
             .expect("scripts");
-            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
                 keys,
                 commit_num,
                 feerate_per_kw,
-                to_broadcaster,
                 to_countersignatory,
+                to_broadcaster,
                 htlcs.clone(),
             );
 
@@ -519,7 +519,7 @@ mod tests {
             let mut tx = trusted_tx.built_transaction().clone();
 
             // Mutate the transaction and recalculate the txid.
-            txmut(&mut tx);
+            txmut(&mut tx, &mut output_witscripts);
             tx.txid = tx.transaction.txid();
 
             let sig = chan.sign_counterparty_commitment_tx(
@@ -536,7 +536,7 @@ mod tests {
 
         assert_eq!(
             tx.txid().to_hex(),
-            "3f3238ed033a13ab1cf43d8eb6e81e5beca2080f9530a13931c10f40e04697fb"
+            "1a5988ac95fffa4f92cc22ea96cc0b6e4cbd2752dd796596b56c32baba1f792d"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -564,7 +564,7 @@ mod tests {
             |_keys| {
                 // don't mutate the keys, should pass
             },
-            |_tx| {
+            |_tx, _witscripts| {
                 // don't mutate the tx, should pass
             },
         );
@@ -577,7 +577,7 @@ mod tests {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |_state| {},
             |_keys| {},
-            |tx| {
+            |tx, _witscripts| {
                 tx.transaction.version = 3;
             },
         );
@@ -595,7 +595,7 @@ mod tests {
             |_keys| {
                 // don't mutate the keys
             },
-            |tx| {
+            |tx, _witscripts| {
                 tx.transaction.lock_time = 42;
             },
         );
@@ -608,7 +608,7 @@ mod tests {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |_state| {},
             |_keys| {},
-            |tx| {
+            |tx, _witscripts| {
                 tx.transaction.input[0].sequence = 42;
             },
         );
@@ -621,7 +621,7 @@ mod tests {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |_state| {},
             |_keys| {},
-            |tx| {
+            |tx, _witscripts| {
                 let mut inp2 = tx.transaction.input[0].clone();
                 inp2.previous_output.txid = bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
                 tx.transaction.input.push(inp2);
@@ -636,7 +636,7 @@ mod tests {
         let status = sign_counterparty_commitment_tx_with_mutators(
             |_state| {},
             |_keys| {},
-            |tx| {
+            |tx, _witscripts| {
                 tx.transaction.input[0].previous_output.txid =
                     bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
             },
@@ -652,7 +652,7 @@ mod tests {
             |keys| {
                 keys.revocation_key = make_test_pubkey(42);
             },
-            |_tx| {},
+            |_tx, _witscripts| {},
         );
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
@@ -665,12 +665,12 @@ mod tests {
             |keys| {
                 keys.countersignatory_htlc_key = make_test_pubkey(42);
             },
-            |_tx| {},
+            |_tx, _witscripts| {},
         );
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-commitment-delayed-pubkey
+    // policy-commitment-broadcaster-pubkey
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_delayed_pubkey_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
@@ -678,7 +678,21 @@ mod tests {
             |keys| {
                 keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
             },
-            |_tx| {},
+            |_tx, _witscripts| {},
+        );
+        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
+    }
+
+    // policy-commitment-countersignatory-pubkey
+    #[test]
+    fn sign_counterparty_commitment_tx_with_bad_countersignatory_pubkey_test() {
+        let status = sign_counterparty_commitment_tx_with_mutators(
+            |_state| {},
+            |_keys| {},
+            |tx, _witscripts| {
+                tx.transaction.output[3].script_pubkey =
+                    payload_for_p2wpkh(&make_test_pubkey(42)).script_pubkey();
+            },
         );
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
@@ -691,7 +705,7 @@ mod tests {
                 state.set_next_counterparty_revoke_num_for_testing(21);
             },
             |_keys| {},
-            |_tx| {},
+            |_tx, _witscripts| {},
         );
         assert_failed_precondition_err!(
             status,
@@ -710,12 +724,52 @@ mod tests {
                 state.set_next_counterparty_revoke_num_for_testing(24);
             },
             |_keys| {},
-            |_tx| {},
+            |_tx, _witscripts| {},
         );
         assert_failed_precondition_err!(
             status,
             "policy failure: set_next_counterparty_commit_num: \
              24 too small relative to next_counterparty_revoke_num 24"
+        );
+    }
+
+    // policy-commitment-singular-to-holder
+    #[test]
+    fn sign_counterparty_commitment_tx_with_multiple_to_holder() {
+        assert_failed_precondition_err!(
+            sign_counterparty_commitment_tx_with_mutators(
+                |_state| {},
+                |_keys| {},
+                |tx, witscripts| {
+                    // Duplicate the to_holder output
+                    let ndx = 3;
+                    tx.transaction
+                        .output
+                        .push(tx.transaction.output[ndx].clone());
+                    witscripts.push(witscripts[ndx].clone());
+                },
+            ),
+            "transaction format: tx output[5]: more than one to_countersigner output"
+        );
+    }
+
+    // policy-commitment-singular-to-counterparty
+    #[test]
+    fn sign_counterparty_commitment_tx_with_multiple_to_counterparty() {
+        assert_failed_precondition_err!(
+            sign_counterparty_commitment_tx_with_mutators(
+                |_state| {},
+                |_keys| {},
+                |tx, witscripts| {
+                    // Duplicate the to_counterparty output
+                    let ndx = 4;
+                    tx.transaction
+                        .output
+                        .push(tx.transaction.output[ndx].clone());
+                    witscripts.push(witscripts[ndx].clone());
+                },
+            ),
+            "transaction format: tx output[5]: more than one to_broadcaster output"
         );
     }
 

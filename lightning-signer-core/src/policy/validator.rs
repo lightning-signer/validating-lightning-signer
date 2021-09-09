@@ -18,7 +18,10 @@ use crate::tx::tx::{
     HTLC_TIMEOUT_TX_WEIGHT,
 };
 use crate::util::crypto_utils::payload_for_p2wsh;
-use crate::util::debug_utils::{script_debug, DebugHTLCOutputInCommitment, DebugTxCreationKeys};
+use crate::util::debug_utils::{
+    script_debug, DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugTxCreationKeys,
+    DebugVecVecU8,
+};
 use crate::wallet::Wallet;
 
 extern crate scopeguard;
@@ -282,16 +285,9 @@ impl SimpleValidator {
 
 // TODO - policy-funding-change-path-predictable
 
-// TODO - policy-commitment-singular-to-holder [NO TEST TAGGED]
-// TODO - policy-commitment-singular-to-counterparty [NO TESTS TAGGED]
-// TODO - policy-commitment-no-unrecognized-outputs [NO TESTS TAGGED]
 // TODO - policy-commitment-spends-active-utxo
-// TODO - policy-commitment-htlc-inflight-limit [NO TESTS TAGGED]
-// TODO - policy-commitment-fee-range [NO TESTS TAGGED]
-// TODO - policy-commitment-htlc-count-limit [NO TESTS TAGGED]
 // TODO - policy-commitment-htlc-routing-balance
 // TODO - policy-commitment-htlc-received-spends-active-utxo
-// TODO - policy-commitment-counterparty-pubkey
 // TODO - policy-commitment-htlc-revocation-pubkey
 // TODO - policy-commitment-htlc-counterparty-htlc-pubkey
 // TODO - policy-commitment-htlc-holder-htlc-pubkey
@@ -313,8 +309,6 @@ impl SimpleValidator {
 // TODO - policy-v2-commitment-payment-approved
 // TODO - policy-v2-commitment-payment-invoiced
 
-// TODO - policy-revoke-new-commitment-valid [NO TESTS TAGGED]
-
 // TODO - policy-htlc-cltv-range
 
 // TODO - policy-forced-destination-allowlisted
@@ -334,6 +328,14 @@ impl Validator for SimpleValidator {
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
     ) -> Result<CommitmentInfo, ValidationError> {
+        let mut debug_on_return = scoped_debug_return!(
+            DebugInMemorySigner(keys),
+            setup,
+            is_counterparty,
+            tx,
+            DebugVecVecU8(output_witscripts)
+        );
+
         // policy-commitment-version
         if tx.version != 2 {
             return policy_err!("bad commitment version: {}", tx.version);
@@ -347,8 +349,10 @@ impl Validator for SimpleValidator {
                 &tx.output[ind],
                 output_witscripts[ind].as_slice(),
             )
-            .map_err(|ve| policy_error(format!("tx output[{}]: {}", ind, ve)))?;
+            .map_err(|ve| ve.prepend_msg(format!("tx output[{}]: ", ind)))?;
         }
+
+        *debug_on_return = false;
         Ok(info)
     }
 
@@ -1237,7 +1241,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             min_feerate_per_kw: 500,    // c-lightning integration
             max_feerate_per_kw: 16_000, // c-lightning integration
             min_fee: 100,
-            max_fee: 21_000, // c-lightning integration 21000
+            max_fee: 46_000, // c-lightning integration 45675
         }
     }
 }
@@ -1718,6 +1722,7 @@ mod tests {
         );
     }
 
+    // policy-commitment-fee-range
     #[test]
     fn validate_commitment_tx_shortage_test() {
         let validator = make_test_validator();
@@ -1741,6 +1746,7 @@ mod tests {
         );
     }
 
+    // policy-commitment-fee-range
     #[test]
     fn validate_commitment_tx_htlc_shortage_test() {
         let validator = make_test_validator();
@@ -1840,6 +1846,7 @@ mod tests {
         );
     }
 
+    // policy-commitment-htlc-count-limit
     #[test]
     fn validate_commitment_tx_htlc_count_test() {
         let validator = make_test_validator();
@@ -1864,6 +1871,7 @@ mod tests {
         );
     }
 
+    // policy-commitment-htlc-inflight-limit
     #[test]
     fn validate_commitment_tx_htlc_value_test() {
         let validator = make_test_validator();
