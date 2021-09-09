@@ -1331,9 +1331,11 @@ impl Channel {
         // - policy-commitment-input-single
         // - policy-commitment-input-match-funding
         // - policy-commitment-revocation-pubkey
-        // - policy-commitment-htlc-pubkey
         // - policy-commitment-broadcaster-pubkey
         // - policy-commitment-countersignatory-pubkey
+        // - policy-commitment-htlc-revocation-pubkey
+        // - policy-commitment-htlc-counterparty-htlc-pubkey
+        // - policy-commitment-htlc-holder-htlc-pubkey
 
         // Convert from backwards counting.
         let commit_num = INITIAL_COMMITMENT_NUMBER - recomposed_tx.trust().commitment_number();
@@ -1471,8 +1473,10 @@ impl Channel {
         // - policy-commitment-input-single
         // - policy-commitment-input-match-funding
         // - policy-commitment-revocation-pubkey
-        // - policy-commitment-htlc-pubkey
         // - policy-commitment-broadcaster-pubkey
+        // - policy-commitment-htlc-revocation-pubkey
+        // - policy-commitment-htlc-counterparty-htlc-pubkey
+        // - policy-commitment-htlc-holder-htlc-pubkey
         // - policy-revoke-new-commitment-valid
 
         Ok((recomposed_tx, info2))

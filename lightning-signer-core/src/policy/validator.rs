@@ -285,9 +285,6 @@ impl SimpleValidator {
 // TODO - policy-commitment-spends-active-utxo
 // TODO - policy-commitment-htlc-routing-balance
 // TODO - policy-commitment-htlc-received-spends-active-utxo
-// TODO - policy-commitment-htlc-revocation-pubkey
-// TODO - policy-commitment-htlc-counterparty-htlc-pubkey
-// TODO - policy-commitment-htlc-holder-htlc-pubkey
 // TODO - policy-commitment-htlc-cltv-range [NEEDS NEW HTLC DETECTION]
 // TODO - policy-commitment-htlc-offered-hash-matches
 // TODO - policy-commitment-outputs-trimmed
