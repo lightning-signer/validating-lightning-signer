@@ -349,7 +349,7 @@ impl Validator for SimpleValidator {
                 &tx.output[ind],
                 output_witscripts[ind].as_slice(),
             )
-            .map_err(|ve| policy_error(format!("tx output[{}]: {}", ind, ve)))?;
+            .map_err(|ve| ve.prepend_msg(format!("tx output[{}]: ", ind)))?;
         }
 
         *debug_on_return = false;

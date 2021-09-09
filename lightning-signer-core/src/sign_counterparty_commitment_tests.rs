@@ -749,8 +749,7 @@ mod tests {
                     witscripts.push(witscripts[ndx].clone());
                 },
             ),
-            "policy failure: tx output[5]: \
-             TransactionFormat(\"more than one to_countersigner output\")"
+            "transaction format: tx output[5]: more than one to_countersigner output"
         );
     }
 
@@ -770,8 +769,7 @@ mod tests {
                     witscripts.push(witscripts[ndx].clone());
                 },
             ),
-            "policy failure: tx output[5]: \
-             TransactionFormat(\"more than one to_broadcaster output\")"
+            "transaction format: tx output[5]: more than one to_broadcaster output"
         );
     }
 

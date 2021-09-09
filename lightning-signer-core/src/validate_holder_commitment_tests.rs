@@ -481,8 +481,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: tx output[0]: \
-             TransactionFormat(\"script pubkey doesn't match inner script\")"
+            "transaction format: tx output[0]: script pubkey doesn't match inner script"
         );
     }
 
@@ -506,8 +505,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: tx output[2]: \
-             TransactionFormat(\"more than one to_broadcaster output\")"
+            "transaction format: tx output[2]: more than one to_broadcaster output"
         );
     }
 
@@ -531,8 +529,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: tx output[2]: \
-             TransactionFormat(\"more than one to_countersigner output\")"
+            "transaction format: tx output[2]: more than one to_countersigner output"
         );
     }
 
