@@ -30,7 +30,7 @@ pub fn maybe_add_change_output(
         }
     }
 
-    let dust_value = get_dust_value(&change_destination_script);
+    let dust_value = change_destination_script.dust_value();
     let mut change_output = TxOut {
         script_pubkey: change_destination_script,
         value: 0,
@@ -47,7 +47,7 @@ pub fn maybe_add_change_output(
     // When calculating weight, add two for the flag bytes
     let change_value: i64 = (input_value - output_value) as i64
         - weight_with_change * feerate_sat_per_1000_weight as i64 / 1000;
-    if change_value >= dust_value as i64 {
+    if change_value >= dust_value.as_sat() as i64 {
         change_output.value = change_value as u64;
         tx.output.push(change_output);
     } else if (input_value - output_value) as i64
@@ -61,15 +61,4 @@ pub fn maybe_add_change_output(
     }
 
     Ok(())
-}
-
-fn get_dust_value(output_script: &Script) -> u64 {
-    //TODO: This belongs in rust-bitcoin (https://github.com/rust-bitcoin/rust-bitcoin/pull/566)
-    if output_script.is_op_return() {
-        0
-    } else if output_script.is_witness_program() {
-        294
-    } else {
-        546
-    }
 }
