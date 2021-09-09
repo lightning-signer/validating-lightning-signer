@@ -288,7 +288,7 @@ impl SimpleValidator {
 // TODO - policy-commitment-htlc-revocation-pubkey
 // TODO - policy-commitment-htlc-counterparty-htlc-pubkey
 // TODO - policy-commitment-htlc-holder-htlc-pubkey
-// TODO - policy-commitment-htlc-cltv-range
+// TODO - policy-commitment-htlc-cltv-range [NEEDS NEW HTLC DETECTION]
 // TODO - policy-commitment-htlc-offered-hash-matches
 // TODO - policy-commitment-outputs-trimmed
 // TODO - policy-commitment-previous-revoked [still need secret storage]
@@ -452,14 +452,24 @@ impl Validator for SimpleValidator {
         let mut htlc_value_sat: u64 = 0;
 
         for htlc in &info.offered_htlcs {
+            // TODO - this check should be converted into two checks, one the first time
+            // the HTLC is introduced and the other every time it is encountered.
+            //
+            // policy-commitment-htlc-cltv-range
             self.validate_expiry("offered HTLC", htlc.cltv_expiry, vstate.current_height)?;
+
             htlc_value_sat = htlc_value_sat
                 .checked_add(htlc.value_sat)
                 .ok_or_else(|| policy_error("offered HTLC value overflow".to_string()))?;
         }
 
         for htlc in &info.received_htlcs {
+            // TODO - this check should be converted into two checks, one the first time
+            // the HTLC is introduced and the other every time it is encountered.
+            //
+            // policy-commitment-htlc-cltv-range
             self.validate_expiry("received HTLC", htlc.cltv_expiry, vstate.current_height)?;
+
             htlc_value_sat = htlc_value_sat
                 .checked_add(htlc.value_sat)
                 .ok_or_else(|| policy_error("received HTLC value overflow".to_string()))?;
