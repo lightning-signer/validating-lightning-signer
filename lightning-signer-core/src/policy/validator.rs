@@ -32,16 +32,6 @@ use super::error::{policy_error, transaction_format_error, ValidationError};
 ///
 /// Called by Node / Channel as needed.
 pub trait Validator {
-    /// Phase 1 CommitmentInfo
-    fn make_info(
-        &self,
-        keys: &InMemorySigner,
-        setup: &ChannelSetup,
-        is_counterparty: bool,
-        tx: &bitcoin::Transaction,
-        output_witscripts: &Vec<Vec<u8>>,
-    ) -> Result<CommitmentInfo, ValidationError>;
-
     /// Validate ready channel parameters.
     /// The holder_shutdown_key_path should be an empty vector if the
     /// setup.holder_shutdown_script is not set or the address is in
@@ -55,6 +45,16 @@ pub trait Validator {
 
     /// Validate channel value after it is late-filled
     fn validate_channel_value(&self, setup: &ChannelSetup) -> Result<(), ValidationError>;
+
+    /// Phase 1 CommitmentInfo
+    fn decode_commitment_tx(
+        &self,
+        keys: &InMemorySigner,
+        setup: &ChannelSetup,
+        is_counterparty: bool,
+        tx: &bitcoin::Transaction,
+        output_witscripts: &Vec<Vec<u8>>,
+    ) -> Result<CommitmentInfo, ValidationError>;
 
     /// General validation applicable to both holder and counterparty txs
     fn validate_commitment_tx(
@@ -320,42 +320,6 @@ impl SimpleValidator {
 // TODO - policy-routing-deltas-only-htlc
 
 impl Validator for SimpleValidator {
-    fn make_info(
-        &self,
-        keys: &InMemorySigner,
-        setup: &ChannelSetup,
-        is_counterparty: bool,
-        tx: &bitcoin::Transaction,
-        output_witscripts: &Vec<Vec<u8>>,
-    ) -> Result<CommitmentInfo, ValidationError> {
-        let mut debug_on_return = scoped_debug_return!(
-            DebugInMemorySigner(keys),
-            setup,
-            is_counterparty,
-            tx,
-            DebugVecVecU8(output_witscripts)
-        );
-
-        // policy-commitment-version
-        if tx.version != 2 {
-            return policy_err!("bad commitment version: {}", tx.version);
-        }
-
-        let mut info = CommitmentInfo::new(is_counterparty);
-        for ind in 0..tx.output.len() {
-            info.handle_output(
-                keys,
-                setup,
-                &tx.output[ind],
-                output_witscripts[ind].as_slice(),
-            )
-            .map_err(|ve| ve.prepend_msg(format!("tx output[{}]: ", ind)))?;
-        }
-
-        *debug_on_return = false;
-        Ok(info)
-    }
-
     fn validate_ready_channel(
         &self,
         wallet: &Wallet,
@@ -408,6 +372,44 @@ impl Validator for SimpleValidator {
             return policy_err!("channel value {} too large", setup.channel_value_sat);
         }
         Ok(())
+    }
+
+    fn decode_commitment_tx(
+        &self,
+        keys: &InMemorySigner,
+        setup: &ChannelSetup,
+        is_counterparty: bool,
+        tx: &bitcoin::Transaction,
+        output_witscripts: &Vec<Vec<u8>>,
+    ) -> Result<CommitmentInfo, ValidationError> {
+        let mut debug_on_return = scoped_debug_return!(
+            DebugInMemorySigner(keys),
+            setup,
+            is_counterparty,
+            tx,
+            DebugVecVecU8(output_witscripts)
+        );
+
+        // policy-commitment-version
+        if tx.version != 2 {
+            return policy_err!("bad commitment version: {}", tx.version);
+        }
+
+        let mut info = CommitmentInfo::new(is_counterparty);
+        for ind in 0..tx.output.len() {
+            info.handle_output(
+                keys,
+                setup,
+                &tx.output[ind],
+                output_witscripts[ind].as_slice(),
+            )
+            .map_err(|ve| {
+                ve.prepend_msg(format!("{}: tx output[{}]: ", containing_function!(), ind))
+            })?;
+        }
+
+        *debug_on_return = false;
+        Ok(info)
     }
 
     fn validate_commitment_tx(
@@ -1537,10 +1539,10 @@ mod tests {
     }
 
     #[test]
-    fn make_info_test() {
+    fn decode_commitment_test() {
         let validator = make_test_validator();
         let info = validator
-            .make_info(
+            .decode_commitment_tx(
                 &make_test_channel_keys(),
                 &make_test_channel_setup(),
                 true,
@@ -1556,14 +1558,14 @@ mod tests {
         let validator = make_test_validator();
         let mut tx = make_test_commitment_tx();
         tx.version = 1;
-        let res = validator.make_info(
+        let res = validator.decode_commitment_tx(
             &make_test_channel_keys(),
             &make_test_channel_setup(),
             true,
             &tx,
             &vec![vec![]],
         );
-        assert_policy_err!(res, "make_info: bad commitment version: 1");
+        assert_policy_err!(res, "decode_commitment_tx: bad commitment version: 1");
     }
 
     #[test]

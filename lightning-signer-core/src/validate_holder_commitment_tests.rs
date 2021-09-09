@@ -459,7 +459,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: make_info: bad commitment version: 3"
+            "policy failure: decode_commitment_tx: bad commitment version: 3"
         );
     }
 
@@ -481,7 +481,8 @@ mod tests {
                     );
                 }
             ),
-            "transaction format: tx output[0]: script pubkey doesn't match inner script"
+            "transaction format: decode_commitment_tx: \
+             tx output[0]: script pubkey doesn't match inner script"
         );
     }
 
@@ -505,7 +506,8 @@ mod tests {
                     );
                 }
             ),
-            "transaction format: tx output[2]: more than one to_broadcaster output"
+            "transaction format: decode_commitment_tx: \
+             tx output[2]: more than one to_broadcaster output"
         );
     }
 
@@ -529,7 +531,8 @@ mod tests {
                     );
                 }
             ),
-            "transaction format: tx output[2]: more than one to_countersigner output"
+            "transaction format: decode_commitment_tx: \
+             tx output[2]: more than one to_countersigner output"
         );
     }
 
