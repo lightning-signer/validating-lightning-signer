@@ -583,7 +583,7 @@ mod tests {
         );
         assert_failed_precondition_err!(
             status,
-            "policy failure: make_info: bad commitment version: 3"
+            "policy failure: decode_commitment_tx: bad commitment version: 3"
         );
     }
 
@@ -749,7 +749,8 @@ mod tests {
                     witscripts.push(witscripts[ndx].clone());
                 },
             ),
-            "transaction format: tx output[5]: more than one to_countersigner output"
+            "transaction format: decode_commitment_tx: \
+             tx output[5]: more than one to_countersigner output"
         );
     }
 
@@ -769,7 +770,8 @@ mod tests {
                     witscripts.push(witscripts[ndx].clone());
                 },
             ),
-            "transaction format: tx output[5]: more than one to_broadcaster output"
+            "transaction format: decode_commitment_tx: \
+             tx output[5]: more than one to_broadcaster output"
         );
     }
 

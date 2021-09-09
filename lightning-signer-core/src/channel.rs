@@ -1267,7 +1267,7 @@ impl Channel {
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = true;
-        let info = validator.make_info(
+        let info = validator.decode_commitment_tx(
             &self.keys,
             &self.setup,
             is_counterparty,
@@ -1385,7 +1385,7 @@ impl Channel {
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = false;
-        let info = validator.make_info(
+        let info = validator.decode_commitment_tx(
             &self.keys,
             &self.setup,
             is_counterparty,
