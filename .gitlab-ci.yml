@@ -26,6 +26,14 @@ embedded:
   script:
     - cd embedded && cargo run --target thumbv7m-none-eabi
 
+wasm:
+  stage: build
+  image: rust:latest
+  script:
+    - rustup target add wasm32-unknown-unknown
+    - cargo install wasm-pack
+    - cd wasm && cargo test
+
 coverage:
   stage: build
   image: rust:latest
