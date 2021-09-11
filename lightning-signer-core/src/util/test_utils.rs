@@ -20,7 +20,7 @@ use lightning::chain::transaction::OutPoint;
 use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, derive_private_key, get_htlc_redeemscript, get_revokeable_redeemscript,
-    make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters,
+    make_funding_redeemscript, ChannelTransactionParameters,
     CommitmentTransaction, CounterpartyChannelTransactionParameters,
     DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
@@ -42,6 +42,7 @@ use crate::util::crypto_utils::{
 use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
 use crate::Arc;
+use super::key_utils::{make_test_counterparty_points, make_test_privkey, make_test_bitcoin_pubkey, make_test_pubkey};
 
 // Status assertions:
 
@@ -227,48 +228,6 @@ pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> Public
         secp_ctx,
         &SecretKey::from_slice(&Vec::from_hex(h).unwrap()[..]).unwrap(),
     )
-}
-
-pub fn make_test_bitcoin_key(i: u8) -> (bitcoin::PublicKey, bitcoin::PrivateKey) {
-    let secp_ctx = Secp256k1::signing_only();
-    let secret_key = SecretKey::from_slice(&[i; 32]).unwrap();
-    let private_key = bitcoin::PrivateKey {
-        compressed: true,
-        network: Network::Testnet,
-        key: secret_key,
-    };
-    return (private_key.public_key(&secp_ctx), private_key);
-}
-
-pub fn make_test_bitcoin_pubkey(i: u8) -> bitcoin::PublicKey {
-    make_test_bitcoin_key(i).0
-}
-
-pub fn make_test_key(i: u8) -> (PublicKey, SecretKey) {
-    let secp_ctx = Secp256k1::signing_only();
-    let secret_key = SecretKey::from_slice(&[i; 32]).unwrap();
-    return (
-        PublicKey::from_secret_key(&secp_ctx, &secret_key),
-        secret_key,
-    );
-}
-
-pub fn make_test_pubkey(i: u8) -> PublicKey {
-    make_test_key(i).0
-}
-
-pub fn make_test_privkey(i: u8) -> SecretKey {
-    make_test_key(i).1
-}
-
-pub fn make_test_counterparty_points() -> ChannelPublicKeys {
-    ChannelPublicKeys {
-        funding_pubkey: make_test_pubkey(104),
-        revocation_basepoint: make_test_pubkey(100),
-        payment_point: make_test_pubkey(101),
-        delayed_payment_basepoint: make_test_pubkey(102),
-        htlc_basepoint: make_test_pubkey(103),
-    }
 }
 
 pub fn make_test_channel_setup() -> ChannelSetup {

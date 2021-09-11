@@ -1516,6 +1516,7 @@ mod tests {
 
     use crate::tx::tx::HTLCInfo2;
     use crate::util::test_utils::*;
+    use crate::util::key_utils::*;
 
     use super::*;
 

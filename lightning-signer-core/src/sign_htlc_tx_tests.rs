@@ -17,6 +17,7 @@ mod tests {
     };
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
+    use crate::util::key_utils::*;
 
     #[test]
     fn sign_local_htlc_tx_static_test() {

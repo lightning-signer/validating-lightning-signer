@@ -918,7 +918,7 @@ mod tests {
     };
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::*;
-    use crate::util::test_utils::{hex_decode, hex_encode};
+    use crate::util::key_utils::*;
 
     use super::*;
 

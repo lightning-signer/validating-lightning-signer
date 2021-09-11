@@ -15,6 +15,7 @@ mod tests {
     use crate::tx::tx::HTLCInfo2;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
+    use crate::util::key_utils::*;
 
     #[test]
     fn validate_holder_commitment_with_htlcs() {

@@ -880,8 +880,9 @@ mod tests {
 
     use crate::channel::CommitmentType;
     use crate::util::test_utils::{
-        hex_encode, make_test_channel_keys, make_test_channel_setup, make_test_pubkey,
+        hex_encode, make_test_channel_keys, make_test_channel_setup
     };
+    use crate::util::key_utils::make_test_pubkey;
 
     use super::*;
 
