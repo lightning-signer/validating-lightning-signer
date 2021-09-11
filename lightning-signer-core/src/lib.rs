@@ -18,12 +18,14 @@ extern crate core2;
 
 #[macro_use]
 extern crate alloc;
-extern crate bitcoin;
 extern crate core;
 #[cfg(feature = "std")]
 extern crate rand;
 #[cfg(feature = "grpc")]
 extern crate tonic;
+
+pub use bitcoin;
+pub use lightning;
 
 /// Various utilities
 #[macro_use]

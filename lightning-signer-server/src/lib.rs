@@ -8,6 +8,8 @@ extern crate hex;
 #[cfg(feature = "grpc")]
 extern crate tonic;
 
+use lightning_signer::lightning;
+
 pub mod fslogger;
 pub mod persist;
 pub mod util;

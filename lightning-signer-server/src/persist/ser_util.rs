@@ -4,6 +4,7 @@ use std::convert::TryInto;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::key::PublicKey;
 use bitcoin::{OutPoint, Script, Txid};
+use crate::lightning;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
 use lightning::util::ser::Writer;

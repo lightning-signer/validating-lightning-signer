@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::Network;
-use lightning::ln::chan_utils::ChannelPublicKeys;
+use crate::lightning::ln::chan_utils::ChannelPublicKeys;
 
 use lightning_signer::channel::{
     ChannelId, ChannelSetup, ChannelSlot, ChannelStub, CommitmentType,

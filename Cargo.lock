@@ -756,7 +756,6 @@ dependencies = [
  "hex 0.3.2",
  "hyper",
  "kv",
- "lightning",
  "lightning-signer-core",
  "log",
  "prost",
