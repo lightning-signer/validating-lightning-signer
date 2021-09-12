@@ -14,6 +14,7 @@ use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::key_utils::{make_test_counterparty_points, make_test_key};
 
 use crate::utils::set_panic_hook;
+use lightning_signer::util::status::Status;
 
 mod utils;
 
@@ -22,10 +23,10 @@ extern {
     fn alert(s: &str);
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name="ChannelId")]
 pub struct JSChannelId(ChannelId);
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class="ChannelId")]
 impl JSChannelId {
     #[wasm_bindgen(js_name = toString)]
     pub fn to_string(&self) -> String {
@@ -41,11 +42,11 @@ pub enum JSCommitmentType {
     Anchors,
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name="OutPoint")]
 #[derive(Copy, Clone)]
 pub struct JSOutPoint(OutPoint);
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class="OutPoint")]
 impl JSOutPoint {
     #[wasm_bindgen]
     pub fn default() -> JSOutPoint {
@@ -58,11 +59,11 @@ impl JSOutPoint {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name="PublicKey")]
 #[derive(Copy, Clone)]
 pub struct JSPublicKey(PublicKey);
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class="PublicKey")]
 impl JSPublicKey {
     #[wasm_bindgen]
     pub fn new_test_key(i: u8) -> JSPublicKey {
@@ -70,7 +71,7 @@ impl JSPublicKey {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name="ChannelPublicKeys")]
 #[derive(Copy, Clone)]
 pub struct JSChannelPublicKeys {
     funding_pubkey: PublicKey,
@@ -80,22 +81,26 @@ pub struct JSChannelPublicKeys {
     htlc_basepoint: PublicKey,
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class="ChannelPublicKeys")]
 impl JSChannelPublicKeys {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        let keys = make_test_counterparty_points();
+    pub fn new(funding_pubkey: JSPublicKey,
+               revocation_basepoint: JSPublicKey,
+               payment_point: JSPublicKey,
+               delayed_payment_basepoint: JSPublicKey,
+               htlc_basepoint: JSPublicKey
+    ) -> Self {
         JSChannelPublicKeys {
-            funding_pubkey: keys.funding_pubkey,
-            revocation_basepoint: keys.revocation_basepoint,
-            payment_point: keys.payment_point,
-            delayed_payment_basepoint: keys.delayed_payment_basepoint,
-            htlc_basepoint: keys.htlc_basepoint
+            funding_pubkey: funding_pubkey.0,
+            revocation_basepoint: revocation_basepoint.0,
+            payment_point: payment_point.0,
+            delayed_payment_basepoint: delayed_payment_basepoint.0,
+            htlc_basepoint: htlc_basepoint.0
         }
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name="ChannelSetup")]
 pub struct JSChannelSetup {
     pub is_outbound: bool,
     pub channel_value_sat: u64,
@@ -109,29 +114,50 @@ pub struct JSChannelSetup {
     pub commitment_type: JSCommitmentType,
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class="ChannelSetup")]
 impl JSChannelSetup {
     #[wasm_bindgen(constructor)]
-    pub fn new(cp_keys: JSChannelPublicKeys, funding_outpoint: JSOutPoint) -> Self {
+    pub fn new(
+        is_outbound: bool,
+        channel_value_sat: u64,
+        push_value_msat: u64,
+        funding_outpoint: JSOutPoint,
+        holder_selected_contest_delay: u16,
+        counterparty_points: JSChannelPublicKeys,
+        counterparty_selected_contest_delay: u16
+    ) -> Self {
         JSChannelSetup {
-            is_outbound: false,
-            channel_value_sat: 10000,
-            push_value_msat: 0,
+            is_outbound,
+            channel_value_sat,
+            push_value_msat,
             funding_outpoint,
-            holder_selected_contest_delay: 6,
-            counterparty_points: cp_keys,
-            counterparty_selected_contest_delay: 6,
+            holder_selected_contest_delay,
+            counterparty_points,
+            counterparty_selected_contest_delay,
             commitment_type: JSCommitmentType::StaticRemoteKey
         }
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name="Node")]
 pub struct JSNode {
     node: Arc<Node>
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name="ValidationError")]
+pub struct JSValidationError {
+    message: String,
+}
+
+#[wasm_bindgen(js_class="ValidationError")]
+impl JSValidationError {
+    #[wasm_bindgen(js_name = toString)]
+    pub fn to_string(&self) -> String {
+        self.message.clone()
+    }
+}
+
+#[wasm_bindgen(js_class="Node")]
 impl JSNode {
     #[wasm_bindgen(js_name = toString)]
     pub fn to_string(&self) -> String {
@@ -165,15 +191,19 @@ impl JSNode {
             counterparty_shutdown_script: None,
             commitment_type: CommitmentType::Legacy
         };
-        let channel = self.node
+        let _channel = self.node
             .ready_channel(
                 id.0,
                 None,
                 setup,
                 &vec![],
-            ).map_err(|e| JsValue::from(e.message()))?;
+            ).map_err(from_status)?;
         Ok(())
     }
+}
+
+fn from_status(s: Status) -> JSValidationError {
+    JSValidationError { message: s.message().to_string() }
 }
 
 #[wasm_bindgen]
