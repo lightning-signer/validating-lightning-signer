@@ -346,7 +346,7 @@ mod tests {
 
     #[test]
     fn validate_holder_commitment_success() {
-        assert!(validate_holder_commitment_with_mutator(
+        assert_status_ok!(validate_holder_commitment_with_mutator(
             |_keys| {},
             |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
                 // If we don't mutate anything it should succeed.
@@ -358,13 +358,12 @@ mod tests {
                     HOLD_COMMIT_NUM + 1
                 );
             }
-        )
-        .is_ok());
+        ));
     }
 
     #[test]
     fn validate_holder_commitment_can_retry() {
-        assert!(validate_holder_commitment_with_mutator(
+        assert_status_ok!(validate_holder_commitment_with_mutator(
             |_keys| {},
             |chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
                 // Set the channel's next_holder_commit_num ahead one;
@@ -379,8 +378,7 @@ mod tests {
                     HOLD_COMMIT_NUM + 1
                 );
             }
-        )
-        .is_ok());
+        ));
     }
 
     #[test]
@@ -683,26 +681,22 @@ mod tests {
                 assert_eq!(state.next_counterparty_revoke_num, 0);
 
                 // ADVANCE next_commit to 1
-                assert!(state
-                    .set_next_counterparty_commit_num(
-                        1,
-                        make_test_pubkey(0x10),
-                        commit_info.clone()
-                    )
-                    .is_ok());
+                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                    1,
+                    make_test_pubkey(0x10),
+                    commit_info.clone()
+                ));
                 assert_eq!(state.next_counterparty_revoke_num, 0);
                 assert_eq!(state.next_counterparty_commit_num, 1);
                 // commit 0: current <- next_revoke
                 // commit 1: next    <- next_commit
 
                 // retries are ok
-                assert!(state
-                    .set_next_counterparty_commit_num(
-                        1,
-                        make_test_pubkey(0x10),
-                        commit_info.clone()
-                    )
-                    .is_ok());
+                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                    1,
+                    make_test_pubkey(0x10),
+                    commit_info.clone()
+                ));
                 assert_eq!(state.next_counterparty_revoke_num, 0);
                 assert_eq!(state.next_counterparty_commit_num, 1);
 
@@ -727,13 +721,11 @@ mod tests {
                 assert_eq!(state.next_counterparty_revoke_num, 0);
 
                 // ADVANCE next_commit to 2
-                assert!(state
-                    .set_next_counterparty_commit_num(
-                        2,
-                        make_test_pubkey(0x12),
-                        commit_info.clone()
-                    )
-                    .is_ok());
+                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                    2,
+                    make_test_pubkey(0x12),
+                    commit_info.clone()
+                ));
                 assert_eq!(state.next_counterparty_revoke_num, 0);
                 assert_eq!(state.next_counterparty_commit_num, 2);
                 // commit 0: unrevoked <- next_revoke
@@ -741,13 +733,11 @@ mod tests {
                 // commit 2: next    <- next_commit
 
                 // retries are ok
-                assert!(state
-                    .set_next_counterparty_commit_num(
-                        2,
-                        make_test_pubkey(0x12),
-                        commit_info.clone()
-                    )
-                    .is_ok());
+                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                    2,
+                    make_test_pubkey(0x12),
+                    commit_info.clone()
+                ));
                 assert_eq!(state.next_counterparty_revoke_num, 0);
                 assert_eq!(state.next_counterparty_commit_num, 2);
 
@@ -790,7 +780,7 @@ mod tests {
                 assert_eq!(state.next_counterparty_revoke_num, 0);
 
                 // REVOKE commit 0
-                assert!(state.set_next_counterparty_revoke_num(1).is_ok());
+                assert_validation_ok!(state.set_next_counterparty_revoke_num(1));
                 assert_eq!(state.next_counterparty_revoke_num, 1);
                 assert_eq!(state.next_counterparty_commit_num, 2);
                 // commit 0: revoked
@@ -798,7 +788,7 @@ mod tests {
                 // commit 2: next      <- next_commit
 
                 // retries are ok
-                assert!(state.set_next_counterparty_revoke_num(1).is_ok());
+                assert_validation_ok!(state.set_next_counterparty_revoke_num(1));
                 assert_eq!(state.next_counterparty_revoke_num, 1);
                 assert_eq!(state.next_counterparty_commit_num, 2);
 
@@ -842,13 +832,11 @@ mod tests {
                 assert_eq!(state.next_counterparty_revoke_num, 1);
 
                 // ADVANCE next_commit to 3
-                assert!(state
-                    .set_next_counterparty_commit_num(
-                        3,
-                        make_test_pubkey(0x14),
-                        commit_info.clone()
-                    )
-                    .is_ok());
+                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                    3,
+                    make_test_pubkey(0x14),
+                    commit_info.clone()
+                ));
                 // commit 0: revoked
                 // commit 1: unrevoked <- next_revoke
                 // commit 2: current
@@ -857,17 +845,15 @@ mod tests {
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // retries ok
-                assert!(state
-                    .set_next_counterparty_commit_num(
-                        3,
-                        make_test_pubkey(0x14),
-                        commit_info.clone()
-                    )
-                    .is_ok());
+                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                    3,
+                    make_test_pubkey(0x14),
+                    commit_info.clone()
+                ));
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // Can still retry the old revoke (they may not have seen our commit).
-                assert!(state.set_next_counterparty_revoke_num(1).is_ok());
+                assert_validation_ok!(state.set_next_counterparty_revoke_num(1));
                 assert_eq!(state.next_counterparty_revoke_num, 1);
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
@@ -904,7 +890,7 @@ mod tests {
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // REVOKE commit 1
-                assert!(state.set_next_counterparty_revoke_num(2).is_ok());
+                assert_validation_ok!(state.set_next_counterparty_revoke_num(2));
                 // commit 1: revoked
                 // commit 2: current   <- next_revoke
                 // commit 3: next      <- next_commit
@@ -912,7 +898,7 @@ mod tests {
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // revoke retries ok
-                assert!(state.set_next_counterparty_revoke_num(2).is_ok());
+                assert_validation_ok!(state.set_next_counterparty_revoke_num(2));
                 assert_eq!(state.next_counterparty_revoke_num, 2);
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
@@ -956,13 +942,11 @@ mod tests {
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // ADVANCE next_commit to 4
-                assert!(state
-                    .set_next_counterparty_commit_num(
-                        4,
-                        make_test_pubkey(0x16),
-                        commit_info.clone()
-                    )
-                    .is_ok());
+                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                    4,
+                    make_test_pubkey(0x16),
+                    commit_info.clone()
+                ));
                 // commit 2: unrevoked <- next_revoke
                 // commit 3: current
                 // commit 4: next      <- next_commit
