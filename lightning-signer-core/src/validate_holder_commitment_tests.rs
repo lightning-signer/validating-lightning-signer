@@ -544,6 +544,100 @@ mod tests {
         );
     }
 
+    // policy-commitment-outputs-trimmed
+    #[test]
+    fn validate_holder_commitment_with_dust_to_holder() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                    let delta = 1_979_900;
+                    tx.output[3].value += delta;
+                    tx.output[4].value -= delta;
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: validate_commitment_tx: \
+             to_broadcaster_value_sat 97 less than dust limit 330"
+        );
+    }
+
+    // policy-commitment-outputs-trimmed
+    #[test]
+    fn validate_holder_commitment_with_dust_to_counterparty() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                    let delta = 999_900;
+                    tx.output[3].value -= delta;
+                    tx.output[4].value += delta;
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: validate_commitment_tx: \
+             to_countersigner_value_sat 100 less than dust limit 330"
+        );
+    }
+
+    // policy-commitment-outputs-trimmed
+    #[test]
+    fn validate_holder_commitment_with_dust_offered_htlc() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                    commit_tx_ctx.offered_htlcs[0].value_sat = 1000;
+                    tx.output[0].value = 1000;
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: validate_commitment_tx: \
+             offered htlc.value_sat 1000 less than dust limit 2319"
+        );
+    }
+
+    // policy-commitment-outputs-trimmed
+    #[test]
+    fn validate_holder_commitment_with_dust_received_htlc() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                    commit_tx_ctx.received_htlcs[0].value_sat = 1000;
+                    tx.output[1].value = 1000;
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: validate_commitment_tx: \
+             received htlc.value_sat 1000 less than dust limit 2439"
+        );
+    }
+
     #[test]
     fn channel_state_counterparty_commit_and_revoke_test() {
         let node_ctx = test_node_ctx(1);

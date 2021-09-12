@@ -5,6 +5,10 @@ use bitcoin::{Script, Transaction, TxOut, VarInt};
 /// The maximum value of an input or output in milli satoshi
 pub const MAX_VALUE_MSAT: u64 = 21_000_000_0000_0000_000;
 
+/// The minimum value of the dust limit in satoshis.
+// FIXME - this is copied from `lightning::ln::channel, lobby to increase visibility.
+pub const MIN_DUST_LIMIT_SATOSHIS: u64 = 330;
+
 /// Possibly adds a change output to the given transaction, always doing so if there are excess
 /// funds available beyond the requested feerate.
 /// Assumes at least one input will have a witness (ie spends a segwit output).
