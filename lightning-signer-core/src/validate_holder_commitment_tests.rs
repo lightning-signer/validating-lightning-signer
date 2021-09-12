@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use core::str::FromStr;
+
     use bitcoin::hash_types::Txid;
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::{Secp256k1, Signature};
@@ -379,6 +381,47 @@ mod tests {
                 );
             }
         ));
+    }
+
+    #[test]
+    fn validate_holder_commitment_with_bad_commit_sig() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, _commit_tx_ctx, _tx, _witscripts, commit_sig, _htlc_sigs| {
+                    *commit_sig = Signature::from_str("30450221009338316aef0f17f75127a24d60ae8a980fee5e2b4605dc96fba2d5407e77fcee022029e311ff22df5b515e4a2fbe412d32ed49e93cabbb31b067ad3318ac22441cd2").expect("sig");
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: commit sig verify failed: secp: signature failed verification"
+        );
+    }
+
+    #[test]
+    fn validate_holder_commitment_with_bad_htlc_sig() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, htlc_sigs| {
+                    htlc_sigs[0] = Signature::from_str("30450221009338316aef0f17f75127a24d60ae8a980fee5e2b4605dc96fba2d5407e77fcee022029e311ff22df5b515e4a2fbe412d32ed49e93cabbb31b067ad3318ac22441cd2").expect("sig");
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: \
+             commit sig verify failed for htlc 0: secp: signature failed verification"
+        );
     }
 
     #[test]
