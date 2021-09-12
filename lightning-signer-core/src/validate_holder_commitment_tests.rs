@@ -2,7 +2,7 @@
 mod tests {
     use bitcoin::hash_types::Txid;
     use bitcoin::hashes::Hash;
-    use bitcoin::secp256k1::Signature;
+    use bitcoin::secp256k1::{Secp256k1, Signature};
     use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::{self, Transaction};
     use lightning::ln::chan_utils::TxCreationKeys;
@@ -232,29 +232,36 @@ mod tests {
         ),
         ChannelStateValidator: Fn(&Channel),
     {
-        let node_ctx = test_node_ctx(1);
-
-        let channel_amount = 3_000_000;
-
-        let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
+        let (node, setup, channel_id, offered_htlcs, received_htlcs) =
+            sign_commitment_tx_with_mutators_setup();
+        let secp_ctx = Secp256k1::signing_only();
+        let node_ctx = TestNodeContext { node, secp_ctx };
+        let channel_value_sat = setup.channel_value_sat;
+        let mut chan_ctx = TestChannelContext {
+            channel_id,
+            setup,
+            counterparty_keys: make_test_counterparty_keys(
+                &node_ctx,
+                &channel_id,
+                channel_value_sat,
+            ),
+        };
 
         // Pretend we funded the channel and ran for a while ...
-        synthesize_ready_channel(
-            &node_ctx,
-            &mut chan_ctx,
-            bitcoin::OutPoint {
-                txid: Txid::from_slice(&[2u8; 32]).unwrap(),
-                vout: 0,
-            },
-            HOLD_COMMIT_NUM,
-        );
+        chan_ctx.setup.funding_outpoint = bitcoin::OutPoint {
+            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
+            vout: 0,
+        };
+        node_ctx
+            .node
+            .with_ready_channel(&chan_ctx.channel_id, |chan| {
+                chan.enforcement_state
+                    .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM);
+                Ok(())
+            })?;
 
-        let fee = 1000;
-        let to_broadcaster = 1_000_000;
-        let to_countersignatory = channel_amount - to_broadcaster - fee;
-        let offered_htlcs = vec![];
-        let received_htlcs = vec![];
-
+        let to_broadcaster = 1_979_997;
+        let to_countersignatory = 1_000_000;
         let feerate_per_kw = 1200;
 
         let mut commit_tx_ctx0 = channel_commitment(
@@ -483,7 +490,7 @@ mod tests {
                 }
             ),
             "transaction format: decode_commitment_tx: \
-             tx output[0]: script pubkey doesn't match inner script"
+             tx output[4]: script pubkey doesn't match inner script"
         );
     }
 
@@ -495,7 +502,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_keys| {},
                 |_chan, _commit_tx_ctx, tx, witscripts, _commit_sig, _htlc_sigs| {
-                    let ndx = 0;
+                    let ndx = 4;
                     tx.output.push(tx.output[ndx].clone());
                     witscripts.push(witscripts[ndx].clone());
                 },
@@ -508,7 +515,7 @@ mod tests {
                 }
             ),
             "transaction format: decode_commitment_tx: \
-             tx output[2]: more than one to_broadcaster output"
+             tx output[5]: more than one to_broadcaster output"
         );
     }
 
@@ -520,7 +527,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_keys| {},
                 |_chan, _commit_tx_ctx, tx, witscripts, _commit_sig, _htlc_sigs| {
-                    let ndx = 1;
+                    let ndx = 3;
                     tx.output.push(tx.output[ndx].clone());
                     witscripts.push(witscripts[ndx].clone());
                 },
@@ -533,7 +540,7 @@ mod tests {
                 }
             ),
             "transaction format: decode_commitment_tx: \
-             tx output[2]: more than one to_countersigner output"
+             tx output[5]: more than one to_countersigner output"
         );
     }
 
