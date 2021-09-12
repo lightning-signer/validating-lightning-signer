@@ -1309,19 +1309,19 @@ pub fn sign_commitment_tx_with_mutators_setup() -> (
     let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
     let htlc1 = HTLCInfo2 {
-        value_sat: 1,
+        value_sat: 4000,
         payment_hash: PaymentHash([1; 32]),
         cltv_expiry: 2 << 16,
     };
 
     let htlc2 = HTLCInfo2 {
-        value_sat: 1,
+        value_sat: 5000,
         payment_hash: PaymentHash([3; 32]),
         cltv_expiry: 3 << 16,
     };
 
     let htlc3 = HTLCInfo2 {
-        value_sat: 1,
+        value_sat: 11_003,
         payment_hash: PaymentHash([5; 32]),
         cltv_expiry: 4 << 16,
     };

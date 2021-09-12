@@ -197,19 +197,19 @@ mod tests {
         let counterparty_points = make_test_counterparty_points();
 
         let htlc1 = HTLCInfo2 {
-            value_sat: 1,
+            value_sat: 4000,
             payment_hash: PaymentHash([1; 32]),
             cltv_expiry: 2 << 16,
         };
 
         let htlc2 = HTLCInfo2 {
-            value_sat: 1,
+            value_sat: 5000,
             payment_hash: PaymentHash([3; 32]),
             cltv_expiry: 3 << 16,
         };
 
         let htlc3 = HTLCInfo2 {
-            value_sat: 1,
+            value_sat: 11_003,
             payment_hash: PaymentHash([5; 32]),
             cltv_expiry: 4 << 16,
         };
@@ -227,7 +227,7 @@ mod tests {
                     .make_counterparty_tx_keys(&remote_percommitment_point)
                     .unwrap();
                 let to_broadcaster_value_sat = 1_000_000;
-                let to_countersignatory_value_sat = 1_999_997;
+                let to_countersignatory_value_sat = 1_979_997;
                 let redeem_scripts = build_tx_scripts(
                     &keys,
                     to_broadcaster_value_sat,
@@ -278,7 +278,7 @@ mod tests {
 
         assert_eq!(
             tx.txid().to_hex(),
-            "3f3238ed033a13ab1cf43d8eb6e81e5beca2080f9530a13931c10f40e04697fb"
+            "56f1eb4719a7e93311f2ee3f4275785d857939af0c5eff6058b130f422042bff"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -477,7 +477,7 @@ mod tests {
 
             let commit_num = 23;
             let feerate_per_kw = 0;
-            let to_broadcaster = 1_999_997;
+            let to_broadcaster = 1_979_997;
             let to_countersignatory = 1_000_000;
 
             chan.enforcement_state
@@ -537,7 +537,7 @@ mod tests {
 
         assert_eq!(
             tx.txid().to_hex(),
-            "1a5988ac95fffa4f92cc22ea96cc0b6e4cbd2752dd796596b56c32baba1f792d"
+            "0704dbebf8dc4841b7aa07934e29c962df7b0aa02ea243fb25a1f01c52e80e4c"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -802,7 +802,7 @@ mod tests {
 
             let commit_num = 23;
             let mut feerate_per_kw = 0;
-            let to_broadcaster = 1_999_997;
+            let to_broadcaster = 1_979_997;
             let to_countersignatory = 1_000_000;
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 

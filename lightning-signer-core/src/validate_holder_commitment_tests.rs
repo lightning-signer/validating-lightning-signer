@@ -26,34 +26,34 @@ mod tests {
 
         let offered_htlcs = vec![
             HTLCInfo2 {
-                value_sat: 1000,
+                value_sat: 10_000,
                 payment_hash: PaymentHash([1; 32]),
                 cltv_expiry: 1 << 16,
             },
             HTLCInfo2 {
-                value_sat: 1000,
+                value_sat: 10_000,
                 payment_hash: PaymentHash([2; 32]),
                 cltv_expiry: 2 << 16,
             },
         ];
         let received_htlcs = vec![
             HTLCInfo2 {
-                value_sat: 1000,
+                value_sat: 10_000,
                 payment_hash: PaymentHash([3; 32]),
                 cltv_expiry: 3 << 16,
             },
             HTLCInfo2 {
-                value_sat: 1000,
+                value_sat: 10_000,
                 payment_hash: PaymentHash([4; 32]),
                 cltv_expiry: 4 << 16,
             },
             HTLCInfo2 {
-                value_sat: 1000,
+                value_sat: 10_000,
                 payment_hash: PaymentHash([5; 32]),
                 cltv_expiry: 5 << 16,
             },
         ];
-        let sum_htlc = 5000;
+        let sum_htlc = 50_000;
 
         let commit_num = 1;
         let feerate_per_kw = 1100;

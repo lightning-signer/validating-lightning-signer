@@ -1634,7 +1634,7 @@ mod tests {
 
     fn make_htlc_info2(expiry: u32) -> HTLCInfo2 {
         HTLCInfo2 {
-            value_sat: 10,
+            value_sat: 5010,
             payment_hash: PaymentHash([0; 32]),
             cltv_expiry: expiry,
         }
@@ -1936,15 +1936,14 @@ mod tests {
             vec![],
             vec![make_htlc_info2(1005)],
         );
-        let status = validator.validate_commitment_tx(
+        assert_validation_ok!(validator.validate_commitment_tx(
             &enforcement_state,
             commit_num,
             &commit_point,
             &setup,
             &state,
             &info_good,
-        );
-        assert!(status.is_ok());
+        ));
         let info_good = make_counterparty_info(
             2_000_000,
             990_000,
@@ -1952,16 +1951,14 @@ mod tests {
             vec![],
             vec![make_htlc_info2(2440)],
         );
-        assert!(validator
-            .validate_commitment_tx(
-                &enforcement_state,
-                commit_num,
-                &commit_point,
-                &setup,
-                &state,
-                &info_good,
-            )
-            .is_ok());
+        assert_validation_ok!(validator.validate_commitment_tx(
+            &enforcement_state,
+            commit_num,
+            &commit_point,
+            &setup,
+            &state,
+            &info_good,
+        ));
         let info_bad = make_counterparty_info(
             2_000_000,
             990_000,
