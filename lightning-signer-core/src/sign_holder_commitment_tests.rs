@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn sign_holder_commitment_tx_with_no_mut_test() {
-        let status = sign_holder_commitment_tx_with_mutators(
+        assert_status_ok!(sign_holder_commitment_tx_with_mutators(
             |_state| {
                 // don't mutate the signer, should pass
             },
@@ -280,22 +280,20 @@ mod tests {
             |_tx, _witscripts| {
                 // don't mutate the tx, should pass
             },
-        );
-        assert!(status.is_ok());
+        ));
     }
 
     // policy-commitment-version
     #[test]
     fn sign_holder_commitment_tx_with_bad_version_test() {
-        let status = sign_holder_commitment_tx_with_mutators(
-            |_state| {},
-            |_keys| {},
-            |tx, _witscripts| {
-                tx.transaction.version = 3;
-            },
-        );
         assert_failed_precondition_err!(
-            status,
+            sign_holder_commitment_tx_with_mutators(
+                |_state| {},
+                |_keys| {},
+                |tx, _witscripts| {
+                    tx.transaction.version = 3;
+                },
+            ),
             "policy failure: decode_commitment_tx: bad commitment version: 3"
         );
     }
@@ -303,107 +301,120 @@ mod tests {
     // policy-commitment-locktime
     #[test]
     fn sign_holder_commitment_tx_with_bad_locktime_test() {
-        let status = sign_holder_commitment_tx_with_mutators(
-            |_state| {},
-            |_keys| {
-                // don't mutate the keys
-            },
-            |tx, _witscripts| {
-                tx.transaction.lock_time = 42;
-            },
+        assert_failed_precondition_err!(
+            sign_holder_commitment_tx_with_mutators(
+                |_state| {},
+                |_keys| {
+                    // don't mutate the keys
+                },
+                |tx, _witscripts| {
+                    tx.transaction.lock_time = 42;
+                },
+            ),
+            "policy failure: recomposed tx mismatch"
         );
-        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-commitment-sequence
     #[test]
     fn sign_holder_commitment_tx_with_bad_sequence_test() {
-        let status = sign_holder_commitment_tx_with_mutators(
-            |_state| {},
-            |_keys| {},
-            |tx, _witscripts| {
-                tx.transaction.input[0].sequence = 42;
-            },
+        assert_failed_precondition_err!(
+            sign_holder_commitment_tx_with_mutators(
+                |_state| {},
+                |_keys| {},
+                |tx, _witscripts| {
+                    tx.transaction.input[0].sequence = 42;
+                },
+            ),
+            "policy failure: recomposed tx mismatch"
         );
-        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-commitment-input-single
     #[test]
     fn sign_holder_commitment_tx_with_bad_numinputs_test() {
-        let status = sign_holder_commitment_tx_with_mutators(
-            |_state| {},
-            |_keys| {},
-            |tx, _witscripts| {
-                let mut inp2 = tx.transaction.input[0].clone();
-                inp2.previous_output.txid = bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
-                tx.transaction.input.push(inp2);
-            },
+        assert_failed_precondition_err!(
+            sign_holder_commitment_tx_with_mutators(
+                |_state| {},
+                |_keys| {},
+                |tx, _witscripts| {
+                    let mut inp2 = tx.transaction.input[0].clone();
+                    inp2.previous_output.txid = bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
+                    tx.transaction.input.push(inp2);
+                },
+            ),
+            "policy failure: recomposed tx mismatch"
         );
-        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-commitment-input-match-funding
     #[test]
     fn sign_holder_commitment_tx_with_input_mismatch_test() {
-        let status = sign_holder_commitment_tx_with_mutators(
-            |_state| {},
-            |_keys| {},
-            |tx, _witscripts| {
-                tx.transaction.input[0].previous_output.txid =
-                    bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
-            },
+        assert_failed_precondition_err!(
+            sign_holder_commitment_tx_with_mutators(
+                |_state| {},
+                |_keys| {},
+                |tx, _witscripts| {
+                    tx.transaction.input[0].previous_output.txid =
+                        bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
+                },
+            ),
+            "policy failure: recomposed tx mismatch"
         );
-        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-commitment-revocation-pubkey
     #[test]
     fn sign_holder_commitment_tx_with_bad_revpubkey_test() {
-        let status = sign_holder_commitment_tx_with_mutators(
-            |_state| {},
-            |keys| {
-                keys.revocation_key = make_test_pubkey(42);
-            },
-            |_tx, _witscripts| {},
+        assert_failed_precondition_err!(
+            sign_holder_commitment_tx_with_mutators(
+                |_state| {},
+                |keys| {
+                    keys.revocation_key = make_test_pubkey(42);
+                },
+                |_tx, _witscripts| {},
+            ),
+            "policy failure: recomposed tx mismatch"
         );
-        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-commitment-htlc-counterparty-htlc-pubkey`
     #[test]
     fn sign_holder_commitment_tx_with_bad_htlcpubkey_test() {
-        let status = sign_holder_commitment_tx_with_mutators(
-            |_state| {},
-            |keys| {
-                keys.countersignatory_htlc_key = make_test_pubkey(42);
-            },
-            |_tx, _witscripts| {},
+        assert_failed_precondition_err!(
+            sign_holder_commitment_tx_with_mutators(
+                |_state| {},
+                |keys| {
+                    keys.countersignatory_htlc_key = make_test_pubkey(42);
+                },
+                |_tx, _witscripts| {},
+            ),
+            "policy failure: recomposed tx mismatch"
         );
-        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     // policy-commitment-broadcaster-pubkey
     #[test]
     fn sign_holder_commitment_tx_with_bad_delayed_pubkey_test() {
-        let status = sign_holder_commitment_tx_with_mutators(
-            |_state| {},
-            |keys| {
-                keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
-            },
-            |_tx, _witscripts| {},
+        assert_failed_precondition_err!(
+            sign_holder_commitment_tx_with_mutators(
+                |_state| {},
+                |keys| {
+                    keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
+                },
+                |_tx, _witscripts| {},
+            ),
+            "policy failure: recomposed tx mismatch"
         );
-        assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
     #[test]
     fn sign_holder_commitment_tx_after_mutual_close() {
-        let status = sign_holder_commitment_tx_with_mutators(
+        assert_status_ok!(sign_holder_commitment_tx_with_mutators(
             |state| state.mutual_close_signed = true,
             |_keys| {},
             |_tx, _witscripts| {},
-        );
-        assert!(status.is_ok());
+        ));
     }
 
     // policy-commitment-singular-to-holder
