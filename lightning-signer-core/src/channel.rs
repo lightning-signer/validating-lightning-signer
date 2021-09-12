@@ -309,7 +309,9 @@ impl ChannelBase for Channel {
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status> {
         let next_holder_commit_num = self.enforcement_state.next_holder_commit_num;
-        if commitment_number > next_holder_commit_num {
+        // The following check is relaxed by +1 because LDK fetches the next commitment point
+        // before it calls validate_holder_commitment_tx.
+        if commitment_number > next_holder_commit_num + 1 {
             return Err(policy_error(format!(
                 "get_per_commitment_point: \
                  commitment_number {} invalid when next_holder_commit_num is {}",

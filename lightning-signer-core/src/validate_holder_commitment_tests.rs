@@ -115,8 +115,7 @@ mod tests {
 
         assert_failed_precondition_err!(
             validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs,),
-            "policy failure: get_per_commitment_point: \
-                commitment_number 2 invalid when next_holder_commit_num is 1"
+            "policy failure: set_next_holder_commit_num: invalid progression: 1 to 3"
         );
     }
 
@@ -464,8 +463,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: get_per_commitment_point: \
-             commitment_number 43 invalid when next_holder_commit_num is 42"
+            "policy failure: set_next_holder_commit_num: invalid progression: 42 to 44"
         );
     }
 
