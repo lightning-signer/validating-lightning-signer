@@ -6,5 +6,5 @@ RUN apt-get install -y qemu-system-arm gcc-arm-none-eabi firefox-esr
 RUN rustup target add thumbv7m-none-eabi
 RUN rustup target add wasm32-unknown-unknown
 RUN cargo install wasm-pack
-RUN apt-get install -y clang
+RUN apt-get install -y clang gcc-multilib
 
