@@ -5,7 +5,7 @@ rust-latest:
   stage: build
   image: rust:latest
   script:
-    - cd lightning-signer-core && cargo build --no-default-features --features=std  # make sure it builds without test_utils enabled
+    - (cd lightning-signer-core && cargo build --no-default-features --features=std)  # make sure it builds without test_utils enabled
     - cargo build
     - cargo test
 
@@ -13,7 +13,7 @@ rust-1.45.2:
   stage: build
   image: rust:1.45.2
   script:
-    - cd lightning-signer-core && cargo build --no-default-features --features=std  # make sure it builds without test_utils enabled
+    - (cd lightning-signer-core && cargo build --no-default-features --features=std)  # make sure it builds without test_utils enabled
     - cargo build
     - cargo test
 
@@ -28,11 +28,11 @@ embedded:
 
 wasm:
   stage: build
-  image: rust:latest
+  image: devrandom01/rust-qemu:nightly
   script:
-    - rustup target add wasm32-unknown-unknown
-    - cargo install wasm-pack
-    - cd wasm && cargo test
+    - cd wasm
+    - wasm-pack test --firefox --headless
+    - cargo test
 
 coverage:
   stage: build
