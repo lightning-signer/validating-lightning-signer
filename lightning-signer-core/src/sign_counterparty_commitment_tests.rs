@@ -885,6 +885,7 @@ mod tests {
         })
     }
 
+    // policy-commitment-retry-same
     #[test]
     fn sign_counterparty_commitment_tx_retry_same() {
         assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(
@@ -899,7 +900,7 @@ mod tests {
         ));
     }
 
-    // policy-commitment-retry-same (remote_percommitment_point)
+    // policy-commitment-retry-same
     #[test]
     fn sign_counterparty_commitment_tx_retry_with_bad_point() {
         assert_failed_precondition_err!(
@@ -917,6 +918,33 @@ mod tests {
              retry of sign_counterparty_commitment 23 with changed point: \
              prev 03f76a39d05686e34a4420897e359371836145dd3973e3982568b60f8433adde6e != \
              new 035be5e9478209674a96e60f1f037f6176540fd001fa1d64694770c56a7709c42c"
+        );
+    }
+
+    // policy-commitment-retry-same
+    #[test]
+    fn sign_counterparty_commitment_tx_retry_with_removed_htlc() {
+        assert_failed_precondition_err!(
+            sign_counterparty_commitment_tx_retry_with_mutator(
+                |tx,
+                 output_witscripts,
+                 _remote_percommitment_point,
+                 _feerate_per_kw,
+                 _offered_htlcs,
+                 received_htlcs| {
+                    // Remove the last received HTLC
+                    let htlc = received_htlcs.pop().unwrap();
+
+                    // Credit the value to the broadcaster
+                    tx.output[3].value += htlc.value_sat;
+
+                    // Remove the htlc from the tx and witscripts
+                    tx.output.remove(2);
+                    output_witscripts.remove(2);
+                }
+            ),
+            "policy failure: validate_commitment_tx: \
+             retry of sign_counterparty_commitment 23 with changed info"
         );
     }
 }

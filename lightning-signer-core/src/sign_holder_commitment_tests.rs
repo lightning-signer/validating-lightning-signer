@@ -716,4 +716,86 @@ mod tests {
              tx output[5]: more than one to_countersigner output"
         );
     }
+
+    // policy-commitment-retry-same
+    #[test]
+    fn sign_holder_commitment_tx_retry_success() {
+        assert_status_ok!(sign_holder_commitment_tx_retry_with_mutators(
+            |_commit_tx_ctx| {},
+            |_state| {},
+            |_keys| {},
+            |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+        ));
+    }
+
+    // policy-commitment-retry-same
+    #[test]
+    fn sign_holder_commitment_tx_retry_with_bad_to_holder() {
+        assert_failed_precondition_err!(
+            sign_holder_commitment_tx_retry_with_mutators(
+                |commit_tx_ctx| {
+                    commit_tx_ctx.to_broadcaster -= 1;
+                },
+                |_state| {},
+                |_keys| {},
+                |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+            ),
+            "policy failure: validate_commitment_tx: retry holder commitment 23 with changed info"
+        );
+    }
+
+    // policy-commitment-retry-same
+    #[test]
+    fn sign_holder_commitment_tx_retry_with_bad_to_counterparty() {
+        assert_failed_precondition_err!(
+            sign_holder_commitment_tx_retry_with_mutators(
+                |commit_tx_ctx| {
+                    commit_tx_ctx.to_countersignatory -= 1;
+                },
+                |_state| {},
+                |_keys| {},
+                |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+            ),
+            "policy failure: validate_commitment_tx: retry holder commitment 23 with changed info"
+        );
+    }
+
+    // policy-commitment-retry-same
+    #[test]
+    fn sign_holder_commitment_tx_retry_with_bad_offered_htlcs() {
+        assert_failed_precondition_err!(
+            sign_holder_commitment_tx_retry_with_mutators(
+                |commit_tx_ctx| {
+                    // Remove the offered HTLC, give it's value to the first received HTLC.
+                    commit_tx_ctx.received_htlcs[0].value_sat =
+                        commit_tx_ctx.offered_htlcs[0].value_sat;
+                    commit_tx_ctx.offered_htlcs.remove(0);
+                },
+                |_state| {},
+                |_keys| {},
+                |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+            ),
+            "policy failure: validate_commitment_tx: retry holder commitment 23 with changed info"
+        );
+    }
+
+    // policy-commitment-retry-same
+    #[test]
+    fn sign_holder_commitment_tx_retry_with_bad_received_htlcs() {
+        assert_failed_precondition_err!(
+            sign_holder_commitment_tx_retry_with_mutators(
+                |commit_tx_ctx| {
+                    // Remove the first received HTLC, give its value to the offered HTLC.
+                    // Remove the offered HTLC, give it's value to the first received HTLC.
+                    commit_tx_ctx.offered_htlcs[0].value_sat =
+                        commit_tx_ctx.received_htlcs[0].value_sat;
+                    commit_tx_ctx.received_htlcs.remove(0);
+                },
+                |_state| {},
+                |_keys| {},
+                |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+            ),
+            "policy failure: validate_commitment_tx: retry holder commitment 23 with changed info"
+        );
+    }
 }

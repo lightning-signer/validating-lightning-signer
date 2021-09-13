@@ -358,7 +358,7 @@ impl fmt::Debug for HTLCInfo2 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[allow(missing_docs)]
 pub struct CommitmentInfo2 {
     pub is_counterparty_broadcaster: bool,

@@ -474,25 +474,109 @@ mod tests {
         ));
     }
 
+    // policy-commitment-retry-same
     #[test]
     fn validate_holder_commitment_can_retry() {
         assert_status_ok!(validate_holder_commitment_retry_with_mutator(
             |_commit_tx_ctx| {},
             |_keys| {},
-            |chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
-                // Set the channel's next_holder_commit_num ahead one;
-                // pretend we've already seen it ...
-                chan.enforcement_state
-                    .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM + 1);
-            },
+            |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
             |chan| {
-                // Channel state should stay where we advanced it.
+                // Channel state should stay where we advanced it initially.
                 assert_eq!(
                     chan.enforcement_state.next_holder_commit_num,
                     HOLD_COMMIT_NUM + 1
                 );
             }
         ));
+    }
+
+    // policy-commitment-retry-same
+    #[test]
+    fn validate_holder_commitment_retry_with_bad_to_holder() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_retry_with_mutator(
+                |commit_tx_ctx| {
+                    commit_tx_ctx.to_broadcaster -= 1;
+                },
+                |_keys| {},
+                |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
+                |chan| {
+                    // Channel state should stay where we advanced it initially.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM + 1
+                    );
+                }
+            ),
+            "policy failure: validate_commitment_tx: retry holder commitment 43 with changed info"
+        );
+    }
+
+    // policy-commitment-retry-same
+    #[test]
+    fn validate_holder_commitment_retry_with_bad_to_counterparty() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_retry_with_mutator(
+                |commit_tx_ctx| {
+                    commit_tx_ctx.to_countersignatory -= 1;
+                },
+                |_keys| {},
+                |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
+                |chan| {
+                    // Channel state should stay where we advanced it initially.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM + 1
+                    );
+                }
+            ),
+            "policy failure: validate_commitment_tx: retry holder commitment 43 with changed info"
+        );
+    }
+
+    // policy-commitment-retry-same
+    #[test]
+    fn validate_holder_commitment_retry_with_bad_offered_htlc() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_retry_with_mutator(
+                |commit_tx_ctx| {
+                    commit_tx_ctx.offered_htlcs[0].value_sat -= 1;
+                },
+                |_keys| {},
+                |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
+                |chan| {
+                    // Channel state should stay where we advanced it initially.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM + 1
+                    );
+                }
+            ),
+            "policy failure: validate_commitment_tx: retry holder commitment 43 with changed info"
+        );
+    }
+
+    // policy-commitment-retry-same
+    #[test]
+    fn validate_holder_commitment_retry_with_bad_received_htlc() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_retry_with_mutator(
+                |commit_tx_ctx| {
+                    commit_tx_ctx.received_htlcs[0].value_sat -= 1;
+                },
+                |_keys| {},
+                |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
+                |chan| {
+                    // Channel state should stay where we advanced it initially.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM + 1
+                    );
+                }
+            ),
+            "policy failure: validate_commitment_tx: retry holder commitment 43 with changed info"
+        );
     }
 
     #[test]
