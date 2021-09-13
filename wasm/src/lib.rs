@@ -11,7 +11,7 @@ use lightning_signer::{bitcoin, lightning};
 use lightning_signer::node::{Node, NodeConfig};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
-use lightning_signer::util::key_utils::{make_test_counterparty_points, make_test_key};
+use lightning_signer::util::key_utils::make_test_key;
 
 use crate::utils::set_panic_hook;
 use lightning_signer::util::status::Status;
@@ -217,6 +217,11 @@ pub fn make_node() -> JSNode {
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
     let node = Node::new(config, &seed, Network::Testnet, &persister, vec![]);
     JSNode { node: Arc::new(node) }
+}
+
+#[wasm_bindgen]
+pub fn setup() {
+    set_panic_hook()
 }
 
 #[cfg(target_arch = "wasm32")]

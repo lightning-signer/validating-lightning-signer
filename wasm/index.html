@@ -5,11 +5,12 @@
 <body>
 <!-- Note the usage of `type=module` here as this is an ES6 module -->
 <script type="module">
-    import init, {make_node, OutPoint, PublicKey, ChannelPublicKeys, ChannelSetup} from './pkg/bindgen_test.js';
+    import init, {setup, make_node, OutPoint, PublicKey, ChannelPublicKeys, ChannelSetup} from './pkg/bindgen_test.js';
 
     async function run() {
         // Load the wasm
         await init();
+        setup();
 
         console.log('This should succeed');
         let node = make_node();
@@ -22,7 +23,7 @@
             PublicKey.new_test_key(103),
             PublicKey.new_test_key(104),
         );
-        let setup = new ChannelSetup(
+        let channel_setup = new ChannelSetup(
             false, // is_outbound
             BigInt(10000), // channel_value_sat
             BigInt(0), // push_value_msat
@@ -31,7 +32,7 @@
             counterparty_points,
             6, // counterparty to-self delay
         );
-        node.ready_channel(chan_id, setup);
+        node.ready_channel(chan_id, channel_setup);
         console.log('Done');
 
         console.log('This should fail with a policy error');
