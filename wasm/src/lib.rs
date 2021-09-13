@@ -44,6 +44,17 @@ impl JSChannelId {
 }
 
 #[wasm_bindgen]
+pub struct Signature(Vec<u8>);
+
+#[wasm_bindgen]
+impl Signature {
+    #[wasm_bindgen(js_name = toString)]
+    pub fn to_string(&self) -> String {
+        format!("Signature({})", self.0.to_hex())
+    }
+}
+
+#[wasm_bindgen]
 #[derive(Copy, Clone)]
 pub enum JSCommitmentType {
     // no longer supported - Legacy,
@@ -179,7 +190,7 @@ impl JSNode {
         JSChannelId(channel_id)
     }
 
-    pub fn ready_channel(&self, id: JSChannelId, s: JSChannelSetup) -> Result<(), JsValue> {
+    pub fn ready_channel(&self, id: &JSChannelId, s: &JSChannelSetup) -> Result<(), JsValue> {
         let p = s.counterparty_points;
         let cp_points = ChannelPublicKeys {
             funding_pubkey: p.funding_pubkey,
@@ -208,6 +219,26 @@ impl JSNode {
                 &vec![],
             ).map_err(from_status)?;
         Ok(())
+    }
+
+    pub fn sign_holder_commitment(&self,
+                                  channel_id: &JSChannelId,
+                                  commit_num: u64,
+                                  to_holder_value_sat: u64,
+                                  to_counterparty_value_sat: u64
+    ) -> Result<Signature, JsValue> {
+        let (ser_signature, _) =
+            self.node.with_ready_channel(&channel_id.0, |chan| {
+                chan.sign_holder_commitment_tx_phase2(
+                    commit_num,
+                    0, // feerate not used
+                    to_holder_value_sat,
+                    to_counterparty_value_sat,
+                    vec![],
+                    vec![],
+                )
+            }).map_err(from_status)?;
+        Ok(Signature(ser_signature))
     }
 }
 

@@ -31,6 +31,8 @@
         setup();
         set_log_level("INFO");
 
+        let channel_value_sat = BigInt(1000000);
+
         console.log('This should succeed');
         let node = make_node();
         let chan_id = node.new_channel();
@@ -38,7 +40,7 @@
         let counterparty_points = make_counterparty_points();
         let channel_setup = new ChannelSetup(
             false, // is_outbound
-            BigInt(10000), // channel_value_sat
+            channel_value_sat, // channel_value_sat
             BigInt(0), // push_value_msat
             outpoint,
             6, // holder to-self delay
@@ -54,7 +56,7 @@
         let counterparty_points1 = make_counterparty_points();
         let setup1 = new ChannelSetup(
             false, // is_outbound
-            BigInt(10000), // channel_value_sat
+            channel_value_sat, // channel_value_sat
             BigInt(0), // push_value_msat
             outpoint1,
             2, // holder to-self delay - too small
@@ -67,6 +69,30 @@
         } catch (e) {ex = e;}
         if (!ex) throw "Did not throw expected exception";
         console.log("Caught expected exception", ex.toString());
+
+        let sig = node.sign_holder_commitment(
+            chan_id,
+            BigInt(0), // Commitment number
+            channel_value_sat, // to holder
+            BigInt(0), // to counterparty
+        );
+        console.log("Signed initial commitment", sig.toString());
+
+        console.log('This should fail with a policy error');
+        // This will fail because we have not shown the counterparty's signature on the initial commitment
+        // or commitment number 1.
+        try {
+            let sig1 = node.sign_holder_commitment(
+                chan_id,
+                BigInt(1), // Commitment number
+                channel_value_sat, // to holder
+                BigInt(0), // to counterparty
+            );
+        } catch (e) {ex = e;}
+
+        if (!ex) throw "Did not throw expected exception";
+        console.log("Caught expected exception", ex.toString());
+
         console.log('Done');
     }
 

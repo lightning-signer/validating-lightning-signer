@@ -33,5 +33,11 @@ fn channel_test() {
         cp_keys,
         6,
     );
-    node.ready_channel(channel_id, setup).unwrap();
+    node.ready_channel(&channel_id, &setup).unwrap();
+    let _sig1 = node.sign_holder_commitment(
+        &channel_id,
+        0, // Commitment number
+        1, // to holder
+        0, // to counterparty
+    ).unwrap();
 }
