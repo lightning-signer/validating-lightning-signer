@@ -1,4 +1,4 @@
-FROM rustlang/rust:nightly
+FROM rustlang/rust:nightly-bullseye
 
 RUN apt-get update
 RUN cat /etc/apt/sources.list # 1
