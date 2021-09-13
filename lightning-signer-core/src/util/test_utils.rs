@@ -1089,17 +1089,17 @@ pub fn make_test_commitment_tx() -> bitcoin::Transaction {
 }
 
 pub fn make_test_commitment_info() -> CommitmentInfo2 {
-    CommitmentInfo2 {
-        is_counterparty_broadcaster: true,
-        to_countersigner_pubkey: make_test_pubkey(0x20),
-        to_countersigner_value_sat: 3_000_000,
-        revocation_pubkey: make_test_pubkey(0x21),
-        to_broadcaster_delayed_pubkey: make_test_pubkey(0x22),
-        to_broadcaster_value_sat: 2_000_000,
-        to_self_delay: 10,
-        offered_htlcs: vec![],
-        received_htlcs: vec![],
-    }
+    CommitmentInfo2::new(
+        true,
+        make_test_pubkey(0x20),
+        3_000_000,
+        make_test_pubkey(0x21),
+        make_test_pubkey(0x22),
+        2_000_000,
+        10,
+        vec![],
+        vec![],
+    )
 }
 
 pub const TEST_NODE_CONFIG: NodeConfig = NodeConfig {

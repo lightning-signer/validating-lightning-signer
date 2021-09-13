@@ -320,7 +320,7 @@ impl fmt::Debug for HTLCInfo {
 }
 
 /// Phase 2 HTLC info
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct HTLCInfo2 {
     /// The value in satoshi
     pub value_sat: u64,
@@ -328,6 +328,23 @@ pub struct HTLCInfo2 {
     pub payment_hash: PaymentHash,
     /// This is zero for offered HTLCs in phase 1
     pub cltv_expiry: u32,
+}
+
+// Implement manually because PaymentHash doesn't support
+impl Ord for HTLCInfo2 {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.value_sat
+            .cmp(&other.value_sat)
+            .then_with(|| self.payment_hash.0.cmp(&other.payment_hash.0))
+            .then_with(|| self.cltv_expiry.cmp(&other.cltv_expiry))
+    }
+}
+
+// Implement manually because PaymentHash doesn't support
+impl PartialOrd for HTLCInfo2 {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 // Implement manually so we can have hex encoded payment_hash.
@@ -357,6 +374,40 @@ pub struct CommitmentInfo2 {
 }
 
 impl CommitmentInfo2 {
+    /// Construct a normalized CommitmentInfo2
+    pub fn new(
+        is_counterparty_broadcaster: bool,
+        to_countersigner_pubkey: PublicKey,
+        to_countersigner_value_sat: u64,
+        revocation_pubkey: PublicKey,
+        to_broadcaster_delayed_pubkey: PublicKey,
+        to_broadcaster_value_sat: u64,
+        to_self_delay: u16,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
+    ) -> CommitmentInfo2 {
+        CommitmentInfo2 {
+            is_counterparty_broadcaster,
+            to_countersigner_pubkey,
+            to_countersigner_value_sat,
+            revocation_pubkey,
+            to_broadcaster_delayed_pubkey,
+            to_broadcaster_value_sat,
+            to_self_delay,
+            offered_htlcs,
+            received_htlcs,
+        }
+        .normalize()
+    }
+
+    /// Normalize the CommitmentInfo2 for future use
+    pub fn normalize(mut self) -> Self {
+        // Sort the offered and received HTLCs for later comparison
+        self.offered_htlcs.sort();
+        self.received_htlcs.sort();
+        self
+    }
+
     /// Returns true if there are no pending HTLCS
     pub fn htlcs_is_empty(&self) -> bool {
         self.offered_htlcs.is_empty() && self.received_htlcs.is_empty()
@@ -879,14 +930,48 @@ mod tests {
     use bitcoin::{Address, Network};
 
     use crate::channel::CommitmentType;
-    use crate::util::test_utils::{
-        hex_encode, make_test_channel_keys, make_test_channel_setup
-    };
     use crate::util::key_utils::make_test_pubkey;
+    use crate::util::test_utils::{hex_encode, make_test_channel_keys, make_test_channel_setup};
 
     use super::*;
 
     use test_env_log::test;
+
+    #[test]
+    fn htlc2_sorting() {
+        // Defined in order ...
+        let htlc0 = HTLCInfo2 {
+            value_sat: 4000,
+            payment_hash: PaymentHash([1; 32]),
+            cltv_expiry: 2 << 16,
+        };
+        let htlc1 = HTLCInfo2 {
+            value_sat: 4000,
+            payment_hash: PaymentHash([1; 32]),
+            cltv_expiry: 3 << 16,
+        };
+        let htlc2 = HTLCInfo2 {
+            value_sat: 4000,
+            payment_hash: PaymentHash([2; 32]),
+            cltv_expiry: 3 << 16,
+        };
+        let htlc3 = HTLCInfo2 {
+            value_sat: 5000,
+            payment_hash: PaymentHash([2; 32]),
+            cltv_expiry: 3 << 16,
+        };
+        let sorted = vec![&htlc0, &htlc1, &htlc2, &htlc3];
+
+        // Reverse order
+        let mut unsorted0 = vec![&htlc3, &htlc2, &htlc1, &htlc0];
+        unsorted0.sort();
+        assert_eq!(unsorted0, sorted);
+
+        // Random order
+        let mut unsorted1 = vec![&htlc2, &htlc0, &htlc3, &htlc1];
+        unsorted1.sort();
+        assert_eq!(unsorted1, sorted);
+    }
 
     #[test]
     fn parse_test_err() {

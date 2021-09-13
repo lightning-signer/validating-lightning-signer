@@ -1172,17 +1172,17 @@ impl Channel {
         )
         .map_err(|err| internal_error(format!("could not derive revocation key: {}", err)))?;
         let to_holder_pubkey = counterparty_payment_pubkey.clone();
-        Ok(CommitmentInfo2 {
-            is_counterparty_broadcaster: true,
-            to_countersigner_pubkey: to_holder_pubkey,
-            to_countersigner_value_sat: to_holder_value_sat,
+        Ok(CommitmentInfo2::new(
+            true,
+            to_holder_pubkey,
+            to_holder_value_sat,
             revocation_pubkey,
-            to_broadcaster_delayed_pubkey: to_counterparty_delayed_pubkey,
-            to_broadcaster_value_sat: to_counterparty_value_sat,
-            to_self_delay: self.setup.holder_selected_contest_delay,
+            to_counterparty_delayed_pubkey,
+            to_counterparty_value_sat,
+            self.setup.holder_selected_contest_delay,
             offered_htlcs,
             received_htlcs,
-        })
+        ))
     }
 
     fn build_holder_commitment_info(
@@ -1229,17 +1229,17 @@ impl Channel {
         )
         .map_err(|err| internal_error(format!("could not derive revocation_pubkey: {}", err)))?;
         let to_counterparty_pubkey = counterparty_pubkey.clone();
-        Ok(CommitmentInfo2 {
-            is_counterparty_broadcaster: false,
-            to_countersigner_pubkey: to_counterparty_pubkey,
-            to_countersigner_value_sat: to_counterparty_value_sat,
+        Ok(CommitmentInfo2::new(
+            false,
+            to_counterparty_pubkey,
+            to_counterparty_value_sat,
             revocation_pubkey,
-            to_broadcaster_delayed_pubkey: to_holder_delayed_pubkey,
-            to_broadcaster_value_sat: to_holder_value_sat,
-            to_self_delay: self.setup.counterparty_selected_contest_delay,
+            to_holder_delayed_pubkey,
+            to_holder_value_sat,
+            self.setup.counterparty_selected_contest_delay,
             offered_htlcs,
             received_htlcs,
-        })
+        ))
     }
 
     /// Phase 1

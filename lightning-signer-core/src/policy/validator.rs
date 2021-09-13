@@ -1656,17 +1656,17 @@ mod tests {
         let to_holder_pubkey = make_test_pubkey(1);
         let revocation_pubkey = make_test_pubkey(2);
         let to_broadcaster_delayed_pubkey = make_test_pubkey(3);
-        CommitmentInfo2 {
-            is_counterparty_broadcaster: true,
-            to_countersigner_pubkey: to_holder_pubkey,
-            to_countersigner_value_sat: to_holder_value_sat,
+        CommitmentInfo2::new(
+            true,
+            to_holder_pubkey,
+            to_holder_value_sat,
             revocation_pubkey,
-            to_broadcaster_delayed_pubkey: to_broadcaster_delayed_pubkey,
-            to_broadcaster_value_sat: to_counterparty_value_sat,
+            to_broadcaster_delayed_pubkey,
+            to_counterparty_value_sat,
             to_self_delay,
             offered_htlcs,
             received_htlcs,
-        }
+        )
     }
 
     fn make_test_validator_state() -> ValidatorState {
