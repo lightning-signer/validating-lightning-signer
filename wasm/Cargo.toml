@@ -24,6 +24,7 @@ console_error_panic_hook = { version = "0.1", optional = true }
 web-sys = { version = "0.3", features = ["console", "Crypto", "Window"] }
 js-sys = "0.3"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
+log = { version = "0.4", features = ["max_level_trace"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.13"

@@ -51,6 +51,7 @@ dependencies = [
  "js-sys",
  "lazy_static",
  "lightning-signer-core",
+ "log",
  "wasm-bindgen",
  "wasm-bindgen-test",
  "web-sys",

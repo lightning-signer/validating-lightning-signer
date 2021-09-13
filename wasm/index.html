@@ -5,24 +5,37 @@
 <body>
 <!-- Note the usage of `type=module` here as this is an ES6 module -->
 <script type="module">
-    import init, {setup, make_node, OutPoint, PublicKey, ChannelPublicKeys, ChannelSetup} from './pkg/bindgen_test.js';
+    import init, {
+        setup,
+        make_node,
+        set_log_level,
+        OutPoint,
+        PublicKey,
+        ChannelPublicKeys,
+        ChannelSetup,
+    } from './pkg/bindgen_test.js';
 
-    async function run() {
-        // Load the wasm
-        await init();
-        setup();
-
-        console.log('This should succeed');
-        let node = make_node();
-        let chan_id = node.new_channel();
-        let outpoint = OutPoint.default();
-        let counterparty_points = new ChannelPublicKeys(
+    function make_counterparty_points() {
+        return new ChannelPublicKeys(
             PublicKey.new_test_key(100),
             PublicKey.new_test_key(101),
             PublicKey.new_test_key(102),
             PublicKey.new_test_key(103),
             PublicKey.new_test_key(104),
         );
+    }
+
+    async function run() {
+        // Load the wasm
+        await init();
+        setup();
+        set_log_level("INFO");
+
+        console.log('This should succeed');
+        let node = make_node();
+        let chan_id = node.new_channel();
+        let outpoint = OutPoint.default();
+        let counterparty_points = make_counterparty_points();
         let channel_setup = new ChannelSetup(
             false, // is_outbound
             BigInt(10000), // channel_value_sat
@@ -38,13 +51,7 @@
         console.log('This should fail with a policy error');
         let chan_id1 = node.new_channel();
         let outpoint1 = OutPoint.default();
-        let counterparty_points1 = new ChannelPublicKeys(
-            PublicKey.new_test_key(100),
-            PublicKey.new_test_key(101),
-            PublicKey.new_test_key(102),
-            PublicKey.new_test_key(103),
-            PublicKey.new_test_key(104),
-        );
+        let counterparty_points1 = make_counterparty_points();
         let setup1 = new ChannelSetup(
             false, // is_outbound
             BigInt(10000), // channel_value_sat

@@ -1,22 +1,31 @@
+#[macro_use]
+extern crate log;
+
+use std::str::FromStr;
+
 use bitcoin::{Network, OutPoint};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::PublicKey;
 use lightning::ln::chan_utils::ChannelPublicKeys;
+use log::LevelFilter;
 use wasm_bindgen::prelude::*;
 use web_sys;
 
+use lightning_signer::{bitcoin, lightning};
 use lightning_signer::Arc;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
-use lightning_signer::{bitcoin, lightning};
 use lightning_signer::node::{Node, NodeConfig};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::key_utils::make_test_key;
 
+use crate::console_log::setup_log;
 use crate::utils::set_panic_hook;
 use lightning_signer::util::status::Status;
 
+
 mod utils;
+mod console_log;
 
 #[wasm_bindgen]
 extern {
@@ -213,7 +222,8 @@ pub fn make_node() -> JSNode {
     };
     let mut seed = [0u8; 32];
     randomize_buffer(&mut seed);
-    println!("{}", seed.to_hex());
+    // TODO remove in production :)
+    debug!("SEED {}", seed.to_hex());
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
     let node = Node::new(config, &seed, Network::Testnet, &persister, vec![]);
     JSNode { node: Arc::new(node) }
@@ -221,7 +231,8 @@ pub fn make_node() -> JSNode {
 
 #[wasm_bindgen]
 pub fn setup() {
-    set_panic_hook()
+    set_panic_hook();
+    setup_log();
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -231,6 +242,11 @@ fn randomize_buffer(seed: &mut [u8; 32]) {
     let window = window().expect("window");
     let crypto: Crypto = window.crypto().expect("crypto");
     crypto.get_random_values_with_u8_array(seed).expect("random");
+}
+
+#[wasm_bindgen]
+pub fn set_log_level(level: String) {
+    log::set_max_level(LevelFilter::from_str(&level).expect("level name"));
 }
 
 #[cfg(not(target_arch = "wasm32"))]
