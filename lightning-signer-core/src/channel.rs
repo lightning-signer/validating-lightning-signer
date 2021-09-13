@@ -21,11 +21,11 @@ use log::{debug, trace, warn};
 
 use crate::node::Node;
 use crate::policy::error::policy_error;
-use crate::policy::validator::{EnforcementState, Validator, ValidatorState};
-use crate::prelude::{Box, ToString, Vec};
+use crate::policy::validator::{EnforcementState, ValidatorState};
+use crate::prelude::{ToString, Vec};
 use crate::tx::tx::{
     build_close_tx, build_commitment_tx, get_commitment_transaction_number_obscure_factor,
-    CommitmentInfo, CommitmentInfo2, HTLCInfo2,
+    CommitmentInfo2, HTLCInfo2,
 };
 use crate::util::crypto_utils::{
     derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
@@ -1397,27 +1397,6 @@ impl Channel {
             output_witscripts,
         )?;
 
-        self.make_recomposed_holder_commitment_tx_common(
-            tx,
-            commitment_number,
-            feerate_per_kw,
-            offered_htlcs,
-            received_htlcs,
-            validator,
-            info,
-        )
-    }
-
-    fn make_recomposed_holder_commitment_tx_common(
-        &self,
-        tx: &bitcoin::Transaction,
-        commitment_number: u64,
-        feerate_per_kw: u32,
-        offered_htlcs: Vec<HTLCInfo2>,
-        received_htlcs: Vec<HTLCInfo2>,
-        validator: Box<dyn Validator>,
-        info: CommitmentInfo,
-    ) -> Result<(CommitmentTransaction, CommitmentInfo2), Status> {
         let commitment_point = &self.get_per_commitment_point(commitment_number)?;
         let info2 = self.build_holder_commitment_info(
             &commitment_point,
