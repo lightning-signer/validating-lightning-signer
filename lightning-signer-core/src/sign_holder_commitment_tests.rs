@@ -321,13 +321,114 @@ mod tests {
             next_counterparty_revoke_num,
         );
 
-        let mut commit_tx_ctx0 = setup_validated_holder_commitment(
+        let commit_tx_ctx = setup_validated_holder_commitment(
             &node_ctx,
             &chan_ctx,
             |_commit_tx_ctx| {},
             |_keys| {},
         )?;
 
+        sign_holder_commitment_tx_with_mutators_common(
+            &node_ctx,
+            &chan_ctx,
+            commit_tx_ctx,
+            mutate_tx_builder,
+            mutate_channel_state,
+            mutate_keys,
+            mutate_sign_inputs,
+        )
+    }
+
+    fn sign_holder_commitment_tx_retry_with_mutators<
+        TxBuilderMutator,
+        StateMutator,
+        KeysMutator,
+        SignInputMutator,
+    >(
+        mutate_tx_builder: TxBuilderMutator,
+        mutate_channel_state: StateMutator,
+        mutate_keys: KeysMutator,
+        mutate_sign_inputs: SignInputMutator,
+    ) -> Result<(), Status>
+    where
+        TxBuilderMutator: Fn(&mut TestCommitmentTxContext),
+        StateMutator: Fn(&mut EnforcementState),
+        KeysMutator: Fn(&mut TxCreationKeys),
+        SignInputMutator: Fn(
+            &mut Transaction,
+            &mut Vec<Vec<u8>>,
+            &mut u64,
+            &mut u32,
+            &mut Vec<HTLCInfo2>,
+            &mut Vec<HTLCInfo2>,
+        ),
+    {
+        let next_holder_commit_num = HOLD_COMMIT_NUM;
+        let next_counterparty_commit_num = HOLD_COMMIT_NUM + 1;
+        let next_counterparty_revoke_num = next_counterparty_commit_num - 1;
+        let (node_ctx, chan_ctx) = setup_funded_channel(
+            next_holder_commit_num,
+            next_counterparty_commit_num,
+            next_counterparty_revoke_num,
+        );
+
+        let commit_tx_ctx = setup_validated_holder_commitment(
+            &node_ctx,
+            &chan_ctx,
+            |_commit_tx_ctx| {},
+            |_keys| {},
+        )?;
+
+        // Sign the holder commitment w/o mutators the first time.
+        sign_holder_commitment_tx_with_mutators_common(
+            &node_ctx,
+            &chan_ctx,
+            commit_tx_ctx.clone(),
+            |_commit_tx_ctx| {},
+            |_chan| {},
+            |_keys| {},
+            |_tx, _witscripts, _commit_num, _feerate_per_kw, _offered_htlcs, _received_htlcs| {},
+        )?;
+
+        // Retry the signature with mutators.
+        sign_holder_commitment_tx_with_mutators_common(
+            &node_ctx,
+            &chan_ctx,
+            commit_tx_ctx,
+            mutate_tx_builder,
+            mutate_channel_state,
+            mutate_keys,
+            mutate_sign_inputs,
+        )
+    }
+
+    fn sign_holder_commitment_tx_with_mutators_common<
+        TxBuilderMutator,
+        StateMutator,
+        KeysMutator,
+        SignInputMutator,
+    >(
+        node_ctx: &TestNodeContext,
+        chan_ctx: &TestChannelContext,
+        mut commit_tx_ctx0: TestCommitmentTxContext,
+        mutate_tx_builder: TxBuilderMutator,
+        mutate_channel_state: StateMutator,
+        mutate_keys: KeysMutator,
+        mutate_sign_inputs: SignInputMutator,
+    ) -> Result<(), Status>
+    where
+        TxBuilderMutator: Fn(&mut TestCommitmentTxContext),
+        StateMutator: Fn(&mut EnforcementState),
+        KeysMutator: Fn(&mut TxCreationKeys),
+        SignInputMutator: Fn(
+            &mut Transaction,
+            &mut Vec<Vec<u8>>,
+            &mut u64,
+            &mut u32,
+            &mut Vec<HTLCInfo2>,
+            &mut Vec<HTLCInfo2>,
+        ),
+    {
         mutate_tx_builder(&mut commit_tx_ctx0);
 
         let (sig, tx) = node_ctx
