@@ -4,7 +4,7 @@ mod tests {
 
     use bitcoin::hash_types::Txid;
     use bitcoin::hashes::Hash;
-    use bitcoin::secp256k1::{Secp256k1, Signature};
+    use bitcoin::secp256k1::Signature;
     use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::{self, Transaction};
     use lightning::ln::chan_utils::TxCreationKeys;
@@ -15,9 +15,9 @@ mod tests {
     use crate::channel::{Channel, ChannelBase};
     use crate::policy::error::policy_error;
     use crate::tx::tx::HTLCInfo2;
+    use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
-    use crate::util::key_utils::*;
 
     #[test]
     fn validate_holder_commitment_with_htlcs() {
@@ -212,41 +212,6 @@ mod tests {
 
     const HOLD_COMMIT_NUM: u64 = 43;
 
-    fn validate_holder_commitment_with_mutators_setup() -> (TestNodeContext, TestChannelContext) {
-        let setup = make_test_channel_setup();
-        let (node, channel_id) =
-            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
-
-        let secp_ctx = Secp256k1::signing_only();
-        let node_ctx = TestNodeContext { node, secp_ctx };
-        let channel_value_sat = setup.channel_value_sat;
-        let mut chan_ctx = TestChannelContext {
-            channel_id,
-            setup,
-            counterparty_keys: make_test_counterparty_keys(
-                &node_ctx,
-                &channel_id,
-                channel_value_sat,
-            ),
-        };
-
-        // Pretend we funded the channel and ran for a while ...
-        chan_ctx.setup.funding_outpoint = bitcoin::OutPoint {
-            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
-            vout: 0,
-        };
-        node_ctx
-            .node
-            .with_ready_channel(&chan_ctx.channel_id, |chan| {
-                chan.enforcement_state
-                    .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM);
-                Ok(())
-            })
-            .expect("ready happy");
-
-        (node_ctx, chan_ctx)
-    }
-
     fn validate_holder_commitment_with_mutator_common<
         TxBuilderMutator,
         KeysMutator,
@@ -412,7 +377,14 @@ mod tests {
         ),
         ChannelStateValidator: Fn(&Channel),
     {
-        let (node_ctx, chan_ctx) = validate_holder_commitment_with_mutators_setup();
+        let next_holder_commit_num = HOLD_COMMIT_NUM;
+        let next_counterparty_commit_num = HOLD_COMMIT_NUM + 1;
+        let next_counterparty_revoke_num = next_counterparty_commit_num - 1;
+        let (node_ctx, chan_ctx) = setup_funded_channel(
+            next_holder_commit_num,
+            next_counterparty_commit_num,
+            next_counterparty_revoke_num,
+        );
 
         validate_holder_commitment_with_mutator_common(
             &node_ctx,
@@ -448,7 +420,14 @@ mod tests {
         ),
         ChannelStateValidator: Fn(&Channel),
     {
-        let (node_ctx, chan_ctx) = validate_holder_commitment_with_mutators_setup();
+        let next_holder_commit_num = HOLD_COMMIT_NUM;
+        let next_counterparty_commit_num = HOLD_COMMIT_NUM + 1;
+        let next_counterparty_revoke_num = next_counterparty_commit_num - 1;
+        let (node_ctx, chan_ctx) = setup_funded_channel(
+            next_holder_commit_num,
+            next_counterparty_commit_num,
+            next_counterparty_revoke_num,
+        );
 
         // Start with successful validation w/o mutations
         validate_holder_commitment_with_mutator_common(
