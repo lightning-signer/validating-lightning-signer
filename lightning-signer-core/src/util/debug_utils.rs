@@ -171,6 +171,16 @@ pub fn script_debug(script: &Script, network: Network) -> String {
 macro_rules! debug_vals {
     ( $($arg:tt)* ) => {
         if log::log_enabled!(log::Level::Debug) {
+            debug!("{}: {}", short_function!(), vals_str!($($arg)*));
+        }
+    };
+}
+
+/// Logs the arguments at debug level.
+#[macro_export]
+macro_rules! debug_failed_vals {
+    ( $($arg:tt)* ) => {
+        if log::log_enabled!(log::Level::Debug) {
             debug!("{} failed: {}", short_function!(), vals_str!($($arg)*));
         }
     };

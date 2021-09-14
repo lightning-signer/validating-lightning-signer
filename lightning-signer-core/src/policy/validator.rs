@@ -617,7 +617,7 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         // policy-commitment-holder-not-revoked
         if commit_num + 2 <= enforcement_state.next_holder_commit_num {
-            debug_vals!(enforcement_state, commit_num);
+            debug_failed_vals!(enforcement_state, commit_num);
             return policy_err!(
                 "can't sign revoked commitment_number {}, \
                  next_holder_commit_num is {}",
@@ -635,7 +635,7 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         // policy-revoke-not-closed
         if enforcement_state.mutual_close_signed {
-            debug_vals!(enforcement_state);
+            debug_failed_vals!(enforcement_state);
             return policy_err!("mutual close already signed");
         }
 
@@ -654,7 +654,7 @@ impl Validator for SimpleValidator {
         if revoke_num != state.next_counterparty_revoke_num
             && revoke_num + 1 != state.next_counterparty_revoke_num
         {
-            debug_vals!(state, revoke_num, commitment_secret);
+            debug_failed_vals!(state, revoke_num, commitment_secret);
             return policy_err!(
                 "invalid counterparty revoke_num {} with next_counterparty_revoke_num {}",
                 revoke_num,
@@ -666,7 +666,7 @@ impl Validator for SimpleValidator {
         let supplied_commit_point = PublicKey::from_secret_key(&secp_ctx, &commitment_secret);
         let prev_commit_point = state.get_previous_counterparty_point(revoke_num)?;
         if supplied_commit_point != prev_commit_point {
-            debug_vals!(state, revoke_num, commitment_secret);
+            debug_failed_vals!(state, revoke_num, commitment_secret);
             return policy_err!(
                 "revocation commit point mismatch for commit_num {}: supplied {}, previous {}",
                 revoke_num,
@@ -710,7 +710,7 @@ impl Validator for SimpleValidator {
         } else if parse_received_htlc_script(redeemscript, setup.option_anchor_outputs()).is_ok() {
             false
         } else {
-            debug_vals!(
+            debug_failed_vals!(
                 is_counterparty,
                 setup,
                 DebugTxCreationKeys(txkeys),
@@ -764,7 +764,7 @@ impl Validator for SimpleValidator {
         );
 
         if recomposed_tx_sighash != original_tx_sighash {
-            debug_vals!(
+            debug_failed_vals!(
                 is_counterparty,
                 setup,
                 DebugTxCreationKeys(txkeys),
