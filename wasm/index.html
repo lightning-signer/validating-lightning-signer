@@ -1,0 +1,102 @@
+<html>
+<head>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type"/>
+</head>
+<body>
+<!-- Note the usage of `type=module` here as this is an ES6 module -->
+<script type="module">
+    import init, {
+        setup,
+        make_node,
+        set_log_level,
+        OutPoint,
+        PublicKey,
+        ChannelPublicKeys,
+        ChannelSetup,
+    } from './pkg/bindgen_test.js';
+
+    function make_counterparty_points() {
+        return new ChannelPublicKeys(
+            PublicKey.new_test_key(100),
+            PublicKey.new_test_key(101),
+            PublicKey.new_test_key(102),
+            PublicKey.new_test_key(103),
+            PublicKey.new_test_key(104),
+        );
+    }
+
+    async function run() {
+        // Load the wasm
+        await init();
+        setup();
+        set_log_level("INFO");
+
+        let channel_value_sat = BigInt(1000000);
+
+        console.log('This should succeed');
+        let node = make_node();
+        let chan_id = node.new_channel();
+        let outpoint = OutPoint.default();
+        let counterparty_points = make_counterparty_points();
+        let channel_setup = new ChannelSetup(
+            false, // is_outbound
+            channel_value_sat, // channel_value_sat
+            BigInt(0), // push_value_msat
+            outpoint,
+            6, // holder to-self delay
+            counterparty_points,
+            6, // counterparty to-self delay
+        );
+        node.ready_channel(chan_id, channel_setup);
+        console.log('Done');
+
+        console.log('This should fail with a policy error');
+        let chan_id1 = node.new_channel();
+        let outpoint1 = OutPoint.default();
+        let counterparty_points1 = make_counterparty_points();
+        let setup1 = new ChannelSetup(
+            false, // is_outbound
+            channel_value_sat, // channel_value_sat
+            BigInt(0), // push_value_msat
+            outpoint1,
+            2, // holder to-self delay - too small
+            counterparty_points1,
+            6, // counterparty to-self delay
+        );
+        let ex;
+        try {
+            node.ready_channel(chan_id1, setup1);
+        } catch (e) {ex = e;}
+        if (!ex) throw "Did not throw expected exception";
+        console.log("Caught expected exception", ex.toString());
+
+        let sig = node.sign_holder_commitment(
+            chan_id,
+            BigInt(0), // Commitment number
+            channel_value_sat, // to holder
+            BigInt(0), // to counterparty
+        );
+        console.log("Signed initial commitment", sig.toString());
+
+        console.log('This should fail with a policy error');
+        // This will fail because we have not shown the counterparty's signature on the initial commitment
+        // or commitment number 1.
+        try {
+            let sig1 = node.sign_holder_commitment(
+                chan_id,
+                BigInt(1), // Commitment number
+                channel_value_sat, // to holder
+                BigInt(0), // to counterparty
+            );
+        } catch (e) {ex = e;}
+
+        if (!ex) throw "Did not throw expected exception";
+        console.log("Caught expected exception", ex.toString());
+
+        console.log('Done');
+    }
+
+    run();
+</script>
+</body>
+</html>

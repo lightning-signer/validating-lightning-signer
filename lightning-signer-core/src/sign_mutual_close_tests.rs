@@ -18,6 +18,7 @@ mod tests {
     use crate::util::crypto_utils::signature_to_bitcoin_vec;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
+    use crate::util::key_utils::*;
 
     macro_rules! hex (($hex:expr) => (Vec::from_hex($hex).unwrap()));
     macro_rules! hex_script (($hex:expr) => (Script::from(hex!($hex))));

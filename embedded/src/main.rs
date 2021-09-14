@@ -27,6 +27,7 @@ use lightning_signer::node::{Node, NodeConfig};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::Arc;
+use lightning_signer::util::key_utils::{make_test_key, make_test_counterparty_points};
 
 // this is the allocator the application will use
 #[global_allocator]
@@ -53,31 +54,12 @@ fn main() -> ! {
     loop {}
 }
 
-pub fn make_test_key(i: u8) -> (PublicKey, SecretKey) {
-    let secp_ctx = Secp256k1::signing_only();
-    let secret_key = SecretKey::from_slice(&[i; 32]).unwrap();
-    return (
-        PublicKey::from_secret_key(&secp_ctx, &secret_key),
-        secret_key,
-    );
-}
-
 pub fn make_test_pubkey(i: u8) -> PublicKey {
     make_test_key(i).0
 }
 
 pub fn make_test_privkey(i: u8) -> SecretKey {
     make_test_key(i).1
-}
-
-pub fn make_test_counterparty_points() -> ChannelPublicKeys {
-    ChannelPublicKeys {
-        funding_pubkey: make_test_pubkey(104),
-        revocation_basepoint: make_test_pubkey(100),
-        payment_point: make_test_pubkey(101),
-        delayed_payment_basepoint: make_test_pubkey(102),
-        htlc_basepoint: make_test_pubkey(103),
-    }
 }
 
 pub fn make_test_channel_setup() -> ChannelSetup {

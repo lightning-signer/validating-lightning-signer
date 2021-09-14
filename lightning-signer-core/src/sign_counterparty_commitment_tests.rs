@@ -17,6 +17,7 @@ mod tests {
     use crate::util::crypto_utils::{payload_for_p2wpkh, signature_to_bitcoin_vec};
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
+    use crate::util::key_utils::*;
 
     #[test]
     fn sign_counterparty_commitment_tx_static_test() {

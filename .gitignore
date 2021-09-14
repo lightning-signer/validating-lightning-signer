@@ -5,3 +5,4 @@
 /target/
 /.lightning-signer/
 /embedded/target/
+/wasm/target/

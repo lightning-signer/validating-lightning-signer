@@ -31,6 +31,8 @@ pub mod functional_test_utils;
 pub mod status;
 /// Transaction utilities
 pub mod transaction_utils;
+/// Key utilities
+pub mod key_utils;
 
 /// The initial commitment number when counting backwards
 pub const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;

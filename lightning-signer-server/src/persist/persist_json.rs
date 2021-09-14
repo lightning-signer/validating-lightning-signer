@@ -191,6 +191,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
 mod tests {
     use std::sync::Arc;
 
+    use crate::lightning;
     use lightning::chain::keysinterface::InMemorySigner;
     use lightning::util::ser::Writeable;
     use tempfile::TempDir;
