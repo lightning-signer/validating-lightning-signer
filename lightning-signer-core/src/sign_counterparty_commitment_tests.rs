@@ -646,6 +646,7 @@ mod tests {
     }
 
     // policy-commitment-revocation-pubkey
+    // policy-commitment-htlc-revocation-pubkey
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_revpubkey_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(
@@ -658,7 +659,7 @@ mod tests {
         assert_failed_precondition_err!(status, "policy failure: recomposed tx mismatch");
     }
 
-    // policy-commitment-htlc-pubkey
+    // policy-commitment-htlc-holder-htlc-pubkey
     #[test]
     fn sign_counterparty_commitment_tx_with_bad_htlcpubkey_test() {
         let status = sign_counterparty_commitment_tx_with_mutators(

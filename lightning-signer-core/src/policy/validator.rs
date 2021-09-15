@@ -280,18 +280,12 @@ impl SimpleValidator {
     }
 }
 
-// TODO - policy-channel-holder-contest-delay-range
-// TODO - policy-channel-counterparty-contest-delay-range
-
 // TODO - policy-funding-change-path-predictable
 
 // TODO - policy-commitment-spends-active-utxo
 // TODO - policy-commitment-htlc-routing-balance
 // TODO - policy-commitment-htlc-received-spends-active-utxo
-// TODO - policy-commitment-htlc-revocation-pubkey
-// TODO - policy-commitment-htlc-counterparty-htlc-pubkey
-// TODO - policy-commitment-htlc-holder-htlc-pubkey
-// TODO - policy-commitment-htlc-cltv-range
+// TODO - policy-commitment-htlc-cltv-range [NEEDS NEW HTLC DETECTION]
 // TODO - policy-commitment-htlc-offered-hash-matches
 // TODO - policy-commitment-outputs-trimmed
 // TODO - policy-commitment-previous-revoked [still need secret storage]
@@ -337,12 +331,16 @@ impl Validator for SimpleValidator {
                 self.policy.max_push_sat
             );
         }
-        // policy-commitment-to-self-delay-range
+
+        // policy-channel-counterparty-contest-delay-range
+        // policy-commitment-to-self-delay-range relies on this value
         self.validate_delay(
             "counterparty_selected_contest_delay",
             setup.counterparty_selected_contest_delay as u32,
         )?;
-        // policy-commitment-to-self-delay-range
+
+        // policy-channel-holder-contest-delay-range
+        // policy-commitment-to-self-delay-range relies on this value
         self.validate_delay(
             "holder_selected_contest_delay",
             setup.holder_selected_contest_delay as u32,
@@ -451,14 +449,24 @@ impl Validator for SimpleValidator {
         let mut htlc_value_sat: u64 = 0;
 
         for htlc in &info.offered_htlcs {
+            // TODO - this check should be converted into two checks, one the first time
+            // the HTLC is introduced and the other every time it is encountered.
+            //
+            // policy-commitment-htlc-cltv-range
             self.validate_expiry("offered HTLC", htlc.cltv_expiry, vstate.current_height)?;
+
             htlc_value_sat = htlc_value_sat
                 .checked_add(htlc.value_sat)
                 .ok_or_else(|| policy_error("offered HTLC value overflow".to_string()))?;
         }
 
         for htlc in &info.received_htlcs {
+            // TODO - this check should be converted into two checks, one the first time
+            // the HTLC is introduced and the other every time it is encountered.
+            //
+            // policy-commitment-htlc-cltv-range
             self.validate_expiry("received HTLC", htlc.cltv_expiry, vstate.current_height)?;
+
             htlc_value_sat = htlc_value_sat
                 .checked_add(htlc.value_sat)
                 .ok_or_else(|| policy_error("received HTLC value overflow".to_string()))?;
@@ -1515,8 +1523,8 @@ mod tests {
     use test_env_log::test;
 
     use crate::tx::tx::HTLCInfo2;
-    use crate::util::test_utils::*;
     use crate::util::key_utils::*;
+    use crate::util::test_utils::*;
 
     use super::*;
 
@@ -1657,6 +1665,7 @@ mod tests {
             .is_ok());
     }
 
+    // policy-channel-holder-contest-delay-range
     // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_holder_min_delay_test() {
@@ -1674,6 +1683,7 @@ mod tests {
         );
     }
 
+    // policy-channel-holder-contest-delay-range
     // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_holder_max_delay_test() {
@@ -1691,6 +1701,7 @@ mod tests {
         );
     }
 
+    // policy-channel-counterparty-contest-delay-range
     // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_counterparty_min_delay_test() {
@@ -1708,6 +1719,7 @@ mod tests {
         );
     }
 
+    // policy-channel-counterparty-contest-delay-range
     // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_counterparty_max_delay_test() {
