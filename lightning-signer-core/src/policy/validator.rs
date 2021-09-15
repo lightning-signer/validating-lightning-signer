@@ -280,9 +280,6 @@ impl SimpleValidator {
     }
 }
 
-// TODO - policy-channel-holder-contest-delay-range
-// TODO - policy-channel-counterparty-contest-delay-range
-
 // TODO - policy-funding-change-path-predictable
 
 // TODO - policy-commitment-spends-active-utxo
@@ -337,12 +334,16 @@ impl Validator for SimpleValidator {
                 self.policy.max_push_sat
             );
         }
-        // policy-commitment-to-self-delay-range
+
+        // policy-channel-counterparty-contest-delay-range
+        // policy-commitment-to-self-delay-range relies on this value
         self.validate_delay(
             "counterparty_selected_contest_delay",
             setup.counterparty_selected_contest_delay as u32,
         )?;
-        // policy-commitment-to-self-delay-range
+
+        // policy-channel-holder-contest-delay-range
+        // policy-commitment-to-self-delay-range relies on this value
         self.validate_delay(
             "holder_selected_contest_delay",
             setup.holder_selected_contest_delay as u32,
@@ -1515,8 +1516,8 @@ mod tests {
     use test_env_log::test;
 
     use crate::tx::tx::HTLCInfo2;
-    use crate::util::test_utils::*;
     use crate::util::key_utils::*;
+    use crate::util::test_utils::*;
 
     use super::*;
 
@@ -1657,6 +1658,7 @@ mod tests {
             .is_ok());
     }
 
+    // policy-channel-holder-contest-delay-range
     // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_holder_min_delay_test() {
@@ -1674,6 +1676,7 @@ mod tests {
         );
     }
 
+    // policy-channel-holder-contest-delay-range
     // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_holder_max_delay_test() {
@@ -1691,6 +1694,7 @@ mod tests {
         );
     }
 
+    // policy-channel-counterparty-contest-delay-range
     // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_counterparty_min_delay_test() {
@@ -1708,6 +1712,7 @@ mod tests {
         );
     }
 
+    // policy-channel-counterparty-contest-delay-range
     // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_counterparty_max_delay_test() {
