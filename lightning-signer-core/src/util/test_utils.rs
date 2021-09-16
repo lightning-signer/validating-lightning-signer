@@ -443,34 +443,14 @@ pub fn test_node_ctx(ndx: usize) -> TestNodeContext {
     TestNodeContext { node, secp_ctx }
 }
 
-pub fn test_chan_ctx(node_ctx: &TestNodeContext, nn: usize, value_sat: u64) -> TestChannelContext {
-    let channel_nonce0 = format!("nonce{}", nn).as_bytes().to_vec();
-    let channel_id = channel_nonce_to_id(&channel_nonce0);
-    let setup = ChannelSetup {
-        is_outbound: true,
-        channel_value_sat: value_sat,
-        push_value_msat: 0,
-        funding_outpoint: BitcoinOutPoint {
-            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
-            vout: 0,
-        },
-        holder_selected_contest_delay: 6,
-        holder_shutdown_script: None,
-        counterparty_points: make_test_counterparty_points(),
-        counterparty_selected_contest_delay: 7,
-        counterparty_shutdown_script: None,
-        commitment_type: CommitmentType::StaticRemoteKey,
-    };
-
+pub fn make_test_counterparty_keys(
+    node_ctx: &TestNodeContext,
+    channel_id: &ChannelId,
+    value_sat: u64,
+) -> InMemorySigner {
     node_ctx
         .node
-        .new_channel(Some(channel_id), Some(channel_nonce0), &node_ctx.node)
-        .expect("new_channel");
-
-    // Make counterparty keys that match.
-    let counterparty_keys = node_ctx
-        .node
-        .with_channel_base(&channel_id, |stub| {
+        .with_channel_base(channel_id, |stub| {
             // These need to match make_test_counterparty_points() above ...
             let mut cpkeys = InMemorySigner::new(
                 &node_ctx.secp_ctx,
@@ -499,11 +479,38 @@ pub fn test_chan_ctx(node_ctx: &TestNodeContext, nn: usize, value_sat: u64) -> T
             });
             Ok(cpkeys)
         })
-        .unwrap();
+        .unwrap()
+}
+
+pub fn test_chan_ctx(node_ctx: &TestNodeContext, nn: usize, value_sat: u64) -> TestChannelContext {
+    let channel_nonce0 = format!("nonce{}", nn).as_bytes().to_vec();
+    let channel_id = channel_nonce_to_id(&channel_nonce0);
+    let setup = ChannelSetup {
+        is_outbound: true,
+        channel_value_sat: value_sat,
+        push_value_msat: 0,
+        funding_outpoint: BitcoinOutPoint {
+            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
+            vout: 0,
+        },
+        holder_selected_contest_delay: 6,
+        holder_shutdown_script: None,
+        counterparty_points: make_test_counterparty_points(),
+        counterparty_selected_contest_delay: 7,
+        counterparty_shutdown_script: None,
+        commitment_type: CommitmentType::StaticRemoteKey,
+    };
+
+    node_ctx
+        .node
+        .new_channel(Some(channel_id), Some(channel_nonce0), &node_ctx.node)
+        .expect("new_channel");
+
+    // Make counterparty keys that match.
     TestChannelContext {
         channel_id,
         setup,
-        counterparty_keys,
+        counterparty_keys: make_test_counterparty_keys(&node_ctx, &channel_id, value_sat),
     }
 }
 
@@ -1309,19 +1316,19 @@ pub fn sign_commitment_tx_with_mutators_setup() -> (
     let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
     let htlc1 = HTLCInfo2 {
-        value_sat: 1,
+        value_sat: 4000,
         payment_hash: PaymentHash([1; 32]),
         cltv_expiry: 2 << 16,
     };
 
     let htlc2 = HTLCInfo2 {
-        value_sat: 1,
+        value_sat: 5000,
         payment_hash: PaymentHash([3; 32]),
         cltv_expiry: 3 << 16,
     };
 
     let htlc3 = HTLCInfo2 {
-        value_sat: 1,
+        value_sat: 11_003,
         payment_hash: PaymentHash([5; 32]),
         cltv_expiry: 4 << 16,
     };

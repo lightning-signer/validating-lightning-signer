@@ -191,7 +191,7 @@ mod tests {
 
             let commit_num = 23;
             let feerate_per_kw = 0;
-            let to_broadcaster = 1_999_997;
+            let to_broadcaster = 1_979_997;
             let to_countersignatory = 1_000_000;
 
             chan.enforcement_state
@@ -249,7 +249,7 @@ mod tests {
 
         assert_eq!(
             tx.txid().to_hex(),
-            "f438eac18af86e17f7dd74a8630e7427fefb2d81becb0ae563914a4e3e9aef9f"
+            "bede14b4ebeb56a4a76e51220ec898bb0e2adc3d7429c60d1e782cf43a2fa2a7"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);

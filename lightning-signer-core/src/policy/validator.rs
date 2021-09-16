@@ -1,4 +1,5 @@
 use bitcoin::hashes::hex::ToHex;
+use bitcoin::policy::DUST_RELAY_TX_FEE;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
@@ -22,6 +23,7 @@ use crate::util::debug_utils::{
     script_debug, DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugTxCreationKeys,
     DebugVecVecU8,
 };
+use crate::util::transaction_utils::MIN_DUST_LIMIT_SATOSHIS;
 use crate::wallet::Wallet;
 
 extern crate scopeguard;
@@ -287,7 +289,6 @@ impl SimpleValidator {
 // TODO - policy-commitment-htlc-received-spends-active-utxo
 // TODO - policy-commitment-htlc-cltv-range [NEEDS NEW HTLC DETECTION]
 // TODO - policy-commitment-htlc-offered-hash-matches
-// TODO - policy-commitment-outputs-trimmed
 // TODO - policy-commitment-previous-revoked [still need secret storage]
 // TODO - policy-commitment-retry-same
 // TODO - policy-commitment-anchors-not-when-off
@@ -441,6 +442,26 @@ impl Validator for SimpleValidator {
             }
         }
 
+        // policy-commitment-outputs-trimmed
+        if info.to_broadcaster_value_sat > 0
+            && info.to_broadcaster_value_sat < MIN_DUST_LIMIT_SATOSHIS
+        {
+            return policy_err!(
+                "to_broadcaster_value_sat {} less than dust limit {}",
+                info.to_broadcaster_value_sat,
+                MIN_DUST_LIMIT_SATOSHIS
+            );
+        }
+        if info.to_countersigner_value_sat > 0
+            && info.to_countersigner_value_sat < MIN_DUST_LIMIT_SATOSHIS
+        {
+            return policy_err!(
+                "to_countersigner_value_sat {} less than dust limit {}",
+                info.to_countersigner_value_sat,
+                MIN_DUST_LIMIT_SATOSHIS
+            );
+        }
+
         // policy-commitment-htlc-count-limit
         if info.offered_htlcs.len() + info.received_htlcs.len() > policy.max_htlcs {
             return Err(policy_error("too many HTLCs".to_string()));
@@ -448,6 +469,8 @@ impl Validator for SimpleValidator {
 
         let mut htlc_value_sat: u64 = 0;
 
+        let offered_htlc_dust_limit =
+            MIN_DUST_LIMIT_SATOSHIS + (DUST_RELAY_TX_FEE as u64 * HTLC_TIMEOUT_TX_WEIGHT / 1000);
         for htlc in &info.offered_htlcs {
             // TODO - this check should be converted into two checks, one the first time
             // the HTLC is introduced and the other every time it is encountered.
@@ -458,8 +481,19 @@ impl Validator for SimpleValidator {
             htlc_value_sat = htlc_value_sat
                 .checked_add(htlc.value_sat)
                 .ok_or_else(|| policy_error("offered HTLC value overflow".to_string()))?;
+
+            // policy-commitment-outputs-trimmed
+            if htlc.value_sat < offered_htlc_dust_limit {
+                return policy_err!(
+                    "offered htlc.value_sat {} less than dust limit {}",
+                    htlc.value_sat,
+                    offered_htlc_dust_limit
+                );
+            }
         }
 
+        let received_htlc_dust_limit =
+            MIN_DUST_LIMIT_SATOSHIS + (DUST_RELAY_TX_FEE as u64 * HTLC_SUCCESS_TX_WEIGHT / 1000);
         for htlc in &info.received_htlcs {
             // TODO - this check should be converted into two checks, one the first time
             // the HTLC is introduced and the other every time it is encountered.
@@ -470,6 +504,15 @@ impl Validator for SimpleValidator {
             htlc_value_sat = htlc_value_sat
                 .checked_add(htlc.value_sat)
                 .ok_or_else(|| policy_error("received HTLC value overflow".to_string()))?;
+
+            // policy-commitment-outputs-trimmed
+            if htlc.value_sat < received_htlc_dust_limit {
+                return policy_err!(
+                    "received htlc.value_sat {} less than dust limit {}",
+                    htlc.value_sat,
+                    received_htlc_dust_limit
+                );
+            }
         }
 
         // policy-commitment-htlc-inflight-limit
@@ -1634,7 +1677,7 @@ mod tests {
 
     fn make_htlc_info2(expiry: u32) -> HTLCInfo2 {
         HTLCInfo2 {
-            value_sat: 10,
+            value_sat: 5010,
             payment_hash: PaymentHash([0; 32]),
             cltv_expiry: expiry,
         }
@@ -1936,15 +1979,14 @@ mod tests {
             vec![],
             vec![make_htlc_info2(1005)],
         );
-        let status = validator.validate_commitment_tx(
+        assert_validation_ok!(validator.validate_commitment_tx(
             &enforcement_state,
             commit_num,
             &commit_point,
             &setup,
             &state,
             &info_good,
-        );
-        assert!(status.is_ok());
+        ));
         let info_good = make_counterparty_info(
             2_000_000,
             990_000,
@@ -1952,16 +1994,14 @@ mod tests {
             vec![],
             vec![make_htlc_info2(2440)],
         );
-        assert!(validator
-            .validate_commitment_tx(
-                &enforcement_state,
-                commit_num,
-                &commit_point,
-                &setup,
-                &state,
-                &info_good,
-            )
-            .is_ok());
+        assert_validation_ok!(validator.validate_commitment_tx(
+            &enforcement_state,
+            commit_num,
+            &commit_point,
+            &setup,
+            &state,
+            &info_good,
+        ));
         let info_bad = make_counterparty_info(
             2_000_000,
             990_000,

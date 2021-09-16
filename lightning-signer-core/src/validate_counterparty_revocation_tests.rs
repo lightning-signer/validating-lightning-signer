@@ -36,7 +36,7 @@ mod tests {
             let mut remote_percommit_secret = make_test_privkey(10);
 
             let feerate_per_kw = 0;
-            let to_broadcaster = 1_999_997;
+            let to_broadcaster = 1_979_997;
             let to_countersignatory = 1_000_000;
 
             chan.enforcement_state
@@ -123,7 +123,7 @@ mod tests {
 
             assert_eq!(
                 tx.txid.to_hex(),
-                "3f3238ed033a13ab1cf43d8eb6e81e5beca2080f9530a13931c10f40e04697fb"
+                "56f1eb4719a7e93311f2ee3f4275785d857939af0c5eff6058b130f422042bff"
             );
 
             Ok(())
@@ -261,7 +261,7 @@ mod tests {
             let remote_percommit_point = make_test_pubkey(REV_COMMIT_NUM as u8);
 
             let feerate_per_kw = 0;
-            let to_broadcaster = 1_999_997;
+            let to_broadcaster = 1_979_997;
             let to_countersignatory = 1_000_000;
 
             let parameters = channel_parameters.as_counterparty_broadcastable();
@@ -327,7 +327,7 @@ mod tests {
             let remote_percommit_point = make_test_pubkey((REV_COMMIT_NUM + 1) as u8);
 
             let feerate_per_kw = 0;
-            let to_broadcaster = 1_999_097; // -900
+            let to_broadcaster = 1_979_097; // -900
             let to_countersignatory = 1_000_900; // +900
 
             let parameters = channel_parameters.as_counterparty_broadcastable();

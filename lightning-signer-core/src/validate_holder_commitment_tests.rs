@@ -1,8 +1,10 @@
 #[cfg(test)]
 mod tests {
+    use core::str::FromStr;
+
     use bitcoin::hash_types::Txid;
     use bitcoin::hashes::Hash;
-    use bitcoin::secp256k1::Signature;
+    use bitcoin::secp256k1::{Secp256k1, Signature};
     use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::{self, Transaction};
     use lightning::ln::chan_utils::TxCreationKeys;
@@ -26,34 +28,34 @@ mod tests {
 
         let offered_htlcs = vec![
             HTLCInfo2 {
-                value_sat: 1000,
+                value_sat: 10_000,
                 payment_hash: PaymentHash([1; 32]),
                 cltv_expiry: 1 << 16,
             },
             HTLCInfo2 {
-                value_sat: 1000,
+                value_sat: 10_000,
                 payment_hash: PaymentHash([2; 32]),
                 cltv_expiry: 2 << 16,
             },
         ];
         let received_htlcs = vec![
             HTLCInfo2 {
-                value_sat: 1000,
+                value_sat: 10_000,
                 payment_hash: PaymentHash([3; 32]),
                 cltv_expiry: 3 << 16,
             },
             HTLCInfo2 {
-                value_sat: 1000,
+                value_sat: 10_000,
                 payment_hash: PaymentHash([4; 32]),
                 cltv_expiry: 4 << 16,
             },
             HTLCInfo2 {
-                value_sat: 1000,
+                value_sat: 10_000,
                 payment_hash: PaymentHash([5; 32]),
                 cltv_expiry: 5 << 16,
             },
         ];
-        let sum_htlc = 5000;
+        let sum_htlc = 50_000;
 
         let commit_num = 1;
         let feerate_per_kw = 1100;
@@ -232,29 +234,36 @@ mod tests {
         ),
         ChannelStateValidator: Fn(&Channel),
     {
-        let node_ctx = test_node_ctx(1);
-
-        let channel_amount = 3_000_000;
-
-        let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
+        let (node, setup, channel_id, offered_htlcs, received_htlcs) =
+            sign_commitment_tx_with_mutators_setup();
+        let secp_ctx = Secp256k1::signing_only();
+        let node_ctx = TestNodeContext { node, secp_ctx };
+        let channel_value_sat = setup.channel_value_sat;
+        let mut chan_ctx = TestChannelContext {
+            channel_id,
+            setup,
+            counterparty_keys: make_test_counterparty_keys(
+                &node_ctx,
+                &channel_id,
+                channel_value_sat,
+            ),
+        };
 
         // Pretend we funded the channel and ran for a while ...
-        synthesize_ready_channel(
-            &node_ctx,
-            &mut chan_ctx,
-            bitcoin::OutPoint {
-                txid: Txid::from_slice(&[2u8; 32]).unwrap(),
-                vout: 0,
-            },
-            HOLD_COMMIT_NUM,
-        );
+        chan_ctx.setup.funding_outpoint = bitcoin::OutPoint {
+            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
+            vout: 0,
+        };
+        node_ctx
+            .node
+            .with_ready_channel(&chan_ctx.channel_id, |chan| {
+                chan.enforcement_state
+                    .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM);
+                Ok(())
+            })?;
 
-        let fee = 1000;
-        let to_broadcaster = 1_000_000;
-        let to_countersignatory = channel_amount - to_broadcaster - fee;
-        let offered_htlcs = vec![];
-        let received_htlcs = vec![];
-
+        let to_broadcaster = 1_979_997;
+        let to_countersignatory = 1_000_000;
         let feerate_per_kw = 1200;
 
         let mut commit_tx_ctx0 = channel_commitment(
@@ -339,7 +348,7 @@ mod tests {
 
     #[test]
     fn validate_holder_commitment_success() {
-        assert!(validate_holder_commitment_with_mutator(
+        assert_status_ok!(validate_holder_commitment_with_mutator(
             |_keys| {},
             |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
                 // If we don't mutate anything it should succeed.
@@ -351,13 +360,12 @@ mod tests {
                     HOLD_COMMIT_NUM + 1
                 );
             }
-        )
-        .is_ok());
+        ));
     }
 
     #[test]
     fn validate_holder_commitment_can_retry() {
-        assert!(validate_holder_commitment_with_mutator(
+        assert_status_ok!(validate_holder_commitment_with_mutator(
             |_keys| {},
             |chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
                 // Set the channel's next_holder_commit_num ahead one;
@@ -372,8 +380,48 @@ mod tests {
                     HOLD_COMMIT_NUM + 1
                 );
             }
-        )
-        .is_ok());
+        ));
+    }
+
+    #[test]
+    fn validate_holder_commitment_with_bad_commit_sig() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, _commit_tx_ctx, _tx, _witscripts, commit_sig, _htlc_sigs| {
+                    *commit_sig = Signature::from_str("30450221009338316aef0f17f75127a24d60ae8a980fee5e2b4605dc96fba2d5407e77fcee022029e311ff22df5b515e4a2fbe412d32ed49e93cabbb31b067ad3318ac22441cd2").expect("sig");
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: commit sig verify failed: secp: signature failed verification"
+        );
+    }
+
+    #[test]
+    fn validate_holder_commitment_with_bad_htlc_sig() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, htlc_sigs| {
+                    htlc_sigs[0] = Signature::from_str("30450221009338316aef0f17f75127a24d60ae8a980fee5e2b4605dc96fba2d5407e77fcee022029e311ff22df5b515e4a2fbe412d32ed49e93cabbb31b067ad3318ac22441cd2").expect("sig");
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: \
+             commit sig verify failed for htlc 0: secp: signature failed verification"
+        );
     }
 
     #[test]
@@ -483,7 +531,7 @@ mod tests {
                 }
             ),
             "transaction format: decode_commitment_tx: \
-             tx output[0]: script pubkey doesn't match inner script"
+             tx output[4]: script pubkey doesn't match inner script"
         );
     }
 
@@ -495,7 +543,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_keys| {},
                 |_chan, _commit_tx_ctx, tx, witscripts, _commit_sig, _htlc_sigs| {
-                    let ndx = 0;
+                    let ndx = 4;
                     tx.output.push(tx.output[ndx].clone());
                     witscripts.push(witscripts[ndx].clone());
                 },
@@ -508,7 +556,7 @@ mod tests {
                 }
             ),
             "transaction format: decode_commitment_tx: \
-             tx output[2]: more than one to_broadcaster output"
+             tx output[5]: more than one to_broadcaster output"
         );
     }
 
@@ -520,7 +568,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_keys| {},
                 |_chan, _commit_tx_ctx, tx, witscripts, _commit_sig, _htlc_sigs| {
-                    let ndx = 1;
+                    let ndx = 3;
                     tx.output.push(tx.output[ndx].clone());
                     witscripts.push(witscripts[ndx].clone());
                 },
@@ -533,7 +581,101 @@ mod tests {
                 }
             ),
             "transaction format: decode_commitment_tx: \
-             tx output[2]: more than one to_countersigner output"
+             tx output[5]: more than one to_countersigner output"
+        );
+    }
+
+    // policy-commitment-outputs-trimmed
+    #[test]
+    fn validate_holder_commitment_with_dust_to_holder() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                    let delta = 1_979_900;
+                    tx.output[3].value += delta;
+                    tx.output[4].value -= delta;
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: validate_commitment_tx: \
+             to_broadcaster_value_sat 97 less than dust limit 330"
+        );
+    }
+
+    // policy-commitment-outputs-trimmed
+    #[test]
+    fn validate_holder_commitment_with_dust_to_counterparty() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                    let delta = 999_900;
+                    tx.output[3].value -= delta;
+                    tx.output[4].value += delta;
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: validate_commitment_tx: \
+             to_countersigner_value_sat 100 less than dust limit 330"
+        );
+    }
+
+    // policy-commitment-outputs-trimmed
+    #[test]
+    fn validate_holder_commitment_with_dust_offered_htlc() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                    commit_tx_ctx.offered_htlcs[0].value_sat = 1000;
+                    tx.output[0].value = 1000;
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: validate_commitment_tx: \
+             offered htlc.value_sat 1000 less than dust limit 2319"
+        );
+    }
+
+    // policy-commitment-outputs-trimmed
+    #[test]
+    fn validate_holder_commitment_with_dust_received_htlc() {
+        assert_failed_precondition_err!(
+            validate_holder_commitment_with_mutator(
+                |_keys| {},
+                |_chan, commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                    commit_tx_ctx.received_htlcs[0].value_sat = 1000;
+                    tx.output[1].value = 1000;
+                },
+                |chan| {
+                    // Channel state should not advance.
+                    assert_eq!(
+                        chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM
+                    );
+                }
+            ),
+            "policy failure: validate_commitment_tx: \
+             received htlc.value_sat 1000 less than dust limit 2439"
         );
     }
 
@@ -582,26 +724,22 @@ mod tests {
                 assert_eq!(state.next_counterparty_revoke_num, 0);
 
                 // ADVANCE next_commit to 1
-                assert!(state
-                    .set_next_counterparty_commit_num(
-                        1,
-                        make_test_pubkey(0x10),
-                        commit_info.clone()
-                    )
-                    .is_ok());
+                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                    1,
+                    make_test_pubkey(0x10),
+                    commit_info.clone()
+                ));
                 assert_eq!(state.next_counterparty_revoke_num, 0);
                 assert_eq!(state.next_counterparty_commit_num, 1);
                 // commit 0: current <- next_revoke
                 // commit 1: next    <- next_commit
 
                 // retries are ok
-                assert!(state
-                    .set_next_counterparty_commit_num(
-                        1,
-                        make_test_pubkey(0x10),
-                        commit_info.clone()
-                    )
-                    .is_ok());
+                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                    1,
+                    make_test_pubkey(0x10),
+                    commit_info.clone()
+                ));
                 assert_eq!(state.next_counterparty_revoke_num, 0);
                 assert_eq!(state.next_counterparty_commit_num, 1);
 
@@ -626,13 +764,11 @@ mod tests {
                 assert_eq!(state.next_counterparty_revoke_num, 0);
 
                 // ADVANCE next_commit to 2
-                assert!(state
-                    .set_next_counterparty_commit_num(
-                        2,
-                        make_test_pubkey(0x12),
-                        commit_info.clone()
-                    )
-                    .is_ok());
+                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                    2,
+                    make_test_pubkey(0x12),
+                    commit_info.clone()
+                ));
                 assert_eq!(state.next_counterparty_revoke_num, 0);
                 assert_eq!(state.next_counterparty_commit_num, 2);
                 // commit 0: unrevoked <- next_revoke
@@ -640,13 +776,11 @@ mod tests {
                 // commit 2: next    <- next_commit
 
                 // retries are ok
-                assert!(state
-                    .set_next_counterparty_commit_num(
-                        2,
-                        make_test_pubkey(0x12),
-                        commit_info.clone()
-                    )
-                    .is_ok());
+                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                    2,
+                    make_test_pubkey(0x12),
+                    commit_info.clone()
+                ));
                 assert_eq!(state.next_counterparty_revoke_num, 0);
                 assert_eq!(state.next_counterparty_commit_num, 2);
 
@@ -689,7 +823,7 @@ mod tests {
                 assert_eq!(state.next_counterparty_revoke_num, 0);
 
                 // REVOKE commit 0
-                assert!(state.set_next_counterparty_revoke_num(1).is_ok());
+                assert_validation_ok!(state.set_next_counterparty_revoke_num(1));
                 assert_eq!(state.next_counterparty_revoke_num, 1);
                 assert_eq!(state.next_counterparty_commit_num, 2);
                 // commit 0: revoked
@@ -697,7 +831,7 @@ mod tests {
                 // commit 2: next      <- next_commit
 
                 // retries are ok
-                assert!(state.set_next_counterparty_revoke_num(1).is_ok());
+                assert_validation_ok!(state.set_next_counterparty_revoke_num(1));
                 assert_eq!(state.next_counterparty_revoke_num, 1);
                 assert_eq!(state.next_counterparty_commit_num, 2);
 
@@ -741,13 +875,11 @@ mod tests {
                 assert_eq!(state.next_counterparty_revoke_num, 1);
 
                 // ADVANCE next_commit to 3
-                assert!(state
-                    .set_next_counterparty_commit_num(
-                        3,
-                        make_test_pubkey(0x14),
-                        commit_info.clone()
-                    )
-                    .is_ok());
+                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                    3,
+                    make_test_pubkey(0x14),
+                    commit_info.clone()
+                ));
                 // commit 0: revoked
                 // commit 1: unrevoked <- next_revoke
                 // commit 2: current
@@ -756,17 +888,15 @@ mod tests {
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // retries ok
-                assert!(state
-                    .set_next_counterparty_commit_num(
-                        3,
-                        make_test_pubkey(0x14),
-                        commit_info.clone()
-                    )
-                    .is_ok());
+                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                    3,
+                    make_test_pubkey(0x14),
+                    commit_info.clone()
+                ));
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // Can still retry the old revoke (they may not have seen our commit).
-                assert!(state.set_next_counterparty_revoke_num(1).is_ok());
+                assert_validation_ok!(state.set_next_counterparty_revoke_num(1));
                 assert_eq!(state.next_counterparty_revoke_num, 1);
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
@@ -803,7 +933,7 @@ mod tests {
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // REVOKE commit 1
-                assert!(state.set_next_counterparty_revoke_num(2).is_ok());
+                assert_validation_ok!(state.set_next_counterparty_revoke_num(2));
                 // commit 1: revoked
                 // commit 2: current   <- next_revoke
                 // commit 3: next      <- next_commit
@@ -811,7 +941,7 @@ mod tests {
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // revoke retries ok
-                assert!(state.set_next_counterparty_revoke_num(2).is_ok());
+                assert_validation_ok!(state.set_next_counterparty_revoke_num(2));
                 assert_eq!(state.next_counterparty_revoke_num, 2);
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
@@ -855,13 +985,11 @@ mod tests {
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // ADVANCE next_commit to 4
-                assert!(state
-                    .set_next_counterparty_commit_num(
-                        4,
-                        make_test_pubkey(0x16),
-                        commit_info.clone()
-                    )
-                    .is_ok());
+                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                    4,
+                    make_test_pubkey(0x16),
+                    commit_info.clone()
+                ));
                 // commit 2: unrevoked <- next_revoke
                 // commit 3: current
                 // commit 4: next      <- next_commit
