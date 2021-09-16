@@ -209,9 +209,6 @@ impl BaseSign for LoopbackChannelSigner {
         // we are passed a backwards counting one
         self.signer
             .with_channel_base(&self.node_id, &self.channel_id, |base| {
-                // TODO - remove the following hack when loopback makes the
-                // appropriate validate_holder_commitment_tx calls ...
-                base.set_next_holder_commit_num_for_testing(INITIAL_COMMITMENT_NUMBER - idx);
                 Ok(base
                     .get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - idx)
                     .unwrap())
