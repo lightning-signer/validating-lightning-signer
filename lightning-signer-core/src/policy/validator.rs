@@ -297,11 +297,11 @@ impl SimpleValidator {
 // TODO - policy-commitment-anchor-static-remotekey
 // TODO - policy-commitment-anchor-match-fundingkey [NO TESTS TAGGED]
 
-// TODO - policy-v2-commitment-payment-settled-preimage
-// TODO - policy-v2-commitment-payment-allowlisted
-// TODO - policy-v2-commitment-payment-velocity
-// TODO - policy-v2-commitment-payment-approved
-// TODO - policy-v2-commitment-payment-invoiced
+// TODO - policy-commitment-payment-settled-preimage
+// TODO - policy-commitment-payment-allowlisted
+// TODO - policy-commitment-payment-velocity
+// TODO - policy-commitment-payment-approved
+// TODO - policy-commitment-payment-invoiced
 
 // TODO - policy-htlc-cltv-range
 
