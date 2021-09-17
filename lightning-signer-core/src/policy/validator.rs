@@ -518,8 +518,65 @@ impl Validator for SimpleValidator {
         vstate: &ValidatorState,
         info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
+        // Validate common commitment constraints
         self.validate_commitment_tx(estate, commit_num, commitment_point, setup, vstate, info)
-            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))
+            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
+
+        let mut debug_on_return =
+            scoped_debug_return!(estate, commit_num, commitment_point, setup, vstate, info);
+
+        // policy-commitment-to-self-delay-range
+        if info.to_self_delay != setup.holder_selected_contest_delay {
+            return Err(policy_error(
+                "holder_selected_contest_delay mismatch".to_string(),
+            ));
+        }
+
+        // policy-commitment-previous-revoked
+        // if next_counterparty_revoke_num is 20:
+        // - commit_num 19 has been revoked
+        // - commit_num 20 is current, previously signed, ok to resign
+        // - commit_num 21 is ok to sign, advances the state
+        // - commit_num 22 is not ok to sign
+        // This check overlaps the check in set_next_counterparty_commit_num
+        // but gives better diagnostic.
+        if commit_num > estate.next_counterparty_revoke_num + 1 {
+            return policy_err!(
+                "invalid attempt to sign counterparty commit_num {} \
+                         with next_counterparty_revoke_num {}",
+                commit_num,
+                estate.next_counterparty_revoke_num
+            );
+        }
+
+        // policy-commitment-retry-same
+        // Is this a retry?
+        if commit_num + 1 == estate.next_counterparty_commit_num {
+            // The commit_point must be the same as previous
+            let prev_commit_point = estate.get_previous_counterparty_point(commit_num)?;
+            if *commitment_point != prev_commit_point {
+                return policy_err!(
+                    "retry of sign_counterparty_commitment {} with changed point: \
+                             prev {} != new {}",
+                    commit_num,
+                    &prev_commit_point,
+                    &commitment_point
+                );
+            }
+
+            // The CommitmentInfo2 must be the same as previously
+            let prev_commit_info = estate.get_previous_counterparty_commit_info(commit_num)?;
+            if *info != prev_commit_info {
+                debug_vals!(*info, prev_commit_info);
+                return policy_err!(
+                    "retry of sign_counterparty_commitment {} with changed info",
+                    commit_num,
+                );
+            }
+        }
+
+        *debug_on_return = false;
+        Ok(())
     }
 
     fn validate_holder_commitment_tx(
@@ -535,7 +592,33 @@ impl Validator for SimpleValidator {
         self.validate_commitment_tx(estate, commit_num, commitment_point, setup, vstate, info)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
+        let mut debug_on_return =
+            scoped_debug_return!(estate, commit_num, commitment_point, setup, vstate, info);
+
+        // policy-commitment-to-self-delay-range
+        if info.to_self_delay != setup.counterparty_selected_contest_delay {
+            return Err(policy_error(
+                "counterparty_selected_contest_delay mismatch".to_string(),
+            ));
+        }
+
+        // policy-commitment-retry-same
+        // Is this a retry?
+        if commit_num + 1 == estate.next_holder_commit_num {
+            // The CommitmentInfo2 must be the same as previously
+            let holder_commit_info = &estate
+                .current_holder_commit_info
+                .as_ref()
+                .expect("current_holder_commit_info");
+            if info != *holder_commit_info {
+                debug_vals!(*info, holder_commit_info);
+                return policy_err!("retry holder commitment {} with changed info", commit_num);
+            }
+        }
+
         // policy-commitment-holder-not-revoked
+        // This test overlaps the check in set_next_holder_commit_num but gives
+        // better diagnostic.
         if commit_num + 2 <= estate.next_holder_commit_num {
             debug_failed_vals!(estate, commit_num);
             return policy_err!(
@@ -554,6 +637,7 @@ impl Validator for SimpleValidator {
             return policy_err!("mutual close already signed");
         }
 
+        *debug_on_return = false;
         Ok(())
     }
 
@@ -1091,26 +1175,7 @@ impl SimpleValidator {
         let mut debug_on_return =
             scoped_debug_return!(estate, commit_num, commitment_point, setup, vstate, info);
 
-        // TODO - refactor code which is holder/counterparty specific
-        // to side-specific methods.
-        let is_counterparty = info.is_counterparty_broadcaster;
-
         let policy = &self.policy;
-
-        // policy-commitment-to-self-delay-range
-        if is_counterparty {
-            if info.to_self_delay != setup.holder_selected_contest_delay {
-                return Err(policy_error(
-                    "holder_selected_contest_delay mismatch".to_string(),
-                ));
-            }
-        } else {
-            if info.to_self_delay != setup.counterparty_selected_contest_delay {
-                return Err(policy_error(
-                    "counterparty_selected_contest_delay mismatch".to_string(),
-                ));
-            }
-        }
 
         // policy-commitment-outputs-trimmed
         if info.to_broadcaster_value_sat > 0
@@ -1214,67 +1279,6 @@ impl SimpleValidator {
             );
         }
 
-        if !is_counterparty {
-            // This is a holder commitment
-
-            // policy-commitment-retry-same
-            // Is this a retry?
-            if commit_num + 1 == estate.next_holder_commit_num {
-                // The CommitmentInfo2 must be the same as previously
-                let holder_commit_info = &estate
-                    .current_holder_commit_info
-                    .as_ref()
-                    .expect("current_holder_commit_info");
-                if info != *holder_commit_info {
-                    debug_vals!(*info, holder_commit_info);
-                    return policy_err!("retry holder commitment {} with changed info", commit_num);
-                }
-            }
-        } else {
-            // This is a counterparty commitment
-
-            // policy-commitment-previous-revoked
-            // if next_counterparty_revoke_num is 20:
-            // - commit_num 19 has been revoked
-            // - commit_num 20 is current, previously signed, ok to resign
-            // - commit_num 21 is ok to sign, advances the state
-            // - commit_num 22 is not ok to sign
-            if commit_num > estate.next_counterparty_revoke_num + 1 {
-                return policy_err!(
-                    "invalid attempt to sign counterparty commit_num {} \
-                         with next_counterparty_revoke_num {}",
-                    commit_num,
-                    estate.next_counterparty_revoke_num
-                );
-            }
-
-            // policy-commitment-retry-same
-            // Is this a retry?
-            if commit_num + 1 == estate.next_counterparty_commit_num {
-                // The commit_point must be the same as previous
-                let prev_commit_point = estate.get_previous_counterparty_point(commit_num)?;
-                if *commitment_point != prev_commit_point {
-                    return policy_err!(
-                        "retry of sign_counterparty_commitment {} with changed point: \
-                             prev {} != new {}",
-                        commit_num,
-                        &prev_commit_point,
-                        &commitment_point
-                    );
-                }
-
-                // The CommitmentInfo2 must be the same as previously
-                let prev_commit_info = estate.get_previous_counterparty_commit_info(commit_num)?;
-                if *info != prev_commit_info {
-                    debug_vals!(*info, prev_commit_info);
-                    return policy_err!(
-                        "retry of sign_counterparty_commitment {} with changed info",
-                        commit_num,
-                    );
-                }
-            }
-        }
-
         // Enforce additional requirements on initial commitments.
         if commit_num == 0 {
             if info.offered_htlcs.len() + info.received_htlcs.len() > 0 {
@@ -1290,7 +1294,7 @@ impl SimpleValidator {
                 // no-initial-htlcs and fee checks above will ensure
                 // that our share is valid.
 
-                let fundee_value_sat = if is_counterparty {
+                let fundee_value_sat = if info.is_counterparty_broadcaster {
                     info.to_broadcaster_value_sat
                 } else {
                     info.to_countersigner_value_sat

@@ -740,7 +740,7 @@ mod tests {
                 |_keys| {},
                 |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
             ),
-            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: \
              retry holder commitment 23 with changed info"
         );
     }
@@ -757,7 +757,7 @@ mod tests {
                 |_keys| {},
                 |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
             ),
-            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: \
              retry holder commitment 23 with changed info"
         );
     }
@@ -777,7 +777,7 @@ mod tests {
                 |_keys| {},
                 |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
             ),
-            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: \
              retry holder commitment 23 with changed info"
         );
     }
@@ -798,7 +798,7 @@ mod tests {
                 |_keys| {},
                 |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
             ),
-            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: \
              retry holder commitment 23 with changed info"
         );
     }

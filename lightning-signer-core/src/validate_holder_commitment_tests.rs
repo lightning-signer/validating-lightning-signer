@@ -509,7 +509,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: \
              retry holder commitment 43 with changed info"
         );
     }
@@ -532,7 +532,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: \
              retry holder commitment 43 with changed info"
         );
     }
@@ -555,7 +555,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: \
              retry holder commitment 43 with changed info"
         );
     }
@@ -578,7 +578,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: \
              retry holder commitment 43 with changed info"
         );
     }

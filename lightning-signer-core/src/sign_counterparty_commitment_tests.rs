@@ -724,7 +724,7 @@ mod tests {
                 |_keys| {},
                 |_tx, _witscripts| {},
             ),
-            "policy failure: validate_counterparty_commitment_tx: validate_commitment_tx: \
+            "policy failure: validate_counterparty_commitment_tx: \
              invalid attempt to sign counterparty commit_num 23 with next_counterparty_revoke_num 21"
         );
     }
@@ -913,7 +913,7 @@ mod tests {
                     *remote_percommitment_point = make_test_pubkey(42);
                 }
             ),
-            "policy failure: validate_counterparty_commitment_tx: validate_commitment_tx: \
+            "policy failure: validate_counterparty_commitment_tx: \
              retry of sign_counterparty_commitment 23 with changed point: \
              prev 03f76a39d05686e34a4420897e359371836145dd3973e3982568b60f8433adde6e != \
              new 035be5e9478209674a96e60f1f037f6176540fd001fa1d64694770c56a7709c42c"
@@ -942,7 +942,7 @@ mod tests {
                     output_witscripts.remove(2);
                 }
             ),
-            "policy failure: validate_counterparty_commitment_tx: validate_commitment_tx: \
+            "policy failure: validate_counterparty_commitment_tx: \
              retry of sign_counterparty_commitment 23 with changed info"
         );
     }
