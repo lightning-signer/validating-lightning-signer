@@ -1487,8 +1487,6 @@ impl Channel {
             .validator_factory
             .make_validator(self.network());
 
-        validator.validate_holder_commitment_state(&self.enforcement_state)?;
-
         let (recomposed_tx, info2) = self.make_recomposed_holder_commitment_tx(
             tx,
             output_witscripts,
@@ -1496,6 +1494,20 @@ impl Channel {
             feerate_per_kw,
             offered_htlcs,
             received_htlcs,
+        )?;
+
+        let commitment_point = self.get_per_commitment_point(commitment_number)?;
+
+        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
+        let vstate = ValidatorState { current_height: 0 };
+
+        validator.validate_holder_commitment_tx(
+            &self.enforcement_state,
+            commitment_number,
+            &commitment_point,
+            &self.setup,
+            &vstate,
+            &info2,
         )?;
 
         self.check_holder_tx_signatures(

@@ -97,12 +97,6 @@ pub trait Validator {
         info2: &CommitmentInfo2,
     ) -> Result<(), ValidationError>;
 
-    /// Ensures that a counterparty signed holder commitment is valid.
-    fn validate_holder_commitment_state(
-        &self,
-        enforcement_state: &EnforcementState,
-    ) -> Result<(), ValidationError>;
-
     /// Check a counterparty's revocation of an old state.
     /// This also makes a note that the counterparty has committed to their
     /// current commitment transaction.
@@ -552,16 +546,11 @@ impl Validator for SimpleValidator {
             );
         };
 
-        Ok(())
-    }
-
-    fn validate_holder_commitment_state(
-        &self,
-        enforcement_state: &EnforcementState,
-    ) -> Result<(), ValidationError> {
         // policy-revoke-not-closed
-        if enforcement_state.mutual_close_signed {
-            debug_failed_vals!(enforcement_state);
+        // It's ok to validate the current state when closed, but not ok to validate
+        // a new state.
+        if commit_num == estate.next_holder_commit_num && estate.mutual_close_signed {
+            debug_failed_vals!(estate);
             return policy_err!("mutual close already signed");
         }
 

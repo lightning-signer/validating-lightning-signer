@@ -691,8 +691,28 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_holder_commitment_state: mutual close already signed"
+            "policy failure: validate_holder_commitment_tx: mutual close already signed"
         );
+    }
+
+    // policy-revoke-not-closed
+    #[test]
+    fn validate_holder_commitment_closed_ok_on_previous() {
+        // It's ok to validate existing when closed (ie: retry after mutual close)
+        assert_status_ok!(validate_holder_commitment_retry_with_mutator(
+            |_commit_tx_ctx| {},
+            |_keys| {},
+            |chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
+                chan.enforcement_state.mutual_close_signed = true;
+            },
+            |chan| {
+                // Channel state should stay where it was
+                assert_eq!(
+                    chan.enforcement_state.next_holder_commit_num,
+                    HOLD_COMMIT_NUM + 1
+                );
+            }
+        ));
     }
 
     // policy-revoke-new-commitment-valid
