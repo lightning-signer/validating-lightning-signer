@@ -48,6 +48,23 @@ pub trait Validator {
     /// Validate channel value after it is late-filled
     fn validate_channel_value(&self, setup: &ChannelSetup) -> Result<(), ValidationError>;
 
+    /// Validate a funding transaction, which may fund multiple channels
+    ///
+    /// * `channels` the funded channel for each funding output, or
+    ///   None for change outputs
+    /// * `values_sat` - the amount in satoshi per input
+    /// * `opaths` - derivation path for change, one per output,
+    ///   empty for non-change or allowlisted outputs
+    fn validate_funding_tx(
+        &self,
+        wallet: &Wallet,
+        channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
+        state: &ValidatorState,
+        tx: &Transaction,
+        values_sat: &Vec<u64>,
+        opaths: &Vec<Vec<u32>>,
+    ) -> Result<(), ValidationError>;
+
     /// Phase 1 CommitmentInfo
     fn decode_commitment_tx(
         &self,
@@ -112,23 +129,6 @@ pub trait Validator {
         is_counterparty: bool,
         htlc: &HTLCOutputInCommitment,
         feerate_per_kw: u32,
-    ) -> Result<(), ValidationError>;
-
-    /// Validate a funding transaction, which may fund multiple channels
-    ///
-    /// * `channels` the funded channel for each funding output, or None for
-    ///   change outputs
-    /// * `values_sat` - the amount in satoshi per input
-    /// * `opaths` - derivation path for change, one per output.  Empty for
-    ///   non-change outputs.
-    fn validate_funding_tx(
-        &self,
-        wallet: &Wallet,
-        channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
-        state: &ValidatorState,
-        tx: &Transaction,
-        values_sat: &Vec<u64>,
-        opaths: &Vec<Vec<u32>>,
     ) -> Result<(), ValidationError>;
 
     /// Phase 1 decoding and recomposition of mutual_close
@@ -369,6 +369,107 @@ impl Validator for SimpleValidator {
         if setup.channel_value_sat > self.policy.max_channel_size_sat {
             return policy_err!("channel value {} too large", setup.channel_value_sat);
         }
+        Ok(())
+    }
+
+    fn validate_funding_tx(
+        &self,
+        wallet: &Wallet,
+        channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
+        state: &ValidatorState,
+        tx: &Transaction,
+        values_sat: &Vec<u64>,
+        opaths: &Vec<Vec<u32>>,
+    ) -> Result<(), ValidationError> {
+        let mut debug_on_return = scoped_debug_return!(state, tx, values_sat, opaths);
+
+        // policy-funding-fee-range
+        let mut sum_inputs: u64 = 0;
+        for val in values_sat {
+            sum_inputs = sum_inputs
+                .checked_add(*val)
+                .ok_or_else(|| policy_error(format!("funding sum inputs overflow")))?;
+        }
+        let mut sum_outputs: u64 = 0;
+        for outp in &tx.output {
+            sum_outputs = sum_outputs
+                .checked_add(outp.value)
+                .ok_or_else(|| policy_error(format!("funding sum outputs overflow")))?;
+        }
+        let fee = sum_inputs
+            .checked_sub(sum_outputs)
+            .ok_or_else(|| policy_error(format!("funding fee overflow")))?;
+        self.validate_fee("validate_funding_tx", fee, tx)?;
+
+        // policy-funding-format-standard
+        if tx.version != 2 {
+            return policy_err!("invalid version: {}", tx.version);
+        }
+
+        for outndx in 0..tx.output.len() {
+            let output = &tx.output[outndx];
+            let opath = &opaths[outndx];
+            let channel_slot = channels[outndx].as_ref();
+
+            // policy-funding-output-match-commitment
+            // policy-funding-change-to-wallet
+            // All outputs must either be wallet (change) or channel funding.
+            if opath.len() > 0 {
+                let spendable = wallet
+                    .can_spend(opath, &output.script_pubkey)
+                    .map_err(|err| {
+                        policy_error(format!(
+                            "output[{}]: wallet_can_spend error: {}",
+                            outndx, err
+                        ))
+                    })?;
+                if !spendable {
+                    return policy_err!("wallet cannot spend output[{}]", outndx);
+                }
+            } else {
+                let slot = channel_slot.ok_or_else(|| {
+                    let outpoint = OutPoint {
+                        txid: tx.txid(),
+                        vout: outndx as u32,
+                    };
+                    policy_error(format!("unknown output: {}", outpoint))
+                })?;
+                match &*slot.lock().unwrap() {
+                    ChannelSlot::Ready(chan) => {
+                        // policy-funding-output-match-commitment
+                        if output.value != chan.setup.channel_value_sat {
+                            return policy_err!(
+                                "funding output amount mismatch w/ channel: {} != {}",
+                                output.value,
+                                chan.setup.channel_value_sat
+                            );
+                        }
+
+                        // policy-funding-output-scriptpubkey
+                        let funding_redeemscript = make_funding_redeemscript(
+                            &chan.keys.pubkeys().funding_pubkey,
+                            &chan.keys.counterparty_pubkeys().funding_pubkey,
+                        );
+                        let script_pubkey =
+                            payload_for_p2wsh(&funding_redeemscript).script_pubkey();
+                        if output.script_pubkey != script_pubkey {
+                            return policy_err!(
+                                "funding script_pubkey mismatch w/ channel: {} != {}",
+                                output.script_pubkey,
+                                script_pubkey
+                            );
+                        }
+
+                        // policy-funding-initial-commitment-countersigned
+                        if chan.enforcement_state.next_holder_commit_num != 1 {
+                            return policy_err!("initial holder commitment not validated",);
+                        }
+                    }
+                    _ => panic!("this can't happen"),
+                };
+            }
+        }
+        *debug_on_return = false;
         Ok(())
     }
 
@@ -882,107 +983,6 @@ impl Validator for SimpleValidator {
             );
         }
 
-        *debug_on_return = false;
-        Ok(())
-    }
-
-    fn validate_funding_tx(
-        &self,
-        wallet: &Wallet,
-        channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
-        state: &ValidatorState,
-        tx: &Transaction,
-        values_sat: &Vec<u64>,
-        opaths: &Vec<Vec<u32>>,
-    ) -> Result<(), ValidationError> {
-        let mut debug_on_return = scoped_debug_return!(state, tx, values_sat, opaths);
-
-        // policy-funding-fee-range
-        let mut sum_inputs: u64 = 0;
-        for val in values_sat {
-            sum_inputs = sum_inputs
-                .checked_add(*val)
-                .ok_or_else(|| policy_error(format!("funding sum inputs overflow")))?;
-        }
-        let mut sum_outputs: u64 = 0;
-        for outp in &tx.output {
-            sum_outputs = sum_outputs
-                .checked_add(outp.value)
-                .ok_or_else(|| policy_error(format!("funding sum outputs overflow")))?;
-        }
-        let fee = sum_inputs
-            .checked_sub(sum_outputs)
-            .ok_or_else(|| policy_error(format!("funding fee overflow")))?;
-        self.validate_fee("validate_funding_tx", fee, tx)?;
-
-        // policy-funding-format-standard
-        if tx.version != 2 {
-            return policy_err!("invalid version: {}", tx.version);
-        }
-
-        for outndx in 0..tx.output.len() {
-            let output = &tx.output[outndx];
-            let opath = &opaths[outndx];
-            let channel_slot = channels[outndx].as_ref();
-
-            // policy-funding-output-match-commitment
-            // policy-funding-change-to-wallet
-            // All outputs must either be wallet (change) or channel funding.
-            if opath.len() > 0 {
-                let spendable = wallet
-                    .can_spend(opath, &output.script_pubkey)
-                    .map_err(|err| {
-                        policy_error(format!(
-                            "output[{}]: wallet_can_spend error: {}",
-                            outndx, err
-                        ))
-                    })?;
-                if !spendable {
-                    return policy_err!("wallet cannot spend output[{}]", outndx);
-                }
-            } else {
-                let slot = channel_slot.ok_or_else(|| {
-                    let outpoint = OutPoint {
-                        txid: tx.txid(),
-                        vout: outndx as u32,
-                    };
-                    policy_error(format!("unknown output: {}", outpoint))
-                })?;
-                match &*slot.lock().unwrap() {
-                    ChannelSlot::Ready(chan) => {
-                        // policy-funding-output-match-commitment
-                        if output.value != chan.setup.channel_value_sat {
-                            return policy_err!(
-                                "funding output amount mismatch w/ channel: {} != {}",
-                                output.value,
-                                chan.setup.channel_value_sat
-                            );
-                        }
-
-                        // policy-funding-output-scriptpubkey
-                        let funding_redeemscript = make_funding_redeemscript(
-                            &chan.keys.pubkeys().funding_pubkey,
-                            &chan.keys.counterparty_pubkeys().funding_pubkey,
-                        );
-                        let script_pubkey =
-                            payload_for_p2wsh(&funding_redeemscript).script_pubkey();
-                        if output.script_pubkey != script_pubkey {
-                            return policy_err!(
-                                "funding script_pubkey mismatch w/ channel: {} != {}",
-                                output.script_pubkey,
-                                script_pubkey
-                            );
-                        }
-
-                        // policy-funding-initial-commitment-countersigned
-                        if chan.enforcement_state.next_holder_commit_num != 1 {
-                            return policy_err!("initial holder commitment not validated",);
-                        }
-                    }
-                    _ => panic!("this can't happen"),
-                };
-            }
-        }
         *debug_on_return = false;
         Ok(())
     }
