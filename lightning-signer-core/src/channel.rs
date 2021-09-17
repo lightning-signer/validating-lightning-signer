@@ -838,6 +838,27 @@ impl Channel {
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+        let commitment_point = &self.get_per_commitment_point(commitment_number)?;
+
+        let info2 = self.build_holder_commitment_info(
+            &commitment_point,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            offered_htlcs.clone(),
+            received_htlcs.clone(),
+        )?;
+
+        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
+        let state = ValidatorState { current_height: 0 };
+        self.validator().validate_holder_commitment_tx(
+            &self.enforcement_state,
+            commitment_number,
+            &commitment_point,
+            &self.setup,
+            &state,
+            &info2,
+        )?;
+
         let htlcs = Self::htlcs_info2_to_oic(offered_htlcs, received_htlcs);
 
         // We provide a dummy signature for the remote, since we don't require that sig
