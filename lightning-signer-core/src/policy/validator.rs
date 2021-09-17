@@ -290,7 +290,6 @@ impl SimpleValidator {
 // TODO - policy-commitment-htlc-cltv-range [NEEDS NEW HTLC DETECTION]
 // TODO - policy-commitment-htlc-offered-hash-matches
 // TODO - policy-commitment-previous-revoked [still need secret storage]
-// TODO - policy-commitment-retry-same
 // TODO - policy-commitment-anchors-not-when-off
 // TODO - policy-commitment-anchor-to-holder
 // TODO - policy-commitment-anchor-to-counterparty
@@ -423,6 +422,8 @@ impl Validator for SimpleValidator {
         let mut debug_on_return =
             scoped_debug_return!(estate, commit_num, commitment_point, setup, vstate, info);
 
+        // TODO - refactor code which is holder/counterparty specific
+        // to side-specific methods.
         let is_counterparty = info.is_counterparty_broadcaster;
 
         let policy = &self.policy;
@@ -544,7 +545,25 @@ impl Validator for SimpleValidator {
             );
         }
 
-        if is_counterparty {
+        if !is_counterparty {
+            // This is a holder commitment
+
+            // policy-commitment-retry-same
+            // Is this a retry?
+            if commit_num + 1 == estate.next_holder_commit_num {
+                // The CommitmentInfo2 must be the same as previously
+                let holder_commit_info = &estate
+                    .current_holder_commit_info
+                    .as_ref()
+                    .expect("current_holder_commit_info");
+                if info != *holder_commit_info {
+                    debug_vals!(*info, holder_commit_info);
+                    return policy_err!("retry holder commitment {} with changed info", commit_num);
+                }
+            }
+        } else {
+            // This is a counterparty commitment
+
             // policy-commitment-previous-revoked
             // if next_counterparty_revoke_num is 20:
             // - commit_num 19 has been revoked
@@ -560,8 +579,10 @@ impl Validator for SimpleValidator {
                 );
             }
 
-            // If this is a retry the commit_point must be the same
+            // policy-commitment-retry-same
+            // Is this a retry?
             if commit_num + 1 == estate.next_counterparty_commit_num {
+                // The commit_point must be the same as previous
                 let prev_commit_point = estate.get_previous_counterparty_point(commit_num)?;
                 if *commitment_point != prev_commit_point {
                     return policy_err!(
@@ -570,6 +591,16 @@ impl Validator for SimpleValidator {
                         commit_num,
                         &prev_commit_point,
                         &commitment_point
+                    );
+                }
+
+                // The CommitmentInfo2 must be the same as previously
+                let prev_commit_info = estate.get_previous_counterparty_commit_info(commit_num)?;
+                if *info != prev_commit_info {
+                    debug_vals!(*info, prev_commit_info);
+                    return policy_err!(
+                        "retry of sign_counterparty_commitment {} with changed info",
+                        commit_num,
                     );
                 }
             }
@@ -617,7 +648,7 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         // policy-commitment-holder-not-revoked
         if commit_num + 2 <= enforcement_state.next_holder_commit_num {
-            debug_vals!(enforcement_state, commit_num);
+            debug_failed_vals!(enforcement_state, commit_num);
             return policy_err!(
                 "can't sign revoked commitment_number {}, \
                  next_holder_commit_num is {}",
@@ -635,7 +666,7 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         // policy-revoke-not-closed
         if enforcement_state.mutual_close_signed {
-            debug_vals!(enforcement_state);
+            debug_failed_vals!(enforcement_state);
             return policy_err!("mutual close already signed");
         }
 
@@ -654,7 +685,7 @@ impl Validator for SimpleValidator {
         if revoke_num != state.next_counterparty_revoke_num
             && revoke_num + 1 != state.next_counterparty_revoke_num
         {
-            debug_vals!(state, revoke_num, commitment_secret);
+            debug_failed_vals!(state, revoke_num, commitment_secret);
             return policy_err!(
                 "invalid counterparty revoke_num {} with next_counterparty_revoke_num {}",
                 revoke_num,
@@ -666,7 +697,7 @@ impl Validator for SimpleValidator {
         let supplied_commit_point = PublicKey::from_secret_key(&secp_ctx, &commitment_secret);
         let prev_commit_point = state.get_previous_counterparty_point(revoke_num)?;
         if supplied_commit_point != prev_commit_point {
-            debug_vals!(state, revoke_num, commitment_secret);
+            debug_failed_vals!(state, revoke_num, commitment_secret);
             return policy_err!(
                 "revocation commit point mismatch for commit_num {}: supplied {}, previous {}",
                 revoke_num,
@@ -710,7 +741,7 @@ impl Validator for SimpleValidator {
         } else if parse_received_htlc_script(redeemscript, setup.option_anchor_outputs()).is_ok() {
             false
         } else {
-            debug_vals!(
+            debug_failed_vals!(
                 is_counterparty,
                 setup,
                 DebugTxCreationKeys(txkeys),
@@ -764,7 +795,7 @@ impl Validator for SimpleValidator {
         );
 
         if recomposed_tx_sighash != original_tx_sighash {
-            debug_vals!(
+            debug_failed_vals!(
                 is_counterparty,
                 setup,
                 DebugTxCreationKeys(txkeys),
@@ -1485,6 +1516,32 @@ impl EnforcementState {
         Ok(point)
     }
 
+    /// Previous counterparty commitment info
+    pub fn get_previous_counterparty_commit_info(
+        &self,
+        num: u64,
+    ) -> Result<CommitmentInfo2, ValidationError> {
+        let commit_info = if num + 1 == self.next_counterparty_commit_num {
+            self.current_counterparty_commit_info.clone()
+        } else if num + 2 == self.next_counterparty_commit_num {
+            self.previous_counterparty_commit_info.clone()
+        } else {
+            return policy_err!(
+                "{} out of range, next is {}",
+                num,
+                self.next_counterparty_commit_num
+            );
+        }
+        .unwrap_or_else(|| {
+            panic!(
+                "counterparty commit_info for commit_num {} not set, \
+                 next_commitment_number is {}",
+                num, self.next_counterparty_commit_num
+            );
+        });
+        Ok(commit_info)
+    }
+
     /// Set next counterparty revoked commitment number
     pub fn set_next_counterparty_revoke_num(&mut self, num: u64) -> Result<(), ValidationError> {
         if num == 0 {
@@ -1656,17 +1713,17 @@ mod tests {
         let to_holder_pubkey = make_test_pubkey(1);
         let revocation_pubkey = make_test_pubkey(2);
         let to_broadcaster_delayed_pubkey = make_test_pubkey(3);
-        CommitmentInfo2 {
-            is_counterparty_broadcaster: true,
-            to_countersigner_pubkey: to_holder_pubkey,
-            to_countersigner_value_sat: to_holder_value_sat,
+        CommitmentInfo2::new(
+            true,
+            to_holder_pubkey,
+            to_holder_value_sat,
             revocation_pubkey,
-            to_broadcaster_delayed_pubkey: to_broadcaster_delayed_pubkey,
-            to_broadcaster_value_sat: to_counterparty_value_sat,
+            to_broadcaster_delayed_pubkey,
+            to_counterparty_value_sat,
             to_self_delay,
             offered_htlcs,
             received_htlcs,
-        }
+        )
     }
 
     fn make_test_validator_state() -> ValidatorState {

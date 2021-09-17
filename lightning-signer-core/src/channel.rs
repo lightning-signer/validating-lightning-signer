@@ -21,11 +21,11 @@ use log::{debug, trace, warn};
 
 use crate::node::Node;
 use crate::policy::error::policy_error;
-use crate::policy::validator::{EnforcementState, Validator, ValidatorState};
-use crate::prelude::{Box, ToString, Vec};
+use crate::policy::validator::{EnforcementState, ValidatorState};
+use crate::prelude::{ToString, Vec};
 use crate::tx::tx::{
     build_close_tx, build_commitment_tx, get_commitment_transaction_number_obscure_factor,
-    CommitmentInfo, CommitmentInfo2, HTLCInfo2,
+    CommitmentInfo2, HTLCInfo2,
 };
 use crate::util::crypto_utils::{
     derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
@@ -309,7 +309,9 @@ impl ChannelBase for Channel {
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status> {
         let next_holder_commit_num = self.enforcement_state.next_holder_commit_num;
-        if commitment_number > next_holder_commit_num {
+        // The following check is relaxed by +1 because LDK fetches the next commitment point
+        // before it calls validate_holder_commitment_tx.
+        if commitment_number > next_holder_commit_num + 1 {
             return Err(policy_error(format!(
                 "get_per_commitment_point: \
                  commitment_number {} invalid when next_holder_commit_num is {}",
@@ -1170,17 +1172,17 @@ impl Channel {
         )
         .map_err(|err| internal_error(format!("could not derive revocation key: {}", err)))?;
         let to_holder_pubkey = counterparty_payment_pubkey.clone();
-        Ok(CommitmentInfo2 {
-            is_counterparty_broadcaster: true,
-            to_countersigner_pubkey: to_holder_pubkey,
-            to_countersigner_value_sat: to_holder_value_sat,
+        Ok(CommitmentInfo2::new(
+            true,
+            to_holder_pubkey,
+            to_holder_value_sat,
             revocation_pubkey,
-            to_broadcaster_delayed_pubkey: to_counterparty_delayed_pubkey,
-            to_broadcaster_value_sat: to_counterparty_value_sat,
-            to_self_delay: self.setup.holder_selected_contest_delay,
+            to_counterparty_delayed_pubkey,
+            to_counterparty_value_sat,
+            self.setup.holder_selected_contest_delay,
             offered_htlcs,
             received_htlcs,
-        })
+        ))
     }
 
     fn build_holder_commitment_info(
@@ -1227,17 +1229,17 @@ impl Channel {
         )
         .map_err(|err| internal_error(format!("could not derive revocation_pubkey: {}", err)))?;
         let to_counterparty_pubkey = counterparty_pubkey.clone();
-        Ok(CommitmentInfo2 {
-            is_counterparty_broadcaster: false,
-            to_countersigner_pubkey: to_counterparty_pubkey,
-            to_countersigner_value_sat: to_counterparty_value_sat,
+        Ok(CommitmentInfo2::new(
+            false,
+            to_counterparty_pubkey,
+            to_counterparty_value_sat,
             revocation_pubkey,
-            to_broadcaster_delayed_pubkey: to_holder_delayed_pubkey,
-            to_broadcaster_value_sat: to_holder_value_sat,
-            to_self_delay: self.setup.counterparty_selected_contest_delay,
+            to_holder_delayed_pubkey,
+            to_holder_value_sat,
+            self.setup.counterparty_selected_contest_delay,
             offered_htlcs,
             received_htlcs,
-        })
+        ))
     }
 
     /// Phase 1
@@ -1395,27 +1397,6 @@ impl Channel {
             output_witscripts,
         )?;
 
-        self.make_recomposed_holder_commitment_tx_common(
-            tx,
-            commitment_number,
-            feerate_per_kw,
-            offered_htlcs,
-            received_htlcs,
-            validator,
-            info,
-        )
-    }
-
-    fn make_recomposed_holder_commitment_tx_common(
-        &self,
-        tx: &bitcoin::Transaction,
-        commitment_number: u64,
-        feerate_per_kw: u32,
-        offered_htlcs: Vec<HTLCInfo2>,
-        received_htlcs: Vec<HTLCInfo2>,
-        validator: Box<dyn Validator>,
-        info: CommitmentInfo,
-    ) -> Result<(CommitmentTransaction, CommitmentInfo2), Status> {
         let commitment_point = &self.get_per_commitment_point(commitment_number)?;
         let info2 = self.build_holder_commitment_info(
             &commitment_point,

@@ -20,13 +20,16 @@ use lightning::chain::transaction::OutPoint;
 use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, derive_private_key, get_htlc_redeemscript, get_revokeable_redeemscript,
-    make_funding_redeemscript, ChannelTransactionParameters,
-    CommitmentTransaction, CounterpartyChannelTransactionParameters,
-    DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
+    make_funding_redeemscript, ChannelTransactionParameters, CommitmentTransaction,
+    CounterpartyChannelTransactionParameters, DirectedChannelTransactionParameters,
+    HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
 use lightning::util::test_utils;
 
+use super::key_utils::{
+    make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
+};
 use crate::channel::{
     channel_nonce_to_id, Channel, ChannelBase, ChannelId, ChannelSetup, CommitmentType,
 };
@@ -42,7 +45,6 @@ use crate::util::crypto_utils::{
 use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
 use crate::Arc;
-use super::key_utils::{make_test_counterparty_points, make_test_privkey, make_test_bitcoin_pubkey, make_test_pubkey};
 
 // Status assertions:
 
@@ -826,6 +828,46 @@ pub fn channel_commitment(
         .expect("TestCommitmentTxContext")
 }
 
+// Setup node and channel state.
+pub fn setup_funded_channel(
+    next_holder_commit_num: u64,
+    next_counterparty_commit_num: u64,
+    next_counterparty_revoke_num: u64,
+) -> (TestNodeContext, TestChannelContext) {
+    let setup = make_test_channel_setup();
+    let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
+
+    let secp_ctx = Secp256k1::signing_only();
+    let node_ctx = TestNodeContext { node, secp_ctx };
+    let channel_value_sat = setup.channel_value_sat;
+    let mut chan_ctx = TestChannelContext {
+        channel_id,
+        setup,
+        counterparty_keys: make_test_counterparty_keys(&node_ctx, &channel_id, channel_value_sat),
+    };
+
+    // Pretend we funded the channel and ran for a while ...
+    chan_ctx.setup.funding_outpoint = bitcoin::OutPoint {
+        txid: Txid::from_slice(&[2u8; 32]).unwrap(),
+        vout: 0,
+    };
+    node_ctx
+        .node
+        .with_ready_channel(&chan_ctx.channel_id, |chan| {
+            let point = make_test_pubkey((next_counterparty_commit_num + 1) as u8);
+            chan.enforcement_state
+                .set_next_holder_commit_num_for_testing(next_holder_commit_num);
+            chan.enforcement_state
+                .set_next_counterparty_commit_num_for_testing(next_counterparty_commit_num, point);
+            chan.enforcement_state
+                .set_next_counterparty_revoke_num_for_testing(next_counterparty_revoke_num);
+            Ok(())
+        })
+        .expect("ready happy");
+
+    (node_ctx, chan_ctx)
+}
+
 // Construct counterparty signatures for a holder commitment.
 // Mimics InMemorySigner::sign_counterparty_commitment w/ transposition.
 pub fn counterparty_sign_holder_commitment(
@@ -1089,17 +1131,17 @@ pub fn make_test_commitment_tx() -> bitcoin::Transaction {
 }
 
 pub fn make_test_commitment_info() -> CommitmentInfo2 {
-    CommitmentInfo2 {
-        is_counterparty_broadcaster: true,
-        to_countersigner_pubkey: make_test_pubkey(0x20),
-        to_countersigner_value_sat: 3_000_000,
-        revocation_pubkey: make_test_pubkey(0x21),
-        to_broadcaster_delayed_pubkey: make_test_pubkey(0x22),
-        to_broadcaster_value_sat: 2_000_000,
-        to_self_delay: 10,
-        offered_htlcs: vec![],
-        received_htlcs: vec![],
-    }
+    CommitmentInfo2::new(
+        true,
+        make_test_pubkey(0x20),
+        3_000_000,
+        make_test_pubkey(0x21),
+        make_test_pubkey(0x22),
+        2_000_000,
+        10,
+        vec![],
+        vec![],
+    )
 }
 
 pub const TEST_NODE_CONFIG: NodeConfig = NodeConfig {
