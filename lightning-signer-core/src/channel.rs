@@ -759,10 +759,10 @@ impl Channel {
 
         let state = ValidatorState { current_height: 0 };
         validator
-            .validate_commitment_tx(
+            .validate_holder_commitment_tx(
                 &self.enforcement_state,
                 commitment_number,
-                commitment_point,
+                &commitment_point,
                 &self.setup,
                 &state,
                 &info2,
@@ -1288,7 +1288,7 @@ impl Channel {
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let vstate = ValidatorState { current_height: 0 };
         validator
-            .validate_commitment_tx(
+            .validate_counterparty_commitment_tx(
                 &self.enforcement_state,
                 commitment_number,
                 &remote_per_commitment_point,
@@ -1409,10 +1409,10 @@ impl Channel {
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let state = ValidatorState { current_height: 0 };
         validator
-            .validate_commitment_tx(
+            .validate_holder_commitment_tx(
                 &self.enforcement_state,
                 commitment_number,
-                commitment_point,
+                &commitment_point,
                 &self.setup,
                 &state,
                 &info2,

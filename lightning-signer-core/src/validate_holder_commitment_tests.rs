@@ -509,7 +509,8 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: retry holder commitment 43 with changed info"
+            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
+             retry holder commitment 43 with changed info"
         );
     }
 
@@ -531,7 +532,8 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: retry holder commitment 43 with changed info"
+            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
+             retry holder commitment 43 with changed info"
         );
     }
 
@@ -553,7 +555,8 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: retry holder commitment 43 with changed info"
+            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
+             retry holder commitment 43 with changed info"
         );
     }
 
@@ -575,7 +578,8 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: retry holder commitment 43 with changed info"
+            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
+             retry holder commitment 43 with changed info"
         );
     }
 
@@ -809,7 +813,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
              to_broadcaster_value_sat 97 less than dust limit 330"
         );
     }
@@ -834,7 +838,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
              to_countersigner_value_sat 100 less than dust limit 330"
         );
     }
@@ -858,7 +862,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
              offered htlc.value_sat 1000 less than dust limit 2319"
         );
     }
@@ -882,7 +886,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
              received htlc.value_sat 1000 less than dust limit 2439"
         );
     }
