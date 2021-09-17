@@ -170,7 +170,7 @@ mod tests {
 
         assert_failed_precondition_err!(
             sign_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx),
-            "policy failure: validate_sign_holder_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: \
              can't sign revoked commitment_number 9, next_holder_commit_num is 11"
         );
     }
@@ -645,7 +645,8 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: set_next_holder_commit_num: invalid progression: 45 to 44"
+            "policy failure: validate_holder_commitment_tx: \
+             can't sign revoked commitment_number 43, next_holder_commit_num is 45"
         );
     }
 

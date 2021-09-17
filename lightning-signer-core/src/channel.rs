@@ -1559,9 +1559,7 @@ impl Channel {
             .validator_factory
             .make_validator(self.network());
 
-        validator.validate_sign_holder_commitment_tx(&self.enforcement_state, commitment_number)?;
-
-        let (recomposed_tx, _info2) = self.make_recomposed_holder_commitment_tx(
+        let (recomposed_tx, info2) = self.make_recomposed_holder_commitment_tx(
             tx,
             output_witscripts,
             commitment_number,
@@ -1570,6 +1568,20 @@ impl Channel {
             received_htlcs,
         )?;
         let htlcs = recomposed_tx.htlcs();
+
+        let commitment_point = self.get_per_commitment_point(commitment_number)?;
+
+        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
+        let vstate = ValidatorState { current_height: 0 };
+
+        validator.validate_holder_commitment_tx(
+            &self.enforcement_state,
+            commitment_number,
+            &commitment_point,
+            &self.setup,
+            &vstate,
+            &info2,
+        )?;
 
         // We provide a dummy signature for the remote, since we don't require that sig
         // to be passed in to this call.  It would have been better if HolderCommitmentTransaction

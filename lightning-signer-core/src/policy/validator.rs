@@ -97,13 +97,6 @@ pub trait Validator {
         info2: &CommitmentInfo2,
     ) -> Result<(), ValidationError>;
 
-    /// Ensures that signing a holder commitment is valid.
-    fn validate_sign_holder_commitment_tx(
-        &self,
-        enforcement_state: &EnforcementState,
-        commit_num: u64,
-    ) -> Result<(), ValidationError>;
-
     /// Ensures that a counterparty signed holder commitment is valid.
     fn validate_holder_commitment_state(
         &self,
@@ -544,23 +537,18 @@ impl Validator for SimpleValidator {
         vstate: &ValidatorState,
         info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
+        // Validate common commitment constraints
         self.validate_commitment_tx(estate, commit_num, commitment_point, setup, vstate, info)
-            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))
-    }
+            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-    fn validate_sign_holder_commitment_tx(
-        &self,
-        enforcement_state: &EnforcementState,
-        commit_num: u64,
-    ) -> Result<(), ValidationError> {
         // policy-commitment-holder-not-revoked
-        if commit_num + 2 <= enforcement_state.next_holder_commit_num {
-            debug_failed_vals!(enforcement_state, commit_num);
+        if commit_num + 2 <= estate.next_holder_commit_num {
+            debug_failed_vals!(estate, commit_num);
             return policy_err!(
                 "can't sign revoked commitment_number {}, \
                  next_holder_commit_num is {}",
                 commit_num,
-                enforcement_state.next_holder_commit_num
+                estate.next_holder_commit_num
             );
         };
 
