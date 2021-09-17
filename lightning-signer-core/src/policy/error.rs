@@ -132,7 +132,7 @@ macro_rules! transaction_format_err {
                 "{}: {}",
                 short_function!(),
                 format!($($arg)*)
-            )));
+            )))
         )
 }
 
@@ -143,7 +143,7 @@ macro_rules! script_format_err {
                 "{}: {}",
                 short_function!(),
                 format!($($arg)*)
-            )));
+            )))
         )
 }
 
@@ -154,7 +154,7 @@ macro_rules! mismatch_err {
                 "{}: {}",
                 short_function!(),
                 format!($($arg)*)
-            )));
+            )))
         )
 }
 
@@ -165,7 +165,7 @@ macro_rules! policy_err {
                 "{}: {}",
                 short_function!(),
                 format!($($arg)*)
-            )));
+            )))
         )
 }
 
