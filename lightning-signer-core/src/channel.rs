@@ -1360,7 +1360,7 @@ impl Channel {
         Ok(sigs.0)
     }
 
-    fn make_recomposed_holder_commitment_tx(
+    fn make_validated_recomposed_holder_commitment_tx(
         &self,
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
@@ -1480,34 +1480,13 @@ impl Channel {
         counterparty_commit_sig: &Signature,
         counterparty_htlc_sigs: &Vec<Signature>,
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
-        let validator = self
-            .node
-            .upgrade()
-            .unwrap()
-            .validator_factory
-            .make_validator(self.network());
-
-        let (recomposed_tx, info2) = self.make_recomposed_holder_commitment_tx(
+        let (recomposed_tx, info2) = self.make_validated_recomposed_holder_commitment_tx(
             tx,
             output_witscripts,
             commitment_number,
             feerate_per_kw,
             offered_htlcs,
             received_htlcs,
-        )?;
-
-        let commitment_point = self.get_per_commitment_point(commitment_number)?;
-
-        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
-        let vstate = ValidatorState { current_height: 0 };
-
-        validator.validate_holder_commitment_tx(
-            &self.enforcement_state,
-            commitment_number,
-            &commitment_point,
-            &self.setup,
-            &vstate,
-            &info2,
         )?;
 
         self.check_holder_tx_signatures(
@@ -1564,35 +1543,13 @@ impl Channel {
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<Signature, Status> {
-        let validator = self
-            .node
-            .upgrade()
-            .unwrap()
-            .validator_factory
-            .make_validator(self.network());
-
-        let (recomposed_tx, info2) = self.make_recomposed_holder_commitment_tx(
+        let (recomposed_tx, _info2) = self.make_validated_recomposed_holder_commitment_tx(
             tx,
             output_witscripts,
             commitment_number,
             feerate_per_kw,
             offered_htlcs,
             received_htlcs,
-        )?;
-        let htlcs = recomposed_tx.htlcs();
-
-        let commitment_point = self.get_per_commitment_point(commitment_number)?;
-
-        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
-        let vstate = ValidatorState { current_height: 0 };
-
-        validator.validate_holder_commitment_tx(
-            &self.enforcement_state,
-            commitment_number,
-            &commitment_point,
-            &self.setup,
-            &vstate,
-            &info2,
         )?;
 
         // We provide a dummy signature for the remote, since we don't require that sig
@@ -1603,8 +1560,9 @@ impl Channel {
             &secp256k1::Message::from_slice(&[42; 32]).unwrap(),
             &SecretKey::from_slice(&[42; 32]).unwrap(),
         );
-        let mut htlc_dummy_sigs = Vec::with_capacity(htlcs.len());
-        htlc_dummy_sigs.resize(htlcs.len(), dummy_sig);
+        let htlcs_len = recomposed_tx.htlcs().len();
+        let mut htlc_dummy_sigs = Vec::with_capacity(htlcs_len);
+        htlc_dummy_sigs.resize(htlcs_len, dummy_sig);
 
         // Holder commitments need an extra wrapper for the LDK signature routine.
         let recomposed_holder_tx = HolderCommitmentTransaction::new(
