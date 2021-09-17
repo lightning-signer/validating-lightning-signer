@@ -507,12 +507,33 @@ impl Channel {
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+        let validator = self
+            .node
+            .upgrade()
+            .unwrap()
+            .validator_factory
+            .make_validator(self.network());
+
+        // Since we didn't have the value at the real open, validate it now.
+        validator.validate_channel_value(&self.setup)?;
+
         let info2 = self.build_counterparty_commitment_info(
             remote_per_commitment_point,
             to_holder_value_sat,
             to_counterparty_value_sat,
             offered_htlcs.clone(),
             received_htlcs.clone(),
+        )?;
+
+        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
+        let vstate = ValidatorState { current_height: 0 };
+        validator.validate_counterparty_commitment_tx(
+            &self.enforcement_state,
+            commitment_number,
+            &remote_per_commitment_point,
+            &self.setup,
+            &vstate,
+            &info2,
         )?;
 
         let htlcs = Self::htlcs_info2_to_oic(offered_htlcs, received_htlcs);
@@ -524,19 +545,6 @@ impl Channel {
             to_holder_value_sat,
             to_counterparty_value_sat,
             htlcs,
-        );
-
-        // TODO validation missing?
-
-        self.enforcement_state.set_next_counterparty_commit_num(
-            commitment_number + 1,
-            remote_per_commitment_point.clone(),
-            info2,
-        )?;
-
-        debug!(
-            "channel: sign counterparty txid {}",
-            commitment_tx.trust().built_transaction().txid
         );
 
         let sigs = self
@@ -551,6 +559,14 @@ impl Channel {
             htlc_sig.push(SigHashType::All as u8);
             htlc_sigs.push(htlc_sig);
         }
+
+        // Only advance the state if nothing goes wrong.
+        self.enforcement_state.set_next_counterparty_commit_num(
+            commitment_number + 1,
+            remote_per_commitment_point.clone(),
+            info2,
+        )?;
+
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok((sig, htlc_sigs))
@@ -1344,14 +1360,15 @@ impl Channel {
 
         let point = recomposed_tx.trust().keys().per_commitment_point;
 
-        self.enforcement_state
-            .set_next_counterparty_commit_num(commit_num + 1, point, info2)?;
-
         // Sign the recomposed commitment.
         let sigs = self
             .keys
             .sign_counterparty_commitment(&recomposed_tx, &self.secp_ctx)
             .map_err(|_| internal_error(format!("sign_counterparty_commitment failed")))?;
+
+        // Only advance the state if nothing goes wrong.
+        self.enforcement_state
+            .set_next_counterparty_commit_num(commit_num + 1, point, info2)?;
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
