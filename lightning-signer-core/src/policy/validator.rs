@@ -220,10 +220,10 @@ impl SimpleValidator {
         let policy = &self.policy;
 
         if delay < policy.min_delay as u32 {
-            return policy_err!("{} too small", name);
+            return policy_err!("{} too small: {} < {}", name, delay, policy.min_delay);
         }
         if delay > policy.max_delay as u32 {
-            return policy_err!("{} too large", name);
+            return policy_err!("{} too large: {} > {}", name, delay, policy.max_delay);
         }
 
         Ok(())
@@ -239,10 +239,20 @@ impl SimpleValidator {
 
         if policy.use_chain_state {
             if expiry < current_height + policy.min_delay as u32 {
-                return policy_err!("{} expiry too early", name);
+                return policy_err!(
+                    "{} expiry too early: {} < {}",
+                    name,
+                    expiry,
+                    current_height + policy.min_delay as u32
+                );
             }
             if expiry > current_height + policy.max_delay as u32 {
-                return policy_err!("{} expiry too late", name);
+                return policy_err!(
+                    "{} expiry too late: {} > {}",
+                    name,
+                    expiry,
+                    current_height + policy.max_delay as u32
+                );
             }
         }
 
@@ -1800,7 +1810,7 @@ mod tests {
         setup.holder_selected_contest_delay = 4;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
-            "validate_delay: holder_selected_contest_delay too small"
+            "validate_delay: holder_selected_contest_delay too small: 4 < 5"
         );
     }
 
@@ -1818,7 +1828,7 @@ mod tests {
         setup.holder_selected_contest_delay = 1441;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
-            "validate_delay: holder_selected_contest_delay too large"
+            "validate_delay: holder_selected_contest_delay too large: 1441 > 1440"
         );
     }
 
@@ -1836,7 +1846,7 @@ mod tests {
         setup.counterparty_selected_contest_delay = 4;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
-            "validate_delay: counterparty_selected_contest_delay too small"
+            "validate_delay: counterparty_selected_contest_delay too small: 4 < 5"
         );
     }
 
@@ -1854,7 +1864,7 @@ mod tests {
         setup.counterparty_selected_contest_delay = 1441;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
-            "validate_delay: counterparty_selected_contest_delay too large"
+            "validate_delay: counterparty_selected_contest_delay too large: 1441 > 1440"
         );
     }
 
@@ -2096,7 +2106,7 @@ mod tests {
                 &state,
                 &info_bad,
             ),
-            "validate_expiry: received HTLC expiry too early"
+            "validate_expiry: received HTLC expiry too early: 1004 < 1005"
         );
         let info_bad = make_counterparty_info(
             2_000_000,
@@ -2114,7 +2124,7 @@ mod tests {
                 &state,
                 &info_bad,
             ),
-            "validate_expiry: received HTLC expiry too late"
+            "validate_expiry: received HTLC expiry too late: 2441 > 2440"
         );
     }
 
