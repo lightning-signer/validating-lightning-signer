@@ -29,9 +29,9 @@ fn channel_test() {
     let _sig1 = node
         .sign_holder_commitment(
             &channel_id,
-            0, // Commitment number
-            1, // to holder
-            0, // to counterparty
+            0,    // Commitment number
+            9000, // to holder
+            0,    // to counterparty
         )
         .unwrap();
 }
