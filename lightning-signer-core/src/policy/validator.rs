@@ -48,6 +48,23 @@ pub trait Validator {
     /// Validate channel value after it is late-filled
     fn validate_channel_value(&self, setup: &ChannelSetup) -> Result<(), ValidationError>;
 
+    /// Validate a funding transaction, which may fund multiple channels
+    ///
+    /// * `channels` the funded channel for each funding output, or
+    ///   None for change outputs
+    /// * `values_sat` - the amount in satoshi per input
+    /// * `opaths` - derivation path for change, one per output,
+    ///   empty for non-change or allowlisted outputs
+    fn validate_funding_tx(
+        &self,
+        wallet: &Wallet,
+        channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
+        state: &ValidatorState,
+        tx: &Transaction,
+        values_sat: &Vec<u64>,
+        opaths: &Vec<Vec<u32>>,
+    ) -> Result<(), ValidationError>;
+
     /// Phase 1 CommitmentInfo
     fn decode_commitment_tx(
         &self,
@@ -58,8 +75,8 @@ pub trait Validator {
         output_witscripts: &Vec<Vec<u8>>,
     ) -> Result<CommitmentInfo, ValidationError>;
 
-    /// General validation applicable to both holder and counterparty txs
-    fn validate_commitment_tx(
+    /// Validate a counterparty commitment
+    fn validate_counterparty_commitment_tx(
         &self,
         estate: &EnforcementState,
         commit_num: u64,
@@ -69,17 +86,15 @@ pub trait Validator {
         info2: &CommitmentInfo2,
     ) -> Result<(), ValidationError>;
 
-    /// Ensures that signing a holder commitment is valid.
-    fn validate_sign_holder_commitment_tx(
+    /// Validate a holder commitment
+    fn validate_holder_commitment_tx(
         &self,
-        enforcement_state: &EnforcementState,
+        estate: &EnforcementState,
         commit_num: u64,
-    ) -> Result<(), ValidationError>;
-
-    /// Ensures that a counterparty signed holder commitment is valid.
-    fn validate_holder_commitment_state(
-        &self,
-        enforcement_state: &EnforcementState,
+        commitment_point: &PublicKey,
+        setup: &ChannelSetup,
+        vstate: &ValidatorState,
+        info2: &CommitmentInfo2,
     ) -> Result<(), ValidationError>;
 
     /// Check a counterparty's revocation of an old state.
@@ -112,23 +127,6 @@ pub trait Validator {
         is_counterparty: bool,
         htlc: &HTLCOutputInCommitment,
         feerate_per_kw: u32,
-    ) -> Result<(), ValidationError>;
-
-    /// Validate a funding transaction, which may fund multiple channels
-    ///
-    /// * `channels` the funded channel for each funding output, or None for
-    ///   change outputs
-    /// * `values_sat` - the amount in satoshi per input
-    /// * `opaths` - derivation path for change, one per output.  Empty for
-    ///   non-change outputs.
-    fn validate_funding_tx(
-        &self,
-        wallet: &Wallet,
-        channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
-        state: &ValidatorState,
-        tx: &Transaction,
-        values_sat: &Vec<u64>,
-        opaths: &Vec<Vec<u32>>,
     ) -> Result<(), ValidationError>;
 
     /// Phase 1 decoding and recomposition of mutual_close
@@ -297,11 +295,11 @@ impl SimpleValidator {
 // TODO - policy-commitment-anchor-static-remotekey
 // TODO - policy-commitment-anchor-match-fundingkey [NO TESTS TAGGED]
 
-// TODO - policy-v2-commitment-payment-settled-preimage
-// TODO - policy-v2-commitment-payment-allowlisted
-// TODO - policy-v2-commitment-payment-velocity
-// TODO - policy-v2-commitment-payment-approved
-// TODO - policy-v2-commitment-payment-invoiced
+// TODO - policy-commitment-payment-settled-preimage
+// TODO - policy-commitment-payment-allowlisted
+// TODO - policy-commitment-payment-velocity
+// TODO - policy-commitment-payment-approved
+// TODO - policy-commitment-payment-invoiced
 
 // TODO - policy-htlc-cltv-range
 
@@ -372,6 +370,107 @@ impl Validator for SimpleValidator {
         Ok(())
     }
 
+    fn validate_funding_tx(
+        &self,
+        wallet: &Wallet,
+        channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
+        state: &ValidatorState,
+        tx: &Transaction,
+        values_sat: &Vec<u64>,
+        opaths: &Vec<Vec<u32>>,
+    ) -> Result<(), ValidationError> {
+        let mut debug_on_return = scoped_debug_return!(state, tx, values_sat, opaths);
+
+        // policy-funding-fee-range
+        let mut sum_inputs: u64 = 0;
+        for val in values_sat {
+            sum_inputs = sum_inputs
+                .checked_add(*val)
+                .ok_or_else(|| policy_error(format!("funding sum inputs overflow")))?;
+        }
+        let mut sum_outputs: u64 = 0;
+        for outp in &tx.output {
+            sum_outputs = sum_outputs
+                .checked_add(outp.value)
+                .ok_or_else(|| policy_error(format!("funding sum outputs overflow")))?;
+        }
+        let fee = sum_inputs
+            .checked_sub(sum_outputs)
+            .ok_or_else(|| policy_error(format!("funding fee overflow")))?;
+        self.validate_fee("validate_funding_tx", fee, tx)?;
+
+        // policy-funding-format-standard
+        if tx.version != 2 {
+            return policy_err!("invalid version: {}", tx.version);
+        }
+
+        for outndx in 0..tx.output.len() {
+            let output = &tx.output[outndx];
+            let opath = &opaths[outndx];
+            let channel_slot = channels[outndx].as_ref();
+
+            // policy-funding-output-match-commitment
+            // policy-funding-change-to-wallet
+            // All outputs must either be wallet (change) or channel funding.
+            if opath.len() > 0 {
+                let spendable = wallet
+                    .can_spend(opath, &output.script_pubkey)
+                    .map_err(|err| {
+                        policy_error(format!(
+                            "output[{}]: wallet_can_spend error: {}",
+                            outndx, err
+                        ))
+                    })?;
+                if !spendable {
+                    return policy_err!("wallet cannot spend output[{}]", outndx);
+                }
+            } else {
+                let slot = channel_slot.ok_or_else(|| {
+                    let outpoint = OutPoint {
+                        txid: tx.txid(),
+                        vout: outndx as u32,
+                    };
+                    policy_error(format!("unknown output: {}", outpoint))
+                })?;
+                match &*slot.lock().unwrap() {
+                    ChannelSlot::Ready(chan) => {
+                        // policy-funding-output-match-commitment
+                        if output.value != chan.setup.channel_value_sat {
+                            return policy_err!(
+                                "funding output amount mismatch w/ channel: {} != {}",
+                                output.value,
+                                chan.setup.channel_value_sat
+                            );
+                        }
+
+                        // policy-funding-output-scriptpubkey
+                        let funding_redeemscript = make_funding_redeemscript(
+                            &chan.keys.pubkeys().funding_pubkey,
+                            &chan.keys.counterparty_pubkeys().funding_pubkey,
+                        );
+                        let script_pubkey =
+                            payload_for_p2wsh(&funding_redeemscript).script_pubkey();
+                        if output.script_pubkey != script_pubkey {
+                            return policy_err!(
+                                "funding script_pubkey mismatch w/ channel: {} != {}",
+                                output.script_pubkey,
+                                script_pubkey
+                            );
+                        }
+
+                        // policy-funding-initial-commitment-countersigned
+                        if chan.enforcement_state.next_holder_commit_num != 1 {
+                            return policy_err!("initial holder commitment not validated",);
+                        }
+                    }
+                    _ => panic!("this can't happen"),
+                };
+            }
+        }
+        *debug_on_return = false;
+        Ok(())
+    }
+
     fn decode_commitment_tx(
         &self,
         keys: &InMemorySigner,
@@ -410,7 +509,7 @@ impl Validator for SimpleValidator {
         Ok(info)
     }
 
-    fn validate_commitment_tx(
+    fn validate_counterparty_commitment_tx(
         &self,
         estate: &EnforcementState,
         commit_num: u64,
@@ -419,221 +518,60 @@ impl Validator for SimpleValidator {
         vstate: &ValidatorState,
         info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
+        // Validate common commitment constraints
+        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, vstate, info)
+            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
+
         let mut debug_on_return =
             scoped_debug_return!(estate, commit_num, commitment_point, setup, vstate, info);
 
-        // TODO - refactor code which is holder/counterparty specific
-        // to side-specific methods.
-        let is_counterparty = info.is_counterparty_broadcaster;
-
-        let policy = &self.policy;
-
         // policy-commitment-to-self-delay-range
-        if is_counterparty {
-            if info.to_self_delay != setup.holder_selected_contest_delay {
-                return Err(policy_error(
-                    "holder_selected_contest_delay mismatch".to_string(),
-                ));
-            }
-        } else {
-            if info.to_self_delay != setup.counterparty_selected_contest_delay {
-                return Err(policy_error(
-                    "counterparty_selected_contest_delay mismatch".to_string(),
-                ));
-            }
+        if info.to_self_delay != setup.holder_selected_contest_delay {
+            return Err(policy_error(
+                "holder_selected_contest_delay mismatch".to_string(),
+            ));
         }
 
-        // policy-commitment-outputs-trimmed
-        if info.to_broadcaster_value_sat > 0
-            && info.to_broadcaster_value_sat < MIN_DUST_LIMIT_SATOSHIS
-        {
+        // policy-commitment-previous-revoked
+        // if next_counterparty_revoke_num is 20:
+        // - commit_num 19 has been revoked
+        // - commit_num 20 is current, previously signed, ok to resign
+        // - commit_num 21 is ok to sign, advances the state
+        // - commit_num 22 is not ok to sign
+        // This check overlaps the check in set_next_counterparty_commit_num
+        // but gives better diagnostic.
+        if commit_num > estate.next_counterparty_revoke_num + 1 {
             return policy_err!(
-                "to_broadcaster_value_sat {} less than dust limit {}",
-                info.to_broadcaster_value_sat,
-                MIN_DUST_LIMIT_SATOSHIS
-            );
-        }
-        if info.to_countersigner_value_sat > 0
-            && info.to_countersigner_value_sat < MIN_DUST_LIMIT_SATOSHIS
-        {
-            return policy_err!(
-                "to_countersigner_value_sat {} less than dust limit {}",
-                info.to_countersigner_value_sat,
-                MIN_DUST_LIMIT_SATOSHIS
-            );
-        }
-
-        // policy-commitment-htlc-count-limit
-        if info.offered_htlcs.len() + info.received_htlcs.len() > policy.max_htlcs {
-            return Err(policy_error("too many HTLCs".to_string()));
-        }
-
-        let mut htlc_value_sat: u64 = 0;
-
-        let offered_htlc_dust_limit =
-            MIN_DUST_LIMIT_SATOSHIS + (DUST_RELAY_TX_FEE as u64 * HTLC_TIMEOUT_TX_WEIGHT / 1000);
-        for htlc in &info.offered_htlcs {
-            // TODO - this check should be converted into two checks, one the first time
-            // the HTLC is introduced and the other every time it is encountered.
-            //
-            // policy-commitment-htlc-cltv-range
-            self.validate_expiry("offered HTLC", htlc.cltv_expiry, vstate.current_height)?;
-
-            htlc_value_sat = htlc_value_sat
-                .checked_add(htlc.value_sat)
-                .ok_or_else(|| policy_error("offered HTLC value overflow".to_string()))?;
-
-            // policy-commitment-outputs-trimmed
-            if htlc.value_sat < offered_htlc_dust_limit {
-                return policy_err!(
-                    "offered htlc.value_sat {} less than dust limit {}",
-                    htlc.value_sat,
-                    offered_htlc_dust_limit
-                );
-            }
-        }
-
-        let received_htlc_dust_limit =
-            MIN_DUST_LIMIT_SATOSHIS + (DUST_RELAY_TX_FEE as u64 * HTLC_SUCCESS_TX_WEIGHT / 1000);
-        for htlc in &info.received_htlcs {
-            // TODO - this check should be converted into two checks, one the first time
-            // the HTLC is introduced and the other every time it is encountered.
-            //
-            // policy-commitment-htlc-cltv-range
-            self.validate_expiry("received HTLC", htlc.cltv_expiry, vstate.current_height)?;
-
-            htlc_value_sat = htlc_value_sat
-                .checked_add(htlc.value_sat)
-                .ok_or_else(|| policy_error("received HTLC value overflow".to_string()))?;
-
-            // policy-commitment-outputs-trimmed
-            if htlc.value_sat < received_htlc_dust_limit {
-                return policy_err!(
-                    "received htlc.value_sat {} less than dust limit {}",
-                    htlc.value_sat,
-                    received_htlc_dust_limit
-                );
-            }
-        }
-
-        // policy-commitment-htlc-inflight-limit
-        if htlc_value_sat > policy.max_htlc_value_sat {
-            return policy_err!("sum of HTLC values {} too large", htlc_value_sat);
-        }
-
-        // policy-commitment-fee-range
-        let consumed = info
-            .to_broadcaster_value_sat
-            .checked_add(info.to_countersigner_value_sat)
-            .ok_or_else(|| policy_error("channel value overflow".to_string()))?
-            .checked_add(htlc_value_sat)
-            .ok_or_else(|| policy_error("channel value overflow on HTLC".to_string()))?;
-        let shortage = setup
-            .channel_value_sat
-            .checked_sub(consumed)
-            .ok_or_else(|| {
-                policy_error(format!(
-                    "channel shortage underflow: {} - {}",
-                    setup.channel_value_sat, consumed
-                ))
-            })?;
-        if shortage > policy.epsilon_sat {
-            return policy_err!(
-                "channel value short by {} > {}",
-                shortage,
-                policy.epsilon_sat
-            );
-        }
-
-        if !is_counterparty {
-            // This is a holder commitment
-
-            // policy-commitment-retry-same
-            // Is this a retry?
-            if commit_num + 1 == estate.next_holder_commit_num {
-                // The CommitmentInfo2 must be the same as previously
-                let holder_commit_info = &estate
-                    .current_holder_commit_info
-                    .as_ref()
-                    .expect("current_holder_commit_info");
-                if info != *holder_commit_info {
-                    debug_vals!(*info, holder_commit_info);
-                    return policy_err!("retry holder commitment {} with changed info", commit_num);
-                }
-            }
-        } else {
-            // This is a counterparty commitment
-
-            // policy-commitment-previous-revoked
-            // if next_counterparty_revoke_num is 20:
-            // - commit_num 19 has been revoked
-            // - commit_num 20 is current, previously signed, ok to resign
-            // - commit_num 21 is ok to sign, advances the state
-            // - commit_num 22 is not ok to sign
-            if commit_num > estate.next_counterparty_revoke_num + 1 {
-                return policy_err!(
-                    "invalid attempt to sign counterparty commit_num {} \
+                "invalid attempt to sign counterparty commit_num {} \
                          with next_counterparty_revoke_num {}",
+                commit_num,
+                estate.next_counterparty_revoke_num
+            );
+        }
+
+        // policy-commitment-retry-same
+        // Is this a retry?
+        if commit_num + 1 == estate.next_counterparty_commit_num {
+            // The commit_point must be the same as previous
+            let prev_commit_point = estate.get_previous_counterparty_point(commit_num)?;
+            if *commitment_point != prev_commit_point {
+                return policy_err!(
+                    "retry of sign_counterparty_commitment {} with changed point: \
+                             prev {} != new {}",
                     commit_num,
-                    estate.next_counterparty_revoke_num
+                    &prev_commit_point,
+                    &commitment_point
                 );
             }
 
-            // policy-commitment-retry-same
-            // Is this a retry?
-            if commit_num + 1 == estate.next_counterparty_commit_num {
-                // The commit_point must be the same as previous
-                let prev_commit_point = estate.get_previous_counterparty_point(commit_num)?;
-                if *commitment_point != prev_commit_point {
-                    return policy_err!(
-                        "retry of sign_counterparty_commitment {} with changed point: \
-                             prev {} != new {}",
-                        commit_num,
-                        &prev_commit_point,
-                        &commitment_point
-                    );
-                }
-
-                // The CommitmentInfo2 must be the same as previously
-                let prev_commit_info = estate.get_previous_counterparty_commit_info(commit_num)?;
-                if *info != prev_commit_info {
-                    debug_vals!(*info, prev_commit_info);
-                    return policy_err!(
-                        "retry of sign_counterparty_commitment {} with changed info",
-                        commit_num,
-                    );
-                }
-            }
-        }
-
-        // Enforce additional requirements on initial commitments.
-        if commit_num == 0 {
-            if info.offered_htlcs.len() + info.received_htlcs.len() > 0 {
-                return policy_err!("initial commitment may not have HTLCS");
-            }
-
-            // policy-commitment-initial-funding-value
-            // If we are the funder, the value to us of the initial
-            // commitment transaction should be equal to our funding
-            // value.
-            if setup.is_outbound {
-                // Ensure that no extra value is sent to fundee, the
-                // no-initial-htlcs and fee checks above will ensure
-                // that our share is valid.
-
-                let fundee_value_sat = if is_counterparty {
-                    info.to_broadcaster_value_sat
-                } else {
-                    info.to_countersigner_value_sat
-                };
-
-                // The fundee is only entitled to push_value
-                if fundee_value_sat > setup.push_value_msat / 1000 {
-                    return policy_err!(
-                        "initial commitment may only send push_value_msat ({}) to fundee",
-                        setup.push_value_msat
-                    );
-                }
+            // The CommitmentInfo2 must be the same as previously
+            let prev_commit_info = estate.get_previous_counterparty_commit_info(commit_num)?;
+            if *info != prev_commit_info {
+                debug_vals!(*info, prev_commit_info);
+                return policy_err!(
+                    "retry of sign_counterparty_commitment {} with changed info",
+                    commit_num,
+                );
             }
         }
 
@@ -641,35 +579,65 @@ impl Validator for SimpleValidator {
         Ok(())
     }
 
-    fn validate_sign_holder_commitment_tx(
+    fn validate_holder_commitment_tx(
         &self,
-        enforcement_state: &EnforcementState,
+        estate: &EnforcementState,
         commit_num: u64,
+        commitment_point: &PublicKey,
+        setup: &ChannelSetup,
+        vstate: &ValidatorState,
+        info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
+        // Validate common commitment constraints
+        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, vstate, info)
+            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
+
+        let mut debug_on_return =
+            scoped_debug_return!(estate, commit_num, commitment_point, setup, vstate, info);
+
+        // policy-commitment-to-self-delay-range
+        if info.to_self_delay != setup.counterparty_selected_contest_delay {
+            return Err(policy_error(
+                "counterparty_selected_contest_delay mismatch".to_string(),
+            ));
+        }
+
+        // policy-commitment-retry-same
+        // Is this a retry?
+        if commit_num + 1 == estate.next_holder_commit_num {
+            // The CommitmentInfo2 must be the same as previously
+            let holder_commit_info = &estate
+                .current_holder_commit_info
+                .as_ref()
+                .expect("current_holder_commit_info");
+            if info != *holder_commit_info {
+                debug_vals!(*info, holder_commit_info);
+                return policy_err!("retry holder commitment {} with changed info", commit_num);
+            }
+        }
+
         // policy-commitment-holder-not-revoked
-        if commit_num + 2 <= enforcement_state.next_holder_commit_num {
-            debug_failed_vals!(enforcement_state, commit_num);
+        // This test overlaps the check in set_next_holder_commit_num but gives
+        // better diagnostic.
+        if commit_num + 2 <= estate.next_holder_commit_num {
+            debug_failed_vals!(estate, commit_num);
             return policy_err!(
                 "can't sign revoked commitment_number {}, \
                  next_holder_commit_num is {}",
                 commit_num,
-                enforcement_state.next_holder_commit_num
+                estate.next_holder_commit_num
             );
         };
 
-        Ok(())
-    }
-
-    fn validate_holder_commitment_state(
-        &self,
-        enforcement_state: &EnforcementState,
-    ) -> Result<(), ValidationError> {
         // policy-revoke-not-closed
-        if enforcement_state.mutual_close_signed {
-            debug_failed_vals!(enforcement_state);
+        // It's ok to validate the current state when closed, but not ok to validate
+        // a new state.
+        if commit_num == estate.next_holder_commit_num && estate.mutual_close_signed {
+            debug_failed_vals!(estate);
             return policy_err!("mutual close already signed");
         }
 
+        *debug_on_return = false;
         Ok(())
     }
 
@@ -882,107 +850,6 @@ impl Validator for SimpleValidator {
             );
         }
 
-        *debug_on_return = false;
-        Ok(())
-    }
-
-    fn validate_funding_tx(
-        &self,
-        wallet: &Wallet,
-        channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
-        state: &ValidatorState,
-        tx: &Transaction,
-        values_sat: &Vec<u64>,
-        opaths: &Vec<Vec<u32>>,
-    ) -> Result<(), ValidationError> {
-        let mut debug_on_return = scoped_debug_return!(state, tx, values_sat, opaths);
-
-        // policy-funding-fee-range
-        let mut sum_inputs: u64 = 0;
-        for val in values_sat {
-            sum_inputs = sum_inputs
-                .checked_add(*val)
-                .ok_or_else(|| policy_error(format!("funding sum inputs overflow")))?;
-        }
-        let mut sum_outputs: u64 = 0;
-        for outp in &tx.output {
-            sum_outputs = sum_outputs
-                .checked_add(outp.value)
-                .ok_or_else(|| policy_error(format!("funding sum outputs overflow")))?;
-        }
-        let fee = sum_inputs
-            .checked_sub(sum_outputs)
-            .ok_or_else(|| policy_error(format!("funding fee overflow")))?;
-        self.validate_fee("validate_funding_tx", fee, tx)?;
-
-        // policy-funding-format-standard
-        if tx.version != 2 {
-            return policy_err!("invalid version: {}", tx.version);
-        }
-
-        for outndx in 0..tx.output.len() {
-            let output = &tx.output[outndx];
-            let opath = &opaths[outndx];
-            let channel_slot = channels[outndx].as_ref();
-
-            // policy-funding-output-match-commitment
-            // policy-funding-change-to-wallet
-            // All outputs must either be wallet (change) or channel funding.
-            if opath.len() > 0 {
-                let spendable = wallet
-                    .can_spend(opath, &output.script_pubkey)
-                    .map_err(|err| {
-                        policy_error(format!(
-                            "output[{}]: wallet_can_spend error: {}",
-                            outndx, err
-                        ))
-                    })?;
-                if !spendable {
-                    return policy_err!("wallet cannot spend output[{}]", outndx);
-                }
-            } else {
-                let slot = channel_slot.ok_or_else(|| {
-                    let outpoint = OutPoint {
-                        txid: tx.txid(),
-                        vout: outndx as u32,
-                    };
-                    policy_error(format!("unknown output: {}", outpoint))
-                })?;
-                match &*slot.lock().unwrap() {
-                    ChannelSlot::Ready(chan) => {
-                        // policy-funding-output-match-commitment
-                        if output.value != chan.setup.channel_value_sat {
-                            return policy_err!(
-                                "funding output amount mismatch w/ channel: {} != {}",
-                                output.value,
-                                chan.setup.channel_value_sat
-                            );
-                        }
-
-                        // policy-funding-output-scriptpubkey
-                        let funding_redeemscript = make_funding_redeemscript(
-                            &chan.keys.pubkeys().funding_pubkey,
-                            &chan.keys.counterparty_pubkeys().funding_pubkey,
-                        );
-                        let script_pubkey =
-                            payload_for_p2wsh(&funding_redeemscript).script_pubkey();
-                        if output.script_pubkey != script_pubkey {
-                            return policy_err!(
-                                "funding script_pubkey mismatch w/ channel: {} != {}",
-                                output.script_pubkey,
-                                script_pubkey
-                            );
-                        }
-
-                        // policy-funding-initial-commitment-countersigned
-                        if chan.enforcement_state.next_holder_commit_num != 1 {
-                            return policy_err!("initial holder commitment not validated",);
-                        }
-                    }
-                    _ => panic!("this can't happen"),
-                };
-            }
-        }
         *debug_on_return = false;
         Ok(())
     }
@@ -1290,6 +1157,160 @@ impl Validator for SimpleValidator {
         }
 
         *debug_on_return = false; // don't debug when we succeed
+        Ok(())
+    }
+}
+
+impl SimpleValidator {
+    // Common commitment validation applicable to both holder and counterparty txs
+    fn validate_commitment_tx(
+        &self,
+        estate: &EnforcementState,
+        commit_num: u64,
+        commitment_point: &PublicKey,
+        setup: &ChannelSetup,
+        vstate: &ValidatorState,
+        info: &CommitmentInfo2,
+    ) -> Result<(), ValidationError> {
+        let mut debug_on_return =
+            scoped_debug_return!(estate, commit_num, commitment_point, setup, vstate, info);
+
+        let policy = &self.policy;
+
+        // policy-commitment-outputs-trimmed
+        if info.to_broadcaster_value_sat > 0
+            && info.to_broadcaster_value_sat < MIN_DUST_LIMIT_SATOSHIS
+        {
+            return policy_err!(
+                "to_broadcaster_value_sat {} less than dust limit {}",
+                info.to_broadcaster_value_sat,
+                MIN_DUST_LIMIT_SATOSHIS
+            );
+        }
+        if info.to_countersigner_value_sat > 0
+            && info.to_countersigner_value_sat < MIN_DUST_LIMIT_SATOSHIS
+        {
+            return policy_err!(
+                "to_countersigner_value_sat {} less than dust limit {}",
+                info.to_countersigner_value_sat,
+                MIN_DUST_LIMIT_SATOSHIS
+            );
+        }
+
+        // policy-commitment-htlc-count-limit
+        if info.offered_htlcs.len() + info.received_htlcs.len() > policy.max_htlcs {
+            return Err(policy_error("too many HTLCs".to_string()));
+        }
+
+        let mut htlc_value_sat: u64 = 0;
+
+        let offered_htlc_dust_limit =
+            MIN_DUST_LIMIT_SATOSHIS + (DUST_RELAY_TX_FEE as u64 * HTLC_TIMEOUT_TX_WEIGHT / 1000);
+        for htlc in &info.offered_htlcs {
+            // TODO - this check should be converted into two checks, one the first time
+            // the HTLC is introduced and the other every time it is encountered.
+            //
+            // policy-commitment-htlc-cltv-range
+            self.validate_expiry("offered HTLC", htlc.cltv_expiry, vstate.current_height)?;
+
+            htlc_value_sat = htlc_value_sat
+                .checked_add(htlc.value_sat)
+                .ok_or_else(|| policy_error("offered HTLC value overflow".to_string()))?;
+
+            // policy-commitment-outputs-trimmed
+            if htlc.value_sat < offered_htlc_dust_limit {
+                return policy_err!(
+                    "offered htlc.value_sat {} less than dust limit {}",
+                    htlc.value_sat,
+                    offered_htlc_dust_limit
+                );
+            }
+        }
+
+        let received_htlc_dust_limit =
+            MIN_DUST_LIMIT_SATOSHIS + (DUST_RELAY_TX_FEE as u64 * HTLC_SUCCESS_TX_WEIGHT / 1000);
+        for htlc in &info.received_htlcs {
+            // TODO - this check should be converted into two checks, one the first time
+            // the HTLC is introduced and the other every time it is encountered.
+            //
+            // policy-commitment-htlc-cltv-range
+            self.validate_expiry("received HTLC", htlc.cltv_expiry, vstate.current_height)?;
+
+            htlc_value_sat = htlc_value_sat
+                .checked_add(htlc.value_sat)
+                .ok_or_else(|| policy_error("received HTLC value overflow".to_string()))?;
+
+            // policy-commitment-outputs-trimmed
+            if htlc.value_sat < received_htlc_dust_limit {
+                return policy_err!(
+                    "received htlc.value_sat {} less than dust limit {}",
+                    htlc.value_sat,
+                    received_htlc_dust_limit
+                );
+            }
+        }
+
+        // policy-commitment-htlc-inflight-limit
+        if htlc_value_sat > policy.max_htlc_value_sat {
+            return policy_err!("sum of HTLC values {} too large", htlc_value_sat);
+        }
+
+        // policy-commitment-fee-range
+        let consumed = info
+            .to_broadcaster_value_sat
+            .checked_add(info.to_countersigner_value_sat)
+            .ok_or_else(|| policy_error("channel value overflow".to_string()))?
+            .checked_add(htlc_value_sat)
+            .ok_or_else(|| policy_error("channel value overflow on HTLC".to_string()))?;
+        let shortage = setup
+            .channel_value_sat
+            .checked_sub(consumed)
+            .ok_or_else(|| {
+                policy_error(format!(
+                    "channel shortage underflow: {} - {}",
+                    setup.channel_value_sat, consumed
+                ))
+            })?;
+        if shortage > policy.epsilon_sat {
+            return policy_err!(
+                "channel value short by {} > {}",
+                shortage,
+                policy.epsilon_sat
+            );
+        }
+
+        // Enforce additional requirements on initial commitments.
+        if commit_num == 0 {
+            if info.offered_htlcs.len() + info.received_htlcs.len() > 0 {
+                return policy_err!("initial commitment may not have HTLCS");
+            }
+
+            // policy-commitment-initial-funding-value
+            // If we are the funder, the value to us of the initial
+            // commitment transaction should be equal to our funding
+            // value.
+            if setup.is_outbound {
+                // Ensure that no extra value is sent to fundee, the
+                // no-initial-htlcs and fee checks above will ensure
+                // that our share is valid.
+
+                let fundee_value_sat = if info.is_counterparty_broadcaster {
+                    info.to_broadcaster_value_sat
+                } else {
+                    info.to_countersigner_value_sat
+                };
+
+                // The fundee is only entitled to push_value
+                if fundee_value_sat > setup.push_value_msat / 1000 {
+                    return policy_err!(
+                        "initial commitment may only send push_value_msat ({}) to fundee",
+                        setup.push_value_msat
+                    );
+                }
+            }
+        }
+
+        *debug_on_return = false;
         Ok(())
     }
 }

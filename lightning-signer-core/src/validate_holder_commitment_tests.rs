@@ -170,7 +170,7 @@ mod tests {
 
         assert_failed_precondition_err!(
             sign_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx),
-            "policy failure: validate_sign_holder_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: \
              can't sign revoked commitment_number 9, next_holder_commit_num is 11"
         );
     }
@@ -509,7 +509,8 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: retry holder commitment 43 with changed info"
+            "policy failure: validate_holder_commitment_tx: \
+             retry holder commitment 43 with changed info"
         );
     }
 
@@ -531,7 +532,8 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: retry holder commitment 43 with changed info"
+            "policy failure: validate_holder_commitment_tx: \
+             retry holder commitment 43 with changed info"
         );
     }
 
@@ -553,7 +555,8 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: retry holder commitment 43 with changed info"
+            "policy failure: validate_holder_commitment_tx: \
+             retry holder commitment 43 with changed info"
         );
     }
 
@@ -575,7 +578,8 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: retry holder commitment 43 with changed info"
+            "policy failure: validate_holder_commitment_tx: \
+             retry holder commitment 43 with changed info"
         );
     }
 
@@ -641,7 +645,8 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: set_next_holder_commit_num: invalid progression: 45 to 44"
+            "policy failure: validate_holder_commitment_tx: \
+             can't sign revoked commitment_number 43, next_holder_commit_num is 45"
         );
     }
 
@@ -686,8 +691,28 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_holder_commitment_state: mutual close already signed"
+            "policy failure: validate_holder_commitment_tx: mutual close already signed"
         );
+    }
+
+    // policy-revoke-not-closed
+    #[test]
+    fn validate_holder_commitment_closed_ok_on_previous() {
+        // It's ok to validate existing when closed (ie: retry after mutual close)
+        assert_status_ok!(validate_holder_commitment_retry_with_mutator(
+            |_commit_tx_ctx| {},
+            |_keys| {},
+            |chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
+                chan.enforcement_state.mutual_close_signed = true;
+            },
+            |chan| {
+                // Channel state should stay where it was
+                assert_eq!(
+                    chan.enforcement_state.next_holder_commit_num,
+                    HOLD_COMMIT_NUM + 1
+                );
+            }
+        ));
     }
 
     // policy-revoke-new-commitment-valid
@@ -809,7 +834,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
              to_broadcaster_value_sat 97 less than dust limit 330"
         );
     }
@@ -834,7 +859,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
              to_countersigner_value_sat 100 less than dust limit 330"
         );
     }
@@ -858,7 +883,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
              offered htlc.value_sat 1000 less than dust limit 2319"
         );
     }
@@ -882,7 +907,7 @@ mod tests {
                     );
                 }
             ),
-            "policy failure: validate_commitment_tx: \
+            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
              received htlc.value_sat 1000 less than dust limit 2439"
         );
     }
