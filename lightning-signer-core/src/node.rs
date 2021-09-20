@@ -29,8 +29,9 @@ use log::{info, trace};
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub};
 use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
+use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::EnforcementState;
-use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
+use crate::policy::validator::{ValidatorFactory, ValidatorState};
 use crate::prelude::*;
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::sync::{Arc, Weak};
@@ -916,9 +917,9 @@ mod tests {
         derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
         signature_to_bitcoin_vec,
     };
+    use crate::util::key_utils::*;
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::*;
-    use crate::util::key_utils::*;
 
     use super::*;
 
