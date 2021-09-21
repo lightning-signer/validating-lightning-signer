@@ -35,7 +35,8 @@ use super::error::{policy_error, transaction_format_error, ValidationError};
 /// A factory for SimpleValidator
 pub struct SimpleValidatorFactory {}
 
-fn simple_validator(network: Network) -> SimpleValidator {
+/// Construct a SimpleValidator
+pub fn simple_validator(network: Network) -> SimpleValidator {
     SimpleValidator {
         policy: make_simple_policy(network),
     }
