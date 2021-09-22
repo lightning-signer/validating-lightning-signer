@@ -251,6 +251,7 @@ fn from_status(s: Status) -> JSValidationError {
 #[wasm_bindgen]
 pub fn make_node() -> JSNode {
     let config = NodeConfig {
+        network: Network::Testnet,
         key_derivation_style: KeyDerivationStyle::Native,
     };
     let mut seed = [0u8; 32];
@@ -258,7 +259,7 @@ pub fn make_node() -> JSNode {
     // TODO remove in production :)
     debug!("SEED {}", seed.to_hex());
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
-    let node = Node::new(config, &seed, Network::Testnet, &persister, vec![]);
+    let node = Node::new(config, &seed, &persister, vec![]);
     JSNode {
         node: Arc::new(node),
     }

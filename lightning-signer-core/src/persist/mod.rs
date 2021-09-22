@@ -1,5 +1,5 @@
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::{Network, Script};
+use bitcoin::Script;
 
 use crate::channel::{Channel, ChannelId, ChannelStub};
 use crate::node::NodeConfig;
@@ -14,7 +14,7 @@ pub mod model;
 /// The persister should durably persist before returning, for safety.
 pub trait Persist: Sync + Send {
     /// Create a new node
-    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8], network: Network);
+    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8]);
     /// Delete a node and all of its channels.  Used in test mode.
     fn delete_node(&self, node_id: &PublicKey);
     /// Will error if exists
@@ -47,7 +47,7 @@ pub struct DummyPersister;
 
 #[allow(unused_variables)]
 impl Persist for DummyPersister {
-    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8], network: Network) {}
+    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8]) {}
 
     fn delete_node(&self, node_id: &PublicKey) {}
 

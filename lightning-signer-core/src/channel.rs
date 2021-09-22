@@ -33,6 +33,7 @@ use crate::util::crypto_utils::{
 use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner};
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::INITIAL_COMMITMENT_NUMBER;
+use crate::wallet::Wallet;
 use crate::{Arc, Weak};
 
 /// Channel identifier
@@ -258,7 +259,7 @@ impl ChannelBase for ChannelStub {
             .validator_factory
             .lock()
             .unwrap()
-            .make_validator(self.node.upgrade().unwrap().network)
+            .make_validator(self.node.upgrade().unwrap().network())
     }
 }
 
@@ -1176,7 +1177,7 @@ impl Channel {
 
     /// The node's network
     pub fn network(&self) -> Network {
-        self.get_node().network
+        self.get_node().network()
     }
 }
 

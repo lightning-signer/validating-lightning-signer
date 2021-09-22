@@ -45,6 +45,8 @@ use lightning::ln::script::ShutdownScript;
 
 #[derive(Copy, Clone)]
 pub struct NodeConfig {
+    /// The network type
+    pub network: Network,
     /// The derivation style to use when deriving purpose-specific keys
     pub key_derivation_style: KeyDerivationStyle,
 }
@@ -59,14 +61,12 @@ pub struct NodeConfig {
 /// use lightning_signer::util::test_logger::TestLogger;
 /// use lightning_signer::node::SyncLogger;
 ///
-/// use bitcoin::Network;
 /// use std::sync::Arc;
 ///
 /// let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
-/// let network = Network::Testnet;
 /// let seed = [0; 32];
 /// let config = TEST_NODE_CONFIG;
-/// let node = Arc::new(Node::new(config, &seed, network, &persister, vec![]));
+/// let node = Arc::new(Node::new(config, &seed, &persister, vec![]));
 /// let (channel_id, opt_stub) = node.new_channel(None, None, &node).expect("new channel");
 /// assert!(opt_stub.is_some());
 /// let channel_slot_mutex = node.get_channel(&channel_id).expect("get channel");
@@ -83,7 +83,6 @@ pub struct Node {
     pub(crate) node_config: NodeConfig,
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<Map<ChannelId, Arc<Mutex<ChannelSlot>>>>,
-    pub(crate) network: Network,
     pub(crate) validator_factory: Mutex<Box<dyn ValidatorFactory>>,
     pub(crate) persister: Arc<dyn Persist>,
     allowlist: Mutex<UnorderedSet<Script>>,
@@ -102,8 +101,8 @@ impl Wallet for Node {
             .public_key(&secp_ctx);
 
         // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
-        let native_addr = Address::p2wpkh(&pubkey, self.network).expect("p2wpkh failed");
-        let wrapped_addr = Address::p2shwpkh(&pubkey, self.network).expect("p2shwpkh failed");
+        let native_addr = Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed");
+        let wrapped_addr = Address::p2shwpkh(&pubkey, self.network()).expect("p2shwpkh failed");
 
         Ok(*script_pubkey == native_addr.script_pubkey()
             || *script_pubkey == wrapped_addr.script_pubkey())
@@ -115,7 +114,7 @@ impl Wallet for Node {
     }
 
     fn network(&self) -> Network {
-        self.network
+        self.node_config.network
     }
 }
 
@@ -126,23 +125,21 @@ impl Node {
     pub fn new(
         node_config: NodeConfig,
         seed: &[u8],
-        network: Network,
         persister: &Arc<Persist>,
         allowlist: Vec<Script>,
     ) -> Node {
-        let now = Duration::from_secs(genesis_block(network).header.time as u64);
+        let now = Duration::from_secs(genesis_block(node_config.network).header.time as u64);
 
         Node {
             keys_manager: MyKeysManager::new(
                 node_config.key_derivation_style,
                 seed,
-                network,
+                node_config.network,
                 now.as_secs(),
                 now.subsec_nanos(),
             ),
             node_config,
             channels: Mutex::new(Map::new()),
-            network,
             validator_factory: Mutex::new(Box::new(SimpleValidatorFactory {})),
             persister: Arc::clone(persister),
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
@@ -384,10 +381,10 @@ impl Node {
         persister: Arc<dyn Persist>,
     ) -> Arc<Node> {
         let config = NodeConfig {
+            network: Network::from_str(node_entry.network.as_str()).expect("bad network"),
             key_derivation_style: KeyDerivationStyle::try_from(node_entry.key_derivation_style)
                 .unwrap(),
         };
-        let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
         let node = Arc::new(Node::new(
             config,
             node_entry
@@ -395,7 +392,6 @@ impl Node {
                 .as_slice()
                 .try_into()
                 .expect("seed wrong length"),
-            network,
             &persister,
             persister.get_node_allowlist(node_id),
         ));
@@ -544,7 +540,7 @@ impl Node {
             .validator_factory
             .lock()
             .unwrap()
-            .make_validator(self.network);
+            .make_validator(self.network());
 
         let channels: Vec<Option<Arc<Mutex<ChannelSlot>>>> = tx
             .output
@@ -801,7 +797,7 @@ impl Node {
         (*alset)
             .iter()
             .map(|script_pubkey| {
-                let addr = Address::from_script(&script_pubkey, self.network);
+                let addr = Address::from_script(&script_pubkey, self.network());
                 if addr.is_none() {
                     return Err(invalid_argument(format!(
                         "address from script faied on {}",
@@ -821,10 +817,12 @@ impl Node {
                 let addr = addrstr.parse::<Address>().map_err(|err| {
                     invalid_argument(format!("parse address {} failed: {}", addrstr, err))
                 })?;
-                if addr.network != self.network {
+                if addr.network != self.network() {
                     return Err(invalid_argument(format!(
                         "network mismatch for addr {}: addr={}, node={}",
-                        addr, addr.network, self.network
+                        addr,
+                        addr.network,
+                        self.network()
                     )));
                 }
                 Ok(addr)
@@ -849,10 +847,12 @@ impl Node {
                 let addr = addrstr.parse::<Address>().map_err(|err| {
                     invalid_argument(format!("parse address {} failed: {}", addrstr, err))
                 })?;
-                if addr.network != self.network {
+                if addr.network != self.network() {
                     return Err(invalid_argument(format!(
                         "network mismatch for addr {}: addr={}, node={}",
-                        addr, addr.network, self.network
+                        addr,
+                        addr.network,
+                        self.network()
                     )));
                 }
                 Ok(addr)

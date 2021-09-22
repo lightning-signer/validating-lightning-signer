@@ -44,6 +44,7 @@ use crate::util::crypto_utils::{
 };
 use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
+use crate::wallet::Wallet;
 use crate::Arc;
 
 // Status assertions:
@@ -284,12 +285,10 @@ pub fn make_test_channel_keys() -> InMemorySigner {
 pub fn init_node(node_config: NodeConfig, seedstr: &str) -> Arc<Node> {
     let mut seed = [0; 32];
     seed.copy_from_slice(Vec::from_hex(seedstr).unwrap().as_slice());
-    let network = Network::Testnet;
 
     let node = Node::new(
         node_config,
         &seed,
-        network,
         &(Arc::new(DummyPersister) as Arc<Persist>),
         vec![],
     );
@@ -326,9 +325,9 @@ pub fn make_test_funding_wallet_addr(
 
     // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
     if !is_p2sh {
-        Address::p2wpkh(&pubkey, node.network).unwrap()
+        Address::p2wpkh(&pubkey, node.network()).unwrap()
     } else {
-        Address::p2shwpkh(&pubkey, node.network).unwrap()
+        Address::p2shwpkh(&pubkey, node.network()).unwrap()
     }
 }
 
@@ -359,9 +358,9 @@ pub fn make_test_funding_wallet_output(
 
     // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
     let addr = if !is_p2sh {
-        Address::p2wpkh(&pubkey, node.network).unwrap()
+        Address::p2wpkh(&pubkey, node.network()).unwrap()
     } else {
-        Address::p2shwpkh(&pubkey, node.network).unwrap()
+        Address::p2shwpkh(&pubkey, node.network()).unwrap()
     };
 
     TxOut {
@@ -1145,6 +1144,7 @@ pub fn make_test_commitment_info() -> CommitmentInfo2 {
 }
 
 pub const TEST_NODE_CONFIG: NodeConfig = NodeConfig {
+    network: Network::Testnet,
     key_derivation_style: KeyDerivationStyle::Native,
 };
 
