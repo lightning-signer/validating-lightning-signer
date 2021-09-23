@@ -39,6 +39,7 @@ use crate::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use crate::util::test_utils::{TestChainMonitor, TestPersister};
 use core::cmp;
 use lightning::util::events::PaymentPurpose;
+use crate::lightning::routing::network_graph::NetworkGraph;
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 10;
 
@@ -616,6 +617,24 @@ macro_rules! get_closing_signed_broadcast {
     }};
 }
 
+///
+#[macro_export]
+macro_rules! check_closed_event {
+       ($node: expr, $events: expr, $reason: expr) => {{
+               let events = $node.node.get_and_clear_pending_events();
+               assert_eq!(events.len(), $events);
+               let expected_reason = $reason;
+               for event in events {
+                       match event {
+                               Event::ChannelClosed { ref reason, .. } => {
+                                       assert_eq!(*reason, expected_reason);
+                               },
+                               _ => panic!("Unexpected event"),
+                       }
+               }
+       }}
+}
+
 pub fn close_channel<'a, 'b, 'c>(outbound_node: &Node<'a, 'b, 'c>, inbound_node: &Node<'a, 'b, 'c>, channel_id: &[u8; 32], funding_tx: Transaction, close_inbound_first: bool) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, Transaction) {
     let (node_a, broadcaster_a, struct_a) = if close_inbound_first { (&inbound_node.node, &inbound_node.tx_broadcaster, inbound_node) } else { (&outbound_node.node, &outbound_node.tx_broadcaster, outbound_node) };
     let (node_b, broadcaster_b, struct_b) = if close_inbound_first { (&outbound_node.node, &outbound_node.tx_broadcaster, outbound_node) } else { (&inbound_node.node, &inbound_node.tx_broadcaster, inbound_node) };
@@ -833,6 +852,21 @@ macro_rules! expect_pending_htlcs_forwardable {
     }};
 }
 
+///
+#[macro_export]
+macro_rules! expect_pending_htlcs_forwardable_from_events {
+	($node: expr, $events: expr, $ignore: expr) => {{
+		assert_eq!($events.len(), 1);
+		match $events[0] {
+			Event::PendingHTLCsForwardable { .. } => { },
+			_ => panic!("Unexpected event"),
+		};
+		if $ignore {
+			$node.node.process_pending_htlc_forwards();
+		}
+	}}
+}
+
 macro_rules! expect_payment_sent {
     ($node: expr, $expected_payment_preimage: expr) => {
         let events = $node.node.get_and_clear_pending_events();
@@ -865,6 +899,22 @@ macro_rules! expect_pending_htlcs_forwardable_ignore {
 
 ///
 #[macro_export]
+macro_rules! expect_payment_forwarded {
+	($node: expr, $expected_fee: expr, $upstream_force_closed: expr) => {
+		let events = $node.node.get_and_clear_pending_events();
+		assert_eq!(events.len(), 1);
+		match events[0] {
+			Event::PaymentForwarded { fee_earned_msat, claim_from_onchain_tx } => {
+				assert_eq!(fee_earned_msat, $expected_fee);
+				assert_eq!(claim_from_onchain_tx, $upstream_force_closed);
+			},
+			_ => panic!("Unexpected event"),
+		}
+	}
+}
+
+///
+#[macro_export]
 macro_rules! expect_payment_failed {
 	($node: expr, $expected_payment_hash: expr, $rejected_by_dest: expr $(, $expected_error_code: expr, $expected_error_data: expr)*) => {
         use lightning::util::events::Event;
@@ -872,7 +922,7 @@ macro_rules! expect_payment_failed {
 		let events = $node.node.get_and_clear_pending_events();
 		assert_eq!(events.len(), 1);
 		match events[0] {
-			Event::PaymentFailed { ref payment_hash, rejected_by_dest, /*ref error_code, ref error_data*/ } => {
+			Event::PaymentPathFailed { ref payment_hash, rejected_by_dest, .. } => {
 				assert_eq!(*payment_hash, $expected_payment_hash, "unexpected payment_hash");
 				assert_eq!(rejected_by_dest, $rejected_by_dest, "unexpected rejected_by_dest value");
 				// assert!(error_code.is_some(), "expected error_code.is_some() = true");
@@ -1058,7 +1108,7 @@ pub const TEST_FINAL_CLTV: u32 = 70;
 pub fn route_payment<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_route: &[&Node<'a, 'b, 'c>], recv_value: u64) -> (PaymentPreimage, PaymentHash, PaymentSecret) {
     let net_graph_msg_handler = &origin_node.net_graph_msg_handler;
     let logger = test_utils::TestLogger::new();
-    let route = get_route(&origin_node.node.get_our_node_id(), &net_graph_msg_handler.network_graph.read().unwrap(), &expected_route.last().unwrap().node.get_our_node_id(), Some(InvoiceFeatures::known()), None, &Vec::new(), recv_value, TEST_FINAL_CLTV, &logger).unwrap();
+    let route = get_route(&origin_node.node.get_our_node_id(), &net_graph_msg_handler.network_graph, &expected_route.last().unwrap().node.get_our_node_id(), Some(InvoiceFeatures::known()), None, &Vec::new(), recv_value, TEST_FINAL_CLTV, &logger).unwrap();
     assert_eq!(route.paths.len(), 1);
     assert_eq!(route.paths[0].len(), expected_route.len());
     for (node, hop) in expected_route.iter().zip(route.paths[0].iter()) {
@@ -1157,8 +1207,9 @@ pub fn create_network<'a, 'b: 'a, 'c: 'b>(
     let payment_count = Rc::new(RefCell::new(0));
 
     for i in 0..node_count {
+        let network_graph = NetworkGraph::new(cfgs[i].chain_source.genesis_hash);
         let net_graph_msg_handler =
-            NetGraphMsgHandler::new(cfgs[i].chain_source.genesis_hash, None, cfgs[i].logger);
+            NetGraphMsgHandler::new(network_graph,None, cfgs[i].logger);
         let connect_style = Rc::new(RefCell::new(ConnectStyle::FullBlockViaListen));
         nodes.push(Node {
             chain_source: cfgs[i].chain_source,

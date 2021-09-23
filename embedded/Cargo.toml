@@ -19,12 +19,6 @@ version = "0.27"
 features = ["no-std", "secp-lowmemory"]
 default-features = false
 
-[dependencies.lightning]
-git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "4c4d99b291c5336130d3d5cfeffa8ab88fd97783"
-version = "0.0.100"
-default-features = false
-
 [patch.crates-io]
 # See also https://github.com/rust-bitcoin/rust-secp256k1/pull/299 and https://github.com/bitcoin-core/secp256k1/pull/956
 

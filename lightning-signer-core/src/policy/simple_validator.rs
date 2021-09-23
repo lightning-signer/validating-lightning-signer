@@ -6,6 +6,7 @@ use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
+    ClosingTransaction
 };
 use lightning::ln::PaymentHash;
 use log::{debug, info};
@@ -16,7 +17,7 @@ use crate::policy::validator::{Validator, ValidatorFactory, ValidatorState};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
-    build_close_tx, parse_offered_htlc_script, parse_received_htlc_script,
+    parse_offered_htlc_script, parse_received_htlc_script,
     parse_revokeable_redeemscript, CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT,
     HTLC_TIMEOUT_TX_WEIGHT,
 };
@@ -738,7 +739,7 @@ impl Validator for SimpleValidator {
         estate: &EnforcementState,
         tx: &Transaction,
         wallet_paths: &Vec<Vec<u32>>,
-    ) -> Result<Transaction, ValidationError> {
+    ) -> Result<ClosingTransaction, ValidationError> {
         // Log state and inputs if we don't succeed.
         let should_debug = true;
         let mut debug_on_return = scopeguard::guard(should_debug, |should_debug| {
@@ -904,22 +905,24 @@ impl Validator for SimpleValidator {
             }
         };
 
-        let recomposed_tx = build_close_tx(
+        let closing_tx = ClosingTransaction::new(
             good_args.to_holder_value_sat,
             good_args.to_counterparty_value_sat,
-            &good_args.holder_script,
-            &good_args.counterparty_script,
-            setup.funding_outpoint,
-        )?;
+            good_args.holder_script.unwrap_or_else(|| Script::new()),
+            good_args.counterparty_script.unwrap_or_else(|| Script::new()),
+            setup.funding_outpoint
+        );
+        let trusted = closing_tx.trust();
+        let recomposed_tx = trusted.built_transaction();
 
-        if recomposed_tx != *tx {
+        if *recomposed_tx != *tx {
             debug!("ORIGINAL_TX={:#?}", &tx);
             debug!("RECOMPOSED_TX={:#?}", &recomposed_tx);
             return policy_err!("recomposed tx mismatch");
         }
 
         *debug_on_return = false; // don't debug when we succeed
-        Ok(recomposed_tx)
+        Ok(closing_tx)
     }
 
     fn validate_mutual_close_tx(

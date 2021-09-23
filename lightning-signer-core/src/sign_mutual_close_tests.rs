@@ -6,7 +6,7 @@ mod tests {
     use bitcoin::secp256k1;
     use bitcoin::secp256k1::Secp256k1;
     use bitcoin::{self, Address, Network, OutPoint, Script, Transaction, TxOut};
-    use lightning::ln::chan_utils::{make_funding_redeemscript, ChannelPublicKeys};
+    use lightning::ln::chan_utils::{make_funding_redeemscript, ChannelPublicKeys, ClosingTransaction};
     use lightning::ln::PaymentHash;
 
     use test_env_log::test;
@@ -14,7 +14,7 @@ mod tests {
     use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup};
     use crate::node::Node;
     use crate::sync::Arc;
-    use crate::tx::tx::{build_close_tx, CommitmentInfo2, HTLCInfo2};
+    use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
     use crate::util::crypto_utils::signature_to_bitcoin_vec;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
@@ -117,8 +117,8 @@ mod tests {
             &mut Channel,
             &mut u64,
             &mut u64,
-            &mut Option<Script>,
-            &mut Option<Script>,
+            &mut Script,
+            &mut Script,
             &mut OutPoint,
         ),
         MutualCloseTxMutator: Fn(&mut Transaction, &mut Vec<Vec<u32>>, &mut Vec<String>),
@@ -139,7 +139,7 @@ mod tests {
         let (tx, sigvec) = node.with_ready_channel(&channel_id, |chan| {
             let mut holder_value_sat = to_holder_value_sat;
             let mut counterparty_value_sat = to_counterparty_value_sat;
-            let mut holder_shutdown_script = Some(
+            let mut holder_shutdown_script =
                 Address::p2wpkh(
                     &node
                         .get_wallet_key(&secp_ctx, &holder_wallet_path_hint)
@@ -148,12 +148,10 @@ mod tests {
                     Network::Testnet,
                 )
                 .expect("Address")
-                .script_pubkey(),
-            );
-            let mut counterparty_shutdown_script = Some(
+                .script_pubkey();
+            let mut counterparty_shutdown_script =
                 Script::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
-                    .expect("script_pubkey"),
-            );
+                    .expect("script_pubkey");
             let mut funding_outpoint = setup.funding_outpoint;
 
             mutate_close_input(
@@ -165,13 +163,15 @@ mod tests {
                 &mut funding_outpoint,
             );
 
-            let tx = build_close_tx(
+            let closing_tx = ClosingTransaction::new(
                 holder_value_sat,
                 counterparty_value_sat,
-                &holder_shutdown_script,
-                &counterparty_shutdown_script,
+                holder_shutdown_script,
+                counterparty_shutdown_script,
                 funding_outpoint,
-            )?;
+            );
+            let trusted = closing_tx.trust();
+            let tx = trusted.built_transaction();
 
             // Secrets can be released before the mutual close.
             assert!(chan
@@ -194,7 +194,7 @@ mod tests {
             validate_channel_state(chan);
 
             let sig = deferred_rv?;
-            Ok((tx, signature_to_bitcoin_vec(sig)))
+            Ok((tx.clone(), signature_to_bitcoin_vec(sig)))
         })?;
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -235,8 +235,8 @@ mod tests {
             &mut Channel,
             &mut u64,
             &mut u64,
-            &mut Option<Script>,
-            &mut Option<Script>,
+            &mut Script,
+            &mut Script,
             &mut OutPoint,
             &mut Vec<u32>,
             &mut Vec<String>,
@@ -266,7 +266,7 @@ mod tests {
             let mut wallet_path = init_holder_wallet_path_hint.clone();
             let mut holder_value_sat = to_holder_value_sat;
             let mut counterparty_value_sat = to_counterparty_value_sat;
-            let mut holder_shutdown_script = Some(
+            let mut holder_shutdown_script =
                 Address::p2wpkh(
                     &node
                         .get_wallet_key(&secp_ctx, &wallet_path)
@@ -274,13 +274,11 @@ mod tests {
                         .public_key(&secp_ctx),
                     Network::Testnet,
                 )
-                .expect("Address")
-                .script_pubkey(),
-            );
-            let mut counterparty_shutdown_script = Some(
+                    .expect("Address")
+                    .script_pubkey();
+            let mut counterparty_shutdown_script =
                 Script::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
-                    .expect("script_pubkey"),
-            );
+                    .expect("script_pubkey");
             let mut funding_outpoint = setup.funding_outpoint;
 
             // Secrets can be released before the mutual close.
@@ -308,8 +306,8 @@ mod tests {
             let deferred_rv = chan.sign_mutual_close_tx_phase2(
                 holder_value_sat,
                 counterparty_value_sat,
-                &holder_shutdown_script,
-                &counterparty_shutdown_script,
+                &Some(holder_shutdown_script.clone()),
+                &Some(counterparty_shutdown_script.clone()),
                 &wallet_path,
             );
             // This will panic if the state is not good.
@@ -326,15 +324,15 @@ mod tests {
             ))
         })?;
 
-        let tx = {
-            build_close_tx(
-                holder_value_sat,
-                counterparty_value_sat,
-                &holder_shutdown_script,
-                &counterparty_shutdown_script,
-                funding_outpoint,
-            )
-        }?;
+        let closing_tx = ClosingTransaction::new(
+            holder_value_sat,
+            counterparty_value_sat,
+            holder_shutdown_script,
+            counterparty_shutdown_script,
+            funding_outpoint,
+        );
+        let trusted = closing_tx.trust();
+        let tx = trusted.built_transaction();
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
 
@@ -430,7 +428,7 @@ mod tests {
                 // from the constructed tx
                 *to_holder += *to_counterparty;
                 *to_counterparty = 0;
-                *counter_script = None;
+                *counter_script = Script::new();
             },
             |_tx, wallet_paths, _allowlist| {
                 // remove the counterparties wallet_path
@@ -475,7 +473,7 @@ mod tests {
                 // from the constructed tx
                 *to_counterparty += *to_holder - fee;
                 *to_holder = 0;
-                *holder_script = None;
+                *holder_script = Script::new();
             },
             |_tx, wallet_paths, _allowlist| {
                 // remove the holders wallet_path
@@ -524,10 +522,10 @@ mod tests {
                 // from the constructed tx
                 *to_counterparty += *to_holder - fee;
                 *to_holder = 0;
-                *holder_script = None;
+                *holder_script = Script::new();
 
                 // counterparty is using the allowlist
-                *counter_script = Some(hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565"));
+                *counter_script = hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565");
             },
             |_tx, wallet_paths, allowlist| {
                 // remove all the walletpaths
@@ -630,9 +628,9 @@ mod tests {
                  _allowlist| {
                     chan.setup.holder_shutdown_script =
                         Some(hex_script!("0014b76dd61e41b5ef052af21cda3260888c070bb9af"));
-                    *holder_script = Some(hex_script!(
+                    *holder_script = hex_script!(
                         "76a9149f9a7abd600c0caa03983a77c8c3df8e062cb2fa88ac"
-                    ));
+                    );
                 },
                 |chan| {
                     // Channel should not be marked closed

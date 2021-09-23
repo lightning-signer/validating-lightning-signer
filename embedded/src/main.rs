@@ -5,7 +5,6 @@
 
 extern crate alloc;
 extern crate bitcoin;
-extern crate lightning;
 
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -28,6 +27,7 @@ use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::key_utils::{make_test_counterparty_points, make_test_key};
 use lightning_signer::Arc;
+use lightning_signer::lightning;
 
 // this is the allocator the application will use
 #[global_allocator]

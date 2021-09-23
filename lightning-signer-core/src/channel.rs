@@ -11,12 +11,7 @@ use bitcoin::util::bip143::SigHashCache;
 use bitcoin::{Network, OutPoint, Script, SigHashType};
 use lightning::chain;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface};
-use lightning::ln::chan_utils::{
-    build_htlc_transaction, derive_private_key, get_htlc_redeemscript, make_funding_redeemscript,
-    ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction,
-    CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
-    TxCreationKeys,
-};
+use lightning::ln::chan_utils::{build_htlc_transaction, derive_private_key, get_htlc_redeemscript, make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys, ClosingTransaction};
 use log::{debug, trace, warn};
 
 use crate::node::Node;
@@ -24,7 +19,7 @@ use crate::policy::error::policy_error;
 use crate::policy::validator::{EnforcementState, Validator, ValidatorState};
 use crate::prelude::{Box, ToString, Vec};
 use crate::tx::tx::{
-    build_close_tx, build_commitment_tx, get_commitment_transaction_number_obscure_factor,
+    build_commitment_tx, get_commitment_transaction_number_obscure_factor,
     CommitmentInfo2, HTLCInfo2,
 };
 use crate::util::crypto_utils::{
@@ -1042,13 +1037,13 @@ impl Channel {
             holder_wallet_path_hint,
         )?;
 
-        let tx = build_close_tx(
+        let tx = ClosingTransaction::new(
             to_holder_value_sat,
             to_counterparty_value_sat,
-            holder_script,
-            counterparty_script,
+            holder_script.clone().unwrap_or_else(|| Script::new()),
+            counterparty_script.clone().unwrap_or_else(|| Script::new()),
             self.setup.funding_outpoint,
-        )?;
+        );
 
         let sig = self
             .keys
