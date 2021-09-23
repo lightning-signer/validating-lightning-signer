@@ -4,6 +4,8 @@ use core::marker::PhantomData;
 use serde::{de, ser, Serializer};
 use serde_derive::{Deserialize, Serialize};
 use serde::ser::SerializeTuple;
+use core::fmt::Debug;
+use std::fmt::Formatter;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Bip32KeyVersion {
@@ -20,8 +22,13 @@ pub struct Secret([u8; 32]);
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PrivKey([u8; 32]);
 
-#[derive(Debug)]
 pub struct PubKey([u8; 33]);
+
+impl Debug for PubKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.to_vec().fmt(f)
+    }
+}
 
 struct PubKeyVisitor {
     marker: PhantomData<PubKey>,
@@ -69,8 +76,8 @@ impl<'de> de::Deserialize<'de> for PubKey {
 impl ser::Serialize for PubKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
         let mut tuple = serializer.serialize_tuple(self.0.len())?;
-        for el in self.0 {
-            tuple.serialize_element(&el)?;
+        for i in 0..self.0.len() {
+            tuple.serialize_element(&self.0[i])?;
         }
         tuple.end()
     }
