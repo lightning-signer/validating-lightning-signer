@@ -1,6 +1,6 @@
 use serde::{de, ser};
 use serde_bolt::{from_vec, to_vec};
-use serde_bolt::types::{Read, Write};
+use serde_bolt::{Read, Write, LargeBytes};
 use serde_derive::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -79,6 +79,68 @@ impl TypedMessage for SignChannelUpdate {
     const TYPE: u16 = 3;
 }
 
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetPerCommitmentPoint {
+    n: u64,
+}
+
+impl TypedMessage for GetPerCommitmentPoint {
+    const TYPE: u16 = 18;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignRemoteCommitmentTx {
+    tx: LargeBytes,
+    psbt: LargeBytes,
+    remote_funding_key: PubKey,
+    remote_per_commitment_point: PubKey,
+    option_static_remotekey: bool,
+}
+
+impl TypedMessage for SignRemoteCommitmentTx {
+    const TYPE: u16 = 19;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetChannelBasepoints {
+    node_id: PubKey,
+    dbid: u64,
+}
+
+impl TypedMessage for GetChannelBasepoints {
+    const TYPE: u16 = 10;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignRemoteHtlcTx {
+    tx: LargeBytes,
+    psbt: LargeBytes,
+    wscript: Vec<u8>,
+    remote_per_commitment_point: PubKey,
+    option_anchor_outputs: bool,
+}
+
+impl TypedMessage for SignRemoteHtlcTx {
+    const TYPE: u16 = 20;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignPenaltyToUs {
+    revocation_secret: Secret,
+    tx: LargeBytes,
+    psbt: LargeBytes,
+    wscript: Vec<u8>,
+}
+
+impl TypedMessage for SignPenaltyToUs {
+    const TYPE: u16 = 14;
+}
+
 /// An unknown message
 #[derive(Debug)]
 pub struct Unknown {
@@ -97,6 +159,11 @@ pub enum Message {
     Ecdh(Ecdh),
     Memleak(Memleak),
     SignChannelUpdate(SignChannelUpdate),
+    GetPerCommitmentPoint(GetPerCommitmentPoint),
+    SignRemoteCommitmentTx(SignRemoteCommitmentTx),
+    GetChannelBasepoints(GetChannelBasepoints),
+    SignRemoteHtlcTx(SignRemoteHtlcTx),
+    SignPenaltyToUs(SignPenaltyToUs),
     Unknown(Unknown),
 }
 
@@ -135,6 +202,11 @@ pub fn read<R: Read>(reader: &mut R) -> Result<Message> {
         Ecdh::TYPE => Ok(Message::Ecdh(from_vec_no_trailing(&mut data)?)),
         Memleak::TYPE => Ok(Message::Memleak(from_vec_no_trailing(&mut data)?)),
         SignChannelUpdate::TYPE => Ok(Message::SignChannelUpdate(from_vec_no_trailing(&mut data)?)),
+        GetPerCommitmentPoint::TYPE => Ok(Message::GetPerCommitmentPoint(from_vec_no_trailing(&mut data)?)),
+        SignRemoteCommitmentTx::TYPE => Ok(Message::SignRemoteCommitmentTx(from_vec_no_trailing(&mut data)?)),
+        GetChannelBasepoints::TYPE => Ok(Message::GetChannelBasepoints(from_vec_no_trailing(&mut data)?)),
+        SignRemoteHtlcTx::TYPE => Ok(Message::SignRemoteHtlcTx(from_vec_no_trailing(&mut data)?)),
+        SignPenaltyToUs::TYPE => Ok(Message::SignPenaltyToUs(from_vec_no_trailing(&mut data)?)),
         _ => {
             Ok(Message::Unknown(Unknown { message_type, data }))
         }
@@ -165,10 +237,11 @@ mod tests {
     fn parse_fixtures_test() {
         assert_eq!(parse_fixture("r_3"), 16);
         assert_eq!(parse_fixture("r_5"), 1);
-        assert_eq!(parse_fixture("r_6"), 52);
+        assert_eq!(parse_fixture("r_6"), 39);
     }
 
     fn parse_fixture(fixture: &str) -> u32 {
+        println!("processing {}", fixture);
         let contents_with_whitespace = fs::read_to_string(format!("fixtures/{}.hex", fixture)).unwrap();
         let contents_hex = Regex::new(r"\s").unwrap().replace_all(&contents_with_whitespace, "");
         let mut contents = hex::decode(&*contents_hex).unwrap();
