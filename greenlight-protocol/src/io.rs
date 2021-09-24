@@ -1,5 +1,6 @@
+use serde_bolt::Read;
+
 use crate::error::{Error, Result};
-use serde_bolt::types::Read;
 
 pub(crate) fn read_u32<R: Read>(reader: &mut R) -> Result<u32> {
     let mut buf = [0u8; 4];
