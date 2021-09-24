@@ -23,6 +23,7 @@ use lightning::util::config::{ChannelHandshakeConfig, UserConfig};
 use lightning::util::events::{Event, EventsProvider, MessageSendEvent, MessageSendEventsProvider};
 use lightning::util::logger::Logger;
 
+use lightning_signer::policy::null_validator::NullValidatorFactory;
 use lightning_signer::signer::multi_signer::MultiSigner;
 use lightning_signer::util::functional_test_utils::{
     close_channel, confirm_transaction_at, connect_block, connect_blocks,
@@ -243,6 +244,14 @@ fn claim_htlc_outputs_single_tx() {
     let node_cfgs = create_node_cfgs_with_signer(2, &signer, &chanmon_cfgs);
     let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[None, None]);
     let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
+
+    // Disable validation on node 0 so we can sign revoked commitment below
+    nodes[0]
+        .keys_manager
+        .signer
+        .get_node(&nodes[0].keys_manager.node_id)
+        .unwrap()
+        .set_validator_factory(Box::new(NullValidatorFactory {}));
 
     let chan_1 = create_announced_chan_between_nodes(
         &nodes,

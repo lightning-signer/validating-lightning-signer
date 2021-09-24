@@ -556,6 +556,136 @@ mod tests {
         Ok(())
     }
 
+    fn sign_counterparty_commitment_tx_phase2_with_mutators<StateMutator, KeysMutator, TxMutator>(
+        statemut: StateMutator,
+        keysmut: KeysMutator,
+        txmut: TxMutator,
+    ) -> Result<(), Status>
+    where
+        StateMutator: Fn(&mut EnforcementState),
+        KeysMutator: Fn(&mut TxCreationKeys),
+        TxMutator: Fn(&mut BuiltCommitmentTransaction, &mut Vec<Vec<u8>>),
+    {
+        let (node, setup, channel_id, offered_htlcs, received_htlcs) =
+            sign_commitment_tx_with_mutators_setup();
+
+        let remote_percommitment_point = make_test_pubkey(10);
+
+        let (sig, tx) = node.with_ready_channel(&channel_id, |chan| {
+            let channel_parameters = chan.make_channel_parameters();
+
+            let commit_num = 23;
+            let feerate_per_kw = 0;
+            let to_broadcaster = 1_979_997;
+            let to_countersignatory = 1_000_000;
+
+            chan.enforcement_state
+                .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
+            chan.enforcement_state
+                .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
+
+            // Mutate the signer state.
+            statemut(&mut chan.enforcement_state);
+
+            let parameters = channel_parameters.as_counterparty_broadcastable();
+            let mut keys = chan.make_counterparty_tx_keys(&remote_percommitment_point)?;
+
+            // Mutate the tx creation keys.
+            keysmut(&mut keys);
+
+            let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
+
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                to_broadcaster,
+                to_countersignatory,
+                &htlcs,
+                &parameters,
+            )
+            .expect("scripts");
+            let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+
+            let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
+                keys,
+                commit_num,
+                feerate_per_kw,
+                to_countersignatory,
+                to_broadcaster,
+                htlcs.clone(),
+            );
+
+            // rebuild to get the scripts
+            let trusted_tx = commitment_tx.trust();
+            let mut tx = trusted_tx.built_transaction().clone();
+
+            // Mutate the transaction and recalculate the txid.
+            txmut(&mut tx, &mut output_witscripts);
+            tx.txid = tx.transaction.txid();
+
+            let (sig, _htlc_sigs) = chan.sign_counterparty_commitment_tx_phase2(
+                &remote_percommitment_point,
+                commit_num,
+                feerate_per_kw,
+                to_countersignatory,
+                to_broadcaster,
+                offered_htlcs.clone(),
+                received_htlcs.clone(),
+            )?;
+            Ok((sig, tx.transaction.clone()))
+        })?;
+
+        assert_eq!(
+            tx.txid().to_hex(),
+            "0704dbebf8dc4841b7aa07934e29c962df7b0aa02ea243fb25a1f01c52e80e4c"
+        );
+
+        let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
+        let channel_funding_redeemscript =
+            make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
+
+        check_signature(
+            &tx,
+            0,
+            sig,
+            &funding_pubkey,
+            setup.channel_value_sat,
+            &channel_funding_redeemscript,
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn sign_counterparty_commitment_tx_phase2_success() {
+        assert_status_ok!(sign_counterparty_commitment_tx_phase2_with_mutators(
+            |_state| {
+                // don't mutate the signer, should pass
+            },
+            |_keys| {
+                // don't mutate the keys, should pass
+            },
+            |_tx, _witscripts| {
+                // don't mutate the tx, should pass
+            },
+        ));
+    }
+
+    // policy-commitment-previous-revoked
+    #[test]
+    fn sign_counterparty_commitment_tx_phase2_with_unrevoked_prior() {
+        assert_failed_precondition_err!(
+            sign_counterparty_commitment_tx_phase2_with_mutators(
+                |state| {
+                    state.set_next_counterparty_revoke_num_for_testing(21);
+                },
+                |_keys| {},
+                |_tx, _witscripts| {},
+            ),
+            "policy failure: validate_counterparty_commitment_tx: \
+             invalid attempt to sign counterparty commit_num 23 with next_counterparty_revoke_num 21"
+        );
+    }
+
     #[test]
     fn sign_counterparty_commitment_tx_with_no_mut_test() {
         assert_status_ok!(sign_counterparty_commitment_tx_with_mutators(

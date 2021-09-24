@@ -21,8 +21,8 @@ use log::{debug, trace, warn};
 
 use crate::node::Node;
 use crate::policy::error::policy_error;
-use crate::policy::validator::{EnforcementState, ValidatorState};
-use crate::prelude::{ToString, Vec};
+use crate::policy::validator::{EnforcementState, Validator, ValidatorState};
+use crate::prelude::{Box, ToString, Vec};
 use crate::tx::tx::{
     build_close_tx, build_commitment_tx, get_commitment_transaction_number_obscure_factor,
     CommitmentInfo2, HTLCInfo2,
@@ -148,6 +148,8 @@ pub trait ChannelBase: Any {
     /// Get the channel nonce, used to derive the channel keys
     // TODO should this be exposed?
     fn nonce(&self) -> Vec<u8>;
+    /// Returns the validator for this channel
+    fn validator(&self) -> Box<dyn Validator>;
 
     // TODO remove when LDK workaround is removed in LoopbackSigner
     #[allow(missing_docs)]
@@ -247,6 +249,16 @@ impl ChannelBase for ChannelStub {
 
     fn nonce(&self) -> Vec<u8> {
         self.nonce.clone()
+    }
+
+    fn validator(&self) -> Box<dyn Validator> {
+        self.node
+            .upgrade()
+            .unwrap()
+            .validator_factory
+            .lock()
+            .unwrap()
+            .make_validator(self.node.upgrade().unwrap().network)
     }
 }
 
@@ -355,6 +367,16 @@ impl ChannelBase for Channel {
 
     fn nonce(&self) -> Vec<u8> {
         self.nonce.clone()
+    }
+
+    fn validator(&self) -> Box<dyn Validator> {
+        self.node
+            .upgrade()
+            .unwrap()
+            .validator_factory
+            .lock()
+            .unwrap()
+            .make_validator(self.network())
     }
 }
 
@@ -507,12 +529,26 @@ impl Channel {
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+        // Since we didn't have the value at the real open, validate it now.
+        self.validator().validate_channel_value(&self.setup)?;
+
         let info2 = self.build_counterparty_commitment_info(
             remote_per_commitment_point,
             to_holder_value_sat,
             to_counterparty_value_sat,
             offered_htlcs.clone(),
             received_htlcs.clone(),
+        )?;
+
+        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
+        let vstate = ValidatorState { current_height: 0 };
+        self.validator().validate_counterparty_commitment_tx(
+            &self.enforcement_state,
+            commitment_number,
+            &remote_per_commitment_point,
+            &self.setup,
+            &vstate,
+            &info2,
         )?;
 
         let htlcs = Self::htlcs_info2_to_oic(offered_htlcs, received_htlcs);
@@ -524,19 +560,6 @@ impl Channel {
             to_holder_value_sat,
             to_counterparty_value_sat,
             htlcs,
-        );
-
-        // TODO validation missing?
-
-        self.enforcement_state.set_next_counterparty_commit_num(
-            commitment_number + 1,
-            remote_per_commitment_point.clone(),
-            info2,
-        )?;
-
-        debug!(
-            "channel: sign counterparty txid {}",
-            commitment_tx.trust().built_transaction().txid
         );
 
         let sigs = self
@@ -551,6 +574,14 @@ impl Channel {
             htlc_sig.push(SigHashType::All as u8);
             htlc_sigs.push(htlc_sig);
         }
+
+        // Only advance the state if nothing goes wrong.
+        self.enforcement_state.set_next_counterparty_commit_num(
+            commitment_number + 1,
+            remote_per_commitment_point.clone(),
+            info2,
+        )?;
+
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok((sig, htlc_sigs))
@@ -750,15 +781,8 @@ impl Channel {
             received_htlcs,
         )?;
 
-        let validator = self
-            .node
-            .upgrade()
-            .unwrap()
-            .validator_factory
-            .make_validator(self.network());
-
         let state = ValidatorState { current_height: 0 };
-        validator
+        self.validator()
             .validate_holder_commitment_tx(
                 &self.enforcement_state,
                 commitment_number,
@@ -814,6 +838,27 @@ impl Channel {
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+        let commitment_point = &self.get_per_commitment_point(commitment_number)?;
+
+        let info2 = self.build_holder_commitment_info(
+            &commitment_point,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            offered_htlcs.clone(),
+            received_htlcs.clone(),
+        )?;
+
+        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
+        let state = ValidatorState { current_height: 0 };
+        self.validator().validate_holder_commitment_tx(
+            &self.enforcement_state,
+            commitment_number,
+            &commitment_point,
+            &self.setup,
+            &state,
+            &info2,
+        )?;
+
         let htlcs = Self::htlcs_info2_to_oic(offered_htlcs, received_htlcs);
 
         // We provide a dummy signature for the remote, since we don't require that sig
@@ -985,14 +1030,7 @@ impl Channel {
         counterparty_script: &Option<Script>,
         holder_wallet_path_hint: &Vec<u32>,
     ) -> Result<Signature, Status> {
-        let validator = self
-            .node
-            .upgrade()
-            .unwrap()
-            .validator_factory
-            .make_validator(self.network());
-
-        validator.validate_mutual_close_tx(
+        self.validator().validate_mutual_close_tx(
             &*self.node.upgrade().unwrap(),
             &self.setup,
             &self.enforcement_state,
@@ -1257,19 +1295,12 @@ impl Channel {
             return Err(invalid_argument("len(tx.output) != len(witscripts)"));
         }
 
-        let validator = self
-            .node
-            .upgrade()
-            .unwrap()
-            .validator_factory
-            .make_validator(self.network());
-
         // Since we didn't have the value at the real open, validate it now.
-        validator.validate_channel_value(&self.setup)?;
+        self.validator().validate_channel_value(&self.setup)?;
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = true;
-        let info = validator.decode_commitment_tx(
+        let info = self.validator().decode_commitment_tx(
             &self.keys,
             &self.setup,
             is_counterparty,
@@ -1287,7 +1318,7 @@ impl Channel {
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let vstate = ValidatorState { current_height: 0 };
-        validator
+        self.validator()
             .validate_counterparty_commitment_tx(
                 &self.enforcement_state,
                 commitment_number,
@@ -1344,14 +1375,15 @@ impl Channel {
 
         let point = recomposed_tx.trust().keys().per_commitment_point;
 
-        self.enforcement_state
-            .set_next_counterparty_commit_num(commit_num + 1, point, info2)?;
-
         // Sign the recomposed commitment.
         let sigs = self
             .keys
             .sign_counterparty_commitment(&recomposed_tx, &self.secp_ctx)
             .map_err(|_| internal_error(format!("sign_counterparty_commitment failed")))?;
+
+        // Only advance the state if nothing goes wrong.
+        self.enforcement_state
+            .set_next_counterparty_commit_num(commit_num + 1, point, info2)?;
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
@@ -1377,19 +1409,12 @@ impl Channel {
             )));
         }
 
-        let validator = self
-            .node
-            .upgrade()
-            .unwrap()
-            .validator_factory
-            .make_validator(self.network());
-
         // Since we didn't have the value at the real open, validate it now.
-        validator.validate_channel_value(&self.setup)?;
+        self.validator().validate_channel_value(&self.setup)?;
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = false;
-        let info = validator.decode_commitment_tx(
+        let info = self.validator().decode_commitment_tx(
             &self.keys,
             &self.setup,
             is_counterparty,
@@ -1408,7 +1433,7 @@ impl Channel {
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let state = ValidatorState { current_height: 0 };
-        validator
+        self.validator()
             .validate_holder_commitment_tx(
                 &self.enforcement_state,
                 commitment_number,
@@ -1515,18 +1540,15 @@ impl Channel {
         revoke_num: u64,
         old_secret: &SecretKey,
     ) -> Result<(), Status> {
-        let validator = self
-            .node
-            .upgrade()
-            .unwrap()
-            .validator_factory
-            .make_validator(self.network());
-
         // TODO - need to store the revealed secret.
 
-        let estate = &mut self.enforcement_state;
-        validator.validate_counterparty_revocation(&estate, revoke_num, old_secret)?;
-        estate.set_next_counterparty_revoke_num(revoke_num + 1)?;
+        self.validator().validate_counterparty_revocation(
+            &self.enforcement_state,
+            revoke_num,
+            old_secret,
+        )?;
+        self.enforcement_state
+            .set_next_counterparty_revoke_num(revoke_num + 1)?;
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
@@ -1597,13 +1619,6 @@ impl Channel {
             short_function!(),
             self.node.upgrade().unwrap().allowlist().expect("allowlist")
         );
-        let validator = self
-            .node
-            .upgrade()
-            .unwrap()
-            .validator_factory
-            .make_validator(self.network());
-
         if opaths.len() != tx.output.len() {
             return Err(invalid_argument(format!(
                 "{}: bad opath len {} with tx.output len {}",
@@ -1613,7 +1628,7 @@ impl Channel {
             )));
         }
 
-        let recomposed_tx = validator.decode_and_validate_mutual_close_tx(
+        let recomposed_tx = self.validator().decode_and_validate_mutual_close_tx(
             &*self.node.upgrade().unwrap(),
             &self.setup,
             &self.enforcement_state,
@@ -1697,26 +1712,20 @@ impl Channel {
         is_counterparty: bool,
         txkeys: TxCreationKeys,
     ) -> Result<Signature, Status> {
-        let validator = self
-            .node
-            .upgrade()
-            .unwrap()
-            .validator_factory
-            .make_validator(self.network());
-
-        let (feerate_per_kw, htlc, recomposed_tx_sighash) = validator.decode_and_validate_htlc_tx(
-            is_counterparty,
-            &self.setup,
-            &txkeys,
-            tx,
-            &redeemscript,
-            htlc_amount_sat,
-            output_witscript,
-        )?;
+        let (feerate_per_kw, htlc, recomposed_tx_sighash) =
+            self.validator().decode_and_validate_htlc_tx(
+                is_counterparty,
+                &self.setup,
+                &txkeys,
+                tx,
+                &redeemscript,
+                htlc_amount_sat,
+                output_witscript,
+            )?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
         let state = ValidatorState { current_height: 0 };
-        validator
+        self.validator()
             .validate_htlc_tx(&self.setup, &state, is_counterparty, &htlc, feerate_per_kw)
             .map_err(|ve| {
                 debug!(

@@ -29,8 +29,9 @@ use log::{info, trace};
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub};
 use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
+use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::EnforcementState;
-use crate::policy::validator::{SimpleValidatorFactory, ValidatorFactory, ValidatorState};
+use crate::policy::validator::{ValidatorFactory, ValidatorState};
 use crate::prelude::*;
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::sync::{Arc, Weak};
@@ -83,7 +84,7 @@ pub struct Node {
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<Map<ChannelId, Arc<Mutex<ChannelSlot>>>>,
     pub(crate) network: Network,
-    pub(crate) validator_factory: Box<dyn ValidatorFactory>,
+    pub(crate) validator_factory: Mutex<Box<dyn ValidatorFactory>>,
     pub(crate) persister: Arc<dyn Persist>,
     allowlist: Mutex<UnorderedSet<Script>>,
 }
@@ -142,10 +143,16 @@ impl Node {
             node_config,
             channels: Mutex::new(Map::new()),
             network,
-            validator_factory: Box::new(SimpleValidatorFactory {}),
+            validator_factory: Mutex::new(Box::new(SimpleValidatorFactory {})),
             persister: Arc::clone(persister),
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
         }
+    }
+
+    /// Set the node's validator factory
+    pub fn set_validator_factory(&self, validator_factory: Box<dyn ValidatorFactory>) {
+        let mut vfac = self.validator_factory.lock().unwrap();
+        *vfac = validator_factory;
     }
 
     /// Get the node ID, which is the same as the node public key
@@ -468,7 +475,11 @@ impl Node {
                 id: opt_channel_id,
             }
         };
-        let validator = self.validator_factory.make_validator(chan.network());
+        let validator = self
+            .validator_factory
+            .lock()
+            .unwrap()
+            .make_validator(chan.network());
 
         validator.validate_ready_channel(self, &setup, holder_shutdown_key_path)?;
 
@@ -529,7 +540,11 @@ impl Node {
         // Funding transactions cannot be associated with a single channel; a single
         // transaction may fund multiple channels
 
-        let validator = self.validator_factory.make_validator(self.network);
+        let validator = self
+            .validator_factory
+            .lock()
+            .unwrap()
+            .make_validator(self.network);
 
         let channels: Vec<Option<Arc<Mutex<ChannelSlot>>>> = tx
             .output
@@ -916,9 +931,9 @@ mod tests {
         derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
         signature_to_bitcoin_vec,
     };
+    use crate::util::key_utils::*;
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::*;
-    use crate::util::key_utils::*;
 
     use super::*;
 
