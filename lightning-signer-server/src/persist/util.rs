@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-use bitcoin::Network;
 use crate::lightning::ln::chan_utils::ChannelPublicKeys;
+use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 
 use lightning_signer::channel::{
     ChannelId, ChannelSetup, ChannelSlot, ChannelStub, CommitmentType,
@@ -41,13 +40,7 @@ pub(crate) fn make_node() -> (PublicKey, Arc<Node>, [u8; 32]) {
     seed.copy_from_slice(hex::decode(TEST_SEED[1]).unwrap().as_slice());
 
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
-    let node = Arc::new(Node::new(
-        TEST_NODE_CONFIG,
-        &seed,
-        Network::Testnet,
-        &persister,
-        vec![],
-    ));
+    let node = Arc::new(Node::new(TEST_NODE_CONFIG, &seed, &persister, vec![]));
     let node_id = node.get_id();
     (node_id, node, seed)
 }

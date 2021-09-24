@@ -1,4 +1,3 @@
-use bitcoin::Network;
 use kv::Json;
 
 use lightning_signer::channel::channel_nonce_to_id;
@@ -19,7 +18,7 @@ pub fn main() {
     let (node_id, node_arc, stub, _seed) = util::make_node_and_channel(&channel_nonce, channel_id);
     let node = &*node_arc;
 
-    persister.new_node(&node_id, &TEST_NODE_CONFIG, &[3u8; 32], Network::Regtest);
+    persister.new_node(&node_id, &TEST_NODE_CONFIG, &[3u8; 32]);
 
     persister.new_channel(&node_id, &stub).unwrap();
 

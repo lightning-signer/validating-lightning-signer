@@ -1,6 +1,7 @@
 use std::convert::{TryFrom, TryInto};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::{cmp, process};
 
@@ -10,12 +11,11 @@ use log::{debug, error, info};
 use serde_json::json;
 use tonic::{transport::Server, Request, Response, Status};
 
-use bitcoin;
 use bitcoin::consensus::{deserialize, encode};
 use bitcoin::hashes::Hash as BitcoinHash;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::util::psbt::serialize::Deserialize;
-use bitcoin::{OutPoint, Script, SigHashType};
+use bitcoin::{self, Network, OutPoint, Script, SigHashType};
 
 use crate::lightning;
 use lightning::ln::chan_utils::ChannelPublicKeys;
@@ -259,7 +259,10 @@ fn convert_commitment_type(proto_commitment_type: i32) -> channel::CommitmentTyp
     }
 }
 
-fn convert_node_config(proto_node_config: NodeConfig) -> node::NodeConfig {
+fn convert_node_config(
+    chainparams: ChainParams,
+    proto_node_config: NodeConfig,
+) -> node::NodeConfig {
     let proto_style = proto_node_config.key_derivation_style;
     let key_derivation_style = if proto_style == node_config::KeyDerivationStyle::Lnd as i32 {
         KeyDerivationStyle::Lnd
@@ -268,7 +271,9 @@ fn convert_node_config(proto_node_config: NodeConfig) -> node::NodeConfig {
     } else {
         panic!("invalid key derivation style")
     };
+    let network = Network::from_str(&chainparams.network_name).expect("bad network");
     node::NodeConfig {
+        network,
         key_derivation_style,
     }
 }
@@ -301,6 +306,11 @@ impl Signer for SignServer {
                 "unknown node_config.key_derivation_style",
             ));
         }
+
+        let proto_chainparams = req
+            .chainparams
+            .ok_or_else(|| invalid_grpc_argument("missing chainparams"))?;
+
         let hsm_secret = req.hsm_secret.map(|o| o.data).unwrap_or_else(|| Vec::new());
 
         let hsm_secret = hsm_secret.as_slice();
@@ -316,7 +326,7 @@ impl Signer for SignServer {
                 ));
             }
         }
-        let node_config = convert_node_config(proto_node_config);
+        let node_config = convert_node_config(proto_chainparams, proto_node_config);
 
         let node_id = if hsm_secret.len() == 0 {
             Ok(self.signer.new_node(node_config))

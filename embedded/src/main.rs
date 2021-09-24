@@ -26,8 +26,8 @@ use lightning_signer::channel::{ChannelSetup, CommitmentType};
 use lightning_signer::node::{Node, NodeConfig};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
+use lightning_signer::util::key_utils::{make_test_counterparty_points, make_test_key};
 use lightning_signer::Arc;
-use lightning_signer::util::key_utils::{make_test_key, make_test_counterparty_points};
 
 // this is the allocator the application will use
 #[global_allocator]
@@ -82,12 +82,12 @@ pub fn make_test_channel_setup() -> ChannelSetup {
 
 fn test_lightning_signer() {
     let config = NodeConfig {
+        network: bitcoin::Network::Signet,
         key_derivation_style: KeyDerivationStyle::Native,
     };
-    let network = bitcoin::Network::Signet;
     let seed = [0u8; 32];
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
-    let node = Arc::new(Node::new(config, &seed, network, &persister, Vec::new()));
+    let node = Arc::new(Node::new(config, &seed, &persister, Vec::new()));
     let (channel_id, _) = node.new_channel(None, None, &node).unwrap();
     hprintln!("stub channel ID: {}", channel_id).unwrap();
     let holder_shutdown_key_path = Vec::new();

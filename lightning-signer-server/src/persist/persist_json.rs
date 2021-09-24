@@ -1,7 +1,7 @@
 use kv::{Bucket, Config, Json, Store, TransactionError};
 
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::{Network, Script};
+use bitcoin::Script;
 
 use lightning_signer::channel::{Channel, ChannelId, ChannelStub};
 use lightning_signer::node::NodeConfig;
@@ -41,13 +41,13 @@ impl KVJsonPersister<'_> {
 }
 
 impl<'a> Persist for KVJsonPersister<'a> {
-    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8], network: Network) {
+    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8]) {
         let key = node_id.serialize().to_vec();
         assert!(!self.node_bucket.contains(key.clone()).unwrap());
         let entry = NodeEntry {
             seed: seed.to_vec(),
             key_derivation_style: config.key_derivation_style as u8,
-            network: network.to_string(),
+            network: config.network.to_string(),
         };
         self.node_bucket.set(key, Json(entry)).expect("insert node");
         self.node_bucket.flush().expect("flush");
@@ -228,7 +228,7 @@ mod tests {
         let (temp_dir, path) = {
             let (persister, temp_dir, path) = make_temp_persister();
             let persister: Arc<dyn Persist> = Arc::new(persister);
-            persister.new_node(&node_id, &TEST_NODE_CONFIG, &seed, Network::Regtest);
+            persister.new_node(&node_id, &TEST_NODE_CONFIG, &seed);
             persister.new_channel(&node_id, &stub).unwrap();
 
             let nodes = Node::restore_nodes(Arc::clone(&persister));

@@ -3,39 +3,38 @@ extern crate log;
 
 use std::str::FromStr;
 
-use bitcoin::{Network, OutPoint};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::PublicKey;
+use bitcoin::{Network, OutPoint};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use log::LevelFilter;
 use wasm_bindgen::prelude::*;
 use web_sys;
 
-use lightning_signer::{bitcoin, lightning};
-use lightning_signer::Arc;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::node::{Node, NodeConfig};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::key_utils::make_test_key;
+use lightning_signer::Arc;
+use lightning_signer::{bitcoin, lightning};
 
 use crate::console_log::setup_log;
 use crate::utils::set_panic_hook;
 use lightning_signer::util::status::Status;
 
-
-mod utils;
 mod console_log;
+mod utils;
 
 #[wasm_bindgen]
-extern {
+extern "C" {
     fn alert(s: &str);
 }
 
-#[wasm_bindgen(js_name="ChannelId")]
+#[wasm_bindgen(js_name = "ChannelId")]
 pub struct JSChannelId(ChannelId);
 
-#[wasm_bindgen(js_class="ChannelId")]
+#[wasm_bindgen(js_class = "ChannelId")]
 impl JSChannelId {
     #[wasm_bindgen(js_name = toString)]
     pub fn to_string(&self) -> String {
@@ -62,11 +61,11 @@ pub enum JSCommitmentType {
     Anchors,
 }
 
-#[wasm_bindgen(js_name="OutPoint")]
+#[wasm_bindgen(js_name = "OutPoint")]
 #[derive(Copy, Clone)]
 pub struct JSOutPoint(OutPoint);
 
-#[wasm_bindgen(js_class="OutPoint")]
+#[wasm_bindgen(js_class = "OutPoint")]
 impl JSOutPoint {
     #[wasm_bindgen]
     pub fn default() -> JSOutPoint {
@@ -79,11 +78,11 @@ impl JSOutPoint {
     }
 }
 
-#[wasm_bindgen(js_name="PublicKey")]
+#[wasm_bindgen(js_name = "PublicKey")]
 #[derive(Copy, Clone)]
 pub struct JSPublicKey(PublicKey);
 
-#[wasm_bindgen(js_class="PublicKey")]
+#[wasm_bindgen(js_class = "PublicKey")]
 impl JSPublicKey {
     #[wasm_bindgen]
     pub fn new_test_key(i: u8) -> JSPublicKey {
@@ -91,7 +90,7 @@ impl JSPublicKey {
     }
 }
 
-#[wasm_bindgen(js_name="ChannelPublicKeys")]
+#[wasm_bindgen(js_name = "ChannelPublicKeys")]
 #[derive(Copy, Clone)]
 pub struct JSChannelPublicKeys {
     funding_pubkey: PublicKey,
@@ -101,26 +100,27 @@ pub struct JSChannelPublicKeys {
     htlc_basepoint: PublicKey,
 }
 
-#[wasm_bindgen(js_class="ChannelPublicKeys")]
+#[wasm_bindgen(js_class = "ChannelPublicKeys")]
 impl JSChannelPublicKeys {
     #[wasm_bindgen(constructor)]
-    pub fn new(funding_pubkey: JSPublicKey,
-               revocation_basepoint: JSPublicKey,
-               payment_point: JSPublicKey,
-               delayed_payment_basepoint: JSPublicKey,
-               htlc_basepoint: JSPublicKey
+    pub fn new(
+        funding_pubkey: JSPublicKey,
+        revocation_basepoint: JSPublicKey,
+        payment_point: JSPublicKey,
+        delayed_payment_basepoint: JSPublicKey,
+        htlc_basepoint: JSPublicKey,
     ) -> Self {
         JSChannelPublicKeys {
             funding_pubkey: funding_pubkey.0,
             revocation_basepoint: revocation_basepoint.0,
             payment_point: payment_point.0,
             delayed_payment_basepoint: delayed_payment_basepoint.0,
-            htlc_basepoint: htlc_basepoint.0
+            htlc_basepoint: htlc_basepoint.0,
         }
     }
 }
 
-#[wasm_bindgen(js_name="ChannelSetup")]
+#[wasm_bindgen(js_name = "ChannelSetup")]
 pub struct JSChannelSetup {
     pub is_outbound: bool,
     pub channel_value_sat: u64,
@@ -134,7 +134,7 @@ pub struct JSChannelSetup {
     pub commitment_type: JSCommitmentType,
 }
 
-#[wasm_bindgen(js_class="ChannelSetup")]
+#[wasm_bindgen(js_class = "ChannelSetup")]
 impl JSChannelSetup {
     #[wasm_bindgen(constructor)]
     pub fn new(
@@ -144,7 +144,7 @@ impl JSChannelSetup {
         funding_outpoint: JSOutPoint,
         holder_selected_contest_delay: u16,
         counterparty_points: JSChannelPublicKeys,
-        counterparty_selected_contest_delay: u16
+        counterparty_selected_contest_delay: u16,
     ) -> Self {
         JSChannelSetup {
             is_outbound,
@@ -154,22 +154,22 @@ impl JSChannelSetup {
             holder_selected_contest_delay,
             counterparty_points,
             counterparty_selected_contest_delay,
-            commitment_type: JSCommitmentType::StaticRemoteKey
+            commitment_type: JSCommitmentType::StaticRemoteKey,
         }
     }
 }
 
-#[wasm_bindgen(js_name="Node")]
+#[wasm_bindgen(js_name = "Node")]
 pub struct JSNode {
-    node: Arc<Node>
+    node: Arc<Node>,
 }
 
-#[wasm_bindgen(js_name="ValidationError")]
+#[wasm_bindgen(js_name = "ValidationError")]
 pub struct JSValidationError {
     message: String,
 }
 
-#[wasm_bindgen(js_class="ValidationError")]
+#[wasm_bindgen(js_class = "ValidationError")]
 impl JSValidationError {
     #[wasm_bindgen(js_name = toString)]
     pub fn to_string(&self) -> String {
@@ -177,7 +177,7 @@ impl JSValidationError {
     }
 }
 
-#[wasm_bindgen(js_class="Node")]
+#[wasm_bindgen(js_class = "Node")]
 impl JSNode {
     #[wasm_bindgen(js_name = toString)]
     pub fn to_string(&self) -> String {
@@ -197,7 +197,7 @@ impl JSNode {
             revocation_basepoint: p.revocation_basepoint,
             payment_point: p.payment_point,
             delayed_payment_basepoint: p.delayed_payment_basepoint,
-            htlc_basepoint: p.htlc_basepoint
+            htlc_basepoint: p.htlc_basepoint,
         };
         let setup = ChannelSetup {
             is_outbound: s.is_outbound,
@@ -209,26 +209,25 @@ impl JSNode {
             counterparty_points: cp_points,
             counterparty_selected_contest_delay: s.counterparty_selected_contest_delay,
             counterparty_shutdown_script: None,
-            commitment_type: CommitmentType::Legacy
+            commitment_type: CommitmentType::Legacy,
         };
-        let _channel = self.node
-            .ready_channel(
-                id.0,
-                None,
-                setup,
-                &vec![],
-            ).map_err(from_status)?;
+        let _channel = self
+            .node
+            .ready_channel(id.0, None, setup, &vec![])
+            .map_err(from_status)?;
         Ok(())
     }
 
-    pub fn sign_holder_commitment(&self,
-                                  channel_id: &JSChannelId,
-                                  commit_num: u64,
-                                  to_holder_value_sat: u64,
-                                  to_counterparty_value_sat: u64
+    pub fn sign_holder_commitment(
+        &self,
+        channel_id: &JSChannelId,
+        commit_num: u64,
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
     ) -> Result<Signature, JsValue> {
-        let (ser_signature, _) =
-            self.node.with_ready_channel(&channel_id.0, |chan| {
+        let (ser_signature, _) = self
+            .node
+            .with_ready_channel(&channel_id.0, |chan| {
                 chan.sign_holder_commitment_tx_phase2(
                     commit_num,
                     0, // feerate not used
@@ -237,18 +236,22 @@ impl JSNode {
                     vec![],
                     vec![],
                 )
-            }).map_err(from_status)?;
+            })
+            .map_err(from_status)?;
         Ok(Signature(ser_signature))
     }
 }
 
 fn from_status(s: Status) -> JSValidationError {
-    JSValidationError { message: s.message().to_string() }
+    JSValidationError {
+        message: s.message().to_string(),
+    }
 }
 
 #[wasm_bindgen]
 pub fn make_node() -> JSNode {
     let config = NodeConfig {
+        network: Network::Testnet,
         key_derivation_style: KeyDerivationStyle::Native,
     };
     let mut seed = [0u8; 32];
@@ -256,8 +259,10 @@ pub fn make_node() -> JSNode {
     // TODO remove in production :)
     debug!("SEED {}", seed.to_hex());
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
-    let node = Node::new(config, &seed, Network::Testnet, &persister, vec![]);
-    JSNode { node: Arc::new(node) }
+    let node = Node::new(config, &seed, &persister, vec![]);
+    JSNode {
+        node: Arc::new(node),
+    }
 }
 
 #[wasm_bindgen]
@@ -272,7 +277,9 @@ fn randomize_buffer(seed: &mut [u8; 32]) {
 
     let window = window().expect("window");
     let crypto: Crypto = window.crypto().expect("crypto");
-    crypto.get_random_values_with_u8_array(seed).expect("random");
+    crypto
+        .get_random_values_with_u8_array(seed)
+        .expect("random");
 }
 
 #[wasm_bindgen]

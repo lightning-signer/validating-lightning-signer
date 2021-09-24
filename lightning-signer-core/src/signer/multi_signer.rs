@@ -1,6 +1,6 @@
 use bitcoin;
 use bitcoin::secp256k1::{PublicKey, Secp256k1};
-use bitcoin::{Network, OutPoint};
+use bitcoin::OutPoint;
 use lightning::chain::keysinterface::KeysInterface;
 use log::info;
 #[cfg(feature = "std")]
@@ -50,20 +50,18 @@ impl MultiSigner {
     #[cfg(feature = "std")]
     pub fn new_node(&self, node_config: NodeConfig) -> PublicKey {
         let secp_ctx = Secp256k1::signing_only();
-        let network = Network::Testnet;
         let mut rng = OsRng::new().unwrap();
 
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);
 
-        let node = Node::new(node_config, &seed, network, &self.persister, vec![]);
+        let node = Node::new(node_config, &seed, &self.persister, vec![]);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         node.add_allowlist(&self.initial_allowlist)
             .expect("valid initialallowlist");
         nodes.insert(node_id, Arc::new(node));
-        self.persister
-            .new_node(&node_id, &node_config, &seed, network);
+        self.persister.new_node(&node_id, &node_config, &seed);
         node_id
     }
 
@@ -74,9 +72,8 @@ impl MultiSigner {
         seed: &[u8],
     ) -> Result<PublicKey, Status> {
         let secp_ctx = Secp256k1::signing_only();
-        let network = Network::Testnet;
 
-        let node = Node::new(node_config, seed, network, &self.persister, vec![]);
+        let node = Node::new(node_config, seed, &self.persister, vec![]);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         if self.test_mode {
@@ -92,8 +89,7 @@ impl MultiSigner {
         node.add_allowlist(&self.initial_allowlist)
             .expect("valid initialallowlist");
         nodes.insert(node_id, Arc::new(node));
-        self.persister
-            .new_node(&node_id, &node_config, seed, network);
+        self.persister.new_node(&node_id, &node_config, seed);
         Ok(node_id)
     }
 
@@ -110,9 +106,8 @@ impl MultiSigner {
         seed: &[u8],
     ) -> Result<PublicKey, Status> {
         let secp_ctx = Secp256k1::signing_only();
-        let network = Network::Testnet;
 
-        let node = Node::new(node_config, seed, network, &self.persister, vec![]);
+        let node = Node::new(node_config, seed, &self.persister, vec![]);
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let nodes = self.nodes.lock().unwrap();
         nodes.get(&node_id).ok_or_else(|| {

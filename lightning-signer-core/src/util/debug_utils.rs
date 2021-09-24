@@ -149,17 +149,11 @@ impl<'a> core::fmt::Debug for DebugWitVec<'a> {
 
 /// Return a debug string for a bitcoin::Script
 pub fn script_debug(script: &Script, network: Network) -> String {
-    // We include regtest formated addresses because c-lighting uses
-    // them in their integration test suite.
     format!(
-        "script={} {}={} regtest={}",
+        "script={} {}={}",
         script.to_hex(),
         network,
         match Address::from_script(script, network) {
-            Some(addr) => addr.to_string(),
-            None => "<bad-address>".to_string(),
-        },
-        match Address::from_script(script, bitcoin::Network::Regtest) {
             Some(addr) => addr.to_string(),
             None => "<bad-address>".to_string(),
         },
