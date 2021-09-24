@@ -142,7 +142,7 @@ impl TypedMessage for SignPenaltyToUs {
 }
 
 /// An unknown message
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Unknown {
     /// Message type
     pub message_type: u16,
@@ -151,7 +151,7 @@ pub struct Unknown {
 }
 
 /// An enum representing all messages we can read and write
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub enum Message {
     HsmdInit(HsmdInit),
     ClientHsmFd(ClientHsmFd),
@@ -195,22 +195,45 @@ pub fn read<R: Read>(reader: &mut R) -> Result<Message> {
         return Err(Error::ShortRead);
     }
 
-    match message_type {
-        HsmdInit::TYPE => Ok(Message::HsmdInit(from_vec_no_trailing(&mut data)?)),
-        ClientHsmFd::TYPE => Ok(Message::ClientHsmFd(from_vec_no_trailing(&mut data)?)),
-        SignInvoice::TYPE => Ok(Message::SignInvoice(from_vec_no_trailing(&mut data)?)),
-        Ecdh::TYPE => Ok(Message::Ecdh(from_vec_no_trailing(&mut data)?)),
-        Memleak::TYPE => Ok(Message::Memleak(from_vec_no_trailing(&mut data)?)),
-        SignChannelUpdate::TYPE => Ok(Message::SignChannelUpdate(from_vec_no_trailing(&mut data)?)),
-        GetPerCommitmentPoint::TYPE => Ok(Message::GetPerCommitmentPoint(from_vec_no_trailing(&mut data)?)),
-        SignRemoteCommitmentTx::TYPE => Ok(Message::SignRemoteCommitmentTx(from_vec_no_trailing(&mut data)?)),
-        GetChannelBasepoints::TYPE => Ok(Message::GetChannelBasepoints(from_vec_no_trailing(&mut data)?)),
-        SignRemoteHtlcTx::TYPE => Ok(Message::SignRemoteHtlcTx(from_vec_no_trailing(&mut data)?)),
-        SignPenaltyToUs::TYPE => Ok(Message::SignPenaltyToUs(from_vec_no_trailing(&mut data)?)),
+    read_message(&mut data, message_type)
+}
+
+fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
+    let message = match message_type {
+        HsmdInit::TYPE => Message::HsmdInit(from_vec_no_trailing(&mut data)?),
+        ClientHsmFd::TYPE => Message::ClientHsmFd(from_vec_no_trailing(&mut data)?),
+        SignInvoice::TYPE => Message::SignInvoice(from_vec_no_trailing(&mut data)?),
+        Ecdh::TYPE => Message::Ecdh(from_vec_no_trailing(&mut data)?),
+        Memleak::TYPE => Message::Memleak(from_vec_no_trailing(&mut data)?),
+        SignChannelUpdate::TYPE => Message::SignChannelUpdate(from_vec_no_trailing(&mut data)?),
+        GetPerCommitmentPoint::TYPE => Message::GetPerCommitmentPoint(from_vec_no_trailing(&mut data)?),
+        SignRemoteCommitmentTx::TYPE => Message::SignRemoteCommitmentTx(from_vec_no_trailing(&mut data)?),
+        GetChannelBasepoints::TYPE => Message::GetChannelBasepoints(from_vec_no_trailing(&mut data)?),
+        SignRemoteHtlcTx::TYPE => Message::SignRemoteHtlcTx(from_vec_no_trailing(&mut data)?),
+        SignPenaltyToUs::TYPE => Message::SignPenaltyToUs(from_vec_no_trailing(&mut data)?),
         _ => {
-            Ok(Message::Unknown(Unknown { message_type, data }))
+            Message::Unknown(Unknown { message_type, data: data.clone() })
         }
+    };
+    Ok(message)
+}
+
+#[cfg(test)]
+fn read_message_and_data<R: Read>(reader: &mut R) -> Result<(Message, Vec<u8>)> {
+    let len = read_u32(reader)?;
+    let mut data = Vec::new();
+    if len < 2 {
+        return Err(Error::ShortRead)
     }
+    let message_type = read_u16(reader)?;
+    data.resize(len as usize - 2, 0);
+    let len = reader.read(&mut data)?;
+    if len < data.len() {
+        return Err(Error::ShortRead);
+    }
+    let saved_data = data.clone();
+
+    read_message(&mut data, message_type).map(|m| (m, saved_data))
 }
 
 pub fn write<W: Write, T: ser::Serialize + TypedMessage>(writer: &mut W, value: T) -> Result<()> {
@@ -229,7 +252,7 @@ mod tests {
 
     use regex::Regex;
 
-    use crate::msgs::{Message, read};
+    use crate::msgs::Message;
 
     use super::*;
 
@@ -247,12 +270,16 @@ mod tests {
         let mut contents = hex::decode(&*contents_hex).unwrap();
         let mut num_read = 0;
         loop {
-            let res = read(&mut contents);
+            let res = read_message_and_data(&mut contents);
             match res {
-                Ok(Message::Unknown(u)) => {
+                Ok((Message::Unknown(u), _)) => {
                     println!("unknown {} {}", u.message_type, u.data.len());
                 }
-                Ok(msg) => { println!("read {:x?}", msg) }
+                Ok((msg, data)) => {
+                    println!("read {:x?}", msg);
+                    let encoded = to_vec(&msg).expect("encoding");
+                    assert_eq!(encoded, data);
+                }
                 Err(Error::Eof) => {
                     println!("done");
                     break;
