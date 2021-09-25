@@ -9,21 +9,21 @@ use std::fmt::Formatter;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Bip32KeyVersion {
-    pubkey_version: u32,
-    privkey_version : u32,
+    pub pubkey_version: u32,
+    pub privkey_version: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BlockID([u8; 32]);
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Secret([u8; 32]);
+pub struct Secret(pub [u8; 32]);
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct PrivKey([u8; 32]);
+pub struct PrivKey(pub [u8; 32]);
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct PubKey32([u8; 32]);
+pub struct PubKey32(pub [u8; 32]);
 
 macro_rules! array_impl {
     ($ty:ident, $len:tt) => {
