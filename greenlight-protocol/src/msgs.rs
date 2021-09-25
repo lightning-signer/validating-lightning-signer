@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use serde::{de, ser};
 use serde_bolt::{from_vec, to_vec};
 use serde_bolt::{Read, Write, LargeBytes};
@@ -14,13 +16,13 @@ pub trait TypedMessage {
 /// hsmd Init
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HsmdInit {
-    key_version: Bip32KeyVersion,
-    chain_params: BlockID,
-    encryption_key: Option<Secret>,
-    dev_privkey: Option<PrivKey>,
-    dev_bip32_seed: Option<Secret>,
-    dev_channel_secrets: Option<Vec<Secret>>,
-    dev_channel_secrets_shaseed: Option<Sha256>,
+    pub key_version: Bip32KeyVersion,
+    pub chain_params: BlockID,
+    pub encryption_key: Option<Secret>,
+    pub dev_privkey: Option<PrivKey>,
+    pub dev_bip32_seed: Option<Secret>,
+    pub dev_channel_secrets: Option<Vec<Secret>>,
+    pub dev_channel_secrets_shaseed: Option<Sha256>,
 }
 
 impl TypedMessage for HsmdInit {
@@ -30,10 +32,10 @@ impl TypedMessage for HsmdInit {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HsmdInitReply {
-    node_id: PubKey,
-    bip32: ExtKey,
-    bolt12: PubKey32,
-    onion_reply_secret: Secret,
+    pub node_id: PubKey,
+    pub bip32: ExtKey,
+    pub bolt12: PubKey32,
+    pub onion_reply_secret: Secret,
 }
 
 impl TypedMessage for HsmdInitReply {
@@ -43,9 +45,9 @@ impl TypedMessage for HsmdInitReply {
 /// Connect a new client
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClientHsmFd {
-    id: PubKey,
-    dbid: u64,
-    capabilities: u64,
+    pub id: PubKey,
+    pub dbid: u64,
+    pub capabilities: u64,
 }
 
 impl TypedMessage for ClientHsmFd {
@@ -65,8 +67,8 @@ impl TypedMessage for ClientHsmFdReply {
 /// Sign invoice
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignInvoice {
-    u5bytes: Vec<u8>,
-    hrp: Vec<u8>,
+    pub u5bytes: Vec<u8>,
+    pub hrp: Vec<u8>,
 }
 
 impl TypedMessage for SignInvoice {
@@ -76,7 +78,7 @@ impl TypedMessage for SignInvoice {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignInvoiceReply {
-    signature: RecoverableSignature,
+    pub signature: RecoverableSignature,
 }
 
 impl TypedMessage for SignInvoiceReply {
@@ -86,7 +88,7 @@ impl TypedMessage for SignInvoiceReply {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Ecdh {
-    point: PubKey,
+    pub point: PubKey,
 }
 
 impl TypedMessage for Ecdh {
@@ -96,7 +98,7 @@ impl TypedMessage for Ecdh {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EcdhReply {
-    secret: Secret,
+    pub secret: Secret,
 }
 
 impl TypedMessage for EcdhReply {
@@ -115,7 +117,7 @@ impl TypedMessage for Memleak {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MemleakReply {
-    result: bool,
+    pub result: bool,
 }
 
 impl TypedMessage for MemleakReply {
@@ -125,7 +127,7 @@ impl TypedMessage for MemleakReply {
 /// Sign channel update
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignChannelUpdate {
-    update: Vec<u8>,
+    pub update: Vec<u8>,
 }
 
 impl TypedMessage for SignChannelUpdate {
@@ -135,7 +137,7 @@ impl TypedMessage for SignChannelUpdate {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignChannelUpdateReply {
-    update: Vec<u8>,
+    pub update: Vec<u8>,
 }
 
 impl TypedMessage for SignChannelUpdateReply {
@@ -145,7 +147,7 @@ impl TypedMessage for SignChannelUpdateReply {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetPerCommitmentPoint {
-    n: u64,
+    pub n: u64,
 }
 
 impl TypedMessage for GetPerCommitmentPoint {
@@ -155,8 +157,8 @@ impl TypedMessage for GetPerCommitmentPoint {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetPerCommitmentPointReply {
-    point: PubKey,
-    secret: Option<Secret>,
+    pub point: PubKey,
+    pub secret: Option<Secret>,
 }
 
 impl TypedMessage for GetPerCommitmentPointReply {
@@ -166,11 +168,11 @@ impl TypedMessage for GetPerCommitmentPointReply {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignRemoteCommitmentTx {
-    tx: LargeBytes,
-    psbt: LargeBytes,
-    remote_funding_key: PubKey,
-    remote_per_commitment_point: PubKey,
-    option_static_remotekey: bool,
+    pub tx: LargeBytes,
+    pub psbt: LargeBytes,
+    pub remote_funding_key: PubKey,
+    pub remote_per_commitment_point: PubKey,
+    pub option_static_remotekey: bool,
 }
 
 impl TypedMessage for SignRemoteCommitmentTx {
@@ -180,8 +182,8 @@ impl TypedMessage for SignRemoteCommitmentTx {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignTxReply {
-    signature: Signature,
-    sighash: u8,
+    pub signature: Signature,
+    pub sighash: u8,
 }
 
 impl TypedMessage for SignTxReply {
@@ -191,8 +193,8 @@ impl TypedMessage for SignTxReply {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetChannelBasepoints {
-    node_id: PubKey,
-    dbid: u64,
+    pub node_id: PubKey,
+    pub dbid: u64,
 }
 
 impl TypedMessage for GetChannelBasepoints {
@@ -202,8 +204,8 @@ impl TypedMessage for GetChannelBasepoints {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetChannelBasepointsReply {
-    basepoints: Basepoints,
-    node_id: PubKey,
+    pub basepoints: Basepoints,
+    pub node_id: PubKey,
 }
 
 impl TypedMessage for GetChannelBasepointsReply {
@@ -214,11 +216,11 @@ impl TypedMessage for GetChannelBasepointsReply {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignRemoteHtlcTx {
-    tx: LargeBytes,
-    psbt: LargeBytes,
-    wscript: Vec<u8>,
-    remote_per_commitment_point: PubKey,
-    option_anchor_outputs: bool,
+    pub tx: LargeBytes,
+    pub psbt: LargeBytes,
+    pub wscript: Vec<u8>,
+    pub remote_per_commitment_point: PubKey,
+    pub option_anchor_outputs: bool,
 }
 
 impl TypedMessage for SignRemoteHtlcTx {
@@ -228,10 +230,10 @@ impl TypedMessage for SignRemoteHtlcTx {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignPenaltyToUs {
-    revocation_secret: Secret,
-    tx: LargeBytes,
-    psbt: LargeBytes,
-    wscript: Vec<u8>,
+    pub revocation_secret: Secret,
+    pub tx: LargeBytes,
+    pub psbt: LargeBytes,
+    pub wscript: Vec<u8>,
 }
 
 impl TypedMessage for SignPenaltyToUs {
@@ -353,10 +355,9 @@ fn read_message_and_data<R: Read>(reader: &mut R) -> Result<(Message, Vec<u8>)> 
 
 pub fn write<W: Write, T: ser::Serialize + TypedMessage>(writer: &mut W, value: T) -> Result<()> {
     let buf = to_vec(&value)?;
-    let len = buf.len() + 2;
+    let len: u32 = buf.len() as u32 + 2;
     writer.write_all(&len.to_be_bytes())?;
     writer.write_all(&T::TYPE.to_be_bytes())?;
-    // FIXME write type
     writer.write_all(&buf)?;
     Ok(())
 }

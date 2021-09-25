@@ -1,0 +1,12 @@
+[package]
+name = "greenlight-signer"
+version = "0.1.0"
+authors = ["Devrandom <c1.devrandom@niftybox.net>"]
+edition = "2018"
+
+[dependencies]
+greenlight-protocol = { path = "../greenlight-protocol" }
+nix = "0.22"
+serde = "1.0"
+log = "0.4"
+env_logger = "0.9"
