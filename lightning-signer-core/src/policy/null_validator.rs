@@ -1,7 +1,7 @@
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{self, Network, Script, SigHash, Transaction};
 use lightning::chain::keysinterface::InMemorySigner;
-use lightning::ln::chan_utils::{HTLCOutputInCommitment, TxCreationKeys};
+use lightning::ln::chan_utils::{HTLCOutputInCommitment, TxCreationKeys, ClosingTransaction};
 
 use crate::channel::{ChannelSetup, ChannelSlot};
 use crate::policy::simple_validator::{simple_validator, SimpleValidator};
@@ -148,7 +148,7 @@ impl Validator for NullValidator {
         estate: &EnforcementState,
         tx: &Transaction,
         wallet_paths: &Vec<Vec<u32>>,
-    ) -> Result<Transaction, ValidationError> {
+    ) -> Result<ClosingTransaction, ValidationError> {
         // Delegate to SimplePolicy
         self.0
             .decode_and_validate_mutual_close_tx(wallet, setup, estate, tx, wallet_paths)

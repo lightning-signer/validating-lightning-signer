@@ -26,8 +26,7 @@ use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::Arc;
 use lightning::ln::script::ShutdownScript;
-
-use crate::policy::error::transaction_format_error;
+use lightning::ln::chan_utils::ClosingTransaction;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -454,7 +453,7 @@ impl BaseSign for LoopbackChannelSigner {
     // TODO - Couldn't this return a declared error signature?
     fn sign_closing_transaction(
         &self,
-        closing_tx: &Transaction,
+        closing_tx: &ClosingTransaction,
         _secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         info!(
@@ -465,42 +464,15 @@ impl BaseSign for LoopbackChannelSigner {
         // TODO error handling is awkward
         self.signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-                let mut to_holder_value = 0;
-                let mut to_counterparty_value = 0;
-                let mut holder_script = None;
-                let mut counterparty_script = None;
-
-                for out in &closing_tx.output {
-                    // FIXME - get_ldk_shutdown_script is deprecated.
-                    if out.script_pubkey == chan.get_ldk_shutdown_script() {
-                        if to_holder_value > 0 {
-                            return Err(transaction_format_error(format!(
-                                "multiple to_holder outputs"
-                            ))
-                            .into());
-                        }
-                        to_holder_value = out.value;
-                        holder_script = Some(out.script_pubkey.clone());
-                    } else {
-                        if to_counterparty_value > 0 {
-                            return Err(transaction_format_error(format!(
-                                "multiple to_counterparty outputs"
-                            ))
-                            .into());
-                        }
-                        to_counterparty_value = out.value;
-                        counterparty_script = Some(out.script_pubkey.clone());
-                    }
-                }
 
                 // FIXME - this needs to be supplied
                 let holder_wallet_path_hint = vec![];
 
                 chan.sign_mutual_close_tx_phase2(
-                    to_holder_value,
-                    to_counterparty_value,
-                    &holder_script,
-                    &counterparty_script,
+                    closing_tx.to_holder_value_sat(),
+                    closing_tx.to_counterparty_value_sat(),
+                    &Some(closing_tx.to_holder_script().clone()),
+                    &Some(closing_tx.to_counterparty_script().clone()),
                     &holder_wallet_path_hint,
                 )
             })
