@@ -27,6 +27,19 @@ impl TypedMessage for HsmdInit {
     const TYPE: u16 = 11;
 }
 
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HsmdInitReply {
+    node_id: PubKey,
+    bip32: ExtKey,
+    bolt12: PubKey32,
+    onion_reply_secret: Secret,
+}
+
+impl TypedMessage for HsmdInitReply {
+    const TYPE: u16 = 111;
+}
+
 /// Connect a new client
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClientHsmFd {
@@ -37,6 +50,16 @@ pub struct ClientHsmFd {
 
 impl TypedMessage for ClientHsmFd {
     const TYPE: u16 = 9;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ClientHsmFdReply {
+    // TODO fd handling
+}
+
+impl TypedMessage for ClientHsmFdReply {
+    const TYPE: u16 = 109;
 }
 
 /// Sign invoice
@@ -50,7 +73,17 @@ impl TypedMessage for SignInvoice {
     const TYPE: u16 = 8;
 }
 
-/// Sign invoice
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignInvoiceReply {
+    signature: RecoverableSignature,
+}
+
+impl TypedMessage for SignInvoiceReply {
+    const TYPE: u16 = 108;
+}
+
+///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Ecdh {
     point: PubKey,
@@ -60,6 +93,16 @@ impl TypedMessage for Ecdh {
     const TYPE: u16 = 1;
 }
 
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EcdhReply {
+    secret: Secret,
+}
+
+impl TypedMessage for EcdhReply {
+    const TYPE: u16 = 100;
+}
+
 /// Memleak
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Memleak {
@@ -67,6 +110,16 @@ pub struct Memleak {
 
 impl TypedMessage for Memleak {
     const TYPE: u16 = 33;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MemleakReply {
+    result: bool,
+}
+
+impl TypedMessage for MemleakReply {
+    const TYPE: u16 = 133;
 }
 
 /// Sign channel update
@@ -81,12 +134,33 @@ impl TypedMessage for SignChannelUpdate {
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
+pub struct SignChannelUpdateReply {
+    update: Vec<u8>,
+}
+
+impl TypedMessage for SignChannelUpdateReply {
+    const TYPE: u16 = 103;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GetPerCommitmentPoint {
     n: u64,
 }
 
 impl TypedMessage for GetPerCommitmentPoint {
     const TYPE: u16 = 18;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetPerCommitmentPointReply {
+    point: PubKey,
+    secret: Option<Secret>,
+}
+
+impl TypedMessage for GetPerCommitmentPointReply {
+    const TYPE: u16 = 118;
 }
 
 ///
@@ -105,6 +179,17 @@ impl TypedMessage for SignRemoteCommitmentTx {
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
+pub struct SignTxReply {
+    signature: Signature,
+    sighash: u8,
+}
+
+impl TypedMessage for SignTxReply {
+    const TYPE: u16 = 112;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GetChannelBasepoints {
     node_id: PubKey,
     dbid: u64,
@@ -113,6 +198,18 @@ pub struct GetChannelBasepoints {
 impl TypedMessage for GetChannelBasepoints {
     const TYPE: u16 = 10;
 }
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetChannelBasepointsReply {
+    basepoints: Basepoints,
+    node_id: PubKey,
+}
+
+impl TypedMessage for GetChannelBasepointsReply {
+    const TYPE: u16 = 110;
+}
+
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
@@ -154,14 +251,23 @@ pub struct Unknown {
 #[derive(Debug, Serialize)]
 pub enum Message {
     HsmdInit(HsmdInit),
+    HsmdInitReply(HsmdInitReply),
     ClientHsmFd(ClientHsmFd),
+    ClientHsmFdReply(ClientHsmFdReply),
     SignInvoice(SignInvoice),
+    SignInvoiceReply(SignInvoiceReply),
     Ecdh(Ecdh),
+    EcdhReply(EcdhReply),
     Memleak(Memleak),
+    MemleakReply(MemleakReply),
     SignChannelUpdate(SignChannelUpdate),
+    SignChannelUpdateReply(SignChannelUpdateReply),
     GetPerCommitmentPoint(GetPerCommitmentPoint),
+    GetPerCommitmentPointReply(GetPerCommitmentPointReply),
     SignRemoteCommitmentTx(SignRemoteCommitmentTx),
+    SignTxReply(SignTxReply),
     GetChannelBasepoints(GetChannelBasepoints),
+    GetChannelBasepointsReply(GetChannelBasepointsReply),
     SignRemoteHtlcTx(SignRemoteHtlcTx),
     SignPenaltyToUs(SignPenaltyToUs),
     Unknown(Unknown),
@@ -201,14 +307,23 @@ pub fn read<R: Read>(reader: &mut R) -> Result<Message> {
 fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
     let message = match message_type {
         HsmdInit::TYPE => Message::HsmdInit(from_vec_no_trailing(&mut data)?),
+        HsmdInitReply::TYPE => Message::HsmdInitReply(from_vec_no_trailing(&mut data)?),
         ClientHsmFd::TYPE => Message::ClientHsmFd(from_vec_no_trailing(&mut data)?),
+        ClientHsmFdReply::TYPE => Message::ClientHsmFdReply(from_vec_no_trailing(&mut data)?),
         SignInvoice::TYPE => Message::SignInvoice(from_vec_no_trailing(&mut data)?),
+        SignInvoiceReply::TYPE => Message::SignInvoiceReply(from_vec_no_trailing(&mut data)?),
         Ecdh::TYPE => Message::Ecdh(from_vec_no_trailing(&mut data)?),
+        EcdhReply::TYPE => Message::EcdhReply(from_vec_no_trailing(&mut data)?),
         Memleak::TYPE => Message::Memleak(from_vec_no_trailing(&mut data)?),
+        MemleakReply::TYPE => Message::MemleakReply(from_vec_no_trailing(&mut data)?),
         SignChannelUpdate::TYPE => Message::SignChannelUpdate(from_vec_no_trailing(&mut data)?),
+        SignChannelUpdateReply::TYPE => Message::SignChannelUpdateReply(from_vec_no_trailing(&mut data)?),
         GetPerCommitmentPoint::TYPE => Message::GetPerCommitmentPoint(from_vec_no_trailing(&mut data)?),
+        GetPerCommitmentPointReply::TYPE => Message::GetPerCommitmentPointReply(from_vec_no_trailing(&mut data)?),
         SignRemoteCommitmentTx::TYPE => Message::SignRemoteCommitmentTx(from_vec_no_trailing(&mut data)?),
+        SignTxReply::TYPE => Message::SignTxReply(from_vec_no_trailing(&mut data)?),
         GetChannelBasepoints::TYPE => Message::GetChannelBasepoints(from_vec_no_trailing(&mut data)?),
+        GetChannelBasepointsReply::TYPE => Message::GetChannelBasepointsReply(from_vec_no_trailing(&mut data)?),
         SignRemoteHtlcTx::TYPE => Message::SignRemoteHtlcTx(from_vec_no_trailing(&mut data)?),
         SignPenaltyToUs::TYPE => Message::SignPenaltyToUs(from_vec_no_trailing(&mut data)?),
         _ => {
@@ -257,10 +372,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_fixtures_test() {
+    fn parse_read_fixtures_test() {
         assert_eq!(parse_fixture("r_3"), 16);
         assert_eq!(parse_fixture("r_5"), 1);
         assert_eq!(parse_fixture("r_6"), 39);
+    }
+
+    #[test]
+    fn parse_write_fixtures_test() {
+        // TODO negative message type IDs?
+        // assert_eq!(parse_fixture("w_0"), 16);
+        assert_eq!(parse_fixture("w_3"), 16);
+        assert_eq!(parse_fixture("w_4"), 1);
+        assert_eq!(parse_fixture("w_5"), 1);
+        assert_eq!(parse_fixture("w_6"), 52);
     }
 
     fn parse_fixture(fixture: &str) -> u32 {
@@ -273,7 +398,7 @@ mod tests {
             let res = read_message_and_data(&mut contents);
             match res {
                 Ok((Message::Unknown(u), _)) => {
-                    println!("unknown {} {}", u.message_type, u.data.len());
+                    panic!("unknown {} {}", u.message_type, u.data.len());
                 }
                 Ok((msg, data)) => {
                     println!("read {:x?}", msg);

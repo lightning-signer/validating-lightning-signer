@@ -1,0 +1,46 @@
+msgtype,hsmstatus_client_bad_request,1000
+DONE msgtype,hsmd_init,11
+DONE msgtype,hsmd_init_reply,111
+
+DONE msgtype,hsmd_client_hsmfd,9
+DONE msgtype,hsmd_client_hsmfd_reply,109
+# but need to pass fd
+
+DONE msgtype,hsmd_get_channel_basepoints,10
+DONE msgtype,hsmd_get_channel_basepoints_reply,110
+msgtype,hsmd_node_announcement_sig_req,6
+msgtype,hsmd_node_announcement_sig_reply,106
+msgtype,hsmd_sign_withdrawal,7
+msgtype,hsmd_sign_withdrawal_reply,107
+DONE msgtype,hsmd_sign_invoice,8
+DONE msgtype,hsmd_sign_invoice_reply,108
+DONE msgtype,hsmd_ecdh_req,1
+DONE msgtype,hsmd_ecdh_resp,100
+msgtype,hsmd_cannouncement_sig_req,2
+msgtype,hsmd_cannouncement_sig_reply,102
+DONE msgtype,hsmd_cupdate_sig_req,3
+DONE msgtype,hsmd_cupdate_sig_reply,103
+msgtype,hsmd_sign_commitment_tx,5
+msgtype,hsmd_sign_commitment_tx_reply,105
+msgtype,hsmd_sign_delayed_payment_to_us,12
+msgtype,hsmd_sign_remote_htlc_to_us,13
+msgtype,hsmd_sign_penalty_to_us,14
+msgtype,hsmd_sign_local_htlc_tx,16
+DONE msgtype,hsmd_sign_remote_commitment_tx,19
+msgtype,hsmd_sign_remote_htlc_tx,20
+msgtype,hsmd_sign_mutual_close_tx,21
+DONE msgtype,hsmd_sign_tx_reply,112
+DONE msgtype,hsmd_get_per_commitment_point,18
+DONE msgtype,hsmd_get_per_commitment_point_reply,118
+DONE msgtype,hsmd_dev_memleak,33
+DONE msgtype,hsmd_dev_memleak_reply,133
+msgtype,hsmd_check_future_secret,22
+msgtype,hsmd_check_future_secret_reply,122
+msgtype,hsmd_sign_message,23
+msgtype,hsmd_sign_message_reply,123
+msgtype,hsmd_get_output_scriptpubkey,24
+msgtype,hsmd_get_output_scriptpubkey_reply,124
+msgtype,hsmd_sign_bolt12,25
+msgtype,hsmd_sign_bolt12_reply,125
+msgtype,hsmd_sign_option_will_fund_offer,26
+msgtype,hsmd_sign_option_will_fund_offer_reply,126

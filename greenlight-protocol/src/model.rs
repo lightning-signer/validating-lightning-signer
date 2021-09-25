@@ -27,6 +27,8 @@ pub struct PubKey32([u8; 32]);
 
 macro_rules! array_impl {
     ($ty:ident, $len:tt) => {
+        pub struct $ty(pub [u8; $len]);
+
         impl Debug for $ty {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 self.0.to_vec().fmt(f)
@@ -87,13 +89,20 @@ macro_rules! array_impl {
     }
 }
 
-pub struct PubKey([u8; 33]);
-
 array_impl!(PubKey, 33);
-
-pub struct ExtKey([u8; 78]);
 
 array_impl!(ExtKey, 78);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Sha256([u8; 32]);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Basepoints {
+    revocation: PubKey,
+    payment: PubKey,
+    htlc: PubKey,
+    delayed_payment: PubKey,
+}
+
+array_impl!(Signature, 64);
+array_impl!(RecoverableSignature, 65);
