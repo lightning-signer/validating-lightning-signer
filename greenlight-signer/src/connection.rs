@@ -12,14 +12,14 @@ use greenlight_protocol::serde_bolt;
 use nix::sys::uio::IoVec;
 use nix::unistd::close;
 
-pub(crate) struct Connection {
+pub(crate) struct UnixConnection {
     fd: RawFd,
     stream: UnixStream,
 }
 
-impl Connection {
+impl UnixConnection {
     pub(crate) fn new(fd: RawFd) -> Self {
-        Connection {
+        UnixConnection {
             fd,
             stream: unsafe { UnixStream::from_raw_fd(fd) }
         }
@@ -74,7 +74,7 @@ impl Connection {
     }
 }
 
-impl Read for Connection {
+impl Read for UnixConnection {
     type Error = SError;
 
     fn read(&mut self, dest: &mut [u8]) -> SResult<usize> {
@@ -98,7 +98,7 @@ impl Read for Connection {
     }
 }
 
-impl Write for Connection {
+impl Write for UnixConnection {
     type Error = SError;
 
     fn write_all(&mut self, buf: &[u8]) -> SResult<()> {
