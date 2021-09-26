@@ -14,8 +14,8 @@ use connection::Connection;
 use greenlight_protocol::{Error, msgs, Result, serde_bolt};
 use greenlight_protocol::model::{Basepoints, ExtKey, PubKey, PubKey32, Secret};
 use greenlight_protocol::msgs::{ClientHsmFdReply, GetChannelBasepointsReply, HsmdInitReply, Memleak, MemleakReply, Message};
-use clap::{App, Arg};
-use std::thread;
+use clap::{App, Arg, crate_version, AppSettings};
+use std::{thread, env};
 
 mod connection;
 
@@ -121,9 +121,18 @@ fn do_client_loop(mut client: Client) -> Result<()> {
 pub fn main() {
     setup_logging("info");
     let app = App::new("signer")
+        .setting(AppSettings::NoAutoVersion)
         .about("Greenlight lightning-signer")
+        .arg(Arg::from("--version show a dummy version"))
         .arg(Arg::from("--test run a test emulating lightningd/hsmd"));
     let matches = app.get_matches();
+    if matches.is_present("version") {
+        // Pretend to be the right version, given to us by an env var
+        let version = env::var("GREENLIGHT_VERSION")
+            .expect("set GREENLIGHT_VERSION to match c-lightning");
+        println!("{}", version);
+        return;
+    }
     if matches.is_present("test") {
         run_test();
     } else {
