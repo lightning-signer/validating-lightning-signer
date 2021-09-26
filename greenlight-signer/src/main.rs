@@ -77,7 +77,7 @@ fn signer_loop(client: Client) {
     info!("loop {}: start", id);
     match do_client_loop(client) {
         Ok(()) => info!("loop {}: done", id),
-        Err(Error::Eof) => info!("loop {}: EOF", id),
+        Err(Error::Eof) => info!("loop {}: ending", id),
         Err(e) => error!("loop {}: error {:?}", id, e),
     }
 }

@@ -3,7 +3,7 @@ use std::io;
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 
-use log::{info, error};
+use log::{info, error, trace};
 use nix::cmsg_space;
 use nix::sys::socket::{ControlMessage, MsgFlags, recvmsg, sendmsg, ControlMessageOwned};
 use serde_bolt::{Error as SError, Read, Result as SResult, Write};
@@ -78,17 +78,23 @@ impl Read for Connection {
     type Error = SError;
 
     fn read(&mut self, dest: &mut [u8]) -> SResult<usize> {
-        let res: io::Result<()> = self.stream.read_exact(dest);
-        match res {
-            Ok(()) => Ok(dest.len()),
-            Err(e) => {
-                if e.kind() == io::ErrorKind::UnexpectedEof {
-                    Err(SError::Eof)
-                } else {
-                    Err(SError::Message(format!("{}", e)))
+        let mut cursor = 0;
+        while cursor < dest.len() {
+            let res: io::Result<usize> = self.stream.read(&mut dest[cursor..]);
+            trace!("read {}: {:?} cursor={} expected={}", self.id(), res, cursor, dest.len());
+            match res {
+                Ok(n) =>  {
+                    if n == 0 {
+                        return Ok(cursor);
+                    }
+                    cursor = cursor + n;
+                },
+                Err(e) => {
+                    return Err(SError::Message(format!("{}", e)));
                 }
             }
         }
+        Ok(cursor)
     }
 }
 
