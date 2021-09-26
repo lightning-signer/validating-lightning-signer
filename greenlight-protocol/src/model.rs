@@ -98,10 +98,10 @@ pub struct Sha256([u8; 32]);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Basepoints {
-    revocation: PubKey,
-    payment: PubKey,
-    htlc: PubKey,
-    delayed_payment: PubKey,
+    pub revocation: PubKey,
+    pub payment: PubKey,
+    pub htlc: PubKey,
+    pub delayed_payment: PubKey,
 }
 
 array_impl!(Signature, 64);

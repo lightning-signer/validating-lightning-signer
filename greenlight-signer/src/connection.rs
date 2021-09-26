@@ -25,6 +25,10 @@ impl Connection {
         }
     }
 
+    pub(crate) fn id(&self) -> u64 {
+        self.fd as u64
+    }
+
     pub(crate) fn send_fd(&self, fd: RawFd) {
         info!("sending fd {}", fd);
         let fds = [fd];
