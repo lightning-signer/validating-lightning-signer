@@ -37,22 +37,17 @@ fn run_parent(fd: RawFd) {
     info!("parent: client1 {:?}", client1.read());
 }
 
-fn signer_loop(client: UnixClient) {
-    let id = client.id();
+fn signer_loop(handler: Handler<UnixClient>) {
+    let id = handler.client.id();
     info!("loop {}: start", id);
-    match do_signer_loop(client) {
+    match do_signer_loop(handler) {
         Ok(()) => info!("loop {}: done", id),
         Err(Error::Eof) => info!("loop {}: ending", id),
         Err(e) => error!("loop {}: error {:?}", id, e),
     }
 }
 
-fn do_signer_loop(client: UnixClient) -> Result<()> {
-    // TODO should we assume HsmdInit is the first message?
-    // We could read it and pass into the Handler constructor so we can init
-    // the signer with the relevant parameters.
-    // TODO add a signer to the handler
-    let mut handler = Handler { client };
+fn do_signer_loop(mut handler: Handler<UnixClient>) -> Result<()> {
     loop {
         let msg = handler.client.read()?;
         info!("loop {}: got {:?}", handler.client.id(), msg);
@@ -60,7 +55,8 @@ fn do_signer_loop(client: UnixClient) -> Result<()> {
             Message::ClientHsmFd(_) => {
                 handler.client.write(msgs::ClientHsmFdReply {}).unwrap();
                 let new_client = handler.client.new_client();
-                thread::spawn(|| signer_loop(new_client));
+                let handler = handler.with_new_client(new_client);
+                thread::spawn(|| signer_loop(handler));
             }
             msg => handler.handle(msg)
         }
@@ -84,10 +80,12 @@ pub fn main() {
     }
     if matches.is_present("test") {
         run_test();
+
     } else {
         let conn = UnixConnection::new(3);
         let client = UnixClient::new(conn);
-        signer_loop(client);
+        let handler = Handler::new(client);
+        signer_loop(handler);
     }
 }
 
@@ -105,7 +103,8 @@ fn run_test() {
             close(fd4).unwrap();
             let conn = UnixConnection::new(fd3);
             let client = UnixClient::new(conn);
-            signer_loop(client)
+            let handler = Handler::new(client);
+            signer_loop(handler)
         },
         Err(_) => {}
     }

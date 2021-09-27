@@ -2,13 +2,39 @@ use greenlight_protocol::{msgs, msgs::Message};
 use greenlight_protocol::model::{Basepoints, ExtKey, PubKey, PubKey32, Secret};
 
 use crate::client::Client;
+use lightning_signer::Arc;
+use lightning_signer::node::{Node, NodeConfig};
+use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
+use lightning_signer::bitcoin::Network;
+use lightning_signer::persist::{DummyPersister, Persist};
 
 /// Protocol handler
 pub(crate) struct Handler<C: Client> {
-    pub(crate) client: C
+    pub(crate) client: C,
+    pub(crate) node: Arc<Node>
 }
 
 impl<C: Client> Handler<C> {
+    pub(crate) fn new(client: C) -> Self {
+        let config = NodeConfig {
+            network: Network::Testnet,
+            key_derivation_style: KeyDerivationStyle::Native
+        };
+        let seed = [0; 32];
+        let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
+        Self {
+            client,
+            node: Arc::new(Node::new(config, &seed, &persister, vec![]))
+        }
+    }
+
+    pub(crate) fn with_new_client(&mut self, client: C) -> Self {
+        Self {
+            client,
+            node: Arc::clone(&self.node)
+        }
+    }
+
     pub(crate) fn handle(&mut self, msg: Message) {
         match msg {
             Message::Memleak(m) => {
