@@ -1,6 +1,6 @@
 #![allow(unused_variables)]
 
-use std::{env, thread};
+use std::{env, thread, fs};
 use std::os::unix::io::RawFd;
 
 use clap::{App, AppSettings, Arg};
@@ -17,6 +17,7 @@ use greenlight_protocol::model::PubKey;
 
 use crate::client::{Client, UnixClient};
 use crate::handler::{Handler, RootHandler};
+use std::convert::TryInto;
 
 mod connection;
 mod client;
@@ -90,8 +91,17 @@ pub fn main() {
     } else {
         let conn = UnixConnection::new(3);
         let client = UnixClient::new(conn);
-        let handler = RootHandler::new(client);
+        let handler = RootHandler::new(client, read_integration_test_seed());
         signer_loop(handler);
+    }
+}
+
+fn read_integration_test_seed() -> Option<[u8; 32]> {
+    let result = fs::read("hsm_secret");
+    if let Ok(data) = result {
+        Some(data.as_slice().try_into().expect("hsm_secret wrong length"))
+    } else {
+        None
     }
 }
 
@@ -109,7 +119,7 @@ fn run_test() {
             close(fd4).unwrap();
             let conn = UnixConnection::new(fd3);
             let client = UnixClient::new(conn);
-            let handler = RootHandler::new(client);
+            let handler = RootHandler::new(client, read_integration_test_seed());
             signer_loop(handler)
         },
         Err(_) => {}

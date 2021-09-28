@@ -117,6 +117,12 @@ pub struct FailedHtlc {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct BitcoinSignature {
+    pub signature: Signature,
+    pub sighash: u8,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Htlc {
     pub state: u8,
     pub id: u64,

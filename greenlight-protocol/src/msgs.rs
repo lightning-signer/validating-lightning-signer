@@ -197,6 +197,47 @@ impl TypedMessage for ReadyChannelReply {
     const TYPE: u16 = 131;
 }
 
+// msgtype,hsmd_validate_commitment_tx,35
+// msgdata,hsmd_validate_commitment_tx,tx,bitcoin_tx,
+// msgdata,hsmd_validate_commitment_tx,num_existing_htlcs,u16,
+// msgdata,hsmd_validate_commitment_tx,htlcs,existing_htlc,num_existing_htlcs
+// msgdata,hsmd_validate_commitment_tx,commit_num,u64,
+// msgdata,hsmd_validate_commitment_tx,feerate,u32,
+// msgdata,hsmd_validate_commitment_tx,sig,bitcoin_signature,
+// msgdata,hsmd_validate_commitment_tx,num_htlc_sigs,u16,
+// msgdata,hsmd_validate_commitment_tx,htlc_sigs,bitcoin_signature,num_htlc_sigs
+//
+// msgtype,hsmd_validate_commitment_tx_reply,135
+// msgdata,hsmd_validate_commitment_tx_reply,old_commitment_secret,?secret,
+// msgdata,hsmd_validate_commitment_tx_reply,next_per_commitment_point,pubkey,
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ValidateCommitmentTx {
+    pub tx: LargeBytes,
+    pub psbt: LargeBytes,
+    pub htlcs: Vec<Htlc>,
+    pub commitment_number: u64,
+    pub feerate: u32,
+    pub signature: BitcoinSignature,
+    pub htlc_signatures: Vec<BitcoinSignature>,
+}
+
+impl TypedMessage for ValidateCommitmentTx {
+    const TYPE: u16 = 35;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ValidateCommitmentTxReply {
+    pub old_commitment_secret: Option<Secret>,
+    pub next_per_commitment_point: PubKey,
+}
+
+impl TypedMessage for ValidateCommitmentTxReply {
+    const TYPE: u16 = 135;
+}
+
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignRemoteCommitmentTx {
@@ -217,8 +258,7 @@ impl TypedMessage for SignRemoteCommitmentTx {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignTxReply {
-    pub signature: Signature,
-    pub sighash: u8,
+    pub signature: BitcoinSignature,
 }
 
 impl TypedMessage for SignTxReply {
@@ -323,6 +363,7 @@ pub enum Message {
     GetPerCommitmentPointReply(GetPerCommitmentPointReply),
     ReadyChannel(ReadyChannel),
     ReadyChannelReply(ReadyChannelReply),
+    ValidateCommitmentTx(ValidateCommitmentTx),
     SignRemoteCommitmentTx(SignRemoteCommitmentTx),
     SignTxReply(SignTxReply),
     GetChannelBasepoints(GetChannelBasepoints),
@@ -383,6 +424,7 @@ fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
         GetPerCommitmentPointReply::TYPE => Message::GetPerCommitmentPointReply(from_vec_no_trailing(&mut data)?),
         ReadyChannel::TYPE => Message::ReadyChannel(from_vec_no_trailing(&mut data)?),
         ReadyChannelReply::TYPE => Message::ReadyChannelReply(from_vec_no_trailing(&mut data)?),
+        ValidateCommitmentTx::TYPE => Message::ValidateCommitmentTx(from_vec_no_trailing(&mut data)?),
         SignRemoteCommitmentTx::TYPE => Message::SignRemoteCommitmentTx(from_vec_no_trailing(&mut data)?),
         SignTxReply::TYPE => Message::SignTxReply(from_vec_no_trailing(&mut data)?),
         GetChannelBasepoints::TYPE => Message::GetChannelBasepoints(from_vec_no_trailing(&mut data)?),

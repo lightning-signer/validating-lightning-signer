@@ -13,7 +13,7 @@ use secp256k1::rand::rngs::OsRng;
 use serde::Serialize;
 
 use greenlight_protocol::{msgs, msgs::Message, Result};
-use greenlight_protocol::model::{Basepoints, ExtKey, PubKey, PubKey32, Secret, Signature};
+use greenlight_protocol::model::{Basepoints, BitcoinSignature, ExtKey, PubKey, PubKey32, Secret, Signature};
 use greenlight_protocol::msgs::TypedMessage;
 use lightning_signer::Arc;
 use lightning_signer::bitcoin;
@@ -44,12 +44,13 @@ pub(crate) struct RootHandler<C: Client> {
 }
 
 impl<C: Client> RootHandler<C> {
-    pub(crate) fn new(client: C) -> Self {
+    pub(crate) fn new(client: C, seed_opt: Option<[u8; 32]>) -> Self {
         let config = NodeConfig {
             network: Network::Testnet,
             key_derivation_style: KeyDerivationStyle::Native
         };
-        let seed = [0; 32];
+
+        let seed = seed_opt.expect("expected a seed");
         let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
         Self {
             client,
@@ -242,11 +243,7 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
-                let witscripts =
-                    psbt.outputs.iter()
-                        .map(|o| o.witness_script.clone().unwrap_or(Script::new()))
-                        .map(|s| s[..].to_vec())
-                        .collect();
+                let witscripts = extract_witscripts(psbt);
                 let remote_per_commitment_point =
                     PublicKey::from_slice(&m.remote_per_commitment_point.0).expect("pubkey");
                 let commit_num = m.commitment_number;
@@ -266,8 +263,48 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                         )
                     }).unwrap();
                 self.client.write(msgs::SignTxReply {
-                    signature: Signature(sig.serialize_compact()),
-                    sighash: SigHashType::All as u8
+                    signature: BitcoinSignature
+                    {
+                        signature: Signature(sig.serialize_compact()),
+                        sighash: SigHashType::All as u8
+                    }
+                }).expect("write");
+            }
+            Message::ValidateCommitmentTx(m) => {
+                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
+                let mut tx_bytes = m.tx.0.clone();
+                let tx = deserialize(&mut tx_bytes).expect("tx");
+                let witscripts = extract_witscripts(psbt);
+                let commit_num = m.commitment_number;
+                let feerate_sat_per_kw = m.feerate;
+                let offered_htlcs = vec![];
+                let received_htlcs = vec![];
+                let commit_sig = secp256k1::Signature::from_compact(&m.signature.signature.0).expect("signature");
+                assert_eq!(m.signature.sighash, SigHashType::All as u8);
+                let htlc_sigs = m.htlc_signatures.iter()
+                    .map(|s| {
+                        assert_eq!(s.sighash, SigHashType::All as u8);
+                        secp256k1::Signature::from_compact(&s.signature.0).expect("signature")
+                    })
+                    .collect();
+                let (next_per_commitment_point, old_secret) =
+                    self.node
+                        .with_ready_channel(&self.channel_id, |chan| {
+                            chan.validate_holder_commitment_tx(
+                                &tx,
+                                &witscripts,
+                                commit_num,
+                                feerate_sat_per_kw,
+                                offered_htlcs.clone(),
+                                received_htlcs.clone(),
+                                &commit_sig,
+                                &htlc_sigs,
+                            )
+                        }).expect("ready_channel");
+                let old_secret_reply = old_secret.map(|s| Secret(s[..].try_into().unwrap()));
+                self.client.write(msgs::ValidateCommitmentTxReply {
+                    next_per_commitment_point: PubKey(next_per_commitment_point.serialize()),
+                    old_commitment_secret: old_secret_reply,
                 }).expect("write");
             }
             Message::Unknown(u) => unimplemented!("loop {}: unknown message type {}", self.client.id(), u.message_type),
@@ -307,5 +344,21 @@ fn extract_commitment_type(static_remotekey: bool, anchor_outputs: bool) -> Comm
         CommitmentType::StaticRemoteKey
     } else {
         CommitmentType::Legacy
+    }
+}
+
+fn extract_witscripts(psbt: PartiallySignedTransaction) -> Vec<Vec<u8>> {
+    psbt.outputs.iter()
+        .map(|o| o.witness_script.clone().unwrap_or(Script::new()))
+        .map(|s| s[..].to_vec())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_der() {
+        let sig = [83, 1, 22, 118, 14, 225, 143, 45, 119, 59, 51, 81, 117, 109, 12, 76, 141, 142, 137, 167, 117, 28, 98, 150, 245, 134, 254, 105, 172, 236, 170, 4, 24, 195, 101, 175, 186, 97, 224, 127, 128, 202, 94, 58, 56, 171, 51, 106, 153, 217, 229, 22, 217, 94, 169, 47, 55, 71, 237, 36, 128, 102, 148, 61];
+        secp256k1::Signature::from_compact(&sig).expect("signature");
     }
 }
