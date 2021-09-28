@@ -1,12 +1,17 @@
+use std::convert::TryInto;
+
+use secp256k1::{PublicKey, Secp256k1};
+use secp256k1::rand::rngs::OsRng;
+
 use greenlight_protocol::{msgs, msgs::Message};
 use greenlight_protocol::model::{Basepoints, ExtKey, PubKey, PubKey32, Secret};
+use lightning_signer::Arc;
+use lightning_signer::bitcoin::Network;
+use lightning_signer::node::{Node, NodeConfig};
+use lightning_signer::persist::{DummyPersister, Persist};
+use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 
 use crate::client::Client;
-use lightning_signer::Arc;
-use lightning_signer::node::{Node, NodeConfig};
-use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
-use lightning_signer::bitcoin::Network;
-use lightning_signer::persist::{DummyPersister, Persist};
 
 /// Protocol handler
 pub(crate) struct Handler<C: Client> {
@@ -41,12 +46,23 @@ impl<C: Client> Handler<C> {
                 self.client.write(msgs::MemleakReply { result: false }).unwrap();
             }
             Message::HsmdInit(_) => {
+                let bip32 = self.node.get_account_extended_pubkey().encode();
+                let node_id = self.node.get_id().serialize();
+                let secp = Secp256k1::new();
+                let mut rng = OsRng::new().unwrap();
+                let (_, bolt12_pubkey) = secp.generate_schnorrsig_keypair(&mut rng);
+                let bolt12_xonly = bolt12_pubkey.serialize();
                 self.client.write(msgs::HsmdInitReply {
-                    node_id: PubKey([0; 33]),
-                    bip32: ExtKey([0; 78]),
-                    bolt12: PubKey32([0; 32]),
-                    onion_reply_secret: Secret([0; 32])
+                    node_id: PubKey(node_id),
+                    bip32: ExtKey(bip32),
+                    bolt12: PubKey32(bolt12_xonly),
                 }).unwrap();
+            }
+            Message::Ecdh(m) => {
+                let pubkey =
+                    PublicKey::from_slice(&m.point.0).expect("pubkey");
+                let secret = self.node.ecdh(&pubkey).as_slice().try_into().unwrap();
+                self.client.write(msgs::EcdhReply { secret: Secret(secret) }).unwrap();
             }
             Message::GetChannelBasepoints(_) => {
                 let basepoints = Basepoints {

@@ -7,6 +7,7 @@ edition = "2018"
 [dependencies]
 lightning-signer-core = { path = "../lightning-signer-core" }
 greenlight-protocol = { path = "../greenlight-protocol" }
+secp256k1 = { version = "0.20", features = ["rand-std", "bitcoin_hashes"] }
 nix = "0.22"
 serde = "1.0"
 log = "0.4"
