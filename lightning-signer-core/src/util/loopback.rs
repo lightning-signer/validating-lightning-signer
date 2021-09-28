@@ -25,8 +25,8 @@ use crate::util::crypto_utils::{
 use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::Arc;
-use lightning::ln::script::ShutdownScript;
 use lightning::ln::chan_utils::ClosingTransaction;
+use lightning::ln::script::ShutdownScript;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -464,7 +464,6 @@ impl BaseSign for LoopbackChannelSigner {
         // TODO error handling is awkward
         self.signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-
                 // FIXME - this needs to be supplied
                 let holder_wallet_path_hint = vec![];
 

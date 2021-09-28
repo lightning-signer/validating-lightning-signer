@@ -11,7 +11,12 @@ use bitcoin::util::bip143::SigHashCache;
 use bitcoin::{Network, OutPoint, Script, SigHashType};
 use lightning::chain;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface};
-use lightning::ln::chan_utils::{build_htlc_transaction, derive_private_key, get_htlc_redeemscript, make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys, ClosingTransaction};
+use lightning::ln::chan_utils::{
+    build_htlc_transaction, derive_private_key, get_htlc_redeemscript, make_funding_redeemscript,
+    ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
+    CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
+    TxCreationKeys,
+};
 use log::{debug, trace, warn};
 
 use crate::node::Node;
@@ -19,8 +24,8 @@ use crate::policy::error::policy_error;
 use crate::policy::validator::{EnforcementState, Validator, ValidatorState};
 use crate::prelude::{Box, ToString, Vec};
 use crate::tx::tx::{
-    build_commitment_tx, get_commitment_transaction_number_obscure_factor,
-    CommitmentInfo2, HTLCInfo2,
+    build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
+    HTLCInfo2,
 };
 use crate::util::crypto_utils::{
     derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,

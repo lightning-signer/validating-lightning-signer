@@ -1,7 +1,7 @@
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{self, Network, Script, SigHash, Transaction};
 use lightning::chain::keysinterface::InMemorySigner;
-use lightning::ln::chan_utils::{HTLCOutputInCommitment, TxCreationKeys, ClosingTransaction};
+use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 
 use crate::channel::{ChannelSetup, ChannelSlot};
 use crate::policy::simple_validator::{simple_validator, SimpleValidator};

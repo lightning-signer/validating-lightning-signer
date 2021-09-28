@@ -5,8 +5,8 @@ use bitcoin::util::bip143::SigHashCache;
 use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils::{
-    build_htlc_transaction, make_funding_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
-    ClosingTransaction
+    build_htlc_transaction, make_funding_redeemscript, ClosingTransaction, HTLCOutputInCommitment,
+    TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
 use log::{debug, info};
@@ -17,9 +17,8 @@ use crate::policy::validator::{Validator, ValidatorFactory, ValidatorState};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
-    parse_offered_htlc_script, parse_received_htlc_script,
-    parse_revokeable_redeemscript, CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT,
-    HTLC_TIMEOUT_TX_WEIGHT,
+    parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
+    CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT, HTLC_TIMEOUT_TX_WEIGHT,
 };
 use crate::util::crypto_utils::payload_for_p2wsh;
 use crate::util::debug_utils::{
@@ -909,8 +908,10 @@ impl Validator for SimpleValidator {
             good_args.to_holder_value_sat,
             good_args.to_counterparty_value_sat,
             good_args.holder_script.unwrap_or_else(|| Script::new()),
-            good_args.counterparty_script.unwrap_or_else(|| Script::new()),
-            setup.funding_outpoint
+            good_args
+                .counterparty_script
+                .unwrap_or_else(|| Script::new()),
+            setup.funding_outpoint,
         );
         let trusted = closing_tx.trust();
         let recomposed_tx = trusted.built_transaction();

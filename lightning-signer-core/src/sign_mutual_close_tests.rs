@@ -6,7 +6,9 @@ mod tests {
     use bitcoin::secp256k1;
     use bitcoin::secp256k1::Secp256k1;
     use bitcoin::{self, Address, Network, OutPoint, Script, Transaction, TxOut};
-    use lightning::ln::chan_utils::{make_funding_redeemscript, ChannelPublicKeys, ClosingTransaction};
+    use lightning::ln::chan_utils::{
+        make_funding_redeemscript, ChannelPublicKeys, ClosingTransaction,
+    };
     use lightning::ln::PaymentHash;
 
     use test_env_log::test;
@@ -16,9 +18,9 @@ mod tests {
     use crate::sync::Arc;
     use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
     use crate::util::crypto_utils::signature_to_bitcoin_vec;
+    use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
-    use crate::util::key_utils::*;
 
     macro_rules! hex (($hex:expr) => (Vec::from_hex($hex).unwrap()));
     macro_rules! hex_script (($hex:expr) => (Script::from(hex!($hex))));
@@ -113,14 +115,8 @@ mod tests {
         validate_channel_state: ChannelStateValidator,
     ) -> Result<(), Status>
     where
-        MutualCloseInputMutator: Fn(
-            &mut Channel,
-            &mut u64,
-            &mut u64,
-            &mut Script,
-            &mut Script,
-            &mut OutPoint,
-        ),
+        MutualCloseInputMutator:
+            Fn(&mut Channel, &mut u64, &mut u64, &mut Script, &mut Script, &mut OutPoint),
         MutualCloseTxMutator: Fn(&mut Transaction, &mut Vec<Vec<u32>>, &mut Vec<String>),
         ChannelStateValidator: Fn(&Channel),
     {
@@ -139,16 +135,15 @@ mod tests {
         let (tx, sigvec) = node.with_ready_channel(&channel_id, |chan| {
             let mut holder_value_sat = to_holder_value_sat;
             let mut counterparty_value_sat = to_counterparty_value_sat;
-            let mut holder_shutdown_script =
-                Address::p2wpkh(
-                    &node
-                        .get_wallet_key(&secp_ctx, &holder_wallet_path_hint)
-                        .unwrap()
-                        .public_key(&secp_ctx),
-                    Network::Testnet,
-                )
-                .expect("Address")
-                .script_pubkey();
+            let mut holder_shutdown_script = Address::p2wpkh(
+                &node
+                    .get_wallet_key(&secp_ctx, &holder_wallet_path_hint)
+                    .unwrap()
+                    .public_key(&secp_ctx),
+                Network::Testnet,
+            )
+            .expect("Address")
+            .script_pubkey();
             let mut counterparty_shutdown_script =
                 Script::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
                     .expect("script_pubkey");
@@ -266,16 +261,15 @@ mod tests {
             let mut wallet_path = init_holder_wallet_path_hint.clone();
             let mut holder_value_sat = to_holder_value_sat;
             let mut counterparty_value_sat = to_counterparty_value_sat;
-            let mut holder_shutdown_script =
-                Address::p2wpkh(
-                    &node
-                        .get_wallet_key(&secp_ctx, &wallet_path)
-                        .unwrap()
-                        .public_key(&secp_ctx),
-                    Network::Testnet,
-                )
-                    .expect("Address")
-                    .script_pubkey();
+            let mut holder_shutdown_script = Address::p2wpkh(
+                &node
+                    .get_wallet_key(&secp_ctx, &wallet_path)
+                    .unwrap()
+                    .public_key(&secp_ctx),
+                Network::Testnet,
+            )
+            .expect("Address")
+            .script_pubkey();
             let mut counterparty_shutdown_script =
                 Script::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
                     .expect("script_pubkey");
@@ -628,9 +622,8 @@ mod tests {
                  _allowlist| {
                     chan.setup.holder_shutdown_script =
                         Some(hex_script!("0014b76dd61e41b5ef052af21cda3260888c070bb9af"));
-                    *holder_script = hex_script!(
-                        "76a9149f9a7abd600c0caa03983a77c8c3df8e062cb2fa88ac"
-                    );
+                    *holder_script =
+                        hex_script!("76a9149f9a7abd600c0caa03983a77c8c3df8e062cb2fa88ac");
                 },
                 |chan| {
                     // Channel should not be marked closed

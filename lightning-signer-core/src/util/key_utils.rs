@@ -1,4 +1,4 @@
-use bitcoin::secp256k1::{SecretKey, PublicKey, Secp256k1};
+use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::Network;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 
