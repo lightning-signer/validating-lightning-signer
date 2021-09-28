@@ -7,10 +7,12 @@ use greenlight_protocol::{msgs, Result};
 
 use crate::connection::UnixConnection;
 
-pub(crate) trait Client {
+pub(crate) trait Client: Send {
     fn write<M: msgs::TypedMessage + Serialize>(&mut self, msg: M) -> Result<()>;
     fn read(&mut self) -> Result<msgs::Message>;
     fn id(&self) -> u64;
+    #[must_use = "don't leak the client fd"]
+    fn new_client(&mut self) -> Self;
 }
 
 pub(crate) struct UnixClient {
@@ -22,13 +24,6 @@ impl UnixClient {
         Self {
             conn
         }
-    }
-
-    #[must_use = "don't leak the client fd"]
-    pub(crate) fn new_client(&mut self) -> UnixClient {
-        let (fd_a, fd_b) = socketpair(AddressFamily::Unix, SockType::Stream, None, SockFlag::empty()).unwrap();
-        self.conn.send_fd(fd_a);
-        UnixClient::new(UnixConnection::new(fd_b))
     }
 
     pub(crate) fn recv_fd(&mut self) -> core::result::Result<RawFd, ()> {
@@ -48,5 +43,11 @@ impl Client for UnixClient {
 
     fn id(&self) -> u64 {
         self.conn.id()
+    }
+
+    fn new_client(&mut self) -> UnixClient {
+        let (fd_a, fd_b) = socketpair(AddressFamily::Unix, SockType::Stream, None, SockFlag::empty()).unwrap();
+        self.conn.send_fd(fd_a);
+        UnixClient::new(UnixConnection::new(fd_b))
     }
 }

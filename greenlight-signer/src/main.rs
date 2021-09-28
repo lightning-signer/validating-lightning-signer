@@ -1,19 +1,22 @@
 #![allow(unused_variables)]
 
+use std::{env, thread};
 use std::os::unix::io::RawFd;
 
+use clap::{App, AppSettings, Arg};
 use env_logger::Env;
 use log::{error, info};
 use nix::sys::socket::{AddressFamily, socketpair, SockFlag, SockType};
 use nix::unistd::{close, fork, ForkResult};
+use secp256k1::rand::rngs::OsRng;
+use secp256k1::Secp256k1;
 
 use connection::UnixConnection;
-use greenlight_protocol::{Error, msgs, Result, msgs::Message};
-use clap::{App, Arg, AppSettings};
-use std::{env, thread};
-use crate::client::{Client, UnixClient};
+use greenlight_protocol::{Error, msgs, msgs::Message, Result};
 use greenlight_protocol::model::PubKey;
-use crate::handler::Handler;
+
+use crate::client::{Client, UnixClient};
+use crate::handler::{Handler, RootHandler};
 
 mod connection;
 mod client;
@@ -24,8 +27,12 @@ fn run_parent(fd: RawFd) {
     info!("parent: start");
     client.write(msgs::Memleak {}).unwrap();
     info!("parent: {:?}", client.read());
+    let secp = Secp256k1::new();
+    let mut rng = OsRng::new().unwrap();
+    let (_, key) = secp.generate_keypair(&mut rng);
+
     client.write(msgs::ClientHsmFd {
-        id: PubKey([0; 33]),
+        peer_id: PubKey(key.serialize()),
         dbid: 0,
         capabilities: 0
     }).unwrap();
@@ -37,8 +44,8 @@ fn run_parent(fd: RawFd) {
     info!("parent: client1 {:?}", client1.read());
 }
 
-fn signer_loop(handler: Handler<UnixClient>) {
-    let id = handler.client.id();
+fn signer_loop<C: 'static + Client, H: Handler<C>>(handler: H) {
+    let id = handler.client_id();
     info!("loop {}: start", id);
     match do_signer_loop(handler) {
         Ok(()) => info!("loop {}: done", id),
@@ -47,16 +54,15 @@ fn signer_loop(handler: Handler<UnixClient>) {
     }
 }
 
-fn do_signer_loop(mut handler: Handler<UnixClient>) -> Result<()> {
+fn do_signer_loop<C: 'static + Client, H: Handler<C>>(mut handler: H) -> Result<()> {
     loop {
-        let msg = handler.client.read()?;
-        info!("loop {}: got {:?}", handler.client.id(), msg);
+        let msg = handler.read()?;
+        info!("loop {}: got {:?}", handler.client_id(), msg);
         match msg {
-            Message::ClientHsmFd(_) => {
-                handler.client.write(msgs::ClientHsmFdReply {}).unwrap();
-                let new_client = handler.client.new_client();
-                let handler = handler.with_new_client(new_client);
-                thread::spawn(|| signer_loop(handler));
+            Message::ClientHsmFd(m) => {
+                handler.write(msgs::ClientHsmFdReply {}).unwrap();
+                let handler = handler.with_new_client(m.peer_id, m.dbid);
+                thread::spawn(move || signer_loop(handler));
             }
             msg => handler.handle(msg)
         }
@@ -84,7 +90,7 @@ pub fn main() {
     } else {
         let conn = UnixConnection::new(3);
         let client = UnixClient::new(conn);
-        let handler = Handler::new(client);
+        let handler = RootHandler::new(client);
         signer_loop(handler);
     }
 }
@@ -103,7 +109,7 @@ fn run_test() {
             close(fd4).unwrap();
             let conn = UnixConnection::new(fd3);
             let client = UnixClient::new(conn);
-            let handler = Handler::new(client);
+            let handler = RootHandler::new(client);
             signer_loop(handler)
         },
         Err(_) => {}

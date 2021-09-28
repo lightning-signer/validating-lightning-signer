@@ -106,3 +106,25 @@ pub struct Basepoints {
 
 array_impl!(Signature, 64);
 array_impl!(RecoverableSignature, 65);
+
+array_impl!(TxId, 32);
+
+array_impl!(OnionRoutingPacket, 1366);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FailedHtlc {
+    pub id: u64
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Htlc {
+    pub state: u8,
+    pub id: u64,
+    pub amount: u64,
+    pub payment_hash: Sha256,
+    pub ctlv_expiry: u32,
+    pub routing_packet: OnionRoutingPacket,
+    pub preimage: Option<Secret>,
+    pub failed: Option<FailedHtlc>,
+    pub blinding: Option<PubKey>,
+}

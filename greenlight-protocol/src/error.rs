@@ -4,7 +4,8 @@ use serde_bolt::{Error as BoltError};
 #[derive(Debug)]
 pub enum Error {
     BoltError(BoltError),
-    TrailingBytes,
+    // Include the message type for trailing bytes
+    TrailingBytes(u16),
     ShortRead,
     Eof,
 }

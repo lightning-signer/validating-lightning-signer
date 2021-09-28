@@ -45,7 +45,7 @@ impl TypedMessage for HsmdInitReply {
 /// Connect a new client
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClientHsmFd {
-    pub id: PubKey,
+    pub peer_id: PubKey,
     pub dbid: u64,
     pub capabilities: u64,
 }
@@ -147,7 +147,7 @@ impl TypedMessage for SignChannelUpdateReply {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetPerCommitmentPoint {
-    pub n: u64,
+    pub commitment_number: u64,
 }
 
 impl TypedMessage for GetPerCommitmentPoint {
@@ -167,12 +167,47 @@ impl TypedMessage for GetPerCommitmentPointReply {
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
+pub struct ReadyChannel {
+    pub is_outbound: bool,
+    pub channel_value: u64,
+    pub push_value: u64,
+    pub funding_txid: TxId,
+    pub funding_txout: u16,
+    pub to_self_delay: u16,
+    pub local_shutdown_script: Vec<u8>,
+    pub local_shutdown_wallet_index: u32,
+    pub remote_basepoints: Basepoints,
+    pub remote_funding_pubkey: PubKey,
+    pub remote_to_self_delay: u16,
+    pub remote_shutdown_script: Vec<u8>,
+    pub option_static_remotekey: bool,
+    pub option_anchor_outputs: bool,
+}
+
+impl TypedMessage for ReadyChannel {
+    const TYPE: u16 = 31;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReadyChannelReply {
+}
+
+impl TypedMessage for ReadyChannelReply {
+    const TYPE: u16 = 131;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SignRemoteCommitmentTx {
     pub tx: LargeBytes,
     pub psbt: LargeBytes,
     pub remote_funding_key: PubKey,
     pub remote_per_commitment_point: PubKey,
     pub option_static_remotekey: bool,
+    pub commitment_number: u64,
+    pub htlcs: Vec<Htlc>,
+    pub feerate: u32,
 }
 
 impl TypedMessage for SignRemoteCommitmentTx {
@@ -192,6 +227,26 @@ impl TypedMessage for SignTxReply {
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
+pub struct NewChannel {
+    pub node_id: PubKey,
+    pub dbid: u64,
+}
+
+impl TypedMessage for NewChannel {
+    const TYPE: u16 = 30;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NewChannelReply {
+}
+
+impl TypedMessage for NewChannelReply {
+    const TYPE: u16 = 130;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GetChannelBasepoints {
     pub node_id: PubKey,
     pub dbid: u64,
@@ -205,7 +260,7 @@ impl TypedMessage for GetChannelBasepoints {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetChannelBasepointsReply {
     pub basepoints: Basepoints,
-    pub node_id: PubKey,
+    pub funding: PubKey,
 }
 
 impl TypedMessage for GetChannelBasepointsReply {
@@ -266,21 +321,25 @@ pub enum Message {
     SignChannelUpdateReply(SignChannelUpdateReply),
     GetPerCommitmentPoint(GetPerCommitmentPoint),
     GetPerCommitmentPointReply(GetPerCommitmentPointReply),
+    ReadyChannel(ReadyChannel),
+    ReadyChannelReply(ReadyChannelReply),
     SignRemoteCommitmentTx(SignRemoteCommitmentTx),
     SignTxReply(SignTxReply),
     GetChannelBasepoints(GetChannelBasepoints),
     GetChannelBasepointsReply(GetChannelBasepointsReply),
+    NewChannel(NewChannel),
+    NewChannelReply(NewChannelReply),
     SignRemoteHtlcTx(SignRemoteHtlcTx),
     SignPenaltyToUs(SignPenaltyToUs),
     Unknown(Unknown),
 }
 
-fn from_vec_no_trailing<T>(s: &mut Vec<u8>) -> Result<T>
+fn from_vec_no_trailing<T: TypedMessage>(s: &mut Vec<u8>) -> Result<T>
     where T: de::DeserializeOwned,
 {
     let res: T = from_vec(s)?;
     if !s.is_empty() {
-        return Err(Error::TrailingBytes);
+        return Err(Error::TrailingBytes(T::TYPE));
     }
     Ok(res)
 }
@@ -322,10 +381,14 @@ fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
         SignChannelUpdateReply::TYPE => Message::SignChannelUpdateReply(from_vec_no_trailing(&mut data)?),
         GetPerCommitmentPoint::TYPE => Message::GetPerCommitmentPoint(from_vec_no_trailing(&mut data)?),
         GetPerCommitmentPointReply::TYPE => Message::GetPerCommitmentPointReply(from_vec_no_trailing(&mut data)?),
+        ReadyChannel::TYPE => Message::ReadyChannel(from_vec_no_trailing(&mut data)?),
+        ReadyChannelReply::TYPE => Message::ReadyChannelReply(from_vec_no_trailing(&mut data)?),
         SignRemoteCommitmentTx::TYPE => Message::SignRemoteCommitmentTx(from_vec_no_trailing(&mut data)?),
         SignTxReply::TYPE => Message::SignTxReply(from_vec_no_trailing(&mut data)?),
         GetChannelBasepoints::TYPE => Message::GetChannelBasepoints(from_vec_no_trailing(&mut data)?),
         GetChannelBasepointsReply::TYPE => Message::GetChannelBasepointsReply(from_vec_no_trailing(&mut data)?),
+        NewChannel::TYPE => Message::NewChannel(from_vec_no_trailing(&mut data)?),
+        NewChannelReply::TYPE => Message::NewChannelReply(from_vec_no_trailing(&mut data)?),
         SignRemoteHtlcTx::TYPE => Message::SignRemoteHtlcTx(from_vec_no_trailing(&mut data)?),
         SignPenaltyToUs::TYPE => Message::SignPenaltyToUs(from_vec_no_trailing(&mut data)?),
         _ => {
