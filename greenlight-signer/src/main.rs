@@ -21,6 +21,8 @@ use lightning_signer::persist::{DummyPersister, Persist};
 use crate::client::{Client, UnixClient};
 use crate::handler::{Handler, RootHandler};
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
+use std::fs::File;
+use std::io::{BufReader, BufRead};
 
 mod connection;
 mod client;
@@ -99,8 +101,22 @@ pub fn main() {
         let conn = UnixConnection::new(3);
         let client = UnixClient::new(conn);
         let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new("signer.kv"));
-        let handler = RootHandler::new(client, read_integration_test_seed(), persister);
+        let allowlist = read_allowlist();
+        let handler = RootHandler::new(client, read_integration_test_seed(), persister, allowlist);
         signer_loop(handler);
+    }
+}
+
+fn read_allowlist() -> Vec<String> {
+    let allowlist_path_res = env::var("ALLOWLIST");
+    if let Ok(allowlist_path) = allowlist_path_res {
+        let file = File::open(&allowlist_path).expect(format!("open {} failed", &allowlist_path).as_str());
+        BufReader::new(file)
+            .lines()
+            .map(|l| l.expect("line"))
+            .collect()
+    } else {
+        Vec::new()
     }
 }
 
@@ -128,7 +144,7 @@ fn run_test() {
             let conn = UnixConnection::new(fd3);
             let client = UnixClient::new(conn);
             let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
-            let handler = RootHandler::new(client, read_integration_test_seed(), persister);
+            let handler = RootHandler::new(client, read_integration_test_seed(), persister, vec![]);
             signer_loop(handler)
         },
         Err(_) => {}

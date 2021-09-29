@@ -21,12 +21,20 @@ To do:
 
 ## Running with C-lightning
 
+In the lightning-signer `remote-hsmd` branch, apply this patch:
+
+```
+-                self.use_rsignerd = True
++                self.use_rsignerd = False
+```
+
 Build C-lightning from the lightning-signer `remote_hsmd` branch, and then:
 
 ```shell
-ln -sf ../../rust-lightning-signer/target/debug/greenlight-signer lightningd/lightning_hsmd
+ln -sf ../../rust-lightning-signer/target/debug/greenlight-signer lightningd/remote_hsmd
 export GREENLIGHT_VERSION=`./lightningd/lightningd --version`
+export SUBDAEMON=hsmd:remote_hsmd
+export ALLOWLIST=`pwd`/contrib/remote_hsmd/TESTING_ALLOWLIST
 
 pytest $THETEST
 ```
-

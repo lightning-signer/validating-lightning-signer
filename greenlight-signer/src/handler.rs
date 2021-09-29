@@ -49,9 +49,9 @@ pub(crate) struct RootHandler<C: Client> {
 }
 
 impl<C: Client> RootHandler<C> {
-    pub(crate) fn new(client: C, seed_opt: Option<[u8; 32]>, persister: Arc<dyn Persist>) -> Self {
+    pub(crate) fn new(client: C, seed_opt: Option<[u8; 32]>, persister: Arc<dyn Persist>, allowlist: Vec<String>) -> Self {
         let config = NodeConfig {
-            network: Network::Testnet,
+            network: Network::Regtest,
             key_derivation_style: KeyDerivationStyle::Native
         };
 
@@ -60,6 +60,7 @@ impl<C: Client> RootHandler<C> {
         let nodes = persister.get_nodes();
         let node = if nodes.is_empty() {
             let node = Arc::new(Node::new(config, &seed, &persister, vec![]));
+            node.add_allowlist(&allowlist).expect("allowlist");
             persister.new_node(&node.get_id(), &config, &seed);
             node
         } else {
