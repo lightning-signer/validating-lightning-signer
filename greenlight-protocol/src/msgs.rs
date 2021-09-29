@@ -167,6 +167,47 @@ impl TypedMessage for SignChannelUpdateReply {
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
+pub struct SignChannelAnnouncement {
+    pub announcement: Vec<u8>,
+}
+
+impl TypedMessage for SignChannelAnnouncement {
+    const TYPE: u16 = 2;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignChannelAnnouncementReply {
+    pub node_signature: Signature,
+    pub bitcoin_signature: Signature,
+}
+
+impl TypedMessage for SignChannelAnnouncementReply {
+    const TYPE: u16 = 102;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignNodeAnnouncement {
+    pub announcement: Vec<u8>,
+}
+
+impl TypedMessage for SignNodeAnnouncement {
+    const TYPE: u16 = 6;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignNodeAnnouncementReply {
+    pub node_signature: Signature,
+}
+
+impl TypedMessage for SignNodeAnnouncementReply {
+    const TYPE: u16 = 106;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GetPerCommitmentPoint {
     pub commitment_number: u64,
 }
@@ -388,6 +429,10 @@ pub enum Message {
     MemleakReply(MemleakReply),
     SignChannelUpdate(SignChannelUpdate),
     SignChannelUpdateReply(SignChannelUpdateReply),
+    SignChannelAnnouncement(SignChannelAnnouncement),
+    SignChannelAnnouncementReply(SignChannelAnnouncementReply),
+    SignNodeAnnouncement(SignNodeAnnouncement),
+    SignNodeAnnouncementReply(SignNodeAnnouncementReply),
     GetPerCommitmentPoint(GetPerCommitmentPoint),
     GetPerCommitmentPointReply(GetPerCommitmentPointReply),
     ReadyChannel(ReadyChannel),
@@ -454,6 +499,10 @@ fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
         MemleakReply::TYPE => Message::MemleakReply(from_vec_no_trailing(&mut data)?),
         SignChannelUpdate::TYPE => Message::SignChannelUpdate(from_vec_no_trailing(&mut data)?),
         SignChannelUpdateReply::TYPE => Message::SignChannelUpdateReply(from_vec_no_trailing(&mut data)?),
+        SignChannelAnnouncement::TYPE => Message::SignChannelAnnouncement(from_vec_no_trailing(&mut data)?),
+        SignChannelAnnouncementReply::TYPE => Message::SignChannelAnnouncementReply(from_vec_no_trailing(&mut data)?),
+        SignNodeAnnouncement::TYPE => Message::SignNodeAnnouncement(from_vec_no_trailing(&mut data)?),
+        SignNodeAnnouncementReply::TYPE => Message::SignNodeAnnouncementReply(from_vec_no_trailing(&mut data)?),
         GetPerCommitmentPoint::TYPE => Message::GetPerCommitmentPoint(from_vec_no_trailing(&mut data)?),
         GetPerCommitmentPointReply::TYPE => Message::GetPerCommitmentPointReply(from_vec_no_trailing(&mut data)?),
         ReadyChannel::TYPE => Message::ReadyChannel(from_vec_no_trailing(&mut data)?),

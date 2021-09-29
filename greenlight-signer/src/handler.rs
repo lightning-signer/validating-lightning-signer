@@ -159,6 +159,16 @@ impl<C: Client> Handler<C> for RootHandler<C> {
                     signature: RecoverableSignature(sig_slice)
                 }).expect("write");
             }
+            Message::SignNodeAnnouncement(m) => {
+                let message = m.announcement[64 + 2..].to_vec();
+                let node_sig_der =
+                    self.node.sign_node_announcement(&message).expect("sign");
+                let sig = secp256k1::Signature::from_der(&node_sig_der).expect("sig");
+
+                self.client.write(msgs::SignNodeAnnouncementReply {
+                    node_signature: Signature(sig.serialize_compact()),
+                }).expect("write");
+            }
             Message::Unknown(u) => unimplemented!("loop {}: unknown message type {}", self.client.id(), u.message_type),
             m => unimplemented!("loop {}: unimplemented message {:?}", self.client.id(), m),
         }
@@ -444,6 +454,27 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                 let mut update = m.update;
                 update[2..2+64].copy_from_slice(&sig.serialize_compact());
                 self.client.write(msgs::SignChannelUpdateReply { update }).expect("write");
+            }
+            Message::SignChannelAnnouncement(m) => {
+                let message = m.announcement[256 + 2..].to_vec();
+                let (node_sig, bitcoin_sig) = self.node.with_ready_channel(&self.channel_id, |chan| {
+                    Ok(chan.sign_channel_announcement(&message))
+                }).expect("sign");
+                self.client.write(msgs::SignChannelAnnouncementReply {
+                    node_signature: Signature(node_sig.serialize_compact()),
+                    bitcoin_signature: Signature(bitcoin_sig.serialize_compact())
+                }).expect("write");
+            }
+            Message::SignNodeAnnouncement(m) => {
+                // TODO DRY (and why is this called in the per-channel handler??)
+                let message = m.announcement[64 + 2..].to_vec();
+                let node_sig_der =
+                    self.node.sign_node_announcement(&message).expect("sign");
+                let sig = secp256k1::Signature::from_der(&node_sig_der).expect("sig");
+
+                self.client.write(msgs::SignNodeAnnouncementReply {
+                    node_signature: Signature(sig.serialize_compact()),
+                }).expect("write");
             }
             Message::Unknown(u) => unimplemented!("cloop {}: unknown message type {}", self.client.id(), u.message_type),
             m => unimplemented!("cloop {}: unimplemented message {:?}", self.client.id(), m),
