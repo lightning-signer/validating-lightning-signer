@@ -180,6 +180,51 @@ impl<C: Client> Handler<C> for RootHandler<C> {
                     node_signature: Signature(sig.serialize_compact()),
                 }).expect("write");
             }
+            Message::SignCommitmentTx(m) => {
+                // TODO why not channel handler??
+                let channel_id = extract_channel_id(m.dbid);
+                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
+                let mut tx_bytes = m.tx.0.clone();
+                let tx: Transaction = deserialize(&mut tx_bytes).expect("tx");
+
+                // WORKAROUND - sometimes c-lightning calls handle_sign_commitment_tx
+                // with mutual close transactions.  We can tell the difference because
+                // the locktime field will be set to 0 for a mutual close.
+                let sig = if tx.lock_time == 0 {
+                    let opaths = psbt.outputs.iter()
+                        .map(|o| extract_output_path(&o.bip32_derivation)).collect();
+                    self.node
+                        .with_ready_channel(&channel_id, |chan| {
+                            chan.sign_mutual_close_tx(
+                                &tx,
+                                &opaths,
+                            )
+                        }).expect("sign mutual close")
+                } else {
+                    let witscripts = extract_witscripts(psbt);
+                    let commit_num = m.commitment_number;
+                    let feerate_sat_per_kw = m.feerate;
+                    let (received_htlcs, offered_htlcs) = extract_htlcs(&m.htlcs);
+                    self.node
+                        .with_ready_channel(&channel_id, |chan| {
+                            chan.sign_holder_commitment_tx(
+                                &tx,
+                                &witscripts,
+                                commit_num,
+                                feerate_sat_per_kw,
+                                offered_htlcs.clone(),
+                                received_htlcs.clone(),
+                            )
+                        }).expect("sign holder commitment")
+                };
+                self.client.write(msgs::SignCommitmentTxReply {
+                    signature: BitcoinSignature
+                    {
+                        signature: Signature(sig.serialize_compact()),
+                        sighash: SigHashType::All as u8
+                    }
+                }).expect("write");
+            }
             Message::Unknown(u) => unimplemented!("loop {}: unknown message type {}", self.client.id(), u.message_type),
             m => unimplemented!("loop {}: unimplemented message {:?}", self.client.id(), m),
         }
@@ -375,6 +420,118 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                             feerate_sat_per_kw,
                             offered_htlcs.clone(),
                             received_htlcs.clone(),
+                        )
+                    }).unwrap();
+                self.client.write(msgs::SignTxReply {
+                    signature: BitcoinSignature
+                    {
+                        signature: Signature(sig.serialize_compact()),
+                        sighash: SigHashType::All as u8
+                    }
+                }).expect("write");
+            }
+            Message::SignDelayedPaymentToUs(m) => {
+                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
+                let mut tx_bytes = m.tx.0.clone();
+                let tx = deserialize(&mut tx_bytes).expect("tx");
+                let commitment_number = m.commitment_number;
+                let redeemscript = Script::from(m.wscript);
+                let input = 0;
+                let htlc_amount_sat = psbt.inputs[input]
+                    .witness_utxo.as_ref().expect("will only spend witness UTXOs")
+                    .value;
+                let sig = self
+                    .node
+                    .with_ready_channel(&self.channel_id, |chan| {
+                        chan.sign_delayed_sweep(
+                            &tx,
+                            input,
+                            commitment_number,
+                            &redeemscript,
+                            htlc_amount_sat,
+                        )
+                    }).expect("sign");
+                self.client.write(msgs::SignTxReply {
+                    signature: BitcoinSignature
+                    {
+                        signature: Signature(sig.serialize_compact()),
+                        sighash: SigHashType::All as u8
+                    }
+                }).expect("write");
+            }
+            Message::SignRemoteHtlcToUs(m) => {
+                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
+                let mut tx_bytes = m.tx.0.clone();
+                let tx = deserialize(&mut tx_bytes).expect("tx");
+                let remote_per_commitment_point =
+                    PublicKey::from_slice(&m.remote_per_commitment_point.0).expect("pubkey");
+                let redeemscript = Script::from(m.wscript);
+                let input = 0;
+                let htlc_amount_sat = psbt.inputs[input]
+                    .witness_utxo.as_ref().expect("will only spend witness UTXOs")
+                    .value;
+                let sig = self
+                    .node
+                    .with_ready_channel(&self.channel_id, |chan| {
+                        chan.sign_counterparty_htlc_sweep(
+                            &tx,
+                            input,
+                            &remote_per_commitment_point,
+                            &redeemscript,
+                            htlc_amount_sat,
+                        )
+                    }).expect("sign");
+                self.client.write(msgs::SignTxReply {
+                    signature: BitcoinSignature
+                    {
+                        signature: Signature(sig.serialize_compact()),
+                        sighash: SigHashType::All as u8
+                    }
+                }).expect("write");
+            }
+            Message::SignLocalHtlcTx(m) => {
+                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
+                let mut tx_bytes = m.tx.0.clone();
+                let tx = deserialize(&mut tx_bytes).expect("tx");
+                let commitment_number = m.commitment_number;
+                let redeemscript = Script::from(m.wscript);
+                let input = 0;
+                let htlc_amount_sat = psbt.inputs[input]
+                    .witness_utxo.as_ref().expect("will only spend witness UTXOs")
+                    .value;
+                let output_witscript = psbt.outputs[0].
+                    witness_script.as_ref().expect("output witscript");
+                let sig = self
+                    .node
+                    .with_ready_channel(&self.channel_id, |chan| {
+                        chan.sign_holder_htlc_tx(
+                            &tx,
+                            commitment_number,
+                            None,
+                            &redeemscript,
+                            htlc_amount_sat,
+                            output_witscript
+                        )
+                    }).expect("sign");
+                self.client.write(msgs::SignTxReply {
+                    signature: BitcoinSignature
+                    {
+                        signature: Signature(sig.serialize_compact()),
+                        sighash: SigHashType::All as u8
+                    }
+                }).expect("write");
+            }
+            Message::SignMutualCloseTx(m) => {
+                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
+                let mut tx_bytes = m.tx.0.clone();
+                let tx = deserialize(&mut tx_bytes).expect("tx");
+                let opaths = psbt.outputs.iter()
+                    .map(|o| extract_output_path(&o.bip32_derivation)).collect();
+                let sig = self.node
+                    .with_ready_channel(&self.channel_id, |chan| {
+                        chan.sign_mutual_close_tx(
+                            &tx,
+                            &opaths,
                         )
                     }).unwrap();
                 self.client.write(msgs::SignTxReply {

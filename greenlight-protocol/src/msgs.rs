@@ -306,7 +306,24 @@ impl TypedMessage for ValidateRevocationReply {
     const TYPE: u16 = 136;
 }
 
-    ///
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignCommitmentTx {
+    pub peer_id: PubKey,
+    pub dbid: u64,
+    pub tx: LargeBytes,
+    pub psbt: LargeBytes,
+    pub remote_funding_key: PubKey,
+    pub commitment_number: u64,
+    pub htlcs: Vec<Htlc>,
+    pub feerate: u32,
+}
+
+impl TypedMessage for SignCommitmentTx {
+    const TYPE: u16 = 5;
+}
+
+///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignRemoteCommitmentTx {
     pub tx: LargeBytes,
@@ -321,6 +338,69 @@ pub struct SignRemoteCommitmentTx {
 
 impl TypedMessage for SignRemoteCommitmentTx {
     const TYPE: u16 = 19;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignDelayedPaymentToUs {
+    pub commitment_number: u64,
+    pub tx: LargeBytes,
+    pub psbt: LargeBytes,
+    pub wscript: Vec<u8>,
+}
+
+impl TypedMessage for SignDelayedPaymentToUs {
+    const TYPE: u16 = 12;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignRemoteHtlcToUs {
+    pub remote_per_commitment_point: PubKey,
+    pub tx: LargeBytes,
+    pub psbt: LargeBytes,
+    pub wscript: Vec<u8>,
+    pub option_anchor_outputs: bool,
+}
+
+impl TypedMessage for SignRemoteHtlcToUs {
+    const TYPE: u16 = 13;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignLocalHtlcTx {
+    pub commitment_number: u64,
+    pub tx: LargeBytes,
+    pub psbt: LargeBytes,
+    pub wscript: Vec<u8>,
+    pub option_anchor_outputs: bool,
+}
+
+impl TypedMessage for SignLocalHtlcTx {
+    const TYPE: u16 = 16;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignMutualCloseTx {
+    pub tx: LargeBytes,
+    pub psbt: LargeBytes,
+    pub remote_funding_key: PubKey,
+}
+
+impl TypedMessage for SignMutualCloseTx {
+    const TYPE: u16 = 21;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignCommitmentTxReply {
+    pub signature: BitcoinSignature,
+}
+
+impl TypedMessage for SignCommitmentTxReply {
+    const TYPE: u16 = 105;
 }
 
 ///
@@ -442,7 +522,13 @@ pub enum Message {
     ValidateRevocation(ValidateRevocation),
     ValidateRevocationReply(ValidateRevocationReply),
     SignRemoteCommitmentTx(SignRemoteCommitmentTx),
+    SignDelayedPaymentToUs(SignDelayedPaymentToUs),
+    SignRemoteHtlcToUs(SignRemoteHtlcToUs),
+    SignLocalHtlcTx(SignLocalHtlcTx),
+    SignCommitmentTx(SignCommitmentTx),
+    SignMutualCloseTx(SignMutualCloseTx),
     SignTxReply(SignTxReply),
+    SignCommitmentTxReply(SignCommitmentTxReply),
     GetChannelBasepoints(GetChannelBasepoints),
     GetChannelBasepointsReply(GetChannelBasepointsReply),
     NewChannel(NewChannel),
@@ -512,6 +598,12 @@ fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
         ValidateRevocation::TYPE => Message::ValidateRevocation(from_vec_no_trailing(&mut data)?),
         ValidateRevocationReply::TYPE => Message::ValidateRevocationReply(from_vec_no_trailing(&mut data)?),
         SignRemoteCommitmentTx::TYPE => Message::SignRemoteCommitmentTx(from_vec_no_trailing(&mut data)?),
+        SignDelayedPaymentToUs::TYPE => Message::SignDelayedPaymentToUs(from_vec_no_trailing(&mut data)?),
+        SignRemoteHtlcToUs::TYPE => Message::SignRemoteHtlcToUs(from_vec_no_trailing(&mut data)?),
+        SignLocalHtlcTx::TYPE => Message::SignLocalHtlcTx(from_vec_no_trailing(&mut data)?),
+        SignCommitmentTx::TYPE => Message::SignCommitmentTx(from_vec_no_trailing(&mut data)?),
+        SignMutualCloseTx::TYPE => Message::SignMutualCloseTx(from_vec_no_trailing(&mut data)?),
+        SignCommitmentTxReply::TYPE => Message::SignCommitmentTxReply(from_vec_no_trailing(&mut data)?),
         SignTxReply::TYPE => Message::SignTxReply(from_vec_no_trailing(&mut data)?),
         GetChannelBasepoints::TYPE => Message::GetChannelBasepoints(from_vec_no_trailing(&mut data)?),
         GetChannelBasepointsReply::TYPE => Message::GetChannelBasepointsReply(from_vec_no_trailing(&mut data)?),
