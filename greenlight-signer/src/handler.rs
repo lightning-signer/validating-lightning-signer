@@ -27,7 +27,7 @@ use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::{Node, NodeConfig, SpendType};
-use lightning_signer::persist::{DummyPersister, Persist};
+use lightning_signer::persist::Persist;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
@@ -49,17 +49,28 @@ pub(crate) struct RootHandler<C: Client> {
 }
 
 impl<C: Client> RootHandler<C> {
-    pub(crate) fn new(client: C, seed_opt: Option<[u8; 32]>) -> Self {
+    pub(crate) fn new(client: C, seed_opt: Option<[u8; 32]>, persister: Arc<dyn Persist>) -> Self {
         let config = NodeConfig {
             network: Network::Testnet,
             key_derivation_style: KeyDerivationStyle::Native
         };
 
         let seed = seed_opt.expect("expected a seed");
-        let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
+
+        let nodes = persister.get_nodes();
+        let node = if nodes.is_empty() {
+            let node = Arc::new(Node::new(config, &seed, &persister, vec![]));
+            persister.new_node(&node.get_id(), &config, &seed);
+            node
+        } else {
+            assert_eq!(nodes.len(), 1);
+            let (node_id, entry) = nodes.into_iter().next().unwrap();
+            Node::restore_node(&node_id, entry, persister)
+        };
+
         Self {
             client,
-            node: Arc::new(Node::new(config, &seed, &persister, vec![]))
+            node
         }
     }
 }

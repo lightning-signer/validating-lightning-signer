@@ -1,6 +1,7 @@
 #![allow(unused_variables)]
 
-use std::{env, thread, fs};
+use std::{env, fs, thread};
+use std::convert::TryInto;
 use std::os::unix::io::RawFd;
 
 use clap::{App, AppSettings, Arg};
@@ -14,10 +15,12 @@ use secp256k1::Secp256k1;
 use connection::UnixConnection;
 use greenlight_protocol::{Error, msgs, msgs::Message, Result};
 use greenlight_protocol::model::PubKey;
+use lightning_signer::Arc;
+use lightning_signer::persist::{DummyPersister, Persist};
 
 use crate::client::{Client, UnixClient};
 use crate::handler::{Handler, RootHandler};
-use std::convert::TryInto;
+use lightning_signer_server::persist::persist_json::KVJsonPersister;
 
 mod connection;
 mod client;
@@ -92,11 +95,11 @@ pub fn main() {
     }
     if matches.is_present("test") {
         run_test();
-
     } else {
         let conn = UnixConnection::new(3);
         let client = UnixClient::new(conn);
-        let handler = RootHandler::new(client, read_integration_test_seed());
+        let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new("signer.kv"));
+        let handler = RootHandler::new(client, read_integration_test_seed(), persister);
         signer_loop(handler);
     }
 }
@@ -124,7 +127,8 @@ fn run_test() {
             close(fd4).unwrap();
             let conn = UnixConnection::new(fd3);
             let client = UnixClient::new(conn);
-            let handler = RootHandler::new(client, read_integration_test_seed());
+            let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
+            let handler = RootHandler::new(client, read_integration_test_seed(), persister);
             signer_loop(handler)
         },
         Err(_) => {}
