@@ -75,6 +75,11 @@ pub fn main() {
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
         .about("Greenlight lightning-signer")
+        .arg(Arg::new("--dev-disconnect")
+            .about("ignored dev flag")
+            .long("dev-disconnect")
+            .takes_value(true))
+        .arg(Arg::from("--log-io ignored dev flag"))
         .arg(Arg::from("--version show a dummy version"))
         .arg(Arg::from("--test run a test emulating lightningd/hsmd"));
     let matches = app.get_matches();
