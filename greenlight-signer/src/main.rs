@@ -58,7 +58,7 @@ fn signer_loop<C: 'static + Client, H: Handler<C>>(handler: H) {
 fn do_signer_loop<C: 'static + Client, H: Handler<C>>(mut handler: H) -> Result<()> {
     loop {
         let msg = handler.read()?;
-        info!("loop {}: got {:?}", handler.client_id(), msg);
+        info!("loop {}: got {:x?}", handler.client_id(), msg);
         match msg {
             Message::ClientHsmFd(m) => {
                 handler.write(msgs::ClientHsmFdReply {}).unwrap();

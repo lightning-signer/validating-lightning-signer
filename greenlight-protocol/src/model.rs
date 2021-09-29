@@ -14,7 +14,7 @@ pub struct Bip32KeyVersion {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BlockID([u8; 32]);
+pub struct BlockId([u8; 32]);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Secret(pub [u8; 32]);
@@ -94,7 +94,7 @@ array_impl!(PubKey, 33);
 array_impl!(ExtKey, 78);
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Sha256([u8; 32]);
+pub struct Sha256(pub [u8; 32]);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Basepoints {
@@ -133,4 +133,24 @@ pub struct Htlc {
     pub preimage: Option<Secret>,
     pub failed: Option<FailedHtlc>,
     pub blinding: Option<PubKey>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CloseInfo {
+    pub channel_id: u64,
+    pub peer_id: PubKey,
+    pub commitment_point: Option<PubKey>,
+    pub option_anchor_outputs: bool,
+    pub csv: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Utxo {
+    pub txid: TxId,
+    pub outnum: u32,
+    pub amount: u64,
+    pub keyindex: u32,
+    pub is_p2sh: bool,
+    pub script: Vec<u8>,
+    pub close_info: Option<CloseInfo>,
 }

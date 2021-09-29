@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use bitcoin::{Network, Script, SigHashType};
@@ -13,18 +14,22 @@ use secp256k1::rand::rngs::OsRng;
 use serde::Serialize;
 
 use greenlight_protocol::{msgs, msgs::Message, Result};
-use greenlight_protocol::model::{Basepoints, BitcoinSignature, ExtKey, PubKey, PubKey32, Secret, Signature};
+use greenlight_protocol::model::{Basepoints, BitcoinSignature, ExtKey, PubKey, PubKey32, RecoverableSignature, Secret, Signature, Htlc};
 use greenlight_protocol::msgs::TypedMessage;
+use greenlight_protocol::serde_bolt::LargeBytes;
 use lightning_signer::Arc;
 use lightning_signer::bitcoin;
-use lightning_signer::bitcoin::consensus::Decodable;
-use lightning_signer::bitcoin::OutPoint;
+use lightning_signer::bitcoin::{OutPoint, Transaction};
+use lightning_signer::bitcoin::consensus::{Decodable, Encodable};
+use lightning_signer::bitcoin::util::bip32::{ChildNumber, KeySource};
 use lightning_signer::bitcoin::util::psbt::PartiallySignedTransaction;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::lightning::ln::chan_utils::ChannelPublicKeys;
-use lightning_signer::node::{Node, NodeConfig};
+use lightning_signer::lightning::ln::PaymentHash;
+use lightning_signer::node::{Node, NodeConfig, SpendType};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
+use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
 
 use crate::client::Client;
@@ -111,6 +116,49 @@ impl<C: Client> Handler<C> for RootHandler<C> {
 
                 self.client.write(msgs::GetChannelBasepointsReply { basepoints, funding }).expect("write");
             }
+            Message::SignWithdrawal(m) => {
+                let mut psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
+                let tx = psbt.clone().extract_tx();
+                let ipaths = m.utxos.iter()
+                    .map(|u| vec![u.keyindex]).collect();
+                let values_sat = m.utxos.iter()
+                    .map(|u| u.amount).collect();
+                let spendtypes = m.utxos.iter()
+                    .map(|u| if u.is_p2sh { SpendType::P2shP2wpkh } else { SpendType::P2wpkh }).collect();
+                let uniclosekeys = m.utxos.iter()
+                    .map(|u| None).collect(); // TODO
+                let opaths = psbt.outputs.iter()
+                    .map(|o| extract_output_path(&o.bip32_derivation)).collect();
+                let witvec = self.node.sign_funding_tx(
+                    &tx,
+                    &ipaths,
+                    &values_sat,
+                    &spendtypes,
+                    &uniclosekeys,
+                    &opaths,
+                ).expect("sign funding");
+
+                for (i, (sig, pubkey)) in witvec.into_iter().enumerate() {
+                    if !sig.is_empty() {
+                        psbt.inputs[i].final_script_witness = Some(vec![sig, pubkey]);
+                    }
+                }
+
+                let mut ser_psbt = Vec::new();
+                psbt.consensus_encode(&mut ser_psbt).expect("serialize psbt");
+                self.client.write(msgs::SignWithdrawalReply {
+                    psbt: LargeBytes(ser_psbt)
+                }).expect("write");
+            }
+            Message::SignInvoice(m) => {
+                let hrp = String::from_utf8(m.hrp).expect("hrp");
+                let sig = self.node.sign_invoice_in_parts(&m.u5bytes, &hrp).expect("sign_channel_update");
+                let mut sig_slice = [0u8; 65];
+                sig_slice.copy_from_slice(&sig);
+                self.client.write(msgs::SignInvoiceReply {
+                    signature: RecoverableSignature(sig_slice)
+                }).expect("write");
+            }
             Message::Unknown(u) => unimplemented!("loop {}: unknown message type {}", self.client.id(), u.message_type),
             m => unimplemented!("loop {}: unimplemented message {:?}", self.client.id(), m),
         }
@@ -138,6 +186,18 @@ impl<C: Client> Handler<C> for RootHandler<C> {
             channel_id: extract_channel_id(dbid),
         }
     }
+}
+
+fn extract_output_path(x: &BTreeMap<bitcoin::util::ecdsa::PublicKey, KeySource>) -> Vec<u32> {
+    if x.is_empty() {
+        return Vec::new();
+    }
+    if x.len() > 1 {
+        panic!("len > 1");
+    }
+    let (fingerprint, path) = x.iter().next().unwrap().1;
+    let segments: Vec<ChildNumber> = path.clone().into();
+    segments.into_iter().map(|c| u32::from(c)).collect()
 }
 
 /// Protocol handler
@@ -239,6 +299,40 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
 
                 self.client.write(msgs::ReadyChannelReply {}).expect("write");
             }
+            Message::SignRemoteHtlcTx(m) => {
+                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
+                let mut tx_bytes = m.tx.0.clone();
+                let remote_per_commitment_point =
+                    PublicKey::from_slice(&m.remote_per_commitment_point.0).expect("pubkey");
+                let tx: Transaction = deserialize(&mut tx_bytes).expect("tx");
+                assert_eq!(psbt.outputs.len(), 1);
+                assert_eq!(psbt.inputs.len(), 1);
+                assert_eq!(tx.output.len(), 1);
+                assert_eq!(tx.input.len(), 1);
+                let redeemscript = Script::from(m.wscript);
+                let htlc_amount_sat = psbt.inputs[0]
+                    .witness_utxo.as_ref().expect("will only spend witness UTXOs")
+                    .value;
+                let output_witscript = psbt.outputs[0].
+                    witness_script.as_ref().expect("output witscript");
+                let sig = self.node
+                    .with_ready_channel(&self.channel_id, |chan| {
+                        chan.sign_counterparty_htlc_tx(
+                            &tx,
+                            &remote_per_commitment_point,
+                            &redeemscript,
+                            htlc_amount_sat,
+                            &output_witscript,
+                        )
+                    }).expect("sign");
+                self.client.write(msgs::SignTxReply {
+                    signature: BitcoinSignature
+                    {
+                        signature: Signature(sig.serialize_compact()),
+                        sighash: SigHashType::All as u8
+                    }
+                }).expect("write");
+            }
             Message::SignRemoteCommitmentTx(m) => {
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
                 let mut tx_bytes = m.tx.0.clone();
@@ -248,8 +342,8 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                     PublicKey::from_slice(&m.remote_per_commitment_point.0).expect("pubkey");
                 let commit_num = m.commitment_number;
                 let feerate_sat_per_kw = m.feerate;
-                let offered_htlcs = vec![];
-                let received_htlcs = vec![];
+                // Flip offered and received
+                let (offered_htlcs, received_htlcs) = extract_htlcs(&m.htlcs);
                 let sig = self.node
                     .with_ready_channel(&self.channel_id, |chan| {
                         chan.sign_counterparty_commitment_tx(
@@ -277,8 +371,7 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                 let witscripts = extract_witscripts(psbt);
                 let commit_num = m.commitment_number;
                 let feerate_sat_per_kw = m.feerate;
-                let offered_htlcs = vec![];
-                let received_htlcs = vec![];
+                let (received_htlcs, offered_htlcs) = extract_htlcs(&m.htlcs);
                 let commit_sig = secp256k1::Signature::from_compact(&m.signature.signature.0).expect("signature");
                 assert_eq!(m.signature.sighash, SigHashType::All as u8);
                 let htlc_sigs = m.htlc_signatures.iter()
@@ -307,8 +400,53 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                     old_commitment_secret: old_secret_reply,
                 }).expect("write");
             }
-            Message::Unknown(u) => unimplemented!("loop {}: unknown message type {}", self.client.id(), u.message_type),
-            m => unimplemented!("loop {}: unimplemented message {:?}", self.client.id(), m),
+            Message::ValidateRevocation(m) => {
+                let revoke_num = m.commitment_number;
+                let old_secret = SecretKey::from_slice(&m.commitment_secret.0).expect("secret");
+                self.node.with_ready_channel(&self.channel_id, |chan| {
+                    chan.validate_counterparty_revocation(revoke_num, &old_secret)
+                }).expect("validate");
+                self.client.write(msgs::ValidateRevocationReply {}).expect("write");
+            }
+            Message::SignPenaltyToUs(m) => {
+                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
+                let mut tx_bytes = m.tx.0.clone();
+                let tx = deserialize(&mut tx_bytes).expect("tx");
+                let revocation_secret = SecretKey::from_slice(&m.revocation_secret.0).expect("secret");
+                let redeemscript = Script::from(m.wscript);
+                let input = 0;
+                let htlc_amount_sat = psbt.inputs[input]
+                    .witness_utxo.as_ref().expect("will only spend witness UTXOs")
+                    .value;
+                let sig = self
+                    .node
+                    .with_ready_channel(&self.channel_id, |chan| {
+                        chan.sign_justice_sweep(
+                            &tx,
+                            input,
+                            &revocation_secret,
+                            &redeemscript,
+                            htlc_amount_sat,
+                        )
+                    }).expect("sign");
+                self.client.write(msgs::SignTxReply {
+                    signature: BitcoinSignature
+                    {
+                        signature: Signature(sig.serialize_compact()),
+                        sighash: SigHashType::All as u8
+                    }
+                }).expect("write");
+            }
+            Message::SignChannelUpdate(m) => {
+                let message = m.update[2+64..].to_vec();
+                let sig_data_der = self.node.sign_channel_update(&message).expect("sign_channel_update");
+                let sig = secp256k1::Signature::from_der(&sig_data_der).expect("sig");
+                let mut update = m.update;
+                update[2..2+64].copy_from_slice(&sig.serialize_compact());
+                self.client.write(msgs::SignChannelUpdateReply { update }).expect("write");
+            }
+            Message::Unknown(u) => unimplemented!("cloop {}: unknown message type {}", self.client.id(), u.message_type),
+            m => unimplemented!("cloop {}: unimplemented message {:?}", self.client.id(), m),
         }
     }
 
@@ -361,4 +499,26 @@ mod tests {
         let sig = [83, 1, 22, 118, 14, 225, 143, 45, 119, 59, 51, 81, 117, 109, 12, 76, 141, 142, 137, 167, 117, 28, 98, 150, 245, 134, 254, 105, 172, 236, 170, 4, 24, 195, 101, 175, 186, 97, 224, 127, 128, 202, 94, 58, 56, 171, 51, 106, 153, 217, 229, 22, 217, 94, 169, 47, 55, 71, 237, 36, 128, 102, 148, 61];
         secp256k1::Signature::from_compact(&sig).expect("signature");
     }
+}
+
+fn extract_htlcs(htlcs: &Vec<Htlc>) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
+    let offered_htlcs: Vec<HTLCInfo2> = htlcs.iter()
+        .filter(|h| h.state < 10)
+        .map(|h|
+            HTLCInfo2 {
+                value_sat: h.amount / 1000,
+                payment_hash: PaymentHash(h.payment_hash.0),
+                cltv_expiry: h.ctlv_expiry
+            }
+        ).collect();
+    let received_htlcs: Vec<HTLCInfo2> = htlcs.iter()
+        .filter(|h| h.state >= 10)
+        .map(|h|
+            HTLCInfo2 {
+                value_sat: h.amount / 1000,
+                payment_hash: PaymentHash(h.payment_hash.0),
+                cltv_expiry: h.ctlv_expiry
+            }
+        ).collect();
+    (received_htlcs, offered_htlcs)
 }

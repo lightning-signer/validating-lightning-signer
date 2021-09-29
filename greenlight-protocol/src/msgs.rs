@@ -17,7 +17,7 @@ pub trait TypedMessage {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HsmdInit {
     pub key_version: Bip32KeyVersion,
-    pub chain_params: BlockID,
+    pub chain_params: BlockId,
     pub encryption_key: Option<Secret>,
     pub dev_privkey: Option<PrivKey>,
     pub dev_bip32_seed: Option<Secret>,
@@ -83,6 +83,27 @@ pub struct SignInvoiceReply {
 
 impl TypedMessage for SignInvoiceReply {
     const TYPE: u16 = 108;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignWithdrawal {
+    pub utxos: Vec<Utxo>,
+    pub psbt: LargeBytes,
+}
+
+impl TypedMessage for SignWithdrawal {
+    const TYPE: u16 = 7;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignWithdrawalReply {
+    pub psbt: LargeBytes,
+}
+
+impl TypedMessage for SignWithdrawalReply {
+    const TYPE: u16 = 107;
 }
 
 ///
@@ -197,20 +218,6 @@ impl TypedMessage for ReadyChannelReply {
     const TYPE: u16 = 131;
 }
 
-// msgtype,hsmd_validate_commitment_tx,35
-// msgdata,hsmd_validate_commitment_tx,tx,bitcoin_tx,
-// msgdata,hsmd_validate_commitment_tx,num_existing_htlcs,u16,
-// msgdata,hsmd_validate_commitment_tx,htlcs,existing_htlc,num_existing_htlcs
-// msgdata,hsmd_validate_commitment_tx,commit_num,u64,
-// msgdata,hsmd_validate_commitment_tx,feerate,u32,
-// msgdata,hsmd_validate_commitment_tx,sig,bitcoin_signature,
-// msgdata,hsmd_validate_commitment_tx,num_htlc_sigs,u16,
-// msgdata,hsmd_validate_commitment_tx,htlc_sigs,bitcoin_signature,num_htlc_sigs
-//
-// msgtype,hsmd_validate_commitment_tx_reply,135
-// msgdata,hsmd_validate_commitment_tx_reply,old_commitment_secret,?secret,
-// msgdata,hsmd_validate_commitment_tx_reply,next_per_commitment_point,pubkey,
-
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ValidateCommitmentTx {
@@ -239,6 +246,26 @@ impl TypedMessage for ValidateCommitmentTxReply {
 }
 
 ///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ValidateRevocation {
+    pub commitment_number: u64,
+    pub commitment_secret: Secret,
+}
+
+impl TypedMessage for ValidateRevocation {
+    const TYPE: u16 = 36;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ValidateRevocationReply {
+}
+
+impl TypedMessage for ValidateRevocationReply {
+    const TYPE: u16 = 136;
+}
+
+    ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignRemoteCommitmentTx {
     pub tx: LargeBytes,
@@ -353,6 +380,8 @@ pub enum Message {
     ClientHsmFdReply(ClientHsmFdReply),
     SignInvoice(SignInvoice),
     SignInvoiceReply(SignInvoiceReply),
+    SignWithdrawal(SignWithdrawal),
+    SignWithdrawalReply(SignWithdrawalReply),
     Ecdh(Ecdh),
     EcdhReply(EcdhReply),
     Memleak(Memleak),
@@ -364,6 +393,9 @@ pub enum Message {
     ReadyChannel(ReadyChannel),
     ReadyChannelReply(ReadyChannelReply),
     ValidateCommitmentTx(ValidateCommitmentTx),
+    ValidateCommitmentTxReply(ValidateCommitmentTxReply),
+    ValidateRevocation(ValidateRevocation),
+    ValidateRevocationReply(ValidateRevocationReply),
     SignRemoteCommitmentTx(SignRemoteCommitmentTx),
     SignTxReply(SignTxReply),
     GetChannelBasepoints(GetChannelBasepoints),
@@ -414,6 +446,8 @@ fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
         ClientHsmFdReply::TYPE => Message::ClientHsmFdReply(from_vec_no_trailing(&mut data)?),
         SignInvoice::TYPE => Message::SignInvoice(from_vec_no_trailing(&mut data)?),
         SignInvoiceReply::TYPE => Message::SignInvoiceReply(from_vec_no_trailing(&mut data)?),
+        SignWithdrawal::TYPE => Message::SignWithdrawal(from_vec_no_trailing(&mut data)?),
+        SignWithdrawalReply::TYPE => Message::SignWithdrawalReply(from_vec_no_trailing(&mut data)?),
         Ecdh::TYPE => Message::Ecdh(from_vec_no_trailing(&mut data)?),
         EcdhReply::TYPE => Message::EcdhReply(from_vec_no_trailing(&mut data)?),
         Memleak::TYPE => Message::Memleak(from_vec_no_trailing(&mut data)?),
@@ -425,6 +459,9 @@ fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
         ReadyChannel::TYPE => Message::ReadyChannel(from_vec_no_trailing(&mut data)?),
         ReadyChannelReply::TYPE => Message::ReadyChannelReply(from_vec_no_trailing(&mut data)?),
         ValidateCommitmentTx::TYPE => Message::ValidateCommitmentTx(from_vec_no_trailing(&mut data)?),
+        ValidateCommitmentTxReply::TYPE => Message::ValidateCommitmentTxReply(from_vec_no_trailing(&mut data)?),
+        ValidateRevocation::TYPE => Message::ValidateRevocation(from_vec_no_trailing(&mut data)?),
+        ValidateRevocationReply::TYPE => Message::ValidateRevocationReply(from_vec_no_trailing(&mut data)?),
         SignRemoteCommitmentTx::TYPE => Message::SignRemoteCommitmentTx(from_vec_no_trailing(&mut data)?),
         SignTxReply::TYPE => Message::SignTxReply(from_vec_no_trailing(&mut data)?),
         GetChannelBasepoints::TYPE => Message::GetChannelBasepoints(from_vec_no_trailing(&mut data)?),
