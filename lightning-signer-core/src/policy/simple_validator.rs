@@ -1045,6 +1045,89 @@ impl Validator for SimpleValidator {
         *debug_on_return = false; // don't debug when we succeed
         Ok(())
     }
+
+    fn validate_delayed_sweep(
+        &self,
+        wallet: &Wallet,
+        setup: &ChannelSetup,
+        vstate: &ValidatorState,
+        tx: &Transaction,
+        input: usize,
+        amount_sat: u64,
+        wallet_path: &Vec<u32>,
+    ) -> Result<(), ValidationError> {
+        let mut debug_on_return =
+            scoped_debug_return!(setup, vstate, tx, input, amount_sat, wallet_path);
+
+        // TODO - remove these checks when we handle multiple inputs/outputs
+        if tx.input.len() != 1 {
+            return transaction_format_err!(
+                "bad number of delayed sweep inputs: {} != 1",
+                tx.input.len()
+            );
+        }
+        if tx.output.len() != 1 {
+            return transaction_format_err!(
+                "bad number of delayed sweep outputs: {} != 1",
+                tx.output.len()
+            );
+        }
+        if input != 0 {
+            return transaction_format_err!("bad input index: {} != 0", input);
+        }
+
+        // policy-delayed-sweep-version
+        if tx.version != 2 {
+            return transaction_format_err!("bad delayed sweep version: {}", tx.version);
+        }
+
+        // policy-delayed-sweep-locktime
+        // FIXME - Until vstate.current_height is hooked up only allows lock_time = 0.
+        if tx.lock_time > vstate.current_height {
+            return transaction_format_err!(
+                "bad delayed sweep locktime: {} > {}",
+                tx.lock_time,
+                vstate.current_height
+            );
+        }
+
+        // policy-delayed-sweep-sequence
+        let seq = tx.input[0].sequence;
+        if seq != setup.counterparty_selected_contest_delay as u32 {
+            return transaction_format_err!(
+                "bad delayed sweep sequence: {} != {}",
+                seq,
+                setup.counterparty_selected_contest_delay
+            );
+        }
+
+        // policy-delayed-sweep-fee-range
+        let fee = amount_sat.checked_sub(tx.output[0].value).ok_or_else(|| {
+            policy_error(format!(
+                "delayed sweep fee underflow: {} - {}",
+                amount_sat, tx.output[0].value
+            ))
+        })?;
+        self.validate_fee("validate_delayed_sweep", fee, tx)?;
+
+        // policy-delayed-sweep-destination-allowlisted
+        let dest_script = &tx.output[0].script_pubkey;
+        if !wallet
+            .can_spend(wallet_path, dest_script)
+            .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
+            && !wallet.allowlist_contains(dest_script)
+        {
+            info!(
+                "dest_script not matched: path={:?}, {}",
+                wallet_path,
+                script_debug(dest_script, wallet.network())
+            );
+            return policy_err!("destination is not in wallet or allowlist");
+        }
+
+        *debug_on_return = false;
+        Ok(())
+    }
 }
 
 impl SimpleValidator {

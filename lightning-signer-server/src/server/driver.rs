@@ -1059,6 +1059,19 @@ impl Signer for SignServer {
 
         let htlc_redeemscript = Script::from(redeemscript.clone());
 
+        let wallet_path = &reqtx
+            .output_descs
+            .into_iter()
+            .map(|od| {
+                let key_loc = od.key_loc.as_ref();
+                if key_loc.is_some() {
+                    key_loc.unwrap().key_path.to_vec()
+                } else {
+                    vec![]
+                }
+            })
+            .collect::<Vec<Vec<u32>>>()[0];
+
         let sigvec = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
@@ -1068,6 +1081,7 @@ impl Signer for SignServer {
                     req.commitment_number,
                     &htlc_redeemscript,
                     htlc_amount_sat,
+                    &wallet_path,
                 )?;
                 Ok(signature_to_bitcoin_vec(sig))
             })

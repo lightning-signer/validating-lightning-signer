@@ -167,4 +167,17 @@ impl Validator for NullValidator {
     ) -> Result<(), ValidationError> {
         Ok(())
     }
+
+    fn validate_delayed_sweep(
+        &self,
+        _wallet: &Wallet,
+        _setup: &ChannelSetup,
+        _vstate: &ValidatorState,
+        _tx: &Transaction,
+        _input: usize,
+        _amount_sat: u64,
+        _wallet_path: &Vec<u32>,
+    ) -> Result<(), ValidationError> {
+        Ok(())
+    }
 }

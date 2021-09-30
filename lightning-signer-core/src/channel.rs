@@ -1067,28 +1067,42 @@ impl Channel {
         input: usize,
         commitment_number: u64,
         redeemscript: &Script,
-        htlc_amount_sat: u64,
+        amount_sat: u64,
+        wallet_path: &Vec<u32>,
     ) -> Result<Signature, Status> {
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
-        let htlc_sighash = Message::from_slice(
+        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
+        let vstate = ValidatorState { current_height: 0 };
+
+        self.validator().validate_delayed_sweep(
+            &*self.node.upgrade().unwrap(),
+            &self.setup,
+            &vstate,
+            tx,
+            input,
+            amount_sat,
+            wallet_path,
+        )?;
+
+        let sighash = Message::from_slice(
             &SigHashCache::new(tx).signature_hash(
                 input,
                 &redeemscript,
-                htlc_amount_sat,
+                amount_sat,
                 SigHashType::All,
             )[..],
         )
         .map_err(|_| Status::internal("failed to sighash"))?;
 
-        let htlc_privkey = derive_private_key(
+        let privkey = derive_private_key(
             &self.secp_ctx,
             &per_commitment_point,
             &self.keys.delayed_payment_base_key,
         )
         .map_err(|_| Status::internal("failed to derive key"))?;
 
-        let sig = self.secp_ctx.sign(&htlc_sighash, &htlc_privkey);
+        let sig = self.secp_ctx.sign(&sighash, &privkey);
         self.persist()?;
         Ok(sig)
     }

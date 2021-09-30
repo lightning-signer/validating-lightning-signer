@@ -135,6 +135,18 @@ pub trait Validator {
         counterparty_shutdown_script: &Option<Script>,
         holder_wallet_path_hint: &Vec<u32>,
     ) -> Result<(), ValidationError>;
+
+    /// Validation of delayed sweep transaction
+    fn validate_delayed_sweep(
+        &self,
+        wallet: &Wallet,
+        setup: &ChannelSetup,
+        vstate: &ValidatorState,
+        tx: &Transaction,
+        input: usize,
+        amount_sat: u64,
+        key_path: &Vec<u32>,
+    ) -> Result<(), ValidationError>;
 }
 
 /// Blockchain state used by the validator
