@@ -144,7 +144,8 @@ fn run_test() {
             let conn = UnixConnection::new(fd3);
             let client = UnixClient::new(conn);
             let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
-            let handler = RootHandler::new(client, read_integration_test_seed(), persister, vec![]);
+            let seed = Some([0; 32]);
+            let handler = RootHandler::new(client, seed, persister, vec![]);
             signer_loop(handler)
         },
         Err(_) => {}
