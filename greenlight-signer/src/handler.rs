@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use bitcoin::{Network, Script, SigHashType};
+use bitcoin::blockdata::script;
 use bitcoin::consensus::deserialize;
 use bitcoin::hashes::Hash;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
@@ -14,7 +15,7 @@ use secp256k1::rand::rngs::OsRng;
 use serde::Serialize;
 
 use greenlight_protocol::{msgs, msgs::Message, Result};
-use greenlight_protocol::model::{Basepoints, BitcoinSignature, ExtKey, PubKey, PubKey32, RecoverableSignature, Secret, Signature, Htlc};
+use greenlight_protocol::model::{Basepoints, BitcoinSignature, ExtKey, Htlc, PubKey, PubKey32, RecoverableSignature, Secret, Signature};
 use greenlight_protocol::msgs::TypedMessage;
 use greenlight_protocol::serde_bolt::LargeBytes;
 use lightning_signer::Arc;
@@ -130,7 +131,7 @@ impl<C: Client> Handler<C> for RootHandler<C> {
             }
             Message::SignWithdrawal(m) => {
                 let mut psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
-                let tx = psbt.clone().extract_tx();
+                let mut tx = psbt.clone().extract_tx();
                 let ipaths = m.utxos.iter()
                     .map(|u| vec![u.keyindex]).collect();
                 let values_sat = m.utxos.iter()
@@ -141,6 +142,23 @@ impl<C: Client> Handler<C> for RootHandler<C> {
                     .map(|u| None).collect(); // TODO
                 let opaths = psbt.outputs.iter()
                     .map(|o| extract_output_path(&o.bip32_derivation)).collect();
+
+                // Populate script_sig for p2sh-p2wpkh signing
+                for (psbt_in, tx_in) in psbt.inputs.iter_mut().zip(tx.input.iter_mut()) {
+                    if let Some(script) = psbt_in.redeem_script.as_ref() {
+                        assert!(psbt_in.final_script_sig.is_none());
+                        assert!(tx_in.script_sig.is_empty());
+                        let script_sig = script::Builder::new()
+                            .push_slice(script.as_bytes())
+                            .into_script();
+                        tx_in.script_sig = script_sig.clone();
+                        psbt_in.final_script_sig = Some(script_sig);
+                    }
+                }
+                info!("opaths {:?}", opaths);
+                info!("txid {}", tx.txid());
+                info!("tx {:?}", tx);
+                info!("psbt {:?}", psbt);
                 let witvec = self.node.sign_funding_tx(
                     &tx,
                     &ipaths,
