@@ -721,7 +721,7 @@ mod tests {
 
 fn extract_htlcs(htlcs: &Vec<Htlc>) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
     let offered_htlcs: Vec<HTLCInfo2> = htlcs.iter()
-        .filter(|h| h.state < 10)
+        .filter(|h| h.side == Htlc::LOCAL)
         .map(|h|
             HTLCInfo2 {
                 value_sat: h.amount / 1000,
@@ -730,7 +730,7 @@ fn extract_htlcs(htlcs: &Vec<Htlc>) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
             }
         ).collect();
     let received_htlcs: Vec<HTLCInfo2> = htlcs.iter()
-        .filter(|h| h.state >= 10)
+        .filter(|h| h.side == Htlc::REMOTE)
         .map(|h|
             HTLCInfo2 {
                 value_sat: h.amount / 1000,

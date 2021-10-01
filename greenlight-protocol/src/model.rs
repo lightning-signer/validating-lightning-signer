@@ -124,15 +124,15 @@ pub struct BitcoinSignature {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Htlc {
-    pub state: u8,
-    pub id: u64,
+    pub side: u8, // 0 = local, 1 = remote
     pub amount: u64,
     pub payment_hash: Sha256,
     pub ctlv_expiry: u32,
-    pub routing_packet: OnionRoutingPacket,
-    pub preimage: Option<Secret>,
-    pub failed: Option<FailedHtlc>,
-    pub blinding: Option<PubKey>,
+}
+
+impl Htlc {
+    pub const LOCAL: u8 = 0;
+    pub const REMOTE: u8 = 1;
 }
 
 #[derive(Debug, Serialize, Deserialize)]
