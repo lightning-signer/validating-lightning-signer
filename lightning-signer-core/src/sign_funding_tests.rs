@@ -216,7 +216,7 @@ mod tests {
                 &uniclosekeys,
                 &vec![opath.clone()],
             ),
-            "policy failure: validate_fee: validate_funding_tx: above maximum: 47000 > 46000"
+            "policy failure: validate_fee: validate_funding_tx: fee above maximum: 47000 > 46000"
         );
     }
 

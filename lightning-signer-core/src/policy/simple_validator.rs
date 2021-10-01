@@ -136,7 +136,12 @@ impl SimpleValidator {
             );
         }
         if fee > self.policy.max_fee {
-            return policy_err!("{}: above maximum: {} > {}", name, fee, self.policy.max_fee);
+            return policy_err!(
+                "{}: fee above maximum: {} > {}",
+                name,
+                fee,
+                self.policy.max_fee
+            );
         }
         // TODO - apply min/max fee rate heurustic (incorporating tx size) as well.
         Ok(())
