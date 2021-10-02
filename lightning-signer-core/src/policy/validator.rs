@@ -147,6 +147,20 @@ pub trait Validator {
         amount_sat: u64,
         key_path: &Vec<u32>,
     ) -> Result<(), ValidationError>;
+
+    /// Validation of counterparty htlc sweep transaction (first level
+    /// commitment htlc outputs)
+    fn validate_counterparty_htlc_sweep(
+        &self,
+        wallet: &Wallet,
+        setup: &ChannelSetup,
+        vstate: &ValidatorState,
+        tx: &Transaction,
+        redeemscript: &Script,
+        input: usize,
+        amount_sat: u64,
+        key_path: &Vec<u32>,
+    ) -> Result<(), ValidationError>;
 }
 
 /// Blockchain state used by the validator

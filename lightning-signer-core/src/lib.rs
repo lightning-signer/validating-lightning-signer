@@ -116,6 +116,8 @@ mod ready_channel_tests;
 #[cfg(test)]
 mod sign_counterparty_commitment_tests;
 #[cfg(test)]
+mod sign_counterparty_htlc_sweep_tests;
+#[cfg(test)]
 mod sign_delayed_sweep_tests;
 #[cfg(test)]
 mod sign_funding_tests;
