@@ -923,8 +923,7 @@ mod tests {
     use bitcoin::util::bip143::SigHashCache;
     use bitcoin::{Address, OutPoint, SigHashType};
     use lightning::ln::chan_utils::{
-        build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
-        HTLCOutputInCommitment, TxCreationKeys,
+        build_htlc_transaction, get_revokeable_redeemscript, HTLCOutputInCommitment,
     };
     use lightning::ln::PaymentHash;
     use test_env_log::test;
@@ -1036,88 +1035,6 @@ mod tests {
             })
             .unwrap();
         assert_eq!(notcorrect, false);
-    }
-
-    #[test]
-    fn sign_counterparty_htlc_sweep_test() {
-        let (node, channel_id) =
-            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
-
-        let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
-        let feerate_per_kw = 1000;
-        let to_self_delay = 32;
-        let htlc = HTLCOutputInCommitment {
-            offered: true,
-            amount_msat: 1 * 1000 * 1000,
-            cltv_expiry: 2 << 16,
-            payment_hash: PaymentHash([1; 32]),
-            transaction_output_index: Some(0),
-        };
-
-        let remote_per_commitment_point = make_test_pubkey(10);
-
-        let per_commitment_point = make_test_pubkey(1);
-        let a_delayed_payment_base = make_test_pubkey(2);
-        let b_revocation_base = make_test_pubkey(3);
-
-        let secp_ctx = Secp256k1::new();
-
-        let keys = TxCreationKeys::derive_new(
-            &secp_ctx,
-            &per_commitment_point,
-            &a_delayed_payment_base,
-            &make_test_pubkey(4), // a_htlc_base
-            &b_revocation_base,
-            &make_test_pubkey(6),
-        ) // b_htlc_base
-        .expect("new TxCreationKeys");
-
-        let a_delayed_payment_key =
-            derive_public_key(&secp_ctx, &per_commitment_point, &a_delayed_payment_base)
-                .expect("a_delayed_payment_key");
-
-        let revocation_key =
-            derive_revocation_pubkey(&secp_ctx, &per_commitment_point, &b_revocation_base)
-                .expect("revocation_key");
-
-        let htlc_tx = build_htlc_transaction(
-            &commitment_txid,
-            feerate_per_kw,
-            to_self_delay,
-            &htlc,
-            &a_delayed_payment_key,
-            &revocation_key,
-        );
-
-        let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
-
-        let htlc_amount_sat = 10 * 1000;
-
-        let ser_signature = node
-            .with_ready_channel(&channel_id, |chan| {
-                let sig = chan
-                    .sign_counterparty_htlc_sweep(
-                        &htlc_tx,
-                        0,
-                        &remote_per_commitment_point,
-                        &htlc_redeemscript,
-                        htlc_amount_sat,
-                    )
-                    .unwrap();
-                Ok(signature_to_bitcoin_vec(sig))
-            })
-            .unwrap();
-
-        let htlc_pubkey = get_channel_htlc_pubkey(&node, &channel_id, &remote_per_commitment_point);
-
-        check_signature(
-            &htlc_tx,
-            0,
-            ser_signature,
-            &htlc_pubkey,
-            htlc_amount_sat,
-            &htlc_redeemscript,
-        );
     }
 
     #[test]
