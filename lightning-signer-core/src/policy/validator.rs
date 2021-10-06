@@ -161,6 +161,18 @@ pub trait Validator {
         amount_sat: u64,
         key_path: &Vec<u32>,
     ) -> Result<(), ValidationError>;
+
+    /// Validation of justice sweep transaction
+    fn validate_justice_sweep(
+        &self,
+        wallet: &Wallet,
+        setup: &ChannelSetup,
+        vstate: &ValidatorState,
+        tx: &Transaction,
+        input: usize,
+        amount_sat: u64,
+        key_path: &Vec<u32>,
+    ) -> Result<(), ValidationError>;
 }
 
 /// Blockchain state used by the validator

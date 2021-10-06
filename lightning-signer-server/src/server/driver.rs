@@ -1234,10 +1234,27 @@ impl Signer for SignServer {
 
         let revocation_secret = self.secret_key(req.revocation_secret)?;
 
+        if tx.output.len() != 1 {
+            return Err(Status::invalid_argument("tx.output.len() != 1"));
+        }
+
         let input: usize = req
             .input
             .try_into()
             .map_err(|_| invalid_grpc_argument("bad input index"))?;
+
+        let wallet_path = &reqtx
+            .output_descs
+            .into_iter()
+            .map(|od| {
+                let key_loc = od.key_loc.as_ref();
+                if key_loc.is_some() {
+                    key_loc.unwrap().key_path.to_vec()
+                } else {
+                    vec![]
+                }
+            })
+            .collect::<Vec<Vec<u32>>>()[0];
 
         let sigvec = self
             .signer
@@ -1248,6 +1265,7 @@ impl Signer for SignServer {
                     &revocation_secret,
                     &redeemscript,
                     htlc_amount_sat,
+                    &wallet_path,
                 )?;
                 Ok(signature_to_bitcoin_vec(sig))
             })

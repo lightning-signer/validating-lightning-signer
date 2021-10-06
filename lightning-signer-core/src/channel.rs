@@ -1160,13 +1160,27 @@ impl Channel {
         input: usize,
         revocation_secret: &SecretKey,
         redeemscript: &Script,
-        htlc_amount_sat: u64,
+        amount_sat: u64,
+        wallet_path: &Vec<u32>,
     ) -> Result<Signature, Status> {
+        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
+        let vstate = ValidatorState { current_height: 0 };
+
+        self.validator().validate_justice_sweep(
+            &*self.node.upgrade().unwrap(),
+            &self.setup,
+            &vstate,
+            tx,
+            input,
+            amount_sat,
+            wallet_path,
+        )?;
+
         let sighash = Message::from_slice(
             &SigHashCache::new(tx).signature_hash(
                 input,
                 &redeemscript,
-                htlc_amount_sat,
+                amount_sat,
                 SigHashType::All,
             )[..],
         )

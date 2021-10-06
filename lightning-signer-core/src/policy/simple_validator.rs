@@ -1261,6 +1261,90 @@ impl Validator for SimpleValidator {
         *debug_on_return = false;
         Ok(())
     }
+
+    fn validate_justice_sweep(
+        &self,
+        wallet: &Wallet,
+        _setup: &ChannelSetup,
+        vstate: &ValidatorState,
+        tx: &Transaction,
+        input: usize,
+        amount_sat: u64,
+        wallet_path: &Vec<u32>,
+    ) -> Result<(), ValidationError> {
+        let mut debug_on_return =
+            scoped_debug_return!(_setup, vstate, tx, input, amount_sat, wallet_path);
+
+        // TODO - remove these checks when we handle multiple inputs/outputs
+        if tx.input.len() != 1 {
+            return transaction_format_err!(
+                "bad number of justice sweep inputs: {} != 1",
+                tx.input.len()
+            );
+        }
+        if tx.output.len() != 1 {
+            return transaction_format_err!(
+                "bad number of justice sweep outputs: {} != 1",
+                tx.output.len()
+            );
+        }
+        if input != 0 {
+            return transaction_format_err!("bad input index: {} != 0", input);
+        }
+
+        // policy-justice-sweep-version
+        if tx.version != 2 {
+            return transaction_format_err!("bad justice sweep version: {}", tx.version);
+        }
+
+        // policy-justice-sweep-locktime
+        // FIXME - Until vstate.current_height is hooked up only allows lock_time = 0.
+        if tx.lock_time > vstate.current_height {
+            return transaction_format_err!(
+                "bad justice sweep locktime: {} > {}",
+                tx.lock_time,
+                vstate.current_height
+            );
+        }
+
+        // policy-justice-sweep-sequence
+        let seq = tx.input[0].sequence;
+        let valid_seqs = SimpleValidator::NON_ANCHOR_SEQS.to_vec();
+        if !valid_seqs.contains(&seq) {
+            return transaction_format_err!(
+                "bad justice sweep sequence: {} not in {:?}",
+                seq,
+                valid_seqs
+            );
+        }
+
+        // policy-justice-sweep-fee-range
+        let fee = amount_sat.checked_sub(tx.output[0].value).ok_or_else(|| {
+            policy_error(format!(
+                "justice sweep fee underflow: {} - {}",
+                amount_sat, tx.output[0].value
+            ))
+        })?;
+        self.validate_fee("validate_justice_sweep", fee, tx)?;
+
+        // policy-justice-sweep-destination-allowlisted
+        let dest_script = &tx.output[0].script_pubkey;
+        if !wallet
+            .can_spend(wallet_path, dest_script)
+            .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
+            && !wallet.allowlist_contains(dest_script)
+        {
+            info!(
+                "dest_script not matched: path={:?}, {}",
+                wallet_path,
+                script_debug(dest_script, wallet.network())
+            );
+            return policy_err!("destination is not in wallet or allowlist");
+        }
+
+        *debug_on_return = false;
+        Ok(())
+    }
 }
 
 impl SimpleValidator {
