@@ -163,6 +163,64 @@ impl SimpleValidator {
             )
         }
     }
+
+    // Common validation for validate_{delayed,counterparty_htlc,justice}_sweep
+    fn validate_sweep(
+        &self,
+        wallet: &Wallet,
+        tx: &Transaction,
+        input: usize,
+        amount_sat: u64,
+        wallet_path: &Vec<u32>,
+    ) -> Result<(), ValidationError> {
+        // TODO - remove these checks when we handle multiple inputs/outputs
+        if tx.input.len() != 1 {
+            return transaction_format_err!("bad number of inputs: {} != 1", tx.input.len());
+        }
+        if tx.output.len() != 1 {
+            return transaction_format_err!("bad number of outputs: {} != 1", tx.output.len());
+        }
+        if input != 0 {
+            return transaction_format_err!("bad input index: {} != 0", input);
+        }
+
+        // policy-delayed-sweep-version
+        // policy-counterparty-htlc-sweep-version
+        // policy-justice-sweep-version
+        if tx.version != 2 {
+            return transaction_format_err!("bad version: {}", tx.version);
+        }
+
+        // policy-delayed-sweep-fee-range
+        // policy-counterparty-htlc-sweep-fee-range
+        // policy-justice-sweep-fee-range
+        let fee = amount_sat.checked_sub(tx.output[0].value).ok_or_else(|| {
+            policy_error(format!(
+                "fee underflow: {} - {}",
+                amount_sat, tx.output[0].value
+            ))
+        })?;
+        self.validate_fee("validate_sweep", fee, tx)?;
+
+        // policy-delayed-sweep-destination-allowlisted
+        // policy-counterparty-htlc-sweep-destination-allowlisted
+        // policy-justice-sweep-destination-allowlisted
+        let dest_script = &tx.output[0].script_pubkey;
+        if !wallet
+            .can_spend(wallet_path, dest_script)
+            .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
+            && !wallet.allowlist_contains(dest_script)
+        {
+            info!(
+                "dest_script not matched: path={:?}, {}",
+                wallet_path,
+                script_debug(dest_script, wallet.network())
+            );
+            return policy_err!("destination is not in wallet or allowlist");
+        }
+
+        Ok(())
+    }
 }
 
 // TODO - policy-funding-change-path-predictable
@@ -1062,33 +1120,15 @@ impl Validator for SimpleValidator {
         let mut debug_on_return =
             scoped_debug_return!(setup, vstate, tx, input, amount_sat, wallet_path);
 
-        // TODO - remove these checks when we handle multiple inputs/outputs
-        if tx.input.len() != 1 {
-            return transaction_format_err!(
-                "bad number of delayed sweep inputs: {} != 1",
-                tx.input.len()
-            );
-        }
-        if tx.output.len() != 1 {
-            return transaction_format_err!(
-                "bad number of delayed sweep outputs: {} != 1",
-                tx.output.len()
-            );
-        }
-        if input != 0 {
-            return transaction_format_err!("bad input index: {} != 0", input);
-        }
-
-        // policy-delayed-sweep-version
-        if tx.version != 2 {
-            return transaction_format_err!("bad delayed sweep version: {}", tx.version);
-        }
+        // Common sweep validation
+        self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
+            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // policy-delayed-sweep-locktime
         // FIXME - Until vstate.current_height is hooked up only allows lock_time = 0.
         if tx.lock_time > vstate.current_height {
             return transaction_format_err!(
-                "bad delayed sweep locktime: {} > {}",
+                "bad locktime: {} > {}",
                 tx.lock_time,
                 vstate.current_height
             );
@@ -1098,34 +1138,10 @@ impl Validator for SimpleValidator {
         let seq = tx.input[0].sequence;
         if seq != setup.counterparty_selected_contest_delay as u32 {
             return transaction_format_err!(
-                "bad delayed sweep sequence: {} != {}",
+                "bad sequence: {} != {}",
                 seq,
                 setup.counterparty_selected_contest_delay
             );
-        }
-
-        // policy-delayed-sweep-fee-range
-        let fee = amount_sat.checked_sub(tx.output[0].value).ok_or_else(|| {
-            policy_error(format!(
-                "delayed sweep fee underflow: {} - {}",
-                amount_sat, tx.output[0].value
-            ))
-        })?;
-        self.validate_fee("validate_delayed_sweep", fee, tx)?;
-
-        // policy-delayed-sweep-destination-allowlisted
-        let dest_script = &tx.output[0].script_pubkey;
-        if !wallet
-            .can_spend(wallet_path, dest_script)
-            .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
-            && !wallet.allowlist_contains(dest_script)
-        {
-            info!(
-                "dest_script not matched: path={:?}, {}",
-                wallet_path,
-                script_debug(dest_script, wallet.network())
-            );
-            return policy_err!("destination is not in wallet or allowlist");
         }
 
         *debug_on_return = false;
@@ -1146,27 +1162,9 @@ impl Validator for SimpleValidator {
         let mut debug_on_return =
             scoped_debug_return!(setup, vstate, tx, input, amount_sat, wallet_path);
 
-        // TODO - remove these checks when we handle multiple inputs/outputs
-        if tx.input.len() != 1 {
-            return transaction_format_err!(
-                "bad number of counterparty htlc sweep inputs: {} != 1",
-                tx.input.len()
-            );
-        }
-        if tx.output.len() != 1 {
-            return transaction_format_err!(
-                "bad number of counterparty htlc sweep outputs: {} != 1",
-                tx.output.len()
-            );
-        }
-        if input != 0 {
-            return transaction_format_err!("bad input index: {} != 0", input);
-        }
-
-        // policy-counterparty-htlc-sweep-version
-        if tx.version != 2 {
-            return transaction_format_err!("bad counterparty htlc sweep version: {}", tx.version);
-        }
+        // Common sweep validation
+        self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
+            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // Parse the redeemscript to determine the cltv_expiry
         if let Ok((
@@ -1179,10 +1177,7 @@ impl Validator for SimpleValidator {
         {
             // It's a received htlc (counterparty perspective)
             if cltv_expiry < 0 || cltv_expiry > u32::MAX as i64 {
-                return transaction_format_err!(
-                    "bad counterparty htlc sweep cltv_expiry: {}",
-                    cltv_expiry
-                );
+                return transaction_format_err!("bad cltv_expiry: {}", cltv_expiry);
             }
 
             // policy-counterparty-htlc-sweep-locktime
@@ -1213,10 +1208,7 @@ impl Validator for SimpleValidator {
             }
         } else {
             // The redeemscript didn't parse as received or offered ...
-            return transaction_format_err!(
-                "bad counterparty htlc sweep redeemscript: {}",
-                &redeemscript
-            );
+            return transaction_format_err!("bad redeemscript: {}", &redeemscript);
         };
 
         // policy-counterparty-htlc-sweep-sequence
@@ -1227,35 +1219,7 @@ impl Validator for SimpleValidator {
             SimpleValidator::NON_ANCHOR_SEQS.to_vec()
         };
         if !valid_seqs.contains(&seq) {
-            return transaction_format_err!(
-                "bad counterparty htlc sweep sequence: {} not in {:?}",
-                seq,
-                valid_seqs,
-            );
-        }
-
-        // policy-counterparty-htlc-sweep-fee-range
-        let fee = amount_sat.checked_sub(tx.output[0].value).ok_or_else(|| {
-            policy_error(format!(
-                "counterparty htlc sweep fee underflow: {} - {}",
-                amount_sat, tx.output[0].value
-            ))
-        })?;
-        self.validate_fee("validate_counterparty htlc_sweep", fee, tx)?;
-
-        // policy-counterparty-htlc-sweep-destination-allowlisted
-        let dest_script = &tx.output[0].script_pubkey;
-        if !wallet
-            .can_spend(wallet_path, dest_script)
-            .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
-            && !wallet.allowlist_contains(dest_script)
-        {
-            info!(
-                "dest_script not matched: path={:?}, {}",
-                wallet_path,
-                script_debug(dest_script, wallet.network())
-            );
-            return policy_err!("destination is not in wallet or allowlist");
+            return transaction_format_err!("bad sequence: {} not in {:?}", seq, valid_seqs,);
         }
 
         *debug_on_return = false;
@@ -1275,33 +1239,15 @@ impl Validator for SimpleValidator {
         let mut debug_on_return =
             scoped_debug_return!(_setup, vstate, tx, input, amount_sat, wallet_path);
 
-        // TODO - remove these checks when we handle multiple inputs/outputs
-        if tx.input.len() != 1 {
-            return transaction_format_err!(
-                "bad number of justice sweep inputs: {} != 1",
-                tx.input.len()
-            );
-        }
-        if tx.output.len() != 1 {
-            return transaction_format_err!(
-                "bad number of justice sweep outputs: {} != 1",
-                tx.output.len()
-            );
-        }
-        if input != 0 {
-            return transaction_format_err!("bad input index: {} != 0", input);
-        }
-
-        // policy-justice-sweep-version
-        if tx.version != 2 {
-            return transaction_format_err!("bad justice sweep version: {}", tx.version);
-        }
+        // Common sweep validation
+        self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
+            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // policy-justice-sweep-locktime
         // FIXME - Until vstate.current_height is hooked up only allows lock_time = 0.
         if tx.lock_time > vstate.current_height {
             return transaction_format_err!(
-                "bad justice sweep locktime: {} > {}",
+                "bad locktime: {} > {}",
                 tx.lock_time,
                 vstate.current_height
             );
@@ -1311,35 +1257,7 @@ impl Validator for SimpleValidator {
         let seq = tx.input[0].sequence;
         let valid_seqs = SimpleValidator::NON_ANCHOR_SEQS.to_vec();
         if !valid_seqs.contains(&seq) {
-            return transaction_format_err!(
-                "bad justice sweep sequence: {} not in {:?}",
-                seq,
-                valid_seqs
-            );
-        }
-
-        // policy-justice-sweep-fee-range
-        let fee = amount_sat.checked_sub(tx.output[0].value).ok_or_else(|| {
-            policy_error(format!(
-                "justice sweep fee underflow: {} - {}",
-                amount_sat, tx.output[0].value
-            ))
-        })?;
-        self.validate_fee("validate_justice_sweep", fee, tx)?;
-
-        // policy-justice-sweep-destination-allowlisted
-        let dest_script = &tx.output[0].script_pubkey;
-        if !wallet
-            .can_spend(wallet_path, dest_script)
-            .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
-            && !wallet.allowlist_contains(dest_script)
-        {
-            info!(
-                "dest_script not matched: path={:?}, {}",
-                wallet_path,
-                script_debug(dest_script, wallet.network())
-            );
-            return policy_err!("destination is not in wallet or allowlist");
+            return transaction_format_err!("bad sequence: {} not in {:?}", seq, valid_seqs);
         }
 
         *debug_on_return = false;
