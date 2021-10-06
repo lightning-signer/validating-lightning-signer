@@ -174,7 +174,7 @@ mod tests {
                 &uniclosekeys,
                 &vec![opath.clone()],
             ),
-            "policy failure: validate_fee: validate_funding_tx: fee below minimum: 99 < 100"
+            "policy failure: validate_funding_tx: validate_fee: fee below minimum: 99 < 100"
         );
     }
 
@@ -210,7 +210,7 @@ mod tests {
                 &uniclosekeys,
                 &vec![opath.clone()],
             ),
-            "policy failure: validate_fee: validate_funding_tx: fee above maximum: 47000 > 46000"
+            "policy failure: validate_funding_tx: validate_fee: fee above maximum: 47000 > 46000"
         );
     }
 

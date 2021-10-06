@@ -414,7 +414,7 @@ mod tests {
                     *amount_sat = tx.output[0].value; // fee = 0
                 },
             ),
-            "policy failure: validate_counterparty_htlc_sweep: validate_fee: validate_sweep: \
+            "policy failure: validate_counterparty_htlc_sweep: validate_sweep: validate_fee: \
              fee below minimum: 0 < 100"
         );
     }
@@ -430,7 +430,7 @@ mod tests {
                     *amount_sat += 50_000;
                 },
             ),
-            "policy failure: validate_counterparty_htlc_sweep: validate_fee: validate_sweep: \
+            "policy failure: validate_counterparty_htlc_sweep: validate_sweep: validate_fee: \
              fee above maximum: 51000 > 46000"
         );
     }
