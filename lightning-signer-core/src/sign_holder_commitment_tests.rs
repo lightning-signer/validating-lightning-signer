@@ -27,7 +27,7 @@ mod tests {
                 let channel_parameters = chan.make_channel_parameters();
                 let commit_num = 23;
                 let feerate_per_kw = 0;
-                let to_broadcaster = 2_000_000;
+                let to_broadcaster = 1_999_000;
                 let to_countersignatory = 1_000_000;
                 let offered_htlcs = vec![];
                 let received_htlcs = vec![];
@@ -83,7 +83,7 @@ mod tests {
 
         assert_eq!(
             tx.txid().to_hex(),
-            "566333b63b2696cd51516dee93baa01243a0c0f17d646da1d1450a4f98de6a5e"
+            "17e696b2d7135e3b4df5ea7ab3f0bbb7cf22b37fa700c81075d5ec11e82fd1fc"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -119,7 +119,7 @@ mod tests {
 
         let commit_num = 23;
         let to_holder_value_sat = 1_000_000;
-        let to_counterparty_value_sat = 2_000_000;
+        let to_counterparty_value_sat = 1_999_000;
         let tx = node
             .with_ready_channel(&channel_id, |chan| {
                 chan.enforcement_state
@@ -155,7 +155,7 @@ mod tests {
             .expect("sign");
         assert_eq!(
             tx.txid().to_hex(),
-            "deb063aa75d0a43fecd8330a150dce8fd794d835c0b6db97b755cb8cfa3803fc"
+            "991422f2c0d308b9319f9aec28ccef4bffedf5d36965ec7346155537b8800844"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -389,7 +389,7 @@ mod tests {
 
         assert_eq!(
             tx.txid().to_hex(),
-            "bede14b4ebeb56a4a76e51220ec898bb0e2adc3d7429c60d1e782cf43a2fa2a7"
+            "d236f61c3e0fb3221fab61f97696077df3514e3d602561a6d2050d79777eb362"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node_ctx.node, &chan_ctx.channel_id);

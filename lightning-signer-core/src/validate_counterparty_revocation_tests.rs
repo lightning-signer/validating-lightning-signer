@@ -123,7 +123,7 @@ mod tests {
 
             assert_eq!(
                 tx.txid.to_hex(),
-                "56f1eb4719a7e93311f2ee3f4275785d857939af0c5eff6058b130f422042bff"
+                "98fe7f855e1cc99ca29a7c18caf1b8c6ac81fcdc44a854c60bf1b28d390323c4"
             );
 
             Ok(())
