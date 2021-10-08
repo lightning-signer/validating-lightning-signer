@@ -346,7 +346,7 @@ mod tests {
                 },
             ),
             "policy failure: validate_delayed_sweep: validate_sweep: validate_fee: \
-             fee above maximum: 1978997 > 46000"
+             fee above maximum: 1978997 > 80000"
         );
     }
 }

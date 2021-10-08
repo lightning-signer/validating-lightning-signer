@@ -644,8 +644,8 @@ mod tests {
                  _outpoint,
                  _wallet_path,
                  _allowlist| {
-                    *to_holder -= 22_000;
-                    *to_counterparty -= 23_000;
+                    *to_holder -= 40_000;
+                    *to_counterparty -= 40_000;
                 },
                 |chan| {
                     // Channel should not be marked closed
@@ -653,7 +653,7 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: validate_fee: \
-             fee above maximum: 47000 > 46000"
+             fee above maximum: 82000 > 80000"
         );
     }
 

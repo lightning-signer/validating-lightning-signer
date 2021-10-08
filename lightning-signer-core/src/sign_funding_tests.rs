@@ -185,7 +185,7 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let ipaths = vec![vec![0u32]];
-        let fee = 47_000u64;
+        let fee = 81_000u64;
         let ival0 = 100u64 + fee;
         let chanamt = 100u64;
         let values_sat = vec![ival0];
@@ -210,7 +210,7 @@ mod tests {
                 &uniclosekeys,
                 &vec![opath.clone()],
             ),
-            "policy failure: validate_funding_tx: validate_fee: fee above maximum: 47000 > 46000"
+            "policy failure: validate_funding_tx: validate_fee: fee above maximum: 81000 > 80000"
         );
     }
 
