@@ -399,7 +399,8 @@ mod tests {
                     *amount_sat = 2_000;
                 },
             ),
-            "policy failure: validate_counterparty_htlc_sweep: fee underflow: 2000 - 3000"
+            "policy failure: validate_counterparty_htlc_sweep: validate_sweep: \
+             fee underflow: 2000 - 3000"
         );
     }
 

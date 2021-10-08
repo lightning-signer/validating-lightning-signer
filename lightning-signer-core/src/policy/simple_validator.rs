@@ -129,14 +129,16 @@ impl SimpleValidator {
         Ok(())
     }
 
-    fn validate_fee(&self, fee: u64, _tx: &Transaction) -> Result<(), ValidationError> {
+    fn validate_fee(&self, sum_inputs: u64, sum_outputs: u64) -> Result<(), ValidationError> {
+        let fee = sum_inputs.checked_sub(sum_outputs).ok_or_else(|| {
+            policy_error(format!("fee underflow: {} - {}", sum_inputs, sum_outputs))
+        })?;
         if fee < self.policy.min_fee {
             return policy_err!("fee below minimum: {} < {}", fee, self.policy.min_fee);
         }
         if fee > self.policy.max_fee {
             return policy_err!("fee above maximum: {} > {}", fee, self.policy.max_fee);
         }
-        // TODO - apply min/max fee rate heurustic (incorporating tx size) as well.
         Ok(())
     }
 
@@ -184,13 +186,7 @@ impl SimpleValidator {
         // policy-delayed-sweep-fee-range
         // policy-counterparty-htlc-sweep-fee-range
         // policy-justice-sweep-fee-range
-        let fee = amount_sat.checked_sub(tx.output[0].value).ok_or_else(|| {
-            policy_error(format!(
-                "fee underflow: {} - {}",
-                amount_sat, tx.output[0].value
-            ))
-        })?;
-        self.validate_fee(fee, tx)
+        self.validate_fee(amount_sat, tx.output[0].value)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // policy-delayed-sweep-destination-allowlisted
@@ -328,10 +324,7 @@ impl Validator for SimpleValidator {
                 .checked_add(outp.value)
                 .ok_or_else(|| policy_error(format!("funding sum outputs overflow")))?;
         }
-        let fee = sum_inputs
-            .checked_sub(sum_outputs)
-            .ok_or_else(|| policy_error(format!("funding fee overflow")))?;
-        self.validate_fee(fee, tx)
+        self.validate_fee(sum_inputs, sum_outputs)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // policy-funding-format-standard

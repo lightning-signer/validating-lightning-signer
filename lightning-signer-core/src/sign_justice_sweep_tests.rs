@@ -356,7 +356,8 @@ mod tests {
                     *amount_sat -= 100_000;
                 },
             ),
-            "policy failure: validate_justice_sweep: fee underflow: 1879997 - 1978997"
+            "policy failure: validate_justice_sweep: validate_sweep: \
+             fee underflow: 1879997 - 1978997"
         );
     }
 
