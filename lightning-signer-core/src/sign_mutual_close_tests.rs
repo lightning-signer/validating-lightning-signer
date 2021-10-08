@@ -652,7 +652,8 @@ mod tests {
                     assert_eq!(chan.enforcement_state.mutual_close_signed, false);
                 }
             ),
-            "policy failure: validate_mutual_close_tx: fee too large 47000 > 46000"
+            "policy failure: validate_mutual_close_tx: validate_fee: \
+             fee above maximum: 47000 > 46000"
         );
     }
 
@@ -677,7 +678,8 @@ mod tests {
                     assert_eq!(chan.enforcement_state.mutual_close_signed, false);
                 }
             ),
-            "policy failure: validate_mutual_close_tx: fee too small 50 < 100"
+            "policy failure: validate_mutual_close_tx: validate_fee: \
+             fee below minimum: 50 < 100"
         );
     }
 

@@ -1035,24 +1035,11 @@ impl Validator for SimpleValidator {
         }
 
         // policy-mutual-fee-range
-        let consumed = to_holder_value_sat
+        let sum_outputs = to_holder_value_sat
             .checked_add(to_counterparty_value_sat)
             .ok_or_else(|| policy_error("consumed overflow".to_string()))?;
-        let fee = setup
-            .channel_value_sat
-            .checked_sub(consumed)
-            .ok_or_else(|| {
-                policy_error(format!(
-                    "mutual_close_tx: fee underflow: {} - {}",
-                    setup.channel_value_sat, consumed
-                ))
-            })?;
-        if fee > self.policy.max_fee {
-            return policy_err!("fee too large {} > {}", fee, self.policy.max_fee);
-        }
-        if fee < self.policy.min_fee {
-            return policy_err!("fee too small {} < {}", fee, self.policy.min_fee);
-        }
+        self.validate_fee(setup.channel_value_sat, sum_outputs)
+            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // policy-mutual-value-matches-commitment
         if let (true, descr) =
