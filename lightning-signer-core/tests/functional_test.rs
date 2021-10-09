@@ -578,7 +578,7 @@ macro_rules! check_spendable_outputs {
     }};
 }
 
-#[ignore] // Need to pass valid holder_wallet_path_hint to validate_mutual_close_tx
+#[ignore] // validate_mutual_close_tx: holder output not to wallet or in allowlist
 #[test]
 fn test_static_output_closing_tx() {
     let signer = Arc::new(MultiSigner::new());

@@ -673,11 +673,6 @@ impl Node {
         self.keys_manager.get_node_secret()
     }
 
-    /// Get destination redeemScript to encumber static protocol exit points.
-    pub fn get_destination_script(&self) -> Script {
-        self.keys_manager.get_destination_script()
-    }
-
     /// Get shutdown_pubkey to use as PublicKey at channel closure
     // FIXME - this method is deprecated
     pub fn get_ldk_shutdown_scriptpubkey(&self) -> ShutdownScript {

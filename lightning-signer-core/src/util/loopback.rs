@@ -1,8 +1,11 @@
 #![allow(missing_docs)]
 use std::convert::TryInto;
 
+use bitcoin::hash_types::WPubkeyHash;
+use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
+use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::{Script, Transaction, TxOut};
 use lightning::chain::keysinterface::{BaseSign, KeysInterface, Sign, SpendableOutputDescriptor};
 use lightning::ln::chan_utils;
@@ -185,6 +188,10 @@ impl LoopbackChannelSigner {
             }
         }
         (offered_htlcs, received_htlcs)
+    }
+
+    fn dest_wallet_path() -> Vec<u32> {
+        vec![1]
     }
 }
 
@@ -546,7 +553,13 @@ impl KeysInterface for LoopbackSignerKeysInterface {
     }
 
     fn get_destination_script(&self) -> Script {
-        self.get_node().get_destination_script()
+        let secp_ctx = Secp256k1::signing_only();
+        let wallet_path = LoopbackChannelSigner::dest_wallet_path();
+        let pubkey = self
+            .get_node()
+            .get_wallet_pubkey(&secp_ctx, &wallet_path)
+            .expect("pubkey");
+        Script::new_v0_wpkh(&WPubkeyHash::hash(&pubkey.serialize()))
     }
 
     fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {
