@@ -137,9 +137,8 @@ mod tests {
             let mut counterparty_value_sat = to_counterparty_value_sat;
             let mut holder_shutdown_script = Address::p2wpkh(
                 &node
-                    .get_wallet_key(&secp_ctx, &holder_wallet_path_hint)
-                    .unwrap()
-                    .public_key(&secp_ctx),
+                    .get_wallet_pubkey(&secp_ctx, &holder_wallet_path_hint)
+                    .unwrap(),
                 Network::Testnet,
             )
             .expect("Address")
@@ -262,10 +261,7 @@ mod tests {
             let mut holder_value_sat = to_holder_value_sat;
             let mut counterparty_value_sat = to_counterparty_value_sat;
             let mut holder_shutdown_script = Address::p2wpkh(
-                &node
-                    .get_wallet_key(&secp_ctx, &wallet_path)
-                    .unwrap()
-                    .public_key(&secp_ctx),
+                &node.get_wallet_pubkey(&secp_ctx, &wallet_path).unwrap(),
                 Network::Testnet,
             )
             .expect("Address")

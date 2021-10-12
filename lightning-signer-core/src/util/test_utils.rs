@@ -318,10 +318,7 @@ pub fn make_test_funding_wallet_addr(
     is_p2sh: bool,
 ) -> Address {
     let child_path = vec![i];
-    let pubkey = node
-        .get_wallet_key(&secp_ctx, &child_path)
-        .unwrap()
-        .public_key(&secp_ctx);
+    let pubkey = node.get_wallet_pubkey(&secp_ctx, &child_path).unwrap();
 
     // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
     if !is_p2sh {
@@ -351,10 +348,7 @@ pub fn make_test_funding_wallet_output(
     is_p2sh: bool,
 ) -> TxOut {
     let child_path = vec![i];
-    let pubkey = node
-        .get_wallet_key(&secp_ctx, &child_path)
-        .unwrap()
-        .public_key(&secp_ctx);
+    let pubkey = node.get_wallet_pubkey(&secp_ctx, &child_path).unwrap();
 
     // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
     let addr = if !is_p2sh {
@@ -1080,10 +1074,7 @@ pub fn make_test_funding_tx(
 ) -> (Vec<u32>, bitcoin::Transaction) {
     let opath = vec![0];
     let change_addr = Address::p2wpkh(
-        &node
-            .get_wallet_key(&secp_ctx, &opath)
-            .unwrap()
-            .public_key(&secp_ctx),
+        &node.get_wallet_pubkey(&secp_ctx, &opath).unwrap(),
         Network::Testnet,
     )
     .unwrap();
@@ -1098,10 +1089,7 @@ pub fn make_test_funding_tx_with_p2shwpkh_change(
 ) -> (Vec<u32>, bitcoin::Transaction) {
     let opath = vec![0];
     let change_addr = Address::p2shwpkh(
-        &node
-            .get_wallet_key(&secp_ctx, &opath)
-            .unwrap()
-            .public_key(&secp_ctx),
+        &node.get_wallet_pubkey(&secp_ctx, &opath).unwrap(),
         Network::Testnet,
     )
     .unwrap();

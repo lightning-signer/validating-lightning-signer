@@ -96,9 +96,7 @@ impl Wallet for Node {
         }
 
         let secp_ctx = Secp256k1::signing_only();
-        let pubkey = self
-            .get_wallet_key(&secp_ctx, child_path)?
-            .public_key(&secp_ctx);
+        let pubkey = self.get_wallet_pubkey(&secp_ctx, child_path)?;
 
         // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
         let native_addr = Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed");
@@ -575,7 +573,7 @@ impl Node {
                         key: sk,
                     }),
                     // Derive the HD key.
-                    None => self.get_wallet_key(&secp_ctx, &ipaths[idx]),
+                    None => self.get_wallet_privkey(&secp_ctx, &ipaths[idx]),
                 }?;
                 let pubkey = privkey.public_key(&secp_ctx);
                 let script_code = Address::p2pkh(&pubkey, privkey.network).script_pubkey();
@@ -634,7 +632,7 @@ impl Node {
         channel_transaction_parameters
     }
 
-    pub(crate) fn get_wallet_key(
+    pub(crate) fn get_wallet_privkey(
         &self,
         secp_ctx: &Secp256k1<secp256k1::SignOnly>,
         child_path: &Vec<u32>,
@@ -655,6 +653,16 @@ impl Node {
                 .map_err(|err| internal_error(format!("derive child_path failed: {}", err)))?;
         }
         Ok(xkey.private_key)
+    }
+
+    pub(crate) fn get_wallet_pubkey(
+        &self,
+        secp_ctx: &Secp256k1<secp256k1::SignOnly>,
+        child_path: &Vec<u32>,
+    ) -> Result<bitcoin::PublicKey, Status> {
+        Ok(self
+            .get_wallet_privkey(secp_ctx, child_path)?
+            .public_key(secp_ctx))
     }
 
     /// Get the node secret key
