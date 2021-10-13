@@ -1177,6 +1177,19 @@ impl Signer for SignServer {
             return Err(Status::invalid_argument("tx.output.len() != 1"));
         }
 
+        let wallet_path = &reqtx
+            .output_descs
+            .into_iter()
+            .map(|od| {
+                let key_loc = od.key_loc.as_ref();
+                if key_loc.is_some() {
+                    key_loc.unwrap().key_path.to_vec()
+                } else {
+                    vec![]
+                }
+            })
+            .collect::<Vec<Vec<u32>>>()[0];
+
         let sigvec = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
@@ -1186,6 +1199,7 @@ impl Signer for SignServer {
                     &remote_per_commitment_point,
                     &redeemscript,
                     htlc_amount_sat,
+                    &wallet_path,
                 )?;
                 Ok(signature_to_bitcoin_vec(sig))
             })

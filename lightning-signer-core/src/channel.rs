@@ -1107,7 +1107,7 @@ impl Channel {
         Ok(sig)
     }
 
-    /// Sign TODO
+    /// Sign an offered or received HTLC output from a commitment the counterparty broadcast.
     pub fn sign_counterparty_htlc_sweep(
         &self,
         tx: &bitcoin::Transaction,
@@ -1115,7 +1115,22 @@ impl Channel {
         remote_per_commitment_point: &PublicKey,
         redeemscript: &Script,
         htlc_amount_sat: u64,
+        wallet_path: &Vec<u32>,
     ) -> Result<Signature, Status> {
+        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
+        let vstate = ValidatorState { current_height: 0 };
+
+        self.validator().validate_counterparty_htlc_sweep(
+            &*self.node.upgrade().unwrap(),
+            &self.setup,
+            &vstate,
+            tx,
+            redeemscript,
+            input,
+            htlc_amount_sat,
+            wallet_path,
+        )?;
+
         let htlc_sighash = Message::from_slice(
             &SigHashCache::new(tx).signature_hash(
                 input,

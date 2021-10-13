@@ -70,6 +70,16 @@ impl<'a> core::fmt::Debug for DebugHTLCOutputInCommitment<'a> {
     }
 }
 
+/// Debug support for Vec<HTLCOutputInCommitment>
+pub struct DebugVecHTLCOutputInCommitment<'a>(pub &'a Vec<HTLCOutputInCommitment>);
+impl<'a> core::fmt::Debug for DebugVecHTLCOutputInCommitment<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_list()
+            .entries(self.0.iter().map(|vv| DebugHTLCOutputInCommitment(&vv)))
+            .finish()
+    }
+}
+
 /// Debug printer for TxCreationKeys which doesn't have one.
 pub struct DebugTxCreationKeys<'a>(pub &'a TxCreationKeys);
 impl<'a> core::fmt::Debug for DebugTxCreationKeys<'a> {

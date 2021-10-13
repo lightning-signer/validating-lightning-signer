@@ -438,6 +438,7 @@ impl BaseSign for LoopbackChannelSigner {
     ) -> Result<Signature, ()> {
         let chan_keys = self.make_counterparty_tx_keys(per_commitment_point, secp_ctx)?;
         let redeem_script = chan_utils::get_htlc_redeemscript(htlc, &chan_keys);
+        let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2
         let res = self
@@ -449,6 +450,7 @@ impl BaseSign for LoopbackChannelSigner {
                     per_commitment_point,
                     &redeem_script,
                     amount,
+                    &wallet_path,
                 )?;
                 Ok(signature_to_bitcoin_vec(sig))
             })

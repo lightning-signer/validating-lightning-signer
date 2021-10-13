@@ -83,6 +83,9 @@ pub struct SimpleValidator {
 }
 
 impl SimpleValidator {
+    const ANCHOR_SEQS: [u32; 1] = [0x_0000_0001];
+    const NON_ANCHOR_SEQS: [u32; 3] = [0x_0000_0000_u32, 0x_ffff_fffd_u32, 0x_ffff_ffff_u32];
+
     fn validate_delay(&self, name: &str, delay: u32) -> Result<(), ValidationError> {
         let policy = &self.policy;
 
@@ -1111,6 +1114,136 @@ impl Validator for SimpleValidator {
         self.validate_fee("validate_delayed_sweep", fee, tx)?;
 
         // policy-delayed-sweep-destination-allowlisted
+        let dest_script = &tx.output[0].script_pubkey;
+        if !wallet
+            .can_spend(wallet_path, dest_script)
+            .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
+            && !wallet.allowlist_contains(dest_script)
+        {
+            info!(
+                "dest_script not matched: path={:?}, {}",
+                wallet_path,
+                script_debug(dest_script, wallet.network())
+            );
+            return policy_err!("destination is not in wallet or allowlist");
+        }
+
+        *debug_on_return = false;
+        Ok(())
+    }
+
+    fn validate_counterparty_htlc_sweep(
+        &self,
+        wallet: &Wallet,
+        setup: &ChannelSetup,
+        vstate: &ValidatorState,
+        tx: &Transaction,
+        redeemscript: &Script,
+        input: usize,
+        amount_sat: u64,
+        wallet_path: &Vec<u32>,
+    ) -> Result<(), ValidationError> {
+        let mut debug_on_return =
+            scoped_debug_return!(setup, vstate, tx, input, amount_sat, wallet_path);
+
+        // TODO - remove these checks when we handle multiple inputs/outputs
+        if tx.input.len() != 1 {
+            return transaction_format_err!(
+                "bad number of counterparty htlc sweep inputs: {} != 1",
+                tx.input.len()
+            );
+        }
+        if tx.output.len() != 1 {
+            return transaction_format_err!(
+                "bad number of counterparty htlc sweep outputs: {} != 1",
+                tx.output.len()
+            );
+        }
+        if input != 0 {
+            return transaction_format_err!("bad input index: {} != 0", input);
+        }
+
+        // policy-counterparty-htlc-sweep-version
+        if tx.version != 2 {
+            return transaction_format_err!("bad counterparty htlc sweep version: {}", tx.version);
+        }
+
+        // Parse the redeemscript to determine the cltv_expiry
+        if let Ok((
+            _revocation_hash,
+            _remote_htlc_pubkey,
+            _payment_hash_vec,
+            _local_htlc_pubkey,
+            cltv_expiry,
+        )) = parse_received_htlc_script(redeemscript, setup.option_anchor_outputs())
+        {
+            // It's a received htlc (counterparty perspective)
+            if cltv_expiry < 0 || cltv_expiry > u32::MAX as i64 {
+                return transaction_format_err!(
+                    "bad counterparty htlc sweep cltv_expiry: {}",
+                    cltv_expiry
+                );
+            }
+
+            // policy-counterparty-htlc-sweep-locktime
+            if tx.lock_time > cltv_expiry as u32 {
+                return transaction_format_err!(
+                    "bad locktime: {} > {}",
+                    tx.lock_time,
+                    cltv_expiry as u32
+                );
+            }
+        } else if let Ok((
+            _revocation_hash,
+            _remote_htlc_pubkey,
+            _local_htlc_pubkey,
+            _payment_hash_vec,
+        )) = parse_offered_htlc_script(redeemscript, setup.option_anchor_outputs())
+        {
+            // It's an offered htlc (counterparty perspective)
+
+            // policy-counterparty-htlc-sweep-locktime
+            // FIXME - Until vstate.current_height is hooked up only allows lock_time = 0.
+            if tx.lock_time > vstate.current_height {
+                return transaction_format_err!(
+                    "bad locktime: {} > {}",
+                    tx.lock_time,
+                    vstate.current_height
+                );
+            }
+        } else {
+            // The redeemscript didn't parse as received or offered ...
+            return transaction_format_err!(
+                "bad counterparty htlc sweep redeemscript: {}",
+                &redeemscript
+            );
+        };
+
+        // policy-counterparty-htlc-sweep-sequence
+        let seq = tx.input[0].sequence;
+        let valid_seqs = if setup.option_anchor_outputs() {
+            SimpleValidator::ANCHOR_SEQS.to_vec()
+        } else {
+            SimpleValidator::NON_ANCHOR_SEQS.to_vec()
+        };
+        if !valid_seqs.contains(&seq) {
+            return transaction_format_err!(
+                "bad counterparty htlc sweep sequence: {} not in {:?}",
+                seq,
+                valid_seqs,
+            );
+        }
+
+        // policy-counterparty-htlc-sweep-fee-range
+        let fee = amount_sat.checked_sub(tx.output[0].value).ok_or_else(|| {
+            policy_error(format!(
+                "counterparty htlc sweep fee underflow: {} - {}",
+                amount_sat, tx.output[0].value
+            ))
+        })?;
+        self.validate_fee("validate_counterparty htlc_sweep", fee, tx)?;
+
+        // policy-counterparty-htlc-sweep-destination-allowlisted
         let dest_script = &tx.output[0].script_pubkey;
         if !wallet
             .can_spend(wallet_path, dest_script)
