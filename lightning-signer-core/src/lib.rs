@@ -126,6 +126,8 @@ mod sign_holder_commitment_tests;
 #[cfg(test)]
 mod sign_htlc_tx_tests;
 #[cfg(test)]
+mod sign_justice_sweep_tests;
+#[cfg(test)]
 mod sign_mutual_close_tests;
 #[cfg(test)]
 mod validate_counterparty_revocation_tests;

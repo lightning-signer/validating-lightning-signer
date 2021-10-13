@@ -377,6 +377,8 @@ impl BaseSign for LoopbackChannelSigner {
             &delayed_payment_key,
         );
 
+        let wallet_path = LoopbackChannelSigner::dest_wallet_path();
+
         // TODO phase 2
         let res = self
             .signer
@@ -387,6 +389,7 @@ impl BaseSign for LoopbackChannelSigner {
                     per_commitment_key,
                     &redeem_script,
                     amount,
+                    &wallet_path,
                 )?;
                 Ok(signature_to_bitcoin_vec(sig))
             })
@@ -405,9 +408,9 @@ impl BaseSign for LoopbackChannelSigner {
         secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
-
         let tx_keys = self.make_counterparty_tx_keys(&per_commitment_point, secp_ctx)?;
         let redeem_script = chan_utils::get_htlc_redeemscript(&htlc, &tx_keys);
+        let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2
         let res = self
@@ -419,6 +422,7 @@ impl BaseSign for LoopbackChannelSigner {
                     per_commitment_key,
                     &redeem_script,
                     amount,
+                    &wallet_path,
                 )?;
                 Ok(signature_to_bitcoin_vec(sig))
             })

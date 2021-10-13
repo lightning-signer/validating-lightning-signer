@@ -202,7 +202,8 @@ mod tests {
                 |node_ctx| { make_test_nonwallet_dest(node_ctx, 3, P2shP2wpkh) },
                 |_chan, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
             ),
-            "policy failure: validate_delayed_sweep: destination is not in wallet or allowlist"
+            "policy failure: validate_delayed_sweep: validate_sweep: \
+             destination is not in wallet or allowlist"
         );
     }
 
@@ -217,7 +218,8 @@ mod tests {
                 },
                 |_chan, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
             ),
-            "policy failure: validate_delayed_sweep: destination is not in wallet or allowlist"
+            "policy failure: validate_delayed_sweep: validate_sweep: \
+             destination is not in wallet or allowlist"
         );
     }
 
@@ -230,8 +232,8 @@ mod tests {
                     tx.input.push(tx.input[0].clone());
                 },
             ),
-            "transaction format: validate_delayed_sweep: \
-             bad number of delayed sweep inputs: 2 != 1"
+            "transaction format: validate_delayed_sweep: validate_sweep: \
+             bad number of inputs: 2 != 1"
         );
     }
 
@@ -244,8 +246,8 @@ mod tests {
                     tx.output.push(tx.output[0].clone());
                 },
             ),
-            "transaction format: validate_delayed_sweep: \
-             bad number of delayed sweep outputs: 2 != 1"
+            "transaction format: validate_delayed_sweep: validate_sweep: \
+             bad number of outputs: 2 != 1"
         );
     }
 
@@ -258,7 +260,7 @@ mod tests {
                     *input = 1;
                 },
             ),
-            "transaction format: validate_delayed_sweep: bad input index: 1 != 0"
+            "transaction format: validate_delayed_sweep: validate_sweep: bad input index: 1 != 0"
         );
     }
 
@@ -272,7 +274,7 @@ mod tests {
                     tx.version = 3;
                 },
             ),
-            "transaction format: validate_delayed_sweep: bad delayed sweep version: 3"
+            "transaction format: validate_delayed_sweep: validate_sweep: bad version: 3"
         );
     }
 
@@ -286,7 +288,7 @@ mod tests {
                     tx.lock_time = 1_000_000;
                 },
             ),
-            "transaction format: validate_delayed_sweep: bad delayed sweep locktime: 1000000 > 0"
+            "transaction format: validate_delayed_sweep: bad locktime: 1000000 > 0"
         );
     }
 
@@ -300,7 +302,7 @@ mod tests {
                     tx.input[0].sequence = 42;
                 },
             ),
-            "transaction format: validate_delayed_sweep: bad delayed sweep sequence: 42 != 7"
+            "transaction format: validate_delayed_sweep: bad sequence: 42 != 7"
         );
     }
 
@@ -313,7 +315,7 @@ mod tests {
                     *amount_sat -= 100_000;
                 },
             ),
-            "policy failure: delayed sweep fee underflow: 1879997 - 1978997"
+            "policy failure: validate_delayed_sweep: fee underflow: 1879997 - 1978997"
         );
     }
 
@@ -327,7 +329,8 @@ mod tests {
                     *amount_sat = tx.output[0].value; // fee = 0
                 },
             ),
-            "policy failure: validate_fee: validate_delayed_sweep: fee below minimum: 0 < 100"
+            "policy failure: validate_delayed_sweep: validate_sweep: validate_fee: \
+             fee below minimum: 0 < 100"
         );
     }
 
@@ -341,7 +344,7 @@ mod tests {
                     tx.output[0].value = 1_000;
                 },
             ),
-            "policy failure: validate_fee: validate_delayed_sweep: \
+            "policy failure: validate_delayed_sweep: validate_sweep: validate_fee: \
              fee above maximum: 1978997 > 46000"
         );
     }
