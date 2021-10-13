@@ -570,6 +570,16 @@ impl Signer for SignServer {
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_req_enter!(&node_id, &channel_id, &req);
 
+        let holder_shutdown_script = if req.holder_shutdown_script.is_empty() {
+            None
+        } else {
+            Some(
+                Script::deserialize(&req.holder_shutdown_script.as_slice()).map_err(|_| {
+                    invalid_grpc_argument("could not deserialize holder_shutdown_script")
+                })?,
+            )
+        };
+
         let counterparty_shutdown_script = if req.counterparty_shutdown_script.is_empty() {
             None
         } else {
@@ -586,7 +596,7 @@ impl Signer for SignServer {
                 let sig = chan.sign_mutual_close_tx_phase2(
                     req.to_holder_value_sat,
                     req.to_counterparty_value_sat,
-                    &Some(chan.get_ldk_shutdown_script().clone()), // FIXME - deprecated
+                    &holder_shutdown_script,
                     &counterparty_shutdown_script,
                     &req.holder_wallet_path_hint,
                 )?;

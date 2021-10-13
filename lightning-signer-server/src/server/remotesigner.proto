@@ -862,11 +862,14 @@ message SignMutualCloseTxPhase2Request {
   // Value to counterparty in satoshi, may be zero if dust
   uint64 to_counterparty_value_sat = 4;
 
-  // Counterparty shutdown script, if not previously specified
-  bytes counterparty_shutdown_script = 5;
+  // Holdershutdown script, if not previously specified
+  bytes holder_shutdown_script = 5;
 
-  // Path to the holder output in the wallet.
-  repeated uint32 holder_wallet_path_hint = 6;
+  // Counterparty shutdown script, if not previously specified
+  bytes counterparty_shutdown_script = 6;
+
+  // Path to the holder output in the wallet, may be empty if not in wallet
+  repeated uint32 holder_wallet_path_hint = 7;
 }
 
 message CloseTxSignatureReply {
