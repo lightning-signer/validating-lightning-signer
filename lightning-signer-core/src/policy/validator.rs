@@ -1,7 +1,7 @@
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{self, Network, Script, SigHash, Transaction};
 use lightning::chain::keysinterface::InMemorySigner;
-use lightning::ln::chan_utils::{HTLCOutputInCommitment, TxCreationKeys, ClosingTransaction};
+use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use log::debug;
 
 use crate::channel::{ChannelSetup, ChannelSlot};
@@ -134,6 +134,18 @@ pub trait Validator {
         holder_shutdown_script: &Option<Script>,
         counterparty_shutdown_script: &Option<Script>,
         holder_wallet_path_hint: &Vec<u32>,
+    ) -> Result<(), ValidationError>;
+
+    /// Validation of delayed sweep transaction
+    fn validate_delayed_sweep(
+        &self,
+        wallet: &Wallet,
+        setup: &ChannelSetup,
+        vstate: &ValidatorState,
+        tx: &Transaction,
+        input: usize,
+        amount_sat: u64,
+        key_path: &Vec<u32>,
     ) -> Result<(), ValidationError>;
 }
 

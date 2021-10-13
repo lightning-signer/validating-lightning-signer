@@ -1,7 +1,7 @@
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{self, Network, Script, SigHash, Transaction};
 use lightning::chain::keysinterface::InMemorySigner;
-use lightning::ln::chan_utils::{HTLCOutputInCommitment, TxCreationKeys, ClosingTransaction};
+use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 
 use crate::channel::{ChannelSetup, ChannelSlot};
 use crate::policy::simple_validator::{simple_validator, SimpleValidator};
@@ -164,6 +164,19 @@ impl Validator for NullValidator {
         _holder_script: &Option<Script>,
         _counterparty_script: &Option<Script>,
         _holder_wallet_path_hint: &Vec<u32>,
+    ) -> Result<(), ValidationError> {
+        Ok(())
+    }
+
+    fn validate_delayed_sweep(
+        &self,
+        _wallet: &Wallet,
+        _setup: &ChannelSetup,
+        _vstate: &ValidatorState,
+        _tx: &Transaction,
+        _input: usize,
+        _amount_sat: u64,
+        _wallet_path: &Vec<u32>,
     ) -> Result<(), ValidationError> {
         Ok(())
     }

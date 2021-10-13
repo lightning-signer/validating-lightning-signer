@@ -61,10 +61,7 @@ mod tests {
 
         let address = |n: u32| {
             Address::p2wpkh(
-                &node
-                    .get_wallet_key(&secp_ctx, &vec![n])
-                    .unwrap()
-                    .public_key(&secp_ctx),
+                &node.get_wallet_pubkey(&secp_ctx, &vec![n]).unwrap(),
                 Network::Testnet,
             )
             .unwrap()
@@ -125,10 +122,7 @@ mod tests {
 
         let address = |n: u32| {
             Address::p2wpkh(
-                &node
-                    .get_wallet_key(&secp_ctx, &vec![n])
-                    .unwrap()
-                    .public_key(&secp_ctx),
+                &node.get_wallet_pubkey(&secp_ctx, &vec![n]).unwrap(),
                 Network::Testnet,
             )
             .unwrap()
@@ -216,7 +210,7 @@ mod tests {
                 &uniclosekeys,
                 &vec![opath.clone()],
             ),
-            "policy failure: validate_fee: validate_funding_tx: above maximum: 47000 > 46000"
+            "policy failure: validate_fee: validate_funding_tx: fee above maximum: 47000 > 46000"
         );
     }
 
@@ -315,10 +309,7 @@ mod tests {
 
         let address = |n: u32| {
             Address::p2pkh(
-                &node
-                    .get_wallet_key(&secp_ctx, &vec![n])
-                    .unwrap()
-                    .public_key(&secp_ctx),
+                &node.get_wallet_pubkey(&secp_ctx, &vec![n]).unwrap(),
                 Network::Testnet,
             )
         };
@@ -375,19 +366,13 @@ mod tests {
 
         let address = |n: u32| {
             Address::p2shwpkh(
-                &node
-                    .get_wallet_key(&secp_ctx, &vec![n])
-                    .unwrap()
-                    .public_key(&secp_ctx),
+                &node.get_wallet_pubkey(&secp_ctx, &vec![n]).unwrap(),
                 Network::Testnet,
             )
             .unwrap()
         };
 
-        let pubkey = &node
-            .get_wallet_key(&secp_ctx, &ipaths[0])
-            .unwrap()
-            .public_key(&secp_ctx);
+        let pubkey = &node.get_wallet_pubkey(&secp_ctx, &ipaths[0]).unwrap();
 
         let keyhash = Hash160::hash(&pubkey.serialize()[..]);
 

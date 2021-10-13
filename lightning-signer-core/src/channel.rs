@@ -11,7 +11,12 @@ use bitcoin::util::bip143::SigHashCache;
 use bitcoin::{Network, OutPoint, Script, SigHashType};
 use lightning::chain;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface};
-use lightning::ln::chan_utils::{build_htlc_transaction, derive_private_key, get_htlc_redeemscript, make_funding_redeemscript, ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys, ClosingTransaction};
+use lightning::ln::chan_utils::{
+    build_htlc_transaction, derive_private_key, get_htlc_redeemscript, make_funding_redeemscript,
+    ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
+    CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
+    TxCreationKeys,
+};
 use log::{debug, trace, warn};
 
 use crate::node::Node;
@@ -19,8 +24,8 @@ use crate::policy::error::policy_error;
 use crate::policy::validator::{EnforcementState, Validator, ValidatorState};
 use crate::prelude::{Box, ToString, Vec};
 use crate::tx::tx::{
-    build_commitment_tx, get_commitment_transaction_number_obscure_factor,
-    CommitmentInfo2, HTLCInfo2,
+    build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
+    HTLCInfo2,
 };
 use crate::util::crypto_utils::{
     derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
@@ -1062,28 +1067,42 @@ impl Channel {
         input: usize,
         commitment_number: u64,
         redeemscript: &Script,
-        htlc_amount_sat: u64,
+        amount_sat: u64,
+        wallet_path: &Vec<u32>,
     ) -> Result<Signature, Status> {
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
-        let htlc_sighash = Message::from_slice(
+        // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
+        let vstate = ValidatorState { current_height: 0 };
+
+        self.validator().validate_delayed_sweep(
+            &*self.node.upgrade().unwrap(),
+            &self.setup,
+            &vstate,
+            tx,
+            input,
+            amount_sat,
+            wallet_path,
+        )?;
+
+        let sighash = Message::from_slice(
             &SigHashCache::new(tx).signature_hash(
                 input,
                 &redeemscript,
-                htlc_amount_sat,
+                amount_sat,
                 SigHashType::All,
             )[..],
         )
         .map_err(|_| Status::internal("failed to sighash"))?;
 
-        let htlc_privkey = derive_private_key(
+        let privkey = derive_private_key(
             &self.secp_ctx,
             &per_commitment_point,
             &self.keys.delayed_payment_base_key,
         )
         .map_err(|_| Status::internal("failed to derive key"))?;
 
-        let sig = self.secp_ctx.sign(&htlc_sighash, &htlc_privkey);
+        let sig = self.secp_ctx.sign(&sighash, &privkey);
         self.persist()?;
         Ok(sig)
     }

@@ -570,7 +570,9 @@ impl KeysInterface for MyKeysManager {
     }
 
     fn get_destination_script(&self) -> Script {
-        self.destination_script.clone()
+        // The destination script is chosen by the local node (must be
+        // in wallet or allowlisted).
+        unimplemented!()
     }
 
     fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {

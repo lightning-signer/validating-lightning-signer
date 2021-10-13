@@ -5,7 +5,6 @@ mod tests {
     use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::{self, Transaction};
     use lightning::ln::chan_utils::{make_funding_redeemscript, TxCreationKeys};
-    use lightning::ln::PaymentHash;
 
     use test_env_log::test;
 
@@ -175,119 +174,6 @@ mod tests {
 
     const HOLD_COMMIT_NUM: u64 = 23;
 
-    fn setup_validated_holder_commitment<TxBuilderMutator, KeysMutator>(
-        node_ctx: &TestNodeContext,
-        chan_ctx: &TestChannelContext,
-        mutate_tx_builder: TxBuilderMutator,
-        mutate_keys: KeysMutator,
-    ) -> Result<TestCommitmentTxContext, Status>
-    where
-        TxBuilderMutator: Fn(&mut TestCommitmentTxContext),
-        KeysMutator: Fn(&mut TxCreationKeys),
-    {
-        let to_broadcaster = 1_979_997;
-        let to_countersignatory = 1_000_000;
-        let feerate_per_kw = 1200;
-        let htlc1 = HTLCInfo2 {
-            value_sat: 4000,
-            payment_hash: PaymentHash([1; 32]),
-            cltv_expiry: 2 << 16,
-        };
-
-        let htlc2 = HTLCInfo2 {
-            value_sat: 5000,
-            payment_hash: PaymentHash([3; 32]),
-            cltv_expiry: 3 << 16,
-        };
-
-        let htlc3 = HTLCInfo2 {
-            value_sat: 11_003,
-            payment_hash: PaymentHash([5; 32]),
-            cltv_expiry: 4 << 16,
-        };
-        let offered_htlcs = vec![htlc1];
-        let received_htlcs = vec![htlc2, htlc3];
-
-        let mut commit_tx_ctx0 = TestCommitmentTxContext {
-            commit_num: HOLD_COMMIT_NUM,
-            feerate_per_kw,
-            to_broadcaster,
-            to_countersignatory,
-            offered_htlcs: offered_htlcs.clone(),
-            received_htlcs: received_htlcs.clone(),
-            tx: None,
-        };
-
-        mutate_tx_builder(&mut commit_tx_ctx0);
-
-        commit_tx_ctx0 = channel_commitment(
-            &node_ctx,
-            &chan_ctx,
-            commit_tx_ctx0.commit_num,
-            commit_tx_ctx0.feerate_per_kw,
-            commit_tx_ctx0.to_broadcaster,
-            commit_tx_ctx0.to_countersignatory,
-            commit_tx_ctx0.offered_htlcs.clone(),
-            commit_tx_ctx0.received_htlcs.clone(),
-        );
-
-        let (commit_sig0, htlc_sigs0) =
-            counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx0);
-
-        node_ctx
-            .node
-            .with_ready_channel(&chan_ctx.channel_id, |chan| {
-                let commit_tx_ctx = commit_tx_ctx0.clone();
-                let commit_sig = commit_sig0.clone();
-                let htlc_sigs = htlc_sigs0.clone();
-
-                let channel_parameters = chan.make_channel_parameters();
-                let parameters = channel_parameters.as_holder_broadcastable();
-                let per_commitment_point =
-                    chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
-
-                let mut keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
-
-                mutate_keys(&mut keys);
-
-                let htlcs = Channel::htlcs_info2_to_oic(
-                    commit_tx_ctx.offered_htlcs.clone(),
-                    commit_tx_ctx.received_htlcs.clone(),
-                );
-                let redeem_scripts = build_tx_scripts(
-                    &keys,
-                    commit_tx_ctx.to_broadcaster,
-                    commit_tx_ctx.to_countersignatory,
-                    &htlcs,
-                    &parameters,
-                )
-                .expect("scripts");
-                let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
-
-                let tx = commit_tx_ctx
-                    .tx
-                    .as_ref()
-                    .unwrap()
-                    .trust()
-                    .built_transaction()
-                    .transaction
-                    .clone();
-
-                chan.validate_holder_commitment_tx(
-                    &tx,
-                    &output_witscripts,
-                    commit_tx_ctx.commit_num,
-                    commit_tx_ctx.feerate_per_kw,
-                    commit_tx_ctx.offered_htlcs.clone(),
-                    commit_tx_ctx.received_htlcs.clone(),
-                    &commit_sig,
-                    &htlc_sigs,
-                )?;
-
-                Ok(commit_tx_ctx)
-            })
-    }
-
     fn sign_holder_commitment_tx_with_mutators<
         TxBuilderMutator,
         StateMutator,
@@ -324,6 +210,7 @@ mod tests {
         let commit_tx_ctx = setup_validated_holder_commitment(
             &node_ctx,
             &chan_ctx,
+            HOLD_COMMIT_NUM,
             |_commit_tx_ctx| {},
             |_keys| {},
         )?;
@@ -375,6 +262,7 @@ mod tests {
         let commit_tx_ctx = setup_validated_holder_commitment(
             &node_ctx,
             &chan_ctx,
+            HOLD_COMMIT_NUM,
             |_commit_tx_ctx| {},
             |_keys| {},
         )?;

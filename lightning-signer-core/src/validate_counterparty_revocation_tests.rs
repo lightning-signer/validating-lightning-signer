@@ -8,9 +8,9 @@ mod tests {
     use test_env_log::test;
 
     use crate::channel::Channel;
+    use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
-    use crate::util::key_utils::*;
 
     // TODO - policy-v2-commitment-retry-same (tx)
     // TODO - policy-v2-commitment-retry-same (output_witscripts)

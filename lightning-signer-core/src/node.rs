@@ -96,9 +96,7 @@ impl Wallet for Node {
         }
 
         let secp_ctx = Secp256k1::signing_only();
-        let pubkey = self
-            .get_wallet_key(&secp_ctx, child_path)?
-            .public_key(&secp_ctx);
+        let pubkey = self.get_wallet_pubkey(&secp_ctx, child_path)?;
 
         // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
         let native_addr = Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed");
@@ -575,7 +573,7 @@ impl Node {
                         key: sk,
                     }),
                     // Derive the HD key.
-                    None => self.get_wallet_key(&secp_ctx, &ipaths[idx]),
+                    None => self.get_wallet_privkey(&secp_ctx, &ipaths[idx]),
                 }?;
                 let pubkey = privkey.public_key(&secp_ctx);
                 let script_code = Address::p2pkh(&pubkey, privkey.network).script_pubkey();
@@ -634,7 +632,7 @@ impl Node {
         channel_transaction_parameters
     }
 
-    pub(crate) fn get_wallet_key(
+    pub(crate) fn get_wallet_privkey(
         &self,
         secp_ctx: &Secp256k1<secp256k1::SignOnly>,
         child_path: &Vec<u32>,
@@ -657,17 +655,22 @@ impl Node {
         Ok(xkey.private_key)
     }
 
+    pub(crate) fn get_wallet_pubkey(
+        &self,
+        secp_ctx: &Secp256k1<secp256k1::SignOnly>,
+        child_path: &Vec<u32>,
+    ) -> Result<bitcoin::PublicKey, Status> {
+        Ok(self
+            .get_wallet_privkey(secp_ctx, child_path)?
+            .public_key(secp_ctx))
+    }
+
     /// Get the node secret key
     /// This function will be eliminated once the node key related items
     /// are implemented.  This includes onion decoding and p2p handshake.
     // TODO leaking secret
     pub fn get_node_secret(&self) -> SecretKey {
         self.keys_manager.get_node_secret()
-    }
-
-    /// Get destination redeemScript to encumber static protocol exit points.
-    pub fn get_destination_script(&self) -> Script {
-        self.keys_manager.get_destination_script()
     }
 
     /// Get shutdown_pubkey to use as PublicKey at channel closure
@@ -877,7 +880,7 @@ impl Debug for Node {
 }
 
 /// The type of address, for layer-1 input signing
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 #[repr(i32)]
 pub enum SpendType {
     /// To be signed by someone else
@@ -926,7 +929,7 @@ mod tests {
     use lightning::ln::PaymentHash;
     use test_env_log::test;
 
-    use crate::channel::{ChannelBase, ChannelSetup, CommitmentType};
+    use crate::channel::ChannelBase;
     use crate::util::crypto_utils::{
         derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
         signature_to_bitcoin_vec,
@@ -1033,96 +1036,6 @@ mod tests {
             })
             .unwrap();
         assert_eq!(notcorrect, false);
-    }
-
-    #[test]
-    fn sign_delayed_sweep_static_test() {
-        let setup = make_test_channel_setup();
-        sign_delayed_sweep_test(&setup);
-    }
-
-    #[test]
-    fn sign_delayed_sweep_legacy_test() {
-        let mut setup = make_test_channel_setup();
-        setup.commitment_type = CommitmentType::Legacy;
-        sign_delayed_sweep_test(&setup);
-    }
-
-    fn sign_delayed_sweep_test(setup: &ChannelSetup) {
-        let (node, channel_id) =
-            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
-
-        let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
-        let feerate_per_kw = 1000;
-        let to_self_delay = 32;
-        let htlc = HTLCOutputInCommitment {
-            offered: true,
-            amount_msat: 1 * 1000 * 1000,
-            cltv_expiry: 2 << 16,
-            payment_hash: PaymentHash([1; 32]),
-            transaction_output_index: Some(0),
-        };
-
-        let secp_ctx_all = Secp256k1::new();
-
-        let n: u64 = 1;
-
-        let per_commitment_point = node
-            .with_ready_channel(&channel_id, |chan| {
-                chan.enforcement_state
-                    .set_next_holder_commit_num_for_testing(n);
-                chan.get_per_commitment_point(n)
-            })
-            .expect("point");
-
-        let a_delayed_payment_base = make_test_pubkey(2);
-        let b_revocation_base = make_test_pubkey(3);
-
-        let a_delayed_payment_key = derive_public_key(
-            &secp_ctx_all,
-            &per_commitment_point,
-            &a_delayed_payment_base,
-        )
-        .expect("a_delayed_payment_key");
-
-        let revocation_pubkey =
-            derive_revocation_pubkey(&secp_ctx_all, &per_commitment_point, &b_revocation_base)
-                .expect("revocation_pubkey");
-
-        let htlc_tx = build_htlc_transaction(
-            &commitment_txid,
-            feerate_per_kw,
-            to_self_delay,
-            &htlc,
-            &a_delayed_payment_key,
-            &revocation_pubkey,
-        );
-
-        let redeemscript =
-            get_revokeable_redeemscript(&revocation_pubkey, to_self_delay, &a_delayed_payment_key);
-
-        let htlc_amount_sat = 10 * 1000;
-
-        let sigvec = node
-            .with_ready_channel(&channel_id, |chan| {
-                let sig = chan
-                    .sign_delayed_sweep(&htlc_tx, 0, n, &redeemscript, htlc_amount_sat)
-                    .unwrap();
-                Ok(signature_to_bitcoin_vec(sig))
-            })
-            .unwrap();
-
-        let htlc_pubkey =
-            get_channel_delayed_payment_pubkey(&node, &channel_id, &per_commitment_point);
-
-        check_signature(
-            &htlc_tx,
-            0,
-            sigvec,
-            &htlc_pubkey,
-            htlc_amount_sat,
-            &redeemscript,
-        );
     }
 
     #[test]
