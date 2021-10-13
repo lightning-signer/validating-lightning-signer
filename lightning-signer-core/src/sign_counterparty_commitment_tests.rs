@@ -44,9 +44,10 @@ mod tests {
                 let keys = chan
                     .make_counterparty_tx_keys(&remote_percommitment_point)
                     .unwrap();
+                // fee = 1000
                 let commit_num = 23;
                 let feerate_per_kw = 0;
-                let to_broadcaster = 2_000_000;
+                let to_broadcaster = 1_999_000;
                 let to_countersignatory = 1_000_000;
                 let mut htlcs = vec![];
 
@@ -99,7 +100,7 @@ mod tests {
 
         assert_eq!(
             tx.txid().to_hex(),
-            "770f45e5093d10ed3c7dc05f152bcf954200015cca98e701811714b6a4132b38"
+            "d167e8e687f93170e787d210bac57538910050138b7d088684fe7fdcf735bf6d"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -209,7 +210,7 @@ mod tests {
         };
 
         let htlc3 = HTLCInfo2 {
-            value_sat: 11_003,
+            value_sat: 10_003,
             payment_hash: PaymentHash([5; 32]),
             cltv_expiry: 4 << 16,
         };
@@ -278,7 +279,7 @@ mod tests {
 
         assert_eq!(
             tx.txid().to_hex(),
-            "56f1eb4719a7e93311f2ee3f4275785d857939af0c5eff6058b130f422042bff"
+            "98fe7f855e1cc99ca29a7c18caf1b8c6ac81fcdc44a854c60bf1b28d390323c4"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -399,9 +400,10 @@ mod tests {
         let remote_percommitment_point = make_test_pubkey(10);
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
 
+        // fee = 1000
         let commit_num = 23;
         let to_holder_value_sat = 1_000_000;
-        let to_counterparty_value_sat = 2_000_000;
+        let to_counterparty_value_sat = 1_999_000;
 
         let tx = node
             .with_ready_channel(&channel_id, |chan| {
@@ -426,7 +428,7 @@ mod tests {
                 let tx = trusted_tx.built_transaction();
                 assert_eq!(
                     tx.txid.to_hex(),
-                    "75a87d13138017f2c62c86be375e526821a40805e5f31808bf782ce7e13fe951"
+                    "b7a48f1201c6d5bddf5c2a247a9c622969fc5048e84f0d25b00b8fa40815632b"
                 );
                 Ok(tx.transaction.clone())
             })
@@ -537,7 +539,7 @@ mod tests {
 
         assert_eq!(
             tx.txid().to_hex(),
-            "0704dbebf8dc4841b7aa07934e29c962df7b0aa02ea243fb25a1f01c52e80e4c"
+            "4337fc463e7662975b6ea7ecf7d7d3977e3d3ea1981f12380db5a7a22931eeb9"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -574,9 +576,10 @@ mod tests {
         let (sig, tx) = node.with_ready_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
 
+            // fee = 1000
             let commit_num = 23;
             let feerate_per_kw = 0;
-            let to_broadcaster = 1_979_997;
+            let to_broadcaster = 1_978_997;
             let to_countersignatory = 1_000_000;
 
             chan.enforcement_state
@@ -636,7 +639,7 @@ mod tests {
 
         assert_eq!(
             tx.txid().to_hex(),
-            "0704dbebf8dc4841b7aa07934e29c962df7b0aa02ea243fb25a1f01c52e80e4c"
+            "51acabe2cbc9c0007cbc46b9efe7dd60ede4e3be16aac20d49668046a5ed0279"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);

@@ -129,14 +129,16 @@ impl SimpleValidator {
         Ok(())
     }
 
-    fn validate_fee(&self, fee: u64, _tx: &Transaction) -> Result<(), ValidationError> {
+    fn validate_fee(&self, sum_inputs: u64, sum_outputs: u64) -> Result<(), ValidationError> {
+        let fee = sum_inputs.checked_sub(sum_outputs).ok_or_else(|| {
+            policy_error(format!("fee underflow: {} - {}", sum_inputs, sum_outputs))
+        })?;
         if fee < self.policy.min_fee {
             return policy_err!("fee below minimum: {} < {}", fee, self.policy.min_fee);
         }
         if fee > self.policy.max_fee {
             return policy_err!("fee above maximum: {} > {}", fee, self.policy.max_fee);
         }
-        // TODO - apply min/max fee rate heurustic (incorporating tx size) as well.
         Ok(())
     }
 
@@ -184,13 +186,7 @@ impl SimpleValidator {
         // policy-delayed-sweep-fee-range
         // policy-counterparty-htlc-sweep-fee-range
         // policy-justice-sweep-fee-range
-        let fee = amount_sat.checked_sub(tx.output[0].value).ok_or_else(|| {
-            policy_error(format!(
-                "fee underflow: {} - {}",
-                amount_sat, tx.output[0].value
-            ))
-        })?;
-        self.validate_fee(fee, tx)
+        self.validate_fee(amount_sat, tx.output[0].value)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // policy-delayed-sweep-destination-allowlisted
@@ -328,10 +324,7 @@ impl Validator for SimpleValidator {
                 .checked_add(outp.value)
                 .ok_or_else(|| policy_error(format!("funding sum outputs overflow")))?;
         }
-        let fee = sum_inputs
-            .checked_sub(sum_outputs)
-            .ok_or_else(|| policy_error(format!("funding fee overflow")))?;
-        self.validate_fee(fee, tx)
+        self.validate_fee(sum_inputs, sum_outputs)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // policy-funding-format-standard
@@ -1042,24 +1035,11 @@ impl Validator for SimpleValidator {
         }
 
         // policy-mutual-fee-range
-        let consumed = to_holder_value_sat
+        let sum_outputs = to_holder_value_sat
             .checked_add(to_counterparty_value_sat)
             .ok_or_else(|| policy_error("consumed overflow".to_string()))?;
-        let fee = setup
-            .channel_value_sat
-            .checked_sub(consumed)
-            .ok_or_else(|| {
-                policy_error(format!(
-                    "mutual_close_tx: fee underflow: {} - {}",
-                    setup.channel_value_sat, consumed
-                ))
-            })?;
-        if fee > self.policy.max_fee {
-            return policy_err!("fee too large {} > {}", fee, self.policy.max_fee);
-        }
-        if fee < self.policy.min_fee {
-            return policy_err!("fee too small {} < {}", fee, self.policy.min_fee);
-        }
+        self.validate_fee(setup.channel_value_sat, sum_outputs)
+            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // policy-mutual-value-matches-commitment
         if let (true, descr) =
@@ -1352,28 +1332,14 @@ impl SimpleValidator {
         }
 
         // policy-commitment-fee-range
-        let consumed = info
+        let sum_outputs = info
             .to_broadcaster_value_sat
             .checked_add(info.to_countersigner_value_sat)
             .ok_or_else(|| policy_error("channel value overflow".to_string()))?
             .checked_add(htlc_value_sat)
             .ok_or_else(|| policy_error("channel value overflow on HTLC".to_string()))?;
-        let shortage = setup
-            .channel_value_sat
-            .checked_sub(consumed)
-            .ok_or_else(|| {
-                policy_error(format!(
-                    "channel shortage underflow: {} - {}",
-                    setup.channel_value_sat, consumed
-                ))
-            })?;
-        if shortage > policy.epsilon_sat {
-            return policy_err!(
-                "channel value short by {} > {}",
-                shortage,
-                policy.epsilon_sat
-            );
-        }
+        self.validate_fee(setup.channel_value_sat, sum_outputs)
+            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // Enforce additional requirements on initial commitments.
         if commit_num == 0 {
@@ -1435,14 +1401,14 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_channel_size_sat: 1_000_000_001, // lnd itest: wumbu default + 1
             max_push_sat: 20_000,
             // lnd itest: async_bidirectional_payments (large amount of dust HTLCs) 1_600_000
-            epsilon_sat: 79641, // c-lighting integration
+            epsilon_sat: 10_000, // c-lightning
             max_htlcs: 1000,
             max_htlc_value_sat: 16_777_216, // lnd itest: multi-hop_htlc_error_propagation
             use_chain_state: false,
             min_feerate_per_kw: 500,    // c-lightning integration
             max_feerate_per_kw: 16_000, // c-lightning integration
             min_fee: 100,
-            max_fee: 46_000, // c-lightning integration 45675
+            max_fee: 80_000, // c-lightning integration 79641
         }
     }
 }
@@ -1471,7 +1437,7 @@ mod tests {
             min_feerate_per_kw: 1000,
             max_feerate_per_kw: 1000 * 1000,
             min_fee: 100,
-            max_fee: 1000,
+            max_fee: 10_000,
         };
 
         SimpleValidator { policy }
@@ -1582,17 +1548,15 @@ mod tests {
         let vstate = make_test_validator_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
-        let info = make_counterparty_info(2_000_000, 900_000, delay, vec![], vec![]);
-        assert!(validator
-            .validate_commitment_tx(
-                &enforcement_state,
-                commit_num,
-                &commit_point,
-                &setup,
-                &vstate,
-                &info,
-            )
-            .is_ok());
+        let info = make_counterparty_info(2_000_000, 999_000, delay, vec![], vec![]);
+        assert_status_ok!(validator.validate_commitment_tx(
+            &enforcement_state,
+            commit_num,
+            &commit_point,
+            &setup,
+            &vstate,
+            &info,
+        ));
     }
 
     // policy-channel-holder-contest-delay-range
@@ -1677,7 +1641,7 @@ mod tests {
         let state = make_test_validator_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
-        let info_bad = make_counterparty_info(2_000_000, 900_000 - 1, delay, vec![], vec![]);
+        let info_bad = make_counterparty_info(2_000_000, 1_000_001, delay, vec![], vec![]);
         assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,
@@ -1687,7 +1651,7 @@ mod tests {
                 &state,
                 &info_bad,
             ),
-            "validate_commitment_tx: channel value short by 100001 > 100000"
+            "validate_commitment_tx: fee underflow: 3000000 - 3000001"
         );
     }
 
@@ -1709,19 +1673,19 @@ mod tests {
         let state = make_test_validator_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
-        let info = make_counterparty_info(2_000_000, 800_000, delay, vec![htlc.clone()], vec![]);
+        let info = make_counterparty_info(2_000_000, 899_000, delay, vec![htlc.clone()], vec![]);
 
-        let status = validator.validate_commitment_tx(
+        assert_status_ok!(validator.validate_commitment_tx(
             &enforcement_state,
             commit_num,
             &commit_point,
             &setup,
             &state,
             &info,
-        );
-        assert!(status.is_ok());
+        ));
+
         let info_bad =
-            make_counterparty_info(2_000_000, 800_000 - 1, delay, vec![htlc.clone()], vec![]);
+            make_counterparty_info(2_000_000, 1_000_000, delay, vec![htlc.clone()], vec![]);
         assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,
@@ -1731,7 +1695,7 @@ mod tests {
                 &state,
                 &info_bad,
             ),
-            "validate_commitment_tx: channel value short by 100001 > 100000"
+            "validate_commitment_tx: fee underflow: 3000000 - 3100000"
         );
     }
 
@@ -1739,7 +1703,7 @@ mod tests {
     fn validate_commitment_tx_initial_with_htlcs() {
         let validator = make_test_validator();
         let htlc = HTLCInfo2 {
-            value_sat: 100_000,
+            value_sat: 199_000,
             payment_hash: PaymentHash([0; 32]),
             cltv_expiry: 1005,
         };
@@ -1775,7 +1739,7 @@ mod tests {
         let state = make_test_validator_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
-        let info = make_counterparty_info(2_000_000, 950_000, delay, vec![], vec![]);
+        let info = make_counterparty_info(2_000_000, 999_000, delay, vec![], vec![]);
 
         let status = validator.validate_commitment_tx(
             &enforcement_state,

@@ -254,7 +254,7 @@ mod tests {
         };
 
         let htlc3 = HTLCInfo2 {
-            value_sat: 11_003,
+            value_sat: 10_003,
             payment_hash: PaymentHash([5; 32]),
             cltv_expiry: 4 << 16,
         };

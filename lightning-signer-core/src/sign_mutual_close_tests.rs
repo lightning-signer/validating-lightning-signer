@@ -644,15 +644,16 @@ mod tests {
                  _outpoint,
                  _wallet_path,
                  _allowlist| {
-                    *to_holder -= 22_000;
-                    *to_counterparty -= 23_000;
+                    *to_holder -= 40_000;
+                    *to_counterparty -= 40_000;
                 },
                 |chan| {
                     // Channel should not be marked closed
                     assert_eq!(chan.enforcement_state.mutual_close_signed, false);
                 }
             ),
-            "policy failure: validate_mutual_close_tx: fee too large 47000 > 46000"
+            "policy failure: validate_mutual_close_tx: validate_fee: \
+             fee above maximum: 82000 > 80000"
         );
     }
 
@@ -677,7 +678,8 @@ mod tests {
                     assert_eq!(chan.enforcement_state.mutual_close_signed, false);
                 }
             ),
-            "policy failure: validate_mutual_close_tx: fee too small 50 < 100"
+            "policy failure: validate_mutual_close_tx: validate_fee: \
+             fee below minimum: 50 < 100"
         );
     }
 

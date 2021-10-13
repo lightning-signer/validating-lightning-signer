@@ -399,7 +399,8 @@ mod tests {
                     *amount_sat = 2_000;
                 },
             ),
-            "policy failure: validate_counterparty_htlc_sweep: fee underflow: 2000 - 3000"
+            "policy failure: validate_counterparty_htlc_sweep: validate_sweep: \
+             fee underflow: 2000 - 3000"
         );
     }
 
@@ -427,11 +428,11 @@ mod tests {
                 OfferedHTLC,
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2shP2wpkh) },
                 |_chan, _tx, _input, _commit_num, _redeemscript, amount_sat| {
-                    *amount_sat += 50_000;
+                    *amount_sat += 80_000;
                 },
             ),
             "policy failure: validate_counterparty_htlc_sweep: validate_sweep: validate_fee: \
-             fee above maximum: 51000 > 46000"
+             fee above maximum: 81000 > 80000"
         );
     }
 
