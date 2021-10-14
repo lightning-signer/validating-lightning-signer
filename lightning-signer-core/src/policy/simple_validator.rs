@@ -176,22 +176,16 @@ impl SimpleValidator {
             return transaction_format_err!("bad input index: {} != 0", input);
         }
 
-        // policy-delayed-sweep-version
-        // policy-counterparty-htlc-sweep-version
-        // policy-justice-sweep-version
+        // policy-sweep-version
         if tx.version != 2 {
             return transaction_format_err!("bad version: {}", tx.version);
         }
 
-        // policy-delayed-sweep-fee-range
-        // policy-counterparty-htlc-sweep-fee-range
-        // policy-justice-sweep-fee-range
+        // policy-sweep-fee-range
         self.validate_fee(amount_sat, tx.output[0].value)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        // policy-delayed-sweep-destination-allowlisted
-        // policy-counterparty-htlc-sweep-destination-allowlisted
-        // policy-justice-sweep-destination-allowlisted
+        // policy-sweep-destination-allowlisted
         let dest_script = &tx.output[0].script_pubkey;
         if !wallet
             .can_spend(wallet_path, dest_script)
@@ -1096,7 +1090,7 @@ impl Validator for SimpleValidator {
         self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        // policy-delayed-sweep-locktime
+        // policy-sweep-locktime
         // FIXME - Until vstate.current_height is hooked up only allows lock_time = 0.
         if tx.lock_time > vstate.current_height {
             return transaction_format_err!(
@@ -1106,7 +1100,7 @@ impl Validator for SimpleValidator {
             );
         }
 
-        // policy-delayed-sweep-sequence
+        // policy-sweep-sequence
         let seq = tx.input[0].sequence;
         if seq != setup.counterparty_selected_contest_delay as u32 {
             return transaction_format_err!(
@@ -1152,7 +1146,7 @@ impl Validator for SimpleValidator {
                 return transaction_format_err!("bad cltv_expiry: {}", cltv_expiry);
             }
 
-            // policy-counterparty-htlc-sweep-locktime
+            // policy-sweep-locktime
             if tx.lock_time > cltv_expiry as u32 {
                 return transaction_format_err!(
                     "bad locktime: {} > {}",
@@ -1169,7 +1163,7 @@ impl Validator for SimpleValidator {
         {
             // It's an offered htlc (counterparty perspective)
 
-            // policy-counterparty-htlc-sweep-locktime
+            // policy-sweep-locktime
             // FIXME - Until vstate.current_height is hooked up only allows lock_time = 0.
             if tx.lock_time > vstate.current_height {
                 return transaction_format_err!(
@@ -1183,7 +1177,7 @@ impl Validator for SimpleValidator {
             return transaction_format_err!("bad redeemscript: {}", &redeemscript);
         };
 
-        // policy-counterparty-htlc-sweep-sequence
+        // policy-sweep-sequence
         let seq = tx.input[0].sequence;
         let valid_seqs = if setup.option_anchor_outputs() {
             SimpleValidator::ANCHOR_SEQS.to_vec()
@@ -1215,7 +1209,7 @@ impl Validator for SimpleValidator {
         self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        // policy-justice-sweep-locktime
+        // policy-sweep-locktime
         // FIXME - Until vstate.current_height is hooked up only allows lock_time = 0.
         if tx.lock_time > vstate.current_height {
             return transaction_format_err!(
@@ -1225,7 +1219,7 @@ impl Validator for SimpleValidator {
             );
         }
 
-        // policy-justice-sweep-sequence
+        // policy-sweep-sequence
         let seq = tx.input[0].sequence;
         let valid_seqs = SimpleValidator::NON_ANCHOR_SEQS.to_vec();
         if !valid_seqs.contains(&seq) {
