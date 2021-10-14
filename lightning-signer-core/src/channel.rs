@@ -21,7 +21,7 @@ use log::{debug, trace, warn};
 
 use crate::node::Node;
 use crate::policy::error::policy_error;
-use crate::policy::validator::{EnforcementState, Validator, ValidatorState};
+use crate::policy::validator::{ChainState, EnforcementState, Validator};
 use crate::prelude::{Box, ToString, Vec};
 use crate::tx::tx::{
     build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
@@ -542,13 +542,13 @@ impl Channel {
         )?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
-        let vstate = ValidatorState { current_height: 0 };
+        let cstate = ChainState { current_height: 0 };
         self.validator().validate_counterparty_commitment_tx(
             &self.enforcement_state,
             commitment_number,
             &remote_per_commitment_point,
             &self.setup,
-            &vstate,
+            &cstate,
             &info2,
         )?;
 
@@ -782,20 +782,20 @@ impl Channel {
             received_htlcs,
         )?;
 
-        let state = ValidatorState { current_height: 0 };
+        let cstate = ChainState { current_height: 0 };
         self.validator()
             .validate_holder_commitment_tx(
                 &self.enforcement_state,
                 commitment_number,
                 &commitment_point,
                 &self.setup,
-                &state,
+                &cstate,
                 &info2,
             )
             .map_err(|ve| {
                 warn!(
                     "VALIDATION FAILED: {}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
-                    ve, &self.setup, &state, &info2,
+                    ve, &self.setup, &cstate, &info2,
                 );
                 ve
             })?;
@@ -850,13 +850,13 @@ impl Channel {
         )?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
-        let state = ValidatorState { current_height: 0 };
+        let cstate = ChainState { current_height: 0 };
         self.validator().validate_holder_commitment_tx(
             &self.enforcement_state,
             commitment_number,
             &commitment_point,
             &self.setup,
-            &state,
+            &cstate,
             &info2,
         )?;
 
@@ -1073,12 +1073,12 @@ impl Channel {
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
-        let vstate = ValidatorState { current_height: 0 };
+        let cstate = ChainState { current_height: 0 };
 
         self.validator().validate_delayed_sweep(
             &*self.node.upgrade().unwrap(),
             &self.setup,
-            &vstate,
+            &cstate,
             tx,
             input,
             amount_sat,
@@ -1118,12 +1118,12 @@ impl Channel {
         wallet_path: &Vec<u32>,
     ) -> Result<Signature, Status> {
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
-        let vstate = ValidatorState { current_height: 0 };
+        let cstate = ChainState { current_height: 0 };
 
         self.validator().validate_counterparty_htlc_sweep(
             &*self.node.upgrade().unwrap(),
             &self.setup,
-            &vstate,
+            &cstate,
             tx,
             redeemscript,
             input,
@@ -1164,12 +1164,12 @@ impl Channel {
         wallet_path: &Vec<u32>,
     ) -> Result<Signature, Status> {
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
-        let vstate = ValidatorState { current_height: 0 };
+        let cstate = ChainState { current_height: 0 };
 
         self.validator().validate_justice_sweep(
             &*self.node.upgrade().unwrap(),
             &self.setup,
-            &vstate,
+            &cstate,
             tx,
             input,
             amount_sat,
@@ -1361,20 +1361,20 @@ impl Channel {
         )?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
-        let vstate = ValidatorState { current_height: 0 };
+        let cstate = ChainState { current_height: 0 };
         self.validator()
             .validate_counterparty_commitment_tx(
                 &self.enforcement_state,
                 commitment_number,
                 &remote_per_commitment_point,
                 &self.setup,
-                &vstate,
+                &cstate,
                 &info2,
             )
             .map_err(|ve| {
                 debug!(
-                    "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\nvstate={:#?}\ninfo={:#?}",
-                    ve, &tx, &self.setup, &vstate, &info2,
+                    "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\ncstate={:#?}\ninfo={:#?}",
+                    ve, &tx, &self.setup, &cstate, &info2,
                 );
                 ve
             })?;
@@ -1476,20 +1476,20 @@ impl Channel {
         )?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
-        let state = ValidatorState { current_height: 0 };
+        let cstate = ChainState { current_height: 0 };
         self.validator()
             .validate_holder_commitment_tx(
                 &self.enforcement_state,
                 commitment_number,
                 &commitment_point,
                 &self.setup,
-                &state,
+                &cstate,
                 &info2,
             )
             .map_err(|ve| {
                 warn!(
                     "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
-                    ve, &tx, &self.setup, &state, &info2,
+                    ve, &tx, &self.setup, &cstate, &info2,
                 );
                 ve
             })?;
@@ -1768,9 +1768,9 @@ impl Channel {
             )?;
 
         // TODO(devrandom) - obtain current_height so that we can validate the HTLC CLTV
-        let state = ValidatorState { current_height: 0 };
+        let cstate = ChainState { current_height: 0 };
         self.validator()
-            .validate_htlc_tx(&self.setup, &state, is_counterparty, &htlc, feerate_per_kw)
+            .validate_htlc_tx(&self.setup, &cstate, is_counterparty, &htlc, feerate_per_kw)
             .map_err(|ve| {
                 debug!(
                     "VALIDATION FAILED: {}\n\
@@ -1782,7 +1782,7 @@ impl Channel {
                      feerate_per_kw={}",
                     ve,
                     &self.setup,
-                    &state,
+                    &cstate,
                     is_counterparty,
                     &tx,
                     DebugHTLCOutputInCommitment(&htlc),

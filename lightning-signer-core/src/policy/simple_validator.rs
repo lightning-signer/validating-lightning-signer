@@ -13,7 +13,7 @@ use log::{debug, info};
 
 use crate::channel::{ChannelSetup, ChannelSlot};
 use crate::policy::validator::EnforcementState;
-use crate::policy::validator::{Validator, ValidatorFactory, ValidatorState};
+use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
@@ -298,12 +298,12 @@ impl Validator for SimpleValidator {
         &self,
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
-        state: &ValidatorState,
+        cstate: &ChainState,
         tx: &Transaction,
         values_sat: &Vec<u64>,
         opaths: &Vec<Vec<u32>>,
     ) -> Result<(), ValidationError> {
-        let mut debug_on_return = scoped_debug_return!(state, tx, values_sat, opaths);
+        let mut debug_on_return = scoped_debug_return!(cstate, tx, values_sat, opaths);
 
         // policy-funding-fee-range
         let mut sum_inputs: u64 = 0;
@@ -437,15 +437,15 @@ impl Validator for SimpleValidator {
         commit_num: u64,
         commitment_point: &PublicKey,
         setup: &ChannelSetup,
-        vstate: &ValidatorState,
+        cstate: &ChainState,
         info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
         // Validate common commitment constraints
-        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, vstate, info)
+        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         let mut debug_on_return =
-            scoped_debug_return!(estate, commit_num, commitment_point, setup, vstate, info);
+            scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info);
 
         // policy-commitment-to-self-delay-range
         if info.to_self_delay != setup.holder_selected_contest_delay {
@@ -507,15 +507,15 @@ impl Validator for SimpleValidator {
         commit_num: u64,
         commitment_point: &PublicKey,
         setup: &ChannelSetup,
-        vstate: &ValidatorState,
+        cstate: &ChainState,
         info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
         // Validate common commitment constraints
-        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, vstate, info)
+        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         let mut debug_on_return =
-            scoped_debug_return!(estate, commit_num, commitment_point, setup, vstate, info);
+            scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info);
 
         // policy-commitment-to-self-delay-range
         if info.to_self_delay != setup.counterparty_selected_contest_delay {
@@ -739,7 +739,7 @@ impl Validator for SimpleValidator {
     fn validate_htlc_tx(
         &self,
         _setup: &ChannelSetup,
-        _state: &ValidatorState,
+        _cstate: &ChainState,
         _is_counterparty: bool,
         htlc: &HTLCOutputInCommitment,
         feerate_per_kw: u32,
@@ -1077,26 +1077,25 @@ impl Validator for SimpleValidator {
         &self,
         wallet: &Wallet,
         setup: &ChannelSetup,
-        vstate: &ValidatorState,
+        cstate: &ChainState,
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
         wallet_path: &Vec<u32>,
     ) -> Result<(), ValidationError> {
         let mut debug_on_return =
-            scoped_debug_return!(setup, vstate, tx, input, amount_sat, wallet_path);
+            scoped_debug_return!(setup, cstate, tx, input, amount_sat, wallet_path);
 
         // Common sweep validation
         self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // policy-sweep-locktime
-        // FIXME - Until vstate.current_height is hooked up only allows lock_time = 0.
-        if tx.lock_time > vstate.current_height {
+        if tx.lock_time > cstate.current_height {
             return transaction_format_err!(
                 "bad locktime: {} > {}",
                 tx.lock_time,
-                vstate.current_height
+                cstate.current_height
             );
         }
 
@@ -1118,7 +1117,7 @@ impl Validator for SimpleValidator {
         &self,
         wallet: &Wallet,
         setup: &ChannelSetup,
-        vstate: &ValidatorState,
+        cstate: &ChainState,
         tx: &Transaction,
         redeemscript: &Script,
         input: usize,
@@ -1126,7 +1125,7 @@ impl Validator for SimpleValidator {
         wallet_path: &Vec<u32>,
     ) -> Result<(), ValidationError> {
         let mut debug_on_return =
-            scoped_debug_return!(setup, vstate, tx, input, amount_sat, wallet_path);
+            scoped_debug_return!(setup, cstate, tx, input, amount_sat, wallet_path);
 
         // Common sweep validation
         self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
@@ -1164,12 +1163,11 @@ impl Validator for SimpleValidator {
             // It's an offered htlc (counterparty perspective)
 
             // policy-sweep-locktime
-            // FIXME - Until vstate.current_height is hooked up only allows lock_time = 0.
-            if tx.lock_time > vstate.current_height {
+            if tx.lock_time > cstate.current_height {
                 return transaction_format_err!(
                     "bad locktime: {} > {}",
                     tx.lock_time,
-                    vstate.current_height
+                    cstate.current_height
                 );
             }
         } else {
@@ -1196,26 +1194,25 @@ impl Validator for SimpleValidator {
         &self,
         wallet: &Wallet,
         _setup: &ChannelSetup,
-        vstate: &ValidatorState,
+        cstate: &ChainState,
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
         wallet_path: &Vec<u32>,
     ) -> Result<(), ValidationError> {
         let mut debug_on_return =
-            scoped_debug_return!(_setup, vstate, tx, input, amount_sat, wallet_path);
+            scoped_debug_return!(_setup, cstate, tx, input, amount_sat, wallet_path);
 
         // Common sweep validation
         self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // policy-sweep-locktime
-        // FIXME - Until vstate.current_height is hooked up only allows lock_time = 0.
-        if tx.lock_time > vstate.current_height {
+        if tx.lock_time > cstate.current_height {
             return transaction_format_err!(
                 "bad locktime: {} > {}",
                 tx.lock_time,
-                vstate.current_height
+                cstate.current_height
             );
         }
 
@@ -1239,11 +1236,11 @@ impl SimpleValidator {
         commit_num: u64,
         commitment_point: &PublicKey,
         setup: &ChannelSetup,
-        vstate: &ValidatorState,
+        cstate: &ChainState,
         info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
         let mut debug_on_return =
-            scoped_debug_return!(estate, commit_num, commitment_point, setup, vstate, info);
+            scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info);
 
         let policy = &self.policy;
 
@@ -1281,7 +1278,7 @@ impl SimpleValidator {
             // the HTLC is introduced and the other every time it is encountered.
             //
             // policy-commitment-htlc-cltv-range
-            self.validate_expiry("offered HTLC", htlc.cltv_expiry, vstate.current_height)?;
+            self.validate_expiry("offered HTLC", htlc.cltv_expiry, cstate.current_height)?;
 
             htlc_value_sat = htlc_value_sat
                 .checked_add(htlc.value_sat)
@@ -1304,7 +1301,7 @@ impl SimpleValidator {
             // the HTLC is introduced and the other every time it is encountered.
             //
             // policy-commitment-htlc-cltv-range
-            self.validate_expiry("received HTLC", htlc.cltv_expiry, vstate.current_height)?;
+            self.validate_expiry("received HTLC", htlc.cltv_expiry, cstate.current_height)?;
 
             htlc_value_sat = htlc_value_sat
                 .checked_add(htlc.value_sat)
@@ -1516,8 +1513,8 @@ mod tests {
         )
     }
 
-    fn make_test_validator_state() -> ValidatorState {
-        ValidatorState {
+    fn make_test_chain_state() -> ChainState {
+        ChainState {
             current_height: 1000,
         }
     }
@@ -1539,7 +1536,7 @@ mod tests {
             .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
         enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
         let commit_point = make_test_pubkey(0x12);
-        let vstate = make_test_validator_state();
+        let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
         let info = make_counterparty_info(2_000_000, 999_000, delay, vec![], vec![]);
@@ -1548,7 +1545,7 @@ mod tests {
             commit_num,
             &commit_point,
             &setup,
-            &vstate,
+            &cstate,
             &info,
         ));
     }
@@ -1632,7 +1629,7 @@ mod tests {
         let enforcement_state = EnforcementState::new();
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
-        let state = make_test_validator_state();
+        let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
         let info_bad = make_counterparty_info(2_000_000, 1_000_001, delay, vec![], vec![]);
@@ -1642,7 +1639,7 @@ mod tests {
                 commit_num,
                 &commit_point,
                 &setup,
-                &state,
+                &cstate,
                 &info_bad,
             ),
             "validate_commitment_tx: fee underflow: 3000000 - 3000001"
@@ -1664,7 +1661,7 @@ mod tests {
             .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
         enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
         let commit_point = make_test_pubkey(0x12);
-        let state = make_test_validator_state();
+        let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
         let info = make_counterparty_info(2_000_000, 899_000, delay, vec![htlc.clone()], vec![]);
@@ -1674,7 +1671,7 @@ mod tests {
             commit_num,
             &commit_point,
             &setup,
-            &state,
+            &cstate,
             &info,
         ));
 
@@ -1686,7 +1683,7 @@ mod tests {
                 commit_num,
                 &commit_point,
                 &setup,
-                &state,
+                &cstate,
                 &info_bad,
             ),
             "validate_commitment_tx: fee underflow: 3000000 - 3100000"
@@ -1704,7 +1701,7 @@ mod tests {
         let enforcement_state = EnforcementState::new();
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
-        let state = make_test_validator_state();
+        let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
         let info = make_counterparty_info(2_000_000, 800_000, delay, vec![htlc.clone()], vec![]);
@@ -1714,7 +1711,7 @@ mod tests {
             commit_num,
             &commit_point,
             &setup,
-            &state,
+            &cstate,
             &info,
         );
         assert_policy_err!(
@@ -1730,7 +1727,7 @@ mod tests {
         let enforcement_state = EnforcementState::new();
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
-        let state = make_test_validator_state();
+        let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
         let info = make_counterparty_info(2_000_000, 999_000, delay, vec![], vec![]);
@@ -1740,7 +1737,7 @@ mod tests {
             commit_num,
             &commit_point,
             &setup,
-            &state,
+            &cstate,
             &info,
         );
         assert_policy_err!(
@@ -1756,7 +1753,7 @@ mod tests {
         let enforcement_state = EnforcementState::new();
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
-        let state = make_test_validator_state();
+        let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
         let htlcs = (0..1001).map(|_| make_htlc_info2(1100)).collect();
         let delay = setup.holder_selected_contest_delay;
@@ -1767,7 +1764,7 @@ mod tests {
                 commit_num,
                 &commit_point,
                 &setup,
-                &state,
+                &cstate,
                 &info_bad,
             ),
             "too many HTLCs"
@@ -1781,7 +1778,7 @@ mod tests {
         let enforcement_state = EnforcementState::new();
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
-        let state = make_test_validator_state();
+        let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
         let htlcs = (0..1000)
@@ -1798,7 +1795,7 @@ mod tests {
                 commit_num,
                 &commit_point,
                 &setup,
-                &state,
+                &cstate,
                 &info_bad,
             ),
             "validate_commitment_tx: sum of HTLC values 10001000 too large"
@@ -1814,7 +1811,7 @@ mod tests {
             .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
         enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
         let commit_point = make_test_pubkey(0x12);
-        let state = make_test_validator_state();
+        let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
         let info_good = make_counterparty_info(
@@ -1829,7 +1826,7 @@ mod tests {
             commit_num,
             &commit_point,
             &setup,
-            &state,
+            &cstate,
             &info_good,
         ));
         let info_good = make_counterparty_info(
@@ -1844,7 +1841,7 @@ mod tests {
             commit_num,
             &commit_point,
             &setup,
-            &state,
+            &cstate,
             &info_good,
         ));
         let info_bad = make_counterparty_info(
@@ -1860,7 +1857,7 @@ mod tests {
                 commit_num,
                 &commit_point,
                 &setup,
-                &state,
+                &cstate,
                 &info_bad,
             ),
             "validate_expiry: received HTLC expiry too early: 1004 < 1005"
@@ -1878,7 +1875,7 @@ mod tests {
                 commit_num,
                 &commit_point,
                 &setup,
-                &state,
+                &cstate,
                 &info_bad,
             ),
             "validate_expiry: received HTLC expiry too late: 2441 > 2440"

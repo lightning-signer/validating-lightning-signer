@@ -43,7 +43,7 @@ pub trait Validator {
         &self,
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
-        state: &ValidatorState,
+        cstate: &ChainState,
         tx: &Transaction,
         values_sat: &Vec<u64>,
         opaths: &Vec<Vec<u32>>,
@@ -66,7 +66,7 @@ pub trait Validator {
         commit_num: u64,
         commitment_point: &PublicKey,
         setup: &ChannelSetup,
-        vstate: &ValidatorState,
+        cstate: &ChainState,
         info2: &CommitmentInfo2,
     ) -> Result<(), ValidationError>;
 
@@ -77,7 +77,7 @@ pub trait Validator {
         commit_num: u64,
         commitment_point: &PublicKey,
         setup: &ChannelSetup,
-        vstate: &ValidatorState,
+        cstate: &ChainState,
         info2: &CommitmentInfo2,
     ) -> Result<(), ValidationError>;
 
@@ -107,7 +107,7 @@ pub trait Validator {
     fn validate_htlc_tx(
         &self,
         setup: &ChannelSetup,
-        state: &ValidatorState,
+        cstate: &ChainState,
         is_counterparty: bool,
         htlc: &HTLCOutputInCommitment,
         feerate_per_kw: u32,
@@ -141,7 +141,7 @@ pub trait Validator {
         &self,
         wallet: &Wallet,
         setup: &ChannelSetup,
-        vstate: &ValidatorState,
+        cstate: &ChainState,
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
@@ -154,7 +154,7 @@ pub trait Validator {
         &self,
         wallet: &Wallet,
         setup: &ChannelSetup,
-        vstate: &ValidatorState,
+        cstate: &ChainState,
         tx: &Transaction,
         redeemscript: &Script,
         input: usize,
@@ -167,7 +167,7 @@ pub trait Validator {
         &self,
         wallet: &Wallet,
         setup: &ChannelSetup,
-        vstate: &ValidatorState,
+        cstate: &ChainState,
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
@@ -177,7 +177,7 @@ pub trait Validator {
 
 /// Blockchain state used by the validator
 #[derive(Debug)]
-pub struct ValidatorState {
+pub struct ChainState {
     /// The current blockchain height
     pub current_height: u32,
 }

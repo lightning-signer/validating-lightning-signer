@@ -31,7 +31,7 @@ use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
 use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::EnforcementState;
-use crate::policy::validator::{ValidatorFactory, ValidatorState};
+use crate::policy::validator::{ChainState, ValidatorFactory};
 use crate::prelude::*;
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::sync::{Arc, Weak};
@@ -553,8 +553,8 @@ impl Node {
             })
             .collect();
         // TODO - initialize the state
-        let state = ValidatorState { current_height: 0 };
-        validator.validate_funding_tx(self, channels, &state, tx, values_sat, opaths)?;
+        let cstate = ChainState { current_height: 0 };
+        validator.validate_funding_tx(self, channels, &cstate, tx, values_sat, opaths)?;
 
         let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for idx in 0..tx.input.len() {
