@@ -1,5 +1,7 @@
 #![allow(missing_docs)]
 
+use alloc::vec::Vec;
+
 use serde::{de, ser};
 use serde_bolt::{from_vec, to_vec};
 use serde_bolt::{Read, Write, LargeBytes};

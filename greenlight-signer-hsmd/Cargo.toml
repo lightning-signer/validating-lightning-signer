@@ -6,7 +6,6 @@ edition = "2018"
 
 [dependencies]
 lightning-signer-core = { path = "../../rust-lightning-signer/lightning-signer-core" }
-lightning-signer-server = { path = "../../rust-lightning-signer/lightning-signer-server" }
 greenlight-protocol = { path = "../greenlight-protocol" }
 greenlight-signer = { path = "../greenlight-signer" }
 secp256k1 = { version = "0.20", features = ["rand-std", "bitcoin_hashes"] }
@@ -18,3 +17,8 @@ env_logger = "0.9"
 clap = "=3.0.0-beta.2"
 # 0.2.5 doesn't compile with 1.45.2
 http = "=0.2.4"
+
+[dependencies.lightning-signer-server]
+path = "../../rust-lightning-signer/lightning-signer-server"
+default_features = false
+features = ["persist_kv_json"]

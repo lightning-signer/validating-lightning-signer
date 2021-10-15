@@ -1,3 +1,7 @@
+#![no_std]
+
+extern crate alloc;
+
 pub mod msgs;
 pub mod model;
 mod error;
