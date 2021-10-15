@@ -609,12 +609,16 @@ fn from_vec_no_trailing<T: TypedMessage>(s: &mut Vec<u8>) -> Result<T>
 /// - data
 pub fn read<R: Read>(reader: &mut R) -> Result<Message> {
     let len = read_u32(reader)?;
+    read_unframed(reader, len)
+}
+
+pub fn read_unframed<R: Read>(reader: &mut R, len: u32) -> Result<Message> {
     let mut data = Vec::new();
     if len < 2 {
         return Err(Error::ShortRead)
     }
-    let message_type = read_u16(reader)?;
     data.resize(len as usize - 2, 0);
+    let message_type = read_u16(reader)?;
     let len = reader.read(&mut data)?;
     if len < data.len() {
         return Err(Error::ShortRead);
