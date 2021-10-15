@@ -173,7 +173,7 @@ mod tests {
         Ok(())
     }
 
-    // policy-justice-sweep-destination-allowlisted
+    // policy-sweep-destination-allowlisted
     #[test]
     fn sign_justice_to_local_wallet_p2wpkh_success() {
         assert_status_ok!(sign_justice_sweep_with_mutators(
@@ -182,7 +182,7 @@ mod tests {
         ));
     }
 
-    // policy-justice-sweep-destination-allowlisted
+    // policy-sweep-destination-allowlisted
     #[test]
     fn sign_justice_to_local_wallet_p2shwpkh_success() {
         assert_status_ok!(sign_justice_sweep_with_mutators(
@@ -191,7 +191,7 @@ mod tests {
         ));
     }
 
-    // policy-justice-sweep-destination-allowlisted
+    // policy-sweep-destination-allowlisted
     #[test]
     fn sign_justice_to_local_allowlist_p2wpkh_success() {
         assert_status_ok!(sign_justice_sweep_with_mutators(
@@ -208,7 +208,7 @@ mod tests {
         ));
     }
 
-    // policy-justice-sweep-destination-allowlisted
+    // policy-sweep-destination-allowlisted
     #[test]
     fn sign_justice_to_local_allowlist_p2shwpkh_success() {
         assert_status_ok!(sign_justice_sweep_with_mutators(
@@ -223,7 +223,7 @@ mod tests {
         ));
     }
 
-    // policy-justice-sweep-destination-allowlisted
+    // policy-sweep-destination-allowlisted
     #[test]
     fn sign_justice_to_local_with_unknown_dest() {
         assert_failed_precondition_err!(
@@ -236,7 +236,7 @@ mod tests {
         );
     }
 
-    // policy-justice-sweep-destination-allowlisted
+    // policy-sweep-destination-allowlisted
     #[test]
     fn sign_justice_sweep_with_wrong_wallet_path() {
         assert_failed_precondition_err!(
@@ -293,7 +293,7 @@ mod tests {
         );
     }
 
-    // policy-justice-sweep-version
+    // policy-sweep-version
     #[test]
     fn sign_justice_sweep_with_bad_version() {
         assert_failed_precondition_err!(
@@ -307,7 +307,7 @@ mod tests {
         );
     }
 
-    // policy-justice-sweep-locktime
+    // policy-sweep-locktime
     #[test]
     fn sign_justice_sweep_with_bad_locktime() {
         assert_failed_precondition_err!(
@@ -321,7 +321,7 @@ mod tests {
         );
     }
 
-    // policy-justice-sweep-sequence
+    // policy-sweep-sequence
     #[test]
     fn sign_justice_sweep_with_rbf_sequence_success() {
         assert_status_ok!(sign_justice_sweep_with_mutators(
@@ -332,7 +332,7 @@ mod tests {
         ));
     }
 
-    // policy-justice-sweep-sequence
+    // policy-sweep-sequence
     #[test]
     fn sign_justice_sweep_with_bad_sequence() {
         assert_failed_precondition_err!(
@@ -361,7 +361,7 @@ mod tests {
         );
     }
 
-    // policy-justice-sweep-fee-range
+    // policy-sweep-fee-range
     #[test]
     fn sign_justice_sweep_with_fee_too_small() {
         assert_failed_precondition_err!(
@@ -376,7 +376,7 @@ mod tests {
         );
     }
 
-    // policy-justice-sweep-fee-range
+    // policy-sweep-fee-range
     #[test]
     fn sign_justice_sweep_with_fee_too_large() {
         assert_failed_precondition_err!(

@@ -144,7 +144,7 @@ mod tests {
         Ok(())
     }
 
-    // policy-delayed-sweep-destination-allowlisted
+    // policy-sweep-destination-allowlisted
     #[test]
     fn sign_delayed_to_local_wallet_p2wpkh_success() {
         assert_status_ok!(sign_delayed_sweep_with_mutators(
@@ -153,7 +153,7 @@ mod tests {
         ));
     }
 
-    // policy-delayed-sweep-destination-allowlisted
+    // policy-sweep-destination-allowlisted
     #[test]
     fn sign_delayed_to_local_wallet_p2shwpkh_success() {
         assert_status_ok!(sign_delayed_sweep_with_mutators(
@@ -162,7 +162,7 @@ mod tests {
         ));
     }
 
-    // policy-delayed-sweep-destination-allowlisted
+    // policy-sweep-destination-allowlisted
     #[test]
     fn sign_delayed_to_local_allowlist_p2wpkh_success() {
         assert_status_ok!(sign_delayed_sweep_with_mutators(
@@ -179,7 +179,7 @@ mod tests {
         ));
     }
 
-    // policy-delayed-sweep-destination-allowlisted
+    // policy-sweep-destination-allowlisted
     #[test]
     fn sign_delayed_to_local_allowlist_p2shwpkh_success() {
         assert_status_ok!(sign_delayed_sweep_with_mutators(
@@ -194,7 +194,7 @@ mod tests {
         ));
     }
 
-    // policy-delayed-sweep-destination-allowlisted
+    // policy-sweep-destination-allowlisted
     #[test]
     fn sign_delayed_to_local_with_unknown_dest() {
         assert_failed_precondition_err!(
@@ -207,7 +207,7 @@ mod tests {
         );
     }
 
-    // policy-delayed-sweep-destination-allowlisted
+    // policy-sweep-destination-allowlisted
     #[test]
     fn sign_delayed_sweep_with_wrong_wallet_path() {
         assert_failed_precondition_err!(
@@ -264,7 +264,7 @@ mod tests {
         );
     }
 
-    // policy-delayed-sweep-version
+    // policy-sweep-version
     #[test]
     fn sign_delayed_sweep_with_bad_version() {
         assert_failed_precondition_err!(
@@ -278,7 +278,7 @@ mod tests {
         );
     }
 
-    // policy-delayed-sweep-locktime
+    // policy-sweep-locktime
     #[test]
     fn sign_delayed_sweep_with_bad_locktime() {
         assert_failed_precondition_err!(
@@ -292,7 +292,7 @@ mod tests {
         );
     }
 
-    // policy-delayed-sweep-sequence
+    // policy-sweep-sequence
     #[test]
     fn sign_delayed_sweep_with_bad_sequence() {
         assert_failed_precondition_err!(
@@ -320,7 +320,7 @@ mod tests {
         );
     }
 
-    // policy-delayed-sweep-fee-range
+    // policy-sweep-fee-range
     #[test]
     fn sign_delayed_sweep_with_fee_too_small() {
         assert_failed_precondition_err!(
@@ -335,7 +335,7 @@ mod tests {
         );
     }
 
-    // policy-delayed-sweep-fee-range
+    // policy-sweep-fee-range
     #[test]
     fn sign_delayed_sweep_with_fee_too_large() {
         assert_failed_precondition_err!(
