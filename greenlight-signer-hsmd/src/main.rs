@@ -19,14 +19,13 @@ use lightning_signer::Arc;
 use lightning_signer::persist::{DummyPersister, Persist};
 
 use crate::client::{Client, UnixClient};
-use crate::handler::{Handler, RootHandler};
+use greenlight_signer::handler::{Handler, RootHandler};
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
 use std::fs::File;
 use std::io::{BufReader, BufRead};
 
 mod connection;
 mod client;
-mod handler;
 
 fn run_parent(fd: RawFd) {
     let mut client = UnixClient::new(UnixConnection::new(fd));
@@ -50,27 +49,32 @@ fn run_parent(fd: RawFd) {
     info!("parent: client1 {:?}", client1.read());
 }
 
-fn signer_loop<C: 'static + Client, H: Handler<C>>(handler: H) {
+fn signer_loop<C: 'static + Client, H: Handler>(client: C, handler: H) {
     let id = handler.client_id();
     info!("loop {}: start", id);
-    match do_signer_loop(handler) {
+    match do_signer_loop(client, handler) {
         Ok(()) => info!("loop {}: done", id),
         Err(Error::Eof) => info!("loop {}: ending", id),
         Err(e) => error!("loop {}: error {:?}", id, e),
     }
 }
 
-fn do_signer_loop<C: 'static + Client, H: Handler<C>>(mut handler: H) -> Result<()> {
+fn do_signer_loop<C: 'static + Client, H: Handler>(mut client: C, mut handler: H) -> Result<()> {
     loop {
-        let msg = handler.read()?;
+        let msg = client.read()?;
         info!("loop {}: got {:x?}", handler.client_id(), msg);
         match msg {
             Message::ClientHsmFd(m) => {
-                handler.write(msgs::ClientHsmFdReply {}).unwrap();
+                client.write(msgs::ClientHsmFdReply {}).unwrap();
+                let new_client = client.new_client();
                 let handler = handler.with_new_client(m.peer_id, m.dbid);
-                thread::spawn(move || signer_loop(handler));
+                thread::spawn(move || signer_loop(new_client, handler));
             }
-            msg => handler.handle(msg)
+            msg => {
+                let reply = handler.handle(msg).expect("handle");
+                let v = reply.vec_serialize();
+                client.write_vec(v).unwrap();
+            }
         }
     }
 }
@@ -99,11 +103,12 @@ pub fn main() {
         run_test();
     } else {
         let conn = UnixConnection::new(3);
-        let client = UnixClient::new(conn);
+        let mut client = UnixClient::new(conn);
         let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new("signer.kv"));
         let allowlist = read_allowlist();
-        let handler = RootHandler::new(client, read_integration_test_seed(), persister, allowlist);
-        signer_loop(handler);
+        let new_client = client.new_client();
+        let handler = RootHandler::new(client.id(), read_integration_test_seed(), persister, allowlist);
+        signer_loop(client, handler);
     }
 }
 
@@ -145,8 +150,8 @@ fn run_test() {
             let client = UnixClient::new(conn);
             let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
             let seed = Some([0; 32]);
-            let handler = RootHandler::new(client, seed, persister, vec![]);
-            signer_loop(handler)
+            let handler = RootHandler::new(client.id(), seed, persister, vec![]);
+            signer_loop(client, handler)
         },
         Err(_) => {}
     }

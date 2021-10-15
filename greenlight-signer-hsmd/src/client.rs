@@ -9,6 +9,7 @@ use crate::connection::UnixConnection;
 
 pub(crate) trait Client: Send {
     fn write<M: msgs::TypedMessage + Serialize>(&mut self, msg: M) -> Result<()>;
+    fn write_vec(&mut self, v: Vec<u8>) -> Result<()>;
     fn read(&mut self) -> Result<msgs::Message>;
     fn id(&self) -> u64;
     #[must_use = "don't leak the client fd"]
@@ -34,6 +35,11 @@ impl UnixClient {
 impl Client for UnixClient {
     fn write<M: msgs::TypedMessage + Serialize>(&mut self, msg: M) -> Result<()> {
         msgs::write(&mut self.conn, msg)?;
+        Ok(())
+    }
+
+    fn write_vec(&mut self, v: Vec<u8>) -> Result<()> {
+        msgs::write_vec(&mut self.conn, v)?;
         Ok(())
     }
 

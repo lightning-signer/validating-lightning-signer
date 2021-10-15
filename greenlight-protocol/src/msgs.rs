@@ -13,6 +13,24 @@ pub trait TypedMessage {
     const TYPE: u16;
 }
 
+pub trait SerMessage {
+    fn vec_serialize(&self) -> Vec<u8>;
+}
+
+macro_rules! impl_ser {
+	($val_type:ty) => {
+        impl SerMessage for $val_type {
+            fn vec_serialize(&self) -> Vec<u8> {
+                let message_type = Self::TYPE;
+                let mut buf = message_type.to_be_bytes().to_vec();
+                let mut val_buf = to_vec(&self).expect("serialize");
+                buf.append(&mut val_buf);
+                buf
+            }
+        }
+    };
+}
+
 /// hsmd Init
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HsmdInit {
@@ -42,6 +60,8 @@ impl TypedMessage for HsmdInitReply {
     const TYPE: u16 = 111;
 }
 
+impl_ser!(HsmdInitReply);
+
 /// Connect a new client
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClientHsmFd {
@@ -64,6 +84,8 @@ impl TypedMessage for ClientHsmFdReply {
     const TYPE: u16 = 109;
 }
 
+impl_ser!(ClientHsmFdReply);
+
 /// Sign invoice
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignInvoice {
@@ -84,6 +106,8 @@ pub struct SignInvoiceReply {
 impl TypedMessage for SignInvoiceReply {
     const TYPE: u16 = 108;
 }
+
+impl_ser!(SignInvoiceReply);
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
@@ -106,6 +130,8 @@ impl TypedMessage for SignWithdrawalReply {
     const TYPE: u16 = 107;
 }
 
+impl_ser!(SignWithdrawalReply);
+
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Ecdh {
@@ -126,6 +152,8 @@ impl TypedMessage for EcdhReply {
     const TYPE: u16 = 100;
 }
 
+impl_ser!(EcdhReply);
+
 /// Memleak
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Memleak {
@@ -144,6 +172,8 @@ pub struct MemleakReply {
 impl TypedMessage for MemleakReply {
     const TYPE: u16 = 133;
 }
+
+impl_ser!(MemleakReply);
 
 /// Sign channel update
 #[derive(Debug, Serialize, Deserialize)]
@@ -164,6 +194,8 @@ pub struct SignChannelUpdateReply {
 impl TypedMessage for SignChannelUpdateReply {
     const TYPE: u16 = 103;
 }
+
+impl_ser!(SignChannelUpdateReply);
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
@@ -186,6 +218,8 @@ impl TypedMessage for SignChannelAnnouncementReply {
     const TYPE: u16 = 102;
 }
 
+impl_ser!(SignChannelAnnouncementReply);
+
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignNodeAnnouncement {
@@ -205,6 +239,8 @@ pub struct SignNodeAnnouncementReply {
 impl TypedMessage for SignNodeAnnouncementReply {
     const TYPE: u16 = 106;
 }
+
+impl_ser!(SignNodeAnnouncementReply);
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
@@ -226,6 +262,8 @@ pub struct GetPerCommitmentPointReply {
 impl TypedMessage for GetPerCommitmentPointReply {
     const TYPE: u16 = 118;
 }
+
+impl_ser!(GetPerCommitmentPointReply);
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
@@ -259,6 +297,8 @@ impl TypedMessage for ReadyChannelReply {
     const TYPE: u16 = 131;
 }
 
+impl_ser!(ReadyChannelReply);
+
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ValidateCommitmentTx {
@@ -286,6 +326,8 @@ impl TypedMessage for ValidateCommitmentTxReply {
     const TYPE: u16 = 135;
 }
 
+impl_ser!(ValidateCommitmentTxReply);
+
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ValidateRevocation {
@@ -305,6 +347,8 @@ pub struct ValidateRevocationReply {
 impl TypedMessage for ValidateRevocationReply {
     const TYPE: u16 = 136;
 }
+
+impl_ser!(ValidateRevocationReply);
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
@@ -403,6 +447,8 @@ impl TypedMessage for SignCommitmentTxReply {
     const TYPE: u16 = 105;
 }
 
+impl_ser!(SignCommitmentTxReply);
+
 ///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignTxReply {
@@ -412,6 +458,8 @@ pub struct SignTxReply {
 impl TypedMessage for SignTxReply {
     const TYPE: u16 = 112;
 }
+
+impl_ser!(SignTxReply);
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
@@ -432,6 +480,8 @@ pub struct NewChannelReply {
 impl TypedMessage for NewChannelReply {
     const TYPE: u16 = 130;
 }
+
+impl_ser!(NewChannelReply);
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
@@ -454,6 +504,8 @@ pub struct GetChannelBasepointsReply {
 impl TypedMessage for GetChannelBasepointsReply {
     const TYPE: u16 = 110;
 }
+
+impl_ser!(GetChannelBasepointsReply);
 
 
 ///
@@ -637,10 +689,16 @@ fn read_message_and_data<R: Read>(reader: &mut R) -> Result<(Message, Vec<u8>)> 
 }
 
 pub fn write<W: Write, T: ser::Serialize + TypedMessage>(writer: &mut W, value: T) -> Result<()> {
-    let buf = to_vec(&value)?;
-    let len: u32 = buf.len() as u32 + 2;
+    let message_type = T::TYPE;
+    let mut buf = message_type.to_be_bytes().to_vec();
+    let mut val_buf = to_vec(&value)?;
+    buf.append(&mut val_buf);
+    write_vec(writer, buf)
+}
+
+pub fn write_vec<W: Write>(writer: &mut W, buf: Vec<u8>) -> Result<()> {
+    let len: u32 = buf.len() as u32;
     writer.write_all(&len.to_be_bytes())?;
-    writer.write_all(&T::TYPE.to_be_bytes())?;
     writer.write_all(&buf)?;
     Ok(())
 }
