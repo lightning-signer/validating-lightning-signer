@@ -204,7 +204,7 @@ impl SimpleValidator {
     }
 }
 
-// TODO - policy-funding-change-path-predictable
+// TODO - policy-onchain-change-path-predictable
 
 // TODO - policy-commitment-spends-active-utxo
 // TODO - policy-commitment-htlc-routing-balance
@@ -305,7 +305,7 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         let mut debug_on_return = scoped_debug_return!(cstate, tx, values_sat, opaths);
 
-        // policy-funding-fee-range
+        // policy-onchain-fee-range
         let mut sum_inputs: u64 = 0;
         for val in values_sat {
             sum_inputs = sum_inputs
@@ -321,7 +321,7 @@ impl Validator for SimpleValidator {
         self.validate_fee(sum_inputs, sum_outputs)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        // policy-funding-format-standard
+        // policy-onchain-format-standard
         if tx.version != 2 {
             return policy_err!("invalid version: {}", tx.version);
         }
@@ -331,8 +331,8 @@ impl Validator for SimpleValidator {
             let opath = &opaths[outndx];
             let channel_slot = channels[outndx].as_ref();
 
-            // policy-funding-output-match-commitment
-            // policy-funding-change-to-wallet
+            // policy-onchain-output-match-commitment
+            // policy-onchain-change-to-wallet
             // All outputs must either be wallet (change) or channel funding.
             if opath.len() > 0 {
                 let spendable = wallet
@@ -356,7 +356,7 @@ impl Validator for SimpleValidator {
                 })?;
                 match &*slot.lock().unwrap() {
                     ChannelSlot::Ready(chan) => {
-                        // policy-funding-output-match-commitment
+                        // policy-onchain-output-match-commitment
                         if output.value != chan.setup.channel_value_sat {
                             return policy_err!(
                                 "funding output amount mismatch w/ channel: {} != {}",
@@ -365,7 +365,7 @@ impl Validator for SimpleValidator {
                             );
                         }
 
-                        // policy-funding-output-scriptpubkey
+                        // policy-onchain-output-scriptpubkey
                         let funding_redeemscript = make_funding_redeemscript(
                             &chan.keys.pubkeys().funding_pubkey,
                             &chan.keys.counterparty_pubkeys().funding_pubkey,
@@ -380,7 +380,7 @@ impl Validator for SimpleValidator {
                             );
                         }
 
-                        // policy-funding-initial-commitment-countersigned
+                        // policy-onchain-initial-commitment-countersigned
                         if chan.enforcement_state.next_holder_commit_num != 1 {
                             return policy_err!("initial holder commitment not validated",);
                         }

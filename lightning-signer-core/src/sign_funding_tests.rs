@@ -147,7 +147,7 @@ mod tests {
         Ok(())
     }
 
-    // policy-funding-fee-range
+    // policy-onchain-fee-range
     #[test]
     fn sign_funding_tx_fee_too_low() {
         let secp_ctx = Secp256k1::signing_only();
@@ -184,7 +184,7 @@ mod tests {
         );
     }
 
-    // policy-funding-fee-range
+    // policy-onchain-fee-range
     #[test]
     fn sign_funding_tx_fee_too_high() {
         let secp_ctx = Secp256k1::signing_only();
@@ -541,7 +541,7 @@ mod tests {
         assert!(status.is_ok());
     }
 
-    // policy-funding-format-standard
+    // policy-onchain-format-standard
     #[test]
     fn sign_funding_tx_with_version_1() {
         assert_failed_precondition_err!(
@@ -552,7 +552,7 @@ mod tests {
         );
     }
 
-    // policy-funding-format-standard
+    // policy-onchain-format-standard
     #[test]
     fn sign_funding_tx_with_version_3() {
         assert_failed_precondition_err!(
@@ -717,7 +717,7 @@ mod tests {
         funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
     }
 
-    // policy-funding-initial-commitment-countersigned
+    // policy-onchain-initial-commitment-countersigned
     #[test]
     fn sign_funding_tx_with_missing_initial_commitment_validation() {
         let is_p2sh = false;
@@ -761,8 +761,8 @@ mod tests {
         );
     }
 
-    // policy-funding-output-match-commitment
-    // policy-funding-change-to-wallet
+    // policy-onchain-output-match-commitment
+    // policy-onchain-change-to-wallet
     #[test]
     fn sign_funding_tx_with_unknown_output() {
         let is_p2sh = false;
@@ -957,7 +957,7 @@ mod tests {
         );
     }
 
-    // policy-funding-output-scriptpubkey
+    // policy-onchain-output-scriptpubkey
     #[test]
     fn sign_funding_tx_with_bad_output_script_pubkey2() {
         let is_p2sh = false;
