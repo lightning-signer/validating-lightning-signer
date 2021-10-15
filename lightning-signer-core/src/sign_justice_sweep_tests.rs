@@ -7,6 +7,7 @@ mod tests {
 
     use crate::channel::{Channel, ChannelBase};
     use crate::node::SpendType::{P2shP2wpkh, P2wpkh};
+    use crate::policy::validator::ChainState;
     use crate::util::crypto_utils::{
         derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
         signature_to_bitcoin_vec,
@@ -43,8 +44,15 @@ mod tests {
     ) -> Result<(), Status>
     where
         MakeDestination: Fn(&TestNodeContext) -> (Script, Vec<u32>),
-        InputMutator:
-            Fn(&mut Channel, &mut Transaction, &mut usize, &mut SecretKey, &mut Script, &mut u64),
+        InputMutator: Fn(
+            &mut Channel,
+            &mut ChainState,
+            &mut Transaction,
+            &mut usize,
+            &mut SecretKey,
+            &mut Script,
+            &mut u64,
+        ),
     {
         let (node, setup, channel_id, offered_htlcs, received_htlcs) =
             sign_commitment_tx_with_mutators_setup();
@@ -135,9 +143,11 @@ mod tests {
                     setup.holder_selected_contest_delay,
                     &delayed_payment_pubkey,
                 );
+                let mut cstate = make_test_chain_state();
 
                 mutate_signing_input(
                     chan,
+                    &mut cstate,
                     &mut tx,
                     &mut input,
                     &mut revocation_secret,
@@ -146,6 +156,7 @@ mod tests {
                 );
 
                 let sig = chan.sign_justice_sweep(
+                    &cstate,
                     &tx,
                     input,
                     &revocation_secret,
@@ -178,7 +189,7 @@ mod tests {
     fn sign_justice_to_local_wallet_p2wpkh_success() {
         assert_status_ok!(sign_justice_sweep_with_mutators(
             |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-            |_chan, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
+            |_chan, _cstate, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
         ));
     }
 
@@ -187,7 +198,7 @@ mod tests {
     fn sign_justice_to_local_wallet_p2shwpkh_success() {
         assert_status_ok!(sign_justice_sweep_with_mutators(
             |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2shP2wpkh) },
-            |_chan, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
+            |_chan, _cstate, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
         ));
     }
 
@@ -196,7 +207,7 @@ mod tests {
     fn sign_justice_to_local_allowlist_p2wpkh_success() {
         assert_status_ok!(sign_justice_sweep_with_mutators(
             |node_ctx| { make_test_nonwallet_dest(node_ctx, 3, P2wpkh) },
-            |chan, _tx, _input, _commit_num, _redeemscript, _amount_sat| {
+            |chan, _cstate, _tx, _input, _commit_num, _redeemscript, _amount_sat| {
                 chan.node
                     .upgrade()
                     .unwrap()
@@ -213,7 +224,7 @@ mod tests {
     fn sign_justice_to_local_allowlist_p2shwpkh_success() {
         assert_status_ok!(sign_justice_sweep_with_mutators(
             |node_ctx| { make_test_nonwallet_dest(node_ctx, 3, P2shP2wpkh) },
-            |chan, _tx, _input, _commit_num, _redeemscript, _amount_sat| {
+            |chan, _cstate, _tx, _input, _commit_num, _redeemscript, _amount_sat| {
                 chan.node
                     .upgrade()
                     .unwrap()
@@ -229,7 +240,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_nonwallet_dest(node_ctx, 3, P2shP2wpkh) },
-                |_chan, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
+                |_chan, _cstate, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
             ),
             "policy failure: validate_justice_sweep: validate_sweep: \
              destination is not in wallet or allowlist"
@@ -245,7 +256,7 @@ mod tests {
                     // Build the dest from index 19, but report index 21.
                     (make_test_wallet_dest(node_ctx, 19, P2wpkh).0, vec![21])
                 },
-                |_chan, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
+                |_chan, _cstate, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
             ),
             "policy failure: validate_justice_sweep: validate_sweep: \
              destination is not in wallet or allowlist"
@@ -257,7 +268,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, tx, _input, _commit_num, _redeemscript, _amount_sat| {
+                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
                     tx.input.push(tx.input[0].clone());
                 },
             ),
@@ -271,7 +282,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, tx, _input, _commit_num, _redeemscript, _amount_sat| {
+                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
                     tx.output.push(tx.output[0].clone());
                 },
             ),
@@ -285,7 +296,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, _tx, input, _commit_num, _redeemscript, _amount_sat| {
+                |_chan, _cstate, _tx, input, _commit_num, _redeemscript, _amount_sat| {
                     *input = 1;
                 },
             ),
@@ -299,7 +310,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, tx, _input, _commit_num, _redeemscript, _amount_sat| {
+                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
                     tx.version = 3;
                 },
             ),
@@ -313,11 +324,11 @@ mod tests {
         assert_failed_precondition_err!(
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, tx, _input, _commit_num, _redeemscript, _amount_sat| {
+                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
                     tx.lock_time = 1_000_000;
                 },
             ),
-            "transaction format: validate_justice_sweep: bad locktime: 1000000 > 0"
+            "transaction format: validate_justice_sweep: bad locktime: 1000000 > 1000"
         );
     }
 
@@ -326,7 +337,7 @@ mod tests {
     fn sign_justice_sweep_with_rbf_sequence_success() {
         assert_status_ok!(sign_justice_sweep_with_mutators(
             |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-            |_chan, tx, _input, _commit_num, _redeemscript, _amount_sat| {
+            |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
                 tx.input[0].sequence = 0x_ffff_fffd_u32;
             },
         ));
@@ -338,7 +349,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, tx, _input, _commit_num, _redeemscript, _amount_sat| {
+                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
                     tx.input[0].sequence = 42;
                 },
             ),
@@ -352,7 +363,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, _tx, _input, _commit_num, _redeemscript, amount_sat| {
+                |_chan, _cstate, _tx, _input, _commit_num, _redeemscript, amount_sat| {
                     *amount_sat -= 100_000;
                 },
             ),
@@ -367,7 +378,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, tx, _input, _commit_num, _redeemscript, amount_sat| {
+                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, amount_sat| {
                     *amount_sat = tx.output[0].value; // fee = 0
                 },
             ),
@@ -382,7 +393,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, tx, _input, _commit_num, _redeemscript, _amount_sat| {
+                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
                     tx.output[0].value = 1_000;
                 },
             ),

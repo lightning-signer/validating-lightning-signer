@@ -20,6 +20,7 @@ use log::{debug, error, info};
 use crate::channel::{ChannelBase, ChannelId, ChannelSetup, CommitmentType};
 use crate::io_extras::Error as IOError;
 use crate::node::Node;
+use crate::policy::validator::ChainState;
 use crate::signer::multi_signer::MultiSigner;
 use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::{
@@ -147,10 +148,13 @@ impl LoopbackChannelSigner {
         let (offered_htlcs, received_htlcs) =
             LoopbackChannelSigner::convert_to_htlc_info2(hct.htlcs());
 
+        let cstate = self.get_chain_state()?;
+
         let (sig_vec, htlc_sig_vecs) = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 let result = chan.sign_holder_commitment_tx_phase2(
+                    &cstate,
                     commitment_number,
                     feerate_per_kw,
                     to_holder_value_sat,
@@ -192,6 +196,11 @@ impl LoopbackChannelSigner {
 
     fn dest_wallet_path() -> Vec<u32> {
         vec![1]
+    }
+
+    fn get_chain_state(&self) -> Result<ChainState, ()> {
+        // FIXME - where should this come from for loopback?
+        Ok(ChainState { current_height: 0 })
     }
 }
 
@@ -244,11 +253,14 @@ impl BaseSign for LoopbackChannelSigner {
         holder_tx: &HolderCommitmentTransaction,
     ) -> Result<(), ()> {
         let commitment_number = INITIAL_COMMITMENT_NUMBER - holder_tx.commitment_number();
+        let cstate = self.get_chain_state()?;
+
         self.signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 let (offered_htlcs, received_htlcs) =
                     LoopbackChannelSigner::convert_to_htlc_info2(holder_tx.htlcs());
                 chan.validate_holder_commitment_tx_phase2(
+                    &cstate,
                     commitment_number,
                     holder_tx.feerate_per_kw(),
                     holder_tx.to_broadcaster_value_sat(),
@@ -298,10 +310,13 @@ impl BaseSign for LoopbackChannelSigner {
         let to_counterparty_value_sat = commitment_tx.to_broadcaster_value_sat();
         let feerate_per_kw = commitment_tx.feerate_per_kw();
 
+        let cstate = self.get_chain_state()?;
+
         let (sig_vec, htlc_sigs_vecs) = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 chan.sign_counterparty_commitment_tx_phase2(
+                    &cstate,
                     &per_commitment_point,
                     commitment_number,
                     feerate_per_kw,
@@ -379,11 +394,14 @@ impl BaseSign for LoopbackChannelSigner {
 
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
+        let cstate = self.get_chain_state()?;
+
         // TODO phase 2
         let res = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 let sig = chan.sign_justice_sweep(
+                    &cstate,
                     justice_tx,
                     input,
                     per_commitment_key,
@@ -412,11 +430,14 @@ impl BaseSign for LoopbackChannelSigner {
         let redeem_script = chan_utils::get_htlc_redeemscript(&htlc, &tx_keys);
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
+        let cstate = self.get_chain_state()?;
+
         // TODO phase 2
         let res = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 let sig = chan.sign_justice_sweep(
+                    &cstate,
                     justice_tx,
                     input,
                     per_commitment_key,
@@ -444,11 +465,14 @@ impl BaseSign for LoopbackChannelSigner {
         let redeem_script = chan_utils::get_htlc_redeemscript(htlc, &chan_keys);
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
+        let cstate = self.get_chain_state()?;
+
         // TODO phase 2
         let res = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 let sig = chan.sign_counterparty_htlc_sweep(
+                    &cstate,
                     htlc_tx,
                     input,
                     per_commitment_point,

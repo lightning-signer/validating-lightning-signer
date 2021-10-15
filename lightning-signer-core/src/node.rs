@@ -31,7 +31,7 @@ use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
 use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::EnforcementState;
-use crate::policy::validator::{ValidatorFactory, ValidatorState};
+use crate::policy::validator::{ChainState, ValidatorFactory};
 use crate::prelude::*;
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::sync::{Arc, Weak};
@@ -522,6 +522,7 @@ impl Node {
     ///   non-change outputs.
     pub fn sign_funding_tx(
         &self,
+        cstate: &ChainState,
         tx: &bitcoin::Transaction,
         ipaths: &Vec<Vec<u32>>,
         values_sat: &Vec<u64>,
@@ -552,9 +553,8 @@ impl Node {
                 self.find_channel_with_funding_outpoint(&outpoint)
             })
             .collect();
-        // TODO - initialize the state
-        let state = ValidatorState { current_height: 0 };
-        validator.validate_funding_tx(self, channels, &state, tx, values_sat, opaths)?;
+
+        validator.validate_funding_tx(self, channels, &cstate, tx, values_sat, opaths)?;
 
         let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for idx in 0..tx.input.len() {

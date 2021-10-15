@@ -12,6 +12,7 @@ mod tests {
     use test_env_log::test;
 
     use crate::channel::{ChannelBase, ChannelSetup, CommitmentType};
+    use crate::policy::validator::ChainState;
     use crate::util::crypto_utils::{
         derive_public_key, derive_revocation_pubkey, signature_to_bitcoin_vec,
     };
@@ -87,8 +88,10 @@ mod tests {
 
         let sigvec = node
             .with_ready_channel(&channel_id, |chan| {
+                let cstate = make_test_chain_state();
                 let sig = chan
                     .sign_holder_htlc_tx(
+                        &cstate,
                         &htlc_tx,
                         n,
                         None,
@@ -112,8 +115,10 @@ mod tests {
 
         let sigvec1 = node
             .with_ready_channel(&channel_id, |chan| {
+                let cstate = make_test_chain_state();
                 let sig = chan
                     .sign_holder_htlc_tx(
+                        &cstate,
                         &htlc_tx,
                         999,
                         Some(per_commitment_point),
@@ -145,7 +150,7 @@ mod tests {
     where
         ChanParamMutator: Fn(&mut ChannelTransactionParameters),
         KeysMutator: Fn(&mut TxCreationKeys),
-        TxMutator: Fn(&mut Transaction),
+        TxMutator: Fn(&mut ChainState, &mut Transaction),
     {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
@@ -187,8 +192,10 @@ mod tests {
                 &keys.revocation_key,
             );
 
+            let mut cstate = make_test_chain_state();
+
             // Mutate the transaction.
-            txmut(&mut htlc_tx);
+            txmut(&mut cstate, &mut htlc_tx);
 
             let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
 
@@ -199,6 +206,7 @@ mod tests {
             );
 
             let sig = chan.sign_counterparty_htlc_tx(
+                &cstate,
                 &htlc_tx,
                 &remote_per_commitment_point,
                 &htlc_redeemscript,
@@ -243,7 +251,7 @@ mod tests {
     where
         ChanParamMutator: Fn(&mut ChannelTransactionParameters),
         KeysMutator: Fn(&mut TxCreationKeys),
-        TxMutator: Fn(&mut Transaction),
+        TxMutator: Fn(&mut ChainState, &mut Transaction),
     {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
@@ -288,8 +296,10 @@ mod tests {
                     &keys.revocation_key,
                 );
 
+                let mut cstate = make_test_chain_state();
+
                 // Mutate the transaction.
-                txmut(&mut htlc_tx);
+                txmut(&mut cstate, &mut htlc_tx);
 
                 let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
 
@@ -300,6 +310,7 @@ mod tests {
                 );
 
                 let sig = chan.sign_holder_htlc_tx(
+                    &cstate,
                     &htlc_tx,
                     commit_num,
                     Some(per_commitment_point),
@@ -369,7 +380,7 @@ mod tests {
             |_keys| {
                 // don't mutate the keys, should pass
             },
-            |_tx| {
+            |_cstate, _tx| {
                 // don't mutate the tx, should pass
             }
         );
@@ -385,7 +396,7 @@ mod tests {
             |_keys| {
                 // don't mutate the keys, should pass
             },
-            |_tx| {
+            |_cstate, _tx| {
                 // don't mutate the tx, should pass
             }
         );
@@ -401,7 +412,7 @@ mod tests {
             |_keys| {
                 // don't mutate the keys, should pass
             },
-            |_tx| {
+            |_cstate, _tx| {
                 // don't mutate the tx, should pass
             }
         );
@@ -417,7 +428,7 @@ mod tests {
             |_keys| {
                 // don't mutate the keys, should pass
             },
-            |_tx| {
+            |_cstate, _tx| {
                 // don't mutate the tx, should pass
             }
         );
@@ -431,7 +442,7 @@ mod tests {
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.version = 3 // only version 2 allowed
+                |_cstate, tx| tx.version = 3 // only version 2 allowed
             ),
             "policy failure: sighash mismatch"
         );
@@ -444,7 +455,7 @@ mod tests {
             sign_counterparty_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.version = 3 // only version 2 allowed
+                |_cstate, tx| tx.version = 3 // only version 2 allowed
             ),
             "policy failure: sighash mismatch"
         );
@@ -457,7 +468,7 @@ mod tests {
             sign_holder_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.version = 3 // only version 2 allowed
+                |_cstate, tx| tx.version = 3 // only version 2 allowed
             ),
             "policy failure: sighash mismatch"
         );
@@ -470,7 +481,7 @@ mod tests {
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.version = 3 // only version 2 allowed
+                |_cstate, tx| tx.version = 3 // only version 2 allowed
             ),
             "policy failure: sighash mismatch"
         );
@@ -483,7 +494,7 @@ mod tests {
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.lock_time = 0 // offered must have non-zero locktime
+                |_cstate, tx| tx.lock_time = 0 // offered must have non-zero locktime
             ),
             "policy failure: validate_htlc_tx: offered lock_time must be non-zero"
         );
@@ -496,7 +507,7 @@ mod tests {
             sign_counterparty_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.lock_time = 42 // received must have zero locktime
+                |_cstate, tx| tx.lock_time = 42 // received must have zero locktime
             ),
             "policy failure: sighash mismatch"
         );
@@ -509,7 +520,7 @@ mod tests {
             sign_holder_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.lock_time = 0 // offered must have non-zero locktime
+                |_cstate, tx| tx.lock_time = 0 // offered must have non-zero locktime
             ),
             "policy failure: validate_htlc_tx: offered lock_time must be non-zero"
         );
@@ -522,7 +533,7 @@ mod tests {
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.lock_time = 42 // received must have zero locktime
+                |_cstate, tx| tx.lock_time = 42 // received must have zero locktime
             ),
             "policy failure: sighash mismatch"
         );
@@ -535,7 +546,7 @@ mod tests {
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
+                |_cstate, tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
             ),
             "policy failure: sighash mismatch"
         );
@@ -548,7 +559,7 @@ mod tests {
             sign_counterparty_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
+                |_cstate, tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
             ),
             "policy failure: sighash mismatch"
         );
@@ -561,7 +572,7 @@ mod tests {
             sign_holder_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
+                |_cstate, tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
             ),
             "policy failure: sighash mismatch"
         );
@@ -574,7 +585,7 @@ mod tests {
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
+                |_cstate, tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
             ),
             "policy failure: sighash mismatch"
         );
@@ -587,7 +598,7 @@ mod tests {
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |param| param.holder_selected_contest_delay = 42,
                 |_keys| {},
-                |_tx| {}
+                |_cstate, _tx| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -600,7 +611,7 @@ mod tests {
             sign_counterparty_received_htlc_tx_with_mutators!(
                 |param| param.holder_selected_contest_delay = 42,
                 |_keys| {},
-                |_tx| {}
+                |_cstate, _tx| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -617,7 +628,7 @@ mod tests {
                     param.counterparty_parameters = Some(cptp);
                 },
                 |_keys| {},
-                |_tx| {}
+                |_cstate, _tx| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -634,7 +645,7 @@ mod tests {
                     param.counterparty_parameters = Some(cptp);
                 },
                 |_keys| {},
-                |_tx| {}
+                |_cstate, _tx| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -647,7 +658,7 @@ mod tests {
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.revocation_key = make_test_pubkey(42),
-                |_tx| {}
+                |_cstate, _tx| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -660,7 +671,7 @@ mod tests {
             sign_counterparty_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.revocation_key = make_test_pubkey(42),
-                |_tx| {}
+                |_cstate, _tx| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -673,7 +684,7 @@ mod tests {
             sign_holder_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.revocation_key = make_test_pubkey(42),
-                |_tx| {}
+                |_cstate, _tx| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -686,7 +697,7 @@ mod tests {
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.revocation_key = make_test_pubkey(42),
-                |_tx| {}
+                |_cstate, _tx| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -699,7 +710,7 @@ mod tests {
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
-                |_tx| {}
+                |_cstate, _tx| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -712,7 +723,7 @@ mod tests {
             sign_counterparty_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
-                |_tx| {}
+                |_cstate, _tx| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -725,7 +736,7 @@ mod tests {
             sign_holder_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
-                |_tx| {}
+                |_cstate, _tx| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -738,7 +749,7 @@ mod tests {
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
-                |_tx| {}
+                |_cstate, _tx| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -751,7 +762,7 @@ mod tests {
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.output[0].value = 999_900 // htlc_amount_sat is 1_000_000
+                |_cstate, tx| tx.output[0].value = 999_900 // htlc_amount_sat is 1_000_000
             ),
             "policy failure: validate_htlc_tx: \
              feerate_per_kw of 151 is smaller than the minimum of 500"
@@ -765,7 +776,7 @@ mod tests {
             sign_counterparty_offered_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.output[0].value = 980_000 // htlc_amount_sat is 1_000_000
+                |_cstate, tx| tx.output[0].value = 980_000 // htlc_amount_sat is 1_000_000
             ),
             "policy failure: validate_htlc_tx: \
              feerate_per_kw of 30166 is larger than the maximum of 16000"
@@ -779,7 +790,7 @@ mod tests {
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.output[0].value = 999_900 // htlc_amount_sat is 1_000_000
+                |_cstate, tx| tx.output[0].value = 999_900 // htlc_amount_sat is 1_000_000
             ),
             "policy failure: validate_htlc_tx: \
              feerate_per_kw of 143 is smaller than the minimum of 500"
@@ -793,7 +804,7 @@ mod tests {
             sign_holder_received_htlc_tx_with_mutators!(
                 |_param| {},
                 |_keys| {},
-                |tx| tx.output[0].value = 980_000 // htlc_amount_sat is 1_000_000
+                |_cstate, tx| tx.output[0].value = 980_000 // htlc_amount_sat is 1_000_000
             ),
             "policy failure: validate_htlc_tx: \
              feerate_per_kw of 28450 is larger than the maximum of 16000"
@@ -863,8 +874,10 @@ mod tests {
 
         let ser_signature = node
             .with_ready_channel(&channel_id, |chan| {
+                let cstate = make_test_chain_state();
                 let sig = chan
                     .sign_counterparty_htlc_tx(
+                        &cstate,
                         &htlc_tx,
                         &remote_per_commitment_point,
                         &htlc_redeemscript,

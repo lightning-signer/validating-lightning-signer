@@ -36,6 +36,7 @@ use crate::channel::{
 use crate::node::SpendType;
 use crate::node::{Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
+use crate::policy::validator::ChainState;
 use crate::prelude::*;
 use crate::signer::my_keys_manager::KeyDerivationStyle;
 use crate::tx::tx::{sort_outputs, CommitmentInfo2, HTLCInfo2};
@@ -231,6 +232,12 @@ pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> Public
         secp_ctx,
         &SecretKey::from_slice(&Vec::from_hex(h).unwrap()[..]).unwrap(),
     )
+}
+
+pub fn make_test_chain_state() -> ChainState {
+    ChainState {
+        current_height: 1000,
+    }
 }
 
 pub fn make_test_channel_setup() -> ChannelSetup {
@@ -734,7 +741,9 @@ pub fn funding_tx_sign(
     tx_ctx: &TestFundingTxContext,
     tx: &bitcoin::Transaction,
 ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Status> {
+    let cstate = ChainState { current_height: 0 };
     node_ctx.node.sign_funding_tx(
+        &cstate,
         &tx,
         &tx_ctx.ipaths,
         &tx_ctx.ivals,
@@ -1013,7 +1022,10 @@ pub fn validate_holder_commitment(
             .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
+            let cstate = ChainState { current_height: 0 };
+
             chan.validate_holder_commitment_tx(
+                &cstate,
                 &commit_tx_ctx
                     .tx
                     .as_ref()
@@ -1072,7 +1084,10 @@ pub fn sign_holder_commitment(
             .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
+            let cstate = ChainState { current_height: 0 };
+
             chan.sign_holder_commitment_tx(
+                &cstate,
                 &commit_tx_ctx
                     .tx
                     .as_ref()
@@ -1504,7 +1519,10 @@ where
                 .transaction
                 .clone();
 
+            let cstate = ChainState { current_height: 0 };
+
             chan.validate_holder_commitment_tx(
+                &cstate,
                 &tx,
                 &output_witscripts,
                 commit_tx_ctx.commit_num,

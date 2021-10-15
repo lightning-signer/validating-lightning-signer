@@ -6,6 +6,7 @@ mod tests {
 
     use crate::channel::{Channel, ChannelBase};
     use crate::node::SpendType::{P2shP2wpkh, P2wpkh};
+    use crate::policy::validator::ChainState;
     use crate::util::crypto_utils::signature_to_bitcoin_vec;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
@@ -41,8 +42,15 @@ mod tests {
     ) -> Result<(), Status>
     where
         MakeDestination: Fn(&TestNodeContext) -> (Script, Vec<u32>),
-        InputMutator:
-            Fn(&mut Channel, &mut Transaction, &mut usize, &mut u64, &mut Script, &mut u64),
+        InputMutator: Fn(
+            &mut Channel,
+            &mut ChainState,
+            &mut Transaction,
+            &mut usize,
+            &mut u64,
+            &mut Script,
+            &mut u64,
+        ),
     {
         let next_holder_commit_num = HOLD_COMMIT_NUM;
         let next_counterparty_commit_num = HOLD_COMMIT_NUM + 1;
@@ -99,8 +107,11 @@ mod tests {
                     amount_sat - fee,
                 );
 
+                let mut cstate = make_test_chain_state();
+
                 mutate_signing_input(
                     chan,
+                    &mut cstate,
                     &mut tx,
                     &mut input,
                     &mut commit_num,
@@ -109,6 +120,7 @@ mod tests {
                 );
 
                 let sig = chan.sign_delayed_sweep(
+                    &cstate,
                     &tx,
                     input,
                     commit_num,
@@ -149,7 +161,7 @@ mod tests {
     fn sign_delayed_to_local_wallet_p2wpkh_success() {
         assert_status_ok!(sign_delayed_sweep_with_mutators(
             |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-            |_chan, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
+            |_chan, _cstate, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
         ));
     }
 
@@ -158,7 +170,7 @@ mod tests {
     fn sign_delayed_to_local_wallet_p2shwpkh_success() {
         assert_status_ok!(sign_delayed_sweep_with_mutators(
             |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2shP2wpkh) },
-            |_chan, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
+            |_chan, _cstate, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
         ));
     }
 
@@ -167,7 +179,7 @@ mod tests {
     fn sign_delayed_to_local_allowlist_p2wpkh_success() {
         assert_status_ok!(sign_delayed_sweep_with_mutators(
             |node_ctx| { make_test_nonwallet_dest(node_ctx, 3, P2wpkh) },
-            |chan, _tx, _input, _commit_num, _redeemscript, _amount_sat| {
+            |chan, _cstate, _tx, _input, _commit_num, _redeemscript, _amount_sat| {
                 chan.node
                     .upgrade()
                     .unwrap()
@@ -184,7 +196,7 @@ mod tests {
     fn sign_delayed_to_local_allowlist_p2shwpkh_success() {
         assert_status_ok!(sign_delayed_sweep_with_mutators(
             |node_ctx| { make_test_nonwallet_dest(node_ctx, 3, P2shP2wpkh) },
-            |chan, _tx, _input, _commit_num, _redeemscript, _amount_sat| {
+            |chan, _cstate, _tx, _input, _commit_num, _redeemscript, _amount_sat| {
                 chan.node
                     .upgrade()
                     .unwrap()
@@ -200,7 +212,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_nonwallet_dest(node_ctx, 3, P2shP2wpkh) },
-                |_chan, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
+                |_chan, _cstate, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
             ),
             "policy failure: validate_delayed_sweep: validate_sweep: \
              destination is not in wallet or allowlist"
@@ -216,7 +228,7 @@ mod tests {
                     // Build the dest from index 19, but report index 21.
                     (make_test_wallet_dest(node_ctx, 19, P2wpkh).0, vec![21])
                 },
-                |_chan, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
+                |_chan, _cstate, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
             ),
             "policy failure: validate_delayed_sweep: validate_sweep: \
              destination is not in wallet or allowlist"
@@ -228,7 +240,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, tx, _input, _commit_num, _redeemscript, _amount_sat| {
+                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
                     tx.input.push(tx.input[0].clone());
                 },
             ),
@@ -242,7 +254,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, tx, _input, _commit_num, _redeemscript, _amount_sat| {
+                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
                     tx.output.push(tx.output[0].clone());
                 },
             ),
@@ -256,7 +268,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, _tx, input, _commit_num, _redeemscript, _amount_sat| {
+                |_chan, _cstate, _tx, input, _commit_num, _redeemscript, _amount_sat| {
                     *input = 1;
                 },
             ),
@@ -270,7 +282,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, tx, _input, _commit_num, _redeemscript, _amount_sat| {
+                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
                     tx.version = 3;
                 },
             ),
@@ -284,11 +296,11 @@ mod tests {
         assert_failed_precondition_err!(
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, tx, _input, _commit_num, _redeemscript, _amount_sat| {
+                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
                     tx.lock_time = 1_000_000;
                 },
             ),
-            "transaction format: validate_delayed_sweep: bad locktime: 1000000 > 0"
+            "transaction format: validate_delayed_sweep: bad locktime: 1000000 > 1000"
         );
     }
 
@@ -298,7 +310,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, tx, _input, _commit_num, _redeemscript, _amount_sat| {
+                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
                     tx.input[0].sequence = 42;
                 },
             ),
@@ -311,7 +323,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, _tx, _input, _commit_num, _redeemscript, amount_sat| {
+                |_chan, _cstate, _tx, _input, _commit_num, _redeemscript, amount_sat| {
                     *amount_sat -= 100_000;
                 },
             ),
@@ -326,7 +338,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, tx, _input, _commit_num, _redeemscript, amount_sat| {
+                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, amount_sat| {
                     *amount_sat = tx.output[0].value; // fee = 0
                 },
             ),
@@ -341,7 +353,7 @@ mod tests {
         assert_failed_precondition_err!(
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, tx, _input, _commit_num, _redeemscript, _amount_sat| {
+                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
                     tx.output[0].value = 1_000;
                 },
             ),

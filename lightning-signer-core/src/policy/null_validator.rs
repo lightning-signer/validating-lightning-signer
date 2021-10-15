@@ -6,7 +6,7 @@ use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCr
 use crate::channel::{ChannelSetup, ChannelSlot};
 use crate::policy::simple_validator::{simple_validator, SimpleValidator};
 use crate::policy::validator::EnforcementState;
-use crate::policy::validator::{Validator, ValidatorFactory, ValidatorState};
+use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
@@ -52,7 +52,7 @@ impl Validator for NullValidator {
         &self,
         _wallet: &Wallet,
         _channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
-        _state: &ValidatorState,
+        _cstate: &ChainState,
         _tx: &Transaction,
         _values_sat: &Vec<u64>,
         _opaths: &Vec<Vec<u32>>,
@@ -79,7 +79,7 @@ impl Validator for NullValidator {
         _commit_num: u64,
         _commitment_point: &PublicKey,
         _setup: &ChannelSetup,
-        _vstate: &ValidatorState,
+        _cstate: &ChainState,
         _info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
         Ok(())
@@ -91,7 +91,7 @@ impl Validator for NullValidator {
         _commit_num: u64,
         _commitment_point: &PublicKey,
         _setup: &ChannelSetup,
-        _vstate: &ValidatorState,
+        _cstate: &ChainState,
         _info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
         Ok(())
@@ -133,7 +133,7 @@ impl Validator for NullValidator {
     fn validate_htlc_tx(
         &self,
         _setup: &ChannelSetup,
-        _state: &ValidatorState,
+        _cstate: &ChainState,
         _is_counterparty: bool,
         _htlc: &HTLCOutputInCommitment,
         _feerate_per_kw: u32,
@@ -172,7 +172,7 @@ impl Validator for NullValidator {
         &self,
         _wallet: &Wallet,
         _setup: &ChannelSetup,
-        _vstate: &ValidatorState,
+        _cstate: &ChainState,
         _tx: &Transaction,
         _input: usize,
         _amount_sat: u64,
@@ -185,7 +185,7 @@ impl Validator for NullValidator {
         &self,
         _wallet: &Wallet,
         _setup: &ChannelSetup,
-        _vstate: &ValidatorState,
+        _cstate: &ChainState,
         _tx: &Transaction,
         _redeemscript: &Script,
         _input: usize,
@@ -199,7 +199,7 @@ impl Validator for NullValidator {
         &self,
         _wallet: &Wallet,
         _setup: &ChannelSetup,
-        _vstate: &ValidatorState,
+        _cstate: &ChainState,
         _tx: &Transaction,
         _input: usize,
         _amount_sat: u64,
