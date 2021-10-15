@@ -94,12 +94,10 @@ service Signer {
   rpc GetPerCommitmentPoint (GetPerCommitmentPointRequest)
     returns (GetPerCommitmentPointReply);
 
-  // BOLT #3 - Funding Transaction
-  // Sign the funding transaction
-  // TODO this must be done after we know the remote signature on the
-  // commitment tx - need to provide this to the signer.
-  rpc SignFundingTx (SignFundingTxRequest)
-    returns (SignFundingTxReply);
+  // BOLT #3 - Onchain transactions (Funding tx and simple sweeps)
+  // Sign the onchain transaction
+  rpc SignOnchainTx (SignOnchainTxRequest)
+    returns (SignOnchainTxReply);
 
   // BOLT #3 - Commitment Transaction, phase 1
   // Sign the counterparty's commitment tx, at commitment time.
@@ -418,9 +416,9 @@ message GetPerCommitmentPointReply {
   Secret old_secret = 2;
 }
 
-// Sign a funding tx for this channel
+// Sign an onchain tx for this channel
 // The channel(s) must have been readied
-message SignFundingTxRequest {
+message SignOnchainTxRequest {
   NodeId node_id = 1;
 
   // No channel_nonce.  Funding tx are not associated with a
@@ -432,7 +430,7 @@ message SignFundingTxRequest {
   Transaction tx = 2;
 }
 
-message SignFundingTxReply {
+message SignOnchainTxReply {
   // Witnesses for each of our inputs.  For inputs that are not
   // ours the elements will be None.
   repeated Witness witnesses = 1;

@@ -294,7 +294,7 @@ impl Validator for SimpleValidator {
         Ok(())
     }
 
-    fn validate_funding_tx(
+    fn validate_onchain_tx(
         &self,
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,

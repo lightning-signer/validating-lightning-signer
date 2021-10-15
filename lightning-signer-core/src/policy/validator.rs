@@ -32,14 +32,15 @@ pub trait Validator {
     /// Validate channel value after it is late-filled
     fn validate_channel_value(&self, setup: &ChannelSetup) -> Result<(), ValidationError>;
 
-    /// Validate a funding transaction, which may fund multiple channels
+    /// Validate an onchain transaction (funding tx, simple sweeps).
+    /// This transaction may fund multiple channels at the same time.
     ///
     /// * `channels` the funded channel for each funding output, or
     ///   None for change outputs
     /// * `values_sat` - the amount in satoshi per input
     /// * `opaths` - derivation path for change, one per output,
     ///   empty for non-change or allowlisted outputs
-    fn validate_funding_tx(
+    fn validate_onchain_tx(
         &self,
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,

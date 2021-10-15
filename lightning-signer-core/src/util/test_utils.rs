@@ -742,7 +742,7 @@ pub fn funding_tx_sign(
     tx: &bitcoin::Transaction,
 ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Status> {
     let cstate = ChainState { current_height: 0 };
-    node_ctx.node.sign_funding_tx(
+    node_ctx.node.sign_onchain_tx(
         &cstate,
         &tx,
         &tx_ctx.ipaths,

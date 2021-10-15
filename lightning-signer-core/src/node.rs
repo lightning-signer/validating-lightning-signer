@@ -506,7 +506,7 @@ impl Node {
         Ok(chan)
     }
 
-    /// Sign a funding transaction.
+    /// Sign an onchain transaction (funding tx or simple sweeps).
     ///
     /// The transaction may fund multiple channels at once.
     /// Returns a witness stack for each input.  Inputs that are marked
@@ -520,7 +520,7 @@ impl Node {
     ///   we are sweeping a unilateral close and funding a channel in a single tx.
     /// * `opaths` - derivation path for change, one per output.  Empty for
     ///   non-change outputs.
-    pub fn sign_funding_tx(
+    pub fn sign_onchain_tx(
         &self,
         cstate: &ChainState,
         tx: &bitcoin::Transaction,
@@ -554,7 +554,7 @@ impl Node {
             })
             .collect();
 
-        validator.validate_funding_tx(self, channels, &cstate, tx, values_sat, opaths)?;
+        validator.validate_onchain_tx(self, channels, &cstate, tx, values_sat, opaths)?;
 
         let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for idx in 0..tx.input.len() {
