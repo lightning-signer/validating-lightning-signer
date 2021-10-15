@@ -220,7 +220,7 @@ impl<C: Client> Handler<C> for RootHandler<C> {
                             )
                         }).expect("sign mutual close")
                 } else {
-                    let witscripts = extract_witscripts(psbt);
+                    let witscripts = extract_witscripts(&psbt);
                     let commit_num = m.commitment_number;
                     let feerate_sat_per_kw = m.feerate;
                     let (received_htlcs, offered_htlcs) = extract_htlcs(&m.htlcs);
@@ -422,7 +422,7 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
-                let witscripts = extract_witscripts(psbt);
+                let witscripts = extract_witscripts(&psbt);
                 let remote_per_commitment_point =
                     PublicKey::from_slice(&m.remote_per_commitment_point.0).expect("pubkey");
                 let commit_num = m.commitment_number;
@@ -459,6 +459,7 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                 let htlc_amount_sat = psbt.inputs[input]
                     .witness_utxo.as_ref().expect("will only spend witness UTXOs")
                     .value;
+                let wallet_path = extract_wallet_paths(&psbt);
                 let sig = self
                     .node
                     .with_ready_channel(&self.channel_id, |chan| {
@@ -468,6 +469,7 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                             commitment_number,
                             &redeemscript,
                             htlc_amount_sat,
+                            &wallet_path[0]
                         )
                     }).expect("sign");
                 self.client.write(msgs::SignTxReply {
@@ -489,6 +491,7 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                 let htlc_amount_sat = psbt.inputs[input]
                     .witness_utxo.as_ref().expect("will only spend witness UTXOs")
                     .value;
+                let wallet_path = extract_wallet_paths(&psbt);
                 let sig = self
                     .node
                     .with_ready_channel(&self.channel_id, |chan| {
@@ -498,6 +501,7 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                             &remote_per_commitment_point,
                             &redeemscript,
                             htlc_amount_sat,
+                            &wallet_path[0]
                         )
                     }).expect("sign");
                 self.client.write(msgs::SignTxReply {
@@ -565,7 +569,7 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
-                let witscripts = extract_witscripts(psbt);
+                let witscripts = extract_witscripts(&psbt);
                 let commit_num = m.commitment_number;
                 let feerate_sat_per_kw = m.feerate;
                 let (received_htlcs, offered_htlcs) = extract_htlcs(&m.htlcs);
@@ -615,6 +619,7 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                 let htlc_amount_sat = psbt.inputs[input]
                     .witness_utxo.as_ref().expect("will only spend witness UTXOs")
                     .value;
+                let wallet_path = extract_wallet_paths(&psbt);
                 let sig = self
                     .node
                     .with_ready_channel(&self.channel_id, |chan| {
@@ -624,6 +629,7 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                             &revocation_secret,
                             &redeemscript,
                             htlc_amount_sat,
+                            &wallet_path[0]
                         )
                     }).expect("sign");
                 self.client.write(msgs::SignTxReply {
@@ -703,11 +709,15 @@ fn extract_commitment_type(static_remotekey: bool, anchor_outputs: bool) -> Comm
     }
 }
 
-fn extract_witscripts(psbt: PartiallySignedTransaction) -> Vec<Vec<u8>> {
+fn extract_witscripts(psbt: &PartiallySignedTransaction) -> Vec<Vec<u8>> {
     psbt.outputs.iter()
         .map(|o| o.witness_script.clone().unwrap_or(Script::new()))
         .map(|s| s[..].to_vec())
         .collect()
+}
+
+fn extract_wallet_paths(psbt: &PartiallySignedTransaction) -> Vec<Vec<u32>> {
+    vec![vec![0]]
 }
 
 #[cfg(test)]
