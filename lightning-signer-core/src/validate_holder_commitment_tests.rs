@@ -14,6 +14,7 @@ mod tests {
 
     use crate::channel::{Channel, ChannelBase};
     use crate::policy::error::policy_error;
+    use crate::policy::validator::ChainState;
     use crate::tx::tx::HTLCInfo2;
     use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
@@ -230,6 +231,7 @@ mod tests {
         KeysMutator: Fn(&mut TxCreationKeys),
         ValidationMutator: Fn(
             &mut Channel,
+            &mut ChainState,
             &mut TestCommitmentTxContext,
             &mut Transaction,
             &mut Vec<Vec<u8>>,
@@ -326,8 +328,11 @@ mod tests {
                     .transaction
                     .clone();
 
+                let mut cstate = make_test_chain_state();
+
                 mutate_validation_input(
                     chan,
+                    &mut cstate,
                     &mut commit_tx_ctx,
                     &mut tx,
                     &mut output_witscripts,
@@ -338,6 +343,7 @@ mod tests {
                 // Validate the holder_commitment, but defer error returns till after we've had
                 // a chance to validate the channel state for side-effects
                 let deferred_rv = chan.validate_holder_commitment_tx(
+                    &cstate,
                     &tx,
                     &output_witscripts,
                     commit_tx_ctx.commit_num,
@@ -369,6 +375,7 @@ mod tests {
         KeysMutator: Fn(&mut TxCreationKeys),
         ValidationMutator: Fn(
             &mut Channel,
+            &mut ChainState,
             &mut TestCommitmentTxContext,
             &mut Transaction,
             &mut Vec<Vec<u8>>,
@@ -412,6 +419,7 @@ mod tests {
         KeysMutator: Fn(&mut TxCreationKeys),
         ValidationMutator: Fn(
             &mut Channel,
+            &mut ChainState,
             &mut TestCommitmentTxContext,
             &mut Transaction,
             &mut Vec<Vec<u8>>,
@@ -435,7 +443,7 @@ mod tests {
             &chan_ctx,
             |_commit_tx_ctx| {},
             |_keys| {},
-            |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
+            |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
             |chan| {
                 // Channel state should advance.
                 assert_eq!(
@@ -461,7 +469,7 @@ mod tests {
         assert_status_ok!(validate_holder_commitment_with_mutator(
             |_commit_tx_ctx| {},
             |_keys| {},
-            |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
+            |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
                 // If we don't mutate anything it should succeed.
             },
             |chan| {
@@ -480,7 +488,7 @@ mod tests {
         assert_status_ok!(validate_holder_commitment_retry_with_mutator(
             |_commit_tx_ctx| {},
             |_keys| {},
-            |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
+            |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
             |chan| {
                 // Channel state should stay where we advanced it initially.
                 assert_eq!(
@@ -500,7 +508,7 @@ mod tests {
                     commit_tx_ctx.to_broadcaster -= 1;
                 },
                 |_keys| {},
-                |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
+                |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
                 |chan| {
                     // Channel state should stay where we advanced it initially.
                     assert_eq!(
@@ -523,7 +531,7 @@ mod tests {
                     commit_tx_ctx.to_countersignatory -= 1;
                 },
                 |_keys| {},
-                |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
+                |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
                 |chan| {
                     // Channel state should stay where we advanced it initially.
                     assert_eq!(
@@ -546,7 +554,7 @@ mod tests {
                     commit_tx_ctx.offered_htlcs[0].value_sat -= 1;
                 },
                 |_keys| {},
-                |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
+                |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
                 |chan| {
                     // Channel state should stay where we advanced it initially.
                     assert_eq!(
@@ -569,7 +577,7 @@ mod tests {
                     commit_tx_ctx.received_htlcs[0].value_sat -= 1;
                 },
                 |_keys| {},
-                |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
+                |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
                 |chan| {
                     // Channel state should stay where we advanced it initially.
                     assert_eq!(
@@ -589,7 +597,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_commit_tx_ctx| {},
                 |_keys| {},
-                |_chan, _commit_tx_ctx, _tx, _witscripts, commit_sig, _htlc_sigs| {
+                |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, commit_sig, _htlc_sigs| {
                     *commit_sig = Signature::from_str("30450221009338316aef0f17f75127a24d60ae8a980fee5e2b4605dc96fba2d5407e77fcee022029e311ff22df5b515e4a2fbe412d32ed49e93cabbb31b067ad3318ac22441cd2").expect("sig");
                 },
                 |chan| {
@@ -610,7 +618,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_commit_tx_ctx| {},
                 |_keys| {},
-                |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, htlc_sigs| {
+                |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, htlc_sigs| {
                     htlc_sigs[0] = Signature::from_str("30450221009338316aef0f17f75127a24d60ae8a980fee5e2b4605dc96fba2d5407e77fcee022029e311ff22df5b515e4a2fbe412d32ed49e93cabbb31b067ad3318ac22441cd2").expect("sig");
                 },
                 |chan| {
@@ -632,7 +640,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_commit_tx_ctx| {},
                 |_keys| {},
-                |chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
+                |chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
                     // Set the channel's next_holder_commit_num ahead two, past the retry ...
                     chan.enforcement_state
                         .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM + 2);
@@ -656,7 +664,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_commit_tx_ctx| {},
                 |_keys| {},
-                |chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
+                |chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
                     // Set the channel's next_holder_commit_num ahead two behind 1, in the past ...
                     chan.enforcement_state
                         .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM - 1);
@@ -680,7 +688,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_commit_tx_ctx| {},
                 |_keys| {},
-                |chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
+                |chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
                     chan.enforcement_state.mutual_close_signed = true;
                 },
                 |chan| {
@@ -702,7 +710,7 @@ mod tests {
         assert_status_ok!(validate_holder_commitment_retry_with_mutator(
             |_commit_tx_ctx| {},
             |_keys| {},
-            |chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
+            |chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
                 chan.enforcement_state.mutual_close_signed = true;
             },
             |chan| {
@@ -723,7 +731,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_commit_tx_ctx| {},
                 |_keys| {},
-                |_chan, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                |_chan, _cstate, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
                     tx.version = 3;
                 },
                 |chan| {
@@ -748,7 +756,7 @@ mod tests {
                 |keys| {
                     keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
                 },
-                |_chan, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
+                |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
                 |chan| {
                     // Channel state should not advance.
                     assert_eq!(
@@ -770,7 +778,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_commit_tx_ctx| {},
                 |_keys| {},
-                |_chan, _commit_tx_ctx, tx, witscripts, _commit_sig, _htlc_sigs| {
+                |_chan, _cstate, _commit_tx_ctx, tx, witscripts, _commit_sig, _htlc_sigs| {
                     let ndx = 4;
                     tx.output.push(tx.output[ndx].clone());
                     witscripts.push(witscripts[ndx].clone());
@@ -796,7 +804,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_commit_tx_ctx| {},
                 |_keys| {},
-                |_chan, _commit_tx_ctx, tx, witscripts, _commit_sig, _htlc_sigs| {
+                |_chan, _cstate, _commit_tx_ctx, tx, witscripts, _commit_sig, _htlc_sigs| {
                     let ndx = 3;
                     tx.output.push(tx.output[ndx].clone());
                     witscripts.push(witscripts[ndx].clone());
@@ -821,7 +829,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_commit_tx_ctx| {},
                 |_keys| {},
-                |_chan, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                |_chan, _cstate, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
                     let delta = 1_979_900;
                     tx.output[3].value += delta;
                     tx.output[4].value -= delta;
@@ -846,7 +854,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_commit_tx_ctx| {},
                 |_keys| {},
-                |_chan, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                |_chan, _cstate, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
                     let delta = 999_900;
                     tx.output[3].value -= delta;
                     tx.output[4].value += delta;
@@ -871,7 +879,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_commit_tx_ctx| {},
                 |_keys| {},
-                |_chan, commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                |_chan, _cstate, commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
                     commit_tx_ctx.offered_htlcs[0].value_sat = 1000;
                     tx.output[0].value = 1000;
                 },
@@ -895,7 +903,7 @@ mod tests {
             validate_holder_commitment_with_mutator(
                 |_commit_tx_ctx| {},
                 |_keys| {},
-                |_chan, commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                |_chan, _cstate, commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
                     commit_tx_ctx.received_htlcs[0].value_sat = 1000;
                     tx.output[1].value = 1000;
                 },

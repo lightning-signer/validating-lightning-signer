@@ -1513,12 +1513,6 @@ mod tests {
         )
     }
 
-    fn make_test_chain_state() -> ChainState {
-        ChainState {
-            current_height: 1000,
-        }
-    }
-
     fn make_htlc_info2(expiry: u32) -> HTLCInfo2 {
         HTLCInfo2 {
             value_sat: 5010,

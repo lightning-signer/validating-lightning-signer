@@ -9,7 +9,7 @@ mod tests {
     use test_env_log::test;
 
     use crate::channel::{Channel, ChannelBase, ChannelSetup, CommitmentType};
-    use crate::policy::validator::EnforcementState;
+    use crate::policy::validator::{ChainState, EnforcementState};
     use crate::tx::tx::HTLCInfo2;
     use crate::util::crypto_utils::signature_to_bitcoin_vec;
     use crate::util::key_utils::*;
@@ -67,8 +67,11 @@ mod tests {
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
 
+                let cstate = make_test_chain_state();
+
                 let sig = chan
                     .sign_holder_commitment_tx(
+                        &cstate,
                         &tx.transaction,
                         &output_witscripts,
                         commit_num,
@@ -143,7 +146,9 @@ mod tests {
             .expect("build");
         let (ser_signature, _) = node
             .with_ready_channel(&channel_id, |chan| {
+                let cstate = make_test_chain_state();
                 chan.sign_holder_commitment_tx_phase2(
+                    &cstate,
                     commit_num,
                     0, // feerate not used
                     to_holder_value_sat,
@@ -190,6 +195,7 @@ mod tests {
         StateMutator: Fn(&mut EnforcementState),
         KeysMutator: Fn(&mut TxCreationKeys),
         SignInputMutator: Fn(
+            &mut ChainState,
             &mut Transaction,
             &mut Vec<Vec<u8>>,
             &mut u64,
@@ -242,6 +248,7 @@ mod tests {
         StateMutator: Fn(&mut EnforcementState),
         KeysMutator: Fn(&mut TxCreationKeys),
         SignInputMutator: Fn(
+            &mut ChainState,
             &mut Transaction,
             &mut Vec<Vec<u8>>,
             &mut u64,
@@ -275,7 +282,13 @@ mod tests {
             |_commit_tx_ctx| {},
             |_chan| {},
             |_keys| {},
-            |_tx, _witscripts, _commit_num, _feerate_per_kw, _offered_htlcs, _received_htlcs| {},
+            |_cstate,
+             _tx,
+             _witscripts,
+             _commit_num,
+             _feerate_per_kw,
+             _offered_htlcs,
+             _received_htlcs| {},
         )?;
 
         // Retry the signature with mutators.
@@ -309,6 +322,7 @@ mod tests {
         StateMutator: Fn(&mut EnforcementState),
         KeysMutator: Fn(&mut TxCreationKeys),
         SignInputMutator: Fn(
+            &mut ChainState,
             &mut Transaction,
             &mut Vec<Vec<u8>>,
             &mut u64,
@@ -365,8 +379,11 @@ mod tests {
                 let trusted_tx = commitment_tx.trust();
                 let mut tx = trusted_tx.built_transaction().clone();
 
+                let mut cstate = make_test_chain_state();
+
                 // Mutate the signing inputs.
                 mutate_sign_inputs(
+                    &mut cstate,
                     &mut tx.transaction,
                     &mut output_witscripts,
                     &mut commit_tx_ctx.commit_num,
@@ -376,6 +393,7 @@ mod tests {
                 );
 
                 let sig = chan.sign_holder_commitment_tx(
+                    &cstate,
                     &tx.transaction,
                     &output_witscripts,
                     commit_tx_ctx.commit_num,
@@ -420,7 +438,7 @@ mod tests {
             |_keys| {
                 // don't mutate the keys, should pass
             },
-            |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+            |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
         ));
     }
 
@@ -432,7 +450,7 @@ mod tests {
                 |_commit_tx_ctx| {},
                 |_state| {},
                 |_keys| {},
-                |tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
+                |_cstate, tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
                     tx.version = 3;
                 },
             ),
@@ -448,7 +466,7 @@ mod tests {
                 |_commit_tx_ctx| {},
                 |_state| {},
                 |_keys| {},
-                |tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
+                |_cstate, tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
                     tx.lock_time = 42;
                 },
             ),
@@ -464,7 +482,7 @@ mod tests {
                 |_commit_tx_ctx| {},
                 |_state| {},
                 |_keys| {},
-                |tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
+                |_cstate, tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
                     tx.input[0].sequence = 42;
                 },
             ),
@@ -480,7 +498,7 @@ mod tests {
                 |_commit_tx_ctx| {},
                 |_state| {},
                 |_keys| {},
-                |tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
+                |_cstate, tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
                     let mut inp2 = tx.input[0].clone();
                     inp2.previous_output.txid = bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
                     tx.input.push(inp2);
@@ -498,7 +516,7 @@ mod tests {
                 |_commit_tx_ctx| {},
                 |_state| {},
                 |_keys| {},
-                |tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
+                |_cstate, tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
                     tx.input[0].previous_output.txid =
                         bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
                 },
@@ -517,7 +535,7 @@ mod tests {
                 |keys| {
                     keys.revocation_key = make_test_pubkey(42);
                 },
-                |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+                |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
             ),
             "policy failure: recomposed tx mismatch"
         );
@@ -533,7 +551,7 @@ mod tests {
                 |keys| {
                     keys.countersignatory_htlc_key = make_test_pubkey(42);
                 },
-                |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+                |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
             ),
             "policy failure: recomposed tx mismatch"
         );
@@ -549,7 +567,7 @@ mod tests {
                 |keys| {
                     keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
                 },
-                |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+                |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
             ),
             "policy failure: recomposed tx mismatch"
         );
@@ -561,7 +579,7 @@ mod tests {
             |_commit_tx_ctx| {},
             |state| state.mutual_close_signed = true,
             |_keys| {},
-            |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+            |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
         ));
     }
 
@@ -573,7 +591,7 @@ mod tests {
                 |_commit_tx_ctx| {},
                 |_state| {},
                 |_keys| {},
-                |tx, witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
+                |_cstate, tx, witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
                     // Duplicate the to_holder output
                     let ndx = 4;
                     tx.output.push(tx.output[ndx].clone());
@@ -593,7 +611,7 @@ mod tests {
                 |_commit_tx_ctx| {},
                 |_state| {},
                 |_keys| {},
-                |tx, witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
+                |_cstate, tx, witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
                     // Duplicate the to_counterparty output
                     let ndx = 3;
                     tx.output.push(tx.output[ndx].clone());
@@ -612,7 +630,7 @@ mod tests {
             |_commit_tx_ctx| {},
             |_state| {},
             |_keys| {},
-            |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+            |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
         ));
     }
 
@@ -626,7 +644,7 @@ mod tests {
                 },
                 |_state| {},
                 |_keys| {},
-                |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+                |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
             ),
             "policy failure: validate_holder_commitment_tx: \
              retry holder commitment 23 with changed info"
@@ -643,7 +661,7 @@ mod tests {
                 },
                 |_state| {},
                 |_keys| {},
-                |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+                |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
             ),
             "policy failure: validate_holder_commitment_tx: \
              retry holder commitment 23 with changed info"
@@ -663,7 +681,7 @@ mod tests {
                 },
                 |_state| {},
                 |_keys| {},
-                |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+                |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
             ),
             "policy failure: validate_holder_commitment_tx: \
              retry holder commitment 23 with changed info"
@@ -684,7 +702,7 @@ mod tests {
                 },
                 |_state| {},
                 |_keys| {},
-                |_tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
+                |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
             ),
             "policy failure: validate_holder_commitment_tx: \
              retry holder commitment 23 with changed info"

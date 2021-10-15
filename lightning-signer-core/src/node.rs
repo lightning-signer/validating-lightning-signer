@@ -522,6 +522,7 @@ impl Node {
     ///   non-change outputs.
     pub fn sign_funding_tx(
         &self,
+        cstate: &ChainState,
         tx: &bitcoin::Transaction,
         ipaths: &Vec<Vec<u32>>,
         values_sat: &Vec<u64>,
@@ -552,8 +553,7 @@ impl Node {
                 self.find_channel_with_funding_outpoint(&outpoint)
             })
             .collect();
-        // TODO - initialize the state
-        let cstate = ChainState { current_height: 0 };
+
         validator.validate_funding_tx(self, channels, &cstate, tx, values_sat, opaths)?;
 
         let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
