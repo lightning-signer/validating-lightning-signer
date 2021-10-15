@@ -3,6 +3,7 @@ use std::os::unix::io::RawFd;
 use nix::sys::socket::{AddressFamily, socketpair, SockFlag, SockType};
 use serde::Serialize;
 
+use greenlight_signer::greenlight_protocol;
 use greenlight_protocol::{msgs, Result};
 
 use crate::connection::UnixConnection;

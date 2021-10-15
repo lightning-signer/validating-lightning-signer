@@ -38,7 +38,7 @@ use greenlight_protocol::msgs::SerMessage;
 use greenlight_protocol::serde_bolt::LargeBytes;
 
 pub trait Handler {
-    fn handle(&mut self, msg: Message) -> Result<Box<dyn SerMessage>>;
+    fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>>;
     fn client_id(&self) -> u64;
     fn with_new_client(&mut self, peer_id: PubKey, dbid: u64) -> ChannelHandler;
 }
@@ -78,7 +78,7 @@ impl RootHandler {
 }
 
 impl Handler for RootHandler {
-    fn handle(&mut self, msg: Message) -> Result<Box<dyn SerMessage>> {
+    fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>> {
         match msg {
             Message::Memleak(_m) => {
                 Ok(Box::new(msgs::MemleakReply { result: false }))
@@ -293,7 +293,7 @@ fn extract_channel_id(dbid: u64) -> ChannelId {
 }
 
 impl Handler for ChannelHandler {
-    fn handle(&mut self, msg: Message) -> Result<Box<dyn SerMessage>> {
+    fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>> {
         match msg {
             Message::Memleak(_m) => {
                 Ok(Box::new(msgs::MemleakReply { result: false }))

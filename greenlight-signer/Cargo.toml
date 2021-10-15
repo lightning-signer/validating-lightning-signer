@@ -5,7 +5,7 @@ authors = ["Devrandom <c1.devrandom@niftybox.net>"]
 edition = "2018"
 
 [dependencies]
-lightning-signer-core = { path = "../../rust-lightning-signer/lightning-signer-core", features = ["no-std"] }
+lightning-signer-core = { path = "../../rust-lightning-signer/lightning-signer-core", default_features = false, features = ["no-std"] }
 greenlight-protocol = { path = "../greenlight-protocol" }
 secp256k1 = { version = "0.20", default_features = false, features = ["bitcoin_hashes", "rand"] }
 log = { version = "0.4", default_features = false }

@@ -8,6 +8,7 @@ use nix::cmsg_space;
 use nix::sys::socket::{ControlMessage, MsgFlags, recvmsg, sendmsg, ControlMessageOwned};
 use serde_bolt::{Error as SError, Read, Result as SResult, Write};
 
+use greenlight_signer::greenlight_protocol;
 use greenlight_protocol::serde_bolt;
 use nix::sys::uio::IoVec;
 use nix::unistd::close;

@@ -13,6 +13,7 @@ use secp256k1::rand::rngs::OsRng;
 use secp256k1::Secp256k1;
 
 use connection::UnixConnection;
+use greenlight_signer::greenlight_protocol;
 use greenlight_protocol::{Error, msgs, msgs::Message, Result};
 use greenlight_protocol::model::PubKey;
 use lightning_signer::Arc;
