@@ -40,7 +40,7 @@ use greenlight_protocol::serde_bolt::LargeBytes;
 pub trait Handler {
     fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>>;
     fn client_id(&self) -> u64;
-    fn with_new_client(&mut self, peer_id: PubKey, dbid: u64) -> ChannelHandler;
+    fn for_new_client(&self, peer_id: PubKey, dbid: u64) -> ChannelHandler;
 }
 
 /// Protocol handler
@@ -254,7 +254,7 @@ impl Handler for RootHandler {
         self.id
     }
 
-    fn with_new_client(&mut self, peer_id: PubKey, dbid: u64) -> ChannelHandler {
+    fn for_new_client(&self, peer_id: PubKey, dbid: u64) -> ChannelHandler {
         ChannelHandler {
             id: self.id,
             node: Arc::clone(&self.node),
@@ -672,7 +672,7 @@ impl Handler for ChannelHandler {
         self.id
     }
 
-    fn with_new_client(&mut self, _peer_id: PubKey, _dbid: u64) -> ChannelHandler {
+    fn for_new_client(&self, _peer_id: PubKey, _dbid: u64) -> ChannelHandler {
         unimplemented!("cannot create a sub-handler from a channel handler");
     }
 }

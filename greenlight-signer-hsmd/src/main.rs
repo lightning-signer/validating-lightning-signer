@@ -68,7 +68,7 @@ fn do_signer_loop<C: 'static + Client, H: Handler>(mut client: C, mut handler: H
             Message::ClientHsmFd(m) => {
                 client.write(msgs::ClientHsmFdReply {}).unwrap();
                 let new_client = client.new_client();
-                let handler = handler.with_new_client(m.peer_id, m.dbid);
+                let handler = handler.for_new_client(m.peer_id, m.dbid);
                 thread::spawn(move || signer_loop(new_client, handler));
             }
             msg => {
