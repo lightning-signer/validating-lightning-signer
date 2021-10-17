@@ -32,10 +32,33 @@ use secp256k1::{PublicKey, Secp256k1};
 use secp256k1::rand::rngs::SmallRng;
 use secp256k1::rand::SeedableRng;
 
-use greenlight_protocol::{msgs, msgs::Message, Result};
+use greenlight_protocol::{msgs, msgs::Message, Error as ProtocolError};
 use greenlight_protocol::model::{Basepoints, BitcoinSignature, ExtKey, Htlc, PubKey, PubKey32, RecoverableSignature, Secret, Signature};
 use greenlight_protocol::msgs::SerMessage;
 use greenlight_protocol::serde_bolt::LargeBytes;
+use lightning_signer::util::status::Status;
+
+/// Error
+#[derive(Debug)]
+pub enum Error {
+    ProtocolError(ProtocolError),
+    SigningError(Status),
+}
+
+impl From<ProtocolError> for Error {
+    fn from(e: ProtocolError) -> Self {
+        Error::ProtocolError(e)
+    }
+}
+
+impl From<Status> for Error {
+    fn from(e: Status) -> Self {
+        Error::SigningError(e)
+    }
+}
+
+/// Result
+pub type Result<T> = core::result::Result<T, Error>;
 
 pub trait Handler {
     fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>>;
@@ -46,7 +69,7 @@ pub trait Handler {
 /// Protocol handler
 pub struct RootHandler {
     pub(crate) id: u64,
-    pub(crate) node: Arc<Node>,
+    pub node: Arc<Node>,
 }
 
 impl RootHandler {
@@ -108,7 +131,7 @@ impl Handler for RootHandler {
                 let channel_id = extract_channel_id(m.dbid);
                 // TODO mix in the peer_id
                 let nonce = m.dbid.to_le_bytes();
-                self.node.new_channel(Some(channel_id), Some(nonce.to_vec()), &self.node).expect("new_channel");
+                self.node.new_channel(Some(channel_id), Some(nonce.to_vec()), &self.node)?;
                 Ok(Box::new(msgs::NewChannelReply {}))
             }
             Message::GetChannelBasepoints(m) => {
@@ -117,7 +140,7 @@ impl Handler for RootHandler {
                 let bps = self.node
                     .with_channel_base(&channel_id, |base| {
                         Ok(base.get_channel_basepoints())
-                    }).expect("basepoints");
+                    })?;
             
             
                 let basepoints = Basepoints {
@@ -167,7 +190,7 @@ impl Handler for RootHandler {
                     &spendtypes,
                     &uniclosekeys,
                     &opaths,
-                ).expect("sign funding");
+                )?;
             
                 for (i, (sig, pubkey)) in witvec.into_iter().enumerate() {
                     if !sig.is_empty() {
@@ -183,7 +206,7 @@ impl Handler for RootHandler {
             }
             Message::SignInvoice(m) => {
                 let hrp = String::from_utf8(m.hrp).expect("hrp");
-                let sig = self.node.sign_invoice_in_parts(&m.u5bytes, &hrp).expect("sign_channel_update");
+                let sig = self.node.sign_invoice_in_parts(&m.u5bytes, &hrp)?;
                 let mut sig_slice = [0u8; 65];
                 sig_slice.copy_from_slice(&sig);
                 Ok(Box::new(msgs::SignInvoiceReply {
@@ -193,7 +216,7 @@ impl Handler for RootHandler {
             Message::SignNodeAnnouncement(m) => {
                 let message = m.announcement[64 + 2..].to_vec();
                 let node_sig_der =
-                    self.node.sign_node_announcement(&message).expect("sign");
+                    self.node.sign_node_announcement(&message)?;
                 let sig = secp256k1::Signature::from_der(&node_sig_der).expect("sig");
             
                 Ok(Box::new(msgs::SignNodeAnnouncementReply {
@@ -219,7 +242,7 @@ impl Handler for RootHandler {
                                 &tx,
                                 &opaths,
                             )
-                        }).expect("sign mutual close")
+                        })?
                 } else {
                     let witscripts = extract_witscripts(&psbt);
                     let commit_num = m.commitment_number;
@@ -235,7 +258,7 @@ impl Handler for RootHandler {
                                 offered_htlcs.clone(),
                                 received_htlcs.clone(),
                             )
-                        }).expect("sign holder commitment")
+                        })?
                 };
                 Ok(Box::new(msgs::SignCommitmentTxReply {
                     signature: BitcoinSignature
@@ -244,6 +267,15 @@ impl Handler for RootHandler {
                         sighash: SigHashType::All as u8
                     }
                 }))
+            }
+            // TODO duplicate from ChannelHandler
+            Message::SignChannelUpdate(m) => {
+                let message = m.update[2+64..].to_vec();
+                let sig_data_der = self.node.sign_channel_update(&message)?;
+                let sig = secp256k1::Signature::from_der(&sig_data_der).expect("sig");
+                let mut update = m.update;
+                update[2..2+64].copy_from_slice(&sig.serialize_compact());
+                Ok(Box::new(msgs::SignChannelUpdateReply { update }))
             }
             Message::Unknown(u) => unimplemented!("loop {}: unknown message type {}", self.id, u.message_type),
             m => unimplemented!("loop {}: unimplemented message {:?}", self.id, m),
@@ -280,12 +312,10 @@ fn extract_output_path(x: &BTreeMap<bitcoin::util::ecdsa::PublicKey, KeySource>)
 /// Protocol handler
 pub struct ChannelHandler {
     pub(crate) id: u64,
-    pub(crate) node: Arc<Node>,
-    #[allow(dead_code)]
-    pub(crate) peer_id: PublicKey,
-    #[allow(dead_code)]
-    pub(crate) dbid: u64,
-    pub(crate) channel_id: ChannelId,
+    pub node: Arc<Node>,
+    pub peer_id: PublicKey,
+    pub dbid: u64,
+    pub channel_id: ChannelId,
 }
 
 fn extract_channel_id(dbid: u64) -> ChannelId {
@@ -318,7 +348,7 @@ impl Handler for ChannelHandler {
                         Ok((point, secret))
                     });
             
-                let (point, old_secret) = res.expect("per_commit");
+                let (point, old_secret) = res?;
             
                 let old_secret_reply = old_secret.clone().map(|s| Secret(s[..].try_into().unwrap()));
                 Ok(Box::new(msgs::GetPerCommitmentPointReply { point: PubKey(point.serialize()), secret: old_secret_reply }))
@@ -374,7 +404,7 @@ impl Handler for ChannelHandler {
                     None,
                     setup,
                     &holder_shutdown_key_path,
-                ).expect("ready_channel");
+                )?;
             
                 Ok(Box::new(msgs::ReadyChannelReply {}))
             }
@@ -403,7 +433,7 @@ impl Handler for ChannelHandler {
                             htlc_amount_sat,
                             &output_witscript,
                         )
-                    }).expect("sign");
+                    })?;
                 Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature
                     {
@@ -434,7 +464,7 @@ impl Handler for ChannelHandler {
                             offered_htlcs.clone(),
                             received_htlcs.clone(),
                         )
-                    }).unwrap();
+                    })?;
                 Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature
                     {
@@ -465,7 +495,7 @@ impl Handler for ChannelHandler {
                             htlc_amount_sat,
                             &wallet_path[0]
                         )
-                    }).expect("sign");
+                    })?;
                 Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature
                     {
@@ -497,7 +527,7 @@ impl Handler for ChannelHandler {
                             htlc_amount_sat,
                             &wallet_path[0]
                         )
-                    }).expect("sign");
+                    })?;
                 Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature
                     {
@@ -529,7 +559,7 @@ impl Handler for ChannelHandler {
                             htlc_amount_sat,
                             output_witscript
                         )
-                    }).expect("sign");
+                    })?;
                 Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature
                     {
@@ -550,7 +580,7 @@ impl Handler for ChannelHandler {
                             &tx,
                             &opaths,
                         )
-                    }).unwrap();
+                    })?;
                 Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature
                     {
@@ -588,7 +618,7 @@ impl Handler for ChannelHandler {
                                 &commit_sig,
                                 &htlc_sigs,
                             )
-                        }).expect("ready_channel");
+                        })?;
                 let old_secret_reply = old_secret.map(|s| Secret(s[..].try_into().unwrap()));
                 Ok(Box::new(msgs::ValidateCommitmentTxReply {
                     next_per_commitment_point: PubKey(next_per_commitment_point.serialize()),
@@ -600,7 +630,7 @@ impl Handler for ChannelHandler {
                 let old_secret = SecretKey::from_slice(&m.commitment_secret.0).expect("secret");
                 self.node.with_ready_channel(&self.channel_id, |chan| {
                     chan.validate_counterparty_revocation(revoke_num, &old_secret)
-                }).expect("validate");
+                })?;
                 Ok(Box::new(msgs::ValidateRevocationReply {}))
             }
             Message::SignPenaltyToUs(m) => {
@@ -625,7 +655,7 @@ impl Handler for ChannelHandler {
                             htlc_amount_sat,
                             &wallet_path[0]
                         )
-                    }).expect("sign");
+                    })?;
                 Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature
                     {
@@ -636,7 +666,7 @@ impl Handler for ChannelHandler {
             }
             Message::SignChannelUpdate(m) => {
                 let message = m.update[2+64..].to_vec();
-                let sig_data_der = self.node.sign_channel_update(&message).expect("sign_channel_update");
+                let sig_data_der = self.node.sign_channel_update(&message)?;
                 let sig = secp256k1::Signature::from_der(&sig_data_der).expect("sig");
                 let mut update = m.update;
                 update[2..2+64].copy_from_slice(&sig.serialize_compact());
@@ -646,7 +676,7 @@ impl Handler for ChannelHandler {
                 let message = m.announcement[256 + 2..].to_vec();
                 let (node_sig, bitcoin_sig) = self.node.with_ready_channel(&self.channel_id, |chan| {
                     Ok(chan.sign_channel_announcement(&message))
-                }).expect("sign");
+                })?;
                 Ok(Box::new(msgs::SignChannelAnnouncementReply {
                     node_signature: Signature(node_sig.serialize_compact()),
                     bitcoin_signature: Signature(bitcoin_sig.serialize_compact())
@@ -656,7 +686,7 @@ impl Handler for ChannelHandler {
                 // TODO DRY (and why is this called in the per-channel handler??)
                 let message = m.announcement[64 + 2..].to_vec();
                 let node_sig_der =
-                    self.node.sign_node_announcement(&message).expect("sign");
+                    self.node.sign_node_announcement(&message)?;
                 let sig = secp256k1::Signature::from_der(&node_sig_der).expect("sig");
             
                 Ok(Box::new(msgs::SignNodeAnnouncementReply {

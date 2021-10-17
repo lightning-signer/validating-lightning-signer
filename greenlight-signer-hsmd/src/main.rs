@@ -60,7 +60,7 @@ fn signer_loop<C: 'static + Client, H: Handler>(client: C, handler: H) {
     }
 }
 
-fn do_signer_loop<C: 'static + Client, H: Handler>(mut client: C, mut handler: H) -> Result<()> {
+fn do_signer_loop<C: 'static + Client, H: Handler>(mut client: C, handler: H) -> Result<()> {
     loop {
         let msg = client.read()?;
         info!("loop {}: got {:x?}", handler.client_id(), msg);
