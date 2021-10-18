@@ -48,7 +48,7 @@ impl Validator for NullValidator {
         Ok(())
     }
 
-    fn validate_funding_tx(
+    fn validate_onchain_tx(
         &self,
         _wallet: &Wallet,
         _channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,

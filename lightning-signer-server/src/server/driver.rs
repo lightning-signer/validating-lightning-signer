@@ -683,10 +683,10 @@ impl Signer for SignServer {
         Ok(Response::new(reply))
     }
 
-    async fn sign_funding_tx(
+    async fn sign_onchain_tx(
         &self,
-        request: Request<SignFundingTxRequest>,
-    ) -> Result<Response<SignFundingTxReply>, Status> {
+        request: Request<SignOnchainTxRequest>,
+    ) -> Result<Response<SignOnchainTxReply>, Status> {
         let req = request.into_inner();
         let node_id = self.node_id(req.node_id.clone())?;
         log_req_enter!(&node_id, &req);
@@ -742,7 +742,7 @@ impl Signer for SignServer {
 
         let cstate = self.get_chain_state()?;
 
-        let witvec = node.sign_funding_tx(
+        let witvec = node.sign_onchain_tx(
             &cstate,
             &tx,
             &ipaths,
@@ -760,7 +760,7 @@ impl Signer for SignServer {
             })
             .collect();
 
-        let reply = SignFundingTxReply { witnesses: wits };
+        let reply = SignOnchainTxReply { witnesses: wits };
         log_req_reply!(&node_id, &reply);
         Ok(Response::new(reply))
     }
