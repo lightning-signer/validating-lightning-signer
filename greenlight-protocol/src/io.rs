@@ -9,7 +9,7 @@ pub(crate) fn read_u32<R: Read>(reader: &mut R) -> Result<u32> {
         return Err(Error::Eof);
     }
     if len < buf.len() {
-        return Err(Error::ShortRead)
+        return Err(Error::ShortRead);
     }
     Ok(u32::from_be_bytes(buf))
 }
@@ -21,7 +21,7 @@ pub(crate) fn read_u16<R: Read>(reader: &mut R) -> Result<u16> {
         return Err(Error::Eof);
     }
     if len < buf.len() {
-        return Err(Error::ShortRead)
+        return Err(Error::ShortRead);
     }
     Ok(u16::from_be_bytes(buf))
 }

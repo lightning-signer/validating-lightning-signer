@@ -1,10 +1,10 @@
 use std::os::unix::io::RawFd;
 
-use nix::sys::socket::{AddressFamily, socketpair, SockFlag, SockType};
+use nix::sys::socket::{socketpair, AddressFamily, SockFlag, SockType};
 use serde::Serialize;
 
-use greenlight_signer::greenlight_protocol;
 use greenlight_protocol::{msgs, Result};
+use greenlight_signer::greenlight_protocol;
 
 use crate::connection::UnixConnection;
 
@@ -23,9 +23,7 @@ pub(crate) struct UnixClient {
 
 impl UnixClient {
     pub(crate) fn new(conn: UnixConnection) -> Self {
-        Self {
-            conn
-        }
+        Self { conn }
     }
 
     pub(crate) fn recv_fd(&mut self) -> core::result::Result<RawFd, ()> {
@@ -53,7 +51,8 @@ impl Client for UnixClient {
     }
 
     fn new_client(&mut self) -> UnixClient {
-        let (fd_a, fd_b) = socketpair(AddressFamily::Unix, SockType::Stream, None, SockFlag::empty()).unwrap();
+        let (fd_a, fd_b) =
+            socketpair(AddressFamily::Unix, SockType::Stream, None, SockFlag::empty()).unwrap();
         self.conn.send_fd(fd_a);
         UnixClient::new(UnixConnection::new(fd_b))
     }

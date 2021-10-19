@@ -1,15 +1,15 @@
-use std::io::{Read as _, Write as _};
 use std::io;
+use std::io::{Read as _, Write as _};
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 
-use log::{info, error, trace};
+use log::{error, info, trace};
 use nix::cmsg_space;
-use nix::sys::socket::{ControlMessage, MsgFlags, recvmsg, sendmsg, ControlMessageOwned};
+use nix::sys::socket::{recvmsg, sendmsg, ControlMessage, ControlMessageOwned, MsgFlags};
 use serde_bolt::{Error as SError, Read, Result as SResult, Write};
 
-use greenlight_signer::greenlight_protocol;
 use greenlight_protocol::serde_bolt;
+use greenlight_signer::greenlight_protocol;
 use nix::sys::uio::IoVec;
 use nix::unistd::close;
 
@@ -20,10 +20,7 @@ pub(crate) struct UnixConnection {
 
 impl UnixConnection {
     pub(crate) fn new(fd: RawFd) -> Self {
-        UnixConnection {
-            fd,
-            stream: unsafe { UnixStream::from_raw_fd(fd) }
-        }
+        UnixConnection { fd, stream: unsafe { UnixStream::from_raw_fd(fd) } }
     }
 
     pub(crate) fn id(&self) -> u64 {
@@ -48,25 +45,23 @@ impl UnixConnection {
         let mut iter = result.cmsgs();
         if c[0] != 0xff {
             error!("expected a 0xff byte, got {}", c[0]);
-            return Err(())
+            return Err(());
         }
-        let cmsg = iter.next()
-            .ok_or_else(|| {
-                error!("expected a control message");
-            })?;
+        let cmsg = iter.next().ok_or_else(|| {
+            error!("expected a control message");
+        })?;
         if iter.next().is_some() {
             error!("expected exactly one control message");
             return Err(());
         }
         match cmsg {
-            ControlMessageOwned::ScmRights(r) => {
+            ControlMessageOwned::ScmRights(r) =>
                 if r.len() != 1 {
                     error!("expected exactly one fd");
                     Err(())
                 } else {
                     Ok(r[0])
-                }
-            },
+                },
             m => {
                 error!("unexpected cmsg {:?}", m);
                 Err(())
@@ -84,12 +79,12 @@ impl Read for UnixConnection {
             let res: io::Result<usize> = self.stream.read(&mut dest[cursor..]);
             trace!("read {}: {:?} cursor={} expected={}", self.id(), res, cursor, dest.len());
             match res {
-                Ok(n) =>  {
+                Ok(n) => {
                     if n == 0 {
                         return Ok(cursor);
                     }
                     cursor = cursor + n;
-                },
+                }
                 Err(e) => {
                     return Err(SError::Message(format!("{}", e)));
                 }

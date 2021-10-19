@@ -1,4 +1,4 @@
-use serde_bolt::{Error as BoltError};
+use serde_bolt::Error as BoltError;
 
 /// Error
 #[derive(Debug)]

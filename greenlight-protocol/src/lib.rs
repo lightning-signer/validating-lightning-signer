@@ -2,10 +2,10 @@
 
 extern crate alloc;
 
-pub mod msgs;
-pub mod model;
 mod error;
 mod io;
+pub mod model;
+pub mod msgs;
 
-pub use serde_bolt;
 pub use error::{Error, Result};
+pub use serde_bolt;
