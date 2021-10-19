@@ -102,7 +102,7 @@ macro_rules! assert_policy_err {
 }
 
 pub struct TestPersister {
-    pub update_ret: Mutex<Result<(), channelmonitor::ChannelMonitorUpdateErr>>,
+    pub update_ret: Mutex<Result<(), chain::ChannelMonitorUpdateErr>>,
 }
 
 impl TestPersister {
@@ -112,17 +112,17 @@ impl TestPersister {
         }
     }
 
-    pub fn set_update_ret(&self, ret: Result<(), channelmonitor::ChannelMonitorUpdateErr>) {
+    pub fn set_update_ret(&self, ret: Result<(), chain::ChannelMonitorUpdateErr>) {
         *self.update_ret.lock().unwrap() = ret;
     }
 }
 
-impl channelmonitor::Persist<LoopbackChannelSigner> for TestPersister {
+impl chainmonitor::Persist<LoopbackChannelSigner> for TestPersister {
     fn persist_new_channel(
         &self,
         _funding_txo: OutPoint,
         _data: &channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
-    ) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
+    ) -> Result<(), chain::ChannelMonitorUpdateErr> {
         self.update_ret.lock().unwrap().clone()
     }
 
@@ -131,7 +131,7 @@ impl channelmonitor::Persist<LoopbackChannelSigner> for TestPersister {
         _funding_txo: OutPoint,
         _update: &channelmonitor::ChannelMonitorUpdate,
         _data: &channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
-    ) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
+    ) -> Result<(), chain::ChannelMonitorUpdateErr> {
         self.update_ret.lock().unwrap().clone()
     }
 }
@@ -145,12 +145,12 @@ pub struct TestChainMonitor<'a> {
         &'a chaininterface::BroadcasterInterface,
         &'a test_utils::TestFeeEstimator,
         &'a test_utils::TestLogger,
-        &'a channelmonitor::Persist<LoopbackChannelSigner>,
+        &'a chainmonitor::Persist<LoopbackChannelSigner>,
     >,
-    pub update_ret: Mutex<Option<Result<(), channelmonitor::ChannelMonitorUpdateErr>>>,
+    pub update_ret: Mutex<Option<Result<(), chain::ChannelMonitorUpdateErr>>>,
     // If this is set to Some(), after the next return, we'll always return this until update_ret
     // is changed:
-    pub next_update_ret: Mutex<Option<Result<(), channelmonitor::ChannelMonitorUpdateErr>>>,
+    pub next_update_ret: Mutex<Option<Result<(), chain::ChannelMonitorUpdateErr>>>,
 }
 impl<'a> TestChainMonitor<'a> {
     pub fn new(
@@ -158,7 +158,7 @@ impl<'a> TestChainMonitor<'a> {
         broadcaster: &'a chaininterface::BroadcasterInterface,
         logger: &'a test_utils::TestLogger,
         fee_estimator: &'a test_utils::TestFeeEstimator,
-        persister: &'a channelmonitor::Persist<LoopbackChannelSigner>,
+        persister: &'a chainmonitor::Persist<LoopbackChannelSigner>,
     ) -> Self {
         Self {
             added_monitors: Mutex::new(Vec::new()),
@@ -180,7 +180,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
         &self,
         funding_txo: OutPoint,
         monitor: channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
-    ) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
+    ) -> Result<(), chain::ChannelMonitorUpdateErr> {
         self.latest_monitor_update_id.lock().unwrap().insert(
             funding_txo.to_channel_id(),
             (funding_txo, monitor.get_latest_update_id()),
@@ -203,7 +203,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
         &self,
         funding_txo: OutPoint,
         update: channelmonitor::ChannelMonitorUpdate,
-    ) -> Result<(), channelmonitor::ChannelMonitorUpdateErr> {
+    ) -> Result<(), chain::ChannelMonitorUpdateErr> {
         self.latest_monitor_update_id
             .lock()
             .unwrap()
