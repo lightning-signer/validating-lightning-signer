@@ -1,5 +1,9 @@
-use std::collections::BTreeMap;
-use std::convert::TryInto;
+use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::convert::TryInto;
 
 use bitcoin::{Network, Script, SigHashType};
 use bitcoin::blockdata::script;
@@ -8,16 +12,6 @@ use bitcoin::hashes::Hash;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::util::psbt::serialize::Deserialize;
-#[allow(unused_imports)]
-use log::info;
-use secp256k1::{PublicKey, Secp256k1};
-use secp256k1::rand::rngs::OsRng;
-use serde::Serialize;
-
-use greenlight_protocol::{msgs, msgs::Message, Result};
-use greenlight_protocol::model::{Basepoints, BitcoinSignature, ExtKey, Htlc, PubKey, PubKey32, RecoverableSignature, Secret, Signature};
-use greenlight_protocol::msgs::TypedMessage;
-use greenlight_protocol::serde_bolt::LargeBytes;
 use lightning_signer::Arc;
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::{OutPoint, Transaction};
@@ -29,28 +23,58 @@ use lightning_signer::lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::{Node, NodeConfig, SpendType};
 use lightning_signer::persist::Persist;
+use lightning_signer::policy::validator::ChainState;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
+#[allow(unused_imports)]
+use log::info;
+use secp256k1::{PublicKey, Secp256k1};
+use secp256k1::rand::rngs::SmallRng;
+use secp256k1::rand::SeedableRng;
 
-use crate::client::Client;
+use greenlight_protocol::{msgs, msgs::Message, Error as ProtocolError};
+use greenlight_protocol::model::{Basepoints, BitcoinSignature, ExtKey, Htlc, PubKey, PubKey32, RecoverableSignature, Secret, Signature};
+use greenlight_protocol::msgs::SerMessage;
+use greenlight_protocol::serde_bolt::LargeBytes;
+use lightning_signer::util::status::Status;
 
-pub(crate) trait Handler<C: Client> {
-    fn handle(&mut self, msg: Message);
+/// Error
+#[derive(Debug)]
+pub enum Error {
+    ProtocolError(ProtocolError),
+    SigningError(Status),
+}
+
+impl From<ProtocolError> for Error {
+    fn from(e: ProtocolError) -> Self {
+        Error::ProtocolError(e)
+    }
+}
+
+impl From<Status> for Error {
+    fn from(e: Status) -> Self {
+        Error::SigningError(e)
+    }
+}
+
+/// Result
+pub type Result<T> = core::result::Result<T, Error>;
+
+pub trait Handler {
+    fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>>;
     fn client_id(&self) -> u64;
-    fn read(&mut self) -> Result<Message>;
-    fn write<M: TypedMessage + Serialize>(&mut self, msg: M) -> Result<()>;
-    fn with_new_client(&mut self, peer_id: PubKey, dbid: u64) -> ChannelHandler<C>;
+    fn for_new_client(&self, peer_id: PubKey, dbid: u64) -> ChannelHandler;
 }
 
 /// Protocol handler
-pub(crate) struct RootHandler<C: Client> {
-    pub(crate) client: C,
-    pub(crate) node: Arc<Node>
+pub struct RootHandler {
+    pub(crate) id: u64,
+    pub node: Arc<Node>,
 }
 
-impl<C: Client> RootHandler<C> {
-    pub(crate) fn new(client: C, seed_opt: Option<[u8; 32]>, persister: Arc<dyn Persist>, allowlist: Vec<String>) -> Self {
+impl RootHandler {
+    pub fn new(id: u64, seed_opt: Option<[u8; 32]>, persister: Arc<dyn Persist>, allowlist: Vec<String>) -> Self {
         let config = NodeConfig {
             network: Network::Regtest,
             key_derivation_style: KeyDerivationStyle::Native
@@ -71,52 +95,58 @@ impl<C: Client> RootHandler<C> {
         };
 
         Self {
-            client,
+            id,
             node
         }
     }
+
+    fn get_chain_state(&self) -> ChainState {
+        // TODO - fetch the current height from the oracle
+        ChainState { current_height: 0 }
+    }
 }
 
-impl<C: Client> Handler<C> for RootHandler<C> {
-    fn handle(&mut self, msg: Message) {
+impl Handler for RootHandler {
+    fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>> {
         match msg {
-            Message::Memleak(m) => {
-                self.client.write(msgs::MemleakReply { result: false }).unwrap();
+            Message::Memleak(_m) => {
+                Ok(Box::new(msgs::MemleakReply { result: false }))
             }
             Message::HsmdInit(_) => {
                 let bip32 = self.node.get_account_extended_pubkey().encode();
                 let node_id = self.node.get_id().serialize();
                 let secp = Secp256k1::new();
-                let mut rng = OsRng::new().unwrap();
+                // FIXME bogus entropy
+                let mut rng = SmallRng::seed_from_u64(0);
                 let (_, bolt12_pubkey) = secp.generate_schnorrsig_keypair(&mut rng);
                 let bolt12_xonly = bolt12_pubkey.serialize();
-                self.client.write(msgs::HsmdInitReply {
+                Ok(Box::new(msgs::HsmdInitReply {
                     node_id: PubKey(node_id),
                     bip32: ExtKey(bip32),
                     bolt12: PubKey32(bolt12_xonly),
-                }).unwrap();
+                }))
             }
             Message::Ecdh(m) => {
                 let pubkey =
                     PublicKey::from_slice(&m.point.0).expect("pubkey");
                 let secret = self.node.ecdh(&pubkey).as_slice().try_into().unwrap();
-                self.client.write(msgs::EcdhReply { secret: Secret(secret) }).expect("write");
+                Ok(Box::new(msgs::EcdhReply { secret: Secret(secret) }))
             }
             Message::NewChannel(m) => {
                 let _peer_id = extract_pubkey(&m.node_id);
                 let channel_id = extract_channel_id(m.dbid);
                 // TODO mix in the peer_id
                 let nonce = m.dbid.to_le_bytes();
-                self.node.new_channel(Some(channel_id), Some(nonce.to_vec()), &self.node).expect("new_channel");
-                self.client.write(msgs::NewChannelReply {}).expect("write");
+                self.node.new_channel(Some(channel_id), Some(nonce.to_vec()), &self.node)?;
+                Ok(Box::new(msgs::NewChannelReply {}))
             }
             Message::GetChannelBasepoints(m) => {
-                let peer_id = extract_pubkey(&m.node_id);
+                let _peer_id = extract_pubkey(&m.node_id);
                 let channel_id = extract_channel_id(m.dbid);
                 let bps = self.node
                     .with_channel_base(&channel_id, |base| {
                         Ok(base.get_channel_basepoints())
-                    }).expect("basepoints");
+                    })?;
 
 
                 let basepoints = Basepoints {
@@ -127,7 +157,7 @@ impl<C: Client> Handler<C> for RootHandler<C> {
                 };
                 let funding = PubKey(bps.funding_pubkey.serialize());
 
-                self.client.write(msgs::GetChannelBasepointsReply { basepoints, funding }).expect("write");
+                Ok(Box::new(msgs::GetChannelBasepointsReply { basepoints, funding }))
             }
             Message::SignWithdrawal(m) => {
                 let mut psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
@@ -139,7 +169,7 @@ impl<C: Client> Handler<C> for RootHandler<C> {
                 let spendtypes = m.utxos.iter()
                     .map(|u| if u.is_p2sh { SpendType::P2shP2wpkh } else { SpendType::P2wpkh }).collect();
                 let uniclosekeys = m.utxos.iter()
-                    .map(|u| None).collect(); // TODO
+                    .map(|_u| None).collect(); // TODO
                 let opaths = psbt.outputs.iter()
                     .map(|o| extract_output_path(&o.bip32_derivation)).collect();
 
@@ -159,14 +189,16 @@ impl<C: Client> Handler<C> for RootHandler<C> {
                 info!("txid {}", tx.txid());
                 info!("tx {:?}", tx);
                 info!("psbt {:?}", psbt);
-                let witvec = self.node.sign_funding_tx(
+                let cstate = self.get_chain_state();
+                let witvec = self.node.sign_onchain_tx(
+                    &cstate,
                     &tx,
                     &ipaths,
                     &values_sat,
                     &spendtypes,
                     &uniclosekeys,
                     &opaths,
-                ).expect("sign funding");
+                )?;
 
                 for (i, (sig, pubkey)) in witvec.into_iter().enumerate() {
                     if !sig.is_empty() {
@@ -176,28 +208,28 @@ impl<C: Client> Handler<C> for RootHandler<C> {
 
                 let mut ser_psbt = Vec::new();
                 psbt.consensus_encode(&mut ser_psbt).expect("serialize psbt");
-                self.client.write(msgs::SignWithdrawalReply {
+                Ok(Box::new(msgs::SignWithdrawalReply {
                     psbt: LargeBytes(ser_psbt)
-                }).expect("write");
+                }))
             }
             Message::SignInvoice(m) => {
                 let hrp = String::from_utf8(m.hrp).expect("hrp");
-                let sig = self.node.sign_invoice_in_parts(&m.u5bytes, &hrp).expect("sign_channel_update");
+                let sig = self.node.sign_invoice_in_parts(&m.u5bytes, &hrp)?;
                 let mut sig_slice = [0u8; 65];
                 sig_slice.copy_from_slice(&sig);
-                self.client.write(msgs::SignInvoiceReply {
+                Ok(Box::new(msgs::SignInvoiceReply {
                     signature: RecoverableSignature(sig_slice)
-                }).expect("write");
+                }))
             }
             Message::SignNodeAnnouncement(m) => {
                 let message = m.announcement[64 + 2..].to_vec();
                 let node_sig_der =
-                    self.node.sign_node_announcement(&message).expect("sign");
+                    self.node.sign_node_announcement(&message)?;
                 let sig = secp256k1::Signature::from_der(&node_sig_der).expect("sig");
 
-                self.client.write(msgs::SignNodeAnnouncementReply {
+                Ok(Box::new(msgs::SignNodeAnnouncementReply {
                     node_signature: Signature(sig.serialize_compact()),
-                }).expect("write");
+                }))
             }
             Message::SignCommitmentTx(m) => {
                 // TODO why not channel handler??
@@ -218,15 +250,17 @@ impl<C: Client> Handler<C> for RootHandler<C> {
                                 &tx,
                                 &opaths,
                             )
-                        }).expect("sign mutual close")
+                        })?
                 } else {
-                    let witscripts = extract_witscripts(psbt);
+                    let witscripts = extract_witscripts(&psbt);
                     let commit_num = m.commitment_number;
                     let feerate_sat_per_kw = m.feerate;
                     let (received_htlcs, offered_htlcs) = extract_htlcs(&m.htlcs);
+                    let cstate = self.get_chain_state();
                     self.node
                         .with_ready_channel(&channel_id, |chan| {
                             chan.sign_holder_commitment_tx(
+                                &cstate,
                                 &tx,
                                 &witscripts,
                                 commit_num,
@@ -234,37 +268,37 @@ impl<C: Client> Handler<C> for RootHandler<C> {
                                 offered_htlcs.clone(),
                                 received_htlcs.clone(),
                             )
-                        }).expect("sign holder commitment")
+                        })?
                 };
-                self.client.write(msgs::SignCommitmentTxReply {
+                Ok(Box::new(msgs::SignCommitmentTxReply {
                     signature: BitcoinSignature
                     {
                         signature: Signature(sig.serialize_compact()),
                         sighash: SigHashType::All as u8
                     }
-                }).expect("write");
+                }))
             }
-            Message::Unknown(u) => unimplemented!("loop {}: unknown message type {}", self.client.id(), u.message_type),
-            m => unimplemented!("loop {}: unimplemented message {:?}", self.client.id(), m),
+            // TODO duplicate from ChannelHandler
+            Message::SignChannelUpdate(m) => {
+                let message = m.update[2+64..].to_vec();
+                let sig_data_der = self.node.sign_channel_update(&message)?;
+                let sig = secp256k1::Signature::from_der(&sig_data_der).expect("sig");
+                let mut update = m.update;
+                update[2..2+64].copy_from_slice(&sig.serialize_compact());
+                Ok(Box::new(msgs::SignChannelUpdateReply { update }))
+            }
+            Message::Unknown(u) => unimplemented!("loop {}: unknown message type {}", self.id, u.message_type),
+            m => unimplemented!("loop {}: unimplemented message {:?}", self.id, m),
         }
     }
 
     fn client_id(&self) -> u64 {
-        self.client.id()
+        self.id
     }
 
-    fn read(&mut self) -> Result<Message> {
-        self.client.read()
-    }
-
-    fn write<M: TypedMessage + Serialize>(&mut self, msg: M) -> Result<()> {
-        self.client.write(msg)
-    }
-
-    fn with_new_client(&mut self, peer_id: PubKey, dbid: u64) -> ChannelHandler<C> {
-        let new_client = self.client.new_client();
+    fn for_new_client(&self, peer_id: PubKey, dbid: u64) -> ChannelHandler {
         ChannelHandler {
-            client: new_client,
+            id: self.id,
             node: Arc::clone(&self.node),
             peer_id: PublicKey::from_slice(&peer_id.0).expect("peer_id"),
             dbid,
@@ -280,34 +314,51 @@ fn extract_output_path(x: &BTreeMap<bitcoin::util::ecdsa::PublicKey, KeySource>)
     if x.len() > 1 {
         panic!("len > 1");
     }
-    let (fingerprint, path) = x.iter().next().unwrap().1;
+    let (_fingerprint, path) = x.iter().next().unwrap().1;
     let segments: Vec<ChildNumber> = path.clone().into();
     segments.into_iter().map(|c| u32::from(c)).collect()
 }
 
-/// Protocol handler
-pub(crate) struct ChannelHandler<C: Client> {
-    pub(crate) client: C,
-    pub(crate) node: Arc<Node>,
-    #[allow(dead_code)]
-    pub(crate) peer_id: PublicKey,
-    #[allow(dead_code)]
-    pub(crate) dbid: u64,
-    pub(crate) channel_id: ChannelId,
+fn extract_psbt_output_paths(psbt: &PartiallySignedTransaction) -> Vec<Vec<u32>> {
+    psbt
+        .outputs
+        .iter()
+        .map(|o| extract_output_path(&o.bip32_derivation))
+        .collect::<Vec<Vec<u32>>>()
 }
 
-impl<C: Client> Handler<C> for ChannelHandler<C> {
-    fn handle(&mut self, msg: Message) {
+/// Protocol handler
+pub struct ChannelHandler {
+    pub(crate) id: u64,
+    pub node: Arc<Node>,
+    pub peer_id: PublicKey,
+    pub dbid: u64,
+    pub channel_id: ChannelId,
+}
+
+fn extract_channel_id(dbid: u64) -> ChannelId {
+    ChannelId(Sha256Hash::hash(&dbid.to_le_bytes()).into_inner())
+}
+
+impl ChannelHandler {
+    fn get_chain_state(&self) -> ChainState {
+        // TODO - fetch the current height from the oracle
+        ChainState { current_height: 0 }
+    }
+}
+
+impl Handler for ChannelHandler {
+    fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>> {
         match msg {
-            Message::Memleak(m) => {
-                self.client.write(msgs::MemleakReply { result: false }).unwrap();
+            Message::Memleak(_m) => {
+                Ok(Box::new(msgs::MemleakReply { result: false }))
             }
             Message::Ecdh(m) => {
                 // TODO DRY with root handler
                 let pubkey =
                     PublicKey::from_slice(&m.point.0).expect("pubkey");
                 let secret = self.node.ecdh(&pubkey).as_slice().try_into().unwrap();
-                self.client.write(msgs::EcdhReply { secret: Secret(secret) }).expect("write");
+                Ok(Box::new(msgs::EcdhReply { secret: Secret(secret) }))
             }
             Message::GetPerCommitmentPoint(m)  => {
                 let commitment_number = m.commitment_number;
@@ -322,12 +373,10 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                         Ok((point, secret))
                     });
 
-                let (point, old_secret) = res.expect("per_commit");
-
-                let pointdata = point.serialize().to_vec();
+                let (point, old_secret) = res?;
 
                 let old_secret_reply = old_secret.clone().map(|s| Secret(s[..].try_into().unwrap()));
-                self.client.write(msgs::GetPerCommitmentPointReply { point: PubKey(point.serialize()), secret: old_secret_reply }).expect("write");
+                Ok(Box::new(msgs::GetPerCommitmentPointReply { point: PubKey(point.serialize()), secret: old_secret_reply }))
             }
             Message::ReadyChannel(m) => {
                 let txid = bitcoin::Txid::from_slice(&m.funding_txid.0).expect("txid");
@@ -380,9 +429,9 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                     None,
                     setup,
                     &holder_shutdown_key_path,
-                ).expect("ready_channel");
+                )?;
 
-                self.client.write(msgs::ReadyChannelReply {}).expect("write");
+                Ok(Box::new(msgs::ReadyChannelReply {}))
             }
             Message::SignRemoteHtlcTx(m) => {
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
@@ -402,27 +451,29 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                     witness_script.as_ref().expect("output witscript");
                 let sig = self.node
                     .with_ready_channel(&self.channel_id, |chan| {
+                        let cstate = self.get_chain_state();
                         chan.sign_counterparty_htlc_tx(
+                            &cstate,
                             &tx,
                             &remote_per_commitment_point,
                             &redeemscript,
                             htlc_amount_sat,
                             &output_witscript,
                         )
-                    }).expect("sign");
-                self.client.write(msgs::SignTxReply {
+                    })?;
+                Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature
                     {
                         signature: Signature(sig.serialize_compact()),
                         sighash: SigHashType::All as u8
                     }
-                }).expect("write");
+                }))
             }
             Message::SignRemoteCommitmentTx(m) => {
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
-                let witscripts = extract_witscripts(psbt);
+                let witscripts = extract_witscripts(&psbt);
                 let remote_per_commitment_point =
                     PublicKey::from_slice(&m.remote_per_commitment_point.0).expect("pubkey");
                 let commit_num = m.commitment_number;
@@ -431,7 +482,9 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                 let (offered_htlcs, received_htlcs) = extract_htlcs(&m.htlcs);
                 let sig = self.node
                     .with_ready_channel(&self.channel_id, |chan| {
+                        let cstate = self.get_chain_state();
                         chan.sign_counterparty_commitment_tx(
+                            &cstate,
                             &tx,
                             &witscripts,
                             &remote_per_commitment_point,
@@ -440,14 +493,14 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                             offered_htlcs.clone(),
                             received_htlcs.clone(),
                         )
-                    }).unwrap();
-                self.client.write(msgs::SignTxReply {
+                    })?;
+                Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature
                     {
                         signature: Signature(sig.serialize_compact()),
                         sighash: SigHashType::All as u8
                     }
-                }).expect("write");
+                }))
             }
             Message::SignDelayedPaymentToUs(m) => {
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
@@ -459,24 +512,28 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                 let htlc_amount_sat = psbt.inputs[input]
                     .witness_utxo.as_ref().expect("will only spend witness UTXOs")
                     .value;
+                let wallet_paths = extract_psbt_output_paths(&psbt);
                 let sig = self
                     .node
                     .with_ready_channel(&self.channel_id, |chan| {
+                        let cstate = self.get_chain_state();
                         chan.sign_delayed_sweep(
+                            &cstate,
                             &tx,
                             input,
                             commitment_number,
                             &redeemscript,
                             htlc_amount_sat,
+                            &wallet_paths[0],
                         )
-                    }).expect("sign");
-                self.client.write(msgs::SignTxReply {
+                    })?;
+                Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature
                     {
                         signature: Signature(sig.serialize_compact()),
                         sighash: SigHashType::All as u8
                     }
-                }).expect("write");
+                }))
             }
             Message::SignRemoteHtlcToUs(m) => {
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
@@ -489,24 +546,28 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                 let htlc_amount_sat = psbt.inputs[input]
                     .witness_utxo.as_ref().expect("will only spend witness UTXOs")
                     .value;
+                let wallet_paths = extract_psbt_output_paths(&psbt);
                 let sig = self
                     .node
                     .with_ready_channel(&self.channel_id, |chan| {
+                        let cstate = self.get_chain_state();
                         chan.sign_counterparty_htlc_sweep(
+                            &cstate,
                             &tx,
                             input,
                             &remote_per_commitment_point,
                             &redeemscript,
                             htlc_amount_sat,
+                            &wallet_paths[0],
                         )
-                    }).expect("sign");
-                self.client.write(msgs::SignTxReply {
+                    })?;
+                Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature
                     {
                         signature: Signature(sig.serialize_compact()),
                         sighash: SigHashType::All as u8
                     }
-                }).expect("write");
+                }))
             }
             Message::SignLocalHtlcTx(m) => {
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
@@ -523,7 +584,9 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                 let sig = self
                     .node
                     .with_ready_channel(&self.channel_id, |chan| {
+                        let cstate = self.get_chain_state();
                         chan.sign_holder_htlc_tx(
+                            &cstate,
                             &tx,
                             commitment_number,
                             None,
@@ -531,14 +594,14 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                             htlc_amount_sat,
                             output_witscript
                         )
-                    }).expect("sign");
-                self.client.write(msgs::SignTxReply {
+                    })?;
+                Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature
                     {
                         signature: Signature(sig.serialize_compact()),
                         sighash: SigHashType::All as u8
                     }
-                }).expect("write");
+                }))
             }
             Message::SignMutualCloseTx(m) => {
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
@@ -552,20 +615,20 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                             &tx,
                             &opaths,
                         )
-                    }).unwrap();
-                self.client.write(msgs::SignTxReply {
+                    })?;
+                Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature
                     {
                         signature: Signature(sig.serialize_compact()),
                         sighash: SigHashType::All as u8
                     }
-                }).expect("write");
+                }))
             }
             Message::ValidateCommitmentTx(m) => {
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
-                let witscripts = extract_witscripts(psbt);
+                let witscripts = extract_witscripts(&psbt);
                 let commit_num = m.commitment_number;
                 let feerate_sat_per_kw = m.feerate;
                 let (received_htlcs, offered_htlcs) = extract_htlcs(&m.htlcs);
@@ -580,7 +643,9 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                 let (next_per_commitment_point, old_secret) =
                     self.node
                         .with_ready_channel(&self.channel_id, |chan| {
-                            chan.validate_holder_commitment_tx(
+                            let cstate = self.get_chain_state();
+                        chan.validate_holder_commitment_tx(
+                            &cstate,
                                 &tx,
                                 &witscripts,
                                 commit_num,
@@ -590,20 +655,20 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                                 &commit_sig,
                                 &htlc_sigs,
                             )
-                        }).expect("ready_channel");
+                        })?;
                 let old_secret_reply = old_secret.map(|s| Secret(s[..].try_into().unwrap()));
-                self.client.write(msgs::ValidateCommitmentTxReply {
+                Ok(Box::new(msgs::ValidateCommitmentTxReply {
                     next_per_commitment_point: PubKey(next_per_commitment_point.serialize()),
                     old_commitment_secret: old_secret_reply,
-                }).expect("write");
+                }))
             }
             Message::ValidateRevocation(m) => {
                 let revoke_num = m.commitment_number;
                 let old_secret = SecretKey::from_slice(&m.commitment_secret.0).expect("secret");
                 self.node.with_ready_channel(&self.channel_id, |chan| {
                     chan.validate_counterparty_revocation(revoke_num, &old_secret)
-                }).expect("validate");
-                self.client.write(msgs::ValidateRevocationReply {}).expect("write");
+                })?;
+                Ok(Box::new(msgs::ValidateRevocationReply {}))
             }
             Message::SignPenaltyToUs(m) => {
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).expect("psbt");
@@ -615,79 +680,72 @@ impl<C: Client> Handler<C> for ChannelHandler<C> {
                 let htlc_amount_sat = psbt.inputs[input]
                     .witness_utxo.as_ref().expect("will only spend witness UTXOs")
                     .value;
+                let cstate = self.get_chain_state();
+                let wallet_paths = extract_psbt_output_paths(&psbt);
                 let sig = self
                     .node
                     .with_ready_channel(&self.channel_id, |chan| {
                         chan.sign_justice_sweep(
+                            &cstate,
                             &tx,
                             input,
                             &revocation_secret,
                             &redeemscript,
                             htlc_amount_sat,
+                            &wallet_paths[0],
                         )
-                    }).expect("sign");
-                self.client.write(msgs::SignTxReply {
+                    })?;
+                Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature
                     {
                         signature: Signature(sig.serialize_compact()),
                         sighash: SigHashType::All as u8
                     }
-                }).expect("write");
+                }))
             }
             Message::SignChannelUpdate(m) => {
                 let message = m.update[2+64..].to_vec();
-                let sig_data_der = self.node.sign_channel_update(&message).expect("sign_channel_update");
+                let sig_data_der = self.node.sign_channel_update(&message)?;
                 let sig = secp256k1::Signature::from_der(&sig_data_der).expect("sig");
                 let mut update = m.update;
                 update[2..2+64].copy_from_slice(&sig.serialize_compact());
-                self.client.write(msgs::SignChannelUpdateReply { update }).expect("write");
+                Ok(Box::new(msgs::SignChannelUpdateReply { update }))
             }
             Message::SignChannelAnnouncement(m) => {
                 let message = m.announcement[256 + 2..].to_vec();
                 let (node_sig, bitcoin_sig) = self.node.with_ready_channel(&self.channel_id, |chan| {
                     Ok(chan.sign_channel_announcement(&message))
-                }).expect("sign");
-                self.client.write(msgs::SignChannelAnnouncementReply {
+                })?;
+                Ok(Box::new(msgs::SignChannelAnnouncementReply {
                     node_signature: Signature(node_sig.serialize_compact()),
                     bitcoin_signature: Signature(bitcoin_sig.serialize_compact())
-                }).expect("write");
+                }))
             }
             Message::SignNodeAnnouncement(m) => {
                 // TODO DRY (and why is this called in the per-channel handler??)
                 let message = m.announcement[64 + 2..].to_vec();
                 let node_sig_der =
-                    self.node.sign_node_announcement(&message).expect("sign");
+                    self.node.sign_node_announcement(&message)?;
                 let sig = secp256k1::Signature::from_der(&node_sig_der).expect("sig");
 
-                self.client.write(msgs::SignNodeAnnouncementReply {
+                Ok(Box::new(msgs::SignNodeAnnouncementReply {
                     node_signature: Signature(sig.serialize_compact()),
-                }).expect("write");
+                }))
             }
-            Message::Unknown(u) => unimplemented!("cloop {}: unknown message type {}", self.client.id(), u.message_type),
-            m => unimplemented!("cloop {}: unimplemented message {:?}", self.client.id(), m),
+            Message::Unknown(u) => unimplemented!("cloop {}: unknown message type {}", self.id, u.message_type),
+            m => unimplemented!("cloop {}: unimplemented message {:?}", self.id, m),
         }
     }
 
     fn client_id(&self) -> u64 {
-        self.client.id()
+        self.id
     }
 
-    fn read(&mut self) -> Result<Message> {
-        self.client.read()
-    }
-
-    fn write<M: TypedMessage + Serialize>(&mut self, msg: M) -> Result<()> {
-        self.client.write(msg)
-    }
-
-    fn with_new_client(&mut self, peer_id: PubKey, dbid: u64) -> ChannelHandler<C> {
+    fn for_new_client(&self, _peer_id: PubKey, _dbid: u64) -> ChannelHandler {
         unimplemented!("cannot create a sub-handler from a channel handler");
     }
 }
 
-fn extract_channel_id(dbid: u64) -> ChannelId {
-    ChannelId(Sha256Hash::hash(&dbid.to_le_bytes()).into_inner())
-}
 
 fn extract_pubkey(key: &PubKey) -> PublicKey {
     PublicKey::from_slice(&key.0).expect("pubkey")
@@ -703,7 +761,7 @@ fn extract_commitment_type(static_remotekey: bool, anchor_outputs: bool) -> Comm
     }
 }
 
-fn extract_witscripts(psbt: PartiallySignedTransaction) -> Vec<Vec<u8>> {
+fn extract_witscripts(psbt: &PartiallySignedTransaction) -> Vec<Vec<u8>> {
     psbt.outputs.iter()
         .map(|o| o.witness_script.clone().unwrap_or(Script::new()))
         .map(|s| s[..].to_vec())

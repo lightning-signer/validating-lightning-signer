@@ -1,11 +1,12 @@
+use alloc::vec::Vec;
 use core::fmt;
+use core::fmt::Debug;
+use core::fmt::Formatter;
 use core::marker::PhantomData;
 
 use serde::{de, ser, Serializer};
-use serde_derive::{Deserialize, Serialize};
 use serde::ser::SerializeTuple;
-use core::fmt::Debug;
-use std::fmt::Formatter;
+use serde_derive::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Bip32KeyVersion {
@@ -30,7 +31,7 @@ macro_rules! array_impl {
         pub struct $ty(pub [u8; $len]);
 
         impl Debug for $ty {
-            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
                 self.0.to_vec().fmt(f)
             }
         }
