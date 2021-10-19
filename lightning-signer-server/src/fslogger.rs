@@ -6,8 +6,9 @@ use time::OffsetDateTime;
 
 use log::{LevelFilter, Log, Metadata, Record};
 
+/// A filesystem logger
 #[derive(Debug)]
-pub(crate) struct FilesystemLogger {
+pub struct FilesystemLogger {
     disk_log_level: LevelFilter,
     console_log_level: LevelFilter,
     logs_file_path: String,
@@ -15,7 +16,8 @@ pub(crate) struct FilesystemLogger {
 }
 
 impl FilesystemLogger {
-    pub(crate) fn new(
+    /// Create a new logger
+    pub fn new(
         data_dir: String,
         disk_log_level: LevelFilter,
         console_log_level: LevelFilter,

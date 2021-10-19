@@ -710,9 +710,9 @@ checksum = "18794a8ad5b29321f790b55d93dfba91e125cb1a9edbd4f8e3150acc771c1a5e"
 
 [[package]]
 name = "lightning"
-version = "0.0.101"
+version = "0.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b0bcd8d72c1177579fe7cfe42309967e11e432688b2e87c86d0d8b707d60530"
+checksum = "0679c22408337cb4a866a6c9d420b15b996cbc4018ae31a0223ad15699fb1aad"
 dependencies = [
  "bitcoin",
  "core2",

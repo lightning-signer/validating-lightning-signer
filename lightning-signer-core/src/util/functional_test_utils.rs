@@ -40,6 +40,7 @@ use crate::util::test_utils::{TestChainMonitor, TestPersister};
 use core::cmp;
 use lightning::util::events::PaymentPurpose;
 use crate::lightning::routing::network_graph::NetworkGraph;
+use crate::lightning::routing;
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 10;
 
@@ -314,10 +315,11 @@ macro_rules! get_htlc_update_msgs {
 #[macro_export]
 macro_rules! get_local_commitment_txn {
     ($node: expr, $channel_id: expr) => {{
-        let mut monitors = $node.chain_monitor.chain_monitor.monitors.write().unwrap();
+        let outpoints = $node.chain_monitor.chain_monitor.list_monitors();
         let mut commitment_txn = None;
-        for (funding_txo, monitor) in monitors.iter_mut() {
+        for funding_txo in outpoints.iter() {
             if funding_txo.to_channel_id() == $channel_id {
+                let monitor = $node.chain_monitor.chain_monitor.get_monitor(funding_txo.clone()).unwrap();
                 commitment_txn =
                     Some(monitor.unsafe_get_latest_holder_commitment_txn(&$node.logger));
                 break;
@@ -873,7 +875,7 @@ macro_rules! expect_payment_sent {
         assert_eq!(events.len(), 1);
         match events[0] {
             Event::PaymentSent {
-                ref payment_preimage,
+                ref payment_preimage, ..
             } => {
                 assert_eq!($expected_payment_preimage, *payment_preimage);
             }
@@ -1108,7 +1110,8 @@ pub const TEST_FINAL_CLTV: u32 = 70;
 pub fn route_payment<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_route: &[&Node<'a, 'b, 'c>], recv_value: u64) -> (PaymentPreimage, PaymentHash, PaymentSecret) {
     let net_graph_msg_handler = &origin_node.net_graph_msg_handler;
     let logger = test_utils::TestLogger::new();
-    let route = get_route(&origin_node.node.get_our_node_id(), &net_graph_msg_handler.network_graph, &expected_route.last().unwrap().node.get_our_node_id(), Some(InvoiceFeatures::known()), None, &Vec::new(), recv_value, TEST_FINAL_CLTV, &logger).unwrap();
+    let scorer = routing::scorer::Scorer::new(0);
+    let route = get_route(&origin_node.node.get_our_node_id(), &net_graph_msg_handler.network_graph, &expected_route.last().unwrap().node.get_our_node_id(), Some(InvoiceFeatures::known()), None, &Vec::new(), recv_value, TEST_FINAL_CLTV, &logger, &scorer).unwrap();
     assert_eq!(route.paths.len(), 1);
     assert_eq!(route.paths[0].len(), expected_route.len());
     for (node, hop) in expected_route.iter().zip(route.paths[0].iter()) {
