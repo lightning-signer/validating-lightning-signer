@@ -1,5 +1,3 @@
-#![allow(unused_variables)]
-
 use std::{env, fs, thread};
 use std::convert::TryInto;
 use std::os::unix::io::RawFd;
@@ -68,6 +66,7 @@ fn do_signer_loop<C: 'static + Client, H: Handler>(mut client: C, handler: H) ->
             Message::ClientHsmFd(m) => {
                 client.write(msgs::ClientHsmFdReply {}).unwrap();
                 let new_client = client.new_client();
+                info!("new client");
                 let handler = handler.for_new_client(m.peer_id, m.dbid);
                 thread::spawn(move || signer_loop(new_client, handler));
             }
@@ -75,6 +74,7 @@ fn do_signer_loop<C: 'static + Client, H: Handler>(mut client: C, handler: H) ->
                 let reply = handler.handle(msg).expect("handle");
                 let v = reply.vec_serialize();
                 client.write_vec(v).unwrap();
+                info!("replied");
             }
         }
     }
@@ -104,10 +104,9 @@ pub fn main() {
         run_test();
     } else {
         let conn = UnixConnection::new(3);
-        let mut client = UnixClient::new(conn);
+        let client = UnixClient::new(conn);
         let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new("signer.kv"));
         let allowlist = read_allowlist();
-        let new_client = client.new_client();
         let handler = RootHandler::new(client.id(), read_integration_test_seed(), persister, allowlist);
         signer_loop(client, handler);
     }
@@ -142,6 +141,7 @@ fn run_test() {
     assert_eq!(fd4, 4);
     match unsafe { fork() } {
         Ok(ForkResult::Parent { child, .. }) => {
+            info!("child pid {}", child);
             close(fd3).unwrap();
             run_parent(fd4)
         },
