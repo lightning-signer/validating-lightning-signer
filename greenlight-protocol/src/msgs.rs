@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use serde::{de, ser};
 use serde_bolt::{from_vec, to_vec};
-use serde_bolt::{Read, Write, LargeBytes};
+use serde_bolt::{LargeBytes, Read, Write};
 use serde_derive::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -20,7 +20,7 @@ pub trait SerMessage {
 }
 
 macro_rules! impl_ser {
-	($val_type:ty) => {
+    ($val_type:ty) => {
         impl SerMessage for $val_type {
             fn vec_serialize(&self) -> Vec<u8> {
                 let message_type = Self::TYPE;
@@ -158,8 +158,7 @@ impl_ser!(EcdhReply);
 
 /// Memleak
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Memleak {
-}
+pub struct Memleak {}
 
 impl TypedMessage for Memleak {
     const TYPE: u16 = 33;
@@ -292,8 +291,7 @@ impl TypedMessage for ReadyChannel {
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ReadyChannelReply {
-}
+pub struct ReadyChannelReply {}
 
 impl TypedMessage for ReadyChannelReply {
     const TYPE: u16 = 131;
@@ -343,8 +341,7 @@ impl TypedMessage for ValidateRevocation {
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ValidateRevocationReply {
-}
+pub struct ValidateRevocationReply {}
 
 impl TypedMessage for ValidateRevocationReply {
     const TYPE: u16 = 136;
@@ -476,8 +473,7 @@ impl TypedMessage for NewChannel {
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
-pub struct NewChannelReply {
-}
+pub struct NewChannelReply {}
 
 impl TypedMessage for NewChannelReply {
     const TYPE: u16 = 130;
@@ -508,7 +504,6 @@ impl TypedMessage for GetChannelBasepointsReply {
 }
 
 impl_ser!(GetChannelBasepointsReply);
-
 
 ///
 #[derive(Debug, Serialize, Deserialize)]
@@ -593,7 +588,8 @@ pub enum Message {
 }
 
 fn from_vec_no_trailing<T: TypedMessage>(s: &mut Vec<u8>) -> Result<T>
-    where T: de::DeserializeOwned,
+where
+    T: de::DeserializeOwned,
 {
     let res: T = from_vec(s)?;
     if !s.is_empty() {
@@ -615,7 +611,7 @@ pub fn read<R: Read>(reader: &mut R) -> Result<Message> {
 pub fn read_unframed<R: Read>(reader: &mut R, len: u32) -> Result<Message> {
     let mut data = Vec::new();
     if len < 2 {
-        return Err(Error::ShortRead)
+        return Err(Error::ShortRead);
     }
     data.resize(len as usize - 2, 0);
     let message_type = read_u16(reader)?;
@@ -642,36 +638,49 @@ fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
         Memleak::TYPE => Message::Memleak(from_vec_no_trailing(&mut data)?),
         MemleakReply::TYPE => Message::MemleakReply(from_vec_no_trailing(&mut data)?),
         SignChannelUpdate::TYPE => Message::SignChannelUpdate(from_vec_no_trailing(&mut data)?),
-        SignChannelUpdateReply::TYPE => Message::SignChannelUpdateReply(from_vec_no_trailing(&mut data)?),
-        SignChannelAnnouncement::TYPE => Message::SignChannelAnnouncement(from_vec_no_trailing(&mut data)?),
-        SignChannelAnnouncementReply::TYPE => Message::SignChannelAnnouncementReply(from_vec_no_trailing(&mut data)?),
-        SignNodeAnnouncement::TYPE => Message::SignNodeAnnouncement(from_vec_no_trailing(&mut data)?),
-        SignNodeAnnouncementReply::TYPE => Message::SignNodeAnnouncementReply(from_vec_no_trailing(&mut data)?),
-        GetPerCommitmentPoint::TYPE => Message::GetPerCommitmentPoint(from_vec_no_trailing(&mut data)?),
-        GetPerCommitmentPointReply::TYPE => Message::GetPerCommitmentPointReply(from_vec_no_trailing(&mut data)?),
+        SignChannelUpdateReply::TYPE =>
+            Message::SignChannelUpdateReply(from_vec_no_trailing(&mut data)?),
+        SignChannelAnnouncement::TYPE =>
+            Message::SignChannelAnnouncement(from_vec_no_trailing(&mut data)?),
+        SignChannelAnnouncementReply::TYPE =>
+            Message::SignChannelAnnouncementReply(from_vec_no_trailing(&mut data)?),
+        SignNodeAnnouncement::TYPE =>
+            Message::SignNodeAnnouncement(from_vec_no_trailing(&mut data)?),
+        SignNodeAnnouncementReply::TYPE =>
+            Message::SignNodeAnnouncementReply(from_vec_no_trailing(&mut data)?),
+        GetPerCommitmentPoint::TYPE =>
+            Message::GetPerCommitmentPoint(from_vec_no_trailing(&mut data)?),
+        GetPerCommitmentPointReply::TYPE =>
+            Message::GetPerCommitmentPointReply(from_vec_no_trailing(&mut data)?),
         ReadyChannel::TYPE => Message::ReadyChannel(from_vec_no_trailing(&mut data)?),
         ReadyChannelReply::TYPE => Message::ReadyChannelReply(from_vec_no_trailing(&mut data)?),
-        ValidateCommitmentTx::TYPE => Message::ValidateCommitmentTx(from_vec_no_trailing(&mut data)?),
-        ValidateCommitmentTxReply::TYPE => Message::ValidateCommitmentTxReply(from_vec_no_trailing(&mut data)?),
+        ValidateCommitmentTx::TYPE =>
+            Message::ValidateCommitmentTx(from_vec_no_trailing(&mut data)?),
+        ValidateCommitmentTxReply::TYPE =>
+            Message::ValidateCommitmentTxReply(from_vec_no_trailing(&mut data)?),
         ValidateRevocation::TYPE => Message::ValidateRevocation(from_vec_no_trailing(&mut data)?),
-        ValidateRevocationReply::TYPE => Message::ValidateRevocationReply(from_vec_no_trailing(&mut data)?),
-        SignRemoteCommitmentTx::TYPE => Message::SignRemoteCommitmentTx(from_vec_no_trailing(&mut data)?),
-        SignDelayedPaymentToUs::TYPE => Message::SignDelayedPaymentToUs(from_vec_no_trailing(&mut data)?),
+        ValidateRevocationReply::TYPE =>
+            Message::ValidateRevocationReply(from_vec_no_trailing(&mut data)?),
+        SignRemoteCommitmentTx::TYPE =>
+            Message::SignRemoteCommitmentTx(from_vec_no_trailing(&mut data)?),
+        SignDelayedPaymentToUs::TYPE =>
+            Message::SignDelayedPaymentToUs(from_vec_no_trailing(&mut data)?),
         SignRemoteHtlcToUs::TYPE => Message::SignRemoteHtlcToUs(from_vec_no_trailing(&mut data)?),
         SignLocalHtlcTx::TYPE => Message::SignLocalHtlcTx(from_vec_no_trailing(&mut data)?),
         SignCommitmentTx::TYPE => Message::SignCommitmentTx(from_vec_no_trailing(&mut data)?),
         SignMutualCloseTx::TYPE => Message::SignMutualCloseTx(from_vec_no_trailing(&mut data)?),
-        SignCommitmentTxReply::TYPE => Message::SignCommitmentTxReply(from_vec_no_trailing(&mut data)?),
+        SignCommitmentTxReply::TYPE =>
+            Message::SignCommitmentTxReply(from_vec_no_trailing(&mut data)?),
         SignTxReply::TYPE => Message::SignTxReply(from_vec_no_trailing(&mut data)?),
-        GetChannelBasepoints::TYPE => Message::GetChannelBasepoints(from_vec_no_trailing(&mut data)?),
-        GetChannelBasepointsReply::TYPE => Message::GetChannelBasepointsReply(from_vec_no_trailing(&mut data)?),
+        GetChannelBasepoints::TYPE =>
+            Message::GetChannelBasepoints(from_vec_no_trailing(&mut data)?),
+        GetChannelBasepointsReply::TYPE =>
+            Message::GetChannelBasepointsReply(from_vec_no_trailing(&mut data)?),
         NewChannel::TYPE => Message::NewChannel(from_vec_no_trailing(&mut data)?),
         NewChannelReply::TYPE => Message::NewChannelReply(from_vec_no_trailing(&mut data)?),
         SignRemoteHtlcTx::TYPE => Message::SignRemoteHtlcTx(from_vec_no_trailing(&mut data)?),
         SignPenaltyToUs::TYPE => Message::SignPenaltyToUs(from_vec_no_trailing(&mut data)?),
-        _ => {
-            Message::Unknown(Unknown { message_type, data: data.clone() })
-        }
+        _ => Message::Unknown(Unknown { message_type, data: data.clone() }),
     };
     Ok(message)
 }
@@ -681,7 +690,7 @@ fn read_message_and_data<R: Read>(reader: &mut R) -> Result<(Message, Vec<u8>)> 
     let len = read_u32(reader)?;
     let mut data = Vec::new();
     if len < 2 {
-        return Err(Error::ShortRead)
+        return Err(Error::ShortRead);
     }
     let message_type = read_u16(reader)?;
     data.resize(len as usize - 2, 0);
@@ -742,7 +751,8 @@ mod tests {
 
     fn parse_fixture(fixture: &str) -> u32 {
         println!("processing {}", fixture);
-        let contents_with_whitespace = fs::read_to_string(format!("fixtures/{}.hex", fixture)).unwrap();
+        let contents_with_whitespace =
+            fs::read_to_string(format!("fixtures/{}.hex", fixture)).unwrap();
         let contents_hex = Regex::new(r"\s").unwrap().replace_all(&contents_with_whitespace, "");
         let mut contents = hex::decode(&*contents_hex).unwrap();
         let mut num_read = 0;

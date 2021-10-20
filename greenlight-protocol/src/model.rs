@@ -4,8 +4,8 @@ use core::fmt::Debug;
 use core::fmt::Formatter;
 use core::marker::PhantomData;
 
-use serde::{de, ser, Serializer};
 use serde::ser::SerializeTuple;
+use serde::{de, ser, Serializer};
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -37,13 +37,15 @@ macro_rules! array_impl {
         }
 
         impl<'de> de::Deserialize<'de> for $ty {
-            fn deserialize<D>(d: D) -> core::result::Result<Self, D::Error> where D: de::Deserializer<'de> {
+            fn deserialize<D>(d: D) -> core::result::Result<Self, D::Error>
+            where
+                D: de::Deserializer<'de>,
+            {
                 struct Visitor {
                     marker: PhantomData<$ty>,
                 }
 
-                impl<'de> de::Visitor<'de> for Visitor
-                {
+                impl<'de> de::Visitor<'de> for Visitor {
                     type Value = $ty;
 
                     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -52,8 +54,8 @@ macro_rules! array_impl {
 
                     #[inline]
                     fn visit_seq<A>(self, mut seq: A) -> core::result::Result<Self::Value, A::Error>
-                        where
-                            A: de::SeqAccess<'de>,
+                    where
+                        A: de::SeqAccess<'de>,
                     {
                         let mut buf = [0u8; $len];
                         for i in 0..buf.len() {
@@ -69,9 +71,7 @@ macro_rules! array_impl {
 
                 impl Visitor {
                     fn new() -> Self {
-                        Self {
-                            marker: PhantomData,
-                        }
+                        Self { marker: PhantomData }
                     }
                 }
                 d.deserialize_tuple($len, Visitor::new())
@@ -79,7 +79,10 @@ macro_rules! array_impl {
         }
 
         impl ser::Serialize for $ty {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
                 let mut tuple = serializer.serialize_tuple(self.0.len())?;
                 for i in 0..self.0.len() {
                     tuple.serialize_element(&self.0[i])?;
@@ -87,7 +90,7 @@ macro_rules! array_impl {
                 tuple.end()
             }
         }
-    }
+    };
 }
 
 array_impl!(PubKey, 33);
@@ -114,7 +117,7 @@ array_impl!(OnionRoutingPacket, 1366);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FailedHtlc {
-    pub id: u64
+    pub id: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
