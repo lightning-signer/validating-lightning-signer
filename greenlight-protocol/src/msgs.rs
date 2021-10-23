@@ -55,7 +55,7 @@ pub struct HsmdInitReply {
     pub node_id: PubKey,
     pub bip32: ExtKey,
     pub bolt12: PubKey32,
-    // pub onion_reply_secret: Secret,
+    pub onion_reply_secret: Secret,
 }
 
 impl TypedMessage for HsmdInitReply {

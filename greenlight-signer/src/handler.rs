@@ -123,10 +123,13 @@ impl Handler for RootHandler {
                 let mut rng = SmallRng::seed_from_u64(0);
                 let (_, bolt12_pubkey) = secp.generate_schnorrsig_keypair(&mut rng);
                 let bolt12_xonly = bolt12_pubkey.serialize();
+                // FIXME bogus onion_reply_secret
+                let onion_reply_secret = [1; 32].try_into().unwrap();
                 Ok(Box::new(msgs::HsmdInitReply {
                     node_id: PubKey(node_id),
                     bip32: ExtKey(bip32),
                     bolt12: PubKey32(bolt12_xonly),
+                    onion_reply_secret: Secret(onion_reply_secret),
                 }))
             }
             Message::Ecdh(m) => {
