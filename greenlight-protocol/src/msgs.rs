@@ -281,8 +281,7 @@ pub struct ReadyChannel {
     pub remote_funding_pubkey: PubKey,
     pub remote_to_self_delay: u16,
     pub remote_shutdown_script: Vec<u8>,
-    pub option_static_remotekey: bool,
-    pub option_anchor_outputs: bool,
+    pub channel_type: Vec<u8>,
 }
 
 impl TypedMessage for ReadyChannel {
