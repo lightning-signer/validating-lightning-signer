@@ -12,7 +12,7 @@ It is both:
 Build C-lightning from the [lightning-signer `remote_hsmd` branch](https://github.com/lightning-signer/c-lightning/tree/remote-hsmd), and then:
 
 ```shell
-ln -sf ../../greenlight-signer/greenlight-signer-hsmd/target/debug/greenlight-signer-hsmd lightningd/remote_hsmd_greenlight
+ln -sf ../../greenlight-signer/target/debug/greenlight-signer-hsmd lightningd/remote_hsmd_greenlight
 export GREENLIGHT_VERSION=`./lightningd/lightningd --version`
 export SUBDAEMON=hsmd:remote_hsmd_greenlight
 export ALLOWLIST=`pwd`/contrib/remote_hsmd/TESTING_ALLOWLIST

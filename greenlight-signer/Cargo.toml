@@ -10,3 +10,4 @@ greenlight-protocol = { path = "../greenlight-protocol" }
 secp256k1 = { version = "0.20", default_features = false, features = ["bitcoin_hashes", "rand"] }
 log = { version = "0.4", default_features = false }
 serde = { version = "1.0", default_features = false }
+bit-vec = { version = "0.6", default_features = false }

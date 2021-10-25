@@ -1,0 +1,7 @@
+[workspace]
+
+members = [
+    "greenlight-protocol",
+    "greenlight-signer",
+    "greenlight-signer-hsmd",
+]

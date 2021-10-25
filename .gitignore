@@ -1,5 +1,6 @@
 **/*.rs.bk
+/Cargo.lock
 /cobertura.xml
 /coverage.txt
-target/
 signer.kv
+target/
