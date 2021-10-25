@@ -3,6 +3,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
+use bit_vec::BitVec;
 use core::convert::TryInto;
 
 use bitcoin::blockdata::script;
@@ -33,6 +34,7 @@ use secp256k1::rand::rngs::SmallRng;
 use secp256k1::rand::SeedableRng;
 use secp256k1::{PublicKey, Secp256k1};
 
+use greenlight_protocol::features::*;
 use greenlight_protocol::model::{
     Basepoints, BitcoinSignature, ExtKey, Htlc, PubKey, PubKey32, RecoverableSignature, Secret,
     Signature,
@@ -123,10 +125,13 @@ impl Handler for RootHandler {
                 let mut rng = SmallRng::seed_from_u64(0);
                 let (_, bolt12_pubkey) = secp.generate_schnorrsig_keypair(&mut rng);
                 let bolt12_xonly = bolt12_pubkey.serialize();
+                // FIXME bogus onion_reply_secret
+                let onion_reply_secret = [1; 32].try_into().unwrap();
                 Ok(Box::new(msgs::HsmdInitReply {
                     node_id: PubKey(node_id),
                     bip32: ExtKey(bip32),
                     bolt12: PubKey32(bolt12_xonly),
+                    onion_reply_secret: Secret(onion_reply_secret),
                 }))
             }
             Message::Ecdh(m) => {
@@ -406,10 +411,7 @@ impl Handler for ChannelHandler {
                     holder_shutdown_script,
                     counterparty_selected_contest_delay: m.remote_to_self_delay as u16,
                     counterparty_shutdown_script,
-                    commitment_type: extract_commitment_type(
-                        m.option_static_remotekey,
-                        m.option_anchor_outputs,
-                    ),
+                    commitment_type: extract_commitment_type(&m.channel_type),
                 };
                 self.node.ready_channel(self.channel_id, None, setup, &holder_shutdown_key_path)?;
 
@@ -733,10 +735,15 @@ fn extract_pubkey(key: &PubKey) -> PublicKey {
     PublicKey::from_slice(&key.0).expect("pubkey")
 }
 
-fn extract_commitment_type(static_remotekey: bool, anchor_outputs: bool) -> CommitmentType {
-    if anchor_outputs {
+fn extract_commitment_type(channel_type: &Vec<u8>) -> CommitmentType {
+    // The byte/bit order from the wire is wrong in every way ...
+    let features = BitVec::from_bytes(
+        &channel_type.iter().rev().map(|bb| bb.reverse_bits()).collect::<Vec<u8>>(),
+    );
+    if features.get(OPT_ANCHOR_OUTPUTS).unwrap_or_default() {
+        assert_eq!(features.get(OPT_STATIC_REMOTEKEY).unwrap_or_default(), true);
         CommitmentType::Anchors
-    } else if static_remotekey {
+    } else if features.get(OPT_STATIC_REMOTEKEY).unwrap_or_default() {
         CommitmentType::StaticRemoteKey
     } else {
         CommitmentType::Legacy
@@ -749,20 +756,6 @@ fn extract_witscripts(psbt: &PartiallySignedTransaction) -> Vec<Vec<u8>> {
         .map(|o| o.witness_script.clone().unwrap_or(Script::new()))
         .map(|s| s[..].to_vec())
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_der() {
-        let sig = [
-            83, 1, 22, 118, 14, 225, 143, 45, 119, 59, 51, 81, 117, 109, 12, 76, 141, 142, 137,
-            167, 117, 28, 98, 150, 245, 134, 254, 105, 172, 236, 170, 4, 24, 195, 101, 175, 186,
-            97, 224, 127, 128, 202, 94, 58, 56, 171, 51, 106, 153, 217, 229, 22, 217, 94, 169, 47,
-            55, 71, 237, 36, 128, 102, 148, 61,
-        ];
-        secp256k1::Signature::from_compact(&sig).expect("signature");
-    }
 }
 
 fn extract_htlcs(htlcs: &Vec<Htlc>) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
@@ -785,4 +778,39 @@ fn extract_htlcs(htlcs: &Vec<Htlc>) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
         })
         .collect();
     (received_htlcs, offered_htlcs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_der() {
+        let sig = [
+            83, 1, 22, 118, 14, 225, 143, 45, 119, 59, 51, 81, 117, 109, 12, 76, 141, 142, 137,
+            167, 117, 28, 98, 150, 245, 134, 254, 105, 172, 236, 170, 4, 24, 195, 101, 175, 186,
+            97, 224, 127, 128, 202, 94, 58, 56, 171, 51, 106, 153, 217, 229, 22, 217, 94, 169, 47,
+            55, 71, 237, 36, 128, 102, 148, 61,
+        ];
+        secp256k1::Signature::from_compact(&sig).expect("signature");
+    }
+
+    #[test]
+    fn test_extract_commitment_type() {
+        assert_eq!(
+            extract_commitment_type(&vec![0x10_u8, 0x10_u8, 0x00_u8]),
+            CommitmentType::Anchors
+        );
+        assert_eq!(
+            extract_commitment_type(&vec![0x10_u8, 0x00_u8]),
+            CommitmentType::StaticRemoteKey
+        );
+        assert_eq!(extract_commitment_type(&vec![0x00_u8, 0x00_u8]), CommitmentType::Legacy);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_extract_commitment_type_panic() {
+        extract_commitment_type(&vec![0x10_u8, 0x00_u8, 0x00_u8]);
+    }
 }
