@@ -3,10 +3,14 @@ use crate::bitcoin::blockdata::constants::DIFFCHANGE_INTERVAL;
 use crate::bitcoin::{BlockHeader, Network};
 use crate::bitcoin::util::uint::Uint256;
 
+/// Error
 #[derive(Debug, PartialEq)]
 pub enum Error {
+    /// Chain progression is invalid (e.g. invalid difficulty change)
     InvalidChain,
+    /// Block is invalid (e.g. block hash not under target)
     InvalidBlock,
+    /// Reorg size greater than [`ChainTracker::MAX_REORG_SIZE`]
     ReorgTooDeep,
 }
 
@@ -21,6 +25,7 @@ pub struct ChainTracker {
 impl ChainTracker {
     const MAX_REORG_SIZE: usize = 100;
 
+    /// Create a new tracker
     pub fn new(network: Network, height: u32, tip: BlockHeader) -> Result<Self, Error> {
         tip.validate_pow(&tip.target())
             .map_err(|_| Error::InvalidBlock)?;
@@ -33,14 +38,17 @@ impl ChainTracker {
         })
     }
 
+    /// Current chain tip header
     pub fn tip(&self) -> BlockHeader {
         self.tip
     }
 
+    /// Height of current chain tip
     pub fn height(&self) -> u32 {
         self.height
     }
 
+    /// Remove block at tip due to reorg
     pub fn remove_block(&mut self) -> Result<BlockHeader, Error> {
         if self.headers.is_empty() {
             return Err(Error::ReorgTooDeep)
@@ -51,6 +59,7 @@ impl ChainTracker {
         Ok(header)
     }
 
+    /// Add a block, which becomes the new tip
     pub fn add_block(&mut self, header: BlockHeader) -> Result<(), Error> {
         // Check hash is correctly chained
         if header.prev_blockhash != self.tip.block_hash() {
@@ -66,15 +75,15 @@ impl ChainTracker {
             let max = prev_target << 2;
             let chain_max = max_target(self.network);
 
-            if target.ge(&chain_max) {
+            if target.gt(&chain_max) {
                 return Err(Error::InvalidBlock);
             }
-            if target.le(&min) || target.ge(&max) {
+            if target.lt(&min) || target.gt(&max) {
                 return Err(Error::InvalidChain);
             }
             // TODO do actual retargeting with timestamps, requires remembering start timestamp
         } else {
-            if header.bits != self.tip.bits {
+            if header.bits != self.tip.bits && self.network != Network::Testnet {
                 return Err(Error::InvalidChain);
             }
         }
