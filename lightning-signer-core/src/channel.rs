@@ -610,9 +610,9 @@ impl Channel {
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             to_counterparty_value_sat,
             to_holder_value_sat,
-            false,
-            self.keys.pubkeys().funding_pubkey,
+            self.setup.option_anchor_outputs(),
             self.keys.counterparty_pubkeys().funding_pubkey,
+            self.keys.pubkeys().funding_pubkey,
             keys,
             feerate_per_kw,
             &mut htlcs_with_aux,
@@ -656,19 +656,13 @@ impl Channel {
             &self.setup.counterparty_points.funding_pubkey,
         );
 
-        let sig_hash_type = if self.setup.option_anchor_outputs() {
-            SigHashType::SinglePlusAnyoneCanPay
-        } else {
-            SigHashType::All
-        };
-
         let sighash = Message::from_slice(
             &SigHashCache::new(&recomposed_tx.trust().built_transaction().transaction)
                 .signature_hash(
                     0,
                     &redeemscript,
                     self.setup.channel_value_sat,
-                    sig_hash_type,
+                    SigHashType::All,
                 )[..],
         )
         .map_err(|ve| internal_error(format!("sighash failed: {}", ve)))?;
@@ -696,6 +690,12 @@ impl Channel {
         )
         .map_err(|err| internal_error(format!("derive_public_key failed: {}", err)))?;
 
+        let sig_hash_type = if self.setup.option_anchor_outputs() {
+            SigHashType::SinglePlusAnyoneCanPay
+        } else {
+            SigHashType::All
+        };
+
         for ndx in 0..recomposed_tx.htlcs().len() {
             let htlc = &recomposed_tx.htlcs()[ndx];
 
@@ -717,7 +717,7 @@ impl Channel {
                     0,
                     &htlc_redeemscript,
                     htlc.amount_msat / 1000,
-                    SigHashType::All,
+                    sig_hash_type,
                 )[..],
             )
             .map_err(|err| invalid_argument(format!("sighash failed for htlc {}: {}", ndx, err)))?;
@@ -935,7 +935,7 @@ impl Channel {
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             to_holder_value_sat,
             to_counterparty_value_sat,
-            false,
+            self.setup.option_anchor_outputs(),
             self.keys.pubkeys().funding_pubkey,
             self.keys.counterparty_pubkeys().funding_pubkey,
             keys,
