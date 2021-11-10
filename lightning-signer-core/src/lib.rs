@@ -27,6 +27,8 @@ extern crate tonic;
 pub use bitcoin;
 pub use lightning;
 
+/// Chain tracking and validation
+pub mod chain;
 /// Various utilities
 #[macro_use]
 pub mod util;
