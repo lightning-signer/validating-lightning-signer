@@ -1,10 +1,10 @@
 use crate::prelude::*;
 
-use crate::bitcoin::blockdata::constants::DIFFCHANGE_INTERVAL;
-use crate::bitcoin::util::merkleblock::PartialMerkleTree;
-use crate::bitcoin::util::uint::Uint256;
-use crate::bitcoin::{BlockHeader, Network, OutPoint, Transaction};
-use alloc::collections::{VecDeque, BTreeSet as Set};
+use alloc::collections::{BTreeMap as Map, BTreeSet as Set, VecDeque};
+use bitcoin::blockdata::constants::DIFFCHANGE_INTERVAL;
+use bitcoin::util::merkleblock::PartialMerkleTree;
+use bitcoin::util::uint::Uint256;
+use bitcoin::{BlockHeader, Network, OutPoint, Transaction};
 
 /// Error
 #[derive(Debug, PartialEq)]
@@ -20,21 +20,20 @@ pub enum Error {
 }
 
 struct ListenSlot {
-    listener: Box<dyn ChainListener>,
     watches: Set<OutPoint>,
     seen: Set<OutPoint>,
 }
 
 /// Track chain, with basic validation
-pub struct ChainTracker {
+pub struct ChainTracker<L: ChainListener + Ord> {
     headers: VecDeque<BlockHeader>,
     tip: BlockHeader,
     height: u32,
     network: Network,
-    listeners: Vec<ListenSlot>,
+    listeners: Map<L, ListenSlot>,
 }
 
-impl ChainTracker {
+impl<L: ChainListener + Ord> ChainTracker<L> {
     const MAX_REORG_SIZE: usize = 100;
 
     /// Create a new tracker
@@ -42,7 +41,7 @@ impl ChainTracker {
         tip.validate_pow(&tip.target())
             .map_err(|_| Error::InvalidBlock)?;
         let headers = VecDeque::new();
-        let listeners = Vec::new();
+        let listeners = Map::new();
         Ok(ChainTracker {
             headers,
             tip,
@@ -63,9 +62,10 @@ impl ChainTracker {
     }
 
     /// Remove block at tip due to reorg
-    pub fn remove_block(&mut self,
-                        txs: Vec<Transaction>,
-                        txs_proof: Option<PartialMerkleTree>,
+    pub fn remove_block(
+        &mut self,
+        txs: Vec<Transaction>,
+        txs_proof: Option<PartialMerkleTree>,
     ) -> Result<BlockHeader, Error> {
         if self.headers.is_empty() {
             return Err(Error::ReorgTooDeep);
@@ -79,7 +79,7 @@ impl ChainTracker {
     }
 
     fn notify_listeners_remove(&mut self, txs: &Vec<Transaction>) {
-        for slot in &mut self.listeners {
+        for (listener, slot) in self.listeners.iter_mut() {
             let mut matched = Vec::new();
             for tx in txs.iter().rev() {
                 // Remove any outpoints that were seen as spent when we added this block
@@ -97,7 +97,10 @@ impl ChainTracker {
                 for (vout, _) in tx.output.iter().enumerate() {
                     let outpoint = OutPoint::new(txid, vout as u32);
                     if slot.watches.remove(&outpoint) {
-                        assert!(input_matched, "a watch was previously added without any inputs matching");
+                        assert!(
+                            input_matched,
+                            "a watch was previously added without any inputs matching"
+                        );
                     }
                 }
 
@@ -105,7 +108,7 @@ impl ChainTracker {
                     matched.push(tx);
                 }
             }
-            slot.listener.on_remove_block(matched);
+            listener.on_remove_block(matched);
         }
     }
 
@@ -128,7 +131,7 @@ impl ChainTracker {
     }
 
     fn notify_listeners_add(&mut self, txs: &Vec<Transaction>) {
-        for slot in &mut self.listeners {
+        for (listener, slot) in self.listeners.iter_mut() {
             let mut matched = Vec::new();
             for tx in txs {
                 let mut found = false;
@@ -142,23 +145,27 @@ impl ChainTracker {
                     matched.push(tx);
                 }
             }
-            let new_watches = slot.listener.on_add_block(matched);
+            let new_watches = listener.on_add_block(matched);
             slot.watches.extend(new_watches);
         }
     }
 
     /// Add a listener and initialize the watched outpoint set
-    pub fn add_listener(
-        &mut self,
-        listener: Box<dyn ChainListener>,
-        initial_watches: Set<OutPoint>,
-    ) {
+    pub fn add_listener(&mut self, listener: L, initial_watches: Set<OutPoint>) {
         let slot = ListenSlot {
-            listener,
             watches: initial_watches,
             seen: Set::new(),
         };
-        self.listeners.push(slot);
+        self.listeners.insert(listener, slot);
+    }
+
+    /// Add more watches to a listener
+    pub fn add_listener_watches(&mut self, listener: L, watches: Set<OutPoint>) {
+        let slot = self
+            .listeners
+            .get_mut(&listener)
+            .expect("trying to add watches to non-existent listener");
+        slot.watches.extend(watches);
     }
 
     fn validate_block(
@@ -199,7 +206,11 @@ impl ChainTracker {
         Ok(())
     }
 
-    fn validate_spv(header: &BlockHeader, txs: &Vec<Transaction>, txs_proof: Option<PartialMerkleTree>) -> Result<(), Error> {
+    fn validate_spv(
+        header: &BlockHeader,
+        txs: &Vec<Transaction>,
+        txs_proof: Option<PartialMerkleTree>,
+    ) -> Result<(), Error> {
         // Check SPV proof
         if let Some(txs_proof) = txs_proof {
             let mut matches = Vec::new();
@@ -226,13 +237,13 @@ impl ChainTracker {
 }
 
 /// Listen to chain events
-pub trait ChainListener {
+pub trait ChainListener: SendSync {
     /// A block was added, and zero or more transactions consume watched outpoints.
     /// The listener returns zero or more new outpoints to watch.
-    fn on_add_block(&mut self, txs: Vec<&Transaction>) -> Vec<&OutPoint>;
+    fn on_add_block(&self, txs: Vec<&Transaction>) -> Vec<OutPoint>;
     /// A block was deleted.
     /// The tracker will revert any changes to the watched outpoints set.
-    fn on_remove_block(&mut self, txs: Vec<&Transaction>);
+    fn on_remove_block(&self, txs: Vec<&Transaction>);
 }
 
 /// The one in rust-bitcoin is incorrect for Regtest at least
@@ -245,12 +256,14 @@ pub fn max_target(network: Network) -> Uint256 {
 
 #[cfg(test)]
 mod tests {
-    use core::iter::FromIterator;
     use super::*;
     use crate::bitcoin::blockdata::constants::genesis_block;
+    use crate::bitcoin::hashes::_export::_core::cmp::Ordering;
     use crate::bitcoin::network::constants::Network;
     use crate::bitcoin::util::hash::bitcoin_merkle_root;
-    use crate::bitcoin::{BlockHash, TxMerkleNode, Txid, TxIn};
+    use crate::bitcoin::{BlockHash, TxIn, TxMerkleNode, Txid};
+    use crate::util::test_utils::*;
+    use core::iter::FromIterator;
 
     #[test]
     fn test_add_remove() -> Result<(), Error> {
@@ -276,34 +289,70 @@ mod tests {
 
         let header_removed = tracker.remove_block(vec![], None)?;
         assert_eq!(header, header_removed);
-        assert_eq!(tracker.remove_block(vec![], None).err(), Some(Error::ReorgTooDeep));
+        assert_eq!(
+            tracker.remove_block(vec![], None).err(),
+            Some(Error::ReorgTooDeep)
+        );
         Ok(())
     }
 
     struct MockListener {
         watch: OutPoint,
-        watched: bool,
+        watched: Mutex<bool>,
+    }
+
+    impl SendSync for MockListener {}
+
+    impl PartialEq<Self> for MockListener {
+        fn eq(&self, other: &Self) -> bool {
+            self.watch.eq(&other.watch)
+        }
+    }
+
+    impl PartialOrd for MockListener {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            self.watch.partial_cmp(&other.watch)
+        }
+    }
+
+    impl Eq for MockListener {}
+
+    impl Ord for MockListener {
+        fn cmp(&self, other: &Self) -> Ordering {
+            self.watch.cmp(&other.watch)
+        }
+    }
+
+    impl Clone for MockListener {
+        fn clone(&self) -> Self {
+            // We just need this to have the right `Ord` semantics
+            // the value of `watched` doesn't matter
+            Self {
+                watch: self.watch,
+                watched: Mutex::new(false),
+            }
+        }
     }
 
     impl ChainListener for MockListener {
-        fn on_add_block(&mut self, _txs: Vec<&Transaction>) -> Vec<&OutPoint> {
-            if self.watched {
+        fn on_add_block(&self, _txs: Vec<&Transaction>) -> Vec<OutPoint> {
+            let mut watched = self.watched.lock().unwrap();
+            if *watched {
                 vec![]
             } else {
-                self.watched = true;
-                vec![&self.watch]
+                *watched = true;
+                vec![self.watch]
             }
         }
 
-        fn on_remove_block(&mut self, _txs: Vec<&Transaction>) {
-        }
+        fn on_remove_block(&self, _txs: Vec<&Transaction>) {}
     }
 
     impl MockListener {
         fn new(watch: OutPoint) -> Self {
             MockListener {
                 watch,
-                watched: false
+                watched: Mutex::new(false),
             }
         }
     }
@@ -320,73 +369,73 @@ mod tests {
         let second_watch = OutPoint::new(tx.txid(), 0);
         let listener = MockListener::new(second_watch);
 
-        tracker.add_listener(Box::new(listener), Set::from_iter(vec![initial_watch]));
+        tracker.add_listener(listener.clone(), Set::from_iter(vec![initial_watch]));
         assert_eq!(tracker.listeners.len(), 1);
-        assert_eq!(tracker.listeners[0].watches, Set::from_iter(vec![initial_watch]));
+        assert_eq!(
+            tracker.listeners.get(&listener).unwrap().watches,
+            Set::from_iter(vec![initial_watch])
+        );
 
         add_block(&mut tracker, tx.clone())?;
 
-        assert_eq!(tracker.listeners[0].watches, Set::from_iter(vec![second_watch]));
+        assert_eq!(
+            tracker.listeners.get(&listener).unwrap().watches,
+            Set::from_iter(vec![second_watch])
+        );
 
         let tx2 = make_tx(vec![TxIn {
             previous_output: second_watch,
             script_sig: Default::default(),
             sequence: 0,
-            witness: vec![]
+            witness: vec![],
         }]);
 
         add_block(&mut tracker, tx2.clone())?;
 
-        assert_eq!(tracker.listeners[0].watches, Set::new());
+        assert_eq!(
+            tracker.listeners.get(&listener).unwrap().watches,
+            Set::new()
+        );
 
         remove_block(&mut tracker, tx2.clone())?;
 
-        assert_eq!(tracker.listeners[0].watches, Set::from_iter(vec![second_watch]));
+        assert_eq!(
+            tracker.listeners.get(&listener).unwrap().watches,
+            Set::from_iter(vec![second_watch])
+        );
 
         remove_block(&mut tracker, tx.clone())?;
 
-        assert_eq!(tracker.listeners[0].watches, Set::from_iter(vec![initial_watch]));
+        assert_eq!(
+            tracker.listeners.get(&listener).unwrap().watches,
+            Set::from_iter(vec![initial_watch])
+        );
 
         Ok(())
     }
 
-    fn add_block(tracker: &mut ChainTracker, tx: Transaction) -> Result<(), Error> {
+    fn add_block(tracker: &mut ChainTracker<MockListener>, tx: Transaction) -> Result<(), Error> {
         let txids = [tx.txid()];
         let proof = PartialMerkleTree::from_txids(&txids, &[true]);
 
         let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).into();
 
-        tracker.add_block(make_header(tracker.tip(), merkle_root), vec![tx], Some(proof))
+        tracker.add_block(
+            make_header(tracker.tip(), merkle_root),
+            vec![tx],
+            Some(proof),
+        )
     }
 
-    fn remove_block(tracker: &mut ChainTracker, tx: Transaction) -> Result<(), Error> {
+    fn remove_block(
+        tracker: &mut ChainTracker<MockListener>,
+        tx: Transaction,
+    ) -> Result<(), Error> {
         let txids = [tx.txid()];
         let proof = PartialMerkleTree::from_txids(&txids, &[true]);
 
         tracker.remove_block(vec![tx], Some(proof))?;
         Ok(())
-    }
-
-    fn make_tx(inputs: Vec<TxIn>) -> Transaction {
-        Transaction {
-            version: 0,
-            lock_time: 0,
-            input: inputs,
-            output: vec![Default::default()],
-        }
-    }
-
-    fn make_txin(vout: u32) -> TxIn {
-        TxIn {
-            previous_output: make_outpoint(vout),
-            script_sig: Default::default(),
-            sequence: 0,
-            witness: vec![]
-        }
-    }
-
-    fn make_outpoint(vout: u32) -> OutPoint {
-        OutPoint { txid: Default::default(), vout }
     }
 
     #[test]
@@ -473,7 +522,7 @@ mod tests {
         Ok(())
     }
 
-    fn make_tracker() -> Result<ChainTracker, Error> {
+    fn make_tracker() -> Result<ChainTracker<MockListener>, Error> {
         let genesis = genesis_block(Network::Regtest);
         let tracker = ChainTracker::new(Network::Regtest, 0, genesis.header)?;
         Ok(tracker)

@@ -34,6 +34,8 @@ pub mod chain;
 pub mod util;
 /// Channel
 pub mod channel;
+/// Channel on-chain monitor
+pub mod monitor;
 /// Node
 pub mod node;
 /// Persistence

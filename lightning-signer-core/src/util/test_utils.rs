@@ -11,7 +11,7 @@ use bitcoin::network::constants::Network;
 use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1, SecretKey, SignOnly, Signature};
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::psbt::serialize::Serialize;
-use bitcoin::{Address, OutPoint as BitcoinOutPoint, SigHashType, TxIn, TxOut};
+use bitcoin::{Address, OutPoint as BitcoinOutPoint, SigHashType, Transaction, TxIn, TxOut};
 use chain::chaininterface;
 use lightning::chain;
 use lightning::chain::channelmonitor::MonitorEvent;
@@ -1546,4 +1546,29 @@ pub fn hex_decode(s: &str) -> Result<Vec<u8>, hex::Error> {
 
 pub fn hex_encode(o: &[u8]) -> String {
     o.to_hex()
+}
+
+pub fn make_tx(inputs: Vec<TxIn>) -> Transaction {
+    Transaction {
+        version: 0,
+        lock_time: 0,
+        input: inputs,
+        output: vec![Default::default()],
+    }
+}
+
+pub fn make_txin(vout: u32) -> TxIn {
+    TxIn {
+        previous_output: make_outpoint(vout),
+        script_sig: Default::default(),
+        sequence: 0,
+        witness: vec![],
+    }
+}
+
+pub fn make_outpoint(vout: u32) -> BitcoinOutPoint {
+    BitcoinOutPoint {
+        txid: Default::default(),
+        vout,
+    }
 }
