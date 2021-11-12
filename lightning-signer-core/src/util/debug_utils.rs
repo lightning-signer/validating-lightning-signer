@@ -33,7 +33,10 @@ macro_rules! log_channel_public_keys {
 #[macro_export]
 macro_rules! trace_enforcement_state {
     ($estate: expr) => {
+        #[cfg(not(feature = "debug_enforcement_state"))]
         trace!("{}:\n{:#?}", function!(), $estate);
+        #[cfg(feature = "debug_enforcement_state")]
+        debug!("{}:\n{:#?}", function!(), $estate);
     };
 }
 

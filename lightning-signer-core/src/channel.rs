@@ -17,6 +17,8 @@ use lightning::ln::chan_utils::{
     CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
     TxCreationKeys,
 };
+
+#[allow(unused_imports)]
 use log::{debug, trace, warn};
 
 use crate::monitor::ChainMonitor;
@@ -1112,6 +1114,7 @@ impl Channel {
         .map_err(|_| Status::internal("failed to derive key"))?;
 
         let sig = self.secp_ctx.sign(&sighash, &privkey);
+        trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok(sig)
     }
@@ -1155,6 +1158,7 @@ impl Channel {
         .map_err(|_| Status::internal("failed to derive key"))?;
 
         let sig = self.secp_ctx.sign(&htlc_sighash, &htlc_privkey);
+        trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok(sig)
     }
@@ -1197,6 +1201,7 @@ impl Channel {
         .map_err(|_| Status::internal("failed to derive key"))?;
 
         let sig = self.secp_ctx.sign(&sighash, &privkey);
+        trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok(sig)
     }
