@@ -1013,7 +1013,8 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
-             to_holder_value 1000000 is smaller than holder_info.broadcaster_value_sat 2078000"
+             to_counterparty_value 1998000 is larger than \
+             counterparty_info.broadcaster_value_sat 1000000"
         );
     }
 
@@ -1042,7 +1043,8 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
-             to_holder_value 1000000 is smaller than holder_info.broadcaster_value_sat 1918000"
+             to_counterparty_value 1998000 is larger than \
+             counterparty_info.broadcaster_value_sat 1000000"
         );
     }
 
@@ -1071,7 +1073,8 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
-             to_holder_value 1000000 is smaller than holder_info.broadcaster_value_sat 1998000"
+             to_counterparty_value 1998000 is larger than \
+             counterparty_info.broadcaster_value_sat 1080000"
         );
     }
 
@@ -1100,7 +1103,8 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
-             to_holder_value 1000000 is smaller than holder_info.broadcaster_value_sat 1998000"
+             to_counterparty_value 1998000 is larger than \
+             counterparty_info.broadcaster_value_sat 920000"
         );
     }
 }

@@ -1036,26 +1036,59 @@ impl Validator for SimpleValidator {
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // policy-mutual-value-matches-commitment
-        if let (true, descr) =
-            self.outside_epsilon_range(to_holder_value_sat, holder_info.to_broadcaster_value_sat)
-        {
-            return policy_err!(
-                "to_holder_value {} is {} than holder_info.broadcaster_value_sat {}",
+        // To make this test independent of variable fees we compare the side that
+        // isn't paying the fees.
+        if setup.is_outbound {
+            // We are the funder and paying the fees, make sure the counterparty's output matches
+            // the latest commitments.  Our value will then be enforced by the max-fee policy.
+            if let (true, descr) = self.outside_epsilon_range(
+                to_counterparty_value_sat,
+                counterparty_info.to_broadcaster_value_sat,
+            ) {
+                return policy_err!(
+                    "to_counterparty_value {} \
+                     is {} than counterparty_info.broadcaster_value_sat {}",
+                    to_counterparty_value_sat,
+                    descr,
+                    counterparty_info.to_broadcaster_value_sat
+                );
+            }
+            if let (true, descr) = self.outside_epsilon_range(
+                to_counterparty_value_sat,
+                holder_info.to_countersigner_value_sat,
+            ) {
+                return policy_err!(
+                    "to_counterparty_value {} \
+                     is {} than holder_info.countersigner_value_sat {}",
+                    to_counterparty_value_sat,
+                    descr,
+                    holder_info.to_countersigner_value_sat
+                );
+            }
+        } else {
+            // The counterparty is the funder, make sure the holder's
+            // output matches the latest commitments.
+            if let (true, descr) = self
+                .outside_epsilon_range(to_holder_value_sat, holder_info.to_broadcaster_value_sat)
+            {
+                return policy_err!(
+                    "to_holder_value {} is {} than holder_info.broadcaster_value_sat {}",
+                    to_holder_value_sat,
+                    descr,
+                    holder_info.to_broadcaster_value_sat
+                );
+            }
+            if let (true, descr) = self.outside_epsilon_range(
                 to_holder_value_sat,
-                descr,
-                holder_info.to_broadcaster_value_sat
-            );
-        }
-        if let (true, descr) = self.outside_epsilon_range(
-            to_holder_value_sat,
-            counterparty_info.to_countersigner_value_sat,
-        ) {
-            return policy_err!(
-                "to_holder_value {} is {} than counterparty_info.countersigner_value_sat {}",
-                to_holder_value_sat,
-                descr,
-                counterparty_info.to_countersigner_value_sat
-            );
+                counterparty_info.to_countersigner_value_sat,
+            ) {
+                return policy_err!(
+                    "to_holder_value {} is {} than counterparty_info.countersigner_value_sat {}",
+                    to_holder_value_sat,
+                    descr,
+                    counterparty_info.to_countersigner_value_sat
+                );
+            }
         }
 
         // policy-mutual-destination-allowlisted
