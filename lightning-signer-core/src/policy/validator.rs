@@ -233,7 +233,7 @@ impl EnforcementState {
             if let Some(cinfo) = &self.current_counterparty_commit_info {
                 let hval = hinfo.to_broadcaster_value_sat;
                 let cval = cinfo.to_countersigner_value_sat;
-                debug!("hval={}, cval={}", hval, cval);
+                debug!("min to_holder: hval={}, cval={}", hval, cval);
                 if hval > cval {
                     if hval - cval <= epsilon_sat {
                         return Some(cval);
@@ -257,6 +257,7 @@ impl EnforcementState {
             if let Some(cinfo) = &self.current_counterparty_commit_info {
                 let hval = hinfo.to_countersigner_value_sat;
                 let cval = cinfo.to_broadcaster_value_sat;
+                debug!("min to_cparty: hval={}, cval={}", hval, cval);
                 if hval > cval {
                     if hval - cval <= epsilon_sat {
                         return Some(cval);
