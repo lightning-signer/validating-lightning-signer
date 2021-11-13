@@ -1,6 +1,8 @@
+use alloc::collections::BTreeSet as Set;
 use core::any::Any;
 use core::fmt;
 use core::fmt::{Debug, Error, Formatter};
+use core::iter::FromIterator;
 
 use bitcoin::hashes::hex;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
@@ -8,7 +10,7 @@ use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{self, All, Message, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::bip143::SigHashCache;
-use bitcoin::{Network, OutPoint, Script, SigHashType};
+use bitcoin::{Network, OutPoint, Script, SigHashType, Transaction};
 use lightning::chain;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface};
 use lightning::ln::chan_utils::{
@@ -19,6 +21,7 @@ use lightning::ln::chan_utils::{
 };
 use log::{debug, trace, warn};
 
+use crate::monitor::ChainMonitor;
 use crate::node::Node;
 use crate::policy::error::policy_error;
 use crate::policy::validator::{ChainState, EnforcementState, Validator};
@@ -300,6 +303,8 @@ pub struct Channel {
     pub id0: ChannelId,
     /// The optional permanent channel ID
     pub id: Option<ChannelId>,
+    /// The chain monitor
+    pub monitor: ChainMonitor,
 }
 
 impl Debug for Channel {
@@ -1213,6 +1218,21 @@ impl Channel {
     /// The node's network
     pub fn network(&self) -> Network {
         self.get_node().network()
+    }
+
+    /// The node has signed our funding transaction
+    pub fn funding_signed(&self, tx: &Transaction, vout: u32) {
+        // the lock order is backwards (monitor -> tracker), but we release
+        // the monitor lock, so it's OK
+        self.monitor.add_funding(tx, vout);
+        let inputs = Set::from_iter(tx.input.iter().map(|i| i.previous_output));
+        self.node
+            .upgrade()
+            .unwrap()
+            .tracker
+            .lock()
+            .unwrap()
+            .add_listener_watches(self.monitor.clone(), inputs);
     }
 }
 

@@ -1,3 +1,4 @@
+use alloc::collections::BTreeSet as Set;
 use core::convert::TryFrom;
 use core::convert::TryInto;
 use core::fmt::{self, Debug, Formatter};
@@ -26,7 +27,9 @@ use lightning::ln::chan_utils::{
 use lightning::util::logger::Logger;
 use log::{info, trace};
 
+use crate::chain::tracker::ChainTracker;
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub};
+use crate::monitor::ChainMonitor;
 use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
 use crate::policy::simple_validator::SimpleValidatorFactory;
@@ -86,6 +89,7 @@ pub struct Node {
     pub(crate) validator_factory: Mutex<Box<dyn ValidatorFactory>>,
     pub(crate) persister: Arc<dyn Persist>,
     allowlist: Mutex<UnorderedSet<Script>>,
+    pub(crate) tracker: Mutex<ChainTracker<ChainMonitor>>,
 }
 
 impl Wallet for Node {
@@ -126,7 +130,13 @@ impl Node {
         persister: &Arc<Persist>,
         allowlist: Vec<Script>,
     ) -> Node {
-        let now = Duration::from_secs(genesis_block(node_config.network).header.time as u64);
+        let genesis = genesis_block(node_config.network);
+        let now = Duration::from_secs(genesis.header.time as u64);
+
+        // TODO supply current tip
+        let tracker = Mutex::new(
+            ChainTracker::new(node_config.network, 0, genesis.header).expect("bad  chain tip"),
+        );
 
         Node {
             keys_manager: MyKeysManager::new(
@@ -141,6 +151,7 @@ impl Node {
             validator_factory: Mutex::new(Box::new(SimpleValidatorFactory {})),
             persister: Arc::clone(persister),
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
+            tracker,
         }
     }
 
@@ -347,6 +358,7 @@ impl Node {
                 let channel_transaction_parameters =
                     Node::channel_setup_to_channel_transaction_parameters(&setup, keys.pubkeys());
                 keys.ready_channel(&channel_transaction_parameters);
+                let funding_outpoint = setup.funding_outpoint;
                 let channel = Channel {
                     node: Arc::downgrade(arc_self),
                     nonce,
@@ -356,6 +368,7 @@ impl Node {
                     setup,
                     id0: channel_id0,
                     id: channel_id,
+                    monitor: ChainMonitor::new(funding_outpoint),
                 };
                 // TODO this clone is expensive
                 let slot = Arc::new(Mutex::new(ChannelSlot::Ready(channel.clone())));
@@ -458,6 +471,13 @@ impl Node {
             let channel_transaction_parameters =
                 Node::channel_setup_to_channel_transaction_parameters(&setup, holder_pubkeys);
             keys.ready_channel(&channel_transaction_parameters);
+            let funding_outpoint = setup.funding_outpoint;
+            let monitor = ChainMonitor::new(funding_outpoint);
+            // Don't watch anything initially, wait until we are asked to sign funding
+            self.tracker
+                .lock()
+                .unwrap()
+                .add_listener(monitor.clone(), Set::new());
             Channel {
                 node: Weak::clone(&stub.node),
                 nonce: stub.nonce.clone(),
@@ -467,6 +487,7 @@ impl Node {
                 setup: setup.clone(),
                 id0: channel_id0,
                 id: opt_channel_id,
+                monitor,
             }
         };
         let validator = self
@@ -554,7 +575,7 @@ impl Node {
             })
             .collect();
 
-        validator.validate_onchain_tx(self, channels, &cstate, tx, values_sat, opaths)?;
+        validator.validate_onchain_tx(self, channels.clone(), &cstate, tx, values_sat, opaths)?;
 
         let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for idx in 0..tx.input.len() {
@@ -607,6 +628,17 @@ impl Node {
                 witvec.push((sigvec, pubkey.key.serialize().to_vec()));
             }
         }
+
+        for (vout, slot_opt) in channels.iter().enumerate() {
+            if let Some(slot_mutex) = slot_opt {
+                let slot = slot_mutex.lock().unwrap();
+                match &*slot {
+                    ChannelSlot::Stub(_) => panic!("this can't happen"),
+                    ChannelSlot::Ready(chan) => chan.funding_signed(tx, vout as u32),
+                }
+            }
+        }
+
         // TODO(devrandom) self.persist_channel(node_id, chan);
         Ok(witvec)
     }
