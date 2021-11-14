@@ -6,8 +6,11 @@ use crate::bitcoin::hashes::_export::_core::cmp::Ordering;
 use crate::chain::tracker::ChainListener;
 use crate::prelude::*;
 use crate::Arc;
+use crate::policy::validator::ChainState;
 
 struct State {
+    // Chain height
+    height: u32,
     // funding txids
     funding_txids: Vec<Txid>,
     // the funding output index for each funding tx
@@ -52,8 +55,9 @@ impl Ord for ChainMonitor {
 impl ChainMonitor {
     /// Create a new chain monitor.
     /// Use add_funding to really start monitoring.
-    pub fn new(funding_outpoint: OutPoint) -> Self {
+    pub fn new(funding_outpoint: OutPoint, height: u32) -> Self {
         let state = State {
+            height,
             funding_txids: Vec::new(),
             funding_vouts: Vec::new(),
             funding_inputs: Set::new(),
@@ -94,6 +98,16 @@ impl ChainMonitor {
     pub fn funding_double_spent_depth(&self) -> u32 {
         let state = self.state.lock().expect("lock");
         state.funding_double_spent_depth.unwrap_or(0)
+    }
+
+    /// Convert to a ChainState, to be used for validation
+    pub fn as_chain_state(&self) -> ChainState {
+        let state = self.state.lock().expect("lock");
+        ChainState {
+            current_height: state.height,
+            funding_depth: state.funding_depth.unwrap_or(0),
+            funding_double_spent_depth: state.funding_double_spent_depth.unwrap_or(0),
+        }
     }
 }
 
@@ -169,7 +183,7 @@ mod tests {
     fn test_funding() {
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);
         let outpoint = OutPoint::new(tx.txid(), 0);
-        let monitor = ChainMonitor::new(outpoint);
+        let monitor = ChainMonitor::new(outpoint, 0);
         monitor.add_funding(&tx, 0);
         monitor.on_add_block(vec![]);
         monitor.on_add_block(vec![&tx]);
@@ -190,7 +204,7 @@ mod tests {
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);
         let tx2 = make_tx(vec![make_txin(2)]);
         let outpoint = OutPoint::new(tx.txid(), 0);
-        let monitor = ChainMonitor::new(outpoint);
+        let monitor = ChainMonitor::new(outpoint, 0);
         monitor.add_funding(&tx, 0);
         monitor.on_add_block(vec![]);
         monitor.on_add_block(vec![&tx2]);

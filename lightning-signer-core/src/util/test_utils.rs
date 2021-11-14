@@ -240,6 +240,8 @@ pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> Public
 pub fn make_test_chain_state() -> ChainState {
     ChainState {
         current_height: 1000,
+        funding_depth: 0,
+        funding_double_spent_depth: 0
     }
 }
 
@@ -744,7 +746,7 @@ pub fn funding_tx_sign(
     tx_ctx: &TestFundingTxContext,
     tx: &bitcoin::Transaction,
 ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Status> {
-    let cstate = ChainState { current_height: 0 };
+    let cstate = make_test_chain_state();
     node_ctx.node.sign_onchain_tx(
         &cstate,
         &tx,
@@ -1025,7 +1027,7 @@ pub fn validate_holder_commitment(
             .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
-            let cstate = ChainState { current_height: 0 };
+            let cstate = make_test_chain_state();
 
             chan.validate_holder_commitment_tx(
                 &cstate,
@@ -1087,7 +1089,7 @@ pub fn sign_holder_commitment(
             .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
-            let cstate = ChainState { current_height: 0 };
+            let cstate = make_test_chain_state();
 
             chan.sign_holder_commitment_tx(
                 &cstate,
@@ -1522,7 +1524,7 @@ where
                 .transaction
                 .clone();
 
-            let cstate = ChainState { current_height: 0 };
+            let cstate = make_test_chain_state();
 
             chan.validate_holder_commitment_tx(
                 &cstate,

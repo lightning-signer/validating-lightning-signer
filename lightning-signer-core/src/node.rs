@@ -19,6 +19,7 @@ use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, Address, Transaction, TxOut};
 use bitcoin::{Network, OutPoint, Script, SigHashType};
+use hashbrown::HashMap;
 use lightning::chain;
 use lightning::chain::keysinterface::{BaseSign, KeysInterface, SpendableOutputDescriptor};
 use lightning::ln::chan_utils::{
@@ -220,21 +221,8 @@ impl Node {
         &self,
         outpoint: &OutPoint,
     ) -> Option<Arc<Mutex<ChannelSlot>>> {
-        let guard = self.channels.lock().unwrap();
-        for (_, slot_arc) in guard.iter() {
-            let slot = slot_arc.lock().unwrap();
-            match &*slot {
-                ChannelSlot::Ready(chan) => {
-                    if chan.setup.funding_outpoint == *outpoint {
-                        return Some(Arc::clone(slot_arc));
-                    }
-                }
-                ChannelSlot::Stub(_stub) => {
-                    // ignore stubs ...
-                }
-            }
-        }
-        None
+        let channels_lock = self.channels.lock().unwrap();
+        find_channel_with_funding_outpoint(&channels_lock, outpoint)
     }
 
     /// Create a new channel, which starts out as a stub.
@@ -359,6 +347,8 @@ impl Node {
                     Node::channel_setup_to_channel_transaction_parameters(&setup, keys.pubkeys());
                 keys.ready_channel(&channel_transaction_parameters);
                 let funding_outpoint = setup.funding_outpoint;
+                // FIXME correct persistence
+                let monitor = ChainMonitor::new(funding_outpoint, 0);
                 let channel = Channel {
                     node: Arc::downgrade(arc_self),
                     nonce,
@@ -368,7 +358,7 @@ impl Node {
                     setup,
                     id0: channel_id0,
                     id: channel_id,
-                    monitor: ChainMonitor::new(funding_outpoint),
+                    monitor,
                 };
                 // TODO this clone is expensive
                 let slot = Arc::new(Mutex::new(ChannelSlot::Ready(channel.clone())));
@@ -453,6 +443,7 @@ impl Node {
         setup: ChannelSetup,
         holder_shutdown_key_path: &Vec<u32>,
     ) -> Result<Channel, Status> {
+        let mut tracker = self.tracker.lock().unwrap();
         let chan = {
             let channels = self.channels.lock().unwrap();
             let arcobj = channels.get(&channel_id0).ok_or_else(|| {
@@ -472,12 +463,7 @@ impl Node {
                 Node::channel_setup_to_channel_transaction_parameters(&setup, holder_pubkeys);
             keys.ready_channel(&channel_transaction_parameters);
             let funding_outpoint = setup.funding_outpoint;
-            let monitor = ChainMonitor::new(funding_outpoint);
-            // Don't watch anything initially, wait until we are asked to sign funding
-            self.tracker
-                .lock()
-                .unwrap()
-                .add_listener(monitor.clone(), Set::new());
+            let monitor = ChainMonitor::new(funding_outpoint, tracker.height());
             Channel {
                 node: Weak::clone(&stub.node),
                 nonce: stub.nonce.clone(),
@@ -503,21 +489,24 @@ impl Node {
         // Wrap the ready channel with an arc so we can potentially
         // refer to it multiple times.
         // TODO this clone is expensive
-        let arcobj = Arc::new(Mutex::new(ChannelSlot::Ready(chan.clone())));
+        let chan_arc = Arc::new(Mutex::new(ChannelSlot::Ready(chan.clone())));
 
         // If a permanent channel_id was provided use it, otherwise
         // continue with the initial channel_id0.
         let chan_id = opt_channel_id.unwrap_or(channel_id0);
 
         // Associate the new ready channel with the channel id.
-        channels.insert(chan_id, arcobj.clone());
+        channels.insert(chan_id, chan_arc.clone());
 
         // If we are using a new permanent channel_id additionally
         // associate the channel with the original (initial)
         // channel_id as well.
         if channel_id0 != chan_id {
-            channels.insert(channel_id0, arcobj.clone());
+            channels.insert(channel_id0, chan_arc.clone());
         }
+
+        // Don't watch anything initially, wait until we are asked to sign funding
+        tracker.add_listener(chan.monitor.clone(), Set::new());
 
         trace_enforcement_state!(&chan.enforcement_state);
         self.persister
@@ -551,10 +540,11 @@ impl Node {
         uniclosekeys: &Vec<Option<SecretKey>>,
         opaths: &Vec<Vec<u32>>,
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Status> {
+        let channels_lock = self.channels.lock().unwrap();
         let secp_ctx = Secp256k1::signing_only();
 
-        // Funding transactions cannot be associated with a single channel; a single
-        // transaction may fund multiple channels
+        // Funding transactions cannot be associated with just a single channel;
+        // a single transaction may fund multiple channels
 
         let validator = self
             .validator_factory
@@ -562,18 +552,18 @@ impl Node {
             .unwrap()
             .make_validator(self.network());
 
-        let channels: Vec<Option<Arc<Mutex<ChannelSlot>>>> = tx
-            .output
-            .iter()
-            .enumerate()
-            .map(|(ndx, _)| {
-                let outpoint = OutPoint {
-                    txid: tx.txid(),
-                    vout: ndx as u32,
-                };
-                self.find_channel_with_funding_outpoint(&outpoint)
-            })
-            .collect();
+        let txid = tx.txid();
+
+        let channels: Vec<Option<Arc<Mutex<ChannelSlot>>>> =
+            (0..tx.output.len())
+                .map(|ndx| {
+                    let outpoint = OutPoint {
+                        txid,
+                        vout: ndx as u32,
+                    };
+                    find_channel_with_funding_outpoint(&channels_lock, &outpoint)
+                })
+                .collect();
 
         validator.validate_onchain_tx(self, channels.clone(), &cstate, tx, values_sat, opaths)?;
 
@@ -629,6 +619,10 @@ impl Node {
             }
         }
 
+        // This locks channels in a random order, so we have to keep a global
+        // lock to ensure no deadlock.  We grab the self.channels mutex above
+        // for this purpose.
+        // TODO(devrandom) consider sorting instead
         for (vout, slot_opt) in channels.iter().enumerate() {
             if let Some(slot_mutex) = slot_opt {
                 let slot = slot_mutex.lock().unwrap();
@@ -903,6 +897,26 @@ impl Node {
             .map_err(|_| Status::internal("persist failed"))?;
         Ok(())
     }
+}
+
+fn find_channel_with_funding_outpoint(
+    channels_lock: &MutexGuard<HashMap<ChannelId, Arc<Mutex<ChannelSlot>>>>,
+    outpoint: &OutPoint
+) -> Option<Arc<Mutex<ChannelSlot>>> {
+    for (_, slot_arc) in channels_lock.iter() {
+        let slot = slot_arc.lock().unwrap();
+        match &*slot {
+            ChannelSlot::Ready(chan) => {
+                if chan.setup.funding_outpoint == *outpoint {
+                    return Some(Arc::clone(slot_arc));
+                }
+            }
+            ChannelSlot::Stub(_stub) => {
+                // ignore stubs ...
+            }
+        }
+    }
+    None
 }
 
 impl Debug for Node {

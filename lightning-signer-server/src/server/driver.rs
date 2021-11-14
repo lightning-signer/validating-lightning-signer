@@ -223,7 +223,11 @@ impl SignServer {
 
     fn get_chain_state(&self) -> Result<ChainState, Status> {
         // TODO - fetch the current height from the oracle
-        Ok(ChainState { current_height: 0 })
+        Ok(ChainState {
+            current_height: 0,
+            funding_depth: 0,
+            funding_double_spent_depth: 0
+        })
     }
 }
 
