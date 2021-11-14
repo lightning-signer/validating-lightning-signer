@@ -261,7 +261,7 @@ mod tests {
     use crate::bitcoin::hashes::_export::_core::cmp::Ordering;
     use crate::bitcoin::network::constants::Network;
     use crate::bitcoin::util::hash::bitcoin_merkle_root;
-    use crate::bitcoin::{BlockHash, TxIn, TxMerkleNode, Txid};
+    use crate::bitcoin::{TxIn, Txid};
     use crate::util::test_utils::*;
     use core::iter::FromIterator;
 
@@ -526,33 +526,5 @@ mod tests {
         let genesis = genesis_block(Network::Regtest);
         let tracker = ChainTracker::new(Network::Regtest, 0, genesis.header)?;
         Ok(tracker)
-    }
-
-    fn make_header(tip: BlockHeader, merkle_root: TxMerkleNode) -> BlockHeader {
-        let bits = tip.bits;
-        mine_header_with_bits(tip.block_hash(), merkle_root, bits)
-    }
-
-    fn mine_header_with_bits(
-        prev_hash: BlockHash,
-        merkle_root: TxMerkleNode,
-        bits: u32,
-    ) -> BlockHeader {
-        let mut nonce = 0;
-        loop {
-            let header = BlockHeader {
-                version: 0,
-                prev_blockhash: prev_hash,
-                merkle_root,
-                time: 0,
-                bits,
-                nonce,
-            };
-            if header.validate_pow(&header.target()).is_ok() {
-                // println!("mined block with nonce {}", nonce);
-                return header;
-            }
-            nonce += 1;
-        }
     }
 }

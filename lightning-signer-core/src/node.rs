@@ -35,7 +35,7 @@ use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
 use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::EnforcementState;
-use crate::policy::validator::{ChainState, ValidatorFactory};
+use crate::policy::validator::ValidatorFactory;
 use crate::prelude::*;
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::sync::{Arc, Weak};
@@ -532,7 +532,6 @@ impl Node {
     ///   non-change outputs.
     pub fn sign_onchain_tx(
         &self,
-        cstate: &ChainState,
         tx: &bitcoin::Transaction,
         ipaths: &Vec<Vec<u32>>,
         values_sat: &Vec<u64>,
@@ -565,7 +564,7 @@ impl Node {
                 })
                 .collect();
 
-        validator.validate_onchain_tx(self, channels.clone(), &cstate, tx, values_sat, opaths)?;
+        validator.validate_onchain_tx(self, channels.clone(), tx, values_sat, opaths)?;
 
         let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for idx in 0..tx.input.len() {

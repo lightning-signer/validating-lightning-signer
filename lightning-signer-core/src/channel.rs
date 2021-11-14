@@ -404,6 +404,10 @@ impl Channel {
         self.enforcement_state
             .set_next_counterparty_revoke_num_for_testing(num);
     }
+
+    fn get_chain_state(&self) -> ChainState {
+        self.monitor.as_chain_state()
+    }
 }
 
 // Phase 2
@@ -527,7 +531,6 @@ impl Channel {
     // TODO anchors support once LDK supports it
     pub fn sign_counterparty_commitment_tx_phase2(
         &mut self,
-        cstate: &ChainState,
         remote_per_commitment_point: &PublicKey,
         commitment_number: u64,
         feerate_per_kw: u32,
@@ -552,7 +555,7 @@ impl Channel {
             commitment_number,
             &remote_per_commitment_point,
             &self.setup,
-            cstate,
+            &self.get_chain_state(),
             &info2,
         )?;
 
@@ -768,7 +771,6 @@ impl Channel {
     /// the signer's state.
     pub fn validate_holder_commitment_tx_phase2(
         &mut self,
-        cstate: &ChainState,
         commitment_number: u64,
         feerate_per_kw: u32,
         to_holder_value_sat: u64,
@@ -793,13 +795,13 @@ impl Channel {
                 commitment_number,
                 &commitment_point,
                 &self.setup,
-                cstate,
+                &self.get_chain_state(),
                 &info2,
             )
             .map_err(|ve| {
                 warn!(
                     "VALIDATION FAILED: {}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
-                    ve, &self.setup, cstate, &info2,
+                    ve, &self.setup, &self.get_chain_state(), &info2,
                 );
                 ve
             })?;
@@ -836,7 +838,6 @@ impl Channel {
     // TODO anchors support once upstream supports it
     pub fn sign_holder_commitment_tx_phase2(
         &self,
-        cstate: &ChainState,
         commitment_number: u64,
         feerate_per_kw: u32,
         to_holder_value_sat: u64,
@@ -859,7 +860,7 @@ impl Channel {
             commitment_number,
             &commitment_point,
             &self.setup,
-            cstate,
+            &self.get_chain_state(),
             &info2,
         )?;
 
@@ -1066,7 +1067,6 @@ impl Channel {
     /// Sign a delayed output that goes to us while sweeping a transaction we broadcast
     pub fn sign_delayed_sweep(
         &self,
-        cstate: &ChainState,
         tx: &bitcoin::Transaction,
         input: usize,
         commitment_number: u64,
@@ -1079,7 +1079,7 @@ impl Channel {
         self.validator().validate_delayed_sweep(
             &*self.node.upgrade().unwrap(),
             &self.setup,
-            cstate,
+            &self.get_chain_state(),
             tx,
             input,
             amount_sat,
@@ -1111,7 +1111,6 @@ impl Channel {
     /// Sign an offered or received HTLC output from a commitment the counterparty broadcast.
     pub fn sign_counterparty_htlc_sweep(
         &self,
-        cstate: &ChainState,
         tx: &bitcoin::Transaction,
         input: usize,
         remote_per_commitment_point: &PublicKey,
@@ -1122,7 +1121,7 @@ impl Channel {
         self.validator().validate_counterparty_htlc_sweep(
             &*self.node.upgrade().unwrap(),
             &self.setup,
-            cstate,
+            &self.get_chain_state(),
             tx,
             redeemscript,
             input,
@@ -1155,7 +1154,6 @@ impl Channel {
     /// Sign a justice transaction on an old state that the counterparty broadcast
     pub fn sign_justice_sweep(
         &self,
-        cstate: &ChainState,
         tx: &bitcoin::Transaction,
         input: usize,
         revocation_secret: &SecretKey,
@@ -1166,7 +1164,7 @@ impl Channel {
         self.validator().validate_justice_sweep(
             &*self.node.upgrade().unwrap(),
             &self.setup,
-            cstate,
+            &self.get_chain_state(),
             tx,
             input,
             amount_sat,
@@ -1339,7 +1337,6 @@ impl Channel {
     /// Phase 1
     pub fn sign_counterparty_commitment_tx(
         &mut self,
-        cstate: &ChainState,
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
         remote_per_commitment_point: &PublicKey,
@@ -1379,13 +1376,13 @@ impl Channel {
                 commitment_number,
                 &remote_per_commitment_point,
                 &self.setup,
-                cstate,
+                &self.get_chain_state(),
                 &info2,
             )
             .map_err(|ve| {
                 debug!(
                     "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\ncstate={:#?}\ninfo={:#?}",
-                    ve, &tx, &self.setup, cstate, &info2,
+                    ve, &tx, &self.setup, &self.get_chain_state(), &info2,
                 );
                 ve
             })?;
@@ -1449,7 +1446,6 @@ impl Channel {
 
     fn make_validated_recomposed_holder_commitment_tx(
         &self,
-        cstate: &ChainState,
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
         commitment_number: u64,
@@ -1493,13 +1489,13 @@ impl Channel {
                 commitment_number,
                 &commitment_point,
                 &self.setup,
-                cstate,
+                &self.get_chain_state(),
                 &info2,
             )
             .map_err(|ve| {
                 warn!(
                     "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
-                    ve, &tx, &self.setup, cstate, &info2,
+                    ve, &tx, &self.setup, &self.get_chain_state(), &info2,
                 );
                 ve
             })?;
@@ -1550,7 +1546,6 @@ impl Channel {
     /// the signer's state.
     pub fn validate_holder_commitment_tx(
         &mut self,
-        cstate: &ChainState,
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
         commitment_number: u64,
@@ -1561,7 +1556,6 @@ impl Channel {
         counterparty_htlc_sigs: &Vec<Signature>,
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
         let (recomposed_tx, info2) = self.make_validated_recomposed_holder_commitment_tx(
-            cstate,
             tx,
             output_witscripts,
             commitment_number,
@@ -1614,7 +1608,6 @@ impl Channel {
     /// Sign a holder commitment when force-closing
     pub fn sign_holder_commitment_tx(
         &self,
-        cstate: &ChainState,
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
         commitment_number: u64,
@@ -1623,7 +1616,6 @@ impl Channel {
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<Signature, Status> {
         let (recomposed_tx, _info2) = self.make_validated_recomposed_holder_commitment_tx(
-            cstate,
             tx,
             output_witscripts,
             commitment_number,
@@ -1707,7 +1699,6 @@ impl Channel {
     /// Phase 1
     pub fn sign_holder_htlc_tx(
         &self,
-        cstate: &ChainState,
         tx: &bitcoin::Transaction,
         commitment_number: u64,
         opt_per_commitment_point: Option<PublicKey>,
@@ -1726,7 +1717,6 @@ impl Channel {
             .expect("failed to make txkeys");
 
         self.sign_htlc_tx(
-            cstate,
             tx,
             &per_commitment_point,
             redeemscript,
@@ -1740,7 +1730,6 @@ impl Channel {
     /// Phase 1
     pub fn sign_counterparty_htlc_tx(
         &self,
-        cstate: &ChainState,
         tx: &bitcoin::Transaction,
         remote_per_commitment_point: &PublicKey,
         redeemscript: &Script,
@@ -1752,7 +1741,6 @@ impl Channel {
             .expect("failed to make txkeys");
 
         self.sign_htlc_tx(
-            cstate,
             tx,
             remote_per_commitment_point,
             redeemscript,
@@ -1766,7 +1754,6 @@ impl Channel {
     /// Sign a 2nd level HTLC transaction hanging off a commitment transaction
     pub fn sign_htlc_tx(
         &self,
-        cstate: &ChainState,
         tx: &bitcoin::Transaction,
         per_commitment_point: &PublicKey,
         redeemscript: &Script,
@@ -1787,7 +1774,7 @@ impl Channel {
             )?;
 
         self.validator()
-            .validate_htlc_tx(&self.setup, cstate, is_counterparty, &htlc, feerate_per_kw)
+            .validate_htlc_tx(&self.setup, &self.get_chain_state(), is_counterparty, &htlc, feerate_per_kw)
             .map_err(|ve| {
                 debug!(
                     "VALIDATION FAILED: {}\n\
@@ -1799,7 +1786,7 @@ impl Channel {
                      feerate_per_kw={}",
                     ve,
                     &self.setup,
-                    cstate,
+                    &self.get_chain_state(),
                     is_counterparty,
                     &tx,
                     DebugHTLCOutputInCommitment(&htlc),

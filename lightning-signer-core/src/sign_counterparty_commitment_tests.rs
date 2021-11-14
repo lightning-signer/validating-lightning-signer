@@ -82,11 +82,9 @@ mod tests {
                 // rebuild to get the scripts
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
-                let cstate = make_test_chain_state();
 
                 let sig = chan
                     .sign_counterparty_commitment_tx(
-                        &cstate,
                         &tx.transaction,
                         &output_witscripts,
                         &remote_percommitment_point,
@@ -145,11 +143,9 @@ mod tests {
                 let (tx, output_scripts, _) =
                     chan.build_commitment_tx(&remote_percommitment_point, commit_num, &info)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
-                let cstate = make_test_chain_state();
 
                 let sig = chan
                     .sign_counterparty_commitment_tx(
-                        &cstate,
                         &tx,
                         &output_witscripts,
                         &remote_percommitment_point,
@@ -267,11 +263,9 @@ mod tests {
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
                 let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
-                let cstate = make_test_chain_state();
 
                 let sig = chan
                     .sign_counterparty_commitment_tx(
-                        &cstate,
                         &tx.transaction,
                         &output_witscripts,
                         &remote_percommitment_point,
@@ -354,11 +348,9 @@ mod tests {
                 let (tx, output_scripts, _) =
                     chan.build_commitment_tx(&remote_percommitment_point, commit_num, &info)?;
                 let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
-                let cstate = make_test_chain_state();
 
                 let sig = chan
                     .sign_counterparty_commitment_tx(
-                        &cstate,
                         &tx,
                         &output_witscripts,
                         &remote_percommitment_point,
@@ -446,9 +438,7 @@ mod tests {
             .expect("build");
         let (ser_signature, _) = node
             .with_ready_channel(&channel_id, |chan| {
-                let cstate = make_test_chain_state();
                 chan.sign_counterparty_commitment_tx_phase2(
-                    &cstate,
                     &remote_percommitment_point,
                     commit_num,
                     0, // we are not looking at HTLCs yet
@@ -541,7 +531,6 @@ mod tests {
             tx.txid = tx.transaction.txid();
 
             let sig = chan.sign_counterparty_commitment_tx(
-                &cstate,
                 &tx.transaction,
                 &output_witscripts,
                 &remote_percommitment_point,
@@ -644,7 +633,6 @@ mod tests {
             tx.txid = tx.transaction.txid();
 
             let (sig, _htlc_sigs) = chan.sign_counterparty_commitment_tx_phase2(
-                &cstate,
                 &remote_percommitment_point,
                 commit_num,
                 feerate_per_kw,
@@ -1005,7 +993,6 @@ mod tests {
 
             // Sign the commitment the first time.
             let _sig = chan.sign_counterparty_commitment_tx(
-                &cstate,
                 &tx.transaction,
                 &output_witscripts,
                 &remote_percommitment_point,
@@ -1028,7 +1015,6 @@ mod tests {
 
             // Sign it again (retry).
             let _sig = chan.sign_counterparty_commitment_tx(
-                &cstate,
                 &tx.transaction,
                 &output_witscripts,
                 &remote_percommitment_point,

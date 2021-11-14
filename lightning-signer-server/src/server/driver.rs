@@ -27,7 +27,6 @@ use lightning_signer::containing_function;
 use lightning_signer::node::SpendType;
 use lightning_signer::node::{self};
 use lightning_signer::persist::{DummyPersister, Persist};
-use lightning_signer::policy::validator::ChainState;
 use lightning_signer::signer::multi_signer::MultiSigner;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
@@ -219,15 +218,6 @@ impl SignServer {
                 Ok(Some(key))
             }
         }
-    }
-
-    fn get_chain_state(&self) -> Result<ChainState, Status> {
-        // TODO - fetch the current height from the oracle
-        Ok(ChainState {
-            current_height: 0,
-            funding_depth: 0,
-            funding_double_spent_depth: 0
-        })
     }
 }
 
@@ -744,10 +734,7 @@ impl Signer for SignServer {
 
         let node = self.signer.get_node(&node_id)?;
 
-        let cstate = self.get_chain_state()?;
-
         let witvec = node.sign_onchain_tx(
-            &cstate,
             &tx,
             &ipaths,
             &values_sat,
@@ -797,13 +784,10 @@ impl Signer for SignServer {
         let received_htlcs = self.convert_htlcs(&req.received_htlcs)?;
         let feerate_sat_per_kw = req.feerate_sat_per_kw;
 
-        let cstate = self.get_chain_state()?;
-
         let sig = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 chan.sign_counterparty_commitment_tx(
-                    &cstate,
                     &tx,
                     &witscripts,
                     &remote_per_commitment_point,
@@ -876,13 +860,10 @@ impl Signer for SignServer {
         let commit_num = req.commit_num;
         let feerate_sat_per_kw = req.feerate_sat_per_kw;
 
-        let cstate = self.get_chain_state()?;
-
         let (next_per_commitment_point, old_secret) =
             self.signer
                 .with_ready_channel(&node_id, &channel_id, |chan| {
                     chan.validate_holder_commitment_tx(
-                        &cstate,
                         &tx,
                         &witscripts,
                         commit_num,
@@ -962,13 +943,10 @@ impl Signer for SignServer {
         let received_htlcs = self.convert_htlcs(&req.received_htlcs)?;
         let feerate_per_kw = req.feerate_sat_per_kw;
 
-        let cstate = self.get_chain_state()?;
-
         let sig = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 chan.sign_holder_commitment_tx(
-                    &cstate,
                     &tx,
                     &witscripts,
                     commit_num,
@@ -1022,13 +1000,10 @@ impl Signer for SignServer {
 
         let output_witscript = Script::from(reqtx.output_descs[0].witscript.clone());
 
-        let cstate = self.get_chain_state()?;
-
         let sigvec = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let sig = chan.sign_holder_htlc_tx(
-                    &cstate,
                     &tx,
                     req.n,
                     opt_per_commitment_point,
@@ -1087,13 +1062,10 @@ impl Signer for SignServer {
             .map(|od| od.key_loc.unwrap_or_default().key_path.to_vec())
             .collect::<Vec<Vec<u32>>>()[0];
 
-        let cstate = self.get_chain_state()?;
-
         let sigvec = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let sig = chan.sign_delayed_sweep(
-                    &cstate,
                     &tx,
                     input,
                     req.commitment_number,
@@ -1145,13 +1117,10 @@ impl Signer for SignServer {
 
         let output_witscript = Script::from(reqtx.output_descs[0].witscript.clone());
 
-        let cstate = self.get_chain_state()?;
-
         let sig_vec = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let sig = chan.sign_counterparty_htlc_tx(
-                    &cstate,
                     &tx,
                     &remote_per_commitment_point,
                     &redeemscript,
@@ -1204,13 +1173,10 @@ impl Signer for SignServer {
             .map(|od| od.key_loc.unwrap_or_default().key_path.to_vec())
             .collect::<Vec<Vec<u32>>>()[0];
 
-        let cstate = self.get_chain_state()?;
-
         let sigvec = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let sig = chan.sign_counterparty_htlc_sweep(
-                    &cstate,
                     &tx,
                     input,
                     &remote_per_commitment_point,
@@ -1266,13 +1232,10 @@ impl Signer for SignServer {
             .map(|od| od.key_loc.unwrap_or_default().key_path.to_vec())
             .collect::<Vec<Vec<u32>>>()[0];
 
-        let cstate = self.get_chain_state()?;
-
         let sigvec = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let sig = chan.sign_justice_sweep(
-                    &cstate,
                     &tx,
                     input,
                     &revocation_secret,
@@ -1430,13 +1393,10 @@ impl Signer for SignServer {
         let offered_htlcs = self.convert_htlcs(&req_info.offered_htlcs)?;
         let received_htlcs = self.convert_htlcs(&req_info.received_htlcs)?;
 
-        let cstate = self.get_chain_state()?;
-
         let (sig, htlc_sigs) = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 chan.sign_counterparty_commitment_tx_phase2(
-                    &cstate,
                     &remote_per_commitment_point,
                     req_info.n,
                     req_info.feerate_sat_per_kw,
@@ -1480,13 +1440,10 @@ impl Signer for SignServer {
         let offered_htlcs = self.convert_htlcs(&req_info.offered_htlcs)?;
         let received_htlcs = self.convert_htlcs(&req_info.received_htlcs)?;
 
-        let cstate = self.get_chain_state()?;
-
         let (sig, htlc_sigs) = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 let result = chan.sign_holder_commitment_tx_phase2(
-                    &cstate,
                     req_info.n,
                     req_info.feerate_sat_per_kw,
                     req_info.to_holder_value_sat,

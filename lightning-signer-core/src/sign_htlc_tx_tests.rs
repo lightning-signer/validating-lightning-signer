@@ -88,10 +88,8 @@ mod tests {
 
         let sigvec = node
             .with_ready_channel(&channel_id, |chan| {
-                let cstate = make_test_chain_state();
                 let sig = chan
                     .sign_holder_htlc_tx(
-                        &cstate,
                         &htlc_tx,
                         n,
                         None,
@@ -115,10 +113,8 @@ mod tests {
 
         let sigvec1 = node
             .with_ready_channel(&channel_id, |chan| {
-                let cstate = make_test_chain_state();
                 let sig = chan
                     .sign_holder_htlc_tx(
-                        &cstate,
                         &htlc_tx,
                         999,
                         Some(per_commitment_point),
@@ -206,7 +202,6 @@ mod tests {
             );
 
             let sig = chan.sign_counterparty_htlc_tx(
-                &cstate,
                 &htlc_tx,
                 &remote_per_commitment_point,
                 &htlc_redeemscript,
@@ -310,7 +305,6 @@ mod tests {
                 );
 
                 let sig = chan.sign_holder_htlc_tx(
-                    &cstate,
                     &htlc_tx,
                     commit_num,
                     Some(per_commitment_point),
@@ -874,10 +868,8 @@ mod tests {
 
         let ser_signature = node
             .with_ready_channel(&channel_id, |chan| {
-                let cstate = make_test_chain_state();
                 let sig = chan
                     .sign_counterparty_htlc_tx(
-                        &cstate,
                         &htlc_tx,
                         &remote_per_commitment_point,
                         &htlc_redeemscript,

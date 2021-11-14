@@ -229,7 +229,6 @@ impl JSNode {
             .node
             .with_ready_channel(&channel_id.0, |chan| {
                 chan.sign_holder_commitment_tx_phase2(
-                    &cstate,
                     commit_num,
                     0, // feerate not used
                     to_holder_value_sat,
