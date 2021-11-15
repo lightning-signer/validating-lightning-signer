@@ -90,7 +90,7 @@ pub struct Node {
     pub(crate) validator_factory: Mutex<Box<dyn ValidatorFactory>>,
     pub(crate) persister: Arc<dyn Persist>,
     allowlist: Mutex<UnorderedSet<Script>>,
-    pub(crate) tracker: Mutex<ChainTracker<ChainMonitor>>,
+    tracker: Mutex<ChainTracker<ChainMonitor>>,
 }
 
 impl Wallet for Node {
@@ -153,6 +153,34 @@ impl Node {
             persister: Arc::clone(persister),
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
             tracker,
+        }
+    }
+
+    /// Restore a node.
+    pub fn new_from_persistence(
+        node_config: NodeConfig,
+        seed: &[u8],
+        persister: &Arc<Persist>,
+        allowlist: Vec<Script>,
+        tracker: ChainTracker<ChainMonitor>,
+    ) -> Node {
+        let genesis = genesis_block(node_config.network);
+        let now = Duration::from_secs(genesis.header.time as u64);
+
+        Node {
+            keys_manager: MyKeysManager::new(
+                node_config.key_derivation_style,
+                seed,
+                node_config.network,
+                now.as_secs(),
+                now.subsec_nanos(),
+            ),
+            node_config,
+            channels: Mutex::new(Map::new()),
+            validator_factory: Mutex::new(Box::new(SimpleValidatorFactory {})),
+            persister: Arc::clone(persister),
+            allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
+            tracker: Mutex::new(tracker),
         }
     }
 
@@ -386,7 +414,11 @@ impl Node {
             key_derivation_style: KeyDerivationStyle::try_from(node_entry.key_derivation_style)
                 .unwrap(),
         };
-        let node = Arc::new(Node::new(
+
+        let allowlist = persister.get_node_allowlist(node_id);
+        let tracker = persister.get_tracker(node_id).expect("tracker");
+
+        let node = Arc::new(Node::new_from_persistence(
             config,
             node_entry
                 .seed
@@ -394,7 +426,8 @@ impl Node {
                 .try_into()
                 .expect("seed wrong length"),
             &persister,
-            persister.get_node_allowlist(node_id),
+            allowlist,
+            tracker,
         ));
         assert_eq!(&node.get_id(), node_id);
         info!("Restore node {}", node_id);
@@ -510,6 +543,9 @@ impl Node {
 
         trace_enforcement_state!(&chan.enforcement_state);
         self.persister
+            .update_tracker(&self.get_id(), &tracker)
+            .map_err(|_| Status::internal("tracker persist failed"))?;
+        self.persister
             .update_channel(&self.get_id(), &chan)
             .map_err(|_| Status::internal("persist failed"))?;
 
@@ -618,6 +654,9 @@ impl Node {
             }
         }
 
+        // The tracker may be updated for multiple channels
+        let mut tracker = self.tracker.lock().unwrap();
+
         // This locks channels in a random order, so we have to keep a global
         // lock to ensure no deadlock.  We grab the self.channels mutex above
         // for this purpose.
@@ -627,10 +666,19 @@ impl Node {
                 let slot = slot_mutex.lock().unwrap();
                 match &*slot {
                     ChannelSlot::Stub(_) => panic!("this can't happen"),
-                    ChannelSlot::Ready(chan) => chan.funding_signed(tx, vout as u32),
+                    ChannelSlot::Ready(chan) => {
+                        let inputs = Set::from_iter(tx.input.iter().map(|i| i.previous_output));
+                        tracker.add_listener_watches(chan.monitor.clone(), inputs);
+                        chan.funding_signed(tx, vout as u32)
+                    },
                 }
             }
         }
+
+        // the channels added some watches - persist
+        self.persister
+            .update_tracker(&self.get_id(), &tracker)
+            .map_err(|_| Status::internal("tracker persist failed"))?;
 
         // TODO(devrandom) self.persist_channel(node_id, chan);
         Ok(witvec)
@@ -895,6 +943,11 @@ impl Node {
             .update_node_allowlist(&self.get_id(), wlvec)
             .map_err(|_| Status::internal("persist failed"))?;
         Ok(())
+    }
+
+    /// Chain tracker with lock
+    pub fn get_tracker(&self) -> MutexGuard<'_, ChainTracker<ChainMonitor>> {
+        self.tracker.lock().unwrap()
     }
 }
 

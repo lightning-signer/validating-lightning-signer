@@ -2,8 +2,10 @@ use kv::{Bucket, Config, Json, Store, TransactionError};
 
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::Script;
+use lightning_signer::chain::tracker::ChainTracker;
 
 use lightning_signer::channel::{Channel, ChannelId, ChannelStub};
+use lightning_signer::monitor::ChainMonitor;
 use lightning_signer::node::NodeConfig;
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
@@ -13,12 +15,14 @@ use lightning_signer::policy::validator::EnforcementState;
 
 use crate::persist::model::NodeChannelId;
 use crate::persist::model::{AllowlistItemEntry, ChannelEntry, NodeEntry};
+use crate::persist::model::ChainTrackerEntry;
 
 /// A persister that uses the kv crate and JSON serialization for values.
 pub struct KVJsonPersister<'a> {
     pub node_bucket: Bucket<'a, Vec<u8>, Json<NodeEntry>>,
     pub channel_bucket: Bucket<'a, NodeChannelId, Json<ChannelEntry>>,
     pub allowlist_bucket: Bucket<'a, Vec<u8>, Json<AllowlistItemEntry>>,
+    pub chain_tracker_bucket: Bucket<'a, Vec<u8>, Json<ChainTrackerEntry>>
 }
 
 impl KVJsonPersister<'_> {
@@ -32,10 +36,14 @@ impl KVJsonPersister<'_> {
         let allowlist_bucket = store
             .bucket(Some("allowlists"))
             .expect("create allowlist bucket");
+        let chain_tracker_bucket = store
+            .bucket(Some("chain_tracker"))
+            .expect("create chain tracker bucket");
         Self {
             node_bucket,
             channel_bucket,
             allowlist_bucket,
+            chain_tracker_bucket
         }
     }
 }
@@ -61,9 +69,9 @@ impl<'a> Persist for KVJsonPersister<'a> {
             let id: NodeChannelId = item_res.unwrap().key().unwrap();
             self.channel_bucket.remove(id).unwrap();
         }
-        self.node_bucket
-            .remove(node_id.serialize().to_vec())
-            .unwrap();
+        let key = node_id.serialize().to_vec();
+        self.node_bucket.remove(key.clone()).unwrap();
+        self.chain_tracker_bucket.remove(key).unwrap();
     }
 
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()> {
@@ -90,6 +98,26 @@ impl<'a> Persist for KVJsonPersister<'a> {
             .expect("new transaction");
         self.channel_bucket.flush().expect("flush");
         Ok(())
+    }
+
+    fn new_chain_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) {
+        let key = node_id.serialize().to_vec();
+        assert!(!self.chain_tracker_bucket.contains(key.clone()).unwrap());
+        self.chain_tracker_bucket.set(key, Json(tracker.into())).expect("insert chain tracker");
+        self.chain_tracker_bucket.flush().expect("flush");
+    }
+
+    fn update_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) -> Result<(), ()> {
+        let key = node_id.serialize().to_vec();
+        self.chain_tracker_bucket.set(key, Json(tracker.into())).expect("update chain tracker");
+        self.chain_tracker_bucket.flush().expect("flush");
+        Ok(())
+    }
+
+    fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, ()> {
+        let key = node_id.serialize().to_vec();
+        let value = self.chain_tracker_bucket.get(key).unwrap().ok_or_else(|| ())?;
+        Ok(value.0.into())
     }
 
     fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), ()> {
@@ -229,6 +257,7 @@ mod tests {
             let (persister, temp_dir, path) = make_temp_persister();
             let persister: Arc<dyn Persist> = Arc::new(persister);
             persister.new_node(&node_id, &TEST_NODE_CONFIG, &seed);
+            persister.new_chain_tracker(&node_id, &node.get_tracker());
             persister.new_channel(&node_id, &stub).unwrap();
 
             let nodes = Node::restore_nodes(Arc::clone(&persister));

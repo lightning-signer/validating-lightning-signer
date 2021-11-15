@@ -8,28 +8,32 @@ use crate::prelude::*;
 use crate::Arc;
 use crate::policy::validator::ChainState;
 
-struct State {
-    // Chain height
-    height: u32,
-    // funding txids
-    funding_txids: Vec<Txid>,
-    // the funding output index for each funding tx
-    funding_vouts: Vec<u32>,
-    // inputs derived from funding_txs for convenience
-    funding_inputs: Set<OutPoint>,
-    // Number of confirmations of the funding transaction
-    funding_depth: Option<u32>,
-    // Number of confirmations of a transaction that double-spends
-    // a funding input
-    funding_double_spent_depth: Option<u32>,
+/// State
+#[derive(Clone, Debug)]
+pub struct State {
+    /// Chain height
+    pub height: u32,
+    /// funding txids
+    pub funding_txids: Vec<Txid>,
+    /// the funding output index for each funding tx
+    pub funding_vouts: Vec<u32>,
+    /// inputs derived from funding_txs for convenience
+    pub funding_inputs: Set<OutPoint>,
+    /// Number of confirmations of the funding transaction
+    pub funding_depth: Option<u32>,
+    /// Number of confirmations of a transaction that double-spends
+    /// a funding input
+    pub funding_double_spent_depth: Option<u32>,
 }
 
 /// Keep track of channel on-chain events.
 /// Note that this object has refcounted state, so is lightweight to clone.
 #[derive(Clone)]
 pub struct ChainMonitor {
-    funding_outpoint: OutPoint,
-    state: Arc<Mutex<State>>,
+    /// the first funding outpoint, used to identify the channel / channel monitor
+    pub funding_outpoint: OutPoint,
+    /// the monitor state
+    pub state: Arc<Mutex<State>>,
 }
 
 impl Eq for ChainMonitor {}
@@ -69,6 +73,19 @@ impl ChainMonitor {
             funding_outpoint,
             state: Arc::new(Mutex::new(state)),
         }
+    }
+
+    /// recreate this monitor after restoring from persistence
+    pub fn new_from_persistence(funding_outpoint: OutPoint, state: State)  -> Self {
+        Self {
+            funding_outpoint,
+            state: Arc::new(Mutex::new(state))
+        }
+    }
+
+    /// Get the locked state
+    pub fn get_state(&self) -> MutexGuard<'_, State> {
+        self.state.lock().expect("lock")
     }
 
     /// Add a funding transaction to keep track of

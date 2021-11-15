@@ -1,22 +1,31 @@
+use std::collections::{BTreeMap as Map, BTreeMap};
 use std::convert::TryInto;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::iter::FromIterator;
 
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::Script;
+use bitcoin::{Network, OutPoint, Script};
+use bitcoin::consensus::{deserialize, serialize};
 use kv::{Key, Raw};
 use serde::{Deserialize, Serialize};
 use serde_with::hex::Hex;
 use serde_with::serde_as;
+use lightning_signer::chain::tracker::{ChainTracker, ListenSlot};
 
 use lightning_signer::channel::ChannelId;
 use lightning_signer::channel::ChannelSetup;
+use lightning_signer::monitor::ChainMonitor;
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
 use lightning_signer::policy::validator::EnforcementState;
+use lightning_signer::monitor::State as ChainMonitorState;
 
-use super::ser_util::{ChannelIdHandler, ChannelSetupDef, EnforcementStateDef, ScriptDef};
+use super::ser_util::{
+    ChannelIdHandler, ChannelSetupDef, EnforcementStateDef, ScriptDef,
+    ListenSlotDef, ChainMonitorStateDef, OutPointDef
+};
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
@@ -118,5 +127,61 @@ impl AsRef<[u8]> for NodeChannelId {
 impl<'a> Key<'a> for NodeChannelId {
     fn from_raw_key(r: &'a Raw) -> Result<Self, kv::Error> {
         Ok(NodeChannelId(r.to_vec()))
+    }
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ChainTrackerEntry {
+    // Serialized headers beyond tip
+    #[serde_as(as = "Vec<Hex>")]
+    headers: Vec<Vec<u8>>,
+    // Serialized header at tip
+    #[serde_as(as = "Hex")]
+    tip: Vec<u8>,
+    height: u32,
+    network: Network,
+    #[serde_as(as = "Vec<(OutPointDef, (ChainMonitorStateDef, ListenSlotDef))>")]
+    listeners: BTreeMap<OutPoint, (ChainMonitorState, ListenSlot)>,
+}
+
+impl From<&ChainTracker<ChainMonitor>> for ChainTrackerEntry {
+    fn from(t: &ChainTracker<ChainMonitor>) -> Self {
+        let tip = serialize(&t.tip);
+        let headers = t.headers.iter()
+            .map(|h| serialize(h))
+            .collect();
+        let listeners = t.listeners.iter()
+            .map(|(l, s)| (l.funding_outpoint, (l.get_state().clone(), s.clone())))
+            .collect();
+        ChainTrackerEntry {
+            headers,
+            tip,
+            height: t.height(),
+            network: t.network,
+            listeners,
+        }
+    }
+}
+
+impl Into<ChainTracker<ChainMonitor>> for ChainTrackerEntry {
+    fn into(self) -> ChainTracker<ChainMonitor> {
+        let tip = deserialize(&self.tip).expect("deserialize tip");
+        let headers = self.headers.iter()
+            .map(|h| deserialize(h).expect("deserialize header"))
+            .collect();
+        let listeners: Map<ChainMonitor, ListenSlot> = Map::from_iter(
+            self.listeners.into_iter()
+                .map(|(outpoint, (state, slot))|
+                    (ChainMonitor::new_from_persistence(outpoint, state), slot)
+                )
+        );
+        ChainTracker {
+            headers,
+            tip,
+            height: self.height,
+            network: self.network,
+            listeners,
+        }
     }
 }

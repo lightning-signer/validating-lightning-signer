@@ -1,8 +1,6 @@
-use alloc::collections::BTreeSet as Set;
 use core::any::Any;
 use core::fmt;
 use core::fmt::{Debug, Error, Formatter};
-use core::iter::FromIterator;
 
 use bitcoin::hashes::hex;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
@@ -1223,14 +1221,6 @@ impl Channel {
         // the lock order is backwards (monitor -> tracker), but we release
         // the monitor lock, so it's OK
         self.monitor.add_funding(tx, vout);
-        let inputs = Set::from_iter(tx.input.iter().map(|i| i.previous_output));
-        self.node
-            .upgrade()
-            .unwrap()
-            .tracker
-            .lock()
-            .unwrap()
-            .add_listener_watches(self.monitor.clone(), inputs);
     }
 }
 

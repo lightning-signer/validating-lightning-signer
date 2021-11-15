@@ -315,7 +315,7 @@ pub fn init_node_and_channel(
 ) -> (Arc<Node>, ChannelId) {
     let node = init_node(node_config, seedstr);
     {
-        let mut tracker = node.tracker.lock().unwrap();
+        let mut tracker = node.get_tracker();
         let header = make_testnet_header(tracker.tip(), Default::default());
         tracker.add_block(header, vec![], None).unwrap();
         let header = make_testnet_header(tracker.tip(), Default::default());

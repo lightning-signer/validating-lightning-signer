@@ -1,5 +1,11 @@
+//! By convention, structs ending with `Def` are serde local types
+//! describing how to serialize a remote type via `serde(remote)`.
+//! Structs ending with `Entry` are local types that require a manual
+//! transformation from the remote type - implemented via `From` / `Into`.
+
 use std::borrow::Cow;
 use std::convert::TryInto;
+use std::collections::BTreeSet as Set;
 
 use crate::lightning;
 use bitcoin::hashes::Hash;
@@ -11,8 +17,10 @@ use lightning::util::ser::Writer;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::serde_as;
 use serde_with::{DeserializeAs, SerializeAs};
+use lightning_signer::chain::tracker::ListenSlot;
 
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
+use lightning_signer::monitor::{State as ChainMonitorState};
 use lightning_signer::policy::validator::EnforcementState;
 use lightning_signer::tx::tx::{CommitmentInfo2, HTLCInfo2};
 
@@ -397,5 +405,106 @@ impl<'de> DeserializeAs<'de, EnforcementState> for EnforcementStateDef {
         D: Deserializer<'de>,
     {
         EnforcementStateHelper::deserialize(deserializer).map(|h| h.0)
+    }
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(remote = "ListenSlot")]
+pub struct ListenSlotDef {
+    #[serde_as(as = "Set<OutPointDef>")]
+    watches: Set<OutPoint>,
+    #[serde_as(as = "Set<OutPointDef>")]
+    seen: Set<OutPoint>,
+}
+
+#[derive(Deserialize)]
+struct ListenSlotHelper(#[serde(with = "ListenSlotDef")] ListenSlot);
+
+impl SerializeAs<ListenSlot> for ListenSlotDef {
+    fn serialize_as<S>(value: &ListenSlot, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+    {
+        ListenSlotDef::serialize(value, serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, ListenSlot> for ListenSlotDef {
+    fn deserialize_as<D>(
+        deserializer: D,
+    ) -> Result<ListenSlot, <D as Deserializer<'de>>::Error>
+        where
+            D: Deserializer<'de>,
+    {
+        ListenSlotHelper::deserialize(deserializer).map(|h| h.0)
+    }
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(remote = "ChainMonitorState")]
+pub struct ChainMonitorStateDef {
+    height: u32,
+    funding_txids: Vec<Txid>,
+    funding_vouts: Vec<u32>,
+    funding_inputs: Set<OutPoint>,
+    funding_depth: Option<u32>,
+    funding_double_spent_depth: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct ChainMonitorStateHelper(#[serde(with = "ChainMonitorStateDef")] ChainMonitorState);
+
+impl SerializeAs<ChainMonitorState> for ChainMonitorStateDef {
+    fn serialize_as<S>(value: &ChainMonitorState, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+    {
+        ChainMonitorStateDef::serialize(value, serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, ChainMonitorState> for ChainMonitorStateDef {
+    fn deserialize_as<D>(
+        deserializer: D,
+    ) -> Result<ChainMonitorState, <D as Deserializer<'de>>::Error>
+        where
+            D: Deserializer<'de>,
+    {
+        ChainMonitorStateHelper::deserialize(deserializer).map(|h| h.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::iter::FromIterator;
+    use bitcoin::blockdata::constants::genesis_block;
+    use bitcoin::Network;
+    use lightning_signer::chain::tracker::{ChainTracker, Error};
+    use lightning_signer::monitor::ChainMonitor;
+    use lightning_signer::util::test_utils::*;
+    use crate::persist::model::ChainTrackerEntry;
+    use super::*;
+
+    #[test]
+    fn test_chain_tracker() -> Result<(), Error> {
+        let tx = make_tx(vec![make_txin(1), make_txin(2)]);
+        let outpoint = OutPoint::new(tx.txid(), 0);
+        let monitor = ChainMonitor::new(outpoint, 0);
+        monitor.add_funding(&tx, 0);
+        let genesis = genesis_block(Network::Regtest);
+        let mut tracker = ChainTracker::new(Network::Regtest, 0, genesis.header)?;
+        tracker.add_listener(monitor.clone(), Set::new());
+        let header = make_header(tracker.tip(), Default::default());
+        tracker.add_block(header, vec![], None)?;
+        tracker.add_listener_watches(monitor, Set::from_iter(vec![make_txin(1).previous_output]));
+
+        let entry = ChainTrackerEntry::from(&tracker);
+        let json = serde_json::to_string(&entry).expect("json");
+        println!("{}", json);
+        let entry_de: ChainTrackerEntry = serde_json::from_str(&json).expect("de json");
+        let _tracker_de: ChainTracker<ChainMonitor> = entry_de.into();
+        Ok(())
     }
 }

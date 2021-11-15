@@ -19,18 +19,27 @@ pub enum Error {
     InvalidSpvProof,
 }
 
-struct ListenSlot {
-    watches: Set<OutPoint>,
-    seen: Set<OutPoint>,
+/// A listener entry
+#[derive(Debug, Clone)]
+pub struct ListenSlot {
+    /// outpoints we are watching
+    pub watches: Set<OutPoint>,
+    /// outpoints we have already seen
+    pub seen: Set<OutPoint>,
 }
 
 /// Track chain, with basic validation
 pub struct ChainTracker<L: ChainListener + Ord> {
-    headers: VecDeque<BlockHeader>,
-    tip: BlockHeader,
-    height: u32,
-    network: Network,
-    listeners: Map<L, ListenSlot>,
+    /// headers past the tip
+    pub headers: VecDeque<BlockHeader>,
+    /// tip header
+    pub tip: BlockHeader,
+    /// height
+    pub height: u32,
+    /// The network
+    pub network: Network,
+    /// listeners
+    pub listeners: Map<L, ListenSlot>,
 }
 
 impl<L: ChainListener + Ord> ChainTracker<L> {
@@ -54,6 +63,11 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     /// Current chain tip header
     pub fn tip(&self) -> BlockHeader {
         self.tip
+    }
+
+    /// Headers past the tip
+    pub fn headers(&self) -> &VecDeque<BlockHeader> {
+        &self.headers
     }
 
     /// Height of current chain tip
