@@ -681,7 +681,7 @@ impl Validator for SimpleValidator {
             0,
             &redeemscript,
             htlc_amount_sat,
-            SigHashType::All,
+            sighash_type,
         );
 
         if recomposed_tx_sighash != original_tx_sighash {
