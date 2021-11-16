@@ -2,14 +2,10 @@ use crate::prelude::*;
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::opcodes::Class;
 use bitcoin::blockdata::script::{read_scriptint, Builder, Instruction, Instructions};
-use bitcoin::hash_types::PubkeyHash;
-use bitcoin::hashes::ripemd160::Hash as Ripemd160;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{blockdata, Script};
-use lightning::ln::chan_utils::{HTLCOutputInCommitment, TxCreationKeys};
 
 use crate::policy::error::{mismatch_error, ValidationError};
-use bitcoin::hashes::Hash;
 
 #[inline]
 fn expect_next<'a>(iter: &'a mut Instructions) -> Result<Instruction<'a>, ValidationError> {
@@ -80,112 +76,6 @@ pub(crate) fn get_delayed_redeemscript(delayed_key: &PublicKey) -> Script {
         .push_opcode(opcodes::all::OP_PUSHNUM_1)
         .push_opcode(opcodes::all::OP_CSV)
         .into_script()
-}
-
-/// Anchor redeem script
-// FIXME - This should be in chan_utils.
-pub(crate) fn get_anchor_redeemscript(funding_key: &PublicKey) -> Script {
-    Builder::new()
-        .push_slice(&funding_key.serialize())
-        .push_opcode(opcodes::all::OP_CHECKSIG)
-        .push_opcode(opcodes::all::OP_IFDUP)
-        .push_opcode(opcodes::all::OP_NOTIF)
-        .push_opcode(opcodes::all::OP_PUSHNUM_16)
-        .push_opcode(opcodes::all::OP_CSV)
-        .push_opcode(opcodes::all::OP_ENDIF)
-        .into_script()
-}
-
-/// HTLC redeem script when anchors are enabled
-// FIXME - yup, chan_utils.
-#[inline]
-pub(crate) fn get_htlc_anchor_redeemscript(
-    htlc: &HTLCOutputInCommitment,
-    keys: &TxCreationKeys,
-) -> Script {
-    get_htlc_anchor_redeemscript_with_explicit_keys(
-        htlc,
-        &keys.broadcaster_htlc_key,
-        &keys.countersignatory_htlc_key,
-        &keys.revocation_key,
-    )
-}
-
-fn get_htlc_anchor_redeemscript_with_explicit_keys(
-    htlc: &HTLCOutputInCommitment,
-    a_htlc_key: &PublicKey,
-    b_htlc_key: &PublicKey,
-    revocation_key: &PublicKey,
-) -> Script {
-    let payment_hash160 = Ripemd160::hash(&htlc.payment_hash.0[..]).into_inner();
-    if htlc.offered {
-        Builder::new()
-            .push_opcode(opcodes::all::OP_DUP)
-            .push_opcode(opcodes::all::OP_HASH160)
-            .push_slice(&PubkeyHash::hash(&revocation_key.serialize())[..])
-            .push_opcode(opcodes::all::OP_EQUAL)
-            .push_opcode(opcodes::all::OP_IF)
-            .push_opcode(opcodes::all::OP_CHECKSIG)
-            .push_opcode(opcodes::all::OP_ELSE)
-            .push_slice(&b_htlc_key.serialize()[..])
-            .push_opcode(opcodes::all::OP_SWAP)
-            .push_opcode(opcodes::all::OP_SIZE)
-            .push_int(32)
-            .push_opcode(opcodes::all::OP_EQUAL)
-            .push_opcode(opcodes::all::OP_NOTIF)
-            .push_opcode(opcodes::all::OP_DROP)
-            .push_int(2)
-            .push_opcode(opcodes::all::OP_SWAP)
-            .push_slice(&a_htlc_key.serialize()[..])
-            .push_int(2)
-            .push_opcode(opcodes::all::OP_CHECKMULTISIG)
-            .push_opcode(opcodes::all::OP_ELSE)
-            .push_opcode(opcodes::all::OP_HASH160)
-            .push_slice(&payment_hash160)
-            .push_opcode(opcodes::all::OP_EQUALVERIFY)
-            .push_opcode(opcodes::all::OP_CHECKSIG)
-            .push_opcode(opcodes::all::OP_ENDIF)
-            .push_opcode(opcodes::all::OP_PUSHNUM_1)
-            .push_opcode(opcodes::all::OP_CSV)
-            .push_opcode(opcodes::all::OP_DROP)
-            .push_opcode(opcodes::all::OP_ENDIF)
-            .into_script()
-    } else {
-        Builder::new()
-            .push_opcode(opcodes::all::OP_DUP)
-            .push_opcode(opcodes::all::OP_HASH160)
-            .push_slice(&PubkeyHash::hash(&revocation_key.serialize())[..])
-            .push_opcode(opcodes::all::OP_EQUAL)
-            .push_opcode(opcodes::all::OP_IF)
-            .push_opcode(opcodes::all::OP_CHECKSIG)
-            .push_opcode(opcodes::all::OP_ELSE)
-            .push_slice(&b_htlc_key.serialize()[..])
-            .push_opcode(opcodes::all::OP_SWAP)
-            .push_opcode(opcodes::all::OP_SIZE)
-            .push_int(32)
-            .push_opcode(opcodes::all::OP_EQUAL)
-            .push_opcode(opcodes::all::OP_IF)
-            .push_opcode(opcodes::all::OP_HASH160)
-            .push_slice(&payment_hash160)
-            .push_opcode(opcodes::all::OP_EQUALVERIFY)
-            .push_int(2)
-            .push_opcode(opcodes::all::OP_SWAP)
-            .push_slice(&a_htlc_key.serialize()[..])
-            .push_int(2)
-            .push_opcode(opcodes::all::OP_CHECKMULTISIG)
-            .push_opcode(opcodes::all::OP_ELSE)
-            .push_opcode(opcodes::all::OP_DROP)
-            .push_int(htlc.cltv_expiry as i64)
-            .push_opcode(opcodes::all::OP_CLTV)
-            .push_opcode(opcodes::all::OP_DROP)
-            .push_opcode(opcodes::all::OP_CHECKSIG)
-            .push_opcode(opcodes::all::OP_ENDIF)
-            .push_opcode(opcodes::all::OP_PUSHNUM_1)
-            .push_opcode(opcodes::all::OP_CSV)
-            .push_opcode(opcodes::all::OP_DROP)
-            .push_opcode(opcodes::all::OP_ENDIF)
-            .into_script()
-    }
 }
 
 #[cfg(test)]

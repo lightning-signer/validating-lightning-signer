@@ -699,13 +699,15 @@ impl Channel {
         for ndx in 0..recomposed_tx.htlcs().len() {
             let htlc = &recomposed_tx.htlcs()[ndx];
 
-            let htlc_redeemscript = get_htlc_redeemscript(htlc, &txkeys);
+            let htlc_redeemscript =
+                get_htlc_redeemscript(htlc, self.setup.option_anchor_outputs(), &txkeys);
 
             let recomposed_htlc_tx = build_htlc_transaction(
                 &commitment_txid,
                 feerate_per_kw,
                 to_self_delay,
                 htlc,
+                self.setup.option_anchor_outputs(),
                 &txkeys.broadcaster_delayed_payment_key,
                 &txkeys.revocation_key,
             );
@@ -799,7 +801,10 @@ impl Channel {
             .map_err(|ve| {
                 warn!(
                     "VALIDATION FAILED: {}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
-                    ve, &self.setup, &self.get_chain_state(), &info2,
+                    ve,
+                    &self.setup,
+                    &self.get_chain_state(),
+                    &info2,
                 );
                 ve
             })?;
@@ -1002,6 +1007,11 @@ impl Channel {
                 selected_contest_delay: self.setup.counterparty_selected_contest_delay,
             }),
             funding_outpoint: Some(funding_outpoint),
+            opt_anchors: if self.setup.option_anchor_outputs() {
+                Some(())
+            } else {
+                None
+            },
         };
         channel_parameters
     }
@@ -1372,7 +1382,11 @@ impl Channel {
             .map_err(|ve| {
                 debug!(
                     "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\ncstate={:#?}\ninfo={:#?}",
-                    ve, &tx, &self.setup, &self.get_chain_state(), &info2,
+                    ve,
+                    &tx,
+                    &self.setup,
+                    &self.get_chain_state(),
+                    &info2,
                 );
                 ve
             })?;
@@ -1485,7 +1499,11 @@ impl Channel {
             .map_err(|ve| {
                 warn!(
                     "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
-                    ve, &tx, &self.setup, &self.get_chain_state(), &info2,
+                    ve,
+                    &tx,
+                    &self.setup,
+                    &self.get_chain_state(),
+                    &info2,
                 );
                 ve
             })?;
@@ -1764,7 +1782,13 @@ impl Channel {
             )?;
 
         self.validator()
-            .validate_htlc_tx(&self.setup, &self.get_chain_state(), is_counterparty, &htlc, feerate_per_kw)
+            .validate_htlc_tx(
+                &self.setup,
+                &self.get_chain_state(),
+                is_counterparty,
+                &htlc,
+                feerate_per_kw,
+            )
             .map_err(|ve| {
                 debug!(
                     "VALIDATION FAILED: {}\n\

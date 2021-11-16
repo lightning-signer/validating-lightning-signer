@@ -837,7 +837,7 @@ macro_rules! get_payment_preimage_hash {
 			let payment_preimage = PaymentPreimage([*$dest_node.network_payment_count.borrow(); 32]);
 			*$dest_node.network_payment_count.borrow_mut() += 1;
 			let payment_hash = PaymentHash(Sha256::hash(&payment_preimage.0[..]).into_inner());
-			let payment_secret = $dest_node.node.create_inbound_payment_for_hash(payment_hash, None, 7200, 0).unwrap();
+			let payment_secret = $dest_node.node.create_inbound_payment_for_hash(payment_hash, None, 7200).unwrap();
 			(payment_preimage, payment_hash, payment_secret)
 		}
 	}
@@ -1275,7 +1275,7 @@ pub fn get_announce_close_broadcast_events<'a, 'b, 'c>(nodes: &Vec<Node<'a, 'b, 
     match events_1[1] {
         MessageSendEvent::HandleError { node_id, action: msgs::ErrorAction::SendErrorMessage { ref msg } } => {
             assert_eq!(node_id, nodes[b].node.get_our_node_id());
-            assert_eq!(msg.data, "Commitment or closing transaction was confirmed on chain.");
+            assert_eq!(msg.data, "Channel closed because commitment or closing transaction was confirmed on chain.");
         },
         _ => panic!("Unexpected event"),
     }
@@ -1291,7 +1291,7 @@ pub fn get_announce_close_broadcast_events<'a, 'b, 'c>(nodes: &Vec<Node<'a, 'b, 
     match events_2[1] {
         MessageSendEvent::HandleError { node_id, action: msgs::ErrorAction::SendErrorMessage { ref msg } } => {
             assert_eq!(node_id, nodes[a].node.get_our_node_id());
-            assert_eq!(msg.data, "Commitment or closing transaction was confirmed on chain.");
+            assert_eq!(msg.data, "Channel closed because commitment or closing transaction was confirmed on chain.");
         },
         _ => panic!("Unexpected event"),
     }

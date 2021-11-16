@@ -701,6 +701,11 @@ impl Node {
                 selected_contest_delay: setup.counterparty_selected_contest_delay,
             }),
             funding_outpoint,
+            opt_anchors: if setup.option_anchor_outputs() {
+                Some(())
+            } else {
+                None
+            },
         };
         channel_transaction_parameters
     }
