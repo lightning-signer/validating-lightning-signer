@@ -21,9 +21,7 @@ use crate::lightning;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
 
-use lightning_signer::channel;
 use lightning_signer::channel::{channel_nonce_to_id, ChannelId, ChannelSetup, CommitmentType};
-use lightning_signer::containing_function;
 use lightning_signer::node::SpendType;
 use lightning_signer::node::{self};
 use lightning_signer::persist::{DummyPersister, Persist};
@@ -34,6 +32,7 @@ use lightning_signer::util::crypto_utils::{bitcoin_vec_to_signature, signature_t
 use lightning_signer::util::debug_utils::DebugBytes;
 use lightning_signer::util::log_utils::{parse_log_level_filter, LOG_LEVEL_FILTER_NAMES};
 use lightning_signer::util::status;
+use lightning_signer::{channel, containing_function, debug_vals, short_function, vals_str};
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
 
@@ -452,6 +451,7 @@ impl Signer for SignServer {
             txid,
             vout: req_outpoint.index,
         };
+        debug_vals!(&funding_outpoint); // because req_outpoint.txid is reversed
 
         let holder_shutdown_script = if req.holder_shutdown_script.is_empty() {
             None

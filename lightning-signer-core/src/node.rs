@@ -543,6 +543,7 @@ impl Node {
         // Don't watch anything initially, wait until we are asked to sign funding
         tracker.add_listener(chan.monitor.clone(), Set::new());
 
+        debug_vals!(&chan.setup);
         trace_enforcement_state!(&chan.enforcement_state);
         self.persister
             .update_tracker(&self.get_id(), &tracker)

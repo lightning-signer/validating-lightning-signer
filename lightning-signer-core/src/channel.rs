@@ -25,7 +25,7 @@ use crate::monitor::ChainMonitor;
 use crate::node::Node;
 use crate::policy::error::policy_error;
 use crate::policy::validator::{ChainState, EnforcementState, Validator};
-use crate::prelude::{Box, ToString, Vec};
+use crate::prelude::{Box, String, ToString, Vec};
 use crate::tx::tx::{
     build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
     HTLCInfo2,
@@ -33,7 +33,7 @@ use crate::tx::tx::{
 use crate::util::crypto_utils::{
     derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
 };
-use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner};
+use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugVecVecU8};
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::wallet::Wallet;
@@ -1505,8 +1505,8 @@ impl Channel {
             &commitment_point,
             info.to_broadcaster_value_sat,
             info.to_countersigner_value_sat,
-            offered_htlcs,
-            received_htlcs,
+            offered_htlcs.clone(),
+            received_htlcs.clone(),
         )?;
 
         self.validator()
@@ -1542,6 +1542,16 @@ impl Channel {
         )?;
 
         if recomposed_tx.trust().built_transaction().transaction != *tx {
+            debug_vals!(
+                &self.setup,
+                &self.enforcement_state,
+                tx,
+                DebugVecVecU8(output_witscripts),
+                commitment_number,
+                feerate_per_kw,
+                &offered_htlcs,
+                &received_htlcs
+            );
             warn!("RECOMPOSITION FAILED");
             warn!("ORIGINAL_TX={:#?}", &tx);
             warn!(
