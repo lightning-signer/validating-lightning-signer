@@ -44,7 +44,6 @@ pub trait Validator {
         &self,
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
-        cstate: &ChainState,
         tx: &Transaction,
         values_sat: &Vec<u64>,
         opaths: &Vec<Vec<u32>>,
@@ -181,6 +180,10 @@ pub trait Validator {
 pub struct ChainState {
     /// The current blockchain height
     pub current_height: u32,
+    /// Zero or the number of confirmation of the funding tx
+    pub funding_depth: u32,
+    /// Zero or the number of confirmation of a double-spend of the funding tx
+    pub funding_double_spent_depth: u32,
 }
 
 /// A factory for validators

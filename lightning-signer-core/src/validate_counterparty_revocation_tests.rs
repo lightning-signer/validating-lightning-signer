@@ -77,10 +77,7 @@ mod tests {
             let trusted_tx = commitment_tx.trust();
             let tx = trusted_tx.built_transaction().clone();
 
-            let cstate = make_test_chain_state();
-
             let _sig = chan.sign_counterparty_commitment_tx(
-                &cstate,
                 &tx.transaction,
                 &output_witscripts,
                 &remote_percommit_point,
@@ -293,10 +290,7 @@ mod tests {
             let trusted_tx = commitment_tx.trust();
             let tx = trusted_tx.built_transaction().clone();
 
-            let cstate = make_test_chain_state();
-
             let _sig = chan.sign_counterparty_commitment_tx(
-                &cstate,
                 &tx.transaction,
                 &output_witscripts,
                 &remote_percommit_point,
@@ -362,10 +356,7 @@ mod tests {
             let trusted_tx = commitment_tx.trust();
             let tx = trusted_tx.built_transaction().clone();
 
-            let cstate = make_test_chain_state();
-
             let _sig = chan.sign_counterparty_commitment_tx(
-                &cstate,
                 &tx.transaction,
                 &output_witscripts,
                 &remote_percommit_point,

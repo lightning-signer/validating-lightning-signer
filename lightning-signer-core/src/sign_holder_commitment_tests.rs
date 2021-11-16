@@ -67,11 +67,8 @@ mod tests {
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
 
-                let cstate = make_test_chain_state();
-
                 let sig = chan
                     .sign_holder_commitment_tx(
-                        &cstate,
                         &tx.transaction,
                         &output_witscripts,
                         commit_num,
@@ -146,9 +143,7 @@ mod tests {
             .expect("build");
         let (ser_signature, _) = node
             .with_ready_channel(&channel_id, |chan| {
-                let cstate = make_test_chain_state();
                 chan.sign_holder_commitment_tx_phase2(
-                    &cstate,
                     commit_num,
                     0, // feerate not used
                     to_holder_value_sat,
@@ -393,7 +388,6 @@ mod tests {
                 );
 
                 let sig = chan.sign_holder_commitment_tx(
-                    &cstate,
                     &tx.transaction,
                     &output_witscripts,
                     commit_tx_ctx.commit_num,

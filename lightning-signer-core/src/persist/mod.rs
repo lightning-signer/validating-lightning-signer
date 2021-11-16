@@ -1,7 +1,9 @@
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::Script;
+use crate::chain::tracker::ChainTracker;
 
 use crate::channel::{Channel, ChannelId, ChannelStub};
+use crate::monitor::ChainMonitor;
 use crate::node::NodeConfig;
 use crate::prelude::*;
 
@@ -19,6 +21,14 @@ pub trait Persist: Sync + Send {
     fn delete_node(&self, node_id: &PublicKey);
     /// Will error if exists
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()>;
+
+    /// Create a new tracker
+    fn new_chain_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>);
+    /// Update the tracker
+    fn update_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) -> Result<(), ()>;
+    /// Get the tracker
+    fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, ()>;
+
     /// Will error if doesn't exist.
     ///
     /// * `id0` original channel ID supplied to [`Persist::new_channel()`]
@@ -53,6 +63,16 @@ impl Persist for DummyPersister {
 
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()> {
         Ok(())
+    }
+
+    fn new_chain_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) {}
+
+    fn update_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) -> Result<(), ()> {
+        Ok(())
+    }
+
+    fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, ()> {
+        Err(())
     }
 
     fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), ()> {

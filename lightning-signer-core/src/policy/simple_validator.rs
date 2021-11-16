@@ -298,12 +298,11 @@ impl Validator for SimpleValidator {
         &self,
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
-        cstate: &ChainState,
         tx: &Transaction,
         values_sat: &Vec<u64>,
         opaths: &Vec<Vec<u32>>,
     ) -> Result<(), ValidationError> {
-        let mut debug_on_return = scoped_debug_return!(cstate, tx, values_sat, opaths);
+        let mut debug_on_return = scoped_debug_return!(tx, values_sat, opaths);
 
         // policy-onchain-fee-range
         let mut sum_inputs: u64 = 0;

@@ -60,8 +60,9 @@ impl MultiSigner {
         let mut nodes = self.nodes.lock().unwrap();
         node.add_allowlist(&self.initial_allowlist)
             .expect("valid initialallowlist");
-        nodes.insert(node_id, Arc::new(node));
         self.persister.new_node(&node_id, &node_config, &seed);
+        self.persister.new_chain_tracker(&node_id, &node.get_tracker());
+        nodes.insert(node_id, Arc::new(node));
         node_id
     }
 
@@ -88,8 +89,9 @@ impl MultiSigner {
         }
         node.add_allowlist(&self.initial_allowlist)
             .expect("valid initialallowlist");
-        nodes.insert(node_id, Arc::new(node));
         self.persister.new_node(&node_id, &node_config, seed);
+        self.persister.new_chain_tracker(&node_id, &node.get_tracker());
+        nodes.insert(node_id, Arc::new(node));
         Ok(node_id)
     }
 

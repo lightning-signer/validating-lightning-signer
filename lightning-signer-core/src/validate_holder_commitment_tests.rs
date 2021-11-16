@@ -343,7 +343,6 @@ mod tests {
                 // Validate the holder_commitment, but defer error returns till after we've had
                 // a chance to validate the channel state for side-effects
                 let deferred_rv = chan.validate_holder_commitment_tx(
-                    &cstate,
                     &tx,
                     &output_witscripts,
                     commit_tx_ctx.commit_num,

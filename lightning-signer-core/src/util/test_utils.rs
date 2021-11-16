@@ -11,7 +11,8 @@ use bitcoin::network::constants::Network;
 use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1, SecretKey, SignOnly, Signature};
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::psbt::serialize::Serialize;
-use bitcoin::{Address, OutPoint as BitcoinOutPoint, SigHashType, TxIn, TxOut};
+use bitcoin::{Address, BlockHash, BlockHeader, OutPoint as BitcoinOutPoint, SigHashType, Transaction, TxIn, TxMerkleNode, TxOut};
+use bitcoin::blockdata::constants::genesis_block;
 use chain::chaininterface;
 use lightning::chain;
 use lightning::chain::channelmonitor::MonitorEvent;
@@ -240,6 +241,8 @@ pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> Public
 pub fn make_test_chain_state() -> ChainState {
     ChainState {
         current_height: 1000,
+        funding_depth: 0,
+        funding_double_spent_depth: 0
     }
 }
 
@@ -311,6 +314,15 @@ pub fn init_node_and_channel(
     setup: ChannelSetup,
 ) -> (Arc<Node>, ChannelId) {
     let node = init_node(node_config, seedstr);
+    {
+        let mut tracker = node.get_tracker();
+        let header = make_testnet_header(tracker.tip(), Default::default());
+        tracker.add_block(header, vec![], None).unwrap();
+        let header = make_testnet_header(tracker.tip(), Default::default());
+        tracker.add_block(header, vec![], None).unwrap();
+        let header = make_testnet_header(tracker.tip(), Default::default());
+        tracker.add_block(header, vec![], None).unwrap();
+    }
     let channel_nonce = "nonce1".as_bytes().to_vec();
     let channel_id = channel_nonce_to_id(&channel_nonce);
     node.new_channel(Some(channel_id), Some(channel_nonce), &node)
@@ -744,9 +756,7 @@ pub fn funding_tx_sign(
     tx_ctx: &TestFundingTxContext,
     tx: &bitcoin::Transaction,
 ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Status> {
-    let cstate = ChainState { current_height: 0 };
     node_ctx.node.sign_onchain_tx(
-        &cstate,
         &tx,
         &tx_ctx.ipaths,
         &tx_ctx.ivals,
@@ -1025,10 +1035,7 @@ pub fn validate_holder_commitment(
             .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
-            let cstate = ChainState { current_height: 0 };
-
             chan.validate_holder_commitment_tx(
-                &cstate,
                 &commit_tx_ctx
                     .tx
                     .as_ref()
@@ -1087,10 +1094,7 @@ pub fn sign_holder_commitment(
             .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
-            let cstate = ChainState { current_height: 0 };
-
             chan.sign_holder_commitment_tx(
-                &cstate,
                 &commit_tx_ctx
                     .tx
                     .as_ref()
@@ -1522,10 +1526,7 @@ where
                 .transaction
                 .clone();
 
-            let cstate = ChainState { current_height: 0 };
-
             chan.validate_holder_commitment_tx(
-                &cstate,
                 &tx,
                 &output_witscripts,
                 commit_tx_ctx.commit_num,
@@ -1546,4 +1547,64 @@ pub fn hex_decode(s: &str) -> Result<Vec<u8>, hex::Error> {
 
 pub fn hex_encode(o: &[u8]) -> String {
     o.to_hex()
+}
+
+pub fn make_tx(inputs: Vec<TxIn>) -> Transaction {
+    Transaction {
+        version: 0,
+        lock_time: 0,
+        input: inputs,
+        output: vec![Default::default()],
+    }
+}
+
+pub fn make_txin(vout: u32) -> TxIn {
+    TxIn {
+        previous_output: make_outpoint(vout),
+        script_sig: Default::default(),
+        sequence: 0,
+        witness: vec![],
+    }
+}
+
+pub fn make_outpoint(vout: u32) -> BitcoinOutPoint {
+    BitcoinOutPoint {
+        txid: Default::default(),
+        vout,
+    }
+}
+
+pub fn make_header(tip: BlockHeader, merkle_root: TxMerkleNode) -> BlockHeader {
+    let bits = tip.bits;
+    mine_header_with_bits(tip.block_hash(), merkle_root, bits)
+}
+
+pub fn make_testnet_header(tip: BlockHeader, merkle_root: TxMerkleNode) -> BlockHeader {
+    // use lower bits so it doesn't take forever
+    let regtest_genesis = genesis_block(Network::Regtest);
+    let bits = regtest_genesis.header.bits;
+    mine_header_with_bits(tip.block_hash(), merkle_root, bits)
+}
+
+pub fn mine_header_with_bits(
+    prev_hash: BlockHash,
+    merkle_root: TxMerkleNode,
+    bits: u32,
+) -> BlockHeader {
+    let mut nonce = 0;
+    loop {
+        let header = BlockHeader {
+            version: 0,
+            prev_blockhash: prev_hash,
+            merkle_root,
+            time: 0,
+            bits,
+            nonce,
+        };
+        if header.validate_pow(&header.target()).is_ok() {
+            // println!("mined block with nonce {}", nonce);
+            return header;
+        }
+        nonce += 1;
+    }
 }

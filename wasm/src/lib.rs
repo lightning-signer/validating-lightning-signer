@@ -14,7 +14,6 @@ use web_sys;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::node::{Node, NodeConfig};
 use lightning_signer::persist::{DummyPersister, Persist};
-use lightning_signer::policy::validator::ChainState;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::key_utils::make_test_key;
 use lightning_signer::Arc;
@@ -229,11 +228,7 @@ impl JSNode {
         let (ser_signature, _) = self
             .node
             .with_ready_channel(&channel_id.0, |chan| {
-                let cstate = ChainState {
-                    current_height: 1000,
-                };
                 chan.sign_holder_commitment_tx_phase2(
-                    &cstate,
                     commit_num,
                     0, // feerate not used
                     to_holder_value_sat,

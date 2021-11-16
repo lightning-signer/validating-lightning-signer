@@ -52,7 +52,6 @@ impl Validator for NullValidator {
         &self,
         _wallet: &Wallet,
         _channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
-        _cstate: &ChainState,
         _tx: &Transaction,
         _values_sat: &Vec<u64>,
         _opaths: &Vec<Vec<u32>>,

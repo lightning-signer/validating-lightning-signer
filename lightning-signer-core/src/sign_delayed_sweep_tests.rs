@@ -120,7 +120,6 @@ mod tests {
                 );
 
                 let sig = chan.sign_delayed_sweep(
-                    &cstate,
                     &tx,
                     input,
                     commit_num,
@@ -300,7 +299,7 @@ mod tests {
                     tx.lock_time = 1_000_000;
                 },
             ),
-            "transaction format: validate_delayed_sweep: bad locktime: 1000000 > 1000"
+            "transaction format: validate_delayed_sweep: bad locktime: 1000000 > 3"
         );
     }
 

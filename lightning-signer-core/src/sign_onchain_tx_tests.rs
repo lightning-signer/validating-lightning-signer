@@ -46,11 +46,9 @@ mod tests {
         let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1, input2], chanamt);
         let spendtypes = vec![SpendType::P2wpkh, SpendType::P2wpkh];
         let uniclosekeys = vec![None, None];
-        let cstate = make_test_chain_state();
 
         let witvec = node
             .sign_onchain_tx(
-                &cstate,
                 &tx,
                 &ipaths,
                 &values_sat,
@@ -109,11 +107,9 @@ mod tests {
         let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1], chanamt);
         let spendtypes = vec![SpendType::P2wpkh];
         let uniclosekeys = vec![None];
-        let cstate = make_test_chain_state();
 
         let witvec = node
             .sign_onchain_tx(
-                &cstate,
                 &tx,
                 &ipaths,
                 &values_sat,
@@ -168,11 +164,9 @@ mod tests {
         let (opath, tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1], chanamt);
         let spendtypes = vec![SpendType::P2wpkh];
         let uniclosekeys = vec![None];
-        let cstate = make_test_chain_state();
 
         assert_failed_precondition_err!(
             node.sign_onchain_tx(
-                &cstate,
                 &tx,
                 &ipaths,
                 &values_sat,
@@ -206,11 +200,9 @@ mod tests {
         let (opath, tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1], chanamt);
         let spendtypes = vec![SpendType::P2wpkh];
         let uniclosekeys = vec![None];
-        let cstate = make_test_chain_state();
 
         assert_failed_precondition_err!(
             node.sign_onchain_tx(
-                &cstate,
                 &tx,
                 &ipaths,
                 &values_sat,
@@ -253,11 +245,9 @@ mod tests {
         )
         .unwrap();
         let uniclosekeys = vec![Some(uniclosekey)];
-        let cstate = make_test_chain_state();
 
         let witvec = node
             .sign_onchain_tx(
-                &cstate,
                 &tx,
                 &ipaths,
                 &values_sat,
@@ -304,11 +294,9 @@ mod tests {
         let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1], 100);
         let spendtypes = vec![SpendType::P2pkh];
         let uniclosekeys = vec![None];
-        let cstate = make_test_chain_state();
 
         let witvec = node
             .sign_onchain_tx(
-                &cstate,
                 &tx,
                 &ipaths,
                 &values_sat,
@@ -363,11 +351,9 @@ mod tests {
             make_test_funding_tx_with_p2shwpkh_change(&secp_ctx, &node, vec![input1], chanamt);
         let spendtypes = vec![SpendType::P2shP2wpkh];
         let uniclosekeys = vec![None];
-        let cstate = make_test_chain_state();
 
         let witvec = node
             .sign_onchain_tx(
-                &cstate,
                 &tx,
                 &ipaths,
                 &values_sat,
@@ -464,11 +450,9 @@ mod tests {
             SpendType::Invalid,
         ];
         let uniclosekeys = vec![None, None, None];
-        let cstate = make_test_chain_state();
 
         let witvec = node
             .sign_onchain_tx(
-                &cstate,
                 &tx,
                 &ipaths,
                 &values_sat,

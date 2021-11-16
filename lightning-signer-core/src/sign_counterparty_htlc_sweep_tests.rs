@@ -181,7 +181,6 @@ mod tests {
                     );
 
                     let sig = chan.sign_counterparty_htlc_sweep(
-                        &cstate,
                         &tx,
                         input,
                         &remote_per_commitment_point,
@@ -329,7 +328,7 @@ mod tests {
                 },
             ),
             "transaction format: validate_counterparty_htlc_sweep: \
-             bad locktime: 1000000 > 1000"
+             bad locktime: 1000000 > 3"
         );
     }
 

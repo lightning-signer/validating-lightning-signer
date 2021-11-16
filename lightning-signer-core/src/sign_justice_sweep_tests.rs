@@ -156,7 +156,6 @@ mod tests {
                 );
 
                 let sig = chan.sign_justice_sweep(
-                    &cstate,
                     &tx,
                     input,
                     &revocation_secret,
@@ -328,7 +327,7 @@ mod tests {
                     tx.lock_time = 1_000_000;
                 },
             ),
-            "transaction format: validate_justice_sweep: bad locktime: 1000000 > 1000"
+            "transaction format: validate_justice_sweep: bad locktime: 1000000 > 3"
         );
     }
 
