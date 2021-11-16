@@ -80,6 +80,7 @@ pub fn create_node_cfgs_with_signer<'a>(
             fee_estimator: &chanmon_cfgs[i].fee_estimator,
             chain_monitor,
             keys_manager,
+            network_graph: &chanmon_cfgs[i].network_graph,
             node_seed: seed,
         });
     }

@@ -56,8 +56,9 @@ hashbrown = "0.9" # match hashbrown dependency version via tonic/h2/indexmap
 tempfile = "3.2.0"
 
 [dependencies.lightning]
-# git = "https://github.com/rust-bitcoin/rust-lightning.git"
-version = "0.0.102"
+git = "https://github.com/rust-bitcoin/rust-lightning.git"
+rev = "4bb81ff5942749077613827d6807b64230ecbcd5"
+# version = "0.0.103"
 default-features = false
 
 [dependencies.bitcoin]
