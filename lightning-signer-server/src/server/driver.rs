@@ -844,15 +844,27 @@ impl Signer for SignServer {
             &req.commit_signature
                 .ok_or_else(|| invalid_grpc_argument("missing commit_signature"))?
                 .data,
+            SigHashType::All,
         )
         .map_err(|err| {
             invalid_grpc_argument(format!("trouble in bitcoin_vec_to_signature: {}", err))
         })?;
+
+        let htlc_sighashtype = self
+            .signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                Ok(if chan.setup.option_anchor_outputs() {
+                    SigHashType::SinglePlusAnyoneCanPay
+                } else {
+                    SigHashType::All
+                })
+            })?;
+
         let htlc_sigs = req
             .htlc_signatures
             .iter()
             .map(|sig| {
-                bitcoin_vec_to_signature(&sig.data).map_err(|err| {
+                bitcoin_vec_to_signature(&sig.data, htlc_sighashtype).map_err(|err| {
                     internal_error(format!("bitcoin_vec_to_signature trouble: {}", err))
                 })
             })
@@ -1003,7 +1015,7 @@ impl Signer for SignServer {
         let sigvec = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let sig = chan.sign_holder_htlc_tx(
+                let typedsig = chan.sign_holder_htlc_tx(
                     &tx,
                     req.n,
                     opt_per_commitment_point,
@@ -1011,7 +1023,7 @@ impl Signer for SignServer {
                     htlc_amount_sat,
                     &output_witscript,
                 )?;
-                Ok(signature_to_bitcoin_vec(sig))
+                Ok(typedsig.serialize())
             })
             .map_err(|_| Status::internal("failed to sign"))?;
 
@@ -1120,14 +1132,14 @@ impl Signer for SignServer {
         let sig_vec = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let sig = chan.sign_counterparty_htlc_tx(
+                let typedsig = chan.sign_counterparty_htlc_tx(
                     &tx,
                     &remote_per_commitment_point,
                     &redeemscript,
                     htlc_amount_sat,
                     &output_witscript,
                 )?;
-                Ok(signature_to_bitcoin_vec(sig))
+                Ok(typedsig.serialize())
             })
             .map_err(|_| Status::internal("failed to sign"))?;
 

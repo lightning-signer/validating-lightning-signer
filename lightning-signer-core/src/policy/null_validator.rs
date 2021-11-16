@@ -1,5 +1,5 @@
 use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::{self, Network, Script, SigHash, Transaction};
+use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
 use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 
@@ -116,7 +116,7 @@ impl Validator for NullValidator {
         redeemscript: &Script,
         htlc_amount_sat: u64,
         output_witscript: &Script,
-    ) -> Result<(u32, HTLCOutputInCommitment, SigHash), ValidationError> {
+    ) -> Result<(u32, HTLCOutputInCommitment, SigHash, SigHashType), ValidationError> {
         // Delegate to SimplePolicy
         self.0.decode_and_validate_htlc_tx(
             is_counterparty,

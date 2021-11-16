@@ -61,6 +61,22 @@ impl fmt::Display for ChannelId {
     }
 }
 
+/// Bitcoin Signature which specifies SigHashType
+#[derive(Debug)]
+pub struct TypedSignature {
+    sig: Signature,
+    typ: SigHashType,
+}
+
+impl TypedSignature {
+    /// Serialize the signature and append the sighash type byte.
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut ss = self.sig.serialize_der().to_vec();
+        ss.push(self.typ as u8);
+        ss
+    }
+}
+
 /// The commitment type, based on the negotiated option
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CommitmentType {
@@ -133,7 +149,8 @@ impl ChannelSetup {
         self.commitment_type != CommitmentType::Legacy
     }
 
-    pub(crate) fn option_anchor_outputs(&self) -> bool {
+    /// True if this channel uses anchors.
+    pub fn option_anchor_outputs(&self) -> bool {
         self.commitment_type == CommitmentType::Anchors
     }
 }
@@ -1718,7 +1735,7 @@ impl Channel {
         redeemscript: &Script,
         htlc_amount_sat: u64,
         output_witscript: &Script,
-    ) -> Result<Signature, Status> {
+    ) -> Result<TypedSignature, Status> {
         let per_commitment_point = if opt_per_commitment_point.is_some() {
             opt_per_commitment_point.unwrap()
         } else {
@@ -1748,7 +1765,7 @@ impl Channel {
         redeemscript: &Script,
         htlc_amount_sat: u64,
         output_witscript: &Script,
-    ) -> Result<Signature, Status> {
+    ) -> Result<TypedSignature, Status> {
         let txkeys = self
             .make_counterparty_tx_keys(&remote_per_commitment_point)
             .expect("failed to make txkeys");
@@ -1774,8 +1791,8 @@ impl Channel {
         output_witscript: &Script,
         is_counterparty: bool,
         txkeys: TxCreationKeys,
-    ) -> Result<Signature, Status> {
-        let (feerate_per_kw, htlc, recomposed_tx_sighash) =
+    ) -> Result<TypedSignature, Status> {
+        let (feerate_per_kw, htlc, recomposed_tx_sighash, sighashtype) =
             self.validator().decode_and_validate_htlc_tx(
                 is_counterparty,
                 &self.setup,
@@ -1824,7 +1841,10 @@ impl Channel {
         let htlc_sighash = Message::from_slice(&recomposed_tx_sighash[..])
             .map_err(|_| Status::internal("failed to sighash recomposed"))?;
 
-        Ok(self.secp_ctx.sign(&htlc_sighash, &htlc_privkey))
+        Ok(TypedSignature {
+            sig: self.secp_ctx.sign(&htlc_sighash, &htlc_privkey),
+            typ: sighashtype,
+        })
     }
 
     /// Get the unilateral close key, for sweeping the to-remote output

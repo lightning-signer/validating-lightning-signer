@@ -244,8 +244,11 @@ pub fn signature_to_bitcoin_vec(sig: Signature) -> Vec<u8> {
     sigvec
 }
 
-/// Convert a Bitcoin signature bytes, with SIGHASH_ALL, to [Signature]
-pub fn bitcoin_vec_to_signature(sigvec: &Vec<u8>) -> Result<Signature, bitcoin::secp256k1::Error> {
+/// Convert a Bitcoin signature bytes, with the specified SigHashType, to [Signature]
+pub fn bitcoin_vec_to_signature(
+    sigvec: &Vec<u8>,
+    sighashtype: SigHashType,
+) -> Result<Signature, bitcoin::secp256k1::Error> {
     let len = sigvec.len();
     if len == 0 {
         return Err(bitcoin::secp256k1::Error::InvalidSignature);
@@ -254,7 +257,7 @@ pub fn bitcoin_vec_to_signature(sigvec: &Vec<u8>) -> Result<Signature, bitcoin::
     let mode = sv
         .pop()
         .ok_or_else(|| bitcoin::secp256k1::Error::InvalidSignature)?;
-    if mode != SigHashType::All as u8 {
+    if mode != sighashtype as u8 {
         return Err(bitcoin::secp256k1::Error::InvalidSignature);
     }
     Ok(Signature::from_der(&sv[..])?)
