@@ -64,7 +64,7 @@ pub struct SimplePolicy {
     pub max_delay: u16,
     /// Maximum channel value in satoshi
     pub max_channel_size_sat: u64,
-    /// Maximum amount allowed to be pushed
+    /// Maximum amount allowed to be pushed (v1 channel establishment)
     pub max_push_sat: u64,
     /// amounts below this number of satoshi are not considered important
     pub epsilon_sat: u64,
@@ -256,14 +256,6 @@ impl Validator for SimpleValidator {
 
         // NOTE - setup.channel_value_sat is not valid, set later on.
 
-        if setup.push_value_msat / 1000 > self.policy.max_push_sat {
-            return policy_err!(
-                "push_value_msat {} greater than max_push_sat {}",
-                setup.push_value_msat,
-                self.policy.max_push_sat
-            );
-        }
-
         // policy-channel-counterparty-contest-delay-range
         // policy-commitment-to-self-delay-range relies on this value
         self.validate_delay(
@@ -357,6 +349,14 @@ impl Validator for SimpleValidator {
                 })?;
                 match &*slot.lock().unwrap() {
                     ChannelSlot::Ready(chan) => {
+                        if chan.setup.push_value_msat / 1000 > self.policy.max_push_sat {
+                            return policy_err!(
+                                "push_value_msat {} greater than max_push_sat {}",
+                                chan.setup.push_value_msat,
+                                self.policy.max_push_sat
+                            );
+                        }
+
                         // policy-onchain-output-match-commitment
                         if output.value != chan.setup.channel_value_sat {
                             return policy_err!(
@@ -1526,20 +1526,6 @@ mod tests {
         assert!(validator.validate_channel_value(&setup).is_ok());
         setup.channel_value_sat = 100_000_001;
         assert!(validator.validate_channel_value(&setup).is_err());
-    }
-
-    #[test]
-    fn validate_channel_open_bad_push_val() {
-        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let mut setup = make_test_channel_setup();
-        let validator = make_test_validator();
-        setup.push_value_msat = 0;
-        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_ok());
-        setup.push_value_msat = 1000;
-        assert_policy_err!(
-            validator.validate_ready_channel(&*node, &setup, &vec![]),
-            "validate_ready_channel: push_value_msat 1000 greater than max_push_sat 0"
-        );
     }
 
     fn make_counterparty_info(

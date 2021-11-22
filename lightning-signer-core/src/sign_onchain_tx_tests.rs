@@ -887,4 +887,40 @@ mod tests {
             "policy failure: validate_onchain_tx: funding script_pubkey mismatch w/ channel: Script(OP_0 OP_PUSHBYTES_32 1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b) != Script(OP_0 OP_PUSHBYTES_32 7ac8486233edd675a9745d9eefd4386880312b3930a2195567b4b89220b5c833)"
         );
     }
+
+    #[test]
+    fn sign_funding_tx_with_bad_push_val() {
+        let is_p2sh = false;
+        let node_ctx = test_node_ctx(1);
+
+        let incoming = 5_000_000;
+        let channel_amount = 3_000_000;
+        let fee = 1000;
+        let change = incoming - channel_amount - fee;
+        let push_val_msat = 50_000 * 1000;
+
+        let mut chan_ctx = test_chan_ctx_with_push_val(&node_ctx, 1, channel_amount, push_val_msat);
+        let mut tx_ctx = test_funding_tx_ctx();
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        let outpoint_ndx =
+            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+
+        let tx = funding_tx_from_ctx(&tx_ctx);
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
+        let (csig, hsigs) =
+            counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
+        validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
+            .expect("valid holder commitment");
+
+        assert_failed_precondition_err!(
+            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            "policy failure: validate_onchain_tx: \
+             push_value_msat 50000000 greater than max_push_sat 20000"
+        );
+    }
 }

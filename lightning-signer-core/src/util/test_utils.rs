@@ -513,13 +513,27 @@ pub fn make_test_counterparty_keys(
         .unwrap()
 }
 
-pub fn test_chan_ctx(node_ctx: &TestNodeContext, nn: usize, value_sat: u64) -> TestChannelContext {
+pub fn test_chan_ctx(
+    node_ctx: &TestNodeContext,
+    nn: usize,
+    channel_value_sat: u64,
+) -> TestChannelContext {
+    let push_value_msat = 0;
+    test_chan_ctx_with_push_val(node_ctx, nn, channel_value_sat, push_value_msat)
+}
+
+pub fn test_chan_ctx_with_push_val(
+    node_ctx: &TestNodeContext,
+    nn: usize,
+    channel_value_sat: u64,
+    push_value_msat: u64,
+) -> TestChannelContext {
     let channel_nonce0 = format!("nonce{}", nn).as_bytes().to_vec();
     let channel_id = channel_nonce_to_id(&channel_nonce0);
     let setup = ChannelSetup {
         is_outbound: true,
-        channel_value_sat: value_sat,
-        push_value_msat: 0,
+        channel_value_sat,
+        push_value_msat,
         funding_outpoint: BitcoinOutPoint { txid: Txid::from_slice(&[2u8; 32]).unwrap(), vout: 0 },
         holder_selected_contest_delay: 6,
         holder_shutdown_script: None,
@@ -538,7 +552,7 @@ pub fn test_chan_ctx(node_ctx: &TestNodeContext, nn: usize, value_sat: u64) -> T
     TestChannelContext {
         channel_id,
         setup,
-        counterparty_keys: make_test_counterparty_keys(&node_ctx, &channel_id, value_sat),
+        counterparty_keys: make_test_counterparty_keys(&node_ctx, &channel_id, channel_value_sat),
     }
 }
 
