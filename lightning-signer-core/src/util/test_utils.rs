@@ -18,11 +18,11 @@ use bitcoin::{
 };
 use chain::chaininterface;
 use lightning::chain;
+use lightning::chain::chainmonitor::MonitorUpdateId;
 use lightning::chain::channelmonitor::MonitorEvent;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::chain::transaction::OutPoint;
 use lightning::chain::{chainmonitor, channelmonitor};
-use lightning::chain::chainmonitor::MonitorUpdateId;
 use lightning::ln::chan_utils::{
     build_htlc_transaction, derive_private_key, get_htlc_redeemscript, get_revokeable_redeemscript,
     make_funding_redeemscript, ChannelTransactionParameters, CommitmentTransaction,
@@ -127,7 +127,7 @@ impl chainmonitor::Persist<LoopbackChannelSigner> for TestPersister {
         &self,
         _funding_txo: OutPoint,
         _data: &channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
-        _id: MonitorUpdateId
+        _id: MonitorUpdateId,
     ) -> Result<(), chain::ChannelMonitorUpdateErr> {
         self.update_ret.lock().unwrap().clone()
     }
@@ -137,7 +137,7 @@ impl chainmonitor::Persist<LoopbackChannelSigner> for TestPersister {
         _funding_txo: OutPoint,
         _update: &Option<channelmonitor::ChannelMonitorUpdate>,
         _data: &channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
-        _id: MonitorUpdateId
+        _id: MonitorUpdateId,
     ) -> Result<(), chain::ChannelMonitorUpdateErr> {
         self.update_ret.lock().unwrap().clone()
     }
