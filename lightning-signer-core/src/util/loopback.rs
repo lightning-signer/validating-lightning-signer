@@ -38,7 +38,7 @@ pub struct LoopbackSignerKeysInterface {
 }
 
 impl LoopbackSignerKeysInterface {
-    fn get_node(&self) -> Arc<Node> {
+    pub(crate) fn get_node(&self) -> Arc<Node> {
         self.signer.get_node(&self.node_id).expect("our node is missing")
     }
 

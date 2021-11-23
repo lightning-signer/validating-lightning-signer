@@ -5,8 +5,10 @@ use lightning::chain::keysinterface::KeysInterface;
 use log::info;
 #[cfg(feature = "std")]
 use rand::{OsRng, Rng};
+use crate::chain::tracker::ChainTracker;
 
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSlot};
+use crate::monitor::ChainMonitor;
 use crate::node::{Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
 use crate::prelude::*;
@@ -54,6 +56,26 @@ impl MultiSigner {
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         node.add_allowlist(&self.initial_allowlist).expect("valid initialallowlist");
+        self.persister.new_node(&node_id, &node_config, &seed);
+        self.persister.new_chain_tracker(&node_id, &node.get_tracker());
+        nodes.insert(node_id, Arc::new(node));
+        node_id
+    }
+
+    /// Create a node with a random seed, given extended initialization parameters
+    #[cfg(feature = "std")]
+    pub fn new_node_with_tracker(&self, node_config: NodeConfig, tracker: ChainTracker<ChainMonitor>) -> PublicKey {
+        let secp_ctx = Secp256k1::signing_only();
+        let mut rng = OsRng::new().unwrap();
+
+        let mut seed = [0; 32];
+        rng.fill_bytes(&mut seed);
+
+        let node = Node::new_with_tracker(node_config, &seed, &self.persister, vec![], tracker);
+        let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
+        let mut nodes = self.nodes.lock().unwrap();
+        node.add_allowlist(&self.initial_allowlist)
+            .expect("valid initialallowlist");
         self.persister.new_node(&node_id, &node_config, &seed);
         self.persister.new_chain_tracker(&node_id, &node.get_tracker());
         nodes.insert(node_id, Arc::new(node));
