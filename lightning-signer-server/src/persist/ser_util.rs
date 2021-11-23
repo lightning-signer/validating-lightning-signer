@@ -412,6 +412,8 @@ impl<'de> DeserializeAs<'de, EnforcementState> for EnforcementStateDef {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(remote = "ListenSlot")]
 pub struct ListenSlotDef {
+    #[serde_as(as = "Set<TxidDef>")]
+    pub txid_watches: Set<Txid>,
     #[serde_as(as = "Set<OutPointDef>")]
     watches: Set<OutPoint>,
     #[serde_as(as = "Set<OutPointDef>")]

@@ -4,7 +4,7 @@ use alloc::collections::{BTreeMap as Map, BTreeSet as Set, VecDeque};
 use bitcoin::blockdata::constants::DIFFCHANGE_INTERVAL;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::util::uint::Uint256;
-use bitcoin::{BlockHeader, Network, OutPoint, Transaction};
+use bitcoin::{BlockHeader, Network, OutPoint, Transaction, Txid};
 
 /// Error
 #[derive(Debug, PartialEq)]
@@ -22,7 +22,9 @@ pub enum Error {
 /// A listener entry
 #[derive(Debug, Clone)]
 pub struct ListenSlot {
-    /// outpoints we are watching
+    /// watched transactions to be confirmed
+    pub txid_watches: Set<Txid>,
+    /// watched outpoints to be spent
     pub watches: Set<OutPoint>,
     /// outpoints we have already seen
     pub seen: Set<OutPoint>,
@@ -90,28 +92,32 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
             let mut matched = Vec::new();
             for tx in txs.iter().rev() {
                 // Remove any outpoints that were seen as spent when we added this block
-                let mut input_matched = false;
+                let mut found = false;
                 for inp in tx.input.iter().rev() {
                     if slot.seen.remove(&inp.previous_output) {
-                        input_matched = true;
+                        found = true;
                         let inserted = slot.watches.insert(inp.previous_output);
                         assert!(inserted, "we failed to previously remove a watch");
                     }
                 }
 
-                // Remove any watches that match outputs which are being reorged-out.
                 let txid = tx.txid();
+                if slot.txid_watches.contains(&txid) {
+                    found = true;
+                }
+
+                // Remove any watches that match outputs which are being reorged-out.
                 for (vout, _) in tx.output.iter().enumerate() {
                     let outpoint = OutPoint::new(txid, vout as u32);
                     if slot.watches.remove(&outpoint) {
                         assert!(
-                            input_matched,
+                            found,
                             "a watch was previously added without any inputs matching"
                         );
                     }
                 }
 
-                if input_matched {
+                if found {
                     matched.push(tx);
                 }
             }
@@ -148,6 +154,9 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
                         slot.seen.insert(inp.previous_output);
                     }
                 }
+                if slot.txid_watches.contains(&tx.txid()) {
+                    found = true;
+                }
                 if found {
                     matched.push(tx);
                 }
@@ -158,8 +167,10 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     }
 
     /// Add a listener and initialize the watched outpoint set
-    pub fn add_listener(&mut self, listener: L, initial_watches: Set<OutPoint>) {
-        let slot = ListenSlot { watches: initial_watches, seen: Set::new() };
+    pub fn add_listener(&mut self, listener: L, initial_txid_watches: Set<Txid>) {
+        let slot = ListenSlot {
+            txid_watches: initial_txid_watches,
+            watches: Set::new(), seen: Set::new() };
         self.listeners.insert(listener, slot);
     }
 
@@ -359,7 +370,10 @@ mod tests {
         let second_watch = OutPoint::new(tx.txid(), 0);
         let listener = MockListener::new(second_watch);
 
-        tracker.add_listener(listener.clone(), Set::from_iter(vec![initial_watch]));
+        tracker.add_listener(listener.clone(), Set::new());
+
+        tracker.add_listener_watches(listener.clone(), Set::from_iter(vec![initial_watch]));
+
         assert_eq!(tracker.listeners.len(), 1);
         assert_eq!(
             tracker.listeners.get(&listener).unwrap().watches,

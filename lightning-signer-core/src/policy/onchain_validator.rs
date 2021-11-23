@@ -1,9 +1,10 @@
 use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::{self, Network, Script, SigHash, Transaction};
+use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
 use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 
 use crate::channel::{ChannelSetup, ChannelSlot};
+use crate::policy::error::policy_error;
 use crate::policy::simple_validator::{simple_validator, SimpleValidator};
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
@@ -22,14 +23,29 @@ pub struct OnchainValidatorFactory {}
 impl ValidatorFactory for OnchainValidatorFactory {
     fn make_validator(&self, network: Network) -> Box<dyn Validator> {
         let validator = OnchainValidator {
-            0: simple_validator(network),
+            inner: simple_validator(network),
+            policy: make_onchain_policy(network),
         };
         Box::new(validator)
     }
 }
 
 /// An on-chain validator, subsumes the policy checks of SimpleValidator
-pub struct OnchainValidator(SimpleValidator);
+pub struct OnchainValidator {
+    inner: SimpleValidator,
+    policy: OnchainPolicy,
+}
+
+/// Policy to configure the onchain validator
+pub struct OnchainPolicy {
+    min_funding_depth: u16,
+}
+
+fn make_onchain_policy(_network: Network) -> OnchainPolicy {
+    OnchainPolicy {
+        min_funding_depth: 6
+    }
+}
 
 impl Validator for OnchainValidator {
     fn validate_ready_channel(
@@ -38,11 +54,11 @@ impl Validator for OnchainValidator {
         setup: &ChannelSetup,
         holder_shutdown_key_path: &Vec<u32>,
     ) -> Result<(), ValidationError> {
-        self.0.validate_ready_channel(wallet, setup, holder_shutdown_key_path)
+        self.inner.validate_ready_channel(wallet, setup, holder_shutdown_key_path)
     }
 
     fn validate_channel_value(&self, setup: &ChannelSetup) -> Result<(), ValidationError> {
-        self.0.validate_channel_value(setup)
+        self.inner.validate_channel_value(setup)
     }
 
     fn validate_onchain_tx(
@@ -53,7 +69,7 @@ impl Validator for OnchainValidator {
         values_sat: &Vec<u64>,
         opaths: &Vec<Vec<u32>>,
     ) -> Result<(), ValidationError> {
-        self.0.validate_onchain_tx(wallet, channels, tx, values_sat, opaths)
+        self.inner.validate_onchain_tx(wallet, channels, tx, values_sat, opaths)
     }
 
     fn decode_commitment_tx(
@@ -65,7 +81,7 @@ impl Validator for OnchainValidator {
         output_witscripts: &Vec<Vec<u8>>,
     ) -> Result<CommitmentInfo, ValidationError> {
         // Delegate to SimplePolicy
-        self.0
+        self.inner
             .decode_commitment_tx(keys, setup, is_counterparty, tx, output_witscripts)
     }
 
@@ -78,7 +94,8 @@ impl Validator for OnchainValidator {
         cstate: &ChainState,
         info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
-        self.0.validate_counterparty_commitment_tx(state, commit_num, commitment_point, setup, cstate, info)
+        self.ensure_funding_buried(commit_num, cstate)?;
+        self.inner.validate_counterparty_commitment_tx(state, commit_num, commitment_point, setup, cstate, info)
     }
 
     fn validate_holder_commitment_tx(
@@ -90,7 +107,8 @@ impl Validator for OnchainValidator {
         cstate: &ChainState,
         info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
-        self.0.validate_holder_commitment_tx(state, commit_num, commitment_point, setup, cstate, info)
+        self.ensure_funding_buried(commit_num, cstate)?;
+        self.inner.validate_holder_commitment_tx(state, commit_num, commitment_point, setup, cstate, info)
     }
 
     fn validate_counterparty_revocation(
@@ -99,7 +117,7 @@ impl Validator for OnchainValidator {
         revoke_num: u64,
         commitment_secret: &SecretKey,
     ) -> Result<(), ValidationError> {
-        self.0.validate_counterparty_revocation(state, revoke_num, commitment_secret)
+        self.inner.validate_counterparty_revocation(state, revoke_num, commitment_secret)
     }
 
     // Phase 1
@@ -113,9 +131,9 @@ impl Validator for OnchainValidator {
         redeemscript: &Script,
         htlc_amount_sat: u64,
         output_witscript: &Script,
-    ) -> Result<(u32, HTLCOutputInCommitment, SigHash), ValidationError> {
+    ) -> Result<(u32, HTLCOutputInCommitment, SigHash, SigHashType), ValidationError> {
         // Delegate to SimplePolicy
-        self.0.decode_and_validate_htlc_tx(
+        self.inner.decode_and_validate_htlc_tx(
             is_counterparty,
             setup,
             txkeys,
@@ -134,7 +152,7 @@ impl Validator for OnchainValidator {
         htlc: &HTLCOutputInCommitment,
         feerate_per_kw: u32,
     ) -> Result<(), ValidationError> {
-        self.0.validate_htlc_tx(setup, cstate, is_counterparty, htlc, feerate_per_kw)
+        self.inner.validate_htlc_tx(setup, cstate, is_counterparty, htlc, feerate_per_kw)
     }
 
     fn decode_and_validate_mutual_close_tx(
@@ -146,7 +164,7 @@ impl Validator for OnchainValidator {
         wallet_paths: &Vec<Vec<u32>>,
     ) -> Result<ClosingTransaction, ValidationError> {
         // Delegate to SimplePolicy
-        self.0
+        self.inner
             .decode_and_validate_mutual_close_tx(wallet, setup, estate, tx, wallet_paths)
     }
 
@@ -161,7 +179,7 @@ impl Validator for OnchainValidator {
         counterparty_script: &Option<Script>,
         holder_wallet_path_hint: &Vec<u32>,
     ) -> Result<(), ValidationError> {
-        self.0.validate_mutual_close_tx(wallet, setup, state, to_holder_value_sat, to_counterparty_value_sat, holder_script, counterparty_script, holder_wallet_path_hint)
+        self.inner.validate_mutual_close_tx(wallet, setup, state, to_holder_value_sat, to_counterparty_value_sat, holder_script, counterparty_script, holder_wallet_path_hint)
     }
 
     fn validate_delayed_sweep(
@@ -174,7 +192,7 @@ impl Validator for OnchainValidator {
         amount_sat: u64,
         wallet_path: &Vec<u32>,
     ) -> Result<(), ValidationError> {
-        self.0.validate_delayed_sweep(wallet, setup, cstate, tx, input, amount_sat, wallet_path)
+        self.inner.validate_delayed_sweep(wallet, setup, cstate, tx, input, amount_sat, wallet_path)
     }
 
     fn validate_counterparty_htlc_sweep(
@@ -188,7 +206,7 @@ impl Validator for OnchainValidator {
         amount_sat: u64,
         wallet_path: &Vec<u32>,
     ) -> Result<(), ValidationError> {
-        self.0.validate_counterparty_htlc_sweep(wallet, setup, cstate, tx, redeemscript, input, amount_sat, wallet_path)
+        self.inner.validate_counterparty_htlc_sweep(wallet, setup, cstate, tx, redeemscript, input, amount_sat, wallet_path)
     }
 
     fn validate_justice_sweep(
@@ -201,6 +219,17 @@ impl Validator for OnchainValidator {
         amount_sat: u64,
         wallet_path: &Vec<u32>,
     ) -> Result<(), ValidationError> {
-        self.0.validate_justice_sweep(wallet, setup, cstate, tx, input, amount_sat, wallet_path)
+        self.inner.validate_justice_sweep(wallet, setup, cstate, tx, input, amount_sat, wallet_path)
+    }
+}
+
+impl OnchainValidator {
+    fn ensure_funding_buried(&self, commit_num: u64, cstate: &ChainState) -> Result<(), ValidationError> {
+        // If we are trying to move beyond the initial commitment, ensure funding is on-chain and
+        // had enough confirmations.
+        if commit_num > 0 && cstate.funding_depth < self.policy.min_funding_depth as u32 {
+            return policy_err!("tried commitment {} when funding is not buried at depth {}", commit_num, cstate.funding_depth);
+        }
+        Ok(())
     }
 }

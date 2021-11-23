@@ -83,6 +83,20 @@ impl ChainMonitor {
     }
 
     /// Add a funding transaction to keep track of
+    /// For single-funding
+    pub fn add_funding_outpoint(&self, outpoint: &OutPoint) {
+        let mut state = self.state.lock().expect("lock");
+        assert!(
+            state.funding_txids.is_empty(),
+            "only a single funding tx currently supported"
+        );
+        assert_eq!(state.funding_txids.len(), state.funding_vouts.len());
+        state.funding_txids.push(outpoint.txid);
+        state.funding_vouts.push(outpoint.vout);
+    }
+
+    /// Add a funding transaction to keep track of
+    /// For dual-funding
     pub fn add_funding(&self, tx: &Transaction, vout: u32) {
         let mut state = self.state.lock().expect("lock");
         assert!(state.funding_txids.is_empty(), "only a single funding tx currently supported");
@@ -120,16 +134,18 @@ impl ChainMonitor {
 impl ChainListener for ChainMonitor {
     fn on_add_block(&self, txs: Vec<&Transaction>) -> Vec<OutPoint> {
         let mut state = self.state.lock().expect("lock");
+        let mut outpoints = vec![];
         for tx in txs {
-            if let Some(ind) = state.funding_txids.iter().position(|i| *i == tx.txid()) {
+            let txid = tx.txid();
+            if let Some(ind) = state.funding_txids.iter().position(|i| *i == txid) {
                 assert!(state.funding_double_spent_depth.is_none());
-                let outpoint = OutPoint::new(tx.txid(), state.funding_vouts[ind]);
+                let outpoint = OutPoint::new(txid, state.funding_vouts[ind]);
                 assert!(
                     outpoint.vout < tx.output.len() as u32,
                     "tx doesn't have funding output index"
                 );
-                state.funding_depth = Some(1);
-                return vec![outpoint];
+                state.funding_depth = Some(0);
+                outpoints.push(outpoint);
             } else if tx.input.iter().any(|i| state.funding_inputs.contains(&i.previous_output)) {
                 assert!(state.funding_depth.is_none());
                 // we may have seen some other funding input double-spent, so
@@ -138,12 +154,13 @@ impl ChainListener for ChainMonitor {
                     state.funding_double_spent_depth = Some(0);
                 }
             } else {
-                panic!("unexpected tx provided to ChainMonitor.on_add_block");
+                // Most likely closed on-chain
             }
         }
         state.funding_depth = state.funding_depth.map(|d| d + 1);
         state.funding_double_spent_depth = state.funding_double_spent_depth.map(|d| d + 1);
-        vec![]
+        state.height += 1;
+        outpoints
     }
 
     fn on_remove_block(&self, txs: Vec<&Transaction>) {
@@ -166,6 +183,7 @@ impl ChainListener for ChainMonitor {
         }
         state.funding_depth = state.funding_depth.map(|d| d - 1);
         state.funding_double_spent_depth = state.funding_double_spent_depth.map(|d| d - 1);
+        state.height -= 1;
     }
 }
 

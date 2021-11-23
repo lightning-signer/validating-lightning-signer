@@ -1193,10 +1193,15 @@ impl Channel {
     }
 
     /// The node has signed our funding transaction
-    pub fn funding_signed(&self, tx: &Transaction, vout: u32) {
+    pub fn funding_signed(&self, _tx: &Transaction, _vout: u32) {
+        // TODO(devrandom) we can't start monitoring the funding here,
+        // because the fundee in v1 doesn't sign the funding.  But we might
+        // want to track inputs here in the future for dual-funding.
+
         // the lock order is backwards (monitor -> tracker), but we release
         // the monitor lock, so it's OK
-        self.monitor.add_funding(tx, vout);
+
+        // self.monitor.add_funding(tx, vout);
     }
 }
 

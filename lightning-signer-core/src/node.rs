@@ -498,6 +498,7 @@ impl Node {
             keys.ready_channel(&channel_transaction_parameters);
             let funding_outpoint = setup.funding_outpoint;
             let monitor = ChainMonitor::new(funding_outpoint, tracker.height());
+            monitor.add_funding_outpoint(&funding_outpoint);
             Channel {
                 node: Weak::clone(&stub.node),
                 nonce: stub.nonce.clone(),
@@ -535,8 +536,11 @@ impl Node {
             channels.insert(channel_id0, chan_arc.clone());
         }
 
-        // Don't watch anything initially, wait until we are asked to sign funding
-        tracker.add_listener(chan.monitor.clone(), Set::new());
+        // Watch the funding outpoint, because we might not have any funding
+        // inputs that are ours.
+        // Note that the functional tests also have no inputs for the funder's tx
+        // which might be a problem in the future with more validation.
+        tracker.add_listener(chan.monitor.clone(), Set::from_iter(vec![setup.funding_outpoint.txid]));
 
         debug_vals!(&chan.setup);
         trace_enforcement_state!(&chan.enforcement_state);
