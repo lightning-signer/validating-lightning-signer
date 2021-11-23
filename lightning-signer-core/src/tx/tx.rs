@@ -16,7 +16,7 @@ use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut};
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
-    get_revokeable_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
+    get_anchor_redeemscript, get_revokeable_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
 
@@ -25,8 +25,7 @@ use crate::policy::error::{
     mismatch_error, script_format_error, transaction_format_error, ValidationError,
 };
 use crate::tx::script::{
-    expect_data, expect_number, expect_op, expect_script_end, get_anchor_redeemscript,
-    get_delayed_redeemscript, get_htlc_anchor_redeemscript,
+    expect_data, expect_number, expect_op, expect_script_end, get_delayed_redeemscript,
 };
 use crate::util::crypto_utils::payload_for_p2wpkh;
 use crate::util::debug_utils::DebugPayload;
@@ -152,11 +151,7 @@ pub(crate) fn build_commitment_tx(
             payment_hash: out.payment_hash,
             transaction_output_index: None,
         };
-        let script = if option_anchor_outputs {
-            get_htlc_anchor_redeemscript(&htlc_in_tx, &keys)
-        } else {
-            chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys)
-        };
+        let script = chan_utils::get_htlc_redeemscript(&htlc_in_tx, option_anchor_outputs, &keys);
         let txout = TxOut {
             script_pubkey: script.to_v0_p2wsh(),
             value: out.value_sat,
@@ -172,11 +167,7 @@ pub(crate) fn build_commitment_tx(
             payment_hash: out.payment_hash,
             transaction_output_index: None,
         };
-        let script = if option_anchor_outputs {
-            get_htlc_anchor_redeemscript(&htlc_in_tx, &keys)
-        } else {
-            chan_utils::get_htlc_redeemscript(&htlc_in_tx, &keys)
-        };
+        let script = chan_utils::get_htlc_redeemscript(&htlc_in_tx, option_anchor_outputs, &keys);
         let txout = TxOut {
             script_pubkey: script.to_v0_p2wsh(),
             value: out.value_sat,

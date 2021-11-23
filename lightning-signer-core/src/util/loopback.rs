@@ -73,6 +73,7 @@ pub struct LoopbackChannelSigner {
     pub channel_value_sat: u64,
     pub local_to_self_delay: u16,
     pub counterparty_to_self_delay: u16,
+    pub commitment_type: CommitmentType,
 }
 
 impl LoopbackChannelSigner {
@@ -103,6 +104,7 @@ impl LoopbackChannelSigner {
             channel_value_sat,
             local_to_self_delay: 0,
             counterparty_to_self_delay: 0,
+            commitment_type: CommitmentType::StaticRemoteKey,
         }
     }
 
@@ -192,6 +194,10 @@ impl LoopbackChannelSigner {
 
     fn dest_wallet_path() -> Vec<u32> {
         vec![1]
+    }
+
+    fn option_anchor_outputs(&self) -> bool {
+        self.commitment_type == CommitmentType::Anchors
     }
 }
 
@@ -410,7 +416,8 @@ impl BaseSign for LoopbackChannelSigner {
     ) -> Result<Signature, ()> {
         let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
         let tx_keys = self.make_counterparty_tx_keys(&per_commitment_point, secp_ctx)?;
-        let redeem_script = chan_utils::get_htlc_redeemscript(&htlc, &tx_keys);
+        let redeem_script =
+            chan_utils::get_htlc_redeemscript(&htlc, self.option_anchor_outputs(), &tx_keys);
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2
@@ -442,7 +449,8 @@ impl BaseSign for LoopbackChannelSigner {
         secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         let chan_keys = self.make_counterparty_tx_keys(per_commitment_point, secp_ctx)?;
-        let redeem_script = chan_utils::get_htlc_redeemscript(htlc, &chan_keys);
+        let redeem_script =
+            chan_utils::get_htlc_redeemscript(htlc, self.option_anchor_outputs(), &chan_keys);
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2

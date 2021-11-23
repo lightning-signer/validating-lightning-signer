@@ -1,6 +1,7 @@
 use core::cmp;
 
 use bitcoin;
+use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::{Builder, Script};
 use bitcoin::hash_types::Txid;
@@ -11,8 +12,10 @@ use bitcoin::network::constants::Network;
 use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1, SecretKey, SignOnly, Signature};
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::psbt::serialize::Serialize;
-use bitcoin::{Address, BlockHash, BlockHeader, OutPoint as BitcoinOutPoint, SigHashType, Transaction, TxIn, TxMerkleNode, TxOut};
-use bitcoin::blockdata::constants::genesis_block;
+use bitcoin::{
+    Address, BlockHash, BlockHeader, OutPoint as BitcoinOutPoint, SigHashType, Transaction, TxIn,
+    TxMerkleNode, TxOut,
+};
 use chain::chaininterface;
 use lightning::chain;
 use lightning::chain::channelmonitor::MonitorEvent;
@@ -242,7 +245,7 @@ pub fn make_test_chain_state() -> ChainState {
     ChainState {
         current_height: 1000,
         funding_depth: 0,
-        funding_double_spent_depth: 0
+        funding_double_spent_depth: 0,
     }
 }
 
@@ -291,6 +294,7 @@ pub fn make_test_channel_keys() -> InMemorySigner {
             txid: Default::default(),
             index: 0,
         }),
+        opt_anchors: None,
     });
     inmemkeys
 }
@@ -532,6 +536,7 @@ pub fn make_test_counterparty_keys(
                     txid: Default::default(),
                     index: 0,
                 }),
+                opt_anchors: None,
             });
             Ok(cpkeys)
         })
@@ -968,10 +973,12 @@ pub fn counterparty_sign_holder_commitment(
                     tx.feerate_per_kw(),
                     chan_ctx.setup.counterparty_selected_contest_delay,
                     htlc,
+                    chan_ctx.setup.option_anchor_outputs(),
                     &txkeys.broadcaster_delayed_payment_key,
                     &txkeys.revocation_key,
                 );
-                let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
+                let htlc_redeemscript =
+                    get_htlc_redeemscript(&htlc, chan_ctx.setup.option_anchor_outputs(), &keys);
                 let htlc_sighash = Message::from_slice(
                     &SigHashCache::new(&htlc_tx).signature_hash(
                         0,
@@ -1251,7 +1258,7 @@ pub fn build_tx_scripts(
     }
 
     for htlc in htlcs {
-        let script = get_htlc_redeemscript(&htlc, &keys);
+        let script = get_htlc_redeemscript(&htlc, channel_parameters.opt_anchors(), &keys);
         let txout = TxOut {
             script_pubkey: script.to_v0_p2wsh(),
             value: htlc.amount_msat / 1000,

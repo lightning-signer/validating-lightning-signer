@@ -136,7 +136,8 @@ mod tests {
                         if kind == OfferedHTLC {
                             let outndx = 0;
                             let htlc = &htlcs[0];
-                            let htlc_redeemscript = get_htlc_redeemscript(htlc, &keys);
+                            let htlc_redeemscript =
+                                get_htlc_redeemscript(htlc, setup.option_anchor_outputs(), &keys);
                             let htlc_amount_sat = htlc.amount_msat / 1000;
                             (
                                 make_test_counterparty_offered_htlc_sweep_tx(
@@ -152,7 +153,8 @@ mod tests {
                         } else {
                             let outndx = 1;
                             let htlc = &htlcs[1];
-                            let htlc_redeemscript = get_htlc_redeemscript(htlc, &keys);
+                            let htlc_redeemscript =
+                                get_htlc_redeemscript(htlc, setup.option_anchor_outputs(), &keys);
                             let htlc_amount_sat = htlc.amount_msat / 1000;
                             (
                                 make_test_counterparty_received_htlc_sweep_tx(

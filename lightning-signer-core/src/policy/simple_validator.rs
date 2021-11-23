@@ -672,6 +672,7 @@ impl Validator for SimpleValidator {
             feerate_per_kw,
             to_self_delay,
             &htlc,
+            setup.option_anchor_outputs(),
             &txkeys.broadcaster_delayed_payment_key,
             &txkeys.revocation_key,
         );

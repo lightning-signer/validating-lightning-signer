@@ -72,11 +72,13 @@ mod tests {
             feerate_per_kw,
             to_self_delay,
             &htlc,
+            setup.option_anchor_outputs(),
             &txkeys.broadcaster_delayed_payment_key,
             &txkeys.revocation_key,
         );
 
-        let htlc_redeemscript = get_htlc_redeemscript(&htlc, &txkeys);
+        let htlc_redeemscript =
+            get_htlc_redeemscript(&htlc, setup.option_anchor_outputs(), &txkeys);
 
         let output_witscript = get_revokeable_redeemscript(
             &txkeys.revocation_key,
@@ -184,6 +186,7 @@ mod tests {
                 feerate_per_kw,
                 to_self_delay,
                 &htlc,
+                channel_parameters.opt_anchors.is_some(),
                 &keys.broadcaster_delayed_payment_key,
                 &keys.revocation_key,
             );
@@ -193,7 +196,8 @@ mod tests {
             // Mutate the transaction.
             txmut(&mut cstate, &mut htlc_tx);
 
-            let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
+            let htlc_redeemscript =
+                get_htlc_redeemscript(&htlc, channel_parameters.opt_anchors.is_some(), &keys);
 
             let output_witscript = get_revokeable_redeemscript(
                 &keys.revocation_key,
@@ -287,6 +291,7 @@ mod tests {
                     feerate_per_kw,
                     to_self_delay,
                     &htlc,
+                    channel_parameters.opt_anchors.is_some(),
                     &keys.broadcaster_delayed_payment_key,
                     &keys.revocation_key,
                 );
@@ -296,7 +301,8 @@ mod tests {
                 // Mutate the transaction.
                 txmut(&mut cstate, &mut htlc_tx);
 
-                let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
+                let htlc_redeemscript =
+                    get_htlc_redeemscript(&htlc, channel_parameters.opt_anchors.is_some(), &keys);
 
                 let output_witscript = get_revokeable_redeemscript(
                     &keys.revocation_key,
@@ -857,11 +863,12 @@ mod tests {
             feerate_per_kw,
             to_self_delay,
             &htlc,
+            setup.option_anchor_outputs(),
             &a_delayed_payment_key,
             &revocation_key,
         );
 
-        let htlc_redeemscript = get_htlc_redeemscript(&htlc, &keys);
+        let htlc_redeemscript = get_htlc_redeemscript(&htlc, setup.option_anchor_outputs(), &keys);
 
         let output_witscript =
             get_revokeable_redeemscript(&revocation_key, to_self_delay, &a_delayed_payment_key);
