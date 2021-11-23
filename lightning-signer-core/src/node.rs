@@ -139,17 +139,18 @@ impl Node {
         let tracker =
             ChainTracker::new(node_config.network, 0, genesis.header).expect("bad  chain tip");
 
-        Self::new_with_tracker(node_config, seed, persister, allowlist, tracker)
+        Self::new_extended(node_config, seed, persister, allowlist, tracker, Box::new(SimpleValidatorFactory {}))
     }
 
     /// Create a node
     ///
     /// NOTE: you must persist the node yourself if it is new.
-    pub fn new_with_tracker(node_config: NodeConfig,
-                            seed: &[u8],
-                            persister: &Arc<dyn Persist>,
-                            allowlist: Vec<Script>,
-                            tracker: ChainTracker<ChainMonitor>) -> Node {
+    pub fn new_extended(node_config: NodeConfig,
+                        seed: &[u8],
+                        persister: &Arc<dyn Persist>,
+                        allowlist: Vec<Script>,
+                        tracker: ChainTracker<ChainMonitor>,
+                        validator_factory: Box<dyn ValidatorFactory>) -> Node {
         let genesis = genesis_block(node_config.network);
         let now = Duration::from_secs(genesis.header.time as u64);
 
@@ -163,7 +164,7 @@ impl Node {
             ),
             node_config,
             channels: Mutex::new(Map::new()),
-            validator_factory: Mutex::new(Box::new(SimpleValidatorFactory {})),
+            validator_factory: Mutex::new(validator_factory),
             persister: Arc::clone(persister),
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
             tracker: Mutex::new(tracker),

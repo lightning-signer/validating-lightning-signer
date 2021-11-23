@@ -64,7 +64,8 @@ pub fn create_node_cfgs_with_signer<'a>(
         let chain_tracker: ChainTracker<ChainMonitor> =
             ChainTracker::new(network, 0, tip).unwrap();
 
-        let node_id = signer.new_node_with_tracker(config, chain_tracker);
+        let validator_factory = Box::new(OnchainValidatorFactory {});
+        let node_id = signer.new_node_extended(config, chain_tracker, validator_factory);
 
         let keys_manager = LoopbackSignerKeysInterface {
             node_id,
@@ -529,6 +530,7 @@ use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use std::collections::BTreeSet;
+use lightning_signer::policy::onchain_validator::OnchainValidatorFactory;
 
 macro_rules! check_spendable_outputs {
     ($node: expr, $der_idx: expr, $keysinterface: expr, $chan_value: expr) => {{
