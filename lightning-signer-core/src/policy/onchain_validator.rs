@@ -94,7 +94,8 @@ impl Validator for OnchainValidator {
         cstate: &ChainState,
         info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
-        self.ensure_funding_buried(commit_num, cstate)?;
+        // Only allow state advancement if funding is buried and unspent
+        self.ensure_funding_buried_and_unspent(commit_num, cstate)?;
         self.inner.validate_counterparty_commitment_tx(state, commit_num, commitment_point, setup, cstate, info)
     }
 
@@ -107,7 +108,10 @@ impl Validator for OnchainValidator {
         cstate: &ChainState,
         info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
-        self.ensure_funding_buried(commit_num, cstate)?;
+        // Only allow state advancement if funding is buried and unspent
+        if state.next_holder_commit_num <= commit_num {
+            self.ensure_funding_buried_and_unspent(commit_num, cstate)?;
+        }
         self.inner.validate_holder_commitment_tx(state, commit_num, commitment_point, setup, cstate, info)
     }
 
@@ -224,11 +228,17 @@ impl Validator for OnchainValidator {
 }
 
 impl OnchainValidator {
-    fn ensure_funding_buried(&self, commit_num: u64, cstate: &ChainState) -> Result<(), ValidationError> {
+    fn ensure_funding_buried_and_unspent(&self, commit_num: u64, cstate: &ChainState) -> Result<(), ValidationError> {
         // If we are trying to move beyond the initial commitment, ensure funding is on-chain and
         // had enough confirmations.
-        if commit_num > 0 && cstate.funding_depth < self.policy.min_funding_depth as u32 {
-            return policy_err!("tried commitment {} when funding is not buried at depth {}", commit_num, cstate.funding_depth);
+        if commit_num > 0 {
+            if cstate.funding_depth < self.policy.min_funding_depth as u32 {
+                return policy_err!("tried commitment {} when funding is not buried at depth {}", commit_num, cstate.funding_depth);
+            }
+
+            if cstate.closing_depth > 0 {
+                return policy_err!("tried commitment {} after closed on-chain at depth {}", commit_num, cstate.closing_depth);
+            }
         }
         Ok(())
     }

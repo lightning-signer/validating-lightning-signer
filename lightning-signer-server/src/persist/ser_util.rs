@@ -449,8 +449,10 @@ pub struct ChainMonitorStateDef {
     funding_txids: Vec<Txid>,
     funding_vouts: Vec<u32>,
     funding_inputs: Set<OutPoint>,
-    funding_depth: Option<u32>,
-    funding_double_spent_depth: Option<u32>,
+    funding_height: Option<u32>,
+    funding_outpoint: Option<OutPoint>,
+    funding_double_spent_height: Option<u32>,
+    closing_height: Option<u32>,
 }
 
 #[derive(Deserialize)]

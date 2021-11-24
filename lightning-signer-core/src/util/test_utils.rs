@@ -242,7 +242,12 @@ pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> Public
 }
 
 pub fn make_test_chain_state() -> ChainState {
-    ChainState { current_height: 1000, funding_depth: 0, funding_double_spent_depth: 0 }
+    ChainState {
+        current_height: 1000,
+        funding_depth: 0,
+        funding_double_spent_depth: 0,
+        closing_depth: 0,
+    }
 }
 
 pub fn make_test_channel_setup() -> ChannelSetup {

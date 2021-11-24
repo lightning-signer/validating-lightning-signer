@@ -184,6 +184,8 @@ pub struct ChainState {
     pub funding_depth: u32,
     /// Zero or the number of confirmation of a double-spend of the funding tx
     pub funding_double_spent_depth: u32,
+    /// Zero or the number of confirmations of a closing tx
+    pub closing_depth: u32,
 }
 
 /// A factory for validators
