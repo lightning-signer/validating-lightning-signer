@@ -53,21 +53,15 @@ impl<T: ?Sized> DerefMut for MutexGuard<'_, T> {
 
 impl<T> Mutex<T> {
     pub fn new(inner: T) -> Mutex<T> {
-        Mutex {
-            inner: RefCell::new(inner),
-        }
+        Mutex { inner: RefCell::new(inner) }
     }
 
     pub fn lock<'a>(&'a self) -> LockResult<MutexGuard<'a, T>> {
-        Ok(MutexGuard {
-            lock: self.inner.borrow_mut(),
-        })
+        Ok(MutexGuard { lock: self.inner.borrow_mut() })
     }
 
     pub fn try_lock<'a>(&'a self) -> LockResult<MutexGuard<'a, T>> {
-        Ok(MutexGuard {
-            lock: self.inner.borrow_mut(),
-        })
+        Ok(MutexGuard { lock: self.inner.borrow_mut() })
     }
 }
 
@@ -107,21 +101,15 @@ impl<T: ?Sized> DerefMut for RwLockWriteGuard<'_, T> {
 
 impl<T> RwLock<T> {
     pub fn new(inner: T) -> RwLock<T> {
-        RwLock {
-            inner: RefCell::new(inner),
-        }
+        RwLock { inner: RefCell::new(inner) }
     }
 
     pub fn read<'a>(&'a self) -> LockResult<RwLockReadGuard<'a, T>> {
-        Ok(RwLockReadGuard {
-            lock: self.inner.borrow(),
-        })
+        Ok(RwLockReadGuard { lock: self.inner.borrow() })
     }
 
     pub fn write<'a>(&'a self) -> LockResult<RwLockWriteGuard<'a, T>> {
-        Ok(RwLockWriteGuard {
-            lock: self.inner.borrow_mut(),
-        })
+        Ok(RwLockWriteGuard { lock: self.inner.borrow_mut() })
     }
 
     pub fn try_write<'a>(&'a self) -> LockResult<RwLockWriteGuard<'a, T>> {

@@ -4,9 +4,9 @@ use bitcoin::{OutPoint, Transaction, Txid};
 
 use crate::bitcoin::hashes::_export::_core::cmp::Ordering;
 use crate::chain::tracker::ChainListener;
+use crate::policy::validator::ChainState;
 use crate::prelude::*;
 use crate::Arc;
-use crate::policy::validator::ChainState;
 
 /// State
 #[derive(Clone, Debug)]
@@ -69,18 +69,12 @@ impl ChainMonitor {
             funding_double_spent_depth: None,
         };
 
-        Self {
-            funding_outpoint,
-            state: Arc::new(Mutex::new(state)),
-        }
+        Self { funding_outpoint, state: Arc::new(Mutex::new(state)) }
     }
 
     /// recreate this monitor after restoring from persistence
-    pub fn new_from_persistence(funding_outpoint: OutPoint, state: State)  -> Self {
-        Self {
-            funding_outpoint,
-            state: Arc::new(Mutex::new(state))
-        }
+    pub fn new_from_persistence(funding_outpoint: OutPoint, state: State) -> Self {
+        Self { funding_outpoint, state: Arc::new(Mutex::new(state)) }
     }
 
     /// Get the locked state
@@ -91,16 +85,11 @@ impl ChainMonitor {
     /// Add a funding transaction to keep track of
     pub fn add_funding(&self, tx: &Transaction, vout: u32) {
         let mut state = self.state.lock().expect("lock");
-        assert!(
-            state.funding_txids.is_empty(),
-            "only a single funding tx currently supported"
-        );
+        assert!(state.funding_txids.is_empty(), "only a single funding tx currently supported");
         assert_eq!(state.funding_txids.len(), state.funding_vouts.len());
         state.funding_txids.push(tx.txid());
         state.funding_vouts.push(vout);
-        state
-            .funding_inputs
-            .extend(tx.input.iter().map(|i| i.previous_output));
+        state.funding_inputs.extend(tx.input.iter().map(|i| i.previous_output));
     }
 
     /// Returns the number of confirmations of the funding transaction, or zero
@@ -141,11 +130,7 @@ impl ChainListener for ChainMonitor {
                 );
                 state.funding_depth = Some(1);
                 return vec![outpoint];
-            } else if tx
-                .input
-                .iter()
-                .any(|i| state.funding_inputs.contains(&i.previous_output))
-            {
+            } else if tx.input.iter().any(|i| state.funding_inputs.contains(&i.previous_output)) {
                 assert!(state.funding_depth.is_none());
                 // we may have seen some other funding input double-spent, so
                 // don't overwrite the depth if it exists
@@ -167,11 +152,7 @@ impl ChainListener for ChainMonitor {
             if let Some(_) = state.funding_txids.iter().position(|i| *i == tx.txid()) {
                 assert_eq!(state.funding_depth, Some(1));
                 state.funding_depth = None
-            } else if tx
-                .input
-                .iter()
-                .any(|i| state.funding_inputs.contains(&i.previous_output))
-            {
+            } else if tx.input.iter().any(|i| state.funding_inputs.contains(&i.previous_output)) {
                 // we may have seen some other funding input double-spent, so
                 // don't overwrite the depth if it's non-zero, and don't assume
                 // it is 1

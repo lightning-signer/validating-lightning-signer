@@ -35,13 +35,8 @@ pub fn maybe_add_change_output(
     }
 
     let dust_value = change_destination_script.dust_value();
-    let mut change_output = TxOut {
-        script_pubkey: change_destination_script,
-        value: 0,
-    };
-    let change_len = change_output
-        .consensus_encode(&mut sink())
-        .map_err(|_| ())?;
+    let mut change_output = TxOut { script_pubkey: change_destination_script, value: 0 };
+    let change_len = change_output.consensus_encode(&mut sink()).map_err(|_| ())?;
     let mut weight_with_change: i64 =
         tx.get_weight() as i64 + 2 + witness_max_weight as i64 + change_len as i64 * 4;
     // Include any extra bytes required to push an extra output.

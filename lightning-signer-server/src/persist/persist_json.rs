@@ -13,16 +13,16 @@ use lightning_signer::persist::model::{
 use lightning_signer::persist::Persist;
 use lightning_signer::policy::validator::EnforcementState;
 
+use crate::persist::model::ChainTrackerEntry;
 use crate::persist::model::NodeChannelId;
 use crate::persist::model::{AllowlistItemEntry, ChannelEntry, NodeEntry};
-use crate::persist::model::ChainTrackerEntry;
 
 /// A persister that uses the kv crate and JSON serialization for values.
 pub struct KVJsonPersister<'a> {
     pub node_bucket: Bucket<'a, Vec<u8>, Json<NodeEntry>>,
     pub channel_bucket: Bucket<'a, NodeChannelId, Json<ChannelEntry>>,
     pub allowlist_bucket: Bucket<'a, Vec<u8>, Json<AllowlistItemEntry>>,
-    pub chain_tracker_bucket: Bucket<'a, Vec<u8>, Json<ChainTrackerEntry>>
+    pub chain_tracker_bucket: Bucket<'a, Vec<u8>, Json<ChainTrackerEntry>>,
 }
 
 impl KVJsonPersister<'_> {
@@ -30,21 +30,11 @@ impl KVJsonPersister<'_> {
         let cfg = Config::new(path);
         let store = Store::new(cfg).expect("create store");
         let node_bucket = store.bucket(Some("nodes")).expect("create node bucket");
-        let channel_bucket = store
-            .bucket(Some("channels"))
-            .expect("create channel bucket");
-        let allowlist_bucket = store
-            .bucket(Some("allowlists"))
-            .expect("create allowlist bucket");
-        let chain_tracker_bucket = store
-            .bucket(Some("chain_tracker"))
-            .expect("create chain tracker bucket");
-        Self {
-            node_bucket,
-            channel_bucket,
-            allowlist_bucket,
-            chain_tracker_bucket
-        }
+        let channel_bucket = store.bucket(Some("channels")).expect("create channel bucket");
+        let allowlist_bucket = store.bucket(Some("allowlists")).expect("create allowlist bucket");
+        let chain_tracker_bucket =
+            store.bucket(Some("chain_tracker")).expect("create chain tracker bucket");
+        Self { node_bucket, channel_bucket, allowlist_bucket, chain_tracker_bucket }
     }
 }
 
@@ -62,10 +52,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
     }
 
     fn delete_node(&self, node_id: &PublicKey) {
-        for item_res in self
-            .channel_bucket
-            .iter_prefix(NodeChannelId::new_prefix(node_id))
-        {
+        for item_res in self.channel_bucket.iter_prefix(NodeChannelId::new_prefix(node_id)) {
             let id: NodeChannelId = item_res.unwrap().key().unwrap();
             self.channel_bucket.remove(id).unwrap();
         }
@@ -107,7 +94,11 @@ impl<'a> Persist for KVJsonPersister<'a> {
         self.chain_tracker_bucket.flush().expect("flush");
     }
 
-    fn update_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) -> Result<(), ()> {
+    fn update_tracker(
+        &self,
+        node_id: &PublicKey,
+        tracker: &ChainTracker<ChainMonitor>,
+    ) -> Result<(), ()> {
         let key = node_id.serialize().to_vec();
         self.chain_tracker_bucket.set(key, Json(tracker.into())).expect("update chain tracker");
         self.chain_tracker_bucket.flush().expect("flush");
@@ -160,10 +151,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
 
     fn get_node_channels(&self, node_id: &PublicKey) -> Vec<(ChannelId, CoreChannelEntry)> {
         let mut res = Vec::new();
-        for item_res in self
-            .channel_bucket
-            .iter_prefix(NodeChannelId::new_prefix(node_id))
-        {
+        for item_res in self.channel_bucket.iter_prefix(NodeChannelId::new_prefix(node_id)) {
             let item = item_res.unwrap();
             let value: Json<ChannelEntry> = item.value().unwrap();
             let entry = CoreChannelEntry::from(value.0);
@@ -176,9 +164,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
     fn update_node_allowlist(&self, node_id: &PublicKey, allowlist: Vec<Script>) -> Result<(), ()> {
         let key = node_id.serialize().to_vec();
         let entry = AllowlistItemEntry { allowlist };
-        self.allowlist_bucket
-            .set(key, Json(entry))
-            .expect("update transaction");
+        self.allowlist_bucket.set(key, Json(entry)).expect("update transaction");
         self.allowlist_bucket.flush().expect("flush");
 
         Ok(())
@@ -282,9 +268,8 @@ mod tests {
                 let channel_nonce1 = "nonce1".as_bytes().to_vec();
                 let channel_id1 = channel_nonce_to_id(&channel_nonce1);
 
-                let channel = node
-                    .ready_channel(channel_id0, Some(channel_id1), setup, &vec![])
-                    .unwrap();
+                let channel =
+                    node.ready_channel(channel_id0, Some(channel_id1), setup, &vec![]).unwrap();
                 persister.update_channel(&node_id, &channel).unwrap();
 
                 let nodes = Node::restore_nodes(Arc::clone(&persister));

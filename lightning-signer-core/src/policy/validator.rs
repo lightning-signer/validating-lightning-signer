@@ -349,10 +349,7 @@ impl EnforcementState {
         }
 
         self.next_counterparty_commit_num = num;
-        debug!(
-            "next_counterparty_commit_num {} -> {} current {}",
-            current, num, current_point
-        );
+        debug!("next_counterparty_commit_num {} -> {} current {}", current, num, current_point);
         Ok(())
     }
 
@@ -526,10 +523,7 @@ mod tests {
             .is_ok());
 
         // and now you can get it.
-        assert_eq!(
-            state.get_previous_counterparty_point(0).unwrap(),
-            point0.clone()
-        );
+        assert_eq!(state.get_previous_counterparty_point(0).unwrap(), point0.clone());
 
         // you can set it again to the same thing (retry)
         // policy-v2-commitment-retry-same
@@ -568,16 +562,10 @@ mod tests {
         assert_eq!(state.next_counterparty_commit_num, 2);
 
         // you can still get commit_num 0
-        assert_eq!(
-            state.get_previous_counterparty_point(0).unwrap(),
-            point0.clone()
-        );
+        assert_eq!(state.get_previous_counterparty_point(0).unwrap(), point0.clone());
 
         // Now you can get commit_num 1
-        assert_eq!(
-            state.get_previous_counterparty_point(1).unwrap(),
-            point1.clone()
-        );
+        assert_eq!(state.get_previous_counterparty_point(1).unwrap(), point1.clone());
 
         // can't look forward
         assert_policy_err!(
@@ -609,16 +597,10 @@ mod tests {
         );
 
         // you can still get commit_num 1
-        assert_eq!(
-            state.get_previous_counterparty_point(1).unwrap(),
-            point1.clone()
-        );
+        assert_eq!(state.get_previous_counterparty_point(1).unwrap(), point1.clone());
 
         // now you can get commit_num 2
-        assert_eq!(
-            state.get_previous_counterparty_point(2).unwrap(),
-            point2.clone()
-        );
+        assert_eq!(state.get_previous_counterparty_point(2).unwrap(), point2.clone());
 
         // can't look forward
         assert_policy_err!(

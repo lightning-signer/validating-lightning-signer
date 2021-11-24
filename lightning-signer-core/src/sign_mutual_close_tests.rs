@@ -145,9 +145,7 @@ mod tests {
             let mut holder_value_sat = to_holder_value_sat;
             let mut counterparty_value_sat = to_counterparty_value_sat;
             let mut holder_shutdown_script = Address::p2wpkh(
-                &node
-                    .get_wallet_pubkey(&secp_ctx, &holder_wallet_path_hint)
-                    .unwrap(),
+                &node.get_wallet_pubkey(&secp_ctx, &holder_wallet_path_hint).unwrap(),
                 Network::Testnet,
             )
             .expect("Address")
@@ -177,9 +175,7 @@ mod tests {
             let tx = trusted.built_transaction();
 
             // Secrets can be released before the mutual close.
-            assert!(chan
-                .get_per_commitment_secret(holder_commit_num - 1)
-                .is_ok());
+            assert!(chan.get_per_commitment_secret(holder_commit_num - 1).is_ok());
 
             let mut mtx = tx.clone();
             let mut wallet_paths = vec![vec![], holder_wallet_path_hint.clone()];
@@ -282,9 +278,7 @@ mod tests {
             let mut funding_outpoint = setup.funding_outpoint;
 
             // Secrets can be released before the mutual close.
-            assert!(chan
-                .get_per_commitment_secret(holder_commit_num - 1)
-                .is_ok());
+            assert!(chan.get_per_commitment_secret(holder_commit_num - 1).is_ok());
 
             let mut allowlist = vec![];
 
@@ -464,12 +458,8 @@ mod tests {
         assert_status_ok!(sign_mutual_close_tx_with_mutators_outbound!(
             |chan, to_holder, to_counterparty, _holder_script, counter_script, _outpoint| {
                 // remove the counterparty from current_holder_commit_info
-                let mut holder = chan
-                    .enforcement_state
-                    .current_holder_commit_info
-                    .as_ref()
-                    .unwrap()
-                    .clone();
+                let mut holder =
+                    chan.enforcement_state.current_holder_commit_info.as_ref().unwrap().clone();
                 holder.to_broadcaster_value_sat += holder.to_countersigner_value_sat;
                 holder.to_countersigner_value_sat = 0;
                 chan.enforcement_state.current_holder_commit_info = Some(holder);
@@ -509,12 +499,8 @@ mod tests {
                 let fee = 2000;
 
                 // remove the holder from current_holder_commit_info
-                let mut holder = chan
-                    .enforcement_state
-                    .current_holder_commit_info
-                    .as_ref()
-                    .unwrap()
-                    .clone();
+                let mut holder =
+                    chan.enforcement_state.current_holder_commit_info.as_ref().unwrap().clone();
                 holder.to_countersigner_value_sat += holder.to_broadcaster_value_sat - fee;
                 holder.to_broadcaster_value_sat = 0;
                 chan.enforcement_state.current_holder_commit_info = Some(holder);
@@ -558,12 +544,8 @@ mod tests {
                 let fee = 2000;
 
                 // remove the holder from current_holder_commit_info
-                let mut holder = chan
-                    .enforcement_state
-                    .current_holder_commit_info
-                    .as_ref()
-                    .unwrap()
-                    .clone();
+                let mut holder =
+                    chan.enforcement_state.current_holder_commit_info.as_ref().unwrap().clone();
                 holder.to_countersigner_value_sat += holder.to_broadcaster_value_sat - fee;
                 holder.to_broadcaster_value_sat = 0;
                 chan.enforcement_state.current_holder_commit_info = Some(holder);
@@ -851,12 +833,8 @@ mod tests {
                 mem::swap(to_holder, to_counterparty);
 
                 // Swap the holder commitment's values
-                let mut hinfo = chan
-                    .enforcement_state
-                    .current_holder_commit_info
-                    .as_ref()
-                    .unwrap()
-                    .clone();
+                let mut hinfo =
+                    chan.enforcement_state.current_holder_commit_info.as_ref().unwrap().clone();
                 mem::swap(
                     &mut hinfo.to_broadcaster_value_sat,
                     &mut hinfo.to_countersigner_value_sat,
@@ -940,12 +918,8 @@ mod tests {
         assert_failed_precondition_err!(
             sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
-                    let mut holder = chan
-                        .enforcement_state
-                        .current_holder_commit_info
-                        .as_ref()
-                        .unwrap()
-                        .clone();
+                    let mut holder =
+                        chan.enforcement_state.current_holder_commit_info.as_ref().unwrap().clone();
                     holder.offered_htlcs.push(HTLCInfo2 {
                         value_sat: 1,
                         payment_hash: PaymentHash([1; 32]),
@@ -971,12 +945,8 @@ mod tests {
         assert_failed_precondition_err!(
             sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
-                    let mut holder = chan
-                        .enforcement_state
-                        .current_holder_commit_info
-                        .as_ref()
-                        .unwrap()
-                        .clone();
+                    let mut holder =
+                        chan.enforcement_state.current_holder_commit_info.as_ref().unwrap().clone();
                     holder.received_htlcs.push(HTLCInfo2 {
                         value_sat: 1,
                         payment_hash: PaymentHash([1; 32]),
@@ -1064,12 +1034,8 @@ mod tests {
         assert_failed_precondition_err!(
             sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
-                    let mut holder = chan
-                        .enforcement_state
-                        .current_holder_commit_info
-                        .as_ref()
-                        .unwrap()
-                        .clone();
+                    let mut holder =
+                        chan.enforcement_state.current_holder_commit_info.as_ref().unwrap().clone();
                     let mut cparty = chan
                         .enforcement_state
                         .current_counterparty_commit_info
@@ -1104,12 +1070,8 @@ mod tests {
         assert_failed_precondition_err!(
             sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
-                    let mut holder = chan
-                        .enforcement_state
-                        .current_holder_commit_info
-                        .as_ref()
-                        .unwrap()
-                        .clone();
+                    let mut holder =
+                        chan.enforcement_state.current_holder_commit_info.as_ref().unwrap().clone();
                     let mut cparty = chan
                         .enforcement_state
                         .current_counterparty_commit_info
@@ -1144,12 +1106,8 @@ mod tests {
         assert_failed_precondition_err!(
             sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
-                    let mut holder = chan
-                        .enforcement_state
-                        .current_holder_commit_info
-                        .as_ref()
-                        .unwrap()
-                        .clone();
+                    let mut holder =
+                        chan.enforcement_state.current_holder_commit_info.as_ref().unwrap().clone();
                     let mut cparty = chan
                         .enforcement_state
                         .current_counterparty_commit_info
@@ -1184,12 +1142,8 @@ mod tests {
         assert_failed_precondition_err!(
             sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
-                    let mut holder = chan
-                        .enforcement_state
-                        .current_holder_commit_info
-                        .as_ref()
-                        .unwrap()
-                        .clone();
+                    let mut holder =
+                        chan.enforcement_state.current_holder_commit_info.as_ref().unwrap().clone();
                     let mut cparty = chan
                         .enforcement_state
                         .current_counterparty_commit_info
@@ -1224,12 +1178,8 @@ mod tests {
         assert_failed_precondition_err!(
             sign_mutual_close_tx_with_mutators_inbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
-                    let mut holder = chan
-                        .enforcement_state
-                        .current_holder_commit_info
-                        .as_ref()
-                        .unwrap()
-                        .clone();
+                    let mut holder =
+                        chan.enforcement_state.current_holder_commit_info.as_ref().unwrap().clone();
                     let mut cparty = chan
                         .enforcement_state
                         .current_counterparty_commit_info
@@ -1264,12 +1214,8 @@ mod tests {
         assert_failed_precondition_err!(
             sign_mutual_close_tx_with_mutators_inbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
-                    let mut holder = chan
-                        .enforcement_state
-                        .current_holder_commit_info
-                        .as_ref()
-                        .unwrap()
-                        .clone();
+                    let mut holder =
+                        chan.enforcement_state.current_holder_commit_info.as_ref().unwrap().clone();
                     let mut cparty = chan
                         .enforcement_state
                         .current_counterparty_commit_info
@@ -1304,12 +1250,8 @@ mod tests {
         assert_failed_precondition_err!(
             sign_mutual_close_tx_with_mutators_inbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
-                    let mut holder = chan
-                        .enforcement_state
-                        .current_holder_commit_info
-                        .as_ref()
-                        .unwrap()
-                        .clone();
+                    let mut holder =
+                        chan.enforcement_state.current_holder_commit_info.as_ref().unwrap().clone();
                     let mut cparty = chan
                         .enforcement_state
                         .current_counterparty_commit_info
@@ -1344,12 +1286,8 @@ mod tests {
         assert_failed_precondition_err!(
             sign_mutual_close_tx_with_mutators_inbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
-                    let mut holder = chan
-                        .enforcement_state
-                        .current_holder_commit_info
-                        .as_ref()
-                        .unwrap()
-                        .clone();
+                    let mut holder =
+                        chan.enforcement_state.current_holder_commit_info.as_ref().unwrap().clone();
                     let mut cparty = chan
                         .enforcement_state
                         .current_counterparty_commit_info

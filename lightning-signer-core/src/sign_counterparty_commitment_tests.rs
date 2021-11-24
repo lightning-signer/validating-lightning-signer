@@ -41,9 +41,7 @@ mod tests {
             .with_ready_channel(&channel_id, |chan| {
                 let channel_parameters = chan.make_channel_parameters();
                 let parameters = channel_parameters.as_counterparty_broadcastable();
-                let keys = chan
-                    .make_counterparty_tx_keys(&remote_percommitment_point)
-                    .unwrap();
+                let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point).unwrap();
                 // fee = 1000
                 let commit_num = 23;
                 let feerate_per_kw = 0;
@@ -52,13 +50,11 @@ mod tests {
                 let mut htlcs = vec![];
 
                 // Set the commit_num and revoke_num.
-                chan.enforcement_state
-                    .set_next_counterparty_commit_num_for_testing(
-                        commit_num,
-                        make_test_pubkey(0x10),
-                    );
-                chan.enforcement_state
-                    .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
+                chan.enforcement_state.set_next_counterparty_commit_num_for_testing(
+                    commit_num,
+                    make_test_pubkey(0x10),
+                );
+                chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
 
                 let commitment_tx = chan.make_counterparty_commitment_tx(
                     &remote_percommitment_point,
@@ -198,17 +194,11 @@ mod tests {
         let remote_percommitment_point = make_test_pubkey(10);
         let counterparty_points = make_test_counterparty_points();
 
-        let htlc1 = HTLCInfo2 {
-            value_sat: 4000,
-            payment_hash: PaymentHash([1; 32]),
-            cltv_expiry: 2 << 16,
-        };
+        let htlc1 =
+            HTLCInfo2 { value_sat: 4000, payment_hash: PaymentHash([1; 32]), cltv_expiry: 2 << 16 };
 
-        let htlc2 = HTLCInfo2 {
-            value_sat: 5000,
-            payment_hash: PaymentHash([3; 32]),
-            cltv_expiry: 3 << 16,
-        };
+        let htlc2 =
+            HTLCInfo2 { value_sat: 5000, payment_hash: PaymentHash([3; 32]), cltv_expiry: 3 << 16 };
 
         let htlc3 = HTLCInfo2 {
             value_sat: 10_003,
@@ -225,9 +215,7 @@ mod tests {
                 let parameters = channel_parameters.as_counterparty_broadcastable();
                 let mut htlcs =
                     Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
-                let keys = chan
-                    .make_counterparty_tx_keys(&remote_percommitment_point)
-                    .unwrap();
+                let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point).unwrap();
                 let to_broadcaster_value_sat = 1_000_000;
                 let to_countersignatory_value_sat = 1_979_997;
                 let redeem_scripts = build_tx_scripts(
@@ -243,13 +231,11 @@ mod tests {
                 let feerate_per_kw = 0;
 
                 // Set the commit_num and revoke_num.
-                chan.enforcement_state
-                    .set_next_counterparty_commit_num_for_testing(
-                        commit_num,
-                        make_test_pubkey(0x10),
-                    );
-                chan.enforcement_state
-                    .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
+                chan.enforcement_state.set_next_counterparty_commit_num_for_testing(
+                    commit_num,
+                    make_test_pubkey(0x10),
+                );
+                chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
 
                 let commitment_tx = chan.make_counterparty_commitment_tx(
                     &remote_percommitment_point,
@@ -309,23 +295,14 @@ mod tests {
         let remote_percommitment_point = make_test_pubkey(10);
         let counterparty_points = make_test_counterparty_points();
 
-        let htlc1 = HTLCInfo2 {
-            value_sat: 1,
-            payment_hash: PaymentHash([1; 32]),
-            cltv_expiry: 2 << 16,
-        };
+        let htlc1 =
+            HTLCInfo2 { value_sat: 1, payment_hash: PaymentHash([1; 32]), cltv_expiry: 2 << 16 };
 
-        let htlc2 = HTLCInfo2 {
-            value_sat: 1,
-            payment_hash: PaymentHash([3; 32]),
-            cltv_expiry: 3 << 16,
-        };
+        let htlc2 =
+            HTLCInfo2 { value_sat: 1, payment_hash: PaymentHash([3; 32]), cltv_expiry: 3 << 16 };
 
-        let htlc3 = HTLCInfo2 {
-            value_sat: 1,
-            payment_hash: PaymentHash([5; 32]),
-            cltv_expiry: 4 << 16,
-        };
+        let htlc3 =
+            HTLCInfo2 { value_sat: 1, payment_hash: PaymentHash([5; 32]), cltv_expiry: 4 << 16 };
 
         let offered_htlcs = vec![htlc1.clone()];
         let received_htlcs = vec![htlc2.clone(), htlc3.clone()];
@@ -411,13 +388,11 @@ mod tests {
         let tx = node
             .with_ready_channel(&channel_id, |chan| {
                 // Set the commit_num and revoke_num.
-                chan.enforcement_state
-                    .set_next_counterparty_commit_num_for_testing(
-                        commit_num,
-                        make_test_pubkey(0x10),
-                    );
-                chan.enforcement_state
-                    .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
+                chan.enforcement_state.set_next_counterparty_commit_num_for_testing(
+                    commit_num,
+                    make_test_pubkey(0x10),
+                );
+                chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
 
                 let commitment_tx = chan.make_counterparty_commitment_tx(
                     &remote_percommitment_point,
@@ -487,8 +462,7 @@ mod tests {
 
             chan.enforcement_state
                 .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
-            chan.enforcement_state
-                .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
+            chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
 
             // Mutate the signer state.
             statemut(&mut chan.enforcement_state);
@@ -501,14 +475,9 @@ mod tests {
 
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
-            let redeem_scripts = build_tx_scripts(
-                &keys,
-                to_broadcaster,
-                to_countersignatory,
-                &htlcs,
-                &parameters,
-            )
-            .expect("scripts");
+            let redeem_scripts =
+                build_tx_scripts(&keys, to_broadcaster, to_countersignatory, &htlcs, &parameters)
+                    .expect("scripts");
             let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
@@ -589,8 +558,7 @@ mod tests {
 
             chan.enforcement_state
                 .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
-            chan.enforcement_state
-                .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
+            chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
 
             // Mutate the signer state.
             statemut(&mut chan.enforcement_state);
@@ -603,14 +571,9 @@ mod tests {
 
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
-            let redeem_scripts = build_tx_scripts(
-                &keys,
-                to_broadcaster,
-                to_countersignatory,
-                &htlcs,
-                &parameters,
-            )
-            .expect("scripts");
+            let redeem_scripts =
+                build_tx_scripts(&keys, to_broadcaster, to_countersignatory, &htlcs, &parameters)
+                    .expect("scripts");
             let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
@@ -896,9 +859,7 @@ mod tests {
                 |_cstate, tx, witscripts| {
                     // Duplicate the to_holder output
                     let ndx = 3;
-                    tx.transaction
-                        .output
-                        .push(tx.transaction.output[ndx].clone());
+                    tx.transaction.output.push(tx.transaction.output[ndx].clone());
                     witscripts.push(witscripts[ndx].clone());
                 },
             ),
@@ -917,9 +878,7 @@ mod tests {
                 |_cstate, tx, witscripts| {
                     // Duplicate the to_counterparty output
                     let ndx = 4;
-                    tx.transaction
-                        .output
-                        .push(tx.transaction.output[ndx].clone());
+                    tx.transaction.output.push(tx.transaction.output[ndx].clone());
                     witscripts.push(witscripts[ndx].clone());
                 },
             ),
@@ -960,20 +919,14 @@ mod tests {
 
             chan.enforcement_state
                 .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
-            chan.enforcement_state
-                .set_next_counterparty_revoke_num_for_testing(commit_num - 1);
+            chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
 
             let parameters = channel_parameters.as_counterparty_broadcastable();
             let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point)?;
 
-            let redeem_scripts = build_tx_scripts(
-                &keys,
-                to_countersignatory,
-                to_broadcaster,
-                &htlcs,
-                &parameters,
-            )
-            .expect("scripts");
+            let redeem_scripts =
+                build_tx_scripts(&keys, to_countersignatory, to_broadcaster, &htlcs, &parameters)
+                    .expect("scripts");
             let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(

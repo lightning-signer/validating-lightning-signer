@@ -34,8 +34,7 @@ mod tests {
                 let mut htlcs =
                     Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
-                chan.enforcement_state
-                    .set_next_holder_commit_num_for_testing(commit_num);
+                chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
 
                 let parameters = channel_parameters.as_holder_broadcastable();
 
@@ -122,8 +121,7 @@ mod tests {
         let to_counterparty_value_sat = 1_999_000;
         let tx = node
             .with_ready_channel(&channel_id, |chan| {
-                chan.enforcement_state
-                    .set_next_holder_commit_num_for_testing(commit_num);
+                chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
 
                 let commitment_tx = chan
                     .make_holder_commitment_tx(
@@ -134,11 +132,7 @@ mod tests {
                         vec![],
                     )
                     .expect("holder_commitment_tx");
-                Ok(commitment_tx
-                    .trust()
-                    .built_transaction()
-                    .transaction
-                    .clone())
+                Ok(commitment_tx.trust().built_transaction().transaction.clone())
             })
             .expect("build");
         let (ser_signature, _) = node
@@ -328,76 +322,73 @@ mod tests {
     {
         mutate_tx_builder(&mut commit_tx_ctx0);
 
-        let (sig, tx) = node_ctx
-            .node
-            .with_ready_channel(&chan_ctx.channel_id, |chan| {
-                let mut commit_tx_ctx = commit_tx_ctx0.clone();
+        let (sig, tx) = node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
+            let mut commit_tx_ctx = commit_tx_ctx0.clone();
 
-                let channel_parameters = chan.make_channel_parameters();
+            let channel_parameters = chan.make_channel_parameters();
 
-                // Mutate the signer state.
-                mutate_channel_state(&mut chan.enforcement_state);
+            // Mutate the signer state.
+            mutate_channel_state(&mut chan.enforcement_state);
 
-                let parameters = channel_parameters.as_holder_broadcastable();
-                let per_commitment_point = chan
-                    .get_per_commitment_point(commit_tx_ctx.commit_num)
-                    .expect("point");
-                let mut keys = chan.make_holder_tx_keys(&per_commitment_point)?;
+            let parameters = channel_parameters.as_holder_broadcastable();
+            let per_commitment_point =
+                chan.get_per_commitment_point(commit_tx_ctx.commit_num).expect("point");
+            let mut keys = chan.make_holder_tx_keys(&per_commitment_point)?;
 
-                // Mutate the tx creation keys.
-                mutate_keys(&mut keys);
+            // Mutate the tx creation keys.
+            mutate_keys(&mut keys);
 
-                let htlcs = Channel::htlcs_info2_to_oic(
-                    commit_tx_ctx.offered_htlcs.clone(),
-                    commit_tx_ctx.received_htlcs.clone(),
-                );
+            let htlcs = Channel::htlcs_info2_to_oic(
+                commit_tx_ctx.offered_htlcs.clone(),
+                commit_tx_ctx.received_htlcs.clone(),
+            );
 
-                let redeem_scripts = build_tx_scripts(
-                    &keys,
-                    commit_tx_ctx.to_broadcaster,
-                    commit_tx_ctx.to_countersignatory,
-                    &htlcs,
-                    &parameters,
-                )
-                .expect("scripts");
-                let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                commit_tx_ctx.to_broadcaster,
+                commit_tx_ctx.to_countersignatory,
+                &htlcs,
+                &parameters,
+            )
+            .expect("scripts");
+            let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
-                let commitment_tx = chan.make_holder_commitment_tx_with_keys(
-                    keys,
-                    commit_tx_ctx.commit_num,
-                    commit_tx_ctx.feerate_per_kw,
-                    commit_tx_ctx.to_broadcaster,
-                    commit_tx_ctx.to_countersignatory,
-                    htlcs.clone(),
-                );
-                // rebuild to get the scripts
-                let trusted_tx = commitment_tx.trust();
-                let mut tx = trusted_tx.built_transaction().clone();
+            let commitment_tx = chan.make_holder_commitment_tx_with_keys(
+                keys,
+                commit_tx_ctx.commit_num,
+                commit_tx_ctx.feerate_per_kw,
+                commit_tx_ctx.to_broadcaster,
+                commit_tx_ctx.to_countersignatory,
+                htlcs.clone(),
+            );
+            // rebuild to get the scripts
+            let trusted_tx = commitment_tx.trust();
+            let mut tx = trusted_tx.built_transaction().clone();
 
-                let mut cstate = make_test_chain_state();
+            let mut cstate = make_test_chain_state();
 
-                // Mutate the signing inputs.
-                mutate_sign_inputs(
-                    &mut cstate,
-                    &mut tx.transaction,
-                    &mut output_witscripts,
-                    &mut commit_tx_ctx.commit_num,
-                    &mut commit_tx_ctx.feerate_per_kw,
-                    &mut commit_tx_ctx.offered_htlcs,
-                    &mut commit_tx_ctx.received_htlcs,
-                );
+            // Mutate the signing inputs.
+            mutate_sign_inputs(
+                &mut cstate,
+                &mut tx.transaction,
+                &mut output_witscripts,
+                &mut commit_tx_ctx.commit_num,
+                &mut commit_tx_ctx.feerate_per_kw,
+                &mut commit_tx_ctx.offered_htlcs,
+                &mut commit_tx_ctx.received_htlcs,
+            );
 
-                let sig = chan.sign_holder_commitment_tx(
-                    &tx.transaction,
-                    &output_witscripts,
-                    commit_tx_ctx.commit_num,
-                    commit_tx_ctx.feerate_per_kw,
-                    commit_tx_ctx.offered_htlcs.clone(),
-                    commit_tx_ctx.received_htlcs.clone(),
-                )?;
+            let sig = chan.sign_holder_commitment_tx(
+                &tx.transaction,
+                &output_witscripts,
+                commit_tx_ctx.commit_num,
+                commit_tx_ctx.feerate_per_kw,
+                commit_tx_ctx.offered_htlcs.clone(),
+                commit_tx_ctx.received_htlcs.clone(),
+            )?;
 
-                Ok((sig, tx.transaction.clone()))
-            })?;
+            Ok((sig, tx.transaction.clone()))
+        })?;
 
         assert_eq!(
             tx.txid().to_hex(),

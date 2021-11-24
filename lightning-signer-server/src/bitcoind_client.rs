@@ -70,11 +70,7 @@ impl BitcoindClient {
         builder = builder.auth(rpc_user, Some(rpc_password));
         let rpc = Client::with_transport(builder.build());
 
-        let client = Self {
-            rpc: Arc::new(Mutex::new(rpc)),
-            host,
-            port,
-        };
+        let client = Self { rpc: Arc::new(Mutex::new(rpc)), host, port };
         Ok(client)
     }
 
@@ -93,11 +89,7 @@ impl BitcoindClient {
             .map(serde_json::value::to_raw_value)
             .collect::<std::result::Result<_, serde_json::Error>>()?;
         let req = rpc.build_request(cmd, &v_args[..]);
-        log::debug!(
-            "JSON-RPC request: {} {}",
-            cmd,
-            serde_json::Value::from(args)
-        );
+        log::debug!("JSON-RPC request: {} {}", cmd, serde_json::Value::from(args));
 
         let res = rpc.send_request(req).await;
         let resp = res.map_err(Error::from);
@@ -168,17 +160,11 @@ impl BlockSource for BitcoindClient {
         header_hash: &BlockHash,
         _height_hint: Option<u32>,
     ) -> BlockSourceResult<BlockHeaderData> {
-        Ok(self
-            .call_into("getblockheader", &[json!(header_hash.to_hex())])
-            .await
-            .unwrap())
+        Ok(self.call_into("getblockheader", &[json!(header_hash.to_hex())]).await.unwrap())
     }
 
     async fn get_block(&self, header_hash: &BlockHash) -> BlockSourceResult<Block> {
-        Ok(self
-            .call_into("getblock", &[json!(header_hash.to_hex()), json!(0)])
-            .await
-            .unwrap())
+        Ok(self.call_into("getblock", &[json!(header_hash.to_hex()), json!(0)]).await.unwrap())
     }
 
     async fn get_block_hash(&self, height: u32) -> BlockSourceResult<Option<BlockHash>> {
@@ -186,13 +172,12 @@ impl BlockSource for BitcoindClient {
         match result {
             Ok(r) => Ok(r),
             Err(e) => match e {
-                Error::JsonRpc(Rpc(ref rpce)) => {
+                Error::JsonRpc(Rpc(ref rpce)) =>
                     if rpce.code == -8 {
                         Ok(None)
                     } else {
                         Err(e)
-                    }
-                }
+                    },
                 _ => Err(e),
             },
         }

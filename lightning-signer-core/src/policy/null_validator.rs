@@ -20,9 +20,7 @@ use super::error::ValidationError;
 pub struct NullValidatorFactory {}
 
 fn null_validator() -> NullValidator {
-    NullValidator {
-        0: simple_validator(Network::Regtest),
-    }
+    NullValidator { 0: simple_validator(Network::Regtest) }
 }
 
 impl ValidatorFactory for NullValidatorFactory {
@@ -68,8 +66,7 @@ impl Validator for NullValidator {
         output_witscripts: &Vec<Vec<u8>>,
     ) -> Result<CommitmentInfo, ValidationError> {
         // Delegate to SimplePolicy
-        self.0
-            .decode_commitment_tx(keys, setup, is_counterparty, tx, output_witscripts)
+        self.0.decode_commitment_tx(keys, setup, is_counterparty, tx, output_witscripts)
     }
 
     fn validate_counterparty_commitment_tx(
@@ -149,8 +146,7 @@ impl Validator for NullValidator {
         wallet_paths: &Vec<Vec<u32>>,
     ) -> Result<ClosingTransaction, ValidationError> {
         // Delegate to SimplePolicy
-        self.0
-            .decode_and_validate_mutual_close_tx(wallet, setup, estate, tx, wallet_paths)
+        self.0.decode_and_validate_mutual_close_tx(wallet, setup, estate, tx, wallet_paths)
     }
 
     fn validate_mutual_close_tx(

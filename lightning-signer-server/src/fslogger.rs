@@ -32,12 +32,7 @@ impl FilesystemLogger {
                 .open(&logs_file_path)
                 .expect(&format!("Failed to open file: {}", &logs_file_path)),
         );
-        Self {
-            disk_log_level,
-            console_log_level,
-            logs_file_path,
-            file,
-        }
+        Self { disk_log_level, console_log_level, logs_file_path, file }
     }
 }
 
@@ -53,9 +48,7 @@ impl Log for FilesystemLogger {
                 "{} {:<5} [{}:{}] {}\n",
                 OffsetDateTime::now_utc().format("%F %T"),
                 record.level().to_string(),
-                record
-                    .module_path()
-                    .unwrap_or_else(|| "<unknown-module-path>"),
+                record.module_path().unwrap_or_else(|| "<unknown-module-path>"),
                 record.line().unwrap_or_else(|| 0),
                 raw_log
             );
@@ -64,10 +57,7 @@ impl Log for FilesystemLogger {
                     .lock()
                     .unwrap()
                     .write_all(log.as_bytes())
-                    .expect(&format!(
-                        "Failed to write to file: {}",
-                        &self.logs_file_path
-                    ));
+                    .expect(&format!("Failed to write to file: {}", &self.logs_file_path));
             }
             if record.level() <= self.console_log_level {
                 print!("{}", &log);

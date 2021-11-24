@@ -37,9 +37,7 @@ pub struct SimpleValidatorFactory {}
 
 /// Construct a SimpleValidator
 pub fn simple_validator(network: Network) -> SimpleValidator {
-    SimpleValidator {
-        policy: make_simple_policy(network),
-    }
+    SimpleValidator { policy: make_simple_policy(network) }
 }
 
 impl ValidatorFactory for SimpleValidatorFactory {
@@ -144,15 +142,9 @@ impl SimpleValidator {
 
     fn outside_epsilon_range(&self, value0: u64, value1: u64) -> (bool, String) {
         if value0 > value1 {
-            (
-                value0 - value1 > self.policy.epsilon_sat,
-                "larger".to_string(),
-            )
+            (value0 - value1 > self.policy.epsilon_sat, "larger".to_string())
         } else {
-            (
-                value1 - value0 > self.policy.epsilon_sat,
-                "smaller".to_string(),
-            )
+            (value1 - value0 > self.policy.epsilon_sat, "smaller".to_string())
         }
     }
 
@@ -334,23 +326,15 @@ impl Validator for SimpleValidator {
             // policy-onchain-change-to-wallet
             // All outputs must either be wallet (change) or channel funding.
             if opath.len() > 0 {
-                let spendable = wallet
-                    .can_spend(opath, &output.script_pubkey)
-                    .map_err(|err| {
-                        policy_error(format!(
-                            "output[{}]: wallet_can_spend error: {}",
-                            outndx, err
-                        ))
-                    })?;
+                let spendable = wallet.can_spend(opath, &output.script_pubkey).map_err(|err| {
+                    policy_error(format!("output[{}]: wallet_can_spend error: {}", outndx, err))
+                })?;
                 if !spendable {
                     return policy_err!("wallet cannot spend output[{}]", outndx);
                 }
             } else {
                 let slot = channel_slot.ok_or_else(|| {
-                    let outpoint = OutPoint {
-                        txid: tx.txid(),
-                        vout: outndx as u32,
-                    };
+                    let outpoint = OutPoint { txid: tx.txid(), vout: outndx as u32 };
                     policy_error(format!("unknown output: {}", outpoint))
                 })?;
                 match &*slot.lock().unwrap() {
@@ -415,15 +399,10 @@ impl Validator for SimpleValidator {
 
         let mut info = CommitmentInfo::new(is_counterparty);
         for ind in 0..tx.output.len() {
-            info.handle_output(
-                keys,
-                setup,
-                &tx.output[ind],
-                output_witscripts[ind].as_slice(),
-            )
-            .map_err(|ve| {
-                ve.prepend_msg(format!("{}: tx output[{}]: ", containing_function!(), ind))
-            })?;
+            info.handle_output(keys, setup, &tx.output[ind], output_witscripts[ind].as_slice())
+                .map_err(|ve| {
+                    ve.prepend_msg(format!("{}: tx output[{}]: ", containing_function!(), ind))
+                })?;
         }
 
         *debug_on_return = false;
@@ -448,9 +427,7 @@ impl Validator for SimpleValidator {
 
         // policy-commitment-to-self-delay-range
         if info.to_self_delay != setup.holder_selected_contest_delay {
-            return Err(policy_error(
-                "holder_selected_contest_delay mismatch".to_string(),
-            ));
+            return Err(policy_error("holder_selected_contest_delay mismatch".to_string()));
         }
 
         // policy-commitment-previous-revoked
@@ -518,19 +495,15 @@ impl Validator for SimpleValidator {
 
         // policy-commitment-to-self-delay-range
         if info.to_self_delay != setup.counterparty_selected_contest_delay {
-            return Err(policy_error(
-                "counterparty_selected_contest_delay mismatch".to_string(),
-            ));
+            return Err(policy_error("counterparty_selected_contest_delay mismatch".to_string()));
         }
 
         // policy-commitment-retry-same
         // Is this a retry?
         if commit_num + 1 == estate.next_holder_commit_num {
             // The CommitmentInfo2 must be the same as previously
-            let holder_commit_info = &estate
-                .current_holder_commit_info
-                .as_ref()
-                .expect("current_holder_commit_info");
+            let holder_commit_info =
+                &estate.current_holder_commit_info.as_ref().expect("current_holder_commit_info");
             if info != *holder_commit_info {
                 debug_vals!(*info, holder_commit_info);
                 return policy_err!("retry holder commitment {} with changed info", commit_num);
@@ -847,10 +820,7 @@ impl Validator for SimpleValidator {
         //
         let holder_value = estate.minimum_to_holder_value(self.policy.epsilon_sat);
         let cparty_value = estate.minimum_to_counterparty_value(self.policy.epsilon_sat);
-        debug!(
-            "holder_value={:#?}, cparty_value={:#?}",
-            holder_value, cparty_value
-        );
+        debug!("holder_value={:#?}, cparty_value={:#?}", holder_value, cparty_value);
         let holder_value_is_larger = holder_value > cparty_value;
         debug!("holder_value_is_larger={}", holder_value_is_larger);
 
@@ -906,11 +876,7 @@ impl Validator for SimpleValidator {
             }
         };
 
-        debug!(
-            "{}: trying likely args: {:#?}",
-            short_function!(),
-            &likely_args
-        );
+        debug!("{}: trying likely args: {:#?}", short_function!(), &likely_args);
         let likely_rv = self.validate_mutual_close_tx(
             wallet,
             setup,
@@ -926,11 +892,7 @@ impl Validator for SimpleValidator {
             likely_args
         } else {
             // Try the other case
-            debug!(
-                "{}: trying unlikely args: {:#?}",
-                short_function!(),
-                &unlikely_args
-            );
+            debug!("{}: trying unlikely args: {:#?}", short_function!(), &unlikely_args);
             let unlikely_rv = self.validate_mutual_close_tx(
                 wallet,
                 setup,
@@ -953,9 +915,7 @@ impl Validator for SimpleValidator {
             good_args.to_holder_value_sat,
             good_args.to_counterparty_value_sat,
             good_args.holder_script.unwrap_or_else(|| Script::new()),
-            good_args
-                .counterparty_script
-                .unwrap_or_else(|| Script::new()),
+            good_args.counterparty_script.unwrap_or_else(|| Script::new()),
             setup.funding_outpoint,
         );
         let trusted = closing_tx.trust();
@@ -1515,9 +1475,7 @@ mod tests {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.push_value_msat = 0;
-        assert!(validator
-            .validate_ready_channel(&*node, &setup, &vec![])
-            .is_ok());
+        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_ok());
         setup.push_value_msat = 1000;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
@@ -1549,11 +1507,7 @@ mod tests {
     }
 
     fn make_htlc_info2(expiry: u32) -> HTLCInfo2 {
-        HTLCInfo2 {
-            value_sat: 5010,
-            payment_hash: PaymentHash([0; 32]),
-            cltv_expiry: expiry,
-        }
+        HTLCInfo2 { value_sat: 5010, payment_hash: PaymentHash([0; 32]), cltv_expiry: expiry }
     }
 
     #[test]
@@ -1587,9 +1541,7 @@ mod tests {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.holder_selected_contest_delay = 5;
-        assert!(validator
-            .validate_ready_channel(&*node, &setup, &vec![])
-            .is_ok());
+        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_ok());
         setup.holder_selected_contest_delay = 4;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
@@ -1605,9 +1557,7 @@ mod tests {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.holder_selected_contest_delay = 1440;
-        assert!(validator
-            .validate_ready_channel(&*node, &setup, &vec![])
-            .is_ok());
+        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_ok());
         setup.holder_selected_contest_delay = 1441;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
@@ -1623,9 +1573,7 @@ mod tests {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.counterparty_selected_contest_delay = 5;
-        assert!(validator
-            .validate_ready_channel(&*node, &setup, &vec![])
-            .is_ok());
+        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_ok());
         setup.counterparty_selected_contest_delay = 4;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
@@ -1641,9 +1589,7 @@ mod tests {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.counterparty_selected_contest_delay = 1440;
-        assert!(validator
-            .validate_ready_channel(&*node, &setup, &vec![])
-            .is_ok());
+        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_ok());
         setup.counterparty_selected_contest_delay = 1441;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
@@ -1679,11 +1625,8 @@ mod tests {
     #[test]
     fn validate_commitment_tx_htlc_shortage_test() {
         let validator = make_test_validator();
-        let htlc = HTLCInfo2 {
-            value_sat: 100_000,
-            payment_hash: PaymentHash([0; 32]),
-            cltv_expiry: 1005,
-        };
+        let htlc =
+            HTLCInfo2 { value_sat: 100_000, payment_hash: PaymentHash([0; 32]), cltv_expiry: 1005 };
         let mut enforcement_state = EnforcementState::new();
         let commit_num = 23;
         enforcement_state
@@ -1722,11 +1665,8 @@ mod tests {
     #[test]
     fn validate_commitment_tx_initial_with_htlcs() {
         let validator = make_test_validator();
-        let htlc = HTLCInfo2 {
-            value_sat: 199_000,
-            payment_hash: PaymentHash([0; 32]),
-            cltv_expiry: 1005,
-        };
+        let htlc =
+            HTLCInfo2 { value_sat: 199_000, payment_hash: PaymentHash([0; 32]), cltv_expiry: 1005 };
         let enforcement_state = EnforcementState::new();
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
@@ -1743,10 +1683,7 @@ mod tests {
             &cstate,
             &info,
         );
-        assert_policy_err!(
-            status,
-            "validate_commitment_tx: initial commitment may not have HTLCS"
-        );
+        assert_policy_err!(status, "validate_commitment_tx: initial commitment may not have HTLCS");
     }
 
     // policy-commitment-initial-funding-value
@@ -1843,13 +1780,8 @@ mod tests {
         let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
         let delay = setup.holder_selected_contest_delay;
-        let info_good = make_counterparty_info(
-            2_000_000,
-            990_000,
-            delay,
-            vec![],
-            vec![make_htlc_info2(1005)],
-        );
+        let info_good =
+            make_counterparty_info(2_000_000, 990_000, delay, vec![], vec![make_htlc_info2(1005)]);
         assert_validation_ok!(validator.validate_commitment_tx(
             &enforcement_state,
             commit_num,
@@ -1858,13 +1790,8 @@ mod tests {
             &cstate,
             &info_good,
         ));
-        let info_good = make_counterparty_info(
-            2_000_000,
-            990_000,
-            delay,
-            vec![],
-            vec![make_htlc_info2(2440)],
-        );
+        let info_good =
+            make_counterparty_info(2_000_000, 990_000, delay, vec![], vec![make_htlc_info2(2440)]);
         assert_validation_ok!(validator.validate_commitment_tx(
             &enforcement_state,
             commit_num,
@@ -1873,13 +1800,8 @@ mod tests {
             &cstate,
             &info_good,
         ));
-        let info_bad = make_counterparty_info(
-            2_000_000,
-            990_000,
-            delay,
-            vec![],
-            vec![make_htlc_info2(1004)],
-        );
+        let info_bad =
+            make_counterparty_info(2_000_000, 990_000, delay, vec![], vec![make_htlc_info2(1004)]);
         assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,
@@ -1891,13 +1813,8 @@ mod tests {
             ),
             "validate_expiry: received HTLC expiry too early: 1004 < 1005"
         );
-        let info_bad = make_counterparty_info(
-            2_000_000,
-            990_000,
-            delay,
-            vec![],
-            vec![make_htlc_info2(2441)],
-        );
+        let info_bad =
+            make_counterparty_info(2_000_000, 990_000, delay, vec![], vec![make_htlc_info2(2441)]);
         assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,

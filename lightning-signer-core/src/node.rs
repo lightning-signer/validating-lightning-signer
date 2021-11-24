@@ -238,10 +238,8 @@ impl Node {
         let slot_arc = self.get_channel(channel_id)?;
         let mut slot = slot_arc.lock().unwrap();
         match &mut *slot {
-            ChannelSlot::Stub(_) => Err(invalid_argument(format!(
-                "channel not ready: {}",
-                &channel_id
-            ))),
+            ChannelSlot::Stub(_) =>
+                Err(invalid_argument(format!("channel not ready: {}", &channel_id))),
             ChannelSlot::Ready(chan) => f(chan),
         }
     }
@@ -304,10 +302,7 @@ impl Node {
                 ChannelSlot::Ready(_) => {
                     // Calling new_channel on a channel that's already been marked
                     // ready is not allowed.
-                    return Err(invalid_argument(format!(
-                        "channel already ready: {}",
-                        channel_id
-                    )));
+                    return Err(invalid_argument(format!("channel already ready: {}", channel_id)));
                 }
             };
         }
@@ -327,10 +322,7 @@ impl Node {
             id0: channel_id,
         };
         // TODO this clone is expensive
-        channels.insert(
-            channel_id,
-            Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone()))),
-        );
+        channels.insert(channel_id, Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone()))));
         self.persister
             .new_channel(&self.get_id(), &stub)
             // Persist.new_channel should only fail if the channel was previously persisted.
@@ -422,11 +414,7 @@ impl Node {
 
         let node = Arc::new(Node::new_from_persistence(
             config,
-            node_entry
-                .seed
-                .as_slice()
-                .try_into()
-                .expect("seed wrong length"),
+            node_entry.seed.as_slice().try_into().expect("seed wrong length"),
             &persister,
             allowlist,
             tracker,
@@ -487,10 +475,8 @@ impl Node {
             let slot = arcobj.lock().unwrap();
             let stub = match &*slot {
                 ChannelSlot::Stub(stub) => Ok(stub),
-                ChannelSlot::Ready(_) => Err(invalid_argument(format!(
-                    "channel already ready: {}",
-                    channel_id0
-                ))),
+                ChannelSlot::Ready(_) =>
+                    Err(invalid_argument(format!("channel already ready: {}", channel_id0))),
             }?;
             let mut keys = stub.channel_keys_with_channel_value(setup.channel_value_sat);
             let holder_pubkeys = keys.pubkeys();
@@ -511,11 +497,7 @@ impl Node {
                 monitor,
             }
         };
-        let validator = self
-            .validator_factory
-            .lock()
-            .unwrap()
-            .make_validator(chan.network());
+        let validator = self.validator_factory.lock().unwrap().make_validator(chan.network());
 
         validator.validate_ready_channel(self, &setup, holder_shutdown_key_path)?;
 
@@ -584,20 +566,13 @@ impl Node {
         // Funding transactions cannot be associated with just a single channel;
         // a single transaction may fund multiple channels
 
-        let validator = self
-            .validator_factory
-            .lock()
-            .unwrap()
-            .make_validator(self.network());
+        let validator = self.validator_factory.lock().unwrap().make_validator(self.network());
 
         let txid = tx.txid();
 
         let channels: Vec<Option<Arc<Mutex<ChannelSlot>>>> = (0..tx.output.len())
             .map(|ndx| {
-                let outpoint = OutPoint {
-                    txid,
-                    vout: ndx as u32,
-                };
+                let outpoint = OutPoint { txid, vout: ndx as u32 };
                 find_channel_with_funding_outpoint(&channels_lock, &outpoint)
             })
             .collect();
@@ -703,11 +678,7 @@ impl Node {
                 selected_contest_delay: setup.counterparty_selected_contest_delay,
             }),
             funding_outpoint,
-            opt_anchors: if setup.option_anchor_outputs() {
-                Some(())
-            } else {
-                None
-            },
+            opt_anchors: if setup.option_anchor_outputs() { Some(()) } else { None },
         };
         channel_transaction_parameters
     }
@@ -740,9 +711,7 @@ impl Node {
         secp_ctx: &Secp256k1<secp256k1::SignOnly>,
         child_path: &Vec<u32>,
     ) -> Result<bitcoin::PublicKey, Status> {
-        Ok(self
-            .get_wallet_privkey(secp_ctx, child_path)?
-            .public_key(secp_ctx))
+        Ok(self.get_wallet_privkey(secp_ctx, child_path)?.public_key(secp_ctx))
     }
 
     /// Get the node secret key
@@ -965,11 +934,10 @@ fn find_channel_with_funding_outpoint(
     for (_, slot_arc) in channels_lock.iter() {
         let slot = slot_arc.lock().unwrap();
         match &*slot {
-            ChannelSlot::Ready(chan) => {
+            ChannelSlot::Ready(chan) =>
                 if chan.setup.funding_outpoint == *outpoint {
                     return Some(Arc::clone(slot_arc));
-                }
-            }
+                },
             ChannelSlot::Stub(_stub) => {
                 // ignore stubs ...
             }
@@ -1093,8 +1061,7 @@ mod tests {
             .with_ready_channel(&channel_id, |chan| {
                 // The channel next_holder_commit_num must be 2 past the
                 // requested commit_num for get_per_commitment_secret.
-                chan.enforcement_state
-                    .set_next_holder_commit_num_for_testing(commit_num + 2);
+                chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num + 2);
                 let point = chan.get_per_commitment_point(commit_num)?;
                 let secret = chan.get_per_commitment_secret(commit_num)?;
                 Ok((point, secret))
@@ -1126,9 +1093,7 @@ mod tests {
         assert_eq!(correct, true);
 
         let notcorrect = node
-            .with_channel_base(&channel_id, |base| {
-                base.check_future_secret(n + 1, &suggested)
-            })
+            .with_channel_base(&channel_id, |base| base.check_future_secret(n + 1, &suggested))
             .unwrap();
         assert_eq!(notcorrect, false);
     }
@@ -1146,14 +1111,10 @@ mod tests {
         let ca_hash = Sha256dHash::hash(&ann);
         let encmsg = secp256k1::Message::from_slice(&ca_hash[..]).expect("encmsg");
         let secp_ctx = Secp256k1::new();
-        secp_ctx
-            .verify(&encmsg, &nsig, &node.get_id())
-            .expect("verify nsig");
+        secp_ctx.verify(&encmsg, &nsig, &node.get_id()).expect("verify nsig");
         let _res: Result<(), Status> = node.with_ready_channel(&channel_id, |chan| {
             let funding_pubkey = PublicKey::from_secret_key(&secp_ctx, &chan.keys.funding_key);
-            Ok(secp_ctx
-                .verify(&encmsg, &bsig, &funding_pubkey)
-                .expect("verify bsig"))
+            Ok(secp_ctx.verify(&encmsg, &bsig, &funding_pubkey).expect("verify bsig"))
         });
     }
 
@@ -1180,9 +1141,7 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let human_readable_part = String::from("lnbcrt1230n");
         let data_part = hex_decode("010f0418090a010101141917110f01040e050f06100003021e1b0e13161c150301011415060204130c0018190d07070a18070a1c1101111e111f130306000d00120c11121706181b120d051807081a0b0f0d18060004120e140018000105100114000b130b01110c001a05041a181716020007130c091d11170d10100d0b1a1b00030e05190208171e16080d00121a00110719021005000405001000").unwrap();
-        let rsig = node
-            .sign_invoice_in_parts(&data_part, &human_readable_part)
-            .unwrap();
+        let rsig = node.sign_invoice_in_parts(&data_part, &human_readable_part).unwrap();
         assert_eq!(rsig, hex_decode("739ffb91aa7c0b3d3c92de1600f7a9afccedc5597977095228232ee4458685531516451b84deb35efad27a311ea99175d10c6cdb458cd27ce2ed104eb6cf806400").unwrap());
         Ok(())
     }
@@ -1195,9 +1154,7 @@ mod tests {
         // The data_part is 170 bytes.
         // overhang = (data_part.len() * 5) % 8 = 2
         // looking for a verified invoice where overhang is in 1..3
-        let rsig = node
-            .sign_invoice_in_parts(&data_part, &human_readable_part)
-            .unwrap();
+        let rsig = node.sign_invoice_in_parts(&data_part, &human_readable_part).unwrap();
         assert_eq!(rsig, hex_decode("f278cdba3fd4a37abf982cee5a66f52e142090631ef57763226f1232eead78b43da7962fcfe29ffae9bd918c588df71d6d7b92a4787de72801594b22f0e7e62a00").unwrap());
         Ok(())
     }
@@ -1268,10 +1225,7 @@ mod tests {
             secp256k1::Signature::from_compact(&rsig.to_standard().serialize_compact()).unwrap();
         let pubkey = secp_ctx.recover(&encmsg, &rsig).unwrap();
         assert!(secp_ctx.verify(&encmsg, &sig, &pubkey).is_ok());
-        assert_eq!(
-            pubkey.serialize().to_vec(),
-            node.get_id().serialize().to_vec()
-        );
+        assert_eq!(pubkey.serialize().to_vec(), node.get_id().serialize().to_vec());
     }
 
     // TODO move this elsewhere
@@ -1368,17 +1322,11 @@ mod tests {
         assert_status_ok!(node.add_allowlist(&adds0));
 
         // now allowlist should have the added entries
-        assert!(vecs_match(
-            node.allowlist().expect("allowlist").clone(),
-            adds0.clone()
-        ));
+        assert!(vecs_match(node.allowlist().expect("allowlist").clone(), adds0.clone()));
 
         // adding duplicates shouldn't change the node allowlist
         assert_status_ok!(node.add_allowlist(&adds0));
-        assert!(vecs_match(
-            node.allowlist().expect("allowlist").clone(),
-            adds0.clone()
-        ));
+        assert!(vecs_match(node.allowlist().expect("allowlist").clone(), adds0.clone()));
 
         // can remove some elements from the allowlist
         let removes0 = vec![adds0[0].clone(), adds0[3].clone()];

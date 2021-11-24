@@ -20,11 +20,7 @@ mod tests {
             "02868b7bc9b6d307509ed97758636d2d3628970bbd3bd36d279f8d3cde8ccd45ae"
         );
         assert_eq!(
-            basepoints
-                .revocation_basepoint
-                .serialize()
-                .to_vec()
-                .to_hex(),
+            basepoints.revocation_basepoint.serialize().to_vec().to_hex(),
             "02982b69bb2d70b083921cbc862c0bcf7761b55d7485769ddf81c2947155b1afe4"
         );
         assert_eq!(
@@ -32,11 +28,7 @@ mod tests {
             "026bb6655b5e0b5ff80d078d548819f57796013b09de8085ddc04b49854ae1e483"
         );
         assert_eq!(
-            basepoints
-                .delayed_payment_basepoint
-                .serialize()
-                .to_vec()
-                .to_hex(),
+            basepoints.delayed_payment_basepoint.serialize().to_vec().to_hex(),
             "0291dfb201bc87a2da8c7ffe0a7cf9691962170896535a7fd00d8ee4406a405e98"
         );
         assert_eq!(
@@ -68,10 +60,7 @@ mod tests {
         assert!(status.is_err());
         let err = status.unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
-        assert_eq!(
-            err.message(),
-            format!("channel does not exist: {}", &channel_id_x)
-        );
+        assert_eq!(err.message(), format!("channel does not exist: {}", &channel_id_x));
     }
 
     #[test]
@@ -79,9 +68,8 @@ mod tests {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
 
-        let basepoints = node
-            .with_channel_base(&channel_id, |base| Ok(base.get_channel_basepoints()))
-            .unwrap();
+        let basepoints =
+            node.with_channel_base(&channel_id, |base| Ok(base.get_channel_basepoints())).unwrap();
 
         check_basepoints(&basepoints);
     }
@@ -91,30 +79,20 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_nonce = "nonce1".as_bytes().to_vec();
         let channel_id = channel_nonce_to_id(&channel_nonce);
-        node.new_channel(Some(channel_id), Some(channel_nonce), &node)
-            .expect("new_channel");
+        node.new_channel(Some(channel_id), Some(channel_nonce), &node).expect("new_channel");
 
         // Issue ready_channel w/ an alternate id.
         let channel_nonce_x = "nonceX".as_bytes().to_vec();
         let channel_id_x = channel_nonce_to_id(&channel_nonce_x);
-        node.ready_channel(
-            channel_id,
-            Some(channel_id_x),
-            make_test_channel_setup(),
-            &vec![],
-        )
-        .expect("ready_channel");
+        node.ready_channel(channel_id, Some(channel_id_x), make_test_channel_setup(), &vec![])
+            .expect("ready_channel");
 
         // Original channel_id should work with_ready_channel.
-        let val = node
-            .with_ready_channel(&channel_id, |_chan| Ok(42))
-            .expect("u32");
+        let val = node.with_ready_channel(&channel_id, |_chan| Ok(42)).expect("u32");
         assert_eq!(val, 42);
 
         // Alternate channel_id should work with_ready_channel.
-        let val_x = node
-            .with_ready_channel(&channel_id_x, |_chan| Ok(43))
-            .expect("u32");
+        let val_x = node.with_ready_channel(&channel_id_x, |_chan| Ok(43)).expect("u32");
         assert_eq!(val_x, 43);
     }
 
@@ -137,8 +115,7 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_nonce = "nonce1".as_bytes().to_vec();
         let channel_id = channel_nonce_to_id(&channel_nonce);
-        node.new_channel(Some(channel_id), Some(channel_nonce), &node)
-            .expect("new_channel");
+        node.new_channel(Some(channel_id), Some(channel_nonce), &node).expect("new_channel");
 
         // with_ready_channel should return not ready.
         let result: Result<(), Status> = node.with_ready_channel(&channel_id, |_chan| {
@@ -148,10 +125,7 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
-        assert_eq!(
-            err.message(),
-            format!("channel not ready: {}", TEST_CHANNEL_ID[0]),
-        );
+        assert_eq!(err.message(), format!("channel not ready: {}", TEST_CHANNEL_ID[0]),);
 
         let _: Result<(), Status> = node.with_channel_base(&channel_id, |base| {
             // get_per_commitment_point for the first commitment should work.
@@ -173,9 +147,8 @@ mod tests {
             Ok(())
         });
 
-        let basepoints = node
-            .with_channel_base(&channel_id, |base| Ok(base.get_channel_basepoints()))
-            .unwrap();
+        let basepoints =
+            node.with_channel_base(&channel_id, |base| Ok(base.get_channel_basepoints())).unwrap();
         // get_channel_basepoints should work.
         check_basepoints(&basepoints);
 
@@ -193,9 +166,7 @@ mod tests {
         assert_eq!(correct, true);
 
         let notcorrect = node
-            .with_channel_base(&channel_id, |base| {
-                base.check_future_secret(n + 1, &suggested)
-            })
+            .with_channel_base(&channel_id, |base| base.check_future_secret(n + 1, &suggested))
             .unwrap();
         assert_eq!(notcorrect, false);
     }
@@ -212,10 +183,7 @@ mod tests {
         let result = node.new_channel(Some(channel_id), Some(channel_nonce), &node);
         let err = result.err().unwrap();
         assert_eq!(err.code(), Code::InvalidArgument);
-        assert_eq!(
-            err.message(),
-            format!("channel already exists: {}", TEST_CHANNEL_ID[0])
-        );
+        assert_eq!(err.message(), format!("channel already exists: {}", TEST_CHANNEL_ID[0]));
     }
 
     #[test]
@@ -228,10 +196,7 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
-        assert_eq!(
-            err.message(),
-            format!("channel already ready: {}", TEST_CHANNEL_ID[0])
-        );
+        assert_eq!(err.message(), format!("channel already ready: {}", TEST_CHANNEL_ID[0]));
     }
 
     #[test]
@@ -239,8 +204,7 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_nonce = "nonce1".as_bytes().to_vec();
         let channel_id = channel_nonce_to_id(&channel_nonce);
-        node.new_channel(Some(channel_id), Some(channel_nonce), &node)
-            .expect("new_channel");
+        node.new_channel(Some(channel_id), Some(channel_nonce), &node).expect("new_channel");
         let mut setup = make_test_channel_setup();
         setup.holder_shutdown_script =
             Some(hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565"));
@@ -257,15 +221,12 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_nonce = "nonce1".as_bytes().to_vec();
         let channel_id = channel_nonce_to_id(&channel_nonce);
-        node.new_channel(Some(channel_id), Some(channel_nonce), &node)
-            .expect("new_channel");
+        node.new_channel(Some(channel_id), Some(channel_nonce), &node).expect("new_channel");
         let mut setup = make_test_channel_setup();
         setup.holder_shutdown_script =
             Some(hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565"));
-        node.add_allowlist(&vec![
-            "tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z".to_string()
-        ])
-        .expect("added allowlist");
+        node.add_allowlist(&vec!["tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z".to_string()])
+            .expect("added allowlist");
         let holder_shutdown_key_path = vec![];
         assert_status_ok!(node.ready_channel(
             channel_id,
@@ -280,8 +241,7 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_nonce = "nonce1".as_bytes().to_vec();
         let channel_id = channel_nonce_to_id(&channel_nonce);
-        node.new_channel(Some(channel_id), Some(channel_nonce), &node)
-            .expect("new_channel");
+        node.new_channel(Some(channel_id), Some(channel_nonce), &node).expect("new_channel");
         let mut setup = make_test_channel_setup();
         setup.holder_shutdown_script =
             Some(hex_script!("0014b76dd61e41b5ef052af21cda3260888c070bb9af"));

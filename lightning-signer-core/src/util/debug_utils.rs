@@ -14,10 +14,7 @@ impl<'a> core::fmt::Debug for DebugChannelPublicKeys<'a> {
             .field("funding_pubkey", &self.0.funding_pubkey)
             .field("revocation_basepoint", &self.0.revocation_basepoint)
             .field("payment_point", &self.0.payment_point)
-            .field(
-                "delayed_payment_basepoint",
-                &self.0.delayed_payment_basepoint,
-            )
+            .field("delayed_payment_basepoint", &self.0.delayed_payment_basepoint)
             .field("htlc_basepoint", &self.0.htlc_basepoint)
             .finish()
     }
@@ -47,10 +44,7 @@ impl<'a> core::fmt::Debug for DebugPayload<'a> {
         match *self.0 {
             Payload::PubkeyHash(ref hash) => hex::format_hex(hash, f),
             Payload::ScriptHash(ref hash) => hex::format_hex(hash, f),
-            Payload::WitnessProgram {
-                version: ver,
-                program: ref prog,
-            } => f
+            Payload::WitnessProgram { version: ver, program: ref prog } => f
                 .debug_struct("WitnessProgram")
                 .field("version", &ver.to_u8())
                 .field("program", &prog.to_hex())
@@ -77,9 +71,7 @@ impl<'a> core::fmt::Debug for DebugHTLCOutputInCommitment<'a> {
 pub struct DebugVecHTLCOutputInCommitment<'a>(pub &'a Vec<HTLCOutputInCommitment>);
 impl<'a> core::fmt::Debug for DebugVecHTLCOutputInCommitment<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
-        f.debug_list()
-            .entries(self.0.iter().map(|vv| DebugHTLCOutputInCommitment(&vv)))
-            .finish()
+        f.debug_list().entries(self.0.iter().map(|vv| DebugHTLCOutputInCommitment(&vv))).finish()
     }
 }
 
@@ -91,14 +83,8 @@ impl<'a> core::fmt::Debug for DebugTxCreationKeys<'a> {
             .field("per_commitment_point", &self.0.per_commitment_point)
             .field("revocation_key", &self.0.revocation_key)
             .field("broadcaster_htlc_key", &self.0.broadcaster_htlc_key)
-            .field(
-                "countersignatory_htlc_key",
-                &self.0.countersignatory_htlc_key,
-            )
-            .field(
-                "broadcaster_delayed_payment_key",
-                &self.0.broadcaster_delayed_payment_key,
-            )
+            .field("countersignatory_htlc_key", &self.0.countersignatory_htlc_key)
+            .field("broadcaster_delayed_payment_key", &self.0.broadcaster_delayed_payment_key)
             .finish()
     }
 }
@@ -133,9 +119,7 @@ impl<'a> core::fmt::Debug for DebugBytes<'a> {
 pub struct DebugVecVecU8<'a>(pub &'a Vec<Vec<u8>>);
 impl<'a> core::fmt::Debug for DebugVecVecU8<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
-        f.debug_list()
-            .entries(self.0.iter().map(|vv| DebugBytes(&vv[..])))
-            .finish()
+        f.debug_list().entries(self.0.iter().map(|vv| DebugBytes(&vv[..]))).finish()
     }
 }
 
@@ -154,9 +138,7 @@ impl<'a> core::fmt::Debug for DebugWitness<'a> {
 pub struct DebugWitVec<'a>(pub &'a Vec<(Vec<u8>, Vec<u8>)>);
 impl<'a> core::fmt::Debug for DebugWitVec<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
-        f.debug_list()
-            .entries(self.0.iter().map(|ww| DebugWitness(ww)))
-            .finish()
+        f.debug_list().entries(self.0.iter().map(|ww| DebugWitness(ww))).finish()
     }
 }
 

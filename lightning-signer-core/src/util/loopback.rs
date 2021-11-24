@@ -39,9 +39,7 @@ pub struct LoopbackSignerKeysInterface {
 
 impl LoopbackSignerKeysInterface {
     fn get_node(&self) -> Arc<Node> {
-        self.signer
-            .get_node(&self.node_id)
-            .expect("our node is missing")
+        self.signer.get_node(&self.node_id).expect("our node is missing")
     }
 
     pub fn spend_spendable_outputs(
@@ -86,9 +84,7 @@ impl LoopbackChannelSigner {
     ) -> LoopbackChannelSigner {
         info!("new channel {:?} {:?}", node_id, channel_id);
         let pubkeys = signer
-            .with_channel_base(&node_id, &channel_id, |base| {
-                Ok(base.get_channel_basepoints())
-            })
+            .with_channel_base(&node_id, &channel_id, |base| Ok(base.get_channel_basepoints()))
             .map_err(|s| {
                 error!("bad status {:?} on channel {}", s, channel_id);
                 ()
@@ -137,10 +133,7 @@ impl LoopbackChannelSigner {
     ) -> Result<(Signature, Vec<Signature>), ()> {
         let commitment_tx = hct.trust();
 
-        debug!(
-            "loopback: sign local txid {}",
-            commitment_tx.built_transaction().txid
-        );
+        debug!("loopback: sign local txid {}", commitment_tx.built_transaction().txid);
 
         let commitment_number = INITIAL_COMMITMENT_NUMBER - hct.commitment_number();
         let to_holder_value_sat = hct.to_broadcaster_value_sat();
@@ -164,10 +157,8 @@ impl LoopbackChannelSigner {
             })
             .map_err(|s| self.bad_status(s))?;
 
-        let htlc_sigs = htlc_sig_vecs
-            .iter()
-            .map(|s| bitcoin_sig_to_signature(s.clone()).unwrap())
-            .collect();
+        let htlc_sigs =
+            htlc_sig_vecs.iter().map(|s| bitcoin_sig_to_signature(s.clone()).unwrap()).collect();
         let sig = bitcoin_sig_to_signature(sig_vec).unwrap();
         Ok((sig, htlc_sigs))
     }
@@ -221,9 +212,7 @@ impl BaseSign for LoopbackChannelSigner {
         // we are passed a backwards counting one
         self.signer
             .with_channel_base(&self.node_id, &self.channel_id, |base| {
-                Ok(base
-                    .get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - idx)
-                    .unwrap())
+                Ok(base.get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - idx).unwrap())
             })
             .map_err(|s| self.bad_status(s))
             .unwrap()
@@ -232,16 +221,14 @@ impl BaseSign for LoopbackChannelSigner {
     fn release_commitment_secret(&self, commitment_number: u64) -> [u8; 32] {
         // signer layer expect forward counting commitment number, but
         // we are passed a backwards counting one
-        let secret = self
-            .signer
-            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-                let secret = chan
-                    .get_per_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number)
-                    .unwrap()[..]
-                    .try_into()
-                    .unwrap();
-                Ok(secret)
-            });
+        let secret = self.signer.with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+            let secret = chan
+                .get_per_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number)
+                .unwrap()[..]
+                .try_into()
+                .unwrap();
+            Ok(secret)
+        });
         secret.expect("missing channel")
     }
 
@@ -478,10 +465,7 @@ impl BaseSign for LoopbackChannelSigner {
         closing_tx: &ClosingTransaction,
         _secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
-        info!(
-            "sign_closing_transaction {:?} {:?}",
-            self.node_id, self.channel_id
-        );
+        info!("sign_closing_transaction {:?} {:?}", self.node_id, self.channel_id);
 
         // TODO error handling is awkward
         self.signer
@@ -505,10 +489,7 @@ impl BaseSign for LoopbackChannelSigner {
         msg: &UnsignedChannelAnnouncement,
         _secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
-        info!(
-            "sign_counterparty_commitment {:?} {:?}",
-            self.node_id, self.channel_id
-        );
+        info!("sign_counterparty_commitment {:?} {:?}", self.node_id, self.channel_id);
 
         let (_nsig, bsig) = self
             .signer
@@ -525,10 +506,7 @@ impl BaseSign for LoopbackChannelSigner {
     }
 
     fn ready_channel(&mut self, parameters: &ChannelTransactionParameters) {
-        info!(
-            "set_remote_channel_pubkeys {:?} {:?}",
-            self.node_id, self.channel_id
-        );
+        info!("set_remote_channel_pubkeys {:?} {:?}", self.node_id, self.channel_id);
 
         // TODO cover local vs remote to_self_delay with a test
         let funding_outpoint = parameters.funding_outpoint.unwrap().into_bitcoin_outpoint();
@@ -570,10 +548,7 @@ impl KeysInterface for LoopbackSignerKeysInterface {
     fn get_destination_script(&self) -> Script {
         let secp_ctx = Secp256k1::signing_only();
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
-        let pubkey = self
-            .get_node()
-            .get_wallet_pubkey(&secp_ctx, &wallet_path)
-            .expect("pubkey");
+        let pubkey = self.get_node().get_wallet_pubkey(&secp_ctx, &wallet_path).expect("pubkey");
         Script::new_v0_wpkh(&WPubkeyHash::hash(&pubkey.serialize()))
     }
 
@@ -613,17 +588,11 @@ fn get_delayed_payment_keys(
     a_pubkeys: &ChannelPublicKeys,
     b_pubkeys: &ChannelPublicKeys,
 ) -> Result<(PublicKey, PublicKey), ()> {
-    let revocation_key = derive_revocation_pubkey(
-        secp_ctx,
-        &per_commitment_point,
-        &b_pubkeys.revocation_basepoint,
-    )
-    .map_err(|_| ())?;
-    let delayed_payment_key = derive_public_key(
-        secp_ctx,
-        &per_commitment_point,
-        &a_pubkeys.delayed_payment_basepoint,
-    )
-    .map_err(|_| ())?;
+    let revocation_key =
+        derive_revocation_pubkey(secp_ctx, &per_commitment_point, &b_pubkeys.revocation_basepoint)
+            .map_err(|_| ())?;
+    let delayed_payment_key =
+        derive_public_key(secp_ctx, &per_commitment_point, &a_pubkeys.delayed_payment_basepoint)
+            .map_err(|_| ())?;
     Ok((revocation_key, delayed_payment_key))
 }

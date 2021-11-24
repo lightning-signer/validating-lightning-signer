@@ -69,9 +69,7 @@ impl core::fmt::Display for ValidationError {
 impl core::fmt::Debug for ValidationError {
     #[cfg(not(feature = "backtrace"))]
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("ValidationError")
-            .field("kind", &self.kind)
-            .finish()
+        f.debug_struct("ValidationError").field("kind", &self.kind).finish()
     }
     #[cfg(feature = "backtrace")]
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
@@ -191,18 +189,12 @@ mod tests {
             Into::<String>::into(script_format_error("testing".to_string())),
             "script format: testing"
         );
-        assert_eq!(
-            format!("{}", mismatch_error("testing".to_string())),
-            "Mismatch(\"testing\")"
-        );
+        assert_eq!(format!("{}", mismatch_error("testing".to_string())), "Mismatch(\"testing\")");
         assert_eq!(
             Into::<String>::into(mismatch_error("testing".to_string())),
             "script template mismatch: testing"
         );
-        assert_eq!(
-            format!("{}", policy_error("testing".to_string())),
-            "Policy(\"testing\")"
-        );
+        assert_eq!(format!("{}", policy_error("testing".to_string())), "Policy(\"testing\")");
         assert_eq!(
             Into::<String>::into(policy_error("testing".to_string())),
             "policy failure: testing"

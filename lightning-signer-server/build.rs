@@ -38,10 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Transaction.raw_tx_bytes",
             "#[serde(serialize_with = \"crate::util::as_hex\")]",
         )
-        .field_attribute(
-            "TxOut.pk_script",
-            "#[serde(serialize_with = \"crate::util::as_hex\")]",
-        )
+        .field_attribute("TxOut.pk_script", "#[serde(serialize_with = \"crate::util::as_hex\")]")
         .field_attribute(
             "InputDescriptor.redeem_script",
             "#[serde(serialize_with = \"crate::util::as_hex\")]",
@@ -58,10 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "HTLCInfo.payment_hash",
             "#[serde(serialize_with = \"crate::util::as_hex\")]",
         )
-        .field_attribute(
-            "Outpoint.txid",
-            "#[serde(serialize_with = \"crate::util::as_hex\")]",
-        )
+        .field_attribute("Outpoint.txid", "#[serde(serialize_with = \"crate::util::as_hex\")]")
         .field_attribute(
             "SignCounterpartyCommitmentTxRequest.payment_hashes",
             "#[serde(serialize_with = \"crate::util::as_hex_vec\")]",

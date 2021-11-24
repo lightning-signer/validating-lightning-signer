@@ -112,9 +112,7 @@ pub struct TestPersister {
 
 impl TestPersister {
     pub fn new() -> Self {
-        Self {
-            update_ret: Mutex::new(Ok(())),
-        }
+        Self { update_ret: Mutex::new(Ok(())) }
     }
 
     pub fn set_update_ret(&self, ret: Result<(), chain::ChannelMonitorUpdateErr>) {
@@ -188,10 +186,10 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
         funding_txo: OutPoint,
         monitor: channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
     ) -> Result<(), chain::ChannelMonitorUpdateErr> {
-        self.latest_monitor_update_id.lock().unwrap().insert(
-            funding_txo.to_channel_id(),
-            (funding_txo, monitor.get_latest_update_id()),
-        );
+        self.latest_monitor_update_id
+            .lock()
+            .unwrap()
+            .insert(funding_txo.to_channel_id(), (funding_txo, monitor.get_latest_update_id()));
         self.added_monitors.lock().unwrap().push((funding_txo, ()));
         let watch_res = self.chain_monitor.watch_channel(funding_txo, monitor);
 
@@ -242,11 +240,7 @@ pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> Public
 }
 
 pub fn make_test_chain_state() -> ChainState {
-    ChainState {
-        current_height: 1000,
-        funding_depth: 0,
-        funding_double_spent_depth: 0,
-    }
+    ChainState { current_height: 1000, funding_depth: 0, funding_double_spent_depth: 0 }
 }
 
 pub fn make_test_channel_setup() -> ChannelSetup {
@@ -254,10 +248,7 @@ pub fn make_test_channel_setup() -> ChannelSetup {
         is_outbound: true,
         channel_value_sat: 3_000_000,
         push_value_msat: 0,
-        funding_outpoint: BitcoinOutPoint {
-            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
-            vout: 0,
-        },
+        funding_outpoint: BitcoinOutPoint { txid: Txid::from_slice(&[2u8; 32]).unwrap(), vout: 0 },
         holder_selected_contest_delay: 6,
         holder_shutdown_script: None,
         counterparty_points: make_test_counterparty_points(),
@@ -290,10 +281,7 @@ pub fn make_test_channel_keys() -> InMemorySigner {
             pubkeys: make_test_counterparty_points(),
             selected_contest_delay: 5,
         }),
-        funding_outpoint: Some(OutPoint {
-            txid: Default::default(),
-            index: 0,
-        }),
+        funding_outpoint: Some(OutPoint { txid: Default::default(), index: 0 }),
         opt_anchors: None,
     });
     inmemkeys
@@ -303,12 +291,7 @@ pub fn init_node(node_config: NodeConfig, seedstr: &str) -> Arc<Node> {
     let mut seed = [0; 32];
     seed.copy_from_slice(Vec::from_hex(seedstr).unwrap().as_slice());
 
-    let node = Node::new(
-        node_config,
-        &seed,
-        &(Arc::new(DummyPersister) as Arc<Persist>),
-        vec![],
-    );
+    let node = Node::new(node_config, &seed, &(Arc::new(DummyPersister) as Arc<Persist>), vec![]);
     Arc::new(node)
 }
 
@@ -329,11 +312,9 @@ pub fn init_node_and_channel(
     }
     let channel_nonce = "nonce1".as_bytes().to_vec();
     let channel_id = channel_nonce_to_id(&channel_nonce);
-    node.new_channel(Some(channel_id), Some(channel_nonce), &node)
-        .expect("new_channel");
+    node.new_channel(Some(channel_id), Some(channel_nonce), &node).expect("new_channel");
     let holder_shutdown_key_path = vec![];
-    node.ready_channel(channel_id, None, setup, &holder_shutdown_key_path)
-        .expect("ready channel");
+    node.ready_channel(channel_id, None, setup, &holder_shutdown_key_path).expect("ready channel");
     (node, channel_id)
 }
 
@@ -356,10 +337,7 @@ pub fn make_test_funding_wallet_addr(
 
 pub fn make_test_funding_wallet_input() -> TxIn {
     TxIn {
-        previous_output: bitcoin::OutPoint {
-            txid: Default::default(),
-            vout: 0,
-        },
+        previous_output: bitcoin::OutPoint { txid: Default::default(), vout: 0 },
         script_sig: Script::new(),
         sequence: 0,
         witness: vec![],
@@ -383,10 +361,7 @@ pub fn make_test_funding_wallet_output(
         Address::p2shwpkh(&pubkey, node.network()).unwrap()
     };
 
-    TxOut {
-        value,
-        script_pubkey: addr.script_pubkey(),
-    }
+    TxOut { value, script_pubkey: addr.script_pubkey() }
 }
 
 pub fn make_test_funding_channel_outpoint(
@@ -401,10 +376,7 @@ pub fn make_test_funding_channel_outpoint(
             &setup.counterparty_points.funding_pubkey,
         );
         let script_pubkey = payload_for_p2wsh(&funding_redeemscript).script_pubkey();
-        Ok(TxOut {
-            value,
-            script_pubkey,
-        })
+        Ok(TxOut { value, script_pubkey })
     })
     .expect("TxOut")
 }
@@ -413,12 +385,7 @@ pub fn make_test_funding_tx_with_ins_outs(
     inputs: Vec<TxIn>,
     outputs: Vec<TxOut>,
 ) -> bitcoin::Transaction {
-    bitcoin::Transaction {
-        version: 2,
-        lock_time: 0,
-        input: inputs,
-        output: outputs,
-    }
+    bitcoin::Transaction { version: 2, lock_time: 0, input: inputs, output: outputs }
 }
 
 pub fn make_test_wallet_dest(
@@ -427,10 +394,7 @@ pub fn make_test_wallet_dest(
     spend_type: SpendType,
 ) -> (Script, Vec<u32>) {
     let child_path = vec![wallet_index];
-    let pubkey = node_ctx
-        .node
-        .get_wallet_pubkey(&node_ctx.secp_ctx, &child_path)
-        .unwrap();
+    let pubkey = node_ctx.node.get_wallet_pubkey(&node_ctx.secp_ctx, &child_path).unwrap();
 
     let script_pubkey = match spend_type {
         SpendType::P2wpkh => Address::p2wpkh(&pubkey, node_ctx.node.network()),
@@ -532,10 +496,7 @@ pub fn make_test_counterparty_keys(
                     pubkeys: stub.get_channel_basepoints(),
                     selected_contest_delay: 6,
                 }),
-                funding_outpoint: Some(OutPoint {
-                    txid: Default::default(),
-                    index: 0,
-                }),
+                funding_outpoint: Some(OutPoint { txid: Default::default(), index: 0 }),
                 opt_anchors: None,
             });
             Ok(cpkeys)
@@ -550,10 +511,7 @@ pub fn test_chan_ctx(node_ctx: &TestNodeContext, nn: usize, value_sat: u64) -> T
         is_outbound: true,
         channel_value_sat: value_sat,
         push_value_msat: 0,
-        funding_outpoint: BitcoinOutPoint {
-            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
-            vout: 0,
-        },
+        funding_outpoint: BitcoinOutPoint { txid: Txid::from_slice(&[2u8; 32]).unwrap(), vout: 0 },
         holder_selected_contest_delay: 6,
         holder_shutdown_script: None,
         counterparty_points: make_test_counterparty_points(),
@@ -583,8 +541,7 @@ pub fn set_next_holder_commit_num_for_testing(
     node_ctx
         .node
         .with_ready_channel(&chan_ctx.channel_id, |chan| {
-            chan.enforcement_state
-                .set_next_holder_commit_num_for_testing(commit_num);
+            chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
             Ok(())
         })
         .unwrap();
@@ -614,8 +571,7 @@ pub fn set_next_counterparty_revoke_num_for_testing(
     node_ctx
         .node
         .with_ready_channel(&chan_ctx.channel_id, |chan| {
-            chan.enforcement_state
-                .set_next_counterparty_revoke_num_for_testing(revoke_num);
+            chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(revoke_num);
             Ok(())
         })
         .unwrap();
@@ -646,11 +602,7 @@ pub fn funding_tx_add_wallet_input(
     tx_ctx.inputs.push(txin);
     tx_ctx.ipaths.push(vec![wallet_ndx]);
     tx_ctx.ivals.push(value_sat);
-    tx_ctx.ispnds.push(if is_p2sh {
-        SpendType::P2shP2wpkh
-    } else {
-        SpendType::P2wpkh
-    });
+    tx_ctx.ispnds.push(if is_p2sh { SpendType::P2shP2wpkh } else { SpendType::P2wpkh });
     tx_ctx.iuckeys.push(None);
 }
 
@@ -720,12 +672,7 @@ pub fn funding_tx_ready_channel(
     let holder_shutdown_key_path = vec![];
     node_ctx
         .node
-        .ready_channel(
-            chan_ctx.channel_id,
-            None,
-            chan_ctx.setup.clone(),
-            &holder_shutdown_key_path,
-        )
+        .ready_channel(chan_ctx.channel_id, None, chan_ctx.setup.clone(), &holder_shutdown_key_path)
         .expect("Channel");
 }
 
@@ -739,18 +686,12 @@ pub fn synthesize_ready_channel(
     let holder_shutdown_key_path = vec![];
     node_ctx
         .node
-        .ready_channel(
-            chan_ctx.channel_id,
-            None,
-            chan_ctx.setup.clone(),
-            &holder_shutdown_key_path,
-        )
+        .ready_channel(chan_ctx.channel_id, None, chan_ctx.setup.clone(), &holder_shutdown_key_path)
         .expect("Channel");
     node_ctx
         .node
         .with_ready_channel(&chan_ctx.channel_id, |chan| {
-            chan.enforcement_state
-                .set_next_holder_commit_num_for_testing(next_holder_commit_num);
+            chan.enforcement_state.set_next_holder_commit_num_for_testing(next_holder_commit_num);
             Ok(())
         })
         .expect("synthesized channel");
@@ -906,16 +847,13 @@ pub fn setup_funded_channel(
     };
 
     // Pretend we funded the channel and ran for a while ...
-    chan_ctx.setup.funding_outpoint = bitcoin::OutPoint {
-        txid: Txid::from_slice(&[2u8; 32]).unwrap(),
-        vout: 0,
-    };
+    chan_ctx.setup.funding_outpoint =
+        bitcoin::OutPoint { txid: Txid::from_slice(&[2u8; 32]).unwrap(), vout: 0 };
     node_ctx
         .node
         .with_ready_channel(&chan_ctx.channel_id, |chan| {
             let point = make_test_pubkey((next_counterparty_commit_num + 1) as u8);
-            chan.enforcement_state
-                .set_next_holder_commit_num_for_testing(next_holder_commit_num);
+            chan.enforcement_state.set_next_holder_commit_num_for_testing(next_holder_commit_num);
             chan.enforcement_state
                 .set_next_counterparty_commit_num_for_testing(next_counterparty_commit_num, point);
             chan.enforcement_state
@@ -954,9 +892,7 @@ pub fn counterparty_sign_holder_commitment(
             let per_commitment_point = chan
                 .get_per_commitment_point(commit_tx_ctx.commit_num)
                 .expect("per_commitment_point");
-            let txkeys = chan
-                .make_holder_tx_keys(&per_commitment_point)
-                .expect("txkeys");
+            let txkeys = chan.make_holder_tx_keys(&per_commitment_point).expect("txkeys");
             let commitment_txid = built_tx.txid;
 
             let counterparty_htlc_key = derive_private_key(
@@ -988,11 +924,7 @@ pub fn counterparty_sign_holder_commitment(
                     )[..],
                 )
                 .unwrap();
-                htlc_sigs.push(
-                    node_ctx
-                        .secp_ctx
-                        .sign(&htlc_sighash, &counterparty_htlc_key),
-                );
+                htlc_sigs.push(node_ctx.secp_ctx.sign(&htlc_sighash, &counterparty_htlc_key));
             }
             Ok((commitment_sig, htlc_sigs))
         })
@@ -1011,54 +943,44 @@ pub fn validate_holder_commitment(
         commit_tx_ctx.offered_htlcs.clone(),
         commit_tx_ctx.received_htlcs.clone(),
     );
-    node_ctx
-        .node
-        .with_ready_channel(&chan_ctx.channel_id, |chan| {
-            let channel_parameters = chan.make_channel_parameters();
-            let parameters = channel_parameters.as_holder_broadcastable();
+    node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
+        let channel_parameters = chan.make_channel_parameters();
+        let parameters = channel_parameters.as_holder_broadcastable();
 
-            // NOTE - the unit tests calling this method may be
-            // setting up a commitment with a bogus
-            // commitment_number on purpose.  To allow this we
-            // need to temporarily set the channel's
-            // next_holder_commit_num while fetching the
-            // commitment_point and then restore it.
-            let save_commit_num = chan.enforcement_state.next_holder_commit_num;
-            chan.enforcement_state
-                .set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
-            let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
-            chan.enforcement_state
-                .set_next_holder_commit_num_for_testing(save_commit_num);
+        // NOTE - the unit tests calling this method may be
+        // setting up a commitment with a bogus
+        // commitment_number on purpose.  To allow this we
+        // need to temporarily set the channel's
+        // next_holder_commit_num while fetching the
+        // commitment_point and then restore it.
+        let save_commit_num = chan.enforcement_state.next_holder_commit_num;
+        chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
+        let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
+        chan.enforcement_state.set_next_holder_commit_num_for_testing(save_commit_num);
 
-            let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+        let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 
-            let redeem_scripts = build_tx_scripts(
-                &keys,
-                commit_tx_ctx.to_broadcaster,
-                commit_tx_ctx.to_countersignatory,
-                &htlcs,
-                &parameters,
-            )
-            .expect("scripts");
-            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+        let redeem_scripts = build_tx_scripts(
+            &keys,
+            commit_tx_ctx.to_broadcaster,
+            commit_tx_ctx.to_countersignatory,
+            &htlcs,
+            &parameters,
+        )
+        .expect("scripts");
+        let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
-            chan.validate_holder_commitment_tx(
-                &commit_tx_ctx
-                    .tx
-                    .as_ref()
-                    .unwrap()
-                    .trust()
-                    .built_transaction()
-                    .transaction,
-                &output_witscripts,
-                commit_tx_ctx.commit_num,
-                commit_tx_ctx.feerate_per_kw,
-                commit_tx_ctx.offered_htlcs.clone(),
-                commit_tx_ctx.received_htlcs.clone(),
-                &commit_sig,
-                &htlc_sigs,
-            )
-        })
+        chan.validate_holder_commitment_tx(
+            &commit_tx_ctx.tx.as_ref().unwrap().trust().built_transaction().transaction,
+            &output_witscripts,
+            commit_tx_ctx.commit_num,
+            commit_tx_ctx.feerate_per_kw,
+            commit_tx_ctx.offered_htlcs.clone(),
+            commit_tx_ctx.received_htlcs.clone(),
+            &commit_sig,
+            &htlc_sigs,
+        )
+    })
 }
 
 pub fn sign_holder_commitment(
@@ -1070,52 +992,42 @@ pub fn sign_holder_commitment(
         commit_tx_ctx.offered_htlcs.clone(),
         commit_tx_ctx.received_htlcs.clone(),
     );
-    node_ctx
-        .node
-        .with_ready_channel(&chan_ctx.channel_id, |chan| {
-            let channel_parameters = chan.make_channel_parameters();
-            let parameters = channel_parameters.as_holder_broadcastable();
+    node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
+        let channel_parameters = chan.make_channel_parameters();
+        let parameters = channel_parameters.as_holder_broadcastable();
 
-            // NOTE - the unit tests calling this method may be
-            // setting up a commitment with a bogus
-            // commitment_number on purpose.  To allow this we
-            // need to temporarily set the channel's
-            // next_holder_commit_num while fetching the
-            // commitment_point and then restore it.
-            let save_commit_num = chan.enforcement_state.next_holder_commit_num;
-            chan.enforcement_state
-                .set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
-            let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
-            chan.enforcement_state
-                .set_next_holder_commit_num_for_testing(save_commit_num);
+        // NOTE - the unit tests calling this method may be
+        // setting up a commitment with a bogus
+        // commitment_number on purpose.  To allow this we
+        // need to temporarily set the channel's
+        // next_holder_commit_num while fetching the
+        // commitment_point and then restore it.
+        let save_commit_num = chan.enforcement_state.next_holder_commit_num;
+        chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
+        let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
+        chan.enforcement_state.set_next_holder_commit_num_for_testing(save_commit_num);
 
-            let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+        let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 
-            let redeem_scripts = build_tx_scripts(
-                &keys,
-                commit_tx_ctx.to_broadcaster,
-                commit_tx_ctx.to_countersignatory,
-                &htlcs,
-                &parameters,
-            )
-            .expect("scripts");
-            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+        let redeem_scripts = build_tx_scripts(
+            &keys,
+            commit_tx_ctx.to_broadcaster,
+            commit_tx_ctx.to_countersignatory,
+            &htlcs,
+            &parameters,
+        )
+        .expect("scripts");
+        let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
-            chan.sign_holder_commitment_tx(
-                &commit_tx_ctx
-                    .tx
-                    .as_ref()
-                    .unwrap()
-                    .trust()
-                    .built_transaction()
-                    .transaction,
-                &output_witscripts,
-                commit_tx_ctx.commit_num,
-                commit_tx_ctx.feerate_per_kw,
-                commit_tx_ctx.offered_htlcs.clone(),
-                commit_tx_ctx.received_htlcs.clone(),
-            )
-        })
+        chan.sign_holder_commitment_tx(
+            &commit_tx_ctx.tx.as_ref().unwrap().trust().built_transaction().transaction,
+            &output_witscripts,
+            commit_tx_ctx.commit_num,
+            commit_tx_ctx.feerate_per_kw,
+            commit_tx_ctx.offered_htlcs.clone(),
+            commit_tx_ctx.received_htlcs.clone(),
+        )
+    })
 }
 
 // Try and use the funding tx helpers before this comment, the following are compat.
@@ -1126,10 +1038,7 @@ pub fn make_test_funding_tx_with_change(
     opath: Vec<u32>,
     change_addr: &Address,
 ) -> (Vec<u32>, bitcoin::Transaction) {
-    let outputs = vec![TxOut {
-        value,
-        script_pubkey: change_addr.script_pubkey(),
-    }];
+    let outputs = vec![TxOut { value, script_pubkey: change_addr.script_pubkey() }];
     let tx = make_test_funding_tx_with_ins_outs(inputs, outputs);
     (opath, tx)
 }
@@ -1141,11 +1050,9 @@ pub fn make_test_funding_tx(
     value: u64,
 ) -> (Vec<u32>, bitcoin::Transaction) {
     let opath = vec![0];
-    let change_addr = Address::p2wpkh(
-        &node.get_wallet_pubkey(&secp_ctx, &opath).unwrap(),
-        Network::Testnet,
-    )
-    .unwrap();
+    let change_addr =
+        Address::p2wpkh(&node.get_wallet_pubkey(&secp_ctx, &opath).unwrap(), Network::Testnet)
+            .unwrap();
     make_test_funding_tx_with_change(inputs, value, opath, &change_addr)
 }
 
@@ -1156,20 +1063,15 @@ pub fn make_test_funding_tx_with_p2shwpkh_change(
     value: u64,
 ) -> (Vec<u32>, bitcoin::Transaction) {
     let opath = vec![0];
-    let change_addr = Address::p2shwpkh(
-        &node.get_wallet_pubkey(&secp_ctx, &opath).unwrap(),
-        Network::Testnet,
-    )
-    .unwrap();
+    let change_addr =
+        Address::p2shwpkh(&node.get_wallet_pubkey(&secp_ctx, &opath).unwrap(), Network::Testnet)
+            .unwrap();
     make_test_funding_tx_with_change(inputs, value, opath, &change_addr)
 }
 
 pub fn make_test_commitment_tx() -> bitcoin::Transaction {
     let input = TxIn {
-        previous_output: BitcoinOutPoint {
-            txid: Default::default(),
-            vout: 0,
-        },
+        previous_output: BitcoinOutPoint { txid: Default::default(), vout: 0 },
         script_sig: Script::new(),
         sequence: 0,
         witness: vec![],
@@ -1199,10 +1101,8 @@ pub fn make_test_commitment_info() -> CommitmentInfo2 {
     )
 }
 
-pub const TEST_NODE_CONFIG: NodeConfig = NodeConfig {
-    network: Network::Testnet,
-    key_derivation_style: KeyDerivationStyle::Native,
-};
+pub const TEST_NODE_CONFIG: NodeConfig =
+    NodeConfig { network: Network::Testnet, key_derivation_style: KeyDerivationStyle::Native };
 
 pub const TEST_SEED: &[&str] = &[
     "6c696768746e696e672d31000000000000000000000000000000000000000000",
@@ -1234,10 +1134,7 @@ pub fn build_tx_scripts(
     if to_countersignatory_value_sat > 0 {
         let script = script_for_p2wpkh(&countersignatory_pubkeys.payment_point);
         txouts.push((
-            TxOut {
-                script_pubkey: script.clone(),
-                value: to_countersignatory_value_sat,
-            },
+            TxOut { script_pubkey: script.clone(), value: to_countersignatory_value_sat },
             (None, Script::new()),
         ))
     }
@@ -1249,20 +1146,14 @@ pub fn build_tx_scripts(
             &keys.broadcaster_delayed_payment_key,
         );
         txouts.push((
-            TxOut {
-                script_pubkey: redeem_script.to_v0_p2wsh(),
-                value: to_broadcaster_value_sat,
-            },
+            TxOut { script_pubkey: redeem_script.to_v0_p2wsh(), value: to_broadcaster_value_sat },
             (None, redeem_script),
         ));
     }
 
     for htlc in htlcs {
         let script = get_htlc_redeemscript(&htlc, channel_parameters.opt_anchors(), &keys);
-        let txout = TxOut {
-            script_pubkey: script.to_v0_p2wsh(),
-            value: htlc.amount_msat / 1000,
-        };
+        let txout = TxOut { script_pubkey: script.to_v0_p2wsh(), value: htlc.amount_msat / 1000 };
         txouts.push((txout, (Some(htlc.clone()), script)));
     }
 
@@ -1398,38 +1289,22 @@ pub fn check_signature_with_setup(
     der_signature.pop(); // Pop the sighash type byte
     let signature = Signature::from_der(&der_signature).expect("from_der");
     let secp_ctx = Secp256k1::new();
-    secp_ctx
-        .verify(&sighash, &signature, &pubkey)
-        .expect("verify");
+    secp_ctx.verify(&sighash, &signature, &pubkey).expect("verify");
 }
 
-pub fn sign_commitment_tx_with_mutators_setup() -> (
-    Arc<Node>,
-    ChannelSetup,
-    ChannelId,
-    Vec<HTLCInfo2>,
-    Vec<HTLCInfo2>,
-) {
+pub fn sign_commitment_tx_with_mutators_setup(
+) -> (Arc<Node>, ChannelSetup, ChannelId, Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
     let setup = make_test_channel_setup();
     let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
-    let htlc1 = HTLCInfo2 {
-        value_sat: 4000,
-        payment_hash: PaymentHash([1; 32]),
-        cltv_expiry: 2 << 16,
-    };
+    let htlc1 =
+        HTLCInfo2 { value_sat: 4000, payment_hash: PaymentHash([1; 32]), cltv_expiry: 2 << 16 };
 
-    let htlc2 = HTLCInfo2 {
-        value_sat: 5000,
-        payment_hash: PaymentHash([3; 32]),
-        cltv_expiry: 3 << 16,
-    };
+    let htlc2 =
+        HTLCInfo2 { value_sat: 5000, payment_hash: PaymentHash([3; 32]), cltv_expiry: 3 << 16 };
 
-    let htlc3 = HTLCInfo2 {
-        value_sat: 10_003,
-        payment_hash: PaymentHash([5; 32]),
-        cltv_expiry: 4 << 16,
-    };
+    let htlc3 =
+        HTLCInfo2 { value_sat: 10_003, payment_hash: PaymentHash([5; 32]), cltv_expiry: 4 << 16 };
     let offered_htlcs = vec![htlc1];
     let received_htlcs = vec![htlc2, htlc3];
     (node, setup, channel_id, offered_htlcs, received_htlcs)
@@ -1449,23 +1324,14 @@ where
     let to_broadcaster = 1_979_997;
     let to_countersignatory = 1_000_000;
     let feerate_per_kw = 1200;
-    let htlc1 = HTLCInfo2 {
-        value_sat: 4000,
-        payment_hash: PaymentHash([1; 32]),
-        cltv_expiry: 2 << 16,
-    };
+    let htlc1 =
+        HTLCInfo2 { value_sat: 4000, payment_hash: PaymentHash([1; 32]), cltv_expiry: 2 << 16 };
 
-    let htlc2 = HTLCInfo2 {
-        value_sat: 5000,
-        payment_hash: PaymentHash([3; 32]),
-        cltv_expiry: 3 << 16,
-    };
+    let htlc2 =
+        HTLCInfo2 { value_sat: 5000, payment_hash: PaymentHash([3; 32]), cltv_expiry: 3 << 16 };
 
-    let htlc3 = HTLCInfo2 {
-        value_sat: 10_003,
-        payment_hash: PaymentHash([5; 32]),
-        cltv_expiry: 4 << 16,
-    };
+    let htlc3 =
+        HTLCInfo2 { value_sat: 10_003, payment_hash: PaymentHash([5; 32]), cltv_expiry: 4 << 16 };
     let offered_htlcs = vec![htlc1];
     let received_htlcs = vec![htlc2, htlc3];
 
@@ -1495,57 +1361,48 @@ where
     let (commit_sig0, htlc_sigs0) =
         counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx0);
 
-    node_ctx
-        .node
-        .with_ready_channel(&chan_ctx.channel_id, |chan| {
-            let commit_tx_ctx = commit_tx_ctx0.clone();
-            let commit_sig = commit_sig0.clone();
-            let htlc_sigs = htlc_sigs0.clone();
+    node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
+        let commit_tx_ctx = commit_tx_ctx0.clone();
+        let commit_sig = commit_sig0.clone();
+        let htlc_sigs = htlc_sigs0.clone();
 
-            let channel_parameters = chan.make_channel_parameters();
-            let parameters = channel_parameters.as_holder_broadcastable();
-            let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
+        let channel_parameters = chan.make_channel_parameters();
+        let parameters = channel_parameters.as_holder_broadcastable();
+        let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
 
-            let mut keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+        let mut keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 
-            mutate_keys(&mut keys);
+        mutate_keys(&mut keys);
 
-            let htlcs = Channel::htlcs_info2_to_oic(
-                commit_tx_ctx.offered_htlcs.clone(),
-                commit_tx_ctx.received_htlcs.clone(),
-            );
-            let redeem_scripts = build_tx_scripts(
-                &keys,
-                commit_tx_ctx.to_broadcaster,
-                commit_tx_ctx.to_countersignatory,
-                &htlcs,
-                &parameters,
-            )
-            .expect("scripts");
-            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+        let htlcs = Channel::htlcs_info2_to_oic(
+            commit_tx_ctx.offered_htlcs.clone(),
+            commit_tx_ctx.received_htlcs.clone(),
+        );
+        let redeem_scripts = build_tx_scripts(
+            &keys,
+            commit_tx_ctx.to_broadcaster,
+            commit_tx_ctx.to_countersignatory,
+            &htlcs,
+            &parameters,
+        )
+        .expect("scripts");
+        let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
-            let tx = commit_tx_ctx
-                .tx
-                .as_ref()
-                .unwrap()
-                .trust()
-                .built_transaction()
-                .transaction
-                .clone();
+        let tx = commit_tx_ctx.tx.as_ref().unwrap().trust().built_transaction().transaction.clone();
 
-            chan.validate_holder_commitment_tx(
-                &tx,
-                &output_witscripts,
-                commit_tx_ctx.commit_num,
-                commit_tx_ctx.feerate_per_kw,
-                commit_tx_ctx.offered_htlcs.clone(),
-                commit_tx_ctx.received_htlcs.clone(),
-                &commit_sig,
-                &htlc_sigs,
-            )?;
+        chan.validate_holder_commitment_tx(
+            &tx,
+            &output_witscripts,
+            commit_tx_ctx.commit_num,
+            commit_tx_ctx.feerate_per_kw,
+            commit_tx_ctx.offered_htlcs.clone(),
+            commit_tx_ctx.received_htlcs.clone(),
+            &commit_sig,
+            &htlc_sigs,
+        )?;
 
-            Ok(commit_tx_ctx)
-        })
+        Ok(commit_tx_ctx)
+    })
 }
 
 pub fn hex_decode(s: &str) -> Result<Vec<u8>, hex::Error> {
@@ -1557,12 +1414,7 @@ pub fn hex_encode(o: &[u8]) -> String {
 }
 
 pub fn make_tx(inputs: Vec<TxIn>) -> Transaction {
-    Transaction {
-        version: 0,
-        lock_time: 0,
-        input: inputs,
-        output: vec![Default::default()],
-    }
+    Transaction { version: 0, lock_time: 0, input: inputs, output: vec![Default::default()] }
 }
 
 pub fn make_txin(vout: u32) -> TxIn {
@@ -1575,10 +1427,7 @@ pub fn make_txin(vout: u32) -> TxIn {
 }
 
 pub fn make_outpoint(vout: u32) -> BitcoinOutPoint {
-    BitcoinOutPoint {
-        txid: Default::default(),
-        vout,
-    }
+    BitcoinOutPoint { txid: Default::default(), vout }
 }
 
 pub fn make_header(tip: BlockHeader, merkle_root: TxMerkleNode) -> BlockHeader {

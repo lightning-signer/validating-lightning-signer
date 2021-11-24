@@ -27,10 +27,7 @@ mod tests {
                 sequence: contest_delay as u32,
                 witness: vec![],
             }],
-            output: vec![TxOut {
-                script_pubkey: script_pubkey,
-                value: amount_sat,
-            }],
+            output: vec![TxOut { script_pubkey: script_pubkey, value: amount_sat }],
         }
     }
 
@@ -68,17 +65,11 @@ mod tests {
             |_keys| {},
         )?;
 
-        let (sig, tx, per_commitment_point, input, redeemscript, amount_sat) = node_ctx
-            .node
-            .with_ready_channel(&chan_ctx.channel_id, |chan| {
+        let (sig, tx, per_commitment_point, input, redeemscript, amount_sat) =
+            node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
                 let mut input = 0;
-                let built_commit = commit_tx_ctx
-                    .tx
-                    .as_ref()
-                    .unwrap()
-                    .trust()
-                    .built_transaction()
-                    .clone();
+                let built_commit =
+                    commit_tx_ctx.tx.as_ref().unwrap().trust().built_transaction().clone();
                 let built_commit_tx = &built_commit.transaction;
                 let built_commit_txid = &built_commit.txid;
 
@@ -127,14 +118,7 @@ mod tests {
                     amount_sat,
                     &wallet_path,
                 )?;
-                Ok((
-                    sig,
-                    tx,
-                    per_commitment_point,
-                    input,
-                    redeemscript,
-                    amount_sat,
-                ))
+                Ok((sig, tx, per_commitment_point, input, redeemscript, amount_sat))
             })?;
 
         let delayed_pubkey = get_channel_delayed_payment_pubkey(
@@ -182,9 +166,7 @@ mod tests {
                 chan.node
                     .upgrade()
                     .unwrap()
-                    .add_allowlist(&vec![
-                        "tb1qg975h6gdx5mryeac72h6lj2nzygugxhyk6dnhr".to_string()
-                    ])
+                    .add_allowlist(&vec!["tb1qg975h6gdx5mryeac72h6lj2nzygugxhyk6dnhr".to_string()])
                     .expect("add_allowlist");
             },
         ));
