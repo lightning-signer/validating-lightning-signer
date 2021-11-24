@@ -27,6 +27,9 @@ debug = ["backtrace"]
 
 log_pretty_print = []
 
+# trace the enforcement_state at debug level
+debug_enforcement_state = []
+
 [lib]
 name = "lightning_signer"
 path = "src/lib.rs"

@@ -25,7 +25,9 @@ mod tests {
     macro_rules! hex (($hex:expr) => (Vec::from_hex($hex).unwrap()));
     macro_rules! hex_script (($hex:expr) => (Script::from(hex!($hex))));
 
-    fn setup_mutual_close_tx() -> Result<
+    fn setup_mutual_close_tx(
+        outbound: bool,
+    ) -> Result<
         (
             Secp256k1<secp256k1::SignOnly>,
             ChannelSetup,
@@ -40,7 +42,8 @@ mod tests {
         Status,
     > {
         let secp_ctx = Secp256k1::signing_only();
-        let setup = make_test_channel_setup();
+        let mut setup = make_test_channel_setup();
+        setup.is_outbound = outbound;
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
@@ -50,8 +53,13 @@ mod tests {
         let holder_wallet_path_hint = vec![7];
 
         let fee = 2000;
-        let to_counterparty_value_sat = 1_000_000;
-        let to_holder_value_sat = setup.channel_value_sat - to_counterparty_value_sat - fee;
+        let mut to_holder_value_sat = 2_000_000;
+        let mut to_counterparty_value_sat = setup.channel_value_sat - to_holder_value_sat; // 1_000_000
+        if outbound {
+            to_holder_value_sat -= fee;
+        } else {
+            to_counterparty_value_sat -= fee;
+        };
 
         node.with_ready_channel(&channel_id, |chan| {
             // Construct the EnforcementState prior to the mutual_close.
@@ -110,6 +118,7 @@ mod tests {
         MutualCloseTxMutator,
         ChannelStateValidator,
     >(
+        outbound: bool,
         mutate_close_input: MutualCloseInputMutator,
         mutate_close_tx: MutualCloseTxMutator,
         validate_channel_state: ChannelStateValidator,
@@ -130,7 +139,7 @@ mod tests {
             to_counterparty_value_sat,
             holder_wallet_path_hint,
             counterparty_points,
-        ) = setup_mutual_close_tx()?;
+        ) = setup_mutual_close_tx(outbound)?;
 
         let (tx, sigvec) = node.with_ready_channel(&channel_id, |chan| {
             let mut holder_value_sat = to_holder_value_sat;
@@ -221,6 +230,7 @@ mod tests {
     }
 
     fn sign_mutual_close_tx_phase2_with_mutators<MutualCloseInput2Mutator, ChannelStateValidator>(
+        outbound: bool,
         mutate_close_input: MutualCloseInput2Mutator,
         validate_channel_state: ChannelStateValidator,
     ) -> Result<(), Status>
@@ -247,7 +257,7 @@ mod tests {
             to_counterparty_value_sat,
             init_holder_wallet_path_hint,
             counterparty_points,
-        ) = setup_mutual_close_tx()?;
+        ) = setup_mutual_close_tx(outbound)?;
 
         let (
             holder_value_sat,
@@ -353,9 +363,33 @@ mod tests {
         Ok(())
     }
 
+    macro_rules! sign_mutual_close_tx_with_mutators_inbound {
+        ($mci: expr, $mct: expr, $vcs: expr) => {
+            sign_mutual_close_tx_with_mutators(false, $mci, $mct, $vcs)
+        };
+    }
+
+    macro_rules! sign_mutual_close_tx_with_mutators_outbound {
+        ($mci: expr, $mct: expr, $vcs: expr) => {
+            sign_mutual_close_tx_with_mutators(true, $mci, $mct, $vcs)
+        };
+    }
+
+    macro_rules! sign_mutual_close_tx_phase2_with_mutators_inbound {
+        ($mci: expr, $vcs: expr) => {
+            sign_mutual_close_tx_phase2_with_mutators(false, $mci, $vcs)
+        };
+    }
+
+    macro_rules! sign_mutual_close_tx_phase2_with_mutators_outbound {
+        ($mci: expr, $vcs: expr) => {
+            sign_mutual_close_tx_phase2_with_mutators(true, $mci, $vcs)
+        };
+    }
+
     #[test]
     fn sign_mutual_close_tx_phase2_success() {
-        assert_status_ok!(sign_mutual_close_tx_phase2_with_mutators(
+        assert_status_ok!(sign_mutual_close_tx_phase2_with_mutators_outbound!(
             |_chan,
              _to_holder,
              _to_counterparty,
@@ -375,7 +409,43 @@ mod tests {
 
     #[test]
     fn sign_mutual_close_tx_success() {
-        assert_status_ok!(sign_mutual_close_tx_with_mutators(
+        assert_status_ok!(sign_mutual_close_tx_with_mutators_outbound!(
+            |_chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                // If we don't mutate anything it should succeed.
+            },
+            |_tx, _wallet_paths, _allowlist| {
+                // If we don't mutate anything it should succeed.
+            },
+            |chan| {
+                // Channel should be marked closed
+                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+            }
+        ));
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_phase2_inbound_success() {
+        assert_status_ok!(sign_mutual_close_tx_phase2_with_mutators_inbound!(
+            |_chan,
+             _to_holder,
+             _to_counterparty,
+             _holder_script,
+             _counter_script,
+             _outpoint,
+             _wallet_path,
+             _allowlist| {
+                // If we don't mutate anything it should succeed.
+            },
+            |chan| {
+                // Channel should be marked closed
+                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+            }
+        ));
+    }
+
+    #[test]
+    fn sign_mutual_close_tx_inbound_success() {
+        assert_status_ok!(sign_mutual_close_tx_with_mutators_inbound!(
             |_chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
                 // If we don't mutate anything it should succeed.
             },
@@ -391,7 +461,7 @@ mod tests {
 
     #[test]
     fn sign_mutual_close_tx_only_holder_success() {
-        assert_status_ok!(sign_mutual_close_tx_with_mutators(
+        assert_status_ok!(sign_mutual_close_tx_with_mutators_outbound!(
             |chan, to_holder, to_counterparty, _holder_script, counter_script, _outpoint| {
                 // remove the counterparty from current_holder_commit_info
                 let mut holder = chan
@@ -434,7 +504,7 @@ mod tests {
 
     #[test]
     fn sign_mutual_close_tx_only_counterparty_success() {
-        assert_status_ok!(sign_mutual_close_tx_with_mutators(
+        assert_status_ok!(sign_mutual_close_tx_with_mutators_outbound!(
             |chan, to_holder, to_counterparty, holder_script, _counter_script, _outpoint| {
                 let fee = 2000;
 
@@ -483,7 +553,7 @@ mod tests {
         // 2. NodeA opens a channel to NodeB (both company nodes).
         // 3. Channel is mutually closed immediately (only one output, to NodeA).
         // 4. NodeB incorrectly assigns the output because it's in the allowlist.
-        assert_status_ok!(sign_mutual_close_tx_with_mutators(
+        assert_status_ok!(sign_mutual_close_tx_with_mutators_outbound!(
             |chan, to_holder, to_counterparty, holder_script, counter_script, _outpoint| {
                 let fee = 2000;
 
@@ -536,7 +606,7 @@ mod tests {
     // policy-mutual-destination-allowlisted
     #[test]
     fn sign_mutual_close_tx_with_allowlist_success() {
-        assert_status_ok!(sign_mutual_close_tx_with_mutators(
+        assert_status_ok!(sign_mutual_close_tx_with_mutators_outbound!(
             |_chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
                 // If we don't mutate anything it should succeed.
             },
@@ -559,7 +629,7 @@ mod tests {
     // policy-mutual-destination-allowlisted
     #[test]
     fn sign_mutual_close_tx_phase2_with_allowlist_success() {
-        assert_status_ok!(sign_mutual_close_tx_phase2_with_mutators(
+        assert_status_ok!(sign_mutual_close_tx_phase2_with_mutators_outbound!(
             |_chan,
              _to_holder,
              _to_counterparty,
@@ -583,7 +653,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_phase2_no_wallet_path_or_allowlist() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_phase2_with_mutators(
+            sign_mutual_close_tx_phase2_with_mutators_outbound!(
                 |_chan,
                  _to_holder,
                  _to_counterparty,
@@ -607,7 +677,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_phase2_holder_upfront_script_mismatch() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_phase2_with_mutators(
+            sign_mutual_close_tx_phase2_with_mutators_outbound!(
                 |chan,
                  _to_holder,
                  _to_counterparty,
@@ -635,7 +705,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_phase2_with_fee_too_large() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_phase2_with_mutators(
+            sign_mutual_close_tx_phase2_with_mutators_outbound!(
                 |_chan,
                  to_holder,
                  to_counterparty,
@@ -661,7 +731,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_phase2_with_fee_too_small() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_phase2_with_mutators(
+            sign_mutual_close_tx_phase2_with_mutators_outbound!(
                 |_chan,
                  to_holder,
                  to_counterparty,
@@ -686,7 +756,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_with_bad_num_txout() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_with_mutators(
+            sign_mutual_close_tx_with_mutators_outbound!(
                 |_chan,
                  _to_holder,
                  _to_counterparty,
@@ -719,7 +789,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_with_opath_len_mismatch() {
         assert_invalid_argument_err!(
-            sign_mutual_close_tx_with_mutators(
+            sign_mutual_close_tx_with_mutators_outbound!(
                 |_chan,
                  _to_holder,
                  _to_counterparty,
@@ -744,7 +814,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_with_unestablished_holder() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_with_mutators(
+            sign_mutual_close_tx_with_mutators_outbound!(
                 |_chan,
                  _to_holder,
                  _to_counterparty,
@@ -772,7 +842,7 @@ mod tests {
     fn sign_mutual_close_tx_with_ambiguous_holder_output() {
         // Both outputs are allowlisted (common company allowlist,
         // channel w/ two company nodes).  Need to use value to pick the output ...
-        assert_status_ok!(sign_mutual_close_tx_with_mutators(
+        assert_status_ok!(sign_mutual_close_tx_with_mutators_outbound!(
             |chan, to_holder, to_counterparty, _holder_script, _counter_script, _outpoint| {
                 // The hard case is when the holder's input is the first, so we need
                 // to swap the outputs and values here.
@@ -827,7 +897,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_without_holder_commitment() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_with_mutators(
+            sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
                     chan.enforcement_state.current_holder_commit_info = None;
                 },
@@ -847,7 +917,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_without_counterparty_commitment() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_with_mutators(
+            sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
                     chan.enforcement_state.current_counterparty_commit_info = None;
                 },
@@ -868,7 +938,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_with_holder_offered_htlcs() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_with_mutators(
+            sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
                     let mut holder = chan
                         .enforcement_state
@@ -899,7 +969,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_with_holder_received_htlcs() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_with_mutators(
+            sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
                     let mut holder = chan
                         .enforcement_state
@@ -930,7 +1000,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_with_counterparty_offered_htlcs() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_with_mutators(
+            sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
                     let mut cparty = chan
                         .enforcement_state
@@ -961,7 +1031,7 @@ mod tests {
     #[test]
     fn sign_mutual_close_tx_with_counterparty_received_htlcs() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_with_mutators(
+            sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
                     let mut cparty = chan
                         .enforcement_state
@@ -990,9 +1060,9 @@ mod tests {
 
     // policy-mutual-value-matches-commitment
     #[test]
-    fn sign_mutual_close_tx_with_holder_commitment_too_large() {
+    fn sign_mutual_close_tx_outbound_with_pos_skewed_holder_commitment() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_with_mutators(
+            sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
                     let mut holder = chan
                         .enforcement_state
@@ -1000,9 +1070,19 @@ mod tests {
                         .as_ref()
                         .unwrap()
                         .clone();
-                    holder.to_broadcaster_value_sat += 80_000;
-                    holder.to_countersigner_value_sat -= 80_000;
+                    let mut cparty = chan
+                        .enforcement_state
+                        .current_counterparty_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    // Need to move both commitments so they are within epsilon of each other.
+                    holder.to_broadcaster_value_sat += 14_000; // outside epsilon
+                    holder.to_countersigner_value_sat -= 14_000; // outside epsilon
+                    cparty.to_countersigner_value_sat += 9_000;
+                    cparty.to_broadcaster_value_sat -= 9_000;
                     chan.enforcement_state.current_holder_commit_info = Some(holder);
+                    chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
                 },
                 |_tx, _wallet_paths, _allowlist| {
                     // don't need to mutate these
@@ -1013,15 +1093,16 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
-             to_holder_value 1000000 is smaller than holder_info.broadcaster_value_sat 2078000"
+             to_counterparty_value 1000000 is larger than \
+             holder_info.countersigner_value_sat 986000"
         );
     }
 
     // policy-mutual-value-matches-commitment
     #[test]
-    fn sign_mutual_close_tx_with_holder_commitment_too_small() {
+    fn sign_mutual_close_tx_outbound_with_neg_skewed_holder_commitment() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_with_mutators(
+            sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
                     let mut holder = chan
                         .enforcement_state
@@ -1029,9 +1110,19 @@ mod tests {
                         .as_ref()
                         .unwrap()
                         .clone();
-                    holder.to_broadcaster_value_sat -= 80_000;
-                    holder.to_countersigner_value_sat += 80_000;
+                    let mut cparty = chan
+                        .enforcement_state
+                        .current_counterparty_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    // Need to move both commitments so they are within epsilon of each other.
+                    holder.to_broadcaster_value_sat -= 14_000; // outside epsilon
+                    holder.to_countersigner_value_sat += 14_000; // outside epsilon
+                    cparty.to_countersigner_value_sat -= 9_000;
+                    cparty.to_broadcaster_value_sat += 9_000;
                     chan.enforcement_state.current_holder_commit_info = Some(holder);
+                    chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
                 },
                 |_tx, _wallet_paths, _allowlist| {
                     // don't need to mutate these
@@ -1042,25 +1133,36 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
-             to_holder_value 1000000 is smaller than holder_info.broadcaster_value_sat 1918000"
+             to_counterparty_value 1000000 is smaller than \
+             holder_info.countersigner_value_sat 1014000"
         );
     }
 
     // policy-mutual-value-matches-commitment
     #[test]
-    fn sign_mutual_close_tx_with_counterparty_commitment_too_small() {
+    fn sign_mutual_close_tx_outbound_with_pos_skewed_cparty_commitment() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_with_mutators(
+            sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
-                    let mut counterparty = chan
+                    let mut holder = chan
+                        .enforcement_state
+                        .current_holder_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    let mut cparty = chan
                         .enforcement_state
                         .current_counterparty_commit_info
                         .as_ref()
                         .unwrap()
                         .clone();
-                    counterparty.to_broadcaster_value_sat += 80_000;
-                    counterparty.to_countersigner_value_sat -= 80_000;
-                    chan.enforcement_state.current_counterparty_commit_info = Some(counterparty);
+                    // Need to move both commitments so they are within epsilon of each other.
+                    holder.to_broadcaster_value_sat -= 9_000;
+                    holder.to_countersigner_value_sat += 9_000;
+                    cparty.to_countersigner_value_sat -= 14_000; // outside epsilon
+                    cparty.to_broadcaster_value_sat += 14_000; // outside epsilon
+                    chan.enforcement_state.current_holder_commit_info = Some(holder);
+                    chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
                 },
                 |_tx, _wallet_paths, _allowlist| {
                     // don't need to mutate these
@@ -1071,25 +1173,36 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
-             to_holder_value 1000000 is smaller than holder_info.broadcaster_value_sat 1998000"
+             to_counterparty_value 1000000 is smaller than \
+             counterparty_info.broadcaster_value_sat 1014000"
         );
     }
 
     // policy-mutual-value-matches-commitment
     #[test]
-    fn sign_mutual_close_tx_with_counterparty_commitment_too_large() {
+    fn sign_mutual_close_tx_outbound_with_neg_skewed_cparty_commitment() {
         assert_failed_precondition_err!(
-            sign_mutual_close_tx_with_mutators(
+            sign_mutual_close_tx_with_mutators_outbound!(
                 |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
-                    let mut counterparty = chan
+                    let mut holder = chan
+                        .enforcement_state
+                        .current_holder_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    let mut cparty = chan
                         .enforcement_state
                         .current_counterparty_commit_info
                         .as_ref()
                         .unwrap()
                         .clone();
-                    counterparty.to_broadcaster_value_sat -= 80_000;
-                    counterparty.to_countersigner_value_sat += 80_000;
-                    chan.enforcement_state.current_counterparty_commit_info = Some(counterparty);
+                    // Need to move both commitments so they are within epsilon of each other.
+                    holder.to_broadcaster_value_sat += 9_000;
+                    holder.to_countersigner_value_sat -= 9_000;
+                    cparty.to_countersigner_value_sat += 14_000; // outside epsilon
+                    cparty.to_broadcaster_value_sat -= 14_000; // outside epsilon
+                    chan.enforcement_state.current_holder_commit_info = Some(holder);
+                    chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
                 },
                 |_tx, _wallet_paths, _allowlist| {
                     // don't need to mutate these
@@ -1100,7 +1213,262 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
-             to_holder_value 1000000 is smaller than holder_info.broadcaster_value_sat 1998000"
+             to_counterparty_value 1000000 is larger than \
+             counterparty_info.broadcaster_value_sat 986000"
+        );
+    }
+
+    // policy-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_inbound_with_pos_skewed_holder_commitment() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators_inbound!(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut holder = chan
+                        .enforcement_state
+                        .current_holder_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    let mut cparty = chan
+                        .enforcement_state
+                        .current_counterparty_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    // Need to move both commitments so they are within epsilon of each other.
+                    holder.to_broadcaster_value_sat += 14_000; // outside epsilon
+                    holder.to_countersigner_value_sat -= 14_000; // outside epsilon
+                    cparty.to_countersigner_value_sat += 9_000;
+                    cparty.to_broadcaster_value_sat -= 9_000;
+                    chan.enforcement_state.current_holder_commit_info = Some(holder);
+                    chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_holder_value 2000000 is smaller than \
+             holder_info.broadcaster_value_sat 2014000"
+        );
+    }
+
+    // policy-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_inbound_with_neg_skewed_holder_commitment() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators_inbound!(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut holder = chan
+                        .enforcement_state
+                        .current_holder_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    let mut cparty = chan
+                        .enforcement_state
+                        .current_counterparty_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    // Need to move both commitments so they are within epsilon of each other.
+                    holder.to_broadcaster_value_sat -= 14_000; // outside epsilon
+                    holder.to_countersigner_value_sat += 14_000; // outside epsilon
+                    cparty.to_countersigner_value_sat -= 9_000;
+                    cparty.to_broadcaster_value_sat += 9_000;
+                    chan.enforcement_state.current_holder_commit_info = Some(holder);
+                    chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_holder_value 2000000 is larger than \
+             holder_info.broadcaster_value_sat 1986000"
+        );
+    }
+
+    // policy-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_inbound_with_pos_skewed_cparty_commitment() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators_inbound!(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut holder = chan
+                        .enforcement_state
+                        .current_holder_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    let mut cparty = chan
+                        .enforcement_state
+                        .current_counterparty_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    // Need to move both commitments so they are within epsilon of each other.
+                    holder.to_broadcaster_value_sat -= 9_000;
+                    holder.to_countersigner_value_sat += 9_000;
+                    cparty.to_countersigner_value_sat -= 14_000; // outside epsilon
+                    cparty.to_broadcaster_value_sat += 14_000; // outside epsilon
+                    chan.enforcement_state.current_holder_commit_info = Some(holder);
+                    chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_holder_value 2000000 is larger than \
+             counterparty_info.countersigner_value_sat 1986000"
+        );
+    }
+
+    // policy-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_inbound_with_neg_skewed_cparty_commitment() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators_inbound!(
+                |chan, _to_holder, _to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    let mut holder = chan
+                        .enforcement_state
+                        .current_holder_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    let mut cparty = chan
+                        .enforcement_state
+                        .current_counterparty_commit_info
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    // Need to move both commitments so they are within epsilon of each other.
+                    holder.to_broadcaster_value_sat += 9_000;
+                    holder.to_countersigner_value_sat -= 9_000;
+                    cparty.to_countersigner_value_sat += 14_000; // outside epsilon
+                    cparty.to_broadcaster_value_sat -= 14_000; // outside epsilon
+                    chan.enforcement_state.current_holder_commit_info = Some(holder);
+                    chan.enforcement_state.current_counterparty_commit_info = Some(cparty);
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_holder_value 2000000 is smaller than \
+             counterparty_info.countersigner_value_sat 2014000"
+        );
+    }
+
+    // policy-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_outbound_with_holder_output_too_large() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators_outbound!(
+                |_chan, to_holder, to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    // Redistribute the outputs more than epsilon
+                    *to_holder += 15_000;
+                    *to_counterparty -= 15_000;
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_counterparty_value 985000 is smaller than \
+             counterparty_info.broadcaster_value_sat 1000000"
+        );
+    }
+
+    // policy-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_outbound_with_holder_output_too_small() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators_outbound!(
+                |_chan, to_holder, to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    // Redistribute the outputs more than epsilon
+                    *to_holder -= 15_000;
+                    *to_counterparty += 15_000;
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_counterparty_value 1015000 is larger than \
+             counterparty_info.broadcaster_value_sat 1000000"
+        );
+    }
+
+    // policy-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_inbound_with_holder_output_too_large() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators_inbound!(
+                |_chan, to_holder, to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    // Redistribute the outputs more than epsilon
+                    *to_holder += 15_000;
+                    *to_counterparty -= 15_000;
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_holder_value 2015000 is larger than holder_info.broadcaster_value_sat 2000000"
+        );
+    }
+
+    // policy-mutual-value-matches-commitment
+    #[test]
+    fn sign_mutual_close_tx_inbound_with_holder_output_too_small() {
+        assert_failed_precondition_err!(
+            sign_mutual_close_tx_with_mutators_inbound!(
+                |_chan, to_holder, to_counterparty, _holder_script, _counter_script, _outpoint| {
+                    // Redistribute the outputs more than epsilon
+                    *to_holder -= 15_000;
+                    *to_counterparty += 15_000;
+                },
+                |_tx, _wallet_paths, _allowlist| {
+                    // don't need to mutate these
+                },
+                |chan| {
+                    // Channel should not be marked closed
+                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                }
+            ),
+            "policy failure: validate_mutual_close_tx: \
+             to_holder_value 1985000 is smaller than holder_info.broadcaster_value_sat 2000000"
         );
     }
 }

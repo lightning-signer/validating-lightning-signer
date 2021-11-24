@@ -1,5 +1,5 @@
 use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::{self, Network, Script, SigHash, Transaction};
+use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
 use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use log::debug;
@@ -101,7 +101,7 @@ pub trait Validator {
         redeemscript: &Script,
         htlc_amount_sat: u64,
         output_witscript: &Script,
-    ) -> Result<(u32, HTLCOutputInCommitment, SigHash), ValidationError>;
+    ) -> Result<(u32, HTLCOutputInCommitment, SigHash, SigHashType), ValidationError>;
 
     /// Phase 2 validation of 2nd level HTLC tx
     fn validate_htlc_tx(
@@ -233,7 +233,7 @@ impl EnforcementState {
             if let Some(cinfo) = &self.current_counterparty_commit_info {
                 let hval = hinfo.to_broadcaster_value_sat;
                 let cval = cinfo.to_countersigner_value_sat;
-                debug!("hval={}, cval={}", hval, cval);
+                debug!("min to_holder: hval={}, cval={}", hval, cval);
                 if hval > cval {
                     if hval - cval <= epsilon_sat {
                         return Some(cval);
@@ -257,6 +257,7 @@ impl EnforcementState {
             if let Some(cinfo) = &self.current_counterparty_commit_info {
                 let hval = hinfo.to_countersigner_value_sat;
                 let cval = cinfo.to_broadcaster_value_sat;
+                debug!("min to_cparty: hval={}, cval={}", hval, cval);
                 if hval > cval {
                     if hval - cval <= epsilon_sat {
                         return Some(cval);

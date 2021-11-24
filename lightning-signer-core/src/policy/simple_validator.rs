@@ -5,8 +5,8 @@ use bitcoin::util::bip143::SigHashCache;
 use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils::{
-    build_htlc_transaction, make_funding_redeemscript, ClosingTransaction, HTLCOutputInCommitment,
-    TxCreationKeys,
+    build_htlc_transaction, htlc_success_tx_weight, htlc_timeout_tx_weight,
+    make_funding_redeemscript, ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
 use log::{debug, info};
@@ -18,7 +18,7 @@ use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
     parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
-    CommitmentInfo, CommitmentInfo2, HTLC_SUCCESS_TX_WEIGHT, HTLC_TIMEOUT_TX_WEIGHT,
+    CommitmentInfo, CommitmentInfo2,
 };
 use crate::util::crypto_utils::payload_for_p2wsh;
 use crate::util::debug_utils::{
@@ -609,7 +609,7 @@ impl Validator for SimpleValidator {
         redeemscript: &Script,
         htlc_amount_sat: u64,
         output_witscript: &Script,
-    ) -> Result<(u32, HTLCOutputInCommitment, SigHash), ValidationError> {
+    ) -> Result<(u32, HTLCOutputInCommitment, SigHash, SigHashType), ValidationError> {
         let to_self_delay = if is_counterparty {
             setup.holder_selected_contest_delay // the local side imposes this value
         } else {
@@ -652,9 +652,9 @@ impl Validator for SimpleValidator {
         // transaction.  Compensate for the total_fee being rounded
         // down when computed.
         let weight = if offered {
-            HTLC_TIMEOUT_TX_WEIGHT
+            htlc_timeout_tx_weight(setup.option_anchor_outputs())
         } else {
-            HTLC_SUCCESS_TX_WEIGHT
+            htlc_success_tx_weight(setup.option_anchor_outputs())
         };
         let feerate_per_kw = (((total_fee * 1000) + weight - 1) / weight) as u32;
 
@@ -681,7 +681,7 @@ impl Validator for SimpleValidator {
             0,
             &redeemscript,
             htlc_amount_sat,
-            SigHashType::All,
+            sighash_type,
         );
 
         if recomposed_tx_sighash != original_tx_sighash {
@@ -733,7 +733,7 @@ impl Validator for SimpleValidator {
         // - policy-htlc-revocation-pubkey
         // - policy-htlc-delayed-pubkey
 
-        Ok((feerate_per_kw, htlc, recomposed_tx_sighash))
+        Ok((feerate_per_kw, htlc, recomposed_tx_sighash, sighash_type))
     }
 
     fn validate_htlc_tx(
@@ -1036,26 +1036,59 @@ impl Validator for SimpleValidator {
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // policy-mutual-value-matches-commitment
-        if let (true, descr) =
-            self.outside_epsilon_range(to_holder_value_sat, holder_info.to_broadcaster_value_sat)
-        {
-            return policy_err!(
-                "to_holder_value {} is {} than holder_info.broadcaster_value_sat {}",
+        // To make this test independent of variable fees we compare the side that
+        // isn't paying the fees.
+        if setup.is_outbound {
+            // We are the funder and paying the fees, make sure the counterparty's output matches
+            // the latest commitments.  Our value will then be enforced by the max-fee policy.
+            if let (true, descr) = self.outside_epsilon_range(
+                to_counterparty_value_sat,
+                counterparty_info.to_broadcaster_value_sat,
+            ) {
+                return policy_err!(
+                    "to_counterparty_value {} \
+                     is {} than counterparty_info.broadcaster_value_sat {}",
+                    to_counterparty_value_sat,
+                    descr,
+                    counterparty_info.to_broadcaster_value_sat
+                );
+            }
+            if let (true, descr) = self.outside_epsilon_range(
+                to_counterparty_value_sat,
+                holder_info.to_countersigner_value_sat,
+            ) {
+                return policy_err!(
+                    "to_counterparty_value {} \
+                     is {} than holder_info.countersigner_value_sat {}",
+                    to_counterparty_value_sat,
+                    descr,
+                    holder_info.to_countersigner_value_sat
+                );
+            }
+        } else {
+            // The counterparty is the funder, make sure the holder's
+            // output matches the latest commitments.
+            if let (true, descr) = self
+                .outside_epsilon_range(to_holder_value_sat, holder_info.to_broadcaster_value_sat)
+            {
+                return policy_err!(
+                    "to_holder_value {} is {} than holder_info.broadcaster_value_sat {}",
+                    to_holder_value_sat,
+                    descr,
+                    holder_info.to_broadcaster_value_sat
+                );
+            }
+            if let (true, descr) = self.outside_epsilon_range(
                 to_holder_value_sat,
-                descr,
-                holder_info.to_broadcaster_value_sat
-            );
-        }
-        if let (true, descr) = self.outside_epsilon_range(
-            to_holder_value_sat,
-            counterparty_info.to_countersigner_value_sat,
-        ) {
-            return policy_err!(
-                "to_holder_value {} is {} than counterparty_info.countersigner_value_sat {}",
-                to_holder_value_sat,
-                descr,
-                counterparty_info.to_countersigner_value_sat
-            );
+                counterparty_info.to_countersigner_value_sat,
+            ) {
+                return policy_err!(
+                    "to_holder_value {} is {} than counterparty_info.countersigner_value_sat {}",
+                    to_holder_value_sat,
+                    descr,
+                    counterparty_info.to_countersigner_value_sat
+                );
+            }
         }
 
         // policy-mutual-destination-allowlisted
@@ -1271,8 +1304,9 @@ impl SimpleValidator {
 
         let mut htlc_value_sat: u64 = 0;
 
-        let offered_htlc_dust_limit =
-            MIN_DUST_LIMIT_SATOSHIS + (DUST_RELAY_TX_FEE as u64 * HTLC_TIMEOUT_TX_WEIGHT / 1000);
+        let offered_htlc_dust_limit = MIN_DUST_LIMIT_SATOSHIS
+            + (DUST_RELAY_TX_FEE as u64 * htlc_timeout_tx_weight(setup.option_anchor_outputs())
+                / 1000);
         for htlc in &info.offered_htlcs {
             // TODO - this check should be converted into two checks, one the first time
             // the HTLC is introduced and the other every time it is encountered.
@@ -1294,8 +1328,9 @@ impl SimpleValidator {
             }
         }
 
-        let received_htlc_dust_limit =
-            MIN_DUST_LIMIT_SATOSHIS + (DUST_RELAY_TX_FEE as u64 * HTLC_SUCCESS_TX_WEIGHT / 1000);
+        let received_htlc_dust_limit = MIN_DUST_LIMIT_SATOSHIS
+            + (DUST_RELAY_TX_FEE as u64 * htlc_success_tx_weight(setup.option_anchor_outputs())
+                / 1000);
         for htlc in &info.received_htlcs {
             // TODO - this check should be converted into two checks, one the first time
             // the HTLC is introduced and the other every time it is encountered.

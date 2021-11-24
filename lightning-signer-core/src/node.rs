@@ -26,7 +26,9 @@ use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
 };
 use lightning::util::logger::Logger;
-use log::{info, trace};
+
+#[allow(unused_imports)]
+use log::{debug, info, trace};
 
 use crate::chain::tracker::ChainTracker;
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub};
@@ -541,6 +543,7 @@ impl Node {
         // Don't watch anything initially, wait until we are asked to sign funding
         tracker.add_listener(chan.monitor.clone(), Set::new());
 
+        debug_vals!(&chan.setup);
         trace_enforcement_state!(&chan.enforcement_state);
         self.persister
             .update_tracker(&self.get_id(), &tracker)
@@ -589,16 +592,15 @@ impl Node {
 
         let txid = tx.txid();
 
-        let channels: Vec<Option<Arc<Mutex<ChannelSlot>>>> =
-            (0..tx.output.len())
-                .map(|ndx| {
-                    let outpoint = OutPoint {
-                        txid,
-                        vout: ndx as u32,
-                    };
-                    find_channel_with_funding_outpoint(&channels_lock, &outpoint)
-                })
-                .collect();
+        let channels: Vec<Option<Arc<Mutex<ChannelSlot>>>> = (0..tx.output.len())
+            .map(|ndx| {
+                let outpoint = OutPoint {
+                    txid,
+                    vout: ndx as u32,
+                };
+                find_channel_with_funding_outpoint(&channels_lock, &outpoint)
+            })
+            .collect();
 
         validator.validate_onchain_tx(self, channels.clone(), tx, values_sat, opaths)?;
 
@@ -670,7 +672,7 @@ impl Node {
                         let inputs = Set::from_iter(tx.input.iter().map(|i| i.previous_output));
                         tracker.add_listener_watches(chan.monitor.clone(), inputs);
                         chan.funding_signed(tx, vout as u32)
-                    },
+                    }
                 }
             }
         }
@@ -958,7 +960,7 @@ impl Node {
 
 fn find_channel_with_funding_outpoint(
     channels_lock: &MutexGuard<HashMap<ChannelId, Arc<Mutex<ChannelSlot>>>>,
-    outpoint: &OutPoint
+    outpoint: &OutPoint,
 ) -> Option<Arc<Mutex<ChannelSlot>>> {
     for (_, slot_arc) in channels_lock.iter() {
         let slot = slot_arc.lock().unwrap();

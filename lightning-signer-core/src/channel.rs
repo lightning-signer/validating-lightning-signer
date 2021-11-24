@@ -17,13 +17,15 @@ use lightning::ln::chan_utils::{
     CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
     TxCreationKeys,
 };
+
+#[allow(unused_imports)]
 use log::{debug, trace, warn};
 
 use crate::monitor::ChainMonitor;
 use crate::node::Node;
 use crate::policy::error::policy_error;
 use crate::policy::validator::{ChainState, EnforcementState, Validator};
-use crate::prelude::{Box, ToString, Vec};
+use crate::prelude::{Box, String, ToString, Vec};
 use crate::tx::tx::{
     build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
     HTLCInfo2,
@@ -31,7 +33,7 @@ use crate::tx::tx::{
 use crate::util::crypto_utils::{
     derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
 };
-use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner};
+use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugVecVecU8};
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::wallet::Wallet;
@@ -56,6 +58,22 @@ impl Debug for ChannelId {
 impl fmt::Display for ChannelId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         hex::format_hex(&self.0, f)
+    }
+}
+
+/// Bitcoin Signature which specifies SigHashType
+#[derive(Debug)]
+pub struct TypedSignature {
+    sig: Signature,
+    typ: SigHashType,
+}
+
+impl TypedSignature {
+    /// Serialize the signature and append the sighash type byte.
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut ss = self.sig.serialize_der().to_vec();
+        ss.push(self.typ as u8);
+        ss
     }
 }
 
@@ -131,7 +149,8 @@ impl ChannelSetup {
         self.commitment_type != CommitmentType::Legacy
     }
 
-    pub(crate) fn option_anchor_outputs(&self) -> bool {
+    /// True if this channel uses anchors.
+    pub fn option_anchor_outputs(&self) -> bool {
         self.commitment_type == CommitmentType::Anchors
     }
 }
@@ -610,9 +629,9 @@ impl Channel {
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             to_counterparty_value_sat,
             to_holder_value_sat,
-            false,
-            self.keys.pubkeys().funding_pubkey,
+            self.setup.option_anchor_outputs(),
             self.keys.counterparty_pubkeys().funding_pubkey,
+            self.keys.pubkeys().funding_pubkey,
             keys,
             feerate_per_kw,
             &mut htlcs_with_aux,
@@ -656,19 +675,13 @@ impl Channel {
             &self.setup.counterparty_points.funding_pubkey,
         );
 
-        let sig_hash_type = if self.setup.option_anchor_outputs() {
-            SigHashType::SinglePlusAnyoneCanPay
-        } else {
-            SigHashType::All
-        };
-
         let sighash = Message::from_slice(
             &SigHashCache::new(&recomposed_tx.trust().built_transaction().transaction)
                 .signature_hash(
                     0,
                     &redeemscript,
                     self.setup.channel_value_sat,
-                    sig_hash_type,
+                    SigHashType::All,
                 )[..],
         )
         .map_err(|ve| internal_error(format!("sighash failed: {}", ve)))?;
@@ -696,6 +709,12 @@ impl Channel {
         )
         .map_err(|err| internal_error(format!("derive_public_key failed: {}", err)))?;
 
+        let sig_hash_type = if self.setup.option_anchor_outputs() {
+            SigHashType::SinglePlusAnyoneCanPay
+        } else {
+            SigHashType::All
+        };
+
         for ndx in 0..recomposed_tx.htlcs().len() {
             let htlc = &recomposed_tx.htlcs()[ndx];
 
@@ -717,7 +736,7 @@ impl Channel {
                     0,
                     &htlc_redeemscript,
                     htlc.amount_msat / 1000,
-                    SigHashType::All,
+                    sig_hash_type,
                 )[..],
             )
             .map_err(|err| invalid_argument(format!("sighash failed for htlc {}: {}", ndx, err)))?;
@@ -935,7 +954,7 @@ impl Channel {
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             to_holder_value_sat,
             to_counterparty_value_sat,
-            false,
+            self.setup.option_anchor_outputs(),
             self.keys.pubkeys().funding_pubkey,
             self.keys.counterparty_pubkeys().funding_pubkey,
             keys,
@@ -1112,6 +1131,7 @@ impl Channel {
         .map_err(|_| Status::internal("failed to derive key"))?;
 
         let sig = self.secp_ctx.sign(&sighash, &privkey);
+        trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok(sig)
     }
@@ -1155,6 +1175,7 @@ impl Channel {
         .map_err(|_| Status::internal("failed to derive key"))?;
 
         let sig = self.secp_ctx.sign(&htlc_sighash, &htlc_privkey);
+        trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok(sig)
     }
@@ -1197,6 +1218,7 @@ impl Channel {
         .map_err(|_| Status::internal("failed to derive key"))?;
 
         let sig = self.secp_ctx.sign(&sighash, &privkey);
+        trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok(sig)
     }
@@ -1483,8 +1505,8 @@ impl Channel {
             &commitment_point,
             info.to_broadcaster_value_sat,
             info.to_countersigner_value_sat,
-            offered_htlcs,
-            received_htlcs,
+            offered_htlcs.clone(),
+            received_htlcs.clone(),
         )?;
 
         self.validator()
@@ -1520,6 +1542,16 @@ impl Channel {
         )?;
 
         if recomposed_tx.trust().built_transaction().transaction != *tx {
+            debug_vals!(
+                &self.setup,
+                &self.enforcement_state,
+                tx,
+                DebugVecVecU8(output_witscripts),
+                commitment_number,
+                feerate_per_kw,
+                &offered_htlcs,
+                &received_htlcs
+            );
             warn!("RECOMPOSITION FAILED");
             warn!("ORIGINAL_TX={:#?}", &tx);
             warn!(
@@ -1713,7 +1745,7 @@ impl Channel {
         redeemscript: &Script,
         htlc_amount_sat: u64,
         output_witscript: &Script,
-    ) -> Result<Signature, Status> {
+    ) -> Result<TypedSignature, Status> {
         let per_commitment_point = if opt_per_commitment_point.is_some() {
             opt_per_commitment_point.unwrap()
         } else {
@@ -1743,7 +1775,7 @@ impl Channel {
         redeemscript: &Script,
         htlc_amount_sat: u64,
         output_witscript: &Script,
-    ) -> Result<Signature, Status> {
+    ) -> Result<TypedSignature, Status> {
         let txkeys = self
             .make_counterparty_tx_keys(&remote_per_commitment_point)
             .expect("failed to make txkeys");
@@ -1769,8 +1801,8 @@ impl Channel {
         output_witscript: &Script,
         is_counterparty: bool,
         txkeys: TxCreationKeys,
-    ) -> Result<Signature, Status> {
-        let (feerate_per_kw, htlc, recomposed_tx_sighash) =
+    ) -> Result<TypedSignature, Status> {
+        let (feerate_per_kw, htlc, recomposed_tx_sighash, sighashtype) =
             self.validator().decode_and_validate_htlc_tx(
                 is_counterparty,
                 &self.setup,
@@ -1819,7 +1851,10 @@ impl Channel {
         let htlc_sighash = Message::from_slice(&recomposed_tx_sighash[..])
             .map_err(|_| Status::internal("failed to sighash recomposed"))?;
 
-        Ok(self.secp_ctx.sign(&htlc_sighash, &htlc_privkey))
+        Ok(TypedSignature {
+            sig: self.secp_ctx.sign(&htlc_sighash, &htlc_privkey),
+            typ: sighashtype,
+        })
     }
 
     /// Get the unilateral close key, for sweeping the to-remote output

@@ -35,11 +35,6 @@ const MAX_DELAY: i64 = 1000;
 /// Value for anchor outputs
 pub(crate) const ANCHOR_SAT: u64 = 330;
 
-/// Copied from lightning::ln::chan_utils where they are not public enough.
-pub(crate) const HTLC_SUCCESS_TX_WEIGHT: u64 = 703;
-/// Copied from lightning::ln::chan_utils where they are not public enough.
-pub(crate) const HTLC_TIMEOUT_TX_WEIGHT: u64 = 663;
-
 pub(crate) fn get_commitment_transaction_number_obscure_factor(
     local_payment_basepoint: &PublicKey,
     counterparty_payment_basepoint: &PublicKey,

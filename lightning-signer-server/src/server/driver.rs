@@ -21,9 +21,7 @@ use crate::lightning;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
 
-use lightning_signer::channel;
 use lightning_signer::channel::{channel_nonce_to_id, ChannelId, ChannelSetup, CommitmentType};
-use lightning_signer::containing_function;
 use lightning_signer::node::SpendType;
 use lightning_signer::node::{self};
 use lightning_signer::persist::{DummyPersister, Persist};
@@ -34,6 +32,7 @@ use lightning_signer::util::crypto_utils::{bitcoin_vec_to_signature, signature_t
 use lightning_signer::util::debug_utils::DebugBytes;
 use lightning_signer::util::log_utils::{parse_log_level_filter, LOG_LEVEL_FILTER_NAMES};
 use lightning_signer::util::status;
+use lightning_signer::{channel, containing_function, debug_vals, short_function, vals_str};
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
 
@@ -452,6 +451,7 @@ impl Signer for SignServer {
             txid,
             vout: req_outpoint.index,
         };
+        debug_vals!(&funding_outpoint); // because req_outpoint.txid is reversed
 
         let holder_shutdown_script = if req.holder_shutdown_script.is_empty() {
             None
@@ -844,15 +844,27 @@ impl Signer for SignServer {
             &req.commit_signature
                 .ok_or_else(|| invalid_grpc_argument("missing commit_signature"))?
                 .data,
+            SigHashType::All,
         )
         .map_err(|err| {
             invalid_grpc_argument(format!("trouble in bitcoin_vec_to_signature: {}", err))
         })?;
+
+        let htlc_sighashtype = self
+            .signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                Ok(if chan.setup.option_anchor_outputs() {
+                    SigHashType::SinglePlusAnyoneCanPay
+                } else {
+                    SigHashType::All
+                })
+            })?;
+
         let htlc_sigs = req
             .htlc_signatures
             .iter()
             .map(|sig| {
-                bitcoin_vec_to_signature(&sig.data).map_err(|err| {
+                bitcoin_vec_to_signature(&sig.data, htlc_sighashtype).map_err(|err| {
                     internal_error(format!("bitcoin_vec_to_signature trouble: {}", err))
                 })
             })
@@ -1003,7 +1015,7 @@ impl Signer for SignServer {
         let sigvec = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let sig = chan.sign_holder_htlc_tx(
+                let typedsig = chan.sign_holder_htlc_tx(
                     &tx,
                     req.n,
                     opt_per_commitment_point,
@@ -1011,7 +1023,7 @@ impl Signer for SignServer {
                     htlc_amount_sat,
                     &output_witscript,
                 )?;
-                Ok(signature_to_bitcoin_vec(sig))
+                Ok(typedsig.serialize())
             })
             .map_err(|_| Status::internal("failed to sign"))?;
 
@@ -1120,14 +1132,14 @@ impl Signer for SignServer {
         let sig_vec = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let sig = chan.sign_counterparty_htlc_tx(
+                let typedsig = chan.sign_counterparty_htlc_tx(
                     &tx,
                     &remote_per_commitment_point,
                     &redeemscript,
                     htlc_amount_sat,
                     &output_witscript,
                 )?;
-                Ok(signature_to_bitcoin_vec(sig))
+                Ok(typedsig.serialize())
             })
             .map_err(|_| Status::internal("failed to sign"))?;
 
