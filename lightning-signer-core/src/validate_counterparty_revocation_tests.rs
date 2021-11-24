@@ -39,13 +39,11 @@ mod tests {
             let to_broadcaster = 1_979_997;
             let to_countersignatory = 1_000_000;
 
-            chan.enforcement_state
-                .set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM - 1);
-            chan.enforcement_state
-                .set_next_counterparty_commit_num_for_testing(
-                    REV_COMMIT_NUM,
-                    make_test_pubkey(0x10),
-                );
+            chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM - 1);
+            chan.enforcement_state.set_next_counterparty_commit_num_for_testing(
+                REV_COMMIT_NUM,
+                make_test_pubkey(0x10),
+            );
 
             // commit 21: revoked
             // commit 22: current  <- next revoke
@@ -55,14 +53,9 @@ mod tests {
             let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
-            let redeem_scripts = build_tx_scripts(
-                &keys,
-                to_countersignatory,
-                to_broadcaster,
-                &htlcs,
-                &parameters,
-            )
-            .expect("scripts");
+            let redeem_scripts =
+                build_tx_scripts(&keys, to_countersignatory, to_broadcaster, &htlcs, &parameters)
+                    .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
@@ -138,10 +131,7 @@ mod tests {
             },
             |chan| {
                 // Channel state should advance.
-                assert_eq!(
-                    chan.enforcement_state.next_counterparty_revoke_num,
-                    REV_COMMIT_NUM + 1
-                );
+                assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM + 1);
             }
         )
         .is_ok());
@@ -158,10 +148,7 @@ mod tests {
             },
             |chan| {
                 // Channel state should stay where we advanced it..
-                assert_eq!(
-                    chan.enforcement_state.next_counterparty_revoke_num,
-                    REV_COMMIT_NUM + 1
-                );
+                assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM + 1);
             }
         )
         .is_ok());
@@ -221,10 +208,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel state should NOT advance.
-                    assert_eq!(
-                        chan.enforcement_state.next_counterparty_revoke_num,
-                        REV_COMMIT_NUM
-                    );
+                    assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM);
                 }
             ),
             "policy failure: validate_counterparty_revocation: \
@@ -241,13 +225,11 @@ mod tests {
 
         // Setup enforcement state
         assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
-            chan.enforcement_state
-                .set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM - 1);
-            chan.enforcement_state
-                .set_next_counterparty_commit_num_for_testing(
-                    REV_COMMIT_NUM,
-                    make_test_pubkey((REV_COMMIT_NUM - 1) as u8),
-                );
+            chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM - 1);
+            chan.enforcement_state.set_next_counterparty_commit_num_for_testing(
+                REV_COMMIT_NUM,
+                make_test_pubkey((REV_COMMIT_NUM - 1) as u8),
+            );
             // commit 21: revoked
             // commit 22: current  <- next revoke
             // commit 23: next     <- next commit
@@ -268,14 +250,9 @@ mod tests {
             let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
-            let redeem_scripts = build_tx_scripts(
-                &keys,
-                to_countersignatory,
-                to_broadcaster,
-                &htlcs,
-                &parameters,
-            )
-            .expect("scripts");
+            let redeem_scripts =
+                build_tx_scripts(&keys, to_countersignatory, to_broadcaster, &htlcs, &parameters)
+                    .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
@@ -334,14 +311,9 @@ mod tests {
             let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
-            let redeem_scripts = build_tx_scripts(
-                &keys,
-                to_countersignatory,
-                to_broadcaster,
-                &htlcs,
-                &parameters,
-            )
-            .expect("scripts");
+            let redeem_scripts =
+                build_tx_scripts(&keys, to_countersignatory, to_broadcaster, &htlcs, &parameters)
+                    .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
@@ -376,14 +348,8 @@ mod tests {
         // Revoke REV_COMMIT_NUM with lots of checking
         assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
             // state is what we think it is
-            assert_eq!(
-                chan.enforcement_state.next_counterparty_revoke_num,
-                REV_COMMIT_NUM
-            );
-            assert!(chan
-                .enforcement_state
-                .previous_counterparty_commit_info
-                .is_some());
+            assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM);
+            assert!(chan.enforcement_state.previous_counterparty_commit_info.is_some());
 
             // Can't assert older
             assert_failed_precondition_err!(
@@ -396,14 +362,8 @@ mod tests {
             );
 
             // state is unchanged
-            assert_eq!(
-                chan.enforcement_state.next_counterparty_revoke_num,
-                REV_COMMIT_NUM
-            );
-            assert!(chan
-                .enforcement_state
-                .previous_counterparty_commit_info
-                .is_some());
+            assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM);
+            assert!(chan.enforcement_state.previous_counterparty_commit_info.is_some());
 
             // Can't skip
             assert_failed_precondition_err!(
@@ -416,14 +376,8 @@ mod tests {
             );
 
             // state is unchanged
-            assert_eq!(
-                chan.enforcement_state.next_counterparty_revoke_num,
-                REV_COMMIT_NUM
-            );
-            assert!(chan
-                .enforcement_state
-                .previous_counterparty_commit_info
-                .is_some());
+            assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM);
+            assert!(chan.enforcement_state.previous_counterparty_commit_info.is_some());
 
             // can revoke correctly
             assert_status_ok!(chan.validate_counterparty_revocation(
@@ -432,14 +386,8 @@ mod tests {
             ));
 
             // state is modified
-            assert_eq!(
-                chan.enforcement_state.next_counterparty_revoke_num,
-                REV_COMMIT_NUM + 1
-            );
-            assert!(chan
-                .enforcement_state
-                .previous_counterparty_commit_info
-                .is_none());
+            assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM + 1);
+            assert!(chan.enforcement_state.previous_counterparty_commit_info.is_none());
 
             // Retry is ok
             assert_status_ok!(chan.validate_counterparty_revocation(
@@ -448,14 +396,8 @@ mod tests {
             ));
 
             // state is unchanged
-            assert_eq!(
-                chan.enforcement_state.next_counterparty_revoke_num,
-                REV_COMMIT_NUM + 1
-            );
-            assert!(chan
-                .enforcement_state
-                .previous_counterparty_commit_info
-                .is_none());
+            assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM + 1);
+            assert!(chan.enforcement_state.previous_counterparty_commit_info.is_none());
 
             // Can't assert older
             assert_failed_precondition_err!(
@@ -468,14 +410,8 @@ mod tests {
             );
 
             // state is unchanged
-            assert_eq!(
-                chan.enforcement_state.next_counterparty_revoke_num,
-                REV_COMMIT_NUM + 1
-            );
-            assert!(chan
-                .enforcement_state
-                .previous_counterparty_commit_info
-                .is_none());
+            assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM + 1);
+            assert!(chan.enforcement_state.previous_counterparty_commit_info.is_none());
 
             // Can't skip
             assert_failed_precondition_err!(
@@ -488,14 +424,8 @@ mod tests {
             );
 
             // state is unchanged
-            assert_eq!(
-                chan.enforcement_state.next_counterparty_revoke_num,
-                REV_COMMIT_NUM + 1
-            );
-            assert!(chan
-                .enforcement_state
-                .previous_counterparty_commit_info
-                .is_none());
+            assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM + 1);
+            assert!(chan.enforcement_state.previous_counterparty_commit_info.is_none());
 
             Ok(())
         }))

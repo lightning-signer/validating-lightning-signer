@@ -25,20 +25,14 @@ mod tests {
         let values_sat = vec![ival0, ival1];
 
         let input1 = TxIn {
-            previous_output: OutPoint {
-                txid: Default::default(),
-                vout: 0,
-            },
+            previous_output: OutPoint { txid: Default::default(), vout: 0 },
             script_sig: Script::new(),
             sequence: 0,
             witness: vec![],
         };
 
         let input2 = TxIn {
-            previous_output: OutPoint {
-                txid: Default::default(),
-                vout: 1,
-            },
+            previous_output: OutPoint { txid: Default::default(), vout: 1 },
             script_sig: Script::new(),
             sequence: 0,
             witness: vec![],
@@ -48,37 +42,21 @@ mod tests {
         let uniclosekeys = vec![None, None];
 
         let witvec = node
-            .sign_onchain_tx(
-                &tx,
-                &ipaths,
-                &values_sat,
-                &spendtypes,
-                &uniclosekeys,
-                &vec![opath],
-            )
+            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
             .expect("good sigs");
         assert_eq!(witvec.len(), 2);
 
         let address = |n: u32| {
-            Address::p2wpkh(
-                &node.get_wallet_pubkey(&secp_ctx, &vec![n]).unwrap(),
-                Network::Testnet,
-            )
-            .unwrap()
+            Address::p2wpkh(&node.get_wallet_pubkey(&secp_ctx, &vec![n]).unwrap(), Network::Testnet)
+                .unwrap()
         };
 
         tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
         tx.input[1].witness = vec![witvec[1].0.clone(), witvec[1].1.clone()];
 
         let outs = vec![
-            TxOut {
-                value: ival0,
-                script_pubkey: address(0).script_pubkey(),
-            },
-            TxOut {
-                value: ival1,
-                script_pubkey: address(1).script_pubkey(),
-            },
+            TxOut { value: ival0, script_pubkey: address(0).script_pubkey() },
+            TxOut { value: ival1, script_pubkey: address(1).script_pubkey() },
         ];
         let verify_result = tx.verify(|p| Some(outs[p.vout as usize].clone()));
 
@@ -109,32 +87,19 @@ mod tests {
         let uniclosekeys = vec![None];
 
         let witvec = node
-            .sign_onchain_tx(
-                &tx,
-                &ipaths,
-                &values_sat,
-                &spendtypes,
-                &uniclosekeys,
-                &vec![opath],
-            )
+            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
         let address = |n: u32| {
-            Address::p2wpkh(
-                &node.get_wallet_pubkey(&secp_ctx, &vec![n]).unwrap(),
-                Network::Testnet,
-            )
-            .unwrap()
+            Address::p2wpkh(&node.get_wallet_pubkey(&secp_ctx, &vec![n]).unwrap(), Network::Testnet)
+                .unwrap()
         };
 
         tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
 
         println!("{:?}", tx.input[0].script_sig);
-        let outs = vec![TxOut {
-            value: ival0,
-            script_pubkey: address(0).script_pubkey(),
-        }];
+        let outs = vec![TxOut { value: ival0, script_pubkey: address(0).script_pubkey() }];
         println!("{:?}", &outs[0].script_pubkey);
         let verify_result = tx.verify(|p| Some(outs[p.vout as usize].clone()));
 
@@ -247,14 +212,7 @@ mod tests {
         let uniclosekeys = vec![Some(uniclosekey)];
 
         let witvec = node
-            .sign_onchain_tx(
-                &tx,
-                &ipaths,
-                &values_sat,
-                &spendtypes,
-                &uniclosekeys,
-                &vec![opath],
-            )
+            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
@@ -264,10 +222,7 @@ mod tests {
 
         tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
         println!("{:?}", tx.input[0].script_sig);
-        let outs = vec![TxOut {
-            value: ival0,
-            script_pubkey: address.script_pubkey(),
-        }];
+        let outs = vec![TxOut { value: ival0, script_pubkey: address.script_pubkey() }];
         println!("{:?}", &outs[0].script_pubkey);
         let verify_result = tx.verify(|p| Some(outs[p.vout as usize].clone()));
 
@@ -296,22 +251,12 @@ mod tests {
         let uniclosekeys = vec![None];
 
         let witvec = node
-            .sign_onchain_tx(
-                &tx,
-                &ipaths,
-                &values_sat,
-                &spendtypes,
-                &uniclosekeys,
-                &vec![opath],
-            )
+            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
         let address = |n: u32| {
-            Address::p2pkh(
-                &node.get_wallet_pubkey(&secp_ctx, &vec![n]).unwrap(),
-                Network::Testnet,
-            )
+            Address::p2pkh(&node.get_wallet_pubkey(&secp_ctx, &vec![n]).unwrap(), Network::Testnet)
         };
 
         tx.input[0].script_sig = Builder::new()
@@ -319,10 +264,7 @@ mod tests {
             .push_slice(witvec[0].1.as_slice())
             .into_script();
         println!("{:?}", tx.input[0].script_sig);
-        let outs = vec![TxOut {
-            value: 100,
-            script_pubkey: address(0).script_pubkey(),
-        }];
+        let outs = vec![TxOut { value: 100, script_pubkey: address(0).script_pubkey() }];
         println!("{:?}", &outs[0].script_pubkey);
         let verify_result = tx.verify(|p| Some(outs[p.vout as usize].clone()));
         assert!(verify_result.is_ok());
@@ -353,14 +295,7 @@ mod tests {
         let uniclosekeys = vec![None];
 
         let witvec = node
-            .sign_onchain_tx(
-                &tx,
-                &ipaths,
-                &values_sat,
-                &spendtypes,
-                &uniclosekeys,
-                &vec![opath],
-            )
+            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
@@ -389,10 +324,7 @@ mod tests {
         tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
 
         println!("{:?}", tx.input[0].script_sig);
-        let outs = vec![TxOut {
-            value: ival0,
-            script_pubkey: address(0).script_pubkey(),
-        }];
+        let outs = vec![TxOut { value: ival0, script_pubkey: address(0).script_pubkey() }];
         println!("{:?}", &outs[0].script_pubkey);
         let verify_result = tx.verify(|p| Some(outs[p.vout as usize].clone()));
 
@@ -413,28 +345,19 @@ mod tests {
 
         let inputs = vec![
             TxIn {
-                previous_output: OutPoint {
-                    txid: txids[0],
-                    vout: 0,
-                },
+                previous_output: OutPoint { txid: txids[0], vout: 0 },
                 script_sig: Script::new(),
                 sequence: 0,
                 witness: vec![],
             },
             TxIn {
-                previous_output: OutPoint {
-                    txid: txids[1],
-                    vout: 0,
-                },
+                previous_output: OutPoint { txid: txids[1], vout: 0 },
                 script_sig: Script::new(),
                 sequence: 0,
                 witness: vec![],
             },
             TxIn {
-                previous_output: OutPoint {
-                    txid: txids[2],
-                    vout: 0,
-                },
+                previous_output: OutPoint { txid: txids[2], vout: 0 },
                 script_sig: Script::new(),
                 sequence: 0,
                 witness: vec![],
@@ -444,22 +367,11 @@ mod tests {
         let (opath, tx) = make_test_funding_tx(&secp_ctx, &node, inputs, 100);
         let ipaths = vec![vec![0u32], vec![1u32], vec![2u32]];
         let values_sat = vec![100u64, 101u64, 102u64];
-        let spendtypes = vec![
-            SpendType::Invalid,
-            SpendType::P2shP2wpkh,
-            SpendType::Invalid,
-        ];
+        let spendtypes = vec![SpendType::Invalid, SpendType::P2shP2wpkh, SpendType::Invalid];
         let uniclosekeys = vec![None, None, None];
 
         let witvec = node
-            .sign_onchain_tx(
-                &tx,
-                &ipaths,
-                &values_sat,
-                &spendtypes,
-                &uniclosekeys,
-                &vec![opath],
-            )
+            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
             .expect("good sigs");
         // Should have three witness stack items.
         assert_eq!(witvec.len(), 3);

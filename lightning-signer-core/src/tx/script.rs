@@ -18,13 +18,12 @@ fn expect_next<'a>(iter: &'a mut Instructions) -> Result<Instruction<'a>, Valida
 pub(crate) fn expect_op(iter: &mut Instructions, op: opcodes::All) -> Result<(), ValidationError> {
     let ins = expect_next(iter)?;
     match ins {
-        blockdata::script::Instruction::Op(o) => {
+        blockdata::script::Instruction::Op(o) =>
             if o == op {
                 Ok(())
             } else {
                 Err(mismatch_error(format!("expected op {}, saw {}", op, o)))
-            }
-        }
+            },
         _ => Err(mismatch_error(format!("expected op, saw {:?}", ins))),
     }
 }
@@ -51,10 +50,7 @@ pub(crate) fn expect_script_end(iter: &mut Instructions) -> Result<(), Validatio
     if ins == None {
         Ok(())
     } else {
-        Err(mismatch_error(format!(
-            "expected script end, saw {:?}",
-            ins
-        )))
+        Err(mismatch_error(format!("expected script end, saw {:?}", ins)))
     }
 }
 

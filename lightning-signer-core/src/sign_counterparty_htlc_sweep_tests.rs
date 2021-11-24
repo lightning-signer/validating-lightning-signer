@@ -36,10 +36,7 @@ mod tests {
                 sequence: if is_anchors { 1 } else { 0 },
                 witness: vec![],
             }],
-            output: vec![TxOut {
-                script_pubkey: script_pubkey,
-                value: amount_sat,
-            }],
+            output: vec![TxOut { script_pubkey: script_pubkey, value: amount_sat }],
         }
     }
 
@@ -60,10 +57,7 @@ mod tests {
                 sequence: if is_anchors { 1 } else { 0 },
                 witness: vec![],
             }],
-            output: vec![TxOut {
-                script_pubkey: script_pubkey,
-                value: amount_sat,
-            }],
+            output: vec![TxOut { script_pubkey: script_pubkey, value: amount_sat }],
         }
     }
 
@@ -100,105 +94,102 @@ mod tests {
         };
 
         let (sig, tx, remote_per_commitment_point, input, htlc_redeemscript, htlc_amount_sat) =
-            node_ctx
-                .node
-                .with_ready_channel(&chan_ctx.channel_id, |chan| {
-                    // These need to match sign_commitment_tx_with_mutators_setup() ...
-                    let commit_num = 23;
-                    let feerate_per_kw = 5_000;
-                    let to_broadcaster = 1_979_997;
-                    let to_countersignatory = 1_000_000;
+            node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
+                // These need to match sign_commitment_tx_with_mutators_setup() ...
+                let commit_num = 23;
+                let feerate_per_kw = 5_000;
+                let to_broadcaster = 1_979_997;
+                let to_countersignatory = 1_000_000;
 
-                    let mut remote_per_commitment_point = make_test_pubkey(10);
-                    let keys = chan.make_counterparty_tx_keys(&remote_per_commitment_point)?;
+                let mut remote_per_commitment_point = make_test_pubkey(10);
+                let keys = chan.make_counterparty_tx_keys(&remote_per_commitment_point)?;
 
-                    let htlcs =
-                        Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
+                let htlcs =
+                    Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
-                    let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
-                        keys.clone(),
-                        commit_num,
-                        feerate_per_kw,
-                        to_countersignatory,
-                        to_broadcaster,
-                        htlcs.clone(),
-                    );
+                let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
+                    keys.clone(),
+                    commit_num,
+                    feerate_per_kw,
+                    to_countersignatory,
+                    to_broadcaster,
+                    htlcs.clone(),
+                );
 
-                    let mut input = 0;
+                let mut input = 0;
 
-                    let built_commit = commitment_tx.trust().built_transaction().clone();
-                    let built_commit_txid = &built_commit.txid;
+                let built_commit = commitment_tx.trust().built_transaction().clone();
+                let built_commit_txid = &built_commit.txid;
 
-                    let (script_pubkey, wallet_path) = make_dest(&node_ctx);
+                let (script_pubkey, wallet_path) = make_dest(&node_ctx);
 
-                    let fee = 1_000;
-                    let (mut tx, mut htlc_redeemscript, mut htlc_amount_sat) =
-                        if kind == OfferedHTLC {
-                            let outndx = 0;
-                            let htlc = &htlcs[0];
-                            let htlc_redeemscript =
-                                get_htlc_redeemscript(htlc, setup.option_anchor_outputs(), &keys);
-                            let htlc_amount_sat = htlc.amount_msat / 1000;
-                            (
-                                make_test_counterparty_offered_htlc_sweep_tx(
-                                    built_commit_txid.clone(),
-                                    outndx,
-                                    chan.setup.option_anchor_outputs(),
-                                    script_pubkey,
-                                    htlc_amount_sat - fee,
-                                ),
-                                htlc_redeemscript,
-                                htlc_amount_sat,
-                            )
-                        } else {
-                            let outndx = 1;
-                            let htlc = &htlcs[1];
-                            let htlc_redeemscript =
-                                get_htlc_redeemscript(htlc, setup.option_anchor_outputs(), &keys);
-                            let htlc_amount_sat = htlc.amount_msat / 1000;
-                            (
-                                make_test_counterparty_received_htlc_sweep_tx(
-                                    htlc.cltv_expiry,
-                                    built_commit_txid.clone(),
-                                    outndx,
-                                    chan.setup.option_anchor_outputs(),
-                                    script_pubkey,
-                                    htlc_amount_sat - fee,
-                                ),
-                                htlc_redeemscript,
-                                htlc_amount_sat,
-                            )
-                        };
-
-                    let mut cstate = make_test_chain_state();
-
-                    mutate_signing_input(
-                        chan,
-                        &mut cstate,
-                        &mut tx,
-                        &mut input,
-                        &mut remote_per_commitment_point,
-                        &mut htlc_redeemscript,
-                        &mut htlc_amount_sat,
-                    );
-
-                    let sig = chan.sign_counterparty_htlc_sweep(
-                        &tx,
-                        input,
-                        &remote_per_commitment_point,
-                        &htlc_redeemscript,
-                        htlc_amount_sat,
-                        &wallet_path,
-                    )?;
-                    Ok((
-                        sig,
-                        tx,
-                        remote_per_commitment_point,
-                        input,
+                let fee = 1_000;
+                let (mut tx, mut htlc_redeemscript, mut htlc_amount_sat) = if kind == OfferedHTLC {
+                    let outndx = 0;
+                    let htlc = &htlcs[0];
+                    let htlc_redeemscript =
+                        get_htlc_redeemscript(htlc, setup.option_anchor_outputs(), &keys);
+                    let htlc_amount_sat = htlc.amount_msat / 1000;
+                    (
+                        make_test_counterparty_offered_htlc_sweep_tx(
+                            built_commit_txid.clone(),
+                            outndx,
+                            chan.setup.option_anchor_outputs(),
+                            script_pubkey,
+                            htlc_amount_sat - fee,
+                        ),
                         htlc_redeemscript,
                         htlc_amount_sat,
-                    ))
-                })?;
+                    )
+                } else {
+                    let outndx = 1;
+                    let htlc = &htlcs[1];
+                    let htlc_redeemscript =
+                        get_htlc_redeemscript(htlc, setup.option_anchor_outputs(), &keys);
+                    let htlc_amount_sat = htlc.amount_msat / 1000;
+                    (
+                        make_test_counterparty_received_htlc_sweep_tx(
+                            htlc.cltv_expiry,
+                            built_commit_txid.clone(),
+                            outndx,
+                            chan.setup.option_anchor_outputs(),
+                            script_pubkey,
+                            htlc_amount_sat - fee,
+                        ),
+                        htlc_redeemscript,
+                        htlc_amount_sat,
+                    )
+                };
+
+                let mut cstate = make_test_chain_state();
+
+                mutate_signing_input(
+                    chan,
+                    &mut cstate,
+                    &mut tx,
+                    &mut input,
+                    &mut remote_per_commitment_point,
+                    &mut htlc_redeemscript,
+                    &mut htlc_amount_sat,
+                );
+
+                let sig = chan.sign_counterparty_htlc_sweep(
+                    &tx,
+                    input,
+                    &remote_per_commitment_point,
+                    &htlc_redeemscript,
+                    htlc_amount_sat,
+                    &wallet_path,
+                )?;
+                Ok((
+                    sig,
+                    tx,
+                    remote_per_commitment_point,
+                    input,
+                    htlc_redeemscript,
+                    htlc_amount_sat,
+                ))
+            })?;
 
         let htlc_pubkey = get_channel_htlc_pubkey(
             &node_ctx.node,
@@ -487,9 +478,7 @@ mod tests {
                 chan.node
                     .upgrade()
                     .unwrap()
-                    .add_allowlist(&vec![
-                        "tb1qg975h6gdx5mryeac72h6lj2nzygugxhyk6dnhr".to_string()
-                    ])
+                    .add_allowlist(&vec!["tb1qg975h6gdx5mryeac72h6lj2nzygugxhyk6dnhr".to_string()])
                     .expect("add_allowlist");
             },
         ));

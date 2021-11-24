@@ -51,16 +51,12 @@ mod tests {
 
         let (per_commitment_point, txkeys, to_self_delay) = node
             .with_ready_channel(&channel_id, |chan| {
-                chan.enforcement_state
-                    .set_next_holder_commit_num_for_testing(n);
+                chan.enforcement_state.set_next_holder_commit_num_for_testing(n);
                 let per_commitment_point = chan.get_per_commitment_point(n).expect("point");
-                let txkeys = chan
-                    .make_holder_tx_keys(&per_commitment_point)
-                    .expect("failed to make txkeys");
-                let to_self_delay = chan
-                    .make_channel_parameters()
-                    .as_holder_broadcastable()
-                    .contest_delay();
+                let txkeys =
+                    chan.make_holder_tx_keys(&per_commitment_point).expect("failed to make txkeys");
+                let to_self_delay =
+                    chan.make_channel_parameters().as_holder_broadcastable().contest_delay();
                 Ok((per_commitment_point, txkeys, to_self_delay))
             })
             .expect("point");
@@ -102,14 +98,7 @@ mod tests {
             })
             .unwrap();
 
-        check_signature(
-            &htlc_tx,
-            0,
-            sigvec,
-            &htlc_pubkey,
-            htlc_amount_sat,
-            &htlc_redeemscript,
-        );
+        check_signature(&htlc_tx, 0, sigvec, &htlc_pubkey, htlc_amount_sat, &htlc_redeemscript);
 
         let sigvec1 = node
             .with_ready_channel(&channel_id, |chan| {
@@ -127,14 +116,7 @@ mod tests {
             })
             .unwrap();
 
-        check_signature(
-            &htlc_tx,
-            0,
-            sigvec1,
-            &htlc_pubkey,
-            htlc_amount_sat,
-            &htlc_redeemscript,
-        );
+        check_signature(&htlc_tx, 0, sigvec1, &htlc_pubkey, htlc_amount_sat, &htlc_redeemscript);
     }
 
     fn sign_counterparty_htlc_tx_with_mutators<ChanParamMutator, KeysMutator, TxMutator>(
@@ -168,9 +150,8 @@ mod tests {
 
                 let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
                 let feerate_per_kw = 1000;
-                let to_self_delay = channel_parameters
-                    .as_counterparty_broadcastable()
-                    .contest_delay();
+                let to_self_delay =
+                    channel_parameters.as_counterparty_broadcastable().contest_delay();
 
                 let htlc = HTLCOutputInCommitment {
                     offered: is_offered,
@@ -259,8 +240,7 @@ mod tests {
 
         let (typedsig, per_commitment_point, htlc_tx, htlc_redeemscript) = node
             .with_ready_channel(&channel_id, |chan| {
-                chan.enforcement_state
-                    .set_next_holder_commit_num_for_testing(commit_num);
+                chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
                 let mut channel_parameters = chan.make_channel_parameters();
 
                 // Mutate the channel parameters

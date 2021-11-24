@@ -120,9 +120,8 @@ impl MyKeysManager {
             Ok(master_key) => {
                 let (_, node_secret) = match key_derivation_style {
                     KeyDerivationStyle::Native => node_keys_native(&secp_ctx, seed),
-                    KeyDerivationStyle::Lnd => {
-                        node_keys_lnd(&secp_ctx, network.clone(), master_key)
-                    }
+                    KeyDerivationStyle::Lnd =>
+                        node_keys_lnd(&secp_ctx, network.clone(), master_key),
                 };
                 let destination_script = match master_key
                     .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(1).unwrap())
@@ -144,11 +143,8 @@ impl MyKeysManager {
                 let ldk_shutdown_pubkey = match master_key
                     .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(2).unwrap())
                 {
-                    Ok(shutdown_key) => {
-                        ExtendedPubKey::from_private(&secp_ctx, &shutdown_key)
-                            .public_key
-                            .key
-                    }
+                    Ok(shutdown_key) =>
+                        ExtendedPubKey::from_private(&secp_ctx, &shutdown_key).public_key.key,
                     Err(_) => panic!("Your RNG is busted"),
                 };
                 let channel_master_key = master_key
@@ -228,10 +224,7 @@ impl MyKeysManager {
         let channel_id = ChannelId(*channel_id_slice);
         let nonce = {
             let id_to_nonce = self.id_to_nonce.lock().unwrap();
-            id_to_nonce
-                .get(&channel_id)
-                .expect("unknown channel ID")
-                .clone()
+            id_to_nonce.get(&channel_id).expect("unknown channel ID").clone()
         };
         self.get_channel_keys_with_id(channel_id, nonce.as_slice(), channel_value_sat)
     }
@@ -248,14 +241,10 @@ impl MyKeysManager {
                 channel_nonce,
                 channel_value_sat,
             ),
-            KeyDerivationStyle::Lnd => {
-                self.get_channel_keys_with_nonce_lnd(channel_id, channel_nonce, channel_value_sat)
-            }
+            KeyDerivationStyle::Lnd =>
+                self.get_channel_keys_with_nonce_lnd(channel_id, channel_nonce, channel_value_sat),
         };
-        self.id_to_nonce
-            .lock()
-            .unwrap()
-            .insert(channel_id, channel_nonce.to_vec());
+        self.id_to_nonce.lock().unwrap().insert(channel_id, channel_nonce.to_vec());
         res
     }
 
@@ -266,11 +255,8 @@ impl MyKeysManager {
         channel_value_sat: u64,
     ) -> InMemorySigner {
         let hkdf_info = "c-lightning";
-        let channel_seed = hkdf_sha256(
-            &self.channel_seed_base,
-            "per-peer seed".as_bytes(),
-            channel_nonce,
-        );
+        let channel_seed =
+            hkdf_sha256(&self.channel_seed_base, "per-peer seed".as_bytes(), channel_nonce);
 
         let keys_buf = hkdf_sha256_keys(&channel_seed, hkdf_info.as_bytes(), &[]);
         let mut ndx = 0;
@@ -309,11 +295,8 @@ impl MyKeysManager {
         // native (really c-lightning) version.
         //
         let hkdf_info = "c-lightning";
-        let channel_seed = hkdf_sha256(
-            &self.channel_seed_base,
-            "per-peer seed".as_bytes(),
-            channel_nonce,
-        );
+        let channel_seed =
+            hkdf_sha256(&self.channel_seed_base, "per-peer seed".as_bytes(), channel_nonce);
         let keys_buf = hkdf_sha256_keys(&channel_seed, hkdf_info.as_bytes(), &[]);
         let mut ndx = 0;
         ndx += 32;
@@ -427,10 +410,7 @@ impl MyKeysManager {
                         return Err(());
                     }
                 }
-                SpendableOutputDescriptor::StaticOutput {
-                    ref outpoint,
-                    ref output,
-                } => {
+                SpendableOutputDescriptor::StaticOutput { ref outpoint, ref output } => {
                     input.push(TxIn {
                         previous_output: outpoint.into_bitcoin_outpoint(),
                         script_sig: Script::new(),
@@ -448,12 +428,7 @@ impl MyKeysManager {
                 return Err(());
             }
         }
-        let mut spend_tx = Transaction {
-            version: 2,
-            lock_time: 0,
-            input,
-            output: outputs,
-        };
+        let mut spend_tx = Transaction { version: 2, lock_time: 0, input, output: outputs };
         transaction_utils::maybe_add_change_output(
             &mut spend_tx,
             input_value,
@@ -510,11 +485,8 @@ impl MyKeysManager {
                         .unwrap();
                 }
                 SpendableOutputDescriptor::StaticOutput { ref output, .. } => {
-                    let derivation_idx = if output.script_pubkey == self.destination_script {
-                        1
-                    } else {
-                        2
-                    };
+                    let derivation_idx =
+                        if output.script_pubkey == self.destination_script { 1 } else { 2 };
                     let secret = {
                         // Note that when we aren't serializing the key, network doesn't matter
                         match ExtendedPrivKey::new_master(Network::Testnet, &self.seed) {
@@ -547,13 +519,9 @@ impl MyKeysManager {
                     )
                     .unwrap();
                     let sig = secp_ctx.sign(&sighash, &secret.private_key.key);
-                    spend_tx.input[input_idx]
-                        .witness
-                        .push(sig.serialize_der().to_vec());
+                    spend_tx.input[input_idx].witness.push(sig.serialize_der().to_vec());
                     spend_tx.input[input_idx].witness[0].push(SigHashType::All as u8);
-                    spend_tx.input[input_idx]
-                        .witness
-                        .push(pubkey.key.serialize().to_vec());
+                    spend_tx.input[input_idx].witness.push(pubkey.key.serialize().to_vec());
                 }
             }
             input_idx += 1;
@@ -621,13 +589,8 @@ mod tests {
 
     #[test]
     fn keys_test_native() -> Result<(), ()> {
-        let manager = MyKeysManager::new(
-            KeyDerivationStyle::Native,
-            &[0u8; 32],
-            Network::Testnet,
-            0,
-            0,
-        );
+        let manager =
+            MyKeysManager::new(KeyDerivationStyle::Native, &[0u8; 32], Network::Testnet, 0, 0);
         assert_eq!(
             hex_encode(&manager.channel_seed_base),
             "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53"
@@ -699,13 +662,8 @@ mod tests {
 
     #[test]
     fn per_commit_test() -> Result<(), ()> {
-        let manager = MyKeysManager::new(
-            KeyDerivationStyle::Native,
-            &[0u8; 32],
-            Network::Testnet,
-            0,
-            0,
-        );
+        let manager =
+            MyKeysManager::new(KeyDerivationStyle::Native, &[0u8; 32], Network::Testnet, 0, 0);
         let mut channel_id = [0u8; 32];
         channel_id[0] = 1u8;
         let keys = make_test_keys(manager);

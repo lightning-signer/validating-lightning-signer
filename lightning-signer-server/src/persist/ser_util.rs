@@ -4,8 +4,8 @@
 //! transformation from the remote type - implemented via `From` / `Into`.
 
 use std::borrow::Cow;
-use std::convert::TryInto;
 use std::collections::BTreeSet as Set;
+use std::convert::TryInto;
 
 use crate::lightning;
 use bitcoin::hashes::Hash;
@@ -14,13 +14,13 @@ use bitcoin::{OutPoint, Script, Txid};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
 use lightning::util::ser::Writer;
+use lightning_signer::chain::tracker::ListenSlot;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::serde_as;
 use serde_with::{DeserializeAs, SerializeAs};
-use lightning_signer::chain::tracker::ListenSlot;
 
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
-use lightning_signer::monitor::{State as ChainMonitorState};
+use lightning_signer::monitor::State as ChainMonitorState;
 use lightning_signer::policy::validator::EnforcementState;
 use lightning_signer::tx::tx::{CommitmentInfo2, HTLCInfo2};
 
@@ -423,19 +423,17 @@ struct ListenSlotHelper(#[serde(with = "ListenSlotDef")] ListenSlot);
 
 impl SerializeAs<ListenSlot> for ListenSlotDef {
     fn serialize_as<S>(value: &ListenSlot, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
+    where
+        S: serde::Serializer,
     {
         ListenSlotDef::serialize(value, serializer)
     }
 }
 
 impl<'de> DeserializeAs<'de, ListenSlot> for ListenSlotDef {
-    fn deserialize_as<D>(
-        deserializer: D,
-    ) -> Result<ListenSlot, <D as Deserializer<'de>>::Error>
-        where
-            D: Deserializer<'de>,
+    fn deserialize_as<D>(deserializer: D) -> Result<ListenSlot, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
     {
         ListenSlotHelper::deserialize(deserializer).map(|h| h.0)
     }
@@ -458,8 +456,8 @@ struct ChainMonitorStateHelper(#[serde(with = "ChainMonitorStateDef")] ChainMoni
 
 impl SerializeAs<ChainMonitorState> for ChainMonitorStateDef {
     fn serialize_as<S>(value: &ChainMonitorState, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
+    where
+        S: serde::Serializer,
     {
         ChainMonitorStateDef::serialize(value, serializer)
     }
@@ -469,8 +467,8 @@ impl<'de> DeserializeAs<'de, ChainMonitorState> for ChainMonitorStateDef {
     fn deserialize_as<D>(
         deserializer: D,
     ) -> Result<ChainMonitorState, <D as Deserializer<'de>>::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         ChainMonitorStateHelper::deserialize(deserializer).map(|h| h.0)
     }
@@ -478,14 +476,14 @@ impl<'de> DeserializeAs<'de, ChainMonitorState> for ChainMonitorStateDef {
 
 #[cfg(test)]
 mod tests {
-    use std::iter::FromIterator;
+    use super::*;
+    use crate::persist::model::ChainTrackerEntry;
     use bitcoin::blockdata::constants::genesis_block;
     use bitcoin::Network;
     use lightning_signer::chain::tracker::{ChainTracker, Error};
     use lightning_signer::monitor::ChainMonitor;
     use lightning_signer::util::test_utils::*;
-    use crate::persist::model::ChainTrackerEntry;
-    use super::*;
+    use std::iter::FromIterator;
 
     #[test]
     fn test_chain_tracker() -> Result<(), Error> {

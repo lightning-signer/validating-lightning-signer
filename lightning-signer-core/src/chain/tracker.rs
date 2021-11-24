@@ -47,17 +47,10 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
 
     /// Create a new tracker
     pub fn new(network: Network, height: u32, tip: BlockHeader) -> Result<Self, Error> {
-        tip.validate_pow(&tip.target())
-            .map_err(|_| Error::InvalidBlock)?;
+        tip.validate_pow(&tip.target()).map_err(|_| Error::InvalidBlock)?;
         let headers = VecDeque::new();
         let listeners = Map::new();
-        Ok(ChainTracker {
-            headers,
-            tip,
-            height,
-            network,
-            listeners,
-        })
+        Ok(ChainTracker { headers, tip, height, network, listeners })
     }
 
     /// Current chain tip header
@@ -166,10 +159,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
 
     /// Add a listener and initialize the watched outpoint set
     pub fn add_listener(&mut self, listener: L, initial_watches: Set<OutPoint>) {
-        let slot = ListenSlot {
-            watches: initial_watches,
-            seen: Set::new(),
-        };
+        let slot = ListenSlot { watches: initial_watches, seen: Set::new() };
         self.listeners.insert(listener, slot);
     }
 
@@ -193,9 +183,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
             return Err(Error::InvalidChain);
         }
         // Ensure correctly mined (hash is under target)
-        header
-            .validate_pow(&header.target())
-            .map_err(|_| Error::InvalidBlock)?;
+        header.validate_pow(&header.target()).map_err(|_| Error::InvalidBlock)?;
         if (self.height + 1) % DIFFCHANGE_INTERVAL == 0 {
             let prev_target = self.tip.target();
             let target = header.target();
@@ -283,10 +271,7 @@ mod tests {
     fn test_add_remove() -> Result<(), Error> {
         let mut tracker = make_tracker()?;
         assert_eq!(tracker.height(), 0);
-        assert_eq!(
-            tracker.add_block(tracker.tip(), vec![], None).err(),
-            Some(Error::InvalidChain)
-        );
+        assert_eq!(tracker.add_block(tracker.tip(), vec![], None).err(), Some(Error::InvalidChain));
         let header = make_header(tracker.tip(), Default::default());
         tracker.add_block(header, vec![], None)?;
         assert_eq!(tracker.height(), 1);
@@ -303,10 +288,7 @@ mod tests {
 
         let header_removed = tracker.remove_block(vec![], None)?;
         assert_eq!(header, header_removed);
-        assert_eq!(
-            tracker.remove_block(vec![], None).err(),
-            Some(Error::ReorgTooDeep)
-        );
+        assert_eq!(tracker.remove_block(vec![], None).err(), Some(Error::ReorgTooDeep));
         Ok(())
     }
 
@@ -341,10 +323,7 @@ mod tests {
         fn clone(&self) -> Self {
             // We just need this to have the right `Ord` semantics
             // the value of `watched` doesn't matter
-            Self {
-                watch: self.watch,
-                watched: Mutex::new(false),
-            }
+            Self { watch: self.watch, watched: Mutex::new(false) }
         }
     }
 
@@ -364,10 +343,7 @@ mod tests {
 
     impl MockListener {
         fn new(watch: OutPoint) -> Self {
-            MockListener {
-                watch,
-                watched: Mutex::new(false),
-            }
+            MockListener { watch, watched: Mutex::new(false) }
         }
     }
 
@@ -406,10 +382,7 @@ mod tests {
 
         add_block(&mut tracker, tx2.clone())?;
 
-        assert_eq!(
-            tracker.listeners.get(&listener).unwrap().watches,
-            Set::new()
-        );
+        assert_eq!(tracker.listeners.get(&listener).unwrap().watches, Set::new());
 
         remove_block(&mut tracker, tx2.clone())?;
 
@@ -434,11 +407,7 @@ mod tests {
 
         let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).into();
 
-        tracker.add_block(
-            make_header(tracker.tip(), merkle_root),
-            vec![tx],
-            Some(proof),
-        )
+        tracker.add_block(make_header(tracker.tip(), merkle_root), vec![tx], Some(proof))
     }
 
     fn remove_block(
@@ -476,9 +445,7 @@ mod tests {
         // try with a wrong root
         let bad_header = make_header(tracker.tip(), Default::default());
         assert_eq!(
-            tracker
-                .add_block(bad_header, txs.to_vec(), Some(proof.clone()))
-                .err(),
+            tracker.add_block(bad_header, txs.to_vec(), Some(proof.clone())).err(),
             Some(Error::InvalidSpvProof)
         );
 
@@ -491,9 +458,7 @@ mod tests {
         };
 
         assert_eq!(
-            tracker
-                .add_block(header, vec![bad_tx], Some(proof.clone()))
-                .err(),
+            tracker.add_block(header, vec![bad_tx], Some(proof.clone())).err(),
             Some(Error::InvalidSpvProof)
         );
 
@@ -516,18 +481,12 @@ mod tests {
         // Decrease difficulty by 2 fails because of chain max
         let bits = BlockHeader::compact_target_from_u256(&(target << 1));
         let header = mine_header_with_bits(tracker.tip().block_hash(), Default::default(), bits);
-        assert_eq!(
-            tracker.add_block(header, vec![], None).err(),
-            Some(Error::InvalidBlock)
-        );
+        assert_eq!(tracker.add_block(header, vec![], None).err(), Some(Error::InvalidBlock));
 
         // Increase difficulty by 8 fails because of max retarget
         let bits = BlockHeader::compact_target_from_u256(&(target >> 3));
         let header = mine_header_with_bits(tracker.tip().block_hash(), Default::default(), bits);
-        assert_eq!(
-            tracker.add_block(header, vec![], None).err(),
-            Some(Error::InvalidChain)
-        );
+        assert_eq!(tracker.add_block(header, vec![], None).err(), Some(Error::InvalidChain));
 
         // Increase difficulty by 2
         let bits = BlockHeader::compact_target_from_u256(&(target >> 1));

@@ -35,10 +35,7 @@ pub enum Code {
 impl Status {
     /// Create a new `Status` with the associated code and message.
     pub fn new(code: Code, message: impl Into<String>) -> Self {
-        Status {
-            code,
-            message: message.into(),
-        }
+        Status { code, message: message.into() }
     }
 
     /// Get the gRPC `Code` of this `Status`.
@@ -84,12 +81,7 @@ impl fmt::Debug for Status {
 
 impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "status: {:?}, message: {:?}",
-            self.code(),
-            self.message()
-        )
+        write!(f, "status: {:?}, message: {:?}", self.code(), self.message())
     }
 }
 

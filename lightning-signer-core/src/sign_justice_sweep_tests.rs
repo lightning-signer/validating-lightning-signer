@@ -31,10 +31,7 @@ mod tests {
                 sequence: 0x_ffff_ffff_u32,
                 witness: vec![],
             }],
-            output: vec![TxOut {
-                script_pubkey: script_pubkey,
-                value: amount_sat,
-            }],
+            output: vec![TxOut { script_pubkey: script_pubkey, value: amount_sat }],
         }
     }
 
@@ -57,10 +54,7 @@ mod tests {
         let (node, setup, channel_id, offered_htlcs, received_htlcs) =
             sign_commitment_tx_with_mutators_setup();
 
-        let node_ctx = TestNodeContext {
-            node,
-            secp_ctx: Secp256k1::signing_only(),
-        };
+        let node_ctx = TestNodeContext { node, secp_ctx: Secp256k1::signing_only() };
         let chan_ctx = TestChannelContext {
             channel_id,
             setup: setup.clone(),
@@ -71,9 +65,8 @@ mod tests {
             ),
         };
 
-        let (sig, tx, revocation_secret, input, redeemscript, amount_sat) = node_ctx
-            .node
-            .with_ready_channel(&chan_ctx.channel_id, |chan| {
+        let (sig, tx, revocation_secret, input, redeemscript, amount_sat) =
+            node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
                 let secp_ctx = Secp256k1::new();
 
                 // These need to match sign_commitment_tx_with_mutators_setup() ...
@@ -210,9 +203,7 @@ mod tests {
                 chan.node
                     .upgrade()
                     .unwrap()
-                    .add_allowlist(&vec![
-                        "tb1qg975h6gdx5mryeac72h6lj2nzygugxhyk6dnhr".to_string()
-                    ])
+                    .add_allowlist(&vec!["tb1qg975h6gdx5mryeac72h6lj2nzygugxhyk6dnhr".to_string()])
                     .expect("add_allowlist");
             },
         ));

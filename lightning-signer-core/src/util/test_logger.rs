@@ -19,11 +19,7 @@ impl TestLogger {
     }
 
     pub fn new_with_id(id: String) -> TestLogger {
-        TestLogger {
-            level: Level::Trace,
-            id,
-            lines: Mutex::new(Map::new()),
-        }
+        TestLogger { level: Level::Trace, id, lines: Mutex::new(Map::new()) }
     }
 
     pub fn enable(&mut self, level: Level) {

@@ -69,10 +69,7 @@ async fn run_test(network: Network, rpc: Url) -> anyhow::Result<()> {
     let info = client.get_blockchain_info().await;
     println!("{:?}", info);
     let start_height = info.latest_height as u32 - 100000;
-    let start_hash = client
-        .get_block_hash(start_height)
-        .await?
-        .expect("block disappeared");
+    let start_hash = client.get_block_hash(start_height).await?.expect("block disappeared");
     let tip = client.get_header(&start_hash, None).await?;
     assert_eq!(start_height, tip.height);
     let mut tracker = ChainTracker::new(network, start_height, tip.header).map_err(Error::from)?;
@@ -102,9 +99,7 @@ async fn run_test(network: Network, rpc: Url) -> anyhow::Result<()> {
                 (vec![], None)
             };
             let data = client.get_header(&hash, None).await?;
-            tracker
-                .add_block(data.header, txs, proof)
-                .map_err(Error::from)?;
+            tracker.add_block(data.header, txs, proof).map_err(Error::from)?;
         } else {
             break;
         }

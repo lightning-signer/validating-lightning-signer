@@ -85,20 +85,11 @@ pub(crate) fn derive_key_lnd(
     };
     let branch = 0;
     let node_ext_prv = master
-        .ckd_priv(
-            &secp_ctx,
-            ChildNumber::from_hardened_idx(bip43purpose).unwrap(),
-        )
+        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(bip43purpose).unwrap())
         .unwrap()
-        .ckd_priv(
-            &secp_ctx,
-            ChildNumber::from_hardened_idx(coin_type).unwrap(),
-        )
+        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(coin_type).unwrap())
         .unwrap()
-        .ckd_priv(
-            &secp_ctx,
-            ChildNumber::from_hardened_idx(key_family).unwrap(),
-        )
+        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(key_family).unwrap())
         .unwrap()
         .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(branch).unwrap())
         .unwrap()
@@ -254,9 +245,7 @@ pub fn bitcoin_vec_to_signature(
         return Err(bitcoin::secp256k1::Error::InvalidSignature);
     }
     let mut sv = sigvec.clone();
-    let mode = sv
-        .pop()
-        .ok_or_else(|| bitcoin::secp256k1::Error::InvalidSignature)?;
+    let mode = sv.pop().ok_or_else(|| bitcoin::secp256k1::Error::InvalidSignature)?;
     if mode != sighashtype as u8 {
         return Err(bitcoin::secp256k1::Error::InvalidSignature);
     }

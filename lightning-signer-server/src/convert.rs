@@ -93,16 +93,14 @@ impl TryInto<BlockHeaderData> for JsonResponse {
 
     fn try_into(self) -> std::io::Result<BlockHeaderData> {
         let mut header = match self.0 {
-            serde_json::Value::Array(mut array) if !array.is_empty() => {
-                array.drain(..).next().unwrap()
-            }
+            serde_json::Value::Array(mut array) if !array.is_empty() =>
+                array.drain(..).next().unwrap(),
             serde_json::Value::Object(_) => self.0,
-            _ => {
+            _ =>
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "unexpected JSON type",
-                ))
-            }
+                )),
         };
 
         if !header.is_object() {
@@ -115,22 +113,18 @@ impl TryInto<BlockHeaderData> for JsonResponse {
         // Add an empty previousblockhash for the genesis block.
         if let None = header.get("previousblockhash") {
             let hash: BlockHash = Default::default();
-            header.as_object_mut().unwrap().insert(
-                "previousblockhash".to_string(),
-                serde_json::json!(hash.to_hex()),
-            );
+            header
+                .as_object_mut()
+                .unwrap()
+                .insert("previousblockhash".to_string(), serde_json::json!(hash.to_hex()));
         }
 
         match serde_json::from_value::<GetHeaderResponse>(header) {
-            Err(_) => Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "invalid header response",
-            )),
+            Err(_) =>
+                Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid header response")),
             Ok(response) => match response.try_into() {
-                Err(_) => Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "invalid header data",
-                )),
+                Err(_) =>
+                    Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid header data")),
                 Ok(header) => Ok(header),
             },
         }
@@ -143,15 +137,11 @@ impl TryInto<Block> for JsonResponse {
 
     fn try_into(self) -> std::io::Result<Block> {
         match self.0.as_str() {
-            None => Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "expected JSON string",
-            )),
+            None =>
+                Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "expected JSON string")),
             Some(hex_data) => match Vec::<u8>::from_hex(hex_data) {
-                Err(_) => Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "invalid hex data",
-                )),
+                Err(_) =>
+                    Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid hex data")),
                 Ok(block_data) => match encode::deserialize(&block_data) {
                     Err(_) => Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,

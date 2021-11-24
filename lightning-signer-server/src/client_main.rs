@@ -8,9 +8,7 @@ use bip39::Mnemonic;
 use lightning_signer_server::client::driver;
 
 fn make_test_subapp() -> App<'static> {
-    App::new("test")
-        .about("run a test scenario")
-        .subcommand(App::new("integration"))
+    App::new("test").about("run a test scenario").subcommand(App::new("integration"))
 }
 
 #[tokio::main]
@@ -54,7 +52,7 @@ async fn node_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
     let mut client = driver::connect().await?;
 
     match matches.subcommand() {
-        Some(("new", matches)) => {
+        Some(("new", matches)) =>
             if matches.is_present("mnemonic") {
                 let mut buf = String::new();
                 io::stdin().read_line(&mut buf).expect("stdin");
@@ -62,8 +60,7 @@ async fn node_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
                 driver::new_node_with_mnemonic(&mut client, mnemonic).await?
             } else {
                 driver::new_node(&mut client).await?
-            }
-        }
+            },
         Some(("list", _)) => driver::list_nodes(&mut client).await?,
         Some((name, _)) => panic!("unimplemented command {}", name),
         None => {
@@ -103,15 +100,14 @@ async fn chan_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
     let node_id = hex::decode(matches.value_of("node").expect("missing node_id"))?;
 
     match matches.subcommand() {
-        Some(("new", matches)) => {
+        Some(("new", matches)) =>
             driver::new_channel(
                 &mut client,
                 node_id,
                 matches.value_of("nonce"),
                 matches.is_present("no-nonce"),
             )
-            .await?
-        }
+            .await?,
         Some(("list", _)) => driver::list_channels(&mut client, node_id).await?,
         Some((name, _)) => panic!("unimplemented command {}", name),
         None => {
@@ -128,24 +124,20 @@ fn make_allowlist_subapp() -> App<'static> {
         .about("manage allowlists")
         .subcommand(App::new("list").about("List allowlisted addresses for a node"))
         .subcommand(
-            App::new("add")
-                .about("Add address to the node's allowlist")
-                .arg(
-                    Arg::new("address")
-                        .takes_value(true)
-                        .required(true)
-                        .about("address to add to the allowlist"),
-                ),
+            App::new("add").about("Add address to the node's allowlist").arg(
+                Arg::new("address")
+                    .takes_value(true)
+                    .required(true)
+                    .about("address to add to the allowlist"),
+            ),
         )
         .subcommand(
-            App::new("remove")
-                .about("Remove address from the node's allowlist")
-                .arg(
-                    Arg::new("address")
-                        .takes_value(true)
-                        .required(true)
-                        .about("address to remove from the allowlist"),
-                ),
+            App::new("remove").about("Remove address from the node's allowlist").arg(
+                Arg::new("address")
+                    .takes_value(true)
+                    .required(true)
+                    .about("address to remove from the allowlist"),
+            ),
         )
 }
 
@@ -158,17 +150,11 @@ async fn alst_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
     match matches.subcommand() {
         Some(("list", _)) => driver::list_allowlist(&mut client, node_id).await?,
         Some(("add", matches)) => {
-            let addrs = vec![matches
-                .value_of("address")
-                .expect("missing address")
-                .to_string()];
+            let addrs = vec![matches.value_of("address").expect("missing address").to_string()];
             driver::add_allowlist(&mut client, node_id, addrs).await?
         }
         Some(("remove", matches)) => {
-            let addrs = vec![matches
-                .value_of("address")
-                .expect("missing address")
-                .to_string()];
+            let addrs = vec![matches.value_of("address").expect("missing address").to_string()];
             driver::remove_allowlist(&mut client, node_id, addrs).await?
         }
         Some((name, _)) => panic!("unimplemented command {}", name),

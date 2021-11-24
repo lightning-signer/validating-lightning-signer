@@ -26,11 +26,7 @@ pub fn make_node_and_channel(
     let (node_id, node, seed) = make_node();
 
     let (_, channel) = node
-        .new_channel(
-            Some(channel_id),
-            Some(channel_nonce.clone()),
-            &Arc::clone(&node),
-        )
+        .new_channel(Some(channel_id), Some(channel_nonce.clone()), &Arc::clone(&node))
         .unwrap();
     (node_id, node, channel.unwrap(), seed)
 }

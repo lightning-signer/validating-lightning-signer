@@ -104,10 +104,7 @@ pub(crate) fn build_commitment_tx(
             ));
             let anchor_script = get_anchor_redeemscript(workaround_remote_funding_pubkey);
             txouts.push((
-                TxOut {
-                    script_pubkey: anchor_script.to_v0_p2wsh(),
-                    value: ANCHOR_SAT,
-                },
+                TxOut { script_pubkey: anchor_script.to_v0_p2wsh(), value: ANCHOR_SAT },
                 (anchor_script, None),
             ));
         }
@@ -129,10 +126,7 @@ pub(crate) fn build_commitment_tx(
         if option_anchor_outputs {
             let anchor_script = get_anchor_redeemscript(workaround_local_funding_pubkey);
             txouts.push((
-                TxOut {
-                    script_pubkey: anchor_script.to_v0_p2wsh(),
-                    value: ANCHOR_SAT,
-                },
+                TxOut { script_pubkey: anchor_script.to_v0_p2wsh(), value: ANCHOR_SAT },
                 (anchor_script, None),
             ));
         }
@@ -147,10 +141,7 @@ pub(crate) fn build_commitment_tx(
             transaction_output_index: None,
         };
         let script = chan_utils::get_htlc_redeemscript(&htlc_in_tx, option_anchor_outputs, &keys);
-        let txout = TxOut {
-            script_pubkey: script.to_v0_p2wsh(),
-            value: out.value_sat,
-        };
+        let txout = TxOut { script_pubkey: script.to_v0_p2wsh(), value: out.value_sat };
         txouts.push((txout, (script, Some(htlc_in_tx))));
     }
 
@@ -163,10 +154,7 @@ pub(crate) fn build_commitment_tx(
             transaction_output_index: None,
         };
         let script = chan_utils::get_htlc_redeemscript(&htlc_in_tx, option_anchor_outputs, &keys);
-        let txout = TxOut {
-            script_pubkey: script.to_v0_p2wsh(),
-            value: out.value_sat,
-        };
+        let txout = TxOut { script_pubkey: script.to_v0_p2wsh(), value: out.value_sat };
         txouts.push((txout, (script, Some(htlc_in_tx))));
     }
     sort_outputs(&mut txouts, |a, b| {
@@ -211,9 +199,7 @@ pub(crate) fn sort_outputs<T, C: Fn(&T, &T) -> cmp::Ordering>(
 ) {
     outputs.sort_unstable_by(|a, b| {
         a.0.value.cmp(&b.0.value).then_with(|| {
-            a.0.script_pubkey[..]
-                .cmp(&b.0.script_pubkey[..])
-                .then_with(|| tie_breaker(&a.1, &b.1))
+            a.0.script_pubkey[..].cmp(&b.0.script_pubkey[..]).then_with(|| tie_breaker(&a.1, &b.1))
         })
     });
 }
@@ -357,38 +343,20 @@ pub struct CommitmentInfo {
 impl fmt::Debug for CommitmentInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CommitmentInfo")
-            .field(
-                "is_counterparty_broadcaster",
-                &self.is_counterparty_broadcaster,
-            )
+            .field("is_counterparty_broadcaster", &self.is_counterparty_broadcaster)
             // Wrap the to_countersigner_address Payload w/ a nicer printing one.
             .field(
                 "to_countersigner_address",
-                &self
-                    .to_countersigner_address
-                    .as_ref()
-                    .map(|p| DebugPayload(&p)),
+                &self.to_countersigner_address.as_ref().map(|p| DebugPayload(&p)),
             )
             .field("to_countersigner_pubkey", &self.to_countersigner_pubkey)
-            .field(
-                "to_countersigner_value_sat",
-                &self.to_countersigner_value_sat,
-            )
-            .field(
-                "to_countersigner_anchor_count",
-                &self.to_countersigner_anchor_count,
-            )
+            .field("to_countersigner_value_sat", &self.to_countersigner_value_sat)
+            .field("to_countersigner_anchor_count", &self.to_countersigner_anchor_count)
             .field("revocation_pubkey", &self.revocation_pubkey)
-            .field(
-                "to_broadcaster_delayed_pubkey",
-                &self.to_broadcaster_delayed_pubkey,
-            )
+            .field("to_broadcaster_delayed_pubkey", &self.to_broadcaster_delayed_pubkey)
             .field("to_broadcaster_value_sat", &self.to_broadcaster_value_sat)
             .field("to_self_delay", &self.to_self_delay)
-            .field(
-                "to_broadcaster_anchor_count",
-                &self.to_broadcaster_anchor_count,
-            )
+            .field("to_broadcaster_anchor_count", &self.to_broadcaster_anchor_count)
             .field("offered_htlcs", &self.offered_htlcs)
             .field("received_htlcs", &self.received_htlcs)
             .finish()
@@ -438,13 +406,7 @@ pub(crate) fn parse_received_htlc_script(
     }
     expect_op(iter, OP_ENDIF)?;
     expect_script_end(iter)?;
-    Ok((
-        revocation_hash,
-        remote_htlc_pubkey,
-        payment_hash_vec,
-        local_htlc_pubkey,
-        cltv_expiry,
-    ))
+    Ok((revocation_hash, remote_htlc_pubkey, payment_hash_vec, local_htlc_pubkey, cltv_expiry))
 }
 
 pub(crate) fn parse_offered_htlc_script(
@@ -487,12 +449,7 @@ pub(crate) fn parse_offered_htlc_script(
     }
     expect_op(iter, OP_ENDIF)?;
     expect_script_end(iter)?;
-    Ok((
-        revocation_hash,
-        remote_htlc_pubkey,
-        local_htlc_pubkey,
-        payment_hash_vec,
-    ))
+    Ok((revocation_hash, remote_htlc_pubkey, local_htlc_pubkey, payment_hash_vec))
 }
 
 pub(crate) fn parse_revokeable_redeemscript(
@@ -650,16 +607,10 @@ impl CommitmentInfo {
                 "more than one to_countersigner output".to_string(),
             ));
         }
-        self.to_countersigner_pubkey = Some(
-            PublicKey::from_slice(to_countersigner_delayed_pubkey_data.as_slice()).map_err(
-                |err| {
-                    mismatch_error(format!(
-                        "to_countersigner delayed pubkey malformed: {}",
-                        err
-                    ))
-                },
-            )?,
-        );
+        self.to_countersigner_pubkey =
+            Some(PublicKey::from_slice(to_countersigner_delayed_pubkey_data.as_slice()).map_err(
+                |err| mismatch_error(format!("to_countersigner delayed pubkey malformed: {}", err)),
+            )?);
         self.to_countersigner_value_sat = out.value;
         Ok(())
     }
@@ -687,11 +638,7 @@ impl CommitmentInfo {
 
         let cltv_expiry = cltv_expiry as u32;
 
-        let htlc = HTLCInfo {
-            value_sat: out.value,
-            payment_hash_hash,
-            cltv_expiry,
-        };
+        let htlc = HTLCInfo { value_sat: out.value, payment_hash_hash, cltv_expiry };
         self.received_htlcs.push(htlc);
 
         Ok(())
@@ -709,11 +656,7 @@ impl CommitmentInfo {
             .try_into()
             .map_err(|_| mismatch_error("payment hash RIPEMD160 must be length 20".to_string()))?;
 
-        let htlc = HTLCInfo {
-            value_sat: out.value,
-            payment_hash_hash,
-            cltv_expiry: 0,
-        };
+        let htlc = HTLCInfo { value_sat: out.value, payment_hash_hash, cltv_expiry: 0 };
         self.offered_htlcs.push(htlc);
 
         Ok(())
@@ -744,15 +687,9 @@ impl CommitmentInfo {
         // These are dependent on which side owns this commitment.
         let (to_broadcaster_funding_pubkey, to_countersigner_funding_pubkey) =
             if self.is_counterparty_broadcaster {
-                (
-                    keys.counterparty_pubkeys().funding_pubkey,
-                    keys.pubkeys().funding_pubkey,
-                )
+                (keys.counterparty_pubkeys().funding_pubkey, keys.pubkeys().funding_pubkey)
             } else {
-                (
-                    keys.pubkeys().funding_pubkey,
-                    keys.counterparty_pubkeys().funding_pubkey,
-                )
+                (keys.pubkeys().funding_pubkey, keys.counterparty_pubkeys().funding_pubkey)
             };
 
         // policy-commitment-anchor-amount
@@ -801,9 +738,7 @@ impl CommitmentInfo {
             self.to_countersigner_value_sat = out.value;
         } else if out.script_pubkey.is_v0_p2wsh() {
             if script_bytes.is_empty() {
-                return Err(transaction_format_error(
-                    "missing witscript for p2wsh".to_string(),
-                ));
+                return Err(transaction_format_error("missing witscript for p2wsh".to_string()));
             }
             let script = Script::from(script_bytes.to_vec());
             // FIXME - Does this need it's own policy tag?
@@ -861,26 +796,14 @@ mod tests {
     #[test]
     fn htlc2_sorting() {
         // Defined in order ...
-        let htlc0 = HTLCInfo2 {
-            value_sat: 4000,
-            payment_hash: PaymentHash([1; 32]),
-            cltv_expiry: 2 << 16,
-        };
-        let htlc1 = HTLCInfo2 {
-            value_sat: 4000,
-            payment_hash: PaymentHash([1; 32]),
-            cltv_expiry: 3 << 16,
-        };
-        let htlc2 = HTLCInfo2 {
-            value_sat: 4000,
-            payment_hash: PaymentHash([2; 32]),
-            cltv_expiry: 3 << 16,
-        };
-        let htlc3 = HTLCInfo2 {
-            value_sat: 5000,
-            payment_hash: PaymentHash([2; 32]),
-            cltv_expiry: 3 << 16,
-        };
+        let htlc0 =
+            HTLCInfo2 { value_sat: 4000, payment_hash: PaymentHash([1; 32]), cltv_expiry: 2 << 16 };
+        let htlc1 =
+            HTLCInfo2 { value_sat: 4000, payment_hash: PaymentHash([1; 32]), cltv_expiry: 3 << 16 };
+        let htlc2 =
+            HTLCInfo2 { value_sat: 4000, payment_hash: PaymentHash([2; 32]), cltv_expiry: 3 << 16 };
+        let htlc3 =
+            HTLCInfo2 { value_sat: 5000, payment_hash: PaymentHash([2; 32]), cltv_expiry: 3 << 16 };
         let sorted = vec![&htlc0, &htlc1, &htlc2, &htlc3];
 
         // Reverse order
@@ -906,10 +829,7 @@ mod tests {
     fn parse_test() {
         let secp_ctx = Secp256k1::signing_only();
         let mut info = CommitmentInfo::new_for_holder();
-        let out = TxOut {
-            value: 123,
-            script_pubkey: Default::default(),
-        };
+        let out = TxOut { value: 123, script_pubkey: Default::default() };
         let revocation_pubkey =
             PublicKey::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[4u8; 32]).unwrap());
         let delayed_pubkey =
@@ -939,27 +859,18 @@ mod tests {
     fn handle_anchor_wrong_size_test() {
         let mut info = CommitmentInfo::new_for_holder();
         let keys = make_test_channel_keys();
-        let out = TxOut {
-            value: 329,
-            script_pubkey: Default::default(),
-        };
+        let out = TxOut { value: 329, script_pubkey: Default::default() };
         let to_pubkey_data = keys.pubkeys().funding_pubkey.serialize().to_vec();
         let res = info.handle_anchor_output(&keys, &out, to_pubkey_data);
         assert!(res.is_err());
-        assert_eq!(
-            res.unwrap_err(),
-            mismatch_error(format!("anchor wrong size: {}", out.value))
-        );
+        assert_eq!(res.unwrap_err(), mismatch_error(format!("anchor wrong size: {}", out.value)));
     }
 
     #[test]
     fn handle_anchor_not_local_or_remote_test() {
         let mut info = CommitmentInfo::new_for_holder();
         let keys = make_test_channel_keys();
-        let out = TxOut {
-            value: 330,
-            script_pubkey: Default::default(),
-        };
+        let out = TxOut { value: 330, script_pubkey: Default::default() };
         let to_pubkey_data = make_test_pubkey(42).serialize().to_vec(); // doesn't match
         let res = info.handle_anchor_output(&keys, &out, to_pubkey_data.clone());
         assert!(res.is_err());
@@ -978,17 +889,11 @@ mod tests {
         let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
         let setup = make_test_channel_setup();
-        let out = TxOut {
-            value: 42,
-            script_pubkey: Default::default(),
-        };
+        let out = TxOut { value: 42, script_pubkey: Default::default() };
         let script_bytes = [3u8; 30];
         let res = info.handle_output(&keys, &setup, &out, &script_bytes);
         assert!(res.is_err());
-        assert_eq!(
-            res.unwrap_err(),
-            transaction_format_error("unknown output type".to_string())
-        );
+        assert_eq!(res.unwrap_err(), transaction_format_error("unknown output type".to_string()));
     }
 
     // policy-commitment-no-unrecognized-outputs
@@ -1006,10 +911,7 @@ mod tests {
         };
         let res = info.handle_output(&keys, &setup, &out, script.as_bytes());
         assert!(res.is_err());
-        assert_eq!(
-            res.unwrap_err(),
-            transaction_format_error("unknown p2wsh script".to_string())
-        );
+        assert_eq!(res.unwrap_err(), transaction_format_error("unknown p2wsh script".to_string()));
     }
 
     #[test]
@@ -1021,9 +923,7 @@ mod tests {
         let pubkey = bitcoin::PublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
         let out = TxOut {
             value: 42,
-            script_pubkey: Address::p2wpkh(&pubkey, Network::Testnet)
-                .unwrap()
-                .script_pubkey(),
+            script_pubkey: Address::p2wpkh(&pubkey, Network::Testnet).unwrap().script_pubkey(),
         };
         let res = info.handle_output(&keys, &setup, &out, &[0u8; 0]);
         assert!(res.is_err());
@@ -1040,10 +940,7 @@ mod tests {
         let setup = make_test_channel_setup();
         let pubkey = bitcoin::PublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
         let address = Address::p2wpkh(&pubkey, Network::Testnet).unwrap();
-        let out = TxOut {
-            value: 42,
-            script_pubkey: address.script_pubkey(),
-        };
+        let out = TxOut { value: 42, script_pubkey: address.script_pubkey() };
 
         // Make the info look like a to_remote has already been seen.
         info.to_countersigner_address = Some(address.payload);

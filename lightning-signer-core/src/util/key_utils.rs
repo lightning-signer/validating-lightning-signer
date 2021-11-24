@@ -6,11 +6,8 @@ use lightning::ln::chan_utils::ChannelPublicKeys;
 pub fn make_test_bitcoin_key(i: u8) -> (bitcoin::PublicKey, bitcoin::PrivateKey) {
     let secp_ctx = Secp256k1::signing_only();
     let secret_key = SecretKey::from_slice(&[i; 32]).unwrap();
-    let private_key = bitcoin::PrivateKey {
-        compressed: true,
-        network: Network::Testnet,
-        key: secret_key,
-    };
+    let private_key =
+        bitcoin::PrivateKey { compressed: true, network: Network::Testnet, key: secret_key };
     return (private_key.public_key(&secp_ctx), private_key);
 }
 
@@ -23,10 +20,7 @@ pub fn make_test_bitcoin_pubkey(i: u8) -> bitcoin::PublicKey {
 pub fn make_test_key(i: u8) -> (PublicKey, SecretKey) {
     let secp_ctx = Secp256k1::signing_only();
     let secret_key = SecretKey::from_slice(&[i; 32]).unwrap();
-    return (
-        PublicKey::from_secret_key(&secp_ctx, &secret_key),
-        secret_key,
-    );
+    return (PublicKey::from_secret_key(&secp_ctx, &secret_key), secret_key);
 }
 
 /// Make a secp256k1 test pubkey

@@ -122,23 +122,11 @@ impl fmt::Debug for ChannelSetup {
             .field("channel_value_sat", &self.channel_value_sat)
             .field("push_value_msat", &self.push_value_msat)
             .field("funding_outpoint", &self.funding_outpoint)
-            .field(
-                "holder_selected_contest_delay",
-                &self.holder_selected_contest_delay,
-            )
+            .field("holder_selected_contest_delay", &self.holder_selected_contest_delay)
             .field("holder_shutdown_script", &self.holder_shutdown_script)
-            .field(
-                "counterparty_points",
-                log_channel_public_keys!(&self.counterparty_points),
-            )
-            .field(
-                "counterparty_selected_contest_delay",
-                &self.counterparty_selected_contest_delay,
-            )
-            .field(
-                "counterparty_shutdown_script",
-                &self.counterparty_shutdown_script,
-            )
+            .field("counterparty_points", log_channel_public_keys!(&self.counterparty_points))
+            .field("counterparty_selected_contest_delay", &self.counterparty_selected_contest_delay)
+            .field("counterparty_shutdown_script", &self.counterparty_shutdown_script)
             .field("commitment_type", &self.commitment_type)
             .finish()
     }
@@ -262,9 +250,8 @@ impl ChannelBase for ChannelStub {
         commitment_number: u64,
         suggested: &SecretKey,
     ) -> Result<bool, Status> {
-        let secret_data = self
-            .keys
-            .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+        let secret_data =
+            self.keys.release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
         Ok(suggested[..] == secret_data)
     }
 
@@ -334,8 +321,7 @@ impl ChannelBase for Channel {
     // TODO move out to impl Channel {} once LDK workaround is removed
     #[cfg(feature = "test_utils")]
     fn set_next_holder_commit_num_for_testing(&mut self, num: u64) {
-        self.enforcement_state
-            .set_next_holder_commit_num_for_testing(num);
+        self.enforcement_state.set_next_holder_commit_num_for_testing(num);
     }
 
     fn get_channel_basepoints(&self) -> ChannelPublicKeys {
@@ -371,9 +357,8 @@ impl ChannelBase for Channel {
             ))
             .into());
         }
-        let secret = self
-            .keys
-            .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+        let secret =
+            self.keys.release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
         Ok(SecretKey::from_slice(&secret).unwrap())
     }
 
@@ -382,9 +367,8 @@ impl ChannelBase for Channel {
         commitment_number: u64,
         suggested: &SecretKey,
     ) -> Result<bool, Status> {
-        let secret_data = self
-            .keys
-            .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+        let secret_data =
+            self.keys.release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
         Ok(suggested[..] == secret_data)
     }
 
@@ -411,15 +395,13 @@ impl Channel {
         num: u64,
         current_point: PublicKey,
     ) {
-        self.enforcement_state
-            .set_next_counterparty_commit_num_for_testing(num, current_point);
+        self.enforcement_state.set_next_counterparty_commit_num_for_testing(num, current_point);
     }
 
     #[allow(missing_docs)]
     #[cfg(feature = "test_utils")]
     pub fn set_next_counterparty_revoke_num_for_testing(&mut self, num: u64) {
-        self.enforcement_state
-            .set_next_counterparty_revoke_num_for_testing(num);
+        self.enforcement_state.set_next_counterparty_revoke_num_for_testing(num);
     }
 
     fn get_chain_state(&self) -> ChainState {
@@ -502,14 +484,7 @@ impl Channel {
         per_commitment_point: &PublicKey,
         commitment_number: u64,
         info: &CommitmentInfo2,
-    ) -> Result<
-        (
-            bitcoin::Transaction,
-            Vec<Script>,
-            Vec<HTLCOutputInCommitment>,
-        ),
-        Status,
-    > {
+    ) -> Result<(bitcoin::Transaction, Vec<Script>, Vec<HTLCOutputInCommitment>), Status> {
         let keys = if !info.is_counterparty_broadcaster {
             self.make_holder_tx_keys(per_commitment_point)?
         } else {
@@ -517,18 +492,13 @@ impl Channel {
         };
 
         // TODO - consider if we can get LDK to put funding pubkeys in TxCreationKeys
-        let (workaround_local_funding_pubkey, workaround_remote_funding_pubkey) =
-            if !info.is_counterparty_broadcaster {
-                (
-                    &self.keys.pubkeys().funding_pubkey,
-                    &self.keys.counterparty_pubkeys().funding_pubkey,
-                )
-            } else {
-                (
-                    &self.keys.counterparty_pubkeys().funding_pubkey,
-                    &self.keys.pubkeys().funding_pubkey,
-                )
-            };
+        let (workaround_local_funding_pubkey, workaround_remote_funding_pubkey) = if !info
+            .is_counterparty_broadcaster
+        {
+            (&self.keys.pubkeys().funding_pubkey, &self.keys.counterparty_pubkeys().funding_pubkey)
+        } else {
+            (&self.keys.counterparty_pubkeys().funding_pubkey, &self.keys.pubkeys().funding_pubkey)
+        };
 
         let obscured_commitment_transaction_number =
             self.get_commitment_transaction_number_obscure_factor() ^ commitment_number;
@@ -649,9 +619,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         htlcs: Vec<HTLCOutputInCommitment>,
     ) -> CommitmentTransaction {
-        let keys = self
-            .make_counterparty_tx_keys(remote_per_commitment_point)
-            .unwrap();
+        let keys = self.make_counterparty_tx_keys(remote_per_commitment_point).unwrap();
         self.make_counterparty_commitment_tx_with_keys(
             keys,
             commitment_number,
@@ -675,16 +643,17 @@ impl Channel {
             &self.setup.counterparty_points.funding_pubkey,
         );
 
-        let sighash = Message::from_slice(
-            &SigHashCache::new(&recomposed_tx.trust().built_transaction().transaction)
-                .signature_hash(
-                    0,
-                    &redeemscript,
-                    self.setup.channel_value_sat,
-                    SigHashType::All,
-                )[..],
-        )
-        .map_err(|ve| internal_error(format!("sighash failed: {}", ve)))?;
+        let sighash =
+            Message::from_slice(
+                &SigHashCache::new(&recomposed_tx.trust().built_transaction().transaction)
+                    .signature_hash(
+                        0,
+                        &redeemscript,
+                        self.setup.channel_value_sat,
+                        SigHashType::All,
+                    )[..],
+            )
+            .map_err(|ve| internal_error(format!("sighash failed: {}", ve)))?;
 
         let secp_ctx = Secp256k1::new();
         secp_ctx
@@ -742,16 +711,9 @@ impl Channel {
             .map_err(|err| invalid_argument(format!("sighash failed for htlc {}: {}", ndx, err)))?;
 
             secp_ctx
-                .verify(
-                    &recomposed_tx_sighash,
-                    &counterparty_htlc_sigs[ndx],
-                    &htlc_pubkey,
-                )
+                .verify(&recomposed_tx_sighash, &counterparty_htlc_sigs[ndx], &htlc_pubkey)
                 .map_err(|err| {
-                    policy_error(format!(
-                        "commit sig verify failed for htlc {}: {}",
-                        ndx, err
-                    ))
+                    policy_error(format!("commit sig verify failed for htlc {}: {}", ndx, err))
                 })?;
         }
         Ok(())
@@ -763,19 +725,14 @@ impl Channel {
         info2: CommitmentInfo2,
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
         // Advance the local commitment number state.
-        self.enforcement_state
-            .set_next_holder_commit_num(commitment_number + 1, info2)?;
+        self.enforcement_state.set_next_holder_commit_num(commitment_number + 1, info2)?;
 
         // These calls are guaranteed to pass the commitment_number
         // check because we just advanced it to the right spot above.
-        let next_holder_commitment_point = self
-            .get_per_commitment_point(commitment_number + 1)
-            .unwrap();
+        let next_holder_commitment_point =
+            self.get_per_commitment_point(commitment_number + 1).unwrap();
         let maybe_old_secret = if commitment_number >= 1 {
-            Some(
-                self.get_per_commitment_secret(commitment_number - 1)
-                    .unwrap(),
-            )
+            Some(self.get_per_commitment_secret(commitment_number - 1).unwrap())
         } else {
             None
         };
@@ -906,10 +863,7 @@ impl Channel {
             to_counterparty_value_sat,
             htlcs,
         )?;
-        debug!(
-            "channel: sign holder txid {}",
-            commitment_tx.trust().built_transaction().txid
-        );
+        debug!("channel: sign holder txid {}", commitment_tx.trust().built_transaction().txid);
 
         let holder_commitment_tx = HolderCommitmentTransaction::new(
             commitment_tx,
@@ -1026,11 +980,7 @@ impl Channel {
                 selected_contest_delay: self.setup.counterparty_selected_contest_delay,
             }),
             funding_outpoint: Some(funding_outpoint),
-            opt_anchors: if self.setup.option_anchor_outputs() {
-                Some(())
-            } else {
-                None
-            },
+            opt_anchors: if self.setup.option_anchor_outputs() { Some(()) } else { None },
         };
         channel_parameters
     }
@@ -1041,12 +991,7 @@ impl Channel {
         self.setup
             .holder_shutdown_script
             .clone()
-            .unwrap_or_else(|| {
-                self.get_node()
-                    .keys_manager
-                    .get_shutdown_scriptpubkey()
-                    .into()
-            })
+            .unwrap_or_else(|| self.get_node().keys_manager.get_shutdown_scriptpubkey().into())
     }
 
     fn get_node(&self) -> Arc<Node> {
@@ -1229,8 +1174,7 @@ impl Channel {
         let encmsg = secp256k1::Message::from_slice(&ann_hash[..]).expect("encmsg failed");
 
         (
-            self.secp_ctx
-                .sign(&encmsg, &self.get_node().get_node_secret()),
+            self.secp_ctx.sign(&encmsg, &self.get_node().get_node_secret()),
             self.secp_ctx.sign(&encmsg, &self.keys.funding_key),
         )
     }
@@ -1317,10 +1261,7 @@ impl Channel {
             &holder_points.delayed_payment_basepoint,
         )
         .map_err(|err| {
-            internal_error(format!(
-                "could not derive to_holder_delayed_pubkey: {}",
-                err
-            ))
+            internal_error(format!("could not derive to_holder_delayed_pubkey: {}", err))
         })?;
 
         let counterparty_pubkey = if self.setup.option_static_remotekey() {
@@ -1427,10 +1368,7 @@ impl Channel {
 
         if recomposed_tx.trust().built_transaction().transaction != *tx {
             debug!("ORIGINAL_TX={:#?}", &tx);
-            debug!(
-                "RECOMPOSED_TX={:#?}",
-                &recomposed_tx.trust().built_transaction().transaction
-            );
+            debug!("RECOMPOSED_TX={:#?}", &recomposed_tx.trust().built_transaction().transaction);
             return Err(policy_error("recomposed tx mismatch".to_string()).into());
         }
 
@@ -1460,8 +1398,7 @@ impl Channel {
             .map_err(|_| internal_error(format!("sign_counterparty_commitment failed")))?;
 
         // Only advance the state if nothing goes wrong.
-        self.enforcement_state
-            .set_next_counterparty_commit_num(commit_num + 1, point, info2)?;
+        self.enforcement_state.set_next_counterparty_commit_num(commit_num + 1, point, info2)?;
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
@@ -1554,10 +1491,7 @@ impl Channel {
             );
             warn!("RECOMPOSITION FAILED");
             warn!("ORIGINAL_TX={:#?}", &tx);
-            warn!(
-                "RECOMPOSED_TX={:#?}",
-                &recomposed_tx.trust().built_transaction().transaction
-            );
+            warn!("RECOMPOSED_TX={:#?}", &recomposed_tx.trust().built_transaction().transaction);
             return Err(policy_error("recomposed tx mismatch".to_string()).into());
         }
 
@@ -1637,8 +1571,7 @@ impl Channel {
             revoke_num,
             old_secret,
         )?;
-        self.enforcement_state
-            .set_next_counterparty_revoke_num(revoke_num + 1)?;
+        self.enforcement_state.set_next_counterparty_revoke_num(revoke_num + 1)?;
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
@@ -1752,9 +1685,8 @@ impl Channel {
             self.get_per_commitment_point(commitment_number)?
         };
 
-        let txkeys = self
-            .make_holder_tx_keys(&per_commitment_point)
-            .expect("failed to make txkeys");
+        let txkeys =
+            self.make_holder_tx_keys(&per_commitment_point).expect("failed to make txkeys");
 
         self.sign_htlc_tx(
             tx,
@@ -1841,12 +1773,9 @@ impl Channel {
                 ve
             })?;
 
-        let htlc_privkey = derive_private_key(
-            &self.secp_ctx,
-            &per_commitment_point,
-            &self.keys.htlc_base_key,
-        )
-        .map_err(|_| Status::internal("failed to derive key"))?;
+        let htlc_privkey =
+            derive_private_key(&self.secp_ctx, &per_commitment_point, &self.keys.htlc_base_key)
+                .map_err(|_| Status::internal("failed to derive key"))?;
 
         let htlc_sighash = Message::from_slice(&recomposed_tx_sighash[..])
             .map_err(|_| Status::internal("failed to sighash recomposed"))?;

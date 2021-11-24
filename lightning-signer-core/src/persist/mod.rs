@@ -1,6 +1,6 @@
+use crate::chain::tracker::ChainTracker;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::Script;
-use crate::chain::tracker::ChainTracker;
 
 use crate::channel::{Channel, ChannelId, ChannelStub};
 use crate::monitor::ChainMonitor;
@@ -25,7 +25,11 @@ pub trait Persist: Sync + Send {
     /// Create a new tracker
     fn new_chain_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>);
     /// Update the tracker
-    fn update_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) -> Result<(), ()>;
+    fn update_tracker(
+        &self,
+        node_id: &PublicKey,
+        tracker: &ChainTracker<ChainMonitor>,
+    ) -> Result<(), ()>;
     /// Get the tracker
     fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, ()>;
 
@@ -67,7 +71,11 @@ impl Persist for DummyPersister {
 
     fn new_chain_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) {}
 
-    fn update_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) -> Result<(), ()> {
+    fn update_tracker(
+        &self,
+        node_id: &PublicKey,
+        tracker: &ChainTracker<ChainMonitor>,
+    ) -> Result<(), ()> {
         Ok(())
     }
 

@@ -20,9 +20,7 @@ pub async fn connect() -> Result<SignerClient<transport::Channel>, Box<dyn std::
 pub async fn ping(
     client: &mut SignerClient<transport::Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let ping_request = Request::new(PingRequest {
-        message: "hello".into(),
-    });
+    let ping_request = Request::new(PingRequest { message: "hello".into() });
 
     let response = client.ping(ping_request).await?;
 
@@ -43,14 +41,10 @@ pub async fn new_node_with_mnemonic(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let secret = mnemonic.to_seed("");
     let init_request = Request::new(InitRequest {
-        node_config: Some(NodeConfig {
-            key_derivation_style: KeyDerivationStyle::Native as i32,
-        }),
+        node_config: Some(NodeConfig { key_derivation_style: KeyDerivationStyle::Native as i32 }),
         chainparams: None,
         coldstart: true,
-        hsm_secret: Some(Bip32Seed {
-            data: secret.to_vec(),
-        }),
+        hsm_secret: Some(Bip32Seed { data: secret.to_vec() }),
     });
 
     let response = client.init(init_request).await?;
@@ -80,9 +74,8 @@ pub async fn list_channels(
     client: &mut SignerClient<transport::Channel>,
     node_id: Vec<u8>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let list_request = Request::new(ListChannelsRequest {
-        node_id: Some(NodeId { data: node_id }),
-    });
+    let list_request =
+        Request::new(ListChannelsRequest { node_id: Some(NodeId { data: node_id }) });
 
     let response = client.list_channels(list_request).await?.into_inner();
     let mut channel_ids: Vec<&Vec<u8>> =
@@ -99,9 +92,8 @@ pub async fn list_allowlist(
     client: &mut SignerClient<transport::Channel>,
     node_id: Vec<u8>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let list_request = Request::new(ListAllowlistRequest {
-        node_id: Some(NodeId { data: node_id }),
-    });
+    let list_request =
+        Request::new(ListAllowlistRequest { node_id: Some(NodeId { data: node_id }) });
 
     let response = client.list_allowlist(list_request).await?.into_inner();
     for addr in response.addresses {
@@ -115,10 +107,8 @@ pub async fn add_allowlist(
     node_id: Vec<u8>,
     addresses: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let add_request = Request::new(AddAllowlistRequest {
-        node_id: Some(NodeId { data: node_id }),
-        addresses,
-    });
+    let add_request =
+        Request::new(AddAllowlistRequest { node_id: Some(NodeId { data: node_id }), addresses });
 
     client.add_allowlist(add_request).await?.into_inner();
     Ok(())
@@ -129,10 +119,8 @@ pub async fn remove_allowlist(
     node_id: Vec<u8>,
     addresses: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let remove_request = Request::new(RemoveAllowlistRequest {
-        node_id: Some(NodeId { data: node_id }),
-        addresses,
-    });
+    let remove_request =
+        Request::new(RemoveAllowlistRequest { node_id: Some(NodeId { data: node_id }), addresses });
 
     client.remove_allowlist(remove_request).await?.into_inner();
     Ok(())
@@ -153,25 +141,16 @@ pub async fn new_channel(
     }
 
     let new_chan_request = Request::new(NewChannelRequest {
-        node_id: Some(NodeId {
-            data: node_id.clone(),
-        }),
+        node_id: Some(NodeId { data: node_id.clone() }),
         channel_nonce0: if no_nonce {
             None
         } else {
-            Some(ChannelNonce {
-                data: channel_nonce.to_vec(),
-            })
+            Some(ChannelNonce { data: channel_nonce.to_vec() })
         },
     });
     let response = client.new_channel(new_chan_request).await?.into_inner();
     if !no_nonce {
-        assert_eq!(
-            response.channel_nonce0,
-            Some(ChannelNonce {
-                data: channel_nonce.to_vec()
-            })
-        );
+        assert_eq!(response.channel_nonce0, Some(ChannelNonce { data: channel_nonce.to_vec() }));
     }
     println!("{}", hex::encode(&response.channel_nonce0.unwrap().data));
     Ok(())
@@ -183,14 +162,10 @@ pub async fn integration_test(
     ping(client).await?;
 
     let init_request = Request::new(InitRequest {
-        node_config: Some(NodeConfig {
-            key_derivation_style: KeyDerivationStyle::Native as i32,
-        }),
+        node_config: Some(NodeConfig { key_derivation_style: KeyDerivationStyle::Native as i32 }),
         chainparams: None,
         coldstart: true,
-        hsm_secret: Some(Bip32Seed {
-            data: vec![0u8; 32],
-        }),
+        hsm_secret: Some(Bip32Seed { data: vec![0u8; 32] }),
     });
 
     let response = client.init(init_request).await?;
@@ -200,38 +175,23 @@ pub async fn integration_test(
 
     let channel_nonce = [1u8];
     let new_chan_request = Request::new(NewChannelRequest {
-        node_id: Some(NodeId {
-            data: node_id.clone(),
-        }),
-        channel_nonce0: Some(ChannelNonce {
-            data: channel_nonce.to_vec(),
-        }),
+        node_id: Some(NodeId { data: node_id.clone() }),
+        channel_nonce0: Some(ChannelNonce { data: channel_nonce.to_vec() }),
     });
     let response = client.new_channel(new_chan_request).await?;
 
-    let new_channel_nonce = response
-        .into_inner()
-        .channel_nonce0
-        .expect("missing channel_id");
+    let new_channel_nonce = response.into_inner().channel_nonce0.expect("missing channel_id");
     assert_eq!(channel_nonce.to_vec(), new_channel_nonce.data);
     println!("new channel {}", hex::encode(&channel_nonce));
 
     let per_commit_request = Request::new(GetPerCommitmentPointRequest {
-        node_id: Some(NodeId {
-            data: node_id.clone(),
-        }),
-        channel_nonce: Some(ChannelNonce {
-            data: channel_nonce.to_vec(),
-        }),
+        node_id: Some(NodeId { data: node_id.clone() }),
+        channel_nonce: Some(ChannelNonce { data: channel_nonce.to_vec() }),
         n: 3,
     });
 
     let response = client.get_per_commitment_point(per_commit_request).await?;
-    let per_commit = response
-        .into_inner()
-        .per_commitment_point
-        .expect("missing per_commit")
-        .data;
+    let per_commit = response.into_inner().per_commitment_point.expect("missing per_commit").data;
     println!("per commit 3 {}", hex::encode(&per_commit));
     assert_eq!(
         hex::encode(&per_commit),

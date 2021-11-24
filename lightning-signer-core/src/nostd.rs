@@ -12,9 +12,7 @@ pub struct Mutex<T> {
 
 impl<T> Mutex<T> {
     pub fn new(inner: T) -> Self {
-        Self {
-            inner: RefCell::new(inner),
-        }
+        Self { inner: RefCell::new(inner) }
     }
 
     pub fn lock(&self) -> Result<MutexGuard<T>, ()> {
