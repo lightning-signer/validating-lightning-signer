@@ -2,3 +2,5 @@ unstable_features = true
 ignore = [
     "lightning-signer-core/tests/functional_test.rs",
 ]
+use_small_heuristics = "Max"
+match_arm_blocks = false
