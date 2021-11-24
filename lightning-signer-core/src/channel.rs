@@ -25,7 +25,7 @@ use crate::monitor::ChainMonitor;
 use crate::node::Node;
 use crate::policy::error::policy_error;
 use crate::policy::validator::{ChainState, EnforcementState, Validator};
-use crate::prelude::{Box, String, ToString, Vec};
+use crate::prelude::*;
 use crate::tx::tx::{
     build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
     HTLCInfo2,
