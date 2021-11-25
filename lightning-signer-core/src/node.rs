@@ -134,12 +134,25 @@ impl Node {
         allowlist: Vec<Script>,
     ) -> Node {
         let genesis = genesis_block(node_config.network);
-        let now = Duration::from_secs(genesis.header.time as u64);
 
         // TODO supply current tip
-        let tracker = Mutex::new(
-            ChainTracker::new(node_config.network, 0, genesis.header).expect("bad  chain tip"),
-        );
+        let tracker =
+            ChainTracker::new(node_config.network, 0, genesis.header).expect("bad  chain tip");
+
+        Self::new_extended(node_config, seed, persister, allowlist, tracker, Box::new(SimpleValidatorFactory {}))
+    }
+
+    /// Create a node
+    ///
+    /// NOTE: you must persist the node yourself if it is new.
+    pub fn new_extended(node_config: NodeConfig,
+                        seed: &[u8],
+                        persister: &Arc<dyn Persist>,
+                        allowlist: Vec<Script>,
+                        tracker: ChainTracker<ChainMonitor>,
+                        validator_factory: Box<dyn ValidatorFactory>) -> Node {
+        let genesis = genesis_block(node_config.network);
+        let now = Duration::from_secs(genesis.header.time as u64);
 
         Node {
             keys_manager: MyKeysManager::new(
@@ -151,10 +164,10 @@ impl Node {
             ),
             node_config,
             channels: Mutex::new(Map::new()),
-            validator_factory: Mutex::new(Box::new(SimpleValidatorFactory {})),
+            validator_factory: Mutex::new(validator_factory),
             persister: Arc::clone(persister),
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
-            tracker,
+            tracker: Mutex::new(tracker),
         }
     }
 
@@ -485,6 +498,7 @@ impl Node {
             keys.ready_channel(&channel_transaction_parameters);
             let funding_outpoint = setup.funding_outpoint;
             let monitor = ChainMonitor::new(funding_outpoint, tracker.height());
+            monitor.add_funding_outpoint(&funding_outpoint);
             Channel {
                 node: Weak::clone(&stub.node),
                 nonce: stub.nonce.clone(),
@@ -522,8 +536,11 @@ impl Node {
             channels.insert(channel_id0, chan_arc.clone());
         }
 
-        // Don't watch anything initially, wait until we are asked to sign funding
-        tracker.add_listener(chan.monitor.clone(), Set::new());
+        // Watch the funding outpoint, because we might not have any funding
+        // inputs that are ours.
+        // Note that the functional tests also have no inputs for the funder's tx
+        // which might be a problem in the future with more validation.
+        tracker.add_listener(chan.monitor.clone(), Set::from_iter(vec![setup.funding_outpoint.txid]));
 
         debug_vals!(&chan.setup);
         trace_enforcement_state!(&chan.enforcement_state);

@@ -13,9 +13,11 @@ use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1, SecretKey, SignOnl
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::{
-    Address, BlockHash, BlockHeader, OutPoint as BitcoinOutPoint, SigHashType, Transaction, TxIn,
+    Address, Block, BlockHash, BlockHeader, OutPoint as BitcoinOutPoint, SigHashType, Transaction, TxIn,
     TxMerkleNode, TxOut,
 };
+use bitcoin::util::hash::bitcoin_merkle_root;
+use bitcoin::util::merkleblock::PartialMerkleTree;
 use chain::chaininterface;
 use lightning::chain;
 use lightning::chain::chainmonitor::MonitorUpdateId;
@@ -240,7 +242,12 @@ pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> Public
 }
 
 pub fn make_test_chain_state() -> ChainState {
-    ChainState { current_height: 1000, funding_depth: 0, funding_double_spent_depth: 0 }
+    ChainState {
+        current_height: 1000,
+        funding_depth: 0,
+        funding_double_spent_depth: 0,
+        closing_depth: 0,
+    }
 }
 
 pub fn make_test_channel_setup() -> ChannelSetup {
@@ -1104,6 +1111,11 @@ pub fn make_test_commitment_info() -> CommitmentInfo2 {
 pub const TEST_NODE_CONFIG: NodeConfig =
     NodeConfig { network: Network::Testnet, key_derivation_style: KeyDerivationStyle::Native };
 
+pub const REGTEST_NODE_CONFIG: NodeConfig = NodeConfig {
+    network: Network::Regtest,
+    key_derivation_style: KeyDerivationStyle::Native,
+};
+
 pub const TEST_SEED: &[&str] = &[
     "6c696768746e696e672d31000000000000000000000000000000000000000000",
     "6c696768746e696e672d32000000000000000000000000000000000000000000",
@@ -1433,6 +1445,25 @@ pub fn make_outpoint(vout: u32) -> BitcoinOutPoint {
 pub fn make_header(tip: BlockHeader, merkle_root: TxMerkleNode) -> BlockHeader {
     let bits = tip.bits;
     mine_header_with_bits(tip.block_hash(), merkle_root, bits)
+}
+
+pub fn make_block(tip: BlockHeader, txs: Vec<Transaction>) -> Block {
+    let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
+    let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).into();
+    let header = make_header(tip, merkle_root);
+    Block {
+        header,
+        txdata: txs
+    }
+}
+
+pub fn proof_for_block(block: &Block) -> Option<PartialMerkleTree> {
+    if block.txdata.is_empty() {
+        return None;
+    }
+    let txids: Vec<Txid> = block.txdata.iter().map(|tx| tx.txid()).collect();
+    let matches: Vec<bool> = txids.iter().map(|_| true).collect();
+    Some(PartialMerkleTree::from_txids(&txids, &matches))
 }
 
 pub fn make_testnet_header(tip: BlockHeader, merkle_root: TxMerkleNode) -> BlockHeader {

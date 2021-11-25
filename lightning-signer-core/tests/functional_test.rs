@@ -3,12 +3,16 @@
 extern crate lightning_signer;
 
 use core::time::Duration;
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use lightning_signer::Arc;
 use lightning_signer::OrderedSet;
+use lightning_signer::chain::tracker::ChainTracker;
+use lightning_signer::monitor::ChainMonitor;
 
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::consensus::serialize;
-use bitcoin::network::constants::Network::Testnet;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::{Block, BlockHeader, Network, OutPoint, Script, Transaction};
@@ -25,15 +29,10 @@ use lightning::util::logger::Logger;
 
 use lightning_signer::policy::null_validator::NullValidatorFactory;
 use lightning_signer::signer::multi_signer::MultiSigner;
-use lightning_signer::util::functional_test_utils::{
-    close_channel, confirm_transaction_at, connect_block, connect_blocks,
-    create_announced_chan_between_nodes, create_chanmon_cfgs, create_network, create_node_chanmgrs,
-    get_announce_close_broadcast_events, mine_transaction, send_payment, Node, NodeCfg,
-    TestChanMonCfg,
-};
+use lightning_signer::util::functional_test_utils::{close_channel, confirm_transaction_at, connect_block, connect_blocks, create_announced_chan_between_nodes, create_chanmon_cfgs, create_network, create_node_chanmgrs, get_announce_close_broadcast_events, mine_transaction, send_payment, Node, NodeCfg, TestChanMonCfg, tip_for_node};
 use lightning_signer::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use lightning_signer::util::test_utils;
-use lightning_signer::util::test_utils::{TestChainMonitor, TEST_NODE_CONFIG};
+use lightning_signer::util::test_utils::{TestChainMonitor, REGTEST_NODE_CONFIG, make_block};
 use lightning_signer::{
     check_closed_event,
     check_added_monitors, check_closed_broadcast, check_spends, expect_payment_failed,
@@ -55,10 +54,18 @@ pub fn create_node_cfgs_with_signer<'a>(
 ) -> Vec<NodeCfg<'a>> {
     let mut nodes = Vec::new();
 
+    let config = REGTEST_NODE_CONFIG;
+    let network = config.network;
+    let tip = genesis_block(network).header;
+
     for i in 0..node_count {
         let seed = [i as u8; 32];
 
-        let node_id = signer.new_node(TEST_NODE_CONFIG);
+        let chain_tracker: ChainTracker<ChainMonitor> =
+            ChainTracker::new(network, 0, tip).unwrap();
+
+        let validator_factory = Box::new(OnchainValidatorFactory {});
+        let node_id = signer.new_node_extended(config, chain_tracker, validator_factory);
 
         let keys_manager = LoopbackSignerKeysInterface {
             node_id,
@@ -189,20 +196,12 @@ fn channel_force_close_test() {
     // Check if closing tx correctly spends the funding
     check_spends!(node_txn[0], chan.3);
 
-    let header = BlockHeader {
-        version: 0x20000000,
-        prev_blockhash: nodes[0].best_block_hash(),
-        merkle_root: Default::default(),
-        time: 42,
-        bits: 42,
-        nonce: 42,
-    };
+    let block = make_block(tip_for_node(&nodes[1]),
+                           vec![node_txn[0].clone()]);
+
     connect_block(
         &nodes[1],
-        &Block {
-            header,
-            txdata: vec![node_txn[0].clone()],
-        },
+        &block,
     );
     assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 2);
     check_added_monitors!(nodes[1], 1);
@@ -382,8 +381,9 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
             true => alice_txn.clone(),
             false => get_local_commitment_txn!(nodes[1], chan_ab.2)
         };
-        let header = BlockHeader { version: 0x20000000, prev_blockhash: nodes[1].best_block_hash(), merkle_root: Default::default(), time: 42, bits: 42, nonce: 42};
-        connect_block(&nodes[1], &Block { header, txdata: vec![txn_to_broadcast[0].clone()]});
+        let block = make_block(tip_for_node(&nodes[1]), vec![txn_to_broadcast[0].clone()]);
+
+        connect_block(&nodes[1], &block);
         let bob_txn = nodes[1].tx_broadcaster.txn_broadcasted.lock().unwrap();
         if broadcast_alice {
             check_closed_broadcast!(nodes[1], true);
@@ -463,8 +463,8 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
     let mut txn_to_broadcast = alice_txn.clone();
     if !broadcast_alice { txn_to_broadcast = get_local_commitment_txn!(nodes[1], chan_ab.2); }
     if !go_onchain_before_fulfill {
-        let header = BlockHeader { version: 0x20000000, prev_blockhash: nodes[1].best_block_hash(), merkle_root: Default::default(), time: 42, bits: 42, nonce: 42};
-        connect_block(&nodes[1], &Block { header, txdata: vec![txn_to_broadcast[0].clone()]});
+        let block = make_block(tip_for_node(&nodes[1]), vec![txn_to_broadcast[0].clone()]);
+        connect_block(&nodes[1], &block);
         // If Bob was the one to force-close, he will have already passed these checks earlier.
         if broadcast_alice {
             check_closed_broadcast!(nodes[1], true);
@@ -530,6 +530,7 @@ use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use std::collections::BTreeSet;
+use lightning_signer::policy::onchain_validator::OnchainValidatorFactory;
 
 macro_rules! check_spendable_outputs {
     ($node: expr, $der_idx: expr, $keysinterface: expr, $chan_value: expr) => {{

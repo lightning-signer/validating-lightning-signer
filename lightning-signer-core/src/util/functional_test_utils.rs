@@ -28,6 +28,7 @@ use lightning::routing::router::{find_route, Payee, Route, RouteParameters};
 use lightning::util;
 use lightning::util::config::UserConfig;
 use lightning::util::test_utils;
+use lightning::util::events::PaymentPurpose;
 use ln::{PaymentHash, PaymentPreimage};
 use ln::channelmanager::ChannelManager;
 use ln::features::InitFeatures;
@@ -36,10 +37,10 @@ use ln::msgs::{ChannelMessageHandler, RoutingMessageHandler};
 use util::events::{Event, MessageSendEvent, MessageSendEventsProvider};
 
 use crate::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
-use crate::util::test_utils::{TestChainMonitor, TestPersister};
-use core::cmp;
-use lightning::util::events::PaymentPurpose;
+use crate::util::test_utils::{make_block, proof_for_block, TestChainMonitor, TestPersister};
 use crate::lightning::routing::network_graph::NetworkGraph;
+
+use core::cmp;
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 10;
 
@@ -62,15 +63,19 @@ pub fn confirm_transaction_at<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, tx: &T
     if conf_height - first_connect_height >= 1 {
         connect_blocks(node, conf_height - first_connect_height);
     }
-    let mut block = Block {
-        header: BlockHeader { version: 0x20000000, prev_blockhash: node.best_block_hash(), merkle_root: Default::default(), time: 42, bits: 42, nonce: 42 },
-        txdata: Vec::new(),
-    };
+    let mut txs = Vec::new();
     for _ in 0..*node.network_chan_count.borrow() { // Make sure we don't end up with channels at the same short id by offsetting by chan_count
-        block.txdata.push(Transaction { version: 0, lock_time: 0, input: Vec::new(), output: Vec::new() });
+        txs.push(Transaction { version: 0, lock_time: 0, input: Vec::new(), output: Vec::new() });
     }
-    block.txdata.push(tx.clone());
+    txs.push(tx.clone());
+    let block = make_block(tip_for_node(node), txs);
     connect_block(node, &block);
+}
+
+pub fn tip_for_node(node: &Node) -> BlockHeader {
+    let node = node.keys_manager.get_node();
+    let tracker = node.get_tracker();
+    tracker.tip().clone()
 }
 
 pub fn connect_blocks<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, depth: u32) -> BlockHash {
@@ -79,17 +84,11 @@ pub fn connect_blocks<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, depth: u32) ->
         _ => false,
     };
 
-    let mut block = Block {
-        header: BlockHeader { version: 0x2000000, prev_blockhash: node.best_block_hash(), merkle_root: Default::default(), time: 42, bits: 42, nonce: 42 },
-        txdata: vec![],
-    };
+    let mut block = make_block(tip_for_node(node), vec![]);
     assert!(depth >= 1);
     for _ in 0..depth - 1 {
         do_connect_block(node, &block, skip_intermediaries);
-        block = Block {
-            header: BlockHeader { version: 0x20000000, prev_blockhash: block.header.block_hash(), merkle_root: Default::default(), time: 42, bits: 42, nonce: 42 },
-            txdata: vec![],
-        };
+        block = make_block(tip_for_node(node), vec![]);
     }
     connect_block(node, &block);
     block.header.block_hash()
@@ -101,6 +100,9 @@ pub fn connect_block<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, block: &Block) 
 
 fn do_connect_block<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, block: &Block, skip_intermediaries: bool) {
     let height = node.best_block_info().1 + 1;
+    let proof = proof_for_block(block);
+
+    node.keys_manager.get_node().get_tracker().add_block(block.header, block.txdata.clone(), proof).unwrap();
     if !skip_intermediaries {
         let txdata: Vec<_> = block.txdata.iter().enumerate().collect();
         match *node.connect_style.borrow() {
@@ -126,7 +128,6 @@ fn do_connect_block<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, block: &Block, s
     node.node.test_process_background_events();
     node.blocks.borrow_mut().push((block.header, height));
 }
-
 
 pub fn disconnect_block<'a, 'b, 'c, 'd>(
     node: &'a Node<'b, 'c, 'd>,
@@ -1152,7 +1153,7 @@ pub fn create_chanmon_cfgs(node_count: usize) -> Vec<TestChanMonCfg> {
             txn_broadcasted: Mutex::new(Vec::new()),
         };
         let fee_estimator = test_utils::TestFeeEstimator { sat_per_kw: Mutex::new(253) };
-        let chain_source = test_utils::TestChainSource::new(Network::Testnet);
+        let chain_source = test_utils::TestChainSource::new(Network::Regtest);
         let logger = test_utils::TestLogger::with_id(format!("node {}", i));
         let persister = TestPersister::new();
         let network_graph = NetworkGraph::new(chain_source.genesis_hash);
@@ -1191,7 +1192,7 @@ pub fn create_node_chanmgrs<'a, 'b>(
             .peer_channel_config_limits
             .force_announced_channel_preference = false;
         default_config.own_channel_config.our_htlc_minimum_msat = 1000; // sanitization being done by the sender, to exerce receiver logic we need to lift of limit
-        let network = Network::Testnet;
+        let network = Network::Regtest;
         let params = ChainParameters {
             network,
             best_block: BestBlock::from_genesis(network),
@@ -1236,7 +1237,7 @@ pub fn create_network<'a, 'b: 'a, 'c: 'b>(
             network_chan_count: chan_count.clone(),
             network_payment_count: payment_count.clone(),
             logger: cfgs[i].logger,
-            blocks: RefCell::new(vec![(genesis_block(Network::Testnet).header, 0)]),
+            blocks: RefCell::new(vec![(genesis_block(Network::Regtest).header, 0)]),
             connect_style: Rc::clone(&connect_style),
         })
     }
