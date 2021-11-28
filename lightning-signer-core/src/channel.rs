@@ -1799,12 +1799,11 @@ impl Channel {
         commitment_point: &Option<PublicKey>,
     ) -> Result<SecretKey, Status> {
         Ok(match commitment_point {
-            Some(commitment_point) => {
+            Some(commitment_point) =>
                 derive_private_key(&self.secp_ctx, &commitment_point, &self.keys.payment_key)
                     .map_err(|err| {
                         Status::internal(format!("derive_private_key failed: {}", err))
-                    })?
-            }
+                    })?,
             None => {
                 // option_static_remotekey in effect
                 self.keys.payment_key.clone()

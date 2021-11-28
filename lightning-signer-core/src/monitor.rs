@@ -92,10 +92,7 @@ impl ChainMonitor {
     /// For single-funding
     pub fn add_funding_outpoint(&self, outpoint: &OutPoint) {
         let mut state = self.state.lock().expect("lock");
-        assert!(
-            state.funding_txids.is_empty(),
-            "only a single funding tx currently supported"
-        );
+        assert!(state.funding_txids.is_empty(), "only a single funding tx currently supported");
         assert_eq!(state.funding_txids.len(), state.funding_vouts.len());
         state.funding_txids.push(outpoint.txid);
         state.funding_vouts.push(outpoint.vout);
@@ -132,7 +129,10 @@ impl ChainMonitor {
         ChainState {
             current_height: state.height,
             funding_depth: state.funding_height.map(|h| state.height + 1 - h).unwrap_or(0),
-            funding_double_spent_depth: state.funding_double_spent_height.map(|h| state.height + 1 - h).unwrap_or(0),
+            funding_double_spent_depth: state
+                .funding_double_spent_height
+                .map(|h| state.height + 1 - h)
+                .unwrap_or(0),
             closing_depth: state.closing_height.map(|h| state.height + 1 - h).unwrap_or(0),
         }
     }
@@ -147,7 +147,7 @@ impl ChainListener for ChainMonitor {
         for tx in txs {
             let spent: Vec<OutPoint> = tx.input.iter().map(|i| i.previous_output).collect();
             let txid = tx.txid();
-            if let Some(ind) = state. funding_txids.iter().position(|i| *i == txid) {
+            if let Some(ind) = state.funding_txids.iter().position(|i| *i == txid) {
                 // A funding tx was confirmed
                 assert!(state.funding_double_spent_height.is_none());
                 let outpoint = OutPoint::new(txid, state.funding_vouts[ind]);
@@ -158,9 +158,7 @@ impl ChainListener for ChainMonitor {
                 state.funding_height = Some(state.height);
                 state.funding_outpoint = Some(outpoint);
                 outpoints.push(outpoint);
-            } else if spent.iter()
-                .any(|i| state.funding_inputs.contains(&i))
-            {
+            } else if spent.iter().any(|i| state.funding_inputs.contains(&i)) {
                 // A funding input was spent, but no funding tx was confirmed,
                 // so we have a double spend on funding
                 assert!(state.funding_height.is_none());
@@ -169,9 +167,7 @@ impl ChainListener for ChainMonitor {
                 if state.funding_double_spent_height.is_none() {
                     state.funding_double_spent_height = Some(state.height);
                 }
-            } else if spent.iter()
-                    .any(|i| Some(*i) == state.funding_outpoint)
-            {
+            } else if spent.iter().any(|i| Some(*i) == state.funding_outpoint) {
                 // Closed on-chain
                 state.closing_height = Some(state.height);
             } else {
@@ -192,9 +188,7 @@ impl ChainListener for ChainMonitor {
                 assert_eq!(state.funding_height, Some(state.height));
                 state.funding_height = None;
                 state.funding_outpoint = None;
-            } else if spent.iter()
-                .any(|i| state.funding_inputs.contains(&i))
-            {
+            } else if spent.iter().any(|i| state.funding_inputs.contains(&i)) {
                 // A funding double-spent was reorged-out
                 // we may have seen some other funding input double-spent, so
                 // don't overwrite the depth if it's non-zero, and don't assume
@@ -203,9 +197,7 @@ impl ChainListener for ChainMonitor {
                 if state.funding_double_spent_height == Some(state.height) {
                     state.funding_double_spent_height = None
                 }
-            } else if spent.iter()
-                .any(|i| Some(*i) == state.funding_outpoint)
-            {
+            } else if spent.iter().any(|i| Some(*i) == state.funding_outpoint) {
                 // A closing tx was reorged-out
                 assert_eq!(state.closing_height, Some(state.height));
                 state.closing_height = None;

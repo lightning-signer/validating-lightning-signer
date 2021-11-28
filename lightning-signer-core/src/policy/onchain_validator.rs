@@ -42,9 +42,7 @@ pub struct OnchainPolicy {
 }
 
 fn make_onchain_policy(_network: Network) -> OnchainPolicy {
-    OnchainPolicy {
-        min_funding_depth: 6
-    }
+    OnchainPolicy { min_funding_depth: 6 }
 }
 
 impl Validator for OnchainValidator {
@@ -81,8 +79,7 @@ impl Validator for OnchainValidator {
         output_witscripts: &Vec<Vec<u8>>,
     ) -> Result<CommitmentInfo, ValidationError> {
         // Delegate to SimplePolicy
-        self.inner
-            .decode_commitment_tx(keys, setup, is_counterparty, tx, output_witscripts)
+        self.inner.decode_commitment_tx(keys, setup, is_counterparty, tx, output_witscripts)
     }
 
     fn validate_counterparty_commitment_tx(
@@ -96,7 +93,14 @@ impl Validator for OnchainValidator {
     ) -> Result<(), ValidationError> {
         // Only allow state advancement if funding is buried and unspent
         self.ensure_funding_buried_and_unspent(commit_num, cstate)?;
-        self.inner.validate_counterparty_commitment_tx(state, commit_num, commitment_point, setup, cstate, info)
+        self.inner.validate_counterparty_commitment_tx(
+            state,
+            commit_num,
+            commitment_point,
+            setup,
+            cstate,
+            info,
+        )
     }
 
     fn validate_holder_commitment_tx(
@@ -112,7 +116,14 @@ impl Validator for OnchainValidator {
         if state.next_holder_commit_num <= commit_num {
             self.ensure_funding_buried_and_unspent(commit_num, cstate)?;
         }
-        self.inner.validate_holder_commitment_tx(state, commit_num, commitment_point, setup, cstate, info)
+        self.inner.validate_holder_commitment_tx(
+            state,
+            commit_num,
+            commitment_point,
+            setup,
+            cstate,
+            info,
+        )
     }
 
     fn validate_counterparty_revocation(
@@ -168,8 +179,7 @@ impl Validator for OnchainValidator {
         wallet_paths: &Vec<Vec<u32>>,
     ) -> Result<ClosingTransaction, ValidationError> {
         // Delegate to SimplePolicy
-        self.inner
-            .decode_and_validate_mutual_close_tx(wallet, setup, estate, tx, wallet_paths)
+        self.inner.decode_and_validate_mutual_close_tx(wallet, setup, estate, tx, wallet_paths)
     }
 
     fn validate_mutual_close_tx(
@@ -183,7 +193,16 @@ impl Validator for OnchainValidator {
         counterparty_script: &Option<Script>,
         holder_wallet_path_hint: &Vec<u32>,
     ) -> Result<(), ValidationError> {
-        self.inner.validate_mutual_close_tx(wallet, setup, state, to_holder_value_sat, to_counterparty_value_sat, holder_script, counterparty_script, holder_wallet_path_hint)
+        self.inner.validate_mutual_close_tx(
+            wallet,
+            setup,
+            state,
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            holder_script,
+            counterparty_script,
+            holder_wallet_path_hint,
+        )
     }
 
     fn validate_delayed_sweep(
@@ -210,7 +229,16 @@ impl Validator for OnchainValidator {
         amount_sat: u64,
         wallet_path: &Vec<u32>,
     ) -> Result<(), ValidationError> {
-        self.inner.validate_counterparty_htlc_sweep(wallet, setup, cstate, tx, redeemscript, input, amount_sat, wallet_path)
+        self.inner.validate_counterparty_htlc_sweep(
+            wallet,
+            setup,
+            cstate,
+            tx,
+            redeemscript,
+            input,
+            amount_sat,
+            wallet_path,
+        )
     }
 
     fn validate_justice_sweep(
@@ -228,16 +256,28 @@ impl Validator for OnchainValidator {
 }
 
 impl OnchainValidator {
-    fn ensure_funding_buried_and_unspent(&self, commit_num: u64, cstate: &ChainState) -> Result<(), ValidationError> {
+    fn ensure_funding_buried_and_unspent(
+        &self,
+        commit_num: u64,
+        cstate: &ChainState,
+    ) -> Result<(), ValidationError> {
         // If we are trying to move beyond the initial commitment, ensure funding is on-chain and
         // had enough confirmations.
         if commit_num > 0 {
             if cstate.funding_depth < self.policy.min_funding_depth as u32 {
-                return policy_err!("tried commitment {} when funding is not buried at depth {}", commit_num, cstate.funding_depth);
+                return policy_err!(
+                    "tried commitment {} when funding is not buried at depth {}",
+                    commit_num,
+                    cstate.funding_depth
+                );
             }
 
             if cstate.closing_depth > 0 {
-                return policy_err!("tried commitment {} after closed on-chain at depth {}", commit_num, cstate.closing_depth);
+                return policy_err!(
+                    "tried commitment {} after closed on-chain at depth {}",
+                    commit_num,
+                    cstate.closing_depth
+                );
             }
         }
         Ok(())

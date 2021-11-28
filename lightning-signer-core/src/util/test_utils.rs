@@ -11,13 +11,13 @@ use bitcoin::hashes::{hex, hex::FromHex, Hash};
 use bitcoin::network::constants::Network;
 use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1, SecretKey, SignOnly, Signature};
 use bitcoin::util::bip143::SigHashCache;
-use bitcoin::util::psbt::serialize::Serialize;
-use bitcoin::{
-    Address, Block, BlockHash, BlockHeader, OutPoint as BitcoinOutPoint, SigHashType, Transaction, TxIn,
-    TxMerkleNode, TxOut,
-};
 use bitcoin::util::hash::bitcoin_merkle_root;
 use bitcoin::util::merkleblock::PartialMerkleTree;
+use bitcoin::util::psbt::serialize::Serialize;
+use bitcoin::{
+    Address, Block, BlockHash, BlockHeader, OutPoint as BitcoinOutPoint, SigHashType, Transaction,
+    TxIn, TxMerkleNode, TxOut,
+};
 use chain::chaininterface;
 use lightning::chain;
 use lightning::chain::chainmonitor::MonitorUpdateId;
@@ -1111,10 +1111,8 @@ pub fn make_test_commitment_info() -> CommitmentInfo2 {
 pub const TEST_NODE_CONFIG: NodeConfig =
     NodeConfig { network: Network::Testnet, key_derivation_style: KeyDerivationStyle::Native };
 
-pub const REGTEST_NODE_CONFIG: NodeConfig = NodeConfig {
-    network: Network::Regtest,
-    key_derivation_style: KeyDerivationStyle::Native,
-};
+pub const REGTEST_NODE_CONFIG: NodeConfig =
+    NodeConfig { network: Network::Regtest, key_derivation_style: KeyDerivationStyle::Native };
 
 pub const TEST_SEED: &[&str] = &[
     "6c696768746e696e672d31000000000000000000000000000000000000000000",
@@ -1451,10 +1449,7 @@ pub fn make_block(tip: BlockHeader, txs: Vec<Transaction>) -> Block {
     let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
     let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).into();
     let header = make_header(tip, merkle_root);
-    Block {
-        header,
-        txdata: txs
-    }
+    Block { header, txdata: txs }
 }
 
 pub fn proof_for_block(block: &Block) -> Option<PartialMerkleTree> {

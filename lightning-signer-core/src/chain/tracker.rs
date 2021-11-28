@@ -110,10 +110,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
                 for (vout, _) in tx.output.iter().enumerate() {
                     let outpoint = OutPoint::new(txid, vout as u32);
                     if slot.watches.remove(&outpoint) {
-                        assert!(
-                            found,
-                            "a watch was previously added without any inputs matching"
-                        );
+                        assert!(found, "a watch was previously added without any inputs matching");
                     }
                 }
 
@@ -170,7 +167,9 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     pub fn add_listener(&mut self, listener: L, initial_txid_watches: Set<Txid>) {
         let slot = ListenSlot {
             txid_watches: initial_txid_watches,
-            watches: Set::new(), seen: Set::new() };
+            watches: Set::new(),
+            seen: Set::new(),
+        };
         self.listeners.insert(listener, slot);
     }
 

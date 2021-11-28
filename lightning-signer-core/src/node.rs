@@ -139,18 +139,27 @@ impl Node {
         let tracker =
             ChainTracker::new(node_config.network, 0, genesis.header).expect("bad  chain tip");
 
-        Self::new_extended(node_config, seed, persister, allowlist, tracker, Box::new(SimpleValidatorFactory {}))
+        Self::new_extended(
+            node_config,
+            seed,
+            persister,
+            allowlist,
+            tracker,
+            Box::new(SimpleValidatorFactory {}),
+        )
     }
 
     /// Create a node
     ///
     /// NOTE: you must persist the node yourself if it is new.
-    pub fn new_extended(node_config: NodeConfig,
-                        seed: &[u8],
-                        persister: &Arc<dyn Persist>,
-                        allowlist: Vec<Script>,
-                        tracker: ChainTracker<ChainMonitor>,
-                        validator_factory: Box<dyn ValidatorFactory>) -> Node {
+    pub fn new_extended(
+        node_config: NodeConfig,
+        seed: &[u8],
+        persister: &Arc<dyn Persist>,
+        allowlist: Vec<Script>,
+        tracker: ChainTracker<ChainMonitor>,
+        validator_factory: Box<dyn ValidatorFactory>,
+    ) -> Node {
         let genesis = genesis_block(node_config.network);
         let now = Duration::from_secs(genesis.header.time as u64);
 
@@ -540,7 +549,8 @@ impl Node {
         // inputs that are ours.
         // Note that the functional tests also have no inputs for the funder's tx
         // which might be a problem in the future with more validation.
-        tracker.add_listener(chan.monitor.clone(), Set::from_iter(vec![setup.funding_outpoint.txid]));
+        tracker
+            .add_listener(chan.monitor.clone(), Set::from_iter(vec![setup.funding_outpoint.txid]));
 
         debug_vals!(&chan.setup);
         trace_enforcement_state!(&chan.enforcement_state);
