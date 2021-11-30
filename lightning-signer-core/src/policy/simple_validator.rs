@@ -64,8 +64,6 @@ pub struct SimplePolicy {
     pub max_delay: u16,
     /// Maximum channel value in satoshi
     pub max_channel_size_sat: u64,
-    /// Maximum amount allowed to be pushed (v1 channel establishment)
-    pub max_push_sat: u64,
     /// amounts below this number of satoshi are not considered important
     pub epsilon_sat: u64,
     /// Maximum number of in-flight HTLCs
@@ -369,14 +367,6 @@ impl Validator for SimpleValidator {
                 // Possible funded channel balance
                 match &*slot.lock().unwrap() {
                     ChannelSlot::Ready(chan) => {
-                        if chan.setup.push_value_msat / 1000 > self.policy.max_push_sat {
-                            return policy_err!(
-                                "push_value_msat {} greater than max_push_sat {}",
-                                chan.setup.push_value_msat,
-                                self.policy.max_push_sat
-                            );
-                        }
-
                         // policy-onchain-output-match-commitment
                         if output.value != chan.setup.channel_value_sat {
                             return policy_err!(
@@ -1479,7 +1469,6 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             min_delay: 60,
             max_delay: 2016, // Match LDK maximum and default
             max_channel_size_sat: 1_000_000_001,
-            max_push_sat: 0,
             epsilon_sat: 1_600_000,
             max_htlcs: 1000,
             max_htlc_value_sat: 16_777_216,
@@ -1494,7 +1483,6 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             min_delay: 4,
             max_delay: 2016,                     // Match LDK maximum and default
             max_channel_size_sat: 1_000_000_001, // lnd itest: wumbu default + 1
-            max_push_sat: 20_000,
             // lnd itest: async_bidirectional_payments (large amount of dust HTLCs) 1_600_000
             epsilon_sat: 10_000, // c-lightning
             max_htlcs: 1000,
@@ -1524,7 +1512,6 @@ mod tests {
             min_delay: 5,
             max_delay: 1440,
             max_channel_size_sat: 100_000_000,
-            max_push_sat: 0,
             epsilon_sat: 100_000,
             max_htlcs: 1000,
             max_htlc_value_sat: 10_000_000,

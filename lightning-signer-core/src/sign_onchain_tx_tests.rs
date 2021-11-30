@@ -531,8 +531,7 @@ mod tests {
                 fms.chan_ctx.setup.push_value_msat =
                     (fms.chan_ctx.setup.channel_value_sat + 100) * 1000;
             }),
-            "policy failure: validate_onchain_tx: \
-             push_value_msat 3000100000 greater than max_push_sat 20000"
+            "policy failure: beneficial channel value underflow: 3000000 - 3000100"
         );
     }
 
@@ -1053,10 +1052,11 @@ mod tests {
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
             .expect("valid holder commitment");
 
+        // The push is not considered beneficial value and the fee check fails.
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: validate_onchain_tx: \
-             push_value_msat 100000000 greater than max_push_sat 20000"
+            "policy failure: validate_onchain_tx: validate_beneficial_value: \
+             non-beneficial value above maximum: 101000 > 80000"
         );
     }
 }
