@@ -10,9 +10,13 @@ mod tests {
 
     use test_env_log::test;
 
+    use crate::channel::CommitmentType;
     use crate::node::SpendType;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
+
+    #[allow(unused_imports)]
+    use log::debug;
 
     #[test]
     fn sign_funding_tx_p2wpkh_test() -> Result<(), ()> {
@@ -110,41 +114,6 @@ mod tests {
 
     // policy-onchain-fee-range
     #[test]
-    fn sign_funding_tx_fee_too_low() {
-        let secp_ctx = Secp256k1::signing_only();
-        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
-        let ipaths = vec![vec![0u32]];
-        let ival0 = 199u64;
-        let chanamt = 100u64;
-        let values_sat = vec![ival0];
-
-        let input1 = TxIn {
-            previous_output: OutPoint { txid, vout: 0 },
-            script_sig: Script::new(),
-            sequence: 0,
-            witness: vec![],
-        };
-
-        let (opath, tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1], chanamt);
-        let spendtypes = vec![SpendType::P2wpkh];
-        let uniclosekeys = vec![None];
-
-        assert_failed_precondition_err!(
-            node.sign_onchain_tx(
-                &tx,
-                &ipaths,
-                &values_sat,
-                &spendtypes,
-                &uniclosekeys,
-                &vec![opath.clone()],
-            ),
-            "policy failure: validate_onchain_tx: validate_fee: fee below minimum: 99 < 100"
-        );
-    }
-
-    // policy-onchain-fee-range
-    #[test]
     fn sign_funding_tx_fee_too_high() {
         let secp_ctx = Secp256k1::signing_only();
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
@@ -175,7 +144,8 @@ mod tests {
                 &uniclosekeys,
                 &vec![opath.clone()],
             ),
-            "policy failure: validate_onchain_tx: validate_fee: fee above maximum: 81000 > 80000"
+            "policy failure: validate_onchain_tx: \
+             validate_beneficial_value: non-beneficial value above maximum: 81000 > 80000"
         );
     }
 
@@ -392,57 +362,83 @@ mod tests {
         Ok(())
     }
 
-    fn sign_funding_tx_with_mutator<TxMutator>(txmut: TxMutator) -> Result<(), Status>
+    #[allow(dead_code)]
+    struct FundingTxMutationState<'a> {
+        chan_ctx: &'a mut TestChannelContext,
+        tx_ctx: &'a mut TestFundingTxContext,
+        tx: &'a mut Transaction,
+    }
+
+    fn sign_funding_tx_with_mutator<FundingTxMutator>(
+        mutate_funding_tx: FundingTxMutator,
+    ) -> Result<(), Status>
     where
-        TxMutator: Fn(&mut Transaction),
+        FundingTxMutator: Fn(&mut FundingTxMutationState),
     {
         let is_p2sh = false;
         let node_ctx = test_node_ctx(1);
 
-        let incoming = 5_000_000;
+        let incoming0 = 5_000_000;
+        let incoming1 = 4_000_000;
         let channel_amount = 3_000_000;
+        let allowlist = 200_000;
         let fee = 1000;
-        let change = incoming - channel_amount - fee;
+        let change0 = 90_000;
+        let change1 = incoming0 + incoming1 - allowlist - channel_amount - fee - change0;
 
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
         let mut tx_ctx = test_funding_tx_ctx();
 
-        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change);
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming0);
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 2, incoming1);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change0);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change1);
+        funding_tx_add_allowlist_output(&node_ctx, &mut tx_ctx, is_p2sh, 42, allowlist);
         let outpoint_ndx =
             funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
 
         let mut tx = funding_tx_from_ctx(&tx_ctx);
 
-        // mutate the tx before calling funding_tx_ready_channel so txid will be valid
-        txmut(&mut tx);
+        mutate_funding_tx(&mut FundingTxMutationState {
+            chan_ctx: &mut chan_ctx,
+            tx_ctx: &mut tx_ctx,
+            tx: &mut tx,
+        });
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
-        validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)?;
+        validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
+            .expect("valid holder commitment");
 
         let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx)?;
         funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+
         Ok(())
     }
 
     #[test]
-    fn sign_funding_tx_with_no_mut_test() {
-        let status = sign_funding_tx_with_mutator(|_tx| {
-            // don't mutate the tx, should pass
-        });
-        assert!(status.is_ok());
+    fn success_static() {
+        assert_status_ok!(sign_funding_tx_with_mutator(|fms| {
+            fms.chan_ctx.setup.commitment_type = CommitmentType::StaticRemoteKey;
+        }));
+    }
+
+    #[test]
+    fn success_anchors() {
+        assert_status_ok!(sign_funding_tx_with_mutator(|fms| {
+            fms.chan_ctx.setup.commitment_type = CommitmentType::Anchors;
+        }));
     }
 
     // policy-onchain-format-standard
     #[test]
-    fn sign_funding_tx_with_version_1() {
+    fn bad_version_1() {
         assert_failed_precondition_err!(
-            sign_funding_tx_with_mutator(|tx| {
-                tx.version = 1;
+            sign_funding_tx_with_mutator(|fms| {
+                fms.tx.version = 1;
             }),
             "policy failure: validate_onchain_tx: invalid version: 1"
         );
@@ -450,12 +446,104 @@ mod tests {
 
     // policy-onchain-format-standard
     #[test]
-    fn sign_funding_tx_with_version_3() {
+    fn bad_version_3() {
         assert_failed_precondition_err!(
-            sign_funding_tx_with_mutator(|tx| {
-                tx.version = 3;
+            sign_funding_tx_with_mutator(|fms| {
+                fms.tx.version = 3;
             }),
             "policy failure: validate_onchain_tx: invalid version: 3"
+        );
+    }
+
+    #[test]
+    fn wallet_cannot_spend() {
+        assert_failed_precondition_err!(
+            sign_funding_tx_with_mutator(|fms| {
+                fms.tx_ctx.opaths[0] = vec![33];
+            }),
+            "policy failure: validate_onchain_tx: wallet cannot spend output[0]"
+        );
+    }
+
+    #[test]
+    fn inputs_overflow() {
+        assert_failed_precondition_err!(
+            sign_funding_tx_with_mutator(|fms| {
+                fms.tx_ctx.ivals[0] = u64::MAX;
+            }),
+            "policy failure: funding sum inputs overflow"
+        );
+    }
+
+    #[test]
+    fn wallet_change_overflow() {
+        assert_failed_precondition_err!(
+            sign_funding_tx_with_mutator(|fms| {
+                fms.tx.output[1].value = u64::MAX;
+            }),
+            "policy failure: beneficial outputs overflow: \
+             sum 90000 + wallet change 18446744073709551615"
+        );
+    }
+
+    #[test]
+    fn allowlist_overflow() {
+        assert_failed_precondition_err!(
+            sign_funding_tx_with_mutator(|fms| {
+                fms.tx.output[2].value = u64::MAX;
+            }),
+            "policy failure: beneficial outputs overflow: \
+             sum 5799000 + allowlisted 18446744073709551615"
+        );
+    }
+
+    #[test]
+    fn channel_value_overflow() {
+        assert_failed_precondition_err!(
+            sign_funding_tx_with_mutator(|fms| {
+                // bump the allowlisted value to almost overflow ... channel will overflow
+                fms.tx.output[2].value = u64::MAX
+                    - fms.tx.output[0].value
+                    - fms.tx.output[1].value
+                    - fms.tx.output[2].value
+                    + 1;
+            }),
+            "policy failure: beneficial outputs overflow: \
+             sum 18446744073709351616 + channel value 3000000"
+        );
+    }
+
+    #[test]
+    fn non_beneficial_value_underflow() {
+        assert_failed_precondition_err!(
+            sign_funding_tx_with_mutator(|fms| {
+                fms.tx.output[1].value += 10_000_000;
+            }),
+            "policy failure: validate_onchain_tx: non-beneficial value underflow: \
+             sum of our inputs 9000000 < sum of our outputs 18999000"
+        );
+    }
+
+    #[test]
+    fn channel_value_underflow() {
+        assert_failed_precondition_err!(
+            sign_funding_tx_with_mutator(|fms| {
+                fms.chan_ctx.setup.push_value_msat =
+                    (fms.chan_ctx.setup.channel_value_sat + 100) * 1000;
+            }),
+            "policy failure: validate_onchain_tx: \
+             push_value_msat 3000100000 greater than max_push_sat 20000"
+        );
+    }
+
+    #[test]
+    fn dual_funding_not_supported() {
+        assert_failed_precondition_err!(
+            sign_funding_tx_with_mutator(|fms| {
+                fms.chan_ctx.setup.is_outbound = false;
+            }),
+            "policy failure: validate_onchain_tx: \
+             can't sign for inbound channel: dual-funding not supported yet"
         );
     }
 
@@ -551,6 +639,40 @@ mod tests {
         funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
         funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change0);
         funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change1);
+        let outpoint_ndx =
+            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+
+        let mut tx = funding_tx_from_ctx(&tx_ctx);
+
+        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
+        let (csig, hsigs) =
+            counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
+        validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
+            .expect("valid holder commitment");
+
+        let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
+        funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+    }
+
+    #[test]
+    fn output_and_allowlisted() {
+        let is_p2sh = false;
+        let node_ctx = test_node_ctx(1);
+
+        let incoming = 5_000_000;
+        let channel_amount = 3_000_000;
+        let fee = 1000;
+        let change0 = 1_000_000;
+        let change1 = incoming - channel_amount - fee - change0;
+
+        let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
+        let mut tx_ctx = test_funding_tx_ctx();
+
+        funding_tx_add_wallet_input(&mut tx_ctx, is_p2sh, 1, incoming);
+        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, is_p2sh, 1, change0);
+        funding_tx_add_allowlist_output(&node_ctx, &mut tx_ctx, is_p2sh, 42, change1);
         let outpoint_ndx =
             funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
 
@@ -683,9 +805,17 @@ mod tests {
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
+        let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
+        let (csig, hsigs) =
+            counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
+        validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
+            .expect("valid holder commitment");
+
+        // Because the channel isn't found the output is considered non-beneficial.
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: unknown output: a5b4d12cf257a92e0536ddfce77635f92283f1e81e4d4f5ce7239bd36cfe925c:1"
+            "policy failure: validate_onchain_tx: \
+             validate_beneficial_value: non-beneficial value above maximum: 501000 > 80000"
         );
     }
 
@@ -781,9 +911,12 @@ mod tests {
         // Modify the output value after funding_tx_ready_channel
         tx.output[1].value = channel_amount + 42; // bad output value
 
+        // Because the amount is bogus, the channel isn't found and the output is considered
+        // non-beneficial.
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: unknown output: 445f380db31cb6647304fefe17d69df19d0a7e8840394a295cb99a98dfce2b73:1"
+            "policy failure: validate_onchain_tx: \
+             validate_beneficial_value: non-beneficial value above maximum: 3001000 > 80000"
         );
     }
 
@@ -847,9 +980,12 @@ mod tests {
             .push_slice(&[27; 32])
             .into_script();
 
+        // Because the script is bogus, the channel isn't found and the output is considered
+        // non-beneficial.
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: unknown output: 81fe91f5705b1a893494726cc9019614aa108fd02809e9f23673c83ea6404bce:1"
+            "policy failure: validate_onchain_tx: \
+             validate_beneficial_value: non-beneficial value above maximum: 3001000 > 80000"
         );
     }
 
@@ -897,7 +1033,7 @@ mod tests {
         let channel_amount = 3_000_000;
         let fee = 1000;
         let change = incoming - channel_amount - fee;
-        let push_val_msat = 50_000 * 1000;
+        let push_val_msat = 100_000 * 1000;
 
         let mut chan_ctx = test_chan_ctx_with_push_val(&node_ctx, 1, channel_amount, push_val_msat);
         let mut tx_ctx = test_funding_tx_ctx();
@@ -920,7 +1056,7 @@ mod tests {
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: validate_onchain_tx: \
-             push_value_msat 50000000 greater than max_push_sat 20000"
+             push_value_msat 100000000 greater than max_push_sat 20000"
         );
     }
 }

@@ -680,6 +680,28 @@ pub fn funding_tx_add_unknown_output(
     tx_ctx.opaths.push(vec![]); // this is what makes it unknown
 }
 
+pub fn funding_tx_add_allowlist_output(
+    node_ctx: &TestNodeContext,
+    tx_ctx: &mut TestFundingTxContext,
+    is_p2sh: bool,
+    unknown_ndx: u32,
+    value_sat: u64,
+) {
+    let wallet_ndx = unknown_ndx + 10_000; // lazy, it's really in the wallet
+    tx_ctx.outputs.push(make_test_funding_wallet_output(
+        &node_ctx.secp_ctx,
+        &node_ctx.node,
+        wallet_ndx,
+        value_sat,
+        is_p2sh,
+    ));
+    tx_ctx.opaths.push(vec![]); // don't consider wallet
+    let child_path = vec![wallet_ndx];
+    let pubkey = node_ctx.node.get_wallet_pubkey(&node_ctx.secp_ctx, &child_path).unwrap();
+    let addr = Address::p2wpkh(&pubkey, node_ctx.node.network()).unwrap();
+    node_ctx.node.add_allowlist(&vec![addr.to_string()]).expect("add_allowlist");
+}
+
 pub fn funding_tx_from_ctx(tx_ctx: &TestFundingTxContext) -> bitcoin::Transaction {
     make_test_funding_tx_with_ins_outs(tx_ctx.inputs.clone(), tx_ctx.outputs.clone())
 }

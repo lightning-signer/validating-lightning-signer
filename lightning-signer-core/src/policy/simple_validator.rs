@@ -2,7 +2,7 @@ use bitcoin::hashes::hex::ToHex;
 use bitcoin::policy::DUST_RELAY_TX_FEE;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::bip143::SigHashCache;
-use bitcoin::{self, Network, OutPoint, Script, SigHash, SigHashType, Transaction};
+use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, htlc_success_tx_weight, htlc_timeout_tx_weight,
@@ -158,6 +158,27 @@ impl SimpleValidator {
         Ok(())
     }
 
+    fn validate_beneficial_value(
+        &self,
+        sum_our_inputs: u64,
+        sum_our_outputs: u64,
+    ) -> Result<(), ValidationError> {
+        let non_beneficial = sum_our_inputs.checked_sub(sum_our_outputs).ok_or_else(|| {
+            policy_error(format!(
+                "non-beneficial value underflow: sum of our inputs {} < sum of our outputs {}",
+                sum_our_inputs, sum_our_outputs
+            ))
+        })?;
+        if non_beneficial > self.policy.max_fee {
+            return policy_err!(
+                "non-beneficial value above maximum: {} > {}",
+                non_beneficial,
+                self.policy.max_fee
+            );
+        }
+        Ok(())
+    }
+
     fn outside_epsilon_range(&self, value0: u64, value1: u64) -> (bool, String) {
         if value0 > value1 {
             (value0 - value1 > self.policy.epsilon_sat, "larger".to_string())
@@ -301,52 +322,51 @@ impl Validator for SimpleValidator {
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         tx: &Transaction,
-        values_sat: &Vec<u64>,
+        holder_inputs_sat: &Vec<u64>,
         opaths: &Vec<Vec<u32>>,
     ) -> Result<(), ValidationError> {
-        let mut debug_on_return = scoped_debug_return!(tx, values_sat, opaths);
-
-        // policy-onchain-fee-range
-        let mut sum_inputs: u64 = 0;
-        for val in values_sat {
-            sum_inputs = sum_inputs
-                .checked_add(*val)
-                .ok_or_else(|| policy_error(format!("funding sum inputs overflow")))?;
-        }
-        let mut sum_outputs: u64 = 0;
-        for outp in &tx.output {
-            sum_outputs = sum_outputs
-                .checked_add(outp.value)
-                .ok_or_else(|| policy_error(format!("funding sum outputs overflow")))?;
-        }
-        self.validate_fee(sum_inputs, sum_outputs)
-            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
+        let mut debug_on_return = scoped_debug_return!(tx, holder_inputs_sat, opaths);
 
         // policy-onchain-format-standard
         if tx.version != 2 {
             return policy_err!("invalid version: {}", tx.version);
         }
 
+        let mut beneficial_sum = 0u64;
         for outndx in 0..tx.output.len() {
             let output = &tx.output[outndx];
             let opath = &opaths[outndx];
             let channel_slot = channels[outndx].as_ref();
 
-            // policy-onchain-output-match-commitment
-            // policy-onchain-change-to-wallet
-            // All outputs must either be wallet (change) or channel funding.
+            macro_rules! add_beneficial_output {
+                ($sum: expr, $val: expr, $which: expr) => {
+                    $sum.checked_add($val).ok_or_else(|| {
+                        policy_error(format!(
+                            "beneficial outputs overflow: sum {} + {} {}",
+                            $sum, $which, $val
+                        ))
+                    })
+                };
+            }
+
             if opath.len() > 0 {
+                // Possible change output to our wallet
                 let spendable = wallet.can_spend(opath, &output.script_pubkey).map_err(|err| {
                     policy_error(format!("output[{}]: wallet_can_spend error: {}", outndx, err))
                 })?;
                 if !spendable {
                     return policy_err!("wallet cannot spend output[{}]", outndx);
                 }
-            } else {
-                let slot = channel_slot.ok_or_else(|| {
-                    let outpoint = OutPoint { txid: tx.txid(), vout: outndx as u32 };
-                    policy_error(format!("unknown output: {}", outpoint))
-                })?;
+                debug!("output {}: {}: is to our wallet", outndx, output.value);
+                beneficial_sum =
+                    add_beneficial_output!(beneficial_sum, output.value, "wallet change")?;
+            } else if wallet.allowlist_contains(&output.script_pubkey) {
+                // Change output to allowlisted address
+                debug!("output {}: {}: is allowlisted", outndx, output.value);
+                beneficial_sum =
+                    add_beneficial_output!(beneficial_sum, output.value, "allowlisted")?;
+            } else if let Some(slot) = channel_slot {
+                // Possible funded channel balance
                 match &*slot.lock().unwrap() {
                     ChannelSlot::Ready(chan) => {
                         if chan.setup.push_value_msat / 1000 > self.policy.max_push_sat {
@@ -385,11 +405,45 @@ impl Validator for SimpleValidator {
                         if chan.enforcement_state.next_holder_commit_num != 1 {
                             return policy_err!("initial holder commitment not validated",);
                         }
+
+                        let push_val_sat = chan.setup.push_value_msat / 1000;
+                        let our_value = if chan.setup.is_outbound {
+                            chan.setup.channel_value_sat.checked_sub(push_val_sat).ok_or_else(
+                                || {
+                                    policy_error(format!(
+                                        "beneficial channel value underflow: {} - {}",
+                                        chan.setup.channel_value_sat, push_val_sat
+                                    ))
+                                },
+                            )?
+                        } else {
+                            return policy_err!(
+                                "can't sign for inbound channel: dual-funding not supported yet",
+                            );
+                            // push_val_sat
+                        };
+                        debug!("output {}: {}: funds channel {}", outndx, output.value, chan.id());
+                        beneficial_sum =
+                            add_beneficial_output!(beneficial_sum, our_value, "channel value")?;
                     }
                     _ => panic!("this can't happen"),
                 };
+            } else {
+                debug!("output {}: {}: is unknown", outndx, output.value);
             }
         }
+
+        // policy-onchain-beneficial-value
+        // policy-onchain-fee-range
+        let mut sum_inputs: u64 = 0;
+        for val in holder_inputs_sat {
+            sum_inputs = sum_inputs
+                .checked_add(*val)
+                .ok_or_else(|| policy_error(format!("funding sum inputs overflow")))?;
+        }
+        self.validate_beneficial_value(sum_inputs, beneficial_sum)
+            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
+
         *debug_on_return = false;
         Ok(())
     }
