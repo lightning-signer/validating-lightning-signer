@@ -2,6 +2,7 @@
 use core::cell::{RefCell, RefMut};
 use core::ops::{Deref, DerefMut};
 
+/// Convenience trait for Send + Sync
 pub trait SendSync {}
 
 pub struct MutexGuard<'a, T>(RefMut<'a, T>);

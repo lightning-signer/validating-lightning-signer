@@ -102,9 +102,12 @@ pub(crate) mod prelude {
     #[cfg(feature = "std")]
     pub use std::sync::{Mutex, MutexGuard};
 
+    /// Convenience trait for Send + Sync
     #[cfg(feature = "std")]
     pub trait SendSync: Send + Sync {}
 }
+
+pub use prelude::SendSync;
 
 #[cfg(feature = "std")]
 mod sync {
