@@ -8,7 +8,7 @@ mod tests {
 
     use test_env_log::test;
 
-    use crate::channel::Channel;
+    use crate::channel::{Channel, CommitmentType};
     use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
@@ -28,7 +28,7 @@ mod tests {
         ChannelStateValidator: Fn(&Channel),
     {
         let (node, _setup, channel_id, offered_htlcs, received_htlcs) =
-            sign_commitment_tx_with_mutators_setup();
+            sign_commitment_tx_with_mutators_setup(CommitmentType::StaticRemoteKey);
 
         node.with_ready_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn validate_counterparty_revocation_with_retry() {
         let (node, _setup, channel_id, offered_htlcs, received_htlcs) =
-            sign_commitment_tx_with_mutators_setup();
+            sign_commitment_tx_with_mutators_setup(CommitmentType::StaticRemoteKey);
 
         // Setup enforcement state
         assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {

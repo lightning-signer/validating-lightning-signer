@@ -1297,8 +1297,10 @@ pub fn check_signature_with_setup(
 }
 
 pub fn sign_commitment_tx_with_mutators_setup(
+    commitment_type: CommitmentType,
 ) -> (Arc<Node>, ChannelSetup, ChannelId, Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
-    let setup = make_test_channel_setup();
+    let mut setup = make_test_channel_setup();
+    setup.commitment_type = commitment_type;
     let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
     let htlc1 =

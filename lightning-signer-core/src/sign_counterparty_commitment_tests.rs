@@ -452,6 +452,7 @@ mod tests {
     }
 
     fn sign_counterparty_commitment_tx_with_mutators<StateMutator, KeysMutator, TxMutator>(
+        commitment_type: CommitmentType,
         statemut: StateMutator,
         keysmut: KeysMutator,
         txmut: TxMutator,
@@ -462,7 +463,7 @@ mod tests {
         TxMutator: Fn(&mut TxMutationState),
     {
         let (node, setup, channel_id, offered_htlcs, received_htlcs) =
-            sign_commitment_tx_with_mutators_setup();
+            sign_commitment_tx_with_mutators_setup(commitment_type);
 
         let remote_percommitment_point = make_test_pubkey(10);
 
@@ -536,11 +537,6 @@ mod tests {
             Ok((sig, tx.transaction.clone()))
         })?;
 
-        assert_eq!(
-            tx.txid().to_hex(),
-            "4337fc463e7662975b6ea7ecf7d7d3977e3d3ea1981f12380db5a7a22931eeb9"
-        );
-
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
         let channel_funding_redeemscript =
             make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
@@ -558,6 +554,7 @@ mod tests {
     }
 
     fn sign_counterparty_commitment_tx_phase2_with_mutators<StateMutator, KeysMutator, TxMutator>(
+        commitment_type: CommitmentType,
         statemut: StateMutator,
         keysmut: KeysMutator,
         txmut: TxMutator,
@@ -568,7 +565,7 @@ mod tests {
         TxMutator: Fn(&mut TxMutationState),
     {
         let (node, setup, channel_id, offered_htlcs, received_htlcs) =
-            sign_commitment_tx_with_mutators_setup();
+            sign_commitment_tx_with_mutators_setup(commitment_type);
 
         let remote_percommitment_point = make_test_pubkey(10);
 
@@ -643,11 +640,6 @@ mod tests {
             Ok((sig, tx.transaction.clone()))
         })?;
 
-        assert_eq!(
-            tx.txid().to_hex(),
-            "51acabe2cbc9c0007cbc46b9efe7dd60ede4e3be16aac20d49668046a5ed0279"
-        );
-
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
         let channel_funding_redeemscript =
             make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
@@ -667,6 +659,7 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_phase2_success() {
         assert_status_ok!(sign_counterparty_commitment_tx_phase2_with_mutators(
+            CommitmentType::StaticRemoteKey,
             |_state| {
                 // don't mutate the signer, should pass
             },
@@ -683,7 +676,7 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_phase2_with_unrevoked_prior() {
         assert_failed_precondition_err!(
-            sign_counterparty_commitment_tx_phase2_with_mutators(
+            sign_counterparty_commitment_tx_phase2_with_mutators(CommitmentType::StaticRemoteKey,
                 |state| {
                     state.set_next_counterparty_revoke_num_for_testing(21);
                 },
@@ -698,6 +691,7 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_with_no_mut_test() {
         assert_status_ok!(sign_counterparty_commitment_tx_with_mutators(
+            CommitmentType::StaticRemoteKey,
             |_state| {
                 // don't mutate the signer, should pass
             },
@@ -715,6 +709,7 @@ mod tests {
     fn sign_counterparty_commitment_tx_with_bad_version_test() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_with_mutators(
+                CommitmentType::StaticRemoteKey,
                 |_state| {},
                 |_keys| {},
                 |tms| {
@@ -730,6 +725,7 @@ mod tests {
     fn sign_counterparty_commitment_tx_with_bad_locktime_test() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_with_mutators(
+                CommitmentType::StaticRemoteKey,
                 |_state| {},
                 |_keys| {
                     // don't mutate the keys
@@ -747,6 +743,7 @@ mod tests {
     fn sign_counterparty_commitment_tx_with_bad_sequence_test() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_with_mutators(
+                CommitmentType::StaticRemoteKey,
                 |_state| {},
                 |_keys| {},
                 |tms| {
@@ -762,6 +759,7 @@ mod tests {
     fn sign_counterparty_commitment_tx_with_bad_numinputs_test() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_with_mutators(
+                CommitmentType::StaticRemoteKey,
                 |_state| {},
                 |_keys| {},
                 |tms| {
@@ -779,6 +777,7 @@ mod tests {
     fn sign_counterparty_commitment_tx_with_input_mismatch_test() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_with_mutators(
+                CommitmentType::StaticRemoteKey,
                 |_state| {},
                 |_keys| {},
                 |tms| {
@@ -796,6 +795,7 @@ mod tests {
     fn sign_counterparty_commitment_tx_with_bad_revpubkey_test() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_with_mutators(
+                CommitmentType::StaticRemoteKey,
                 |_state| {},
                 |keys| {
                     keys.revocation_key = make_test_pubkey(42);
@@ -811,6 +811,7 @@ mod tests {
     fn sign_counterparty_commitment_tx_with_bad_htlcpubkey_test() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_with_mutators(
+                CommitmentType::StaticRemoteKey,
                 |_state| {},
                 |keys| {
                     keys.countersignatory_htlc_key = make_test_pubkey(42);
@@ -826,6 +827,7 @@ mod tests {
     fn sign_counterparty_commitment_tx_with_bad_delayed_pubkey_test() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_with_mutators(
+                CommitmentType::StaticRemoteKey,
                 |_state| {},
                 |keys| {
                     keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
@@ -841,6 +843,7 @@ mod tests {
     fn sign_counterparty_commitment_tx_with_bad_countersignatory_pubkey_test() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_with_mutators(
+                CommitmentType::StaticRemoteKey,
                 |_state| {},
                 |_keys| {},
                 |tms| {
@@ -856,7 +859,7 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_with_unrevoked_prior() {
         assert_failed_precondition_err!(
-            sign_counterparty_commitment_tx_with_mutators(
+            sign_counterparty_commitment_tx_with_mutators(CommitmentType::StaticRemoteKey,
                 |state| {
                     state.set_next_counterparty_revoke_num_for_testing(21);
                 },
@@ -872,6 +875,7 @@ mod tests {
     fn sign_counterparty_commitment_tx_with_old_commit_num() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_with_mutators(
+                CommitmentType::StaticRemoteKey,
                 |state| {
                     // Advance both commit_num and revoke_num:
                     state.set_next_counterparty_commit_num_for_testing(25, make_test_pubkey(0x10));
@@ -890,6 +894,7 @@ mod tests {
     fn sign_counterparty_commitment_tx_with_multiple_to_holder() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_with_mutators(
+                CommitmentType::StaticRemoteKey,
                 |_state| {},
                 |_keys| {},
                 |tms| {
@@ -909,6 +914,7 @@ mod tests {
     fn sign_counterparty_commitment_tx_with_multiple_to_counterparty() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_with_mutators(
+                CommitmentType::StaticRemoteKey,
                 |_state| {},
                 |_keys| {},
                 |tms| {
@@ -935,13 +941,14 @@ mod tests {
     }
 
     fn sign_counterparty_commitment_tx_retry_with_mutator<SignCommitmentMutator>(
+        commitment_type: CommitmentType,
         sign_comm_mut: SignCommitmentMutator,
     ) -> Result<(), Status>
     where
         SignCommitmentMutator: Fn(&mut RetryMutationState),
     {
         let (node, _setup, channel_id, offered_htlcs0, received_htlcs0) =
-            sign_commitment_tx_with_mutators_setup();
+            sign_commitment_tx_with_mutators_setup(commitment_type);
 
         node.with_ready_channel(&channel_id, |chan| {
             let mut offered_htlcs = offered_htlcs0.clone();
@@ -1030,18 +1037,24 @@ mod tests {
     // policy-commitment-retry-same
     #[test]
     fn sign_counterparty_commitment_tx_retry_same() {
-        assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(|_cms| {
-            // If we don't mutate anything it should succeed.
-        }));
+        assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(
+            CommitmentType::StaticRemoteKey,
+            |_cms| {
+                // If we don't mutate anything it should succeed.
+            }
+        ));
     }
 
     // policy-commitment-retry-same
     #[test]
     fn sign_counterparty_commitment_tx_retry_with_bad_point() {
         assert_failed_precondition_err!(
-            sign_counterparty_commitment_tx_retry_with_mutator(|cms| {
-                *cms.remote_percommitment_point = make_test_pubkey(42);
-            }),
+            sign_counterparty_commitment_tx_retry_with_mutator(
+                CommitmentType::StaticRemoteKey,
+                |cms| {
+                    *cms.remote_percommitment_point = make_test_pubkey(42);
+                }
+            ),
             "policy failure: validate_counterparty_commitment_tx: \
              retry of sign_counterparty_commitment 23 with changed point: \
              prev 03f76a39d05686e34a4420897e359371836145dd3973e3982568b60f8433adde6e != \
@@ -1053,17 +1066,20 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_retry_with_removed_htlc() {
         assert_failed_precondition_err!(
-            sign_counterparty_commitment_tx_retry_with_mutator(|cms| {
-                // Remove the last received HTLC
-                let htlc = cms.received_htlcs.pop().unwrap();
+            sign_counterparty_commitment_tx_retry_with_mutator(
+                CommitmentType::StaticRemoteKey,
+                |cms| {
+                    // Remove the last received HTLC
+                    let htlc = cms.received_htlcs.pop().unwrap();
 
-                // Credit the value to the broadcaster
-                cms.tx.output[3].value += htlc.value_sat;
+                    // Credit the value to the broadcaster
+                    cms.tx.output[3].value += htlc.value_sat;
 
-                // Remove the htlc from the tx and witscripts
-                cms.tx.output.remove(2);
-                cms.output_witscripts.remove(2);
-            }),
+                    // Remove the htlc from the tx and witscripts
+                    cms.tx.output.remove(2);
+                    cms.output_witscripts.remove(2);
+                }
+            ),
             "policy failure: validate_counterparty_commitment_tx: \
              retry of sign_counterparty_commitment 23 with changed info"
         );
