@@ -439,6 +439,13 @@ mod tests {
         );
     }
 
+    #[allow(dead_code)]
+    struct TxMutationState<'a> {
+        cstate: &'a mut ChainState,
+        tx: &'a mut BuiltCommitmentTransaction,
+        witscripts: &'a mut Vec<Vec<u8>>,
+    }
+
     fn sign_counterparty_commitment_tx_with_mutators<StateMutator, KeysMutator, TxMutator>(
         statemut: StateMutator,
         keysmut: KeysMutator,
@@ -447,7 +454,7 @@ mod tests {
     where
         StateMutator: Fn(&mut EnforcementState),
         KeysMutator: Fn(&mut TxCreationKeys),
-        TxMutator: Fn(&mut ChainState, &mut BuiltCommitmentTransaction, &mut Vec<Vec<u8>>),
+        TxMutator: Fn(&mut TxMutationState),
     {
         let (node, setup, channel_id, offered_htlcs, received_htlcs) =
             sign_commitment_tx_with_mutators_setup();
@@ -498,7 +505,11 @@ mod tests {
             let mut cstate = make_test_chain_state();
 
             // Mutate the transaction and recalculate the txid.
-            txmut(&mut cstate, &mut tx, &mut output_witscripts);
+            txmut(&mut TxMutationState {
+                cstate: &mut cstate,
+                tx: &mut tx,
+                witscripts: &mut output_witscripts,
+            });
             tx.txid = tx.transaction.txid();
 
             let sig = chan.sign_counterparty_commitment_tx(
@@ -542,7 +553,7 @@ mod tests {
     where
         StateMutator: Fn(&mut EnforcementState),
         KeysMutator: Fn(&mut TxCreationKeys),
-        TxMutator: Fn(&mut ChainState, &mut BuiltCommitmentTransaction, &mut Vec<Vec<u8>>),
+        TxMutator: Fn(&mut TxMutationState),
     {
         let (node, setup, channel_id, offered_htlcs, received_htlcs) =
             sign_commitment_tx_with_mutators_setup();
@@ -594,7 +605,11 @@ mod tests {
             let mut cstate = make_test_chain_state();
 
             // Mutate the transaction and recalculate the txid.
-            txmut(&mut cstate, &mut tx, &mut output_witscripts);
+            txmut(&mut TxMutationState {
+                cstate: &mut cstate,
+                tx: &mut tx,
+                witscripts: &mut output_witscripts,
+            });
             tx.txid = tx.transaction.txid();
 
             let (sig, _htlc_sigs) = chan.sign_counterparty_commitment_tx_phase2(
@@ -639,7 +654,7 @@ mod tests {
             |_keys| {
                 // don't mutate the keys, should pass
             },
-            |_cstate, _tx, _witscripts| {
+            |_tms| {
                 // don't mutate the tx, should pass
             },
         ));
@@ -654,7 +669,7 @@ mod tests {
                     state.set_next_counterparty_revoke_num_for_testing(21);
                 },
                 |_keys| {},
-                |_cstate, _tx, _witscripts| {},
+                |_tms| {},
             ),
             "policy failure: validate_counterparty_commitment_tx: \
              invalid attempt to sign counterparty commit_num 23 with next_counterparty_revoke_num 21"
@@ -670,7 +685,7 @@ mod tests {
             |_keys| {
                 // don't mutate the keys, should pass
             },
-            |_cstate, _tx, _witscripts| {
+            |_tms| {
                 // don't mutate the tx, should pass
             },
         ));
@@ -683,8 +698,8 @@ mod tests {
             sign_counterparty_commitment_tx_with_mutators(
                 |_state| {},
                 |_keys| {},
-                |_cstate, tx, _witscripts| {
-                    tx.transaction.version = 3;
+                |tms| {
+                    tms.tx.transaction.version = 3;
                 },
             ),
             "policy failure: decode_commitment_tx: bad commitment version: 3"
@@ -700,8 +715,8 @@ mod tests {
                 |_keys| {
                     // don't mutate the keys
                 },
-                |_cstate, tx, _witscripts| {
-                    tx.transaction.lock_time = 42;
+                |tms| {
+                    tms.tx.transaction.lock_time = 42;
                 },
             ),
             "policy failure: recomposed tx mismatch"
@@ -715,8 +730,8 @@ mod tests {
             sign_counterparty_commitment_tx_with_mutators(
                 |_state| {},
                 |_keys| {},
-                |_cstate, tx, _witscripts| {
-                    tx.transaction.input[0].sequence = 42;
+                |tms| {
+                    tms.tx.transaction.input[0].sequence = 42;
                 },
             ),
             "policy failure: recomposed tx mismatch"
@@ -730,10 +745,10 @@ mod tests {
             sign_counterparty_commitment_tx_with_mutators(
                 |_state| {},
                 |_keys| {},
-                |_cstate, tx, _witscripts| {
-                    let mut inp2 = tx.transaction.input[0].clone();
+                |tms| {
+                    let mut inp2 = tms.tx.transaction.input[0].clone();
                     inp2.previous_output.txid = bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
-                    tx.transaction.input.push(inp2);
+                    tms.tx.transaction.input.push(inp2);
                 },
             ),
             "policy failure: recomposed tx mismatch"
@@ -747,8 +762,8 @@ mod tests {
             sign_counterparty_commitment_tx_with_mutators(
                 |_state| {},
                 |_keys| {},
-                |_cstate, tx, _witscripts| {
-                    tx.transaction.input[0].previous_output.txid =
+                |tms| {
+                    tms.tx.transaction.input[0].previous_output.txid =
                         bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
                 },
             ),
@@ -766,7 +781,7 @@ mod tests {
                 |keys| {
                     keys.revocation_key = make_test_pubkey(42);
                 },
-                |_cstate, _tx, _witscripts| {},
+                |_tms| {},
             ),
             "policy failure: recomposed tx mismatch"
         );
@@ -781,7 +796,7 @@ mod tests {
                 |keys| {
                     keys.countersignatory_htlc_key = make_test_pubkey(42);
                 },
-                |_cstate, _tx, _witscripts| {},
+                |_tms| {},
             ),
             "policy failure: recomposed tx mismatch"
         );
@@ -796,7 +811,7 @@ mod tests {
                 |keys| {
                     keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
                 },
-                |_cstate, _tx, _witscripts| {},
+                |_tms| {},
             ),
             "policy failure: recomposed tx mismatch"
         );
@@ -809,8 +824,8 @@ mod tests {
             sign_counterparty_commitment_tx_with_mutators(
                 |_state| {},
                 |_keys| {},
-                |_cstate, tx, _witscripts| {
-                    tx.transaction.output[3].script_pubkey =
+                |tms| {
+                    tms.tx.transaction.output[3].script_pubkey =
                         payload_for_p2wpkh(&make_test_pubkey(42)).script_pubkey();
                 },
             ),
@@ -827,7 +842,7 @@ mod tests {
                     state.set_next_counterparty_revoke_num_for_testing(21);
                 },
                 |_keys| {},
-                |_cstate, _tx, _witscripts| {},
+                |_tms| {},
             ),
             "policy failure: validate_counterparty_commitment_tx: \
              invalid attempt to sign counterparty commit_num 23 with next_counterparty_revoke_num 21"
@@ -844,7 +859,7 @@ mod tests {
                     state.set_next_counterparty_revoke_num_for_testing(24);
                 },
                 |_keys| {},
-                |_cstate, _tx, _witscripts| {},
+                |_tms| {},
             ),
             "policy failure: set_next_counterparty_commit_num: \
              24 too small relative to next_counterparty_revoke_num 24"
@@ -858,11 +873,11 @@ mod tests {
             sign_counterparty_commitment_tx_with_mutators(
                 |_state| {},
                 |_keys| {},
-                |_cstate, tx, witscripts| {
+                |tms| {
                     // Duplicate the to_holder output
                     let ndx = 3;
-                    tx.transaction.output.push(tx.transaction.output[ndx].clone());
-                    witscripts.push(witscripts[ndx].clone());
+                    tms.tx.transaction.output.push(tms.tx.transaction.output[ndx].clone());
+                    tms.witscripts.push(tms.witscripts[ndx].clone());
                 },
             ),
             "transaction format: decode_commitment_tx: \
@@ -877,11 +892,11 @@ mod tests {
             sign_counterparty_commitment_tx_with_mutators(
                 |_state| {},
                 |_keys| {},
-                |_cstate, tx, witscripts| {
+                |tms| {
                     // Duplicate the to_counterparty output
                     let ndx = 4;
-                    tx.transaction.output.push(tx.transaction.output[ndx].clone());
-                    witscripts.push(witscripts[ndx].clone());
+                    tms.tx.transaction.output.push(tms.tx.transaction.output[ndx].clone());
+                    tms.witscripts.push(tms.witscripts[ndx].clone());
                 },
             ),
             "transaction format: decode_commitment_tx: \
@@ -889,19 +904,22 @@ mod tests {
         );
     }
 
+    #[allow(dead_code)]
+    struct RetryMutationState<'a> {
+        cstate: &'a mut ChainState,
+        tx: &'a mut bitcoin::Transaction,
+        output_witscripts: &'a mut Vec<Vec<u8>>,
+        remote_percommitment_point: &'a mut PublicKey,
+        feerate_per_kw: &'a mut u32,
+        offered_htlcs: &'a mut Vec<HTLCInfo2>,
+        received_htlcs: &'a mut Vec<HTLCInfo2>,
+    }
+
     fn sign_counterparty_commitment_tx_retry_with_mutator<SignCommitmentMutator>(
         sign_comm_mut: SignCommitmentMutator,
     ) -> Result<(), Status>
     where
-        SignCommitmentMutator: Fn(
-            &mut ChainState,
-            &mut bitcoin::Transaction,
-            &mut Vec<Vec<u8>>,
-            &mut PublicKey,
-            &mut u32,
-            &mut Vec<HTLCInfo2>,
-            &mut Vec<HTLCInfo2>,
-        ),
+        SignCommitmentMutator: Fn(&mut RetryMutationState),
     {
         let (node, _setup, channel_id, offered_htlcs0, received_htlcs0) =
             sign_commitment_tx_with_mutators_setup();
@@ -958,15 +976,15 @@ mod tests {
             )?;
 
             // Mutate the arguments to the commitment.
-            sign_comm_mut(
-                &mut cstate,
-                &mut tx.transaction,
-                &mut output_witscripts,
-                &mut remote_percommitment_point,
-                &mut feerate_per_kw,
-                &mut offered_htlcs,
-                &mut received_htlcs,
-            );
+            sign_comm_mut(&mut RetryMutationState {
+                cstate: &mut cstate,
+                tx: &mut tx.transaction,
+                output_witscripts: &mut output_witscripts,
+                remote_percommitment_point: &mut remote_percommitment_point,
+                feerate_per_kw: &mut feerate_per_kw,
+                offered_htlcs: &mut offered_htlcs,
+                received_htlcs: &mut received_htlcs,
+            });
 
             // Sign it again (retry).
             let _sig = chan.sign_counterparty_commitment_tx(
@@ -986,34 +1004,18 @@ mod tests {
     // policy-commitment-retry-same
     #[test]
     fn sign_counterparty_commitment_tx_retry_same() {
-        assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(
-            |_cstate,
-             _tx,
-             _output_witscripts,
-             _remote_percommitment_point,
-             _feerate_per_kw,
-             _offered_htlcs,
-             _received_htlcs| {
-                // If we don't mutate anything it should succeed.
-            }
-        ));
+        assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(|_cms| {
+            // If we don't mutate anything it should succeed.
+        }));
     }
 
     // policy-commitment-retry-same
     #[test]
     fn sign_counterparty_commitment_tx_retry_with_bad_point() {
         assert_failed_precondition_err!(
-            sign_counterparty_commitment_tx_retry_with_mutator(
-                |_cstate,
-                 _tx,
-                 _output_witscripts,
-                 remote_percommitment_point,
-                 _feerate_per_kw,
-                 _offered_htlcs,
-                 _received_htlcs| {
-                    *remote_percommitment_point = make_test_pubkey(42);
-                }
-            ),
+            sign_counterparty_commitment_tx_retry_with_mutator(|cms| {
+                *cms.remote_percommitment_point = make_test_pubkey(42);
+            }),
             "policy failure: validate_counterparty_commitment_tx: \
              retry of sign_counterparty_commitment 23 with changed point: \
              prev 03f76a39d05686e34a4420897e359371836145dd3973e3982568b60f8433adde6e != \
@@ -1025,25 +1027,17 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_retry_with_removed_htlc() {
         assert_failed_precondition_err!(
-            sign_counterparty_commitment_tx_retry_with_mutator(
-                |_cstate,
-                 tx,
-                 output_witscripts,
-                 _remote_percommitment_point,
-                 _feerate_per_kw,
-                 _offered_htlcs,
-                 received_htlcs| {
-                    // Remove the last received HTLC
-                    let htlc = received_htlcs.pop().unwrap();
+            sign_counterparty_commitment_tx_retry_with_mutator(|cms| {
+                // Remove the last received HTLC
+                let htlc = cms.received_htlcs.pop().unwrap();
 
-                    // Credit the value to the broadcaster
-                    tx.output[3].value += htlc.value_sat;
+                // Credit the value to the broadcaster
+                cms.tx.output[3].value += htlc.value_sat;
 
-                    // Remove the htlc from the tx and witscripts
-                    tx.output.remove(2);
-                    output_witscripts.remove(2);
-                }
-            ),
+                // Remove the htlc from the tx and witscripts
+                cms.tx.output.remove(2);
+                cms.output_witscripts.remove(2);
+            }),
             "policy failure: validate_counterparty_commitment_tx: \
              retry of sign_counterparty_commitment 23 with changed info"
         );
