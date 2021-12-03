@@ -15,7 +15,7 @@ readme = "../README.md"
 default = ["test_utils", "std", "test-env-log", "env_logger", "log_pretty_print"]
 
 no-std = ["lightning/no-std", "bitcoin/no-std", "core2/alloc"]
-std = ["lightning/std", "bitcoin/std", "bitcoin/bitcoinconsensus", "rand"]
+std = ["lightning/std", "lightning/allow_wallclock_use", "bitcoin/std", "bitcoin/bitcoinconsensus", "rand"]
 
 
 # if you use tonic, this is convenient for auto-conversion of MySigner Status to tonic::Status
