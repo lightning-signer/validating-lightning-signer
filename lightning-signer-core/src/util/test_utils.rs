@@ -2,10 +2,8 @@ use core::cmp;
 
 use bitcoin;
 use bitcoin::blockdata::constants::genesis_block;
-use bitcoin::blockdata::opcodes;
-use bitcoin::blockdata::script::{Builder, Script};
+use bitcoin::blockdata::script::Script;
 use bitcoin::hash_types::Txid;
-use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::{hex, hex::FromHex, Hash};
 use bitcoin::network::constants::Network;
@@ -26,10 +24,10 @@ use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::chain::transaction::OutPoint;
 use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{
-    build_htlc_transaction, derive_private_key, get_htlc_redeemscript, get_revokeable_redeemscript,
-    make_funding_redeemscript, ChannelTransactionParameters, CommitmentTransaction,
-    CounterpartyChannelTransactionParameters, DirectedChannelTransactionParameters,
-    HTLCOutputInCommitment, TxCreationKeys,
+    build_htlc_transaction, derive_private_key, get_anchor_redeemscript, get_htlc_redeemscript,
+    get_revokeable_redeemscript, make_funding_redeemscript, ChannelTransactionParameters,
+    CommitmentTransaction, CounterpartyChannelTransactionParameters,
+    DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
 use lightning::util::test_utils;
@@ -46,6 +44,10 @@ use crate::persist::{DummyPersister, Persist};
 use crate::policy::validator::ChainState;
 use crate::prelude::*;
 use crate::signer::my_keys_manager::KeyDerivationStyle;
+use crate::tx::script::{
+    get_p2wpkh_redeemscript, get_to_countersignatory_with_anchors_redeemscript,
+    ANCHOR_OUTPUT_VALUE_SATOSHI,
+};
 use crate::tx::tx::{sort_outputs, CommitmentInfo2, HTLCInfo2};
 use crate::util::crypto_utils::{
     derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, payload_for_p2wsh,
@@ -973,6 +975,8 @@ pub fn validate_holder_commitment(
             commit_tx_ctx.to_countersignatory,
             &htlcs,
             &parameters,
+            &chan.keys.pubkeys().funding_pubkey,
+            &chan.setup.counterparty_points.funding_pubkey,
         )
         .expect("scripts");
         let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
@@ -1086,19 +1090,14 @@ pub const TEST_SEED: &[&str] = &[
 pub const TEST_CHANNEL_ID: &[&str] =
     &["0a78009591722cc84825ca95ee7ffa52428047ed12c9076044ebfe8665f9657f"]; // TEST_SEED[1], "nonce1"
 
-fn script_for_p2wpkh(key: &PublicKey) -> Script {
-    Builder::new()
-        .push_opcode(opcodes::all::OP_PUSHBYTES_0)
-        .push_slice(&WPubkeyHash::hash(&key.serialize())[..])
-        .into_script()
-}
-
 pub fn build_tx_scripts(
     keys: &TxCreationKeys,
     to_broadcaster_value_sat: u64,
     to_countersignatory_value_sat: u64,
     htlcs: &Vec<HTLCOutputInCommitment>,
     channel_parameters: &DirectedChannelTransactionParameters,
+    broadcaster_funding_key: &PublicKey,
+    countersignatory_funding_key: &PublicKey,
 ) -> Result<Vec<Script>, ()> {
     let countersignatory_pubkeys = channel_parameters.countersignatory_pubkeys();
     let contest_delay = channel_parameters.contest_delay();
@@ -1106,10 +1105,17 @@ pub fn build_tx_scripts(
     let mut txouts: Vec<(TxOut, (Option<HTLCOutputInCommitment>, Script))> = Vec::new();
 
     if to_countersignatory_value_sat > 0 {
-        let script = script_for_p2wpkh(&countersignatory_pubkeys.payment_point);
+        let (redeem_script, script_pubkey) = if channel_parameters.opt_anchors() {
+            let script = get_to_countersignatory_with_anchors_redeemscript(
+                &countersignatory_pubkeys.payment_point,
+            );
+            (script.clone(), script.to_v0_p2wsh())
+        } else {
+            (Script::new(), get_p2wpkh_redeemscript(&countersignatory_pubkeys.payment_point))
+        };
         txouts.push((
-            TxOut { script_pubkey: script.clone(), value: to_countersignatory_value_sat },
-            (None, Script::new()),
+            TxOut { script_pubkey, value: to_countersignatory_value_sat },
+            (None, redeem_script),
         ))
     }
 
@@ -1123,6 +1129,30 @@ pub fn build_tx_scripts(
             TxOut { script_pubkey: redeem_script.to_v0_p2wsh(), value: to_broadcaster_value_sat },
             (None, redeem_script),
         ));
+    }
+
+    if channel_parameters.opt_anchors() {
+        if to_broadcaster_value_sat > 0 || !htlcs.is_empty() {
+            let anchor_script = get_anchor_redeemscript(broadcaster_funding_key);
+            txouts.push((
+                TxOut {
+                    script_pubkey: anchor_script.to_v0_p2wsh(),
+                    value: ANCHOR_OUTPUT_VALUE_SATOSHI,
+                },
+                (None, anchor_script),
+            ));
+        }
+
+        if to_countersignatory_value_sat > 0 || !htlcs.is_empty() {
+            let anchor_script = get_anchor_redeemscript(countersignatory_funding_key);
+            txouts.push((
+                TxOut {
+                    script_pubkey: anchor_script.to_v0_p2wsh(),
+                    value: ANCHOR_OUTPUT_VALUE_SATOSHI,
+                },
+                (None, anchor_script),
+            ));
+        }
     }
 
     for htlc in htlcs {
@@ -1358,6 +1388,8 @@ where
             commit_tx_ctx.to_countersignatory,
             &htlcs,
             &parameters,
+            &chan.keys.pubkeys().funding_pubkey,
+            &chan.setup.counterparty_points.funding_pubkey,
         )
         .expect("scripts");
         let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();

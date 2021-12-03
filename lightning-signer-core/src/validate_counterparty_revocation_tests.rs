@@ -4,6 +4,7 @@ mod tests {
     use bitcoin::hashes::hex::ToHex;
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::util::psbt::serialize::Serialize;
+    use lightning::chain::keysinterface::BaseSign;
 
     use test_env_log::test;
 
@@ -53,9 +54,16 @@ mod tests {
             let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
-            let redeem_scripts =
-                build_tx_scripts(&keys, to_countersignatory, to_broadcaster, &htlcs, &parameters)
-                    .expect("scripts");
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                to_countersignatory,
+                to_broadcaster,
+                &htlcs,
+                &parameters,
+                &chan.keys.pubkeys().funding_pubkey,
+                &chan.setup.counterparty_points.funding_pubkey,
+            )
+            .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
@@ -250,9 +258,16 @@ mod tests {
             let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
-            let redeem_scripts =
-                build_tx_scripts(&keys, to_countersignatory, to_broadcaster, &htlcs, &parameters)
-                    .expect("scripts");
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                to_countersignatory,
+                to_broadcaster,
+                &htlcs,
+                &parameters,
+                &chan.keys.pubkeys().funding_pubkey,
+                &chan.setup.counterparty_points.funding_pubkey,
+            )
+            .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
@@ -311,9 +326,16 @@ mod tests {
             let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
-            let redeem_scripts =
-                build_tx_scripts(&keys, to_countersignatory, to_broadcaster, &htlcs, &parameters)
-                    .expect("scripts");
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                to_countersignatory,
+                to_broadcaster,
+                &htlcs,
+                &parameters,
+                &chan.keys.pubkeys().funding_pubkey,
+                &chan.setup.counterparty_points.funding_pubkey,
+            )
+            .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
