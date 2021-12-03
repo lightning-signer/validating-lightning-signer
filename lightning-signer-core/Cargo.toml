@@ -55,6 +55,7 @@ hashbrown = "0.9" # match hashbrown dependency version via tonic/h2/indexmap
 
 [dev-dependencies]
 tempfile = "3.2.0"
+paste = "1.0"
 # For logging in unit tests
 test-env-log = "0.2.7"
 
