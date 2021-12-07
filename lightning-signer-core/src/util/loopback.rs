@@ -14,7 +14,7 @@ use lightning::ln::chan_utils::{
     HolderCommitmentTransaction, TxCreationKeys,
 };
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
-use lightning::util::ser::{Writeable, Writer};
+use lightning::util::ser::{Readable, Writeable, Writer};
 use log::{debug, error, info};
 
 use crate::channel::{ChannelBase, ChannelId, ChannelSetup, CommitmentType};
@@ -193,8 +193,11 @@ impl LoopbackChannelSigner {
 }
 
 impl Writeable for LoopbackChannelSigner {
-    fn write<W: Writer>(&self, _writer: &mut W) -> Result<(), IOError> {
-        unimplemented!()
+    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), IOError> {
+        self.channel_id.0.write(writer)?;
+        self.is_outbound.write(writer)?;
+        self.channel_value_sat.write(writer)?;
+        Ok(())
     }
 }
 
@@ -573,8 +576,17 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         self.get_node().get_secure_random_bytes()
     }
 
-    fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::Signer, DecodeError> {
-        unimplemented!()
+    fn read_chan_signer(&self, mut reader: &[u8]) -> Result<Self::Signer, DecodeError> {
+        let channel_id = ChannelId(Readable::read(&mut reader)?);
+        let is_outbound = Readable::read(&mut reader)?;
+        let channel_value_sat = Readable::read(&mut reader)?;
+        Ok(LoopbackChannelSigner::new(
+            &self.node_id,
+            &channel_id,
+            Arc::clone(&self.signer),
+            is_outbound,
+            channel_value_sat,
+        ))
     }
 
     fn sign_invoice(&self, invoice_preimage: Vec<u8>) -> Result<RecoverableSignature, ()> {
