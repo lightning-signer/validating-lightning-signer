@@ -1,4 +1,3 @@
-use crate::chain::tracker::ChainTracker;
 use bitcoin;
 use bitcoin::secp256k1::{PublicKey, Secp256k1};
 use bitcoin::OutPoint;
@@ -7,10 +6,14 @@ use log::info;
 #[cfg(feature = "std")]
 use rand::{OsRng, Rng};
 
+#[cfg(feature = "std")]
+use crate::chain::tracker::ChainTracker;
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSlot};
+#[cfg(feature = "std")]
 use crate::monitor::ChainMonitor;
 use crate::node::{Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
+#[cfg(feature = "std")]
 use crate::policy::validator::ValidatorFactory;
 use crate::prelude::*;
 use crate::sync::Arc;
