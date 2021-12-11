@@ -880,6 +880,7 @@ mod tests {
     }
 
     fn sign_counterparty_commitment_tx_retry_with_mutator<SignCommitmentMutator>(
+        is_phase2: bool,
         commitment_type: CommitmentType,
         sign_comm_mut: SignCommitmentMutator,
     ) -> Result<(), Status>
@@ -937,15 +938,29 @@ mod tests {
             let mut cstate = make_test_chain_state();
 
             // Sign the commitment the first time.
-            let _sig = chan.sign_counterparty_commitment_tx(
-                &tx.transaction,
-                &output_witscripts,
-                &remote_percommitment_point,
-                commit_num,
-                feerate_per_kw,
-                offered_htlcs.clone(),
-                received_htlcs.clone(),
-            )?;
+            let _sig = if !is_phase2 {
+                let ss = chan.sign_counterparty_commitment_tx(
+                    &tx.transaction,
+                    &output_witscripts,
+                    &remote_percommitment_point,
+                    commit_num,
+                    feerate_per_kw,
+                    offered_htlcs.clone(),
+                    received_htlcs.clone(),
+                )?;
+                signature_to_bitcoin_vec(ss)
+            } else {
+                chan.sign_counterparty_commitment_tx_phase2(
+                    &remote_percommitment_point,
+                    commit_num,
+                    feerate_per_kw,
+                    to_countersignatory,
+                    to_broadcaster,
+                    offered_htlcs.clone(),
+                    received_htlcs.clone(),
+                )?
+                .0
+            };
 
             // Mutate the arguments to the commitment.
             sign_comm_mut(&mut RetryMutationState {
@@ -959,15 +974,29 @@ mod tests {
             });
 
             // Sign it again (retry).
-            let _sig = chan.sign_counterparty_commitment_tx(
-                &tx.transaction,
-                &output_witscripts,
-                &remote_percommitment_point,
-                commit_num,
-                feerate_per_kw,
-                offered_htlcs,
-                received_htlcs,
-            )?;
+            let _sig = if !is_phase2 {
+                let ss = chan.sign_counterparty_commitment_tx(
+                    &tx.transaction,
+                    &output_witscripts,
+                    &remote_percommitment_point,
+                    commit_num,
+                    feerate_per_kw,
+                    offered_htlcs.clone(),
+                    received_htlcs.clone(),
+                )?;
+                signature_to_bitcoin_vec(ss)
+            } else {
+                chan.sign_counterparty_commitment_tx_phase2(
+                    &remote_percommitment_point,
+                    commit_num,
+                    feerate_per_kw,
+                    to_countersignatory,
+                    to_broadcaster,
+                    offered_htlcs.clone(),
+                    received_htlcs.clone(),
+                )?
+                .0
+            };
 
             Ok(())
         })
@@ -975,8 +1004,9 @@ mod tests {
 
     // policy-commitment-retry-same
     #[test]
-    fn sign_counterparty_commitment_tx_retry_same() {
+    fn retry_same_phase1_static() {
         assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(
+            false, // is_phase2
             CommitmentType::StaticRemoteKey,
             |_cms| {
                 // If we don't mutate anything it should succeed.
@@ -986,9 +1016,103 @@ mod tests {
 
     // policy-commitment-retry-same
     #[test]
+    fn retry_same_phase2_static() {
+        assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(
+            true, // is_phase2
+            CommitmentType::StaticRemoteKey,
+            |_cms| {
+                // If we don't mutate anything it should succeed.
+            }
+        ));
+    }
+
+    // policy-commitment-retry-same
+    #[test]
+    fn retry_same_phase1_anchors() {
+        assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(
+            false, // is_phase2
+            CommitmentType::Anchors,
+            |_cms| {
+                // If we don't mutate anything it should succeed.
+            }
+        ));
+    }
+
+    // policy-commitment-retry-same
+    #[test]
+    fn retry_same_phase2_anchors() {
+        assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(
+            true, // is_phase2
+            CommitmentType::Anchors,
+            |_cms| {
+                // If we don't mutate anything it should succeed.
+            }
+        ));
+    }
+
+    macro_rules! generate_failed_precondition_error_retry_with_mutations {
+        ($name: ident, $rm: expr, $errmsg: expr) => {
+            paste! {
+                #[test]
+                fn [<$name _phase1_static>]() {
+                    assert_failed_precondition_err!(
+                        sign_counterparty_commitment_tx_retry_with_mutator(
+                            false, CommitmentType::StaticRemoteKey, $rm),
+                        $errmsg
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _phase2_static>]() {
+                    assert_failed_precondition_err!(
+                        sign_counterparty_commitment_tx_retry_with_mutator(
+                            true, CommitmentType::StaticRemoteKey, $rm),
+                        $errmsg
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _phase1_anchors>]() {
+                    assert_failed_precondition_err!(
+                        sign_counterparty_commitment_tx_retry_with_mutator(
+                            false, CommitmentType::Anchors, $rm),
+                        $errmsg
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _phase2_anchors>]() {
+                    assert_failed_precondition_err!(
+                        sign_counterparty_commitment_tx_retry_with_mutator(
+                            true, CommitmentType::Anchors, $rm),
+                        $errmsg
+                    );
+                }
+            }
+        };
+    }
+
+    // policy-commitment-retry-same
+    generate_failed_precondition_error_retry_with_mutations!(
+        retry_with_bad_point,
+        |cms| {
+            *cms.remote_percommitment_point = make_test_pubkey(42);
+        },
+        "policy failure: validate_counterparty_commitment_tx: \
+             retry of sign_counterparty_commitment 23 with changed point: \
+             prev 03f76a39d05686e34a4420897e359371836145dd3973e3982568b60f8433adde6e != \
+             new 035be5e9478209674a96e60f1f037f6176540fd001fa1d64694770c56a7709c42c"
+    );
+
+    // policy-commitment-retry-same
+    #[test]
     fn sign_counterparty_commitment_tx_retry_with_bad_point() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_retry_with_mutator(
+                false, // is_phase2
                 CommitmentType::StaticRemoteKey,
                 |cms| {
                     *cms.remote_percommitment_point = make_test_pubkey(42);
@@ -1006,6 +1130,7 @@ mod tests {
     fn sign_counterparty_commitment_tx_retry_with_removed_htlc() {
         assert_failed_precondition_err!(
             sign_counterparty_commitment_tx_retry_with_mutator(
+                false, // is_phase2
                 CommitmentType::StaticRemoteKey,
                 |cms| {
                     // Remove the last received HTLC
