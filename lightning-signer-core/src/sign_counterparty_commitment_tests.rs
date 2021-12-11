@@ -449,6 +449,7 @@ mod tests {
 
     #[allow(dead_code)]
     struct TxMutationState<'a> {
+        opt_anchors: bool,
         cstate: &'a mut ChainState,
         tx: &'a mut BuiltCommitmentTransaction,
         witscripts: &'a mut Vec<Vec<u8>>,
@@ -522,6 +523,7 @@ mod tests {
 
             // Mutate the transaction and recalculate the txid.
             txmut(&mut TxMutationState {
+                opt_anchors: commitment_type == CommitmentType::Anchors,
                 cstate: &mut cstate,
                 tx: &mut tx,
                 witscripts: &mut output_witscripts,
@@ -625,6 +627,7 @@ mod tests {
 
             // Mutate the transaction and recalculate the txid.
             txmut(&mut TxMutationState {
+                opt_anchors: commitment_type == CommitmentType::Anchors,
                 cstate: &mut cstate,
                 tx: &mut tx,
                 witscripts: &mut output_witscripts,
@@ -900,15 +903,14 @@ mod tests {
     generate_failed_precondition_error_phase1_with_mutated_tx!(
         bad_countersignatory_pubkey,
         |tms| {
-            if tms.tx.transaction.output.len() <= 5 {
-                tms.tx.transaction.output[3].script_pubkey =
-                    payload_for_p2wpkh(&make_test_pubkey(42)).script_pubkey();
-            } else {
-                // anchors in effect
+            if tms.opt_anchors {
                 let redeem_script =
                     get_to_countersignatory_with_anchors_redeemscript(&make_test_pubkey(42));
                 tms.tx.transaction.output[5].script_pubkey = redeem_script.to_v0_p2wsh();
                 tms.witscripts[5] = redeem_script.serialize();
+            } else {
+                tms.tx.transaction.output[3].script_pubkey =
+                    payload_for_p2wpkh(&make_test_pubkey(42)).script_pubkey();
             };
         },
         "policy failure: recomposed tx mismatch"
