@@ -843,30 +843,88 @@ mod tests {
     );
 
     // policy-commitment-singular-to-holder
-    generate_failed_precondition_error_phase1_with_mutated_tx!(
-        multiple_to_holder,
-        |tms| {
-            // Duplicate the to_holder output
-            let ndx = tms.tx.transaction.output.len() - 2;
-            tms.tx.transaction.output.push(tms.tx.transaction.output[ndx].clone());
-            tms.witscripts.push(tms.witscripts[ndx].clone());
-        },
-        "transaction format: decode_commitment_tx: \
-         tx output[5]: more than one to_countersigner output"
-    );
+    #[test]
+    fn multiple_to_holder_phase1_static() {
+        assert_failed_precondition_err!(
+            sign_counterparty_commitment_tx_with_mutators(
+                false,
+                CommitmentType::StaticRemoteKey,
+                |_| {},
+                |_| {},
+                |tms| {
+                    // Duplicate the to_holder output
+                    let ndx = tms.tx.transaction.output.len() - 2;
+                    tms.tx.transaction.output.push(tms.tx.transaction.output[ndx].clone());
+                    tms.witscripts.push(tms.witscripts[ndx].clone());
+                }
+            ),
+            "transaction format: decode_commitment_tx: \
+             tx output[5]: more than one to_countersigner output"
+        );
+    }
+
+    // policy-commitment-singular-to-holder
+    #[test]
+    fn multiple_to_holder_phase1_anchors() {
+        assert_failed_precondition_err!(
+            sign_counterparty_commitment_tx_with_mutators(
+                false,
+                CommitmentType::Anchors,
+                |_| {},
+                |_| {},
+                |tms| {
+                    // Duplicate the to_holder output
+                    let ndx = tms.tx.transaction.output.len() - 2;
+                    tms.tx.transaction.output.push(tms.tx.transaction.output[ndx].clone());
+                    tms.witscripts.push(tms.witscripts[ndx].clone());
+                }
+            ),
+            "transaction format: decode_commitment_tx: \
+             tx output[7]: more than one to_countersigner output"
+        );
+    }
 
     // policy-commitment-singular-to-counterparty
-    generate_failed_precondition_error_phase1_with_mutated_tx!(
-        multiple_to_counterparty,
-        |tms| {
-            // Duplicate the to_counterparty output
-            let ndx = tms.tx.transaction.output.len() - 1;
-            tms.tx.transaction.output.push(tms.tx.transaction.output[ndx].clone());
-            tms.witscripts.push(tms.witscripts[ndx].clone());
-        },
-        "transaction format: decode_commitment_tx: \
-         tx output[5]: more than one to_broadcaster output"
-    );
+    #[test]
+    fn multiple_to_counterparty_phase1_static() {
+        assert_failed_precondition_err!(
+            sign_counterparty_commitment_tx_with_mutators(
+                false,
+                CommitmentType::StaticRemoteKey,
+                |_| {},
+                |_| {},
+                |tms| {
+                    // Duplicate the to_counterparty output
+                    let ndx = tms.tx.transaction.output.len() - 1;
+                    tms.tx.transaction.output.push(tms.tx.transaction.output[ndx].clone());
+                    tms.witscripts.push(tms.witscripts[ndx].clone());
+                }
+            ),
+            "transaction format: decode_commitment_tx: \
+             tx output[5]: more than one to_broadcaster output"
+        );
+    }
+
+    // policy-commitment-singular-to-counterparty
+    #[test]
+    fn multiple_to_counterparty_phase1_anchors() {
+        assert_failed_precondition_err!(
+            sign_counterparty_commitment_tx_with_mutators(
+                false,
+                CommitmentType::Anchors,
+                |_| {},
+                |_| {},
+                |tms| {
+                    // Duplicate the to_counterparty output
+                    let ndx = tms.tx.transaction.output.len() - 1;
+                    tms.tx.transaction.output.push(tms.tx.transaction.output[ndx].clone());
+                    tms.witscripts.push(tms.witscripts[ndx].clone());
+                }
+            ),
+            "transaction format: decode_commitment_tx: \
+             tx output[7]: more than one to_broadcaster output"
+        );
+    }
 
     #[allow(dead_code)]
     struct RetryMutationState<'a> {
