@@ -15,7 +15,7 @@ mod tests {
     use crate::channel::{Channel, ChannelSetup, CommitmentType};
     use crate::policy::validator::{ChainState, EnforcementState};
     use crate::tx::script::get_to_countersignatory_with_anchors_redeemscript;
-    use crate::tx::tx::{HTLCInfo2, ANCHOR_SAT};
+    use crate::tx::tx::HTLCInfo2;
     use crate::util::crypto_utils::{payload_for_p2wpkh, signature_to_bitcoin_vec};
     use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
@@ -103,68 +103,6 @@ mod tests {
         assert_eq!(
             tx.txid().to_hex(),
             "d167e8e687f93170e787d210bac57538910050138b7d088684fe7fdcf735bf6d"
-        );
-
-        let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
-        let channel_funding_redeemscript =
-            make_funding_redeemscript(&funding_pubkey, &counterparty_points.funding_pubkey);
-
-        check_signature(
-            &tx,
-            0,
-            signature_to_bitcoin_vec(sig),
-            &funding_pubkey,
-            setup.channel_value_sat,
-            &channel_funding_redeemscript,
-        );
-    }
-
-    #[test]
-    #[ignore] // we don't support anchors yet
-    fn sign_counterparty_commitment_tx_with_anchors_test() {
-        let mut setup = make_test_channel_setup();
-        setup.commitment_type = CommitmentType::Anchors;
-        let (node, channel_id) =
-            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
-        let remote_percommitment_point = make_test_pubkey(10);
-        let counterparty_points = make_test_counterparty_points();
-        let to_counterparty_value_sat = 2_000_000;
-        let to_holder_value_sat =
-            setup.channel_value_sat - to_counterparty_value_sat - (2 * ANCHOR_SAT);
-        let feerate_per_kw = 0;
-        let (sig, tx) = node
-            .with_ready_channel(&channel_id, |chan| {
-                let info = chan.build_counterparty_commitment_info(
-                    &remote_percommitment_point,
-                    to_holder_value_sat,
-                    to_counterparty_value_sat,
-                    vec![],
-                    vec![],
-                    feerate_per_kw,
-                )?;
-                let commit_num = 23;
-                let (tx, output_scripts, _) =
-                    chan.build_commitment_tx(&remote_percommitment_point, commit_num, &info)?;
-                let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
-
-                let sig = chan
-                    .sign_counterparty_commitment_tx(
-                        &tx,
-                        &output_witscripts,
-                        &remote_percommitment_point,
-                        commit_num,
-                        feerate_per_kw,
-                        vec![],
-                        vec![],
-                    )
-                    .expect("sign");
-                Ok((sig, tx))
-            })
-            .expect("build_commitment_tx");
-
-        assert_eq!(
-            tx.txid().to_hex(),
-            "68a0916cea22e66438f0cd2c50f667866ebd16f59ba395352602bd817d6c0fd9"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -277,83 +215,6 @@ mod tests {
         assert_eq!(
             tx.txid().to_hex(),
             "98fe7f855e1cc99ca29a7c18caf1b8c6ac81fcdc44a854c60bf1b28d390323c4"
-        );
-
-        let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
-        let channel_funding_redeemscript =
-            make_funding_redeemscript(&funding_pubkey, &counterparty_points.funding_pubkey);
-
-        check_signature(
-            &tx,
-            0,
-            signature_to_bitcoin_vec(sig),
-            &funding_pubkey,
-            setup.channel_value_sat,
-            &channel_funding_redeemscript,
-        );
-    }
-
-    #[test]
-    #[ignore] // we don't support anchors yet
-    fn sign_counterparty_commitment_tx_with_htlc_and_anchors_test() {
-        let mut setup = make_test_channel_setup();
-        setup.commitment_type = CommitmentType::Anchors;
-        let (node, channel_id) =
-            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
-
-        let remote_percommitment_point = make_test_pubkey(10);
-        let counterparty_points = make_test_counterparty_points();
-
-        let htlc1 =
-            HTLCInfo2 { value_sat: 1, payment_hash: PaymentHash([1; 32]), cltv_expiry: 2 << 16 };
-
-        let htlc2 =
-            HTLCInfo2 { value_sat: 1, payment_hash: PaymentHash([3; 32]), cltv_expiry: 3 << 16 };
-
-        let htlc3 =
-            HTLCInfo2 { value_sat: 1, payment_hash: PaymentHash([5; 32]), cltv_expiry: 4 << 16 };
-
-        let offered_htlcs = vec![htlc1.clone()];
-        let received_htlcs = vec![htlc2.clone(), htlc3.clone()];
-        let feerate_per_kw = 0;
-
-        let to_counterparty_value_sat = 2_000_000;
-        let to_holder_value_sat =
-            setup.channel_value_sat - to_counterparty_value_sat - 3 - (2 * ANCHOR_SAT);
-
-        let (sig, tx) = node
-            .with_ready_channel(&channel_id, |chan| {
-                let info = chan.build_counterparty_commitment_info(
-                    &remote_percommitment_point,
-                    to_holder_value_sat,
-                    to_counterparty_value_sat,
-                    offered_htlcs.clone(),
-                    received_htlcs.clone(),
-                    feerate_per_kw,
-                )?;
-                let commit_num = 23;
-                let (tx, output_scripts, _) =
-                    chan.build_commitment_tx(&remote_percommitment_point, commit_num, &info)?;
-                let output_witscripts = output_scripts.iter().map(|s| s.serialize()).collect();
-
-                let sig = chan
-                    .sign_counterparty_commitment_tx(
-                        &tx,
-                        &output_witscripts,
-                        &remote_percommitment_point,
-                        commit_num,
-                        feerate_per_kw,
-                        offered_htlcs.clone(),
-                        received_htlcs.clone(),
-                    )
-                    .expect("sign");
-                Ok((sig, tx))
-            })
-            .expect("build_commitment_tx");
-
-        assert_eq!(
-            tx.txid().to_hex(),
-            "52aa09518edbdbd77ca56790efbb9392710c3bed10d7d27b04d98f6f6d8a207d"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
