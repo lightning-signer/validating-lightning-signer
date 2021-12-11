@@ -456,6 +456,7 @@ mod tests {
     }
 
     fn sign_counterparty_commitment_tx_with_mutators<StateMutator, KeysMutator, TxMutator>(
+        is_phase2: bool,
         commitment_type: CommitmentType,
         statemut: StateMutator,
         keysmut: KeysMutator,
@@ -530,119 +531,29 @@ mod tests {
             });
             tx.txid = tx.transaction.txid();
 
-            let sig = chan.sign_counterparty_commitment_tx(
-                &tx.transaction,
-                &output_witscripts,
-                &remote_percommitment_point,
-                commit_num,
-                feerate_per_kw,
-                offered_htlcs.clone(),
-                received_htlcs.clone(),
-            )?;
-            Ok((sig, tx.transaction.clone()))
-        })?;
-
-        let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
-        let channel_funding_redeemscript =
-            make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
-
-        check_signature(
-            &tx,
-            0,
-            signature_to_bitcoin_vec(sig),
-            &funding_pubkey,
-            setup.channel_value_sat,
-            &channel_funding_redeemscript,
-        );
-
-        Ok(())
-    }
-
-    fn sign_counterparty_commitment_tx_phase2_with_mutators<StateMutator, KeysMutator, TxMutator>(
-        commitment_type: CommitmentType,
-        statemut: StateMutator,
-        keysmut: KeysMutator,
-        txmut: TxMutator,
-    ) -> Result<(), Status>
-    where
-        StateMutator: Fn(&mut EnforcementState),
-        KeysMutator: Fn(&mut TxCreationKeys),
-        TxMutator: Fn(&mut TxMutationState),
-    {
-        let (node, setup, channel_id, offered_htlcs, received_htlcs) =
-            sign_commitment_tx_with_mutators_setup(commitment_type);
-
-        let remote_percommitment_point = make_test_pubkey(10);
-
-        let (sig, tx) = node.with_ready_channel(&channel_id, |chan| {
-            let channel_parameters = chan.make_channel_parameters();
-
-            // fee = 1000
-            let commit_num = 23;
-            let feerate_per_kw = 0;
-            let to_broadcaster = 1_978_997;
-            let to_countersignatory = 1_000_000;
-
-            chan.enforcement_state
-                .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
-            chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
-
-            // Mutate the signer state.
-            statemut(&mut chan.enforcement_state);
-
-            let parameters = channel_parameters.as_counterparty_broadcastable();
-            let mut keys = chan.make_counterparty_tx_keys(&remote_percommitment_point)?;
-
-            // Mutate the tx creation keys.
-            keysmut(&mut keys);
-
-            let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
-
-            let redeem_scripts = build_tx_scripts(
-                &keys,
-                to_broadcaster,
-                to_countersignatory,
-                &htlcs,
-                &parameters,
-                &chan.keys.pubkeys().funding_pubkey,
-                &chan.setup.counterparty_points.funding_pubkey,
-            )
-            .expect("scripts");
-            let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
-
-            let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
-                keys,
-                commit_num,
-                feerate_per_kw,
-                to_countersignatory,
-                to_broadcaster,
-                htlcs.clone(),
-            );
-
-            // rebuild to get the scripts
-            let trusted_tx = commitment_tx.trust();
-            let mut tx = trusted_tx.built_transaction().clone();
-
-            let mut cstate = make_test_chain_state();
-
-            // Mutate the transaction and recalculate the txid.
-            txmut(&mut TxMutationState {
-                opt_anchors: commitment_type == CommitmentType::Anchors,
-                cstate: &mut cstate,
-                tx: &mut tx,
-                witscripts: &mut output_witscripts,
-            });
-            tx.txid = tx.transaction.txid();
-
-            let (sig, _htlc_sigs) = chan.sign_counterparty_commitment_tx_phase2(
-                &remote_percommitment_point,
-                commit_num,
-                feerate_per_kw,
-                to_countersignatory,
-                to_broadcaster,
-                offered_htlcs.clone(),
-                received_htlcs.clone(),
-            )?;
+            let sig = if !is_phase2 {
+                let ss = chan.sign_counterparty_commitment_tx(
+                    &tx.transaction,
+                    &output_witscripts,
+                    &remote_percommitment_point,
+                    commit_num,
+                    feerate_per_kw,
+                    offered_htlcs.clone(),
+                    received_htlcs.clone(),
+                )?;
+                signature_to_bitcoin_vec(ss)
+            } else {
+                chan.sign_counterparty_commitment_tx_phase2(
+                    &remote_percommitment_point,
+                    commit_num,
+                    feerate_per_kw,
+                    to_countersignatory,
+                    to_broadcaster,
+                    offered_htlcs.clone(),
+                    received_htlcs.clone(),
+                )?
+                .0
+            };
             Ok((sig, tx.transaction.clone()))
         })?;
 
@@ -664,7 +575,8 @@ mod tests {
 
     #[test]
     fn success_phase2_static() {
-        assert_status_ok!(sign_counterparty_commitment_tx_phase2_with_mutators(
+        assert_status_ok!(sign_counterparty_commitment_tx_with_mutators(
+            true, // is_phase2
             CommitmentType::StaticRemoteKey,
             |_state| {
                 // don't mutate the signer, should pass
@@ -681,6 +593,7 @@ mod tests {
     #[test]
     fn success_phase1_static() {
         assert_status_ok!(sign_counterparty_commitment_tx_with_mutators(
+            false, // is_phase2
             CommitmentType::StaticRemoteKey,
             |_state| {
                 // don't mutate the signer, should pass
@@ -696,7 +609,8 @@ mod tests {
 
     #[test]
     fn success_phase2_anchors() {
-        assert_status_ok!(sign_counterparty_commitment_tx_phase2_with_mutators(
+        assert_status_ok!(sign_counterparty_commitment_tx_with_mutators(
+            true, // is_phase2
             CommitmentType::Anchors,
             |_state| {
                 // don't mutate the signer, should pass
@@ -713,6 +627,7 @@ mod tests {
     #[test]
     fn success_phase1_anchors() {
         assert_status_ok!(sign_counterparty_commitment_tx_with_mutators(
+            false, // is_phase2
             CommitmentType::Anchors,
             |_state| {
                 // don't mutate the signer, should pass
@@ -733,7 +648,7 @@ mod tests {
                 fn [<$name _phase1_static>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
-                            CommitmentType::StaticRemoteKey, $sm, $km, $tm),
+                            false, CommitmentType::StaticRemoteKey, $sm, $km, $tm),
                         $errmsg
                     );
                 }
@@ -743,7 +658,7 @@ mod tests {
                 fn [<$name _phase1_anchors>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
-                            CommitmentType::Anchors, $sm, $km, $tm),
+                            false, CommitmentType::Anchors, $sm, $km, $tm),
                         $errmsg
                     );
                 }
@@ -757,8 +672,8 @@ mod tests {
                 #[test]
                 fn [<$name _phase2_static>]() {
                     assert_failed_precondition_err!(
-                        sign_counterparty_commitment_tx_phase2_with_mutators(
-                            CommitmentType::StaticRemoteKey, $sm, $km, $tm),
+                        sign_counterparty_commitment_tx_with_mutators(
+                            true, CommitmentType::StaticRemoteKey, $sm, $km, $tm),
                         $errmsg
                     );
                 }
@@ -767,8 +682,8 @@ mod tests {
                 #[test]
                 fn [<$name _phase2_anchors>]() {
                     assert_failed_precondition_err!(
-                        sign_counterparty_commitment_tx_phase2_with_mutators(
-                            CommitmentType::Anchors, $sm, $km, $tm),
+                        sign_counterparty_commitment_tx_with_mutators(
+                            true, CommitmentType::Anchors, $sm, $km, $tm),
                         $errmsg
                     );
                 }
