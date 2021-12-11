@@ -660,7 +660,7 @@ mod tests {
     }
 
     #[test]
-    fn success_static_phase2() {
+    fn success_phase2_static() {
         assert_status_ok!(sign_counterparty_commitment_tx_phase2_with_mutators(
             CommitmentType::StaticRemoteKey,
             |_state| {
@@ -676,7 +676,7 @@ mod tests {
     }
 
     #[test]
-    fn success_static_phase1() {
+    fn success_phase1_static() {
         assert_status_ok!(sign_counterparty_commitment_tx_with_mutators(
             CommitmentType::StaticRemoteKey,
             |_state| {
@@ -692,7 +692,7 @@ mod tests {
     }
 
     #[test]
-    fn success_anchors_phase2() {
+    fn success_phase2_anchors() {
         assert_status_ok!(sign_counterparty_commitment_tx_phase2_with_mutators(
             CommitmentType::Anchors,
             |_state| {
@@ -708,7 +708,7 @@ mod tests {
     }
 
     #[test]
-    fn success_anchors_phase1() {
+    fn success_phase1_anchors() {
         assert_status_ok!(sign_counterparty_commitment_tx_with_mutators(
             CommitmentType::Anchors,
             |_state| {
@@ -727,7 +727,7 @@ mod tests {
         ($name: ident, $sm: expr, $km: expr, $tm: expr, $errmsg: expr) => {
             paste! {
                 #[test]
-                fn [<$name _static_phase1>]() {
+                fn [<$name _phase1_static>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
                             CommitmentType::StaticRemoteKey, $sm, $km, $tm),
@@ -737,7 +737,7 @@ mod tests {
             }
             paste! {
                 #[test]
-                fn [<$name _anchors_phase1>]() {
+                fn [<$name _phase1_anchors>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
                             CommitmentType::Anchors, $sm, $km, $tm),
@@ -752,7 +752,7 @@ mod tests {
         ($name: ident, $sm: expr, $km: expr, $tm: expr, $errmsg: expr) => {
             paste! {
                 #[test]
-                fn [<$name _static_phase2>]() {
+                fn [<$name _phase2_static>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_phase2_with_mutators(
                             CommitmentType::StaticRemoteKey, $sm, $km, $tm),
@@ -762,7 +762,7 @@ mod tests {
             }
             paste! {
                 #[test]
-                fn [<$name _anchors_phase2>]() {
+                fn [<$name _phase2_anchors>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_phase2_with_mutators(
                             CommitmentType::Anchors, $sm, $km, $tm),
@@ -780,23 +780,49 @@ mod tests {
         };
     }
 
+    macro_rules! generate_failed_precondition_error_with_mutated_state {
+        ($name: ident, $sm: expr, $errmsg: expr) => {
+            generate_failed_precondition_error_variations!($name, $sm, |_| {}, |_| {}, $errmsg);
+        };
+    }
+
+    macro_rules! generate_failed_precondition_error_phase1_with_mutated_keys {
+        ($name: ident, $km: expr, $errmsg: expr) => {
+            generate_failed_precondition_error_phase1_variations!(
+                $name,
+                |_| {},
+                $km,
+                |_| {},
+                $errmsg
+            );
+        };
+    }
+
+    macro_rules! generate_failed_precondition_error_phase1_with_mutated_tx {
+        ($name: ident, $tm: expr, $errmsg: expr) => {
+            generate_failed_precondition_error_phase1_variations!(
+                $name,
+                |_| {},
+                |_| {},
+                $tm,
+                $errmsg
+            );
+        };
+    }
+
     // policy-commitment-previous-revoked
-    generate_failed_precondition_error_variations!(
+    generate_failed_precondition_error_with_mutated_state!(
         unrevoked_prior,
         |state| {
             state.set_next_counterparty_revoke_num_for_testing(21);
         },
-        |_keys| {},
-        |_tms| {},
         "policy failure: validate_counterparty_commitment_tx: \
          invalid attempt to sign counterparty commit_num 23 with next_counterparty_revoke_num 21"
     );
 
     // policy-commitment-version
-    generate_failed_precondition_error_phase1_variations!(
+    generate_failed_precondition_error_phase1_with_mutated_tx!(
         bad_version,
-        |_state| {},
-        |_keys| {},
         |tms| {
             tms.tx.transaction.version = 3;
         },
@@ -804,12 +830,8 @@ mod tests {
     );
 
     // policy-commitment-locktime
-    generate_failed_precondition_error_phase1_variations!(
+    generate_failed_precondition_error_phase1_with_mutated_tx!(
         bad_locktime,
-        |_state| {},
-        |_keys| {
-            // don't mutate the keys
-        },
         |tms| {
             tms.tx.transaction.lock_time = 42;
         },
@@ -817,10 +839,8 @@ mod tests {
     );
 
     // policy-commitment-sequence
-    generate_failed_precondition_error_phase1_variations!(
+    generate_failed_precondition_error_phase1_with_mutated_tx!(
         bad_sequence,
-        |_state| {},
-        |_keys| {},
         |tms| {
             tms.tx.transaction.input[0].sequence = 42;
         },
@@ -828,10 +848,8 @@ mod tests {
     );
 
     // policy-commitment-input-single
-    generate_failed_precondition_error_phase1_variations!(
+    generate_failed_precondition_error_phase1_with_mutated_tx!(
         bad_num_inputs,
-        |_state| {},
-        |_keys| {},
         |tms| {
             let mut inp2 = tms.tx.transaction.input[0].clone();
             inp2.previous_output.txid = bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
@@ -841,10 +859,8 @@ mod tests {
     );
 
     // policy-commitment-input-match-funding
-    generate_failed_precondition_error_phase1_variations!(
+    generate_failed_precondition_error_phase1_with_mutated_tx!(
         input_mismatch,
-        |_state| {},
-        |_keys| {},
         |tms| {
             tms.tx.transaction.input[0].previous_output.txid =
                 bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
@@ -854,43 +870,35 @@ mod tests {
 
     // policy-commitment-revocation-pubkey
     // policy-commitment-htlc-revocation-pubkey
-    generate_failed_precondition_error_phase1_variations!(
+    generate_failed_precondition_error_phase1_with_mutated_keys!(
         bad_revpubkey,
-        |_state| {},
         |keys| {
             keys.revocation_key = make_test_pubkey(42);
         },
-        |_tms| {},
         "policy failure: recomposed tx mismatch"
     );
 
     // policy-commitment-htlc-holder-htlc-pubkey
-    generate_failed_precondition_error_phase1_variations!(
+    generate_failed_precondition_error_phase1_with_mutated_keys!(
         bad_htlcpubkey,
-        |_state| {},
         |keys| {
             keys.countersignatory_htlc_key = make_test_pubkey(42);
         },
-        |_tms| {},
         "policy failure: recomposed tx mismatch"
     );
 
     // policy-commitment-broadcaster-pubkey
-    generate_failed_precondition_error_phase1_variations!(
+    generate_failed_precondition_error_phase1_with_mutated_keys!(
         bad_delayed_pubkey,
-        |_state| {},
         |keys| {
             keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
         },
-        |_tms| {},
         "policy failure: recomposed tx mismatch"
     );
 
     // policy-commitment-countersignatory-pubkey
-    generate_failed_precondition_error_phase1_variations!(
+    generate_failed_precondition_error_phase1_with_mutated_tx!(
         bad_countersignatory_pubkey,
-        |_state| {},
-        |_keys| {},
         |tms| {
             if tms.tx.transaction.output.len() <= 5 {
                 tms.tx.transaction.output[3].script_pubkey =
@@ -906,24 +914,20 @@ mod tests {
         "policy failure: recomposed tx mismatch"
     );
 
-    generate_failed_precondition_error_variations!(
+    generate_failed_precondition_error_with_mutated_state!(
         old_commit_num,
         |state| {
             // Advance both commit_num and revoke_num:
             state.set_next_counterparty_commit_num_for_testing(25, make_test_pubkey(0x10));
             state.set_next_counterparty_revoke_num_for_testing(24);
         },
-        |_keys| {},
-        |_tms| {},
         "policy failure: set_next_counterparty_commit_num: \
          24 too small relative to next_counterparty_revoke_num 24"
     );
 
     // policy-commitment-singular-to-holder
-    generate_failed_precondition_error_phase1_variations!(
+    generate_failed_precondition_error_phase1_with_mutated_tx!(
         multiple_to_holder,
-        |_state| {},
-        |_keys| {},
         |tms| {
             // Duplicate the to_holder output
             let ndx = tms.tx.transaction.output.len() - 2;
@@ -935,10 +939,8 @@ mod tests {
     );
 
     // policy-commitment-singular-to-counterparty
-    generate_failed_precondition_error_phase1_variations!(
+    generate_failed_precondition_error_phase1_with_mutated_tx!(
         multiple_to_counterparty,
-        |_state| {},
-        |_keys| {},
         |tms| {
             // Duplicate the to_counterparty output
             let ndx = tms.tx.transaction.output.len() - 1;
