@@ -14,7 +14,7 @@ use lightning::ln::chan_utils::{
     HolderCommitmentTransaction, TxCreationKeys,
 };
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
-use lightning::util::ser::{Writeable, Writer};
+use lightning::util::ser::{Readable, Writeable, Writer};
 use log::{debug, error, info};
 
 use crate::channel::{ChannelBase, ChannelId, ChannelSetup, CommitmentType};
@@ -66,12 +66,8 @@ pub struct LoopbackChannelSigner {
     pub channel_id: ChannelId,
     pub signer: Arc<MultiSigner>,
     pub pubkeys: ChannelPublicKeys,
-    pub counterparty_pubkeys: Option<ChannelPublicKeys>,
     pub is_outbound: bool,
     pub channel_value_sat: u64,
-    pub local_to_self_delay: u16,
-    pub counterparty_to_self_delay: u16,
-    pub commitment_type: CommitmentType,
 }
 
 impl LoopbackChannelSigner {
@@ -95,13 +91,17 @@ impl LoopbackChannelSigner {
             channel_id: *channel_id,
             signer: signer.clone(),
             pubkeys,
-            counterparty_pubkeys: None,
             is_outbound,
             channel_value_sat,
-            local_to_self_delay: 0,
-            counterparty_to_self_delay: 0,
-            commitment_type: CommitmentType::StaticRemoteKey,
         }
+    }
+
+    fn get_channel_setup(&self) -> Result<ChannelSetup, ()> {
+        self.signer
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                Ok(chan.setup.clone())
+            })
+            .map_err(|s| self.bad_status(s))
     }
 
     pub fn make_counterparty_tx_keys(
@@ -110,7 +110,8 @@ impl LoopbackChannelSigner {
         secp_ctx: &Secp256k1<All>,
     ) -> Result<TxCreationKeys, ()> {
         let pubkeys = &self.pubkeys;
-        let counterparty_pubkeys = self.counterparty_pubkeys.as_ref().ok_or(())?;
+        let setup = self.get_channel_setup()?;
+        let counterparty_pubkeys = setup.counterparty_points;
         let keys = TxCreationKeys::derive_new(
             secp_ctx,
             &per_commitment_point,
@@ -188,13 +189,17 @@ impl LoopbackChannelSigner {
     }
 
     fn option_anchor_outputs(&self) -> bool {
-        self.commitment_type == CommitmentType::Anchors
+        let setup = self.get_channel_setup().expect("not ready");
+        setup.commitment_type == CommitmentType::Anchors
     }
 }
 
 impl Writeable for LoopbackChannelSigner {
-    fn write<W: Writer>(&self, _writer: &mut W) -> Result<(), IOError> {
-        unimplemented!()
+    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), IOError> {
+        self.channel_id.0.write(writer)?;
+        self.is_outbound.write(writer)?;
+        self.channel_value_sat.write(writer)?;
+        Ok(())
     }
 }
 
@@ -357,17 +362,18 @@ impl BaseSign for LoopbackChannelSigner {
         secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
-        let counterparty_pubkeys = self.counterparty_pubkeys.as_ref().unwrap();
+        let setup = self.get_channel_setup()?;
+        let counterparty_pubkeys = setup.counterparty_points;
 
         let (revocation_key, delayed_payment_key) = get_delayed_payment_keys(
             secp_ctx,
             &per_commitment_point,
-            counterparty_pubkeys,
+            &counterparty_pubkeys,
             &self.pubkeys,
         )?;
         let redeem_script = chan_utils::get_revokeable_redeemscript(
             &revocation_key,
-            self.local_to_self_delay,
+            setup.holder_selected_contest_delay,
             &delayed_payment_key,
         );
 
@@ -528,10 +534,6 @@ impl BaseSign for LoopbackChannelSigner {
         let holder_shutdown_key_path = vec![];
         node.ready_channel(self.channel_id, None, setup, &holder_shutdown_key_path)
             .expect("channel already ready or does not exist");
-        // Copy some parameters that we need here
-        self.counterparty_pubkeys = Some(counterparty_parameters.pubkeys.clone());
-        self.local_to_self_delay = parameters.holder_selected_contest_delay;
-        self.counterparty_to_self_delay = counterparty_parameters.selected_contest_delay;
     }
 }
 
@@ -573,8 +575,17 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         self.get_node().get_secure_random_bytes()
     }
 
-    fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::Signer, DecodeError> {
-        unimplemented!()
+    fn read_chan_signer(&self, mut reader: &[u8]) -> Result<Self::Signer, DecodeError> {
+        let channel_id = ChannelId(Readable::read(&mut reader)?);
+        let is_outbound = Readable::read(&mut reader)?;
+        let channel_value_sat = Readable::read(&mut reader)?;
+        Ok(LoopbackChannelSigner::new(
+            &self.node_id,
+            &channel_id,
+            Arc::clone(&self.signer),
+            is_outbound,
+            channel_value_sat,
+        ))
     }
 
     fn sign_invoice(&self, invoice_preimage: Vec<u8>) -> Result<RecoverableSignature, ()> {
