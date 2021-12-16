@@ -818,28 +818,6 @@ impl Signer for SignServer {
         Ok(Response::new(reply))
     }
 
-    async fn sign_holder_commitment_tx(
-        &self,
-        request: Request<SignHolderCommitmentTxRequest>,
-    ) -> Result<Response<SignatureReply>, Status> {
-        let req = request.into_inner();
-        let node_id = self.node_id(req.node_id.clone())?;
-        let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_req_enter!(node_id, channel_id, &req);
-
-        let commit_num = req.commit_num;
-
-        let sig = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            chan.sign_holder_commitment_tx(commit_num)
-        })?;
-
-        let reply = SignatureReply {
-            signature: Some(BitcoinSignature { data: signature_to_bitcoin_vec(sig) }),
-        };
-        log_req_reply!(&node_id, &channel_id, &reply);
-        Ok(Response::new(reply))
-    }
-
     async fn sign_holder_htlc_tx(
         &self,
         request: Request<SignHolderHtlcTxRequest>,
@@ -1249,6 +1227,31 @@ impl Signer for SignServer {
         let req = request.into_inner();
         let node_id = self.node_id(req.node_id.clone())?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
+        log_req_enter!(node_id, channel_id, &req);
+
+        let commit_num = req.commit_num;
+
+        let (sig, htlc_sigs) = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+            chan.sign_holder_commitment_tx_phase2(commit_num)
+        })?;
+
+        let htlc_bitcoin_sigs =
+            htlc_sigs.iter().map(|s| BitcoinSignature { data: s.clone() }).collect();
+        let reply = CommitmentTxSignatureReply {
+            signature: Some(BitcoinSignature { data: sig }),
+            htlc_signatures: htlc_bitcoin_sigs,
+        };
+        log_req_reply!(&node_id, &channel_id, &reply);
+        Ok(Response::new(reply))
+    }
+
+    async fn sign_holder_commitment_tx_phase2_redundant(
+        &self,
+        request: Request<SignHolderCommitmentTxPhase2RedundantRequest>,
+    ) -> Result<Response<CommitmentTxSignatureReply>, Status> {
+        let req = request.into_inner();
+        let node_id = self.node_id(req.node_id.clone())?;
+        let channel_id = self.channel_id(&req.channel_nonce)?;
         log_req_enter!(&node_id, &channel_id, &req);
 
         let req_info =
@@ -1263,7 +1266,7 @@ impl Signer for SignServer {
         let received_htlcs = self.convert_htlcs(&req_info.received_htlcs)?;
 
         let (sig, htlc_sigs) = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            let result = chan.sign_holder_commitment_tx_phase2(
+            let result = chan.sign_holder_commitment_tx_phase2_redundant(
                 req_info.n,
                 req_info.feerate_sat_per_kw,
                 req_info.to_holder_value_sat,

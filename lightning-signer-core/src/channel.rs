@@ -32,6 +32,7 @@ use crate::tx::tx::{
 };
 use crate::util::crypto_utils::{
     derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
+    signature_to_bitcoin_vec,
 };
 use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugVecVecU8};
 use crate::util::status::{internal_error, invalid_argument, Status};
@@ -814,10 +815,63 @@ impl Channel {
 
         Ok((next_holder_commitment_point, maybe_old_secret))
     }
+
+    /// Sign a holder commitment when force-closing
+    pub fn sign_holder_commitment_tx_phase2(
+        &self,
+        commitment_number: u64,
+    ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+        let info2 = self.enforcement_state.get_current_holder_commitment_info(commitment_number)?;
+
+        let htlcs =
+            Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
+
+        let recomposed_tx = self.make_holder_commitment_tx(
+            commitment_number,
+            info2.feerate_per_kw,
+            info2.to_broadcaster_value_sat,
+            info2.to_countersigner_value_sat,
+            htlcs,
+        )?;
+
+        // We provide a dummy signature for the remote, since we don't require that sig
+        // to be passed in to this call.  It would have been better if HolderCommitmentTransaction
+        // didn't require the remote sig.
+        // TODO consider if we actually want the sig for policy checks
+        let dummy_sig = Secp256k1::new().sign(
+            &secp256k1::Message::from_slice(&[42; 32]).unwrap(),
+            &SecretKey::from_slice(&[42; 32]).unwrap(),
+        );
+        let htlcs_len = recomposed_tx.htlcs().len();
+        let mut htlc_dummy_sigs = Vec::with_capacity(htlcs_len);
+        htlc_dummy_sigs.resize(htlcs_len, dummy_sig);
+
+        // Holder commitments need an extra wrapper for the LDK signature routine.
+        let recomposed_holder_tx = HolderCommitmentTransaction::new(
+            recomposed_tx,
+            dummy_sig,
+            htlc_dummy_sigs,
+            &self.keys.pubkeys().funding_pubkey,
+            &self.keys.counterparty_pubkeys().funding_pubkey,
+        );
+
+        // Sign the recomposed commitment.
+        let (sig, htlc_sigs) = self
+            .keys
+            .sign_holder_commitment_and_htlcs(&recomposed_holder_tx, &self.secp_ctx)
+            .map_err(|_| internal_error("failed to sign"))?;
+        let sig_vec = signature_to_bitcoin_vec(sig);
+        let htlc_sig_vecs = htlc_sigs.iter().map(|ss| signature_to_bitcoin_vec(*ss)).collect();
+
+        trace_enforcement_state!(&self.enforcement_state);
+        self.persist()?;
+        Ok((sig_vec, htlc_sig_vecs))
+    }
+
     /// Sign a holder commitment transaction after rebuilding it
     /// from the supplied arguments.
     // TODO anchors support once upstream supports it
-    pub fn sign_holder_commitment_tx_phase2(
+    pub fn sign_holder_commitment_tx_phase2_redundant(
         &self,
         commitment_number: u64,
         feerate_per_kw: u32,
@@ -880,15 +934,9 @@ impl Channel {
             .keys
             .sign_holder_commitment_and_htlcs(&holder_commitment_tx, &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
-        let mut sig_vec = sig.serialize_der().to_vec();
-        sig_vec.push(SigHashType::All as u8);
+        let sig_vec = signature_to_bitcoin_vec(sig);
+        let htlc_sig_vecs = htlc_sigs.iter().map(|ss| signature_to_bitcoin_vec(*ss)).collect();
 
-        let mut htlc_sig_vecs = Vec::new();
-        for htlc_sig in htlc_sigs {
-            let mut htlc_sig_vec = htlc_sig.serialize_der().to_vec();
-            htlc_sig_vec.push(SigHashType::All as u8);
-            htlc_sig_vecs.push(htlc_sig_vec);
-        }
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok((sig_vec, htlc_sig_vecs))
@@ -1590,55 +1638,6 @@ impl Channel {
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok(())
-    }
-
-    /// Sign a holder commitment when force-closing
-    pub fn sign_holder_commitment_tx(&self, commitment_number: u64) -> Result<Signature, Status> {
-        let info2 = self.enforcement_state.get_current_holder_commitment_info(commitment_number)?;
-
-        let htlcs =
-            Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
-
-        let recomposed_tx = self.make_holder_commitment_tx(
-            commitment_number,
-            info2.feerate_per_kw,
-            info2.to_broadcaster_value_sat,
-            info2.to_countersigner_value_sat,
-            htlcs,
-        )?;
-
-        // We provide a dummy signature for the remote, since we don't require that sig
-        // to be passed in to this call.  It would have been better if HolderCommitmentTransaction
-        // didn't require the remote sig.
-        // TODO consider if we actually want the sig for policy checks
-        let dummy_sig = Secp256k1::new().sign(
-            &secp256k1::Message::from_slice(&[42; 32]).unwrap(),
-            &SecretKey::from_slice(&[42; 32]).unwrap(),
-        );
-        let htlcs_len = recomposed_tx.htlcs().len();
-        let mut htlc_dummy_sigs = Vec::with_capacity(htlcs_len);
-        htlc_dummy_sigs.resize(htlcs_len, dummy_sig);
-
-        // Holder commitments need an extra wrapper for the LDK signature routine.
-        let recomposed_holder_tx = HolderCommitmentTransaction::new(
-            recomposed_tx,
-            dummy_sig,
-            htlc_dummy_sigs,
-            &self.keys.pubkeys().funding_pubkey,
-            &self.keys.counterparty_pubkeys().funding_pubkey,
-        );
-
-        // Sign the recomposed commitment.
-        let sigs = self
-            .keys
-            .sign_holder_commitment_and_htlcs(&recomposed_holder_tx, &self.secp_ctx)
-            .map_err(|_| internal_error("failed to sign"))?;
-
-        trace_enforcement_state!(&self.enforcement_state);
-        self.persist()?;
-
-        // Discard the htlc signatures for now.
-        Ok(sigs.0)
     }
 
     /// Phase 1

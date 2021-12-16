@@ -994,9 +994,9 @@ pub fn sign_holder_commitment(
     node_ctx: &TestNodeContext,
     chan_ctx: &TestChannelContext,
     commit_tx_ctx: &TestCommitmentTxContext,
-) -> Result<Signature, Status> {
+) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
     node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
-        chan.sign_holder_commitment_tx(commit_tx_ctx.commit_num)
+        chan.sign_holder_commitment_tx_phase2(commit_tx_ctx.commit_num)
     })
 }
 

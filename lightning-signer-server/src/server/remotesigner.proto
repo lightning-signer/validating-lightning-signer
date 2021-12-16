@@ -126,18 +126,15 @@ service Signer {
   rpc ValidateCounterpartyRevocation (ValidateCounterpartyRevocationRequest)
     returns (ValidateCounterpartyRevocationReply);
   
-  // BOLT #3 - Commitment Transaction, , phase 1
-  // Sign the holder's commitment tx, at force-close time.  No further
-  // commitments can be signed on this channel.  The commitment must
-  // not have been revoked.
-  rpc SignHolderCommitmentTx (SignHolderCommitmentTxRequest)
-    returns (SignatureReply);
-
-  // BOLT #3 - Commitment Transaction and attached HTLCs, phase 2
-  // Sign the holder's commitment tx and attached HTLCs, at
+  // BOLT #3 - Commitment Transaction, phase 2
+  // Sign the previously validated holder commitment tx, at
   // force-close time.  No further commitments can be signed on this
   // channel.  The commitment must not have been revoked.
   rpc SignHolderCommitmentTxPhase2 (SignHolderCommitmentTxPhase2Request)
+    returns (CommitmentTxSignatureReply);
+
+  // Deprecated: same as SignHolderCommitmentTxPhase2 with redundant parameters.
+  rpc SignHolderCommitmentTxPhase2Redundant (SignHolderCommitmentTxPhase2RedundantRequest)
     returns (CommitmentTxSignatureReply);
 
   // BOLT #3 - HTLC Outputs, phase 1
@@ -499,16 +496,6 @@ message ValidateCounterpartyRevocationRequest {
 message ValidateCounterpartyRevocationReply {
 }
 
-// Force close a channel by signing a holder commitment tx.  The
-// channel moves to closing state.
-message SignHolderCommitmentTxRequest {
-  NodeId node_id = 1;
-  
-  ChannelNonce channel_nonce = 2;
-    
-  uint64 commit_num = 3;
-}
-
 // As part of a force close, sweep a holder-broadcast HTLC output hanging off the
 // commitment tx
 message SignHolderHTLCTxRequest {
@@ -828,8 +815,18 @@ message SignCounterpartyCommitmentTxPhase2Request {
   CommitmentInfo commitment_info = 4;
 }
 
-// Sign the holder commitment
+// Force close a channel by signing a holder commitment tx.  The
+// channel moves to closing state.
 message SignHolderCommitmentTxPhase2Request {
+  NodeId node_id = 1;
+  
+  ChannelNonce channel_nonce = 2;
+    
+  uint64 commit_num = 3;
+}
+
+// Deprecated: Sign the holder commitment with redundant params
+message SignHolderCommitmentTxPhase2RedundantRequest {
   NodeId node_id = 1;
 
   ChannelNonce channel_nonce = 2;
