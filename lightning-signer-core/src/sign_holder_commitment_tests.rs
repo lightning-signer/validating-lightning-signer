@@ -1,103 +1,16 @@
 #[cfg(test)]
 mod tests {
+    use bitcoin;
     use bitcoin::hashes::hex::ToHex;
-    use bitcoin::hashes::Hash;
-    use bitcoin::util::psbt::serialize::Serialize;
-    use bitcoin::{self, Transaction};
-    use lightning::ln::chan_utils::{make_funding_redeemscript, TxCreationKeys};
+    use lightning::ln::chan_utils::make_funding_redeemscript;
 
     use test_env_log::test;
 
     use crate::channel::{Channel, ChannelBase, ChannelSetup, CommitmentType};
     use crate::policy::validator::{ChainState, EnforcementState};
-    use crate::tx::tx::HTLCInfo2;
     use crate::util::crypto_utils::signature_to_bitcoin_vec;
-    use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
-
-    #[test]
-    fn sign_holder_commitment_tx_test() {
-        let setup = make_test_channel_setup();
-        let (node, channel_id) =
-            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
-
-        let (sig, tx) = node
-            .with_ready_channel(&channel_id, |chan| {
-                let channel_parameters = chan.make_channel_parameters();
-                let commit_num = 23;
-                let feerate_per_kw = 0;
-                let to_broadcaster = 1_999_000;
-                let to_countersignatory = 1_000_000;
-                let offered_htlcs = vec![];
-                let received_htlcs = vec![];
-                let mut htlcs =
-                    Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
-
-                chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
-
-                let parameters = channel_parameters.as_holder_broadcastable();
-
-                let per_commitment_point =
-                    chan.get_per_commitment_point(commit_num).expect("point");
-                let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
-
-                let redeem_scripts = build_tx_scripts(
-                    &keys,
-                    to_broadcaster,
-                    to_countersignatory,
-                    &mut htlcs,
-                    &parameters,
-                )
-                .expect("scripts");
-                let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
-
-                let commitment_tx = chan
-                    .make_holder_commitment_tx(
-                        commit_num,
-                        feerate_per_kw,
-                        to_broadcaster,
-                        to_countersignatory,
-                        htlcs.clone(),
-                    )
-                    .expect("holder_commitment_tx");
-
-                // rebuild to get the scripts
-                let trusted_tx = commitment_tx.trust();
-                let tx = trusted_tx.built_transaction();
-
-                let sig = chan
-                    .sign_holder_commitment_tx(
-                        &tx.transaction,
-                        &output_witscripts,
-                        commit_num,
-                        feerate_per_kw,
-                        offered_htlcs,
-                        received_htlcs,
-                    )
-                    .expect("sign");
-                Ok((sig, tx.transaction.clone()))
-            })
-            .expect("build_commitment_tx");
-
-        assert_eq!(
-            tx.txid().to_hex(),
-            "17e696b2d7135e3b4df5ea7ab3f0bbb7cf22b37fa700c81075d5ec11e82fd1fc"
-        );
-
-        let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
-        let channel_funding_redeemscript =
-            make_funding_redeemscript(&funding_pubkey, &setup.counterparty_points.funding_pubkey);
-
-        check_signature(
-            &tx,
-            0,
-            signature_to_bitcoin_vec(sig),
-            &funding_pubkey,
-            setup.channel_value_sat,
-            &channel_funding_redeemscript,
-        );
-    }
 
     #[test]
     fn sign_holder_commitment_tx_phase2_static_test() {
@@ -168,30 +81,18 @@ mod tests {
 
     const HOLD_COMMIT_NUM: u64 = 23;
 
-    fn sign_holder_commitment_tx_with_mutators<
-        TxBuilderMutator,
-        StateMutator,
-        KeysMutator,
-        SignInputMutator,
-    >(
-        mutate_tx_builder: TxBuilderMutator,
-        mutate_channel_state: StateMutator,
-        mutate_keys: KeysMutator,
+    #[allow(dead_code)]
+    struct SignMutationState<'a> {
+        cstate: &'a mut ChainState,
+        estate: &'a mut EnforcementState,
+        commit_num: &'a mut u64,
+    }
+
+    fn sign_holder_commitment_tx_with_mutators<SignInputMutator>(
         mutate_sign_inputs: SignInputMutator,
     ) -> Result<(), Status>
     where
-        TxBuilderMutator: Fn(&mut TestCommitmentTxContext),
-        StateMutator: Fn(&mut EnforcementState),
-        KeysMutator: Fn(&mut TxCreationKeys),
-        SignInputMutator: Fn(
-            &mut ChainState,
-            &mut Transaction,
-            &mut Vec<Vec<u8>>,
-            &mut u64,
-            &mut u32,
-            &mut Vec<HTLCInfo2>,
-            &mut Vec<HTLCInfo2>,
-        ),
+        SignInputMutator: Fn(&mut SignMutationState),
     {
         let next_holder_commit_num = HOLD_COMMIT_NUM;
         let next_counterparty_commit_num = HOLD_COMMIT_NUM + 1;
@@ -214,37 +115,15 @@ mod tests {
             &node_ctx,
             &chan_ctx,
             commit_tx_ctx,
-            mutate_tx_builder,
-            mutate_channel_state,
-            mutate_keys,
             mutate_sign_inputs,
         )
     }
 
-    fn sign_holder_commitment_tx_retry_with_mutators<
-        TxBuilderMutator,
-        StateMutator,
-        KeysMutator,
-        SignInputMutator,
-    >(
-        mutate_tx_builder: TxBuilderMutator,
-        mutate_channel_state: StateMutator,
-        mutate_keys: KeysMutator,
+    fn sign_holder_commitment_tx_retry_with_mutators<SignInputMutator>(
         mutate_sign_inputs: SignInputMutator,
     ) -> Result<(), Status>
     where
-        TxBuilderMutator: Fn(&mut TestCommitmentTxContext),
-        StateMutator: Fn(&mut EnforcementState),
-        KeysMutator: Fn(&mut TxCreationKeys),
-        SignInputMutator: Fn(
-            &mut ChainState,
-            &mut Transaction,
-            &mut Vec<Vec<u8>>,
-            &mut u64,
-            &mut u32,
-            &mut Vec<HTLCInfo2>,
-            &mut Vec<HTLCInfo2>,
-        ),
+        SignInputMutator: Fn(&mut SignMutationState),
     {
         let next_holder_commit_num = HOLD_COMMIT_NUM;
         let next_counterparty_commit_num = HOLD_COMMIT_NUM + 1;
@@ -268,16 +147,7 @@ mod tests {
             &node_ctx,
             &chan_ctx,
             commit_tx_ctx.clone(),
-            |_commit_tx_ctx| {},
-            |_chan| {},
-            |_keys| {},
-            |_cstate,
-             _tx,
-             _witscripts,
-             _commit_num,
-             _feerate_per_kw,
-             _offered_htlcs,
-             _received_htlcs| {},
+            |_sms| {},
         )?;
 
         // Retry the signature with mutators.
@@ -285,73 +155,30 @@ mod tests {
             &node_ctx,
             &chan_ctx,
             commit_tx_ctx,
-            mutate_tx_builder,
-            mutate_channel_state,
-            mutate_keys,
             mutate_sign_inputs,
         )
     }
 
-    fn sign_holder_commitment_tx_with_mutators_common<
-        TxBuilderMutator,
-        StateMutator,
-        KeysMutator,
-        SignInputMutator,
-    >(
+    fn sign_holder_commitment_tx_with_mutators_common<SignInputMutator>(
         node_ctx: &TestNodeContext,
         chan_ctx: &TestChannelContext,
-        mut commit_tx_ctx0: TestCommitmentTxContext,
-        mutate_tx_builder: TxBuilderMutator,
-        mutate_channel_state: StateMutator,
-        mutate_keys: KeysMutator,
+        commit_tx_ctx0: TestCommitmentTxContext,
         mutate_sign_inputs: SignInputMutator,
     ) -> Result<(), Status>
     where
-        TxBuilderMutator: Fn(&mut TestCommitmentTxContext),
-        StateMutator: Fn(&mut EnforcementState),
-        KeysMutator: Fn(&mut TxCreationKeys),
-        SignInputMutator: Fn(
-            &mut ChainState,
-            &mut Transaction,
-            &mut Vec<Vec<u8>>,
-            &mut u64,
-            &mut u32,
-            &mut Vec<HTLCInfo2>,
-            &mut Vec<HTLCInfo2>,
-        ),
+        SignInputMutator: Fn(&mut SignMutationState),
     {
-        mutate_tx_builder(&mut commit_tx_ctx0);
-
         let (sig, tx) = node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
             let mut commit_tx_ctx = commit_tx_ctx0.clone();
 
-            let channel_parameters = chan.make_channel_parameters();
-
-            // Mutate the signer state.
-            mutate_channel_state(&mut chan.enforcement_state);
-
-            let parameters = channel_parameters.as_holder_broadcastable();
             let per_commitment_point =
                 chan.get_per_commitment_point(commit_tx_ctx.commit_num).expect("point");
-            let mut keys = chan.make_holder_tx_keys(&per_commitment_point)?;
-
-            // Mutate the tx creation keys.
-            mutate_keys(&mut keys);
+            let keys = chan.make_holder_tx_keys(&per_commitment_point)?;
 
             let htlcs = Channel::htlcs_info2_to_oic(
                 commit_tx_ctx.offered_htlcs.clone(),
                 commit_tx_ctx.received_htlcs.clone(),
             );
-
-            let redeem_scripts = build_tx_scripts(
-                &keys,
-                commit_tx_ctx.to_broadcaster,
-                commit_tx_ctx.to_countersignatory,
-                &htlcs,
-                &parameters,
-            )
-            .expect("scripts");
-            let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_holder_commitment_tx_with_keys(
                 keys,
@@ -363,29 +190,18 @@ mod tests {
             );
             // rebuild to get the scripts
             let trusted_tx = commitment_tx.trust();
-            let mut tx = trusted_tx.built_transaction().clone();
+            let tx = trusted_tx.built_transaction().clone();
 
             let mut cstate = make_test_chain_state();
 
             // Mutate the signing inputs.
-            mutate_sign_inputs(
-                &mut cstate,
-                &mut tx.transaction,
-                &mut output_witscripts,
-                &mut commit_tx_ctx.commit_num,
-                &mut commit_tx_ctx.feerate_per_kw,
-                &mut commit_tx_ctx.offered_htlcs,
-                &mut commit_tx_ctx.received_htlcs,
-            );
+            mutate_sign_inputs(&mut SignMutationState {
+                cstate: &mut cstate,
+                estate: &mut chan.enforcement_state,
+                commit_num: &mut commit_tx_ctx.commit_num,
+            });
 
-            let sig = chan.sign_holder_commitment_tx(
-                &tx.transaction,
-                &output_witscripts,
-                commit_tx_ctx.commit_num,
-                commit_tx_ctx.feerate_per_kw,
-                commit_tx_ctx.offered_htlcs.clone(),
-                commit_tx_ctx.received_htlcs.clone(),
-            )?;
+            let sig = chan.sign_holder_commitment_tx(commit_tx_ctx.commit_num)?;
 
             Ok((sig, tx.transaction.clone()))
         })?;
@@ -414,283 +230,69 @@ mod tests {
     }
 
     #[test]
-    fn sign_holder_commitment_tx_with_no_mut_test() {
-        assert_status_ok!(sign_holder_commitment_tx_with_mutators(
-            |_commit_tx_ctx| {},
-            |_state| {
-                // don't mutate the signer, should pass
-            },
-            |_keys| {
-                // don't mutate the keys, should pass
-            },
-            |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
-        ));
+    fn success_phase1() {
+        assert_status_ok!(sign_holder_commitment_tx_with_mutators(|_sms| {
+            // don't mutate the state, should pass
+        },));
     }
 
-    // policy-commitment-version
     #[test]
-    fn sign_holder_commitment_tx_with_bad_version_test() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_with_mutators(
-                |_commit_tx_ctx| {},
-                |_state| {},
-                |_keys| {},
-                |_cstate, tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
-                    tx.version = 3;
-                },
-            ),
-            "policy failure: decode_commitment_tx: bad commitment version: 3"
-        );
+    fn ok_after_mutual_close_phase1() {
+        assert_status_ok!(sign_holder_commitment_tx_with_mutators(|sms| {
+            // Set the mutual_close_signed flag
+            sms.estate.mutual_close_signed = true;
+        }));
     }
 
-    // policy-commitment-locktime
     #[test]
-    fn sign_holder_commitment_tx_with_bad_locktime_test() {
+    fn bad_prior_commit_num_phase1() {
         assert_failed_precondition_err!(
-            sign_holder_commitment_tx_with_mutators(
-                |_commit_tx_ctx| {},
-                |_state| {},
-                |_keys| {},
-                |_cstate, tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
-                    tx.lock_time = 42;
-                },
-            ),
-            "policy failure: recomposed tx mismatch"
-        );
-    }
-
-    // policy-commitment-sequence
-    #[test]
-    fn sign_holder_commitment_tx_with_bad_sequence_test() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_with_mutators(
-                |_commit_tx_ctx| {},
-                |_state| {},
-                |_keys| {},
-                |_cstate, tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
-                    tx.input[0].sequence = 42;
-                },
-            ),
-            "policy failure: recomposed tx mismatch"
-        );
-    }
-
-    // policy-commitment-input-single
-    #[test]
-    fn sign_holder_commitment_tx_with_bad_numinputs_test() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_with_mutators(
-                |_commit_tx_ctx| {},
-                |_state| {},
-                |_keys| {},
-                |_cstate, tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
-                    let mut inp2 = tx.input[0].clone();
-                    inp2.previous_output.txid = bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
-                    tx.input.push(inp2);
-                },
-            ),
-            "policy failure: recomposed tx mismatch"
-        );
-    }
-
-    // policy-commitment-input-match-funding
-    #[test]
-    fn sign_holder_commitment_tx_with_input_mismatch_test() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_with_mutators(
-                |_commit_tx_ctx| {},
-                |_state| {},
-                |_keys| {},
-                |_cstate, tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
-                    tx.input[0].previous_output.txid =
-                        bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
-                },
-            ),
-            "policy failure: recomposed tx mismatch"
-        );
-    }
-
-    // policy-commitment-revocation-pubkey
-    #[test]
-    fn sign_holder_commitment_tx_with_bad_revpubkey_test() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_with_mutators(
-                |_commit_tx_ctx| {},
-                |_state| {},
-                |keys| {
-                    keys.revocation_key = make_test_pubkey(42);
-                },
-                |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
-            ),
-            "policy failure: recomposed tx mismatch"
-        );
-    }
-
-    // policy-commitment-htlc-counterparty-htlc-pubkey`
-    #[test]
-    fn sign_holder_commitment_tx_with_bad_htlcpubkey_test() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_with_mutators(
-                |_commit_tx_ctx| {},
-                |_state| {},
-                |keys| {
-                    keys.countersignatory_htlc_key = make_test_pubkey(42);
-                },
-                |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
-            ),
-            "policy failure: recomposed tx mismatch"
-        );
-    }
-
-    // policy-commitment-broadcaster-pubkey
-    #[test]
-    fn sign_holder_commitment_tx_with_bad_delayed_pubkey_test() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_with_mutators(
-                |_commit_tx_ctx| {},
-                |_state| {},
-                |keys| {
-                    keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
-                },
-                |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
-            ),
-            "policy failure: recomposed tx mismatch"
+            sign_holder_commitment_tx_with_mutators(|sms| {
+                *sms.commit_num -= 1;
+            }),
+            "policy failure: get_current_holder_commitment_info: \
+             invalid next holder commitment number: 23 != 24"
         );
     }
 
     #[test]
-    fn sign_holder_commitment_tx_after_mutual_close() {
-        assert_status_ok!(sign_holder_commitment_tx_with_mutators(
-            |_commit_tx_ctx| {},
-            |state| state.mutual_close_signed = true,
-            |_keys| {},
-            |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
-        ));
-    }
-
-    // policy-commitment-singular-to-holder
-    #[test]
-    fn sign_holder_commitment_tx_with_multiple_to_holder() {
+    fn bad_following_commit_num_phase1() {
         assert_failed_precondition_err!(
-            sign_holder_commitment_tx_with_mutators(
-                |_commit_tx_ctx| {},
-                |_state| {},
-                |_keys| {},
-                |_cstate, tx, witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
-                    // Duplicate the to_holder output
-                    let ndx = 4;
-                    tx.output.push(tx.output[ndx].clone());
-                    witscripts.push(witscripts[ndx].clone());
-                },
-            ),
-            "transaction format: decode_commitment_tx: \
-             tx output[5]: more than one to_broadcaster output"
-        );
-    }
-
-    // policy-commitment-singular-to-counterparty
-    #[test]
-    fn sign_holder_commitment_tx_with_multiple_to_counterparty() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_with_mutators(
-                |_commit_tx_ctx| {},
-                |_state| {},
-                |_keys| {},
-                |_cstate, tx, witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {
-                    // Duplicate the to_counterparty output
-                    let ndx = 3;
-                    tx.output.push(tx.output[ndx].clone());
-                    witscripts.push(witscripts[ndx].clone());
-                },
-            ),
-            "transaction format: decode_commitment_tx: \
-             tx output[5]: more than one to_countersigner output"
+            sign_holder_commitment_tx_with_mutators(|sms| {
+                *sms.commit_num += 1;
+            }),
+            "policy failure: get_current_holder_commitment_info: \
+             invalid next holder commitment number: 25 != 24"
         );
     }
 
     // policy-commitment-retry-same
     #[test]
-    fn sign_holder_commitment_tx_retry_success() {
-        assert_status_ok!(sign_holder_commitment_tx_retry_with_mutators(
-            |_commit_tx_ctx| {},
-            |_state| {},
-            |_keys| {},
-            |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
-        ));
+    fn retry_success_phase1() {
+        assert_status_ok!(sign_holder_commitment_tx_retry_with_mutators(|_sms| {
+            // don't mutate the state, should pass
+        },));
     }
 
-    // policy-commitment-retry-same
     #[test]
-    fn sign_holder_commitment_tx_retry_with_bad_to_holder() {
+    fn retry_bad_prior_commit_num_phase1() {
         assert_failed_precondition_err!(
-            sign_holder_commitment_tx_retry_with_mutators(
-                |commit_tx_ctx| {
-                    commit_tx_ctx.to_broadcaster -= 1;
-                },
-                |_state| {},
-                |_keys| {},
-                |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
-            ),
-            "policy failure: validate_holder_commitment_tx: \
-             retry holder commitment 23 with changed info"
+            sign_holder_commitment_tx_retry_with_mutators(|sms| {
+                *sms.commit_num -= 1;
+            }),
+            "policy failure: get_current_holder_commitment_info: \
+             invalid next holder commitment number: 23 != 24"
         );
     }
 
-    // policy-commitment-retry-same
     #[test]
-    fn sign_holder_commitment_tx_retry_with_bad_to_counterparty() {
+    fn retry_bad_following_commit_num_phase1() {
         assert_failed_precondition_err!(
-            sign_holder_commitment_tx_retry_with_mutators(
-                |commit_tx_ctx| {
-                    commit_tx_ctx.to_countersignatory -= 1;
-                },
-                |_state| {},
-                |_keys| {},
-                |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
-            ),
-            "policy failure: validate_holder_commitment_tx: \
-             retry holder commitment 23 with changed info"
-        );
-    }
-
-    // policy-commitment-retry-same
-    #[test]
-    fn sign_holder_commitment_tx_retry_with_bad_offered_htlcs() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_retry_with_mutators(
-                |commit_tx_ctx| {
-                    // Remove the offered HTLC, give it's value to the first received HTLC.
-                    commit_tx_ctx.received_htlcs[0].value_sat =
-                        commit_tx_ctx.offered_htlcs[0].value_sat;
-                    commit_tx_ctx.offered_htlcs.remove(0);
-                },
-                |_state| {},
-                |_keys| {},
-                |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
-            ),
-            "policy failure: validate_holder_commitment_tx: \
-             retry holder commitment 23 with changed info"
-        );
-    }
-
-    // policy-commitment-retry-same
-    #[test]
-    fn sign_holder_commitment_tx_retry_with_bad_received_htlcs() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_retry_with_mutators(
-                |commit_tx_ctx| {
-                    // Remove the first received HTLC, give its value to the offered HTLC.
-                    // Remove the offered HTLC, give it's value to the first received HTLC.
-                    commit_tx_ctx.offered_htlcs[0].value_sat =
-                        commit_tx_ctx.received_htlcs[0].value_sat;
-                    commit_tx_ctx.received_htlcs.remove(0);
-                },
-                |_state| {},
-                |_keys| {},
-                |_cstate, _tx, _witscripts, _commit_num, _feerate_per_kw, _o_htlcs, _r_htlcs| {},
-            ),
-            "policy failure: validate_holder_commitment_tx: \
-             retry holder commitment 23 with changed info"
+            sign_holder_commitment_tx_retry_with_mutators(|sms| {
+                *sms.commit_num += 1;
+            }),
+            "policy failure: get_current_holder_commitment_info: \
+             invalid next holder commitment number: 25 != 24"
         );
     }
 }

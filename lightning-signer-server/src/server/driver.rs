@@ -827,34 +827,10 @@ impl Signer for SignServer {
         let channel_id = self.channel_id(&req.channel_nonce)?;
         log_req_enter!(node_id, channel_id, &req);
 
-        let reqtx = req.tx.clone().ok_or_else(|| invalid_grpc_argument("missing tx"))?;
-
-        let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
-            .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
-
-        if tx.input.len() != 1 {
-            return Err(invalid_grpc_argument("tx.input.len() != 1"));
-        }
-        if tx.output.len() == 0 {
-            return Err(invalid_grpc_argument("tx.output.len() == 0"));
-        }
-
-        let witscripts = reqtx.output_descs.iter().map(|odsc| odsc.witscript.clone()).collect();
-
         let commit_num = req.commit_num;
-        let offered_htlcs = self.convert_htlcs(&req.offered_htlcs)?;
-        let received_htlcs = self.convert_htlcs(&req.received_htlcs)?;
-        let feerate_per_kw = req.feerate_sat_per_kw;
 
         let sig = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            chan.sign_holder_commitment_tx(
-                &tx,
-                &witscripts,
-                commit_num,
-                feerate_per_kw,
-                offered_htlcs.clone(),
-                received_htlcs.clone(),
-            )
+            chan.sign_holder_commitment_tx(commit_num)
         })?;
 
         let reply = SignatureReply {

@@ -995,45 +995,8 @@ pub fn sign_holder_commitment(
     chan_ctx: &TestChannelContext,
     commit_tx_ctx: &TestCommitmentTxContext,
 ) -> Result<Signature, Status> {
-    let htlcs = Channel::htlcs_info2_to_oic(
-        commit_tx_ctx.offered_htlcs.clone(),
-        commit_tx_ctx.received_htlcs.clone(),
-    );
     node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
-        let channel_parameters = chan.make_channel_parameters();
-        let parameters = channel_parameters.as_holder_broadcastable();
-
-        // NOTE - the unit tests calling this method may be
-        // setting up a commitment with a bogus
-        // commitment_number on purpose.  To allow this we
-        // need to temporarily set the channel's
-        // next_holder_commit_num while fetching the
-        // commitment_point and then restore it.
-        let save_commit_num = chan.enforcement_state.next_holder_commit_num;
-        chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_tx_ctx.commit_num);
-        let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
-        chan.enforcement_state.set_next_holder_commit_num_for_testing(save_commit_num);
-
-        let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
-
-        let redeem_scripts = build_tx_scripts(
-            &keys,
-            commit_tx_ctx.to_broadcaster,
-            commit_tx_ctx.to_countersignatory,
-            &htlcs,
-            &parameters,
-        )
-        .expect("scripts");
-        let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
-
-        chan.sign_holder_commitment_tx(
-            &commit_tx_ctx.tx.as_ref().unwrap().trust().built_transaction().transaction,
-            &output_witscripts,
-            commit_tx_ctx.commit_num,
-            commit_tx_ctx.feerate_per_kw,
-            commit_tx_ctx.offered_htlcs.clone(),
-            commit_tx_ctx.received_htlcs.clone(),
-        )
+        chan.sign_holder_commitment_tx(commit_tx_ctx.commit_num)
     })
 }
 

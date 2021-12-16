@@ -1593,15 +1593,7 @@ impl Channel {
     }
 
     /// Sign a holder commitment when force-closing
-    pub fn sign_holder_commitment_tx(
-        &self,
-        _tx: &bitcoin::Transaction,
-        _output_witscripts: &Vec<Vec<u8>>,
-        commitment_number: u64,
-        _feerate_per_kw: u32,
-        _offered_htlcs: Vec<HTLCInfo2>,
-        _received_htlcs: Vec<HTLCInfo2>,
-    ) -> Result<Signature, Status> {
+    pub fn sign_holder_commitment_tx(&self, commitment_number: u64) -> Result<Signature, Status> {
         let info2 = self.enforcement_state.get_current_holder_commitment_info(commitment_number)?;
 
         let htlcs =
