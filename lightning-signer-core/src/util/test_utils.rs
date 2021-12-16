@@ -1105,6 +1105,7 @@ pub fn make_test_commitment_info() -> CommitmentInfo2 {
         10,
         vec![],
         vec![],
+        7500,
     )
 }
 

@@ -52,6 +52,7 @@ mod tests {
         let counterparty_commit_num = 43;
         let holder_wallet_path_hint = vec![7];
 
+        let feerate_per_kw = 7500;
         let fee = 2000;
         let mut to_holder_value_sat = 2_000_000;
         let mut to_counterparty_value_sat = setup.channel_value_sat - to_holder_value_sat; // 1_000_000
@@ -80,6 +81,7 @@ mod tests {
                 to_self_delay: setup.counterparty_selected_contest_delay,
                 offered_htlcs: vec![],
                 received_htlcs: vec![],
+                feerate_per_kw,
             });
             estate.current_counterparty_commit_info = Some(CommitmentInfo2 {
                 is_counterparty_broadcaster: true,
@@ -93,6 +95,7 @@ mod tests {
                 to_self_delay: setup.holder_selected_contest_delay,
                 offered_htlcs: vec![],
                 received_htlcs: vec![],
+                feerate_per_kw,
             });
             estate.previous_counterparty_commit_info = None;
             estate.mutual_close_signed = false;

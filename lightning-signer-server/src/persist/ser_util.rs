@@ -342,6 +342,7 @@ pub struct CommitmentInfo2Def {
     pub offered_htlcs: Vec<HTLCInfo2>,
     #[serde_as(as = "Vec<HTLCInfo2Def>")]
     pub received_htlcs: Vec<HTLCInfo2>,
+    pub feerate_per_kw: u32,
 }
 
 #[derive(Deserialize)]

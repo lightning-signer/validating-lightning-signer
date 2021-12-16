@@ -535,6 +535,7 @@ impl Channel {
             to_counterparty_value_sat,
             offered_htlcs.clone(),
             received_htlcs.clone(),
+            feerate_per_kw,
         )?;
 
         self.validator().validate_counterparty_commitment_tx(
@@ -763,6 +764,7 @@ impl Channel {
             to_counterparty_value_sat,
             offered_htlcs,
             received_htlcs,
+            feerate_per_kw,
         )?;
 
         self.validator()
@@ -832,6 +834,7 @@ impl Channel {
             to_counterparty_value_sat,
             offered_htlcs.clone(),
             received_htlcs.clone(),
+            feerate_per_kw,
         )?;
 
         self.validator().validate_holder_commitment_tx(
@@ -1214,6 +1217,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
+        feerate_per_kw: u32,
     ) -> Result<CommitmentInfo2, Status> {
         let holder_points = self.keys.pubkeys();
         let secp_ctx = &self.secp_ctx;
@@ -1245,6 +1249,7 @@ impl Channel {
             self.setup.holder_selected_contest_delay,
             offered_htlcs,
             received_htlcs,
+            feerate_per_kw,
         ))
     }
 
@@ -1255,6 +1260,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
+        feerate_per_kw: u32,
     ) -> Result<CommitmentInfo2, Status> {
         let holder_points = self.keys.pubkeys();
         let counterparty_points = self.keys.counterparty_pubkeys();
@@ -1299,6 +1305,7 @@ impl Channel {
             self.setup.counterparty_selected_contest_delay,
             offered_htlcs,
             received_htlcs,
+            feerate_per_kw,
         ))
     }
 
@@ -1336,6 +1343,7 @@ impl Channel {
             info.to_broadcaster_value_sat,
             offered_htlcs,
             received_htlcs,
+            feerate_per_kw,
         )?;
 
         self.validator()
@@ -1449,6 +1457,7 @@ impl Channel {
             info.to_countersigner_value_sat,
             offered_htlcs.clone(),
             received_htlcs.clone(),
+            feerate_per_kw,
         )?;
 
         self.validator()
@@ -1799,11 +1808,12 @@ impl Channel {
         commitment_point: &Option<PublicKey>,
     ) -> Result<SecretKey, Status> {
         Ok(match commitment_point {
-            Some(commitment_point) =>
+            Some(commitment_point) => {
                 derive_private_key(&self.secp_ctx, &commitment_point, &self.keys.payment_key)
                     .map_err(|err| {
                         Status::internal(format!("derive_private_key failed: {}", err))
-                    })?,
+                    })?
+            }
             None => {
                 // option_static_remotekey in effect
                 self.keys.payment_key.clone()
