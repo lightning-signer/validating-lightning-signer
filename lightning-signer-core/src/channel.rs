@@ -1595,20 +1595,24 @@ impl Channel {
     /// Sign a holder commitment when force-closing
     pub fn sign_holder_commitment_tx(
         &self,
-        tx: &bitcoin::Transaction,
-        output_witscripts: &Vec<Vec<u8>>,
+        _tx: &bitcoin::Transaction,
+        _output_witscripts: &Vec<Vec<u8>>,
         commitment_number: u64,
-        feerate_per_kw: u32,
-        offered_htlcs: Vec<HTLCInfo2>,
-        received_htlcs: Vec<HTLCInfo2>,
+        _feerate_per_kw: u32,
+        _offered_htlcs: Vec<HTLCInfo2>,
+        _received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<Signature, Status> {
-        let (recomposed_tx, _info2) = self.make_validated_recomposed_holder_commitment_tx(
-            tx,
-            output_witscripts,
+        let info2 = self.enforcement_state.get_current_holder_commitment_info(commitment_number)?;
+
+        let htlcs =
+            Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
+
+        let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
-            feerate_per_kw,
-            offered_htlcs,
-            received_htlcs,
+            info2.feerate_per_kw,
+            info2.to_broadcaster_value_sat,
+            info2.to_countersigner_value_sat,
+            htlcs,
         )?;
 
         // We provide a dummy signature for the remote, since we don't require that sig
