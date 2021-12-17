@@ -293,6 +293,22 @@ impl EnforcementState {
         Ok(())
     }
 
+    /// Get the current commitment info
+    pub fn get_current_holder_commitment_info(
+        &self,
+        commitment_number: u64,
+    ) -> Result<CommitmentInfo2, ValidationError> {
+        // Make sure they are asking for the correct commitment (in sync).
+        if commitment_number + 1 != self.next_holder_commit_num {
+            return policy_err!(
+                "invalid next holder commitment number: {} != {}",
+                commitment_number + 1,
+                self.next_holder_commit_num
+            );
+        }
+        Ok(self.current_holder_commit_info.as_ref().unwrap().clone())
+    }
+
     /// Set next counterparty commitment number
     pub fn set_next_counterparty_commit_num(
         &mut self,

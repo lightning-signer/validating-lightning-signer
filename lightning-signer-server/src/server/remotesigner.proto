@@ -126,15 +126,8 @@ service Signer {
   rpc ValidateCounterpartyRevocation (ValidateCounterpartyRevocationRequest)
     returns (ValidateCounterpartyRevocationReply);
   
-  // BOLT #3 - Commitment Transaction, , phase 1
-  // Sign the holder's commitment tx, at force-close time.  No further
-  // commitments can be signed on this channel.  The commitment must
-  // not have been revoked.
-  rpc SignHolderCommitmentTx (SignHolderCommitmentTxRequest)
-    returns (SignatureReply);
-
-  // BOLT #3 - Commitment Transaction and attached HTLCs, phase 2
-  // Sign the holder's commitment tx and attached HTLCs, at
+  // BOLT #3 - Commitment Transaction, phase 2
+  // Sign the previously validated holder commitment tx, at
   // force-close time.  No further commitments can be signed on this
   // channel.  The commitment must not have been revoked.
   rpc SignHolderCommitmentTxPhase2 (SignHolderCommitmentTxPhase2Request)
@@ -499,22 +492,6 @@ message ValidateCounterpartyRevocationRequest {
 message ValidateCounterpartyRevocationReply {
 }
 
-// Force close a channel by signing a holder commitment tx.  The
-// channel moves to closing state.
-message SignHolderCommitmentTxRequest {
-  NodeId node_id = 1;
-  
-  ChannelNonce channel_nonce = 2;
-    
-  Transaction tx = 3;
-
-  // These are needed in addition to the tx to recompose.
-  uint64 commit_num = 5;
-  uint32 feerate_sat_per_kw = 6;
-  repeated HTLCInfo offered_htlcs = 10;
-  repeated HTLCInfo received_htlcs = 11;
-}
-
 // As part of a force close, sweep a holder-broadcast HTLC output hanging off the
 // commitment tx
 message SignHolderHTLCTxRequest {
@@ -834,14 +811,14 @@ message SignCounterpartyCommitmentTxPhase2Request {
   CommitmentInfo commitment_info = 4;
 }
 
-// Sign the holder commitment
+// Force close a channel by signing a holder commitment tx.  The
+// channel moves to closing state.
 message SignHolderCommitmentTxPhase2Request {
   NodeId node_id = 1;
-
+  
   ChannelNonce channel_nonce = 2;
-
-  // per_commitment_point will not be populated
-  CommitmentInfo commitment_info = 4;
+    
+  uint64 commit_num = 3;
 }
 
 message CommitmentTxSignatureReply {

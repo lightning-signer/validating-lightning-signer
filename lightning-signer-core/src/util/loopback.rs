@@ -98,9 +98,7 @@ impl LoopbackChannelSigner {
 
     fn get_channel_setup(&self) -> Result<ChannelSetup, ()> {
         self.signer
-            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-                Ok(chan.setup.clone())
-            })
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| Ok(chan.setup.clone()))
             .map_err(|s| self.bad_status(s))
     }
 
@@ -146,7 +144,7 @@ impl LoopbackChannelSigner {
         let (sig_vec, htlc_sig_vecs) = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-                let result = chan.sign_holder_commitment_tx_phase2(
+                let result = chan.sign_holder_commitment_tx_phase2_redundant(
                     commitment_number,
                     feerate_per_kw,
                     to_holder_value_sat,

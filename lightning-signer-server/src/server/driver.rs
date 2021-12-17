@@ -818,52 +818,6 @@ impl Signer for SignServer {
         Ok(Response::new(reply))
     }
 
-    async fn sign_holder_commitment_tx(
-        &self,
-        request: Request<SignHolderCommitmentTxRequest>,
-    ) -> Result<Response<SignatureReply>, Status> {
-        let req = request.into_inner();
-        let node_id = self.node_id(req.node_id.clone())?;
-        let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_req_enter!(node_id, channel_id, &req);
-
-        let reqtx = req.tx.clone().ok_or_else(|| invalid_grpc_argument("missing tx"))?;
-
-        let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
-            .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
-
-        if tx.input.len() != 1 {
-            return Err(invalid_grpc_argument("tx.input.len() != 1"));
-        }
-        if tx.output.len() == 0 {
-            return Err(invalid_grpc_argument("tx.output.len() == 0"));
-        }
-
-        let witscripts = reqtx.output_descs.iter().map(|odsc| odsc.witscript.clone()).collect();
-
-        let commit_num = req.commit_num;
-        let offered_htlcs = self.convert_htlcs(&req.offered_htlcs)?;
-        let received_htlcs = self.convert_htlcs(&req.received_htlcs)?;
-        let feerate_per_kw = req.feerate_sat_per_kw;
-
-        let sig = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            chan.sign_holder_commitment_tx(
-                &tx,
-                &witscripts,
-                commit_num,
-                feerate_per_kw,
-                offered_htlcs.clone(),
-                received_htlcs.clone(),
-            )
-        })?;
-
-        let reply = SignatureReply {
-            signature: Some(BitcoinSignature { data: signature_to_bitcoin_vec(sig) }),
-        };
-        log_req_reply!(&node_id, &channel_id, &reply);
-        Ok(Response::new(reply))
-    }
-
     async fn sign_holder_htlc_tx(
         &self,
         request: Request<SignHolderHtlcTxRequest>,
@@ -1273,29 +1227,12 @@ impl Signer for SignServer {
         let req = request.into_inner();
         let node_id = self.node_id(req.node_id.clone())?;
         let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_req_enter!(&node_id, &channel_id, &req);
+        log_req_enter!(node_id, channel_id, &req);
 
-        let req_info =
-            req.commitment_info.ok_or_else(|| invalid_grpc_argument("missing commitment info"))?;
-        if req_info.per_commitment_point.is_some() {
-            return Err(invalid_grpc_argument(
-                "per-commitment point must not be provided for holder txs",
-            ));
-        }
-
-        let offered_htlcs = self.convert_htlcs(&req_info.offered_htlcs)?;
-        let received_htlcs = self.convert_htlcs(&req_info.received_htlcs)?;
+        let commit_num = req.commit_num;
 
         let (sig, htlc_sigs) = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            let result = chan.sign_holder_commitment_tx_phase2(
-                req_info.n,
-                req_info.feerate_sat_per_kw,
-                req_info.to_holder_value_sat,
-                req_info.to_counterparty_value_sat,
-                offered_htlcs.clone(),
-                received_htlcs.clone(),
-            )?;
-            Ok(result)
+            chan.sign_holder_commitment_tx_phase2(commit_num)
         })?;
 
         let htlc_bitcoin_sigs =

@@ -134,6 +134,7 @@ mod tests {
                     to_counterparty_value_sat,
                     vec![],
                     vec![],
+                    feerate_per_kw,
                 )?;
                 let commit_num = 23;
                 let (tx, output_scripts, _) =
@@ -320,6 +321,7 @@ mod tests {
                     to_counterparty_value_sat,
                     offered_htlcs.clone(),
                     received_htlcs.clone(),
+                    feerate_per_kw,
                 )?;
                 let commit_num = 23;
                 let (tx, output_scripts, _) =

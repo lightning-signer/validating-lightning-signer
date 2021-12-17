@@ -211,10 +211,7 @@ impl JSNode {
             counterparty_shutdown_script: None,
             commitment_type: CommitmentType::Legacy,
         };
-        let _channel = self
-            .node
-            .ready_channel(id.0, None, setup, &vec![])
-            .map_err(from_status)?;
+        let _channel = self.node.ready_channel(id.0, None, setup, &vec![]).map_err(from_status)?;
         Ok(())
     }
 
@@ -228,7 +225,7 @@ impl JSNode {
         let (ser_signature, _) = self
             .node
             .with_ready_channel(&channel_id.0, |chan| {
-                chan.sign_holder_commitment_tx_phase2(
+                chan.sign_holder_commitment_tx_phase2_redundant(
                     commit_num,
                     0, // feerate not used
                     to_holder_value_sat,
@@ -243,26 +240,20 @@ impl JSNode {
 }
 
 fn from_status(s: Status) -> JSValidationError {
-    JSValidationError {
-        message: s.message().to_string(),
-    }
+    JSValidationError { message: s.message().to_string() }
 }
 
 #[wasm_bindgen]
 pub fn make_node() -> JSNode {
-    let config = NodeConfig {
-        network: Network::Testnet,
-        key_derivation_style: KeyDerivationStyle::Native,
-    };
+    let config =
+        NodeConfig { network: Network::Testnet, key_derivation_style: KeyDerivationStyle::Native };
     let mut seed = [0u8; 32];
     randomize_buffer(&mut seed);
     // TODO remove in production :)
     debug!("SEED {}", seed.to_hex());
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
     let node = Node::new(config, &seed, &persister, vec![]);
-    JSNode {
-        node: Arc::new(node),
-    }
+    JSNode { node: Arc::new(node) }
 }
 
 #[wasm_bindgen]
@@ -277,9 +268,7 @@ fn randomize_buffer(seed: &mut [u8; 32]) {
 
     let window = window().expect("window");
     let crypto: Crypto = window.crypto().expect("crypto");
-    crypto
-        .get_random_values_with_u8_array(seed)
-        .expect("random");
+    crypto.get_random_values_with_u8_array(seed).expect("random");
 }
 
 #[wasm_bindgen]

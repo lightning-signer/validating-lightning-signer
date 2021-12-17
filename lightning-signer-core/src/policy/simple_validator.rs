@@ -1490,6 +1490,24 @@ mod tests {
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> CommitmentInfo2 {
+        make_counterparty_info_with_feerate(
+            to_holder_value_sat,
+            to_counterparty_value_sat,
+            to_self_delay,
+            offered_htlcs,
+            received_htlcs,
+            7500,
+        )
+    }
+
+    fn make_counterparty_info_with_feerate(
+        to_holder_value_sat: u64,
+        to_counterparty_value_sat: u64,
+        to_self_delay: u16,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
+        feerate_per_kw: u32,
+    ) -> CommitmentInfo2 {
         let to_holder_pubkey = make_test_pubkey(1);
         let revocation_pubkey = make_test_pubkey(2);
         let to_broadcaster_delayed_pubkey = make_test_pubkey(3);
@@ -1503,6 +1521,7 @@ mod tests {
             to_self_delay,
             offered_htlcs,
             received_htlcs,
+            feerate_per_kw,
         )
     }
 
