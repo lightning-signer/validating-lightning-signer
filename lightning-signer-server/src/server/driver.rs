@@ -1245,48 +1245,6 @@ impl Signer for SignServer {
         Ok(Response::new(reply))
     }
 
-    async fn sign_holder_commitment_tx_phase2_redundant(
-        &self,
-        request: Request<SignHolderCommitmentTxPhase2RedundantRequest>,
-    ) -> Result<Response<CommitmentTxSignatureReply>, Status> {
-        let req = request.into_inner();
-        let node_id = self.node_id(req.node_id.clone())?;
-        let channel_id = self.channel_id(&req.channel_nonce)?;
-        log_req_enter!(&node_id, &channel_id, &req);
-
-        let req_info =
-            req.commitment_info.ok_or_else(|| invalid_grpc_argument("missing commitment info"))?;
-        if req_info.per_commitment_point.is_some() {
-            return Err(invalid_grpc_argument(
-                "per-commitment point must not be provided for holder txs",
-            ));
-        }
-
-        let offered_htlcs = self.convert_htlcs(&req_info.offered_htlcs)?;
-        let received_htlcs = self.convert_htlcs(&req_info.received_htlcs)?;
-
-        let (sig, htlc_sigs) = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            let result = chan.sign_holder_commitment_tx_phase2_redundant(
-                req_info.n,
-                req_info.feerate_sat_per_kw,
-                req_info.to_holder_value_sat,
-                req_info.to_counterparty_value_sat,
-                offered_htlcs.clone(),
-                received_htlcs.clone(),
-            )?;
-            Ok(result)
-        })?;
-
-        let htlc_bitcoin_sigs =
-            htlc_sigs.iter().map(|s| BitcoinSignature { data: s.clone() }).collect();
-        let reply = CommitmentTxSignatureReply {
-            signature: Some(BitcoinSignature { data: sig }),
-            htlc_signatures: htlc_bitcoin_sigs,
-        };
-        log_req_reply!(&node_id, &channel_id, &reply);
-        Ok(Response::new(reply))
-    }
-
     async fn list_nodes(
         &self,
         _request: Request<ListNodesRequest>,

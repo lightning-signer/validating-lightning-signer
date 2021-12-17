@@ -133,10 +133,6 @@ service Signer {
   rpc SignHolderCommitmentTxPhase2 (SignHolderCommitmentTxPhase2Request)
     returns (CommitmentTxSignatureReply);
 
-  // Deprecated: same as SignHolderCommitmentTxPhase2 with redundant parameters.
-  rpc SignHolderCommitmentTxPhase2Redundant (SignHolderCommitmentTxPhase2RedundantRequest)
-    returns (CommitmentTxSignatureReply);
-
   // BOLT #3 - HTLC Outputs, phase 1
   // Sign an HTLC-Success or HTLC-Timeout tx spending a holder's HTLC
   // output, at force-close time
@@ -823,16 +819,6 @@ message SignHolderCommitmentTxPhase2Request {
   ChannelNonce channel_nonce = 2;
     
   uint64 commit_num = 3;
-}
-
-// Deprecated: Sign the holder commitment with redundant params
-message SignHolderCommitmentTxPhase2RedundantRequest {
-  NodeId node_id = 1;
-
-  ChannelNonce channel_nonce = 2;
-
-  // per_commitment_point will not be populated
-  CommitmentInfo commitment_info = 4;
 }
 
 message CommitmentTxSignatureReply {
