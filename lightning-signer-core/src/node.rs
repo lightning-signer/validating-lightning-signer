@@ -21,7 +21,7 @@ use bitcoin::{secp256k1, Address, Transaction, TxOut};
 use bitcoin::{Network, OutPoint, Script, SigHashType};
 use hashbrown::HashMap;
 use lightning::chain;
-use lightning::chain::keysinterface::{BaseSign, KeysInterface, SpendableOutputDescriptor};
+use lightning::chain::keysinterface::{BaseSign, KeyMaterial, KeysInterface, SpendableOutputDescriptor};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
 };
@@ -223,6 +223,13 @@ impl Node {
     #[allow(dead_code)]
     pub(crate) fn get_secure_random_bytes(&self) -> [u8; 32] {
         self.keys_manager.get_secure_random_bytes()
+    }
+
+    /// Get secret key material as bytes for use in encrypting and decrypting inbound payment data.
+    ///
+    /// This method must return the same value each time it is called.
+    pub fn get_inbound_payment_key_material(&self) -> KeyMaterial {
+        self.keys_manager.get_inbound_payment_key_material()
     }
 
     /// Get the [Mutex] protected channel slot

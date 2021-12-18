@@ -7,14 +7,16 @@ use bitcoin::secp256k1::recovery::RecoverableSignature;
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::{Script, Transaction, TxOut};
-use lightning::chain::keysinterface::{BaseSign, KeysInterface, Sign, SpendableOutputDescriptor};
+use lightning::chain::keysinterface::{BaseSign, KeysInterface, Sign, SpendableOutputDescriptor, KeyMaterial};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, HTLCOutputInCommitment,
-    HolderCommitmentTransaction, TxCreationKeys,
+    HolderCommitmentTransaction, TxCreationKeys, ClosingTransaction
 };
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
+use lightning::ln::script::ShutdownScript;
 use lightning::util::ser::{Readable, Writeable, Writer};
+
 use log::{debug, error, info};
 
 use crate::channel::{ChannelBase, ChannelId, ChannelSetup, CommitmentType};
@@ -28,8 +30,6 @@ use crate::util::crypto_utils::{
 use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::Arc;
-use lightning::ln::chan_utils::ClosingTransaction;
-use lightning::ln::script::ShutdownScript;
 
 /// Adapt MySigner to KeysInterface
 pub struct LoopbackSignerKeysInterface {
@@ -590,6 +590,10 @@ impl KeysInterface for LoopbackSignerKeysInterface {
 
     fn sign_invoice(&self, invoice_preimage: Vec<u8>) -> Result<RecoverableSignature, ()> {
         Ok(self.get_node().sign_invoice(&invoice_preimage))
+    }
+
+    fn get_inbound_payment_key_material(&self) -> KeyMaterial {
+        self.get_node().get_inbound_payment_key_material()
     }
 }
 

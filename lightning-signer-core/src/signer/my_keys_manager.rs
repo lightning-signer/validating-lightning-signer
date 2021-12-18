@@ -15,8 +15,10 @@ use bitcoin::{secp256k1, SigHashType, Transaction, TxIn, TxOut};
 use bitcoin::{Network, Script};
 use lightning::chain::keysinterface::{
     DelayedPaymentOutputDescriptor, InMemorySigner, KeysInterface, SpendableOutputDescriptor,
-    StaticPaymentOutputDescriptor,
+    StaticPaymentOutputDescriptor, KeyMaterial
 };
+use lightning::ln::msgs::DecodeError;
+use lightning::ln::script::ShutdownScript;
 
 use crate::channel::ChannelId;
 use crate::util::crypto_utils::{
@@ -28,8 +30,6 @@ use crate::util::{byte_utils, transaction_utils};
 use bitcoin::secp256k1::recovery::RecoverableSignature;
 use bitcoin::util::bip143;
 use hashbrown::HashSet as UnorderedSet;
-use lightning::ln::msgs::DecodeError;
-use lightning::ln::script::ShutdownScript;
 
 /// The key derivation style
 #[derive(Clone, Copy, Debug)]
@@ -86,6 +86,7 @@ pub struct MyKeysManager {
     network: Network,
     master_key: ExtendedPrivKey,
     node_secret: SecretKey,
+    inbound_payment_key: KeyMaterial,
     channel_seed_base: [u8; 32],
     account_extended_key: ExtendedPrivKey,
     destination_script: Script,
@@ -166,6 +167,11 @@ impl MyKeysManager {
                 let rand_bytes_master_key = master_key
                     .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(4).unwrap())
                     .expect("Your RNG is busted");
+                let inbound_payment_key: SecretKey =
+                    master_key.ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(5).unwrap())
+                        .expect("Your RNG is busted").private_key.key;
+                let mut inbound_pmt_key_bytes = [0; 32];
+                inbound_pmt_key_bytes.copy_from_slice(&inbound_payment_key[..]);
 
                 let mut rand_bytes_unique_start = Sha256::engine();
                 rand_bytes_unique_start.input(&byte_utils::be64_to_array(starting_time_secs));
@@ -179,6 +185,7 @@ impl MyKeysManager {
                     network,
                     master_key,
                     node_secret,
+                    inbound_payment_key: KeyMaterial(inbound_pmt_key_bytes),
                     channel_seed_base,
                     account_extended_key,
                     destination_script,
@@ -574,6 +581,10 @@ impl KeysInterface for MyKeysManager {
 
     fn sign_invoice(&self, _invoice_preimage: Vec<u8>) -> Result<RecoverableSignature, ()> {
         unimplemented!()
+    }
+
+    fn get_inbound_payment_key_material(&self) -> KeyMaterial {
+        self.inbound_payment_key
     }
 }
 

@@ -874,7 +874,7 @@ macro_rules! expect_pending_htlcs_forwardable_from_events {
 macro_rules! expect_payment_sent {
     ($node: expr, $expected_payment_preimage: expr) => {
         let events = $node.node.get_and_clear_pending_events();
-        assert_eq!(events.len(), 1);
+        assert!(events.len() > 1);
         match events[0] {
             Event::PaymentSent {
                 ref payment_preimage, ..
