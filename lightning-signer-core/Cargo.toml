@@ -15,7 +15,7 @@ readme = "../README.md"
 default = ["test_utils", "std", "test-env-log", "env_logger", "log_pretty_print"]
 
 no-std = ["lightning/no-std", "bitcoin/no-std", "core2/alloc"]
-std = ["lightning/std", "lightning/allow_wallclock_use", "bitcoin/std", "bitcoin/bitcoinconsensus", "rand"]
+std = ["lightning/std", "bitcoin/std", "bitcoin/bitcoinconsensus", "rand"]
 
 
 # if you use tonic, this is convenient for auto-conversion of MySigner Status to tonic::Status
@@ -59,9 +59,7 @@ hashbrown = "0.9" # match hashbrown dependency version via tonic/h2/indexmap
 tempfile = "3.2.0"
 
 [dependencies.lightning]
-git = "https://github.com/rust-bitcoin/rust-lightning.git"
-rev = "2b78957888b86760bb16325a23302d9c979b5602"
-# version = "0.0.103"
+version = "0.0.104"
 default-features = false
 
 [dependencies.bitcoin]
