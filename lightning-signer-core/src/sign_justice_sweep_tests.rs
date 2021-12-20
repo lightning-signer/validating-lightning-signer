@@ -5,7 +5,7 @@ mod tests {
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
     use test_env_log::test;
 
-    use crate::channel::{Channel, ChannelBase};
+    use crate::channel::{Channel, ChannelBase, CommitmentType};
     use crate::node::SpendType::{P2shP2wpkh, P2wpkh};
     use crate::policy::validator::ChainState;
     use crate::util::crypto_utils::{
@@ -52,7 +52,7 @@ mod tests {
         ),
     {
         let (node, setup, channel_id, offered_htlcs, received_htlcs) =
-            sign_commitment_tx_with_mutators_setup();
+            sign_commitment_tx_with_mutators_setup(CommitmentType::StaticRemoteKey);
 
         let node_ctx = TestNodeContext { node, secp_ctx: Secp256k1::signing_only() };
         let chan_ctx = TestChannelContext {

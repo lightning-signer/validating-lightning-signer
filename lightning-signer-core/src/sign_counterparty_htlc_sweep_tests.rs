@@ -5,7 +5,7 @@ mod tests {
     use lightning::ln::chan_utils::get_htlc_redeemscript;
     use test_env_log::test;
 
-    use crate::channel::Channel;
+    use crate::channel::{Channel, CommitmentType};
     use crate::node::SpendType::{P2shP2wpkh, P2wpkh};
     use crate::policy::validator::ChainState;
     use crate::sign_counterparty_htlc_sweep_tests::tests::HTLCKind::{OfferedHTLC, ReceivedHTLC};
@@ -79,7 +79,7 @@ mod tests {
         ),
     {
         let (node, setup, channel_id, offered_htlcs, received_htlcs) =
-            sign_commitment_tx_with_mutators_setup();
+            sign_commitment_tx_with_mutators_setup(CommitmentType::StaticRemoteKey);
 
         let secp_ctx = Secp256k1::signing_only();
         let node_ctx = TestNodeContext { node, secp_ctx };

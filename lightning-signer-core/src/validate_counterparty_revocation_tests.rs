@@ -4,10 +4,11 @@ mod tests {
     use bitcoin::hashes::hex::ToHex;
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::util::psbt::serialize::Serialize;
+    use lightning::chain::keysinterface::BaseSign;
 
     use test_env_log::test;
 
-    use crate::channel::Channel;
+    use crate::channel::{Channel, CommitmentType};
     use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
@@ -27,7 +28,7 @@ mod tests {
         ChannelStateValidator: Fn(&Channel),
     {
         let (node, _setup, channel_id, offered_htlcs, received_htlcs) =
-            sign_commitment_tx_with_mutators_setup();
+            sign_commitment_tx_with_mutators_setup(CommitmentType::StaticRemoteKey);
 
         node.with_ready_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
@@ -53,9 +54,16 @@ mod tests {
             let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
-            let redeem_scripts =
-                build_tx_scripts(&keys, to_countersignatory, to_broadcaster, &htlcs, &parameters)
-                    .expect("scripts");
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                to_countersignatory,
+                to_broadcaster,
+                &htlcs,
+                &parameters,
+                &chan.keys.pubkeys().funding_pubkey,
+                &chan.setup.counterparty_points.funding_pubkey,
+            )
+            .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
@@ -221,7 +229,7 @@ mod tests {
     #[test]
     fn validate_counterparty_revocation_with_retry() {
         let (node, _setup, channel_id, offered_htlcs, received_htlcs) =
-            sign_commitment_tx_with_mutators_setup();
+            sign_commitment_tx_with_mutators_setup(CommitmentType::StaticRemoteKey);
 
         // Setup enforcement state
         assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
@@ -250,9 +258,16 @@ mod tests {
             let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
-            let redeem_scripts =
-                build_tx_scripts(&keys, to_countersignatory, to_broadcaster, &htlcs, &parameters)
-                    .expect("scripts");
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                to_countersignatory,
+                to_broadcaster,
+                &htlcs,
+                &parameters,
+                &chan.keys.pubkeys().funding_pubkey,
+                &chan.setup.counterparty_points.funding_pubkey,
+            )
+            .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
@@ -311,9 +326,16 @@ mod tests {
             let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
-            let redeem_scripts =
-                build_tx_scripts(&keys, to_countersignatory, to_broadcaster, &htlcs, &parameters)
-                    .expect("scripts");
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                to_countersignatory,
+                to_broadcaster,
+                &htlcs,
+                &parameters,
+                &chan.keys.pubkeys().funding_pubkey,
+                &chan.setup.counterparty_points.funding_pubkey,
+            )
+            .expect("scripts");
             let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(

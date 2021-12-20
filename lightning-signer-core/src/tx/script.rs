@@ -2,6 +2,8 @@ use crate::prelude::*;
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::opcodes::Class;
 use bitcoin::blockdata::script::{read_scriptint, Builder, Instruction, Instructions};
+use bitcoin::hash_types::WPubkeyHash;
+use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{blockdata, Script};
 
@@ -18,12 +20,13 @@ fn expect_next<'a>(iter: &'a mut Instructions) -> Result<Instruction<'a>, Valida
 pub(crate) fn expect_op(iter: &mut Instructions, op: opcodes::All) -> Result<(), ValidationError> {
     let ins = expect_next(iter)?;
     match ins {
-        blockdata::script::Instruction::Op(o) =>
+        blockdata::script::Instruction::Op(o) => {
             if o == op {
                 Ok(())
             } else {
                 Err(mismatch_error(format!("expected op {}, saw {}", op, o)))
-            },
+            }
+        }
         _ => Err(mismatch_error(format!("expected op, saw {:?}", ins))),
     }
 }
@@ -63,8 +66,35 @@ pub(crate) fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, Validation
     }
 }
 
+/// The BOLT specified anchor output size.
+// TODO - Should use the one in ln::channel, but is private
+pub const ANCHOR_OUTPUT_VALUE_SATOSHI: u64 = 330;
+
+/// Gets the redeemscript for the to_remote output when anchors are enabled.
+// TODO - Should use the one in chan_utils, need relaxed visibility
+#[inline]
+pub(crate) fn get_to_countersignatory_with_anchors_redeemscript(
+    payment_point: &PublicKey,
+) -> Script {
+    Builder::new()
+        .push_slice(&payment_point.serialize()[..])
+        .push_opcode(opcodes::all::OP_CHECKSIGVERIFY)
+        .push_int(1)
+        .push_opcode(opcodes::all::OP_CSV)
+        .into_script()
+}
+
+/// Get the p2wpkh redeemscript
+// TODO - Should use the one in chan_utils, need relaxed visibility
+pub(crate) fn get_p2wpkh_redeemscript(key: &PublicKey) -> Script {
+    Builder::new()
+        .push_opcode(opcodes::all::OP_PUSHBYTES_0)
+        .push_slice(&WPubkeyHash::hash(&key.serialize())[..])
+        .into_script()
+}
+
 /// To-counterparty redeem script when anchors are enabled - one block delay
-// FIXME - This should be in chan_utils.
+// TODO - This should be in chan_utils.
 pub(crate) fn get_delayed_redeemscript(delayed_key: &PublicKey) -> Script {
     Builder::new()
         .push_slice(&delayed_key.serialize())

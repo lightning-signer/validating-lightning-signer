@@ -7,6 +7,7 @@ mod tests {
     use bitcoin::secp256k1::Signature;
     use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::{self, Transaction};
+    use lightning::chain::keysinterface::BaseSign;
     use lightning::ln::chan_utils::TxCreationKeys;
     use lightning::ln::PaymentHash;
 
@@ -306,6 +307,8 @@ mod tests {
                 commit_tx_ctx.to_countersignatory,
                 &htlcs,
                 &parameters,
+                &chan.keys.pubkeys().funding_pubkey,
+                &chan.setup.counterparty_points.funding_pubkey,
             )
             .expect("scripts");
             let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
