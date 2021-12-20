@@ -502,15 +502,29 @@ mod tests {
         ));
     }
 
+    #[allow(dead_code)]
+    struct ErrMsgContext {
+        is_phase2: bool,
+        opt_anchors: bool,
+    }
+    const ERR_MSG_CONTEXT_PHASE1_STATIC: ErrMsgContext =
+        ErrMsgContext { is_phase2: false, opt_anchors: false };
+    const ERR_MSG_CONTEXT_PHASE1_ANCHORS: ErrMsgContext =
+        ErrMsgContext { is_phase2: false, opt_anchors: true };
+    const ERR_MSG_CONTEXT_PHASE2_STATIC: ErrMsgContext =
+        ErrMsgContext { is_phase2: true, opt_anchors: false };
+    const ERR_MSG_CONTEXT_PHASE2_ANCHORS: ErrMsgContext =
+        ErrMsgContext { is_phase2: true, opt_anchors: true };
+
     macro_rules! generate_failed_precondition_error_phase1_variations {
-        ($name: ident, $sm: expr, $km: expr, $tm: expr, $errmsg: expr) => {
+        ($name: ident, $sm: expr, $km: expr, $tm: expr, $errcls: expr) => {
             paste! {
                 #[test]
                 fn [<$name _phase1_static>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
                             false, CommitmentType::StaticRemoteKey, $sm, $km, $tm),
-                        $errmsg
+                        ($errcls)(ERR_MSG_CONTEXT_PHASE1_STATIC)
                     );
                 }
             }
@@ -520,7 +534,7 @@ mod tests {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
                             false, CommitmentType::Anchors, $sm, $km, $tm),
-                        $errmsg
+                        ($errcls)(ERR_MSG_CONTEXT_PHASE1_ANCHORS)
                     );
                 }
             }
@@ -528,14 +542,14 @@ mod tests {
     }
 
     macro_rules! generate_failed_precondition_error_phase2_variations {
-        ($name: ident, $sm: expr, $km: expr, $tm: expr, $errmsg: expr) => {
+        ($name: ident, $sm: expr, $km: expr, $tm: expr, $errcls: expr) => {
             paste! {
                 #[test]
                 fn [<$name _phase2_static>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
                             true, CommitmentType::StaticRemoteKey, $sm, $km, $tm),
-                        $errmsg
+                        ($errcls)(ERR_MSG_CONTEXT_PHASE2_STATIC)
                     );
                 }
             }
@@ -545,7 +559,7 @@ mod tests {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
                             true, CommitmentType::Anchors, $sm, $km, $tm),
-                        $errmsg
+                        ($errcls)(ERR_MSG_CONTEXT_PHASE2_ANCHORS)
                     );
                 }
             }
@@ -595,7 +609,7 @@ mod tests {
         |state| {
             state.set_next_counterparty_revoke_num_for_testing(21);
         },
-        "policy failure: validate_counterparty_commitment_tx: \
+        |_| "policy failure: validate_counterparty_commitment_tx: \
          invalid attempt to sign counterparty commit_num 23 with next_counterparty_revoke_num 21"
     );
 
@@ -605,7 +619,7 @@ mod tests {
         |tms| {
             tms.tx.transaction.version = 3;
         },
-        "policy failure: decode_commitment_tx: bad commitment version: 3"
+        |_| "policy failure: decode_commitment_tx: bad commitment version: 3"
     );
 
     // policy-commitment-locktime
@@ -614,7 +628,7 @@ mod tests {
         |tms| {
             tms.tx.transaction.lock_time = 42;
         },
-        "policy failure: recomposed tx mismatch"
+        |_| "policy failure: recomposed tx mismatch"
     );
 
     // policy-commitment-sequence
@@ -623,7 +637,7 @@ mod tests {
         |tms| {
             tms.tx.transaction.input[0].sequence = 42;
         },
-        "policy failure: recomposed tx mismatch"
+        |_| "policy failure: recomposed tx mismatch"
     );
 
     // policy-commitment-input-single
@@ -634,7 +648,7 @@ mod tests {
             inp2.previous_output.txid = bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
             tms.tx.transaction.input.push(inp2);
         },
-        "policy failure: recomposed tx mismatch"
+        |_| "policy failure: recomposed tx mismatch"
     );
 
     // policy-commitment-input-match-funding
@@ -644,7 +658,7 @@ mod tests {
             tms.tx.transaction.input[0].previous_output.txid =
                 bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
         },
-        "policy failure: recomposed tx mismatch"
+        |_| "policy failure: recomposed tx mismatch"
     );
 
     // policy-commitment-revocation-pubkey
@@ -654,7 +668,7 @@ mod tests {
         |keys| {
             keys.revocation_key = make_test_pubkey(42);
         },
-        "policy failure: recomposed tx mismatch"
+        |_| "policy failure: recomposed tx mismatch"
     );
 
     // policy-commitment-htlc-holder-htlc-pubkey
@@ -663,7 +677,7 @@ mod tests {
         |keys| {
             keys.countersignatory_htlc_key = make_test_pubkey(42);
         },
-        "policy failure: recomposed tx mismatch"
+        |_| "policy failure: recomposed tx mismatch"
     );
 
     // policy-commitment-broadcaster-pubkey
@@ -672,7 +686,7 @@ mod tests {
         |keys| {
             keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
         },
-        "policy failure: recomposed tx mismatch"
+        |_| "policy failure: recomposed tx mismatch"
     );
 
     // policy-commitment-countersignatory-pubkey
@@ -689,7 +703,7 @@ mod tests {
                     payload_for_p2wpkh(&make_test_pubkey(42)).script_pubkey();
             };
         },
-        "policy failure: recomposed tx mismatch"
+        |_| "policy failure: recomposed tx mismatch"
     );
 
     generate_failed_precondition_error_with_mutated_state!(
@@ -699,93 +713,41 @@ mod tests {
             state.set_next_counterparty_commit_num_for_testing(25, make_test_pubkey(0x10));
             state.set_next_counterparty_revoke_num_for_testing(24);
         },
-        "policy failure: set_next_counterparty_commit_num: \
+        |_| "policy failure: set_next_counterparty_commit_num: \
          24 too small relative to next_counterparty_revoke_num 24"
     );
 
     // policy-commitment-singular-to-holder
-    #[test]
-    fn multiple_to_holder_phase1_static() {
-        assert_failed_precondition_err!(
-            sign_counterparty_commitment_tx_with_mutators(
-                false,
-                CommitmentType::StaticRemoteKey,
-                |_| {},
-                |_| {},
-                |tms| {
-                    // Duplicate the to_holder output
-                    let ndx = tms.tx.transaction.output.len() - 2;
-                    tms.tx.transaction.output.push(tms.tx.transaction.output[ndx].clone());
-                    tms.witscripts.push(tms.witscripts[ndx].clone());
-                }
-            ),
+    generate_failed_precondition_error_phase1_with_mutated_tx!(
+        multiple_to_holder,
+        |tms| {
+            // Duplicate the to_holder output
+            let ndx = tms.tx.transaction.output.len() - 2;
+            tms.tx.transaction.output.push(tms.tx.transaction.output[ndx].clone());
+            tms.witscripts.push(tms.witscripts[ndx].clone());
+        },
+        |ectx: ErrMsgContext| format!(
             "transaction format: decode_commitment_tx: \
-             tx output[5]: more than one to_countersigner output"
-        );
-    }
-
-    // policy-commitment-singular-to-holder
-    #[test]
-    fn multiple_to_holder_phase1_anchors() {
-        assert_failed_precondition_err!(
-            sign_counterparty_commitment_tx_with_mutators(
-                false,
-                CommitmentType::Anchors,
-                |_| {},
-                |_| {},
-                |tms| {
-                    // Duplicate the to_holder output
-                    let ndx = tms.tx.transaction.output.len() - 2;
-                    tms.tx.transaction.output.push(tms.tx.transaction.output[ndx].clone());
-                    tms.witscripts.push(tms.witscripts[ndx].clone());
-                }
-            ),
-            "transaction format: decode_commitment_tx: \
-             tx output[7]: more than one to_countersigner output"
-        );
-    }
+                        tx output[{}]: more than one to_countersigner output",
+            if ectx.opt_anchors { 7 } else { 5 }
+        )
+    );
 
     // policy-commitment-singular-to-counterparty
-    #[test]
-    fn multiple_to_counterparty_phase1_static() {
-        assert_failed_precondition_err!(
-            sign_counterparty_commitment_tx_with_mutators(
-                false,
-                CommitmentType::StaticRemoteKey,
-                |_| {},
-                |_| {},
-                |tms| {
-                    // Duplicate the to_counterparty output
-                    let ndx = tms.tx.transaction.output.len() - 1;
-                    tms.tx.transaction.output.push(tms.tx.transaction.output[ndx].clone());
-                    tms.witscripts.push(tms.witscripts[ndx].clone());
-                }
-            ),
+    generate_failed_precondition_error_phase1_with_mutated_tx!(
+        multiple_to_counterparty,
+        |tms| {
+            // Duplicate the to_counterparty output
+            let ndx = tms.tx.transaction.output.len() - 1;
+            tms.tx.transaction.output.push(tms.tx.transaction.output[ndx].clone());
+            tms.witscripts.push(tms.witscripts[ndx].clone());
+        },
+        |ectx: ErrMsgContext| format!(
             "transaction format: decode_commitment_tx: \
-             tx output[5]: more than one to_broadcaster output"
-        );
-    }
-
-    // policy-commitment-singular-to-counterparty
-    #[test]
-    fn multiple_to_counterparty_phase1_anchors() {
-        assert_failed_precondition_err!(
-            sign_counterparty_commitment_tx_with_mutators(
-                false,
-                CommitmentType::Anchors,
-                |_| {},
-                |_| {},
-                |tms| {
-                    // Duplicate the to_counterparty output
-                    let ndx = tms.tx.transaction.output.len() - 1;
-                    tms.tx.transaction.output.push(tms.tx.transaction.output[ndx].clone());
-                    tms.witscripts.push(tms.witscripts[ndx].clone());
-                }
-            ),
-            "transaction format: decode_commitment_tx: \
-             tx output[7]: more than one to_broadcaster output"
-        );
-    }
+                        tx output[{}]: more than one to_broadcaster output",
+            if ectx.opt_anchors { 7 } else { 5 }
+        )
+    );
 
     #[allow(dead_code)]
     struct RetryMutationState<'a> {
@@ -970,14 +932,14 @@ mod tests {
     }
 
     macro_rules! generate_failed_precondition_error_retry_with_mutations {
-        ($name: ident, $rm: expr, $errmsg: expr) => {
+        ($name: ident, $rm: expr, $errcls: expr) => {
             paste! {
                 #[test]
                 fn [<$name _phase1_static>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_retry_with_mutator(
                             false, CommitmentType::StaticRemoteKey, $rm),
-                        $errmsg
+                        ($errcls)(ERR_MSG_CONTEXT_PHASE1_STATIC)
                     );
                 }
             }
@@ -987,7 +949,7 @@ mod tests {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_retry_with_mutator(
                             true, CommitmentType::StaticRemoteKey, $rm),
-                        $errmsg
+                        ($errcls)(ERR_MSG_CONTEXT_PHASE2_STATIC)
                     );
                 }
             }
@@ -997,7 +959,7 @@ mod tests {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_retry_with_mutator(
                             false, CommitmentType::Anchors, $rm),
-                        $errmsg
+                        ($errcls)(ERR_MSG_CONTEXT_PHASE1_ANCHORS)
                     );
                 }
             }
@@ -1007,7 +969,7 @@ mod tests {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_retry_with_mutator(
                             true, CommitmentType::Anchors, $rm),
-                        $errmsg
+                        ($errcls)(ERR_MSG_CONTEXT_PHASE2_ANCHORS)
                     );
                 }
             }
@@ -1020,51 +982,27 @@ mod tests {
         |cms| {
             *cms.remote_percommitment_point = make_test_pubkey(42);
         },
-        "policy failure: validate_counterparty_commitment_tx: \
+        |_| "policy failure: validate_counterparty_commitment_tx: \
              retry of sign_counterparty_commitment 23 with changed point: \
              prev 03f76a39d05686e34a4420897e359371836145dd3973e3982568b60f8433adde6e != \
              new 035be5e9478209674a96e60f1f037f6176540fd001fa1d64694770c56a7709c42c"
     );
 
     // policy-commitment-retry-same
-    #[test]
-    fn sign_counterparty_commitment_tx_retry_with_bad_point() {
-        assert_failed_precondition_err!(
-            sign_counterparty_commitment_tx_retry_with_mutator(
-                false, // is_phase2
-                CommitmentType::StaticRemoteKey,
-                |cms| {
-                    *cms.remote_percommitment_point = make_test_pubkey(42);
-                }
-            ),
-            "policy failure: validate_counterparty_commitment_tx: \
-             retry of sign_counterparty_commitment 23 with changed point: \
-             prev 03f76a39d05686e34a4420897e359371836145dd3973e3982568b60f8433adde6e != \
-             new 035be5e9478209674a96e60f1f037f6176540fd001fa1d64694770c56a7709c42c"
-        );
-    }
+    generate_failed_precondition_error_retry_with_mutations!(
+        retry_with_removed_htlc,
+        |cms| {
+            // Remove the last received HTLC
+            let htlc = cms.received_htlcs.pop().unwrap();
 
-    // policy-commitment-retry-same
-    #[test]
-    fn sign_counterparty_commitment_tx_retry_with_removed_htlc() {
-        assert_failed_precondition_err!(
-            sign_counterparty_commitment_tx_retry_with_mutator(
-                false, // is_phase2
-                CommitmentType::StaticRemoteKey,
-                |cms| {
-                    // Remove the last received HTLC
-                    let htlc = cms.received_htlcs.pop().unwrap();
+            // Credit the value to the broadcaster
+            cms.tx.output[3].value += htlc.value_sat;
 
-                    // Credit the value to the broadcaster
-                    cms.tx.output[3].value += htlc.value_sat;
-
-                    // Remove the htlc from the tx and witscripts
-                    cms.tx.output.remove(2);
-                    cms.output_witscripts.remove(2);
-                }
-            ),
-            "policy failure: validate_counterparty_commitment_tx: \
+            // Remove the htlc from the tx and witscripts
+            cms.tx.output.remove(2);
+            cms.output_witscripts.remove(2);
+        },
+        |_| "policy failure: validate_counterparty_commitment_tx: \
              retry of sign_counterparty_commitment 23 with changed info"
-        );
-    }
+    );
 }
