@@ -78,7 +78,7 @@ impl KeyDerivationStyle {
     }
 }
 
-/// An implementation of [`KeysInterace`]
+/// An implementation of [`KeysInterface`]
 pub struct MyKeysManager {
     secp_ctx: Secp256k1<secp256k1::SignOnly>,
     seed: Vec<u8>,

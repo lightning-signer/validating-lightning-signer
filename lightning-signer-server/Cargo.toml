@@ -1,6 +1,6 @@
 [package]
 name = "lightning-signer-server"
-version = "0.1.0-3"
+version = "0.1.0-5"
 authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
 edition = "2018"
 license = "Apache-2.0"
