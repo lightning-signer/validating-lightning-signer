@@ -297,7 +297,7 @@ dependencies = [
 
 [[package]]
 name = "lightning-signer-core"
-version = "0.1.0-4"
+version = "0.1.0-5"
 dependencies = [
  "anyhow",
  "bitcoin",
