@@ -2,7 +2,6 @@
 mod tests {
     use bitcoin::hashes::hex::ToHex;
     use bitcoin::hashes::Hash;
-    use bitcoin::secp256k1::Secp256k1;
     use bitcoin::{self, Transaction};
     use lightning::ln::chan_utils::{
         build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
@@ -13,7 +12,6 @@ mod tests {
 
     use crate::channel::{ChannelBase, ChannelSetup, CommitmentType};
     use crate::policy::validator::ChainState;
-    use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey};
     use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
@@ -141,6 +139,7 @@ mod tests {
 
     fn sign_counterparty_htlc_tx_with_mutators<ChanParamMutator, KeysMutator, TxMutator>(
         is_offered: bool,
+        commitment_type: CommitmentType,
         chanparammut: ChanParamMutator,
         keysmut: KeysMutator,
         txmut: TxMutator,
@@ -150,8 +149,10 @@ mod tests {
         KeysMutator: Fn(&mut KeysMutationState),
         TxMutator: Fn(&mut TxMutationState),
     {
-        let setup = make_test_channel_setup();
-        let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup);
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = commitment_type;
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
         let remote_per_commitment_point = make_test_pubkey(10);
         let htlc_amount_sat = 1_000_000;
@@ -222,27 +223,31 @@ mod tests {
                 Ok((typedsig, htlc_tx, htlc_redeemscript))
             })?;
 
-        if is_offered {
-            assert_eq!(
-                htlc_tx.txid().to_hex(),
+        let expected_txid = if commitment_type == CommitmentType::StaticRemoteKey {
+            if is_offered {
                 "66a108d7722fdb160206ba075a49c03c9e0174421c0c845cddd4a5b931fa5ab5"
-            );
-        } else {
-            assert_eq!(
-                htlc_tx.txid().to_hex(),
+            } else {
                 "a052c48d7cba8eb1107d72b15741292267d4f4af754a7136168de50d4359b714"
-            );
-        }
+            }
+        } else {
+            if is_offered {
+                "81688eca802d9676c24ed8ec444fd5f47991d44f18d8096cede1915ce4a907cb"
+            } else {
+                "944edd4d2bdc576a9275a920c61c720c7487e8a908d05a7381216047d762c281"
+            }
+        };
+        assert_eq!(htlc_tx.txid().to_hex(), expected_txid);
 
         let htlc_pubkey = get_channel_htlc_pubkey(&node, &channel_id, &remote_per_commitment_point);
 
-        check_signature(
+        check_signature_with_setup(
             &htlc_tx,
             0,
             typedsig.serialize(),
             &htlc_pubkey,
             htlc_amount_sat,
             &htlc_redeemscript,
+            &setup,
         );
 
         Ok(())
@@ -250,6 +255,7 @@ mod tests {
 
     fn sign_holder_htlc_tx_with_mutators<ChanParamMutator, KeysMutator, TxMutator>(
         is_offered: bool,
+        commitment_type: CommitmentType,
         chanparammut: ChanParamMutator,
         keysmut: KeysMutator,
         txmut: TxMutator,
@@ -259,8 +265,10 @@ mod tests {
         KeysMutator: Fn(&mut KeysMutationState),
         TxMutator: Fn(&mut TxMutationState),
     {
-        let setup = make_test_channel_setup();
-        let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup);
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = commitment_type;
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
         let commit_num = 23;
         let htlc_amount_sat = 1_000_000;
@@ -334,27 +342,31 @@ mod tests {
                 Ok((typedsig, per_commitment_point, htlc_tx, htlc_redeemscript))
             })?;
 
-        if is_offered {
-            assert_eq!(
-                htlc_tx.txid().to_hex(),
+        let expected_txid = if commitment_type == CommitmentType::StaticRemoteKey {
+            if is_offered {
                 "783ca2bb360dc712301d43daef0dbae2e15a8f06dcc73062b24e1d86cb918e5c"
-            );
-        } else {
-            assert_eq!(
-                htlc_tx.txid().to_hex(),
+            } else {
                 "89cf05ddaef231827291e32cc67d17810b867614bbb8e1a39c001f62f57421ab"
-            );
-        }
+            }
+        } else {
+            if is_offered {
+                "f108967616fc7d97c672d66c4885bcf02a78eabd5c38239ce548922cdb16bbe0"
+            } else {
+                "41c6974ee15c8c5de8f23c64942061a0dad581442218afff28fb84ddce713866"
+            }
+        };
+        assert_eq!(htlc_tx.txid().to_hex(), expected_txid);
 
         let htlc_pubkey = get_channel_htlc_pubkey(&node, &channel_id, &per_commitment_point);
 
-        check_signature(
+        check_signature_with_setup(
             &htlc_tx,
             0,
             typedsig.serialize(),
             &htlc_pubkey,
             htlc_amount_sat,
             &htlc_redeemscript,
+            &setup,
         );
 
         Ok(())
@@ -367,7 +379,7 @@ mod tests {
                 fn [<$name _holder_received_static>]() {
                     assert_status_ok!(
                         sign_holder_htlc_tx_with_mutators(
-                            false, $pm, $km, $tm)
+                            false, CommitmentType::StaticRemoteKey, $pm, $km, $tm)
                     );
                 }
             }
@@ -376,7 +388,7 @@ mod tests {
                 fn [<$name _holder_offered_static>]() {
                     assert_status_ok!(
                         sign_holder_htlc_tx_with_mutators(
-                            true, $pm, $km, $tm)
+                            true, CommitmentType::StaticRemoteKey, $pm, $km, $tm)
                     );
                 }
             }
@@ -385,7 +397,7 @@ mod tests {
                 fn [<$name _counterparty_received_static>]() {
                     assert_status_ok!(
                         sign_counterparty_htlc_tx_with_mutators(
-                            false, $pm, $km, $tm)
+                            false, CommitmentType::StaticRemoteKey, $pm, $km, $tm)
                     );
                 }
             }
@@ -394,7 +406,43 @@ mod tests {
                 fn [<$name _counterparty_offered_static>]() {
                     assert_status_ok!(
                         sign_counterparty_htlc_tx_with_mutators(
-                            true, $pm, $km, $tm)
+                            true, CommitmentType::StaticRemoteKey, $pm, $km, $tm)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _holder_received_anchors>]() {
+                    assert_status_ok!(
+                        sign_holder_htlc_tx_with_mutators(
+                            false, CommitmentType::Anchors, $pm, $km, $tm)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _holder_offered_anchors>]() {
+                    assert_status_ok!(
+                        sign_holder_htlc_tx_with_mutators(
+                            true, CommitmentType::Anchors, $pm, $km, $tm)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _counterparty_received_anchors>]() {
+                    assert_status_ok!(
+                        sign_counterparty_htlc_tx_with_mutators(
+                            false, CommitmentType::Anchors, $pm, $km, $tm)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _counterparty_offered_anchors>]() {
+                    assert_status_ok!(
+                        sign_counterparty_htlc_tx_with_mutators(
+                            true, CommitmentType::Anchors, $pm, $km, $tm)
                     );
                 }
             }
@@ -418,6 +466,14 @@ mod tests {
         ErrMsgContext { is_counterparty: true, is_offered: false, opt_anchors: false };
     const ERR_MSG_CONTEXT_CPARTY_OFFERED_STATIC: ErrMsgContext =
         ErrMsgContext { is_counterparty: true, is_offered: true, opt_anchors: false };
+    const ERR_MSG_CONTEXT_HOLDER_RECEIVED_ANCHORS: ErrMsgContext =
+        ErrMsgContext { is_counterparty: false, is_offered: false, opt_anchors: true };
+    const ERR_MSG_CONTEXT_HOLDER_OFFERED_ANCHORS: ErrMsgContext =
+        ErrMsgContext { is_counterparty: false, is_offered: true, opt_anchors: true };
+    const ERR_MSG_CONTEXT_CPARTY_RECEIVED_ANCHORS: ErrMsgContext =
+        ErrMsgContext { is_counterparty: true, is_offered: false, opt_anchors: true };
+    const ERR_MSG_CONTEXT_CPARTY_OFFERED_ANCHORS: ErrMsgContext =
+        ErrMsgContext { is_counterparty: true, is_offered: true, opt_anchors: true };
 
     macro_rules! generate_failed_precondition_error_variations {
         ($name: ident, $pm: expr, $km: expr, $tm: expr, $errcls: expr) => {
@@ -426,7 +482,7 @@ mod tests {
                 fn [<$name _holder_received_static>]() {
                     assert_failed_precondition_err!(
                         sign_holder_htlc_tx_with_mutators(
-                            false, $pm, $km, $tm),
+                            false, CommitmentType::StaticRemoteKey, $pm, $km, $tm),
                         ($errcls)(ERR_MSG_CONTEXT_HOLDER_RECEIVED_STATIC)
                     );
                 }
@@ -436,7 +492,7 @@ mod tests {
                 fn [<$name _holder_offered_static>]() {
                     assert_failed_precondition_err!(
                         sign_holder_htlc_tx_with_mutators(
-                            true, $pm, $km, $tm),
+                            true, CommitmentType::StaticRemoteKey, $pm, $km, $tm),
                         ($errcls)(ERR_MSG_CONTEXT_HOLDER_OFFERED_STATIC)
                     );
                 }
@@ -446,7 +502,7 @@ mod tests {
                 fn [<$name _counterparty_received_static>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_htlc_tx_with_mutators(
-                            false, $pm, $km, $tm),
+                            false, CommitmentType::StaticRemoteKey, $pm, $km, $tm),
                         ($errcls)(ERR_MSG_CONTEXT_CPARTY_RECEIVED_STATIC)
                     );
                 }
@@ -456,8 +512,48 @@ mod tests {
                 fn [<$name _counterparty_offered_static>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_htlc_tx_with_mutators(
-                            true, $pm, $km, $tm),
+                            true, CommitmentType::StaticRemoteKey, $pm, $km, $tm),
                         ($errcls)(ERR_MSG_CONTEXT_CPARTY_OFFERED_STATIC)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _holder_received_anchors>]() {
+                    assert_failed_precondition_err!(
+                        sign_holder_htlc_tx_with_mutators(
+                            false, CommitmentType::Anchors, $pm, $km, $tm),
+                        ($errcls)(ERR_MSG_CONTEXT_HOLDER_RECEIVED_ANCHORS)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _holder_offered_anchors>]() {
+                    assert_failed_precondition_err!(
+                        sign_holder_htlc_tx_with_mutators(
+                            true, CommitmentType::Anchors, $pm, $km, $tm),
+                        ($errcls)(ERR_MSG_CONTEXT_HOLDER_OFFERED_ANCHORS)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _counterparty_received_anchors>]() {
+                    assert_failed_precondition_err!(
+                        sign_counterparty_htlc_tx_with_mutators(
+                            false, CommitmentType::Anchors, $pm, $km, $tm),
+                        ($errcls)(ERR_MSG_CONTEXT_CPARTY_RECEIVED_ANCHORS)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _counterparty_offered_anchors>]() {
+                    assert_failed_precondition_err!(
+                        sign_counterparty_htlc_tx_with_mutators(
+                            true, CommitmentType::Anchors, $pm, $km, $tm),
+                        ($errcls)(ERR_MSG_CONTEXT_CPARTY_OFFERED_ANCHORS)
                     );
                 }
             }
@@ -544,14 +640,20 @@ mod tests {
     // policy-htlc-fee-range
     generate_failed_precondition_error_with_mutated_tx!(
         low_feerate,
-        |tms| tms.tx.output[0].value = 999_900, // htlc_amount_sat is 1_000_000
+        |tms| tms.tx.output[0].value = 999_800, // htlc_amount_sat is 1_000_000
         |ectx: ErrMsgContext| {
             if ectx.is_offered {
-                "policy failure: validate_htlc_tx: \
-                 feerate_per_kw of 151 is smaller than the minimum of 500"
+                format!(
+                    "policy failure: validate_htlc_tx: \
+                     feerate_per_kw of {} is smaller than the minimum of 500",
+                    if ectx.opt_anchors { 301 } else { 302 }
+                )
             } else {
-                "policy failure: validate_htlc_tx: \
-                 feerate_per_kw of 143 is smaller than the minimum of 500"
+                format!(
+                    "policy failure: validate_htlc_tx: \
+                     feerate_per_kw of {} is smaller than the minimum of 500",
+                    if ectx.opt_anchors { 284 } else { 285 }
+                )
             }
         }
     );
@@ -562,102 +664,18 @@ mod tests {
         |tms| tms.tx.output[0].value = 980_000, // htlc_amount_sat is 1_000_000
         |ectx: ErrMsgContext| {
             if ectx.is_offered {
-                "policy failure: validate_htlc_tx: \
-                 feerate_per_kw of 30166 is larger than the maximum of 16000"
+                format!(
+                    "policy failure: validate_htlc_tx: \
+                     feerate_per_kw of {} is larger than the maximum of 16000",
+                    if ectx.opt_anchors { 30031 } else { 30166 }
+                )
             } else {
-                "policy failure: validate_htlc_tx: \
-                 feerate_per_kw of 28450 is larger than the maximum of 16000"
+                format!(
+                    "policy failure: validate_htlc_tx: \
+                     feerate_per_kw of {} is larger than the maximum of 16000",
+                    if ectx.opt_anchors { 28329 } else { 28450 }
+                )
             }
         }
     );
-
-    #[test]
-    #[ignore] // we don't support anchors yet
-    fn sign_remote_htlc_tx_with_anchors_test() {
-        let mut setup = make_test_channel_setup();
-        setup.commitment_type = CommitmentType::Anchors;
-        let (node, channel_id) =
-            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
-
-        let htlc_amount_sat = 10 * 1000;
-
-        let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
-        let feerate_per_kw = 1000;
-        let to_self_delay = 32;
-        let htlc = HTLCOutputInCommitment {
-            offered: true,
-            amount_msat: htlc_amount_sat * 1000,
-            cltv_expiry: 2 << 16,
-            payment_hash: PaymentHash([1; 32]),
-            transaction_output_index: Some(0),
-        };
-
-        let remote_per_commitment_point = make_test_pubkey(10);
-
-        let per_commitment_point = make_test_pubkey(1);
-        let a_delayed_payment_base = make_test_pubkey(2);
-        let b_revocation_base = make_test_pubkey(3);
-
-        let secp_ctx = Secp256k1::new();
-
-        let keys = TxCreationKeys::derive_new(
-            &secp_ctx,
-            &per_commitment_point,
-            &a_delayed_payment_base,
-            &make_test_pubkey(4), // a_htlc_base
-            &b_revocation_base,
-            &make_test_pubkey(6),
-        ) // b_htlc_base
-        .expect("new TxCreationKeys");
-
-        let a_delayed_payment_key =
-            derive_public_key(&secp_ctx, &per_commitment_point, &a_delayed_payment_base)
-                .expect("a_delayed_payment_key");
-
-        let revocation_key =
-            derive_revocation_pubkey(&secp_ctx, &per_commitment_point, &b_revocation_base)
-                .expect("revocation_key");
-
-        let htlc_tx = build_htlc_transaction(
-            &commitment_txid,
-            feerate_per_kw,
-            to_self_delay,
-            &htlc,
-            setup.option_anchor_outputs(),
-            &a_delayed_payment_key,
-            &revocation_key,
-        );
-
-        let htlc_redeemscript = get_htlc_redeemscript(&htlc, setup.option_anchor_outputs(), &keys);
-
-        let output_witscript =
-            get_revokeable_redeemscript(&revocation_key, to_self_delay, &a_delayed_payment_key);
-
-        let ser_signature = node
-            .with_ready_channel(&channel_id, |chan| {
-                let typedsig = chan
-                    .sign_counterparty_htlc_tx(
-                        &htlc_tx,
-                        &remote_per_commitment_point,
-                        &htlc_redeemscript,
-                        htlc_amount_sat,
-                        &output_witscript,
-                    )
-                    .unwrap();
-                Ok(typedsig.serialize())
-            })
-            .unwrap();
-
-        let htlc_pubkey = get_channel_htlc_pubkey(&node, &channel_id, &remote_per_commitment_point);
-
-        check_signature_with_setup(
-            &htlc_tx,
-            0,
-            ser_signature,
-            &htlc_pubkey,
-            htlc_amount_sat,
-            &htlc_redeemscript,
-            &setup,
-        );
-    }
 }
