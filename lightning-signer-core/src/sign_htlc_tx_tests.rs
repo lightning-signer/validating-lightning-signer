@@ -119,6 +119,24 @@ mod tests {
         check_signature(&htlc_tx, 0, sigvec1, &htlc_pubkey, htlc_amount_sat, &htlc_redeemscript);
     }
 
+    #[allow(dead_code)]
+    struct ChanParamMutationState<'a> {
+        is_counterparty: bool,
+        param: &'a mut ChannelTransactionParameters,
+    }
+
+    #[allow(dead_code)]
+    struct KeysMutationState<'a> {
+        keys: &'a mut TxCreationKeys,
+    }
+
+    #[allow(dead_code)]
+    struct TxMutationState<'a> {
+        is_offered: bool,
+        cstate: &'a mut ChainState,
+        tx: &'a mut Transaction,
+    }
+
     fn sign_counterparty_htlc_tx_with_mutators<ChanParamMutator, KeysMutator, TxMutator>(
         is_offered: bool,
         chanparammut: ChanParamMutator,
@@ -126,9 +144,9 @@ mod tests {
         txmut: TxMutator,
     ) -> Result<(), Status>
     where
-        ChanParamMutator: Fn(&mut ChannelTransactionParameters),
-        KeysMutator: Fn(&mut TxCreationKeys),
-        TxMutator: Fn(&mut ChainState, &mut Transaction), // FIXME - ChainState not used here
+        ChanParamMutator: Fn(&mut ChanParamMutationState),
+        KeysMutator: Fn(&mut KeysMutationState),
+        TxMutator: Fn(&mut TxMutationState),
     {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
@@ -141,12 +159,15 @@ mod tests {
                 let mut channel_parameters = chan.make_channel_parameters();
 
                 // Mutate the channel parameters
-                chanparammut(&mut channel_parameters);
+                chanparammut(&mut ChanParamMutationState {
+                    is_counterparty: true,
+                    param: &mut channel_parameters,
+                });
 
                 let mut keys = chan.make_counterparty_tx_keys(&remote_per_commitment_point)?;
 
                 // Mutate the tx creation keys.
-                keysmut(&mut keys);
+                keysmut(&mut KeysMutationState { keys: &mut keys });
 
                 let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
                 let feerate_per_kw = 1000;
@@ -174,7 +195,11 @@ mod tests {
                 let mut cstate = make_test_chain_state();
 
                 // Mutate the transaction.
-                txmut(&mut cstate, &mut htlc_tx);
+                txmut(&mut TxMutationState {
+                    is_offered: is_offered,
+                    cstate: &mut cstate,
+                    tx: &mut htlc_tx,
+                });
 
                 let htlc_redeemscript =
                     get_htlc_redeemscript(&htlc, channel_parameters.opt_anchors.is_some(), &keys);
@@ -228,9 +253,9 @@ mod tests {
         txmut: TxMutator,
     ) -> Result<(), Status>
     where
-        ChanParamMutator: Fn(&mut ChannelTransactionParameters),
-        KeysMutator: Fn(&mut TxCreationKeys),
-        TxMutator: Fn(&mut ChainState, &mut Transaction), // FIXME - ChainState not used
+        ChanParamMutator: Fn(&mut ChanParamMutationState),
+        KeysMutator: Fn(&mut KeysMutationState),
+        TxMutator: Fn(&mut TxMutationState),
     {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
@@ -244,14 +269,17 @@ mod tests {
                 let mut channel_parameters = chan.make_channel_parameters();
 
                 // Mutate the channel parameters
-                chanparammut(&mut channel_parameters);
+                chanparammut(&mut ChanParamMutationState {
+                    is_counterparty: false,
+                    param: &mut channel_parameters,
+                });
 
                 let per_commitment_point =
                     chan.get_per_commitment_point(commit_num).expect("point");
                 let mut keys = chan.make_holder_tx_keys(&per_commitment_point)?;
 
                 // Mutate the tx creation keys.
-                keysmut(&mut keys);
+                keysmut(&mut KeysMutationState { keys: &mut keys });
 
                 let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
                 let feerate_per_kw = 1000;
@@ -278,7 +306,11 @@ mod tests {
                 let mut cstate = make_test_chain_state();
 
                 // Mutate the transaction.
-                txmut(&mut cstate, &mut htlc_tx);
+                txmut(&mut TxMutationState {
+                    is_offered: is_offered,
+                    cstate: &mut cstate,
+                    tx: &mut htlc_tx,
+                });
 
                 let htlc_redeemscript =
                     get_htlc_redeemscript(&htlc, channel_parameters.opt_anchors.is_some(), &keys);
@@ -353,13 +385,13 @@ mod tests {
     #[test]
     fn sign_counterparty_offered_htlc_tx_with_no_mut_test() {
         let status = sign_counterparty_offered_htlc_tx_with_mutators!(
-            |_param| {
+            |_pms| {
                 // don't mutate the channel parameters, should pass
             },
-            |_keys| {
+            |_kms| {
                 // don't mutate the keys, should pass
             },
-            |_cstate, _tx| {
+            |_tms| {
                 // don't mutate the tx, should pass
             }
         );
@@ -369,13 +401,13 @@ mod tests {
     #[test]
     fn sign_counterparty_received_htlc_tx_with_no_mut_test() {
         let status = sign_counterparty_received_htlc_tx_with_mutators!(
-            |_param| {
+            |_pms| {
                 // don't mutate the channel parameters, should pass
             },
-            |_keys| {
+            |_kms| {
                 // don't mutate the keys, should pass
             },
-            |_cstate, _tx| {
+            |_tms| {
                 // don't mutate the tx, should pass
             }
         );
@@ -385,13 +417,13 @@ mod tests {
     #[test]
     fn sign_holder_offered_htlc_tx_with_no_mut_test() {
         let status = sign_holder_offered_htlc_tx_with_mutators!(
-            |_param| {
+            |_pms| {
                 // don't mutate the channel parameters, should pass
             },
-            |_keys| {
+            |_kms| {
                 // don't mutate the keys, should pass
             },
-            |_cstate, _tx| {
+            |_tms| {
                 // don't mutate the tx, should pass
             }
         );
@@ -401,13 +433,13 @@ mod tests {
     #[test]
     fn sign_holder_received_htlc_tx_with_no_mut_test() {
         let status = sign_holder_received_htlc_tx_with_mutators!(
-            |_param| {
+            |_pms| {
                 // don't mutate the channel parameters, should pass
             },
-            |_keys| {
+            |_kms| {
                 // don't mutate the keys, should pass
             },
-            |_cstate, _tx| {
+            |_tms| {
                 // don't mutate the tx, should pass
             }
         );
@@ -419,9 +451,9 @@ mod tests {
     fn sign_counterparty_offered_htlc_tx_with_bad_version_test() {
         assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.version = 3 // only version 2 allowed
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.version = 3 // only version 2 allowed
             ),
             "policy failure: sighash mismatch"
         );
@@ -432,9 +464,9 @@ mod tests {
     fn sign_counterparty_received_htlc_tx_with_bad_version_test() {
         assert_failed_precondition_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.version = 3 // only version 2 allowed
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.version = 3 // only version 2 allowed
             ),
             "policy failure: sighash mismatch"
         );
@@ -445,9 +477,9 @@ mod tests {
     fn sign_holder_offered_htlc_tx_with_bad_version_test() {
         assert_failed_precondition_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.version = 3 // only version 2 allowed
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.version = 3 // only version 2 allowed
             ),
             "policy failure: sighash mismatch"
         );
@@ -458,9 +490,9 @@ mod tests {
     fn sign_holder_received_htlc_tx_with_bad_version_test() {
         assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.version = 3 // only version 2 allowed
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.version = 3 // only version 2 allowed
             ),
             "policy failure: sighash mismatch"
         );
@@ -471,9 +503,9 @@ mod tests {
     fn sign_counterparty_offered_htlc_tx_with_bad_locktime_test() {
         assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.lock_time = 0 // offered must have non-zero locktime
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.lock_time = 0 // offered must have non-zero locktime
             ),
             "policy failure: validate_htlc_tx: offered lock_time must be non-zero"
         );
@@ -484,9 +516,9 @@ mod tests {
     fn sign_counterparty_received_htlc_tx_with_bad_locktime_test() {
         assert_failed_precondition_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.lock_time = 42 // received must have zero locktime
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.lock_time = 42 // received must have zero locktime
             ),
             "policy failure: sighash mismatch"
         );
@@ -497,9 +529,9 @@ mod tests {
     fn sign_holder_offered_htlc_tx_with_bad_locktime_test() {
         assert_failed_precondition_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.lock_time = 0 // offered must have non-zero locktime
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.lock_time = 0 // offered must have non-zero locktime
             ),
             "policy failure: validate_htlc_tx: offered lock_time must be non-zero"
         );
@@ -510,9 +542,9 @@ mod tests {
     fn sign_holder_received_htlc_tx_with_bad_locktime_test() {
         assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.lock_time = 42 // received must have zero locktime
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.lock_time = 42 // received must have zero locktime
             ),
             "policy failure: sighash mismatch"
         );
@@ -523,9 +555,9 @@ mod tests {
     fn sign_counterparty_offered_htlc_tx_with_bad_sequence_test() {
         assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.input[0].sequence = 42 // sequence must be per BOLT#3
             ),
             "policy failure: sighash mismatch"
         );
@@ -536,9 +568,9 @@ mod tests {
     fn sign_counterparty_received_htlc_tx_with_bad_sequence_test() {
         assert_failed_precondition_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.input[0].sequence = 42 // sequence must be per BOLT#3
             ),
             "policy failure: sighash mismatch"
         );
@@ -549,9 +581,9 @@ mod tests {
     fn sign_holder_offered_htlc_tx_with_bad_sequence_test() {
         assert_failed_precondition_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.input[0].sequence = 42 // sequence must be per BOLT#3
             ),
             "policy failure: sighash mismatch"
         );
@@ -562,9 +594,9 @@ mod tests {
     fn sign_holder_received_htlc_tx_with_bad_sequence_test() {
         assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.input[0].sequence = 42 // sequence must be per BOLT#3
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.input[0].sequence = 42 // sequence must be per BOLT#3
             ),
             "policy failure: sighash mismatch"
         );
@@ -575,9 +607,9 @@ mod tests {
     fn sign_counterparty_offered_htlc_tx_with_bad_to_self_delay_test() {
         assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
-                |param| param.holder_selected_contest_delay = 42,
-                |_keys| {},
-                |_cstate, _tx| {}
+                |pms| pms.param.holder_selected_contest_delay = 42,
+                |_kms| {},
+                |_tms| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -588,9 +620,9 @@ mod tests {
     fn sign_counterparty_received_htlc_tx_with_bad_to_self_delay_test() {
         assert_failed_precondition_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
-                |param| param.holder_selected_contest_delay = 42,
-                |_keys| {},
-                |_cstate, _tx| {}
+                |pms| pms.param.holder_selected_contest_delay = 42,
+                |_kms| {},
+                |_tms| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -601,13 +633,13 @@ mod tests {
     fn sign_holder_offered_htlc_tx_with_bad_to_self_delay_test() {
         assert_failed_precondition_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
-                |param| {
-                    let mut cptp = param.counterparty_parameters.as_ref().unwrap().clone();
+                |pms| {
+                    let mut cptp = pms.param.counterparty_parameters.as_ref().unwrap().clone();
                     cptp.selected_contest_delay = 42;
-                    param.counterparty_parameters = Some(cptp);
+                    pms.param.counterparty_parameters = Some(cptp);
                 },
-                |_keys| {},
-                |_cstate, _tx| {}
+                |_kms| {},
+                |_tms| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -618,13 +650,13 @@ mod tests {
     fn sign_holder_received_htlc_tx_with_bad_to_self_delay_test() {
         assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
-                |param| {
-                    let mut cptp = param.counterparty_parameters.as_ref().unwrap().clone();
+                |pms| {
+                    let mut cptp = pms.param.counterparty_parameters.as_ref().unwrap().clone();
                     cptp.selected_contest_delay = 42;
-                    param.counterparty_parameters = Some(cptp);
+                    pms.param.counterparty_parameters = Some(cptp);
                 },
-                |_keys| {},
-                |_cstate, _tx| {}
+                |_kms| {},
+                |_tms| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -635,9 +667,9 @@ mod tests {
     fn sign_counterparty_offered_htlc_tx_with_bad_revpubkey_test() {
         assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
-                |_param| {},
-                |keys| keys.revocation_key = make_test_pubkey(42),
-                |_cstate, _tx| {}
+                |_pms| {},
+                |kms| kms.keys.revocation_key = make_test_pubkey(42),
+                |_tms| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -648,9 +680,9 @@ mod tests {
     fn sign_counterparty_received_htlc_tx_with_bad_revpubkey_test() {
         assert_failed_precondition_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
-                |_param| {},
-                |keys| keys.revocation_key = make_test_pubkey(42),
-                |_cstate, _tx| {}
+                |_pms| {},
+                |kms| kms.keys.revocation_key = make_test_pubkey(42),
+                |_tms| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -661,9 +693,9 @@ mod tests {
     fn sign_holder_offered_htlc_tx_with_bad_revpubkey_test() {
         assert_failed_precondition_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
-                |_param| {},
-                |keys| keys.revocation_key = make_test_pubkey(42),
-                |_cstate, _tx| {}
+                |_pms| {},
+                |kms| kms.keys.revocation_key = make_test_pubkey(42),
+                |_tms| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -674,9 +706,9 @@ mod tests {
     fn sign_holder_received_htlc_tx_with_bad_revpubkey_test() {
         assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
-                |_param| {},
-                |keys| keys.revocation_key = make_test_pubkey(42),
-                |_cstate, _tx| {}
+                |_pms| {},
+                |kms| kms.keys.revocation_key = make_test_pubkey(42),
+                |_tms| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -687,9 +719,9 @@ mod tests {
     fn sign_counterparty_offered_htlc_tx_with_bad_delayedpubkey_test() {
         assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
-                |_param| {},
-                |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
-                |_cstate, _tx| {}
+                |_pms| {},
+                |kms| kms.keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
+                |_tms| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -700,9 +732,9 @@ mod tests {
     fn sign_counterparty_received_htlc_tx_with_bad_delayedpubkey_test() {
         assert_failed_precondition_err!(
             sign_counterparty_received_htlc_tx_with_mutators!(
-                |_param| {},
-                |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
-                |_cstate, _tx| {}
+                |_pms| {},
+                |kms| kms.keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
+                |_tms| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -713,9 +745,9 @@ mod tests {
     fn sign_holder_offered_htlc_tx_with_bad_delayedpubkey_test() {
         assert_failed_precondition_err!(
             sign_holder_offered_htlc_tx_with_mutators!(
-                |_param| {},
-                |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
-                |_cstate, _tx| {}
+                |_pms| {},
+                |kms| kms.keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
+                |_tms| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -726,9 +758,9 @@ mod tests {
     fn sign_holder_received_htlc_tx_with_bad_delayedpubkey_test() {
         assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
-                |_param| {},
-                |keys| keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
-                |_cstate, _tx| {}
+                |_pms| {},
+                |kms| kms.keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
+                |_tms| {}
             ),
             "policy failure: sighash mismatch"
         );
@@ -739,9 +771,9 @@ mod tests {
     fn sign_counterparty_offered_htlc_tx_with_low_feerate_test() {
         assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.output[0].value = 999_900 // htlc_amount_sat is 1_000_000
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.output[0].value = 999_900 // htlc_amount_sat is 1_000_000
             ),
             "policy failure: validate_htlc_tx: \
              feerate_per_kw of 151 is smaller than the minimum of 500"
@@ -753,9 +785,9 @@ mod tests {
     fn sign_counterparty_offered_htlc_tx_with_high_feerate_test() {
         assert_failed_precondition_err!(
             sign_counterparty_offered_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.output[0].value = 980_000 // htlc_amount_sat is 1_000_000
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.output[0].value = 980_000 // htlc_amount_sat is 1_000_000
             ),
             "policy failure: validate_htlc_tx: \
              feerate_per_kw of 30166 is larger than the maximum of 16000"
@@ -767,9 +799,9 @@ mod tests {
     fn sign_holder_received_htlc_tx_with_low_feerate_test() {
         assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.output[0].value = 999_900 // htlc_amount_sat is 1_000_000
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.output[0].value = 999_900 // htlc_amount_sat is 1_000_000
             ),
             "policy failure: validate_htlc_tx: \
              feerate_per_kw of 143 is smaller than the minimum of 500"
@@ -781,9 +813,9 @@ mod tests {
     fn sign_holder_received_htlc_tx_with_high_feerate_test() {
         assert_failed_precondition_err!(
             sign_holder_received_htlc_tx_with_mutators!(
-                |_param| {},
-                |_keys| {},
-                |_cstate, tx| tx.output[0].value = 980_000 // htlc_amount_sat is 1_000_000
+                |_pms| {},
+                |_kms| {},
+                |tms| tms.tx.output[0].value = 980_000 // htlc_amount_sat is 1_000_000
             ),
             "policy failure: validate_htlc_tx: \
              feerate_per_kw of 28450 is larger than the maximum of 16000"
