@@ -18,6 +18,8 @@ mod tests {
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
 
+    use paste::paste;
+
     #[test]
     fn sign_local_htlc_tx_static_test() {
         let setup = make_test_channel_setup();
@@ -383,7 +385,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_counterparty_offered_htlc_tx_with_no_mut_test() {
+    fn success_counterparty_offered_static() {
         let status = sign_counterparty_offered_htlc_tx_with_mutators!(
             |_pms| {
                 // don't mutate the channel parameters, should pass
@@ -399,7 +401,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_counterparty_received_htlc_tx_with_no_mut_test() {
+    fn success_counterparty_received_static() {
         let status = sign_counterparty_received_htlc_tx_with_mutators!(
             |_pms| {
                 // don't mutate the channel parameters, should pass
@@ -415,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_holder_offered_htlc_tx_with_no_mut_test() {
+    fn success_holder_offered_static() {
         let status = sign_holder_offered_htlc_tx_with_mutators!(
             |_pms| {
                 // don't mutate the channel parameters, should pass
@@ -431,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_holder_received_htlc_tx_with_no_mut_test() {
+    fn success_holder_received_static() {
         let status = sign_holder_received_htlc_tx_with_mutators!(
             |_pms| {
                 // don't mutate the channel parameters, should pass
@@ -446,381 +448,173 @@ mod tests {
         assert!(status.is_ok());
     }
 
-    // policy-htlc-version
-    #[test]
-    fn sign_counterparty_offered_htlc_tx_with_bad_version_test() {
-        assert_failed_precondition_err!(
-            sign_counterparty_offered_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.version = 3 // only version 2 allowed
-            ),
-            "policy failure: sighash mismatch"
-        );
+    #[allow(dead_code)]
+    struct ErrMsgContext {
+        is_counterparty: bool,
+        is_offered: bool,
+        opt_anchors: bool,
+    }
+
+    const ERR_MSG_CONTEXT_HOLDER_RECEIVED_STATIC: ErrMsgContext =
+        ErrMsgContext { is_counterparty: false, is_offered: false, opt_anchors: false };
+    const ERR_MSG_CONTEXT_HOLDER_OFFERED_STATIC: ErrMsgContext =
+        ErrMsgContext { is_counterparty: false, is_offered: true, opt_anchors: false };
+    const ERR_MSG_CONTEXT_CPARTY_RECEIVED_STATIC: ErrMsgContext =
+        ErrMsgContext { is_counterparty: true, is_offered: false, opt_anchors: false };
+    const ERR_MSG_CONTEXT_CPARTY_OFFERED_STATIC: ErrMsgContext =
+        ErrMsgContext { is_counterparty: true, is_offered: true, opt_anchors: false };
+
+    macro_rules! generate_failed_precondition_error_variations {
+        ($name: ident, $pm: expr, $km: expr, $tm: expr, $errcls: expr) => {
+            paste! {
+                #[test]
+                fn [<$name _holder_received_static>]() {
+                    assert_failed_precondition_err!(
+                        sign_holder_htlc_tx_with_mutators(
+                            false, $pm, $km, $tm),
+                        ($errcls)(ERR_MSG_CONTEXT_HOLDER_RECEIVED_STATIC)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _holder_offered_static>]() {
+                    assert_failed_precondition_err!(
+                        sign_holder_htlc_tx_with_mutators(
+                            true, $pm, $km, $tm),
+                        ($errcls)(ERR_MSG_CONTEXT_HOLDER_OFFERED_STATIC)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _counterparty_received_static>]() {
+                    assert_failed_precondition_err!(
+                        sign_counterparty_htlc_tx_with_mutators(
+                            false, $pm, $km, $tm),
+                        ($errcls)(ERR_MSG_CONTEXT_CPARTY_RECEIVED_STATIC)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _counterparty_offered_static>]() {
+                    assert_failed_precondition_err!(
+                        sign_counterparty_htlc_tx_with_mutators(
+                            true, $pm, $km, $tm),
+                        ($errcls)(ERR_MSG_CONTEXT_CPARTY_OFFERED_STATIC)
+                    );
+                }
+            }
+        };
+    }
+
+    macro_rules! generate_failed_precondition_error_with_mutated_param {
+        ($name: ident, $pm: expr, $errmsg: expr) => {
+            generate_failed_precondition_error_variations!($name, $pm, |_| {}, |_| {}, $errmsg);
+        };
+    }
+
+    macro_rules! generate_failed_precondition_error_with_mutated_keys {
+        ($name: ident, $km: expr, $errmsg: expr) => {
+            generate_failed_precondition_error_variations!($name, |_| {}, $km, |_| {}, $errmsg);
+        };
+    }
+
+    macro_rules! generate_failed_precondition_error_with_mutated_tx {
+        ($name: ident, $tm: expr, $errmsg: expr) => {
+            generate_failed_precondition_error_variations!($name, |_| {}, |_| {}, $tm, $errmsg);
+        };
     }
 
     // policy-htlc-version
-    #[test]
-    fn sign_counterparty_received_htlc_tx_with_bad_version_test() {
-        assert_failed_precondition_err!(
-            sign_counterparty_received_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.version = 3 // only version 2 allowed
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-version
-    #[test]
-    fn sign_holder_offered_htlc_tx_with_bad_version_test() {
-        assert_failed_precondition_err!(
-            sign_holder_offered_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.version = 3 // only version 2 allowed
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-version
-    #[test]
-    fn sign_holder_received_htlc_tx_with_bad_version_test() {
-        assert_failed_precondition_err!(
-            sign_holder_received_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.version = 3 // only version 2 allowed
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
+    generate_failed_precondition_error_with_mutated_tx!(
+        bad_version,
+        |tms| tms.tx.version = 3, // only version 2 allowed
+        |_| "policy failure: sighash mismatch"
+    );
 
     // policy-htlc-locktime
-    #[test]
-    fn sign_counterparty_offered_htlc_tx_with_bad_locktime_test() {
-        assert_failed_precondition_err!(
-            sign_counterparty_offered_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.lock_time = 0 // offered must have non-zero locktime
-            ),
-            "policy failure: validate_htlc_tx: offered lock_time must be non-zero"
-        );
-    }
-
-    // policy-htlc-locktime
-    #[test]
-    fn sign_counterparty_received_htlc_tx_with_bad_locktime_test() {
-        assert_failed_precondition_err!(
-            sign_counterparty_received_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.lock_time = 42 // received must have zero locktime
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-locktime
-    #[test]
-    fn sign_holder_offered_htlc_tx_with_bad_locktime_test() {
-        assert_failed_precondition_err!(
-            sign_holder_offered_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.lock_time = 0 // offered must have non-zero locktime
-            ),
-            "policy failure: validate_htlc_tx: offered lock_time must be non-zero"
-        );
-    }
-
-    // policy-htlc-locktime
-    #[test]
-    fn sign_holder_received_htlc_tx_with_bad_locktime_test() {
-        assert_failed_precondition_err!(
-            sign_holder_received_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.lock_time = 42 // received must have zero locktime
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
+    generate_failed_precondition_error_with_mutated_tx!(
+        bad_locktime,
+        |tms| {
+            // offered must have non-zero, received must have zero
+            tms.tx.lock_time = if tms.is_offered { 0 } else { 42 };
+        },
+        |ectx: ErrMsgContext| {
+            if ectx.is_offered {
+                "policy failure: validate_htlc_tx: offered lock_time must be non-zero"
+            } else {
+                "policy failure: sighash mismatch"
+            }
+        }
+    );
 
     // policy-htlc-sequence
-    #[test]
-    fn sign_counterparty_offered_htlc_tx_with_bad_sequence_test() {
-        assert_failed_precondition_err!(
-            sign_counterparty_offered_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.input[0].sequence = 42 // sequence must be per BOLT#3
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-sequence
-    #[test]
-    fn sign_counterparty_received_htlc_tx_with_bad_sequence_test() {
-        assert_failed_precondition_err!(
-            sign_counterparty_received_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.input[0].sequence = 42 // sequence must be per BOLT#3
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-sequence
-    #[test]
-    fn sign_holder_offered_htlc_tx_with_bad_sequence_test() {
-        assert_failed_precondition_err!(
-            sign_holder_offered_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.input[0].sequence = 42 // sequence must be per BOLT#3
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-sequence
-    #[test]
-    fn sign_holder_received_htlc_tx_with_bad_sequence_test() {
-        assert_failed_precondition_err!(
-            sign_holder_received_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.input[0].sequence = 42 // sequence must be per BOLT#3
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
+    generate_failed_precondition_error_with_mutated_tx!(
+        bad_sequence,
+        |tms| tms.tx.input[0].sequence = 42, // sequence must be per BOLT#3
+        |_| "policy failure: sighash mismatch"
+    );
 
     // policy-htlc-to-self-delay
-    #[test]
-    fn sign_counterparty_offered_htlc_tx_with_bad_to_self_delay_test() {
-        assert_failed_precondition_err!(
-            sign_counterparty_offered_htlc_tx_with_mutators!(
-                |pms| pms.param.holder_selected_contest_delay = 42,
-                |_kms| {},
-                |_tms| {}
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-to-self-delay
-    #[test]
-    fn sign_counterparty_received_htlc_tx_with_bad_to_self_delay_test() {
-        assert_failed_precondition_err!(
-            sign_counterparty_received_htlc_tx_with_mutators!(
-                |pms| pms.param.holder_selected_contest_delay = 42,
-                |_kms| {},
-                |_tms| {}
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-to-self-delay
-    #[test]
-    fn sign_holder_offered_htlc_tx_with_bad_to_self_delay_test() {
-        assert_failed_precondition_err!(
-            sign_holder_offered_htlc_tx_with_mutators!(
-                |pms| {
-                    let mut cptp = pms.param.counterparty_parameters.as_ref().unwrap().clone();
-                    cptp.selected_contest_delay = 42;
-                    pms.param.counterparty_parameters = Some(cptp);
-                },
-                |_kms| {},
-                |_tms| {}
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-to-self-delay
-    #[test]
-    fn sign_holder_received_htlc_tx_with_bad_to_self_delay_test() {
-        assert_failed_precondition_err!(
-            sign_holder_received_htlc_tx_with_mutators!(
-                |pms| {
-                    let mut cptp = pms.param.counterparty_parameters.as_ref().unwrap().clone();
-                    cptp.selected_contest_delay = 42;
-                    pms.param.counterparty_parameters = Some(cptp);
-                },
-                |_kms| {},
-                |_tms| {}
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
+    generate_failed_precondition_error_with_mutated_param!(
+        bad_to_self_delay,
+        |pms| {
+            if pms.is_counterparty {
+                pms.param.holder_selected_contest_delay = 42;
+            } else {
+                let mut cptp = pms.param.counterparty_parameters.as_ref().unwrap().clone();
+                cptp.selected_contest_delay = 42;
+                pms.param.counterparty_parameters = Some(cptp);
+            }
+        },
+        |_| "policy failure: sighash mismatch"
+    );
 
     // policy-htlc-revocation-pubkey
-    #[test]
-    fn sign_counterparty_offered_htlc_tx_with_bad_revpubkey_test() {
-        assert_failed_precondition_err!(
-            sign_counterparty_offered_htlc_tx_with_mutators!(
-                |_pms| {},
-                |kms| kms.keys.revocation_key = make_test_pubkey(42),
-                |_tms| {}
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-revocation-pubkey
-    #[test]
-    fn sign_counterparty_received_htlc_tx_with_bad_revpubkey_test() {
-        assert_failed_precondition_err!(
-            sign_counterparty_received_htlc_tx_with_mutators!(
-                |_pms| {},
-                |kms| kms.keys.revocation_key = make_test_pubkey(42),
-                |_tms| {}
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-revocation-pubkey
-    #[test]
-    fn sign_holder_offered_htlc_tx_with_bad_revpubkey_test() {
-        assert_failed_precondition_err!(
-            sign_holder_offered_htlc_tx_with_mutators!(
-                |_pms| {},
-                |kms| kms.keys.revocation_key = make_test_pubkey(42),
-                |_tms| {}
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-revocation-pubkey
-    #[test]
-    fn sign_holder_received_htlc_tx_with_bad_revpubkey_test() {
-        assert_failed_precondition_err!(
-            sign_holder_received_htlc_tx_with_mutators!(
-                |_pms| {},
-                |kms| kms.keys.revocation_key = make_test_pubkey(42),
-                |_tms| {}
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
+    generate_failed_precondition_error_with_mutated_keys!(
+        bad_revpubkey,
+        |kms| kms.keys.revocation_key = make_test_pubkey(42),
+        |_| "policy failure: sighash mismatch"
+    );
 
     // policy-htlc-delayed-pubkey
-    #[test]
-    fn sign_counterparty_offered_htlc_tx_with_bad_delayedpubkey_test() {
-        assert_failed_precondition_err!(
-            sign_counterparty_offered_htlc_tx_with_mutators!(
-                |_pms| {},
-                |kms| kms.keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
-                |_tms| {}
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-delayed-pubkey
-    #[test]
-    fn sign_counterparty_received_htlc_tx_with_bad_delayedpubkey_test() {
-        assert_failed_precondition_err!(
-            sign_counterparty_received_htlc_tx_with_mutators!(
-                |_pms| {},
-                |kms| kms.keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
-                |_tms| {}
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-delayed-pubkey
-    #[test]
-    fn sign_holder_offered_htlc_tx_with_bad_delayedpubkey_test() {
-        assert_failed_precondition_err!(
-            sign_holder_offered_htlc_tx_with_mutators!(
-                |_pms| {},
-                |kms| kms.keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
-                |_tms| {}
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
-
-    // policy-htlc-delayed-pubkey
-    #[test]
-    fn sign_holder_received_htlc_tx_with_bad_delayedpubkey_test() {
-        assert_failed_precondition_err!(
-            sign_holder_received_htlc_tx_with_mutators!(
-                |_pms| {},
-                |kms| kms.keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
-                |_tms| {}
-            ),
-            "policy failure: sighash mismatch"
-        );
-    }
+    generate_failed_precondition_error_with_mutated_keys!(
+        bad_delayedpubkey,
+        |kms| kms.keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
+        |_| "policy failure: sighash mismatch"
+    );
 
     // policy-htlc-fee-range
-    #[test]
-    fn sign_counterparty_offered_htlc_tx_with_low_feerate_test() {
-        assert_failed_precondition_err!(
-            sign_counterparty_offered_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.output[0].value = 999_900 // htlc_amount_sat is 1_000_000
-            ),
-            "policy failure: validate_htlc_tx: \
-             feerate_per_kw of 151 is smaller than the minimum of 500"
-        );
-    }
+    generate_failed_precondition_error_with_mutated_tx!(
+        low_feerate,
+        |tms| tms.tx.output[0].value = 999_900, // htlc_amount_sat is 1_000_000
+        |ectx: ErrMsgContext| {
+            if ectx.is_offered {
+                "policy failure: validate_htlc_tx: \
+                 feerate_per_kw of 151 is smaller than the minimum of 500"
+            } else {
+                "policy failure: validate_htlc_tx: \
+                 feerate_per_kw of 143 is smaller than the minimum of 500"
+            }
+        }
+    );
 
     // policy-htlc-fee-range
-    #[test]
-    fn sign_counterparty_offered_htlc_tx_with_high_feerate_test() {
-        assert_failed_precondition_err!(
-            sign_counterparty_offered_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.output[0].value = 980_000 // htlc_amount_sat is 1_000_000
-            ),
-            "policy failure: validate_htlc_tx: \
-             feerate_per_kw of 30166 is larger than the maximum of 16000"
-        );
-    }
-
-    // policy-htlc-fee-range
-    #[test]
-    fn sign_holder_received_htlc_tx_with_low_feerate_test() {
-        assert_failed_precondition_err!(
-            sign_holder_received_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.output[0].value = 999_900 // htlc_amount_sat is 1_000_000
-            ),
-            "policy failure: validate_htlc_tx: \
-             feerate_per_kw of 143 is smaller than the minimum of 500"
-        );
-    }
-
-    // policy-htlc-fee-range
-    #[test]
-    fn sign_holder_received_htlc_tx_with_high_feerate_test() {
-        assert_failed_precondition_err!(
-            sign_holder_received_htlc_tx_with_mutators!(
-                |_pms| {},
-                |_kms| {},
-                |tms| tms.tx.output[0].value = 980_000 // htlc_amount_sat is 1_000_000
-            ),
-            "policy failure: validate_htlc_tx: \
-             feerate_per_kw of 28450 is larger than the maximum of 16000"
-        );
-    }
+    generate_failed_precondition_error_with_mutated_tx!(
+        high_feerate,
+        |tms| tms.tx.output[0].value = 980_000, // htlc_amount_sat is 1_000_000
+        |ectx: ErrMsgContext| {
+            if ectx.is_offered {
+                "policy failure: validate_htlc_tx: \
+                 feerate_per_kw of 30166 is larger than the maximum of 16000"
+            } else {
+                "policy failure: validate_htlc_tx: \
+                 feerate_per_kw of 28450 is larger than the maximum of 16000"
+            }
+        }
+    );
 
     #[test]
     #[ignore] // we don't support anchors yet
