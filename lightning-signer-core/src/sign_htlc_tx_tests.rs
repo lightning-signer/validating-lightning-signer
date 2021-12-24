@@ -150,8 +150,8 @@ mod tests {
         KeysMutator: Fn(&mut KeysMutationState),
         TxMutator: Fn(&mut TxMutationState),
     {
-        let (node, channel_id) =
-            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        let setup = make_test_channel_setup();
+        let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup);
 
         let remote_per_commitment_point = make_test_pubkey(10);
         let htlc_amount_sat = 1_000_000;
@@ -259,8 +259,8 @@ mod tests {
         KeysMutator: Fn(&mut KeysMutationState),
         TxMutator: Fn(&mut TxMutationState),
     {
-        let (node, channel_id) =
-            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        let setup = make_test_channel_setup();
+        let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup);
 
         let commit_num = 23;
         let htlc_amount_sat = 1_000_000;
@@ -360,93 +360,48 @@ mod tests {
         Ok(())
     }
 
-    macro_rules! sign_counterparty_offered_htlc_tx_with_mutators {
-        ($pm: expr, $km: expr, $tm: expr) => {
-            sign_counterparty_htlc_tx_with_mutators(true, $pm, $km, $tm)
+    macro_rules! generate_status_ok_variations {
+        ($name: ident, $pm: expr, $km: expr, $tm: expr) => {
+            paste! {
+                #[test]
+                fn [<$name _holder_received_static>]() {
+                    assert_status_ok!(
+                        sign_holder_htlc_tx_with_mutators(
+                            false, $pm, $km, $tm)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _holder_offered_static>]() {
+                    assert_status_ok!(
+                        sign_holder_htlc_tx_with_mutators(
+                            true, $pm, $km, $tm)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _counterparty_received_static>]() {
+                    assert_status_ok!(
+                        sign_counterparty_htlc_tx_with_mutators(
+                            false, $pm, $km, $tm)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _counterparty_offered_static>]() {
+                    assert_status_ok!(
+                        sign_counterparty_htlc_tx_with_mutators(
+                            true, $pm, $km, $tm)
+                    );
+                }
+            }
         };
     }
 
-    macro_rules! sign_counterparty_received_htlc_tx_with_mutators {
-        ($pm: expr, $km: expr, $tm: expr) => {
-            sign_counterparty_htlc_tx_with_mutators(false, $pm, $km, $tm)
-        };
-    }
-
-    macro_rules! sign_holder_offered_htlc_tx_with_mutators {
-        ($pm: expr, $km: expr, $tm: expr) => {
-            sign_holder_htlc_tx_with_mutators(true, $pm, $km, $tm)
-        };
-    }
-
-    macro_rules! sign_holder_received_htlc_tx_with_mutators {
-        ($pm: expr, $km: expr, $tm: expr) => {
-            sign_holder_htlc_tx_with_mutators(false, $pm, $km, $tm)
-        };
-    }
-
-    #[test]
-    fn success_counterparty_offered_static() {
-        let status = sign_counterparty_offered_htlc_tx_with_mutators!(
-            |_pms| {
-                // don't mutate the channel parameters, should pass
-            },
-            |_kms| {
-                // don't mutate the keys, should pass
-            },
-            |_tms| {
-                // don't mutate the tx, should pass
-            }
-        );
-        assert!(status.is_ok());
-    }
-
-    #[test]
-    fn success_counterparty_received_static() {
-        let status = sign_counterparty_received_htlc_tx_with_mutators!(
-            |_pms| {
-                // don't mutate the channel parameters, should pass
-            },
-            |_kms| {
-                // don't mutate the keys, should pass
-            },
-            |_tms| {
-                // don't mutate the tx, should pass
-            }
-        );
-        assert!(status.is_ok());
-    }
-
-    #[test]
-    fn success_holder_offered_static() {
-        let status = sign_holder_offered_htlc_tx_with_mutators!(
-            |_pms| {
-                // don't mutate the channel parameters, should pass
-            },
-            |_kms| {
-                // don't mutate the keys, should pass
-            },
-            |_tms| {
-                // don't mutate the tx, should pass
-            }
-        );
-        assert!(status.is_ok());
-    }
-
-    #[test]
-    fn success_holder_received_static() {
-        let status = sign_holder_received_htlc_tx_with_mutators!(
-            |_pms| {
-                // don't mutate the channel parameters, should pass
-            },
-            |_kms| {
-                // don't mutate the keys, should pass
-            },
-            |_tms| {
-                // don't mutate the tx, should pass
-            }
-        );
-        assert!(status.is_ok());
-    }
+    generate_status_ok_variations!(success, |_| {}, |_| {}, |_| {});
 
     #[allow(dead_code)]
     struct ErrMsgContext {
