@@ -12,19 +12,26 @@ mod tests {
     use crate::util::test_utils::*;
 
     #[test]
-    fn sign_holder_commitment_tx_phase2_static_test() {
+    fn success_redundant_static() {
         let setup = make_test_channel_setup();
-        sign_holder_commitment_tx_phase2_test(&setup);
+        test_redundant(&setup);
     }
 
     #[test]
-    fn sign_holder_commitment_tx_phase2_legacy_test() {
+    fn success_redundant_legacy() {
         let mut setup = make_test_channel_setup();
         setup.commitment_type = CommitmentType::Legacy;
-        sign_holder_commitment_tx_phase2_test(&setup);
+        test_redundant(&setup);
     }
 
-    fn sign_holder_commitment_tx_phase2_test(setup: &ChannelSetup) {
+    #[test]
+    fn success_redundant_anchors() {
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = CommitmentType::Anchors;
+        test_redundant(&setup);
+    }
+
+    fn test_redundant(setup: &ChannelSetup) {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
@@ -61,7 +68,11 @@ mod tests {
             .expect("sign");
         assert_eq!(
             tx.txid().to_hex(),
-            "991422f2c0d308b9319f9aec28ccef4bffedf5d36965ec7346155537b8800844"
+            if setup.commitment_type == CommitmentType::Anchors {
+                "2b8ee59e301a0d0af2d1bfd0a105970978800c0dc8338a034234bc4ec93a5c13"
+            } else {
+                "991422f2c0d308b9319f9aec28ccef4bffedf5d36965ec7346155537b8800844"
+            }
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
