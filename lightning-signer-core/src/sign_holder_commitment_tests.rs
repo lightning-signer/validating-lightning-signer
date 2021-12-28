@@ -13,6 +13,8 @@ mod tests {
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
 
+    use paste::paste;
+
     #[test]
     fn success_redundant_static() {
         let setup = make_test_channel_setup();
@@ -101,6 +103,7 @@ mod tests {
     }
 
     fn sign_holder_commitment_tx_with_mutators<SignInputMutator>(
+        commitment_type: CommitmentType,
         mutate_sign_inputs: SignInputMutator,
     ) -> Result<(), Status>
     where
@@ -109,7 +112,10 @@ mod tests {
         let next_holder_commit_num = HOLD_COMMIT_NUM;
         let next_counterparty_commit_num = HOLD_COMMIT_NUM + 1;
         let next_counterparty_revoke_num = next_counterparty_commit_num - 1;
-        let (node_ctx, chan_ctx) = setup_funded_channel(
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = commitment_type;
+        let (node_ctx, chan_ctx) = setup_funded_channel_with_setup(
+            setup,
             next_holder_commit_num,
             next_counterparty_commit_num,
             next_counterparty_revoke_num,
@@ -132,6 +138,7 @@ mod tests {
     }
 
     fn sign_holder_commitment_tx_retry_with_mutators<SignInputMutator>(
+        commitment_type: CommitmentType,
         mutate_sign_inputs: SignInputMutator,
     ) -> Result<(), Status>
     where
@@ -140,7 +147,10 @@ mod tests {
         let next_holder_commit_num = HOLD_COMMIT_NUM;
         let next_counterparty_commit_num = HOLD_COMMIT_NUM + 1;
         let next_counterparty_revoke_num = next_counterparty_commit_num - 1;
-        let (node_ctx, chan_ctx) = setup_funded_channel(
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = commitment_type;
+        let (node_ctx, chan_ctx) = setup_funded_channel_with_setup(
+            setup,
             next_holder_commit_num,
             next_counterparty_commit_num,
             next_counterparty_revoke_num,
@@ -290,70 +300,110 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn success() {
-        assert_status_ok!(sign_holder_commitment_tx_with_mutators(|_sms| {
-            // don't mutate the state, should pass
-        },));
+    macro_rules! generate_status_ok_variations {
+        ($name: ident, $sms: expr) => {
+            paste! {
+                #[test]
+                fn [<$name _static>]() {
+                    assert_status_ok!(
+                        sign_holder_commitment_tx_with_mutators(
+                            CommitmentType::StaticRemoteKey, $sms)
+                    );
+                }
+            }
+        };
     }
 
-    #[test]
-    fn ok_after_mutual_close() {
-        assert_status_ok!(sign_holder_commitment_tx_with_mutators(|sms| {
-            // Set the mutual_close_signed flag
-            sms.estate.mutual_close_signed = true;
-        }));
+    macro_rules! generate_status_ok_retry_variations {
+        ($name: ident, $sms: expr) => {
+            paste! {
+                #[test]
+                fn [<$name _retry_static>]() {
+                    assert_status_ok!(
+                        sign_holder_commitment_tx_retry_with_mutators(
+                            CommitmentType::StaticRemoteKey, $sms)
+                    );
+                }
+            }
+        };
     }
 
-    #[test]
-    fn bad_prior_commit_num() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_with_mutators(|sms| {
-                *sms.commit_num -= 1;
-            }),
-            "policy failure: get_current_holder_commitment_info: \
+    generate_status_ok_variations!(success, |_| {});
+
+    generate_status_ok_variations!(ok_after_mutual_close, |sms| {
+        // Set the mutual_close_signed flag
+        sms.estate.mutual_close_signed = true;
+    });
+
+    generate_status_ok_retry_variations!(success, |_| {});
+
+    generate_status_ok_retry_variations!(ok_after_mutual_close, |sms| {
+        // Set the mutual_close_signed flag
+        sms.estate.mutual_close_signed = true;
+    });
+
+    #[allow(dead_code)]
+    struct ErrMsgContext {
+        opt_anchors: bool,
+    }
+
+    const ERR_MSG_CONTEXT_STATIC: ErrMsgContext = ErrMsgContext { opt_anchors: false };
+
+    macro_rules! generate_failed_precondition_error_variations {
+        ($name: ident, $sms: expr, $errcls: expr) => {
+            paste! {
+                #[test]
+                fn [<$name _static>]() {
+                    assert_failed_precondition_err!(
+                        sign_holder_commitment_tx_with_mutators(
+                            CommitmentType::StaticRemoteKey, $sms),
+                        ($errcls)(ERR_MSG_CONTEXT_STATIC)
+                    );
+                }
+            }
+        };
+    }
+
+    macro_rules! generate_failed_precondition_error_retry_variations {
+        ($name: ident, $sms: expr, $errcls: expr) => {
+            paste! {
+                #[test]
+                fn [<$name _retry_static>]() {
+                    assert_failed_precondition_err!(
+                        sign_holder_commitment_tx_retry_with_mutators(
+                            CommitmentType::StaticRemoteKey, $sms),
+                        ($errcls)(ERR_MSG_CONTEXT_STATIC)
+                    );
+                }
+            }
+        };
+    }
+
+    generate_failed_precondition_error_variations!(
+        bad_prior_commit_num,
+        |sms| *sms.commit_num -= 1,
+        |_| "policy failure: get_current_holder_commitment_info: \
              invalid next holder commitment number: 23 != 24"
-        );
-    }
+    );
 
-    #[test]
-    fn bad_later_commit_num() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_with_mutators(|sms| {
-                *sms.commit_num += 1;
-            }),
-            "policy failure: get_current_holder_commitment_info: \
+    generate_failed_precondition_error_variations!(
+        bad_later_commit_num,
+        |sms| *sms.commit_num += 1,
+        |_| "policy failure: get_current_holder_commitment_info: \
              invalid next holder commitment number: 25 != 24"
-        );
-    }
+    );
 
-    // policy-commitment-retry-same
-    #[test]
-    fn retry_success() {
-        assert_status_ok!(sign_holder_commitment_tx_retry_with_mutators(|_sms| {
-            // don't mutate the state, should pass
-        },));
-    }
-
-    #[test]
-    fn retry_bad_prior_commit_num() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_retry_with_mutators(|sms| {
-                *sms.commit_num -= 1;
-            }),
-            "policy failure: get_current_holder_commitment_info: \
+    generate_failed_precondition_error_retry_variations!(
+        bad_prior_commit_num,
+        |sms| *sms.commit_num -= 1,
+        |_| "policy failure: get_current_holder_commitment_info: \
              invalid next holder commitment number: 23 != 24"
-        );
-    }
+    );
 
-    #[test]
-    fn retry_bad_later_commit_num() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_retry_with_mutators(|sms| {
-                *sms.commit_num += 1;
-            }),
-            "policy failure: get_current_holder_commitment_info: \
+    generate_failed_precondition_error_retry_variations!(
+        bad_later_commit_num,
+        |sms| *sms.commit_num += 1,
+        |_| "policy failure: get_current_holder_commitment_info: \
              invalid next holder commitment number: 25 != 24"
-        );
-    }
+    );
 }

@@ -844,6 +844,21 @@ pub fn setup_funded_channel(
     next_counterparty_revoke_num: u64,
 ) -> (TestNodeContext, TestChannelContext) {
     let setup = make_test_channel_setup();
+    setup_funded_channel_with_setup(
+        setup,
+        next_holder_commit_num,
+        next_counterparty_commit_num,
+        next_counterparty_revoke_num,
+    )
+}
+
+// Setup node and channel state with specified setup.
+pub fn setup_funded_channel_with_setup(
+    setup: ChannelSetup,
+    next_holder_commit_num: u64,
+    next_counterparty_commit_num: u64,
+    next_counterparty_revoke_num: u64,
+) -> (TestNodeContext, TestChannelContext) {
     let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
     let secp_ctx = Secp256k1::signing_only();
