@@ -1,8 +1,10 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin;
     use bitcoin::hashes::hex::ToHex;
-    use lightning::ln::chan_utils::make_funding_redeemscript;
+    use bitcoin::{self, Script, Transaction};
+    use lightning::ln::chan_utils::{
+        build_htlc_transaction, get_htlc_redeemscript, make_funding_redeemscript,
+    };
 
     use test_env_log::test;
 
@@ -178,7 +180,7 @@ mod tests {
     where
         SignInputMutator: Fn(&mut SignMutationState),
     {
-        let (sig, _htlc_sigs, tx) =
+        let (sig, htlc_sigs, tx, htlcs, htlc_txs, htlc_redeemscripts, per_commitment_point) =
             node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
                 let mut commit_tx_ctx = commit_tx_ctx0.clone();
 
@@ -192,7 +194,7 @@ mod tests {
                 );
 
                 let commitment_tx = chan.make_holder_commitment_tx_with_keys(
-                    keys,
+                    keys.clone(),
                     commit_tx_ctx.commit_num,
                     commit_tx_ctx.feerate_per_kw,
                     commit_tx_ctx.to_broadcaster,
@@ -215,7 +217,40 @@ mod tests {
                 let (sig, htlc_sigs) =
                     chan.sign_holder_commitment_tx_phase2(commit_tx_ctx.commit_num)?;
 
-                Ok((sig, htlc_sigs, tx.transaction.clone()))
+                let htlc_txs = htlcs
+                    .iter()
+                    .enumerate()
+                    .map(|(ndx, htlc0)| {
+                        let mut htlc = htlc0.clone();
+                        htlc.transaction_output_index = Some(ndx as u32);
+                        build_htlc_transaction(
+                            &tx.transaction.txid(),
+                            commit_tx_ctx.feerate_per_kw,
+                            chan_ctx.setup.counterparty_selected_contest_delay,
+                            &htlc,
+                            chan_ctx.setup.option_anchor_outputs(),
+                            &keys.broadcaster_delayed_payment_key,
+                            &keys.revocation_key,
+                        )
+                    })
+                    .collect::<Vec<Transaction>>();
+
+                let htlc_redeemscripts = htlcs
+                    .iter()
+                    .map(|htlc| {
+                        get_htlc_redeemscript(&htlc, chan_ctx.setup.option_anchor_outputs(), &keys)
+                    })
+                    .collect::<Vec<Script>>();
+
+                Ok((
+                    sig,
+                    htlc_sigs,
+                    tx.transaction.clone(),
+                    htlcs,
+                    htlc_txs,
+                    htlc_redeemscripts,
+                    per_commitment_point,
+                ))
             })?;
 
         assert_eq!(
@@ -237,6 +272,20 @@ mod tests {
             chan_ctx.setup.channel_value_sat,
             &channel_funding_redeemscript,
         );
+
+        let htlc_pubkey =
+            get_channel_htlc_pubkey(&node_ctx.node, &chan_ctx.channel_id, &per_commitment_point);
+
+        for (ndx, htlc) in htlcs.into_iter().enumerate() {
+            check_signature(
+                &htlc_txs[ndx],
+                0,
+                htlc_sigs[ndx].clone(),
+                &htlc_pubkey,
+                htlc.amount_msat / 1000,
+                &htlc_redeemscripts[ndx],
+            );
+        }
 
         Ok(())
     }
