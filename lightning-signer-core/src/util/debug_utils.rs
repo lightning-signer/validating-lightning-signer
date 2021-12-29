@@ -4,7 +4,10 @@ use bitcoin::hashes::hex::ToHex;
 use bitcoin::util::address::Payload;
 use bitcoin::{Address, Network, Script};
 use lightning::chain::keysinterface::InMemorySigner;
-use lightning::ln::chan_utils::{ChannelPublicKeys, HTLCOutputInCommitment, TxCreationKeys};
+use lightning::ln::chan_utils::{
+    BuiltCommitmentTransaction, ChannelPublicKeys, CommitmentTransaction, HTLCOutputInCommitment,
+    TxCreationKeys,
+};
 
 /// Debug printer for ChannelPublicKeys which doesn't have one.
 pub struct DebugChannelPublicKeys<'a>(pub &'a ChannelPublicKeys);
@@ -100,6 +103,34 @@ impl<'a> core::fmt::Debug for DebugInMemorySigner<'a> {
             .field("delayed_payment_base_key", &self.0.delayed_payment_base_key)
             .field("htlc_base_key", &self.0.htlc_base_key)
             .field("commitment_seed", &DebugBytes(&self.0.commitment_seed))
+            .finish()
+    }
+}
+
+/// Debug printer for BuiltCommitmentTransaction which doesn't have one.
+pub struct DebugBuiltCommitmentTransaction<'a>(pub &'a BuiltCommitmentTransaction);
+impl<'a> core::fmt::Debug for DebugBuiltCommitmentTransaction<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_struct("BuiltCommitmentTransaction")
+            .field("transaction", &self.0.transaction)
+            .field("txid", &self.0.txid)
+            .finish()
+    }
+}
+
+/// Debug printer for CommitmentTransaction which doesn't have one.
+pub struct DebugCommitmentTransaction<'a>(pub &'a CommitmentTransaction);
+impl<'a> core::fmt::Debug for DebugCommitmentTransaction<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_struct("CommitmentTransaction")
+            .field("commitment_number", &self.0.commitment_number())
+            .field("to_broadcaster_value_sat", &self.0.to_broadcaster_value_sat())
+            .field("to_countersignatory_value_sat", &self.0.to_countersignatory_value_sat())
+            .field("feerate_per_kw", &self.0.feerate_per_kw())
+            .field("htlcs", &DebugVecHTLCOutputInCommitment(&self.0.htlcs()))
+            .field("opt_anchors", &self.0.trust().opt_anchors())
+            .field("keys", &DebugTxCreationKeys(&self.0.trust().keys()))
+            .field("built", &DebugBuiltCommitmentTransaction(&self.0.trust().built_transaction()))
             .finish()
     }
 }
