@@ -240,14 +240,14 @@ mod tests {
 
         let htlc_pubkey = get_channel_htlc_pubkey(&node, &channel_id, &remote_per_commitment_point);
 
-        check_signature_with_setup(
+        check_counterparty_htlc_signature(
             &htlc_tx,
             0,
             typedsig.serialize(),
             &htlc_pubkey,
             htlc_amount_sat,
             &htlc_redeemscript,
-            &setup,
+            setup.option_anchor_outputs(),
         );
 
         Ok(())
@@ -359,14 +359,13 @@ mod tests {
 
         let htlc_pubkey = get_channel_htlc_pubkey(&node, &channel_id, &per_commitment_point);
 
-        check_signature_with_setup(
+        check_signature(
             &htlc_tx,
             0,
             typedsig.serialize(),
             &htlc_pubkey,
             htlc_amount_sat,
             &htlc_redeemscript,
-            &setup,
         );
 
         Ok(())

@@ -613,7 +613,7 @@ impl Validator for SimpleValidator {
         } else {
             setup.counterparty_selected_contest_delay // the remote side imposes this value
         };
-        let sighash_type = if setup.option_anchor_outputs() {
+        let sighash_type = if is_counterparty && setup.option_anchor_outputs() {
             SigHashType::SinglePlusAnyoneCanPay
         } else {
             SigHashType::All
