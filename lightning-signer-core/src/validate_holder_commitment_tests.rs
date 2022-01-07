@@ -228,6 +228,7 @@ mod tests {
 
     #[allow(dead_code)]
     struct ValidationMutationState<'a> {
+        opt_anchors: bool,
         chan: &'a mut Channel,
         cstate: &'a mut ChainState,
         commit_tx_ctx: &'a mut TestCommitmentTxContext,
@@ -248,7 +249,7 @@ mod tests {
         ValidationMutator,
         ChannelStateValidator,
     >(
-        _commitment_type: CommitmentType,
+        commitment_type: CommitmentType,
         node_ctx: &TestNodeContext,
         chan_ctx: &TestChannelContext,
         mutate_tx_builder: TxBuilderMutator,
@@ -340,6 +341,7 @@ mod tests {
             let mut cstate = make_test_chain_state();
 
             mutate_validation_input(&mut ValidationMutationState {
+                opt_anchors: commitment_type == CommitmentType::Anchors,
                 chan: chan,
                 cstate: &mut cstate,
                 commit_tx_ctx: &mut commit_tx_ctx,
@@ -475,6 +477,15 @@ mod tests {
                     );
                 }
             }
+            paste! {
+                #[test]
+                fn [<$name _anchors>]() {
+                    assert_status_ok!(
+                        validate_holder_commitment_with_mutators(
+                            CommitmentType::Anchors, $tms, $kms, $vms, $vs)
+                    );
+                }
+            }
         };
     }
 
@@ -489,6 +500,15 @@ mod tests {
                     );
                 }
             }
+            paste! {
+                #[test]
+                fn [<$name _anchors>]() {
+                    assert_status_ok!(
+                        validate_holder_commitment_retry_with_mutators(
+                            CommitmentType::Anchors, $tms, $kms, $vms, $vs)
+                    );
+                }
+            }
         };
     }
 
@@ -498,6 +518,7 @@ mod tests {
     }
 
     const ERR_MSG_CONTEXT_STATIC: ErrMsgContext = ErrMsgContext { opt_anchors: false };
+    const ERR_MSG_CONTEXT_ANCHORS: ErrMsgContext = ErrMsgContext { opt_anchors: true };
 
     macro_rules! generate_failed_precondition_error_variations {
         ($name: ident, $tms: expr, $kms: expr, $vms: expr, $vs: expr, $errcls: expr) => {
@@ -508,6 +529,16 @@ mod tests {
                         validate_holder_commitment_with_mutators(
                             CommitmentType::StaticRemoteKey, $tms, $kms, $vms, $vs),
                         ($errcls)(ERR_MSG_CONTEXT_STATIC)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _anchors>]() {
+                    assert_failed_precondition_err!(
+                        validate_holder_commitment_with_mutators(
+                            CommitmentType::Anchors, $tms, $kms, $vms, $vs),
+                        ($errcls)(ERR_MSG_CONTEXT_ANCHORS)
                     );
                 }
             }
@@ -523,6 +554,16 @@ mod tests {
                         validate_holder_commitment_retry_with_mutators(
                             CommitmentType::StaticRemoteKey, $tms, $kms, $vms, $vs),
                         ($errcls)(ERR_MSG_CONTEXT_STATIC)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _anchors>]() {
+                    assert_failed_precondition_err!(
+                        validate_holder_commitment_retry_with_mutators(
+                            CommitmentType::Anchors, $tms, $kms, $vms, $vs),
+                        ($errcls)(ERR_MSG_CONTEXT_ANCHORS)
                     );
                 }
             }
@@ -740,8 +781,11 @@ mod tests {
             // Channel state should not advance.
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
         },
-        |_| "transaction format: decode_commitment_tx: \
-             tx output[4]: script pubkey doesn't match inner script"
+        |ectx: ErrMsgContext| format!(
+            "transaction format: decode_commitment_tx: \
+             tx output[{}]: script pubkey doesn't match inner script",
+            if ectx.opt_anchors { 6 } else { 4 }
+        )
     );
 
     // policy-revoke-new-commitment-valid
@@ -749,7 +793,8 @@ mod tests {
     generate_failed_precondition_error_with_mutated_validation_input!(
         multiple_to_holder,
         |vms| {
-            let ndx = 4;
+            let basendx = if vms.opt_anchors { 2 } else { 0 };
+            let ndx = basendx + 4;
             vms.tx.output.push(vms.tx.output[ndx].clone());
             vms.witscripts.push(vms.witscripts[ndx].clone());
         },
@@ -757,8 +802,11 @@ mod tests {
             // Channel state should not advance.
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
         },
-        |_| "transaction format: decode_commitment_tx: \
-             tx output[5]: more than one to_broadcaster output"
+        |ectx: ErrMsgContext| format!(
+            "transaction format: decode_commitment_tx: \
+             tx output[{}]: more than one to_broadcaster output",
+            if ectx.opt_anchors { 7 } else { 5 }
+        )
     );
 
     // policy-revoke-new-commitment-valid
@@ -766,7 +814,8 @@ mod tests {
     generate_failed_precondition_error_with_mutated_validation_input!(
         multiple_to_counterparty,
         |vms| {
-            let ndx = 3;
+            let basendx = if vms.opt_anchors { 2 } else { 0 };
+            let ndx = basendx + 3;
             vms.tx.output.push(vms.tx.output[ndx].clone());
             vms.witscripts.push(vms.witscripts[ndx].clone());
         },
@@ -774,17 +823,21 @@ mod tests {
             // Channel state should not advance.
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
         },
-        |_| "transaction format: decode_commitment_tx: \
-             tx output[5]: more than one to_countersigner output"
+        |ectx: ErrMsgContext| format!(
+            "transaction format: decode_commitment_tx: \
+             tx output[{}]: more than one to_countersigner output",
+            if ectx.opt_anchors { 7 } else { 5 }
+        )
     );
 
     // policy-commitment-outputs-trimmed
     generate_failed_precondition_error_with_mutated_validation_input!(
         dust_to_holder,
         |vms| {
+            let basendx = if vms.opt_anchors { 2 } else { 0 };
             let delta = 1_979_900;
-            vms.tx.output[3].value += delta;
-            vms.tx.output[4].value -= delta;
+            vms.tx.output[basendx + 3].value += delta;
+            vms.tx.output[basendx + 4].value -= delta;
         },
         |vs| {
             // Channel state should not advance.
@@ -798,9 +851,10 @@ mod tests {
     generate_failed_precondition_error_with_mutated_validation_input!(
         dust_to_counterparty,
         |vms| {
+            let basendx = if vms.opt_anchors { 2 } else { 0 };
             let delta = 999_900;
-            vms.tx.output[3].value -= delta;
-            vms.tx.output[4].value += delta;
+            vms.tx.output[basendx + 3].value -= delta;
+            vms.tx.output[basendx + 4].value += delta;
         },
         |vs| {
             // Channel state should not advance.
@@ -814,30 +868,38 @@ mod tests {
     generate_failed_precondition_error_with_mutated_validation_input!(
         dust_offered_htlc,
         |vms| {
+            let basendx = if vms.opt_anchors { 2 } else { 0 };
             vms.commit_tx_ctx.offered_htlcs[0].value_sat = 1000;
-            vms.tx.output[0].value = 1000;
+            vms.tx.output[basendx].value = 1000;
         },
         |vs| {
             // Channel state should not advance.
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
         },
-        |_| "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
-             offered htlc.value_sat 1000 less than dust limit 2319"
+        |ectx: ErrMsgContext| format!(
+            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
+             offered htlc.value_sat 1000 less than dust limit {}",
+            if ectx.opt_anchors { 2328 } else { 2319 }
+        )
     );
 
     // policy-commitment-outputs-trimmed
     generate_failed_precondition_error_with_mutated_validation_input!(
         dust_received_htlc,
         |vms| {
+            let basendx = if vms.opt_anchors { 2 } else { 0 };
             vms.commit_tx_ctx.received_htlcs[0].value_sat = 1000;
-            vms.tx.output[1].value = 1000;
+            vms.tx.output[basendx + 1].value = 1000;
         },
         |vs| {
             // Channel state should not advance.
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
         },
-        |_| "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
-             received htlc.value_sat 1000 less than dust limit 2439"
+        |ectx: ErrMsgContext| format!(
+            "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
+             received htlc.value_sat 1000 less than dust limit {}",
+            if ectx.opt_anchors { 2448 } else { 2439 }
+        )
     );
 
     #[test]
