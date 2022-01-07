@@ -227,12 +227,10 @@ mod tests {
                 let (sig, htlc_sigs) =
                     chan.sign_holder_commitment_tx_phase2(commit_tx_ctx.commit_num)?;
 
-                let htlc_txs = htlcs
+                let htlc_txs = trusted_tx
+                    .htlcs()
                     .iter()
-                    .enumerate()
-                    .map(|(ndx, htlc0)| {
-                        let mut htlc = htlc0.clone();
-                        htlc.transaction_output_index = Some(ndx as u32);
+                    .map(|htlc| {
                         build_htlc_transaction(
                             &tx.transaction.txid(),
                             commit_tx_ctx.feerate_per_kw,
@@ -265,7 +263,11 @@ mod tests {
 
         assert_eq!(
             tx.txid().to_hex(),
-            "d236f61c3e0fb3221fab61f97696077df3514e3d602561a6d2050d79777eb362"
+            if chan_ctx.setup.commitment_type == CommitmentType::StaticRemoteKey {
+                "d236f61c3e0fb3221fab61f97696077df3514e3d602561a6d2050d79777eb362"
+            } else {
+                "175502b7af99be693c01be3c033473d39379ff9567b39d238f734ab7e3e58937"
+            }
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node_ctx.node, &chan_ctx.channel_id);
@@ -311,6 +313,15 @@ mod tests {
                     );
                 }
             }
+            paste! {
+                #[test]
+                fn [<$name _anchors>]() {
+                    assert_status_ok!(
+                        sign_holder_commitment_tx_with_mutators(
+                            CommitmentType::Anchors, $sms)
+                    );
+                }
+            }
         };
     }
 
@@ -322,6 +333,15 @@ mod tests {
                     assert_status_ok!(
                         sign_holder_commitment_tx_retry_with_mutators(
                             CommitmentType::StaticRemoteKey, $sms)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _retry_anchors>]() {
+                    assert_status_ok!(
+                        sign_holder_commitment_tx_retry_with_mutators(
+                            CommitmentType::Anchors, $sms)
                     );
                 }
             }
@@ -348,6 +368,7 @@ mod tests {
     }
 
     const ERR_MSG_CONTEXT_STATIC: ErrMsgContext = ErrMsgContext { opt_anchors: false };
+    const ERR_MSG_CONTEXT_ANCHORS: ErrMsgContext = ErrMsgContext { opt_anchors: true };
 
     macro_rules! generate_failed_precondition_error_variations {
         ($name: ident, $sms: expr, $errcls: expr) => {
@@ -358,6 +379,16 @@ mod tests {
                         sign_holder_commitment_tx_with_mutators(
                             CommitmentType::StaticRemoteKey, $sms),
                         ($errcls)(ERR_MSG_CONTEXT_STATIC)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _anchors>]() {
+                    assert_failed_precondition_err!(
+                        sign_holder_commitment_tx_retry_with_mutators(
+                            CommitmentType::Anchors, $sms),
+                        ($errcls)(ERR_MSG_CONTEXT_ANCHORS)
                     );
                 }
             }
