@@ -214,6 +214,32 @@ mod tests {
 
     const HOLD_COMMIT_NUM: u64 = 43;
 
+    #[allow(dead_code)]
+    struct TxBuilderMutationState<'a> {
+        commit_tx_ctx: &'a mut TestCommitmentTxContext,
+    }
+
+    #[allow(dead_code)]
+    struct KeysMutationState<'a> {
+        keys: &'a mut TxCreationKeys,
+    }
+
+    #[allow(dead_code)]
+    struct ValidationMutationState<'a> {
+        chan: &'a mut Channel,
+        cstate: &'a mut ChainState,
+        commit_tx_ctx: &'a mut TestCommitmentTxContext,
+        tx: &'a mut Transaction,
+        witscripts: &'a mut Vec<Vec<u8>>,
+        commit_sig: &'a mut Signature,
+        htlc_sigs: &'a mut Vec<Signature>,
+    }
+
+    #[allow(dead_code)]
+    struct ValidationState<'a> {
+        chan: &'a Channel,
+    }
+
     fn validate_holder_commitment_with_mutator_common<
         TxBuilderMutator,
         KeysMutator,
@@ -228,18 +254,10 @@ mod tests {
         validate_channel_state: ChannelStateValidator,
     ) -> Result<(), Status>
     where
-        TxBuilderMutator: Fn(&mut TestCommitmentTxContext),
-        KeysMutator: Fn(&mut TxCreationKeys),
-        ValidationMutator: Fn(
-            &mut Channel,
-            &mut ChainState,
-            &mut TestCommitmentTxContext,
-            &mut Transaction,
-            &mut Vec<Vec<u8>>,
-            &mut Signature,
-            &mut Vec<Signature>,
-        ),
-        ChannelStateValidator: Fn(&Channel),
+        TxBuilderMutator: Fn(&mut TxBuilderMutationState),
+        KeysMutator: Fn(&mut KeysMutationState),
+        ValidationMutator: Fn(&mut ValidationMutationState),
+        ChannelStateValidator: Fn(&ValidationState),
     {
         let to_broadcaster = 1_979_997;
         let to_countersignatory = 1_000_000;
@@ -268,7 +286,7 @@ mod tests {
             tx: None,
         };
 
-        mutate_tx_builder(&mut commit_tx_ctx0);
+        mutate_tx_builder(&mut TxBuilderMutationState { commit_tx_ctx: &mut commit_tx_ctx0 });
 
         commit_tx_ctx0 = channel_commitment(
             &node_ctx,
@@ -295,7 +313,7 @@ mod tests {
 
             let mut keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 
-            mutate_keys(&mut keys);
+            mutate_keys(&mut KeysMutationState { keys: &mut keys });
 
             let htlcs = Channel::htlcs_info2_to_oic(
                 commit_tx_ctx.offered_htlcs.clone(),
@@ -318,15 +336,15 @@ mod tests {
 
             let mut cstate = make_test_chain_state();
 
-            mutate_validation_input(
-                chan,
-                &mut cstate,
-                &mut commit_tx_ctx,
-                &mut tx,
-                &mut output_witscripts,
-                &mut commit_sig,
-                &mut htlc_sigs,
-            );
+            mutate_validation_input(&mut ValidationMutationState {
+                chan: chan,
+                cstate: &mut cstate,
+                commit_tx_ctx: &mut commit_tx_ctx,
+                tx: &mut tx,
+                witscripts: &mut output_witscripts,
+                commit_sig: &mut commit_sig,
+                htlc_sigs: &mut htlc_sigs,
+            });
 
             // Validate the holder_commitment, but defer error returns till after we've had
             // a chance to validate the channel state for side-effects
@@ -340,7 +358,7 @@ mod tests {
                 &commit_sig,
                 &htlc_sigs,
             );
-            validate_channel_state(chan);
+            validate_channel_state(&ValidationState { chan });
             deferred_rv?;
             Ok(())
         })
@@ -358,18 +376,10 @@ mod tests {
         validate_channel_state: ChannelStateValidator,
     ) -> Result<(), Status>
     where
-        TxBuilderMutator: Fn(&mut TestCommitmentTxContext),
-        KeysMutator: Fn(&mut TxCreationKeys),
-        ValidationMutator: Fn(
-            &mut Channel,
-            &mut ChainState,
-            &mut TestCommitmentTxContext,
-            &mut Transaction,
-            &mut Vec<Vec<u8>>,
-            &mut Signature,
-            &mut Vec<Signature>,
-        ),
-        ChannelStateValidator: Fn(&Channel),
+        TxBuilderMutator: Fn(&mut TxBuilderMutationState),
+        KeysMutator: Fn(&mut KeysMutationState),
+        ValidationMutator: Fn(&mut ValidationMutationState),
+        ChannelStateValidator: Fn(&ValidationState),
     {
         let next_holder_commit_num = HOLD_COMMIT_NUM;
         let next_counterparty_commit_num = HOLD_COMMIT_NUM + 1;
@@ -402,18 +412,10 @@ mod tests {
         validate_channel_state: ChannelStateValidator,
     ) -> Result<(), Status>
     where
-        TxBuilderMutator: Fn(&mut TestCommitmentTxContext),
-        KeysMutator: Fn(&mut TxCreationKeys),
-        ValidationMutator: Fn(
-            &mut Channel,
-            &mut ChainState,
-            &mut TestCommitmentTxContext,
-            &mut Transaction,
-            &mut Vec<Vec<u8>>,
-            &mut Signature,
-            &mut Vec<Signature>,
-        ),
-        ChannelStateValidator: Fn(&Channel),
+        TxBuilderMutator: Fn(&mut TxBuilderMutationState),
+        KeysMutator: Fn(&mut KeysMutationState),
+        ValidationMutator: Fn(&mut ValidationMutationState),
+        ChannelStateValidator: Fn(&ValidationState),
     {
         let next_holder_commit_num = HOLD_COMMIT_NUM;
         let next_counterparty_commit_num = HOLD_COMMIT_NUM + 1;
@@ -428,12 +430,12 @@ mod tests {
         validate_holder_commitment_with_mutator_common(
             &node_ctx,
             &chan_ctx,
-            |_commit_tx_ctx| {},
-            |_keys| {},
-            |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
-            |chan| {
+            |_tms| {},
+            |_kms| {},
+            |_vms| {},
+            |vs| {
                 // Channel state should advance.
-                assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 1);
+                assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 1);
             },
         )?;
 
@@ -451,14 +453,14 @@ mod tests {
     #[test]
     fn validate_holder_commitment_success() {
         assert_status_ok!(validate_holder_commitment_with_mutator(
-            |_commit_tx_ctx| {},
-            |_keys| {},
-            |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
+            |_tms| {},
+            |_kms| {},
+            |_vms| {
                 // If we don't mutate anything it should succeed.
             },
-            |chan| {
+            |vs| {
                 // Channel state should advance.
-                assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 1);
+                assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 1);
             }
         ));
     }
@@ -467,12 +469,12 @@ mod tests {
     #[test]
     fn validate_holder_commitment_can_retry() {
         assert_status_ok!(validate_holder_commitment_retry_with_mutator(
-            |_commit_tx_ctx| {},
-            |_keys| {},
-            |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
-            |chan| {
+            |_tms| {},
+            |_kms| {},
+            |_vms| {},
+            |vs| {
                 // Channel state should stay where we advanced it initially.
-                assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 1);
+                assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 1);
             }
         ));
     }
@@ -482,14 +484,17 @@ mod tests {
     fn validate_holder_commitment_retry_with_bad_to_holder() {
         assert_failed_precondition_err!(
             validate_holder_commitment_retry_with_mutator(
-                |commit_tx_ctx| {
-                    commit_tx_ctx.to_broadcaster -= 1;
+                |tms| {
+                    tms.commit_tx_ctx.to_broadcaster -= 1;
                 },
-                |_keys| {},
-                |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
-                |chan| {
+                |_kms| {},
+                |_vms| {},
+                |vs| {
                     // Channel state should stay where we advanced it initially.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 1);
+                    assert_eq!(
+                        vs.chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM + 1
+                    );
                 }
             ),
             "policy failure: validate_holder_commitment_tx: \
@@ -502,14 +507,17 @@ mod tests {
     fn validate_holder_commitment_retry_with_bad_to_counterparty() {
         assert_failed_precondition_err!(
             validate_holder_commitment_retry_with_mutator(
-                |commit_tx_ctx| {
-                    commit_tx_ctx.to_countersignatory -= 1;
+                |tms| {
+                    tms.commit_tx_ctx.to_countersignatory -= 1;
                 },
-                |_keys| {},
-                |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
-                |chan| {
+                |_kms| {},
+                |_vms| {},
+                |vs| {
                     // Channel state should stay where we advanced it initially.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 1);
+                    assert_eq!(
+                        vs.chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM + 1
+                    );
                 }
             ),
             "policy failure: validate_holder_commitment_tx: \
@@ -522,14 +530,17 @@ mod tests {
     fn validate_holder_commitment_retry_with_bad_offered_htlc() {
         assert_failed_precondition_err!(
             validate_holder_commitment_retry_with_mutator(
-                |commit_tx_ctx| {
-                    commit_tx_ctx.offered_htlcs[0].value_sat -= 1;
+                |tms| {
+                    tms.commit_tx_ctx.offered_htlcs[0].value_sat -= 1;
                 },
-                |_keys| {},
-                |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
-                |chan| {
+                |_kms| {},
+                |_vms| {},
+                |vs| {
                     // Channel state should stay where we advanced it initially.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 1);
+                    assert_eq!(
+                        vs.chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM + 1
+                    );
                 }
             ),
             "policy failure: validate_holder_commitment_tx: \
@@ -542,14 +553,17 @@ mod tests {
     fn validate_holder_commitment_retry_with_bad_received_htlc() {
         assert_failed_precondition_err!(
             validate_holder_commitment_retry_with_mutator(
-                |commit_tx_ctx| {
-                    commit_tx_ctx.received_htlcs[0].value_sat -= 1;
+                |tms| {
+                    tms.commit_tx_ctx.received_htlcs[0].value_sat -= 1;
                 },
-                |_keys| {},
-                |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
-                |chan| {
+                |_kms| {},
+                |_vms| {},
+                |vs| {
                     // Channel state should stay where we advanced it initially.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 1);
+                    assert_eq!(
+                        vs.chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM + 1
+                    );
                 }
             ),
             "policy failure: validate_holder_commitment_tx: \
@@ -561,14 +575,14 @@ mod tests {
     fn validate_holder_commitment_with_bad_commit_sig() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |_commit_tx_ctx| {},
-                |_keys| {},
-                |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, commit_sig, _htlc_sigs| {
-                    *commit_sig = Signature::from_str("30450221009338316aef0f17f75127a24d60ae8a980fee5e2b4605dc96fba2d5407e77fcee022029e311ff22df5b515e4a2fbe412d32ed49e93cabbb31b067ad3318ac22441cd2").expect("sig");
+                |_tms| {},
+                |_kms| {},
+                |vms| {
+                    *vms.commit_sig = Signature::from_str("30450221009338316aef0f17f75127a24d60ae8a980fee5e2b4605dc96fba2d5407e77fcee022029e311ff22df5b515e4a2fbe412d32ed49e93cabbb31b067ad3318ac22441cd2").expect("sig");
                 },
-                |chan| {
+                |vs| {
                     // Channel state should not advance.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
+                    assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
                 }
             ),
             "policy failure: commit sig verify failed: secp: signature failed verification"
@@ -579,14 +593,14 @@ mod tests {
     fn validate_holder_commitment_with_bad_htlc_sig() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |_commit_tx_ctx| {},
-                |_keys| {},
-                |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, htlc_sigs| {
-                    htlc_sigs[0] = Signature::from_str("30450221009338316aef0f17f75127a24d60ae8a980fee5e2b4605dc96fba2d5407e77fcee022029e311ff22df5b515e4a2fbe412d32ed49e93cabbb31b067ad3318ac22441cd2").expect("sig");
+                |_tms| {},
+                |_kms| {},
+                |vms| {
+                    vms.htlc_sigs[0] = Signature::from_str("30450221009338316aef0f17f75127a24d60ae8a980fee5e2b4605dc96fba2d5407e77fcee022029e311ff22df5b515e4a2fbe412d32ed49e93cabbb31b067ad3318ac22441cd2").expect("sig");
                 },
-                |chan| {
+                |vs| {
                     // Channel state should not advance.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
+                    assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
                 }
             ),
             "policy failure: \
@@ -598,16 +612,20 @@ mod tests {
     fn validate_holder_commitment_not_ahead() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |_commit_tx_ctx| {},
-                |_keys| {},
-                |chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
+                |_tms| {},
+                |_kms| {},
+                |vms| {
                     // Set the channel's next_holder_commit_num ahead two, past the retry ...
-                    chan.enforcement_state
+                    vms.chan
+                        .enforcement_state
                         .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM + 2);
                 },
-                |chan| {
+                |vs| {
                     // Channel state should stay where we advanced it.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 2);
+                    assert_eq!(
+                        vs.chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM + 2
+                    );
                 }
             ),
             "policy failure: validate_holder_commitment_tx: \
@@ -619,16 +637,20 @@ mod tests {
     fn validate_holder_commitment_not_behind() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |_commit_tx_ctx| {},
-                |_keys| {},
-                |chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
+                |_tms| {},
+                |_kms| {},
+                |vms| {
                     // Set the channel's next_holder_commit_num ahead two behind 1, in the past ...
-                    chan.enforcement_state
+                    vms.chan
+                        .enforcement_state
                         .set_next_holder_commit_num_for_testing(HOLD_COMMIT_NUM - 1);
                 },
-                |chan| {
+                |vs| {
                     // Channel state should stay where we set it.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM - 1);
+                    assert_eq!(
+                        vs.chan.enforcement_state.next_holder_commit_num,
+                        HOLD_COMMIT_NUM - 1
+                    );
                 }
             ),
             "policy failure: set_next_holder_commit_num: invalid progression: 42 to 44"
@@ -640,14 +662,14 @@ mod tests {
     fn validate_holder_commitment_not_closed() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |_commit_tx_ctx| {},
-                |_keys| {},
-                |chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
-                    chan.enforcement_state.mutual_close_signed = true;
+                |_tms| {},
+                |_kms| {},
+                |vms| {
+                    vms.chan.enforcement_state.mutual_close_signed = true;
                 },
-                |chan| {
+                |vs| {
                     // Channel state should not advance.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
+                    assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
                 }
             ),
             "policy failure: validate_holder_commitment_tx: mutual close already signed"
@@ -659,14 +681,14 @@ mod tests {
     fn validate_holder_commitment_closed_ok_on_previous() {
         // It's ok to validate existing when closed (ie: retry after mutual close)
         assert_status_ok!(validate_holder_commitment_retry_with_mutator(
-            |_commit_tx_ctx| {},
-            |_keys| {},
-            |chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {
-                chan.enforcement_state.mutual_close_signed = true;
+            |_tms| {},
+            |_kms| {},
+            |vms| {
+                vms.chan.enforcement_state.mutual_close_signed = true;
             },
-            |chan| {
+            |vs| {
                 // Channel state should stay where it was
-                assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 1);
+                assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 1);
             }
         ));
     }
@@ -677,14 +699,14 @@ mod tests {
     fn validate_holder_commitment_bad_version() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |_commit_tx_ctx| {},
-                |_keys| {},
-                |_chan, _cstate, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
-                    tx.version = 3;
+                |_tms| {},
+                |_kms| {},
+                |vms| {
+                    vms.tx.version = 3;
                 },
-                |chan| {
+                |vs| {
                     // Channel state should not advance.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
+                    assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
                 }
             ),
             "policy failure: decode_commitment_tx: bad commitment version: 3"
@@ -697,14 +719,14 @@ mod tests {
     fn validate_holder_commitment_bad_delayed_pubkey() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |_commit_tx_ctx| {},
-                |keys| {
-                    keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
+                |_tms| {},
+                |kms| {
+                    kms.keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
                 },
-                |_chan, _cstate, _commit_tx_ctx, _tx, _witscripts, _commit_sig, _htlc_sigs| {},
-                |chan| {
+                |_vms| {},
+                |vs| {
                     // Channel state should not advance.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
+                    assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
                 }
             ),
             "transaction format: decode_commitment_tx: \
@@ -718,16 +740,16 @@ mod tests {
     fn validate_holder_commitment_with_multiple_to_holder() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |_commit_tx_ctx| {},
-                |_keys| {},
-                |_chan, _cstate, _commit_tx_ctx, tx, witscripts, _commit_sig, _htlc_sigs| {
+                |_tms| {},
+                |_kms| {},
+                |vms| {
                     let ndx = 4;
-                    tx.output.push(tx.output[ndx].clone());
-                    witscripts.push(witscripts[ndx].clone());
+                    vms.tx.output.push(vms.tx.output[ndx].clone());
+                    vms.witscripts.push(vms.witscripts[ndx].clone());
                 },
-                |chan| {
+                |vs| {
                     // Channel state should not advance.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
+                    assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
                 }
             ),
             "transaction format: decode_commitment_tx: \
@@ -741,16 +763,16 @@ mod tests {
     fn validate_holder_commitment_with_multiple_to_counterparty() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |_commit_tx_ctx| {},
-                |_keys| {},
-                |_chan, _cstate, _commit_tx_ctx, tx, witscripts, _commit_sig, _htlc_sigs| {
+                |_tms| {},
+                |_kms| {},
+                |vms| {
                     let ndx = 3;
-                    tx.output.push(tx.output[ndx].clone());
-                    witscripts.push(witscripts[ndx].clone());
+                    vms.tx.output.push(vms.tx.output[ndx].clone());
+                    vms.witscripts.push(vms.witscripts[ndx].clone());
                 },
-                |chan| {
+                |vs| {
                     // Channel state should not advance.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
+                    assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
                 }
             ),
             "transaction format: decode_commitment_tx: \
@@ -763,16 +785,16 @@ mod tests {
     fn validate_holder_commitment_with_dust_to_holder() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |_commit_tx_ctx| {},
-                |_keys| {},
-                |_chan, _cstate, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                |_tms| {},
+                |_kms| {},
+                |vms| {
                     let delta = 1_979_900;
-                    tx.output[3].value += delta;
-                    tx.output[4].value -= delta;
+                    vms.tx.output[3].value += delta;
+                    vms.tx.output[4].value -= delta;
                 },
-                |chan| {
+                |vs| {
                     // Channel state should not advance.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
+                    assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
                 }
             ),
             "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
@@ -785,16 +807,16 @@ mod tests {
     fn validate_holder_commitment_with_dust_to_counterparty() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |_commit_tx_ctx| {},
-                |_keys| {},
-                |_chan, _cstate, _commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
+                |_tms| {},
+                |_kms| {},
+                |vms| {
                     let delta = 999_900;
-                    tx.output[3].value -= delta;
-                    tx.output[4].value += delta;
+                    vms.tx.output[3].value -= delta;
+                    vms.tx.output[4].value += delta;
                 },
-                |chan| {
+                |vs| {
                     // Channel state should not advance.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
+                    assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
                 }
             ),
             "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
@@ -807,15 +829,15 @@ mod tests {
     fn validate_holder_commitment_with_dust_offered_htlc() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |_commit_tx_ctx| {},
-                |_keys| {},
-                |_chan, _cstate, commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
-                    commit_tx_ctx.offered_htlcs[0].value_sat = 1000;
-                    tx.output[0].value = 1000;
+                |_tms| {},
+                |_kms| {},
+                |vms| {
+                    vms.commit_tx_ctx.offered_htlcs[0].value_sat = 1000;
+                    vms.tx.output[0].value = 1000;
                 },
-                |chan| {
+                |vs| {
                     // Channel state should not advance.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
+                    assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
                 }
             ),
             "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
@@ -828,15 +850,15 @@ mod tests {
     fn validate_holder_commitment_with_dust_received_htlc() {
         assert_failed_precondition_err!(
             validate_holder_commitment_with_mutator(
-                |_commit_tx_ctx| {},
-                |_keys| {},
-                |_chan, _cstate, commit_tx_ctx, tx, _witscripts, _commit_sig, _htlc_sigs| {
-                    commit_tx_ctx.received_htlcs[0].value_sat = 1000;
-                    tx.output[1].value = 1000;
+                |_tms| {},
+                |_kms| {},
+                |vms| {
+                    vms.commit_tx_ctx.received_htlcs[0].value_sat = 1000;
+                    vms.tx.output[1].value = 1000;
                 },
-                |chan| {
+                |vs| {
                     // Channel state should not advance.
-                    assert_eq!(chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
+                    assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
                 }
             ),
             "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
