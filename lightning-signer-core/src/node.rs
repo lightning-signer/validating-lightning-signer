@@ -20,12 +20,14 @@ use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, Address, Transaction, TxOut};
 use bitcoin::{Network, OutPoint, Script, SigHashType};
 use hashbrown::HashMap;
+use lightning::ln::script::ShutdownScript;
 use lightning::chain;
 use lightning::chain::keysinterface::{BaseSign, KeyMaterial, KeysInterface, SpendableOutputDescriptor};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
 };
 use lightning::util::logger::Logger;
+use lightning_invoice::{Invoice, SignedRawInvoice};
 
 #[allow(unused_imports)]
 use log::{debug, info, trace};
@@ -45,7 +47,6 @@ use crate::util::crypto_utils::signature_to_bitcoin_vec;
 use crate::util::invoice_utils;
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::wallet::Wallet;
-use lightning::ln::script::ShutdownScript;
 
 /// Node configuration parameters.
 
@@ -55,6 +56,27 @@ pub struct NodeConfig {
     pub network: Network,
     /// The derivation style to use when deriving purpose-specific keys
     pub key_derivation_style: KeyDerivationStyle,
+}
+
+/// Invoice payment details and payment state
+pub struct InvoiceState {
+    /// The hash of the invoice, as a unique ID
+    pub invoice_hash: [u8; 32],
+    /// Amount left to pay
+    pub amount_msat: u64,
+    /// Payee's public key
+    pub payee: PublicKey,
+    /// Timestamp of invoice, as duration since the UNIX epoch
+    pub duration_since_epoch: Duration,
+    /// Expiry, as duration since the timestamp
+    pub expiry_duration: Duration,
+}
+
+/// Node state
+// TODO move allowlist into this struct
+pub struct NodeState {
+    /// Added invoices indexed by their payment hash
+    pub invoices: Map<Sha256Hash, InvoiceState>
 }
 
 /// A signer for one Lightning node.
@@ -93,6 +115,7 @@ pub struct Node {
     pub(crate) persister: Arc<dyn Persist>,
     allowlist: Mutex<UnorderedSet<Script>>,
     tracker: Mutex<ChainTracker<ChainMonitor>>,
+    state: Mutex<NodeState>,
 }
 
 impl Wallet for Node {
@@ -162,6 +185,9 @@ impl Node {
     ) -> Node {
         let genesis = genesis_block(node_config.network);
         let now = Duration::from_secs(genesis.header.time as u64);
+        let state = Mutex::new(NodeState {
+            invoices: Map::new()
+        });
 
         Node {
             keys_manager: MyKeysManager::new(
@@ -177,6 +203,7 @@ impl Node {
             persister: Arc::clone(persister),
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
             tracker: Mutex::new(tracker),
+            state,
         }
     }
 
@@ -187,9 +214,11 @@ impl Node {
         persister: &Arc<Persist>,
         allowlist: Vec<Script>,
         tracker: ChainTracker<ChainMonitor>,
+        state: NodeState,
     ) -> Node {
         let genesis = genesis_block(node_config.network);
         let now = Duration::from_secs(genesis.header.time as u64);
+        let state = Mutex::new(state);
 
         Node {
             keys_manager: MyKeysManager::new(
@@ -205,6 +234,7 @@ impl Node {
             persister: Arc::clone(persister),
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
             tracker: Mutex::new(tracker),
+            state,
         }
     }
 
@@ -440,6 +470,8 @@ impl Node {
 
         let allowlist = persister.get_node_allowlist(node_id);
         let tracker = persister.get_tracker(node_id).expect("tracker");
+        // FIXME persist node state
+        let state = NodeState { invoices: Map::new() };
 
         let node = Arc::new(Node::new_from_persistence(
             config,
@@ -447,6 +479,7 @@ impl Node {
             &persister,
             allowlist,
             tracker,
+            state
         ));
         assert_eq!(&node.get_id(), node_id);
         info!("Restore node {}", node_id);
@@ -959,6 +992,38 @@ impl Node {
     pub fn get_tracker(&self) -> MutexGuard<'_, ChainTracker<ChainMonitor>> {
         self.tracker.lock().unwrap()
     }
+
+    /// Add an invoice.
+    /// Used by the signer to map HTLCs to destination payees, so that payee
+    /// public keys can be allowlisted for policy control.
+    pub fn add_invoice(&self, raw_invoice: SignedRawInvoice) -> Result<(), Status> {
+        let invoice_hash = raw_invoice.hash().clone();
+
+        // This performs all semantic checks and signature check
+        let invoice = Invoice::from_signed(raw_invoice)
+            .map_err(|e| Status::invalid_argument(e.to_string()))?;
+        let mut state = self.state.lock().unwrap();
+        let hash = invoice.payment_hash();
+        if let Some(invoice_state) = state.invoices.get(hash) {
+            return if invoice_state.invoice_hash == invoice_hash {
+                Ok(())
+            } else {
+                Err(Status::failed_precondition("already have a different invoice for same secret".to_string()))
+            }
+        }
+        let amount_msat = invoice.amount_milli_satoshis().ok_or_else(|| Status::invalid_argument("invoice amount must be specified"))?;
+        // TODO check if payee public key in allowlist
+        let payee = invoice.payee_pub_key().map(|p| p.clone()).unwrap_or_else(|| invoice.recover_payee_pub_key());
+        let invoice_state = InvoiceState {
+            invoice_hash,
+            amount_msat,
+            payee,
+            duration_since_epoch: invoice.duration_since_epoch(),
+            expiry_duration: invoice.expiry_time(),
+        };
+        state.invoices.insert(*hash, invoice_state);
+        Ok(())
+    }
 }
 
 fn find_channel_with_funding_outpoint(
@@ -1029,6 +1094,8 @@ mod tests {
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::util::bip143::SigHashCache;
     use bitcoin::{Address, OutPoint, SigHashType};
+    use lightning::ln::PaymentSecret;
+    use lightning_invoice::{Currency, InvoiceBuilder};
     use test_env_log::test;
 
     use crate::channel::ChannelBase;
@@ -1082,6 +1149,37 @@ mod tests {
         let channel_id = ChannelId([1; 32]);
         assert!(node.get_channel(&channel_id).is_err());
         Ok(())
+    }
+
+    #[test]
+    fn invoice_test() {
+        let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let (node, _channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        // TODO check currency matches
+        let invoice1 = InvoiceBuilder::new(Currency::Bitcoin)
+            .duration_since_epoch(Duration::from_secs(123456789))
+            .amount_milli_satoshis(100_000)
+            .payment_hash(Sha256Hash::default())
+            .payment_secret(PaymentSecret([0; 32]))
+            .description("invoice1".to_string())
+            .build_raw().expect("build")
+            .sign::<_, ()>(|hash| {
+                Ok(Secp256k1::new().sign_recoverable(hash, &payee_node.get_node_secret()))
+            }).unwrap();
+        let invoice2 = InvoiceBuilder::new(Currency::Bitcoin)
+            .duration_since_epoch(Duration::from_secs(123456789))
+            .amount_milli_satoshis(100_000)
+            .payment_hash(Sha256Hash::default())
+            .payment_secret(PaymentSecret([0; 32]))
+            .description("invoice2".to_string())
+            .build_raw().expect("build")
+            .sign::<_, ()>(|hash| {
+                Ok(Secp256k1::new().sign_recoverable(hash, &payee_node.get_node_secret()))
+            }).unwrap();
+        node.add_invoice(invoice1.clone()).expect("add invoice");
+        node.add_invoice(invoice1.clone()).expect("add invoice");
+        node.add_invoice(invoice2.clone()).expect_err("add a different invoice with same payment hash");
     }
 
     #[test]

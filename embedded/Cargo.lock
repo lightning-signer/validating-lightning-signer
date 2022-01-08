@@ -286,12 +286,25 @@ checksum = "320cfe77175da3a483efed4bc0adc1968ca050b098ce4f2f1c13a56626128790"
 [[package]]
 name = "lightning"
 version = "0.0.104"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0113e6b5a55b7ead30fb0a992b787e69a0551fa15b7eed93c99490eb018ab793"
+source = "git+https://github.com/lightningdevkit/rust-lightning.git?rev=bb248617a52c073d317538119a9dbe2703999993#bb248617a52c073d317538119a9dbe2703999993"
 dependencies = [
  "bitcoin",
  "core2",
  "hashbrown 0.11.2",
+ "secp256k1",
+]
+
+[[package]]
+name = "lightning-invoice"
+version = "0.12.0"
+source = "git+https://github.com/lightningdevkit/rust-lightning.git?rev=bb248617a52c073d317538119a9dbe2703999993#bb248617a52c073d317538119a9dbe2703999993"
+dependencies = [
+ "bech32",
+ "bitcoin_hashes",
+ "core2",
+ "hashbrown 0.11.2",
+ "lightning",
+ "num-traits",
  "secp256k1",
 ]
 
@@ -304,6 +317,7 @@ dependencies = [
  "core2",
  "hashbrown 0.9.1",
  "lightning",
+ "lightning-invoice",
  "log",
  "scopeguard",
 ]
@@ -343,6 +357,15 @@ name = "nb"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "546c37ac5d9e56f55e73b677106873d9d9f5190605e41a856503623648488cae"
+
+[[package]]
+name = "num-traits"
+version = "0.2.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a64b1ec5cda2586e284722486d802acf1f7dbdc623e2bfc57e65ca1cd099290"
+dependencies = [
+ "autocfg",
+]
 
 [[package]]
 name = "once_cell"
