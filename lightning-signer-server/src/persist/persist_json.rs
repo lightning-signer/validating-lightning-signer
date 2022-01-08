@@ -1,7 +1,6 @@
 use kv::{Bucket, Config, Json, Store, TransactionError};
 
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::Script;
 use lightning_signer::chain::tracker::ChainTracker;
 
 use lightning_signer::channel::{Channel, ChannelId, ChannelStub};
@@ -161,7 +160,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
         res
     }
 
-    fn update_node_allowlist(&self, node_id: &PublicKey, allowlist: Vec<Script>) -> Result<(), ()> {
+    fn update_node_allowlist(&self, node_id: &PublicKey, allowlist: Vec<String>) -> Result<(), ()> {
         let key = node_id.serialize().to_vec();
         let entry = AllowlistItemEntry { allowlist };
         self.allowlist_bucket.set(key, Json(entry)).expect("update transaction");
@@ -170,7 +169,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
         Ok(())
     }
 
-    fn get_node_allowlist(&self, node_id: &PublicKey) -> Vec<Script> {
+    fn get_node_allowlist(&self, node_id: &PublicKey) -> Vec<String> {
         let key = node_id.serialize().to_vec();
         let entry = self.allowlist_bucket.get(key);
         if entry.is_err() {

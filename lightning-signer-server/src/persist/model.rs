@@ -6,7 +6,7 @@ use std::iter::FromIterator;
 
 use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::{Network, OutPoint, Script};
+use bitcoin::{Network, OutPoint};
 use kv::{Key, Raw};
 use lightning_signer::chain::tracker::{ChainTracker, ListenSlot};
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ use lightning_signer::policy::validator::EnforcementState;
 
 use super::ser_util::{
     ChainMonitorStateDef, ChannelIdHandler, ChannelSetupDef, EnforcementStateDef, ListenSlotDef,
-    OutPointDef, ScriptDef,
+    OutPointDef,
 };
 
 #[serde_as]
@@ -76,8 +76,7 @@ impl From<ChannelEntry> for CoreChannelEntry {
 #[serde_as]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AllowlistItemEntry {
-    #[serde_as(as = "Vec<ScriptDef>")]
-    pub allowlist: Vec<Script>,
+    pub allowlist: Vec<String>,
 }
 
 /// Fully qualified channel ID
