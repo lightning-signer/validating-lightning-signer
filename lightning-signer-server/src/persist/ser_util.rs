@@ -342,6 +342,7 @@ pub struct CommitmentInfo2Def {
     pub offered_htlcs: Vec<HTLCInfo2>,
     #[serde_as(as = "Vec<HTLCInfo2Def>")]
     pub received_htlcs: Vec<HTLCInfo2>,
+    #[serde(default)] // TODO remove default once everybody upgraded
     pub feerate_per_kw: u32,
 }
 
