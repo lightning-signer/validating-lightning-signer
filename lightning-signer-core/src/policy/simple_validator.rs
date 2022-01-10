@@ -1368,7 +1368,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
     if network == Network::Bitcoin {
         SimplePolicy {
             min_delay: 60,
-            max_delay: 1440,
+            max_delay: 2016,
             max_channel_size_sat: 1_000_000_001,
             max_push_sat: 0,
             epsilon_sat: 1_600_000,
@@ -1383,7 +1383,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
     } else {
         SimplePolicy {
             min_delay: 4,
-            max_delay: 1440,
+            max_delay: 2016,
             max_channel_size_sat: 1_000_000_001, // lnd itest: wumbu default + 1
             max_push_sat: 20_000,
             // lnd itest: async_bidirectional_payments (large amount of dust HTLCs) 1_600_000
