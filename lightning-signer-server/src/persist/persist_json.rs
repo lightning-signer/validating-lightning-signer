@@ -11,6 +11,7 @@ use lightning_signer::persist::model::{
 };
 use lightning_signer::persist::Persist;
 use lightning_signer::policy::validator::EnforcementState;
+use log::error;
 
 use crate::persist::model::ChainTrackerEntry;
 use crate::persist::model::NodeChannelId;
@@ -173,6 +174,8 @@ impl<'a> Persist for KVJsonPersister<'a> {
         let key = node_id.serialize().to_vec();
         let entry = self.allowlist_bucket.get(key);
         if entry.is_err() {
+            // TODO make this fatal
+            error!("allowlist entry error {:?}", entry.err());
             return vec![];
         }
         let entry2 = entry.unwrap();
