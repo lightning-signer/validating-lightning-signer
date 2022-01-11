@@ -64,8 +64,8 @@ pub fn confirm_transaction_at<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, tx: &T
         connect_blocks(node, conf_height - first_connect_height);
     }
     let mut txs = Vec::new();
-    for _ in 0..*node.network_chan_count.borrow() { // Make sure we don't end up with channels at the same short id by offsetting by chan_count
-        txs.push(Transaction { version: 0, lock_time: 0, input: Vec::new(), output: Vec::new() });
+    for i in 0..*node.network_chan_count.borrow() { // Make sure we don't end up with channels at the same short id by offsetting by chan_count
+        txs.push(Transaction { version: 0, lock_time: i, input: Vec::new(), output: Vec::new() });
     }
     txs.push(tx.clone());
     let block = make_block(tip_for_node(node), txs);
