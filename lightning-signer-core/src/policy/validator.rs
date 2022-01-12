@@ -1,13 +1,15 @@
+use std::cmp::max;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
 use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
+use lightning::ln::PaymentHash;
 use log::debug;
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::prelude::*;
 use crate::sync::Arc;
-use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
+use crate::tx::tx::{CommitmentInfo, CommitmentInfo2, HTLCInfo2};
 use crate::wallet::Wallet;
 
 extern crate scopeguard;
@@ -497,6 +499,46 @@ impl EnforcementState {
             self.next_counterparty_revoke_num, num
         );
         self.next_counterparty_revoke_num = num;
+    }
+
+    /// Summarize in-flight outgoing payments, possibly with new
+    /// holder offered or counterparty received commitment tx.
+    /// HTLCs belonging to a payment are summed for each of the
+    /// holder and counterparty txs. The greater value is taken as the actual
+    /// in-flight value.
+    pub fn payments_summary(&self,
+                            new_holder_tx: Option<&CommitmentInfo2>,
+                            new_counterparty_tx: Option<&CommitmentInfo2>
+    ) -> Map<PaymentHash, u64> {
+        let holder_offered =
+            new_holder_tx.or(self.current_holder_commit_info.as_ref())
+                .map(|h| &h.offered_htlcs);
+        let counterparty_received =
+            new_counterparty_tx.or(self.current_holder_commit_info.as_ref())
+                .map(|c| &c.received_htlcs);
+        let holder_summary =
+            holder_offered.map(|h| Self::summarize_payments(h))
+                .unwrap_or_else(|| Map::new());
+        let counterparty_summary =
+            counterparty_received.map(|h| Self::summarize_payments(h))
+                .unwrap_or_else(|| Map::new());
+        let mut summary = holder_summary;
+        for (k, v) in counterparty_summary {
+            // Choose higher amount if already there, or insert if not
+            summary.entry(k).and_modify(|e| *e = max(*e, v))
+                .or_insert(v);
+        }
+        summary
+    }
+
+    fn summarize_payments(htlcs: &Vec<HTLCInfo2>) -> Map<PaymentHash, u64> {
+        let mut summary = Map::new();
+        for h in htlcs {
+            // If there are multiple HTLCs for the same payment, sum them
+            summary.entry(h.payment_hash).and_modify(|e| *e += h.value_sat)
+                .or_insert(h.value_sat);
+        }
+        summary
     }
 }
 
