@@ -3,7 +3,7 @@ use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
 use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 
-use crate::channel::{ChannelSetup, ChannelSlot};
+use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::policy::simple_validator::{simple_validator, SimpleValidator};
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
@@ -20,11 +20,15 @@ use super::error::ValidationError;
 pub struct NullValidatorFactory {}
 
 fn null_validator() -> NullValidator {
-    NullValidator { 0: simple_validator(Network::Regtest) }
+    NullValidator {
+        0: simple_validator(Network::Regtest,
+                            PublicKey::from_slice(&[2u8; 33]).unwrap(),
+                            None)
+    }
 }
 
 impl ValidatorFactory for NullValidatorFactory {
-    fn make_validator(&self, _network: Network) -> Box<dyn Validator> {
+    fn make_validator(&self, _network: Network, _node_id: PublicKey, _channel_id: Option<ChannelId>) -> Box<dyn Validator> {
         Box::new(null_validator())
     }
 }

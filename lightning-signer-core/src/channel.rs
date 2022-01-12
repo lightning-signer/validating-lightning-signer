@@ -261,13 +261,14 @@ impl ChannelBase for ChannelStub {
     }
 
     fn validator(&self) -> Box<dyn Validator> {
-        self.node
-            .upgrade()
-            .unwrap()
-            .validator_factory
+        let node = self.node.upgrade().unwrap();
+        let v = node.validator_factory
             .lock()
             .unwrap()
-            .make_validator(self.node.upgrade().unwrap().network())
+            .make_validator(node.network(),
+                            node.get_id(),
+                            Some(self.id0));
+        v
     }
 }
 
@@ -378,13 +379,14 @@ impl ChannelBase for Channel {
     }
 
     fn validator(&self) -> Box<dyn Validator> {
-        self.node
-            .upgrade()
-            .unwrap()
-            .validator_factory
+        let node = self.node.upgrade().unwrap();
+        let v = node.validator_factory
             .lock()
             .unwrap()
-            .make_validator(self.network())
+            .make_validator(self.network(),
+                            node.get_id(),
+                            Some(self.id0));
+        v
     }
 }
 
@@ -528,7 +530,8 @@ impl Channel {
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
         // Since we didn't have the value at the real open, validate it now.
-        self.validator().validate_channel_value(&self.setup)?;
+        let validator = self.validator();
+        validator.validate_channel_value(&self.setup)?;
 
         let info2 = self.build_counterparty_commitment_info(
             remote_per_commitment_point,
@@ -539,7 +542,7 @@ impl Channel {
             feerate_per_kw,
         )?;
 
-        self.validator().validate_counterparty_commitment_tx(
+        validator.validate_counterparty_commitment_tx(
             &self.enforcement_state,
             commitment_number,
             &remote_per_commitment_point,

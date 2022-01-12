@@ -789,6 +789,7 @@ dependencies = [
  "core2",
  "env_logger",
  "hashbrown 0.9.1",
+ "itertools",
  "lightning",
  "lightning-invoice",
  "log",

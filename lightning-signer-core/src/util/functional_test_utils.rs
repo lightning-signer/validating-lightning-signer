@@ -13,6 +13,7 @@ use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::hash_types::BlockHash;
 use bitcoin::hashes::Hash;
 use bitcoin::hashes::sha256::Hash as Sha256;
+use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::key::PublicKey;
 use chain::transaction::OutPoint;
 use lightning::chain;
@@ -41,6 +42,7 @@ use crate::util::test_utils::{make_block, proof_for_block, TestChainMonitor, Tes
 use crate::lightning::routing::network_graph::NetworkGraph;
 
 use core::cmp;
+use log::info;
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 10;
 
@@ -1223,6 +1225,7 @@ pub fn create_network<'a, 'b: 'a, 'c: 'b>(
     let payment_count = Rc::new(RefCell::new(0));
 
     for i in 0..node_count {
+        info!("node {} {}", i, chan_mgrs[i].get_our_node_id().to_hex());
         let net_graph_msg_handler = NetGraphMsgHandler::new(cfgs[i].network_graph, None, cfgs[i].logger);
         let connect_style = Rc::new(RefCell::new(ConnectStyle::FullBlockViaListen));
         nodes.push(Node {

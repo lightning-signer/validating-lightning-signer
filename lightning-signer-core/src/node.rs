@@ -610,19 +610,21 @@ impl Node {
             let funding_outpoint = setup.funding_outpoint;
             let monitor = ChainMonitor::new(funding_outpoint, tracker.height());
             monitor.add_funding_outpoint(&funding_outpoint);
+            let enforcement_state = EnforcementState::new();
             Channel {
                 node: Weak::clone(&stub.node),
                 nonce: stub.nonce.clone(),
                 secp_ctx: stub.secp_ctx.clone(),
                 keys,
-                enforcement_state: EnforcementState::new(),
+                enforcement_state,
                 setup: setup.clone(),
                 id0: channel_id0,
                 id: opt_channel_id,
                 monitor,
             }
         };
-        let validator = self.validator_factory.lock().unwrap().make_validator(chan.network());
+        let validator = self.validator_factory.lock().unwrap()
+            .make_validator(chan.network(), self.get_id(), Some(channel_id0));
 
         validator.validate_ready_channel(self, &setup, holder_shutdown_key_path)?;
 
@@ -695,7 +697,8 @@ impl Node {
         // Funding transactions cannot be associated with just a single channel;
         // a single transaction may fund multiple channels
 
-        let validator = self.validator_factory.lock().unwrap().make_validator(self.network());
+        let validator = self.validator_factory.lock().unwrap()
+            .make_validator(self.network(), self.get_id(), None);
 
         let txid = tx.txid();
 
