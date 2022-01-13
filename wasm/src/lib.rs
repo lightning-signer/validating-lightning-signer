@@ -18,6 +18,7 @@ use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::key_utils::make_test_key;
 use lightning_signer::Arc;
 use lightning_signer::{bitcoin, lightning};
+use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 
 use crate::console_log::setup_log;
 use crate::utils::set_panic_hook;
@@ -252,7 +253,8 @@ pub fn make_node() -> JSNode {
     // TODO remove in production :)
     debug!("SEED {}", seed.to_hex());
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
-    let node = Node::new(config, &seed, &persister, vec![]);
+    let validator_factory = Arc::new(SimpleValidatorFactory::new());
+    let node = Node::new(config, &seed, &persister, vec![], validator_factory);
     JSNode { node: Arc::new(node) }
 }
 

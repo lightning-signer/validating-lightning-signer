@@ -4,8 +4,9 @@ use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
+use crate::node::InvoiceState;
 use crate::policy::error::policy_error;
-use crate::policy::simple_validator::{simple_validator, SimpleValidator};
+use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
 use crate::prelude::*;
@@ -18,7 +19,18 @@ extern crate scopeguard;
 use super::error::ValidationError;
 
 /// A factory for OnchainValidator
-pub struct OnchainValidatorFactory {}
+pub struct OnchainValidatorFactory {
+    inner_factory: SimpleValidatorFactory
+}
+
+impl OnchainValidatorFactory {
+    /// Create a new onchain validator factory with default policy
+    pub fn new() -> Self {
+        Self {
+            inner_factory: SimpleValidatorFactory::new()
+        }
+    }
+}
 
 impl ValidatorFactory for OnchainValidatorFactory {
     fn make_validator(
@@ -26,18 +38,18 @@ impl ValidatorFactory for OnchainValidatorFactory {
         network: Network,
         node_id: PublicKey,
         channel_id: Option<ChannelId>,
-    ) -> Box<dyn Validator> {
+    ) -> Arc<dyn Validator> {
         let validator = OnchainValidator {
-            inner: simple_validator(network, node_id, channel_id),
+            inner: self.inner_factory.make_validator(network, node_id, channel_id),
             policy: make_onchain_policy(network),
         };
-        Box::new(validator)
+        Arc::new(validator)
     }
 }
 
 /// An on-chain validator, subsumes the policy checks of SimpleValidator
 pub struct OnchainValidator {
-    inner: SimpleValidator,
+    inner: Arc<dyn Validator>,
     policy: OnchainPolicy,
 }
 
@@ -257,6 +269,10 @@ impl Validator for OnchainValidator {
         wallet_path: &Vec<u32>,
     ) -> Result<(), ValidationError> {
         self.inner.validate_justice_sweep(wallet, setup, cstate, tx, input, amount_sat, wallet_path)
+    }
+
+    fn validate_inflight_payments(&self, invoice_state: Option<&InvoiceState>, channel_id: &ChannelId, amount_msat: u64) -> Result<(), ValidationError> {
+        self.inner.validate_inflight_payments(invoice_state, channel_id, amount_msat)
     }
 }
 

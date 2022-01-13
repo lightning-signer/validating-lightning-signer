@@ -1,20 +1,23 @@
-use std::cmp::max;
-use bitcoin::secp256k1::{PublicKey, SecretKey};
+extern crate scopeguard;
+
+use core::cmp::max;
+
 use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
+use bitcoin::secp256k1::{PublicKey, SecretKey};
 use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::ln::PaymentHash;
 use log::debug;
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
+use crate::node::InvoiceState;
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2, HTLCInfo2};
 use crate::wallet::Wallet;
 
-extern crate scopeguard;
-
 use super::error::{policy_error, ValidationError};
+
 
 /// A policy checker
 ///
@@ -175,6 +178,18 @@ pub trait Validator {
         amount_sat: u64,
         key_path: &Vec<u32>,
     ) -> Result<(), ValidationError>;
+
+    /// Validate in-flight payments.
+    ///
+    /// Ensures that if the specified channel pays the specified amount,
+    /// the invoice would not be overpaid.
+    /// If the associated policy has require_invoices, the invoice must have
+    /// been provided.  Otherwise, no validation is performed if no invoice
+    /// was provided.
+    fn validate_inflight_payments(&self,
+                                  invoice_state: Option<&InvoiceState>,
+                                  channel_id: &ChannelId,
+                                  amount_msat: u64) -> Result<(), ValidationError>;
 }
 
 /// Blockchain state used by the validator
@@ -198,7 +213,7 @@ pub trait ValidatorFactory: Send + Sync {
         network: Network,
         node_id: PublicKey,
         channel_id: Option<ChannelId>,
-    ) -> Box<dyn Validator>;
+    ) -> Arc<dyn Validator>;
 }
 
 /// Enforcement state for a signer

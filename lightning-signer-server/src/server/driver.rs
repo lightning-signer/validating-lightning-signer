@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::{cmp, process};
 
 use backtrace::Backtrace;
-use clap::{App, Arg};
+use clap::{App, Arg, ArgMatches};
 use log::{debug, error, info};
 use serde_json::json;
 use tonic::{transport::Server, Request, Response, Status};
@@ -33,6 +33,7 @@ use lightning_signer::util::debug_utils::DebugBytes;
 use lightning_signer::util::log_utils::{parse_log_level_filter, LOG_LEVEL_FILTER_NAMES};
 use lightning_signer::util::status;
 use lightning_signer::{channel, containing_function, debug_vals, short_function, vals_str};
+use lightning_signer::policy::simple_validator::{make_simple_policy, SimplePolicy, SimpleValidatorFactory};
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
 
@@ -106,6 +107,7 @@ macro_rules! log_req_reply {
 
 struct SignServer {
     pub signer: MultiSigner,
+    pub network: Network,
 }
 
 pub(super) fn invalid_grpc_argument(msg: impl Into<String>) -> Status {
@@ -246,6 +248,7 @@ fn convert_commitment_type(proto_commitment_type: i32) -> channel::CommitmentTyp
 }
 
 fn convert_node_config(
+    network: Network,
     chainparams: ChainParams,
     proto_node_config: NodeConfig,
 ) -> node::NodeConfig {
@@ -257,7 +260,10 @@ fn convert_node_config(
     } else {
         panic!("invalid key derivation style")
     };
-    let network = Network::from_str(&chainparams.network_name).expect("bad network");
+    let supplied_network = Network::from_str(&chainparams.network_name).expect("bad network");
+    if supplied_network != network {
+        panic!("network mismatch {} vs configured {}", supplied_network, network);
+    }
     node::NodeConfig { network, key_derivation_style }
 }
 
@@ -301,7 +307,7 @@ impl Signer for SignServer {
                 return Err(invalid_grpc_argument("hsm_secret must be no larger than 64 bytes"));
             }
         }
-        let node_config = convert_node_config(proto_chainparams, proto_node_config);
+        let node_config = convert_node_config(self.network, proto_chainparams, proto_node_config);
 
         let node_id = if hsm_secret.len() == 0 {
             Ok(self.signer.new_node(node_config))
@@ -1335,11 +1341,16 @@ impl Signer for SignServer {
 
 const DEFAULT_DIR: &str = ".lightning-signer";
 
+const NETWORKS: [&str; 3] = ["testnet", "regtest", "signet"];
+
 #[tokio::main]
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     println!("rsignerd {} starting", process::id());
     let app = App::new("server")
         .about("Lightning Signer with a gRPC interface.  Persists to .lightning-signer .")
+        .arg(Arg::new("network").short('n').long("network")
+            .possible_values(&NETWORKS)
+            .default_value(NETWORKS[0]))
         .arg(
             Arg::new("test-mode")
                 .about("allow nodes to be recreated, deleting all channels")
@@ -1403,7 +1414,9 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .long("initial-allowlist-file")
                 .takes_value(true),
         );
+    let app = policy_args(app);
     let matches = app.get_matches();
+
     let addr =
         format!("{}:{}", matches.value_of("interface").unwrap(), matches.value_of("port").unwrap())
             .parse()?;
@@ -1422,6 +1435,9 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     .unwrap_or_else(|e| panic!("Failed to create FilesystemLogger: {}", e));
     log::set_max_level(cmp::max(disk_log_level, console_log_level));
 
+    // Network can be specified on the command line or in the config file
+    let network: Network = matches.value_of_t("network").expect("network");
+
     let test_mode = matches.is_present("test-mode");
     let persister: Arc<dyn Persist> = if matches.is_present("no-persist") {
         Arc::new(DummyPersister)
@@ -1435,8 +1451,13 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         let file = File::open(&alfp).expect(format!("open {} failed", &alfp).as_str());
         initial_allowlist = BufReader::new(file).lines().map(|l| l.expect("line")).collect()
     }
-    let signer = MultiSigner::new_with_persister(persister, test_mode, initial_allowlist);
-    let server = SignServer { signer };
+    let policy = policy(&matches, network);
+    let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
+    let signer = MultiSigner::new_with_persister(persister, test_mode, initial_allowlist, validator_factory);
+    let server = SignServer {
+        signer,
+        network,
+    };
 
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
     ctrlc::set_handler(move || {
@@ -1453,4 +1474,16 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     println!("rsignerd {} finished", process::id());
 
     Ok(())
+}
+
+fn policy_args(app: App) -> App {
+    app.arg(Arg::new("require_invoices")
+        .long("require_invoices")
+        .takes_value(false))
+}
+
+fn policy(matches: &ArgMatches, network: Network) -> SimplePolicy {
+    let mut policy = make_simple_policy(network);
+    policy.require_invoices = matches.is_present("require_invoices");
+    policy
 }

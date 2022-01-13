@@ -27,6 +27,7 @@ use lightning::chain::keysinterface::{
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
 };
+use lightning::ln::PaymentHash;
 use lightning::ln::script::ShutdownScript;
 use lightning::util::logger::Logger;
 use lightning_invoice::{Invoice, SignedRawInvoice};
@@ -39,8 +40,7 @@ use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot,
 use crate::monitor::ChainMonitor;
 use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
-use crate::policy::simple_validator::SimpleValidatorFactory;
-use crate::policy::validator::EnforcementState;
+use crate::policy::validator::{EnforcementState, Validator};
 use crate::policy::validator::ValidatorFactory;
 use crate::prelude::*;
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
@@ -64,7 +64,7 @@ pub struct NodeConfig {
 pub struct InvoiceState {
     /// The hash of the invoice, as a unique ID
     pub invoice_hash: [u8; 32],
-    /// Amount left to pay
+    /// Invoiced amount
     pub amount_msat: u64,
     /// Payee's public key
     pub payee: PublicKey,
@@ -72,13 +72,63 @@ pub struct InvoiceState {
     pub duration_since_epoch: Duration,
     /// Expiry, as duration since the timestamp
     pub expiry_duration: Duration,
+    /// In-flight payments attempting to fulfill this invoice
+    pub inflight_payments: Map<ChannelId, u64>,
+}
+
+impl InvoiceState {
+    /// The amount that would be paid if the specified channel pays the
+    /// specified amount.
+    pub fn updated_amount(&self, channel_id: &ChannelId, amount: u64) -> u64 {
+        // TODO this can be optimized to eliminate the clone
+        let mut payments = self.inflight_payments.clone();
+        payments.insert(channel_id.clone(), amount);
+        payments.values().into_iter().sum::<u64>()
+    }
+
+    /// Update the amount that a channel is trying to send
+    pub fn apply_payment(&mut self, channel_id: &ChannelId, amount: u64) {
+        self.inflight_payments.insert(channel_id.clone(), amount);
+    }
 }
 
 /// Node state
 // TODO move allowlist into this struct
 pub struct NodeState {
     /// Added invoices indexed by their payment hash
-    pub invoices: Map<Sha256Hash, InvoiceState>,
+    pub invoices: Map<PaymentHash, InvoiceState>
+}
+
+/// A channel update overpays one or more invoices
+pub struct OverpaymentError {
+    pub(crate) payment_hashes: Vec<PaymentHash>
+}
+
+impl NodeState {
+    /// Update in-flight payment amounts as a result of a new commitment tx.
+    ///
+    /// The update is only applied if there is no overpayment for any invoice.
+    /// Sends without invoices (e.g. keysend) are only allowed if allow_no_invoice
+    /// is true.
+    pub fn apply_payments(&mut self, channel_id: &ChannelId, amounts: Map<PaymentHash, u64>, validator: Arc<dyn Validator>) -> Result<(), OverpaymentError> {
+        if amounts.is_empty() { return Ok(()) };
+        debug!("applying payments from channel {} - {:?}", channel_id, amounts);
+        let overpaid =
+            amounts.iter()
+                .filter(|(h, amount)| {
+                    let invoice_state = self.invoices.get(*h);
+                    validator.validate_inflight_payments(invoice_state, channel_id, **amount).is_err()
+                })
+                .map(|(h, _)| *h)
+                .collect::<Vec<_>>();
+        if !overpaid.is_empty() {
+            return Err(OverpaymentError { payment_hashes: overpaid })
+        }
+        for (h, amount) in amounts.iter() {
+            self.invoices.get_mut(h).map(|state| state.apply_payment(channel_id, *amount));
+        }
+        Ok(())
+    }
 }
 
 /// Allowlist entry
@@ -149,11 +199,13 @@ impl Allowable {
 /// use lightning_signer::node::SyncLogger;
 ///
 /// use std::sync::Arc;
+/// use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 ///
 /// let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
 /// let seed = [0; 32];
 /// let config = TEST_NODE_CONFIG;
-/// let node = Arc::new(Node::new(config, &seed, &persister, vec![]));
+/// let validator_factory = Arc::new(SimpleValidatorFactory::new());
+/// let node = Arc::new(Node::new(config, &seed, &persister, vec![], validator_factory));
 /// let (channel_id, opt_stub) = node.new_channel(None, None, &node).expect("new channel");
 /// assert!(opt_stub.is_some());
 /// let channel_slot_mutex = node.get_channel(&channel_id).expect("get channel");
@@ -170,11 +222,11 @@ pub struct Node {
     pub(crate) node_config: NodeConfig,
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<Map<ChannelId, Arc<Mutex<ChannelSlot>>>>,
-    pub(crate) validator_factory: Mutex<Box<dyn ValidatorFactory>>,
+    pub(crate) validator_factory: Mutex<Arc<dyn ValidatorFactory>>,
     pub(crate) persister: Arc<dyn Persist>,
     allowlist: Mutex<UnorderedSet<Allowable>>,
     tracker: Mutex<ChainTracker<ChainMonitor>>,
-    state: Mutex<NodeState>,
+    pub(crate) state: Mutex<NodeState>,
 }
 
 impl Wallet for Node {
@@ -214,6 +266,7 @@ impl Node {
         seed: &[u8],
         persister: &Arc<Persist>,
         allowlist: Vec<Allowable>,
+        validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Node {
         let genesis = genesis_block(node_config.network);
 
@@ -227,7 +280,7 @@ impl Node {
             persister,
             allowlist,
             tracker,
-            Box::new(SimpleValidatorFactory {}),
+            validator_factory,
         )
     }
 
@@ -240,7 +293,7 @@ impl Node {
         persister: &Arc<dyn Persist>,
         allowlist: Vec<Allowable>,
         tracker: ChainTracker<ChainMonitor>,
-        validator_factory: Box<dyn ValidatorFactory>,
+        validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Node {
         let genesis = genesis_block(node_config.network);
         let now = Duration::from_secs(genesis.header.time as u64);
@@ -271,6 +324,7 @@ impl Node {
         persister: &Arc<Persist>,
         allowlist: Vec<Allowable>,
         tracker: ChainTracker<ChainMonitor>,
+        validator_factory: Arc<dyn ValidatorFactory>,
         state: NodeState,
     ) -> Node {
         let genesis = genesis_block(node_config.network);
@@ -287,7 +341,7 @@ impl Node {
             ),
             node_config,
             channels: Mutex::new(Map::new()),
-            validator_factory: Mutex::new(Box::new(SimpleValidatorFactory {})),
+            validator_factory: Mutex::new(validator_factory),
             persister: Arc::clone(persister),
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
             tracker: Mutex::new(tracker),
@@ -296,7 +350,7 @@ impl Node {
     }
 
     /// Set the node's validator factory
-    pub fn set_validator_factory(&self, validator_factory: Box<dyn ValidatorFactory>) {
+    pub fn set_validator_factory(&self, validator_factory: Arc<dyn ValidatorFactory>) {
         let mut vfac = self.validator_factory.lock().unwrap();
         *vfac = validator_factory;
     }
@@ -518,6 +572,7 @@ impl Node {
         node_id: &PublicKey,
         node_entry: NodeEntry,
         persister: Arc<dyn Persist>,
+        validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Arc<Node> {
         let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
         let config = NodeConfig {
@@ -542,6 +597,7 @@ impl Node {
             &persister,
             allowlist,
             tracker,
+            validator_factory,
             state,
         ));
         assert_eq!(&node.get_id(), node_id);
@@ -565,10 +621,11 @@ impl Node {
     /// Restore all nodes from `persister`.
     ///
     /// The channels of each node are also restored.
-    pub fn restore_nodes(persister: Arc<dyn Persist>) -> Map<PublicKey, Arc<Node>> {
+    pub fn restore_nodes(persister: Arc<dyn Persist>,
+                         validator_factory: Arc<dyn ValidatorFactory>) -> Map<PublicKey, Arc<Node>> {
         let mut nodes = Map::new();
         for (node_id, node_entry) in persister.get_nodes() {
-            let node = Node::restore_node(&node_id, node_entry, Arc::clone(&persister));
+            let node = Node::restore_node(&node_id, node_entry, Arc::clone(&persister), validator_factory.clone());
             nodes.insert(node_id, node);
         }
         nodes
@@ -1043,8 +1100,8 @@ impl Node {
         let invoice = Invoice::from_signed(raw_invoice)
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
         let mut state = self.state.lock().unwrap();
-        let hash = invoice.payment_hash();
-        if let Some(invoice_state) = state.invoices.get(hash) {
+        let hash = PaymentHash(invoice.payment_hash().as_inner().clone());
+        if let Some(invoice_state) = state.invoices.get(&hash) {
             return if invoice_state.invoice_hash == invoice_hash {
                 Ok(())
             } else {
@@ -1061,14 +1118,17 @@ impl Node {
             .payee_pub_key()
             .map(|p| p.clone())
             .unwrap_or_else(|| invoice.recover_payee_pub_key());
+        let inflight_payments = Map::new();
         let invoice_state = InvoiceState {
             invoice_hash,
             amount_msat,
             payee,
             duration_since_epoch: invoice.duration_since_epoch(),
             expiry_duration: invoice.expiry_time(),
+            inflight_payments
         };
-        state.invoices.insert(*hash, invoice_state);
+        debug!("adding invoice {:?} -> {}", hash, amount_msat);
+        state.invoices.insert(hash, invoice_state);
         Ok(())
     }
 }
@@ -1146,6 +1206,7 @@ mod tests {
     use test_env_log::test;
 
     use crate::channel::ChannelBase;
+    use crate::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::*;
 
@@ -1201,7 +1262,7 @@ mod tests {
     #[test]
     fn invoice_test() {
         let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let (node, _channel_id) =
+        let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
         // TODO check currency matches
         let invoice1 = InvoiceBuilder::new(Currency::Bitcoin)
@@ -1232,6 +1293,35 @@ mod tests {
         node.add_invoice(invoice1.clone()).expect("add invoice");
         node.add_invoice(invoice2.clone())
             .expect_err("add a different invoice with same payment hash");
+
+        let mut state = node.state.lock().unwrap();
+        let hash = PaymentHash([0; 32]);
+        let hash1 = PaymentHash([1; 32]);
+        let invoice_state = state.invoices.get_mut(&hash).expect("invoice state");
+        assert_eq!(invoice_state.updated_amount(&channel_id, 100_000), 100_000);
+        let channel_id1 = ChannelId([1; 32]);
+        invoice_state.apply_payment(&channel_id1, 99_000);
+        assert_eq!(invoice_state.updated_amount(&channel_id1, 98_000), 98_000);
+        assert_eq!(invoice_state.updated_amount(&channel_id, 1), 99_001);
+
+        // Create a strict invoice validator and one that does not validate invoices
+        let mut policy = make_simple_policy(Network::Testnet);
+        policy.require_invoices = true;
+        let invoice_validator = SimpleValidatorFactory::new_with_policy(policy).make_validator(Network::Testnet, node.get_id(), None);
+        let lenient_validator = SimpleValidatorFactory::new().make_validator(Network::Testnet, node.get_id(), None);
+
+        // 99_000 applied on channel_id1 above, so there is 1_000 left to apply on a different channel.  But we also allow for fees when deciding there
+        // is an overpayment.
+        // TODO the max fee is hardcoded to 10_000
+        let apply1 = state.apply_payments(&channel_id, vec![(hash, 11_001)].into_iter().collect(), invoice_validator.clone());
+        assert!(apply1.is_err());
+        assert_eq!(apply1.unwrap_err().payment_hashes, vec![hash]);
+        assert!(state.apply_payments(&channel_id, vec![(hash, 11_000)].into_iter().collect(), invoice_validator.clone()).is_ok());
+        assert!(state.apply_payments(&channel_id, vec![(hash, 11_001)].into_iter().collect(), invoice_validator.clone()).is_err());
+
+        // Apply payments to a non-invoiced payment hash
+        assert!(state.apply_payments(&channel_id, vec![(hash1, 555)].into_iter().collect(), lenient_validator.clone()).is_ok());
+        assert!(state.apply_payments(&channel_id, vec![(hash1, 555)].into_iter().collect(), invoice_validator.clone()).is_err());
     }
 
     #[test]

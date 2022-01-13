@@ -159,7 +159,7 @@ pub trait ChannelBase: Any {
     // TODO should this be exposed?
     fn nonce(&self) -> Vec<u8>;
     /// Returns the validator for this channel
-    fn validator(&self) -> Box<dyn Validator>;
+    fn validator(&self) -> Arc<dyn Validator>;
 
     // TODO remove when LDK workaround is removed in LoopbackSigner
     #[allow(missing_docs)]
@@ -260,7 +260,7 @@ impl ChannelBase for ChannelStub {
         self.nonce.clone()
     }
 
-    fn validator(&self) -> Box<dyn Validator> {
+    fn validator(&self) -> Arc<dyn Validator> {
         let node = self.node.upgrade().unwrap();
         let v = node.validator_factory.lock().unwrap().make_validator(
             node.network(),
@@ -377,7 +377,7 @@ impl ChannelBase for Channel {
         self.nonce.clone()
     }
 
-    fn validator(&self) -> Box<dyn Validator> {
+    fn validator(&self) -> Arc<dyn Validator> {
         let node = self.node.upgrade().unwrap();
         let v = node.validator_factory.lock().unwrap().make_validator(
             self.network(),
@@ -578,6 +578,12 @@ impl Channel {
             htlc_sigs.push(htlc_sig);
         }
 
+        let payment_summary =
+            self.enforcement_state.payments_summary(None, Some(&info2));
+        let node = self.node.upgrade().unwrap();
+        // TODO policy control for non-invoiced payments
+        node.state.lock().unwrap().apply_payments(&self.id0, payment_summary, validator)
+            .map_err(|e| Status::failed_precondition(format!("overpaid invoices {:?}", e.payment_hashes)))?;
         // Only advance the state if nothing goes wrong.
         self.enforcement_state.set_next_counterparty_commit_num(
             commitment_number + 1,
@@ -774,7 +780,8 @@ impl Channel {
             feerate_per_kw,
         )?;
 
-        self.validator()
+        let validator = self.validator();
+        validator
             .validate_holder_commitment_tx(
                 &self.enforcement_state,
                 commitment_number,
@@ -812,6 +819,13 @@ impl Channel {
             counterparty_htlc_sigs,
             recomposed_tx,
         )?;
+
+        let payment_summary =
+            self.enforcement_state.payments_summary(Some(&info2), None);
+        let node = self.node.upgrade().unwrap();
+        // TODO policy control for non-invoiced payments
+        node.state.lock().unwrap().apply_payments(&self.id0, payment_summary, validator)
+            .map_err(|e| Status::failed_precondition(format!("overpaid invoices {:?}", e.payment_hashes)))?;
 
         let (next_holder_commitment_point, maybe_old_secret) =
             self.advance_holder_commitment_state(commitment_number, info2)?;
@@ -1379,11 +1393,12 @@ impl Channel {
         }
 
         // Since we didn't have the value at the real open, validate it now.
-        self.validator().validate_channel_value(&self.setup)?;
+        let validator = self.validator();
+        validator.validate_channel_value(&self.setup)?;
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = true;
-        let info = self.validator().decode_commitment_tx(
+        let info = validator.decode_commitment_tx(
             &self.keys,
             &self.setup,
             is_counterparty,
@@ -1400,7 +1415,7 @@ impl Channel {
             feerate_per_kw,
         )?;
 
-        self.validator()
+        validator
             .validate_counterparty_commitment_tx(
                 &self.enforcement_state,
                 commitment_number,
@@ -1463,6 +1478,13 @@ impl Channel {
             .keys
             .sign_counterparty_commitment(&recomposed_tx, &self.secp_ctx)
             .map_err(|_| internal_error(format!("sign_counterparty_commitment failed")))?;
+
+        let payment_summary =
+            self.enforcement_state.payments_summary(None, Some(&info2));
+        let node = self.node.upgrade().unwrap();
+        // TODO policy control for non-invoiced payments
+        node.state.lock().unwrap().apply_payments(&self.id0, payment_summary, validator)
+            .map_err(|e| Status::failed_precondition(format!("overpaid invoices {:?}", e.payment_hashes)))?;
 
         // Only advance the state if nothing goes wrong.
         self.enforcement_state.set_next_counterparty_commit_num(commit_num + 1, point, info2)?;
@@ -1597,6 +1619,7 @@ impl Channel {
         counterparty_commit_sig: &Signature,
         counterparty_htlc_sigs: &Vec<Signature>,
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
+        let validator = self.validator();
         let (recomposed_tx, info2) = self.make_validated_recomposed_holder_commitment_tx(
             tx,
             output_witscripts,
@@ -1613,6 +1636,13 @@ impl Channel {
             counterparty_htlc_sigs,
             recomposed_tx,
         )?;
+
+        let payment_summary =
+            self.enforcement_state.payments_summary(Some(&info2), None);
+        let node = self.node.upgrade().unwrap();
+        // TODO policy control for non-invoiced payments
+        node.state.lock().unwrap().apply_payments(&self.id0, payment_summary, validator)
+            .map_err(|e| Status::failed_precondition(format!("overpaid invoices {:?}", e.payment_hashes)))?;
 
         let (next_holder_commitment_point, maybe_old_secret) =
             self.advance_holder_commitment_state(commitment_number, info2)?;

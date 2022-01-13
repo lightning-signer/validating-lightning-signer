@@ -12,6 +12,7 @@ use lightning::ln::PaymentHash;
 use log::{debug, info};
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
+use crate::node::InvoiceState;
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
 use crate::prelude::*;
@@ -33,25 +34,35 @@ extern crate scopeguard;
 use super::error::{policy_error, transaction_format_error, ValidationError};
 
 /// A factory for SimpleValidator
-pub struct SimpleValidatorFactory {}
+pub struct SimpleValidatorFactory {
+    policy: Option<SimplePolicy>
+}
 
-/// Construct a SimpleValidator
-pub fn simple_validator(
-    network: Network,
-    node_id: PublicKey,
-    channel_id: Option<ChannelId>,
-) -> SimpleValidator {
-    SimpleValidator { policy: make_simple_policy(network), node_id, channel_id }
+impl SimpleValidatorFactory {
+    /// Create a new simple validator factory with default policy settings
+    pub fn new() -> Self {
+        SimpleValidatorFactory {
+            policy: None
+        }
+    }
+
+    /// Create a new simple validator factory with a specified policy
+    pub fn new_with_policy(policy: SimplePolicy) -> Self {
+        SimpleValidatorFactory {
+            policy: Some(policy)
+        }
+    }
 }
 
 impl ValidatorFactory for SimpleValidatorFactory {
-    fn make_validator(
-        &self,
-        network: Network,
-        node_id: PublicKey,
-        channel_id: Option<ChannelId>,
-    ) -> Box<dyn Validator> {
-        Box::new(simple_validator(network, node_id, channel_id))
+    fn make_validator(&self, network: Network, node_id: PublicKey, channel_id: Option<ChannelId>) -> Arc<dyn Validator> {
+        let validator = SimpleValidator {
+            policy: self.policy.clone().unwrap_or_else(|| make_simple_policy(network)),
+            node_id,
+            channel_id,
+        };
+
+        Arc::new(validator)
     }
 }
 
@@ -80,9 +91,15 @@ pub struct SimplePolicy {
     pub min_fee: u64,
     /// Maximum fee
     pub max_fee: u64,
+    /// Require invoices for payments, and disallow keysend
+    // TODO secure keysend
+    pub require_invoices: bool,
+    /// Maximum layer-2 fee
+    pub max_routing_fee_msat: u64,
 }
 
-/// A simple validator
+/// A simple validator.
+/// See [`SimpleValidatorFactory`] for construction
 pub struct SimpleValidator {
     policy: SimplePolicy,
     node_id: PublicKey,
@@ -1318,6 +1335,18 @@ impl Validator for SimpleValidator {
         *debug_on_return = false;
         Ok(())
     }
+
+    fn validate_inflight_payments(&self, invoice_state: Option<&InvoiceState>, channel_id: &ChannelId, amount_msat: u64) -> Result<(), ValidationError> {
+        // TODO need a policy for layer-2 max fee
+        let is_overpaid = invoice_state
+            .map(|state| state.updated_amount(channel_id, amount_msat) > state.amount_msat + self.policy.max_routing_fee_msat)
+            .unwrap_or(self.policy.require_invoices);
+        if is_overpaid {
+            policy_err!("would overpay for invoice")
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl SimpleValidator {
@@ -1477,6 +1506,8 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_feerate_per_kw: 1000 * 1000,
             min_fee: 100,
             max_fee: 1000,
+            require_invoices: false,
+            max_routing_fee_msat: 10000,
         }
     } else {
         SimplePolicy {
@@ -1492,6 +1523,8 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_feerate_per_kw: 16_000, // c-lightning integration
             min_fee: 100,
             max_fee: 80_000, // c-lightning integration 79641
+            require_invoices: false,
+            max_routing_fee_msat: 10000,
         }
     }
 }
@@ -1520,6 +1553,8 @@ mod tests {
             max_feerate_per_kw: 1000 * 1000,
             min_fee: 100,
             max_fee: 10_000,
+            require_invoices: false,
+            max_routing_fee_msat: 10000
         };
 
         SimpleValidator {

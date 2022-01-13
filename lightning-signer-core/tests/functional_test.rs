@@ -64,7 +64,7 @@ pub fn create_node_cfgs_with_signer<'a>(
         let chain_tracker: ChainTracker<ChainMonitor> =
             ChainTracker::new(network, 0, tip).unwrap();
 
-        let validator_factory = Box::new(OnchainValidatorFactory {});
+        let validator_factory = Arc::new(OnchainValidatorFactory::new());
         let node_id = signer.new_node_extended(config, chain_tracker, validator_factory);
 
         let keys_manager = LoopbackSignerKeysInterface {
@@ -259,7 +259,7 @@ fn claim_htlc_outputs_single_tx() {
         .signer
         .get_node(&nodes[0].keys_manager.node_id)
         .unwrap()
-        .set_validator_factory(Box::new(NullValidatorFactory {}));
+        .set_validator_factory(Arc::new(NullValidatorFactory {}));
 
     let chan_1 = create_announced_chan_between_nodes(&nodes, 0, 1, InitFeatures::known(), InitFeatures::known());
 

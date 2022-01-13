@@ -4,7 +4,8 @@ use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
-use crate::policy::simple_validator::{simple_validator, SimpleValidator};
+use crate::node::InvoiceState;
+use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
 use crate::prelude::*;
@@ -20,8 +21,9 @@ use super::error::ValidationError;
 pub struct NullValidatorFactory {}
 
 fn null_validator() -> NullValidator {
+    let factory = SimpleValidatorFactory::new();
     NullValidator {
-        0: simple_validator(Network::Regtest, PublicKey::from_slice(&[2u8; 33]).unwrap(), None),
+        0: factory.make_validator(Network::Regtest, PublicKey::from_slice(&[2u8; 33]).unwrap(), None),
     }
 }
 
@@ -31,13 +33,13 @@ impl ValidatorFactory for NullValidatorFactory {
         _network: Network,
         _node_id: PublicKey,
         _channel_id: Option<ChannelId>,
-    ) -> Box<dyn Validator> {
-        Box::new(null_validator())
+    ) -> Arc<dyn Validator> {
+        Arc::new(null_validator())
     }
 }
 
 /// A null validator
-pub struct NullValidator(SimpleValidator); // So we can DRY by borrowing its decode methods ...
+pub struct NullValidator(Arc<dyn Validator>); // So we can DRY by borrowing its decode methods ...
 
 impl Validator for NullValidator {
     fn validate_ready_channel(
@@ -207,6 +209,10 @@ impl Validator for NullValidator {
         _amount_sat: u64,
         _wallet_path: &Vec<u32>,
     ) -> Result<(), ValidationError> {
+        Ok(())
+    }
+
+    fn validate_inflight_payments(&self, _invoice_state: Option<&InvoiceState>, _channel_id: &ChannelId, _amount_msat: u64) -> Result<(), ValidationError> {
         Ok(())
     }
 }
