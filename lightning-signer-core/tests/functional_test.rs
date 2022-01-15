@@ -59,47 +59,52 @@ pub fn create_node_cfgs_with_signer<'a>(
     let tip = genesis_block(network).header;
 
     for i in 0..node_count {
-        let seed = [i as u8; 32];
-
-        let chain_tracker: ChainTracker<ChainMonitor> =
-            ChainTracker::new(network, 0, tip).unwrap();
-
-        let validator_factory = Arc::new(OnchainValidatorFactory::new());
-        let node_id = signer.new_node_extended(config, chain_tracker, validator_factory);
-
-        let keys_manager = LoopbackSignerKeysInterface {
-            node_id,
-            signer: Arc::clone(signer),
-        };
-
-        let chain_monitor = TestChainMonitor::new(
-            Some(&chanmon_cfgs[i].chain_source),
-            &chanmon_cfgs[i].tx_broadcaster,
-            &chanmon_cfgs[i].logger,
-            &chanmon_cfgs[i].fee_estimator,
-            &chanmon_cfgs[i].persister,
-        );
-
-        nodes.push(NodeCfg {
-            chain_source: &chanmon_cfgs[i].chain_source,
-            logger: &chanmon_cfgs[i].logger,
-            tx_broadcaster: &chanmon_cfgs[i].tx_broadcaster,
-            fee_estimator: &chanmon_cfgs[i].fee_estimator,
-            chain_monitor,
-            keys_manager,
-            network_graph: &chanmon_cfgs[i].network_graph,
-            node_seed: seed,
-        });
+        let cfg = create_node_cfg(signer, chanmon_cfgs, config, network, tip, i);
+        nodes.push(cfg);
     }
 
     nodes
+}
+
+fn create_node_cfg<'a>(signer: &Arc<MultiSigner>, chanmon_cfgs: &'a Vec<TestChanMonCfg>, config: NodeConfig, network: Network, tip: BlockHeader, idx: usize) -> NodeCfg<'a> {
+    let seed = [idx as u8; 32];
+
+    let chain_tracker: ChainTracker<ChainMonitor> =
+        ChainTracker::new(network, 0, tip).unwrap();
+
+    let node_id = signer.new_node_extended(config, chain_tracker, signer.validator_factory());
+
+    let keys_manager = LoopbackSignerKeysInterface {
+        node_id,
+        signer: Arc::clone(signer),
+    };
+
+    let chain_monitor = TestChainMonitor::new(
+        Some(&chanmon_cfgs[idx].chain_source),
+        &chanmon_cfgs[idx].tx_broadcaster,
+        &chanmon_cfgs[idx].logger,
+        &chanmon_cfgs[idx].fee_estimator,
+        &chanmon_cfgs[idx].persister,
+    );
+
+    let cfg = NodeCfg {
+        chain_source: &chanmon_cfgs[idx].chain_source,
+        logger: &chanmon_cfgs[idx].logger,
+        tx_broadcaster: &chanmon_cfgs[idx].tx_broadcaster,
+        fee_estimator: &chanmon_cfgs[idx].fee_estimator,
+        chain_monitor,
+        keys_manager,
+        network_graph: &chanmon_cfgs[idx].network_graph,
+        node_seed: seed,
+    };
+    cfg
 }
 
 #[test]
 fn fake_network_with_signer_test() {
     // Simple test which builds a network of ChannelManagers, connects them to each other, and
     // tests that payments get routed and transactions broadcast in semi-reasonable ways.
-    let signer = Arc::new(MultiSigner::new());
+    let signer = new_signer();
 
     let chanmon_cfgs = create_chanmon_cfgs(4);
     let node_cfgs = create_node_cfgs_with_signer(4, &signer, &chanmon_cfgs);
@@ -107,27 +112,9 @@ fn fake_network_with_signer_test() {
     let nodes = create_network(4, &node_cfgs, &node_chanmgrs);
 
     // Create some initial channels
-    let _chan_1 = create_announced_chan_between_nodes(
-        &nodes,
-        0,
-        1,
-        InitFeatures::known(),
-        InitFeatures::known(),
-    );
-    let _chan_2 = create_announced_chan_between_nodes(
-        &nodes,
-        1,
-        2,
-        InitFeatures::known(),
-        InitFeatures::known(),
-    );
-    let _chan_3 = create_announced_chan_between_nodes(
-        &nodes,
-        2,
-        3,
-        InitFeatures::known(),
-        InitFeatures::known(),
-    );
+    create_default_chan(&nodes, 0, 1);
+    create_default_chan(&nodes, 1, 2);
+    create_default_chan(&nodes, 2, 3);
 
     // Rebalance the network a bit by relaying one payment through all the channels...
     send_payment(
@@ -139,6 +126,53 @@ fn fake_network_with_signer_test() {
     // FIXME Need to pass valid holder_wallet_path_hint to validate_mutual_close_tx
     // Close channel normally
     // close_channel(&nodes[0], &nodes[1], &chan_1.2, chan_1.3, true);
+}
+
+fn new_signer() -> Arc<MultiSigner> {
+    let validator_factory = Arc::new(OnchainValidatorFactory::new());
+    Arc::new(MultiSigner::new_with_validator(validator_factory))
+}
+
+#[test]
+fn invoice_test() {
+    let network = Network::Regtest;
+    let mut policy = make_simple_policy(network);
+    policy.require_invoices = true;
+    let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
+    let validating_signer = Arc::new(MultiSigner::new_with_validator(validator_factory));
+    let signer = new_signer();
+
+    let chanmon_cfgs = create_chanmon_cfgs(3);
+    let mut node_cfgs = Vec::new();
+
+    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, network, genesis_block(network).header, 0));
+    // routing nodes can't turn on invoice validation yet
+    node_cfgs.push(create_node_cfg(&signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, network, genesis_block(network).header, 1));
+    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, network, genesis_block(network).header, 2));
+    let node_chanmgrs = create_node_chanmgrs(3, &node_cfgs, &[None, None, None]);
+    let mut nodes = create_network(3, &node_cfgs, &node_chanmgrs);
+    nodes[0].use_invoices = true;
+
+    // Create some initial channels
+    create_default_chan(&nodes, 0, 1);
+    create_default_chan(&nodes, 1, 2);
+
+    // Send 0 -> 1 -> 2
+    send_payment(
+        &nodes[0],
+        &vec![&nodes[1], &nodes[2]][..],
+        8000000,
+    );
+}
+
+fn create_default_chan(nodes: &Vec<Node>, a: usize, b: usize) {
+    create_announced_chan_between_nodes(
+        &nodes,
+        a,
+        b,
+        InitFeatures::known(),
+        InitFeatures::known(),
+    );
 }
 
 // Not currently used, but may be interesting for testing different to_self_delay values
@@ -163,7 +197,7 @@ fn _alt_config() -> UserConfig {
 
 #[test]
 fn channel_force_close_test() {
-    let signer = Arc::new(MultiSigner::new());
+    let signer = new_signer();
 
     let chanmon_cfgs = create_chanmon_cfgs(2);
     let node_cfgs = create_node_cfgs_with_signer(2, &signer, &chanmon_cfgs);
@@ -211,7 +245,7 @@ fn channel_force_close_test() {
 
 #[test]
 fn justice_tx_test() {
-    let signer = Arc::new(MultiSigner::new());
+    let signer = new_signer();
 
     let chanmon_cfgs = create_chanmon_cfgs(2);
     let node_cfgs = create_node_cfgs_with_signer(2, &signer, &chanmon_cfgs);
@@ -244,7 +278,7 @@ fn justice_tx_test() {
 
 #[test]
 fn claim_htlc_outputs_single_tx() {
-    let signer = Arc::new(MultiSigner::new());
+    let signer = new_signer();
 
     // Node revoked old state, htlcs have timed out, claim each of them in separated justice tx
     let chanmon_cfgs = create_chanmon_cfgs(2);
@@ -344,7 +378,7 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
     //    but can't be claimed as Bob doesn't have yet knowledge of the preimage.
     // 5) Carol release the preimage to Bob off-chain.
     // 6) Bob claims the offered output on the broadcasted commitment.
-    let signer = Arc::new(MultiSigner::new());
+    let signer = new_signer();
 
     let chanmon_cfgs = create_chanmon_cfgs(3);
     let node_cfgs = create_node_cfgs_with_signer(3, &signer, &chanmon_cfgs);
@@ -530,7 +564,10 @@ use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use std::collections::BTreeSet;
+use lightning_signer::node::NodeConfig;
+use lightning_signer::persist::DummyPersister;
 use lightning_signer::policy::onchain_validator::OnchainValidatorFactory;
+use lightning_signer::policy::simple_validator::{make_simple_policy, SimplePolicy, SimpleValidatorFactory};
 
 macro_rules! check_spendable_outputs {
     ($node: expr, $der_idx: expr, $keysinterface: expr, $chan_value: expr) => {{
@@ -584,7 +621,7 @@ macro_rules! check_spendable_outputs {
 #[ignore] // validate_mutual_close_tx: holder output not to wallet or in allowlist
 #[test]
 fn test_static_output_closing_tx() {
-    let signer = Arc::new(MultiSigner::new());
+    let signer = new_signer();
 
     let chanmon_cfgs = create_chanmon_cfgs(2);
     let node_cfgs = create_node_cfgs_with_signer(2, &signer, &chanmon_cfgs);

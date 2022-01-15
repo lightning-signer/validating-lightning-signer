@@ -518,6 +518,7 @@ impl EnforcementState {
 
     /// Summarize in-flight outgoing payments, possibly with new
     /// holder offered or counterparty received commitment tx.
+    /// The amounts are in millisatoshi.
     /// HTLCs belonging to a payment are summed for each of the
     /// holder and counterparty txs. The greater value is taken as the actual
     /// in-flight value.
@@ -529,7 +530,7 @@ impl EnforcementState {
             new_holder_tx.or(self.current_holder_commit_info.as_ref())
                 .map(|h| &h.offered_htlcs);
         let counterparty_received =
-            new_counterparty_tx.or(self.current_holder_commit_info.as_ref())
+            new_counterparty_tx.or(self.current_counterparty_commit_info.as_ref())
                 .map(|c| &c.received_htlcs);
         let holder_summary =
             holder_offered.map(|h| Self::summarize_payments(h))
@@ -550,8 +551,8 @@ impl EnforcementState {
         let mut summary = Map::new();
         for h in htlcs {
             // If there are multiple HTLCs for the same payment, sum them
-            summary.entry(h.payment_hash).and_modify(|e| *e += h.value_sat)
-                .or_insert(h.value_sat);
+            summary.entry(h.payment_hash).and_modify(|e| *e += h.value_sat * 1000)
+                .or_insert(h.value_sat * 1000);
         }
         summary
     }

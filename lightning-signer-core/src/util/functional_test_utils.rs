@@ -19,7 +19,7 @@ use chain::transaction::OutPoint;
 use lightning::chain;
 use lightning::chain::{Confirm, Listen, chaininterface};
 use lightning::ln;
-use lightning::ln::channelmanager::ChainParameters;
+use lightning::ln::channelmanager::{ChainParameters, MIN_FINAL_CLTV_EXPIRY};
 use lightning::chain::BestBlock;
 use lightning::ln::features::InvoiceFeatures;
 use lightning::ln::functional_test_utils::ConnectStyle;
@@ -42,6 +42,8 @@ use crate::util::test_utils::{make_block, proof_for_block, TestChainMonitor, Tes
 use crate::lightning::routing::network_graph::NetworkGraph;
 
 use core::cmp;
+use bitcoin::secp256k1::Secp256k1;
+use lightning::chain::keysinterface::KeysInterface;
 use log::info;
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 10;
@@ -183,6 +185,7 @@ pub struct Node<'a, 'b: 'a, 'c: 'b> {
     pub logger: &'c test_utils::TestLogger,
     pub blocks: RefCell<Vec<(BlockHeader, u32)>>,
     pub connect_style: Rc<RefCell<ConnectStyle>>,
+    pub use_invoices: bool,
 }
 impl<'a, 'b, 'c> Node<'a, 'b, 'c> {
     pub fn best_block_hash(&self) -> BlockHash {
@@ -1011,6 +1014,24 @@ pub fn pass_along_route<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_rou
 
 pub fn send_along_route<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, route: Route, expected_route: &[&Node<'a, 'b, 'c>], recv_value: u64) -> (PaymentPreimage, PaymentHash, PaymentSecret) {
     let (our_payment_preimage, our_payment_hash, our_payment_secret) = get_payment_preimage_hash!(expected_route.last().unwrap());
+    if origin_node.use_invoices {
+        let destination_node = expected_route[expected_route.len() - 1];
+        let payee_pubkey = destination_node.node.get_our_node_id();
+        let invoice = lightning_invoice::InvoiceBuilder::new(lightning_invoice::Currency::Regtest)
+            .payment_hash(Sha256::from_slice(&our_payment_hash.0).unwrap())
+            .payment_secret(our_payment_secret)
+            .description("invoice".to_string())
+            .amount_milli_satoshis(recv_value)
+            .current_timestamp()
+            .min_final_cltv_expiry(MIN_FINAL_CLTV_EXPIRY as u64)
+            .payee_pub_key(payee_pubkey)
+            .build_signed(|msg_hash| {
+                let secp_ctx = Secp256k1::signing_only();
+                secp_ctx.sign_recoverable(msg_hash, &destination_node.keys_manager.get_node_secret())
+            }).unwrap();
+        origin_node.keys_manager.add_invoice(invoice.into_signed_raw());
+    }
+
     send_along_route_with_secret(origin_node, route, &[expected_route], recv_value, our_payment_hash, our_payment_secret);
     (our_payment_preimage, our_payment_hash, our_payment_secret)
 }
@@ -1242,6 +1263,7 @@ pub fn create_network<'a, 'b: 'a, 'c: 'b>(
             logger: cfgs[i].logger,
             blocks: RefCell::new(vec![(genesis_block(Network::Regtest).header, 0)]),
             connect_style: Rc::clone(&connect_style),
+            use_invoices: false
         })
     }
 

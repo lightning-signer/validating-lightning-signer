@@ -18,6 +18,7 @@ use lightning::ln::chan_utils::{
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
 use lightning::ln::script::ShutdownScript;
 use lightning::util::ser::{Readable, Writeable, Writer};
+use lightning_invoice::SignedRawInvoice;
 
 use log::{debug, error, info};
 
@@ -42,6 +43,10 @@ pub struct LoopbackSignerKeysInterface {
 impl LoopbackSignerKeysInterface {
     pub(crate) fn get_node(&self) -> Arc<Node> {
         self.signer.get_node(&self.node_id).expect("our node is missing")
+    }
+
+    pub fn add_invoice(&self, raw_invoice: SignedRawInvoice) {
+        self.get_node().add_invoice(raw_invoice).expect("could not add invoice");
     }
 
     pub fn spend_spendable_outputs(
