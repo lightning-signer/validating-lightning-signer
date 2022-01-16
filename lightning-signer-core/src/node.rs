@@ -19,13 +19,15 @@ use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, Address, Transaction, TxOut};
 use bitcoin::{Network, OutPoint, Script, SigHashType};
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
+use lightning::ln::script::ShutdownScript;
 use lightning::chain;
 use lightning::chain::keysinterface::{BaseSign, KeyMaterial, KeysInterface, SpendableOutputDescriptor};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
 };
 use lightning::util::logger::Logger;
+use lightning_invoice::{Invoice, SignedRawInvoice};
 
 #[allow(unused_imports)]
 use log::{debug, info, trace};
@@ -45,7 +47,6 @@ use crate::util::crypto_utils::signature_to_bitcoin_vec;
 use crate::util::invoice_utils;
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::wallet::Wallet;
-use lightning::ln::script::ShutdownScript;
 
 /// Node configuration parameters.
 
@@ -55,6 +56,86 @@ pub struct NodeConfig {
     pub network: Network,
     /// The derivation style to use when deriving purpose-specific keys
     pub key_derivation_style: KeyDerivationStyle,
+}
+
+/// Invoice payment details and payment state
+pub struct InvoiceState {
+    /// The hash of the invoice, as a unique ID
+    pub invoice_hash: [u8; 32],
+    /// Amount left to pay
+    pub amount_msat: u64,
+    /// Payee's public key
+    pub payee: PublicKey,
+    /// Timestamp of invoice, as duration since the UNIX epoch
+    pub duration_since_epoch: Duration,
+    /// Expiry, as duration since the timestamp
+    pub expiry_duration: Duration,
+}
+
+/// Node state
+// TODO move allowlist into this struct
+pub struct NodeState {
+    /// Added invoices indexed by their payment hash
+    pub invoices: Map<Sha256Hash, InvoiceState>
+}
+
+/// Allowlist entry
+#[derive(Eq, PartialEq, Hash, Clone)]
+pub enum Allowable {
+    /// A layer-1 destination
+    Script(Script),
+    /// A layer-2 payee (node_id)
+    Payee(PublicKey)
+}
+
+/// Convert to String for a specified Bitcoin network type
+pub trait ToStringForNetwork {
+    /// Convert to String for a specified Bitcoin network type
+    fn to_string(&self, network: Network) -> String;
+}
+
+impl ToStringForNetwork for Allowable {
+    fn to_string(&self, network: Network) -> String {
+        match self {
+            Allowable::Script(script) => {
+                let addr_opt = Address::from_script(&script, network);
+                addr_opt.map(|a| format!("address:{}", a.to_string()))
+                    .unwrap_or_else(|| format!("invalid_script:{}", script.to_hex()))
+            }
+            Allowable::Payee(pubkey) => format!("payee:{}", pubkey.to_hex())
+        }
+    }
+}
+
+impl Allowable {
+    /// Convert from string, while checking that the network matches
+    pub fn from_str(s: &str, network: Network) -> Result<Allowable, String> {
+        let mut splits = s.splitn(2, ":");
+        let prefix = splits.next().expect("failed to parse Allowable");
+        if let Some(body) = splits.next() {
+            if prefix == "address" {
+                let address = Address::from_str(body)
+                    .map_err(|_| s.to_string())?;
+                if address.network != network {
+                    return Err(format!("{}: expected network {}", s, network))
+                }
+                Ok(Allowable::Script(address.script_pubkey()))
+            } else if prefix == "payee" {
+                let pubkey = PublicKey::from_str(body)
+                    .map_err(|_| s.to_string())?;
+                Ok(Allowable::Payee(pubkey))
+            } else {
+                Err(s.to_string())
+            }
+        } else {
+            let address = Address::from_str(prefix)
+                .map_err(|_| s.to_string())?;
+            if address.network != network {
+                return Err(format!("{}: expected network {}", s, network))
+            }
+            Ok(Allowable::Script(address.script_pubkey()))
+        }
+    }
 }
 
 /// A signer for one Lightning node.
@@ -91,8 +172,9 @@ pub struct Node {
     channels: Mutex<Map<ChannelId, Arc<Mutex<ChannelSlot>>>>,
     pub(crate) validator_factory: Mutex<Box<dyn ValidatorFactory>>,
     pub(crate) persister: Arc<dyn Persist>,
-    allowlist: Mutex<UnorderedSet<Script>>,
+    allowlist: Mutex<UnorderedSet<Allowable>>,
     tracker: Mutex<ChainTracker<ChainMonitor>>,
+    state: Mutex<NodeState>,
 }
 
 impl Wallet for Node {
@@ -115,7 +197,7 @@ impl Wallet for Node {
 
     /// Returns true if script_pubkey is in the node's allowlist.
     fn allowlist_contains(&self, script_pubkey: &Script) -> bool {
-        self.allowlist.lock().unwrap().contains(script_pubkey)
+        self.allowlist.lock().unwrap().contains(&Allowable::Script(script_pubkey.clone()))
     }
 
     fn network(&self) -> Network {
@@ -131,7 +213,7 @@ impl Node {
         node_config: NodeConfig,
         seed: &[u8],
         persister: &Arc<Persist>,
-        allowlist: Vec<Script>,
+        allowlist: Vec<Allowable>,
     ) -> Node {
         let genesis = genesis_block(node_config.network);
 
@@ -156,12 +238,15 @@ impl Node {
         node_config: NodeConfig,
         seed: &[u8],
         persister: &Arc<dyn Persist>,
-        allowlist: Vec<Script>,
+        allowlist: Vec<Allowable>,
         tracker: ChainTracker<ChainMonitor>,
         validator_factory: Box<dyn ValidatorFactory>,
     ) -> Node {
         let genesis = genesis_block(node_config.network);
         let now = Duration::from_secs(genesis.header.time as u64);
+        let state = Mutex::new(NodeState {
+            invoices: Map::new()
+        });
 
         Node {
             keys_manager: MyKeysManager::new(
@@ -177,6 +262,7 @@ impl Node {
             persister: Arc::clone(persister),
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
             tracker: Mutex::new(tracker),
+            state,
         }
     }
 
@@ -185,11 +271,13 @@ impl Node {
         node_config: NodeConfig,
         seed: &[u8],
         persister: &Arc<Persist>,
-        allowlist: Vec<Script>,
+        allowlist: Vec<Allowable>,
         tracker: ChainTracker<ChainMonitor>,
+        state: NodeState,
     ) -> Node {
         let genesis = genesis_block(node_config.network);
         let now = Duration::from_secs(genesis.header.time as u64);
+        let state = Mutex::new(state);
 
         Node {
             keys_manager: MyKeysManager::new(
@@ -205,6 +293,7 @@ impl Node {
             persister: Arc::clone(persister),
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
             tracker: Mutex::new(tracker),
+            state,
         }
     }
 
@@ -432,14 +521,19 @@ impl Node {
         node_entry: NodeEntry,
         persister: Arc<dyn Persist>,
     ) -> Arc<Node> {
+        let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
         let config = NodeConfig {
-            network: Network::from_str(node_entry.network.as_str()).expect("bad network"),
+            network,
             key_derivation_style: KeyDerivationStyle::try_from(node_entry.key_derivation_style)
                 .unwrap(),
         };
 
-        let allowlist = persister.get_node_allowlist(node_id);
+        let allowlist = persister.get_node_allowlist(node_id)
+            .iter().map(|e| Allowable::from_str(e, network))
+            .collect::<Result<_, _>>().expect("allowable parse error");
         let tracker = persister.get_tracker(node_id).expect("tracker");
+        // FIXME persist node state
+        let state = NodeState { invoices: Map::new() };
 
         let node = Arc::new(Node::new_from_persistence(
             config,
@@ -447,6 +541,7 @@ impl Node {
             &persister,
             allowlist,
             tracker,
+            state
         ));
         assert_eq!(&node.get_id(), node_id);
         info!("Restore node {}", node_id);
@@ -515,19 +610,21 @@ impl Node {
             let funding_outpoint = setup.funding_outpoint;
             let monitor = ChainMonitor::new(funding_outpoint, tracker.height());
             monitor.add_funding_outpoint(&funding_outpoint);
+            let enforcement_state = EnforcementState::new();
             Channel {
                 node: Weak::clone(&stub.node),
                 nonce: stub.nonce.clone(),
                 secp_ctx: stub.secp_ctx.clone(),
                 keys,
-                enforcement_state: EnforcementState::new(),
+                enforcement_state,
                 setup: setup.clone(),
                 id0: channel_id0,
                 id: opt_channel_id,
                 monitor,
             }
         };
-        let validator = self.validator_factory.lock().unwrap().make_validator(chan.network());
+        let validator = self.validator_factory.lock().unwrap()
+            .make_validator(chan.network(), self.get_id(), Some(channel_id0));
 
         validator.validate_ready_channel(self, &setup, holder_shutdown_key_path)?;
 
@@ -600,7 +697,8 @@ impl Node {
         // Funding transactions cannot be associated with just a single channel;
         // a single transaction may fund multiple channels
 
-        let validator = self.validator_factory.lock().unwrap().make_validator(self.network());
+        let validator = self.validator_factory.lock().unwrap()
+            .make_validator(self.network(), self.get_id(), None);
 
         let txid = tx.txid();
 
@@ -882,82 +980,88 @@ impl Node {
         let alset = self.allowlist.lock().unwrap();
         (*alset)
             .iter()
-            .map(|script_pubkey| {
-                let addr = Address::from_script(&script_pubkey, self.network());
-                if addr.is_none() {
-                    return Err(invalid_argument(format!(
-                        "address from script faied on {}",
-                        &script_pubkey
-                    )));
-                }
-                Ok(addr.unwrap().to_string())
-            })
+            .map(|allowable| Ok(allowable.to_string(self.network())))
             .collect::<Result<Vec<String>, Status>>()
     }
 
     /// Adds addresses to the node's current allowlist.
     pub fn add_allowlist(&self, addlist: &Vec<String>) -> Result<(), Status> {
-        let addresses = addlist
+        let allowables = addlist
             .iter()
             .map(|addrstr| {
-                let addr = addrstr.parse::<Address>().map_err(|err| {
-                    invalid_argument(format!("parse address {} failed: {}", addrstr, err))
-                })?;
-                if addr.network != self.network() {
-                    return Err(invalid_argument(format!(
-                        "network mismatch for addr {}: addr={}, node={}",
-                        addr,
-                        addr.network,
-                        self.network()
-                    )));
-                }
-                Ok(addr)
+                Allowable::from_str(addrstr, self.network())
             })
-            .collect::<Result<Vec<Address>, Status>>()?;
+            .collect::<Result<Vec<Allowable>, String>>()
+            .map_err(|s| Status::invalid_argument(format!("could not parse {}", s)))?;
         let mut alset = self.allowlist.lock().unwrap();
-        for addr in addresses {
-            alset.insert(addr.script_pubkey());
+        for a in allowables {
+            alset.insert(a);
         }
-        let wlvec = (*alset).iter().cloned().collect();
+        self.update_allowlist(&alset)?;
+        Ok(())
+    }
+
+    fn update_allowlist(&self, alset: &MutexGuard<HashSet<Allowable>>) -> Result<(), Status> {
+        let wlvec = (*alset).iter()
+            .map(|a| a.to_string(self.network()))
+            .collect();
         self.persister
             .update_node_allowlist(&self.get_id(), wlvec)
-            .map_err(|_| Status::internal("persist failed"))?;
-        Ok(())
+            .map_err(|_| Status::internal("persist failed"))
     }
 
     /// Removes addresses from the node's current allowlist.
     pub fn remove_allowlist(&self, rmlist: &Vec<String>) -> Result<(), Status> {
-        let addresses = rmlist
+        let allowables = rmlist
             .iter()
             .map(|addrstr| {
-                let addr = addrstr.parse::<Address>().map_err(|err| {
-                    invalid_argument(format!("parse address {} failed: {}", addrstr, err))
-                })?;
-                if addr.network != self.network() {
-                    return Err(invalid_argument(format!(
-                        "network mismatch for addr {}: addr={}, node={}",
-                        addr,
-                        addr.network,
-                        self.network()
-                    )));
-                }
-                Ok(addr)
+                Allowable::from_str(addrstr, self.network())
             })
-            .collect::<Result<Vec<Address>, Status>>()?;
+            .collect::<Result<Vec<Allowable>, String>>()
+            .map_err(|s| Status::invalid_argument(format!("could not parse {}", s)))?;
         let mut alset = self.allowlist.lock().unwrap();
-        for addr in addresses {
-            alset.remove(&addr.script_pubkey());
+        for a in allowables {
+            alset.remove(&a);
         }
-        let wlvec = (*alset).iter().cloned().collect();
-        self.persister
-            .update_node_allowlist(&self.get_id(), wlvec)
-            .map_err(|_| Status::internal("persist failed"))?;
+        self.update_allowlist(&alset)?;
         Ok(())
     }
 
     /// Chain tracker with lock
     pub fn get_tracker(&self) -> MutexGuard<'_, ChainTracker<ChainMonitor>> {
         self.tracker.lock().unwrap()
+    }
+
+    /// Add an invoice.
+    /// Used by the signer to map HTLCs to destination payees, so that payee
+    /// public keys can be allowlisted for policy control.
+    pub fn add_invoice(&self, raw_invoice: SignedRawInvoice) -> Result<(), Status> {
+        let invoice_hash = raw_invoice.hash().clone();
+
+        // This performs all semantic checks and signature check
+        let invoice = Invoice::from_signed(raw_invoice)
+            .map_err(|e| Status::invalid_argument(e.to_string()))?;
+        let mut state = self.state.lock().unwrap();
+        let hash = invoice.payment_hash();
+        if let Some(invoice_state) = state.invoices.get(hash) {
+            return if invoice_state.invoice_hash == invoice_hash {
+                Ok(())
+            } else {
+                Err(Status::failed_precondition("already have a different invoice for same secret".to_string()))
+            }
+        }
+        let amount_msat = invoice.amount_milli_satoshis().ok_or_else(|| Status::invalid_argument("invoice amount must be specified"))?;
+        // TODO check if payee public key in allowlist
+        let payee = invoice.payee_pub_key().map(|p| p.clone()).unwrap_or_else(|| invoice.recover_payee_pub_key());
+        let invoice_state = InvoiceState {
+            invoice_hash,
+            amount_msat,
+            payee,
+            duration_since_epoch: invoice.duration_since_epoch(),
+            expiry_duration: invoice.expiry_time(),
+        };
+        state.invoices.insert(*hash, invoice_state);
+        Ok(())
     }
 }
 
@@ -1029,6 +1133,8 @@ mod tests {
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::util::bip143::SigHashCache;
     use bitcoin::{Address, OutPoint, SigHashType};
+    use lightning::ln::PaymentSecret;
+    use lightning_invoice::{Currency, InvoiceBuilder};
     use test_env_log::test;
 
     use crate::channel::ChannelBase;
@@ -1082,6 +1188,37 @@ mod tests {
         let channel_id = ChannelId([1; 32]);
         assert!(node.get_channel(&channel_id).is_err());
         Ok(())
+    }
+
+    #[test]
+    fn invoice_test() {
+        let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let (node, _channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        // TODO check currency matches
+        let invoice1 = InvoiceBuilder::new(Currency::Bitcoin)
+            .duration_since_epoch(Duration::from_secs(123456789))
+            .amount_milli_satoshis(100_000)
+            .payment_hash(Sha256Hash::default())
+            .payment_secret(PaymentSecret([0; 32]))
+            .description("invoice1".to_string())
+            .build_raw().expect("build")
+            .sign::<_, ()>(|hash| {
+                Ok(Secp256k1::new().sign_recoverable(hash, &payee_node.get_node_secret()))
+            }).unwrap();
+        let invoice2 = InvoiceBuilder::new(Currency::Bitcoin)
+            .duration_since_epoch(Duration::from_secs(123456789))
+            .amount_milli_satoshis(100_000)
+            .payment_hash(Sha256Hash::default())
+            .payment_secret(PaymentSecret([0; 32]))
+            .description("invoice2".to_string())
+            .build_raw().expect("build")
+            .sign::<_, ()>(|hash| {
+                Ok(Secp256k1::new().sign_recoverable(hash, &payee_node.get_node_secret()))
+            }).unwrap();
+        node.add_invoice(invoice1.clone()).expect("add invoice");
+        node.add_invoice(invoice1.clone()).expect("add invoice");
+        node.add_invoice(invoice2.clone()).expect_err("add a different invoice with same payment hash");
     }
 
     #[test]
@@ -1338,54 +1475,60 @@ mod tests {
 
     #[test]
     fn node_allowlist_test() {
+        fn prefix(a: &String) -> String {
+            format!("address:{}", a)
+        }
+
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
 
         // initial allowlist should be empty
         assert!(node.allowlist().expect("allowlist").len() == 0);
 
         // can insert some entries
-        let adds0 = vec![
+        let adds0: Vec<String> = vec![
             "mv4rnyY3Su5gjcDNzbMLKBQkBicCtHUtFB",
             "2N6i2gfgTonx88yvYm32PRhnHxqxtEfocbt",
             "tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z",
             "tb1qycu764qwuvhn7u0enpg0x8gwumyuw565f3mspnn58rsgar5hkjmqtjegrh",
         ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let prefixed_adds: Vec<String> = adds0.iter()
+            .cloned().map(|s| prefix(&s)).collect();
         assert_status_ok!(node.add_allowlist(&adds0));
 
         // now allowlist should have the added entries
-        assert!(vecs_match(node.allowlist().expect("allowlist").clone(), adds0.clone()));
+        assert!(vecs_match(node.allowlist().expect("allowlist").clone(), prefixed_adds.clone()));
 
         // adding duplicates shouldn't change the node allowlist
         assert_status_ok!(node.add_allowlist(&adds0));
-        assert!(vecs_match(node.allowlist().expect("allowlist").clone(), adds0.clone()));
+        assert!(vecs_match(node.allowlist().expect("allowlist").clone(), prefixed_adds.clone()));
 
         // can remove some elements from the allowlist
         let removes0 = vec![adds0[0].clone(), adds0[3].clone()];
         assert_status_ok!(node.remove_allowlist(&removes0));
         assert!(vecs_match(
             node.allowlist().expect("allowlist").clone(),
-            vec![adds0[1].clone(), adds0[2].clone()]
+            vec![prefix(&adds0[1]), prefix(&adds0[2])]
         ));
 
         // can't add bogus addresses
         assert_invalid_argument_err!(
             node.add_allowlist(&vec!["1234567890".to_string()]),
-            "parse address 1234567890 failed: base58: invalid base58 character 0x30"
+            "could not parse 1234567890"
         );
 
         // can't add w/ wrong network
         assert_invalid_argument_err!(
             node.add_allowlist(&vec!["1287uUybCYgf7Tb76qnfPf8E1ohCgSZATp".to_string()]),
-            "network mismatch for addr 1287uUybCYgf7Tb76qnfPf8E1ohCgSZATp: addr=bitcoin, node=testnet"
+            "could not parse 1287uUybCYgf7Tb76qnfPf8E1ohCgSZATp: expected network testnet"
         );
 
         // can't remove w/ wrong network
         assert_invalid_argument_err!(
             node.remove_allowlist(&vec!["1287uUybCYgf7Tb76qnfPf8E1ohCgSZATp".to_string()]),
-            "network mismatch for addr 1287uUybCYgf7Tb76qnfPf8E1ohCgSZATp: addr=bitcoin, node=testnet"
+            "could not parse 1287uUybCYgf7Tb76qnfPf8E1ohCgSZATp: expected network testnet"
         );
     }
 }

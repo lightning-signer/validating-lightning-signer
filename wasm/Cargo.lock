@@ -123,6 +123,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "either"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
+
+[[package]]
 name = "getrandom"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -162,6 +168,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "284f18f85651fe11e8a991b2adb42cb078325c996ed026d994719efcfca1d54b"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "js-sys"
 version = "0.3.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -188,12 +203,25 @@ checksum = "3cb00336871be5ed2c8ed44b60ae9959dc5b9f08539422ed43f09e34ecaeba21"
 [[package]]
 name = "lightning"
 version = "0.0.104"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0113e6b5a55b7ead30fb0a992b787e69a0551fa15b7eed93c99490eb018ab793"
+source = "git+https://github.com/lightningdevkit/rust-lightning.git?rev=bb248617a52c073d317538119a9dbe2703999993#bb248617a52c073d317538119a9dbe2703999993"
 dependencies = [
  "bitcoin",
  "core2",
  "hashbrown 0.11.2",
+ "secp256k1",
+]
+
+[[package]]
+name = "lightning-invoice"
+version = "0.12.0"
+source = "git+https://github.com/lightningdevkit/rust-lightning.git?rev=bb248617a52c073d317538119a9dbe2703999993#bb248617a52c073d317538119a9dbe2703999993"
+dependencies = [
+ "bech32",
+ "bitcoin_hashes",
+ "core2",
+ "hashbrown 0.11.2",
+ "lightning",
+ "num-traits",
  "secp256k1",
 ]
 
@@ -205,7 +233,9 @@ dependencies = [
  "bitcoin",
  "core2",
  "hashbrown 0.9.1",
+ "itertools",
  "lightning",
+ "lightning-invoice",
  "log",
  "scopeguard",
 ]
@@ -224,6 +254,15 @@ name = "memchr"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
+
+[[package]]
+name = "num-traits"
+version = "0.2.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a64b1ec5cda2586e284722486d802acf1f7dbdc623e2bfc57e65ca1cd099290"
+dependencies = [
+ "autocfg",
+]
 
 [[package]]
 name = "once_cell"

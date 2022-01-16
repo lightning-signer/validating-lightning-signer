@@ -11,14 +11,14 @@ use lightning::ln::chan_utils::{
 use lightning::ln::PaymentHash;
 use log::{debug, info};
 
-use crate::channel::{ChannelSetup, ChannelSlot};
+use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
     parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
-    CommitmentInfo, CommitmentInfo2,
+    CommitmentInfo, CommitmentInfo2
 };
 use crate::util::crypto_utils::payload_for_p2wsh;
 use crate::util::debug_utils::{
@@ -36,13 +36,17 @@ use super::error::{policy_error, transaction_format_error, ValidationError};
 pub struct SimpleValidatorFactory {}
 
 /// Construct a SimpleValidator
-pub fn simple_validator(network: Network) -> SimpleValidator {
-    SimpleValidator { policy: make_simple_policy(network) }
+pub fn simple_validator(network: Network, node_id: PublicKey, channel_id: Option<ChannelId>) -> SimpleValidator {
+    SimpleValidator {
+        policy: make_simple_policy(network),
+        node_id,
+        channel_id,
+    }
 }
 
 impl ValidatorFactory for SimpleValidatorFactory {
-    fn make_validator(&self, network: Network) -> Box<dyn Validator> {
-        Box::new(simple_validator(network))
+    fn make_validator(&self, network: Network, node_id: PublicKey, channel_id: Option<ChannelId>) -> Box<dyn Validator> {
+        Box::new(simple_validator(network, node_id, channel_id))
     }
 }
 
@@ -78,11 +82,19 @@ pub struct SimplePolicy {
 /// A simple validator
 pub struct SimpleValidator {
     policy: SimplePolicy,
+    node_id: PublicKey,
+    channel_id: Option<ChannelId>,
 }
 
 impl SimpleValidator {
     const ANCHOR_SEQS: [u32; 1] = [0x_0000_0001];
     const NON_ANCHOR_SEQS: [u32; 3] = [0x_0000_0000_u32, 0x_ffff_fffd_u32, 0x_ffff_ffff_u32];
+
+    fn log_prefix(&self) -> String {
+        let short_node_id = &self.node_id.to_hex()[0..4];
+        let short_channel_id = self.channel_id.map(|c| c.0.to_hex()[0..4].to_string()).unwrap_or("".to_string());
+        format!("{}/{}", short_node_id, short_channel_id)
+    }
 
     fn validate_delay(&self, name: &str, delay: u32) -> Result<(), ValidationError> {
         let policy = &self.policy;
@@ -418,6 +430,12 @@ impl Validator for SimpleValidator {
         cstate: &ChainState,
         info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
+        if let Some(current) = &estate.current_counterparty_commit_info {
+            let (added, removed) = current.delta_offered_htlcs(info);
+            debug!("{} counterparty offered delta outbound={} +{:?} -{:?}", self.log_prefix(), setup.is_outbound, added.collect::<Vec<_>>(), removed.collect::<Vec<_>>());
+            let (added, removed) = current.delta_received_htlcs(info);
+            debug!("{} counterparty received delta outbound={} +{:?} -{:?}", self.log_prefix(), setup.is_outbound, added.collect::<Vec<_>>(), removed.collect::<Vec<_>>());
+        }
         // Validate common commitment constraints
         self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
@@ -486,6 +504,13 @@ impl Validator for SimpleValidator {
         cstate: &ChainState,
         info: &CommitmentInfo2,
     ) -> Result<(), ValidationError> {
+        if let Some(current) = &estate.current_holder_commit_info {
+            let (added, removed) = current.delta_offered_htlcs(info);
+            debug!("{} holder offered delta outbound={} +{:?} -{:?}", self.log_prefix(), setup.is_outbound, added.collect::<Vec<_>>(), removed.collect::<Vec<_>>());
+            let (added, removed) = current.delta_received_htlcs(info);
+            debug!("{} holder received delta outbound={} +{:?} -{:?}", self.log_prefix(), setup.is_outbound, added.collect::<Vec<_>>(), removed.collect::<Vec<_>>());
+        }
+
         // Validate common commitment constraints
         self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
@@ -1368,7 +1393,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
     if network == Network::Bitcoin {
         SimplePolicy {
             min_delay: 60,
-            max_delay: 1440,
+            max_delay: 2016, // Match LDK maximum and default
             max_channel_size_sat: 1_000_000_001,
             max_push_sat: 0,
             epsilon_sat: 1_600_000,
@@ -1383,7 +1408,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
     } else {
         SimplePolicy {
             min_delay: 4,
-            max_delay: 1440,
+            max_delay: 2016, // Match LDK maximum and default
             max_channel_size_sat: 1_000_000_001, // lnd itest: wumbu default + 1
             max_push_sat: 20_000,
             // lnd itest: async_bidirectional_payments (large amount of dust HTLCs) 1_600_000
@@ -1426,7 +1451,11 @@ mod tests {
             max_fee: 10_000,
         };
 
-        SimpleValidator { policy }
+        SimpleValidator {
+            policy,
+            node_id: PublicKey::from_slice(&[2u8; 33]).unwrap(),
+            channel_id: None
+        }
     }
 
     #[test]

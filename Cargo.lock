@@ -755,14 +755,27 @@ checksum = "18794a8ad5b29321f790b55d93dfba91e125cb1a9edbd4f8e3150acc771c1a5e"
 [[package]]
 name = "lightning"
 version = "0.0.104"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0113e6b5a55b7ead30fb0a992b787e69a0551fa15b7eed93c99490eb018ab793"
+source = "git+https://github.com/lightningdevkit/rust-lightning.git?rev=bb248617a52c073d317538119a9dbe2703999993#bb248617a52c073d317538119a9dbe2703999993"
 dependencies = [
  "bitcoin",
  "core2",
  "hashbrown 0.11.2",
  "hex 0.3.2",
  "regex 0.1.80",
+ "secp256k1",
+]
+
+[[package]]
+name = "lightning-invoice"
+version = "0.12.0"
+source = "git+https://github.com/lightningdevkit/rust-lightning.git?rev=bb248617a52c073d317538119a9dbe2703999993#bb248617a52c073d317538119a9dbe2703999993"
+dependencies = [
+ "bech32",
+ "bitcoin_hashes 0.10.0",
+ "core2",
+ "hashbrown 0.11.2",
+ "lightning",
+ "num-traits",
  "secp256k1",
 ]
 
@@ -776,7 +789,9 @@ dependencies = [
  "core2",
  "env_logger",
  "hashbrown 0.9.1",
+ "itertools",
  "lightning",
+ "lightning-invoice",
  "log",
  "paste",
  "rand 0.4.6",
@@ -930,6 +945,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f6bb902e437b6d86e03cce10a7e2af662292c5dfef23b65899ea3ac9354ad44"
 dependencies = [
  "winapi 0.3.9",
+]
+
+[[package]]
+name = "num-traits"
+version = "0.2.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a64b1ec5cda2586e284722486d802acf1f7dbdc623e2bfc57e65ca1cd099290"
+dependencies = [
+ "autocfg 1.0.1",
 ]
 
 [[package]]

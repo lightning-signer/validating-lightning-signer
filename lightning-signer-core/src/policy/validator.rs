@@ -4,7 +4,7 @@ use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use log::debug;
 
-use crate::channel::{ChannelSetup, ChannelSlot};
+use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
@@ -191,7 +191,7 @@ pub struct ChainState {
 /// A factory for validators
 pub trait ValidatorFactory: Send + Sync {
     /// Construct a validator
-    fn make_validator(&self, network: Network) -> Box<dyn Validator>;
+    fn make_validator(&self, network: Network, node_id: PublicKey, channel_id: Option<ChannelId>) -> Box<dyn Validator>;
 }
 
 /// Enforcement state for a signer

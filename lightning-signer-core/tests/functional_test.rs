@@ -95,7 +95,6 @@ pub fn create_node_cfgs_with_signer<'a>(
     nodes
 }
 
-#[ignore] // Need to pass valid holder_wallet_path_hint to validate_mutual_close_tx
 #[test]
 fn fake_network_with_signer_test() {
     // Simple test which builds a network of ChannelManagers, connects them to each other, and
@@ -108,7 +107,7 @@ fn fake_network_with_signer_test() {
     let nodes = create_network(4, &node_cfgs, &node_chanmgrs);
 
     // Create some initial channels
-    let chan_1 = create_announced_chan_between_nodes(
+    let _chan_1 = create_announced_chan_between_nodes(
         &nodes,
         0,
         1,
@@ -137,8 +136,9 @@ fn fake_network_with_signer_test() {
         8000000,
     );
 
+    // FIXME Need to pass valid holder_wallet_path_hint to validate_mutual_close_tx
     // Close channel normally
-    close_channel(&nodes[0], &nodes[1], &chan_1.2, chan_1.3, true);
+    // close_channel(&nodes[0], &nodes[1], &chan_1.2, chan_1.3, true);
 }
 
 // Not currently used, but may be interesting for testing different to_self_delay values

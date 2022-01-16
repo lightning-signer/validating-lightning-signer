@@ -30,6 +30,7 @@ use crate::tx::script::{
 use crate::util::crypto_utils::payload_for_p2wpkh;
 use crate::util::debug_utils::DebugPayload;
 use bitcoin::hashes::hex::ToHex;
+use crate::util::AddedItemsIter;
 
 const MAX_DELAY: i64 = 1000;
 /// Value for anchor outputs
@@ -291,10 +292,12 @@ impl CommitmentInfo2 {
         to_broadcaster_delayed_pubkey: PublicKey,
         to_broadcaster_value_sat: u64,
         to_self_delay: u16,
-        offered_htlcs: Vec<HTLCInfo2>,
-        received_htlcs: Vec<HTLCInfo2>,
+        mut offered_htlcs: Vec<HTLCInfo2>,
+        mut received_htlcs: Vec<HTLCInfo2>,
         feerate_per_kw: u32,
     ) -> CommitmentInfo2 {
+        offered_htlcs.sort();
+        received_htlcs.sort();
         CommitmentInfo2 {
             is_counterparty_broadcaster,
             to_countersigner_pubkey,
@@ -307,20 +310,37 @@ impl CommitmentInfo2 {
             received_htlcs,
             feerate_per_kw,
         }
-        .normalize()
-    }
-
-    /// Normalize the CommitmentInfo2 for future use
-    pub fn normalize(mut self) -> Self {
-        // Sort the offered and received HTLCs for later comparison
-        self.offered_htlcs.sort();
-        self.received_htlcs.sort();
-        self
     }
 
     /// Returns true if there are no pending HTLCS
     pub fn htlcs_is_empty(&self) -> bool {
         self.offered_htlcs.is_empty() && self.received_htlcs.is_empty()
+    }
+
+    /// Returns offered HTLCs added and removed in new commitment tx
+    pub fn delta_offered_htlcs<'a>(&'a self, new: &'a CommitmentInfo2)
+                                   -> (AddedItemsIter<'a, HTLCInfo2>, AddedItemsIter<'a, HTLCInfo2>) {
+        (AddedItemsIter::new(
+            &self.offered_htlcs,
+            &new.offered_htlcs,
+        ),
+         AddedItemsIter::new(
+             &new.offered_htlcs,
+             &self.offered_htlcs,
+         ))
+    }
+
+    /// Returns offered HTLCs added and removed in new commitment tx
+    pub fn delta_received_htlcs<'a>(&'a self, new: &'a CommitmentInfo2)
+                                    -> (AddedItemsIter<'a, HTLCInfo2>, AddedItemsIter<'a, HTLCInfo2>) {
+        (AddedItemsIter::new(
+            &self.received_htlcs,
+            &new.received_htlcs,
+        ),
+         AddedItemsIter::new(
+             &new.received_htlcs,
+             &self.received_htlcs,
+         ))
     }
 }
 
