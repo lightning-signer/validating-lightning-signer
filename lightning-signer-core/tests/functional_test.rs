@@ -165,6 +165,36 @@ fn invoice_test() {
     );
 }
 
+// FIXME failing test due to dust limit
+#[ignore]
+#[test]
+fn dust_test() {
+    let signer = new_signer();
+    let chanmon_cfgs = create_chanmon_cfgs(2);
+    let node_cfgs = create_node_cfgs_with_signer(2, &signer, &chanmon_cfgs);
+    let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[None, None, None, None]);
+    let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
+
+    // Create some initial channels
+    create_default_chan(&nodes, 0, 1);
+
+    send_payment(&nodes[0], &vec![&nodes[1]], 1234000);
+}
+
+#[test]
+fn simple_payment_test() {
+    let signer = new_signer();
+    let chanmon_cfgs = create_chanmon_cfgs(2);
+    let node_cfgs = create_node_cfgs_with_signer(2, &signer, &chanmon_cfgs);
+    let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[None, None, None, None]);
+    let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
+
+    // Create some initial channels
+    create_default_chan(&nodes, 0, 1);
+
+    send_payment(&nodes[0], &vec![&nodes[1]], 3333000);
+}
+
 fn create_default_chan(nodes: &Vec<Node>, a: usize, b: usize) {
     create_announced_chan_between_nodes(
         &nodes,
