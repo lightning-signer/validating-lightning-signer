@@ -72,7 +72,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
                     channel_value_satoshis,
                     channel_setup: None,
                     id: None,
-                    enforcement_state: EnforcementState::new(),
+                    enforcement_state: EnforcementState::new(0),
                 };
                 if txn.get(id.clone()).unwrap().is_some() {
                     return Err(TransactionError::Abort(kv::Error::Message(

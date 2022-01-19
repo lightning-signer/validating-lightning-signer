@@ -10,7 +10,7 @@ use bitcoin::{Script, Transaction, TxOut};
 use lightning::chain::keysinterface::{
     BaseSign, KeyMaterial, KeysInterface, Sign, SpendableOutputDescriptor,
 };
-use lightning::ln::chan_utils;
+use lightning::ln::{chan_utils, PaymentPreimage};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys,
@@ -245,6 +245,7 @@ impl BaseSign for LoopbackChannelSigner {
     fn validate_holder_commitment(
         &self,
         holder_tx: &HolderCommitmentTransaction,
+        _preimages: Vec<PaymentPreimage>,
     ) -> Result<(), ()> {
         let commitment_number = INITIAL_COMMITMENT_NUMBER - holder_tx.commitment_number();
 
@@ -281,6 +282,7 @@ impl BaseSign for LoopbackChannelSigner {
     fn sign_counterparty_commitment(
         &self,
         commitment_tx: &CommitmentTransaction,
+        preimages: Vec<PaymentPreimage>,
         _secp_ctx: &Secp256k1<All>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
         let trusted_tx = commitment_tx.trust();
@@ -305,6 +307,7 @@ impl BaseSign for LoopbackChannelSigner {
         let (sig_vec, htlc_sigs_vecs) = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                chan.htlcs_fulfilled(preimages.clone());
                 chan.sign_counterparty_commitment_tx_phase2(
                     &per_commitment_point,
                     commitment_number,

@@ -2,7 +2,7 @@ use core::any::Any;
 use core::fmt;
 use core::fmt::{Debug, Error, Formatter};
 
-use bitcoin::hashes::hex;
+use bitcoin::hashes::hex::{self, ToHex};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
@@ -17,6 +17,7 @@ use lightning::ln::chan_utils::{
     CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
     TxCreationKeys,
 };
+use lightning::ln::PaymentPreimage;
 
 #[allow(unused_imports)]
 use log::{debug, trace, warn};
@@ -567,7 +568,7 @@ impl Channel {
 
         let sigs = self
             .keys
-            .sign_counterparty_commitment(&commitment_tx, &self.secp_ctx)
+            .sign_counterparty_commitment(&commitment_tx, Vec::new(), &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
         let mut sig = sigs.0.serialize_der().to_vec();
         sig.push(SigHashType::All as u8);
@@ -1476,7 +1477,7 @@ impl Channel {
         // Sign the recomposed commitment.
         let sigs = self
             .keys
-            .sign_counterparty_commitment(&recomposed_tx, &self.secp_ctx)
+            .sign_counterparty_commitment(&recomposed_tx, Vec::new(), &self.secp_ctx)
             .map_err(|_| internal_error(format!("sign_counterparty_commitment failed")))?;
 
         let payment_summary =
@@ -1849,6 +1850,29 @@ impl Channel {
                 self.keys.payment_key.clone()
             }
         })
+    }
+
+    /// Mark any in-flight payments (outgoing HTLCs) on this channel with the
+    /// given preimage as filled.
+    /// Any such payments adjust our expected balance downwards.
+    pub fn htlcs_fulfilled(&mut self, preimages: Vec<PaymentPreimage>) {
+        let to_holder_msat = &mut self.enforcement_state.holder_balance_msat;
+        let node = self.node.upgrade().unwrap();
+        let total_filled = node.htlcs_fulfilled(&self.id0, preimages);
+        if total_filled > 0 {
+            debug!("fulfill at channel {}: {} - {} = {}",
+                self.id0.0.to_hex(),
+                *to_holder_msat,
+                total_filled,
+                *to_holder_msat - total_filled);
+        }
+
+        if let Some(r) = to_holder_msat.checked_sub(total_filled) {
+            *to_holder_msat = r;
+        } else {
+            warn!("more payment ({}) than we had balance ({}) on channel {}", total_filled, *to_holder_msat, self.id0.0.to_hex());
+            *to_holder_msat = 0;
+        }
     }
 }
 

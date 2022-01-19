@@ -232,11 +232,20 @@ pub struct EnforcementState {
     pub current_counterparty_commit_info: Option<CommitmentInfo2>,
     pub previous_counterparty_commit_info: Option<CommitmentInfo2>,
     pub mutual_close_signed: bool,
+    /// Amount due to us.
+    /// As payments go out, this amount decreases.
+    /// As issued invoices are paid, this amount increases.
+    /// This balance also includes:
+    /// - pending unfulfilled outgoing HTLCs
+    /// - pending incoming HTLCs if their sum ever covered the invoice we issued
+    /// - keysend HTLCs to us (TODO)
+    /// - pending routed incoming HTLCs if we know their preimage (matching outgoing HTLCS fulfilled) (TODO)
+    pub holder_balance_msat: u64,
 }
 
 impl EnforcementState {
     /// Create state for a new channel
-    pub fn new() -> EnforcementState {
+    pub fn new(to_holder_msat: u64) -> EnforcementState {
         EnforcementState {
             next_holder_commit_num: 0,
             next_counterparty_commit_num: 0,
@@ -247,6 +256,7 @@ impl EnforcementState {
             current_counterparty_commit_info: None,
             previous_counterparty_commit_info: None,
             mutual_close_signed: false,
+            holder_balance_msat: to_holder_msat
         }
     }
 
@@ -569,7 +579,7 @@ mod tests {
 
     #[test]
     fn enforcement_state_previous_counterparty_point_test() {
-        let mut state = EnforcementState::new();
+        let mut state = EnforcementState::new(0);
 
         let point0 = make_test_pubkey(0x12);
         let commit_info = make_test_commitment_info();

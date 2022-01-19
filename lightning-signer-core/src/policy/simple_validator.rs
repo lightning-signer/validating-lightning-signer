@@ -1653,7 +1653,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_test() {
         let validator = make_test_validator();
-        let mut enforcement_state = EnforcementState::new();
+        let mut enforcement_state = EnforcementState::new(0);
         let commit_num = 23;
         enforcement_state
             .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
@@ -1741,7 +1741,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_shortage_test() {
         let validator = make_test_validator();
-        let enforcement_state = EnforcementState::new();
+        let enforcement_state = EnforcementState::new(0);
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
@@ -1767,7 +1767,7 @@ mod tests {
         let validator = make_test_validator();
         let htlc =
             HTLCInfo2 { value_sat: 100_000, payment_hash: PaymentHash([0; 32]), cltv_expiry: 1005 };
-        let mut enforcement_state = EnforcementState::new();
+        let mut enforcement_state = EnforcementState::new(0);
         let commit_num = 23;
         enforcement_state
             .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
@@ -1807,7 +1807,7 @@ mod tests {
         let validator = make_test_validator();
         let htlc =
             HTLCInfo2 { value_sat: 199_000, payment_hash: PaymentHash([0; 32]), cltv_expiry: 1005 };
-        let enforcement_state = EnforcementState::new();
+        let enforcement_state = EnforcementState::new(0);
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
@@ -1830,7 +1830,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_initial_with_bad_fundee_output() {
         let validator = make_test_validator();
-        let enforcement_state = EnforcementState::new();
+        let enforcement_state = EnforcementState::new(0);
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
@@ -1856,7 +1856,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_htlc_count_test() {
         let validator = make_test_validator();
-        let enforcement_state = EnforcementState::new();
+        let enforcement_state = EnforcementState::new(0);
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
@@ -1881,7 +1881,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_htlc_value_test() {
         let validator = make_test_validator();
-        let enforcement_state = EnforcementState::new();
+        let enforcement_state = EnforcementState::new(0);
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
@@ -1911,7 +1911,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_htlc_delay_test() {
         let validator = make_test_validator();
-        let mut enforcement_state = EnforcementState::new();
+        let mut enforcement_state = EnforcementState::new(0);
         let commit_num = 23;
         enforcement_state
             .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));

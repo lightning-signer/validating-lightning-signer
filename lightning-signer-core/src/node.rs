@@ -27,13 +27,13 @@ use lightning::chain::keysinterface::{
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
 };
-use lightning::ln::PaymentHash;
+use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning::ln::script::ShutdownScript;
 use lightning::util::logger::Logger;
 use lightning_invoice::{Invoice, SignedRawInvoice};
 
 #[allow(unused_imports)]
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 
 use crate::chain::tracker::ChainTracker;
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub};
@@ -73,7 +73,9 @@ pub struct InvoiceState {
     /// Expiry, as duration since the timestamp
     pub expiry_duration: Duration,
     /// In-flight payments attempting to fulfill this invoice
-    pub inflight_payments: Map<ChannelId, u64>,
+    pub inflight_payments: Map<ChannelId, (u64, bool)>,
+    /// The preimage for the hash, filled in on success
+    pub preimage: Option<PaymentPreimage>,
 }
 
 impl InvoiceState {
@@ -81,14 +83,16 @@ impl InvoiceState {
     /// specified amount.
     pub fn updated_amount(&self, channel_id: &ChannelId, amount: u64) -> u64 {
         // TODO this can be optimized to eliminate the clone
-        let mut payments = self.inflight_payments.clone();
-        payments.insert(channel_id.clone(), amount);
+        let mut payments: Map<&ChannelId, u64> = self.inflight_payments.iter()
+            .map(|(channel_id, (amount, _))| (channel_id, *amount))
+            .collect();
+        payments.insert(channel_id, amount);
         payments.values().into_iter().sum::<u64>()
     }
 
     /// Update the amount that a channel is trying to send
     pub fn apply_payment(&mut self, channel_id: &ChannelId, amount: u64) {
-        self.inflight_payments.insert(channel_id.clone(), amount);
+        self.inflight_payments.insert(channel_id.clone(), (amount, false));
     }
 }
 
@@ -668,7 +672,12 @@ impl Node {
             let funding_outpoint = setup.funding_outpoint;
             let monitor = ChainMonitor::new(funding_outpoint, tracker.height());
             monitor.add_funding_outpoint(&funding_outpoint);
-            let enforcement_state = EnforcementState::new();
+            let to_holder_msat = if setup.is_outbound {
+                setup.channel_value_sat * 1000 - setup.push_value_msat
+            } else {
+                setup.push_value_msat
+            };
+            let enforcement_state = EnforcementState::new(to_holder_msat);
             Channel {
                 node: Weak::clone(&stub.node),
                 nonce: stub.nonce.clone(),
@@ -1090,6 +1099,35 @@ impl Node {
         self.tracker.lock().unwrap()
     }
 
+    // Process payment preimages for offered HTLCs.
+    // Any invoice with a payment hash that matches a preimage is marked
+    // as paid, so that the offered HTLC can be removed and our balance
+    // adjusted downwards.
+    pub(crate) fn htlcs_fulfilled(&self, channel_id: &ChannelId, preimages: Vec<PaymentPreimage>) -> u64 {
+        let mut state = self.state.lock().unwrap();
+        let mut total_filled = 0u64;
+        for preimage in preimages.into_iter() {
+            let payment_hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+            if let Some(is) = state.invoices.get_mut(&payment_hash) {
+                is.preimage = Some(preimage);
+                if let Some((amount, filled)) = is.inflight_payments.get_mut(channel_id) {
+                    if *filled {
+                        info!("duplicate preimage {}", payment_hash.0.to_hex());
+                    } else {
+                        info!("preimage fulfills {}", payment_hash.0.to_hex());
+                        total_filled += *amount;
+                        *filled = true;
+                    }
+                } else {
+                    info!("preimage {} on unexpected channel {}", payment_hash.0.to_hex(), channel_id.0.to_hex());
+                }
+            } else {
+                warn!("preimage has no matching invoice for hash {}", payment_hash.0.to_hex());
+            }
+        }
+        total_filled
+    }
+
     /// Add an invoice.
     /// Used by the signer to map HTLCs to destination payees, so that payee
     /// public keys can be allowlisted for policy control.
@@ -1101,6 +1139,7 @@ impl Node {
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
         let mut state = self.state.lock().unwrap();
         let hash = PaymentHash(invoice.payment_hash().as_inner().clone());
+        info!("add invoice with payment hash {}", hash.0.to_hex());
         if let Some(invoice_state) = state.invoices.get(&hash) {
             return if invoice_state.invoice_hash == invoice_hash {
                 Ok(())
@@ -1125,7 +1164,8 @@ impl Node {
             payee,
             duration_since_epoch: invoice.duration_since_epoch(),
             expiry_duration: invoice.expiry_time(),
-            inflight_payments
+            inflight_payments,
+            preimage: None
         };
         debug!("adding invoice {:?} -> {}", hash, amount_msat);
         state.invoices.insert(hash, invoice_state);
@@ -1264,38 +1304,16 @@ mod tests {
         let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        let hash = PaymentHash([0; 32]);
         // TODO check currency matches
-        let invoice1 = InvoiceBuilder::new(Currency::Bitcoin)
-            .duration_since_epoch(Duration::from_secs(123456789))
-            .amount_milli_satoshis(100_000)
-            .payment_hash(Sha256Hash::default())
-            .payment_secret(PaymentSecret([0; 32]))
-            .description("invoice1".to_string())
-            .build_raw()
-            .expect("build")
-            .sign::<_, ()>(|hash| {
-                Ok(Secp256k1::new().sign_recoverable(hash, &payee_node.get_node_secret()))
-            })
-            .unwrap();
-        let invoice2 = InvoiceBuilder::new(Currency::Bitcoin)
-            .duration_since_epoch(Duration::from_secs(123456789))
-            .amount_milli_satoshis(100_000)
-            .payment_hash(Sha256Hash::default())
-            .payment_secret(PaymentSecret([0; 32]))
-            .description("invoice2".to_string())
-            .build_raw()
-            .expect("build")
-            .sign::<_, ()>(|hash| {
-                Ok(Secp256k1::new().sign_recoverable(hash, &payee_node.get_node_secret()))
-            })
-            .unwrap();
+        let invoice1 = make_test_invoice(&payee_node, "invoice1", hash);
+        let invoice2 = make_test_invoice(&payee_node, "invoice2", hash);
         node.add_invoice(invoice1.clone()).expect("add invoice");
         node.add_invoice(invoice1.clone()).expect("add invoice");
         node.add_invoice(invoice2.clone())
             .expect_err("add a different invoice with same payment hash");
 
         let mut state = node.state.lock().unwrap();
-        let hash = PaymentHash([0; 32]);
         let hash1 = PaymentHash([1; 32]);
         let invoice_state = state.invoices.get_mut(&hash).expect("invoice state");
         assert_eq!(invoice_state.updated_amount(&channel_id, 100_000), 100_000);
@@ -1322,6 +1340,48 @@ mod tests {
         // Apply payments to a non-invoiced payment hash
         assert!(state.apply_payments(&channel_id, vec![(hash1, 555)].into_iter().collect(), lenient_validator.clone()).is_ok());
         assert!(state.apply_payments(&channel_id, vec![(hash1, 555)].into_iter().collect(), invoice_validator.clone()).is_err());
+    }
+
+    fn make_test_invoice(payee_node: &Arc<Node>, description: &str, payment_hash: PaymentHash) -> SignedRawInvoice {
+        InvoiceBuilder::new(Currency::Bitcoin)
+            .duration_since_epoch(Duration::from_secs(123456789))
+            .amount_milli_satoshis(100_000)
+            .payment_hash(Sha256Hash::from_slice(&payment_hash.0).unwrap())
+            .payment_secret(PaymentSecret([0; 32]))
+            .description(description.to_string())
+            .build_raw().expect("build")
+            .sign::<_, ()>(|hash| {
+                Ok(Secp256k1::new().sign_recoverable(hash, &payee_node.get_node_secret()))
+            }).unwrap()
+    }
+
+    #[test]
+    fn test_fulfill() {
+        let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        // TODO check currency matches
+        let preimage = PaymentPreimage([0; 32]);
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+
+        let invoice = make_test_invoice(&payee_node, "invoice", hash);
+
+        node.add_invoice(invoice.clone()).expect("add invoice");
+
+        let mut policy = make_simple_policy(Network::Testnet);
+        policy.require_invoices = true;
+        let invoice_validator = SimpleValidatorFactory::new_with_policy(policy).make_validator(Network::Testnet, node.get_id(), None);
+
+        {
+            let mut state = node.state.lock().unwrap();
+            assert!(state.apply_payments(&channel_id, vec![(hash, 101_000)].into_iter().collect(), invoice_validator.clone()).is_ok());
+        }
+        node.with_ready_channel(&channel_id, |chan| {
+            assert_eq!(chan.enforcement_state.holder_balance_msat, 3_000_000_000);
+            chan.htlcs_fulfilled(vec![preimage]);
+            assert_eq!(chan.enforcement_state.holder_balance_msat, 3_000_000_000 - 101_000);
+            Ok(())
+        }).unwrap();
     }
 
     #[test]
