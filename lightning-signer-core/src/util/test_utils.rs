@@ -844,6 +844,21 @@ pub fn setup_funded_channel(
     next_counterparty_revoke_num: u64,
 ) -> (TestNodeContext, TestChannelContext) {
     let setup = make_test_channel_setup();
+    setup_funded_channel_with_setup(
+        setup,
+        next_holder_commit_num,
+        next_counterparty_commit_num,
+        next_counterparty_revoke_num,
+    )
+}
+
+// Setup node and channel state with specified setup.
+pub fn setup_funded_channel_with_setup(
+    setup: ChannelSetup,
+    next_holder_commit_num: u64,
+    next_counterparty_commit_num: u64,
+    next_counterparty_revoke_num: u64,
+) -> (TestNodeContext, TestChannelContext) {
     let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
     let secp_ctx = Secp256k1::signing_only();
@@ -924,12 +939,17 @@ pub fn counterparty_sign_holder_commitment(
                 );
                 let htlc_redeemscript =
                     get_htlc_redeemscript(&htlc, chan_ctx.setup.option_anchor_outputs(), &keys);
+                let sig_hash_type = if chan_ctx.setup.option_anchor_outputs() {
+                    SigHashType::SinglePlusAnyoneCanPay
+                } else {
+                    SigHashType::All
+                };
                 let htlc_sighash = Message::from_slice(
                     &SigHashCache::new(&htlc_tx).signature_hash(
                         0,
                         &htlc_redeemscript,
                         htlc.amount_msat / 1000,
-                        SigHashType::All,
+                        sig_hash_type,
                     )[..],
                 )
                 .unwrap();
@@ -1258,39 +1278,62 @@ pub fn check_signature(
     input_value_sat: u64,
     redeemscript: &Script,
 ) {
-    check_signature_with_setup(
+    let sighashtype = SigHashType::All;
+    check_signature_with_sighashtype(
         tx,
         input,
         ser_signature,
         pubkey,
         input_value_sat,
         redeemscript,
-        &make_test_channel_setup(),
-    )
+        sighashtype,
+    );
 }
 
-pub fn check_signature_with_setup(
+pub fn check_counterparty_htlc_signature(
     tx: &bitcoin::Transaction,
     input: usize,
     ser_signature: Vec<u8>,
     pubkey: &PublicKey,
     input_value_sat: u64,
     redeemscript: &Script,
-    setup: &ChannelSetup,
+    opt_anchors: bool,
 ) {
-    let sig_hash_type = if setup.option_anchor_outputs() {
-        SigHashType::SinglePlusAnyoneCanPay
-    } else {
-        SigHashType::All
-    };
+    let sighashtype =
+        if opt_anchors { SigHashType::SinglePlusAnyoneCanPay } else { SigHashType::All };
+    check_signature_with_sighashtype(
+        tx,
+        input,
+        ser_signature,
+        pubkey,
+        input_value_sat,
+        redeemscript,
+        sighashtype,
+    );
+}
 
-    let sighash = Message::from_slice(
-        &SigHashCache::new(tx).signature_hash(input, &redeemscript, input_value_sat, sig_hash_type)
-            [..],
-    )
-    .expect("sighash");
+pub fn check_signature_with_sighashtype(
+    tx: &bitcoin::Transaction,
+    input: usize,
+    ser_signature: Vec<u8>,
+    pubkey: &PublicKey,
+    input_value_sat: u64,
+    redeemscript: &Script,
+    sighashtype: SigHashType,
+) {
+    let sighash =
+        Message::from_slice(
+            &SigHashCache::new(tx).signature_hash(
+                input,
+                &redeemscript,
+                input_value_sat,
+                sighashtype,
+            )[..],
+        )
+        .expect("sighash");
     let mut der_signature = ser_signature.clone();
-    der_signature.pop(); // Pop the sighash type byte
+    let sigtypebyte = der_signature.pop().expect("sighash type byte"); // Pop the sighash type byte
+    assert_eq!(sigtypebyte, sighashtype as u8);
     let signature = Signature::from_der(&der_signature).expect("from_der");
     let secp_ctx = Secp256k1::new();
     secp_ctx.verify(&sighash, &signature, &pubkey).expect("verify");

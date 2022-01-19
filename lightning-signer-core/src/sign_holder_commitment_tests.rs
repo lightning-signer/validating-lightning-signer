@@ -1,8 +1,10 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin;
     use bitcoin::hashes::hex::ToHex;
-    use lightning::ln::chan_utils::make_funding_redeemscript;
+    use bitcoin::{self, Script, Transaction};
+    use lightning::ln::chan_utils::{
+        build_htlc_transaction, get_htlc_redeemscript, make_funding_redeemscript,
+    };
 
     use test_env_log::test;
 
@@ -11,20 +13,29 @@ mod tests {
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
 
+    use paste::paste;
+
     #[test]
-    fn sign_holder_commitment_tx_phase2_static_test() {
+    fn success_redundant_static() {
         let setup = make_test_channel_setup();
-        sign_holder_commitment_tx_phase2_test(&setup);
+        test_redundant(&setup);
     }
 
     #[test]
-    fn sign_holder_commitment_tx_phase2_legacy_test() {
+    fn success_redundant_legacy() {
         let mut setup = make_test_channel_setup();
         setup.commitment_type = CommitmentType::Legacy;
-        sign_holder_commitment_tx_phase2_test(&setup);
+        test_redundant(&setup);
     }
 
-    fn sign_holder_commitment_tx_phase2_test(setup: &ChannelSetup) {
+    #[test]
+    fn success_redundant_anchors() {
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = CommitmentType::Anchors;
+        test_redundant(&setup);
+    }
+
+    fn test_redundant(setup: &ChannelSetup) {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
 
@@ -61,7 +72,11 @@ mod tests {
             .expect("sign");
         assert_eq!(
             tx.txid().to_hex(),
-            "991422f2c0d308b9319f9aec28ccef4bffedf5d36965ec7346155537b8800844"
+            if setup.commitment_type == CommitmentType::Anchors {
+                "2b8ee59e301a0d0af2d1bfd0a105970978800c0dc8338a034234bc4ec93a5c13"
+            } else {
+                "991422f2c0d308b9319f9aec28ccef4bffedf5d36965ec7346155537b8800844"
+            }
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -88,6 +103,7 @@ mod tests {
     }
 
     fn sign_holder_commitment_tx_with_mutators<SignInputMutator>(
+        commitment_type: CommitmentType,
         mutate_sign_inputs: SignInputMutator,
     ) -> Result<(), Status>
     where
@@ -96,7 +112,10 @@ mod tests {
         let next_holder_commit_num = HOLD_COMMIT_NUM;
         let next_counterparty_commit_num = HOLD_COMMIT_NUM + 1;
         let next_counterparty_revoke_num = next_counterparty_commit_num - 1;
-        let (node_ctx, chan_ctx) = setup_funded_channel(
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = commitment_type;
+        let (node_ctx, chan_ctx) = setup_funded_channel_with_setup(
+            setup,
             next_holder_commit_num,
             next_counterparty_commit_num,
             next_counterparty_revoke_num,
@@ -119,6 +138,7 @@ mod tests {
     }
 
     fn sign_holder_commitment_tx_retry_with_mutators<SignInputMutator>(
+        commitment_type: CommitmentType,
         mutate_sign_inputs: SignInputMutator,
     ) -> Result<(), Status>
     where
@@ -127,7 +147,10 @@ mod tests {
         let next_holder_commit_num = HOLD_COMMIT_NUM;
         let next_counterparty_commit_num = HOLD_COMMIT_NUM + 1;
         let next_counterparty_revoke_num = next_counterparty_commit_num - 1;
-        let (node_ctx, chan_ctx) = setup_funded_channel(
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = commitment_type;
+        let (node_ctx, chan_ctx) = setup_funded_channel_with_setup(
+            setup,
             next_holder_commit_num,
             next_counterparty_commit_num,
             next_counterparty_revoke_num,
@@ -167,7 +190,7 @@ mod tests {
     where
         SignInputMutator: Fn(&mut SignMutationState),
     {
-        let (sig, _htlc_sigs, tx) =
+        let (sig, htlc_sigs, tx, htlcs, htlc_txs, htlc_redeemscripts, per_commitment_point) =
             node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
                 let mut commit_tx_ctx = commit_tx_ctx0.clone();
 
@@ -181,7 +204,7 @@ mod tests {
                 );
 
                 let commitment_tx = chan.make_holder_commitment_tx_with_keys(
-                    keys,
+                    keys.clone(),
                     commit_tx_ctx.commit_num,
                     commit_tx_ctx.feerate_per_kw,
                     commit_tx_ctx.to_broadcaster,
@@ -204,12 +227,47 @@ mod tests {
                 let (sig, htlc_sigs) =
                     chan.sign_holder_commitment_tx_phase2(commit_tx_ctx.commit_num)?;
 
-                Ok((sig, htlc_sigs, tx.transaction.clone()))
+                let htlc_txs = trusted_tx
+                    .htlcs()
+                    .iter()
+                    .map(|htlc| {
+                        build_htlc_transaction(
+                            &tx.transaction.txid(),
+                            commit_tx_ctx.feerate_per_kw,
+                            chan_ctx.setup.counterparty_selected_contest_delay,
+                            &htlc,
+                            chan_ctx.setup.option_anchor_outputs(),
+                            &keys.broadcaster_delayed_payment_key,
+                            &keys.revocation_key,
+                        )
+                    })
+                    .collect::<Vec<Transaction>>();
+
+                let htlc_redeemscripts = htlcs
+                    .iter()
+                    .map(|htlc| {
+                        get_htlc_redeemscript(&htlc, chan_ctx.setup.option_anchor_outputs(), &keys)
+                    })
+                    .collect::<Vec<Script>>();
+
+                Ok((
+                    sig,
+                    htlc_sigs,
+                    tx.transaction.clone(),
+                    htlcs,
+                    htlc_txs,
+                    htlc_redeemscripts,
+                    per_commitment_point,
+                ))
             })?;
 
         assert_eq!(
             tx.txid().to_hex(),
-            "d236f61c3e0fb3221fab61f97696077df3514e3d602561a6d2050d79777eb362"
+            if chan_ctx.setup.commitment_type == CommitmentType::StaticRemoteKey {
+                "d236f61c3e0fb3221fab61f97696077df3514e3d602561a6d2050d79777eb362"
+            } else {
+                "175502b7af99be693c01be3c033473d39379ff9567b39d238f734ab7e3e58937"
+            }
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node_ctx.node, &chan_ctx.channel_id);
@@ -227,73 +285,156 @@ mod tests {
             &channel_funding_redeemscript,
         );
 
+        let htlc_pubkey =
+            get_channel_htlc_pubkey(&node_ctx.node, &chan_ctx.channel_id, &per_commitment_point);
+
+        for (ndx, htlc) in htlcs.into_iter().enumerate() {
+            check_signature(
+                &htlc_txs[ndx],
+                0,
+                htlc_sigs[ndx].clone(),
+                &htlc_pubkey,
+                htlc.amount_msat / 1000,
+                &htlc_redeemscripts[ndx],
+            );
+        }
+
         Ok(())
     }
 
-    #[test]
-    fn success() {
-        assert_status_ok!(sign_holder_commitment_tx_with_mutators(|_sms| {
-            // don't mutate the state, should pass
-        },));
+    macro_rules! generate_status_ok_variations {
+        ($name: ident, $sms: expr) => {
+            paste! {
+                #[test]
+                fn [<$name _static>]() {
+                    assert_status_ok!(
+                        sign_holder_commitment_tx_with_mutators(
+                            CommitmentType::StaticRemoteKey, $sms)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _anchors>]() {
+                    assert_status_ok!(
+                        sign_holder_commitment_tx_with_mutators(
+                            CommitmentType::Anchors, $sms)
+                    );
+                }
+            }
+        };
     }
 
-    #[test]
-    fn ok_after_mutual_close() {
-        assert_status_ok!(sign_holder_commitment_tx_with_mutators(|sms| {
-            // Set the mutual_close_signed flag
-            sms.estate.mutual_close_signed = true;
-        }));
+    macro_rules! generate_status_ok_retry_variations {
+        ($name: ident, $sms: expr) => {
+            paste! {
+                #[test]
+                fn [<$name _retry_static>]() {
+                    assert_status_ok!(
+                        sign_holder_commitment_tx_retry_with_mutators(
+                            CommitmentType::StaticRemoteKey, $sms)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _retry_anchors>]() {
+                    assert_status_ok!(
+                        sign_holder_commitment_tx_retry_with_mutators(
+                            CommitmentType::Anchors, $sms)
+                    );
+                }
+            }
+        };
     }
 
-    #[test]
-    fn bad_prior_commit_num() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_with_mutators(|sms| {
-                *sms.commit_num -= 1;
-            }),
-            "policy failure: get_current_holder_commitment_info: \
+    generate_status_ok_variations!(success, |_| {});
+
+    generate_status_ok_variations!(ok_after_mutual_close, |sms| {
+        // Set the mutual_close_signed flag
+        sms.estate.mutual_close_signed = true;
+    });
+
+    generate_status_ok_retry_variations!(success, |_| {});
+
+    generate_status_ok_retry_variations!(ok_after_mutual_close, |sms| {
+        // Set the mutual_close_signed flag
+        sms.estate.mutual_close_signed = true;
+    });
+
+    #[allow(dead_code)]
+    struct ErrMsgContext {
+        opt_anchors: bool,
+    }
+
+    const ERR_MSG_CONTEXT_STATIC: ErrMsgContext = ErrMsgContext { opt_anchors: false };
+    const ERR_MSG_CONTEXT_ANCHORS: ErrMsgContext = ErrMsgContext { opt_anchors: true };
+
+    macro_rules! generate_failed_precondition_error_variations {
+        ($name: ident, $sms: expr, $errcls: expr) => {
+            paste! {
+                #[test]
+                fn [<$name _static>]() {
+                    assert_failed_precondition_err!(
+                        sign_holder_commitment_tx_with_mutators(
+                            CommitmentType::StaticRemoteKey, $sms),
+                        ($errcls)(ERR_MSG_CONTEXT_STATIC)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _anchors>]() {
+                    assert_failed_precondition_err!(
+                        sign_holder_commitment_tx_retry_with_mutators(
+                            CommitmentType::Anchors, $sms),
+                        ($errcls)(ERR_MSG_CONTEXT_ANCHORS)
+                    );
+                }
+            }
+        };
+    }
+
+    macro_rules! generate_failed_precondition_error_retry_variations {
+        ($name: ident, $sms: expr, $errcls: expr) => {
+            paste! {
+                #[test]
+                fn [<$name _retry_static>]() {
+                    assert_failed_precondition_err!(
+                        sign_holder_commitment_tx_retry_with_mutators(
+                            CommitmentType::StaticRemoteKey, $sms),
+                        ($errcls)(ERR_MSG_CONTEXT_STATIC)
+                    );
+                }
+            }
+        };
+    }
+
+    generate_failed_precondition_error_variations!(
+        bad_prior_commit_num,
+        |sms| *sms.commit_num -= 1,
+        |_| "policy failure: get_current_holder_commitment_info: \
              invalid next holder commitment number: 23 != 24"
-        );
-    }
+    );
 
-    #[test]
-    fn bad_later_commit_num() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_with_mutators(|sms| {
-                *sms.commit_num += 1;
-            }),
-            "policy failure: get_current_holder_commitment_info: \
+    generate_failed_precondition_error_variations!(
+        bad_later_commit_num,
+        |sms| *sms.commit_num += 1,
+        |_| "policy failure: get_current_holder_commitment_info: \
              invalid next holder commitment number: 25 != 24"
-        );
-    }
+    );
 
-    // policy-commitment-retry-same
-    #[test]
-    fn retry_success() {
-        assert_status_ok!(sign_holder_commitment_tx_retry_with_mutators(|_sms| {
-            // don't mutate the state, should pass
-        },));
-    }
-
-    #[test]
-    fn retry_bad_prior_commit_num() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_retry_with_mutators(|sms| {
-                *sms.commit_num -= 1;
-            }),
-            "policy failure: get_current_holder_commitment_info: \
+    generate_failed_precondition_error_retry_variations!(
+        bad_prior_commit_num,
+        |sms| *sms.commit_num -= 1,
+        |_| "policy failure: get_current_holder_commitment_info: \
              invalid next holder commitment number: 23 != 24"
-        );
-    }
+    );
 
-    #[test]
-    fn retry_bad_later_commit_num() {
-        assert_failed_precondition_err!(
-            sign_holder_commitment_tx_retry_with_mutators(|sms| {
-                *sms.commit_num += 1;
-            }),
-            "policy failure: get_current_holder_commitment_info: \
+    generate_failed_precondition_error_retry_variations!(
+        bad_later_commit_num,
+        |sms| *sms.commit_num += 1,
+        |_| "policy failure: get_current_holder_commitment_info: \
              invalid next holder commitment number: 25 != 24"
-        );
-    }
+    );
 }
