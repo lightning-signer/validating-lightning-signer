@@ -94,6 +94,10 @@ pub struct SimplePolicy {
     /// Require invoices for payments, and disallow keysend
     // TODO secure keysend
     pub require_invoices: bool,
+    /// Enforce holder balance
+    // TODO incoming payments
+    // TODO routing
+    pub enforce_balance: bool,
     /// Maximum layer-2 fee
     pub max_routing_fee_msat: u64,
 }
@@ -1455,6 +1459,8 @@ impl SimpleValidator {
         self.validate_fee(setup.channel_value_sat, sum_outputs)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
+        let (holder_value_sat, counterparty_value_sat) = info.value_to_parties();
+
         // Enforce additional requirements on initial commitments.
         if commit_num == 0 {
             if info.offered_htlcs.len() + info.received_htlcs.len() > 0 {
@@ -1470,19 +1476,20 @@ impl SimpleValidator {
                 // no-initial-htlcs and fee checks above will ensure
                 // that our share is valid.
 
-                let fundee_value_sat = if info.is_counterparty_broadcaster {
-                    info.to_broadcaster_value_sat
-                } else {
-                    info.to_countersigner_value_sat
-                };
-
                 // The fundee is only entitled to push_value
-                if fundee_value_sat > setup.push_value_msat / 1000 {
+                if counterparty_value_sat > setup.push_value_msat / 1000 {
                     return policy_err!(
                         "initial commitment may only send push_value_msat ({}) to fundee",
                         setup.push_value_msat
                     );
                 }
+            }
+        }
+
+        if policy.enforce_balance {
+            if holder_value_sat < estate.holder_balance_msat / 1000 {
+                return policy_err!("holder output {} is less than expected balance {}",
+                    holder_value_sat, estate.holder_balance_msat / 1000);
             }
         }
 
@@ -1507,6 +1514,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             min_fee: 100,
             max_fee: 1000,
             require_invoices: false,
+            enforce_balance: false,
             max_routing_fee_msat: 10000,
         }
     } else {
@@ -1524,6 +1532,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             min_fee: 100,
             max_fee: 80_000, // c-lightning integration 79641
             require_invoices: false,
+            enforce_balance: false,
             max_routing_fee_msat: 10000,
         }
     }
@@ -1554,6 +1563,7 @@ mod tests {
             min_fee: 100,
             max_fee: 10_000,
             require_invoices: false,
+            enforce_balance: false,
             max_routing_fee_msat: 10000
         };
 

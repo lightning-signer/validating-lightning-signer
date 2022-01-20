@@ -1480,10 +1480,14 @@ fn policy_args(app: App) -> App {
     app.arg(Arg::new("require_invoices")
         .long("require_invoices")
         .takes_value(false))
+        .arg(Arg::new("enforce_balance")
+            .long("enforce_balance")
+            .takes_value(false))
 }
 
 fn policy(matches: &ArgMatches, network: Network) -> SimplePolicy {
     let mut policy = make_simple_policy(network);
     policy.require_invoices = matches.is_present("require_invoices");
+    policy.enforce_balance = matches.is_present("enforce_balance");
     policy
 }
