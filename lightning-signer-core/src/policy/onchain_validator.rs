@@ -101,45 +101,49 @@ impl Validator for OnchainValidator {
 
     fn validate_counterparty_commitment_tx(
         &self,
-        state: &EnforcementState,
+        estate: &EnforcementState,
         commit_num: u64,
         commitment_point: &PublicKey,
         setup: &ChannelSetup,
         cstate: &ChainState,
-        info: &CommitmentInfo2,
+        info2: &CommitmentInfo2,
+        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         // Only allow state advancement if funding is buried and unspent
         self.ensure_funding_buried_and_unspent(commit_num, cstate)?;
         self.inner.validate_counterparty_commitment_tx(
-            state,
+            estate,
             commit_num,
             commitment_point,
             setup,
             cstate,
-            info,
+            info2,
+            fulfilled_incoming_msat,
         )
     }
 
     fn validate_holder_commitment_tx(
         &self,
-        state: &EnforcementState,
+        estate: &EnforcementState,
         commit_num: u64,
         commitment_point: &PublicKey,
         setup: &ChannelSetup,
         cstate: &ChainState,
-        info: &CommitmentInfo2,
+        info2: &CommitmentInfo2,
+        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         // Only allow state advancement if funding is buried and unspent
-        if state.next_holder_commit_num <= commit_num {
+        if estate.next_holder_commit_num <= commit_num {
             self.ensure_funding_buried_and_unspent(commit_num, cstate)?;
         }
         self.inner.validate_holder_commitment_tx(
-            state,
+            estate,
             commit_num,
             commitment_point,
             setup,
             cstate,
-            info,
+            info2,
+            fulfilled_incoming_msat,
         )
     }
 

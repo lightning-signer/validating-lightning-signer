@@ -1,6 +1,6 @@
 extern crate scopeguard;
 
-use core::cmp::max;
+use core::cmp::{max, min};
 
 use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
 use bitcoin::secp256k1::{PublicKey, SecretKey};
@@ -73,6 +73,7 @@ pub trait Validator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         info2: &CommitmentInfo2,
+        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError>;
 
     /// Validate a holder commitment
@@ -84,6 +85,7 @@ pub trait Validator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         info2: &CommitmentInfo2,
+        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError>;
 
     /// Check a counterparty's revocation of an old state.
@@ -190,6 +192,12 @@ pub trait Validator {
                                   invoice_state: Option<&InvoiceState>,
                                   channel_id: &ChannelId,
                                   amount_msat: u64) -> Result<(), ValidationError>;
+
+    /// Whether the policy specifies that holder balance should be tracked and
+    /// enforced.
+    fn enforce_balance(&self) -> bool {
+        false
+    }
 }
 
 /// Blockchain state used by the validator
@@ -548,11 +556,48 @@ impl EnforcementState {
         let counterparty_summary =
             counterparty_received.map(|h| Self::summarize_payments(h))
                 .unwrap_or_else(|| Map::new());
+        // Union the two summaries
         let mut summary = holder_summary;
         for (k, v) in counterparty_summary {
             // Choose higher amount if already there, or insert if not
             summary.entry(k).and_modify(|e| *e = max(*e, v))
                 .or_insert(v);
+        }
+        summary
+    }
+
+    /// Summarize in-flight incoming payments, possibly with new
+    /// holder offered or counterparty received commitment tx.
+    /// The amounts are in millisatoshi.
+    /// HTLCs belonging to a payment are summed for each of the
+    /// holder and counterparty txs. The smaller value is taken as the actual
+    /// in-flight value.
+    //
+    // The smaller value is taken because we should only consider an invoice paid
+    // when both txs contain the payment.
+    pub fn incoming_payments_summary(&self,
+                                     new_holder_tx: Option<&CommitmentInfo2>,
+                                     new_counterparty_tx: Option<&CommitmentInfo2>
+    ) -> Map<PaymentHash, u64> {
+        let holder_received =
+            new_holder_tx.or(self.current_holder_commit_info.as_ref())
+                .map(|h| &h.received_htlcs);
+        let counterparty_offered =
+            new_counterparty_tx.or(self.current_counterparty_commit_info.as_ref())
+                .map(|c| &c.offered_htlcs);
+        let holder_summary =
+            holder_received.map(|h| Self::summarize_payments(h))
+                .unwrap_or_else(|| Map::new());
+        let counterparty_summary =
+            counterparty_offered.map(|h| Self::summarize_payments(h))
+                .unwrap_or_else(|| Map::new());
+        // Intersect the holder and counterparty summaries, because we don't
+        // consider a payment until it is present in both commitment transactions.
+        let mut summary = holder_summary;
+        summary.retain(|k, _| counterparty_summary.contains_key(k));
+        for (k, v) in counterparty_summary {
+            // Choose lower amount
+            summary.entry(k).and_modify(|e| *e = min(*e, v));
         }
         summary
     }

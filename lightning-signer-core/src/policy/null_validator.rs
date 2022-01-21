@@ -86,6 +86,7 @@ impl Validator for NullValidator {
         _setup: &ChannelSetup,
         _cstate: &ChainState,
         _info: &CommitmentInfo2,
+        _fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         Ok(())
     }
@@ -98,6 +99,7 @@ impl Validator for NullValidator {
         _setup: &ChannelSetup,
         _cstate: &ChainState,
         _info: &CommitmentInfo2,
+        _fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         Ok(())
     }

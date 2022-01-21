@@ -77,6 +77,9 @@ pub struct InvoiceState {
     pub inflight_payments: Map<ChannelId, (u64, bool)>,
     /// The preimage for the hash, filled in on success
     pub preimage: Option<PaymentPreimage>,
+    /// Whether the invoice was fulfilled
+    /// note: for issued invoices only
+    pub is_fulfilled: bool,
 }
 
 impl InvoiceState {
@@ -91,17 +94,34 @@ impl InvoiceState {
         payments.values().into_iter().sum::<u64>()
     }
 
-    /// Update the amount that a channel is trying to send
-    pub fn apply_payment(&mut self, channel_id: &ChannelId, amount: u64) {
+    /// Update the amount that a channel is trying to pay
+    /// Returns true if this payment fulfilled the invoice and it was not fulfilled
+    /// before.  Also returns the total amount paid towards this invoice.
+    pub fn apply_payment(&mut self, channel_id: &ChannelId, amount: u64) -> (bool, u64) {
+        let was_fulfilled = self.is_fulfilled;
         self.inflight_payments.insert(channel_id.clone(), (amount, false));
+        let (invoice_amount_paid, is_fulfilled) = self.amount_paid();
+        // we can only go from unfulfilled to fulfilled, but not the other way
+        self.is_fulfilled = self.is_fulfilled || is_fulfilled;
+        return (!was_fulfilled && is_fulfilled, invoice_amount_paid)
+    }
+
+    /// How much was paid, and does that fulfill the invoice?
+    pub fn amount_paid(&self) -> (u64, bool) {
+        let paid = self.inflight_payments.values()
+            .map(|(amount, _)| amount)
+            .sum::<u64>();
+        (paid, paid >= self.amount_msat)
     }
 }
 
 /// Node state
 // TODO move allowlist into this struct
 pub struct NodeState {
-    /// Added invoices indexed by their payment hash
-    pub invoices: Map<PaymentHash, InvoiceState>
+    /// Added invoices for outgoing payments indexed by their payment hash
+    pub invoices: Map<PaymentHash, InvoiceState>,
+    /// Issued invoices for incoming payments indexed by their payment hash
+    pub issued_invoices: Map<PaymentHash, InvoiceState>,
 }
 
 /// A channel update overpays one or more invoices
@@ -110,7 +130,7 @@ pub struct OverpaymentError {
 }
 
 impl NodeState {
-    /// Update in-flight payment amounts as a result of a new commitment tx.
+    /// Update outgoing in-flight payment amounts as a result of a new commitment tx.
     ///
     /// The update is only applied if there is no overpayment for any invoice.
     /// Sends without invoices (e.g. keysend) are only allowed if allow_no_invoice
@@ -133,6 +153,25 @@ impl NodeState {
             self.invoices.get_mut(h).map(|state| state.apply_payment(channel_id, *amount));
         }
         Ok(())
+    }
+
+    /// Update incoming payment amounts as a result of a new commitment tx.
+    /// Return the total amount of newly fulfilled invoices we issued.
+    pub fn apply_incoming_payments(&mut self, channel_id: &ChannelId, amounts: Map<PaymentHash, u64>) -> Result<u64, ()> {
+        // Keep track of total issued invoices going into paid status
+        let mut total_invoice_amount_paid = 0u64;
+        if amounts.is_empty() { return Ok(0) };
+        debug!("applying incoming payments from channel {} - {:?}", channel_id, amounts);
+        for (h, amount) in amounts.iter() {
+            self.issued_invoices.get_mut(h).map(|state| {
+                let (did_fulfill, invoice_amount_paid) =
+                    state.apply_payment(channel_id, *amount);
+                if did_fulfill {
+                    total_invoice_amount_paid += invoice_amount_paid;
+                }
+            });
+        }
+        Ok(total_invoice_amount_paid)
     }
 }
 
@@ -302,7 +341,10 @@ impl Node {
     ) -> Node {
         let genesis = genesis_block(node_config.network);
         let now = Duration::from_secs(genesis.header.time as u64);
-        let state = Mutex::new(NodeState { invoices: Map::new() });
+        let state = Mutex::new(NodeState {
+            invoices: Map::new(),
+            issued_invoices: Map::new(),
+        });
 
         Node {
             keys_manager: MyKeysManager::new(
@@ -364,6 +406,11 @@ impl Node {
     pub fn get_id(&self) -> PublicKey {
         let secp_ctx = Secp256k1::signing_only();
         PublicKey::from_secret_key(&secp_ctx, &self.keys_manager.get_node_secret())
+    }
+
+    /// Lock and return the node state
+    pub fn get_state(&self) -> MutexGuard<NodeState> {
+        self.state.lock().unwrap()
     }
 
     #[allow(dead_code)]
@@ -594,7 +641,7 @@ impl Node {
             .expect("allowable parse error");
         let tracker = persister.get_tracker(node_id).expect("tracker");
         // FIXME persist node state
-        let state = NodeState { invoices: Map::new() };
+        let state = NodeState { invoices: Map::new(), issued_invoices: Map::new() };
 
         let node = Arc::new(Node::new_from_persistence(
             config,
@@ -984,20 +1031,40 @@ impl Node {
         Ok(res)
     }
 
-    /// Sign an invoice
+    /// Sign an invoice and start tracking incoming payment for its payment hash
     pub fn sign_invoice(&self, hrp_bytes: &[u8], invoice_data: &[u5]) -> Result<RecoverableSignature, Status> {
+        let signed_raw_invoice = self.do_sign_invoice(hrp_bytes, invoice_data);
+
+        let sig = signed_raw_invoice.signature().0;
+        let (hash, invoice_state, invoice_hash) =
+            Self::invoice_state_from_invoice(signed_raw_invoice)?;
+        info!("signing an invoice {} -> {}", hash.0.to_hex(), invoice_state.amount_msat);
+
+        let mut state = self.state.lock().unwrap();
+        if let Some(invoice_state) = state.invoices.get(&hash) {
+            return if invoice_state.invoice_hash == invoice_hash {
+                Ok(sig)
+            } else {
+                Err(Status::failed_precondition("already have a different invoice for same secret".to_string()))
+            }
+        }
+        state.issued_invoices.insert(hash, invoice_state);
+
+        Ok(sig)
+    }
+
+    pub(crate) fn do_sign_invoice(&self, hrp_bytes: &[u8], invoice_data: &[u5]) -> SignedRawInvoice {
         let hrp: RawHrp = String::from_utf8(hrp_bytes.to_vec()).unwrap().parse().unwrap();
         let data = RawDataPart::from_base32(invoice_data).unwrap();
         let raw_invoice = RawInvoice { hrp, data };
-        let payment_hash = raw_invoice.payment_hash()
-            .ok_or_else(|| Status::invalid_argument("invoice has no payment_hash"))?;
-        info!("signing an invoice with payment hash {}", payment_hash.0.to_hex());
 
         let invoice_preimage = construct_invoice_preimage(&hrp_bytes, &invoice_data);
         let secp_ctx = Secp256k1::signing_only();
         let hash = Sha256Hash::hash(&invoice_preimage);
         let message = secp256k1::Message::from_slice(&hash).unwrap();
-        Ok(secp_ctx.sign_recoverable(&message, &self.get_node_secret()))
+        let sig = secp_ctx.sign_recoverable(&message, &self.get_node_secret());
+
+        raw_invoice.sign::<_, ()>(|_| Ok(sig)).unwrap()
     }
 
     /// Sign a Lightning message
@@ -1133,26 +1200,32 @@ impl Node {
     /// Used by the signer to map HTLCs to destination payees, so that payee
     /// public keys can be allowlisted for policy control.
     pub fn add_invoice(&self, raw_invoice: SignedRawInvoice) -> Result<(), Status> {
+        let (hash, invoice_state, invoice_hash) =
+            Self::invoice_state_from_invoice(raw_invoice)?;
+
+        debug!("adding invoice {} -> {}", hash.0.to_hex(), invoice_state.amount_msat);
+        let mut state = self.state.lock().unwrap();
+        if let Some(invoice_state) = state.invoices.get(&hash) {
+            return if invoice_state.invoice_hash == invoice_hash {
+                Ok(())
+            } else {
+                Err(Status::failed_precondition("already have a different invoice for same secret".to_string()))
+            }
+        }
+        state.invoices.insert(hash, invoice_state);
+        Ok(())
+    }
+
+    // Validate the invoice and create a tracking state for it
+    fn invoice_state_from_invoice(raw_invoice: SignedRawInvoice) -> Result<(PaymentHash, InvoiceState, [u8; 32]), Status> {
         let invoice_hash = raw_invoice.hash().clone();
 
         // This performs all semantic checks and signature check
         let invoice = Invoice::from_signed(raw_invoice)
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
-        let mut state = self.state.lock().unwrap();
         let hash = PaymentHash(invoice.payment_hash().as_inner().clone());
         info!("add invoice with payment hash {}", hash.0.to_hex());
-        if let Some(invoice_state) = state.invoices.get(&hash) {
-            return if invoice_state.invoice_hash == invoice_hash {
-                Ok(())
-            } else {
-                Err(Status::failed_precondition(
-                    "already have a different invoice for same secret".to_string(),
-                ))
-            };
-        }
-        let amount_msat = invoice
-            .amount_milli_satoshis()
-            .ok_or_else(|| Status::invalid_argument("invoice amount must be specified"))?;
+        let amount_msat = invoice.amount_milli_satoshis().ok_or_else(|| Status::invalid_argument("invoice amount must be specified"))?;
         // TODO check if payee public key in allowlist
         let payee = invoice
             .payee_pub_key()
@@ -1166,11 +1239,10 @@ impl Node {
             duration_since_epoch: invoice.duration_since_epoch(),
             expiry_duration: invoice.expiry_time(),
             inflight_payments,
-            preimage: None
+            preimage: None,
+            is_fulfilled: false
         };
-        debug!("adding invoice {:?} -> {}", hash, amount_msat);
-        state.invoices.insert(hash, invoice_state);
-        Ok(())
+        Ok((hash, invoice_state, invoice_hash))
     }
 }
 
@@ -1345,6 +1417,11 @@ mod tests {
     }
 
     fn make_test_invoice(payee_node: &Arc<Node>, description: &str, payment_hash: PaymentHash) -> SignedRawInvoice {
+        let (hrp_bytes, invoice_data) = build_test_invoice(description, &payment_hash);
+        payee_node.do_sign_invoice(&hrp_bytes, &invoice_data)
+    }
+
+    fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>, Vec<u5>) {
         let raw_invoice = InvoiceBuilder::new(Currency::Bitcoin)
             .duration_since_epoch(Duration::from_secs(123456789))
             .amount_milli_satoshis(100_000)
@@ -1353,16 +1430,13 @@ mod tests {
             .description(description.to_string())
             .build_raw().expect("build");
         let hrp_str = raw_invoice.hrp.to_string();
-        let hrp_bytes = hrp_str.as_bytes();
+        let hrp_bytes = hrp_str.as_bytes().to_vec();
         let invoice_data = raw_invoice.data.to_base32();
-
-        let signed_raw_invoice =
-            raw_invoice.sign(|_| payee_node.sign_invoice(hrp_bytes, &invoice_data)).unwrap();
-        signed_raw_invoice
+        (hrp_bytes, invoice_data)
     }
 
     #[test]
-    fn test_fulfill() {
+    fn fulfill_test() {
         let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
@@ -1372,11 +1446,14 @@ mod tests {
 
         let invoice = make_test_invoice(&payee_node, "invoice", hash);
 
-        node.add_invoice(invoice.clone()).expect("add invoice");
+        node.add_invoice(invoice).expect("add invoice");
 
         let mut policy = make_simple_policy(Network::Testnet);
         policy.require_invoices = true;
-        let invoice_validator = SimpleValidatorFactory::new_with_policy(policy).make_validator(Network::Testnet, node.get_id(), None);
+        policy.enforce_balance = true;
+        let factory = SimpleValidatorFactory::new_with_policy(policy);
+        let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
+        node.set_validator_factory(Arc::new(factory));
 
         {
             let mut state = node.state.lock().unwrap();
@@ -1388,6 +1465,29 @@ mod tests {
             assert_eq!(chan.enforcement_state.holder_balance_msat, 3_000_000_000 - 101_000);
             Ok(())
         }).unwrap();
+    }
+
+    #[test]
+    fn incoming_payment_test() {
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        // TODO check currency matches
+        let preimage = PaymentPreimage([0; 32]);
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+
+        let (hrp, data) = build_test_invoice("invoice", &hash);
+        // This records the issued invoice
+        node.sign_invoice(&hrp, &data).unwrap();
+
+        {
+            let mut state = node.state.lock().unwrap();
+            // Underpaid
+            assert_eq!(state.apply_incoming_payments(&channel_id, vec![(hash, 99_999)].into_iter().collect()), Ok(0));
+            // Paid
+            assert_eq!(state.apply_incoming_payments(&channel_id, vec![(hash, 100_000)].into_iter().collect()), Ok(100_000));
+            // Already paid, no balance adjustment signalled
+            assert_eq!(state.apply_incoming_payments(&channel_id, vec![(hash, 100_000)].into_iter().collect()), Ok(0));
+        }
     }
 
     #[test]

@@ -499,10 +499,11 @@ impl Validator for SimpleValidator {
         commitment_point: &PublicKey,
         setup: &ChannelSetup,
         cstate: &ChainState,
-        info: &CommitmentInfo2,
+        info2: &CommitmentInfo2,
+        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         if let Some(current) = &estate.current_counterparty_commit_info {
-            let (added, removed) = current.delta_offered_htlcs(info);
+            let (added, removed) = current.delta_offered_htlcs(info2);
             debug!(
                 "{} counterparty offered delta outbound={} +{:?} -{:?}",
                 self.log_prefix(),
@@ -510,7 +511,7 @@ impl Validator for SimpleValidator {
                 added.collect::<Vec<_>>(),
                 removed.collect::<Vec<_>>()
             );
-            let (added, removed) = current.delta_received_htlcs(info);
+            let (added, removed) = current.delta_received_htlcs(info2);
             debug!(
                 "{} counterparty received delta outbound={} +{:?} -{:?}",
                 self.log_prefix(),
@@ -520,14 +521,14 @@ impl Validator for SimpleValidator {
             );
         }
         // Validate common commitment constraints
-        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info)
+        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info2, fulfilled_incoming_msat)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         let mut debug_on_return =
-            scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info);
+            scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info2);
 
         // policy-commitment-to-self-delay-range
-        if info.to_self_delay != setup.holder_selected_contest_delay {
+        if info2.to_self_delay != setup.holder_selected_contest_delay {
             return Err(policy_error("holder_selected_contest_delay mismatch".to_string()));
         }
 
@@ -565,8 +566,8 @@ impl Validator for SimpleValidator {
 
             // The CommitmentInfo2 must be the same as previously
             let prev_commit_info = estate.get_previous_counterparty_commit_info(commit_num)?;
-            if *info != prev_commit_info {
-                debug_vals!(*info, prev_commit_info);
+            if *info2 != prev_commit_info {
+                debug_vals!(*info2, prev_commit_info);
                 return policy_err!(
                     "retry of sign_counterparty_commitment {} with changed info",
                     commit_num,
@@ -585,10 +586,11 @@ impl Validator for SimpleValidator {
         commitment_point: &PublicKey,
         setup: &ChannelSetup,
         cstate: &ChainState,
-        info: &CommitmentInfo2,
+        info2: &CommitmentInfo2,
+        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         if let Some(current) = &estate.current_holder_commit_info {
-            let (added, removed) = current.delta_offered_htlcs(info);
+            let (added, removed) = current.delta_offered_htlcs(info2);
             debug!(
                 "{} holder offered delta outbound={} +{:?} -{:?}",
                 self.log_prefix(),
@@ -596,7 +598,7 @@ impl Validator for SimpleValidator {
                 added.collect::<Vec<_>>(),
                 removed.collect::<Vec<_>>()
             );
-            let (added, removed) = current.delta_received_htlcs(info);
+            let (added, removed) = current.delta_received_htlcs(info2);
             debug!(
                 "{} holder received delta outbound={} +{:?} -{:?}",
                 self.log_prefix(),
@@ -607,14 +609,14 @@ impl Validator for SimpleValidator {
         }
 
         // Validate common commitment constraints
-        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info)
+        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info2, fulfilled_incoming_msat)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         let mut debug_on_return =
-            scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info);
+            scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info2);
 
         // policy-commitment-to-self-delay-range
-        if info.to_self_delay != setup.counterparty_selected_contest_delay {
+        if info2.to_self_delay != setup.counterparty_selected_contest_delay {
             return Err(policy_error("counterparty_selected_contest_delay mismatch".to_string()));
         }
 
@@ -624,8 +626,8 @@ impl Validator for SimpleValidator {
             // The CommitmentInfo2 must be the same as previously
             let holder_commit_info =
                 &estate.current_holder_commit_info.as_ref().expect("current_holder_commit_info");
-            if info != *holder_commit_info {
-                debug_vals!(*info, holder_commit_info);
+            if info2 != *holder_commit_info {
+                debug_vals!(*info2, holder_commit_info);
                 return policy_err!("retry holder commitment {} with changed info", commit_num);
             }
         }
@@ -1351,6 +1353,10 @@ impl Validator for SimpleValidator {
             Ok(())
         }
     }
+
+    fn enforce_balance(&self) -> bool {
+        self.policy.enforce_balance
+    }
 }
 
 impl SimpleValidator {
@@ -1363,6 +1369,7 @@ impl SimpleValidator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         info: &CommitmentInfo2,
+        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         let mut debug_on_return =
             scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info);
@@ -1487,9 +1494,9 @@ impl SimpleValidator {
         }
 
         if policy.enforce_balance {
-            if holder_value_sat < estate.holder_balance_msat / 1000 {
-                return policy_err!("holder output {} is less than expected balance {}",
-                    holder_value_sat, estate.holder_balance_msat / 1000);
+            if holder_value_sat + fulfilled_incoming_msat < estate.holder_balance_msat / 1000 {
+                return policy_err!("holder output {} + {} is less than expected balance {}",
+                    holder_value_sat, fulfilled_incoming_msat, estate.holder_balance_msat / 1000);
             }
         }
 
@@ -1680,6 +1687,7 @@ mod tests {
             &setup,
             &cstate,
             &info,
+            0
         ));
     }
 
@@ -1766,6 +1774,7 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
+                0
             ),
             "validate_commitment_tx: fee underflow: 3000000 - 3000001"
         );
@@ -1795,6 +1804,7 @@ mod tests {
             &setup,
             &cstate,
             &info,
+            0
         ));
 
         let info_bad =
@@ -1807,6 +1817,7 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
+                0
             ),
             "validate_commitment_tx: fee underflow: 3000000 - 3100000"
         );
@@ -1832,6 +1843,7 @@ mod tests {
             &setup,
             &cstate,
             &info,
+            0,
         );
         assert_policy_err!(status, "validate_commitment_tx: initial commitment may not have HTLCS");
     }
@@ -1855,6 +1867,7 @@ mod tests {
             &setup,
             &cstate,
             &info,
+            0,
         );
         assert_policy_err!(
             status,
@@ -1882,6 +1895,7 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
+                0
             ),
             "too many HTLCs"
         );
@@ -1913,6 +1927,7 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
+                0
             ),
             "validate_commitment_tx: sum of HTLC values 10001000 too large"
         );
@@ -1939,6 +1954,7 @@ mod tests {
             &setup,
             &cstate,
             &info_good,
+            0
         ));
         let info_good =
             make_counterparty_info(2_000_000, 990_000, delay, vec![], vec![make_htlc_info2(2440)]);
@@ -1949,6 +1965,7 @@ mod tests {
             &setup,
             &cstate,
             &info_good,
+            0
         ));
         let info_bad =
             make_counterparty_info(2_000_000, 990_000, delay, vec![], vec![make_htlc_info2(1004)]);
@@ -1960,6 +1977,7 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
+                0
             ),
             "validate_expiry: received HTLC expiry too early: 1004 < 1005"
         );
@@ -1973,6 +1991,7 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
+                0
             ),
             "validate_expiry: received HTLC expiry too late: 2441 > 2440"
         );
