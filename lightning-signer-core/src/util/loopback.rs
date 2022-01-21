@@ -7,6 +7,7 @@ use bitcoin::secp256k1::recovery::RecoverableSignature;
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::{Script, Transaction, TxOut};
+use bitcoin::bech32::u5;
 use lightning::chain::keysinterface::{
     BaseSign, KeyMaterial, KeysInterface, Sign, SpendableOutputDescriptor,
 };
@@ -596,8 +597,9 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         ))
     }
 
-    fn sign_invoice(&self, invoice_preimage: Vec<u8>) -> Result<RecoverableSignature, ()> {
-        Ok(self.get_node().sign_invoice(&invoice_preimage))
+    fn sign_invoice(&self, hrp_bytes: &[u8], invoice_data: &[u5]) -> Result<RecoverableSignature, ()> {
+        self.get_node().sign_invoice(hrp_bytes, invoice_data)
+            .map_err(|_| ())
     }
 
     fn get_inbound_payment_key_material(&self) -> KeyMaterial {

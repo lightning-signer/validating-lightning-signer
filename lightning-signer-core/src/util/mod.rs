@@ -9,8 +9,6 @@ pub mod macro_logger;
 #[macro_use]
 /// Debugging
 pub mod debug_utils;
-/// Invoices
-pub mod invoice_utils;
 /// Logging
 pub mod log_utils;
 /// An implementation of the LDK Sign trait for integration with LDK based nodes

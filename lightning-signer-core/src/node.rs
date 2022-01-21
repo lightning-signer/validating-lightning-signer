@@ -19,6 +19,7 @@ use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, Address, Transaction, TxOut};
 use bitcoin::{Network, OutPoint, Script, SigHashType};
+use bitcoin::bech32::{FromBase32, u5};
 use hashbrown::{HashMap, HashSet};
 use lightning::chain;
 use lightning::chain::keysinterface::{
@@ -28,9 +29,10 @@ use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
 };
 use lightning::ln::{PaymentHash, PaymentPreimage};
+use lightning::util::invoice::construct_invoice_preimage;
 use lightning::ln::script::ShutdownScript;
 use lightning::util::logger::Logger;
-use lightning_invoice::{Invoice, SignedRawInvoice};
+use lightning_invoice::{Invoice, RawDataPart, RawHrp, RawInvoice, SignedRawInvoice};
 
 #[allow(unused_imports)]
 use log::{debug, info, trace, warn};
@@ -46,7 +48,6 @@ use crate::prelude::*;
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::sync::{Arc, Weak};
 use crate::util::crypto_utils::signature_to_bitcoin_vec;
-use crate::util::invoice_utils;
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::wallet::Wallet;
 
@@ -968,23 +969,15 @@ impl Node {
     }
 
     /// Sign an invoice
+    // TODO duplicate with sign_invoice
     pub fn sign_invoice_in_parts(
         &self,
         data_part: &Vec<u8>,
         human_readable_part: &String,
     ) -> Result<Vec<u8>, Status> {
         use bitcoin::bech32::CheckBase32;
-
-        let hash = invoice_utils::hash_from_parts(
-            human_readable_part.as_bytes(),
-            &data_part.check_base32().expect("needs to be base32 data"),
-        );
-
-        let secp_ctx = Secp256k1::signing_only();
-        let encmsg = secp256k1::Message::from_slice(&hash[..])
-            .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
-        let node_secret = SecretKey::from_slice(self.get_node_secret().as_ref()).unwrap();
-        let sig = secp_ctx.sign_recoverable(&encmsg, &node_secret);
+        let data = data_part.check_base32().expect("needs to be base32 data");
+        let sig = self.sign_invoice(human_readable_part.as_bytes(), &data)?;
         let (rid, sig) = sig.serialize_compact();
         let mut res = sig.to_vec();
         res.push(rid.to_i32() as u8);
@@ -992,11 +985,19 @@ impl Node {
     }
 
     /// Sign an invoice
-    pub fn sign_invoice(&self, invoice_preimage: &Vec<u8>) -> RecoverableSignature {
+    pub fn sign_invoice(&self, hrp_bytes: &[u8], invoice_data: &[u5]) -> Result<RecoverableSignature, Status> {
+        let hrp: RawHrp = String::from_utf8(hrp_bytes.to_vec()).unwrap().parse().unwrap();
+        let data = RawDataPart::from_base32(invoice_data).unwrap();
+        let raw_invoice = RawInvoice { hrp, data };
+        let payment_hash = raw_invoice.payment_hash()
+            .ok_or_else(|| Status::invalid_argument("invoice has no payment_hash"))?;
+        info!("signing an invoice with payment hash {}", payment_hash.0.to_hex());
+
+        let invoice_preimage = construct_invoice_preimage(&hrp_bytes, &invoice_data);
         let secp_ctx = Secp256k1::signing_only();
-        let hash = Sha256Hash::hash(invoice_preimage);
+        let hash = Sha256Hash::hash(&invoice_preimage);
         let message = secp256k1::Message::from_slice(&hash).unwrap();
-        secp_ctx.sign_recoverable(&message, &self.get_node_secret())
+        Ok(secp_ctx.sign_recoverable(&message, &self.get_node_secret()))
     }
 
     /// Sign a Lightning message
@@ -1241,6 +1242,7 @@ mod tests {
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::util::bip143::SigHashCache;
     use bitcoin::{Address, OutPoint, SigHashType};
+    use bitcoin::bech32::ToBase32;
     use lightning::ln::PaymentSecret;
     use lightning_invoice::{Currency, InvoiceBuilder};
     use test_env_log::test;
@@ -1304,7 +1306,7 @@ mod tests {
         let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
-        let hash = PaymentHash([0; 32]);
+        let hash = PaymentHash([2; 32]);
         // TODO check currency matches
         let invoice1 = make_test_invoice(&payee_node, "invoice1", hash);
         let invoice2 = make_test_invoice(&payee_node, "invoice2", hash);
@@ -1343,16 +1345,20 @@ mod tests {
     }
 
     fn make_test_invoice(payee_node: &Arc<Node>, description: &str, payment_hash: PaymentHash) -> SignedRawInvoice {
-        InvoiceBuilder::new(Currency::Bitcoin)
+        let raw_invoice = InvoiceBuilder::new(Currency::Bitcoin)
             .duration_since_epoch(Duration::from_secs(123456789))
             .amount_milli_satoshis(100_000)
             .payment_hash(Sha256Hash::from_slice(&payment_hash.0).unwrap())
             .payment_secret(PaymentSecret([0; 32]))
             .description(description.to_string())
-            .build_raw().expect("build")
-            .sign::<_, ()>(|hash| {
-                Ok(Secp256k1::new().sign_recoverable(hash, &payee_node.get_node_secret()))
-            }).unwrap()
+            .build_raw().expect("build");
+        let hrp_str = raw_invoice.hrp.to_string();
+        let hrp_bytes = hrp_str.as_bytes();
+        let invoice_data = raw_invoice.data.to_base32();
+
+        let signed_raw_invoice =
+            raw_invoice.sign(|_| payee_node.sign_invoice(hrp_bytes, &invoice_data)).unwrap();
+        signed_raw_invoice
     }
 
     #[test]

@@ -9,10 +9,11 @@ use bitcoin::hashes::hash160::Hash as Hash160;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::sha256::HashEngine as Sha256State;
 use bitcoin::hashes::{Hash, HashEngine};
-use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signing};
+use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signing, Message};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, SigHashType, Transaction, TxIn, TxOut};
 use bitcoin::{Network, Script};
+use bitcoin::bech32::u5;
 use lightning::chain::keysinterface::{
     DelayedPaymentOutputDescriptor, InMemorySigner, KeyMaterial, KeysInterface,
     SpendableOutputDescriptor, StaticPaymentOutputDescriptor,
@@ -30,6 +31,7 @@ use crate::util::{byte_utils, transaction_utils};
 use bitcoin::secp256k1::recovery::RecoverableSignature;
 use bitcoin::util::bip143;
 use hashbrown::HashSet as UnorderedSet;
+use lightning::util::invoice::construct_invoice_preimage;
 
 /// The key derivation style
 #[derive(Clone, Copy, Debug)]
@@ -518,7 +520,7 @@ impl MyKeysManager {
                     }
                     let witness_script =
                         bitcoin::Address::p2pkh(&pubkey, Network::Testnet).script_pubkey();
-                    let sighash = ::bitcoin::secp256k1::Message::from_slice(
+                    let sighash = Message::from_slice(
                         &bip143::SigHashCache::new(&spend_tx).signature_hash(
                             input_idx,
                             &witness_script,
@@ -581,8 +583,9 @@ impl KeysInterface for MyKeysManager {
         unimplemented!()
     }
 
-    fn sign_invoice(&self, _invoice_preimage: Vec<u8>) -> Result<RecoverableSignature, ()> {
-        unimplemented!()
+    fn sign_invoice(&self, hrp_bytes: &[u8], invoice_data: &[u5]) -> Result<RecoverableSignature, ()> {
+        let invoice_preimage = construct_invoice_preimage(hrp_bytes, invoice_data);
+        Ok(self.secp_ctx.sign_recoverable(&Message::from_slice(&Sha256::hash(&invoice_preimage)).unwrap(), &self.get_node_secret()))
     }
 
     fn get_inbound_payment_key_material(&self) -> KeyMaterial {
