@@ -12,7 +12,6 @@ use core::alloc::Layout;
 use core::panic::PanicInfo;
 
 use alloc_cortex_m::CortexMHeap;
-// use panic_halt as _;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::{Address, Network, OutPoint, PrivateKey, Script, Txid};
