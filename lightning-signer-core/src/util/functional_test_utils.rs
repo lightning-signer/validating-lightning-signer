@@ -25,7 +25,7 @@ use lightning::ln::features::InvoiceFeatures;
 use lightning::ln::functional_test_utils::ConnectStyle;
 use lightning::ln::PaymentSecret;
 use lightning::routing::network_graph::NetGraphMsgHandler;
-use lightning::routing::router::{find_route, Payee, Route, RouteParameters};
+use lightning::routing::router::{find_route, PaymentParameters, Route, RouteParameters};
 use lightning::util;
 use lightning::util::config::UserConfig;
 use lightning::util::test_utils;
@@ -1113,10 +1113,10 @@ pub const TEST_FINAL_CLTV: u32 = 70;
 
 pub fn route_payment<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_route: &[&Node<'a, 'b, 'c>], recv_value: u64) -> (PaymentPreimage, PaymentHash, PaymentSecret) {
     let logger = test_utils::TestLogger::new();
-    let payee = Payee::from_node_id(expected_route.last().unwrap().node.get_our_node_id())
+    let payment_params = PaymentParameters::from_node_id(expected_route.last().unwrap().node.get_our_node_id())
         .with_features(InvoiceFeatures::known());
     let params = RouteParameters {
-        payee,
+        payment_params,
         final_value_msat: recv_value,
         final_cltv_expiry_delta: TEST_FINAL_CLTV
     };
