@@ -47,6 +47,10 @@ cargo run --bin client -- channel list -n $node_id
 
 ### Formatting Code
 
+Enable formatting precommit hooks:
+
+    ./scripts/enable-githooks
+
 For some reason, the `ignore` configuration for rustfmt is only available on the nightly channel,
 even though it's documented as stable.
 
