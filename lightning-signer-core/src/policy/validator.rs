@@ -191,7 +191,12 @@ pub struct ChainState {
 /// A factory for validators
 pub trait ValidatorFactory: Send + Sync {
     /// Construct a validator
-    fn make_validator(&self, network: Network, node_id: PublicKey, channel_id: Option<ChannelId>) -> Box<dyn Validator>;
+    fn make_validator(
+        &self,
+        network: Network,
+        node_id: PublicKey,
+        channel_id: Option<ChannelId>,
+    ) -> Box<dyn Validator>;
 }
 
 /// Enforcement state for a signer

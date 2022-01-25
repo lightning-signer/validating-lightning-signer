@@ -262,12 +262,11 @@ impl ChannelBase for ChannelStub {
 
     fn validator(&self) -> Box<dyn Validator> {
         let node = self.node.upgrade().unwrap();
-        let v = node.validator_factory
-            .lock()
-            .unwrap()
-            .make_validator(node.network(),
-                            node.get_id(),
-                            Some(self.id0));
+        let v = node.validator_factory.lock().unwrap().make_validator(
+            node.network(),
+            node.get_id(),
+            Some(self.id0),
+        );
         v
     }
 }
@@ -380,12 +379,11 @@ impl ChannelBase for Channel {
 
     fn validator(&self) -> Box<dyn Validator> {
         let node = self.node.upgrade().unwrap();
-        let v = node.validator_factory
-            .lock()
-            .unwrap()
-            .make_validator(self.network(),
-                            node.get_id(),
-                            Some(self.id0));
+        let v = node.validator_factory.lock().unwrap().make_validator(
+            self.network(),
+            node.get_id(),
+            Some(self.id0),
+        );
         v
     }
 }
@@ -1806,12 +1804,11 @@ impl Channel {
         commitment_point: &Option<PublicKey>,
     ) -> Result<SecretKey, Status> {
         Ok(match commitment_point {
-            Some(commitment_point) => {
+            Some(commitment_point) =>
                 derive_private_key(&self.secp_ctx, &commitment_point, &self.keys.payment_key)
                     .map_err(|err| {
                         Status::internal(format!("derive_private_key failed: {}", err))
-                    })?
-            }
+                    })?,
             None => {
                 // option_static_remotekey in effect
                 self.keys.payment_key.clone()

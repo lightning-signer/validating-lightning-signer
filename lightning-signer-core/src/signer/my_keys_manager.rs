@@ -14,8 +14,8 @@ use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, SigHashType, Transaction, TxIn, TxOut};
 use bitcoin::{Network, Script};
 use lightning::chain::keysinterface::{
-    DelayedPaymentOutputDescriptor, InMemorySigner, KeysInterface, SpendableOutputDescriptor,
-    StaticPaymentOutputDescriptor, KeyMaterial
+    DelayedPaymentOutputDescriptor, InMemorySigner, KeyMaterial, KeysInterface,
+    SpendableOutputDescriptor, StaticPaymentOutputDescriptor,
 };
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::script::ShutdownScript;
@@ -167,9 +167,11 @@ impl MyKeysManager {
                 let rand_bytes_master_key = master_key
                     .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(4).unwrap())
                     .expect("Your RNG is busted");
-                let inbound_payment_key: SecretKey =
-                    master_key.ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(5).unwrap())
-                        .expect("Your RNG is busted").private_key.key;
+                let inbound_payment_key: SecretKey = master_key
+                    .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(5).unwrap())
+                    .expect("Your RNG is busted")
+                    .private_key
+                    .key;
                 let mut inbound_pmt_key_bytes = [0; 32];
                 inbound_pmt_key_bytes.copy_from_slice(&inbound_payment_key[..]);
 

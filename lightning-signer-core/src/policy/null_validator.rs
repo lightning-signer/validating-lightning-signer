@@ -21,14 +21,17 @@ pub struct NullValidatorFactory {}
 
 fn null_validator() -> NullValidator {
     NullValidator {
-        0: simple_validator(Network::Regtest,
-                            PublicKey::from_slice(&[2u8; 33]).unwrap(),
-                            None)
+        0: simple_validator(Network::Regtest, PublicKey::from_slice(&[2u8; 33]).unwrap(), None),
     }
 }
 
 impl ValidatorFactory for NullValidatorFactory {
-    fn make_validator(&self, _network: Network, _node_id: PublicKey, _channel_id: Option<ChannelId>) -> Box<dyn Validator> {
+    fn make_validator(
+        &self,
+        _network: Network,
+        _node_id: PublicKey,
+        _channel_id: Option<ChannelId>,
+    ) -> Box<dyn Validator> {
         Box::new(null_validator())
     }
 }

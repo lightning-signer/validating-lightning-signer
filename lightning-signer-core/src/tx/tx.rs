@@ -29,8 +29,8 @@ use crate::tx::script::{
 };
 use crate::util::crypto_utils::payload_for_p2wpkh;
 use crate::util::debug_utils::DebugPayload;
-use bitcoin::hashes::hex::ToHex;
 use crate::util::AddedItemsIter;
+use bitcoin::hashes::hex::ToHex;
 
 const MAX_DELAY: i64 = 1000;
 /// Value for anchor outputs
@@ -318,29 +318,25 @@ impl CommitmentInfo2 {
     }
 
     /// Returns offered HTLCs added and removed in new commitment tx
-    pub fn delta_offered_htlcs<'a>(&'a self, new: &'a CommitmentInfo2)
-                                   -> (AddedItemsIter<'a, HTLCInfo2>, AddedItemsIter<'a, HTLCInfo2>) {
-        (AddedItemsIter::new(
-            &self.offered_htlcs,
-            &new.offered_htlcs,
-        ),
-         AddedItemsIter::new(
-             &new.offered_htlcs,
-             &self.offered_htlcs,
-         ))
+    pub fn delta_offered_htlcs<'a>(
+        &'a self,
+        new: &'a CommitmentInfo2,
+    ) -> (AddedItemsIter<'a, HTLCInfo2>, AddedItemsIter<'a, HTLCInfo2>) {
+        (
+            AddedItemsIter::new(&self.offered_htlcs, &new.offered_htlcs),
+            AddedItemsIter::new(&new.offered_htlcs, &self.offered_htlcs),
+        )
     }
 
     /// Returns offered HTLCs added and removed in new commitment tx
-    pub fn delta_received_htlcs<'a>(&'a self, new: &'a CommitmentInfo2)
-                                    -> (AddedItemsIter<'a, HTLCInfo2>, AddedItemsIter<'a, HTLCInfo2>) {
-        (AddedItemsIter::new(
-            &self.received_htlcs,
-            &new.received_htlcs,
-        ),
-         AddedItemsIter::new(
-             &new.received_htlcs,
-             &self.received_htlcs,
-         ))
+    pub fn delta_received_htlcs<'a>(
+        &'a self,
+        new: &'a CommitmentInfo2,
+    ) -> (AddedItemsIter<'a, HTLCInfo2>, AddedItemsIter<'a, HTLCInfo2>) {
+        (
+            AddedItemsIter::new(&self.received_htlcs, &new.received_htlcs),
+            AddedItemsIter::new(&new.received_htlcs, &self.received_htlcs),
+        )
     }
 }
 
