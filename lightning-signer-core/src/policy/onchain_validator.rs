@@ -21,7 +21,12 @@ use super::error::ValidationError;
 pub struct OnchainValidatorFactory {}
 
 impl ValidatorFactory for OnchainValidatorFactory {
-    fn make_validator(&self, network: Network, node_id: PublicKey, channel_id: Option<ChannelId>) -> Box<dyn Validator> {
+    fn make_validator(
+        &self,
+        network: Network,
+        node_id: PublicKey,
+        channel_id: Option<ChannelId>,
+    ) -> Box<dyn Validator> {
         let validator = OnchainValidator {
             inner: simple_validator(network, node_id, channel_id),
             policy: make_onchain_policy(network),

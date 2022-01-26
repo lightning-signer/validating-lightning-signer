@@ -37,9 +37,9 @@ pub mod transaction_utils;
 /// The initial commitment number when counting backwards
 pub const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;
 
+use crate::prelude::*;
 use core::slice::Iter;
 use itertools::{put_back, PutBack};
-use crate::prelude::*;
 
 /// Iterator over elements in `to` that are not in `from`
 pub struct AddedItemsIter<'a, T: Ord + Eq> {
@@ -50,10 +50,7 @@ pub struct AddedItemsIter<'a, T: Ord + Eq> {
 impl<'a, T: Ord + Eq> AddedItemsIter<'a, T> {
     /// Both vectors must be sorted
     pub fn new(from: &'a Vec<T>, to: &'a Vec<T>) -> Self {
-        AddedItemsIter {
-            from: put_back(from.iter()),
-            to: put_back(to.iter())
-        }
+        AddedItemsIter { from: put_back(from.iter()), to: put_back(to.iter()) }
     }
 }
 
@@ -97,18 +94,15 @@ mod tests {
     #[test]
     fn delta_test() {
         fn check(from: Vec<u8>, to: Vec<u8>, expect: Vec<u8>) {
-            assert_eq!(AddedItemsIter::new(&from, &to)
-                           .cloned().collect::<Vec<u8>>(),
-                       expect);
-
+            assert_eq!(AddedItemsIter::new(&from, &to).cloned().collect::<Vec<u8>>(), expect);
         }
 
-        check(vec![], vec! [1, 2, 4],vec![1, 2, 4]);
-        check(vec![3], vec! [1, 2, 4],vec![1, 2, 4]);
-        check(vec![2, 3], vec! [1, 2, 4],vec![1, 4]);
-        check(vec![1, 2, 3], vec! [1, 2, 4],vec![4]);
-        check(vec![0, 1, 2, 3], vec! [1, 2, 4],vec![4]);
-        check(vec![0, 1, 3], vec! [1, 2, 4],vec![2, 4]);
-        check(vec![0, 1, 3], vec! [1, 2, 4, 5],vec![2, 4, 5]);
+        check(vec![], vec![1, 2, 4], vec![1, 2, 4]);
+        check(vec![3], vec![1, 2, 4], vec![1, 2, 4]);
+        check(vec![2, 3], vec![1, 2, 4], vec![1, 4]);
+        check(vec![1, 2, 3], vec![1, 2, 4], vec![4]);
+        check(vec![0, 1, 2, 3], vec![1, 2, 4], vec![4]);
+        check(vec![0, 1, 3], vec![1, 2, 4], vec![2, 4]);
+        check(vec![0, 1, 3], vec![1, 2, 4, 5], vec![2, 4, 5]);
     }
 }

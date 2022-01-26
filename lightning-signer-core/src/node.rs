@@ -20,12 +20,14 @@ use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, Address, Transaction, TxOut};
 use bitcoin::{Network, OutPoint, Script, SigHashType};
 use hashbrown::{HashMap, HashSet};
-use lightning::ln::script::ShutdownScript;
 use lightning::chain;
-use lightning::chain::keysinterface::{BaseSign, KeyMaterial, KeysInterface, SpendableOutputDescriptor};
+use lightning::chain::keysinterface::{
+    BaseSign, KeyMaterial, KeysInterface, SpendableOutputDescriptor,
+};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
 };
+use lightning::ln::script::ShutdownScript;
 use lightning::util::logger::Logger;
 use lightning_invoice::{Invoice, SignedRawInvoice};
 
@@ -76,7 +78,7 @@ pub struct InvoiceState {
 // TODO move allowlist into this struct
 pub struct NodeState {
     /// Added invoices indexed by their payment hash
-    pub invoices: Map<Sha256Hash, InvoiceState>
+    pub invoices: Map<Sha256Hash, InvoiceState>,
 }
 
 /// Allowlist entry
@@ -85,7 +87,7 @@ pub enum Allowable {
     /// A layer-1 destination
     Script(Script),
     /// A layer-2 payee (node_id)
-    Payee(PublicKey)
+    Payee(PublicKey),
 }
 
 /// Convert to String for a specified Bitcoin network type
@@ -99,10 +101,11 @@ impl ToStringForNetwork for Allowable {
         match self {
             Allowable::Script(script) => {
                 let addr_opt = Address::from_script(&script, network);
-                addr_opt.map(|a| format!("address:{}", a.to_string()))
+                addr_opt
+                    .map(|a| format!("address:{}", a.to_string()))
                     .unwrap_or_else(|| format!("invalid_script:{}", script.to_hex()))
             }
-            Allowable::Payee(pubkey) => format!("payee:{}", pubkey.to_hex())
+            Allowable::Payee(pubkey) => format!("payee:{}", pubkey.to_hex()),
         }
     }
 }
@@ -114,24 +117,21 @@ impl Allowable {
         let prefix = splits.next().expect("failed to parse Allowable");
         if let Some(body) = splits.next() {
             if prefix == "address" {
-                let address = Address::from_str(body)
-                    .map_err(|_| s.to_string())?;
+                let address = Address::from_str(body).map_err(|_| s.to_string())?;
                 if address.network != network {
-                    return Err(format!("{}: expected network {}", s, network))
+                    return Err(format!("{}: expected network {}", s, network));
                 }
                 Ok(Allowable::Script(address.script_pubkey()))
             } else if prefix == "payee" {
-                let pubkey = PublicKey::from_str(body)
-                    .map_err(|_| s.to_string())?;
+                let pubkey = PublicKey::from_str(body).map_err(|_| s.to_string())?;
                 Ok(Allowable::Payee(pubkey))
             } else {
                 Err(s.to_string())
             }
         } else {
-            let address = Address::from_str(prefix)
-                .map_err(|_| s.to_string())?;
+            let address = Address::from_str(prefix).map_err(|_| s.to_string())?;
             if address.network != network {
-                return Err(format!("{}: expected network {}", s, network))
+                return Err(format!("{}: expected network {}", s, network));
             }
             Ok(Allowable::Script(address.script_pubkey()))
         }
@@ -244,9 +244,7 @@ impl Node {
     ) -> Node {
         let genesis = genesis_block(node_config.network);
         let now = Duration::from_secs(genesis.header.time as u64);
-        let state = Mutex::new(NodeState {
-            invoices: Map::new()
-        });
+        let state = Mutex::new(NodeState { invoices: Map::new() });
 
         Node {
             keys_manager: MyKeysManager::new(
@@ -528,9 +526,12 @@ impl Node {
                 .unwrap(),
         };
 
-        let allowlist = persister.get_node_allowlist(node_id)
-            .iter().map(|e| Allowable::from_str(e, network))
-            .collect::<Result<_, _>>().expect("allowable parse error");
+        let allowlist = persister
+            .get_node_allowlist(node_id)
+            .iter()
+            .map(|e| Allowable::from_str(e, network))
+            .collect::<Result<_, _>>()
+            .expect("allowable parse error");
         let tracker = persister.get_tracker(node_id).expect("tracker");
         // FIXME persist node state
         let state = NodeState { invoices: Map::new() };
@@ -541,7 +542,7 @@ impl Node {
             &persister,
             allowlist,
             tracker,
-            state
+            state,
         ));
         assert_eq!(&node.get_id(), node_id);
         info!("Restore node {}", node_id);
@@ -623,8 +624,11 @@ impl Node {
                 monitor,
             }
         };
-        let validator = self.validator_factory.lock().unwrap()
-            .make_validator(chan.network(), self.get_id(), Some(channel_id0));
+        let validator = self.validator_factory.lock().unwrap().make_validator(
+            chan.network(),
+            self.get_id(),
+            Some(channel_id0),
+        );
 
         validator.validate_ready_channel(self, &setup, holder_shutdown_key_path)?;
 
@@ -697,8 +701,11 @@ impl Node {
         // Funding transactions cannot be associated with just a single channel;
         // a single transaction may fund multiple channels
 
-        let validator = self.validator_factory.lock().unwrap()
-            .make_validator(self.network(), self.get_id(), None);
+        let validator = self.validator_factory.lock().unwrap().make_validator(
+            self.network(),
+            self.get_id(),
+            None,
+        );
 
         let txid = tx.txid();
 
@@ -988,9 +995,7 @@ impl Node {
     pub fn add_allowlist(&self, addlist: &Vec<String>) -> Result<(), Status> {
         let allowables = addlist
             .iter()
-            .map(|addrstr| {
-                Allowable::from_str(addrstr, self.network())
-            })
+            .map(|addrstr| Allowable::from_str(addrstr, self.network()))
             .collect::<Result<Vec<Allowable>, String>>()
             .map_err(|s| Status::invalid_argument(format!("could not parse {}", s)))?;
         let mut alset = self.allowlist.lock().unwrap();
@@ -1002,9 +1007,7 @@ impl Node {
     }
 
     fn update_allowlist(&self, alset: &MutexGuard<HashSet<Allowable>>) -> Result<(), Status> {
-        let wlvec = (*alset).iter()
-            .map(|a| a.to_string(self.network()))
-            .collect();
+        let wlvec = (*alset).iter().map(|a| a.to_string(self.network())).collect();
         self.persister
             .update_node_allowlist(&self.get_id(), wlvec)
             .map_err(|_| Status::internal("persist failed"))
@@ -1014,9 +1017,7 @@ impl Node {
     pub fn remove_allowlist(&self, rmlist: &Vec<String>) -> Result<(), Status> {
         let allowables = rmlist
             .iter()
-            .map(|addrstr| {
-                Allowable::from_str(addrstr, self.network())
-            })
+            .map(|addrstr| Allowable::from_str(addrstr, self.network()))
             .collect::<Result<Vec<Allowable>, String>>()
             .map_err(|s| Status::invalid_argument(format!("could not parse {}", s)))?;
         let mut alset = self.allowlist.lock().unwrap();
@@ -1047,12 +1048,19 @@ impl Node {
             return if invoice_state.invoice_hash == invoice_hash {
                 Ok(())
             } else {
-                Err(Status::failed_precondition("already have a different invoice for same secret".to_string()))
-            }
+                Err(Status::failed_precondition(
+                    "already have a different invoice for same secret".to_string(),
+                ))
+            };
         }
-        let amount_msat = invoice.amount_milli_satoshis().ok_or_else(|| Status::invalid_argument("invoice amount must be specified"))?;
+        let amount_msat = invoice
+            .amount_milli_satoshis()
+            .ok_or_else(|| Status::invalid_argument("invoice amount must be specified"))?;
         // TODO check if payee public key in allowlist
-        let payee = invoice.payee_pub_key().map(|p| p.clone()).unwrap_or_else(|| invoice.recover_payee_pub_key());
+        let payee = invoice
+            .payee_pub_key()
+            .map(|p| p.clone())
+            .unwrap_or_else(|| invoice.recover_payee_pub_key());
         let invoice_state = InvoiceState {
             invoice_hash,
             amount_msat,
@@ -1202,23 +1210,28 @@ mod tests {
             .payment_hash(Sha256Hash::default())
             .payment_secret(PaymentSecret([0; 32]))
             .description("invoice1".to_string())
-            .build_raw().expect("build")
+            .build_raw()
+            .expect("build")
             .sign::<_, ()>(|hash| {
                 Ok(Secp256k1::new().sign_recoverable(hash, &payee_node.get_node_secret()))
-            }).unwrap();
+            })
+            .unwrap();
         let invoice2 = InvoiceBuilder::new(Currency::Bitcoin)
             .duration_since_epoch(Duration::from_secs(123456789))
             .amount_milli_satoshis(100_000)
             .payment_hash(Sha256Hash::default())
             .payment_secret(PaymentSecret([0; 32]))
             .description("invoice2".to_string())
-            .build_raw().expect("build")
+            .build_raw()
+            .expect("build")
             .sign::<_, ()>(|hash| {
                 Ok(Secp256k1::new().sign_recoverable(hash, &payee_node.get_node_secret()))
-            }).unwrap();
+            })
+            .unwrap();
         node.add_invoice(invoice1.clone()).expect("add invoice");
         node.add_invoice(invoice1.clone()).expect("add invoice");
-        node.add_invoice(invoice2.clone()).expect_err("add a different invoice with same payment hash");
+        node.add_invoice(invoice2.clone())
+            .expect_err("add a different invoice with same payment hash");
     }
 
     #[test]
@@ -1491,11 +1504,10 @@ mod tests {
             "tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z",
             "tb1qycu764qwuvhn7u0enpg0x8gwumyuw565f3mspnn58rsgar5hkjmqtjegrh",
         ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let prefixed_adds: Vec<String> = adds0.iter()
-            .cloned().map(|s| prefix(&s)).collect();
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let prefixed_adds: Vec<String> = adds0.iter().cloned().map(|s| prefix(&s)).collect();
         assert_status_ok!(node.add_allowlist(&adds0));
 
         // now allowlist should have the added entries

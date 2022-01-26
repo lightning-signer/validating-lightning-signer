@@ -18,7 +18,7 @@ use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
     parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
-    CommitmentInfo, CommitmentInfo2
+    CommitmentInfo, CommitmentInfo2,
 };
 use crate::util::crypto_utils::payload_for_p2wsh;
 use crate::util::debug_utils::{
@@ -36,16 +36,21 @@ use super::error::{policy_error, transaction_format_error, ValidationError};
 pub struct SimpleValidatorFactory {}
 
 /// Construct a SimpleValidator
-pub fn simple_validator(network: Network, node_id: PublicKey, channel_id: Option<ChannelId>) -> SimpleValidator {
-    SimpleValidator {
-        policy: make_simple_policy(network),
-        node_id,
-        channel_id,
-    }
+pub fn simple_validator(
+    network: Network,
+    node_id: PublicKey,
+    channel_id: Option<ChannelId>,
+) -> SimpleValidator {
+    SimpleValidator { policy: make_simple_policy(network), node_id, channel_id }
 }
 
 impl ValidatorFactory for SimpleValidatorFactory {
-    fn make_validator(&self, network: Network, node_id: PublicKey, channel_id: Option<ChannelId>) -> Box<dyn Validator> {
+    fn make_validator(
+        &self,
+        network: Network,
+        node_id: PublicKey,
+        channel_id: Option<ChannelId>,
+    ) -> Box<dyn Validator> {
         Box::new(simple_validator(network, node_id, channel_id))
     }
 }
@@ -92,7 +97,8 @@ impl SimpleValidator {
 
     fn log_prefix(&self) -> String {
         let short_node_id = &self.node_id.to_hex()[0..4];
-        let short_channel_id = self.channel_id.map(|c| c.0.to_hex()[0..4].to_string()).unwrap_or("".to_string());
+        let short_channel_id =
+            self.channel_id.map(|c| c.0.to_hex()[0..4].to_string()).unwrap_or("".to_string());
         format!("{}/{}", short_node_id, short_channel_id)
     }
 
@@ -432,9 +438,21 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         if let Some(current) = &estate.current_counterparty_commit_info {
             let (added, removed) = current.delta_offered_htlcs(info);
-            debug!("{} counterparty offered delta outbound={} +{:?} -{:?}", self.log_prefix(), setup.is_outbound, added.collect::<Vec<_>>(), removed.collect::<Vec<_>>());
+            debug!(
+                "{} counterparty offered delta outbound={} +{:?} -{:?}",
+                self.log_prefix(),
+                setup.is_outbound,
+                added.collect::<Vec<_>>(),
+                removed.collect::<Vec<_>>()
+            );
             let (added, removed) = current.delta_received_htlcs(info);
-            debug!("{} counterparty received delta outbound={} +{:?} -{:?}", self.log_prefix(), setup.is_outbound, added.collect::<Vec<_>>(), removed.collect::<Vec<_>>());
+            debug!(
+                "{} counterparty received delta outbound={} +{:?} -{:?}",
+                self.log_prefix(),
+                setup.is_outbound,
+                added.collect::<Vec<_>>(),
+                removed.collect::<Vec<_>>()
+            );
         }
         // Validate common commitment constraints
         self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info)
@@ -506,9 +524,21 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         if let Some(current) = &estate.current_holder_commit_info {
             let (added, removed) = current.delta_offered_htlcs(info);
-            debug!("{} holder offered delta outbound={} +{:?} -{:?}", self.log_prefix(), setup.is_outbound, added.collect::<Vec<_>>(), removed.collect::<Vec<_>>());
+            debug!(
+                "{} holder offered delta outbound={} +{:?} -{:?}",
+                self.log_prefix(),
+                setup.is_outbound,
+                added.collect::<Vec<_>>(),
+                removed.collect::<Vec<_>>()
+            );
             let (added, removed) = current.delta_received_htlcs(info);
-            debug!("{} holder received delta outbound={} +{:?} -{:?}", self.log_prefix(), setup.is_outbound, added.collect::<Vec<_>>(), removed.collect::<Vec<_>>());
+            debug!(
+                "{} holder received delta outbound={} +{:?} -{:?}",
+                self.log_prefix(),
+                setup.is_outbound,
+                added.collect::<Vec<_>>(),
+                removed.collect::<Vec<_>>()
+            );
         }
 
         // Validate common commitment constraints
@@ -1408,7 +1438,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
     } else {
         SimplePolicy {
             min_delay: 4,
-            max_delay: 2016, // Match LDK maximum and default
+            max_delay: 2016,                     // Match LDK maximum and default
             max_channel_size_sat: 1_000_000_001, // lnd itest: wumbu default + 1
             max_push_sat: 20_000,
             // lnd itest: async_bidirectional_payments (large amount of dust HTLCs) 1_600_000
@@ -1454,7 +1484,7 @@ mod tests {
         SimpleValidator {
             policy,
             node_id: PublicKey::from_slice(&[2u8; 33]).unwrap(),
-            channel_id: None
+            channel_id: None,
         }
     }
 

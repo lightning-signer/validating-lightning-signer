@@ -7,11 +7,13 @@ use bitcoin::secp256k1::recovery::RecoverableSignature;
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::{Script, Transaction, TxOut};
-use lightning::chain::keysinterface::{BaseSign, KeysInterface, Sign, SpendableOutputDescriptor, KeyMaterial};
+use lightning::chain::keysinterface::{
+    BaseSign, KeyMaterial, KeysInterface, Sign, SpendableOutputDescriptor,
+};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
-    ChannelPublicKeys, ChannelTransactionParameters, CommitmentTransaction, HTLCOutputInCommitment,
-    HolderCommitmentTransaction, TxCreationKeys, ClosingTransaction
+    ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
+    HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys,
 };
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
 use lightning::ln::script::ShutdownScript;
