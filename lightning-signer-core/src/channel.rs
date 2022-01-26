@@ -380,7 +380,7 @@ impl ChannelBase for Channel {
     }
 
     fn validator(&self) -> Arc<dyn Validator> {
-        let node = self.node.upgrade().unwrap();
+        let node = self.get_node();
         let v = node.validator_factory.lock().unwrap().make_validator(
             self.network(),
             node.get_id(),
@@ -547,7 +547,7 @@ impl Channel {
             feerate_per_kw,
         )?;
 
-        let node = self.node.upgrade().unwrap();
+        let node = self.get_node();
         let mut state = node.get_state();
         let (incoming_payment_summary,
             fulfilled_incoming_msat) =
@@ -822,7 +822,7 @@ impl Channel {
             feerate_per_kw,
         )?;
 
-        let node = self.node.upgrade().unwrap();
+        let node = self.get_node();
         let mut state = node.get_state();
         let (incoming_payment_summary,
             fulfilled_incoming_msat) =
@@ -960,7 +960,7 @@ impl Channel {
             feerate_per_kw,
         )?;
 
-        let node = self.node.upgrade().unwrap();
+        let node = self.get_node();
         let state = node.get_state();
         let (_, fulfilled_incoming_msat) =
             self.incoming_payments(Some(&info2), None, &state);
@@ -1134,7 +1134,7 @@ impl Channel {
         holder_wallet_path_hint: &Vec<u32>,
     ) -> Result<Signature, Status> {
         self.validator().validate_mutual_close_tx(
-            &*self.node.upgrade().unwrap(),
+            &*self.get_node(),
             &self.setup,
             &self.enforcement_state,
             to_holder_value_sat,
@@ -1175,7 +1175,7 @@ impl Channel {
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         self.validator().validate_delayed_sweep(
-            &*self.node.upgrade().unwrap(),
+            &*self.get_node(),
             &self.setup,
             &self.get_chain_state(),
             tx,
@@ -1218,7 +1218,7 @@ impl Channel {
         wallet_path: &Vec<u32>,
     ) -> Result<Signature, Status> {
         self.validator().validate_counterparty_htlc_sweep(
-            &*self.node.upgrade().unwrap(),
+            &*self.get_node(),
             &self.setup,
             &self.get_chain_state(),
             tx,
@@ -1262,7 +1262,7 @@ impl Channel {
         wallet_path: &Vec<u32>,
     ) -> Result<Signature, Status> {
         self.validator().validate_justice_sweep(
-            &*self.node.upgrade().unwrap(),
+            &*self.get_node(),
             &self.setup,
             &self.get_chain_state(),
             tx,
@@ -1470,7 +1470,7 @@ impl Channel {
             feerate_per_kw,
         )?;
 
-        let node = self.node.upgrade().unwrap();
+        let node = self.get_node();
         let mut state = node.get_state();
         let (incoming_payment_summary,
             fulfilled_incoming_msat) =
@@ -1595,7 +1595,7 @@ impl Channel {
             feerate_per_kw,
         )?;
 
-        let node = self.node.upgrade().unwrap();
+        let node = self.get_node();
         let (incoming_payment_summary,
             fulfilled_incoming_msat) =
             self.incoming_payments(Some(&info2), None, &node.get_state());
@@ -1695,7 +1695,7 @@ impl Channel {
                 received_htlcs,
             )?;
 
-        let node = self.node.upgrade().unwrap();
+        let node = self.get_node();
         let mut state = node.get_state();
 
         self.check_holder_tx_signatures(
@@ -1751,7 +1751,7 @@ impl Channel {
         debug!(
             "{}: allowlist: {:#?}",
             short_function!(),
-            self.node.upgrade().unwrap().allowlist().expect("allowlist")
+            self.get_node().allowlist().expect("allowlist")
         );
         if opaths.len() != tx.output.len() {
             return Err(invalid_argument(format!(
@@ -1763,7 +1763,7 @@ impl Channel {
         }
 
         let recomposed_tx = self.validator().decode_and_validate_mutual_close_tx(
-            &*self.node.upgrade().unwrap(),
+            &*self.get_node(),
             &self.setup,
             &self.enforcement_state,
             tx,
@@ -1922,8 +1922,8 @@ impl Channel {
     /// Any such payments adjust our expected balance downwards.
     pub fn htlcs_fulfilled(&mut self, preimages: Vec<PaymentPreimage>) {
         let validator = self.validator();
+        let node = self.get_node();
         let to_holder_msat = &mut self.enforcement_state.holder_balance_msat;
-        let node = self.node.upgrade().unwrap();
         let total_filled = node.htlcs_fulfilled(&self.id0, preimages);
         if total_filled > 0 {
             debug!("fulfill at channel {}: {} - {} = {}",
