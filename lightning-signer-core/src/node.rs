@@ -49,7 +49,7 @@ use crate::prelude::*;
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::sync::{Arc, Weak};
 use crate::util::crypto_utils::signature_to_bitcoin_vec;
-use crate::util::status::{internal_error, invalid_argument, Status};
+use crate::util::status::{failed_precondition, internal_error, invalid_argument, Status};
 use crate::wallet::Wallet;
 
 /// Node configuration parameters.
@@ -432,7 +432,7 @@ impl Node {
     pub fn get_channel(&self, channel_id: &ChannelId) -> Result<Arc<Mutex<ChannelSlot>>, Status> {
         let mut guard = self.channels();
         let elem = guard.get_mut(channel_id);
-        let slot_arc = elem.ok_or_else(|| Status::invalid_argument("no such channel"))?;
+        let slot_arc = elem.ok_or_else(|| invalid_argument("no such channel"))?;
         Ok(Arc::clone(slot_arc))
     }
 
@@ -798,10 +798,10 @@ impl Node {
         trace_enforcement_state!(&chan.enforcement_state);
         self.persister
             .update_tracker(&self.get_id(), &tracker)
-            .map_err(|_| Status::internal("tracker persist failed"))?;
+            .map_err(|_| internal_error("tracker persist failed"))?;
         self.persister
             .update_channel(&self.get_id(), &chan)
-            .map_err(|_| Status::internal("persist failed"))?;
+            .map_err(|_| internal_error("persist failed"))?;
 
         Ok(chan)
     }
@@ -928,7 +928,7 @@ impl Node {
         // the channels added some watches - persist
         self.persister
             .update_tracker(&self.get_id(), &tracker)
-            .map_err(|_| Status::internal("tracker persist failed"))?;
+            .map_err(|_| internal_error("tracker persist failed"))?;
 
         // TODO(devrandom) self.persist_channel(node_id, chan);
         Ok(witvec)
@@ -1053,7 +1053,7 @@ impl Node {
             return if invoice_state.invoice_hash == invoice_hash {
                 Ok(sig)
             } else {
-                Err(Status::failed_precondition(
+                Err(failed_precondition(
                     "already have a different invoice for same secret".to_string(),
                 ))
             };
@@ -1151,7 +1151,7 @@ impl Node {
             .iter()
             .map(|addrstr| Allowable::from_str(addrstr, self.network()))
             .collect::<Result<Vec<Allowable>, String>>()
-            .map_err(|s| Status::invalid_argument(format!("could not parse {}", s)))?;
+            .map_err(|s| invalid_argument(format!("could not parse {}", s)))?;
         let mut alset = self.allowlist.lock().unwrap();
         for a in allowables {
             alset.insert(a);
@@ -1164,7 +1164,7 @@ impl Node {
         let wlvec = (*alset).iter().map(|a| a.to_string(self.network())).collect();
         self.persister
             .update_node_allowlist(&self.get_id(), wlvec)
-            .map_err(|_| Status::internal("persist failed"))
+            .map_err(|_| internal_error("persist failed"))
     }
 
     /// Removes addresses from the node's current allowlist.
@@ -1173,7 +1173,7 @@ impl Node {
             .iter()
             .map(|addrstr| Allowable::from_str(addrstr, self.network()))
             .collect::<Result<Vec<Allowable>, String>>()
-            .map_err(|s| Status::invalid_argument(format!("could not parse {}", s)))?;
+            .map_err(|s| invalid_argument(format!("could not parse {}", s)))?;
         let mut alset = self.allowlist.lock().unwrap();
         for a in allowables {
             alset.remove(&a);
@@ -1236,7 +1236,7 @@ impl Node {
             return if invoice_state.invoice_hash == invoice_hash {
                 Ok(())
             } else {
-                Err(Status::failed_precondition(
+                Err(failed_precondition(
                     "already have a different invoice for same secret".to_string(),
                 ))
             };
@@ -1252,13 +1252,13 @@ impl Node {
         let invoice_hash = raw_invoice.hash().clone();
 
         // This performs all semantic checks and signature check
-        let invoice = Invoice::from_signed(raw_invoice)
-            .map_err(|e| Status::invalid_argument(e.to_string()))?;
+        let invoice =
+            Invoice::from_signed(raw_invoice).map_err(|e| invalid_argument(e.to_string()))?;
         let hash = PaymentHash(invoice.payment_hash().as_inner().clone());
         info!("add invoice with payment hash {}", hash.0.to_hex());
         let amount_msat = invoice
             .amount_milli_satoshis()
-            .ok_or_else(|| Status::invalid_argument("invoice amount must be specified"))?;
+            .ok_or_else(|| invalid_argument("invoice amount must be specified"))?;
         // TODO check if payee public key in allowlist
         let payee = invoice
             .payee_pub_key()
