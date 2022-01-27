@@ -1494,9 +1494,9 @@ impl SimpleValidator {
         }
 
         if policy.enforce_balance {
-            if holder_value_sat + fulfilled_incoming_msat < estate.holder_balance_msat / 1000 {
-                return policy_err!("holder output {} + {} is less than expected balance {}",
-                    holder_value_sat, fulfilled_incoming_msat, estate.holder_balance_msat / 1000);
+            if holder_value_sat + fulfilled_incoming_msat + policy.epsilon_sat < estate.holder_balance_msat / 1000 {
+                return policy_err!("holder output {} + {} is more than {} (epsilon) less than expected balance {}",
+                    holder_value_sat, fulfilled_incoming_msat, policy.epsilon_sat, estate.holder_balance_msat / 1000);
             }
         }
 

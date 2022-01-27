@@ -11,6 +11,12 @@ use lightning_signer::OrderedSet;
 use lightning_signer::chain::tracker::ChainTracker;
 use lightning_signer::monitor::ChainMonitor;
 
+use bitcoin::blockdata::opcodes;
+use bitcoin::blockdata::script::Builder;
+use bitcoin::secp256k1::{Message, Secp256k1};
+use std::collections::BTreeSet;
+use bitcoin::hashes::hex::ToHex;
+use itertools::Itertools;
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::consensus::serialize;
 use bitcoin::secp256k1::PublicKey;
@@ -33,6 +39,11 @@ use lightning_signer::util::functional_test_utils::{close_channel, confirm_trans
 use lightning_signer::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use lightning_signer::util::test_utils;
 use lightning_signer::util::test_utils::{TestChainMonitor, REGTEST_NODE_CONFIG, make_block};
+use lightning_signer::channel::ChannelId;
+use lightning_signer::node::NodeConfig;
+use lightning_signer::persist::DummyPersister;
+use lightning_signer::policy::onchain_validator::OnchainValidatorFactory;
+use lightning_signer::policy::simple_validator::{make_simple_policy, SimplePolicy, SimpleValidatorFactory};
 use lightning_signer::{
     check_closed_event,
     check_added_monitors, check_closed_broadcast, check_spends, expect_payment_failed,
@@ -46,6 +57,8 @@ use self::lightning_signer::util::functional_test_utils::{
 };
 
 use test_env_log::test;
+
+const ANTI_REORG_DELAY: u32 = 6;
 
 pub fn create_node_cfgs_with_signer<'a>(
     node_count: usize,
@@ -138,6 +151,7 @@ fn invoice_test() {
     let network = Network::Regtest;
     let mut policy = make_simple_policy(network);
     policy.require_invoices = true;
+    policy.enforce_balance = true;
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
     let validating_signer = Arc::new(MultiSigner::new_with_validator(validator_factory));
     let signer = new_signer();
@@ -157,12 +171,35 @@ fn invoice_test() {
     create_default_chan(&nodes, 0, 1);
     create_default_chan(&nodes, 1, 2);
 
+    let signer_node0 = nodes[0].keys_manager.get_node();
+    let channel_keys0 = signer_node0.channels().keys().cloned().collect::<Vec<_>>();
+    let signer_node2 = nodes[2].keys_manager.get_node();
+    let channel_keys2 = signer_node2.channels().keys().cloned().collect::<Vec<_>>();
+    // The actual balance is lower because of fees
+    assert_eq!(holder_balances(&signer_node0, channel_keys0[0]), (100_000_000, 99_817_000, 99_817_000));
+    assert_eq!(holder_balances(&signer_node2, channel_keys2[0]), (0, 0, 0));
+
     // Send 0 -> 1 -> 2
     send_payment(
         &nodes[0],
         &vec![&nodes[1], &nodes[2]][..],
-        8000000,
+        8_000_000,
     );
+
+    // an extra satoshi was consumed as fee
+    assert_eq!(holder_balances(&signer_node0, channel_keys0[0]), (91_999_000, 91_816_000, 91_816_000));
+    assert_eq!(holder_balances(&signer_node2, channel_keys2[0]), (8_000_000, 8_000_000, 8_000_000));
+}
+
+// Get the holder policy balance, as well as the actual balance in the holder and counterparty txs
+fn holder_balances(signer_node0: &Arc<lightning_signer::node::Node>, id: ChannelId) -> (u64, u64, u64) {
+    signer_node0.with_ready_channel(&id, |chan| {
+        let estate = &chan.enforcement_state;
+        Ok((estate.holder_balance_msat,
+            estate.current_holder_commit_info.as_ref().unwrap().to_broadcaster_value_sat * 1000,
+            estate.current_counterparty_commit_info.as_ref().unwrap().to_countersigner_value_sat * 1000,
+        ))
+    }).expect("channel")
 }
 
 // FIXME failing test due to dust limit
@@ -240,7 +277,7 @@ fn channel_force_close_test() {
         0,
         1,
         100000,
-        990000,
+        0,
         InitFeatures::known(),
         InitFeatures::known(),
     );
@@ -587,17 +624,6 @@ fn test_onchain_htlc_settlement_after_close() {
     do_test_onchain_htlc_settlement_after_close(true, false);
     do_test_onchain_htlc_settlement_after_close(false, false);
 }
-
-const ANTI_REORG_DELAY: u32 = 6;
-
-use bitcoin::blockdata::opcodes;
-use bitcoin::blockdata::script::Builder;
-use bitcoin::secp256k1::{Message, Secp256k1};
-use std::collections::BTreeSet;
-use lightning_signer::node::NodeConfig;
-use lightning_signer::persist::DummyPersister;
-use lightning_signer::policy::onchain_validator::OnchainValidatorFactory;
-use lightning_signer::policy::simple_validator::{make_simple_policy, SimplePolicy, SimpleValidatorFactory};
 
 macro_rules! check_spendable_outputs {
     ($node: expr, $der_idx: expr, $keysinterface: expr, $chan_value: expr) => {{

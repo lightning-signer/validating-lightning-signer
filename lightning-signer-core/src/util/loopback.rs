@@ -42,7 +42,7 @@ pub struct LoopbackSignerKeysInterface {
 }
 
 impl LoopbackSignerKeysInterface {
-    pub(crate) fn get_node(&self) -> Arc<Node> {
+    pub fn get_node(&self) -> Arc<Node> {
         self.signer.get_node(&self.node_id).expect("our node is missing")
     }
 
@@ -529,7 +529,7 @@ impl BaseSign for LoopbackChannelSigner {
         let setup = ChannelSetup {
             is_outbound: self.is_outbound,
             channel_value_sat: self.channel_value_sat,
-            push_value_msat: 1_000_000, // TODO
+            push_value_msat: 0, // TODO
             funding_outpoint,
             holder_selected_contest_delay: parameters.holder_selected_contest_delay,
             holder_shutdown_script: None, // use the signer's shutdown script

@@ -42,8 +42,7 @@ use crate::util::test_utils::{make_block, proof_for_block, TestChainMonitor, Tes
 use crate::lightning::routing::network_graph::NetworkGraph;
 
 use core::cmp;
-use bitcoin::secp256k1::Secp256k1;
-use lightning::chain::keysinterface::KeysInterface;
+use bitcoin::bech32::ToBase32;
 use log::info;
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 10;
@@ -503,7 +502,7 @@ pub fn create_chan_between_nodes_with_value_b<'a, 'b, 'c>(node_a: &Node<'a, 'b, 
 }
 
 pub fn create_announced_chan_between_nodes<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'b, 'c, 'd>>, a: usize, b: usize, a_flags: InitFeatures, b_flags: InitFeatures) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, [u8; 32], Transaction) {
-    create_announced_chan_between_nodes_with_value(nodes, a, b, 100000, 10001, a_flags, b_flags)
+    create_announced_chan_between_nodes_with_value(nodes, a, b, 100000, 0, a_flags, b_flags)
 }
 
 pub fn create_announced_chan_between_nodes_with_value<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'b, 'c, 'd>>, a: usize, b: usize, channel_value: u64, push_msat: u64, a_flags: InitFeatures, b_flags: InitFeatures) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, [u8; 32], Transaction) {
@@ -1025,11 +1024,14 @@ pub fn send_along_route<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, route: Route
             .current_timestamp()
             .min_final_cltv_expiry(MIN_FINAL_CLTV_EXPIRY as u64)
             .payee_pub_key(payee_pubkey)
-            .build_signed(|msg_hash| {
-                let secp_ctx = Secp256k1::signing_only();
-                secp_ctx.sign_recoverable(msg_hash, &destination_node.keys_manager.get_node_secret())
-            }).unwrap();
-        origin_node.keys_manager.add_invoice(invoice.into_signed_raw());
+            .build_raw().expect("build");
+        let hrp = invoice.hrp.to_string().as_bytes().to_vec();
+        let data = invoice.data.to_base32();
+        let sig = destination_node.keys_manager.get_node()
+            .sign_invoice(&hrp, &data).expect("sign invoice");
+        let signed_invoice = invoice.sign::<_, ()>(|_| Ok(sig)).unwrap();
+
+        origin_node.keys_manager.add_invoice(signed_invoice);
     }
 
     send_along_route_with_secret(origin_node, route, &[expected_route], recv_value, our_payment_hash, our_payment_secret);
