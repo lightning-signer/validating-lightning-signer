@@ -1,23 +1,23 @@
 #![allow(missing_docs)]
 use std::convert::TryInto;
 
+use bitcoin::bech32::u5;
 use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::{Script, Transaction, TxOut};
-use bitcoin::bech32::u5;
 use lightning::chain::keysinterface::{
     BaseSign, KeyMaterial, KeysInterface, Sign, SpendableOutputDescriptor,
 };
-use lightning::ln::{chan_utils, PaymentPreimage};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys,
 };
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
 use lightning::ln::script::ShutdownScript;
+use lightning::ln::{chan_utils, PaymentPreimage};
 use lightning::util::ser::{Readable, Writeable, Writer};
 use lightning_invoice::SignedRawInvoice;
 
@@ -597,9 +597,12 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         ))
     }
 
-    fn sign_invoice(&self, hrp_bytes: &[u8], invoice_data: &[u5]) -> Result<RecoverableSignature, ()> {
-        self.get_node().sign_invoice(hrp_bytes, invoice_data)
-            .map_err(|_| ())
+    fn sign_invoice(
+        &self,
+        hrp_bytes: &[u8],
+        invoice_data: &[u5],
+    ) -> Result<RecoverableSignature, ()> {
+        self.get_node().sign_invoice(hrp_bytes, invoice_data).map_err(|_| ())
     }
 
     fn get_inbound_payment_key_material(&self) -> KeyMaterial {

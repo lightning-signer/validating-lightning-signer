@@ -20,15 +20,13 @@ use super::error::ValidationError;
 
 /// A factory for OnchainValidator
 pub struct OnchainValidatorFactory {
-    inner_factory: SimpleValidatorFactory
+    inner_factory: SimpleValidatorFactory,
 }
 
 impl OnchainValidatorFactory {
     /// Create a new onchain validator factory with default policy
     pub fn new() -> Self {
-        Self {
-            inner_factory: SimpleValidatorFactory::new()
-        }
+        Self { inner_factory: SimpleValidatorFactory::new() }
     }
 }
 
@@ -275,7 +273,12 @@ impl Validator for OnchainValidator {
         self.inner.validate_justice_sweep(wallet, setup, cstate, tx, input, amount_sat, wallet_path)
     }
 
-    fn validate_inflight_payments(&self, invoice_state: Option<&InvoiceState>, channel_id: &ChannelId, amount_msat: u64) -> Result<(), ValidationError> {
+    fn validate_inflight_payments(
+        &self,
+        invoice_state: Option<&InvoiceState>,
+        channel_id: &ChannelId,
+        amount_msat: u64,
+    ) -> Result<(), ValidationError> {
         self.inner.validate_inflight_payments(invoice_state, channel_id, amount_msat)
     }
 }

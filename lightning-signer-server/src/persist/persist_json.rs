@@ -238,7 +238,6 @@ mod tests {
         let channel_id0 = channel_nonce_to_id(&channel_nonce);
         let validator_factory = Arc::new(SimpleValidatorFactory::new());
 
-
         let (node_id, node_arc, stub, seed) = make_node_and_channel(&channel_nonce, channel_id0);
 
         let node = &*node_arc;

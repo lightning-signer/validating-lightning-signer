@@ -2,6 +2,7 @@ use crate::prelude::*;
 use core::convert::{TryFrom, TryInto};
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
+use bitcoin::bech32::u5;
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
 use bitcoin::hash_types::WPubkeyHash;
@@ -9,11 +10,10 @@ use bitcoin::hashes::hash160::Hash as Hash160;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::sha256::HashEngine as Sha256State;
 use bitcoin::hashes::{Hash, HashEngine};
-use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signing, Message};
+use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signing};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, SigHashType, Transaction, TxIn, TxOut};
 use bitcoin::{Network, Script};
-use bitcoin::bech32::u5;
 use lightning::chain::keysinterface::{
     DelayedPaymentOutputDescriptor, InMemorySigner, KeyMaterial, KeysInterface,
     SpendableOutputDescriptor, StaticPaymentOutputDescriptor,
@@ -583,9 +583,16 @@ impl KeysInterface for MyKeysManager {
         unimplemented!()
     }
 
-    fn sign_invoice(&self, hrp_bytes: &[u8], invoice_data: &[u5]) -> Result<RecoverableSignature, ()> {
+    fn sign_invoice(
+        &self,
+        hrp_bytes: &[u8],
+        invoice_data: &[u5],
+    ) -> Result<RecoverableSignature, ()> {
         let invoice_preimage = construct_invoice_preimage(hrp_bytes, invoice_data);
-        Ok(self.secp_ctx.sign_recoverable(&Message::from_slice(&Sha256::hash(&invoice_preimage)).unwrap(), &self.get_node_secret()))
+        Ok(self.secp_ctx.sign_recoverable(
+            &Message::from_slice(&Sha256::hash(&invoice_preimage)).unwrap(),
+            &self.get_node_secret(),
+        ))
     }
 
     fn get_inbound_payment_key_material(&self) -> KeyMaterial {

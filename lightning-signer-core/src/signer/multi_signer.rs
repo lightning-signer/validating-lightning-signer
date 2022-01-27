@@ -34,14 +34,24 @@ impl MultiSigner {
     /// Construct with a null persister
     pub fn new() -> MultiSigner {
         let validator_factory = Arc::new(SimpleValidatorFactory::new());
-        let signer = MultiSigner::new_with_persister(Arc::new(DummyPersister), true, vec![], validator_factory);
+        let signer = MultiSigner::new_with_persister(
+            Arc::new(DummyPersister),
+            true,
+            vec![],
+            validator_factory,
+        );
         info!("new MultiSigner");
         signer
     }
 
     /// Construct
     pub fn new_with_validator(validator_factory: Arc<dyn ValidatorFactory>) -> MultiSigner {
-        let signer = MultiSigner::new_with_persister(Arc::new(DummyPersister), true, vec![], validator_factory);
+        let signer = MultiSigner::new_with_persister(
+            Arc::new(DummyPersister),
+            true,
+            vec![],
+            validator_factory,
+        );
         info!("new MultiSigner");
         signer
     }
@@ -59,7 +69,7 @@ impl MultiSigner {
             persister,
             test_mode,
             initial_allowlist,
-            validator_factory
+            validator_factory,
         }
     }
 
@@ -72,8 +82,8 @@ impl MultiSigner {
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);
 
-        let node = Node::new(node_config, &seed, &self.persister, vec![],
-                             self.validator_factory.clone());
+        let node =
+            Node::new(node_config, &seed, &self.persister, vec![], self.validator_factory.clone());
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         node.add_allowlist(&self.initial_allowlist).expect("valid initialallowlist");
@@ -122,8 +132,8 @@ impl MultiSigner {
     ) -> Result<PublicKey, Status> {
         let secp_ctx = Secp256k1::signing_only();
 
-        let node = Node::new(node_config, &seed, &self.persister, vec![],
-                             self.validator_factory.clone());
+        let node =
+            Node::new(node_config, &seed, &self.persister, vec![], self.validator_factory.clone());
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         if self.test_mode {
@@ -157,8 +167,8 @@ impl MultiSigner {
     ) -> Result<PublicKey, Status> {
         let secp_ctx = Secp256k1::signing_only();
 
-        let node = Node::new(node_config, &seed, &self.persister, vec![],
-                             self.validator_factory.clone());
+        let node =
+            Node::new(node_config, &seed, &self.persister, vec![], self.validator_factory.clone());
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let nodes = self.nodes.lock().unwrap();
         nodes.get(&node_id).ok_or_else(|| {

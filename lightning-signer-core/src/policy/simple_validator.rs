@@ -35,27 +35,28 @@ use super::error::{policy_error, transaction_format_error, ValidationError};
 
 /// A factory for SimpleValidator
 pub struct SimpleValidatorFactory {
-    policy: Option<SimplePolicy>
+    policy: Option<SimplePolicy>,
 }
 
 impl SimpleValidatorFactory {
     /// Create a new simple validator factory with default policy settings
     pub fn new() -> Self {
-        SimpleValidatorFactory {
-            policy: None
-        }
+        SimpleValidatorFactory { policy: None }
     }
 
     /// Create a new simple validator factory with a specified policy
     pub fn new_with_policy(policy: SimplePolicy) -> Self {
-        SimpleValidatorFactory {
-            policy: Some(policy)
-        }
+        SimpleValidatorFactory { policy: Some(policy) }
     }
 }
 
 impl ValidatorFactory for SimpleValidatorFactory {
-    fn make_validator(&self, network: Network, node_id: PublicKey, channel_id: Option<ChannelId>) -> Arc<dyn Validator> {
+    fn make_validator(
+        &self,
+        network: Network,
+        node_id: PublicKey,
+        channel_id: Option<ChannelId>,
+    ) -> Arc<dyn Validator> {
         let validator = SimpleValidator {
             policy: self.policy.clone().unwrap_or_else(|| make_simple_policy(network)),
             node_id,
@@ -521,8 +522,16 @@ impl Validator for SimpleValidator {
             );
         }
         // Validate common commitment constraints
-        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info2, fulfilled_incoming_msat)
-            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
+        self.validate_commitment_tx(
+            estate,
+            commit_num,
+            commitment_point,
+            setup,
+            cstate,
+            info2,
+            fulfilled_incoming_msat,
+        )
+        .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         let mut debug_on_return =
             scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info2);
@@ -609,8 +618,16 @@ impl Validator for SimpleValidator {
         }
 
         // Validate common commitment constraints
-        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info2, fulfilled_incoming_msat)
-            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
+        self.validate_commitment_tx(
+            estate,
+            commit_num,
+            commitment_point,
+            setup,
+            cstate,
+            info2,
+            fulfilled_incoming_msat,
+        )
+        .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         let mut debug_on_return =
             scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info2);
@@ -1342,10 +1359,18 @@ impl Validator for SimpleValidator {
         Ok(())
     }
 
-    fn validate_inflight_payments(&self, invoice_state: Option<&InvoiceState>, channel_id: &ChannelId, amount_msat: u64) -> Result<(), ValidationError> {
+    fn validate_inflight_payments(
+        &self,
+        invoice_state: Option<&InvoiceState>,
+        channel_id: &ChannelId,
+        amount_msat: u64,
+    ) -> Result<(), ValidationError> {
         // TODO need a policy for layer-2 max fee
         let is_overpaid = invoice_state
-            .map(|state| state.updated_amount(channel_id, amount_msat) > state.amount_msat + self.policy.max_routing_fee_msat)
+            .map(|state| {
+                state.updated_amount(channel_id, amount_msat)
+                    > state.amount_msat + self.policy.max_routing_fee_msat
+            })
             .unwrap_or(self.policy.require_invoices);
         if is_overpaid {
             policy_err!("would overpay for invoice")
@@ -1494,9 +1519,16 @@ impl SimpleValidator {
         }
 
         if policy.enforce_balance {
-            if holder_value_sat + fulfilled_incoming_msat + policy.epsilon_sat < estate.holder_balance_msat / 1000 {
-                return policy_err!("holder output {} + {} is more than {} (epsilon) less than expected balance {}",
-                    holder_value_sat, fulfilled_incoming_msat, policy.epsilon_sat, estate.holder_balance_msat / 1000);
+            if holder_value_sat + fulfilled_incoming_msat + policy.epsilon_sat
+                < estate.holder_balance_msat / 1000
+            {
+                return policy_err!(
+                    "holder output {} + {} is more than {} (epsilon) less than expected balance {}",
+                    holder_value_sat,
+                    fulfilled_incoming_msat,
+                    policy.epsilon_sat,
+                    estate.holder_balance_msat / 1000
+                );
             }
         }
 
@@ -1571,7 +1603,7 @@ mod tests {
             max_fee: 10_000,
             require_invoices: false,
             enforce_balance: false,
-            max_routing_fee_msat: 10000
+            max_routing_fee_msat: 10000,
         };
 
         SimpleValidator {

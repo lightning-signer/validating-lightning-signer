@@ -23,17 +23,25 @@ use lightning::chain::channelmonitor::MonitorEvent;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::chain::transaction::OutPoint;
 use lightning::chain::{chainmonitor, channelmonitor};
-use lightning::ln::chan_utils::{build_htlc_transaction, derive_private_key, get_anchor_redeemscript, get_htlc_redeemscript, get_revokeable_redeemscript, make_funding_redeemscript, ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters, DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys, ChannelPublicKeys};
+use lightning::ln::chan_utils::{
+    build_htlc_transaction, derive_private_key, get_anchor_redeemscript, get_htlc_redeemscript,
+    get_revokeable_redeemscript, make_funding_redeemscript, ChannelPublicKeys,
+    ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters,
+    DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
+};
 use lightning::ln::PaymentHash;
 use lightning::util::test_utils;
 
 use super::key_utils::{
     make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
 };
-use crate::channel::{channel_nonce_to_id, Channel, ChannelBase, ChannelId, ChannelSetup, CommitmentType, ChannelStub};
+use crate::channel::{
+    channel_nonce_to_id, Channel, ChannelBase, ChannelId, ChannelSetup, ChannelStub, CommitmentType,
+};
 use crate::node::SpendType;
 use crate::node::{Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
+use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::ChainState;
 use crate::prelude::*;
 use crate::signer::my_keys_manager::KeyDerivationStyle;
@@ -49,7 +57,6 @@ use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
 use crate::wallet::Wallet;
 use crate::Arc;
-use crate::policy::simple_validator::SimpleValidatorFactory;
 
 // Status assertions:
 
@@ -290,8 +297,7 @@ pub fn make_test_channel_keys() -> InMemorySigner {
     inmemkeys
 }
 
-pub fn init_node(node_config: NodeConfig,
-                 seedstr: &str) -> Arc<Node> {
+pub fn init_node(node_config: NodeConfig, seedstr: &str) -> Arc<Node> {
     let mut seed = [0; 32];
     seed.copy_from_slice(Vec::from_hex(seedstr).unwrap().as_slice());
 
@@ -299,11 +305,7 @@ pub fn init_node(node_config: NodeConfig,
 
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
 
-    let node = Node::new(node_config,
-                         &seed,
-                         persister,
-                         vec![],
-                         validator_factory);
+    let node = Node::new(node_config, &seed, persister, vec![], validator_factory);
     Arc::new(node)
 }
 
@@ -1570,7 +1572,6 @@ pub fn mine_header_with_bits(
         nonce += 1;
     }
 }
-
 
 pub fn make_node_and_channel(
     channel_nonce: &Vec<u8>,

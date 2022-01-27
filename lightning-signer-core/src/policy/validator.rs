@@ -2,8 +2,8 @@ extern crate scopeguard;
 
 use core::cmp::{max, min};
 
-use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
 use bitcoin::secp256k1::{PublicKey, SecretKey};
+use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
 use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::ln::PaymentHash;
@@ -17,7 +17,6 @@ use crate::tx::tx::{CommitmentInfo, CommitmentInfo2, HTLCInfo2};
 use crate::wallet::Wallet;
 
 use super::error::{policy_error, ValidationError};
-
 
 /// A policy checker
 ///
@@ -188,10 +187,12 @@ pub trait Validator {
     /// If the associated policy has require_invoices, the invoice must have
     /// been provided.  Otherwise, no validation is performed if no invoice
     /// was provided.
-    fn validate_inflight_payments(&self,
-                                  invoice_state: Option<&InvoiceState>,
-                                  channel_id: &ChannelId,
-                                  amount_msat: u64) -> Result<(), ValidationError>;
+    fn validate_inflight_payments(
+        &self,
+        invoice_state: Option<&InvoiceState>,
+        channel_id: &ChannelId,
+        amount_msat: u64,
+    ) -> Result<(), ValidationError>;
 
     /// Whether the policy specifies that holder balance should be tracked and
     /// enforced.
@@ -264,7 +265,7 @@ impl EnforcementState {
             current_counterparty_commit_info: None,
             previous_counterparty_commit_info: None,
             mutual_close_signed: false,
-            holder_balance_msat: to_holder_msat
+            holder_balance_msat: to_holder_msat,
         }
     }
 
@@ -540,28 +541,26 @@ impl EnforcementState {
     /// HTLCs belonging to a payment are summed for each of the
     /// holder and counterparty txs. The greater value is taken as the actual
     /// in-flight value.
-    pub fn payments_summary(&self,
-                            new_holder_tx: Option<&CommitmentInfo2>,
-                            new_counterparty_tx: Option<&CommitmentInfo2>
+    pub fn payments_summary(
+        &self,
+        new_holder_tx: Option<&CommitmentInfo2>,
+        new_counterparty_tx: Option<&CommitmentInfo2>,
     ) -> Map<PaymentHash, u64> {
         let holder_offered =
-            new_holder_tx.or(self.current_holder_commit_info.as_ref())
-                .map(|h| &h.offered_htlcs);
-        let counterparty_received =
-            new_counterparty_tx.or(self.current_counterparty_commit_info.as_ref())
-                .map(|c| &c.received_htlcs);
+            new_holder_tx.or(self.current_holder_commit_info.as_ref()).map(|h| &h.offered_htlcs);
+        let counterparty_received = new_counterparty_tx
+            .or(self.current_counterparty_commit_info.as_ref())
+            .map(|c| &c.received_htlcs);
         let holder_summary =
-            holder_offered.map(|h| Self::summarize_payments(h))
-                .unwrap_or_else(|| Map::new());
-        let counterparty_summary =
-            counterparty_received.map(|h| Self::summarize_payments(h))
-                .unwrap_or_else(|| Map::new());
+            holder_offered.map(|h| Self::summarize_payments(h)).unwrap_or_else(|| Map::new());
+        let counterparty_summary = counterparty_received
+            .map(|h| Self::summarize_payments(h))
+            .unwrap_or_else(|| Map::new());
         // Union the two summaries
         let mut summary = holder_summary;
         for (k, v) in counterparty_summary {
             // Choose higher amount if already there, or insert if not
-            summary.entry(k).and_modify(|e| *e = max(*e, v))
-                .or_insert(v);
+            summary.entry(k).and_modify(|e| *e = max(*e, v)).or_insert(v);
         }
         summary
     }
@@ -575,22 +574,20 @@ impl EnforcementState {
     //
     // The smaller value is taken because we should only consider an invoice paid
     // when both txs contain the payment.
-    pub fn incoming_payments_summary(&self,
-                                     new_holder_tx: Option<&CommitmentInfo2>,
-                                     new_counterparty_tx: Option<&CommitmentInfo2>
+    pub fn incoming_payments_summary(
+        &self,
+        new_holder_tx: Option<&CommitmentInfo2>,
+        new_counterparty_tx: Option<&CommitmentInfo2>,
     ) -> Map<PaymentHash, u64> {
         let holder_received =
-            new_holder_tx.or(self.current_holder_commit_info.as_ref())
-                .map(|h| &h.received_htlcs);
-        let counterparty_offered =
-            new_counterparty_tx.or(self.current_counterparty_commit_info.as_ref())
-                .map(|c| &c.offered_htlcs);
+            new_holder_tx.or(self.current_holder_commit_info.as_ref()).map(|h| &h.received_htlcs);
+        let counterparty_offered = new_counterparty_tx
+            .or(self.current_counterparty_commit_info.as_ref())
+            .map(|c| &c.offered_htlcs);
         let holder_summary =
-            holder_received.map(|h| Self::summarize_payments(h))
-                .unwrap_or_else(|| Map::new());
+            holder_received.map(|h| Self::summarize_payments(h)).unwrap_or_else(|| Map::new());
         let counterparty_summary =
-            counterparty_offered.map(|h| Self::summarize_payments(h))
-                .unwrap_or_else(|| Map::new());
+            counterparty_offered.map(|h| Self::summarize_payments(h)).unwrap_or_else(|| Map::new());
         // Intersect the holder and counterparty summaries, because we don't
         // consider a payment until it is present in both commitment transactions.
         let mut summary = holder_summary;
@@ -606,7 +603,9 @@ impl EnforcementState {
         let mut summary = Map::new();
         for h in htlcs {
             // If there are multiple HTLCs for the same payment, sum them
-            summary.entry(h.payment_hash).and_modify(|e| *e += h.value_sat * 1000)
+            summary
+                .entry(h.payment_hash)
+                .and_modify(|e| *e += h.value_sat * 1000)
                 .or_insert(h.value_sat * 1000);
         }
         summary

@@ -25,6 +25,9 @@ use lightning_signer::channel::{channel_nonce_to_id, ChannelId, ChannelSetup, Co
 use lightning_signer::node::SpendType;
 use lightning_signer::node::{self};
 use lightning_signer::persist::{DummyPersister, Persist};
+use lightning_signer::policy::simple_validator::{
+    make_simple_policy, SimplePolicy, SimpleValidatorFactory,
+};
 use lightning_signer::signer::multi_signer::MultiSigner;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
@@ -33,7 +36,6 @@ use lightning_signer::util::debug_utils::DebugBytes;
 use lightning_signer::util::log_utils::{parse_log_level_filter, LOG_LEVEL_FILTER_NAMES};
 use lightning_signer::util::status;
 use lightning_signer::{channel, containing_function, debug_vals, short_function, vals_str};
-use lightning_signer::policy::simple_validator::{make_simple_policy, SimplePolicy, SimpleValidatorFactory};
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
 
@@ -1348,9 +1350,13 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     println!("rsignerd {} starting", process::id());
     let app = App::new("server")
         .about("Lightning Signer with a gRPC interface.  Persists to .lightning-signer .")
-        .arg(Arg::new("network").short('n').long("network")
-            .possible_values(&NETWORKS)
-            .default_value(NETWORKS[0]))
+        .arg(
+            Arg::new("network")
+                .short('n')
+                .long("network")
+                .possible_values(&NETWORKS)
+                .default_value(NETWORKS[0]),
+        )
         .arg(
             Arg::new("test-mode")
                 .about("allow nodes to be recreated, deleting all channels")
@@ -1453,11 +1459,9 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     }
     let policy = policy(&matches, network);
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
-    let signer = MultiSigner::new_with_persister(persister, test_mode, initial_allowlist, validator_factory);
-    let server = SignServer {
-        signer,
-        network,
-    };
+    let signer =
+        MultiSigner::new_with_persister(persister, test_mode, initial_allowlist, validator_factory);
+    let server = SignServer { signer, network };
 
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
     ctrlc::set_handler(move || {
@@ -1477,12 +1481,8 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn policy_args(app: App) -> App {
-    app.arg(Arg::new("require_invoices")
-        .long("require_invoices")
-        .takes_value(false))
-        .arg(Arg::new("enforce_balance")
-            .long("enforce_balance")
-            .takes_value(false))
+    app.arg(Arg::new("require_invoices").long("require_invoices").takes_value(false))
+        .arg(Arg::new("enforce_balance").long("enforce_balance").takes_value(false))
 }
 
 fn policy(matches: &ArgMatches, network: Network) -> SimplePolicy {

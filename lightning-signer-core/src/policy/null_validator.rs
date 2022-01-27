@@ -23,7 +23,11 @@ pub struct NullValidatorFactory {}
 fn null_validator() -> NullValidator {
     let factory = SimpleValidatorFactory::new();
     NullValidator {
-        0: factory.make_validator(Network::Regtest, PublicKey::from_slice(&[2u8; 33]).unwrap(), None),
+        0: factory.make_validator(
+            Network::Regtest,
+            PublicKey::from_slice(&[2u8; 33]).unwrap(),
+            None,
+        ),
     }
 }
 
@@ -214,7 +218,12 @@ impl Validator for NullValidator {
         Ok(())
     }
 
-    fn validate_inflight_payments(&self, _invoice_state: Option<&InvoiceState>, _channel_id: &ChannelId, _amount_msat: u64) -> Result<(), ValidationError> {
+    fn validate_inflight_payments(
+        &self,
+        _invoice_state: Option<&InvoiceState>,
+        _channel_id: &ChannelId,
+        _amount_msat: u64,
+    ) -> Result<(), ValidationError> {
         Ok(())
     }
 }
