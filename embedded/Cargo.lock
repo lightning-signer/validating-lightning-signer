@@ -203,7 +203,6 @@ dependencies = [
  "cortex-m-rt",
  "cortex-m-semihosting",
  "lightning-signer-core",
- "panic-halt",
 ]
 
 [[package]]
@@ -301,7 +300,7 @@ checksum = "320cfe77175da3a483efed4bc0adc1968ca050b098ce4f2f1c13a56626128790"
 [[package]]
 name = "lightning"
 version = "0.0.104"
-source = "git+https://github.com/lightningdevkit/rust-lightning.git?rev=bb248617a52c073d317538119a9dbe2703999993#bb248617a52c073d317538119a9dbe2703999993"
+source = "git+https://github.com/lightningdevkit/rust-lightning.git?rev=89cbb6d74b32b1d23090761dec216c942a846a04#89cbb6d74b32b1d23090761dec216c942a846a04"
 dependencies = [
  "bitcoin",
  "core2",
@@ -312,7 +311,7 @@ dependencies = [
 [[package]]
 name = "lightning-invoice"
 version = "0.12.0"
-source = "git+https://github.com/lightningdevkit/rust-lightning.git?rev=bb248617a52c073d317538119a9dbe2703999993#bb248617a52c073d317538119a9dbe2703999993"
+source = "git+https://github.com/lightningdevkit/rust-lightning.git?rev=89cbb6d74b32b1d23090761dec216c942a846a04#89cbb6d74b32b1d23090761dec216c942a846a04"
 dependencies = [
  "bech32",
  "bitcoin_hashes",
@@ -388,12 +387,6 @@ name = "once_cell"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "692fcb63b64b1758029e0a96ee63e049ce8c5948587f2f7208df04625e5f6b56"
-
-[[package]]
-name = "panic-halt"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de96540e0ebde571dc55c73d60ef407c653844e6f9a1e2fdbd40c07b9252d812"
 
 [[package]]
 name = "proc-macro2"

@@ -389,6 +389,11 @@ impl ChannelBase for Channel {
 }
 
 impl Channel {
+    /// The channel ID
+    pub fn id(&self) -> ChannelId {
+        self.id.unwrap_or(self.id0)
+    }
+
     #[allow(missing_docs)]
     #[cfg(feature = "test_utils")]
     pub fn set_next_counterparty_commit_num_for_testing(
