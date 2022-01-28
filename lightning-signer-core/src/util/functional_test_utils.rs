@@ -438,7 +438,7 @@ pub fn create_chan_between_nodes_with_value_confirm_first<'a, 'b, 'c, 'd>(node_r
 pub fn create_chan_between_nodes_with_value_confirm_second<'a, 'b, 'c>(node_recv: &Node<'a, 'b, 'c>, node_conf: &Node<'a, 'b, 'c>) -> ((msgs::FundingLocked, msgs::AnnouncementSignatures), [u8; 32]) {
     let channel_id;
     let events_6 = node_conf.node.get_and_clear_pending_msg_events();
-    assert_eq!(events_6.len(), 2);
+    assert_eq!(events_6.len(), 3);
     ((match events_6[0] {
         MessageSendEvent::SendFundingLocked { ref node_id, ref msg } => {
             channel_id = msg.channel_id.clone();
@@ -446,7 +446,7 @@ pub fn create_chan_between_nodes_with_value_confirm_second<'a, 'b, 'c>(node_recv
             msg.clone()
         },
         _ => panic!("Unexpected event"),
-    }, match events_6[1] {
+    }, match events_6[2] {
         MessageSendEvent::SendAnnouncementSignatures { ref node_id, ref msg } => {
             assert_eq!(*node_id, node_recv.node.get_our_node_id());
             msg.clone()

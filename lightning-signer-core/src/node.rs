@@ -42,6 +42,7 @@ use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot,
 use crate::monitor::ChainMonitor;
 use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
+use crate::policy::error::policy_error;
 use crate::policy::validator::ValidatorFactory;
 use crate::policy::validator::{EnforcementState, Validator};
 use crate::prelude::*;
@@ -730,7 +731,17 @@ impl Node {
             let monitor = ChainMonitor::new(funding_outpoint, tracker.height());
             monitor.add_funding_outpoint(&funding_outpoint);
             let to_holder_msat = if setup.is_outbound {
-                setup.channel_value_sat * 1000 - setup.push_value_msat
+                // This is also checked in the validator, but we have to check
+                // here because we need it to create the validator
+                (setup.channel_value_sat * 1000).checked_sub(setup.push_value_msat).ok_or_else(
+                    || {
+                        policy_error(format!(
+                            "beneficial channel value underflow: {} - {}",
+                            setup.channel_value_sat * 1000,
+                            setup.push_value_msat
+                        ))
+                    },
+                )?
             } else {
                 setup.push_value_msat
             };
@@ -1046,7 +1057,7 @@ impl Node {
         hrp_bytes: &[u8],
         invoice_data: &[u5],
     ) -> Result<RecoverableSignature, Status> {
-        let signed_raw_invoice = self.do_sign_invoice(hrp_bytes, invoice_data);
+        let signed_raw_invoice = self.do_sign_invoice(hrp_bytes, invoice_data)?;
 
         let sig = signed_raw_invoice.signature().0;
         let (hash, invoice_state, invoice_hash) =
@@ -1072,9 +1083,13 @@ impl Node {
         &self,
         hrp_bytes: &[u8],
         invoice_data: &[u5],
-    ) -> SignedRawInvoice {
-        let hrp: RawHrp = String::from_utf8(hrp_bytes.to_vec()).unwrap().parse().unwrap();
-        let data = RawDataPart::from_base32(invoice_data).unwrap();
+    ) -> Result<SignedRawInvoice, Status> {
+        let hrp: RawHrp = String::from_utf8(hrp_bytes.to_vec())
+            .map_err(|_| invalid_argument("invoice hrp not utf-8"))?
+            .parse()
+            .map_err(|e| invalid_argument(format!("parse error: {}", e)))?;
+        let data = RawDataPart::from_base32(invoice_data)
+            .map_err(|e| invalid_argument(format!("parse error: {}", e)))?;
         let raw_invoice = RawInvoice { hrp, data };
 
         let invoice_preimage = construct_invoice_preimage(&hrp_bytes, &invoice_data);
@@ -1083,7 +1098,9 @@ impl Node {
         let message = secp256k1::Message::from_slice(&hash).unwrap();
         let sig = secp_ctx.sign_recoverable(&message, &self.get_node_secret());
 
-        raw_invoice.sign::<_, ()>(|_| Ok(sig)).unwrap()
+        raw_invoice
+            .sign::<_, ()>(|_| Ok(sig))
+            .map_err(|()| internal_error("failed to sign invoice"))
     }
 
     /// Sign a Lightning message
@@ -1487,7 +1504,7 @@ mod tests {
         payment_hash: PaymentHash,
     ) -> SignedRawInvoice {
         let (hrp_bytes, invoice_data) = build_test_invoice(description, &payment_hash);
-        payee_node.do_sign_invoice(&hrp_bytes, &invoice_data)
+        payee_node.do_sign_invoice(&hrp_bytes, &invoice_data).unwrap()
     }
 
     fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>, Vec<u5>) {
@@ -1692,6 +1709,17 @@ mod tests {
         let rsig = node.sign_invoice_in_parts(&data_part, &human_readable_part).unwrap();
         assert_eq!(rsig, hex_decode("f278cdba3fd4a37abf982cee5a66f52e142090631ef57763226f1232eead78b43da7962fcfe29ffae9bd918c588df71d6d7b92a4787de72801594b22f0e7e62a00").unwrap());
         Ok(())
+    }
+
+    #[test]
+    fn sign_bad_invoice_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let human_readable_part = String::from("lnbcrt1230n");
+        let data_part = hex_decode("010f0418090a").unwrap().check_base32().unwrap();
+        assert_invalid_argument_err!(
+            node.sign_invoice(human_readable_part.as_bytes(), &data_part),
+            "parse error: data part too short (should be at least 111 bech32 chars long)"
+        );
     }
 
     #[test]

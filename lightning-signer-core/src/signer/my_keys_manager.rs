@@ -285,6 +285,7 @@ impl MyKeysManager {
         let secp_ctx = Secp256k1::signing_only();
         InMemorySigner::new(
             &secp_ctx,
+            self.get_node_secret(),
             funding_key,
             revocation_base_key,
             payment_key,
@@ -339,6 +340,7 @@ impl MyKeysManager {
 
         InMemorySigner::new(
             &secp_ctx,
+            self.get_node_secret(),
             funding_key,
             revocation_base_key,
             payment_key,

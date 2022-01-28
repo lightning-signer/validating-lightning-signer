@@ -420,14 +420,10 @@ impl Validator for SimpleValidator {
 
                         let push_val_sat = chan.setup.push_value_msat / 1000;
                         let our_value = if chan.setup.is_outbound {
-                            chan.setup.channel_value_sat.checked_sub(push_val_sat).ok_or_else(
-                                || {
-                                    policy_error(format!(
-                                        "beneficial channel value underflow: {} - {}",
-                                        chan.setup.channel_value_sat, push_val_sat
-                                    ))
-                                },
-                            )?
+                            chan.setup
+                                .channel_value_sat
+                                .checked_sub(push_val_sat)
+                                .expect("push value underflow checked in ready_channel")
                         } else {
                             return policy_err!(
                                 "can't sign for inbound channel: dual-funding not supported yet",

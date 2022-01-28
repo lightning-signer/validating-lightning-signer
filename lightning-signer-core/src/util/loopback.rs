@@ -503,21 +503,16 @@ impl BaseSign for LoopbackChannelSigner {
         &self,
         msg: &UnsignedChannelAnnouncement,
         _secp_ctx: &Secp256k1<All>,
-    ) -> Result<Signature, ()> {
+    ) -> Result<(Signature, Signature), ()> {
         info!("sign_counterparty_commitment {:?} {:?}", self.node_id, self.channel_id);
 
-        let (_nsig, bsig) = self
+        let (nsig, bsig) = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 Ok(chan.sign_channel_announcement(&msg.encode()))
             })
             .map_err(|s| self.bad_status(s))?;
-
-        let res = bsig.serialize_der().to_vec();
-
-        let sig = Signature::from_der(res.as_slice())
-            .expect("failed to parse the signature we just created");
-        Ok(sig)
+        Ok((nsig, bsig))
     }
 
     fn ready_channel(&mut self, parameters: &ChannelTransactionParameters) {

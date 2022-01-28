@@ -277,8 +277,10 @@ impl ChannelStub {
     pub(crate) fn channel_keys_with_channel_value(&self, channel_value_sat: u64) -> InMemorySigner {
         let secp_ctx = Secp256k1::signing_only();
         let keys = &self.keys;
+        let node_secret = self.node.upgrade().unwrap().get_node_secret();
         InMemorySigner::new(
             &secp_ctx,
+            node_secret,
             keys.funding_key,
             keys.revocation_base_key,
             keys.payment_key,

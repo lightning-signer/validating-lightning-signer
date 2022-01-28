@@ -273,12 +273,13 @@ pub fn make_test_channel_keys() -> InMemorySigner {
     let channel_value_sat = 3_000_000;
     let mut inmemkeys = InMemorySigner::new(
         &secp_ctx,
-        make_test_privkey(1), // funding_key
-        make_test_privkey(2), // revocation_base_key
-        make_test_privkey(3), // payment_key
-        make_test_privkey(4), // delayed_payment_base_key
-        make_test_privkey(5), // htlc_base_key
-        [4u8; 32],            // commitment_seed
+        make_test_privkey(254), // node_secret
+        make_test_privkey(1),   // funding_key
+        make_test_privkey(2),   // revocation_base_key
+        make_test_privkey(3),   // payment_key
+        make_test_privkey(4),   // delayed_payment_base_key
+        make_test_privkey(5),   // htlc_base_key
+        [4u8; 32],              // commitment_seed
         channel_value_sat,
         [0u8; 32],
     );
@@ -492,6 +493,7 @@ pub fn make_test_counterparty_keys(
             // These need to match make_test_counterparty_points() above ...
             let mut cpkeys = InMemorySigner::new(
                 &node_ctx.secp_ctx,
+                make_test_privkey(254), // node_secret
                 make_test_privkey(104), // funding_key
                 make_test_privkey(100), // revocation_base_key
                 make_test_privkey(101), // payment_key
@@ -716,14 +718,14 @@ pub fn funding_tx_ready_channel(
     chan_ctx: &mut TestChannelContext,
     tx: &bitcoin::Transaction,
     vout: u32,
-) {
+) -> Option<Status> {
     let txid = tx.txid();
     chan_ctx.setup.funding_outpoint = BitcoinOutPoint { txid, vout };
     let holder_shutdown_key_path = vec![];
     node_ctx
         .node
         .ready_channel(chan_ctx.channel_id, None, chan_ctx.setup.clone(), &holder_shutdown_key_path)
-        .expect("Channel");
+        .err()
 }
 
 pub fn synthesize_ready_channel(
