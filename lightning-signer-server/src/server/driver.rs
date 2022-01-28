@@ -1157,16 +1157,23 @@ impl Signer for SignServer {
         &self,
         request: Request<SignInvoiceRequest>,
     ) -> Result<Response<RecoverableNodeSignatureReply>, Status> {
+        use bitcoin::bech32::CheckBase32;
+
         let req = request.into_inner();
         let node_id = self.node_id(req.node_id.clone())?;
         log_req_enter!(&node_id, &req);
 
         let data_part = req.data_part;
-        let human_readable_part = req.human_readable_part;
+        let human_readable_part = req.human_readable_part.as_bytes();
         let node = self.signer.get_node(&node_id)?;
-        let sig_data = node.sign_invoice_in_parts(&data_part, &human_readable_part)?;
+        let data =
+            data_part.check_base32().map_err(|_| invalid_grpc_argument("invalid base32 data"))?;
+        let (rid, sig) = node.sign_invoice(human_readable_part, &data)?.serialize_compact();
+        let mut sig_data = sig.to_vec();
+        // the range 0..3 is enforced in the RecoveryId constructor
+        sig_data.push(rid.to_i32() as u8);
         let reply = RecoverableNodeSignatureReply {
-            signature: Some(EcdsaRecoverableSignature { data: sig_data.clone() }),
+            signature: Some(EcdsaRecoverableSignature { data: sig_data }),
         };
         log_req_reply!(&node_id, &reply);
         Ok(Response::new(reply))

@@ -1035,22 +1035,6 @@ impl Node {
         Ok(res)
     }
 
-    /// Sign an invoice
-    // TODO duplicate with sign_invoice
-    pub fn sign_invoice_in_parts(
-        &self,
-        data_part: &Vec<u8>,
-        human_readable_part: &String,
-    ) -> Result<Vec<u8>, Status> {
-        use bitcoin::bech32::CheckBase32;
-        let data = data_part.check_base32().expect("needs to be base32 data");
-        let sig = self.sign_invoice(human_readable_part.as_bytes(), &data)?;
-        let (rid, sig) = sig.serialize_compact();
-        let mut res = sig.to_vec();
-        res.push(rid.to_i32() as u8);
-        Ok(res)
-    }
-
     /// Sign an invoice and start tracking incoming payment for its payment hash
     pub fn sign_invoice(
         &self,
@@ -1355,7 +1339,7 @@ pub trait SyncLogger: Logger + SendSync {}
 #[cfg(test)]
 mod tests {
     use bitcoin;
-    use bitcoin::bech32::ToBase32;
+    use bitcoin::bech32::{CheckBase32, ToBase32};
     use bitcoin::consensus::deserialize;
     use bitcoin::hashes::sha256d::Hash as Sha256dHash;
     use bitcoin::hashes::Hash;
@@ -1692,9 +1676,13 @@ mod tests {
     fn sign_invoice_test() -> Result<(), ()> {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let human_readable_part = String::from("lnbcrt1230n");
-        let data_part = hex_decode("010f0418090a010101141917110f01040e050f06100003021e1b0e13161c150301011415060204130c0018190d07070a18070a1c1101111e111f130306000d00120c11121706181b120d051807081a0b0f0d18060004120e140018000105100114000b130b01110c001a05041a181716020007130c091d11170d10100d0b1a1b00030e05190208171e16080d00121a00110719021005000405001000").unwrap();
-        let rsig = node.sign_invoice_in_parts(&data_part, &human_readable_part).unwrap();
-        assert_eq!(rsig, hex_decode("739ffb91aa7c0b3d3c92de1600f7a9afccedc5597977095228232ee4458685531516451b84deb35efad27a311ea99175d10c6cdb458cd27ce2ed104eb6cf806400").unwrap());
+        let data_part = hex_decode("010f0418090a010101141917110f01040e050f06100003021e1b0e13161c150301011415060204130c0018190d07070a18070a1c1101111e111f130306000d00120c11121706181b120d051807081a0b0f0d18060004120e140018000105100114000b130b01110c001a05041a181716020007130c091d11170d10100d0b1a1b00030e05190208171e16080d00121a00110719021005000405001000").unwrap().check_base32().unwrap();
+        let (rid, rsig) = node
+            .sign_invoice(human_readable_part.as_bytes(), &data_part)
+            .unwrap()
+            .serialize_compact();
+        assert_eq!(rsig.to_vec(), hex_decode("739ffb91aa7c0b3d3c92de1600f7a9afccedc5597977095228232ee4458685531516451b84deb35efad27a311ea99175d10c6cdb458cd27ce2ed104eb6cf8064").unwrap());
+        assert_eq!(rid.to_i32(), 0);
         Ok(())
     }
 
@@ -1702,12 +1690,16 @@ mod tests {
     fn sign_invoice_with_overhang_test() -> Result<(), ()> {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let human_readable_part = String::from("lnbcrt2m");
-        let data_part = hex_decode("010f0a001d051e0101140c0c000006140009160c09051a0d1a190708020d17141106171f0f07131616111f1910070b0d0e150c0c0c0d010d1a01181c15100d010009181a06101a0a0309181b040a111a0a06111705100c0b18091909030e151b14060004120e14001800010510011419080f1307000a0a0517021c171410101a1e101605050a08180d0d110e13150409051d02091d181502020f050e1a1f161a09130005000405001000").unwrap();
+        let data_part = hex_decode("010f0a001d051e0101140c0c000006140009160c09051a0d1a190708020d17141106171f0f07131616111f1910070b0d0e150c0c0c0d010d1a01181c15100d010009181a06101a0a0309181b040a111a0a06111705100c0b18091909030e151b14060004120e14001800010510011419080f1307000a0a0517021c171410101a1e101605050a08180d0d110e13150409051d02091d181502020f050e1a1f161a09130005000405001000").unwrap().check_base32().unwrap();
         // The data_part is 170 bytes.
         // overhang = (data_part.len() * 5) % 8 = 2
         // looking for a verified invoice where overhang is in 1..3
-        let rsig = node.sign_invoice_in_parts(&data_part, &human_readable_part).unwrap();
-        assert_eq!(rsig, hex_decode("f278cdba3fd4a37abf982cee5a66f52e142090631ef57763226f1232eead78b43da7962fcfe29ffae9bd918c588df71d6d7b92a4787de72801594b22f0e7e62a00").unwrap());
+        let (rid, rsig) = node
+            .sign_invoice(human_readable_part.as_bytes(), &data_part)
+            .unwrap()
+            .serialize_compact();
+        assert_eq!(rsig.to_vec(), hex_decode("f278cdba3fd4a37abf982cee5a66f52e142090631ef57763226f1232eead78b43da7962fcfe29ffae9bd918c588df71d6d7b92a4787de72801594b22f0e7e62a").unwrap());
+        assert_eq!(rid.to_i32(), 0);
         Ok(())
     }
 
