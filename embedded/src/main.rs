@@ -14,11 +14,10 @@ use core::panic::PanicInfo;
 use alloc_cortex_m::CortexMHeap;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-use bitcoin::{Address, Network, OutPoint, PrivateKey, Script, Txid};
+use bitcoin::{Address, Network, OutPoint, PrivateKey, Txid};
 use cortex_m::asm;
 use cortex_m_rt::entry;
 use cortex_m_semihosting::{debug, hprintln};
-use lightning::ln::chan_utils::ChannelPublicKeys;
 
 use lightning_signer::channel::{ChannelSetup, CommitmentType};
 use lightning_signer::node::{Node, NodeConfig};
@@ -26,7 +25,7 @@ use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::key_utils::{make_test_counterparty_points, make_test_key};
 use lightning_signer::Arc;
-use lightning_signer::lightning;
+use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 
 // this is the allocator the application will use
 #[global_allocator]
@@ -86,7 +85,8 @@ fn test_lightning_signer() {
     };
     let seed = [0u8; 32];
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
-    let node = Arc::new(Node::new(config, &seed, &persister, Vec::new()));
+    let validator_factory = Arc::new(SimpleValidatorFactory::new());
+    let node = Arc::new(Node::new(config, &seed, &persister, Vec::new(), validator_factory));
     let (channel_id, _) = node.new_channel(None, None, &node).unwrap();
     hprintln!("stub channel ID: {}", channel_id).unwrap();
     let holder_shutdown_key_path = Vec::new();

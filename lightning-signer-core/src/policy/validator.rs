@@ -1,16 +1,20 @@
+extern crate scopeguard;
+
+use core::cmp::{max, min};
+
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
 use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
+use lightning::ln::PaymentHash;
 use log::debug;
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
+use crate::node::InvoiceState;
 use crate::prelude::*;
 use crate::sync::Arc;
-use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
+use crate::tx::tx::{CommitmentInfo, CommitmentInfo2, HTLCInfo2};
 use crate::wallet::Wallet;
-
-extern crate scopeguard;
 
 use super::error::{policy_error, ValidationError};
 
@@ -68,6 +72,7 @@ pub trait Validator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         info2: &CommitmentInfo2,
+        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError>;
 
     /// Validate a holder commitment
@@ -79,6 +84,7 @@ pub trait Validator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         info2: &CommitmentInfo2,
+        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError>;
 
     /// Check a counterparty's revocation of an old state.
@@ -173,6 +179,26 @@ pub trait Validator {
         amount_sat: u64,
         key_path: &Vec<u32>,
     ) -> Result<(), ValidationError>;
+
+    /// Validate in-flight payments.
+    ///
+    /// Ensures that if the specified channel pays the specified amount,
+    /// the invoice would not be overpaid.
+    /// If the associated policy has require_invoices, the invoice must have
+    /// been provided.  Otherwise, no validation is performed if no invoice
+    /// was provided.
+    fn validate_inflight_payments(
+        &self,
+        invoice_state: Option<&InvoiceState>,
+        channel_id: &ChannelId,
+        amount_msat: u64,
+    ) -> Result<(), ValidationError>;
+
+    /// Whether the policy specifies that holder balance should be tracked and
+    /// enforced.
+    fn enforce_balance(&self) -> bool {
+        false
+    }
 }
 
 /// Blockchain state used by the validator
@@ -196,7 +222,7 @@ pub trait ValidatorFactory: Send + Sync {
         network: Network,
         node_id: PublicKey,
         channel_id: Option<ChannelId>,
-    ) -> Box<dyn Validator>;
+    ) -> Arc<dyn Validator>;
 }
 
 /// Enforcement state for a signer
@@ -215,11 +241,20 @@ pub struct EnforcementState {
     pub current_counterparty_commit_info: Option<CommitmentInfo2>,
     pub previous_counterparty_commit_info: Option<CommitmentInfo2>,
     pub mutual_close_signed: bool,
+    /// Amount due to us.
+    /// As payments go out, this amount decreases.
+    /// As issued invoices are paid, this amount increases.
+    /// This balance also includes:
+    /// - pending unfulfilled outgoing HTLCs
+    /// - pending incoming HTLCs if their sum ever covered the invoice we issued
+    /// - keysend HTLCs to us (TODO)
+    /// - pending routed incoming HTLCs if we know their preimage (matching outgoing HTLCS fulfilled) (TODO)
+    pub holder_balance_msat: u64,
 }
 
 impl EnforcementState {
     /// Create state for a new channel
-    pub fn new() -> EnforcementState {
+    pub fn new(to_holder_msat: u64) -> EnforcementState {
         EnforcementState {
             next_holder_commit_num: 0,
             next_counterparty_commit_num: 0,
@@ -230,6 +265,7 @@ impl EnforcementState {
             current_counterparty_commit_info: None,
             previous_counterparty_commit_info: None,
             mutual_close_signed: false,
+            holder_balance_msat: to_holder_msat,
         }
     }
 
@@ -498,6 +534,82 @@ impl EnforcementState {
         );
         self.next_counterparty_revoke_num = num;
     }
+
+    /// Summarize in-flight outgoing payments, possibly with new
+    /// holder offered or counterparty received commitment tx.
+    /// The amounts are in millisatoshi.
+    /// HTLCs belonging to a payment are summed for each of the
+    /// holder and counterparty txs. The greater value is taken as the actual
+    /// in-flight value.
+    pub fn payments_summary(
+        &self,
+        new_holder_tx: Option<&CommitmentInfo2>,
+        new_counterparty_tx: Option<&CommitmentInfo2>,
+    ) -> Map<PaymentHash, u64> {
+        let holder_offered =
+            new_holder_tx.or(self.current_holder_commit_info.as_ref()).map(|h| &h.offered_htlcs);
+        let counterparty_received = new_counterparty_tx
+            .or(self.current_counterparty_commit_info.as_ref())
+            .map(|c| &c.received_htlcs);
+        let holder_summary =
+            holder_offered.map(|h| Self::summarize_payments(h)).unwrap_or_else(|| Map::new());
+        let counterparty_summary = counterparty_received
+            .map(|h| Self::summarize_payments(h))
+            .unwrap_or_else(|| Map::new());
+        // Union the two summaries
+        let mut summary = holder_summary;
+        for (k, v) in counterparty_summary {
+            // Choose higher amount if already there, or insert if not
+            summary.entry(k).and_modify(|e| *e = max(*e, v)).or_insert(v);
+        }
+        summary
+    }
+
+    /// Summarize in-flight incoming payments, possibly with new
+    /// holder offered or counterparty received commitment tx.
+    /// The amounts are in millisatoshi.
+    /// HTLCs belonging to a payment are summed for each of the
+    /// holder and counterparty txs. The smaller value is taken as the actual
+    /// in-flight value.
+    //
+    // The smaller value is taken because we should only consider an invoice paid
+    // when both txs contain the payment.
+    pub fn incoming_payments_summary(
+        &self,
+        new_holder_tx: Option<&CommitmentInfo2>,
+        new_counterparty_tx: Option<&CommitmentInfo2>,
+    ) -> Map<PaymentHash, u64> {
+        let holder_received =
+            new_holder_tx.or(self.current_holder_commit_info.as_ref()).map(|h| &h.received_htlcs);
+        let counterparty_offered = new_counterparty_tx
+            .or(self.current_counterparty_commit_info.as_ref())
+            .map(|c| &c.offered_htlcs);
+        let holder_summary =
+            holder_received.map(|h| Self::summarize_payments(h)).unwrap_or_else(|| Map::new());
+        let counterparty_summary =
+            counterparty_offered.map(|h| Self::summarize_payments(h)).unwrap_or_else(|| Map::new());
+        // Intersect the holder and counterparty summaries, because we don't
+        // consider a payment until it is present in both commitment transactions.
+        let mut summary = holder_summary;
+        summary.retain(|k, _| counterparty_summary.contains_key(k));
+        for (k, v) in counterparty_summary {
+            // Choose lower amount
+            summary.entry(k).and_modify(|e| *e = min(*e, v));
+        }
+        summary
+    }
+
+    fn summarize_payments(htlcs: &Vec<HTLCInfo2>) -> Map<PaymentHash, u64> {
+        let mut summary = Map::new();
+        for h in htlcs {
+            // If there are multiple HTLCs for the same payment, sum them
+            summary
+                .entry(h.payment_hash)
+                .and_modify(|e| *e += h.value_sat * 1000)
+                .or_insert(h.value_sat * 1000);
+        }
+        summary
+    }
 }
 
 #[cfg(test)]
@@ -511,7 +623,7 @@ mod tests {
 
     #[test]
     fn enforcement_state_previous_counterparty_point_test() {
-        let mut state = EnforcementState::new();
+        let mut state = EnforcementState::new(0);
 
         let point0 = make_test_pubkey(0x12);
         let commit_info = make_test_commitment_info();

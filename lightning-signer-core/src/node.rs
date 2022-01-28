@@ -7,6 +7,7 @@ use core::str::FromStr;
 use core::time::Duration;
 
 use bitcoin;
+use bitcoin::bech32::{u5, FromBase32};
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
@@ -28,26 +29,27 @@ use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
 };
 use lightning::ln::script::ShutdownScript;
+use lightning::ln::{PaymentHash, PaymentPreimage};
+use lightning::util::invoice::construct_invoice_preimage;
 use lightning::util::logger::Logger;
-use lightning_invoice::{Invoice, SignedRawInvoice};
+use lightning_invoice::{Invoice, RawDataPart, RawHrp, RawInvoice, SignedRawInvoice};
 
 #[allow(unused_imports)]
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 
 use crate::chain::tracker::ChainTracker;
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub};
 use crate::monitor::ChainMonitor;
 use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
-use crate::policy::simple_validator::SimpleValidatorFactory;
-use crate::policy::validator::EnforcementState;
+use crate::policy::error::policy_error;
 use crate::policy::validator::ValidatorFactory;
+use crate::policy::validator::{EnforcementState, Validator};
 use crate::prelude::*;
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::sync::{Arc, Weak};
 use crate::util::crypto_utils::signature_to_bitcoin_vec;
-use crate::util::invoice_utils;
-use crate::util::status::{internal_error, invalid_argument, Status};
+use crate::util::status::{failed_precondition, internal_error, invalid_argument, Status};
 use crate::wallet::Wallet;
 
 /// Node configuration parameters.
@@ -64,7 +66,7 @@ pub struct NodeConfig {
 pub struct InvoiceState {
     /// The hash of the invoice, as a unique ID
     pub invoice_hash: [u8; 32],
-    /// Amount left to pay
+    /// Invoiced amount
     pub amount_msat: u64,
     /// Payee's public key
     pub payee: PublicKey,
@@ -72,13 +74,118 @@ pub struct InvoiceState {
     pub duration_since_epoch: Duration,
     /// Expiry, as duration since the timestamp
     pub expiry_duration: Duration,
+    /// In-flight payments attempting to fulfill this invoice
+    pub inflight_payments: Map<ChannelId, (u64, bool)>,
+    /// The preimage for the hash, filled in on success
+    pub preimage: Option<PaymentPreimage>,
+    /// Whether the invoice was fulfilled
+    /// note: for issued invoices only
+    pub is_fulfilled: bool,
+}
+
+impl InvoiceState {
+    /// The amount that would be paid if the specified channel pays the
+    /// specified amount.
+    pub fn updated_amount(&self, channel_id: &ChannelId, amount: u64) -> u64 {
+        // TODO this can be optimized to eliminate the clone
+        let mut payments: Map<&ChannelId, u64> = self
+            .inflight_payments
+            .iter()
+            .map(|(channel_id, (amount, _))| (channel_id, *amount))
+            .collect();
+        payments.insert(channel_id, amount);
+        payments.values().into_iter().sum::<u64>()
+    }
+
+    /// Update the amount that a channel is trying to pay
+    /// Returns true if this payment fulfilled the invoice and it was not fulfilled
+    /// before.  Also returns the total amount paid towards this invoice.
+    pub fn apply_payment(&mut self, channel_id: &ChannelId, amount: u64) -> (bool, u64) {
+        let was_fulfilled = self.is_fulfilled;
+        self.inflight_payments.insert(channel_id.clone(), (amount, false));
+        let (invoice_amount_paid, is_fulfilled) = self.amount_paid();
+        // we can only go from unfulfilled to fulfilled, but not the other way
+        self.is_fulfilled = self.is_fulfilled || is_fulfilled;
+        return (!was_fulfilled && is_fulfilled, invoice_amount_paid);
+    }
+
+    /// How much was paid, and does that fulfill the invoice?
+    pub fn amount_paid(&self) -> (u64, bool) {
+        let paid = self.inflight_payments.values().map(|(amount, _)| amount).sum::<u64>();
+        (paid, paid >= self.amount_msat)
+    }
 }
 
 /// Node state
 // TODO move allowlist into this struct
 pub struct NodeState {
-    /// Added invoices indexed by their payment hash
-    pub invoices: Map<Sha256Hash, InvoiceState>,
+    /// Added invoices for outgoing payments indexed by their payment hash
+    pub invoices: Map<PaymentHash, InvoiceState>,
+    /// Issued invoices for incoming payments indexed by their payment hash
+    pub issued_invoices: Map<PaymentHash, InvoiceState>,
+}
+
+/// A channel update overpays one or more invoices
+pub struct OverpaymentError {
+    pub(crate) payment_hashes: Vec<PaymentHash>,
+}
+
+impl NodeState {
+    /// Update outgoing in-flight payment amounts as a result of a new commitment tx.
+    ///
+    /// The update is only applied if there is no overpayment for any invoice.
+    /// Sends without invoices (e.g. keysend) are only allowed if allow_no_invoice
+    /// is true.
+    pub fn apply_payments(
+        &mut self,
+        channel_id: &ChannelId,
+        amounts: Map<PaymentHash, u64>,
+        validator: Arc<dyn Validator>,
+    ) -> Result<(), OverpaymentError> {
+        if amounts.is_empty() {
+            return Ok(());
+        };
+        debug!("applying payments from channel {} - {:?}", channel_id, amounts);
+        let overpaid = amounts
+            .iter()
+            .filter(|(h, amount)| {
+                let invoice_state = self.invoices.get(*h);
+                validator.validate_inflight_payments(invoice_state, channel_id, **amount).is_err()
+            })
+            .map(|(h, _)| *h)
+            .collect::<Vec<_>>();
+        if !overpaid.is_empty() {
+            return Err(OverpaymentError { payment_hashes: overpaid });
+        }
+        for (h, amount) in amounts.iter() {
+            self.invoices.get_mut(h).map(|state| state.apply_payment(channel_id, *amount));
+        }
+        Ok(())
+    }
+
+    /// Update incoming payment amounts as a result of a new commitment tx.
+    /// Return the total amount of newly fulfilled invoices we issued.
+    pub fn apply_incoming_payments(
+        &mut self,
+        channel_id: &ChannelId,
+        amounts: Map<PaymentHash, u64>,
+    ) -> Result<u64, ()> {
+        // Keep track of total issued invoices going into paid status
+        let mut total_invoice_amount_paid = 0u64;
+        if amounts.is_empty() {
+            return Ok(0);
+        };
+        debug!("applying incoming payments from channel {} - {:?}", channel_id, amounts);
+        for (h, amount) in amounts.iter() {
+            self.issued_invoices.get_mut(h).map(|state| {
+                let (did_fulfill, invoice_amount_paid) = state.apply_payment(channel_id, *amount);
+                if did_fulfill {
+                    total_invoice_amount_paid += invoice_amount_paid;
+                }
+            });
+        }
+        Ok(total_invoice_amount_paid)
+    }
 }
 
 /// Allowlist entry
@@ -149,11 +256,13 @@ impl Allowable {
 /// use lightning_signer::node::SyncLogger;
 ///
 /// use std::sync::Arc;
+/// use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 ///
 /// let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
 /// let seed = [0; 32];
 /// let config = TEST_NODE_CONFIG;
-/// let node = Arc::new(Node::new(config, &seed, &persister, vec![]));
+/// let validator_factory = Arc::new(SimpleValidatorFactory::new());
+/// let node = Arc::new(Node::new(config, &seed, &persister, vec![], validator_factory));
 /// let (channel_id, opt_stub) = node.new_channel(None, None, &node).expect("new channel");
 /// assert!(opt_stub.is_some());
 /// let channel_slot_mutex = node.get_channel(&channel_id).expect("get channel");
@@ -170,11 +279,11 @@ pub struct Node {
     pub(crate) node_config: NodeConfig,
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<Map<ChannelId, Arc<Mutex<ChannelSlot>>>>,
-    pub(crate) validator_factory: Mutex<Box<dyn ValidatorFactory>>,
+    pub(crate) validator_factory: Mutex<Arc<dyn ValidatorFactory>>,
     pub(crate) persister: Arc<dyn Persist>,
     allowlist: Mutex<UnorderedSet<Allowable>>,
     tracker: Mutex<ChainTracker<ChainMonitor>>,
-    state: Mutex<NodeState>,
+    pub(crate) state: Mutex<NodeState>,
 }
 
 impl Wallet for Node {
@@ -214,6 +323,7 @@ impl Node {
         seed: &[u8],
         persister: &Arc<Persist>,
         allowlist: Vec<Allowable>,
+        validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Node {
         let genesis = genesis_block(node_config.network);
 
@@ -221,14 +331,7 @@ impl Node {
         let tracker =
             ChainTracker::new(node_config.network, 0, genesis.header).expect("bad  chain tip");
 
-        Self::new_extended(
-            node_config,
-            seed,
-            persister,
-            allowlist,
-            tracker,
-            Box::new(SimpleValidatorFactory {}),
-        )
+        Self::new_extended(node_config, seed, persister, allowlist, tracker, validator_factory)
     }
 
     /// Create a node
@@ -240,11 +343,11 @@ impl Node {
         persister: &Arc<dyn Persist>,
         allowlist: Vec<Allowable>,
         tracker: ChainTracker<ChainMonitor>,
-        validator_factory: Box<dyn ValidatorFactory>,
+        validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Node {
         let genesis = genesis_block(node_config.network);
         let now = Duration::from_secs(genesis.header.time as u64);
-        let state = Mutex::new(NodeState { invoices: Map::new() });
+        let state = Mutex::new(NodeState { invoices: Map::new(), issued_invoices: Map::new() });
 
         Node {
             keys_manager: MyKeysManager::new(
@@ -271,6 +374,7 @@ impl Node {
         persister: &Arc<Persist>,
         allowlist: Vec<Allowable>,
         tracker: ChainTracker<ChainMonitor>,
+        validator_factory: Arc<dyn ValidatorFactory>,
         state: NodeState,
     ) -> Node {
         let genesis = genesis_block(node_config.network);
@@ -287,7 +391,7 @@ impl Node {
             ),
             node_config,
             channels: Mutex::new(Map::new()),
-            validator_factory: Mutex::new(Box::new(SimpleValidatorFactory {})),
+            validator_factory: Mutex::new(validator_factory),
             persister: Arc::clone(persister),
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
             tracker: Mutex::new(tracker),
@@ -296,7 +400,7 @@ impl Node {
     }
 
     /// Set the node's validator factory
-    pub fn set_validator_factory(&self, validator_factory: Box<dyn ValidatorFactory>) {
+    pub fn set_validator_factory(&self, validator_factory: Arc<dyn ValidatorFactory>) {
         let mut vfac = self.validator_factory.lock().unwrap();
         *vfac = validator_factory;
     }
@@ -305,6 +409,11 @@ impl Node {
     pub fn get_id(&self) -> PublicKey {
         let secp_ctx = Secp256k1::signing_only();
         PublicKey::from_secret_key(&secp_ctx, &self.keys_manager.get_node_secret())
+    }
+
+    /// Lock and return the node state
+    pub fn get_state(&self) -> MutexGuard<NodeState> {
+        self.state.lock().unwrap()
     }
 
     #[allow(dead_code)]
@@ -323,7 +432,7 @@ impl Node {
     pub fn get_channel(&self, channel_id: &ChannelId) -> Result<Arc<Mutex<ChannelSlot>>, Status> {
         let mut guard = self.channels();
         let elem = guard.get_mut(channel_id);
-        let slot_arc = elem.ok_or_else(|| Status::invalid_argument("no such channel"))?;
+        let slot_arc = elem.ok_or_else(|| invalid_argument("no such channel"))?;
         Ok(Arc::clone(slot_arc))
     }
 
@@ -518,6 +627,7 @@ impl Node {
         node_id: &PublicKey,
         node_entry: NodeEntry,
         persister: Arc<dyn Persist>,
+        validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Arc<Node> {
         let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
         let config = NodeConfig {
@@ -534,7 +644,7 @@ impl Node {
             .expect("allowable parse error");
         let tracker = persister.get_tracker(node_id).expect("tracker");
         // FIXME persist node state
-        let state = NodeState { invoices: Map::new() };
+        let state = NodeState { invoices: Map::new(), issued_invoices: Map::new() };
 
         let node = Arc::new(Node::new_from_persistence(
             config,
@@ -542,6 +652,7 @@ impl Node {
             &persister,
             allowlist,
             tracker,
+            validator_factory,
             state,
         ));
         assert_eq!(&node.get_id(), node_id);
@@ -565,10 +676,18 @@ impl Node {
     /// Restore all nodes from `persister`.
     ///
     /// The channels of each node are also restored.
-    pub fn restore_nodes(persister: Arc<dyn Persist>) -> Map<PublicKey, Arc<Node>> {
+    pub fn restore_nodes(
+        persister: Arc<dyn Persist>,
+        validator_factory: Arc<dyn ValidatorFactory>,
+    ) -> Map<PublicKey, Arc<Node>> {
         let mut nodes = Map::new();
         for (node_id, node_entry) in persister.get_nodes() {
-            let node = Node::restore_node(&node_id, node_entry, Arc::clone(&persister));
+            let node = Node::restore_node(
+                &node_id,
+                node_entry,
+                Arc::clone(&persister),
+                validator_factory.clone(),
+            );
             nodes.insert(node_id, node);
         }
         nodes
@@ -611,7 +730,22 @@ impl Node {
             let funding_outpoint = setup.funding_outpoint;
             let monitor = ChainMonitor::new(funding_outpoint, tracker.height());
             monitor.add_funding_outpoint(&funding_outpoint);
-            let enforcement_state = EnforcementState::new();
+            let to_holder_msat = if setup.is_outbound {
+                // This is also checked in the validator, but we have to check
+                // here because we need it to create the validator
+                (setup.channel_value_sat * 1000).checked_sub(setup.push_value_msat).ok_or_else(
+                    || {
+                        policy_error(format!(
+                            "beneficial channel value underflow: {} - {}",
+                            setup.channel_value_sat * 1000,
+                            setup.push_value_msat
+                        ))
+                    },
+                )?
+            } else {
+                setup.push_value_msat
+            };
+            let enforcement_state = EnforcementState::new(to_holder_msat);
             Channel {
                 node: Weak::clone(&stub.node),
                 nonce: stub.nonce.clone(),
@@ -664,10 +798,10 @@ impl Node {
         trace_enforcement_state!(&chan.enforcement_state);
         self.persister
             .update_tracker(&self.get_id(), &tracker)
-            .map_err(|_| Status::internal("tracker persist failed"))?;
+            .map_err(|_| internal_error("tracker persist failed"))?;
         self.persister
             .update_channel(&self.get_id(), &chan)
-            .map_err(|_| Status::internal("persist failed"))?;
+            .map_err(|_| internal_error("persist failed"))?;
 
         Ok(chan)
     }
@@ -794,7 +928,7 @@ impl Node {
         // the channels added some watches - persist
         self.persister
             .update_tracker(&self.get_id(), &tracker)
-            .map_err(|_| Status::internal("tracker persist failed"))?;
+            .map_err(|_| internal_error("tracker persist failed"))?;
 
         // TODO(devrandom) self.persist_channel(node_id, chan);
         Ok(witvec)
@@ -901,36 +1035,56 @@ impl Node {
         Ok(res)
     }
 
-    /// Sign an invoice
-    pub fn sign_invoice_in_parts(
+    /// Sign an invoice and start tracking incoming payment for its payment hash
+    pub fn sign_invoice(
         &self,
-        data_part: &Vec<u8>,
-        human_readable_part: &String,
-    ) -> Result<Vec<u8>, Status> {
-        use bitcoin::bech32::CheckBase32;
+        hrp_bytes: &[u8],
+        invoice_data: &[u5],
+    ) -> Result<RecoverableSignature, Status> {
+        let signed_raw_invoice = self.do_sign_invoice(hrp_bytes, invoice_data)?;
 
-        let hash = invoice_utils::hash_from_parts(
-            human_readable_part.as_bytes(),
-            &data_part.check_base32().expect("needs to be base32 data"),
-        );
+        let sig = signed_raw_invoice.signature().0;
+        let (hash, invoice_state, invoice_hash) =
+            Self::invoice_state_from_invoice(signed_raw_invoice)?;
+        info!("signing an invoice {} -> {}", hash.0.to_hex(), invoice_state.amount_msat);
 
-        let secp_ctx = Secp256k1::signing_only();
-        let encmsg = secp256k1::Message::from_slice(&hash[..])
-            .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
-        let node_secret = SecretKey::from_slice(self.get_node_secret().as_ref()).unwrap();
-        let sig = secp_ctx.sign_recoverable(&encmsg, &node_secret);
-        let (rid, sig) = sig.serialize_compact();
-        let mut res = sig.to_vec();
-        res.push(rid.to_i32() as u8);
-        Ok(res)
+        let mut state = self.state.lock().unwrap();
+        if let Some(invoice_state) = state.invoices.get(&hash) {
+            return if invoice_state.invoice_hash == invoice_hash {
+                Ok(sig)
+            } else {
+                Err(failed_precondition(
+                    "already have a different invoice for same secret".to_string(),
+                ))
+            };
+        }
+        state.issued_invoices.insert(hash, invoice_state);
+
+        Ok(sig)
     }
 
-    /// Sign an invoice
-    pub fn sign_invoice(&self, invoice_preimage: &Vec<u8>) -> RecoverableSignature {
+    pub(crate) fn do_sign_invoice(
+        &self,
+        hrp_bytes: &[u8],
+        invoice_data: &[u5],
+    ) -> Result<SignedRawInvoice, Status> {
+        let hrp: RawHrp = String::from_utf8(hrp_bytes.to_vec())
+            .map_err(|_| invalid_argument("invoice hrp not utf-8"))?
+            .parse()
+            .map_err(|e| invalid_argument(format!("parse error: {}", e)))?;
+        let data = RawDataPart::from_base32(invoice_data)
+            .map_err(|e| invalid_argument(format!("parse error: {}", e)))?;
+        let raw_invoice = RawInvoice { hrp, data };
+
+        let invoice_preimage = construct_invoice_preimage(&hrp_bytes, &invoice_data);
         let secp_ctx = Secp256k1::signing_only();
-        let hash = Sha256Hash::hash(invoice_preimage);
+        let hash = Sha256Hash::hash(&invoice_preimage);
         let message = secp256k1::Message::from_slice(&hash).unwrap();
-        secp_ctx.sign_recoverable(&message, &self.get_node_secret())
+        let sig = secp_ctx.sign_recoverable(&message, &self.get_node_secret());
+
+        raw_invoice
+            .sign::<_, ()>(|_| Ok(sig))
+            .map_err(|()| internal_error("failed to sign invoice"))
     }
 
     /// Sign a Lightning message
@@ -997,7 +1151,7 @@ impl Node {
             .iter()
             .map(|addrstr| Allowable::from_str(addrstr, self.network()))
             .collect::<Result<Vec<Allowable>, String>>()
-            .map_err(|s| Status::invalid_argument(format!("could not parse {}", s)))?;
+            .map_err(|s| invalid_argument(format!("could not parse {}", s)))?;
         let mut alset = self.allowlist.lock().unwrap();
         for a in allowables {
             alset.insert(a);
@@ -1010,7 +1164,7 @@ impl Node {
         let wlvec = (*alset).iter().map(|a| a.to_string(self.network())).collect();
         self.persister
             .update_node_allowlist(&self.get_id(), wlvec)
-            .map_err(|_| Status::internal("persist failed"))
+            .map_err(|_| internal_error("persist failed"))
     }
 
     /// Removes addresses from the node's current allowlist.
@@ -1019,7 +1173,7 @@ impl Node {
             .iter()
             .map(|addrstr| Allowable::from_str(addrstr, self.network()))
             .collect::<Result<Vec<Allowable>, String>>()
-            .map_err(|s| Status::invalid_argument(format!("could not parse {}", s)))?;
+            .map_err(|s| invalid_argument(format!("could not parse {}", s)))?;
         let mut alset = self.allowlist.lock().unwrap();
         for a in allowables {
             alset.remove(&a);
@@ -1033,43 +1187,95 @@ impl Node {
         self.tracker.lock().unwrap()
     }
 
+    // Process payment preimages for offered HTLCs.
+    // Any invoice with a payment hash that matches a preimage is marked
+    // as paid, so that the offered HTLC can be removed and our balance
+    // adjusted downwards.
+    pub(crate) fn htlcs_fulfilled(
+        &self,
+        channel_id: &ChannelId,
+        preimages: Vec<PaymentPreimage>,
+    ) -> u64 {
+        let mut state = self.state.lock().unwrap();
+        let mut total_filled = 0u64;
+        for preimage in preimages.into_iter() {
+            let payment_hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+            if let Some(is) = state.invoices.get_mut(&payment_hash) {
+                is.preimage = Some(preimage);
+                if let Some((amount, filled)) = is.inflight_payments.get_mut(channel_id) {
+                    if *filled {
+                        info!("duplicate preimage {}", payment_hash.0.to_hex());
+                    } else {
+                        info!("preimage fulfills {}", payment_hash.0.to_hex());
+                        total_filled += *amount;
+                        *filled = true;
+                    }
+                } else {
+                    info!(
+                        "preimage {} on unexpected channel {}",
+                        payment_hash.0.to_hex(),
+                        channel_id.0.to_hex()
+                    );
+                }
+            } else {
+                warn!("preimage has no matching invoice for hash {}", payment_hash.0.to_hex());
+            }
+        }
+        total_filled
+    }
+
     /// Add an invoice.
     /// Used by the signer to map HTLCs to destination payees, so that payee
     /// public keys can be allowlisted for policy control.
     pub fn add_invoice(&self, raw_invoice: SignedRawInvoice) -> Result<(), Status> {
-        let invoice_hash = raw_invoice.hash().clone();
+        let (hash, invoice_state, invoice_hash) = Self::invoice_state_from_invoice(raw_invoice)?;
 
-        // This performs all semantic checks and signature check
-        let invoice = Invoice::from_signed(raw_invoice)
-            .map_err(|e| Status::invalid_argument(e.to_string()))?;
+        debug!("adding invoice {} -> {}", hash.0.to_hex(), invoice_state.amount_msat);
         let mut state = self.state.lock().unwrap();
-        let hash = invoice.payment_hash();
-        if let Some(invoice_state) = state.invoices.get(hash) {
+        if let Some(invoice_state) = state.invoices.get(&hash) {
             return if invoice_state.invoice_hash == invoice_hash {
                 Ok(())
             } else {
-                Err(Status::failed_precondition(
+                Err(failed_precondition(
                     "already have a different invoice for same secret".to_string(),
                 ))
             };
         }
+        state.invoices.insert(hash, invoice_state);
+        Ok(())
+    }
+
+    // Validate the invoice and create a tracking state for it
+    fn invoice_state_from_invoice(
+        raw_invoice: SignedRawInvoice,
+    ) -> Result<(PaymentHash, InvoiceState, [u8; 32]), Status> {
+        let invoice_hash = raw_invoice.hash().clone();
+
+        // This performs all semantic checks and signature check
+        let invoice =
+            Invoice::from_signed(raw_invoice).map_err(|e| invalid_argument(e.to_string()))?;
+        let hash = PaymentHash(invoice.payment_hash().as_inner().clone());
+        info!("add invoice with payment hash {}", hash.0.to_hex());
         let amount_msat = invoice
             .amount_milli_satoshis()
-            .ok_or_else(|| Status::invalid_argument("invoice amount must be specified"))?;
+            .ok_or_else(|| invalid_argument("invoice amount must be specified"))?;
         // TODO check if payee public key in allowlist
         let payee = invoice
             .payee_pub_key()
             .map(|p| p.clone())
             .unwrap_or_else(|| invoice.recover_payee_pub_key());
+        let inflight_payments = Map::new();
         let invoice_state = InvoiceState {
             invoice_hash,
             amount_msat,
             payee,
             duration_since_epoch: invoice.duration_since_epoch(),
             expiry_duration: invoice.expiry_time(),
+            inflight_payments,
+            preimage: None,
+            is_fulfilled: false,
         };
-        state.invoices.insert(*hash, invoice_state);
-        Ok(())
+        Ok((hash, invoice_state, invoice_hash))
     }
 }
 
@@ -1133,6 +1339,7 @@ pub trait SyncLogger: Logger + SendSync {}
 #[cfg(test)]
 mod tests {
     use bitcoin;
+    use bitcoin::bech32::{CheckBase32, ToBase32};
     use bitcoin::consensus::deserialize;
     use bitcoin::hashes::sha256d::Hash as Sha256dHash;
     use bitcoin::hashes::Hash;
@@ -1146,6 +1353,7 @@ mod tests {
     use test_env_log::test;
 
     use crate::channel::ChannelBase;
+    use crate::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::*;
 
@@ -1201,37 +1409,181 @@ mod tests {
     #[test]
     fn invoice_test() {
         let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let (node, _channel_id) =
+        let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        let hash = PaymentHash([2; 32]);
         // TODO check currency matches
-        let invoice1 = InvoiceBuilder::new(Currency::Bitcoin)
-            .duration_since_epoch(Duration::from_secs(123456789))
-            .amount_milli_satoshis(100_000)
-            .payment_hash(Sha256Hash::default())
-            .payment_secret(PaymentSecret([0; 32]))
-            .description("invoice1".to_string())
-            .build_raw()
-            .expect("build")
-            .sign::<_, ()>(|hash| {
-                Ok(Secp256k1::new().sign_recoverable(hash, &payee_node.get_node_secret()))
-            })
-            .unwrap();
-        let invoice2 = InvoiceBuilder::new(Currency::Bitcoin)
-            .duration_since_epoch(Duration::from_secs(123456789))
-            .amount_milli_satoshis(100_000)
-            .payment_hash(Sha256Hash::default())
-            .payment_secret(PaymentSecret([0; 32]))
-            .description("invoice2".to_string())
-            .build_raw()
-            .expect("build")
-            .sign::<_, ()>(|hash| {
-                Ok(Secp256k1::new().sign_recoverable(hash, &payee_node.get_node_secret()))
-            })
-            .unwrap();
+        let invoice1 = make_test_invoice(&payee_node, "invoice1", hash);
+        let invoice2 = make_test_invoice(&payee_node, "invoice2", hash);
         node.add_invoice(invoice1.clone()).expect("add invoice");
         node.add_invoice(invoice1.clone()).expect("add invoice");
         node.add_invoice(invoice2.clone())
             .expect_err("add a different invoice with same payment hash");
+
+        let mut state = node.state.lock().unwrap();
+        let hash1 = PaymentHash([1; 32]);
+        let invoice_state = state.invoices.get_mut(&hash).expect("invoice state");
+        assert_eq!(invoice_state.updated_amount(&channel_id, 100_000), 100_000);
+        let channel_id1 = ChannelId([1; 32]);
+        invoice_state.apply_payment(&channel_id1, 99_000);
+        assert_eq!(invoice_state.updated_amount(&channel_id1, 98_000), 98_000);
+        assert_eq!(invoice_state.updated_amount(&channel_id, 1), 99_001);
+
+        // Create a strict invoice validator and one that does not validate invoices
+        let mut policy = make_simple_policy(Network::Testnet);
+        policy.require_invoices = true;
+        let invoice_validator = SimpleValidatorFactory::new_with_policy(policy).make_validator(
+            Network::Testnet,
+            node.get_id(),
+            None,
+        );
+        let lenient_validator =
+            SimpleValidatorFactory::new().make_validator(Network::Testnet, node.get_id(), None);
+
+        // 99_000 applied on channel_id1 above, so there is 1_000 left to apply on a different channel.  But we also allow for fees when deciding there
+        // is an overpayment.
+        // TODO the max fee is hardcoded to 10_000
+        let apply1 = state.apply_payments(
+            &channel_id,
+            vec![(hash, 11_001)].into_iter().collect(),
+            invoice_validator.clone(),
+        );
+        assert!(apply1.is_err());
+        assert_eq!(apply1.unwrap_err().payment_hashes, vec![hash]);
+        assert!(state
+            .apply_payments(
+                &channel_id,
+                vec![(hash, 11_000)].into_iter().collect(),
+                invoice_validator.clone()
+            )
+            .is_ok());
+        assert!(state
+            .apply_payments(
+                &channel_id,
+                vec![(hash, 11_001)].into_iter().collect(),
+                invoice_validator.clone()
+            )
+            .is_err());
+
+        // Apply payments to a non-invoiced payment hash
+        assert!(state
+            .apply_payments(
+                &channel_id,
+                vec![(hash1, 555)].into_iter().collect(),
+                lenient_validator.clone()
+            )
+            .is_ok());
+        assert!(state
+            .apply_payments(
+                &channel_id,
+                vec![(hash1, 555)].into_iter().collect(),
+                invoice_validator.clone()
+            )
+            .is_err());
+    }
+
+    fn make_test_invoice(
+        payee_node: &Arc<Node>,
+        description: &str,
+        payment_hash: PaymentHash,
+    ) -> SignedRawInvoice {
+        let (hrp_bytes, invoice_data) = build_test_invoice(description, &payment_hash);
+        payee_node.do_sign_invoice(&hrp_bytes, &invoice_data).unwrap()
+    }
+
+    fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>, Vec<u5>) {
+        let raw_invoice = InvoiceBuilder::new(Currency::Bitcoin)
+            .duration_since_epoch(Duration::from_secs(123456789))
+            .amount_milli_satoshis(100_000)
+            .payment_hash(Sha256Hash::from_slice(&payment_hash.0).unwrap())
+            .payment_secret(PaymentSecret([0; 32]))
+            .description(description.to_string())
+            .build_raw()
+            .expect("build");
+        let hrp_str = raw_invoice.hrp.to_string();
+        let hrp_bytes = hrp_str.as_bytes().to_vec();
+        let invoice_data = raw_invoice.data.to_base32();
+        (hrp_bytes, invoice_data)
+    }
+
+    #[test]
+    fn fulfill_test() {
+        let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        // TODO check currency matches
+        let preimage = PaymentPreimage([0; 32]);
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+
+        let invoice = make_test_invoice(&payee_node, "invoice", hash);
+
+        node.add_invoice(invoice).expect("add invoice");
+
+        let mut policy = make_simple_policy(Network::Testnet);
+        policy.require_invoices = true;
+        policy.enforce_balance = true;
+        let factory = SimpleValidatorFactory::new_with_policy(policy);
+        let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
+        node.set_validator_factory(Arc::new(factory));
+
+        {
+            let mut state = node.state.lock().unwrap();
+            assert!(state
+                .apply_payments(
+                    &channel_id,
+                    vec![(hash, 101_000)].into_iter().collect(),
+                    invoice_validator.clone()
+                )
+                .is_ok());
+        }
+        node.with_ready_channel(&channel_id, |chan| {
+            assert_eq!(chan.enforcement_state.holder_balance_msat, 3_000_000_000);
+            chan.htlcs_fulfilled(vec![preimage]);
+            assert_eq!(chan.enforcement_state.holder_balance_msat, 3_000_000_000 - 101_000);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn incoming_payment_test() {
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        // TODO check currency matches
+        let preimage = PaymentPreimage([0; 32]);
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+
+        let (hrp, data) = build_test_invoice("invoice", &hash);
+        // This records the issued invoice
+        node.sign_invoice(&hrp, &data).unwrap();
+
+        {
+            let mut state = node.state.lock().unwrap();
+            // Underpaid
+            assert_eq!(
+                state.apply_incoming_payments(
+                    &channel_id,
+                    vec![(hash, 99_999)].into_iter().collect()
+                ),
+                Ok(0)
+            );
+            // Paid
+            assert_eq!(
+                state.apply_incoming_payments(
+                    &channel_id,
+                    vec![(hash, 100_000)].into_iter().collect()
+                ),
+                Ok(100_000)
+            );
+            // Already paid, no balance adjustment signalled
+            assert_eq!(
+                state.apply_incoming_payments(
+                    &channel_id,
+                    vec![(hash, 100_000)].into_iter().collect()
+                ),
+                Ok(0)
+            );
+        }
     }
 
     #[test]
@@ -1324,9 +1676,13 @@ mod tests {
     fn sign_invoice_test() -> Result<(), ()> {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let human_readable_part = String::from("lnbcrt1230n");
-        let data_part = hex_decode("010f0418090a010101141917110f01040e050f06100003021e1b0e13161c150301011415060204130c0018190d07070a18070a1c1101111e111f130306000d00120c11121706181b120d051807081a0b0f0d18060004120e140018000105100114000b130b01110c001a05041a181716020007130c091d11170d10100d0b1a1b00030e05190208171e16080d00121a00110719021005000405001000").unwrap();
-        let rsig = node.sign_invoice_in_parts(&data_part, &human_readable_part).unwrap();
-        assert_eq!(rsig, hex_decode("739ffb91aa7c0b3d3c92de1600f7a9afccedc5597977095228232ee4458685531516451b84deb35efad27a311ea99175d10c6cdb458cd27ce2ed104eb6cf806400").unwrap());
+        let data_part = hex_decode("010f0418090a010101141917110f01040e050f06100003021e1b0e13161c150301011415060204130c0018190d07070a18070a1c1101111e111f130306000d00120c11121706181b120d051807081a0b0f0d18060004120e140018000105100114000b130b01110c001a05041a181716020007130c091d11170d10100d0b1a1b00030e05190208171e16080d00121a00110719021005000405001000").unwrap().check_base32().unwrap();
+        let (rid, rsig) = node
+            .sign_invoice(human_readable_part.as_bytes(), &data_part)
+            .unwrap()
+            .serialize_compact();
+        assert_eq!(rsig.to_vec(), hex_decode("739ffb91aa7c0b3d3c92de1600f7a9afccedc5597977095228232ee4458685531516451b84deb35efad27a311ea99175d10c6cdb458cd27ce2ed104eb6cf8064").unwrap());
+        assert_eq!(rid.to_i32(), 0);
         Ok(())
     }
 
@@ -1334,13 +1690,28 @@ mod tests {
     fn sign_invoice_with_overhang_test() -> Result<(), ()> {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let human_readable_part = String::from("lnbcrt2m");
-        let data_part = hex_decode("010f0a001d051e0101140c0c000006140009160c09051a0d1a190708020d17141106171f0f07131616111f1910070b0d0e150c0c0c0d010d1a01181c15100d010009181a06101a0a0309181b040a111a0a06111705100c0b18091909030e151b14060004120e14001800010510011419080f1307000a0a0517021c171410101a1e101605050a08180d0d110e13150409051d02091d181502020f050e1a1f161a09130005000405001000").unwrap();
+        let data_part = hex_decode("010f0a001d051e0101140c0c000006140009160c09051a0d1a190708020d17141106171f0f07131616111f1910070b0d0e150c0c0c0d010d1a01181c15100d010009181a06101a0a0309181b040a111a0a06111705100c0b18091909030e151b14060004120e14001800010510011419080f1307000a0a0517021c171410101a1e101605050a08180d0d110e13150409051d02091d181502020f050e1a1f161a09130005000405001000").unwrap().check_base32().unwrap();
         // The data_part is 170 bytes.
         // overhang = (data_part.len() * 5) % 8 = 2
         // looking for a verified invoice where overhang is in 1..3
-        let rsig = node.sign_invoice_in_parts(&data_part, &human_readable_part).unwrap();
-        assert_eq!(rsig, hex_decode("f278cdba3fd4a37abf982cee5a66f52e142090631ef57763226f1232eead78b43da7962fcfe29ffae9bd918c588df71d6d7b92a4787de72801594b22f0e7e62a00").unwrap());
+        let (rid, rsig) = node
+            .sign_invoice(human_readable_part.as_bytes(), &data_part)
+            .unwrap()
+            .serialize_compact();
+        assert_eq!(rsig.to_vec(), hex_decode("f278cdba3fd4a37abf982cee5a66f52e142090631ef57763226f1232eead78b43da7962fcfe29ffae9bd918c588df71d6d7b92a4787de72801594b22f0e7e62a").unwrap());
+        assert_eq!(rid.to_i32(), 0);
         Ok(())
+    }
+
+    #[test]
+    fn sign_bad_invoice_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let human_readable_part = String::from("lnbcrt1230n");
+        let data_part = hex_decode("010f0418090a").unwrap().check_base32().unwrap();
+        assert_invalid_argument_err!(
+            node.sign_invoice(human_readable_part.as_bytes(), &data_part),
+            "parse error: data part too short (should be at least 111 bech32 chars long)"
+        );
     }
 
     #[test]

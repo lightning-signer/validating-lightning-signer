@@ -405,7 +405,10 @@ mod tests {
             tx: &mut tx,
         });
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        let err_opt = funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        if let Some(err) = err_opt {
+            return Err(err);
+        }
 
         let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
@@ -531,7 +534,7 @@ mod tests {
                 fms.chan_ctx.setup.push_value_msat =
                     (fms.chan_ctx.setup.channel_value_sat + 100) * 1000;
             }),
-            "policy failure: beneficial channel value underflow: 3000000 - 3000100"
+            "policy failure: beneficial channel value underflow: 3000000000 - 3000100000"
         );
     }
 

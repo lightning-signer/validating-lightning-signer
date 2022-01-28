@@ -19,13 +19,13 @@ use chain::transaction::OutPoint;
 use lightning::chain;
 use lightning::chain::{Confirm, Listen, chaininterface};
 use lightning::ln;
-use lightning::ln::channelmanager::ChainParameters;
+use lightning::ln::channelmanager::{ChainParameters, MIN_FINAL_CLTV_EXPIRY};
 use lightning::chain::BestBlock;
 use lightning::ln::features::InvoiceFeatures;
 use lightning::ln::functional_test_utils::ConnectStyle;
 use lightning::ln::PaymentSecret;
 use lightning::routing::network_graph::NetGraphMsgHandler;
-use lightning::routing::router::{find_route, Payee, Route, RouteParameters};
+use lightning::routing::router::{find_route, PaymentParameters, Route, RouteParameters};
 use lightning::util;
 use lightning::util::config::UserConfig;
 use lightning::util::test_utils;
@@ -42,6 +42,7 @@ use crate::util::test_utils::{make_block, proof_for_block, TestChainMonitor, Tes
 use crate::lightning::routing::network_graph::NetworkGraph;
 
 use core::cmp;
+use bitcoin::bech32::ToBase32;
 use log::info;
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 10;
@@ -183,6 +184,7 @@ pub struct Node<'a, 'b: 'a, 'c: 'b> {
     pub logger: &'c test_utils::TestLogger,
     pub blocks: RefCell<Vec<(BlockHeader, u32)>>,
     pub connect_style: Rc<RefCell<ConnectStyle>>,
+    pub use_invoices: bool,
 }
 impl<'a, 'b, 'c> Node<'a, 'b, 'c> {
     pub fn best_block_hash(&self) -> BlockHash {
@@ -436,7 +438,7 @@ pub fn create_chan_between_nodes_with_value_confirm_first<'a, 'b, 'c, 'd>(node_r
 pub fn create_chan_between_nodes_with_value_confirm_second<'a, 'b, 'c>(node_recv: &Node<'a, 'b, 'c>, node_conf: &Node<'a, 'b, 'c>) -> ((msgs::FundingLocked, msgs::AnnouncementSignatures), [u8; 32]) {
     let channel_id;
     let events_6 = node_conf.node.get_and_clear_pending_msg_events();
-    assert_eq!(events_6.len(), 2);
+    assert_eq!(events_6.len(), 3);
     ((match events_6[0] {
         MessageSendEvent::SendFundingLocked { ref node_id, ref msg } => {
             channel_id = msg.channel_id.clone();
@@ -444,7 +446,7 @@ pub fn create_chan_between_nodes_with_value_confirm_second<'a, 'b, 'c>(node_recv
             msg.clone()
         },
         _ => panic!("Unexpected event"),
-    }, match events_6[1] {
+    }, match events_6[2] {
         MessageSendEvent::SendAnnouncementSignatures { ref node_id, ref msg } => {
             assert_eq!(*node_id, node_recv.node.get_our_node_id());
             msg.clone()
@@ -500,7 +502,7 @@ pub fn create_chan_between_nodes_with_value_b<'a, 'b, 'c>(node_a: &Node<'a, 'b, 
 }
 
 pub fn create_announced_chan_between_nodes<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'b, 'c, 'd>>, a: usize, b: usize, a_flags: InitFeatures, b_flags: InitFeatures) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, [u8; 32], Transaction) {
-    create_announced_chan_between_nodes_with_value(nodes, a, b, 100000, 10001, a_flags, b_flags)
+    create_announced_chan_between_nodes_with_value(nodes, a, b, 100000, 0, a_flags, b_flags)
 }
 
 pub fn create_announced_chan_between_nodes_with_value<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'b, 'c, 'd>>, a: usize, b: usize, channel_value: u64, push_msat: u64, a_flags: InitFeatures, b_flags: InitFeatures) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, [u8; 32], Transaction) {
@@ -1011,6 +1013,27 @@ pub fn pass_along_route<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_rou
 
 pub fn send_along_route<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, route: Route, expected_route: &[&Node<'a, 'b, 'c>], recv_value: u64) -> (PaymentPreimage, PaymentHash, PaymentSecret) {
     let (our_payment_preimage, our_payment_hash, our_payment_secret) = get_payment_preimage_hash!(expected_route.last().unwrap());
+    if origin_node.use_invoices {
+        let destination_node = expected_route[expected_route.len() - 1];
+        let payee_pubkey = destination_node.node.get_our_node_id();
+        let invoice = lightning_invoice::InvoiceBuilder::new(lightning_invoice::Currency::Regtest)
+            .payment_hash(Sha256::from_slice(&our_payment_hash.0).unwrap())
+            .payment_secret(our_payment_secret)
+            .description("invoice".to_string())
+            .amount_milli_satoshis(recv_value)
+            .current_timestamp()
+            .min_final_cltv_expiry(MIN_FINAL_CLTV_EXPIRY as u64)
+            .payee_pub_key(payee_pubkey)
+            .build_raw().expect("build");
+        let hrp = invoice.hrp.to_string().as_bytes().to_vec();
+        let data = invoice.data.to_base32();
+        let sig = destination_node.keys_manager.get_node()
+            .sign_invoice(&hrp, &data).expect("sign invoice");
+        let signed_invoice = invoice.sign::<_, ()>(|_| Ok(sig)).unwrap();
+
+        origin_node.keys_manager.add_invoice(signed_invoice);
+    }
+
     send_along_route_with_secret(origin_node, route, &[expected_route], recv_value, our_payment_hash, our_payment_secret);
     (our_payment_preimage, our_payment_hash, our_payment_secret)
 }
@@ -1113,10 +1136,10 @@ pub const TEST_FINAL_CLTV: u32 = 70;
 
 pub fn route_payment<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_route: &[&Node<'a, 'b, 'c>], recv_value: u64) -> (PaymentPreimage, PaymentHash, PaymentSecret) {
     let logger = test_utils::TestLogger::new();
-    let payee = Payee::from_node_id(expected_route.last().unwrap().node.get_our_node_id())
+    let payment_params = PaymentParameters::from_node_id(expected_route.last().unwrap().node.get_our_node_id())
         .with_features(InvoiceFeatures::known());
     let params = RouteParameters {
-        payee,
+        payment_params,
         final_value_msat: recv_value,
         final_cltv_expiry_delta: TEST_FINAL_CLTV
     };
@@ -1242,6 +1265,7 @@ pub fn create_network<'a, 'b: 'a, 'c: 'b>(
             logger: cfgs[i].logger,
             blocks: RefCell::new(vec![(genesis_block(Network::Regtest).header, 0)]),
             connect_style: Rc::clone(&connect_style),
+            use_invoices: false
         })
     }
 

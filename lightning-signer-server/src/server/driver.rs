@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::{cmp, process};
 
 use backtrace::Backtrace;
-use clap::{App, Arg};
+use clap::{App, Arg, ArgMatches};
 use log::{debug, error, info};
 use serde_json::json;
 use tonic::{transport::Server, Request, Response, Status};
@@ -25,6 +25,9 @@ use lightning_signer::channel::{channel_nonce_to_id, ChannelId, ChannelSetup, Co
 use lightning_signer::node::SpendType;
 use lightning_signer::node::{self};
 use lightning_signer::persist::{DummyPersister, Persist};
+use lightning_signer::policy::simple_validator::{
+    make_simple_policy, SimplePolicy, SimpleValidatorFactory,
+};
 use lightning_signer::signer::multi_signer::MultiSigner;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
@@ -106,6 +109,7 @@ macro_rules! log_req_reply {
 
 struct SignServer {
     pub signer: MultiSigner,
+    pub network: Network,
 }
 
 pub(super) fn invalid_grpc_argument(msg: impl Into<String>) -> Status {
@@ -246,6 +250,7 @@ fn convert_commitment_type(proto_commitment_type: i32) -> channel::CommitmentTyp
 }
 
 fn convert_node_config(
+    network: Network,
     chainparams: ChainParams,
     proto_node_config: NodeConfig,
 ) -> node::NodeConfig {
@@ -257,7 +262,10 @@ fn convert_node_config(
     } else {
         panic!("invalid key derivation style")
     };
-    let network = Network::from_str(&chainparams.network_name).expect("bad network");
+    let supplied_network = Network::from_str(&chainparams.network_name).expect("bad network");
+    if supplied_network != network {
+        panic!("network mismatch {} vs configured {}", supplied_network, network);
+    }
     node::NodeConfig { network, key_derivation_style }
 }
 
@@ -301,7 +309,7 @@ impl Signer for SignServer {
                 return Err(invalid_grpc_argument("hsm_secret must be no larger than 64 bytes"));
             }
         }
-        let node_config = convert_node_config(proto_chainparams, proto_node_config);
+        let node_config = convert_node_config(self.network, proto_chainparams, proto_node_config);
 
         let node_id = if hsm_secret.len() == 0 {
             Ok(self.signer.new_node(node_config))
@@ -1149,16 +1157,23 @@ impl Signer for SignServer {
         &self,
         request: Request<SignInvoiceRequest>,
     ) -> Result<Response<RecoverableNodeSignatureReply>, Status> {
+        use bitcoin::bech32::CheckBase32;
+
         let req = request.into_inner();
         let node_id = self.node_id(req.node_id.clone())?;
         log_req_enter!(&node_id, &req);
 
         let data_part = req.data_part;
-        let human_readable_part = req.human_readable_part;
+        let human_readable_part = req.human_readable_part.as_bytes();
         let node = self.signer.get_node(&node_id)?;
-        let sig_data = node.sign_invoice_in_parts(&data_part, &human_readable_part)?;
+        let data =
+            data_part.check_base32().map_err(|_| invalid_grpc_argument("invalid base32 data"))?;
+        let (rid, sig) = node.sign_invoice(human_readable_part, &data)?.serialize_compact();
+        let mut sig_data = sig.to_vec();
+        // the range 0..3 is enforced in the RecoveryId constructor
+        sig_data.push(rid.to_i32() as u8);
         let reply = RecoverableNodeSignatureReply {
-            signature: Some(EcdsaRecoverableSignature { data: sig_data.clone() }),
+            signature: Some(EcdsaRecoverableSignature { data: sig_data }),
         };
         log_req_reply!(&node_id, &reply);
         Ok(Response::new(reply))
@@ -1335,11 +1350,20 @@ impl Signer for SignServer {
 
 const DEFAULT_DIR: &str = ".lightning-signer";
 
+const NETWORKS: [&str; 3] = ["testnet", "regtest", "signet"];
+
 #[tokio::main]
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     println!("rsignerd {} starting", process::id());
     let app = App::new("server")
         .about("Lightning Signer with a gRPC interface.  Persists to .lightning-signer .")
+        .arg(
+            Arg::new("network")
+                .short('n')
+                .long("network")
+                .possible_values(&NETWORKS)
+                .default_value(NETWORKS[0]),
+        )
         .arg(
             Arg::new("test-mode")
                 .about("allow nodes to be recreated, deleting all channels")
@@ -1403,7 +1427,9 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .long("initial-allowlist-file")
                 .takes_value(true),
         );
+    let app = policy_args(app);
     let matches = app.get_matches();
+
     let addr =
         format!("{}:{}", matches.value_of("interface").unwrap(), matches.value_of("port").unwrap())
             .parse()?;
@@ -1422,6 +1448,9 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     .unwrap_or_else(|e| panic!("Failed to create FilesystemLogger: {}", e));
     log::set_max_level(cmp::max(disk_log_level, console_log_level));
 
+    // Network can be specified on the command line or in the config file
+    let network: Network = matches.value_of_t("network").expect("network");
+
     let test_mode = matches.is_present("test-mode");
     let persister: Arc<dyn Persist> = if matches.is_present("no-persist") {
         Arc::new(DummyPersister)
@@ -1435,8 +1464,11 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         let file = File::open(&alfp).expect(format!("open {} failed", &alfp).as_str());
         initial_allowlist = BufReader::new(file).lines().map(|l| l.expect("line")).collect()
     }
-    let signer = MultiSigner::new_with_persister(persister, test_mode, initial_allowlist);
-    let server = SignServer { signer };
+    let policy = policy(&matches, network);
+    let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
+    let signer =
+        MultiSigner::new_with_persister(persister, test_mode, initial_allowlist, validator_factory);
+    let server = SignServer { signer, network };
 
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
     ctrlc::set_handler(move || {
@@ -1453,4 +1485,16 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     println!("rsignerd {} finished", process::id());
 
     Ok(())
+}
+
+fn policy_args(app: App) -> App {
+    app.arg(Arg::new("require_invoices").long("require_invoices").takes_value(false))
+        .arg(Arg::new("enforce_balance").long("enforce_balance").takes_value(false))
+}
+
+fn policy(matches: &ArgMatches, network: Network) -> SimplePolicy {
+    let mut policy = make_simple_policy(network);
+    policy.require_invoices = matches.is_present("require_invoices");
+    policy.enforce_balance = matches.is_present("enforce_balance");
+    policy
 }

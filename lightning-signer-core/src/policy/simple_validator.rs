@@ -12,6 +12,7 @@ use lightning::ln::PaymentHash;
 use log::{debug, info};
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
+use crate::node::InvoiceState;
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
 use crate::prelude::*;
@@ -33,15 +34,20 @@ extern crate scopeguard;
 use super::error::{policy_error, transaction_format_error, ValidationError};
 
 /// A factory for SimpleValidator
-pub struct SimpleValidatorFactory {}
+pub struct SimpleValidatorFactory {
+    policy: Option<SimplePolicy>,
+}
 
-/// Construct a SimpleValidator
-pub fn simple_validator(
-    network: Network,
-    node_id: PublicKey,
-    channel_id: Option<ChannelId>,
-) -> SimpleValidator {
-    SimpleValidator { policy: make_simple_policy(network), node_id, channel_id }
+impl SimpleValidatorFactory {
+    /// Create a new simple validator factory with default policy settings
+    pub fn new() -> Self {
+        SimpleValidatorFactory { policy: None }
+    }
+
+    /// Create a new simple validator factory with a specified policy
+    pub fn new_with_policy(policy: SimplePolicy) -> Self {
+        SimpleValidatorFactory { policy: Some(policy) }
+    }
 }
 
 impl ValidatorFactory for SimpleValidatorFactory {
@@ -50,8 +56,14 @@ impl ValidatorFactory for SimpleValidatorFactory {
         network: Network,
         node_id: PublicKey,
         channel_id: Option<ChannelId>,
-    ) -> Box<dyn Validator> {
-        Box::new(simple_validator(network, node_id, channel_id))
+    ) -> Arc<dyn Validator> {
+        let validator = SimpleValidator {
+            policy: self.policy.clone().unwrap_or_else(|| make_simple_policy(network)),
+            node_id,
+            channel_id,
+        };
+
+        Arc::new(validator)
     }
 }
 
@@ -80,9 +92,19 @@ pub struct SimplePolicy {
     pub min_fee: u64,
     /// Maximum fee
     pub max_fee: u64,
+    /// Require invoices for payments, and disallow keysend
+    // TODO secure keysend
+    pub require_invoices: bool,
+    /// Enforce holder balance
+    // TODO incoming payments
+    // TODO routing
+    pub enforce_balance: bool,
+    /// Maximum layer-2 fee
+    pub max_routing_fee_msat: u64,
 }
 
-/// A simple validator
+/// A simple validator.
+/// See [`SimpleValidatorFactory`] for construction
 pub struct SimpleValidator {
     policy: SimplePolicy,
     node_id: PublicKey,
@@ -398,14 +420,10 @@ impl Validator for SimpleValidator {
 
                         let push_val_sat = chan.setup.push_value_msat / 1000;
                         let our_value = if chan.setup.is_outbound {
-                            chan.setup.channel_value_sat.checked_sub(push_val_sat).ok_or_else(
-                                || {
-                                    policy_error(format!(
-                                        "beneficial channel value underflow: {} - {}",
-                                        chan.setup.channel_value_sat, push_val_sat
-                                    ))
-                                },
-                            )?
+                            chan.setup
+                                .channel_value_sat
+                                .checked_sub(push_val_sat)
+                                .expect("push value underflow checked in ready_channel")
                         } else {
                             return policy_err!(
                                 "can't sign for inbound channel: dual-funding not supported yet",
@@ -478,10 +496,11 @@ impl Validator for SimpleValidator {
         commitment_point: &PublicKey,
         setup: &ChannelSetup,
         cstate: &ChainState,
-        info: &CommitmentInfo2,
+        info2: &CommitmentInfo2,
+        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         if let Some(current) = &estate.current_counterparty_commit_info {
-            let (added, removed) = current.delta_offered_htlcs(info);
+            let (added, removed) = current.delta_offered_htlcs(info2);
             debug!(
                 "{} counterparty offered delta outbound={} +{:?} -{:?}",
                 self.log_prefix(),
@@ -489,7 +508,7 @@ impl Validator for SimpleValidator {
                 added.collect::<Vec<_>>(),
                 removed.collect::<Vec<_>>()
             );
-            let (added, removed) = current.delta_received_htlcs(info);
+            let (added, removed) = current.delta_received_htlcs(info2);
             debug!(
                 "{} counterparty received delta outbound={} +{:?} -{:?}",
                 self.log_prefix(),
@@ -499,14 +518,22 @@ impl Validator for SimpleValidator {
             );
         }
         // Validate common commitment constraints
-        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info)
-            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
+        self.validate_commitment_tx(
+            estate,
+            commit_num,
+            commitment_point,
+            setup,
+            cstate,
+            info2,
+            fulfilled_incoming_msat,
+        )
+        .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         let mut debug_on_return =
-            scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info);
+            scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info2);
 
         // policy-commitment-to-self-delay-range
-        if info.to_self_delay != setup.holder_selected_contest_delay {
+        if info2.to_self_delay != setup.holder_selected_contest_delay {
             return Err(policy_error("holder_selected_contest_delay mismatch".to_string()));
         }
 
@@ -544,8 +571,8 @@ impl Validator for SimpleValidator {
 
             // The CommitmentInfo2 must be the same as previously
             let prev_commit_info = estate.get_previous_counterparty_commit_info(commit_num)?;
-            if *info != prev_commit_info {
-                debug_vals!(*info, prev_commit_info);
+            if *info2 != prev_commit_info {
+                debug_vals!(*info2, prev_commit_info);
                 return policy_err!(
                     "retry of sign_counterparty_commitment {} with changed info",
                     commit_num,
@@ -564,10 +591,11 @@ impl Validator for SimpleValidator {
         commitment_point: &PublicKey,
         setup: &ChannelSetup,
         cstate: &ChainState,
-        info: &CommitmentInfo2,
+        info2: &CommitmentInfo2,
+        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         if let Some(current) = &estate.current_holder_commit_info {
-            let (added, removed) = current.delta_offered_htlcs(info);
+            let (added, removed) = current.delta_offered_htlcs(info2);
             debug!(
                 "{} holder offered delta outbound={} +{:?} -{:?}",
                 self.log_prefix(),
@@ -575,7 +603,7 @@ impl Validator for SimpleValidator {
                 added.collect::<Vec<_>>(),
                 removed.collect::<Vec<_>>()
             );
-            let (added, removed) = current.delta_received_htlcs(info);
+            let (added, removed) = current.delta_received_htlcs(info2);
             debug!(
                 "{} holder received delta outbound={} +{:?} -{:?}",
                 self.log_prefix(),
@@ -586,14 +614,22 @@ impl Validator for SimpleValidator {
         }
 
         // Validate common commitment constraints
-        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info)
-            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
+        self.validate_commitment_tx(
+            estate,
+            commit_num,
+            commitment_point,
+            setup,
+            cstate,
+            info2,
+            fulfilled_incoming_msat,
+        )
+        .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         let mut debug_on_return =
-            scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info);
+            scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info2);
 
         // policy-commitment-to-self-delay-range
-        if info.to_self_delay != setup.counterparty_selected_contest_delay {
+        if info2.to_self_delay != setup.counterparty_selected_contest_delay {
             return Err(policy_error("counterparty_selected_contest_delay mismatch".to_string()));
         }
 
@@ -603,8 +639,8 @@ impl Validator for SimpleValidator {
             // The CommitmentInfo2 must be the same as previously
             let holder_commit_info =
                 &estate.current_holder_commit_info.as_ref().expect("current_holder_commit_info");
-            if info != *holder_commit_info {
-                debug_vals!(*info, holder_commit_info);
+            if info2 != *holder_commit_info {
+                debug_vals!(*info2, holder_commit_info);
                 return policy_err!("retry holder commitment {} with changed info", commit_num);
             }
         }
@@ -1318,6 +1354,30 @@ impl Validator for SimpleValidator {
         *debug_on_return = false;
         Ok(())
     }
+
+    fn validate_inflight_payments(
+        &self,
+        invoice_state: Option<&InvoiceState>,
+        channel_id: &ChannelId,
+        amount_msat: u64,
+    ) -> Result<(), ValidationError> {
+        // TODO need a policy for layer-2 max fee
+        let is_overpaid = invoice_state
+            .map(|state| {
+                state.updated_amount(channel_id, amount_msat)
+                    > state.amount_msat + self.policy.max_routing_fee_msat
+            })
+            .unwrap_or(self.policy.require_invoices);
+        if is_overpaid {
+            policy_err!("would overpay for invoice")
+        } else {
+            Ok(())
+        }
+    }
+
+    fn enforce_balance(&self) -> bool {
+        self.policy.enforce_balance
+    }
 }
 
 impl SimpleValidator {
@@ -1330,6 +1390,7 @@ impl SimpleValidator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         info: &CommitmentInfo2,
+        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         let mut debug_on_return =
             scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info);
@@ -1426,6 +1487,8 @@ impl SimpleValidator {
         self.validate_fee(setup.channel_value_sat, sum_outputs)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
+        let (holder_value_sat, counterparty_value_sat) = info.value_to_parties();
+
         // Enforce additional requirements on initial commitments.
         if commit_num == 0 {
             if info.offered_htlcs.len() + info.received_htlcs.len() > 0 {
@@ -1441,19 +1504,27 @@ impl SimpleValidator {
                 // no-initial-htlcs and fee checks above will ensure
                 // that our share is valid.
 
-                let fundee_value_sat = if info.is_counterparty_broadcaster {
-                    info.to_broadcaster_value_sat
-                } else {
-                    info.to_countersigner_value_sat
-                };
-
                 // The fundee is only entitled to push_value
-                if fundee_value_sat > setup.push_value_msat / 1000 {
+                if counterparty_value_sat > setup.push_value_msat / 1000 {
                     return policy_err!(
                         "initial commitment may only send push_value_msat ({}) to fundee",
                         setup.push_value_msat
                     );
                 }
+            }
+        }
+
+        if policy.enforce_balance {
+            if holder_value_sat + fulfilled_incoming_msat + policy.epsilon_sat
+                < estate.holder_balance_msat / 1000
+            {
+                return policy_err!(
+                    "holder output {} + {} is more than {} (epsilon) less than expected balance {}",
+                    holder_value_sat,
+                    fulfilled_incoming_msat,
+                    policy.epsilon_sat,
+                    estate.holder_balance_msat / 1000
+                );
             }
         }
 
@@ -1477,6 +1548,9 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_feerate_per_kw: 1000 * 1000,
             min_fee: 100,
             max_fee: 1000,
+            require_invoices: false,
+            enforce_balance: false,
+            max_routing_fee_msat: 10000,
         }
     } else {
         SimplePolicy {
@@ -1492,6 +1566,9 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_feerate_per_kw: 16_000, // c-lightning integration
             min_fee: 100,
             max_fee: 80_000, // c-lightning integration 79641
+            require_invoices: false,
+            enforce_balance: false,
+            max_routing_fee_msat: 10000,
         }
     }
 }
@@ -1520,6 +1597,9 @@ mod tests {
             max_feerate_per_kw: 1000 * 1000,
             min_fee: 100,
             max_fee: 10_000,
+            require_invoices: false,
+            enforce_balance: false,
+            max_routing_fee_msat: 10000,
         };
 
         SimpleValidator {
@@ -1618,7 +1698,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_test() {
         let validator = make_test_validator();
-        let mut enforcement_state = EnforcementState::new();
+        let mut enforcement_state = EnforcementState::new(0);
         let commit_num = 23;
         enforcement_state
             .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
@@ -1635,6 +1715,7 @@ mod tests {
             &setup,
             &cstate,
             &info,
+            0
         ));
     }
 
@@ -1706,7 +1787,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_shortage_test() {
         let validator = make_test_validator();
-        let enforcement_state = EnforcementState::new();
+        let enforcement_state = EnforcementState::new(0);
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
@@ -1721,6 +1802,7 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
+                0
             ),
             "validate_commitment_tx: fee underflow: 3000000 - 3000001"
         );
@@ -1732,7 +1814,7 @@ mod tests {
         let validator = make_test_validator();
         let htlc =
             HTLCInfo2 { value_sat: 100_000, payment_hash: PaymentHash([0; 32]), cltv_expiry: 1005 };
-        let mut enforcement_state = EnforcementState::new();
+        let mut enforcement_state = EnforcementState::new(0);
         let commit_num = 23;
         enforcement_state
             .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
@@ -1750,6 +1832,7 @@ mod tests {
             &setup,
             &cstate,
             &info,
+            0
         ));
 
         let info_bad =
@@ -1762,6 +1845,7 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
+                0
             ),
             "validate_commitment_tx: fee underflow: 3000000 - 3100000"
         );
@@ -1772,7 +1856,7 @@ mod tests {
         let validator = make_test_validator();
         let htlc =
             HTLCInfo2 { value_sat: 199_000, payment_hash: PaymentHash([0; 32]), cltv_expiry: 1005 };
-        let enforcement_state = EnforcementState::new();
+        let enforcement_state = EnforcementState::new(0);
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
@@ -1787,6 +1871,7 @@ mod tests {
             &setup,
             &cstate,
             &info,
+            0,
         );
         assert_policy_err!(status, "validate_commitment_tx: initial commitment may not have HTLCS");
     }
@@ -1795,7 +1880,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_initial_with_bad_fundee_output() {
         let validator = make_test_validator();
-        let enforcement_state = EnforcementState::new();
+        let enforcement_state = EnforcementState::new(0);
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
@@ -1810,6 +1895,7 @@ mod tests {
             &setup,
             &cstate,
             &info,
+            0,
         );
         assert_policy_err!(
             status,
@@ -1821,7 +1907,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_htlc_count_test() {
         let validator = make_test_validator();
-        let enforcement_state = EnforcementState::new();
+        let enforcement_state = EnforcementState::new(0);
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
@@ -1837,6 +1923,7 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
+                0
             ),
             "too many HTLCs"
         );
@@ -1846,7 +1933,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_htlc_value_test() {
         let validator = make_test_validator();
-        let enforcement_state = EnforcementState::new();
+        let enforcement_state = EnforcementState::new(0);
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
@@ -1868,6 +1955,7 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
+                0
             ),
             "validate_commitment_tx: sum of HTLC values 10001000 too large"
         );
@@ -1876,7 +1964,7 @@ mod tests {
     #[test]
     fn validate_commitment_tx_htlc_delay_test() {
         let validator = make_test_validator();
-        let mut enforcement_state = EnforcementState::new();
+        let mut enforcement_state = EnforcementState::new(0);
         let commit_num = 23;
         enforcement_state
             .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
@@ -1894,6 +1982,7 @@ mod tests {
             &setup,
             &cstate,
             &info_good,
+            0
         ));
         let info_good =
             make_counterparty_info(2_000_000, 990_000, delay, vec![], vec![make_htlc_info2(2440)]);
@@ -1904,6 +1993,7 @@ mod tests {
             &setup,
             &cstate,
             &info_good,
+            0
         ));
         let info_bad =
             make_counterparty_info(2_000_000, 990_000, delay, vec![], vec![make_htlc_info2(1004)]);
@@ -1915,6 +2005,7 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
+                0
             ),
             "validate_expiry: received HTLC expiry too early: 1004 < 1005"
         );
@@ -1928,6 +2019,7 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
+                0
             ),
             "validate_expiry: received HTLC expiry too late: 2441 > 2440"
         );

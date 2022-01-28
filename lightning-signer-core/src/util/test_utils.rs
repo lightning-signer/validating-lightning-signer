@@ -25,8 +25,8 @@ use lightning::chain::transaction::OutPoint;
 use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, derive_private_key, get_anchor_redeemscript, get_htlc_redeemscript,
-    get_revokeable_redeemscript, make_funding_redeemscript, ChannelTransactionParameters,
-    CommitmentTransaction, CounterpartyChannelTransactionParameters,
+    get_revokeable_redeemscript, make_funding_redeemscript, ChannelPublicKeys,
+    ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters,
     DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
@@ -36,11 +36,12 @@ use super::key_utils::{
     make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
 };
 use crate::channel::{
-    channel_nonce_to_id, Channel, ChannelBase, ChannelId, ChannelSetup, CommitmentType,
+    channel_nonce_to_id, Channel, ChannelBase, ChannelId, ChannelSetup, ChannelStub, CommitmentType,
 };
 use crate::node::SpendType;
 use crate::node::{Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
+use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::ChainState;
 use crate::prelude::*;
 use crate::signer::my_keys_manager::KeyDerivationStyle;
@@ -272,12 +273,13 @@ pub fn make_test_channel_keys() -> InMemorySigner {
     let channel_value_sat = 3_000_000;
     let mut inmemkeys = InMemorySigner::new(
         &secp_ctx,
-        make_test_privkey(1), // funding_key
-        make_test_privkey(2), // revocation_base_key
-        make_test_privkey(3), // payment_key
-        make_test_privkey(4), // delayed_payment_base_key
-        make_test_privkey(5), // htlc_base_key
-        [4u8; 32],            // commitment_seed
+        make_test_privkey(254), // node_secret
+        make_test_privkey(1),   // funding_key
+        make_test_privkey(2),   // revocation_base_key
+        make_test_privkey(3),   // payment_key
+        make_test_privkey(4),   // delayed_payment_base_key
+        make_test_privkey(5),   // htlc_base_key
+        [4u8; 32],              // commitment_seed
         channel_value_sat,
         [0u8; 32],
     );
@@ -300,7 +302,11 @@ pub fn init_node(node_config: NodeConfig, seedstr: &str) -> Arc<Node> {
     let mut seed = [0; 32];
     seed.copy_from_slice(Vec::from_hex(seedstr).unwrap().as_slice());
 
-    let node = Node::new(node_config, &seed, &(Arc::new(DummyPersister) as Arc<Persist>), vec![]);
+    let persister = &(Arc::new(DummyPersister) as Arc<Persist>);
+
+    let validator_factory = Arc::new(SimpleValidatorFactory::new());
+
+    let node = Node::new(node_config, &seed, persister, vec![], validator_factory);
     Arc::new(node)
 }
 
@@ -487,6 +493,7 @@ pub fn make_test_counterparty_keys(
             // These need to match make_test_counterparty_points() above ...
             let mut cpkeys = InMemorySigner::new(
                 &node_ctx.secp_ctx,
+                make_test_privkey(254), // node_secret
                 make_test_privkey(104), // funding_key
                 make_test_privkey(100), // revocation_base_key
                 make_test_privkey(101), // payment_key
@@ -711,14 +718,14 @@ pub fn funding_tx_ready_channel(
     chan_ctx: &mut TestChannelContext,
     tx: &bitcoin::Transaction,
     vout: u32,
-) {
+) -> Option<Status> {
     let txid = tx.txid();
     chan_ctx.setup.funding_outpoint = BitcoinOutPoint { txid, vout };
     let holder_shutdown_key_path = vec![];
     node_ctx
         .node
         .ready_channel(chan_ctx.channel_id, None, chan_ctx.setup.clone(), &holder_shutdown_key_path)
-        .expect("Channel");
+        .err()
 }
 
 pub fn synthesize_ready_channel(
@@ -1566,4 +1573,55 @@ pub fn mine_header_with_bits(
         }
         nonce += 1;
     }
+}
+
+pub fn make_node_and_channel(
+    channel_nonce: &Vec<u8>,
+    channel_id: ChannelId,
+) -> (PublicKey, Arc<Node>, ChannelStub, [u8; 32]) {
+    let (node_id, node, seed) = make_node();
+
+    let (_, channel) = node
+        .new_channel(Some(channel_id), Some(channel_nonce.clone()), &Arc::clone(&node))
+        .unwrap();
+    (node_id, node, channel.unwrap(), seed)
+}
+
+pub(crate) fn make_node() -> (PublicKey, Arc<Node>, [u8; 32]) {
+    let mut seed = [0; 32];
+    seed.copy_from_slice(hex_decode(TEST_SEED[1]).unwrap().as_slice());
+
+    let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
+    let validator_factory = Arc::new(SimpleValidatorFactory::new());
+    let node = Arc::new(Node::new(TEST_NODE_CONFIG, &seed, &persister, vec![], validator_factory));
+    let node_id = node.get_id();
+    (node_id, node, seed)
+}
+
+pub fn create_test_channel_setup(dummy_pubkey: PublicKey) -> ChannelSetup {
+    ChannelSetup {
+        is_outbound: true,
+        channel_value_sat: 123456,
+        push_value_msat: 555,
+        funding_outpoint: Default::default(),
+        holder_selected_contest_delay: 10,
+        holder_shutdown_script: None,
+        counterparty_points: ChannelPublicKeys {
+            funding_pubkey: dummy_pubkey,
+            revocation_basepoint: dummy_pubkey,
+            payment_point: dummy_pubkey,
+            delayed_payment_basepoint: dummy_pubkey,
+            htlc_basepoint: dummy_pubkey,
+        },
+        counterparty_selected_contest_delay: 11,
+        counterparty_shutdown_script: None,
+        commitment_type: CommitmentType::Legacy,
+    }
+}
+
+pub fn make_dummy_pubkey(x: u8) -> PublicKey {
+    let secp_ctx = Secp256k1::signing_only();
+    let seckey = SecretKey::from_slice(&[x; 32]).unwrap();
+    let dummy_pubkey = PublicKey::from_secret_key(&secp_ctx, &seckey);
+    dummy_pubkey
 }

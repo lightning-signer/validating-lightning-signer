@@ -72,7 +72,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
                     channel_value_satoshis,
                     channel_setup: None,
                     id: None,
-                    enforcement_state: EnforcementState::new(),
+                    enforcement_state: EnforcementState::new(0),
                 };
                 if txn.get(id.clone()).unwrap().is_some() {
                     return Err(TransactionError::Abort(kv::Error::Message(
@@ -215,10 +215,10 @@ mod tests {
 
     use lightning_signer::channel::{channel_nonce_to_id, ChannelSlot};
     use lightning_signer::node::Node;
-    use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
+    use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
+    use lightning_signer::util::test_utils::*;
 
     use crate::persist::ser_util::VecWriter;
-    use crate::persist::util::*;
 
     use super::*;
 
@@ -236,6 +236,7 @@ mod tests {
     fn round_trip_signer_test() {
         let channel_nonce = "nonce0".as_bytes().to_vec();
         let channel_id0 = channel_nonce_to_id(&channel_nonce);
+        let validator_factory = Arc::new(SimpleValidatorFactory::new());
 
         let (node_id, node_arc, stub, seed) = make_node_and_channel(&channel_nonce, channel_id0);
 
@@ -248,7 +249,7 @@ mod tests {
             persister.new_chain_tracker(&node_id, &node.get_tracker());
             persister.new_channel(&node_id, &stub).unwrap();
 
-            let nodes = Node::restore_nodes(Arc::clone(&persister));
+            let nodes = Node::restore_nodes(Arc::clone(&persister), validator_factory.clone());
             let restored_node = nodes.get(&node_id).unwrap();
 
             {
@@ -274,7 +275,7 @@ mod tests {
                     node.ready_channel(channel_id0, Some(channel_id1), setup, &vec![]).unwrap();
                 persister.update_channel(&node_id, &channel).unwrap();
 
-                let nodes = Node::restore_nodes(Arc::clone(&persister));
+                let nodes = Node::restore_nodes(Arc::clone(&persister), validator_factory.clone());
                 let restored_node_arc = nodes.get(&node_id).unwrap();
                 let slot = restored_node_arc.get_channel(&stub.id0).unwrap();
                 assert!(node.channels().contains_key(&channel_id0));

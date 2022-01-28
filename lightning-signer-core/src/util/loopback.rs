@@ -1,6 +1,7 @@
 #![allow(missing_docs)]
 use std::convert::TryInto;
 
+use bitcoin::bech32::u5;
 use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
@@ -10,14 +11,15 @@ use bitcoin::{Script, Transaction, TxOut};
 use lightning::chain::keysinterface::{
     BaseSign, KeyMaterial, KeysInterface, Sign, SpendableOutputDescriptor,
 };
-use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys,
 };
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
 use lightning::ln::script::ShutdownScript;
+use lightning::ln::{chan_utils, PaymentPreimage};
 use lightning::util::ser::{Readable, Writeable, Writer};
+use lightning_invoice::SignedRawInvoice;
 
 use log::{debug, error, info};
 
@@ -40,8 +42,12 @@ pub struct LoopbackSignerKeysInterface {
 }
 
 impl LoopbackSignerKeysInterface {
-    pub(crate) fn get_node(&self) -> Arc<Node> {
+    pub fn get_node(&self) -> Arc<Node> {
         self.signer.get_node(&self.node_id).expect("our node is missing")
+    }
+
+    pub fn add_invoice(&self, raw_invoice: SignedRawInvoice) {
+        self.get_node().add_invoice(raw_invoice).expect("could not add invoice");
     }
 
     pub fn spend_spendable_outputs(
@@ -240,6 +246,7 @@ impl BaseSign for LoopbackChannelSigner {
     fn validate_holder_commitment(
         &self,
         holder_tx: &HolderCommitmentTransaction,
+        _preimages: Vec<PaymentPreimage>,
     ) -> Result<(), ()> {
         let commitment_number = INITIAL_COMMITMENT_NUMBER - holder_tx.commitment_number();
 
@@ -276,6 +283,7 @@ impl BaseSign for LoopbackChannelSigner {
     fn sign_counterparty_commitment(
         &self,
         commitment_tx: &CommitmentTransaction,
+        preimages: Vec<PaymentPreimage>,
         _secp_ctx: &Secp256k1<All>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
         let trusted_tx = commitment_tx.trust();
@@ -300,6 +308,7 @@ impl BaseSign for LoopbackChannelSigner {
         let (sig_vec, htlc_sigs_vecs) = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                chan.htlcs_fulfilled(preimages.clone());
                 chan.sign_counterparty_commitment_tx_phase2(
                     &per_commitment_point,
                     commitment_number,
@@ -494,21 +503,16 @@ impl BaseSign for LoopbackChannelSigner {
         &self,
         msg: &UnsignedChannelAnnouncement,
         _secp_ctx: &Secp256k1<All>,
-    ) -> Result<Signature, ()> {
+    ) -> Result<(Signature, Signature), ()> {
         info!("sign_counterparty_commitment {:?} {:?}", self.node_id, self.channel_id);
 
-        let (_nsig, bsig) = self
+        let (nsig, bsig) = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 Ok(chan.sign_channel_announcement(&msg.encode()))
             })
             .map_err(|s| self.bad_status(s))?;
-
-        let res = bsig.serialize_der().to_vec();
-
-        let sig = Signature::from_der(res.as_slice())
-            .expect("failed to parse the signature we just created");
-        Ok(sig)
+        Ok((nsig, bsig))
     }
 
     fn ready_channel(&mut self, parameters: &ChannelTransactionParameters) {
@@ -520,7 +524,7 @@ impl BaseSign for LoopbackChannelSigner {
         let setup = ChannelSetup {
             is_outbound: self.is_outbound,
             channel_value_sat: self.channel_value_sat,
-            push_value_msat: 1_000_000, // TODO
+            push_value_msat: 0, // TODO
             funding_outpoint,
             holder_selected_contest_delay: parameters.holder_selected_contest_delay,
             holder_shutdown_script: None, // use the signer's shutdown script
@@ -588,8 +592,12 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         ))
     }
 
-    fn sign_invoice(&self, invoice_preimage: Vec<u8>) -> Result<RecoverableSignature, ()> {
-        Ok(self.get_node().sign_invoice(&invoice_preimage))
+    fn sign_invoice(
+        &self,
+        hrp_bytes: &[u8],
+        invoice_data: &[u5],
+    ) -> Result<RecoverableSignature, ()> {
+        self.get_node().sign_invoice(hrp_bytes, invoice_data).map_err(|_| ())
     }
 
     fn get_inbound_payment_key_material(&self) -> KeyMaterial {

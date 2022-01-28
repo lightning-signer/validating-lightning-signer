@@ -13,7 +13,7 @@ use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSlot};
 use crate::monitor::ChainMonitor;
 use crate::node::{Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
-#[cfg(feature = "std")]
+use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::ValidatorFactory;
 use crate::prelude::*;
 use crate::sync::Arc;
@@ -27,12 +27,31 @@ pub struct MultiSigner {
     pub(crate) persister: Arc<dyn Persist>,
     pub(crate) test_mode: bool,
     pub(crate) initial_allowlist: Vec<String>,
+    validator_factory: Arc<dyn ValidatorFactory>,
 }
 
 impl MultiSigner {
     /// Construct with a null persister
     pub fn new() -> MultiSigner {
-        let signer = MultiSigner::new_with_persister(Arc::new(DummyPersister), true, vec![]);
+        let validator_factory = Arc::new(SimpleValidatorFactory::new());
+        let signer = MultiSigner::new_with_persister(
+            Arc::new(DummyPersister),
+            true,
+            vec![],
+            validator_factory,
+        );
+        info!("new MultiSigner");
+        signer
+    }
+
+    /// Construct
+    pub fn new_with_validator(validator_factory: Arc<dyn ValidatorFactory>) -> MultiSigner {
+        let signer = MultiSigner::new_with_persister(
+            Arc::new(DummyPersister),
+            true,
+            vec![],
+            validator_factory,
+        );
         info!("new MultiSigner");
         signer
     }
@@ -42,9 +61,16 @@ impl MultiSigner {
         persister: Arc<dyn Persist>,
         test_mode: bool,
         initial_allowlist: Vec<String>,
+        validator_factory: Arc<dyn ValidatorFactory>,
     ) -> MultiSigner {
-        let nodes = Node::restore_nodes(Arc::clone(&persister));
-        MultiSigner { nodes: Mutex::new(nodes), persister, test_mode, initial_allowlist }
+        let nodes = Node::restore_nodes(Arc::clone(&persister), validator_factory.clone());
+        MultiSigner {
+            nodes: Mutex::new(nodes),
+            persister,
+            test_mode,
+            initial_allowlist,
+            validator_factory,
+        }
     }
 
     /// Create a node with a random seed
@@ -56,7 +82,8 @@ impl MultiSigner {
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);
 
-        let node = Node::new(node_config, &seed, &self.persister, vec![]);
+        let node =
+            Node::new(node_config, &seed, &self.persister, vec![], self.validator_factory.clone());
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         node.add_allowlist(&self.initial_allowlist).expect("valid initialallowlist");
@@ -72,7 +99,7 @@ impl MultiSigner {
         &self,
         node_config: NodeConfig,
         tracker: ChainTracker<ChainMonitor>,
-        validator_factory: Box<dyn ValidatorFactory>,
+        validator_factory: Arc<dyn ValidatorFactory>,
     ) -> PublicKey {
         let secp_ctx = Secp256k1::signing_only();
         let mut rng = OsRng::new().unwrap();
@@ -105,7 +132,8 @@ impl MultiSigner {
     ) -> Result<PublicKey, Status> {
         let secp_ctx = Secp256k1::signing_only();
 
-        let node = Node::new(node_config, seed, &self.persister, vec![]);
+        let node =
+            Node::new(node_config, &seed, &self.persister, vec![], self.validator_factory.clone());
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let mut nodes = self.nodes.lock().unwrap();
         if self.test_mode {
@@ -139,7 +167,8 @@ impl MultiSigner {
     ) -> Result<PublicKey, Status> {
         let secp_ctx = Secp256k1::signing_only();
 
-        let node = Node::new(node_config, seed, &self.persister, vec![]);
+        let node =
+            Node::new(node_config, &seed, &self.persister, vec![], self.validator_factory.clone());
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node.keys_manager.get_node_secret());
         let nodes = self.nodes.lock().unwrap();
         nodes.get(&node_id).ok_or_else(|| {
@@ -224,6 +253,11 @@ impl MultiSigner {
         self.persister
             .update_channel(&node_id, &chan)
             .expect("channel was in storage but not in memory");
+    }
+
+    /// Get the configured validator factory
+    pub fn validator_factory(&self) -> Arc<dyn ValidatorFactory> {
+        self.validator_factory.clone()
     }
 }
 

@@ -1,6 +1,7 @@
 unstable_features = true
 ignore = [
     "lightning-signer-core/tests/functional_test.rs",
+    "lightning-signer-server/src/server/remotesigner.rs",
 ]
 use_small_heuristics = "Max"
 match_arm_blocks = false

@@ -338,6 +338,16 @@ impl CommitmentInfo2 {
             AddedItemsIter::new(&new.received_htlcs, &self.received_htlcs),
         )
     }
+
+    /// Value in satoshis to holder and counterparty, respectively.
+    /// Does not include HTLCs.
+    pub fn value_to_parties(&self) -> (u64, u64) {
+        if self.is_counterparty_broadcaster {
+            (self.to_countersigner_value_sat, self.to_broadcaster_value_sat)
+        } else {
+            (self.to_broadcaster_value_sat, self.to_countersigner_value_sat)
+        }
+    }
 }
 
 #[allow(dead_code)]
