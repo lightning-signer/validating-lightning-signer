@@ -1,4 +1,3 @@
-use alloc::collections::BTreeSet as Set;
 use core::convert::TryFrom;
 use core::convert::TryInto;
 use core::fmt::{self, Debug, Formatter};
@@ -20,7 +19,7 @@ use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, Address, Transaction, TxOut};
 use bitcoin::{Network, OutPoint, Script, SigHashType};
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashSet;
 use lightning::chain;
 use lightning::chain::keysinterface::{
     BaseSign, KeyMaterial, KeysInterface, SpendableOutputDescriptor,
@@ -75,7 +74,7 @@ pub struct InvoiceState {
     /// Expiry, as duration since the timestamp
     pub expiry_duration: Duration,
     /// In-flight payments attempting to fulfill this invoice
-    pub inflight_payments: Map<ChannelId, (u64, bool)>,
+    pub inflight_payments: OrderedMap<ChannelId, (u64, bool)>,
     /// The preimage for the hash, filled in on success
     pub preimage: Option<PaymentPreimage>,
     /// Whether the invoice was fulfilled
@@ -88,7 +87,7 @@ impl InvoiceState {
     /// specified amount.
     pub fn updated_amount(&self, channel_id: &ChannelId, amount: u64) -> u64 {
         // TODO this can be optimized to eliminate the clone
-        let mut payments: Map<&ChannelId, u64> = self
+        let mut payments: OrderedMap<&ChannelId, u64> = self
             .inflight_payments
             .iter()
             .map(|(channel_id, (amount, _))| (channel_id, *amount))
@@ -278,7 +277,7 @@ impl Allowable {
 pub struct Node {
     pub(crate) node_config: NodeConfig,
     pub(crate) keys_manager: MyKeysManager,
-    channels: Mutex<Map<ChannelId, Arc<Mutex<ChannelSlot>>>>,
+    channels: Mutex<OrderedMap<ChannelId, Arc<Mutex<ChannelSlot>>>>,
     pub(crate) validator_factory: Mutex<Arc<dyn ValidatorFactory>>,
     pub(crate) persister: Arc<dyn Persist>,
     allowlist: Mutex<UnorderedSet<Allowable>>,
@@ -380,7 +379,7 @@ impl Node {
                 now.subsec_nanos(),
             ),
             node_config,
-            channels: Mutex::new(Map::new()),
+            channels: Mutex::new(OrderedMap::new()),
             validator_factory: Mutex::new(validator_factory),
             persister: Arc::clone(persister),
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
@@ -781,8 +780,10 @@ impl Node {
         // inputs that are ours.
         // Note that the functional tests also have no inputs for the funder's tx
         // which might be a problem in the future with more validation.
-        tracker
-            .add_listener(chan.monitor.clone(), Set::from_iter(vec![setup.funding_outpoint.txid]));
+        tracker.add_listener(
+            chan.monitor.clone(),
+            OrderedSet::from_iter(vec![setup.funding_outpoint.txid]),
+        );
 
         debug_vals!(&chan.setup);
         trace_enforcement_state!(&chan.enforcement_state);
@@ -907,7 +908,8 @@ impl Node {
                 match &*slot {
                     ChannelSlot::Stub(_) => panic!("this can't happen"),
                     ChannelSlot::Ready(chan) => {
-                        let inputs = Set::from_iter(tx.input.iter().map(|i| i.previous_output));
+                        let inputs =
+                            OrderedSet::from_iter(tx.input.iter().map(|i| i.previous_output));
                         tracker.add_listener_watches(chan.monitor.clone(), inputs);
                         chan.funding_signed(tx, vout as u32)
                     }
@@ -1094,7 +1096,7 @@ impl Node {
 
     /// Get the channels this node knows about.
     /// Currently, channels are not pruned once closed, but this will change.
-    pub fn channels(&self) -> MutexGuard<Map<ChannelId, Arc<Mutex<ChannelSlot>>>> {
+    pub fn channels(&self) -> MutexGuard<OrderedMap<ChannelId, Arc<Mutex<ChannelSlot>>>> {
         self.channels.lock().unwrap()
     }
 
@@ -1254,7 +1256,7 @@ impl Node {
             .payee_pub_key()
             .map(|p| p.clone())
             .unwrap_or_else(|| invoice.recover_payee_pub_key());
-        let inflight_payments = Map::new();
+        let inflight_payments = OrderedMap::new();
         let invoice_state = InvoiceState {
             invoice_hash,
             amount_msat,
@@ -1270,7 +1272,7 @@ impl Node {
 }
 
 fn find_channel_with_funding_outpoint(
-    channels_lock: &MutexGuard<HashMap<ChannelId, Arc<Mutex<ChannelSlot>>>>,
+    channels_lock: &MutexGuard<OrderedMap<ChannelId, Arc<Mutex<ChannelSlot>>>>,
     outpoint: &OutPoint,
 ) -> Option<Arc<Mutex<ChannelSlot>>> {
     for (_, slot_arc) in channels_lock.iter() {

@@ -90,8 +90,13 @@ mod nostd;
 
 pub(crate) mod prelude {
     pub use alloc::{boxed::Box, string::String, vec, vec::Vec};
+
+    // TODO clean up naming
     pub use hashbrown::HashMap as Map;
     pub use hashbrown::HashSet as UnorderedSet;
+
+    pub use alloc::collections::BTreeMap as OrderedMap;
+    pub use alloc::collections::BTreeSet as OrderedSet;
 
     pub use alloc::borrow::ToOwned;
     pub use alloc::string::ToString;

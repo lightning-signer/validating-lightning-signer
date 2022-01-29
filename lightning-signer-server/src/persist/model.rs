@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap as Map, BTreeMap};
+use std::collections::BTreeMap as OrderedMap;
 use std::convert::TryInto;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -141,7 +141,7 @@ pub struct ChainTrackerEntry {
     height: u32,
     network: Network,
     #[serde_as(as = "Vec<(OutPointDef, (ChainMonitorStateDef, ListenSlotDef))>")]
-    listeners: BTreeMap<OutPoint, (ChainMonitorState, ListenSlot)>,
+    listeners: OrderedMap<OutPoint, (ChainMonitorState, ListenSlot)>,
 }
 
 impl From<&ChainTracker<ChainMonitor>> for ChainTrackerEntry {
@@ -162,8 +162,8 @@ impl Into<ChainTracker<ChainMonitor>> for ChainTrackerEntry {
         let tip = deserialize(&self.tip).expect("deserialize tip");
         let headers =
             self.headers.iter().map(|h| deserialize(h).expect("deserialize header")).collect();
-        let listeners: Map<ChainMonitor, ListenSlot> =
-            Map::from_iter(self.listeners.into_iter().map(|(outpoint, (state, slot))| {
+        let listeners =
+            OrderedMap::from_iter(self.listeners.into_iter().map(|(outpoint, (state, slot))| {
                 (ChainMonitor::new_from_persistence(outpoint, state), slot)
             }));
         ChainTracker { headers, tip, height: self.height, network: self.network, listeners }

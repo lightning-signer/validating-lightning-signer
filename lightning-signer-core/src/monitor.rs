@@ -68,7 +68,7 @@ impl ChainMonitor {
             height,
             funding_txids: Vec::new(),
             funding_vouts: Vec::new(),
-            funding_inputs: Set::new(),
+            funding_inputs: OrderedSet::new(),
             funding_height: None,
             funding_outpoint: None,
             funding_double_spent_height: None,
