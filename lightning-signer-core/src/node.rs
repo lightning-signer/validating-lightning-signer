@@ -345,26 +345,16 @@ impl Node {
         tracker: ChainTracker<ChainMonitor>,
         validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Node {
-        let genesis = genesis_block(node_config.network);
-        let now = Duration::from_secs(genesis.header.time as u64);
-        let state = Mutex::new(NodeState { invoices: Map::new(), issued_invoices: Map::new() });
-
-        Node {
-            keys_manager: MyKeysManager::new(
-                node_config.key_derivation_style,
-                seed,
-                node_config.network,
-                now.as_secs(),
-                now.subsec_nanos(),
-            ),
+        let state = NodeState { invoices: Map::new(), issued_invoices: Map::new() };
+        Self::new_from_persistence(
             node_config,
-            channels: Mutex::new(Map::new()),
-            validator_factory: Mutex::new(validator_factory),
-            persister: Arc::clone(persister),
-            allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
-            tracker: Mutex::new(tracker),
+            seed,
+            persister,
+            allowlist,
+            tracker,
+            validator_factory,
             state,
-        }
+        )
     }
 
     /// Restore a node.
