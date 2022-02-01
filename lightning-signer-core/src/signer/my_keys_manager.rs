@@ -106,7 +106,7 @@ pub struct MyKeysManager {
 
     unique_start: Sha256State,
 
-    id_to_nonce: Mutex<Map<ChannelId, Vec<u8>>>,
+    id_to_nonce: Mutex<OrderedMap<ChannelId, Vec<u8>>>,
 }
 
 impl MyKeysManager {
@@ -202,7 +202,7 @@ impl MyKeysManager {
                     rand_bytes_unique_start,
                     lnd_basepoint_index: AtomicU32::new(0),
                     unique_start,
-                    id_to_nonce: Mutex::new(Map::new()),
+                    id_to_nonce: Mutex::new(OrderedMap::new()),
                 };
 
                 let secp_seed = res.get_secure_random_bytes();

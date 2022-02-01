@@ -49,7 +49,7 @@ use crate::{Arc, Weak};
 /// A channel may have more than one ID.
 ///
 // TODO document how channel IDs are supplied / derived
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
 pub struct ChannelId(pub [u8; 32]);
 
 impl Debug for ChannelId {

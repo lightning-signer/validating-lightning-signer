@@ -1,10 +1,11 @@
-use crate::prelude::*;
+use alloc::collections::VecDeque;
 
-use alloc::collections::{BTreeMap as Map, BTreeSet as Set, VecDeque};
 use bitcoin::blockdata::constants::DIFFCHANGE_INTERVAL;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::util::uint::Uint256;
 use bitcoin::{BlockHeader, Network, OutPoint, Transaction, Txid};
+
+use crate::prelude::*;
 
 /// Error
 #[derive(Debug, PartialEq)]
@@ -23,11 +24,11 @@ pub enum Error {
 #[derive(Debug, Clone)]
 pub struct ListenSlot {
     /// watched transactions to be confirmed
-    pub txid_watches: Set<Txid>,
+    pub txid_watches: OrderedSet<Txid>,
     /// watched outpoints to be spent
-    pub watches: Set<OutPoint>,
+    pub watches: OrderedSet<OutPoint>,
     /// outpoints we have already seen
-    pub seen: Set<OutPoint>,
+    pub seen: OrderedSet<OutPoint>,
 }
 
 /// Track chain, with basic validation
@@ -41,7 +42,7 @@ pub struct ChainTracker<L: ChainListener + Ord> {
     /// The network
     pub network: Network,
     /// listeners
-    pub listeners: Map<L, ListenSlot>,
+    pub listeners: OrderedMap<L, ListenSlot>,
 }
 
 impl<L: ChainListener + Ord> ChainTracker<L> {
@@ -51,7 +52,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     pub fn new(network: Network, height: u32, tip: BlockHeader) -> Result<Self, Error> {
         tip.validate_pow(&tip.target()).map_err(|_| Error::InvalidBlock)?;
         let headers = VecDeque::new();
-        let listeners = Map::new();
+        let listeners = OrderedMap::new();
         Ok(ChainTracker { headers, tip, height, network, listeners })
     }
 
@@ -164,17 +165,17 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     }
 
     /// Add a listener and initialize the watched outpoint set
-    pub fn add_listener(&mut self, listener: L, initial_txid_watches: Set<Txid>) {
+    pub fn add_listener(&mut self, listener: L, initial_txid_watches: OrderedSet<Txid>) {
         let slot = ListenSlot {
             txid_watches: initial_txid_watches,
-            watches: Set::new(),
-            seen: Set::new(),
+            watches: OrderedSet::new(),
+            seen: OrderedSet::new(),
         };
         self.listeners.insert(listener, slot);
     }
 
     /// Add more watches to a listener
-    pub fn add_listener_watches(&mut self, listener: L, watches: Set<OutPoint>) {
+    pub fn add_listener_watches(&mut self, listener: L, watches: OrderedSet<OutPoint>) {
         let slot = self
             .listeners
             .get_mut(&listener)
@@ -268,14 +269,16 @@ pub fn max_target(network: Network) -> Uint256 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use core::iter::FromIterator;
+
     use crate::bitcoin::blockdata::constants::genesis_block;
     use crate::bitcoin::hashes::_export::_core::cmp::Ordering;
     use crate::bitcoin::network::constants::Network;
     use crate::bitcoin::util::hash::bitcoin_merkle_root;
     use crate::bitcoin::{TxIn, Txid};
     use crate::util::test_utils::*;
-    use core::iter::FromIterator;
+
+    use super::*;
 
     #[test]
     fn test_add_remove() -> Result<(), Error> {
@@ -369,21 +372,21 @@ mod tests {
         let second_watch = OutPoint::new(tx.txid(), 0);
         let listener = MockListener::new(second_watch);
 
-        tracker.add_listener(listener.clone(), Set::new());
+        tracker.add_listener(listener.clone(), OrderedSet::new());
 
-        tracker.add_listener_watches(listener.clone(), Set::from_iter(vec![initial_watch]));
+        tracker.add_listener_watches(listener.clone(), OrderedSet::from_iter(vec![initial_watch]));
 
         assert_eq!(tracker.listeners.len(), 1);
         assert_eq!(
             tracker.listeners.get(&listener).unwrap().watches,
-            Set::from_iter(vec![initial_watch])
+            OrderedSet::from_iter(vec![initial_watch])
         );
 
         add_block(&mut tracker, tx.clone())?;
 
         assert_eq!(
             tracker.listeners.get(&listener).unwrap().watches,
-            Set::from_iter(vec![second_watch])
+            OrderedSet::from_iter(vec![second_watch])
         );
 
         let tx2 = make_tx(vec![TxIn {
@@ -395,20 +398,20 @@ mod tests {
 
         add_block(&mut tracker, tx2.clone())?;
 
-        assert_eq!(tracker.listeners.get(&listener).unwrap().watches, Set::new());
+        assert_eq!(tracker.listeners.get(&listener).unwrap().watches, OrderedSet::new());
 
         remove_block(&mut tracker, tx2.clone())?;
 
         assert_eq!(
             tracker.listeners.get(&listener).unwrap().watches,
-            Set::from_iter(vec![second_watch])
+            OrderedSet::from_iter(vec![second_watch])
         );
 
         remove_block(&mut tracker, tx.clone())?;
 
         assert_eq!(
             tracker.listeners.get(&listener).unwrap().watches,
-            Set::from_iter(vec![initial_watch])
+            OrderedSet::from_iter(vec![initial_watch])
         );
 
         Ok(())
