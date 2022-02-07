@@ -1,7 +1,7 @@
-# Rust Lightning Signer
+# Validating Lightning Signer
 
 Please see the
-[Rust Lightning Signer Project Overview](https://gitlab.com/lightning-signer/docs/-/blob/master/README.md)
+[VLS Project Overview](https://gitlab.com/lightning-signer/docs/-/blob/master/README.md)
 for more information.
 
 # Starting the gRPC server
@@ -13,7 +13,7 @@ It can be started via:
 cargo run --bin server
 ```
 
-The server will persist it's state to `.lightning-signer` in the current directory.
+The server will persist its state to `.lightning-signer` in the current directory.
 
 # Using the admin CLI
 
