@@ -2,6 +2,7 @@ use clap::Clap;
 use lightning_signer::bitcoin::util::merkleblock::PartialMerkleTree;
 use lightning_signer::bitcoin::{Network, Transaction, Txid};
 use lightning_signer::chain::tracker::{ChainTracker, Error as TrackerError};
+use lightning_signer::monitor::ChainMonitor;
 use lightning_signer_server::bitcoind_client::{BitcoindClient, BlockSource};
 use rand::random;
 use std::fmt::{self, Display, Formatter};
@@ -72,7 +73,8 @@ async fn run_test(network: Network, rpc: Url) -> anyhow::Result<()> {
     let start_hash = client.get_block_hash(start_height).await?.expect("block disappeared");
     let tip = client.get_header(&start_hash, None).await?;
     assert_eq!(start_height, tip.height);
-    let mut tracker = ChainTracker::new(network, start_height, tip.header).map_err(Error::from)?;
+    let mut tracker: ChainTracker<ChainMonitor> =
+        ChainTracker::new(network, start_height, tip.header).map_err(Error::from)?;
     loop {
         let height = tracker.height() + 1;
         let hash_opt = client.get_block_hash(height).await?;
