@@ -6,7 +6,7 @@ authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.co
 edition = "2018"
 description = "A library for implementing a Lightning signer, which externalizes and secures cryptographic operations."
 homepage = "https://gitlab.com/lightning-signer/docs/"
-repository = "https://gitlab.com/lightning-signer/rust-lightning-signer"
+repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 readme = "../README.md"
 
 [features]
