@@ -11,7 +11,7 @@ use jsonrpc_async::error::Error::Rpc;
 use jsonrpc_async::simple_http::SimpleHttpTransport;
 use jsonrpc_async::Client;
 use lightning_signer::bitcoin;
-use log;
+use log::{self, error};
 use serde;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
@@ -75,7 +75,7 @@ impl BitcoindClient {
     }
 
     pub async fn get_blockchain_info(&self) -> BlockchainInfo {
-        self.call_into("getblockchaininfo", &[]).await.unwrap()
+        self.call_into("getblockchaininfo", &[]).await.unwrap_or_else(|e| panic!("{}", e))
     }
 
     async fn call<T: for<'a> serde::de::Deserialize<'a>>(
@@ -93,6 +93,9 @@ impl BitcoindClient {
 
         let res = rpc.send_request(req).await;
         let resp = res.map_err(Error::from);
+        if let Err(ref err) = resp {
+            error!("{}: {}:{}: {}", cmd, self.host, self.port, err);
+        }
         // log_response(cmd, &resp);
         Ok(resp?.result()?)
     }
