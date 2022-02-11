@@ -1,11 +1,11 @@
 #!/bin/sh
 
-SRC=$(pwd)/.githooks/pre-commit
-DST=$(pwd)/.git/hooks/pre-commit
+GITHOOKSDIR=.git/hooks/
+PRECOMMIT=.githooks/pre-commit
 
-if [ ! -f $SRC ]; then
-    echo "$SRC not found, you need to be in the top-level directory"
+if [ ! -f $PRECOMMIT ]; then
+    echo "$PRECOMMIT not found; you need to be in the top-level directory"
     exit 1
 fi
 
-ln -s $SRC $DST
+ln -s ../../$PRECOMMIT $GITHOOKSDIR
