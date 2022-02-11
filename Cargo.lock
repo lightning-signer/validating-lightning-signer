@@ -216,6 +216,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoind-client"
+version = "0.1.0-5"
+dependencies = [
+ "async-trait",
+ "bitcoin",
+ "env_logger",
+ "jsonrpc-async",
+ "lightning-signer-core",
+ "log",
+ "serde",
+ "serde_json",
+ "test-env-log",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -707,9 +724,9 @@ checksum = "dd25036021b0de88a0aff6b850051563c6516d0bf53f8638938edbb9de732736"
 
 [[package]]
 name = "jsonrpc-async"
-version = "2.0.1"
+version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5848600ec0cb76391e865cf13e1a2ce02b967f4bf725c7681c56586ec5678477"
+checksum = "a20e8e4ed08ee58717113cbf277b1ecef5cd9554d3e48c114de338289727d466"
 dependencies = [
  "async-trait",
  "base64-compat",
@@ -808,16 +825,15 @@ name = "lightning-signer-server"
 version = "0.1.0-5"
 dependencies = [
  "anyhow",
- "async-trait",
  "backtrace",
  "bip39",
  "bitcoin",
+ "bitcoind-client",
  "clap",
  "ctrlc",
  "env_logger",
  "hex 0.3.2",
  "hyper",
- "jsonrpc-async",
  "kv",
  "lightning-signer-core",
  "log",

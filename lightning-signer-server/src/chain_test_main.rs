@@ -1,9 +1,9 @@
+use bitcoind_client::{BitcoindClient, BlockSource};
 use clap::Clap;
 use lightning_signer::bitcoin::util::merkleblock::PartialMerkleTree;
 use lightning_signer::bitcoin::{Network, Transaction, Txid};
 use lightning_signer::chain::tracker::{ChainTracker, Error as TrackerError};
 use lightning_signer::monitor::ChainMonitor;
-use lightning_signer_server::bitcoind_client::{BitcoindClient, BlockSource};
 use rand::random;
 use std::fmt::{self, Display, Formatter};
 use url::Url;

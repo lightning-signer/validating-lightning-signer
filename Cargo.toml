@@ -3,6 +3,7 @@
 members = [
     "lightning-signer-core",
     "lightning-signer-server",
+    "bitcoind-client",
 ]
 
 exclude = [
