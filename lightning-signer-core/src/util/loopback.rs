@@ -246,12 +246,13 @@ impl BaseSign for LoopbackChannelSigner {
     fn validate_holder_commitment(
         &self,
         holder_tx: &HolderCommitmentTransaction,
-        _preimages: Vec<PaymentPreimage>,
+        preimages: Vec<PaymentPreimage>,
     ) -> Result<(), ()> {
         let commitment_number = INITIAL_COMMITMENT_NUMBER - holder_tx.commitment_number();
 
         self.signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                chan.htlcs_fulfilled(preimages.clone());
                 let (offered_htlcs, received_htlcs) =
                     LoopbackChannelSigner::convert_to_htlc_info2(holder_tx.htlcs());
                 chan.validate_holder_commitment_tx_phase2(

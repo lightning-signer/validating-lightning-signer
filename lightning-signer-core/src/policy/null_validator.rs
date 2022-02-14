@@ -4,7 +4,6 @@ use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
-use crate::node::InvoiceState;
 use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
@@ -90,7 +89,6 @@ impl Validator for NullValidator {
         _setup: &ChannelSetup,
         _cstate: &ChainState,
         _info: &CommitmentInfo2,
-        _fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         Ok(())
     }
@@ -103,7 +101,6 @@ impl Validator for NullValidator {
         _setup: &ChannelSetup,
         _cstate: &ChainState,
         _info: &CommitmentInfo2,
-        _fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         Ok(())
     }
@@ -218,12 +215,16 @@ impl Validator for NullValidator {
         Ok(())
     }
 
-    fn validate_inflight_payments(
+    fn validate_payment_balance(
         &self,
-        _invoice_state: Option<&InvoiceState>,
-        _channel_id: &ChannelId,
-        _amount_msat: u64,
+        _incoming: u64,
+        _outgoing: u64,
+        _invoiced_amount: Option<u64>,
     ) -> Result<(), ValidationError> {
         Ok(())
+    }
+
+    fn minimum_initial_balance(&self, _holder_value_msat: u64) -> u64 {
+        0
     }
 }

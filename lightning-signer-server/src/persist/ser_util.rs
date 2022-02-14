@@ -386,7 +386,7 @@ pub struct EnforcementStateDef {
     pub previous_counterparty_commit_info: Option<CommitmentInfo2>,
     pub mutual_close_signed: bool,
     #[serde(default)] // TODO remove default once everyone upgrades
-    pub holder_balance_msat: u64,
+    pub initial_holder_value: u64,
 }
 
 #[derive(Deserialize)]

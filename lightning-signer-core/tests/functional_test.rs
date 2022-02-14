@@ -176,7 +176,7 @@ fn invoice_test() {
     let signer_node2 = nodes[2].keys_manager.get_node();
     let channel_keys2 = signer_node2.channels().keys().cloned().collect::<Vec<_>>();
     // The actual balance is lower because of fees
-    assert_eq!(holder_balances(&signer_node0, channel_keys0[0]), (100_000_000, 99_817_000, 99_817_000));
+    assert_eq!(holder_balances(&signer_node0, channel_keys0[0]), (99_817, 99_817, 99_817));
     assert_eq!(holder_balances(&signer_node2, channel_keys2[0]), (0, 0, 0));
 
     // Send 0 -> 1 -> 2
@@ -187,17 +187,19 @@ fn invoice_test() {
     );
 
     // an extra satoshi was consumed as fee
-    assert_eq!(holder_balances(&signer_node0, channel_keys0[0]), (91_999_000, 91_816_000, 91_816_000));
-    assert_eq!(holder_balances(&signer_node2, channel_keys2[0]), (8_000_000, 8_000_000, 8_000_000));
+    assert_eq!(holder_balances(&signer_node0, channel_keys0[0]), (91_816, 91_816, 91_816));
+    assert_eq!(holder_balances(&signer_node2, channel_keys2[0]), (8_000, 8_000, 8_000));
 }
 
 // Get the holder policy balance, as well as the actual balance in the holder and counterparty txs
 fn holder_balances(signer_node0: &Arc<lightning_signer::node::Node>, id: ChannelId) -> (u64, u64, u64) {
     signer_node0.with_ready_channel(&id, |chan| {
         let estate = &chan.enforcement_state;
-        Ok((estate.holder_balance_msat,
-            estate.current_holder_commit_info.as_ref().unwrap().to_broadcaster_value_sat * 1000,
-            estate.current_counterparty_commit_info.as_ref().unwrap().to_countersigner_value_sat * 1000,
+        let nstate = signer_node0.get_state();
+        let claimable_balance = estate.current_holder_commit_info.clone().unwrap().claimable_balance(&*nstate);
+        Ok((claimable_balance,
+            estate.current_holder_commit_info.as_ref().unwrap().to_broadcaster_value_sat,
+            estate.current_counterparty_commit_info.as_ref().unwrap().to_countersigner_value_sat,
         ))
     }).expect("channel")
 }

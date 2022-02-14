@@ -10,10 +10,9 @@ use lightning::ln::PaymentHash;
 use log::debug;
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
-use crate::node::InvoiceState;
 use crate::prelude::*;
 use crate::sync::Arc;
-use crate::tx::tx::{CommitmentInfo, CommitmentInfo2, HTLCInfo2};
+use crate::tx::tx::{CommitmentInfo, CommitmentInfo2, HTLCInfo2, PreimageMap};
 use crate::wallet::Wallet;
 
 use super::error::{policy_error, ValidationError};
@@ -72,7 +71,6 @@ pub trait Validator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         info2: &CommitmentInfo2,
-        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError>;
 
     /// Validate a holder commitment
@@ -84,7 +82,6 @@ pub trait Validator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         info2: &CommitmentInfo2,
-        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError>;
 
     /// Check a counterparty's revocation of an old state.
@@ -180,18 +177,17 @@ pub trait Validator {
         key_path: &Vec<u32>,
     ) -> Result<(), ValidationError>;
 
-    /// Validate in-flight payments.
-    ///
-    /// Ensures that if the specified channel pays the specified amount,
-    /// the invoice would not be overpaid.
-    /// If the associated policy has require_invoices, the invoice must have
-    /// been provided.  Otherwise, no validation is performed if no invoice
-    /// was provided.
-    fn validate_inflight_payments(
+    /// Validation of the payment state for a payment hash.
+    /// This could include a payment routed through us, or a payment we
+    /// are making, or both.  If we are not making a payment, then the incoming
+    /// must be greater or equal to the outgoing.  Otherwise, the incoming
+    /// minus outgoing should be enough to pay for the invoice and routing fees,
+    /// but no larger.
+    fn validate_payment_balance(
         &self,
-        invoice_state: Option<&InvoiceState>,
-        channel_id: &ChannelId,
-        amount_msat: u64,
+        incoming: u64,
+        outgoing: u64,
+        invoiced_amount_msat: Option<u64>,
     ) -> Result<(), ValidationError>;
 
     /// Whether the policy specifies that holder balance should be tracked and
@@ -199,6 +195,11 @@ pub trait Validator {
     fn enforce_balance(&self) -> bool {
         false
     }
+
+    /// The minimum initial commitment transaction balance to us, given
+    /// the funding amount.
+    /// The result is in satoshi.
+    fn minimum_initial_balance(&self, holder_value_msat: u64) -> u64;
 }
 
 /// Blockchain state used by the validator
@@ -241,20 +242,15 @@ pub struct EnforcementState {
     pub current_counterparty_commit_info: Option<CommitmentInfo2>,
     pub previous_counterparty_commit_info: Option<CommitmentInfo2>,
     pub mutual_close_signed: bool,
-    /// Amount due to us.
-    /// As payments go out, this amount decreases.
-    /// As issued invoices are paid, this amount increases.
-    /// This balance also includes:
-    /// - pending unfulfilled outgoing HTLCs
-    /// - pending incoming HTLCs if their sum ever covered the invoice we issued
-    /// - keysend HTLCs to us (TODO)
-    /// - pending routed incoming HTLCs if we know their preimage (matching outgoing HTLCS fulfilled) (TODO)
-    pub holder_balance_msat: u64,
+    pub initial_holder_value: u64,
 }
 
 impl EnforcementState {
-    /// Create state for a new channel
-    pub fn new(to_holder_msat: u64) -> EnforcementState {
+    /// Create state for a new channel.
+    ///
+    /// `initial_holder_value` is in satoshi and represents the lowest value
+    /// that we expect the initial commitment to send to us.
+    pub fn new(initial_holder_value: u64) -> EnforcementState {
         EnforcementState {
             next_holder_commit_num: 0,
             next_counterparty_commit_num: 0,
@@ -265,7 +261,7 @@ impl EnforcementState {
             current_counterparty_commit_info: None,
             previous_counterparty_commit_info: None,
             mutual_close_signed: false,
-            holder_balance_msat: to_holder_msat,
+            initial_holder_value,
         }
     }
 
@@ -537,7 +533,7 @@ impl EnforcementState {
 
     /// Summarize in-flight outgoing payments, possibly with new
     /// holder offered or counterparty received commitment tx.
-    /// The amounts are in millisatoshi.
+    /// The amounts are in satoshi.
     /// HTLCs belonging to a payment are summed for each of the
     /// holder and counterparty txs. The greater value is taken as the actual
     /// in-flight value.
@@ -567,7 +563,7 @@ impl EnforcementState {
 
     /// Summarize in-flight incoming payments, possibly with new
     /// holder offered or counterparty received commitment tx.
-    /// The amounts are in millisatoshi.
+    /// The amounts are in satoshi.
     /// HTLCs belonging to a payment are summed for each of the
     /// holder and counterparty txs. The smaller value is taken as the actual
     /// in-flight value.
@@ -603,12 +599,104 @@ impl EnforcementState {
         let mut summary = Map::new();
         for h in htlcs {
             // If there are multiple HTLCs for the same payment, sum them
-            summary
-                .entry(h.payment_hash)
-                .and_modify(|e| *e += h.value_sat * 1000)
-                .or_insert(h.value_sat * 1000);
+            summary.entry(h.payment_hash).and_modify(|e| *e += h.value_sat).or_insert(h.value_sat);
         }
         summary
+    }
+
+    /// The claimable balance before and after a new commitment tx
+    ///
+    /// See [`CommitmentInfo2::claimable_balance`]
+    pub fn claimable_balances<T: PreimageMap>(
+        &self,
+        preimage_map: &T,
+        new_holder_tx: Option<&CommitmentInfo2>,
+        new_counterparty_tx: Option<&CommitmentInfo2>,
+        channel_setup: &ChannelSetup,
+    ) -> BalanceDelta {
+        assert!(
+            new_holder_tx.is_some() || new_counterparty_tx.is_some(),
+            "must have at least one new tx"
+        );
+        assert!(
+            new_holder_tx.is_none() || new_counterparty_tx.is_none(),
+            "must have at most one new tx"
+        );
+        // Our balance in the holder commitment tx
+        let cur_holder_bal = self.current_holder_commit_info.as_ref().map(|tx| {
+            tx.claimable_balance(
+                preimage_map,
+                channel_setup.is_outbound,
+                channel_setup.channel_value_sat,
+            )
+        });
+        // Our balance in the counterparty commitment tx
+        let cur_cp_bal = self.current_counterparty_commit_info.as_ref().map(|tx| {
+            tx.claimable_balance(
+                preimage_map,
+                channel_setup.is_outbound,
+                channel_setup.channel_value_sat,
+            )
+        });
+        // Our overall balance is the lower of the two
+        let cur_bal_opt = min_opt(cur_holder_bal, cur_cp_bal);
+
+        // Perform balance calculations given the new transaction
+        let new_holder_bal = new_holder_tx.or(self.current_holder_commit_info.as_ref()).map(|tx| {
+            tx.claimable_balance(
+                preimage_map,
+                channel_setup.is_outbound,
+                channel_setup.channel_value_sat,
+            )
+        });
+        let new_cp_bal =
+            new_counterparty_tx.or(self.current_counterparty_commit_info.as_ref()).map(|tx| {
+                tx.claimable_balance(
+                    preimage_map,
+                    channel_setup.is_outbound,
+                    channel_setup.channel_value_sat,
+                )
+            });
+        let new_bal =
+            min_opt(new_holder_bal, new_cp_bal).expect("already checked that we have a new tx");
+
+        // If this is the first commitment, we will have no current balance.
+        // We will use our funding amount, or zero if we are not the funder.
+        let cur_bal = cur_bal_opt.unwrap_or_else(|| self.initial_holder_value);
+
+        log::debug!(
+            "balance {} -> {} --- cur h {} c {} new h {} c {}",
+            cur_bal,
+            new_bal,
+            self.current_holder_commit_info.is_some(),
+            self.current_counterparty_commit_info.is_some(),
+            new_holder_tx.is_some(),
+            new_counterparty_tx.is_some()
+        );
+
+        BalanceDelta(cur_bal, new_bal)
+    }
+}
+
+/// Claimable balance before and after a new commitment tx, in satoshi
+pub struct BalanceDelta(pub u64, pub u64);
+
+impl Default for BalanceDelta {
+    fn default() -> Self {
+        BalanceDelta(0, 0)
+    }
+}
+
+// The minimum of two optional values.  If both are None, the result is None.
+fn min_opt(a_opt: Option<u64>, b_opt: Option<u64>) -> Option<u64> {
+    if let Some(a) = a_opt {
+        if let Some(b) = b_opt {
+            Some(a.min(b))
+        } else {
+            a_opt
+        }
+    } else {
+        b_opt
     }
 }
 

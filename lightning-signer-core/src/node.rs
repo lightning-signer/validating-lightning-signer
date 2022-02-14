@@ -19,7 +19,6 @@ use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, Address, Transaction, TxOut};
 use bitcoin::{Network, OutPoint, Script, SigHashType};
-use hashbrown::HashSet;
 use lightning::chain;
 use lightning::chain::keysinterface::{
     BaseSign, KeyMaterial, KeysInterface, SpendableOutputDescriptor,
@@ -41,12 +40,13 @@ use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot,
 use crate::monitor::ChainMonitor;
 use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
-use crate::policy::error::policy_error;
-use crate::policy::validator::ValidatorFactory;
+use crate::policy::error::{policy_error, unbalanced_error, ValidationError};
+use crate::policy::validator::{BalanceDelta, ValidatorFactory};
 use crate::policy::validator::{EnforcementState, Validator};
 use crate::prelude::*;
 use crate::signer::my_keys_manager::{KeyDerivationStyle, MyKeysManager};
 use crate::sync::{Arc, Weak};
+use crate::tx::tx::PreimageMap;
 use crate::util::crypto_utils::signature_to_bitcoin_vec;
 use crate::util::status::{failed_precondition, internal_error, invalid_argument, Status};
 use crate::wallet::Wallet;
@@ -73,45 +73,60 @@ pub struct InvoiceState {
     pub duration_since_epoch: Duration,
     /// Expiry, as duration since the timestamp
     pub expiry_duration: Duration,
-    /// In-flight payments attempting to fulfill this invoice
-    pub inflight_payments: OrderedMap<ChannelId, (u64, bool)>,
-    /// The preimage for the hash, filled in on success
-    pub preimage: Option<PaymentPreimage>,
     /// Whether the invoice was fulfilled
     /// note: for issued invoices only
     pub is_fulfilled: bool,
 }
 
-impl InvoiceState {
-    /// The amount that would be paid if the specified channel pays the
-    /// specified amount.
-    pub fn updated_amount(&self, channel_id: &ChannelId, amount: u64) -> u64 {
+/// Keeps track of incoming and outgoing HTLCs for a routed payment
+#[derive(Clone)]
+pub struct RoutedPayment {
+    /// Incoming payments per channel in satoshi
+    pub incoming: OrderedMap<ChannelId, u64>,
+    /// Outgoing payments per channel in satoshi
+    pub outgoing: OrderedMap<ChannelId, u64>,
+    /// The preimage for the hash, filled in on success
+    pub preimage: Option<PaymentPreimage>,
+}
+
+impl RoutedPayment {
+    /// Create an empty routed payment
+    pub fn new() -> RoutedPayment {
+        RoutedPayment { incoming: OrderedMap::new(), outgoing: OrderedMap::new(), preimage: None }
+    }
+
+    /// Whether we know the preimage, and therefore the incoming is claimable
+    pub fn is_fulfilled(&self) -> bool {
+        self.preimage.is_some()
+    }
+
+    /// The total incoming and outgoing, if this channel updates to the specified values
+    pub fn updated_incoming_outgoing(
+        &self,
+        channel_id: &ChannelId,
+        incoming_amount: u64,
+        outgoing_amount: u64,
+    ) -> (u64, u64) {
         // TODO this can be optimized to eliminate the clone
-        let mut payments: OrderedMap<&ChannelId, u64> = self
-            .inflight_payments
-            .iter()
-            .map(|(channel_id, (amount, _))| (channel_id, *amount))
-            .collect();
-        payments.insert(channel_id, amount);
-        payments.values().into_iter().sum::<u64>()
+        let mut incoming = self.incoming.clone();
+        incoming.insert(channel_id.clone(), incoming_amount);
+        let mut outgoing = self.outgoing.clone();
+        outgoing.insert(channel_id.clone(), outgoing_amount);
+        (incoming.values().into_iter().sum::<u64>(), outgoing.values().into_iter().sum::<u64>())
     }
 
-    /// Update the amount that a channel is trying to pay
-    /// Returns true if this payment fulfilled the invoice and it was not fulfilled
-    /// before.  Also returns the total amount paid towards this invoice.
-    pub fn apply_payment(&mut self, channel_id: &ChannelId, amount: u64) -> (bool, u64) {
-        let was_fulfilled = self.is_fulfilled;
-        self.inflight_payments.insert(channel_id.clone(), (amount, false));
-        let (invoice_amount_paid, is_fulfilled) = self.amount_paid();
-        // we can only go from unfulfilled to fulfilled, but not the other way
-        self.is_fulfilled = self.is_fulfilled || is_fulfilled;
-        return (!was_fulfilled && is_fulfilled, invoice_amount_paid);
+    /// The total incoming and outgoing
+    pub fn incoming_outgoing(&self) -> (u64, u64) {
+        (
+            self.incoming.values().into_iter().sum::<u64>(),
+            self.outgoing.values().into_iter().sum::<u64>(),
+        )
     }
 
-    /// How much was paid, and does that fulfill the invoice?
-    pub fn amount_paid(&self) -> (u64, bool) {
-        let paid = self.inflight_payments.values().map(|(amount, _)| amount).sum::<u64>();
-        (paid, paid >= self.amount_msat)
+    /// Apply incoming and outgoing payment for a channel, in satoshi
+    pub fn apply(&mut self, channel_id: &ChannelId, incoming_amount: u64, outgoing_amount: u64) {
+        self.incoming.insert(channel_id.clone(), incoming_amount);
+        self.outgoing.insert(channel_id.clone(), outgoing_amount);
     }
 }
 
@@ -122,68 +137,172 @@ pub struct NodeState {
     pub invoices: Map<PaymentHash, InvoiceState>,
     /// Issued invoices for incoming payments indexed by their payment hash
     pub issued_invoices: Map<PaymentHash, InvoiceState>,
+    /// Payment states
+    pub payments: Map<PaymentHash, RoutedPayment>,
+    /// Accumulator of excess payment amount in satoshi, for tracking certain
+    /// payment corner cases.
+    /// If this falls below zero, the attempted commit is failed.
+    // TODO fee accumulation adjustment
+    // As we accumulate routing fees, this value grows without bounds.  We should
+    // take accumulated fees out over time to keep this bounded.
+    pub excess_amount: u64,
 }
 
-/// A channel update overpays one or more invoices
-pub struct OverpaymentError {
-    pub(crate) payment_hashes: Vec<PaymentHash>,
+impl PreimageMap for NodeState {
+    fn has_preimage(&self, hash: &PaymentHash) -> bool {
+        self.payments.get(hash).map(|p| p.preimage.is_some()).unwrap_or(false)
+    }
 }
 
 impl NodeState {
     /// Update outgoing in-flight payment amounts as a result of a new commitment tx.
     ///
-    /// The update is only applied if there is no overpayment for any invoice.
-    /// Sends without invoices (e.g. keysend) are only allowed if allow_no_invoice
-    /// is true.
+    /// The following policies are checked:
+    /// - no overpayment for any invoice.
+    /// - Sends without invoices (e.g. keysend) are only allowed if
+    /// `policy.require_invoices` is false.
     pub fn apply_payments(
         &mut self,
         channel_id: &ChannelId,
-        amounts: Map<PaymentHash, u64>,
+        incoming_payment_summary: Map<PaymentHash, u64>,
+        outgoing_payment_summary: Map<PaymentHash, u64>,
+        balance_delta: BalanceDelta,
         validator: Arc<dyn Validator>,
-    ) -> Result<(), OverpaymentError> {
-        if amounts.is_empty() {
-            return Ok(());
-        };
-        debug!("applying payments from channel {} - {:?}", channel_id, amounts);
-        let overpaid = amounts
-            .iter()
-            .filter(|(h, amount)| {
-                let invoice_state = self.invoices.get(*h);
-                validator.validate_inflight_payments(invoice_state, channel_id, **amount).is_err()
-            })
-            .map(|(h, _)| *h)
-            .collect::<Vec<_>>();
-        if !overpaid.is_empty() {
-            return Err(OverpaymentError { payment_hashes: overpaid });
+    ) -> Result<(), ValidationError> {
+        debug!(
+            "applying payments on channel {} - in {:?} out {:?}",
+            channel_id, incoming_payment_summary, outgoing_payment_summary
+        );
+
+        let mut hashes: UnorderedSet<&PaymentHash> = UnorderedSet::new();
+        hashes.extend(incoming_payment_summary.keys());
+        hashes.extend(outgoing_payment_summary.keys());
+
+        let mut unbalanced = Vec::new();
+
+        let mut fulfilled_issued_invoices = Vec::new();
+
+        // Preflight check
+        for hash_r in hashes.iter() {
+            let incoming = incoming_payment_summary.get(hash_r).map(|a| *a).unwrap_or(0);
+            let outgoing = outgoing_payment_summary.get(hash_r).map(|a| *a).unwrap_or(0);
+            let hash = **hash_r;
+            let payment = self.payments.entry(hash).or_insert_with(|| RoutedPayment::new());
+            let (incoming, outgoing) =
+                payment.updated_incoming_outgoing(channel_id, incoming, outgoing);
+            let invoiced_amount = self.invoices.get(&hash).map(|i| i.amount_msat);
+            if validator.validate_payment_balance(incoming, outgoing, invoiced_amount).is_err() {
+                unbalanced.push(hash);
+            }
+            if let Some(issued) = self.issued_invoices.get(&hash) {
+                if !payment.is_fulfilled() {
+                    // We don't manage issued invoice preimages yet, so we don't know
+                    // when the invoice is fulfilled.  But we can guess it is fulfilled
+                    // when the payment balance is greater than the invoiced amount.
+                    // TODO this won't work if there is a routing loop for a payment invoice going through us
+                    // TODO consider rounding here
+                    if incoming >= outgoing + issued.amount_msat / 1000 {
+                        fulfilled_issued_invoices.push(hash);
+                    }
+                }
+            }
         }
-        for (h, amount) in amounts.iter() {
-            self.invoices.get_mut(h).map(|state| state.apply_payment(channel_id, *amount));
+
+        let enforce_balance = validator.enforce_balance();
+        if !unbalanced.is_empty() {
+            return Err(unbalanced_error(unbalanced));
+        }
+
+        if enforce_balance {
+            let excess_amount = self
+                .excess_amount
+                .checked_add(balance_delta.1)
+                .expect("overflow")
+                .checked_sub(balance_delta.0)
+                .ok_or_else(|| {
+                    policy_error(format!(
+                        "shortfall {} + {} - {}",
+                        self.excess_amount, balance_delta.1, balance_delta.0
+                    ))
+                })?;
+            for hash in fulfilled_issued_invoices.iter() {
+                debug!("mark issued invoice {} as fulfilled", hash.0.to_hex());
+                let payment = self.payments.get_mut(&hash).expect("already checked");
+                // Mark as fulfilled by setting a dummy preimage.
+                // This has the side-effect of the payment amount not being added
+                // to the excess_amount, because we set the preimage after the balance
+                // delta has already been calculated.
+                payment.preimage = Some(PaymentPreimage([0; 32]));
+            }
+            self.excess_amount = excess_amount;
+        }
+
+        // Everything was checked, mutate now
+
+        debug!(
+            "applying incoming payments from channel {} - {:?}",
+            channel_id, incoming_payment_summary
+        );
+
+        for hash in hashes.iter() {
+            let incoming = incoming_payment_summary.get(hash).map(|a| *a).unwrap_or(0);
+            let outgoing = outgoing_payment_summary.get(hash).map(|a| *a).unwrap_or(0);
+            let payment = self.payments.get_mut(hash).expect("created above");
+            payment.apply(channel_id, incoming, outgoing);
         }
         Ok(())
     }
 
-    /// Update incoming payment amounts as a result of a new commitment tx.
-    /// Return the total amount of newly fulfilled invoices we issued.
-    pub fn apply_incoming_payments(
+    /// Fulfills an HTLC.
+    /// Performs bookkeeping on any invoice or routed payment with this payment hash.
+    pub fn htlc_fulfilled(
         &mut self,
         channel_id: &ChannelId,
-        amounts: Map<PaymentHash, u64>,
-    ) -> Result<u64, ()> {
-        // Keep track of total issued invoices going into paid status
-        let mut total_invoice_amount_paid = 0u64;
-        if amounts.is_empty() {
-            return Ok(0);
-        };
-        debug!("applying incoming payments from channel {} - {:?}", channel_id, amounts);
-        for (h, amount) in amounts.iter() {
-            self.issued_invoices.get_mut(h).map(|state| {
-                let (did_fulfill, invoice_amount_paid) = state.apply_payment(channel_id, *amount);
-                if did_fulfill {
-                    total_invoice_amount_paid += invoice_amount_paid;
+        preimage: PaymentPreimage,
+        validator: Arc<dyn Validator>,
+    ) {
+        let payment_hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+
+        if let Some(payment) = self.payments.get_mut(&payment_hash) {
+            // Getting an HTLC preimage moves HTLC values to the virtual balance of the recipient
+            // on both input and output.
+            // We gain the difference between the input and the output amounts,
+            // so record that in the excess_amount register.
+            // However, when we pay an invoice, the excess_amount is not
+            // updated.
+            if payment.preimage.is_some() {
+                info!("duplicate preimage {} on channel {}", payment_hash.0.to_hex(), channel_id);
+            } else {
+                let (incoming, outgoing) = payment.incoming_outgoing();
+                if self.invoices.contains_key(&payment_hash) {
+                    if incoming > 0 {
+                        info!(
+                            "preimage invoice+routing {} +{} -{} msat",
+                            payment_hash.0.to_hex(),
+                            incoming,
+                            outgoing
+                        )
+                    } else {
+                        info!("preimage invoice {} -{} msat", payment_hash.0.to_hex(), outgoing)
+                    }
+                } else {
+                    info!(
+                        "preimage routing {} +{} -{} msat",
+                        payment_hash.0.to_hex(),
+                        incoming,
+                        outgoing
+                    );
+                    if validator.enforce_balance() {
+                        self.excess_amount =
+                            self.excess_amount.checked_add(incoming).expect("overflow");
+                        // TODO convert to checked error
+                        self.excess_amount =
+                            self.excess_amount.checked_sub(outgoing).expect("underflow");
+                    }
                 }
-            });
+                payment.preimage = Some(preimage);
+            }
         }
-        Ok(total_invoice_amount_paid)
     }
 }
 
@@ -344,7 +463,12 @@ impl Node {
         tracker: ChainTracker<ChainMonitor>,
         validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Node {
-        let state = NodeState { invoices: Map::new(), issued_invoices: Map::new() };
+        let state = NodeState {
+            invoices: Map::new(),
+            issued_invoices: Map::new(),
+            payments: Map::new(),
+            excess_amount: 0,
+        };
         Self::new_from_persistence(
             node_config,
             seed,
@@ -633,7 +757,12 @@ impl Node {
             .expect("allowable parse error");
         let tracker = persister.get_tracker(node_id).expect("tracker");
         // FIXME persist node state
-        let state = NodeState { invoices: Map::new(), issued_invoices: Map::new() };
+        let state = NodeState {
+            invoices: Map::new(),
+            issued_invoices: Map::new(),
+            payments: Map::new(),
+            excess_amount: 0,
+        };
 
         let node = Arc::new(Node::new_from_persistence(
             config,
@@ -700,6 +829,12 @@ impl Node {
         holder_shutdown_key_path: &Vec<u32>,
     ) -> Result<Channel, Status> {
         let mut tracker = self.tracker.lock().unwrap();
+        let validator = self.validator_factory.lock().unwrap().make_validator(
+            self.network(),
+            self.get_id(),
+            Some(channel_id0),
+        );
+
         let chan = {
             let channels = self.channels.lock().unwrap();
             let arcobj = channels.get(&channel_id0).ok_or_else(|| {
@@ -734,7 +869,8 @@ impl Node {
             } else {
                 setup.push_value_msat
             };
-            let enforcement_state = EnforcementState::new(to_holder_msat);
+            let initial_holder_value_sat = validator.minimum_initial_balance(to_holder_msat);
+            let enforcement_state = EnforcementState::new(initial_holder_value_sat);
             Channel {
                 node: Weak::clone(&stub.node),
                 nonce: stub.nonce.clone(),
@@ -747,11 +883,6 @@ impl Node {
                 monitor,
             }
         };
-        let validator = self.validator_factory.lock().unwrap().make_validator(
-            chan.network(),
-            self.get_id(),
-            Some(channel_id0),
-        );
 
         validator.validate_ready_channel(self, &setup, holder_shutdown_key_path)?;
 
@@ -1041,7 +1172,7 @@ impl Node {
         info!("signing an invoice {} -> {}", hash.0.to_hex(), invoice_state.amount_msat);
 
         let mut state = self.state.lock().unwrap();
-        if let Some(invoice_state) = state.invoices.get(&hash) {
+        if let Some(invoice_state) = state.issued_invoices.get(&hash) {
             return if invoice_state.invoice_hash == invoice_hash {
                 Ok(sig)
             } else {
@@ -1152,7 +1283,7 @@ impl Node {
         Ok(())
     }
 
-    fn update_allowlist(&self, alset: &MutexGuard<HashSet<Allowable>>) -> Result<(), Status> {
+    fn update_allowlist(&self, alset: &MutexGuard<UnorderedSet<Allowable>>) -> Result<(), Status> {
         let wlvec = (*alset).iter().map(|a| a.to_string(self.network())).collect();
         self.persister
             .update_node_allowlist(&self.get_id(), wlvec)
@@ -1187,33 +1318,12 @@ impl Node {
         &self,
         channel_id: &ChannelId,
         preimages: Vec<PaymentPreimage>,
-    ) -> u64 {
+        validator: Arc<dyn Validator>,
+    ) {
         let mut state = self.state.lock().unwrap();
-        let mut total_filled = 0u64;
         for preimage in preimages.into_iter() {
-            let payment_hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
-            if let Some(is) = state.invoices.get_mut(&payment_hash) {
-                is.preimage = Some(preimage);
-                if let Some((amount, filled)) = is.inflight_payments.get_mut(channel_id) {
-                    if *filled {
-                        info!("duplicate preimage {}", payment_hash.0.to_hex());
-                    } else {
-                        info!("preimage fulfills {}", payment_hash.0.to_hex());
-                        total_filled += *amount;
-                        *filled = true;
-                    }
-                } else {
-                    info!(
-                        "preimage {} on unexpected channel {}",
-                        payment_hash.0.to_hex(),
-                        channel_id.0.to_hex()
-                    );
-                }
-            } else {
-                warn!("preimage has no matching invoice for hash {}", payment_hash.0.to_hex());
-            }
+            state.htlc_fulfilled(channel_id, preimage, Arc::clone(&validator));
         }
-        total_filled
     }
 
     /// Add an invoice.
@@ -1234,6 +1344,7 @@ impl Node {
             };
         }
         state.invoices.insert(hash, invoice_state);
+        state.payments.insert(hash, RoutedPayment::new());
         Ok(())
     }
 
@@ -1256,15 +1367,12 @@ impl Node {
             .payee_pub_key()
             .map(|p| p.clone())
             .unwrap_or_else(|| invoice.recover_payee_pub_key());
-        let inflight_payments = OrderedMap::new();
         let invoice_state = InvoiceState {
             invoice_hash,
             amount_msat,
             payee,
             duration_since_epoch: invoice.duration_since_epoch(),
             expiry_duration: invoice.expiry_time(),
-            inflight_payments,
-            preimage: None,
             is_fulfilled: false,
         };
         Ok((hash, invoice_state, invoice_hash))
@@ -1414,12 +1522,7 @@ mod tests {
 
         let mut state = node.state.lock().unwrap();
         let hash1 = PaymentHash([1; 32]);
-        let invoice_state = state.invoices.get_mut(&hash).expect("invoice state");
-        assert_eq!(invoice_state.updated_amount(&channel_id, 100_000), 100_000);
         let channel_id1 = ChannelId([1; 32]);
-        invoice_state.apply_payment(&channel_id1, 99_000);
-        assert_eq!(invoice_state.updated_amount(&channel_id1, 98_000), 98_000);
-        assert_eq!(invoice_state.updated_amount(&channel_id, 1), 99_001);
 
         // Create a strict invoice validator and one that does not validate invoices
         let mut policy = make_simple_policy(Network::Testnet);
@@ -1432,46 +1535,53 @@ mod tests {
         let lenient_validator =
             SimpleValidatorFactory::new().make_validator(Network::Testnet, node.get_id(), None);
 
-        // 99_000 applied on channel_id1 above, so there is 1_000 left to apply on a different channel.  But we also allow for fees when deciding there
-        // is an overpayment.
-        // TODO the max fee is hardcoded to 10_000
-        let apply1 = state.apply_payments(
+        state
+            .apply_payments(
+                &channel_id1,
+                Map::new(),
+                vec![(hash, 99)].into_iter().collect(),
+                Default::default(),
+                invoice_validator.clone(),
+            )
+            .expect("channel1");
+
+        let result = state.apply_payments(
             &channel_id,
-            vec![(hash, 11_001)].into_iter().collect(),
+            Map::new(),
+            vec![(hash, 12)].into_iter().collect(),
+            Default::default(),
             invoice_validator.clone(),
         );
-        assert!(apply1.is_err());
-        assert_eq!(apply1.unwrap_err().payment_hashes, vec![hash]);
-        assert!(state
-            .apply_payments(
-                &channel_id,
-                vec![(hash, 11_000)].into_iter().collect(),
-                invoice_validator.clone()
-            )
-            .is_ok());
-        assert!(state
-            .apply_payments(
-                &channel_id,
-                vec![(hash, 11_001)].into_iter().collect(),
-                invoice_validator.clone()
-            )
-            .is_err());
+        assert_eq!(result, Err(unbalanced_error(vec![hash])));
 
-        // Apply payments to a non-invoiced payment hash
-        assert!(state
-            .apply_payments(
-                &channel_id,
-                vec![(hash1, 555)].into_iter().collect(),
-                lenient_validator.clone()
-            )
-            .is_ok());
-        assert!(state
-            .apply_payments(
-                &channel_id,
-                vec![(hash1, 555)].into_iter().collect(),
-                invoice_validator.clone()
-            )
-            .is_err());
+        let result = state.apply_payments(
+            &channel_id,
+            Map::new(),
+            vec![(hash, 11)].into_iter().collect(),
+            Default::default(),
+            invoice_validator.clone(),
+        );
+        assert!(result.is_ok());
+
+        let result = state.apply_payments(
+            &channel_id,
+            Map::new(),
+            vec![(hash1, 5)].into_iter().collect(),
+            Default::default(),
+            lenient_validator.clone(),
+        );
+
+        assert!(result.is_ok());
+
+        let result = state.apply_payments(
+            &channel_id,
+            Map::new(),
+            vec![(hash1, 5)].into_iter().collect(),
+            Default::default(),
+            invoice_validator.clone(),
+        );
+
+        assert!(result.is_err());
     }
 
     fn make_test_invoice(
@@ -1523,18 +1633,89 @@ mod tests {
             assert!(state
                 .apply_payments(
                     &channel_id,
-                    vec![(hash, 101_000)].into_iter().collect(),
+                    Map::new(),
+                    vec![(hash, 110)].into_iter().collect(),
+                    Default::default(),
                     invoice_validator.clone()
                 )
                 .is_ok());
         }
         node.with_ready_channel(&channel_id, |chan| {
-            assert_eq!(chan.enforcement_state.holder_balance_msat, 3_000_000_000);
             chan.htlcs_fulfilled(vec![preimage]);
-            assert_eq!(chan.enforcement_state.holder_balance_msat, 3_000_000_000 - 101_000);
             Ok(())
         })
         .unwrap();
+    }
+
+    #[test]
+    fn overpay_test() {
+        let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        let preimage = PaymentPreimage([0; 32]);
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+
+        let invoice = make_test_invoice(&payee_node, "invoice", hash);
+
+        node.add_invoice(invoice).expect("add invoice");
+
+        let mut policy = make_simple_policy(Network::Testnet);
+        policy.require_invoices = true;
+        policy.enforce_balance = true;
+        let factory = SimpleValidatorFactory::new_with_policy(policy);
+        let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
+        node.set_validator_factory(Arc::new(factory));
+
+        {
+            let mut state = node.state.lock().unwrap();
+            assert_eq!(
+                state.apply_payments(
+                    &channel_id,
+                    Map::new(),
+                    vec![(hash, 111)].into_iter().collect(),
+                    Default::default(),
+                    invoice_validator.clone()
+                ),
+                Err(unbalanced_error(vec![hash]))
+            );
+        }
+    }
+
+    #[test]
+    fn shortfall_test() {
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+
+        let mut policy = make_simple_policy(Network::Testnet);
+        policy.require_invoices = true;
+        policy.enforce_balance = true;
+        let factory = SimpleValidatorFactory::new_with_policy(policy);
+        let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
+        node.set_validator_factory(Arc::new(factory));
+
+        {
+            let mut state = node.state.lock().unwrap();
+            assert_eq!(
+                state.apply_payments(
+                    &channel_id,
+                    Map::new(),
+                    Map::new(),
+                    BalanceDelta(0, 0),
+                    invoice_validator.clone()
+                ),
+                Ok(())
+            );
+            assert_eq!(
+                state.apply_payments(
+                    &channel_id,
+                    Map::new(),
+                    Map::new(),
+                    BalanceDelta(1, 0),
+                    invoice_validator.clone()
+                ),
+                Err(policy_error("shortfall 0 + 0 - 1"))
+            );
+        }
     }
 
     #[test]
@@ -1549,32 +1730,47 @@ mod tests {
         // This records the issued invoice
         node.sign_invoice(&hrp, &data).unwrap();
 
+        let mut policy = make_simple_policy(Network::Testnet);
+        policy.require_invoices = true;
+        policy.enforce_balance = true;
+        let factory = SimpleValidatorFactory::new_with_policy(policy);
+        let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
+
         {
             let mut state = node.state.lock().unwrap();
             // Underpaid
-            assert_eq!(
-                state.apply_incoming_payments(
+            state
+                .apply_payments(
                     &channel_id,
-                    vec![(hash, 99_999)].into_iter().collect()
-                ),
-                Ok(0)
-            );
+                    vec![(hash, 99)].into_iter().collect(),
+                    Map::new(),
+                    Default::default(),
+                    invoice_validator.clone(),
+                )
+                .expect("ok");
+            assert!(!state.payments.get(&hash).unwrap().is_fulfilled());
             // Paid
-            assert_eq!(
-                state.apply_incoming_payments(
+            state
+                .apply_payments(
                     &channel_id,
-                    vec![(hash, 100_000)].into_iter().collect()
-                ),
-                Ok(100_000)
-            );
-            // Already paid, no balance adjustment signalled
-            assert_eq!(
-                state.apply_incoming_payments(
+                    vec![(hash, 100)].into_iter().collect(),
+                    Map::new(),
+                    Default::default(),
+                    invoice_validator.clone(),
+                )
+                .expect("ok");
+            assert!(state.payments.get(&hash).unwrap().is_fulfilled());
+            // Already paid
+            state
+                .apply_payments(
                     &channel_id,
-                    vec![(hash, 100_000)].into_iter().collect()
-                ),
-                Ok(0)
-            );
+                    vec![(hash, 100)].into_iter().collect(),
+                    Map::new(),
+                    Default::default(),
+                    invoice_validator.clone(),
+                )
+                .expect("ok");
+            assert!(state.payments.get(&hash).unwrap().is_fulfilled());
         }
     }
 

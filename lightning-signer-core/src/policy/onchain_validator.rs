@@ -4,7 +4,6 @@ use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
-use crate::node::InvoiceState;
 use crate::policy::error::policy_error;
 use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::EnforcementState;
@@ -105,7 +104,6 @@ impl Validator for OnchainValidator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         info2: &CommitmentInfo2,
-        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         // Only allow state advancement if funding is buried and unspent
         self.ensure_funding_buried_and_unspent(commit_num, cstate)?;
@@ -116,7 +114,6 @@ impl Validator for OnchainValidator {
             setup,
             cstate,
             info2,
-            fulfilled_incoming_msat,
         )
     }
 
@@ -128,7 +125,6 @@ impl Validator for OnchainValidator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         info2: &CommitmentInfo2,
-        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         // Only allow state advancement if funding is buried and unspent
         if estate.next_holder_commit_num <= commit_num {
@@ -141,7 +137,6 @@ impl Validator for OnchainValidator {
             setup,
             cstate,
             info2,
-            fulfilled_incoming_msat,
         )
     }
 
@@ -273,13 +268,17 @@ impl Validator for OnchainValidator {
         self.inner.validate_justice_sweep(wallet, setup, cstate, tx, input, amount_sat, wallet_path)
     }
 
-    fn validate_inflight_payments(
+    fn validate_payment_balance(
         &self,
-        invoice_state: Option<&InvoiceState>,
-        channel_id: &ChannelId,
-        amount_msat: u64,
+        incoming: u64,
+        outgoing: u64,
+        invoiced_amount: Option<u64>,
     ) -> Result<(), ValidationError> {
-        self.inner.validate_inflight_payments(invoice_state, channel_id, amount_msat)
+        self.inner.validate_payment_balance(incoming, outgoing, invoiced_amount)
+    }
+
+    fn minimum_initial_balance(&self, holder_value_msat: u64) -> u64 {
+        self.inner.minimum_initial_balance(holder_value_msat)
     }
 }
 

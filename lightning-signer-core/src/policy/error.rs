@@ -1,7 +1,9 @@
 #[cfg(feature = "backtrace")]
 use backtrace::Backtrace;
+use bitcoin::hashes::hex::ToHex;
+use lightning::ln::PaymentHash;
 
-use ValidationErrorKind::{Mismatch, Policy, ScriptFormat, TransactionFormat};
+use ValidationErrorKind::*;
 
 use crate::prelude::*;
 
@@ -16,6 +18,8 @@ pub enum ValidationErrorKind {
     Mismatch(String),
     /// A policy was violated
     Policy(String),
+    /// A payment is not balanced
+    Unbalanced(String, Vec<PaymentHash>),
 }
 
 // Explicit PartialEq which ignores backtrace.
@@ -51,6 +55,7 @@ impl ValidationError {
             ScriptFormat(s0) => ScriptFormat(premsg + &s0),
             Mismatch(s0) => Mismatch(premsg + &s0),
             Policy(s0) => Policy(premsg + &s0),
+            Unbalanced(s0, hashes) => Unbalanced(premsg + &s0, hashes.clone()),
         };
         ValidationError {
             kind: modkind,
@@ -87,6 +92,10 @@ impl Into<String> for ValidationError {
             ScriptFormat(s) => "script format: ".to_string() + &s,
             Mismatch(s) => "script template mismatch: ".to_string() + &s,
             Policy(s) => "policy failure: ".to_string() + &s,
+            Unbalanced(s, hashes) => {
+                let hashes: Vec<_> = hashes.iter().map(|h| h.0.to_hex()).collect();
+                format!("unbalanced payments: {} {}", s, hashes.join(", "))
+            }
         }
     }
 }
@@ -118,6 +127,14 @@ pub(crate) fn mismatch_error(msg: impl Into<String>) -> ValidationError {
 pub(crate) fn policy_error(msg: impl Into<String>) -> ValidationError {
     ValidationError {
         kind: Policy(msg.into()),
+        #[cfg(feature = "backtrace")]
+        bt: Backtrace::new_unresolved(),
+    }
+}
+
+pub(crate) fn unbalanced_error(hashes: Vec<PaymentHash>) -> ValidationError {
+    ValidationError {
+        kind: Unbalanced("".to_string(), hashes),
         #[cfg(feature = "backtrace")]
         bt: Backtrace::new_unresolved(),
     }
