@@ -154,14 +154,13 @@ fn invoice_test() {
     policy.enforce_balance = true;
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
     let validating_signer = Arc::new(MultiSigner::new_with_validator(validator_factory));
-    let signer = new_signer();
 
     let chanmon_cfgs = create_chanmon_cfgs(3);
     let mut node_cfgs = Vec::new();
 
     node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, network, genesis_block(network).header, 0));
     // routing nodes can't turn on invoice validation yet
-    node_cfgs.push(create_node_cfg(&signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, network, genesis_block(network).header, 1));
+    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, network, genesis_block(network).header, 1));
     node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, network, genesis_block(network).header, 2));
     let node_chanmgrs = create_node_chanmgrs(3, &node_cfgs, &[None, None, None]);
     let mut nodes = create_network(3, &node_cfgs, &node_chanmgrs);
@@ -173,30 +172,40 @@ fn invoice_test() {
 
     let signer_node0 = nodes[0].keys_manager.get_node();
     let channel_keys0 = signer_node0.channels().keys().cloned().collect::<Vec<_>>();
+    let signer_node1 = nodes[1].keys_manager.get_node();
     let signer_node2 = nodes[2].keys_manager.get_node();
     let channel_keys2 = signer_node2.channels().keys().cloned().collect::<Vec<_>>();
     // The actual balance is lower because of fees
-    assert_eq!(holder_balances(&signer_node0, channel_keys0[0]), (99_817, 99_817, 99_817));
-    assert_eq!(holder_balances(&signer_node2, channel_keys2[0]), (0, 0, 0));
+    assert_eq!(holder_balances(&signer_node0, channel_keys0[0], true), (100_000, 99_817, 99_817));
+    assert_eq!(holder_balances(&signer_node2, channel_keys2[0], false), (0, 0, 0));
+
+    assert_eq!(signer_node0.get_state().excess_amount, 0);
+    assert_eq!(signer_node1.get_state().excess_amount, 0);
+    assert_eq!(signer_node2.get_state().excess_amount, 0);
 
     // Send 0 -> 1 -> 2
     send_payment(
         &nodes[0],
         &vec![&nodes[1], &nodes[2]][..],
-        8_000_000,
+        7_000_000,
     );
 
     // an extra satoshi was consumed as fee
-    assert_eq!(holder_balances(&signer_node0, channel_keys0[0]), (91_816, 91_816, 91_816));
-    assert_eq!(holder_balances(&signer_node2, channel_keys2[0]), (8_000, 8_000, 8_000));
+    assert_eq!(holder_balances(&signer_node0, channel_keys0[0], true), (92_999, 92_816, 92_816));
+    assert_eq!(holder_balances(&signer_node2, channel_keys2[0], false), (7_000, 7_000, 7_000));
+
+    assert_eq!(signer_node0.get_state().excess_amount, 0);
+    // Gained routing fee
+    assert_eq!(signer_node1.get_state().excess_amount, 1);
+    assert_eq!(signer_node2.get_state().excess_amount, 0);
 }
 
 // Get the holder policy balance, as well as the actual balance in the holder and counterparty txs
-fn holder_balances(signer_node0: &Arc<lightning_signer::node::Node>, id: ChannelId) -> (u64, u64, u64) {
+fn holder_balances(signer_node0: &Arc<lightning_signer::node::Node>, id: ChannelId, is_outbound: bool) -> (u64, u64, u64) {
     signer_node0.with_ready_channel(&id, |chan| {
         let estate = &chan.enforcement_state;
         let nstate = signer_node0.get_state();
-        let claimable_balance = estate.current_holder_commit_info.clone().unwrap().claimable_balance(&*nstate);
+        let claimable_balance = estate.current_holder_commit_info.clone().unwrap().claimable_balance(&*nstate, is_outbound, if is_outbound { 100000 } else { 0 });
         Ok((claimable_balance,
             estate.current_holder_commit_info.as_ref().unwrap().to_broadcaster_value_sat,
             estate.current_counterparty_commit_info.as_ref().unwrap().to_countersigner_value_sat,
