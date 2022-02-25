@@ -1329,3 +1329,7 @@ pub fn get_announce_close_broadcast_events<'a, 'b, 'c>(nodes: &Vec<Node<'a, 'b, 
         node.net_graph_msg_handler.handle_channel_update(&bs_update).unwrap();
     }
 }
+
+// Local Variables:
+// inhibit-rust-format-buffer: t
+// End:

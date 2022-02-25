@@ -720,3 +720,7 @@ fn test_static_output_closing_tx() {
     assert_eq!(spend_txn.len(), 1);
     check_spends!(spend_txn[0], closing_tx);
 }
+
+// Local Variables:
+// inhibit-rust-format-buffer: t
+// End:
