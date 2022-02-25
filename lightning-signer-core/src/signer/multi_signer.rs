@@ -6,10 +6,8 @@ use log::info;
 #[cfg(feature = "std")]
 use rand::{OsRng, Rng};
 
-#[cfg(feature = "std")]
 use crate::chain::tracker::ChainTracker;
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSlot};
-#[cfg(feature = "std")]
 use crate::monitor::ChainMonitor;
 use crate::node::{Node, NodeConfig};
 use crate::persist::{DummyPersister, Persist};
@@ -101,12 +99,23 @@ impl MultiSigner {
         tracker: ChainTracker<ChainMonitor>,
         validator_factory: Arc<dyn ValidatorFactory>,
     ) -> PublicKey {
-        let secp_ctx = Secp256k1::signing_only();
         let mut rng = OsRng::new().unwrap();
 
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);
 
+        self.new_node_with_seed(node_config, tracker, validator_factory, seed)
+    }
+
+    /// New node with externally supplied cryptographic seed
+    pub fn new_node_with_seed(
+        &self,
+        node_config: NodeConfig,
+        tracker: ChainTracker<ChainMonitor>,
+        validator_factory: Arc<dyn ValidatorFactory>,
+        seed: [u8; 32],
+    ) -> PublicKey {
+        let secp_ctx = Secp256k1::signing_only();
         let node = Node::new_extended(
             node_config,
             &seed,

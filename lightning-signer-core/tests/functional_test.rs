@@ -85,7 +85,7 @@ fn create_node_cfg<'a>(signer: &Arc<MultiSigner>, chanmon_cfgs: &'a Vec<TestChan
     let chain_tracker: ChainTracker<ChainMonitor> =
         ChainTracker::new(network, 0, tip).unwrap();
 
-    let node_id = signer.new_node_extended(config, chain_tracker, signer.validator_factory());
+    let node_id = signer.new_node_with_seed(config, chain_tracker, signer.validator_factory(), seed.clone());
 
     let keys_manager = LoopbackSignerKeysInterface {
         node_id,
