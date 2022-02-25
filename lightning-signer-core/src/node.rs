@@ -146,6 +146,8 @@ pub struct NodeState {
     // As we accumulate routing fees, this value grows without bounds.  We should
     // take accumulated fees out over time to keep this bounded.
     pub excess_amount: u64,
+    /// Prefix for emitted logs lines
+    pub log_prefix: String,
 }
 
 impl PreimageMap for NodeState {
@@ -155,6 +157,27 @@ impl PreimageMap for NodeState {
 }
 
 impl NodeState {
+    /// Create a state
+    pub fn new() -> Self {
+        NodeState {
+            invoices: Map::new(),
+            issued_invoices: Map::new(),
+            payments: Map::new(),
+            excess_amount: 0,
+            log_prefix: String::new(),
+        }
+    }
+
+    fn with_log_prefix(self, log_prefix: String) -> Self {
+        NodeState {
+            invoices: self.invoices,
+            issued_invoices: self.issued_invoices,
+            payments: self.payments,
+            excess_amount: self.excess_amount,
+            log_prefix,
+        }
+    }
+
     /// Update outgoing in-flight payment amounts as a result of a new commitment tx.
     ///
     /// The following policies are checked:
@@ -208,12 +231,15 @@ impl NodeState {
             }
         }
 
-        let enforce_balance = validator.enforce_balance();
         if !unbalanced.is_empty() {
             return Err(unbalanced_error(unbalanced));
         }
 
-        if enforce_balance {
+        if validator.enforce_balance() {
+            info!(
+                "{} apply payments adjust excess {} +{} -{}",
+                self.log_prefix, self.excess_amount, balance_delta.1, balance_delta.0
+            );
             let excess_amount = self
                 .excess_amount
                 .checked_add(balance_delta.1)
@@ -271,24 +297,37 @@ impl NodeState {
             // However, when we pay an invoice, the excess_amount is not
             // updated.
             if payment.preimage.is_some() {
-                info!("duplicate preimage {} on channel {}", payment_hash.0.to_hex(), channel_id);
+                info!(
+                    "{} duplicate preimage {} on channel {}",
+                    self.log_prefix,
+                    payment_hash.0.to_hex(),
+                    channel_id
+                );
             } else {
                 let (incoming, outgoing) = payment.incoming_outgoing();
                 if self.invoices.contains_key(&payment_hash) {
                     if incoming > 0 {
                         info!(
-                            "preimage invoice+routing {} +{} -{} msat",
+                            "{} preimage invoice+routing {} +{} -{} msat",
+                            self.log_prefix,
                             payment_hash.0.to_hex(),
                             incoming,
                             outgoing
                         )
                     } else {
-                        info!("preimage invoice {} -{} msat", payment_hash.0.to_hex(), outgoing)
+                        info!(
+                            "{} preimage invoice {} -{} msat",
+                            self.log_prefix,
+                            payment_hash.0.to_hex(),
+                            outgoing
+                        )
                     }
                 } else {
                     info!(
-                        "preimage routing {} +{} -{} msat",
+                        "{} preimage routing {} adjust excess {} +{} -{} msat",
+                        self.log_prefix,
                         payment_hash.0.to_hex(),
+                        self.excess_amount,
                         incoming,
                         outgoing
                     );
@@ -463,12 +502,7 @@ impl Node {
         tracker: ChainTracker<ChainMonitor>,
         validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Node {
-        let state = NodeState {
-            invoices: Map::new(),
-            issued_invoices: Map::new(),
-            payments: Map::new(),
-            excess_amount: 0,
-        };
+        let state = NodeState::new();
         Self::new_from_persistence(
             node_config,
             seed,
@@ -492,16 +526,20 @@ impl Node {
     ) -> Node {
         let genesis = genesis_block(node_config.network);
         let now = Duration::from_secs(genesis.header.time as u64);
-        let state = Mutex::new(state);
+        let keys_manager = MyKeysManager::new(
+            node_config.key_derivation_style,
+            seed,
+            node_config.network,
+            now.as_secs(),
+            now.subsec_nanos(),
+        );
+        let node_id = Self::id_from_key(&keys_manager.get_node_secret());
+        let log_prefix = &node_id.to_hex()[0..4];
+
+        let state = Mutex::new(state.with_log_prefix(log_prefix.to_string()));
 
         Node {
-            keys_manager: MyKeysManager::new(
-                node_config.key_derivation_style,
-                seed,
-                node_config.network,
-                now.as_secs(),
-                now.subsec_nanos(),
-            ),
+            keys_manager,
             node_config,
             channels: Mutex::new(OrderedMap::new()),
             validator_factory: Mutex::new(validator_factory),
@@ -520,8 +558,17 @@ impl Node {
 
     /// Get the node ID, which is the same as the node public key
     pub fn get_id(&self) -> PublicKey {
+        let key = &self.keys_manager.get_node_secret();
+        Self::id_from_key(key)
+    }
+
+    fn id_from_key(key: &SecretKey) -> PublicKey {
         let secp_ctx = Secp256k1::signing_only();
-        PublicKey::from_secret_key(&secp_ctx, &self.keys_manager.get_node_secret())
+        PublicKey::from_secret_key(&secp_ctx, key)
+    }
+
+    fn log_prefix(&self) -> String {
+        self.get_id().to_hex()[0..4].to_string()
     }
 
     /// Lock and return the node state
@@ -757,12 +804,7 @@ impl Node {
             .expect("allowable parse error");
         let tracker = persister.get_tracker(node_id).expect("tracker");
         // FIXME persist node state
-        let state = NodeState {
-            invoices: Map::new(),
-            issued_invoices: Map::new(),
-            payments: Map::new(),
-            excess_amount: 0,
-        };
+        let state = NodeState::new();
 
         let node = Arc::new(Node::new_from_persistence(
             config,
@@ -1169,7 +1211,12 @@ impl Node {
         let sig = signed_raw_invoice.signature().0;
         let (hash, invoice_state, invoice_hash) =
             Self::invoice_state_from_invoice(signed_raw_invoice)?;
-        info!("signing an invoice {} -> {}", hash.0.to_hex(), invoice_state.amount_msat);
+        info!(
+            "{} signing an invoice {} -> {}",
+            self.log_prefix(),
+            hash.0.to_hex(),
+            invoice_state.amount_msat
+        );
 
         let mut state = self.state.lock().unwrap();
         if let Some(invoice_state) = state.issued_invoices.get(&hash) {
@@ -1332,7 +1379,12 @@ impl Node {
     pub fn add_invoice(&self, raw_invoice: SignedRawInvoice) -> Result<(), Status> {
         let (hash, invoice_state, invoice_hash) = Self::invoice_state_from_invoice(raw_invoice)?;
 
-        debug!("adding invoice {} -> {}", hash.0.to_hex(), invoice_state.amount_msat);
+        info!(
+            "{} adding invoice {} -> {}",
+            self.log_prefix(),
+            hash.0.to_hex(),
+            invoice_state.amount_msat
+        );
         let mut state = self.state.lock().unwrap();
         if let Some(invoice_state) = state.invoices.get(&hash) {
             return if invoice_state.invoice_hash == invoice_hash {
@@ -1358,7 +1410,6 @@ impl Node {
         let invoice =
             Invoice::from_signed(raw_invoice).map_err(|e| invalid_argument(e.to_string()))?;
         let hash = PaymentHash(invoice.payment_hash().as_inner().clone());
-        info!("add invoice with payment hash {}", hash.0.to_hex());
         let amount_msat = invoice
             .amount_milli_satoshis()
             .ok_or_else(|| invalid_argument("invoice amount must be specified"))?;
