@@ -11,6 +11,7 @@ use clap::{App, Arg, ArgMatches};
 use log::{debug, error, info};
 use serde_json::json;
 use tonic::{transport::Server, Request, Response, Status};
+use url::Url;
 
 use bitcoin::consensus::{deserialize, encode};
 use bitcoin::hashes::Hash as BitcoinHash;
@@ -41,6 +42,7 @@ use lightning_signer::{channel, containing_function, debug_vals, short_function,
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
 
+use crate::chain_follower::ChainFollower;
 use crate::fslogger::FilesystemLogger;
 use crate::persist::persist_json::KVJsonPersister;
 use crate::server::remotesigner::version_server::Version;
@@ -114,6 +116,7 @@ macro_rules! log_req_reply {
 struct SignServer {
     pub signer: MultiSigner,
     pub network: Network,
+    pub rpc_url: Url,
 }
 
 pub(super) fn invalid_grpc_argument(msg: impl Into<String>) -> Status {
@@ -227,6 +230,11 @@ impl SignServer {
                 Ok(Some((key, redeemscript)))
             }
         }
+    }
+
+    async fn start_chain_follower(&self, node_id: &PublicKey) {
+        let node = self.signer.get_node(&node_id).expect("valid node");
+        ChainFollower::new(node, &self.rpc_url).await;
     }
 
     fn htlc_sighash_type(
@@ -362,6 +370,9 @@ impl Signer for SignServer {
                 self.signer.warmstart_with_seed(node_config, hsm_secret)?
             }
         };
+
+        self.start_chain_follower(&node_id).await;
+
         let reply = InitReply { node_id: Some(NodeId { data: node_id.serialize().to_vec() }) };
 
         // We don't want to log the secret, so comment this out by default
@@ -1442,6 +1453,15 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .default_value(NETWORK_NAMES[0]),
         )
         .arg(
+            Arg::new("rpc")
+                .about("bitcoind RPC URL, must have http(s) schema")
+                .short('r')
+                .long("rpc")
+                .takes_value(true)
+                .value_name("URL")
+                .default_value("http://user:pass@localhost:18332"),
+        )
+        .arg(
             Arg::new("test-mode")
                 .about("allow nodes to be recreated, deleting all channels")
                 .short('t')
@@ -1547,7 +1567,15 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
     let signer =
         MultiSigner::new_with_persister(persister, test_mode, initial_allowlist, validator_factory);
-    let server = SignServer { signer, network };
+
+    let rpc_s: String = matches.value_of_t("rpc").expect("rpc url string");
+    let rpc_url = Url::parse(&rpc_s).expect("malformed rpc url");
+
+    let server = SignServer { signer, network, rpc_url };
+
+    for node_id in server.signer.get_node_ids().into_iter() {
+        server.start_chain_follower(&node_id).await;
+    }
 
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
     ctrlc::set_handler(move || {

@@ -19,7 +19,7 @@ use tokio::sync::Mutex;
 use crate::convert::{BlockchainInfo, JsonResponse};
 
 /// Async client for RPC to bitcoin core daemon
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BitcoindClient {
     rpc: Arc<Mutex<Client>>,
     host: String,
@@ -63,6 +63,9 @@ impl From<std::io::Error> for Error {
     }
 }
 
+/// BitcoindClient Error
+pub type BitcoindClientResult<T> = Result<T, Error>;
+
 impl BitcoindClient {
     /// Create a new BitcoindClient
     pub async fn new(
@@ -81,8 +84,8 @@ impl BitcoindClient {
     }
 
     /// Make a getblockchaininfo RPC call
-    pub async fn get_blockchain_info(&self) -> BlockchainInfo {
-        self.call_into("getblockchaininfo", &[]).await.unwrap()
+    pub async fn get_blockchain_info(&self) -> BitcoindClientResult<BlockchainInfo> {
+        Ok(self.call_into("getblockchaininfo", &[]).await?)
     }
 
     async fn call<T: for<'a> serde::de::Deserialize<'a>>(
@@ -96,7 +99,7 @@ impl BitcoindClient {
             .map(serde_json::value::to_raw_value)
             .collect::<std::result::Result<_, serde_json::Error>>()?;
         let req = rpc.build_request(cmd, &v_args[..]);
-        log::debug!("JSON-RPC request: {} {}", cmd, serde_json::Value::from(args));
+        log::trace!("JSON-RPC request: {} {}", cmd, serde_json::Value::from(args));
 
         let res = rpc.send_request(req).await;
         let resp = res.map_err(Error::from);
@@ -172,11 +175,11 @@ impl BlockSource for BitcoindClient {
         header_hash: &BlockHash,
         _height_hint: Option<u32>,
     ) -> BlockSourceResult<BlockHeaderData> {
-        Ok(self.call_into("getblockheader", &[json!(header_hash.to_hex())]).await.unwrap())
+        Ok(self.call_into("getblockheader", &[json!(header_hash.to_hex())]).await?)
     }
 
     async fn get_block(&self, header_hash: &BlockHash) -> BlockSourceResult<Block> {
-        Ok(self.call_into("getblock", &[json!(header_hash.to_hex()), json!(0)]).await.unwrap())
+        Ok(self.call_into("getblock", &[json!(header_hash.to_hex()), json!(0)]).await?)
     }
 
     async fn get_block_hash(&self, height: u32) -> BlockSourceResult<Option<BlockHash>> {
@@ -196,7 +199,7 @@ impl BlockSource for BitcoindClient {
     }
 
     async fn get_best_block(&self) -> BlockSourceResult<(BlockHash, u32)> {
-        let info = self.get_blockchain_info().await;
+        let info = self.get_blockchain_info().await?;
         Ok((info.latest_blockhash, info.latest_height as u32))
     }
 }

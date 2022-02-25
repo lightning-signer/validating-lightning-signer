@@ -217,6 +217,29 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
         slot.watches.extend(watches);
     }
 
+    /// Return all Txid and OutPoint watches for future blocks.
+    pub fn get_all_forward_watches(&self) -> (Vec<Txid>, Vec<OutPoint>) {
+        self.get_all_watches(false)
+    }
+
+    /// Return all Txid and OutPoint watches for removing blocks.
+    pub fn get_all_reverse_watches(&self) -> (Vec<Txid>, Vec<OutPoint>) {
+        self.get_all_watches(true)
+    }
+
+    fn get_all_watches(&self, include_reverse: bool) -> (Vec<Txid>, Vec<OutPoint>) {
+        let mut txid_watches = OrderedSet::new();
+        let mut outpoint_watches = OrderedSet::new();
+        for slot in self.listeners.values() {
+            txid_watches.extend(&slot.txid_watches);
+            outpoint_watches.extend(&slot.watches);
+            if include_reverse {
+                outpoint_watches.extend(&slot.seen);
+            }
+        }
+        (txid_watches.into_iter().collect(), outpoint_watches.into_iter().collect())
+    }
+
     fn validate_block(
         &self,
         header: &BlockHeader,

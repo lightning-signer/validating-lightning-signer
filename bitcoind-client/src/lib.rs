@@ -12,4 +12,4 @@
 pub mod bitcoind_client;
 mod convert;
 
-pub use self::bitcoind_client::{BitcoindClient, BlockSource};
+pub use self::bitcoind_client::{BitcoindClient, BlockSource, Error};
