@@ -42,6 +42,7 @@ use remotesigner::*;
 use crate::fslogger::FilesystemLogger;
 use crate::persist::persist_json::KVJsonPersister;
 use crate::server::remotesigner::version_server::Version;
+use crate::NETWORK_NAMES;
 use crate::SERVER_APP_NAME;
 
 use super::remotesigner;
@@ -1351,8 +1352,6 @@ impl Signer for SignServer {
 
 const DEFAULT_DIR: &str = ".lightning-signer";
 
-const NETWORKS: [&str; 3] = ["testnet", "regtest", "signet"];
-
 #[tokio::main]
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     println!("{} {} starting", SERVER_APP_NAME, process::id());
@@ -1364,8 +1363,8 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
             Arg::new("network")
                 .short('n')
                 .long("network")
-                .possible_values(&NETWORKS)
-                .default_value(NETWORKS[0]),
+                .possible_values(&NETWORK_NAMES)
+                .default_value(NETWORK_NAMES[0]),
         )
         .arg(
             Arg::new("test-mode")

@@ -5,9 +5,9 @@ use remotesigner::signer_client::SignerClient;
 use crate::server::remotesigner;
 use crate::server::remotesigner::node_config::KeyDerivationStyle;
 use crate::server::remotesigner::{
-    AddAllowlistRequest, Bip32Seed, ChannelNonce, GetPerCommitmentPointRequest, InitRequest,
-    ListAllowlistRequest, ListChannelsRequest, ListNodesRequest, NewChannelRequest, NodeConfig,
-    NodeId, PingRequest, RemoveAllowlistRequest,
+    AddAllowlistRequest, Bip32Seed, ChainParams, ChannelNonce, GetPerCommitmentPointRequest,
+    InitRequest, ListAllowlistRequest, ListChannelsRequest, ListNodesRequest, NewChannelRequest,
+    NodeConfig, NodeId, PingRequest, RemoveAllowlistRequest,
 };
 
 use bip39::{Language, Mnemonic};
@@ -30,19 +30,21 @@ pub async fn ping(
 
 pub async fn new_node(
     client: &mut SignerClient<transport::Channel>,
+    network_name: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mnemonic = Mnemonic::generate_in(Language::English, 12).unwrap();
-    new_node_with_mnemonic(client, mnemonic).await
+    new_node_with_mnemonic(client, mnemonic, network_name).await
 }
 
 pub async fn new_node_with_mnemonic(
     client: &mut SignerClient<transport::Channel>,
     mnemonic: Mnemonic,
+    network_name: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let secret = mnemonic.to_seed("");
     let init_request = Request::new(InitRequest {
         node_config: Some(NodeConfig { key_derivation_style: KeyDerivationStyle::Native as i32 }),
-        chainparams: None,
+        chainparams: Some(ChainParams { network_name }),
         coldstart: true,
         hsm_secret: Some(Bip32Seed { data: secret.to_vec() }),
     });

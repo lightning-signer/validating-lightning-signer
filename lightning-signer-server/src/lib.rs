@@ -26,3 +26,4 @@ mod convert;
 
 pub const SERVER_APP_NAME: &str = "vlsd";
 pub const CLIENT_APP_NAME: &str = "vls-cli";
+pub const NETWORK_NAMES: [&str; 3] = ["testnet", "regtest", "signet"];
