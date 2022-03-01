@@ -23,3 +23,6 @@ pub mod server;
 pub mod bitcoind_client;
 #[cfg(feature = "chain_test")]
 mod convert;
+
+pub const SERVER_APP_NAME: &str = "vlsd";
+pub const CLIENT_APP_NAME: &str = "vls-cli";

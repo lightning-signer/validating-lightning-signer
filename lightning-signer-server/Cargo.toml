@@ -58,12 +58,12 @@ tempfile = "3.2.0"
 tonic-build = "0.4"
 
 [[bin]]
-name = "client"
+name = "vls-cli"
 path = "src/client_main.rs"
 required-features = ["grpc"]
 
 [[bin]]
-name = "server"
+name = "vlsd"
 path = "src/server_main.rs"
 required-features = ["grpc"]
 

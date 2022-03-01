@@ -42,6 +42,7 @@ use remotesigner::*;
 use crate::fslogger::FilesystemLogger;
 use crate::persist::persist_json::KVJsonPersister;
 use crate::server::remotesigner::version_server::Version;
+use crate::SERVER_APP_NAME;
 
 use super::remotesigner;
 
@@ -1354,9 +1355,11 @@ const NETWORKS: [&str; 3] = ["testnet", "regtest", "signet"];
 
 #[tokio::main]
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
-    println!("rsignerd {} starting", process::id());
-    let app = App::new("server")
-        .about("Lightning Signer with a gRPC interface.  Persists to .lightning-signer .")
+    println!("{} {} starting", SERVER_APP_NAME, process::id());
+    let app = App::new(SERVER_APP_NAME)
+        .about(
+            "Validating Lightning Signer with a gRPC interface.  Persists to .lightning-signer .",
+        )
         .arg(
             Arg::new("network")
                 .short('n')
@@ -1480,9 +1483,9 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(SignerServer::new(server))
         .serve_with_shutdown(addr, shutdown_signal);
 
-    println!("rsignerd {} ready on {}", process::id(), addr);
+    println!("{} {} ready on {}", SERVER_APP_NAME, process::id(), addr);
     service.await?;
-    println!("rsignerd {} finished", process::id());
+    println!("{} {} finished", SERVER_APP_NAME, process::id());
 
     Ok(())
 }
