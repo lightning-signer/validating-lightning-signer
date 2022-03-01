@@ -1384,7 +1384,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .long("interface")
                 .takes_value(true)
                 .value_name("0.0.0.0")
-                .default_value("[::1]"),
+                .default_value("127.0.0.1"),
         )
         .arg(
             Arg::new("datadir")
