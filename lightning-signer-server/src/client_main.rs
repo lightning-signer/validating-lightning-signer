@@ -6,6 +6,7 @@ use clap::{App, Arg, ArgMatches};
 
 use bip39::Mnemonic;
 use lightning_signer_server::client::driver;
+use lightning_signer_server::CLIENT_APP_NAME;
 
 fn make_test_subapp() -> App<'static> {
     App::new("test").about("run a test scenario").subcommand(App::new("integration"))
@@ -171,8 +172,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let node_subapp = make_node_subapp();
     let chan_subapp = make_chan_subapp();
     let alst_subapp = make_allowlist_subapp();
-    let app = App::new("client")
-        .about("a CLI utility which communicates with a running Lightning Signer server via gRPC")
+    let app = App::new(CLIENT_APP_NAME)
+        .about("a CLI utility which communicates with a running Validating Lightning Signer server via gRPC")
         .arg(
             Arg::new("node")
                 .short('n')

@@ -14,7 +14,7 @@ use bip39::{Language, Mnemonic};
 use rand::{OsRng, Rng};
 
 pub async fn connect() -> Result<SignerClient<transport::Channel>, Box<dyn std::error::Error>> {
-    Ok(SignerClient::connect("http://[::1]:50051").await?)
+    Ok(SignerClient::connect("http://127.0.0.1:50051").await?)
 }
 
 pub async fn ping(
