@@ -1410,9 +1410,7 @@ impl Node {
         let invoice =
             Invoice::from_signed(raw_invoice).map_err(|e| invalid_argument(e.to_string()))?;
         let hash = PaymentHash(invoice.payment_hash().as_inner().clone());
-        let amount_msat = invoice
-            .amount_milli_satoshis()
-            .ok_or_else(|| invalid_argument("invoice amount must be specified"))?;
+        let amount_msat = invoice.amount_milli_satoshis().unwrap_or(0);
         // TODO check if payee public key in allowlist
         let payee = invoice
             .payee_pub_key()
@@ -1767,6 +1765,27 @@ mod tests {
                 Err(policy_error("shortfall 0 + 0 - 1"))
             );
         }
+    }
+
+    #[test]
+    fn sign_invoice_no_amount_test() {
+        let (node, _channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        let preimage = PaymentPreimage([0; 32]);
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+        let raw_invoice = InvoiceBuilder::new(Currency::Bitcoin)
+            .duration_since_epoch(Duration::from_secs(123456789))
+            .payment_hash(Sha256Hash::from_slice(&hash.0).unwrap())
+            .payment_secret(PaymentSecret([0; 32]))
+            .description("".to_string())
+            .build_raw()
+            .expect("build");
+        let hrp_str = raw_invoice.hrp.to_string();
+        let hrp = hrp_str.as_bytes().to_vec();
+        let data = raw_invoice.data.to_base32();
+
+        // This records the issued invoice
+        node.sign_invoice(&hrp, &data).unwrap();
     }
 
     #[test]
