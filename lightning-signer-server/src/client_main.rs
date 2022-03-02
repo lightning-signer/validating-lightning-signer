@@ -7,6 +7,7 @@ use clap::{App, Arg, ArgMatches};
 use bip39::Mnemonic;
 use lightning_signer_server::client::driver;
 use lightning_signer_server::CLIENT_APP_NAME;
+use lightning_signer_server::NETWORK_NAMES;
 
 fn make_test_subapp() -> App<'static> {
     App::new("test").about("run a test scenario").subcommand(App::new("integration"))
@@ -40,10 +41,17 @@ fn make_node_subapp() -> App<'static> {
             App::new("new")
                 .about("Add a new node to the signer.  Outputs the node ID to stdout and the mnemonic to stderr.")
                 .arg(Arg::new("mnemonic")
-                    .about("read mnemonic from stdin")
-                    .long("mnemonic")
-                    .short('m')
-                    .takes_value(false))
+                     .about("read mnemonic from stdin")
+                     .long("mnemonic")
+                     .short('m')
+                     .takes_value(false))
+                .arg(Arg::new("network")
+                     .about("network name")
+                     .long("network")
+                     .takes_value(true)
+                     .possible_values(&NETWORK_NAMES)
+                     .default_value(NETWORK_NAMES[0]),
+                )
         )
         .subcommand(App::new("list").about("List configured nodes."))
 }
@@ -53,15 +61,17 @@ async fn node_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
     let mut client = driver::connect().await?;
 
     match matches.subcommand() {
-        Some(("new", matches)) =>
+        Some(("new", matches)) => {
+            let network_name = matches.value_of_t("network").expect("network");
             if matches.is_present("mnemonic") {
                 let mut buf = String::new();
                 io::stdin().read_line(&mut buf).expect("stdin");
                 let mnemonic = Mnemonic::parse(buf.trim())?;
-                driver::new_node_with_mnemonic(&mut client, mnemonic).await?
+                driver::new_node_with_mnemonic(&mut client, mnemonic, network_name).await?
             } else {
-                driver::new_node(&mut client).await?
-            },
+                driver::new_node(&mut client, network_name).await?
+            }
+        }
         Some(("list", _)) => driver::list_nodes(&mut client).await?,
         Some((name, _)) => panic!("unimplemented command {}", name),
         None => {
