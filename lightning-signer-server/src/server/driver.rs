@@ -5,6 +5,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::{cmp, process};
 
+use anyhow::{anyhow, bail};
 use backtrace::Backtrace;
 use clap::{App, Arg, ArgMatches};
 use log::{debug, error, info};
@@ -255,20 +256,20 @@ fn convert_node_config(
     network: Network,
     chainparams: ChainParams,
     proto_node_config: NodeConfig,
-) -> node::NodeConfig {
+) -> anyhow::Result<node::NodeConfig> {
     let proto_style = proto_node_config.key_derivation_style;
     let key_derivation_style = if proto_style == node_config::KeyDerivationStyle::Lnd as i32 {
-        KeyDerivationStyle::Lnd
+        Ok(KeyDerivationStyle::Lnd)
     } else if proto_style == node_config::KeyDerivationStyle::Native as i32 {
-        KeyDerivationStyle::Native
+        Ok(KeyDerivationStyle::Native)
     } else {
-        panic!("invalid key derivation style")
-    };
+        Err(anyhow!("invalid key derivation style"))
+    }?;
     let supplied_network = Network::from_str(&chainparams.network_name).expect("bad network");
     if supplied_network != network {
-        panic!("network mismatch {} vs configured {}", supplied_network, network);
+        bail!("network mismatch {} vs configured {}", supplied_network, network);
     }
-    node::NodeConfig { network, key_derivation_style }
+    Ok(node::NodeConfig { network, key_derivation_style })
 }
 
 #[tonic::async_trait]
@@ -311,7 +312,8 @@ impl Signer for SignServer {
                 return Err(invalid_grpc_argument("hsm_secret must be no larger than 64 bytes"));
             }
         }
-        let node_config = convert_node_config(self.network, proto_chainparams, proto_node_config);
+        let node_config = convert_node_config(self.network, proto_chainparams, proto_node_config)
+            .map_err(|e| invalid_grpc_argument(e.to_string()))?;
 
         let node_id = if hsm_secret.len() == 0 {
             Ok(self.signer.new_node(node_config))
