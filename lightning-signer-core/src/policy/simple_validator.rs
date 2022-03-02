@@ -12,7 +12,6 @@ use lightning::ln::PaymentHash;
 use log::{debug, info};
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
-use crate::node::InvoiceState;
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
 use crate::prelude::*;
@@ -88,9 +87,9 @@ pub struct SimplePolicy {
     pub min_feerate_per_kw: u32,
     /// Maximum feerate
     pub max_feerate_per_kw: u32,
-    /// Minimum fee
+    /// Minimum fee in satoshi
     pub min_fee: u64,
-    /// Maximum fee
+    /// Maximum fee in satoshi
     pub max_fee: u64,
     /// Require invoices for payments, and disallow keysend
     // TODO secure keysend
@@ -497,7 +496,6 @@ impl Validator for SimpleValidator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         info2: &CommitmentInfo2,
-        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         if let Some(current) = &estate.current_counterparty_commit_info {
             let (added, removed) = current.delta_offered_htlcs(info2);
@@ -518,16 +516,8 @@ impl Validator for SimpleValidator {
             );
         }
         // Validate common commitment constraints
-        self.validate_commitment_tx(
-            estate,
-            commit_num,
-            commitment_point,
-            setup,
-            cstate,
-            info2,
-            fulfilled_incoming_msat,
-        )
-        .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
+        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info2)
+            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         let mut debug_on_return =
             scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info2);
@@ -592,7 +582,6 @@ impl Validator for SimpleValidator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         info2: &CommitmentInfo2,
-        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         if let Some(current) = &estate.current_holder_commit_info {
             let (added, removed) = current.delta_offered_htlcs(info2);
@@ -614,16 +603,8 @@ impl Validator for SimpleValidator {
         }
 
         // Validate common commitment constraints
-        self.validate_commitment_tx(
-            estate,
-            commit_num,
-            commitment_point,
-            setup,
-            cstate,
-            info2,
-            fulfilled_incoming_msat,
-        )
-        .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
+        self.validate_commitment_tx(estate, commit_num, commitment_point, setup, cstate, info2)
+            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         let mut debug_on_return =
             scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info2);
@@ -1355,21 +1336,19 @@ impl Validator for SimpleValidator {
         Ok(())
     }
 
-    fn validate_inflight_payments(
+    fn validate_payment_balance(
         &self,
-        invoice_state: Option<&InvoiceState>,
-        channel_id: &ChannelId,
-        amount_msat: u64,
+        incoming: u64,
+        outgoing: u64,
+        invoiced_amount_msat: Option<u64>,
     ) -> Result<(), ValidationError> {
-        // TODO need a policy for layer-2 max fee
-        let is_overpaid = invoice_state
-            .map(|state| {
-                state.updated_amount(channel_id, amount_msat)
-                    > state.amount_msat + self.policy.max_routing_fee_msat
-            })
-            .unwrap_or(self.policy.require_invoices);
-        if is_overpaid {
-            policy_err!("would overpay for invoice")
+        let max_to_invoice = if let Some(a) = invoiced_amount_msat {
+            (a + self.policy.max_routing_fee_msat) / 1000
+        } else {
+            0
+        };
+        if self.policy.require_invoices && incoming + max_to_invoice < outgoing {
+            policy_err!("incoming < outgoing")
         } else {
             Ok(())
         }
@@ -1377,6 +1356,10 @@ impl Validator for SimpleValidator {
 
     fn enforce_balance(&self) -> bool {
         self.policy.enforce_balance
+    }
+
+    fn minimum_initial_balance(&self, holder_value_msat: u64) -> u64 {
+        holder_value_msat / 1000
     }
 }
 
@@ -1390,7 +1373,6 @@ impl SimpleValidator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         info: &CommitmentInfo2,
-        fulfilled_incoming_msat: u64,
     ) -> Result<(), ValidationError> {
         let mut debug_on_return =
             scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info);
@@ -1487,7 +1469,7 @@ impl SimpleValidator {
         self.validate_fee(setup.channel_value_sat, sum_outputs)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        let (holder_value_sat, counterparty_value_sat) = info.value_to_parties();
+        let (_holder_value_sat, counterparty_value_sat) = info.value_to_parties();
 
         // Enforce additional requirements on initial commitments.
         if commit_num == 0 {
@@ -1511,20 +1493,6 @@ impl SimpleValidator {
                         setup.push_value_msat
                     );
                 }
-            }
-        }
-
-        if policy.enforce_balance {
-            if holder_value_sat + fulfilled_incoming_msat + policy.epsilon_sat
-                < estate.holder_balance_msat / 1000
-            {
-                return policy_err!(
-                    "holder output {} + {} is more than {} (epsilon) less than expected balance {}",
-                    holder_value_sat,
-                    fulfilled_incoming_msat,
-                    policy.epsilon_sat,
-                    estate.holder_balance_msat / 1000
-                );
             }
         }
 
@@ -1715,7 +1683,6 @@ mod tests {
             &setup,
             &cstate,
             &info,
-            0
         ));
     }
 
@@ -1802,7 +1769,6 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
-                0
             ),
             "validate_commitment_tx: fee underflow: 3000000 - 3000001"
         );
@@ -1832,7 +1798,6 @@ mod tests {
             &setup,
             &cstate,
             &info,
-            0
         ));
 
         let info_bad =
@@ -1845,7 +1810,6 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
-                0
             ),
             "validate_commitment_tx: fee underflow: 3000000 - 3100000"
         );
@@ -1871,7 +1835,6 @@ mod tests {
             &setup,
             &cstate,
             &info,
-            0,
         );
         assert_policy_err!(status, "validate_commitment_tx: initial commitment may not have HTLCS");
     }
@@ -1895,7 +1858,6 @@ mod tests {
             &setup,
             &cstate,
             &info,
-            0,
         );
         assert_policy_err!(
             status,
@@ -1923,7 +1885,6 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
-                0
             ),
             "too many HTLCs"
         );
@@ -1955,7 +1916,6 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
-                0
             ),
             "validate_commitment_tx: sum of HTLC values 10001000 too large"
         );
@@ -1982,7 +1942,6 @@ mod tests {
             &setup,
             &cstate,
             &info_good,
-            0
         ));
         let info_good =
             make_counterparty_info(2_000_000, 990_000, delay, vec![], vec![make_htlc_info2(2440)]);
@@ -1993,7 +1952,6 @@ mod tests {
             &setup,
             &cstate,
             &info_good,
-            0
         ));
         let info_bad =
             make_counterparty_info(2_000_000, 990_000, delay, vec![], vec![make_htlc_info2(1004)]);
@@ -2005,7 +1963,6 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
-                0
             ),
             "validate_expiry: received HTLC expiry too early: 1004 < 1005"
         );
@@ -2019,7 +1976,6 @@ mod tests {
                 &setup,
                 &cstate,
                 &info_bad,
-                0
             ),
             "validate_expiry: received HTLC expiry too late: 2441 > 2440"
         );

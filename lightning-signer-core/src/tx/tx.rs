@@ -266,6 +266,12 @@ impl fmt::Debug for HTLCInfo2 {
     }
 }
 
+/// This trait answers whether a preimage is known
+pub trait PreimageMap {
+    /// Whether a preimage is known for the payment hash
+    fn has_preimage(&self, hash: &PaymentHash) -> bool;
+}
+
 #[derive(Debug, Clone, PartialEq)]
 #[allow(missing_docs)]
 pub struct CommitmentInfo2 {
@@ -347,6 +353,49 @@ impl CommitmentInfo2 {
         } else {
             (self.to_broadcaster_value_sat, self.to_countersigner_value_sat)
         }
+    }
+
+    /// The total output value of this transaction.
+    /// This is smaller than the total channel value, due to on-chain fees.
+    pub fn total_value(&self) -> u64 {
+        self.to_broadcaster_value_sat
+            + self.to_countersigner_value_sat
+            + self.offered_htlcs.iter().map(|h| h.value_sat).sum::<u64>()
+            + self.received_htlcs.iter().map(|h| h.value_sat).sum::<u64>()
+    }
+
+    /// Compute claimable balance in sat, defined as the sum of:
+    /// - the output to us
+    /// - HTLCs offered to us for which the preimage is known
+    /// - HTLCs we offer for which the preimage is unknown
+    pub fn claimable_balance<T: PreimageMap>(
+        &self,
+        preimage_map: &T,
+        is_outbound: bool,
+        channel_value: u64,
+    ) -> u64 {
+        let mut balance = self.value_to_parties().0;
+        if is_outbound {
+            let total_value = self.total_value();
+            let fee = channel_value.checked_sub(total_value).unwrap();
+            balance = balance.checked_add(fee).unwrap();
+        }
+        let (offered, received) = if self.is_counterparty_broadcaster {
+            (&self.received_htlcs, &self.offered_htlcs)
+        } else {
+            (&self.offered_htlcs, &self.received_htlcs)
+        };
+        for o in offered {
+            if !preimage_map.has_preimage(&o.payment_hash) {
+                balance = balance.checked_add(o.value_sat).expect("overflow");
+            }
+        }
+        for r in received {
+            if preimage_map.has_preimage(&r.payment_hash) {
+                balance = balance.checked_add(r.value_sat).expect("overflow");
+            }
+        }
+        balance
     }
 }
 

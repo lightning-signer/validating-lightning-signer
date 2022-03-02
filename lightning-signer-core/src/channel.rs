@@ -2,14 +2,13 @@ use core::any::Any;
 use core::fmt;
 use core::fmt::{Debug, Error, Formatter};
 
-use bitcoin::hashes::hex::{self, ToHex};
+use bitcoin::hashes::hex;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{self, All, Message, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::{Network, OutPoint, Script, SigHashType, Transaction};
-use hashbrown::HashMap;
 use lightning::chain;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface};
 use lightning::ln::chan_utils::{
@@ -19,12 +18,11 @@ use lightning::ln::chan_utils::{
     TxCreationKeys,
 };
 use lightning::ln::{PaymentHash, PaymentPreimage};
-
 #[allow(unused_imports)]
 use log::{debug, trace, warn};
 
 use crate::monitor::ChainMonitor;
-use crate::node::{Node, NodeState};
+use crate::node::Node;
 use crate::policy::error::policy_error;
 use crate::policy::validator::{ChainState, EnforcementState, Validator};
 use crate::prelude::*;
@@ -108,7 +106,8 @@ pub struct ChannelSetup {
     /// The holder's optional upfront shutdown script
     pub holder_shutdown_script: Option<Script>,
     /// The counterparty's basepoints and pubkeys
-    pub counterparty_points: ChannelPublicKeys, // DUP keys.inner.remote_channel_pubkeys
+    pub counterparty_points: ChannelPublicKeys,
+    // DUP keys.inner.remote_channel_pubkeys
     /// remotely imposed requirement on the local commitment transaction to_self_delay
     pub counterparty_selected_contest_delay: u16,
     /// The counterparty's optional upfront shutdown script
@@ -209,7 +208,8 @@ pub struct ChannelStub {
     pub nonce: Vec<u8>,
     pub(crate) secp_ctx: Secp256k1<All>,
     /// The signer for this channel
-    pub keys: InMemorySigner, // Incomplete, channel_value_sat is placeholder.
+    pub keys: InMemorySigner,
+    // Incomplete, channel_value_sat is placeholder.
     /// The initial channel ID, used to find the channel in the node
     pub id0: ChannelId,
 }
@@ -551,8 +551,11 @@ impl Channel {
 
         let node = self.get_node();
         let mut state = node.get_state();
-        let (incoming_payment_summary, fulfilled_incoming_msat) =
-            self.incoming_payments(None, Some(&info2), &state);
+        let delta =
+            self.enforcement_state.claimable_balances(&*state, None, Some(&info2), &self.setup);
+
+        let incoming_payment_summary =
+            self.enforcement_state.incoming_payments_summary(None, Some(&info2));
 
         validator.validate_counterparty_commitment_tx(
             &self.enforcement_state,
@@ -561,7 +564,6 @@ impl Channel {
             &self.setup,
             &self.get_chain_state(),
             &info2,
-            fulfilled_incoming_msat,
         )?;
 
         let htlcs = Self::htlcs_info2_to_oic(offered_htlcs, received_htlcs);
@@ -589,10 +591,11 @@ impl Channel {
         }
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(None, Some(&info2));
-        self.apply_payments(
-            &mut state,
+        state.apply_payments(
+            &self.id0,
             incoming_payment_summary,
             outgoing_payment_summary,
+            delta,
             validator,
         )?;
 
@@ -606,48 +609,6 @@ impl Channel {
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok((sig, htlc_sigs))
-    }
-
-    fn apply_payments(
-        &mut self,
-        state: &mut MutexGuard<NodeState>,
-        incoming_payment_summary: HashMap<PaymentHash, u64>,
-        outgoing_payment_summary: HashMap<PaymentHash, u64>,
-        validator: Arc<dyn Validator>,
-    ) -> Result<(), Status> {
-        let newly_fulfilled_incoming_msat = state
-            .apply_incoming_payments(&self.id0, incoming_payment_summary)
-            .map_err(|()| Status::internal("could not apply incoming payments"))?;
-
-        // Keep track of balance only if requested, since our tracking is incomplete (e.g. routing)
-        if validator.enforce_balance() {
-            // Our expected balance is increased whenever an issued invoice is fulfilled
-            self.enforcement_state.holder_balance_msat += newly_fulfilled_incoming_msat;
-        }
-
-        // TODO policy control for non-invoiced payments
-        state.apply_payments(&self.id0, outgoing_payment_summary, validator).map_err(|e| {
-            Status::failed_precondition(format!("overpaid invoices {:?}", e.payment_hashes))
-        })?;
-
-        Ok(())
-    }
-
-    fn incoming_payments(
-        &self,
-        holder_tx: Option<&CommitmentInfo2>,
-        counterparty_tx: Option<&CommitmentInfo2>,
-        state: &MutexGuard<NodeState>,
-    ) -> (Map<PaymentHash, u64>, u64) {
-        let incoming_payment_summary =
-            self.enforcement_state.incoming_payments_summary(holder_tx, counterparty_tx);
-        // Sum pending incoming HTLCs that were previously marked as fulfilled - they are considered part of our balance for validation
-        let fulfilled_incoming_msat = incoming_payment_summary
-            .iter()
-            .filter(|(h, _)| state.issued_invoices.get(*h).map(|i| i.is_fulfilled).unwrap_or(false))
-            .map(|(_, v)| *v)
-            .sum::<u64>();
-        (incoming_payment_summary, fulfilled_incoming_msat)
     }
 
     // This function is needed for testing with mutated keys.
@@ -836,8 +797,11 @@ impl Channel {
 
         let node = self.get_node();
         let mut state = node.get_state();
-        let (incoming_payment_summary, fulfilled_incoming_msat) =
-            self.incoming_payments(Some(&info2), None, &state);
+        let delta =
+            self.enforcement_state.claimable_balances(&*state, Some(&info2), None, &self.setup);
+
+        let incoming_payment_summary =
+            self.enforcement_state.incoming_payments_summary(Some(&info2), None);
 
         let validator = self.validator();
         validator
@@ -848,7 +812,6 @@ impl Channel {
                 &self.setup,
                 &self.get_chain_state(),
                 &info2,
-                fulfilled_incoming_msat,
             )
             .map_err(|ve| {
                 warn!(
@@ -881,10 +844,11 @@ impl Channel {
         )?;
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(Some(&info2), None);
-        self.apply_payments(
-            &mut state,
+        state.apply_payments(
+            &self.id0,
             incoming_payment_summary,
             outgoing_payment_summary,
+            delta,
             validator,
         )?;
 
@@ -975,10 +939,6 @@ impl Channel {
             feerate_per_kw,
         )?;
 
-        let node = self.get_node();
-        let state = node.get_state();
-        let (_, fulfilled_incoming_msat) = self.incoming_payments(Some(&info2), None, &state);
-
         self.validator().validate_holder_commitment_tx(
             &self.enforcement_state,
             commitment_number,
@@ -986,7 +946,6 @@ impl Channel {
             &self.setup,
             &self.get_chain_state(),
             &info2,
-            fulfilled_incoming_msat,
         )?;
 
         let htlcs = Self::htlcs_info2_to_oic(offered_htlcs, received_htlcs);
@@ -1486,8 +1445,11 @@ impl Channel {
 
         let node = self.get_node();
         let mut state = node.get_state();
-        let (incoming_payment_summary, fulfilled_incoming_msat) =
-            self.incoming_payments(None, Some(&info2), &state);
+        let delta =
+            self.enforcement_state.claimable_balances(&*state, None, Some(&info2), &self.setup);
+
+        let incoming_payment_summary =
+            self.enforcement_state.incoming_payments_summary(None, Some(&info2));
 
         validator
             .validate_counterparty_commitment_tx(
@@ -1497,7 +1459,6 @@ impl Channel {
                 &self.setup,
                 &self.get_chain_state(),
                 &info2,
-                fulfilled_incoming_msat,
             )
             .map_err(|ve| {
                 debug!(
@@ -1555,10 +1516,11 @@ impl Channel {
             .map_err(|_| internal_error(format!("sign_counterparty_commitment failed")))?;
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(None, Some(&info2));
-        self.apply_payments(
-            &mut state,
+        state.apply_payments(
+            &self.id0,
             incoming_payment_summary,
             outgoing_payment_summary,
+            delta,
             validator,
         )?;
 
@@ -1612,9 +1574,8 @@ impl Channel {
             feerate_per_kw,
         )?;
 
-        let node = self.get_node();
-        let (incoming_payment_summary, fulfilled_incoming_msat) =
-            self.incoming_payments(Some(&info2), None, &node.get_state());
+        let incoming_payment_summary =
+            self.enforcement_state.incoming_payments_summary(Some(&info2), None);
 
         self.validator()
             .validate_holder_commitment_tx(
@@ -1624,7 +1585,6 @@ impl Channel {
                 &self.setup,
                 &self.get_chain_state(),
                 &info2,
-                fulfilled_incoming_msat,
             )
             .map_err(|ve| {
                 warn!(
@@ -1713,6 +1673,8 @@ impl Channel {
 
         let node = self.get_node();
         let mut state = node.get_state();
+        let delta =
+            self.enforcement_state.claimable_balances(&*state, Some(&info2), None, &self.setup);
 
         self.check_holder_tx_signatures(
             commitment_number,
@@ -1723,10 +1685,11 @@ impl Channel {
         )?;
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(Some(&info2), None);
-        self.apply_payments(
-            &mut state,
+        state.apply_payments(
+            &self.id0,
             incoming_payment_summary,
             outgoing_payment_summary,
+            delta,
             validator,
         )?;
 
@@ -1943,32 +1906,7 @@ impl Channel {
     pub fn htlcs_fulfilled(&mut self, preimages: Vec<PaymentPreimage>) {
         let validator = self.validator();
         let node = self.get_node();
-        let to_holder_msat = &mut self.enforcement_state.holder_balance_msat;
-        let total_filled = node.htlcs_fulfilled(&self.id0, preimages);
-        if total_filled > 0 {
-            debug!(
-                "fulfill at channel {}: {} - {} = {}",
-                self.id0.0.to_hex(),
-                *to_holder_msat,
-                total_filled,
-                *to_holder_msat - total_filled
-            );
-        }
-
-        // Keep track of balance only if requested, since our tracking is incomplete (e.g. routing)
-        if validator.enforce_balance() {
-            if let Some(r) = to_holder_msat.checked_sub(total_filled) {
-                *to_holder_msat = r;
-            } else {
-                warn!(
-                    "more payment ({}) than we had balance ({}) on channel {}",
-                    total_filled,
-                    *to_holder_msat,
-                    self.id0.0.to_hex()
-                );
-                *to_holder_msat = 0;
-            }
-        }
+        node.htlcs_fulfilled(&self.id0, preimages, validator);
     }
 }
 
