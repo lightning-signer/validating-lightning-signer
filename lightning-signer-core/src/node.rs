@@ -259,6 +259,7 @@ impl NodeState {
                 .expect("overflow")
                 .checked_sub(balance_delta.0)
                 .ok_or_else(|| {
+                    // policy-routing-deltas-only-htlc
                     policy_error(format!(
                         "shortfall {} + {} - {}",
                         self.excess_amount, balance_delta.1, balance_delta.0
