@@ -591,12 +591,12 @@ impl Channel {
         }
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(None, Some(&info2));
-        state.apply_payments(
+        state.validate_payments(
             &self.id0,
-            incoming_payment_summary,
-            outgoing_payment_summary,
-            delta,
-            validator,
+            &incoming_payment_summary,
+            &outgoing_payment_summary,
+            &delta,
+            validator.clone(),
         )?;
 
         // Only advance the state if nothing goes wrong.
@@ -605,6 +605,14 @@ impl Channel {
             remote_per_commitment_point.clone(),
             info2,
         )?;
+
+        state.apply_payments(
+            &self.id0,
+            &incoming_payment_summary,
+            &outgoing_payment_summary,
+            &delta,
+            validator,
+        );
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
@@ -844,16 +852,24 @@ impl Channel {
         )?;
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(Some(&info2), None);
-        state.apply_payments(
+        state.validate_payments(
             &self.id0,
-            incoming_payment_summary,
-            outgoing_payment_summary,
-            delta,
-            validator,
+            &incoming_payment_summary,
+            &outgoing_payment_summary,
+            &delta,
+            validator.clone(),
         )?;
 
         let (next_holder_commitment_point, maybe_old_secret) =
             self.advance_holder_commitment_state(commitment_number, info2)?;
+
+        state.apply_payments(
+            &self.id0,
+            &incoming_payment_summary,
+            &outgoing_payment_summary,
+            &delta,
+            validator,
+        );
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
@@ -1516,16 +1532,24 @@ impl Channel {
             .map_err(|_| internal_error(format!("sign_counterparty_commitment failed")))?;
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(None, Some(&info2));
-        state.apply_payments(
+        state.validate_payments(
             &self.id0,
-            incoming_payment_summary,
-            outgoing_payment_summary,
-            delta,
-            validator,
+            &incoming_payment_summary,
+            &outgoing_payment_summary,
+            &delta,
+            validator.clone(),
         )?;
 
         // Only advance the state if nothing goes wrong.
         self.enforcement_state.set_next_counterparty_commit_num(commit_num + 1, point, info2)?;
+
+        state.apply_payments(
+            &self.id0,
+            &incoming_payment_summary,
+            &outgoing_payment_summary,
+            &delta,
+            validator,
+        );
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
@@ -1685,16 +1709,24 @@ impl Channel {
         )?;
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(Some(&info2), None);
-        state.apply_payments(
+        state.validate_payments(
             &self.id0,
-            incoming_payment_summary,
-            outgoing_payment_summary,
-            delta,
-            validator,
+            &incoming_payment_summary,
+            &outgoing_payment_summary,
+            &delta,
+            validator.clone(),
         )?;
 
         let (next_holder_commitment_point, maybe_old_secret) =
             self.advance_holder_commitment_state(commitment_number, info2)?;
+
+        state.apply_payments(
+            &self.id0,
+            &incoming_payment_summary,
+            &outgoing_payment_summary,
+            &delta,
+            validator,
+        );
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
