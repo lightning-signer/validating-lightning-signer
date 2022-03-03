@@ -43,10 +43,12 @@ impl Log for FilesystemLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
+            let tstamp = OffsetDateTime::now_utc().format("%F %H:%M:%S.%N");
+            let tstamp = tstamp.get(0..tstamp.len() - 6).expect("bad timestamp"); // strip to mSec
             let raw_log = record.args().to_string();
             let log = format!(
                 "{} {:<5} [{}:{}] {}\n",
-                OffsetDateTime::now_utc().format("%F %T"),
+                tstamp,
                 record.level().to_string(),
                 record.module_path().unwrap_or_else(|| "<unknown-module-path>"),
                 record.line().unwrap_or_else(|| 0),
