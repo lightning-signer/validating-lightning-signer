@@ -283,7 +283,6 @@ impl SimpleValidator {
 // TODO - policy-velocity-funding
 // TODO - policy-velocity-transferred
 // TODO - policy-merchant-no-sends
-// TODO - policy-routing-deltas-only-htlc
 
 impl Validator for SimpleValidator {
     fn validate_ready_channel(
@@ -1347,6 +1346,7 @@ impl Validator for SimpleValidator {
         } else {
             0
         };
+        // policy-routing-balanced
         if self.policy.require_invoices && incoming + max_to_invoice < outgoing {
             policy_err!("incoming < outgoing")
         } else {

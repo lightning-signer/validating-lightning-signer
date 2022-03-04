@@ -226,7 +226,7 @@ pub trait ValidatorFactory: Send + Sync {
     ) -> Arc<dyn Validator>;
 }
 
-/// Enforcement state for a signer
+/// Enforcement state for a channel
 ///
 /// This keeps track of commitments on both sides and whether the channel
 /// was closed.
