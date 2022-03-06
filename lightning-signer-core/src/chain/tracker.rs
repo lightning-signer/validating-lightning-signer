@@ -1,9 +1,12 @@
 use alloc::collections::VecDeque;
 
 use bitcoin::blockdata::constants::DIFFCHANGE_INTERVAL;
+use bitcoin::hashes::hex::ToHex;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::util::uint::Uint256;
 use bitcoin::{BlockHeader, Network, OutPoint, Transaction, Txid};
+
+use log::error;
 
 use crate::prelude::*;
 
@@ -18,6 +21,27 @@ pub enum Error {
     ReorgTooDeep,
     /// The SPV (merkle) proof was incorrect
     InvalidSpvProof,
+}
+
+macro_rules! error_invalid_chain {
+    ($($arg:tt)*) => {{
+        error!("InvalidChain: {}", format!($($arg)*));
+        Error::InvalidChain
+    }};
+}
+
+macro_rules! error_invalid_block {
+    ($($arg:tt)*) => {{
+        error!("InvalidBlock: {}", format!($($arg)*));
+        Error::InvalidBlock
+    }};
+}
+
+macro_rules! error_invalid_spv_proof {
+    ($($arg:tt)*) => {{
+        error!("InvalidSpvProof: {}", format!($($arg)*));
+        Error::InvalidSpvProof
+    }};
 }
 
 /// A listener entry
@@ -50,7 +74,8 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
 
     /// Create a new tracker
     pub fn new(network: Network, height: u32, tip: BlockHeader) -> Result<Self, Error> {
-        tip.validate_pow(&tip.target()).map_err(|_| Error::InvalidBlock)?;
+        tip.validate_pow(&tip.target())
+            .map_err(|e| error_invalid_block!("validate pow {}: {}", tip.target(), e))?;
         let headers = VecDeque::new();
         let listeners = OrderedMap::new();
         Ok(ChainTracker { headers, tip, height, network, listeners })
@@ -191,7 +216,11 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     ) -> Result<(), Error> {
         // Check hash is correctly chained
         if header.prev_blockhash != self.tip.block_hash() {
-            return Err(Error::InvalidChain);
+            return Err(error_invalid_chain!(
+                "header.prev_blockhash {} != self.tip.block_hash {}",
+                header.prev_blockhash.to_hex(),
+                self.tip.block_hash().to_hex()
+            ));
         }
         // Ensure correctly mined (hash is under target)
         header.validate_pow(&header.target()).map_err(|_| Error::InvalidBlock)?;
@@ -203,15 +232,22 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
             let chain_max = max_target(self.network);
 
             if target.gt(&chain_max) {
-                return Err(Error::InvalidBlock);
+                return Err(error_invalid_block!("target {} > chain_max {}", target, chain_max));
             }
-            if target.lt(&min) || target.gt(&max) {
-                return Err(Error::InvalidChain);
+            if target.lt(&min) {
+                return Err(error_invalid_chain!("target {} < min {}", target, min));
+            }
+            if target.gt(&max) {
+                return Err(error_invalid_chain!("target {} > max {}", target, max));
             }
             // TODO do actual retargeting with timestamps, requires remembering start timestamp
         } else {
             if header.bits != self.tip.bits && self.network != Network::Testnet {
-                return Err(Error::InvalidChain);
+                return Err(error_invalid_chain!(
+                    "header.bits {} != self.tip.bits {}",
+                    header.bits,
+                    self.tip.bits
+                ));
             }
         }
 
@@ -231,18 +267,22 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
 
             let root = txs_proof
                 .extract_matches(&mut matches, &mut indexes)
-                .map_err(|_| Error::InvalidSpvProof)?;
+                .map_err(|e| error_invalid_spv_proof!("extract matches failed: {:?}", e))?;
             if root != header.merkle_root {
-                return Err(Error::InvalidSpvProof);
+                return Err(error_invalid_spv_proof!(
+                    "root {} != header.merkle_root {}",
+                    root,
+                    header.merkle_root
+                ));
             }
             for (tx, txid) in txs.iter().zip(matches) {
                 if tx.txid() != txid {
-                    return Err(Error::InvalidSpvProof);
+                    return Err(error_invalid_spv_proof!("tx.txid {} != txid {}", tx.txid(), txid));
                 }
             }
         } else {
             if !txs.is_empty() {
-                return Err(Error::InvalidSpvProof);
+                return Err(error_invalid_spv_proof!("txs not empty"));
             }
         }
         Ok(())
