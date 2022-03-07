@@ -10,7 +10,7 @@ rustup +nightly target add thumbv7m-none-eabi
 Then:
 
 ```shell
-source ./scripts/env.sh && cargo run +nightly --target thumbv7m-none-eabi
+source ./scripts/env.sh && cargo +nightly run --target thumbv7m-none-eabi
 ```
 
 Output should be something like:
