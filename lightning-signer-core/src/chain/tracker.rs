@@ -110,6 +110,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
         self.notify_listeners_remove(&txs);
 
         self.tip = self.headers.pop_front().expect("already checked for empty");
+        self.height -= 1;
         Ok(header)
     }
 
