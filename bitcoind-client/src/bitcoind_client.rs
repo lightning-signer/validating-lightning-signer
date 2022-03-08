@@ -11,13 +11,14 @@ use jsonrpc_async::error::Error::Rpc;
 use jsonrpc_async::simple_http::SimpleHttpTransport;
 use jsonrpc_async::Client;
 use lightning_signer::bitcoin;
-use log;
+use log::{self, error};
 use serde;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
 use crate::convert::{BlockchainInfo, JsonResponse};
 
+/// Async client for RPC to bitcoin core daemon
 #[derive(Clone)]
 pub struct BitcoindClient {
     rpc: Arc<Mutex<Client>>,
@@ -25,10 +26,14 @@ pub struct BitcoindClient {
     port: u16,
 }
 
+/// RPC errors
 #[derive(Debug)]
 pub enum Error {
+    /// JSON RPC Error
     JsonRpc(jsonrpc_async::error::Error),
+    /// JSON Error
     Json(serde_json::error::Error),
+    /// IO Error
     Io(std::io::Error),
 }
 
@@ -59,6 +64,7 @@ impl From<std::io::Error> for Error {
 }
 
 impl BitcoindClient {
+    /// Create a new BitcoindClient
     pub async fn new(
         host: String,
         port: u16,
@@ -74,6 +80,7 @@ impl BitcoindClient {
         Ok(client)
     }
 
+    /// Make a getblockchaininfo RPC call
     pub async fn get_blockchain_info(&self) -> BlockchainInfo {
         self.call_into("getblockchaininfo", &[]).await.unwrap()
     }
@@ -93,6 +100,9 @@ impl BitcoindClient {
 
         let res = rpc.send_request(req).await;
         let resp = res.map_err(Error::from);
+        if let Err(ref err) = resp {
+            error!("{}: {}:{}: {}", cmd, self.host, self.port, err);
+        }
         // log_response(cmd, &resp);
         Ok(resp?.result()?)
     }
@@ -106,6 +116,7 @@ impl BitcoindClient {
     }
 }
 
+/// BlockSource Error
 pub type BlockSourceResult<T> = Result<T, Error>;
 
 /// Abstract type for retrieving block headers and data.
@@ -127,6 +138,7 @@ pub trait BlockSource: Sync + Send {
     /// error.
     async fn get_block(&self, header_hash: &BlockHash) -> BlockSourceResult<Block>;
 
+    /// Returns hash of block in best-block-chain at height provided.
     async fn get_block_hash(&self, height: u32) -> BlockSourceResult<Option<BlockHash>>;
 
     /// Returns the hash of the best block and, optionally, its height.

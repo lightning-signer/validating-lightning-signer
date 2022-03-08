@@ -375,18 +375,26 @@ impl Validator for SimpleValidator {
                 if !spendable {
                     return policy_err!("wallet cannot spend output[{}]", outndx);
                 }
-                debug!("output {}: {}: is to our wallet", outndx, output.value);
+                debug!("output {} ({}) is to our wallet", outndx, output.value);
                 beneficial_sum =
                     add_beneficial_output!(beneficial_sum, output.value, "wallet change")?;
             } else if wallet.allowlist_contains(&output.script_pubkey) {
                 // Change output to allowlisted address
-                debug!("output {}: {}: is allowlisted", outndx, output.value);
+                debug!("output {} ({}) is allowlisted", outndx, output.value);
                 beneficial_sum =
                     add_beneficial_output!(beneficial_sum, output.value, "allowlisted")?;
             } else if let Some(slot) = channel_slot {
                 // Possible funded channel balance
                 match &*slot.lock().unwrap() {
                     ChannelSlot::Ready(chan) => {
+                        debug!(
+                            "output {} ({}) matches channel {}",
+                            outndx,
+                            output.value,
+                            chan.id()
+                        );
+                        debug_vals!(chan.setup, chan.enforcement_state);
+
                         // policy-onchain-output-match-commitment
                         if output.value != chan.setup.channel_value_sat {
                             return policy_err!(
@@ -428,14 +436,14 @@ impl Validator for SimpleValidator {
                             );
                             // push_val_sat
                         };
-                        debug!("output {}: {}: funds channel {}", outndx, output.value, chan.id());
+                        debug!("output {} ({}) funds channel {}", outndx, output.value, chan.id());
                         beneficial_sum =
                             add_beneficial_output!(beneficial_sum, our_value, "channel value")?;
                     }
                     _ => panic!("this can't happen"),
                 };
             } else {
-                debug!("output {}: {}: is unknown", outndx, output.value);
+                debug!("output {} ({}) is unknown", outndx, output.value);
             }
         }
 

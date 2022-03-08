@@ -10,11 +10,11 @@ repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 readme = "../README.md"
 
 [features]
-default = ["grpc", "persist_kv_json"]
+default = ["grpc", "persist_kv_json", "log_pretty_print"]
 grpc = ["tokio", "tonic", "prost", "serde", "serde_json", "clap", "lightning-signer-core/grpc"]
 persist_kv_json = [ "kv", "serde", "serde_json", "serde_with", "bitcoin/use-serde" ]
 log_pretty_print = []
-chain_test = ["clap", "url", "jsonrpc-async", "async-trait"]
+chain_test = ["clap", "url"]
 test_utils = ["lightning-signer-core/test_utils"]
 
 [lib]
@@ -26,6 +26,7 @@ anyhow = "1.0"
 log = { version="0.4.14", features = [ "std" ] }
 time = "0.2"
 lightning-signer-core = { path = "../lightning-signer-core", features = ["debug", "test_utils"] }
+bitcoind-client = { path = "../bitcoind-client" }
 backtrace = "0.3"
 bip39 = {version = "1.0.0", features = ["rand"] }
 hex = "0.3.2"
@@ -44,8 +45,6 @@ ctrlc = { version = "3.1.9", features = ["termination"] }
 triggered = "0.1.1"
 
 url = { version = "2.2", optional = true }
-jsonrpc-async = { version = "2.0", optional = true }
-async-trait = { version = "0.1", optional = true }
 
 # For logging in unit tests
 test-env-log = "0.2.3"
