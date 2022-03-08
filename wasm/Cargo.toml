@@ -30,5 +30,11 @@ log = { version = "0.4", features = ["max_level_trace"] }
 wasm-bindgen-test = "0.3.13"
 
 [profile.release]
-# Tell `rustc` to optimize for small code size.
-opt-level = "s"
+codegen-units = 1 # better optimizations
+debug = true # symbols are nice and they don't increase the size on Flash
+opt-level = "s" # reduce flash size
+lto = true # reduce flash size
+
+[profile.dev]
+opt-level = "s" # reduce flash size
+lto = true # reduce flash size
