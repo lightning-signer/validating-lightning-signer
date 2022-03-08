@@ -31,7 +31,7 @@ use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
 
-const HEAP_SIZE: usize = 1024 * 512; // 512 KB
+const HEAP_SIZE: usize = 1024 * 384; // 384 KiB, leave some space for stack on a 512 KiB RAM system
 
 #[entry]
 fn main() -> ! {
