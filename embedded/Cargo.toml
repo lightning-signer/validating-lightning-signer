@@ -37,3 +37,6 @@ lto = true # reduce flash size
 [profile.dev]
 opt-level = "s" # reduce flash size
 lto = true # reduce flash size
+
+[profile.test]
+lto = false # workaround LLVM bug
