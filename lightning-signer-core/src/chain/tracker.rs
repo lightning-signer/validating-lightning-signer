@@ -6,9 +6,11 @@ use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::util::uint::Uint256;
 use bitcoin::{BlockHeader, Network, OutPoint, Transaction, Txid};
 
-use log::error;
+#[allow(unused_imports)]
+use log::{debug, error};
 
 use crate::prelude::*;
+use crate::short_function;
 
 /// Error
 #[derive(Debug, PartialEq)]
@@ -122,6 +124,11 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
                 let mut found = false;
                 for inp in tx.input.iter().rev() {
                     if slot.seen.remove(&inp.previous_output) {
+                        debug!(
+                            "{}: unseeing previously seen outpoint {}",
+                            short_function!(),
+                            &inp.previous_output
+                        );
                         found = true;
                         let inserted = slot.watches.insert(inp.previous_output);
                         assert!(inserted, "we failed to previously remove a watch");
@@ -137,6 +144,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
                 for (vout, _) in tx.output.iter().enumerate() {
                     let outpoint = OutPoint::new(txid, vout as u32);
                     if slot.watches.remove(&outpoint) {
+                        debug!("{}: unwatching outpoint {}", short_function!(), &outpoint);
                         assert!(found, "a watch was previously added without any inputs matching");
                     }
                 }
