@@ -197,6 +197,14 @@ impl ChannelSlot {
             ChannelSlot::Ready(chan) => chan.id0,
         }
     }
+
+    /// The basepoints
+    pub fn get_channel_basepoints(&self) -> ChannelPublicKeys {
+        match self {
+            ChannelSlot::Stub(stub) => stub.get_channel_basepoints(),
+            ChannelSlot::Ready(chan) => chan.get_channel_basepoints(),
+        }
+    }
 }
 
 /// A channel takes this form after [Node::new_channel], and before [Node::ready_channel]
