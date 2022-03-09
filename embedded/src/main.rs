@@ -10,5 +10,4 @@ mod tests;
 mod entry;
 
 #[cfg(not(feature = "device"))]
-fn main() {
-}
+fn main() {}

@@ -3,10 +3,10 @@ use core::panic::PanicInfo;
 
 use crate::tests::{test_bitcoin, test_lightning_signer};
 use alloc_cortex_m::CortexMHeap;
-use lightning_signer::bitcoin::secp256k1::Secp256k1;
 use cortex_m::asm;
 use cortex_m_rt::entry;
 use cortex_m_semihosting::{debug, hprintln};
+use lightning_signer::bitcoin::secp256k1::Secp256k1;
 
 // this is the allocator the application will use
 #[global_allocator]
