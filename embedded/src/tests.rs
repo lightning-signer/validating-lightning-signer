@@ -4,8 +4,9 @@ use alloc::vec::Vec;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Network, OutPoint, PrivateKey, Txid};
+#[cfg(feature = "device")]
 use cortex_m_semihosting::hprintln;
-
+use lightning_signer::bitcoin;
 use lightning_signer::channel::{ChannelSetup, CommitmentType};
 use lightning_signer::node::{Node, NodeConfig};
 use lightning_signer::persist::{DummyPersister, Persist};
@@ -13,6 +14,30 @@ use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::key_utils::make_test_counterparty_points;
 use lightning_signer::Arc;
+
+#[cfg(feature = "device")]
+macro_rules! myprintln {
+    () => {{
+        hprintln!().unwrap()
+    }};
+    ($s:expr) => {
+        hprintln!($s).unwrap()
+    };
+    ($s:expr, $($tt:tt)*) => {{
+        hprintln!($s, $($tt)*).unwrap()
+    }};
+}
+
+#[cfg(not(feature = "device"))]
+macro_rules! myprintln {
+    () => {{
+        println!();
+    }};
+    ($($tt:tt)*) => {{
+        println!($($tt)*);
+    }};
+}
+
 
 pub fn make_test_channel_setup() -> ChannelSetup {
     ChannelSetup {
@@ -39,12 +64,12 @@ pub fn test_lightning_signer(postscript: fn()) {
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
     let node = Arc::new(Node::new(config, &seed, &persister, Vec::new(), validator_factory));
     let (channel_id, _) = node.new_channel(None, None, &node).unwrap();
-    hprintln!("stub channel ID: {}", channel_id).unwrap();
+    myprintln!("stub channel ID: {}", channel_id);
     let holder_shutdown_key_path = Vec::new();
     let channel = node
         .ready_channel(channel_id, None, make_test_channel_setup(), &holder_shutdown_key_path)
         .expect("ready_channel");
-    hprintln!("channel ID: {}", channel.id0).unwrap();
+    myprintln!("channel ID: {}", channel.id0);
     postscript();
 }
 
@@ -52,14 +77,29 @@ pub fn test_bitcoin() {
     // Load a private key
     let raw = "L1HKVVLHXiUhecWnwFYF6L3shkf1E12HUmuZTESvBXUdx3yqVP1D";
     let pk = PrivateKey::from_wif(raw).unwrap();
-    hprintln!("Seed WIF: {}", pk).unwrap();
+    myprintln!("Seed WIF: {}", pk);
 
     let secp = Secp256k1::new();
 
     // Derive address
     let pubkey = pk.public_key(&secp);
     let address = Address::p2wpkh(&pubkey, Network::Bitcoin).unwrap();
-    hprintln!("Address: {}", address).unwrap();
+    myprintln!("Address: {}", address);
 
     assert_eq!(address.to_string(), "bc1qpx9t9pzzl4qsydmhyt6ctrxxjd4ep549np9993".to_string());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bitcoin_test() {
+        test_bitcoin();
+    }
+
+    #[test]
+    fn signer_test() {
+        test_lightning_signer(|| {});
+    }
 }
