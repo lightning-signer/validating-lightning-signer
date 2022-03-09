@@ -72,9 +72,7 @@ pub const ANCHOR_OUTPUT_VALUE_SATOSHI: u64 = 330;
 /// Gets the redeemscript for the to_remote output when anchors are enabled.
 // TODO - Should use the one in chan_utils, need relaxed visibility
 #[inline]
-pub(crate) fn get_to_countersignatory_with_anchors_redeemscript(
-    payment_point: &PublicKey,
-) -> Script {
+pub fn get_to_countersignatory_with_anchors_redeemscript(payment_point: &PublicKey) -> Script {
     Builder::new()
         .push_slice(&payment_point.serialize()[..])
         .push_opcode(opcodes::all::OP_CHECKSIGVERIFY)
@@ -85,7 +83,7 @@ pub(crate) fn get_to_countersignatory_with_anchors_redeemscript(
 
 /// Get the p2wpkh redeemscript
 // TODO - Should use the one in chan_utils, need relaxed visibility
-pub(crate) fn get_p2wpkh_redeemscript(key: &PublicKey) -> Script {
+pub fn get_p2wpkh_redeemscript(key: &PublicKey) -> Script {
     Builder::new()
         .push_opcode(opcodes::all::OP_PUSHBYTES_0)
         .push_slice(&WPubkeyHash::hash(&key.serialize())[..])
