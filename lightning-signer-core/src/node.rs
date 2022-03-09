@@ -1113,6 +1113,7 @@ impl Node {
         );
 
         let txid = tx.txid();
+        debug!("{}: txid: {}", short_function!(), txid);
 
         let channels: Vec<Option<Arc<Mutex<ChannelSlot>>>> = (0..tx.output.len())
             .map(|ndx| {
