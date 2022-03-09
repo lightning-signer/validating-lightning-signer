@@ -11,22 +11,21 @@ use bitcoin::{Address, Network, OutPoint, PrivateKey, Txid};
 use cortex_m_semihosting::hprintln;
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::bech32::{u5, FromBase32, ToBase32};
-use lightning_signer::bitcoin::{secp256k1, SigHashType};
-use lightning_signer::bitcoin::secp256k1::SecretKey;
+use lightning_signer::bitcoin::{Script, SigHashType, TxIn, TxOut};
 use lightning_signer::channel::{Channel, ChannelBase, ChannelSetup, CommitmentType};
 use lightning_signer::lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning_signer::lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
-use lightning_signer::lightning::util::invoice::construct_invoice_preimage;
 use lightning_signer::lightning_invoice::{
     Currency, InvoiceBuilder, RawDataPart, RawHrp, RawInvoice, SignedRawInvoice,
 };
-use lightning_signer::node::{Node, NodeConfig};
+use lightning_signer::node::{Node, NodeConfig, SpendType};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
-use lightning_signer::Arc;
 use lightning_signer::util::crypto_utils::bitcoin_vec_to_signature;
+use lightning_signer::wallet::Wallet;
+use lightning_signer::Arc;
 
 #[cfg(feature = "device")]
 macro_rules! myprintln {
@@ -51,7 +50,38 @@ macro_rules! myprintln {
     }};
 }
 
-pub fn make_test_channel_setup(is_outbound: bool, counterparty_points: ChannelPublicKeys) -> ChannelSetup {
+fn make_test_funding_tx(
+    node: &Node,
+    inputs: Vec<TxIn>,
+    value: u64,
+) -> (Vec<u32>, bitcoin::Transaction) {
+    let opath = vec![0];
+    let change_addr = node.get_native_address(&opath).unwrap();
+    make_test_funding_tx_with_change(inputs, value, opath, &change_addr)
+}
+
+fn make_test_funding_tx_with_change(
+    inputs: Vec<TxIn>,
+    value: u64,
+    opath: Vec<u32>,
+    change_addr: &Address,
+) -> (Vec<u32>, bitcoin::Transaction) {
+    let outputs = vec![TxOut { value, script_pubkey: change_addr.script_pubkey() }];
+    let tx = make_test_funding_tx_with_ins_outs(inputs, outputs);
+    (opath, tx)
+}
+
+pub fn make_test_funding_tx_with_ins_outs(
+    inputs: Vec<TxIn>,
+    outputs: Vec<TxOut>,
+) -> bitcoin::Transaction {
+    bitcoin::Transaction { version: 2, lock_time: 0, input: inputs, output: outputs }
+}
+
+pub fn make_test_channel_setup(
+    is_outbound: bool,
+    counterparty_points: ChannelPublicKeys,
+) -> ChannelSetup {
     ChannelSetup {
         is_outbound,
         channel_value_sat: 3_000_000,
@@ -66,32 +96,17 @@ pub fn make_test_channel_setup(is_outbound: bool, counterparty_points: ChannelPu
     }
 }
 
-pub(crate) fn do_sign_invoice(
-    payee_key: &SecretKey,
-    hrp_bytes: &[u8],
-    invoice_data: &[u5],
-) -> SignedRawInvoice {
-    let hrp: RawHrp = String::from_utf8(hrp_bytes.to_vec()).expect("utf8").parse().expect("hrp");
-    let data = RawDataPart::from_base32(invoice_data).expect("base32");
-    let raw_invoice = RawInvoice { hrp, data };
-
-    let invoice_preimage = construct_invoice_preimage(&hrp_bytes, &invoice_data);
-    let secp_ctx = Secp256k1::signing_only();
-    let hash = Sha256Hash::hash(&invoice_preimage);
-    let message = secp256k1::Message::from_slice(&hash).unwrap();
-    let sig = secp_ctx.sign_recoverable(&message, payee_key);
-
-    raw_invoice.sign::<_, ()>(|_| Ok(sig)).unwrap()
-}
-
 fn make_test_invoice(
     payee: &Arc<Node>,
     description: &str,
     payment_hash: PaymentHash,
 ) -> SignedRawInvoice {
     let (hrp_bytes, invoice_data) = build_test_invoice(description, &payment_hash);
-    let key = payee.get_node_secret();
-    do_sign_invoice(&key, &hrp_bytes, &invoice_data)
+    let hrp: RawHrp = String::from_utf8(hrp_bytes.to_vec()).expect("utf8").parse().expect("hrp");
+    let data = RawDataPart::from_base32(&invoice_data).expect("base32");
+    let raw_invoice = RawInvoice { hrp, data };
+    let sig = payee.sign_invoice(&hrp_bytes, &invoice_data).unwrap();
+    raw_invoice.sign::<_, ()>(|_| Ok(sig)).unwrap()
 }
 
 fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>, Vec<u5>) {
@@ -123,9 +138,15 @@ pub fn test_lightning_signer(postscript: fn()) {
     let factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
     let node = Arc::new(Node::new(config, &seed, &persister, Vec::new(), factory.clone()));
     let node1 = Arc::new(Node::new(config, &seed1, &persister, Vec::new(), factory));
+
+    assert_eq!(node.ecdh(&node1.get_id()), node1.ecdh(&node.get_id()));
+
     let (channel_id, _) = node.new_channel(None, None, &node).unwrap();
     let (channel_id1, _) = node1.new_channel(None, None, &node).unwrap();
-    myprintln!("stub channel ID: {}", channel_id);
+    myprintln!("stub channel IDs: {} {}", channel_id, channel_id1);
+
+    sign_funding(&node);
+
     let holder_shutdown_key_path = Vec::new();
     let points = node.get_channel(&channel_id).unwrap().lock().unwrap().get_channel_basepoints();
     let points1 = node1.get_channel(&channel_id1).unwrap().lock().unwrap().get_channel_basepoints();
@@ -160,10 +181,65 @@ pub fn test_lightning_signer(postscript: fn()) {
     let htlc = HTLCInfo2 { value_sat: 1_000_000, payment_hash: hash1, cltv_expiry: 50 };
     next_state(&mut channel, &mut channel1, commit_num, 1_999_000, 0, vec![htlc], vec![]);
 
+    // Fulfill HTLC
+    commit_num = 2;
     channel.htlcs_fulfilled(vec![preimage1]);
 
-    myprintln!("channel ID: {}", channel.id0);
+    next_state(&mut channel, &mut channel1, commit_num, 1_999_000, 1_000_000, vec![], vec![]);
+
+    channel.sign_holder_commitment_tx_phase2(2).unwrap();
+
+    let holder_address = node.get_native_address(&vec![0]).unwrap();
+    let counterparty_script = channel1.get_ldk_shutdown_script();
+
+    channel
+        .sign_mutual_close_tx_phase2(
+            1_999_000,
+            1_000_000,
+            &Some(holder_address.script_pubkey()),
+            &Some(counterparty_script),
+            &vec![0],
+        )
+        .unwrap();
+
+    // these are just to lightly cover these functions
+    node.add_allowlist(&vec!["helloworld".to_string()]).expect_err("bad address");
+    node.remove_allowlist(&vec!["helloworld".to_string()]).expect_err("bad address");
+    node.sign_node_announcement(&vec![]).unwrap();
+    node.sign_channel_update(&vec![]).unwrap();
+    channel.sign_channel_announcement(&vec![]);
+
     postscript();
+}
+
+fn sign_funding(node: &Arc<Node>) {
+    let ipaths = vec![vec![0u32], vec![1u32]];
+    let ival0 = 100u64;
+    let ival1 = 300u64;
+    let chanamt = 300u64;
+    let values_sat = vec![ival0, ival1];
+
+    let input1 = TxIn {
+        previous_output: OutPoint { txid: Default::default(), vout: 0 },
+        script_sig: Script::new(),
+        sequence: 0,
+        witness: vec![],
+    };
+
+    let input2 = TxIn {
+        previous_output: OutPoint { txid: Default::default(), vout: 1 },
+        script_sig: Script::new(),
+        sequence: 0,
+        witness: vec![],
+    };
+    let (opath, tx) = make_test_funding_tx(&node, vec![input1, input2], chanamt);
+    let spendtypes = vec![SpendType::P2wpkh, SpendType::P2wpkh];
+    let uniclosekeys = vec![None, None];
+
+    let witvec = node
+        .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
+        .expect("good sigs");
+    assert_eq!(witvec.len(), 2);
 }
 
 fn next_state(
@@ -177,6 +253,7 @@ fn next_state(
 ) {
     let per_commitment_point = channel.get_per_commitment_point(commit_num).unwrap();
     let per_commitment_point1 = channel1.get_per_commitment_point(commit_num).unwrap();
+
     let sig = channel
         .sign_counterparty_commitment_tx_phase2(
             &per_commitment_point1,
@@ -188,6 +265,7 @@ fn next_state(
             offered.clone(),
         )
         .unwrap();
+
     let sig1 = channel1
         .sign_counterparty_commitment_tx_phase2(
             &per_commitment_point,
@@ -199,26 +277,46 @@ fn next_state(
             received.clone(),
         )
         .unwrap();
-    channel.validate_holder_commitment_tx_phase2(
-        commit_num,
-        0,
-        to_holder,
-        to_counterparty,
-        offered.clone(),
-        received.clone(),
-        &bitcoin_vec_to_signature(&sig1.0, SigHashType::All).unwrap(),
-        &sig1.1.into_iter().map(|s| bitcoin_vec_to_signature(&s, SigHashType::All).unwrap()).collect(),
-    ).unwrap();
-    channel1.validate_holder_commitment_tx_phase2(
-        commit_num,
-        0,
-        to_counterparty,
-        to_holder,
-        received.clone(),
-        offered.clone(),
-        &bitcoin_vec_to_signature(&sig.0, SigHashType::All).unwrap(),
-        &sig.1.into_iter().map(|s| bitcoin_vec_to_signature(&s, SigHashType::All).unwrap()).collect(),
-    ).unwrap();
+
+    channel
+        .validate_holder_commitment_tx_phase2(
+            commit_num,
+            0,
+            to_holder,
+            to_counterparty,
+            offered.clone(),
+            received.clone(),
+            &bitcoin_vec_to_signature(&sig1.0, SigHashType::All).unwrap(),
+            &sig1
+                .1
+                .into_iter()
+                .map(|s| bitcoin_vec_to_signature(&s, SigHashType::All).unwrap())
+                .collect(),
+        )
+        .unwrap();
+
+    channel1
+        .validate_holder_commitment_tx_phase2(
+            commit_num,
+            0,
+            to_counterparty,
+            to_holder,
+            received.clone(),
+            offered.clone(),
+            &bitcoin_vec_to_signature(&sig.0, SigHashType::All).unwrap(),
+            &sig.1
+                .into_iter()
+                .map(|s| bitcoin_vec_to_signature(&s, SigHashType::All).unwrap())
+                .collect(),
+        )
+        .unwrap();
+
+    if commit_num > 0 {
+        let revoke = channel.get_per_commitment_secret(commit_num - 1).unwrap();
+        let revoke1 = channel1.get_per_commitment_secret(commit_num - 1).unwrap();
+        channel1.validate_counterparty_revocation(commit_num - 1, &revoke).unwrap();
+        channel.validate_counterparty_revocation(commit_num - 1, &revoke1).unwrap();
+    }
 }
 
 pub fn test_bitcoin() {
