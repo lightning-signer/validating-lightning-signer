@@ -37,3 +37,11 @@ secp buf size 704
 ...
 used memory 4960
 ```
+
+# Testing / Coverage
+
+To test on your CPU rather than a device / emulator, run:
+
+```shell
+cargo +nightly test --no-default-features --features std tests
+```

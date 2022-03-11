@@ -527,6 +527,26 @@ impl Wallet for Node {
             || *script_pubkey == wrapped_addr.script_pubkey())
     }
 
+    fn get_native_address(&self, child_path: &Vec<u32>) -> Result<Address, Status> {
+        if child_path.len() == 0 {
+            return Err(invalid_argument("empty child path"));
+        }
+
+        let secp_ctx = Secp256k1::signing_only();
+        let pubkey = self.get_wallet_pubkey(&secp_ctx, child_path)?;
+        Ok(Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed"))
+    }
+
+    fn get_wrapped_address(&self, child_path: &Vec<u32>) -> Result<Address, Status> {
+        if child_path.len() == 0 {
+            return Err(invalid_argument("empty child path"));
+        }
+
+        let secp_ctx = Secp256k1::signing_only();
+        let pubkey = self.get_wallet_pubkey(&secp_ctx, child_path)?;
+        Ok(Address::p2shwpkh(&pubkey, self.network()).expect("p2wpkh failed"))
+    }
+
     /// Returns true if script_pubkey is in the node's allowlist.
     fn allowlist_contains(&self, script_pubkey: &Script) -> bool {
         self.allowlist.lock().unwrap().contains(&Allowable::Script(script_pubkey.clone()))

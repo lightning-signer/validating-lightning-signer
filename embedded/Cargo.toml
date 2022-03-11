@@ -5,18 +5,20 @@ readme = "README.md"
 name = "embedded"
 version = "0.1.0"
 
+[features]
+default = ["device"]
+# note that the lightning-signer-core/secp-lowmemory feature reduces memory, but is not nearly as effective as the
+# static precomputation implementation below
+device = ["cortex-m", "cortex-m-rt", "cortex-m-semihosting", "alloc-cortex-m", "lightning-signer-core/no-std", "lightning-signer-core/secp-lowmemory"]
+std = ["lightning-signer-core/std"]
+
 [dependencies]
-cortex-m = "0.6.0"
-cortex-m-rt = "0.6.10"
-cortex-m-semihosting = "0.3.3"
-alloc-cortex-m = "0.4.1"
+cortex-m = { version = "0.6.0", optional = true }
+cortex-m-rt = { version = "0.6.10", optional = true }
+cortex-m-semihosting = { version = "0.3.3", optional = true }
+alloc-cortex-m = { version = "0.4.1", optional = true }
 
-lightning-signer-core = { path="../lightning-signer-core", default-features = false, features = ["no-std"] }
-
-[dependencies.bitcoin]
-version = "0.27"
-features = ["no-std", "secp-lowmemory"]
-default-features = false
+lightning-signer-core = { path="../lightning-signer-core", default-features = false }
 
 [patch.crates-io]
 # See also https://github.com/rust-bitcoin/rust-secp256k1/pull/299 and https://github.com/bitcoin-core/secp256k1/pull/956
@@ -32,8 +34,13 @@ bench = false
 [profile.release]
 codegen-units = 1 # better optimizations
 debug = true # symbols are nice and they don't increase the size on Flash
+# the above statement is almost true - some debug code gets pulled in - about 4 KB
+opt-level = "z" # reduce flash size
 lto = true # reduce flash size
 
 [profile.dev]
-opt-level = "s" # reduce flash size
+opt-level = "z" # reduce flash size
 lto = true # reduce flash size
+
+[profile.test]
+lto = false # workaround LLVM bug

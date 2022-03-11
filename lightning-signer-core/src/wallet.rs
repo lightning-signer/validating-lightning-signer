@@ -1,4 +1,4 @@
-use bitcoin::{Network, Script};
+use bitcoin::{Address, Network, Script};
 
 use crate::util::status::Status;
 
@@ -14,4 +14,10 @@ pub trait Wallet {
 
     /// Returns the network
     fn network(&self) -> Network;
+
+    /// Returns the native segwit address at path
+    fn get_native_address(&self, child_path: &Vec<u32>) -> Result<Address, Status>;
+
+    /// Returns the wrapped segwit address at path
+    fn get_wrapped_address(&self, child_path: &Vec<u32>) -> Result<Address, Status>;
 }
