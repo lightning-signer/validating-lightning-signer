@@ -12,7 +12,7 @@ use lightning_signer::bitcoin::secp256k1::Secp256k1;
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
 
-const HEAP_SIZE: usize = 1024 * 384; // 384 KiB, leave some space for stack on a 512 KiB RAM system
+const HEAP_SIZE: usize = 1024 * 448; // 448 KiB, leave some space for stack on a 512 KiB RAM system
 
 #[entry]
 fn main() -> ! {
