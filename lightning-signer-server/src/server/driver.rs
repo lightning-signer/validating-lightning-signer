@@ -316,19 +316,23 @@ impl Signer for SignServer {
             .map_err(|e| invalid_grpc_argument(e.to_string()))?;
 
         let node_id = if hsm_secret.len() == 0 {
-            Ok(self.signer.new_node(node_config))
+            self.signer.new_node(node_config)
         } else {
             if req.coldstart {
-                self.signer.new_node_from_seed(node_config, hsm_secret)
+                self.signer.new_node_from_seed(node_config, hsm_secret)?
             } else {
-                self.signer.warmstart_with_seed(node_config, hsm_secret)
+                self.signer.warmstart_with_seed(node_config, hsm_secret)?
             }
-        }
-        .map_err(|e| e)?
-        .serialize()
-        .to_vec();
-        let reply = InitReply { node_id: Some(NodeId { data: node_id }) };
-        log_req_reply!(&reply);
+        };
+        let node = self.signer.get_node(&node_id)?;
+        let node_secret = node.get_node_secret();
+        let reply = InitReply {
+            node_id: Some(NodeId { data: node_id.serialize().to_vec() }),
+            node_secret: Some(SecKey { data: node_secret[..].to_vec() }),
+        };
+
+        // We don't want to log the secret, so comment this out by default
+        //log_req_reply!(&reply);
         Ok(Response::new(reply))
     }
 

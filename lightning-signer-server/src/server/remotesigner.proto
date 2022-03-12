@@ -268,6 +268,8 @@ message InitRequest {
 
 message InitReply {
   NodeId node_id = 1;
+  // This is needed until we can do onion decryption in the signer
+  SecKey node_secret = 2;
 }
 
 // FIXME - This interface is specific to c-lightning, it returns the
@@ -683,6 +685,11 @@ message ChannelNonce {
 
 // Compressed ECDSA public key in DER format
 message PubKey {
+  bytes data = 1;
+}
+
+// ECDSA private key
+message SecKey {
   bytes data = 1;
 }
 
