@@ -8,6 +8,7 @@ description = "A library for implementing a Lightning signer server, dependent o
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 readme = "../README.md"
+rust-version = "1.45.2"
 
 [features]
 default = ["grpc", "persist_kv_json", "log_pretty_print"]
