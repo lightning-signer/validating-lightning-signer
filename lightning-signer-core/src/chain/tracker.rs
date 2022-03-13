@@ -225,11 +225,16 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
         }
         // Ensure correctly mined (hash is under target)
         header.validate_pow(&header.target()).map_err(|_| Error::InvalidBlock)?;
-        if (self.height + 1) % DIFFCHANGE_INTERVAL == 0 {
+        if self.network == Network::Testnet
+            && header.target() == max_target(self.network)
+            && header.time > self.tip.time + 60 * 20
+        {
+            // special case for Testnet - 20 minute rule
+        } else if (self.height + 1) % DIFFCHANGE_INTERVAL == 0 {
             let prev_target = self.tip.target();
             let target = header.target();
             let network = self.network;
-            is_valid_retarget(prev_target, target, network)?;
+            validate_retarget(prev_target, target, network)?;
         } else {
             if header.bits != self.tip.bits && self.network != Network::Testnet {
                 return Err(error_invalid_chain!(
@@ -278,7 +283,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     }
 }
 
-fn is_valid_retarget(prev_target: Uint256, target: Uint256, network: Network) -> Result<(), Error> {
+fn validate_retarget(prev_target: Uint256, target: Uint256, network: Network) -> Result<(), Error> {
     // TODO do actual retargeting with timestamps, requires remembering start timestamp
 
     // Round trip the target bounds, to simulate the way bitcoind checks them
@@ -568,7 +573,7 @@ mod tests {
 
     #[test]
     fn test_retarget_rounding() -> Result<(), Error> {
-        is_valid_retarget(
+        validate_retarget(
             BlockHeader::u256_from_compact_target(0x1c063051),
             BlockHeader::u256_from_compact_target(0x1c018c14),
             Network::Testnet,
