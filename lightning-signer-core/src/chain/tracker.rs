@@ -228,20 +228,8 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
         if (self.height + 1) % DIFFCHANGE_INTERVAL == 0 {
             let prev_target = self.tip.target();
             let target = header.target();
-            let min = prev_target >> 2;
-            let max = prev_target << 2;
-            let chain_max = max_target(self.network);
-
-            if target.gt(&chain_max) {
-                return Err(error_invalid_block!("target {} > chain_max {}", target, chain_max));
-            }
-            if target.lt(&min) {
-                return Err(error_invalid_chain!("target {} < min {}", target, min));
-            }
-            if target.gt(&max) {
-                return Err(error_invalid_chain!("target {} > max {}", target, max));
-            }
-            // TODO do actual retargeting with timestamps, requires remembering start timestamp
+            let network = self.network;
+            is_valid_retarget(prev_target, target, network)?;
         } else {
             if header.bits != self.tip.bits && self.network != Network::Testnet {
                 return Err(error_invalid_chain!(
@@ -290,6 +278,30 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     }
 }
 
+fn is_valid_retarget(prev_target: Uint256, target: Uint256, network: Network) -> Result<(), Error> {
+    // TODO do actual retargeting with timestamps, requires remembering start timestamp
+
+    // Round trip the target bounds, to simulate the way bitcoind checks them
+    fn round_trip_target(prev_target: &Uint256) -> Uint256 {
+        BlockHeader::u256_from_compact_target(BlockHeader::compact_target_from_u256(prev_target))
+    }
+
+    let min = round_trip_target(&(prev_target >> 2));
+    let max = round_trip_target(&(prev_target << 2));
+    let chain_max = max_target(network);
+
+    if target.gt(&chain_max) {
+        return Err(error_invalid_block!("target {} > chain_max {}", target, chain_max));
+    }
+    if target.lt(&min) {
+        return Err(error_invalid_chain!("target {} < min {}", target, min));
+    }
+    if target.gt(&max) {
+        return Err(error_invalid_chain!("target {} > max {}", target, max));
+    }
+    Ok(())
+}
+
 /// Listen to chain events
 pub trait ChainListener: SendSync {
     /// A block was added, and zero or more transactions consume watched outpoints.
@@ -320,6 +332,8 @@ mod tests {
     use crate::util::test_utils::*;
 
     use super::*;
+
+    use test_env_log::test;
 
     #[test]
     fn test_add_remove() -> Result<(), Error> {
@@ -549,6 +563,16 @@ mod tests {
         let bits = BlockHeader::compact_target_from_u256(&(target >> 1));
         let header = mine_header_with_bits(tracker.tip().block_hash(), Default::default(), bits);
         tracker.add_block(header, vec![], None)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_retarget_rounding() -> Result<(), Error> {
+        is_valid_retarget(
+            BlockHeader::u256_from_compact_target(0x1c063051),
+            BlockHeader::u256_from_compact_target(0x1c018c14),
+            Network::Testnet,
+        )?;
         Ok(())
     }
 
