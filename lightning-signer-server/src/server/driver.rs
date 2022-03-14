@@ -1442,7 +1442,10 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         format!("{}:{}", matches.value_of("interface").unwrap(), matches.value_of("port").unwrap())
             .parse()?;
 
-    let data_path = format!("{}/{}", matches.value_of("datadir").unwrap(), "data");
+    // Network can be specified on the command line or in the config file
+    let network: Network = matches.value_of_t("network").expect("network");
+
+    let data_path = format!("{}/{}", matches.value_of("datadir").unwrap(), network.to_string());
 
     let console_log_level = parse_log_level_filter(matches.value_of_t("loglevelconsole").unwrap())
         .expect("loglevelconsole");
@@ -1456,8 +1459,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     .unwrap_or_else(|e| panic!("Failed to create FilesystemLogger: {}", e));
     log::set_max_level(cmp::max(disk_log_level, console_log_level));
 
-    // Network can be specified on the command line or in the config file
-    let network: Network = matches.value_of_t("network").expect("network");
+    info!("data directory {}", data_path);
 
     let test_mode = matches.is_present("test-mode");
     let persister: Arc<dyn Persist> = if matches.is_present("no-persist") {
@@ -1488,9 +1490,9 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(SignerServer::new(server))
         .serve_with_shutdown(addr, shutdown_signal);
 
-    println!("{} {} ready on {}", SERVER_APP_NAME, process::id(), addr);
+    info!("{} {} ready on {}", SERVER_APP_NAME, process::id(), addr);
     service.await?;
-    println!("{} {} finished", SERVER_APP_NAME, process::id());
+    info!("{} {} finished", SERVER_APP_NAME, process::id());
 
     Ok(())
 }
