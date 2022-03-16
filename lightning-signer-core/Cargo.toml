@@ -50,7 +50,7 @@ log = "0.4.14"
 env_logger = { version = "0.9.0", optional = true }
 rand = { version = "0.4", optional = true }
 backtrace = { version = "0.3", optional = true }
-tonic = { version = "0.4", optional = true, default-features = false }
+tonic = { version = "0.6.2", optional = true, default-features = false }
 
 hashbrown = "0.9" # match hashbrown dependency version via tonic/h2/indexmap
 itertools = { version = "0.9", default-features = false }

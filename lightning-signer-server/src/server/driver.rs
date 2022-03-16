@@ -1562,11 +1562,20 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(SignerServer::new(server))
         .serve_with_shutdown(addr, shutdown_signal);
 
+    setup_tokio_log();
+
     info!("{} {} ready on {}", SERVER_APP_NAME, process::id(), addr);
     service.await?;
     info!("{} {} finished", SERVER_APP_NAME, process::id());
 
     Ok(())
+}
+
+fn setup_tokio_log() {
+    let subscriber =
+        tracing_subscriber::FmtSubscriber::builder().with_max_level(tracing::Level::INFO).finish();
+
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 }
 
 fn policy_args(app: App) -> App {

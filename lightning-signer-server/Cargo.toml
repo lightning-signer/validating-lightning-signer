@@ -9,6 +9,7 @@ homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 readme = "../README.md"
 rust-version = "1.45.2"
+build = "build.rs"
 
 [features]
 default = ["grpc", "persist_kv_json", "log_pretty_print"]
@@ -33,17 +34,19 @@ bip39 = {version = "1.0.0", features = ["rand"] }
 hex = "0.3.2"
 rand = "0.4"
 kv = { version = "0.22.0", features = ["json-value"], optional = true }
-tonic = { version = "0.4", optional = true }
-prost = { version = "0.7", optional = true }
-hyper = "=0.14.4"  # 0.14.5 depends on socket2 0.4 which requires a higher MSRV
-tokio = { version = "1.6", features = ["macros", "rt-multi-thread"], optional = true }
+tonic = { version = "0.6.2", optional = true }
+prost = { version = "0.9.0", optional = true }
+hyper = "0.14.17"
+tokio = { version = "=1.16.1", features = ["macros", "rt-multi-thread"], optional = true }
 serde = { version = "1.0.105", features = ["derive"], optional = true }
 serde_json = { version = "1.0.48", optional = true }
 serde_with = { version = "1.6.4", features = ["hex"], optional = true }
-clap = { version = "3.0.0-beta.2", optional = true }
+clap = { version = "=3.0.0-beta.2", optional = true }
 bitcoin = { version = "0.27", features = ["bitcoinconsensus"]}
 ctrlc = { version = "3.1.9", features = ["termination"] }
 triggered = "0.1.1"
+tracing = { version = "0.1.32" }
+tracing-subscriber = { version = "0.3.9" }
 
 url = { version = "2.2", optional = true }
 
@@ -55,7 +58,7 @@ env_logger = "0.9.0"
 tempfile = "3.2.0"
 
 [build-dependencies]
-tonic-build = "0.4"
+tonic-build = "~0.5"
 
 [[bin]]
 name = "vls-cli"
