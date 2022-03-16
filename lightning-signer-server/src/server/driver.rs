@@ -1358,7 +1358,7 @@ impl Signer for SignServer {
 
 const DEFAULT_DIR: &str = ".lightning-signer";
 
-#[tokio::main]
+#[tokio::main(worker_threads = 2)]
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     println!("{} {} starting", SERVER_APP_NAME, process::id());
     let app = App::new(SERVER_APP_NAME)
