@@ -120,6 +120,15 @@ service Signer {
   rpc ValidateHolderCommitmentTx (ValidateHolderCommitmentTxRequest)
     returns (ValidateHolderCommitmentTxReply);
 
+  // BOLT #3 - Commitment Transaction and attached HTLCs
+  // Validate the counterparty's commitment and HTLC signatures when
+  // commitment_signed received.  Returns the next
+  // per_commitment_point and the holder's revocation secret for the
+  // prior commitment.  This method advances the expected next
+  // commitment number in the signer's state.
+  rpc ValidateHolderCommitmentTxPhase2(ValidateHolderCommitmentTxPhase2Request)
+      returns (ValidateHolderCommitmentTxReply);
+
   // BOLT #2 Validate the counterparty's per_commitment_secret from
   // the revoke_and_ack message.
   // TODO - describe the signer state change when this method is invoked.
@@ -469,6 +478,22 @@ message ValidateHolderCommitmentTxRequest {
   BitcoinSignature commit_signature = 20;
   repeated BitcoinSignature htlc_signatures = 21;
 }
+
+// Validate the counterparty's signatures
+message ValidateHolderCommitmentTxPhase2Request {
+  NodeId node_id = 1;
+
+  ChannelNonce channel_nonce = 2;
+
+
+  CommitmentInfo commitment_info = 4;
+
+  // These signatures for the holder's commitment are provided by the
+  // channel peer in the BOLT #2 commitment_signed message.
+  BitcoinSignature commit_signature = 20;
+  repeated BitcoinSignature htlc_signatures = 21;
+}
+
 
 message ValidateHolderCommitmentTxReply {
   PubKey next_per_commitment_point = 1;

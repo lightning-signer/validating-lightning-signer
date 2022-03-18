@@ -14,7 +14,7 @@ use tonic::{transport::Server, Request, Response, Status};
 
 use bitcoin::consensus::{deserialize, encode};
 use bitcoin::hashes::Hash as BitcoinHash;
-use bitcoin::secp256k1::{PublicKey, SecretKey};
+use bitcoin::secp256k1::{PublicKey, SecretKey, Signature};
 use bitcoin::util::psbt::serialize::Deserialize;
 use bitcoin::{self, Network, OutPoint, Script, SigHashType};
 
@@ -122,6 +122,7 @@ pub(super) fn invalid_grpc_argument(msg: impl Into<String>) -> Status {
     Status::invalid_argument(s)
 }
 
+#[allow(unused)]
 pub(super) fn internal_error(msg: impl Into<String>) -> Status {
     let s = msg.into();
     error!("INTERNAL ERROR: {}", &s);
@@ -215,6 +216,31 @@ impl SignServer {
             }
         }
     }
+
+    fn htlc_sighash_type(
+        &self,
+        node_id: &PublicKey,
+        channel_id: &ChannelId,
+    ) -> Result<SigHashType, Status> {
+        self.signer
+            .with_ready_channel(&node_id, &channel_id, |chan| {
+                Ok(if chan.setup.option_anchor_outputs() {
+                    SigHashType::SinglePlusAnyoneCanPay
+                } else {
+                    SigHashType::All
+                })
+            })
+            .map_err(|e| e.into())
+    }
+}
+
+fn signature_from_proto(
+    proto_sig: &BitcoinSignature,
+    sighash_type: SigHashType,
+) -> Result<Signature, Status> {
+    bitcoin_vec_to_signature(&proto_sig.data, sighash_type).map_err(|err| {
+        invalid_grpc_argument(format!("trouble in bitcoin_vec_to_signature: {}", err))
+    })
 }
 
 pub fn collect_output_witscripts(output_descs: &Vec<OutputDescriptor>) -> Vec<Vec<u8>> {
@@ -760,32 +786,17 @@ impl Signer for SignServer {
         let offered_htlcs = self.convert_htlcs(&req.offered_htlcs)?;
         let received_htlcs = self.convert_htlcs(&req.received_htlcs)?;
 
-        let commit_sig = bitcoin_vec_to_signature(
-            &req.commit_signature
-                .ok_or_else(|| invalid_grpc_argument("missing commit_signature"))?
-                .data,
-            SigHashType::All,
-        )
-        .map_err(|err| {
-            invalid_grpc_argument(format!("trouble in bitcoin_vec_to_signature: {}", err))
-        })?;
+        let proto_sig = req
+            .commit_signature
+            .ok_or_else(|| invalid_grpc_argument("missing commit_signature"))?;
+        let commit_sig = signature_from_proto(&proto_sig, SigHashType::All)?;
 
-        let htlc_sighashtype = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            Ok(if chan.setup.option_anchor_outputs() {
-                SigHashType::SinglePlusAnyoneCanPay
-            } else {
-                SigHashType::All
-            })
-        })?;
+        let htlc_sighashtype = self.htlc_sighash_type(&node_id, &channel_id)?;
 
         let htlc_sigs = req
             .htlc_signatures
             .iter()
-            .map(|sig| {
-                bitcoin_vec_to_signature(&sig.data, htlc_sighashtype).map_err(|err| {
-                    internal_error(format!("bitcoin_vec_to_signature trouble: {}", err))
-                })
-            })
+            .map(|sig| signature_from_proto(sig, htlc_sighashtype))
             .collect::<Result<Vec<_>, Status>>()?;
         let commit_num = req.commit_num;
         let feerate_sat_per_kw = req.feerate_sat_per_kw;
@@ -1238,6 +1249,55 @@ impl Signer for SignServer {
         let reply = CommitmentTxSignatureReply {
             signature: Some(BitcoinSignature { data: sig }),
             htlc_signatures: htlc_bitcoin_sigs,
+        };
+        log_req_reply!(&node_id, &channel_id, &reply);
+        Ok(Response::new(reply))
+    }
+
+    async fn validate_holder_commitment_tx_phase2(
+        &self,
+        request: Request<ValidateHolderCommitmentTxPhase2Request>,
+    ) -> Result<Response<ValidateHolderCommitmentTxReply>, Status> {
+        let req = request.into_inner();
+        let node_id = self.node_id(req.node_id.clone())?;
+        let channel_id = self.channel_id(&req.channel_nonce)?;
+        log_req_enter!(&node_id, &channel_id, &req);
+
+        let info =
+            req.commitment_info.ok_or_else(|| invalid_grpc_argument("missing commitment info"))?;
+
+        let offered_htlcs = self.convert_htlcs(&info.offered_htlcs)?;
+        let received_htlcs = self.convert_htlcs(&info.received_htlcs)?;
+
+        let proto_sig = req
+            .commit_signature
+            .ok_or_else(|| invalid_grpc_argument("missing commit_signature"))?;
+        let commit_sig = signature_from_proto(&proto_sig, SigHashType::All)?;
+
+        let htlc_sighashtype = self.htlc_sighash_type(&node_id, &channel_id)?;
+
+        let htlc_sigs = req
+            .htlc_signatures
+            .iter()
+            .map(|sig| signature_from_proto(sig, htlc_sighashtype))
+            .collect::<Result<Vec<_>, Status>>()?;
+
+        let (point, old_secret) =
+            self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+                chan.validate_holder_commitment_tx_phase2(
+                    info.n,
+                    info.feerate_sat_per_kw,
+                    info.to_holder_value_sat,
+                    info.to_counterparty_value_sat,
+                    offered_htlcs.clone(),
+                    received_htlcs.clone(),
+                    &commit_sig,
+                    &htlc_sigs,
+                )
+            })?;
+        let reply = ValidateHolderCommitmentTxReply {
+            next_per_commitment_point: Some(point.into()),
+            old_secret: old_secret.map(|s| s.into()),
         };
         log_req_reply!(&node_id, &channel_id, &reply);
         Ok(Response::new(reply))
