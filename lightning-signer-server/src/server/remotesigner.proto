@@ -411,6 +411,9 @@ message GetPerCommitmentPointRequest {
 
   // commitment number
   uint64 n = 3;
+
+  // whether to skip releasing the n-2 commitment secret, and just get the point
+  bool point_only = 4;
 }
 
 message GetPerCommitmentPointReply {

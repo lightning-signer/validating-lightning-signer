@@ -623,7 +623,7 @@ impl Signer for SignServer {
         let res: Result<(PublicKey, Option<SecretKey>), status::Status> =
             self.signer.with_channel_base(&node_id, &channel_id, |base| {
                 let point = base.get_per_commitment_point(commitment_number)?;
-                let secret = if commitment_number >= 2 {
+                let secret = if commitment_number >= 2 && !req.point_only {
                     Some(base.get_per_commitment_secret(commitment_number - 2)?)
                 } else {
                     None
