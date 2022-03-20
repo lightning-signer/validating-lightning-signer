@@ -17,7 +17,7 @@ use lightning::ln::chan_utils::{
     CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
     TxCreationKeys,
 };
-use lightning::ln::{PaymentHash, PaymentPreimage};
+use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage};
 #[allow(unused_imports)]
 use log::{debug, trace, warn};
 
@@ -1920,22 +1920,46 @@ impl Channel {
         })
     }
 
-    /// Get the unilateral close key, for sweeping the to-remote output
-    /// of a counterparty's force-close
+    /// Get the unilateral close key and the witness stack suffix,
+    /// for sweeping the to-remote output of a counterparty's force-close
     // TODO(devrandom) key leaking from this layer
     pub fn get_unilateral_close_key(
         &self,
-        commitment_point: &Option<PublicKey>,
-    ) -> Result<SecretKey, Status> {
-        Ok(match commitment_point {
-            Some(commitment_point) =>
-                derive_private_key(&self.secp_ctx, &commitment_point, &self.keys.payment_key)
-                    .map_err(|err| {
-                        Status::internal(format!("derive_private_key failed: {}", err))
-                    })?,
+        commitment_point_opt: &Option<PublicKey>,
+        revocation_pubkey: &Option<PublicKey>,
+    ) -> Result<(SecretKey, Vec<Vec<u8>>), Status> {
+        Ok(match commitment_point_opt {
+            Some(commitment_point) => {
+                let base_key = if revocation_pubkey.is_some() {
+                    &self.keys.delayed_payment_base_key
+                } else {
+                    &self.keys.payment_key
+                };
+                let key = derive_private_key(&self.secp_ctx, &commitment_point, base_key).map_err(
+                    |err| Status::internal(format!("derive_private_key failed: {}", err)),
+                )?;
+                let pubkey = PublicKey::from_secret_key(&self.secp_ctx, &key);
+
+                let witness_stack_prefix = if let Some(r) = revocation_pubkey {
+                    let contest_delay = self.setup.counterparty_selected_contest_delay;
+                    let redeemscript =
+                        chan_utils::get_revokeable_redeemscript(r, contest_delay, &pubkey)
+                            .to_bytes();
+                    vec![vec![], redeemscript]
+                } else {
+                    vec![PublicKey::from_secret_key(&self.secp_ctx, &base_key).serialize().to_vec()]
+                };
+                (key, witness_stack_prefix)
+            }
             None => {
+                if revocation_pubkey.is_some() {
+                    return Err(invalid_argument("delayed output without commitment point"));
+                }
                 // option_static_remotekey in effect
-                self.keys.payment_key.clone()
+                let key = self.keys.payment_key.clone();
+                let redeemscript =
+                    PublicKey::from_secret_key(&self.secp_ctx, &key).serialize().to_vec();
+                (key, vec![redeemscript])
             }
         })
     }

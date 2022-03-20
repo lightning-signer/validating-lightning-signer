@@ -458,7 +458,7 @@ pub struct TestFundingTxContext {
     pub ipaths: Vec<Vec<u32>>,
     pub ivals: Vec<u64>,
     pub ispnds: Vec<SpendType>,
-    pub iuckeys: Vec<Option<SecretKey>>,
+    pub iuckeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
     pub outputs: Vec<TxOut>,
     pub opaths: Vec<Vec<u32>>,
 }
@@ -753,13 +753,13 @@ pub fn funding_tx_sign(
     node_ctx: &TestNodeContext,
     tx_ctx: &TestFundingTxContext,
     tx: &bitcoin::Transaction,
-) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Status> {
+) -> Result<Vec<Vec<Vec<u8>>>, Status> {
     node_ctx.node.sign_onchain_tx(
         &tx,
         &tx_ctx.ipaths,
         &tx_ctx.ivals,
         &tx_ctx.ispnds,
-        &tx_ctx.iuckeys,
+        tx_ctx.iuckeys.clone(),
         &tx_ctx.opaths,
     )
 }
@@ -768,10 +768,10 @@ pub fn funding_tx_validate_sig(
     node_ctx: &TestNodeContext,
     tx_ctx: &TestFundingTxContext,
     tx: &mut bitcoin::Transaction,
-    witvec: &Vec<(Vec<u8>, Vec<u8>)>,
+    witvec: &Vec<Vec<Vec<u8>>>,
 ) {
     for ndx in 0..tx.input.len() {
-        tx.input[ndx].witness = vec![witvec[ndx].0.clone(), witvec[ndx].1.clone()];
+        tx.input[ndx].witness = witvec[ndx].clone()
     }
     let verify_result = tx.verify(|outpoint| {
         // hack, we collude w/ funding_tx_add_wallet_input

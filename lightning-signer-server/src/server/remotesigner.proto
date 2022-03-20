@@ -782,8 +782,11 @@ message UnilateralCloseInfo {
   // Identifies the old channel closed unilaterally by the peer.
   ChannelNonce channel_nonce = 1;
 
-  // Will be None if this is not a CommitmentType::LEGACY channel.
+  // Will be None if this is not a CommitmentType::LEGACY channel (unsupported).
   PubKey commitment_point = 2;
+
+  // The revocation point, if this is a delayed (revocable) payment to us
+  PubKey revocation_pubkey = 3;
 }
 
 message KeyLocator {
@@ -805,6 +808,7 @@ enum SpendType {
   P2PKH = 1;
   P2WPKH = 3;
   P2SH_P2WPKH = 4;
+  P2WSH = 5;
 }
 
 message InputDescriptor {
@@ -825,9 +829,7 @@ message OutputDescriptor {
 }
 
 message Witness {
-  BitcoinSignature signature = 1;
-
-  PubKey pubkey = 2;
+  repeated bytes stack = 1;
 }
   
 // PHASE 2 messages

@@ -237,7 +237,7 @@ fn sign_funding(node: &Arc<Node>) {
     let uniclosekeys = vec![None, None];
 
     let witvec = node
-        .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
+        .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
         .expect("good sigs");
     assert_eq!(witvec.len(), 2);
 }

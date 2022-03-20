@@ -36,6 +36,7 @@ use lightning_signer::util::crypto_utils::{bitcoin_vec_to_signature, signature_t
 use lightning_signer::util::debug_utils::DebugBytes;
 use lightning_signer::util::log_utils::{parse_log_level_filter, LOG_LEVEL_FILTER_NAMES};
 use lightning_signer::util::status;
+use lightning_signer::util::status::invalid_argument;
 use lightning_signer::{channel, containing_function, debug_vals, short_function, vals_str};
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
@@ -195,7 +196,8 @@ impl SignServer {
         &self,
         node_id: &PublicKey,
         closeinfo: Option<&UnilateralCloseInfo>,
-    ) -> Result<Option<SecretKey>, Status> {
+        spendtype: SpendType,
+    ) -> Result<Option<(SecretKey, Vec<Vec<u8>>)>, Status> {
         match closeinfo {
             // Normal case, no unilateral_close_info present.
             None => Ok(None),
@@ -209,10 +211,25 @@ impl SignServer {
                     // Yes, commitment_point provided.
                     Some(cpoint) => Some(self.public_key(Some(cpoint.clone()))?),
                 };
-                let key = self.signer.with_ready_channel(node_id, &old_chan_id, |chan| {
-                    chan.get_unilateral_close_key(&commitment_point)
-                })?;
-                Ok(Some(key))
+                let (key, redeemscript) =
+                    self.signer.with_ready_channel(node_id, &old_chan_id, |chan| {
+                        let pubkey_opt = match ci.revocation_pubkey.as_ref() {
+                            None => None,
+                            Some(p) => Some(p.clone().try_into().map_err(|_| {
+                                invalid_argument("could not parse revocation_pubkey")
+                            })?),
+                        };
+                        if pubkey_opt.is_some() && spendtype != SpendType::P2wsh {
+                            return Err(invalid_argument("revocation spend must be p2wsh"));
+                        }
+                        if pubkey_opt.is_none() && spendtype == SpendType::P2wsh {
+                            return Err(invalid_argument(
+                                "can only handle p2wsh for revocation spend",
+                            ));
+                        }
+                        chan.get_unilateral_close_key(&commitment_point, &pubkey_opt)
+                    })?;
+                Ok(Some((key, redeemscript)))
             }
         }
     }
@@ -663,7 +680,8 @@ impl Signer for SignServer {
         let mut ipaths: Vec<Vec<u32>> = Vec::new();
         let mut values_sat = Vec::new();
         let mut spendtypes: Vec<SpendType> = Vec::new();
-        let mut uniclosekeys: Vec<Option<SecretKey>> = Vec::new();
+        // Key and redeemscript
+        let mut uniclosekeys = Vec::new();
 
         for idx in 0..tx.input.len() {
             // Use SpendType::Invalid to flag/designate inputs we are not
@@ -691,7 +709,7 @@ impl Signer for SignServer {
                     .ok_or_else(|| invalid_grpc_argument("missing input closeinfo key_loc desc"))?
                     .close_info
                     .as_ref();
-                let uck = self.get_unilateral_close_key(&node_id, closeinfo)?;
+                let uck = self.get_unilateral_close_key(&node_id, closeinfo, spendtype)?;
                 uniclosekeys.push(uck);
             }
         }
@@ -705,15 +723,9 @@ impl Signer for SignServer {
         let node = self.signer.get_node(&node_id)?;
 
         let witvec =
-            node.sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &opaths)?;
+            node.sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &opaths)?;
 
-        let wits = witvec
-            .into_iter()
-            .map(|(sigdata, pubkeydata)| Witness {
-                signature: Some(BitcoinSignature { data: sigdata }),
-                pubkey: Some(PubKey { data: pubkeydata }),
-            })
-            .collect();
+        let wits = witvec.into_iter().map(|stack| Witness { stack }).collect();
 
         let reply = SignOnchainTxReply { witnesses: wits };
         log_req_reply!(&node_id, &reply);

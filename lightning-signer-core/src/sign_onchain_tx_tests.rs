@@ -46,7 +46,7 @@ mod tests {
         let uniclosekeys = vec![None, None];
 
         let witvec = node
-            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
+            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
             .expect("good sigs");
         assert_eq!(witvec.len(), 2);
 
@@ -55,8 +55,8 @@ mod tests {
                 .unwrap()
         };
 
-        tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
-        tx.input[1].witness = vec![witvec[1].0.clone(), witvec[1].1.clone()];
+        tx.input[0].witness = witvec[0].clone();
+        tx.input[1].witness = witvec[1].clone();
 
         let outs = vec![
             TxOut { value: ival0, script_pubkey: address(0).script_pubkey() },
@@ -91,7 +91,7 @@ mod tests {
         let uniclosekeys = vec![None];
 
         let witvec = node
-            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
+            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
@@ -100,7 +100,7 @@ mod tests {
                 .unwrap()
         };
 
-        tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
+        tx.input[0].witness = witvec[0].clone();
 
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec![TxOut { value: ival0, script_pubkey: address(0).script_pubkey() }];
@@ -141,7 +141,7 @@ mod tests {
                 &ipaths,
                 &values_sat,
                 &spendtypes,
-                &uniclosekeys,
+                uniclosekeys.clone(),
                 &vec![opath.clone()],
             ),
             "policy failure: validate_onchain_tx: \
@@ -179,18 +179,18 @@ mod tests {
             &PublicKey::from_secret_key(&secp_ctx, &uniclosekey).serialize()[..],
         )
         .unwrap();
-        let uniclosekeys = vec![Some(uniclosekey)];
+        let uniclosekeys = vec![Some((uniclosekey, vec![uniclosepubkey.serialize()]))];
 
         let witvec = node
-            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
+            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
-        assert_eq!(witvec[0].1, uniclosepubkey.serialize());
+        assert_eq!(witvec[0][1], uniclosepubkey.serialize());
 
         let address = Address::p2wpkh(&uniclosepubkey, Network::Testnet).unwrap();
 
-        tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
+        tx.input[0].witness = witvec[0].clone();
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec![TxOut { value: ival0, script_pubkey: address.script_pubkey() }];
         println!("{:?}", &outs[0].script_pubkey);
@@ -221,7 +221,7 @@ mod tests {
         let uniclosekeys = vec![None];
 
         let witvec = node
-            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
+            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
@@ -230,8 +230,8 @@ mod tests {
         };
 
         tx.input[0].script_sig = Builder::new()
-            .push_slice(witvec[0].0.as_slice())
-            .push_slice(witvec[0].1.as_slice())
+            .push_slice(witvec[0][0].as_slice())
+            .push_slice(witvec[0][1].as_slice())
             .into_script();
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec![TxOut { value: 100, script_pubkey: address(0).script_pubkey() }];
@@ -265,7 +265,7 @@ mod tests {
         let uniclosekeys = vec![None];
 
         let witvec = node
-            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
+            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
@@ -291,7 +291,7 @@ mod tests {
             )
             .into_script();
 
-        tx.input[0].witness = vec![witvec[0].0.clone(), witvec[0].1.clone()];
+        tx.input[0].witness = witvec[0].clone();
 
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec![TxOut { value: ival0, script_pubkey: address(0).script_pubkey() }];
@@ -341,22 +341,19 @@ mod tests {
         let uniclosekeys = vec![None, None, None];
 
         let witvec = node
-            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
+            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
             .expect("good sigs");
         // Should have three witness stack items.
         assert_eq!(witvec.len(), 3);
 
         // First item should be empty sig/pubkey.
-        assert_eq!(witvec[0].0.len(), 0);
-        assert_eq!(witvec[0].1.len(), 0);
+        assert_eq!(witvec[0].len(), 0);
 
         // Second should have values.
-        assert!(witvec[1].0.len() > 0);
-        assert!(witvec[1].1.len() > 0);
+        assert!(witvec[1].len() > 0);
 
         // Third should be empty.
-        assert_eq!(witvec[2].0.len(), 0);
-        assert_eq!(witvec[2].1.len(), 0);
+        assert_eq!(witvec[2].len(), 0);
 
         // Doesn't verify, not fully signed.
         Ok(())
