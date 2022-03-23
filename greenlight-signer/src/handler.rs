@@ -23,11 +23,12 @@ use lightning_signer::lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::{Node, NodeConfig, SpendType};
 use lightning_signer::persist::Persist;
-use lightning_signer::policy::validator::ChainState;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
+use lightning_signer::bitcoin::bech32::u5;
+use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
 #[allow(unused_imports)]
 use log::info;
 use secp256k1::rand::rngs::SmallRng;
@@ -85,31 +86,29 @@ impl RootHandler {
         persister: Arc<dyn Persist>,
         allowlist: Vec<String>,
     ) -> Self {
+        let network = Network::Regtest;
         let config = NodeConfig {
-            network: Network::Regtest,
+            network,
             key_derivation_style: KeyDerivationStyle::Native,
         };
 
         let seed = seed_opt.expect("expected a seed");
 
         let nodes = persister.get_nodes();
+        let policy = make_simple_policy(network);
+        let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
         let node = if nodes.is_empty() {
-            let node = Arc::new(Node::new(config, &seed, &persister, vec![]));
+            let node = Arc::new(Node::new(config, &seed, &persister, vec![], validator_factory));
             node.add_allowlist(&allowlist).expect("allowlist");
             persister.new_node(&node.get_id(), &config, &seed);
             node
         } else {
             assert_eq!(nodes.len(), 1);
             let (node_id, entry) = nodes.into_iter().next().unwrap();
-            Node::restore_node(&node_id, entry, persister)
+            Node::restore_node(&node_id, entry, persister, validator_factory)
         };
 
         Self { id, node }
-    }
-
-    fn get_chain_state(&self) -> ChainState {
-        // TODO - fetch the current height from the oracle
-        ChainState { current_height: 0 }
     }
 }
 
@@ -194,20 +193,18 @@ impl Handler for RootHandler {
                 info!("txid {}", tx.txid());
                 info!("tx {:?}", tx);
                 info!("psbt {:?}", psbt);
-                let cstate = self.get_chain_state();
                 let witvec = self.node.sign_onchain_tx(
-                    &cstate,
                     &tx,
                     &ipaths,
                     &values_sat,
                     &spendtypes,
-                    &uniclosekeys,
+                    uniclosekeys,
                     &opaths,
                 )?;
 
-                for (i, (sig, pubkey)) in witvec.into_iter().enumerate() {
-                    if !sig.is_empty() {
-                        psbt.inputs[i].final_script_witness = Some(vec![sig, pubkey]);
+                for (i, stack) in witvec.into_iter().enumerate() {
+                    if !stack.is_empty() {
+                        psbt.inputs[i].final_script_witness = Some(stack);
                     }
                 }
 
@@ -217,15 +214,18 @@ impl Handler for RootHandler {
             }
             Message::SignInvoice(m) => {
                 let hrp = String::from_utf8(m.hrp).expect("hrp");
-                let sig = self.node.sign_invoice_in_parts(&m.u5bytes, &hrp)?;
+                let hrp_bytes = hrp.as_bytes();
+                let data: Vec<_> = m.u5bytes.into_iter().map(|b| u5::try_from_u8(b).expect("invoice not base32")).collect();
+                let sig = self.node.sign_invoice(hrp_bytes, &data)?;
+                let (rid, ser) = sig.serialize_compact();
                 let mut sig_slice = [0u8; 65];
-                sig_slice.copy_from_slice(&sig);
+                sig_slice[0..64].copy_from_slice(&ser);
+                sig_slice[64] = rid.to_i32() as u8;
                 Ok(Box::new(msgs::SignInvoiceReply { signature: RecoverableSignature(sig_slice) }))
             }
             Message::SignNodeAnnouncement(m) => {
                 let message = m.announcement[64 + 2..].to_vec();
-                let node_sig_der = self.node.sign_node_announcement(&message)?;
-                let sig = secp256k1::Signature::from_der(&node_sig_der).expect("sig");
+                let sig = self.node.sign_node_announcement(&message)?;
 
                 Ok(Box::new(msgs::SignNodeAnnouncementReply {
                     node_signature: Signature(sig.serialize_compact()),
@@ -252,22 +252,11 @@ impl Handler for RootHandler {
                         chan.sign_mutual_close_tx(&tx, &opaths)
                     })?
                 } else {
-                    let witscripts = extract_witscripts(&psbt);
-                    let commit_num = m.commitment_number;
-                    let feerate_sat_per_kw = m.feerate;
-                    let (received_htlcs, offered_htlcs) = extract_htlcs(&m.htlcs);
-                    let cstate = self.get_chain_state();
+                    // We ignore everything in the message other than the commitment number,
+                    // since the signer already has this info.
                     self.node.with_ready_channel(&channel_id, |chan| {
-                        chan.sign_holder_commitment_tx(
-                            &cstate,
-                            &tx,
-                            &witscripts,
-                            commit_num,
-                            feerate_sat_per_kw,
-                            offered_htlcs.clone(),
-                            received_htlcs.clone(),
-                        )
-                    })?
+                        chan.sign_holder_commitment_tx_phase2(m.commitment_number)
+                    })?.0
                 };
                 Ok(Box::new(msgs::SignCommitmentTxReply {
                     signature: BitcoinSignature {
@@ -279,8 +268,7 @@ impl Handler for RootHandler {
             // TODO duplicate from ChannelHandler
             Message::SignChannelUpdate(m) => {
                 let message = m.update[2 + 64..].to_vec();
-                let sig_data_der = self.node.sign_channel_update(&message)?;
-                let sig = secp256k1::Signature::from_der(&sig_data_der).expect("sig");
+                let sig = self.node.sign_channel_update(&message)?;
                 let mut update = m.update;
                 update[2..2 + 64].copy_from_slice(&sig.serialize_compact());
                 Ok(Box::new(msgs::SignChannelUpdateReply { update }))
@@ -336,10 +324,6 @@ fn extract_channel_id(dbid: u64) -> ChannelId {
 }
 
 impl ChannelHandler {
-    fn get_chain_state(&self) -> ChainState {
-        // TODO - fetch the current height from the oracle
-        ChainState { current_height: 0 }
-    }
 }
 
 impl Handler for ChannelHandler {
@@ -437,9 +421,7 @@ impl Handler for ChannelHandler {
                 let output_witscript =
                     psbt.outputs[0].witness_script.as_ref().expect("output witscript");
                 let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
-                    let cstate = self.get_chain_state();
                     chan.sign_counterparty_htlc_tx(
-                        &cstate,
                         &tx,
                         &remote_per_commitment_point,
                         &redeemscript,
@@ -449,8 +431,8 @@ impl Handler for ChannelHandler {
                 })?;
                 Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature {
-                        signature: Signature(sig.serialize_compact()),
-                        sighash: SigHashType::All as u8,
+                        signature: Signature(sig.sig.serialize_compact()),
+                        sighash: sig.typ as u8,
                     },
                 }))
             }
@@ -467,9 +449,7 @@ impl Handler for ChannelHandler {
                 // Flip offered and received
                 let (offered_htlcs, received_htlcs) = extract_htlcs(&m.htlcs);
                 let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
-                    let cstate = self.get_chain_state();
                     chan.sign_counterparty_commitment_tx(
-                        &cstate,
                         &tx,
                         &witscripts,
                         &remote_per_commitment_point,
@@ -501,9 +481,7 @@ impl Handler for ChannelHandler {
                     .value;
                 let wallet_paths = extract_psbt_output_paths(&psbt);
                 let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
-                    let cstate = self.get_chain_state();
                     chan.sign_delayed_sweep(
-                        &cstate,
                         &tx,
                         input,
                         commitment_number,
@@ -535,9 +513,7 @@ impl Handler for ChannelHandler {
                     .value;
                 let wallet_paths = extract_psbt_output_paths(&psbt);
                 let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
-                    let cstate = self.get_chain_state();
                     chan.sign_counterparty_htlc_sweep(
-                        &cstate,
                         &tx,
                         input,
                         &remote_per_commitment_point,
@@ -569,9 +545,7 @@ impl Handler for ChannelHandler {
                 let output_witscript =
                     psbt.outputs[0].witness_script.as_ref().expect("output witscript");
                 let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
-                    let cstate = self.get_chain_state();
                     chan.sign_holder_htlc_tx(
-                        &cstate,
                         &tx,
                         commitment_number,
                         None,
@@ -582,8 +556,8 @@ impl Handler for ChannelHandler {
                 })?;
                 Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature {
-                        signature: Signature(sig.serialize_compact()),
-                        sighash: SigHashType::All as u8,
+                        signature: Signature(sig.sig.serialize_compact()),
+                        sighash: sig.typ as u8,
                     },
                 }))
             }
@@ -626,9 +600,7 @@ impl Handler for ChannelHandler {
                     .collect();
                 let (next_per_commitment_point, old_secret) =
                     self.node.with_ready_channel(&self.channel_id, |chan| {
-                        let cstate = self.get_chain_state();
                         chan.validate_holder_commitment_tx(
-                            &cstate,
                             &tx,
                             &witscripts,
                             commit_num,
@@ -667,11 +639,9 @@ impl Handler for ChannelHandler {
                     .as_ref()
                     .expect("will only spend witness UTXOs")
                     .value;
-                let cstate = self.get_chain_state();
                 let wallet_paths = extract_psbt_output_paths(&psbt);
                 let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
                     chan.sign_justice_sweep(
-                        &cstate,
                         &tx,
                         input,
                         &revocation_secret,
@@ -689,8 +659,7 @@ impl Handler for ChannelHandler {
             }
             Message::SignChannelUpdate(m) => {
                 let message = m.update[2 + 64..].to_vec();
-                let sig_data_der = self.node.sign_channel_update(&message)?;
-                let sig = secp256k1::Signature::from_der(&sig_data_der).expect("sig");
+                let sig = self.node.sign_channel_update(&message)?;
                 let mut update = m.update;
                 update[2..2 + 64].copy_from_slice(&sig.serialize_compact());
                 Ok(Box::new(msgs::SignChannelUpdateReply { update }))
@@ -709,8 +678,7 @@ impl Handler for ChannelHandler {
             Message::SignNodeAnnouncement(m) => {
                 // TODO DRY (and why is this called in the per-channel handler??)
                 let message = m.announcement[64 + 2..].to_vec();
-                let node_sig_der = self.node.sign_node_announcement(&message)?;
-                let sig = secp256k1::Signature::from_der(&node_sig_der).expect("sig");
+                let sig = self.node.sign_node_announcement(&message)?;
 
                 Ok(Box::new(msgs::SignNodeAnnouncementReply {
                     node_signature: Signature(sig.serialize_compact()),
