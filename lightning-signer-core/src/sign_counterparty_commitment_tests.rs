@@ -12,11 +12,11 @@ mod tests {
     use lightning::ln::PaymentHash;
     use test_env_log::test;
 
-    use crate::channel::{Channel, ChannelSetup, CommitmentType};
+    use crate::channel::{Channel, ChannelSetup, CommitmentType, TypedSignature};
     use crate::policy::validator::{ChainState, EnforcementState};
     use crate::tx::script::get_to_countersignatory_with_anchors_redeemscript;
     use crate::tx::tx::HTLCInfo2;
-    use crate::util::crypto_utils::{payload_for_p2wpkh, signature_to_bitcoin_vec};
+    use crate::util::crypto_utils::payload_for_p2wpkh;
     use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
@@ -112,7 +112,7 @@ mod tests {
         check_signature(
             &tx,
             0,
-            signature_to_bitcoin_vec(sig),
+            TypedSignature::all(sig),
             &funding_pubkey,
             setup.channel_value_sat,
             &channel_funding_redeemscript,
@@ -224,7 +224,7 @@ mod tests {
         check_signature(
             &tx,
             0,
-            signature_to_bitcoin_vec(sig),
+            TypedSignature::all(sig),
             &funding_pubkey,
             setup.channel_value_sat,
             &channel_funding_redeemscript,
@@ -282,7 +282,7 @@ mod tests {
                 Ok(tx.transaction.clone())
             })
             .expect("build");
-        let (ser_signature, _) = node
+        let (signature, _) = node
             .with_ready_channel(&channel_id, |chan| {
                 chan.sign_counterparty_commitment_tx_phase2(
                     &remote_percommitment_point,
@@ -301,7 +301,7 @@ mod tests {
         check_signature(
             &tx,
             0,
-            ser_signature,
+            TypedSignature::all(signature),
             &funding_pubkey,
             setup.channel_value_sat,
             &channel_funding_redeemscript,
@@ -393,7 +393,7 @@ mod tests {
             tx.txid = tx.transaction.txid();
 
             let sig = if !is_phase2 {
-                let ss = chan.sign_counterparty_commitment_tx(
+                chan.sign_counterparty_commitment_tx(
                     &tx.transaction,
                     &output_witscripts,
                     &remote_percommitment_point,
@@ -401,8 +401,7 @@ mod tests {
                     feerate_per_kw,
                     offered_htlcs.clone(),
                     received_htlcs.clone(),
-                )?;
-                signature_to_bitcoin_vec(ss)
+                )?
             } else {
                 chan.sign_counterparty_commitment_tx_phase2(
                     &remote_percommitment_point,
@@ -425,7 +424,7 @@ mod tests {
         check_signature(
             &tx,
             0,
-            sig,
+            TypedSignature::all(sig),
             &funding_pubkey,
             setup.channel_value_sat,
             &channel_funding_redeemscript,
@@ -820,7 +819,7 @@ mod tests {
 
             // Sign the commitment the first time.
             let _sig = if !is_phase2 {
-                let ss = chan.sign_counterparty_commitment_tx(
+                chan.sign_counterparty_commitment_tx(
                     &tx.transaction,
                     &output_witscripts,
                     &remote_percommitment_point,
@@ -828,8 +827,7 @@ mod tests {
                     feerate_per_kw,
                     offered_htlcs.clone(),
                     received_htlcs.clone(),
-                )?;
-                signature_to_bitcoin_vec(ss)
+                )?
             } else {
                 chan.sign_counterparty_commitment_tx_phase2(
                     &remote_percommitment_point,
@@ -856,7 +854,7 @@ mod tests {
 
             // Sign it again (retry).
             let _sig = if !is_phase2 {
-                let ss = chan.sign_counterparty_commitment_tx(
+                chan.sign_counterparty_commitment_tx(
                     &tx.transaction,
                     &output_witscripts,
                     &remote_percommitment_point,
@@ -864,8 +862,7 @@ mod tests {
                     feerate_per_kw,
                     offered_htlcs.clone(),
                     received_htlcs.clone(),
-                )?;
-                signature_to_bitcoin_vec(ss)
+                )?
             } else {
                 chan.sign_counterparty_commitment_tx_phase2(
                     &remote_percommitment_point,

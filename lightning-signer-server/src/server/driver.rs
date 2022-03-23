@@ -32,7 +32,7 @@ use lightning_signer::policy::simple_validator::{
 use lightning_signer::signer::multi_signer::MultiSigner;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
-use lightning_signer::util::crypto_utils::{bitcoin_vec_to_signature, signature_to_bitcoin_vec};
+use lightning_signer::util::crypto_utils::bitcoin_vec_to_signature;
 use lightning_signer::util::debug_utils::DebugBytes;
 use lightning_signer::util::log_utils::{parse_log_level_filter, LOG_LEVEL_FILTER_NAMES};
 use lightning_signer::util::status;
@@ -158,11 +158,6 @@ impl SignServer {
             arg.ok_or_else(|| invalid_grpc_argument("missing secret"))?.data.as_slice(),
         )
         .map_err(|err| invalid_grpc_argument(format!("could not deserialize secret: {}", err)));
-    }
-
-    // Converts secp256k1::PublicKey into remotesigner::PubKey
-    fn to_pubkey(&self, arg: PublicKey) -> PubKey {
-        PubKey { data: arg.serialize().to_vec() }
     }
 
     // NOTE - this "channel_id" does *not* correspond to the
@@ -437,11 +432,11 @@ impl Signer for SignServer {
             .with_channel_base(&node_id, &channel_id, |base| Ok(base.get_channel_basepoints()))?;
 
         let basepoints = Basepoints {
-            revocation: Some(self.to_pubkey(bps.revocation_basepoint)),
-            payment: Some(self.to_pubkey(bps.payment_point)),
-            htlc: Some(self.to_pubkey(bps.htlc_basepoint)),
-            delayed_payment: Some(self.to_pubkey(bps.delayed_payment_basepoint)),
-            funding_pubkey: Some(self.to_pubkey(bps.funding_pubkey)),
+            revocation: Some(bps.revocation_basepoint.into()),
+            payment: Some(bps.payment_point.into()),
+            htlc: Some(bps.htlc_basepoint.into()),
+            delayed_payment: Some(bps.delayed_payment_basepoint.into()),
+            funding_pubkey: Some(bps.funding_pubkey.into()),
         };
 
         let reply = GetChannelBasepointsReply { basepoints: Some(basepoints) };
@@ -550,13 +545,11 @@ impl Signer for SignServer {
             .map(|od| od.key_loc.unwrap_or_default().key_path.to_vec())
             .collect();
 
-        let sigvec = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            let sig = chan.sign_mutual_close_tx(&tx, &opaths)?;
-
-            Ok(signature_to_bitcoin_vec(sig))
+        let sig = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+            chan.sign_mutual_close_tx(&tx, &opaths)
         })?;
 
-        let reply = SignatureReply { signature: Some(BitcoinSignature { data: sigvec.clone() }) };
+        let reply = SignatureReply { signature: Some(sig.into()) };
         log_req_reply!(&node_id, &channel_id, &reply);
         Ok(Response::new(reply))
     }
@@ -586,20 +579,17 @@ impl Signer for SignServer {
             )?)
         };
 
-        let sig_data = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
-            let sig = chan.sign_mutual_close_tx_phase2(
+        let sig = self.signer.with_ready_channel(&node_id, &channel_id, |chan| {
+            chan.sign_mutual_close_tx_phase2(
                 req.to_holder_value_sat,
                 req.to_counterparty_value_sat,
                 &holder_shutdown_script,
                 &counterparty_shutdown_script,
                 &req.holder_wallet_path_hint,
-            )?;
-            let mut bitcoin_sig = sig.serialize_der().to_vec();
-            bitcoin_sig.push(SigHashType::All as u8);
-            Ok(bitcoin_sig)
+            )
         })?;
 
-        let reply = CloseTxSignatureReply { signature: Some(BitcoinSignature { data: sig_data }) };
+        let reply = CloseTxSignatureReply { signature: Some(sig.into()) };
         log_req_reply!(&node_id, &channel_id, &reply);
         Ok(Response::new(reply))
     }
@@ -650,15 +640,9 @@ impl Signer for SignServer {
 
         let (point, old_secret) = res?;
 
-        let pointdata = point.serialize().to_vec();
-
-        let old_secret_data: Option<Vec<u8>> = old_secret.map(|s| s[..].to_vec());
-
-        let old_secret_reply = old_secret_data.clone().map(|s| Secret { data: s.clone() });
-
         let reply = GetPerCommitmentPointReply {
-            per_commitment_point: Some(PubKey { data: pointdata.clone() }),
-            old_secret: old_secret_reply,
+            per_commitment_point: Some(point.into()),
+            old_secret: old_secret.map(|s| s.into()),
         };
         log_req_reply!(&node_id, &channel_id, &reply);
         Ok(Response::new(reply))
@@ -765,9 +749,7 @@ impl Signer for SignServer {
             )
         })?;
 
-        let reply = SignatureReply {
-            signature: Some(BitcoinSignature { data: signature_to_bitcoin_vec(sig) }),
-        };
+        let reply = SignatureReply { signature: Some(sig.into()) };
         log_req_reply!(&node_id, &channel_id, &reply);
         Ok(Response::new(reply))
     }
@@ -827,12 +809,9 @@ impl Signer for SignServer {
                 )
             })?;
 
-        let pointdata = next_per_commitment_point.serialize().to_vec();
-        let old_secret_data: Option<Vec<u8>> = old_secret.map(|s| s[..].to_vec());
-        let old_secret_reply = old_secret_data.clone().map(|s| Secret { data: s.clone() });
         let reply = ValidateHolderCommitmentTxReply {
-            next_per_commitment_point: Some(PubKey { data: pointdata.clone() }),
-            old_secret: old_secret_reply,
+            next_per_commitment_point: Some(next_per_commitment_point.into()),
+            old_secret: old_secret.map(|s| s.into()),
         };
         log_req_reply!(&node_id, &channel_id, &reply);
         Ok(Response::new(reply))
@@ -889,22 +868,21 @@ impl Signer for SignServer {
 
         let output_witscript = Script::from(reqtx.output_descs[0].witscript.clone());
 
-        let sigvec = self
+        let sig = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let typedsig = chan.sign_holder_htlc_tx(
+                chan.sign_holder_htlc_tx(
                     &tx,
                     req.n,
                     opt_per_commitment_point,
                     &redeemscript,
                     htlc_amount_sat,
                     &output_witscript,
-                )?;
-                Ok(typedsig.serialize())
+                )
             })
             .map_err(|_| Status::internal("failed to sign"))?;
 
-        let reply = SignatureReply { signature: Some(BitcoinSignature { data: sigvec.clone() }) };
+        let reply = SignatureReply { signature: Some(sig.into()) };
         log_req_reply!(&node_id, &channel_id, &reply);
         Ok(Response::new(reply))
     }
@@ -942,22 +920,21 @@ impl Signer for SignServer {
             .map(|od| od.key_loc.unwrap_or_default().key_path.to_vec())
             .collect::<Vec<Vec<u32>>>()[0];
 
-        let sigvec = self
+        let sig = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let sig = chan.sign_delayed_sweep(
+                chan.sign_delayed_sweep(
                     &tx,
                     input,
                     req.commitment_number,
                     &htlc_redeemscript,
                     htlc_amount_sat,
                     &wallet_path,
-                )?;
-                Ok(signature_to_bitcoin_vec(sig))
+                )
             })
             .map_err(|_| Status::internal("failed to sign"))?;
 
-        let reply = SignatureReply { signature: Some(BitcoinSignature { data: sigvec.clone() }) };
+        let reply = SignatureReply { signature: Some(sig.into()) };
         log_req_reply!(&node_id, &channel_id, &reply);
         Ok(Response::new(reply))
     }
@@ -990,21 +967,20 @@ impl Signer for SignServer {
 
         let output_witscript = Script::from(reqtx.output_descs[0].witscript.clone());
 
-        let sig_vec = self
+        let sig = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let typedsig = chan.sign_counterparty_htlc_tx(
+                chan.sign_counterparty_htlc_tx(
                     &tx,
                     &remote_per_commitment_point,
                     &redeemscript,
                     htlc_amount_sat,
                     &output_witscript,
-                )?;
-                Ok(typedsig.serialize())
+                )
             })
             .map_err(|_| Status::internal("failed to sign"))?;
 
-        let reply = SignatureReply { signature: Some(BitcoinSignature { data: sig_vec }) };
+        let reply = SignatureReply { signature: Some(sig.into()) };
         log_req_reply!(&node_id, &channel_id, &reply);
         Ok(Response::new(reply))
     }
@@ -1042,22 +1018,21 @@ impl Signer for SignServer {
             .map(|od| od.key_loc.unwrap_or_default().key_path.to_vec())
             .collect::<Vec<Vec<u32>>>()[0];
 
-        let sigvec = self
+        let sig = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let sig = chan.sign_counterparty_htlc_sweep(
+                chan.sign_counterparty_htlc_sweep(
                     &tx,
                     input,
                     &remote_per_commitment_point,
                     &redeemscript,
                     htlc_amount_sat,
                     &wallet_path,
-                )?;
-                Ok(signature_to_bitcoin_vec(sig))
+                )
             })
             .map_err(|_| Status::internal("failed to sign"))?;
 
-        let reply = SignatureReply { signature: Some(BitcoinSignature { data: sigvec.clone() }) };
+        let reply = SignatureReply { signature: Some(sig.into()) };
         log_req_reply!(&node_id, &channel_id, &reply);
         Ok(Response::new(reply))
     }
@@ -1095,22 +1070,21 @@ impl Signer for SignServer {
             .map(|od| od.key_loc.unwrap_or_default().key_path.to_vec())
             .collect::<Vec<Vec<u32>>>()[0];
 
-        let sigvec = self
+        let sig = self
             .signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                let sig = chan.sign_justice_sweep(
+                chan.sign_justice_sweep(
                     &tx,
                     input,
                     &revocation_secret,
                     &redeemscript,
                     htlc_amount_sat,
                     &wallet_path,
-                )?;
-                Ok(signature_to_bitcoin_vec(sig))
+                )
             })
             .map_err(|_| Status::internal("failed to sign"))?;
 
-        let reply = SignatureReply { signature: Some(BitcoinSignature { data: sigvec.clone() }) };
+        let reply = SignatureReply { signature: Some(sig.into()) };
         log_req_reply!(&node_id, &channel_id, &reply);
         Ok(Response::new(reply))
     }
@@ -1132,8 +1106,8 @@ impl Signer for SignServer {
             })
             .map_err(|e| Status::internal(e.to_string()))?;
         let reply = SignChannelAnnouncementReply {
-            node_signature: Some(EcdsaSignature { data: nsig.serialize_der().to_vec() }),
-            bitcoin_signature: Some(EcdsaSignature { data: bsig.serialize_der().to_vec() }),
+            node_signature: Some(nsig.into()),
+            bitcoin_signature: Some(bsig.into()),
         };
         log_req_reply!(&node_id, &channel_id, &reply);
         Ok(Response::new(reply))
@@ -1149,8 +1123,8 @@ impl Signer for SignServer {
 
         let na = req.node_announcement;
         let node = self.signer.get_node(&node_id)?;
-        let sig_data = node.sign_node_announcement(&na)?;
-        let reply = NodeSignatureReply { signature: Some(EcdsaSignature { data: sig_data }) };
+        let sig = node.sign_node_announcement(&na)?;
+        let reply = NodeSignatureReply { signature: Some(sig.into()) };
         log_req_reply!(&node_id, &reply);
         Ok(Response::new(reply))
     }
@@ -1165,8 +1139,8 @@ impl Signer for SignServer {
 
         let cu = req.channel_update;
         let node = self.signer.get_node(&node_id)?;
-        let sig_data = node.sign_channel_update(&cu)?;
-        let reply = NodeSignatureReply { signature: Some(EcdsaSignature { data: sig_data }) };
+        let sig = node.sign_channel_update(&cu)?;
+        let reply = NodeSignatureReply { signature: Some(sig.into()) };
         log_req_reply!(&node_id, &reply);
         Ok(Response::new(reply))
     }
@@ -1256,10 +1230,9 @@ impl Signer for SignServer {
             )
         })?;
 
-        let htlc_bitcoin_sigs =
-            htlc_sigs.iter().map(|s| BitcoinSignature { data: s.clone() }).collect();
+        let htlc_bitcoin_sigs = htlc_sigs.into_iter().map(|s| s.into()).collect();
         let reply = CommitmentTxSignatureReply {
-            signature: Some(BitcoinSignature { data: sig }),
+            signature: Some(sig.into()),
             htlc_signatures: htlc_bitcoin_sigs,
         };
         log_req_reply!(&node_id, &channel_id, &reply);
@@ -1330,10 +1303,9 @@ impl Signer for SignServer {
             chan.sign_holder_commitment_tx_phase2(commit_num)
         })?;
 
-        let htlc_bitcoin_sigs =
-            htlc_sigs.iter().map(|s| BitcoinSignature { data: s.clone() }).collect();
+        let htlc_bitcoin_sigs = htlc_sigs.into_iter().map(|s| s.into()).collect();
         let reply = CommitmentTxSignatureReply {
-            signature: Some(BitcoinSignature { data: sig }),
+            signature: Some(sig.into()),
             htlc_signatures: htlc_bitcoin_sigs,
         };
         log_req_reply!(&node_id, &channel_id, &reply);

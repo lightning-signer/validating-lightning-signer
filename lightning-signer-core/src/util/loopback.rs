@@ -28,9 +28,7 @@ use crate::io_extras::Error as IOError;
 use crate::node::Node;
 use crate::signer::multi_signer::MultiSigner;
 use crate::tx::tx::HTLCInfo2;
-use crate::util::crypto_utils::{
-    derive_public_key, derive_revocation_pubkey, signature_to_bitcoin_vec,
-};
+use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey};
 use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::Arc;
@@ -149,7 +147,7 @@ impl LoopbackChannelSigner {
         let (offered_htlcs, received_htlcs) =
             LoopbackChannelSigner::convert_to_htlc_info2(hct.htlcs());
 
-        let (sig_vec, htlc_sig_vecs) = self
+        let (sig, htlc_sigs) = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 let result = chan.sign_holder_commitment_tx_phase2_redundant(
@@ -164,9 +162,6 @@ impl LoopbackChannelSigner {
             })
             .map_err(|s| self.bad_status(s))?;
 
-        let htlc_sigs =
-            htlc_sig_vecs.iter().map(|s| bitcoin_sig_to_signature(s.clone()).unwrap()).collect();
-        let sig = bitcoin_sig_to_signature(sig_vec).unwrap();
         Ok((sig, htlc_sigs))
     }
 
@@ -207,14 +202,6 @@ impl Writeable for LoopbackChannelSigner {
         self.channel_value_sat.write(writer)?;
         Ok(())
     }
-}
-
-fn bitcoin_sig_to_signature(mut res: Vec<u8>) -> Result<Signature, ()> {
-    res.pop();
-    let sig = Signature::from_der(res.as_slice())
-        .map_err(|_e| ())
-        .expect("failed to parse the signature we just created");
-    Ok(sig)
 }
 
 impl BaseSign for LoopbackChannelSigner {
@@ -306,7 +293,7 @@ impl BaseSign for LoopbackChannelSigner {
         let to_counterparty_value_sat = commitment_tx.to_broadcaster_value_sat();
         let feerate_per_kw = commitment_tx.feerate_per_kw();
 
-        let (sig_vec, htlc_sigs_vecs) = self
+        let (commitment_sig, htlc_sigs) = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
                 chan.htlcs_fulfilled(preimages.clone());
@@ -321,11 +308,6 @@ impl BaseSign for LoopbackChannelSigner {
                 )
             })
             .map_err(|s| self.bad_status(s))?;
-        let commitment_sig = bitcoin_sig_to_signature(sig_vec)?;
-        let mut htlc_sigs = Vec::with_capacity(commitment_tx.htlcs().len());
-        for htlc_sig_vec in htlc_sigs_vecs {
-            htlc_sigs.push(bitcoin_sig_to_signature(htlc_sig_vec)?);
-        }
         Ok((commitment_sig, htlc_sigs))
     }
 
@@ -390,22 +372,21 @@ impl BaseSign for LoopbackChannelSigner {
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2
-        let res = self
+        let sig = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-                let sig = chan.sign_justice_sweep(
+                chan.sign_justice_sweep(
                     justice_tx,
                     input,
                     per_commitment_key,
                     &redeem_script,
                     amount,
                     &wallet_path,
-                )?;
-                Ok(signature_to_bitcoin_vec(sig))
+                )
             })
             .map_err(|s| self.bad_status(s))?;
 
-        bitcoin_sig_to_signature(res)
+        Ok(sig)
     }
 
     fn sign_justice_revoked_htlc(
@@ -424,22 +405,21 @@ impl BaseSign for LoopbackChannelSigner {
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2
-        let res = self
+        let sig = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-                let sig = chan.sign_justice_sweep(
+                chan.sign_justice_sweep(
                     justice_tx,
                     input,
                     per_commitment_key,
                     &redeem_script,
                     amount,
                     &wallet_path,
-                )?;
-                Ok(signature_to_bitcoin_vec(sig))
+                )
             })
             .map_err(|s| self.bad_status(s))?;
 
-        bitcoin_sig_to_signature(res)
+        Ok(sig)
     }
 
     fn sign_counterparty_htlc_transaction(
@@ -457,22 +437,21 @@ impl BaseSign for LoopbackChannelSigner {
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2
-        let res = self
+        let sig = self
             .signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-                let sig = chan.sign_counterparty_htlc_sweep(
+                chan.sign_counterparty_htlc_sweep(
                     htlc_tx,
                     input,
                     per_commitment_point,
                     &redeem_script,
                     amount,
                     &wallet_path,
-                )?;
-                Ok(signature_to_bitcoin_vec(sig))
+                )
             })
             .map_err(|s| self.bad_status(s))?;
 
-        bitcoin_sig_to_signature(res)
+        Ok(sig)
     }
 
     // TODO - Couldn't this return a declared error signature?

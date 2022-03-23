@@ -2,7 +2,7 @@ use core::convert::TryInto;
 
 use bitcoin::secp256k1::{PublicKey, SecretKey, Signature};
 
-use lightning_signer::channel::ChannelId;
+use lightning_signer::channel::{ChannelId, TypedSignature};
 use lightning_signer::util::crypto_utils::signature_to_bitcoin_vec;
 use lightning_signer::util::INITIAL_COMMITMENT_NUMBER;
 
@@ -16,6 +16,12 @@ use crate::server::remotesigner::{
 impl From<Signature> for BitcoinSignature {
     fn from(sig: Signature) -> Self {
         BitcoinSignature { data: signature_to_bitcoin_vec(sig) }
+    }
+}
+
+impl From<TypedSignature> for BitcoinSignature {
+    fn from(sig: TypedSignature) -> Self {
+        BitcoinSignature { data: sig.serialize() }
     }
 }
 
@@ -38,6 +44,12 @@ impl TryInto<Signature> for EcdsaSignature {
 
     fn try_into(self) -> Result<Signature, ()> {
         Signature::from_der(&self.data).map_err(|_| ())
+    }
+}
+
+impl From<Signature> for EcdsaSignature {
+    fn from(s: Signature) -> Self {
+        EcdsaSignature { data: s.serialize_der().to_vec() }
     }
 }
 

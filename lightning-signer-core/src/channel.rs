@@ -32,7 +32,6 @@ use crate::tx::tx::{
 };
 use crate::util::crypto_utils::{
     derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
-    signature_to_bitcoin_vec,
 };
 use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugVecVecU8};
 use crate::util::status::{internal_error, invalid_argument, Status};
@@ -65,8 +64,10 @@ impl fmt::Display for ChannelId {
 /// Bitcoin Signature which specifies SigHashType
 #[derive(Debug)]
 pub struct TypedSignature {
-    sig: Signature,
-    typ: SigHashType,
+    /// The signature
+    pub sig: Signature,
+    /// The sighash type
+    pub typ: SigHashType,
 }
 
 impl TypedSignature {
@@ -75,6 +76,11 @@ impl TypedSignature {
         let mut ss = self.sig.serialize_der().to_vec();
         ss.push(self.typ as u8);
         ss
+    }
+
+    /// A TypedSignature with SIGHASH_ALL
+    pub fn all(sig: Signature) -> Self {
+        Self { sig, typ: SigHashType::All }
     }
 }
 
@@ -543,7 +549,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
-    ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+    ) -> Result<(Signature, Vec<Signature>), Status> {
         // Since we didn't have the value at the real open, validate it now.
         let validator = self.validator();
         validator.validate_channel_value(&self.setup)?;
@@ -585,18 +591,10 @@ impl Channel {
             htlcs,
         );
 
-        let sigs = self
+        let (sig, htlc_sigs) = self
             .keys
             .sign_counterparty_commitment(&commitment_tx, Vec::new(), &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
-        let mut sig = sigs.0.serialize_der().to_vec();
-        sig.push(SigHashType::All as u8);
-        let mut htlc_sigs = Vec::new();
-        for htlc_signature in sigs.1 {
-            let mut htlc_sig = htlc_signature.serialize_der().to_vec();
-            htlc_sig.push(SigHashType::All as u8);
-            htlc_sigs.push(htlc_sig);
-        }
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(None, Some(&info2));
         state.validate_payments(
@@ -889,7 +887,7 @@ impl Channel {
     pub fn sign_holder_commitment_tx_phase2(
         &self,
         commitment_number: u64,
-    ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+    ) -> Result<(Signature, Vec<Signature>), Status> {
         let info2 = self.enforcement_state.get_current_holder_commitment_info(commitment_number)?;
 
         let htlcs =
@@ -929,12 +927,10 @@ impl Channel {
             .keys
             .sign_holder_commitment_and_htlcs(&recomposed_holder_tx, &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
-        let sig_vec = signature_to_bitcoin_vec(sig);
-        let htlc_sig_vecs = htlc_sigs.iter().map(|ss| signature_to_bitcoin_vec(*ss)).collect();
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
-        Ok((sig_vec, htlc_sig_vecs))
+        Ok((sig, htlc_sigs))
     }
 
     /// Sign a holder commitment transaction after rebuilding it
@@ -951,7 +947,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
-    ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+    ) -> Result<(Signature, Vec<Signature>), Status> {
         let commitment_point = &self.get_per_commitment_point(commitment_number)?;
 
         let info2 = self.build_holder_commitment_info(
@@ -1006,12 +1002,10 @@ impl Channel {
             .keys
             .sign_holder_commitment_and_htlcs(&holder_commitment_tx, &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
-        let sig_vec = signature_to_bitcoin_vec(sig);
-        let htlc_sig_vecs = htlc_sigs.iter().map(|ss| signature_to_bitcoin_vec(*ss)).collect();
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
-        Ok((sig_vec, htlc_sig_vecs))
+        Ok((sig, htlc_sigs))
     }
 
     // This function is needed for testing with mutated keys.

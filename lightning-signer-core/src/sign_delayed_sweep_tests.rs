@@ -4,10 +4,9 @@ mod tests {
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
     use test_env_log::test;
 
-    use crate::channel::{Channel, ChannelBase};
+    use crate::channel::{Channel, ChannelBase, TypedSignature};
     use crate::node::SpendType::{P2shP2wpkh, P2wpkh};
     use crate::policy::validator::ChainState;
-    use crate::util::crypto_utils::signature_to_bitcoin_vec;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
 
@@ -130,7 +129,7 @@ mod tests {
         check_signature(
             &tx,
             input,
-            signature_to_bitcoin_vec(sig),
+            TypedSignature::all(sig),
             &delayed_pubkey,
             amount_sat,
             &redeemscript,

@@ -13,11 +13,10 @@ mod tests {
 
     use test_env_log::test;
 
-    use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup};
+    use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, TypedSignature};
     use crate::node::Node;
     use crate::sync::Arc;
     use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
-    use crate::util::crypto_utils::signature_to_bitcoin_vec;
     use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
@@ -144,7 +143,7 @@ mod tests {
             counterparty_points,
         ) = setup_mutual_close_tx(outbound)?;
 
-        let (tx, sigvec) = node.with_ready_channel(&channel_id, |chan| {
+        let (tx, sig) = node.with_ready_channel(&channel_id, |chan| {
             let mut holder_value_sat = to_holder_value_sat;
             let mut counterparty_value_sat = to_counterparty_value_sat;
             let mut holder_shutdown_script = Address::p2wpkh(
@@ -196,7 +195,7 @@ mod tests {
             validate_channel_state(chan);
 
             let sig = deferred_rv?;
-            Ok((tx.clone(), signature_to_bitcoin_vec(sig)))
+            Ok((tx.clone(), sig))
         })?;
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -207,7 +206,7 @@ mod tests {
         check_signature(
             &tx,
             0,
-            sigvec,
+            TypedSignature::all(sig),
             &funding_pubkey,
             setup.channel_value_sat,
             &channel_funding_redeemscript,
@@ -264,7 +263,7 @@ mod tests {
             holder_shutdown_script,
             counterparty_shutdown_script,
             funding_outpoint,
-            sigvec,
+            sig,
         ) = node.with_ready_channel(&channel_id, |chan| {
             let mut wallet_path = init_holder_wallet_path_hint.clone();
             let mut holder_value_sat = to_holder_value_sat;
@@ -317,7 +316,7 @@ mod tests {
                 holder_shutdown_script,
                 counterparty_shutdown_script,
                 funding_outpoint,
-                signature_to_bitcoin_vec(sig),
+                sig,
             ))
         })?;
 
@@ -339,7 +338,7 @@ mod tests {
         check_signature(
             &tx,
             0,
-            sigvec,
+            TypedSignature::all(sig),
             &funding_pubkey,
             setup.channel_value_sat,
             &channel_funding_redeemscript,

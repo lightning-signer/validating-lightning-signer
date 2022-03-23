@@ -82,41 +82,35 @@ mod tests {
 
         let htlc_pubkey = get_channel_htlc_pubkey(&node, &channel_id, &per_commitment_point);
 
-        let sigvec = node
+        let sig = node
             .with_ready_channel(&channel_id, |chan| {
-                let typedsig = chan
-                    .sign_holder_htlc_tx(
-                        &htlc_tx,
-                        n,
-                        None,
-                        &htlc_redeemscript,
-                        htlc_amount_sat,
-                        &output_witscript,
-                    )
-                    .unwrap();
-                Ok(typedsig.serialize())
+                chan.sign_holder_htlc_tx(
+                    &htlc_tx,
+                    n,
+                    None,
+                    &htlc_redeemscript,
+                    htlc_amount_sat,
+                    &output_witscript,
+                )
             })
             .unwrap();
 
-        check_signature(&htlc_tx, 0, sigvec, &htlc_pubkey, htlc_amount_sat, &htlc_redeemscript);
+        check_signature(&htlc_tx, 0, sig, &htlc_pubkey, htlc_amount_sat, &htlc_redeemscript);
 
-        let sigvec1 = node
+        let sig1 = node
             .with_ready_channel(&channel_id, |chan| {
-                let typedsig = chan
-                    .sign_holder_htlc_tx(
-                        &htlc_tx,
-                        999,
-                        Some(per_commitment_point),
-                        &htlc_redeemscript,
-                        htlc_amount_sat,
-                        &output_witscript,
-                    )
-                    .unwrap();
-                Ok(typedsig.serialize())
+                chan.sign_holder_htlc_tx(
+                    &htlc_tx,
+                    999,
+                    Some(per_commitment_point),
+                    &htlc_redeemscript,
+                    htlc_amount_sat,
+                    &output_witscript,
+                )
             })
             .unwrap();
 
-        check_signature(&htlc_tx, 0, sigvec1, &htlc_pubkey, htlc_amount_sat, &htlc_redeemscript);
+        check_signature(&htlc_tx, 0, sig1, &htlc_pubkey, htlc_amount_sat, &htlc_redeemscript);
     }
 
     #[allow(dead_code)]
@@ -243,7 +237,7 @@ mod tests {
         check_counterparty_htlc_signature(
             &htlc_tx,
             0,
-            typedsig.serialize(),
+            typedsig,
             &htlc_pubkey,
             htlc_amount_sat,
             &htlc_redeemscript,
@@ -359,14 +353,7 @@ mod tests {
 
         let htlc_pubkey = get_channel_htlc_pubkey(&node, &channel_id, &per_commitment_point);
 
-        check_signature(
-            &htlc_tx,
-            0,
-            typedsig.serialize(),
-            &htlc_pubkey,
-            htlc_amount_sat,
-            &htlc_redeemscript,
-        );
+        check_signature(&htlc_tx, 0, typedsig, &htlc_pubkey, htlc_amount_sat, &htlc_redeemscript);
 
         Ok(())
     }

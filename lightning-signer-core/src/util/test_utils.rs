@@ -36,7 +36,8 @@ use super::key_utils::{
     make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
 };
 use crate::channel::{
-    channel_nonce_to_id, Channel, ChannelBase, ChannelId, ChannelSetup, ChannelStub, CommitmentType,
+    channel_nonce_to_id, Channel, ChannelBase, ChannelId, ChannelSetup, ChannelStub,
+    CommitmentType, TypedSignature,
 };
 use crate::node::SpendType;
 use crate::node::{Node, NodeConfig};
@@ -1061,7 +1062,7 @@ pub fn sign_holder_commitment(
     node_ctx: &TestNodeContext,
     chan_ctx: &TestChannelContext,
     commit_tx_ctx: &TestCommitmentTxContext,
-) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+) -> Result<(Signature, Vec<Signature>), Status> {
     node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
         chan.sign_holder_commitment_tx_phase2(commit_tx_ctx.commit_num)
     })
@@ -1316,7 +1317,7 @@ pub fn get_channel_revocation_pubkey(
 pub fn check_signature(
     tx: &bitcoin::Transaction,
     input: usize,
-    ser_signature: Vec<u8>,
+    signature: TypedSignature,
     pubkey: &PublicKey,
     input_value_sat: u64,
     redeemscript: &Script,
@@ -1325,7 +1326,7 @@ pub fn check_signature(
     check_signature_with_sighashtype(
         tx,
         input,
-        ser_signature,
+        signature,
         pubkey,
         input_value_sat,
         redeemscript,
@@ -1336,7 +1337,7 @@ pub fn check_signature(
 pub fn check_counterparty_htlc_signature(
     tx: &bitcoin::Transaction,
     input: usize,
-    ser_signature: Vec<u8>,
+    signature: TypedSignature,
     pubkey: &PublicKey,
     input_value_sat: u64,
     redeemscript: &Script,
@@ -1347,7 +1348,7 @@ pub fn check_counterparty_htlc_signature(
     check_signature_with_sighashtype(
         tx,
         input,
-        ser_signature,
+        signature,
         pubkey,
         input_value_sat,
         redeemscript,
@@ -1358,7 +1359,7 @@ pub fn check_counterparty_htlc_signature(
 pub fn check_signature_with_sighashtype(
     tx: &bitcoin::Transaction,
     input: usize,
-    ser_signature: Vec<u8>,
+    signature: TypedSignature,
     pubkey: &PublicKey,
     input_value_sat: u64,
     redeemscript: &Script,
@@ -1374,12 +1375,9 @@ pub fn check_signature_with_sighashtype(
             )[..],
         )
         .expect("sighash");
-    let mut der_signature = ser_signature.clone();
-    let sigtypebyte = der_signature.pop().expect("sighash type byte"); // Pop the sighash type byte
-    assert_eq!(sigtypebyte, sighashtype as u8);
-    let signature = Signature::from_der(&der_signature).expect("from_der");
+    assert_eq!(signature.typ, sighashtype);
     let secp_ctx = Secp256k1::new();
-    secp_ctx.verify(&sighash, &signature, &pubkey).expect("verify");
+    secp_ctx.verify(&sighash, &signature.sig, &pubkey).expect("verify");
 }
 
 pub fn sign_commitment_tx_with_mutators_setup(

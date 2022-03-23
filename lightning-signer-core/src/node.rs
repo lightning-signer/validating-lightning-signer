@@ -14,7 +14,7 @@ use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
-use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, Address, Transaction, TxOut};
@@ -1277,25 +1277,23 @@ impl Node {
     }
 
     /// Sign a node announcement using the node key
-    pub fn sign_node_announcement(&self, na: &Vec<u8>) -> Result<Vec<u8>, Status> {
+    pub fn sign_node_announcement(&self, na: &Vec<u8>) -> Result<Signature, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let na_hash = Sha256dHash::hash(na);
         let encmsg = secp256k1::Message::from_slice(&na_hash[..])
             .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign(&encmsg, &self.get_node_secret());
-        let res = sig.serialize_der().to_vec();
-        Ok(res)
+        Ok(sig)
     }
 
     /// Sign a channel update using the node key
-    pub fn sign_channel_update(&self, cu: &Vec<u8>) -> Result<Vec<u8>, Status> {
+    pub fn sign_channel_update(&self, cu: &Vec<u8>) -> Result<Signature, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let cu_hash = Sha256dHash::hash(cu);
         let encmsg = secp256k1::Message::from_slice(&cu_hash[..])
             .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign(&encmsg, &self.get_node_secret());
-        let res = sig.serialize_der().to_vec();
-        Ok(res)
+        Ok(sig)
     }
 
     /// Sign an invoice and start tracking incoming payment for its payment hash
@@ -2018,7 +2016,7 @@ mod tests {
     fn sign_node_announcement_test() -> Result<(), ()> {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let ann = hex_decode("000302aaa25e445fef0265b6ab5ec860cd257865d61ef0bbf5b3339c36cbda8b26b74e7f1dca490b65180265b64c4f554450484f544f2d2e302d3139392d67613237336639642d6d6f646465640000").unwrap();
-        let sigvec = node.sign_node_announcement(&ann).unwrap();
+        let sigvec = node.sign_node_announcement(&ann).unwrap().serialize_der().to_vec();
         assert_eq!(sigvec, hex_decode("30450221008ef1109b95f127a7deec63b190b72180f0c2692984eaf501c44b6bfc5c4e915502207a6fa2f250c5327694967be95ff42a94a9c3d00b7fa0fbf7daa854ceb872e439").unwrap());
         Ok(())
     }
@@ -2027,7 +2025,7 @@ mod tests {
     fn sign_channel_update_test() -> Result<(), ()> {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let cu = hex_decode("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00006700000100015e42ddc6010000060000000000000000000000010000000a000000003b023380").unwrap();
-        let sigvec = node.sign_channel_update(&cu).unwrap();
+        let sigvec = node.sign_channel_update(&cu).unwrap().serialize_der().to_vec();
         assert_eq!(sigvec, hex_decode("3045022100be9840696c868b161aaa997f9fa91a899e921ea06c8083b2e1ea32b8b511948d0220352eec7a74554f97c2aed26950b8538ca7d7d7568b42fd8c6f195bd749763fa5").unwrap());
         Ok(())
     }
