@@ -11,7 +11,7 @@ mod tests {
     };
     use lightning::ln::PaymentHash;
 
-    use test_env_log::test;
+    use test_log::test;
 
     use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, TypedSignature};
     use crate::node::Node;

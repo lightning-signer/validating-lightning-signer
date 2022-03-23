@@ -3,7 +3,7 @@ mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use bitcoin::{self, OutPoint, Script, Transaction, TxIn, TxOut, Txid};
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
-    use test_env_log::test;
+    use test_log::test;
 
     use crate::channel::{Channel, ChannelBase, CommitmentType, TypedSignature};
     use crate::node::SpendType::{P2shP2wpkh, P2wpkh};

@@ -211,7 +211,7 @@ mod tests {
     use lightning::chain::keysinterface::InMemorySigner;
     use lightning::util::ser::Writeable;
     use tempfile::TempDir;
-    use test_env_log::test;
+    use test_log::test;
 
     use lightning_signer::channel::{channel_nonce_to_id, ChannelSlot};
     use lightning_signer::node::Node;

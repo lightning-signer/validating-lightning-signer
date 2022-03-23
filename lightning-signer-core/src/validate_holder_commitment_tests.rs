@@ -11,7 +11,7 @@ mod tests {
     use lightning::ln::chan_utils::TxCreationKeys;
     use lightning::ln::PaymentHash;
 
-    use test_env_log::test;
+    use test_log::test;
 
     use crate::channel::{Channel, ChannelBase, CommitmentType};
     use crate::policy::error::policy_error;

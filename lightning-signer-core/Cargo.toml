@@ -59,7 +59,7 @@ itertools = { version = "0.9", default-features = false }
 tempfile = "3.2.0"
 paste = "1.0"
 # For logging in unit tests
-test-env-log = "0.2.7"
+test-log = "0.2.8"
 
 # TODO point this and lightning-invoice at next release
 [dependencies.lightning]

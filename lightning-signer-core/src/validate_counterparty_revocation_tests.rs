@@ -6,7 +6,7 @@ mod tests {
     use bitcoin::util::psbt::serialize::Serialize;
     use lightning::chain::keysinterface::BaseSign;
 
-    use test_env_log::test;
+    use test_log::test;
 
     use crate::channel::{Channel, CommitmentType};
     use crate::util::key_utils::*;

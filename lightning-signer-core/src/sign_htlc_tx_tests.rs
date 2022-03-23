@@ -8,7 +8,7 @@ mod tests {
         ChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
     };
     use lightning::ln::PaymentHash;
-    use test_env_log::test;
+    use test_log::test;
 
     use crate::channel::{ChannelBase, ChannelSetup, CommitmentType};
     use crate::policy::validator::ChainState;

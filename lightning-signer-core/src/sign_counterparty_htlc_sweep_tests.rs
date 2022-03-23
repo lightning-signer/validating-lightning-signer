@@ -3,7 +3,7 @@ mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1};
     use bitcoin::{self, OutPoint, Script, Transaction, TxIn, TxOut, Txid};
     use lightning::ln::chan_utils::get_htlc_redeemscript;
-    use test_env_log::test;
+    use test_log::test;
 
     use crate::channel::{Channel, CommitmentType, TypedSignature};
     use crate::node::SpendType::{P2shP2wpkh, P2wpkh};

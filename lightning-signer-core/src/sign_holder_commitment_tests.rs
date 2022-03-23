@@ -6,7 +6,7 @@ mod tests {
         build_htlc_transaction, get_htlc_redeemscript, make_funding_redeemscript,
     };
 
-    use test_env_log::test;
+    use test_log::test;
 
     use crate::channel::{Channel, ChannelBase, ChannelSetup, CommitmentType, TypedSignature};
     use crate::policy::validator::{ChainState, EnforcementState};

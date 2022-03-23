@@ -610,7 +610,7 @@ mod tests {
     use lightning::chain::keysinterface::BaseSign;
 
     use crate::util::test_utils::hex_encode;
-    use test_env_log::test;
+    use test_log::test;
 
     #[test]
     fn keys_test_native() -> Result<(), ()> {

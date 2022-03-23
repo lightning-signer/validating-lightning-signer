@@ -2,7 +2,7 @@
 mod tests {
     use bitcoin::{self, OutPoint, Script, Transaction, TxIn, TxOut, Txid};
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
-    use test_env_log::test;
+    use test_log::test;
 
     use crate::channel::{Channel, ChannelBase, TypedSignature};
     use crate::node::SpendType::{P2shP2wpkh, P2wpkh};

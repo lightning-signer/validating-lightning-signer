@@ -1599,7 +1599,7 @@ mod tests {
     use lightning::ln::chan_utils::derive_private_key;
     use lightning::ln::{chan_utils, PaymentSecret};
     use lightning_invoice::{Currency, InvoiceBuilder};
-    use test_env_log::test;
+    use test_log::test;
 
     use crate::channel::ChannelBase;
     use crate::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};

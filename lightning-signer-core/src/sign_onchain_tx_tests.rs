@@ -8,7 +8,7 @@ mod tests {
     use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::{self, Address, Network, OutPoint, Script, Transaction, TxIn, TxOut};
 
-    use test_env_log::test;
+    use test_log::test;
 
     use crate::channel::CommitmentType;
     use crate::node::SpendType;
