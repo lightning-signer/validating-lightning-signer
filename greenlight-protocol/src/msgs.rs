@@ -176,6 +176,28 @@ impl TypedMessage for MemleakReply {
 
 impl_ser!(MemleakReply);
 
+/// SignMessage
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignMessage {
+    pub message: Vec<u8>,
+}
+
+impl TypedMessage for SignMessage {
+    const TYPE: u16 = 23;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignMessageReply {
+    pub signature: RecoverableSignature,
+}
+
+impl TypedMessage for SignMessageReply {
+    const TYPE: u16 = 123;
+}
+
+impl_ser!(SignMessageReply);
+
 /// Sign channel update
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignChannelUpdate {
@@ -553,6 +575,8 @@ pub enum Message {
     EcdhReply(EcdhReply),
     Memleak(Memleak),
     MemleakReply(MemleakReply),
+    SignMessage(SignMessage),
+    SignMessageReply(SignMessageReply),
     SignChannelUpdate(SignChannelUpdate),
     SignChannelUpdateReply(SignChannelUpdateReply),
     SignChannelAnnouncement(SignChannelAnnouncement),
@@ -634,6 +658,8 @@ fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
         EcdhReply::TYPE => Message::EcdhReply(from_vec_no_trailing(&mut data)?),
         Memleak::TYPE => Message::Memleak(from_vec_no_trailing(&mut data)?),
         MemleakReply::TYPE => Message::MemleakReply(from_vec_no_trailing(&mut data)?),
+        SignMessage::TYPE => Message::SignMessage(from_vec_no_trailing(&mut data)?),
+        SignMessageReply::TYPE => Message::SignMessageReply(from_vec_no_trailing(&mut data)?),
         SignChannelUpdate::TYPE => Message::SignChannelUpdate(from_vec_no_trailing(&mut data)?),
         SignChannelUpdateReply::TYPE =>
             Message::SignChannelUpdateReply(from_vec_no_trailing(&mut data)?),

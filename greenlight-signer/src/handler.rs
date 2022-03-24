@@ -126,6 +126,11 @@ impl Handler for RootHandler {
     fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>> {
         match msg {
             Message::Memleak(_m) => Ok(Box::new(msgs::MemleakReply { result: false })),
+            Message::SignMessage(m) => {
+                let sig = self.node.sign_message(&m.message)?;
+                let sig_slice = sig.try_into().expect("recoverable signature size");
+                Ok(Box::new(msgs::SignMessageReply { signature: RecoverableSignature(sig_slice) }))
+            }
             Message::HsmdInit(_) => {
                 let bip32 = self.node.get_account_extended_pubkey().encode();
                 let node_id = self.node.get_id().serialize();
