@@ -1541,7 +1541,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             min_feerate_per_kw: 500,    // c-lightning integration
             max_feerate_per_kw: 16_000, // c-lightning integration
             min_fee: 100,
-            max_fee: 80_000, // c-lightning integration 79641
+            max_fee: 200_000, // c-lightning integration 124301
             require_invoices: false,
             enforce_balance: false,
             max_routing_fee_msat: 10000,
