@@ -276,7 +276,7 @@ pub struct ReadyChannel {
     pub funding_txout: u16,
     pub to_self_delay: u16,
     pub local_shutdown_script: Vec<u8>,
-    pub local_shutdown_wallet_index: u32,
+    pub local_shutdown_wallet_index: Option<u32>,
     pub remote_basepoints: Basepoints,
     pub remote_funding_pubkey: PubKey,
     pub remote_to_self_delay: u16,
