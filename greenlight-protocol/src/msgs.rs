@@ -357,8 +357,6 @@ pub struct SignCommitmentTx {
     pub psbt: LargeBytes,
     pub remote_funding_key: PubKey,
     pub commitment_number: u64,
-    pub htlcs: Vec<Htlc>,
-    pub feerate: u32,
 }
 
 impl TypedMessage for SignCommitmentTx {
