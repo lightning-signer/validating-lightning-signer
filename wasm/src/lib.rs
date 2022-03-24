@@ -4,7 +4,7 @@ extern crate log;
 use std::str::FromStr;
 
 use bitcoin::hashes::hex::ToHex;
-use bitcoin::secp256k1::PublicKey;
+use bitcoin::secp256k1::{PublicKey, Signature as BitcoinSignature};
 use bitcoin::{Network, OutPoint};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use log::LevelFilter;
@@ -51,6 +51,12 @@ impl Signature {
     #[wasm_bindgen(js_name = toString)]
     pub fn to_string(&self) -> String {
         format!("Signature({})", self.0.to_hex())
+    }
+}
+
+impl From<BitcoinSignature> for Signature {
+    fn from(s: BitcoinSignature) -> Self {
+        Signature(s.serialize_compact().to_vec())
     }
 }
 
@@ -223,8 +229,7 @@ impl JSNode {
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
     ) -> Result<Signature, JsValue> {
-        let (ser_signature, _) = self
-            .node
+        self.node
             .with_ready_channel(&channel_id.0, |chan| {
                 chan.sign_holder_commitment_tx_phase2_redundant(
                     commit_num,
@@ -233,10 +238,9 @@ impl JSNode {
                     to_counterparty_value_sat,
                     vec![],
                     vec![],
-                )
+                ).map(|p| p.0.into())
             })
-            .map_err(from_status)?;
-        Ok(Signature(ser_signature))
+            .map_err(|s| from_status(s).into())
     }
 }
 

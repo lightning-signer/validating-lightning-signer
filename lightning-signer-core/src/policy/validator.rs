@@ -702,7 +702,7 @@ fn min_opt(a_opt: Option<u64>, b_opt: Option<u64>) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use test_env_log::test;
+    use test_log::test;
 
     use crate::util::key_utils::*;
     use crate::util::test_utils::*;

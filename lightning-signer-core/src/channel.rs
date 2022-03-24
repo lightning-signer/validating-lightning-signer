@@ -17,7 +17,7 @@ use lightning::ln::chan_utils::{
     CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
     TxCreationKeys,
 };
-use lightning::ln::{PaymentHash, PaymentPreimage};
+use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage};
 #[allow(unused_imports)]
 use log::{debug, trace, warn};
 
@@ -32,7 +32,6 @@ use crate::tx::tx::{
 };
 use crate::util::crypto_utils::{
     derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
-    signature_to_bitcoin_vec,
 };
 use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugVecVecU8};
 use crate::util::status::{internal_error, invalid_argument, Status};
@@ -65,8 +64,10 @@ impl fmt::Display for ChannelId {
 /// Bitcoin Signature which specifies SigHashType
 #[derive(Debug)]
 pub struct TypedSignature {
-    sig: Signature,
-    typ: SigHashType,
+    /// The signature
+    pub sig: Signature,
+    /// The sighash type
+    pub typ: SigHashType,
 }
 
 impl TypedSignature {
@@ -75,6 +76,11 @@ impl TypedSignature {
         let mut ss = self.sig.serialize_der().to_vec();
         ss.push(self.typ as u8);
         ss
+    }
+
+    /// A TypedSignature with SIGHASH_ALL
+    pub fn all(sig: Signature) -> Self {
+        Self { sig, typ: SigHashType::All }
     }
 }
 
@@ -543,7 +549,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
-    ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+    ) -> Result<(Signature, Vec<Signature>), Status> {
         // Since we didn't have the value at the real open, validate it now.
         let validator = self.validator();
         validator.validate_channel_value(&self.setup)?;
@@ -585,18 +591,10 @@ impl Channel {
             htlcs,
         );
 
-        let sigs = self
+        let (sig, htlc_sigs) = self
             .keys
             .sign_counterparty_commitment(&commitment_tx, Vec::new(), &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
-        let mut sig = sigs.0.serialize_der().to_vec();
-        sig.push(SigHashType::All as u8);
-        let mut htlc_sigs = Vec::new();
-        for htlc_signature in sigs.1 {
-            let mut htlc_sig = htlc_signature.serialize_der().to_vec();
-            htlc_sig.push(SigHashType::All as u8);
-            htlc_sigs.push(htlc_sig);
-        }
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(None, Some(&info2));
         state.validate_payments(
@@ -889,7 +887,7 @@ impl Channel {
     pub fn sign_holder_commitment_tx_phase2(
         &self,
         commitment_number: u64,
-    ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+    ) -> Result<(Signature, Vec<Signature>), Status> {
         let info2 = self.enforcement_state.get_current_holder_commitment_info(commitment_number)?;
 
         let htlcs =
@@ -929,12 +927,10 @@ impl Channel {
             .keys
             .sign_holder_commitment_and_htlcs(&recomposed_holder_tx, &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
-        let sig_vec = signature_to_bitcoin_vec(sig);
-        let htlc_sig_vecs = htlc_sigs.iter().map(|ss| signature_to_bitcoin_vec(*ss)).collect();
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
-        Ok((sig_vec, htlc_sig_vecs))
+        Ok((sig, htlc_sigs))
     }
 
     /// Sign a holder commitment transaction after rebuilding it
@@ -951,7 +947,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
-    ) -> Result<(Vec<u8>, Vec<Vec<u8>>), Status> {
+    ) -> Result<(Signature, Vec<Signature>), Status> {
         let commitment_point = &self.get_per_commitment_point(commitment_number)?;
 
         let info2 = self.build_holder_commitment_info(
@@ -1006,12 +1002,10 @@ impl Channel {
             .keys
             .sign_holder_commitment_and_htlcs(&holder_commitment_tx, &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
-        let sig_vec = signature_to_bitcoin_vec(sig);
-        let htlc_sig_vecs = htlc_sigs.iter().map(|ss| signature_to_bitcoin_vec(*ss)).collect();
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
-        Ok((sig_vec, htlc_sig_vecs))
+        Ok((sig, htlc_sigs))
     }
 
     // This function is needed for testing with mutated keys.
@@ -1920,22 +1914,46 @@ impl Channel {
         })
     }
 
-    /// Get the unilateral close key, for sweeping the to-remote output
-    /// of a counterparty's force-close
+    /// Get the unilateral close key and the witness stack suffix,
+    /// for sweeping the to-remote output of a counterparty's force-close
     // TODO(devrandom) key leaking from this layer
     pub fn get_unilateral_close_key(
         &self,
-        commitment_point: &Option<PublicKey>,
-    ) -> Result<SecretKey, Status> {
-        Ok(match commitment_point {
-            Some(commitment_point) =>
-                derive_private_key(&self.secp_ctx, &commitment_point, &self.keys.payment_key)
-                    .map_err(|err| {
-                        Status::internal(format!("derive_private_key failed: {}", err))
-                    })?,
+        commitment_point_opt: &Option<PublicKey>,
+        revocation_pubkey: &Option<PublicKey>,
+    ) -> Result<(SecretKey, Vec<Vec<u8>>), Status> {
+        Ok(match commitment_point_opt {
+            Some(commitment_point) => {
+                let base_key = if revocation_pubkey.is_some() {
+                    &self.keys.delayed_payment_base_key
+                } else {
+                    &self.keys.payment_key
+                };
+                let key = derive_private_key(&self.secp_ctx, &commitment_point, base_key).map_err(
+                    |err| Status::internal(format!("derive_private_key failed: {}", err)),
+                )?;
+                let pubkey = PublicKey::from_secret_key(&self.secp_ctx, &key);
+
+                let witness_stack_prefix = if let Some(r) = revocation_pubkey {
+                    let contest_delay = self.setup.counterparty_selected_contest_delay;
+                    let redeemscript =
+                        chan_utils::get_revokeable_redeemscript(r, contest_delay, &pubkey)
+                            .to_bytes();
+                    vec![vec![], redeemscript]
+                } else {
+                    vec![PublicKey::from_secret_key(&self.secp_ctx, &base_key).serialize().to_vec()]
+                };
+                (key, witness_stack_prefix)
+            }
             None => {
+                if revocation_pubkey.is_some() {
+                    return Err(invalid_argument("delayed output without commitment point"));
+                }
                 // option_static_remotekey in effect
-                self.keys.payment_key.clone()
+                let key = self.keys.payment_key.clone();
+                let redeemscript =
+                    PublicKey::from_secret_key(&self.secp_ctx, &key).serialize().to_vec();
+                (key, vec![redeemscript])
             }
         })
     }

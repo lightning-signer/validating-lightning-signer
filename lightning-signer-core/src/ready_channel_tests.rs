@@ -5,7 +5,7 @@ mod tests {
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::Script;
     use lightning::ln::chan_utils::ChannelPublicKeys;
-    use test_env_log::test;
+    use test_log::test;
 
     use crate::channel::channel_nonce_to_id;
     use crate::util::status::{Code, Status};

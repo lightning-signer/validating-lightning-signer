@@ -99,7 +99,8 @@ impl From<Status> for tonic::Status {
     }
 }
 
-pub(crate) fn invalid_argument(msg: impl Into<String>) -> Status {
+/// An invalid argument was detected
+pub fn invalid_argument(msg: impl Into<String>) -> Status {
     let s = msg.into();
     error!("INVALID ARGUMENT: {}", &s);
     #[cfg(feature = "backtrace")]

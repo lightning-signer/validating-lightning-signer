@@ -237,7 +237,7 @@ fn sign_funding(node: &Arc<Node>) {
     let uniclosekeys = vec![None, None];
 
     let witvec = node
-        .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
+        .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
         .expect("good sigs");
     assert_eq!(witvec.len(), 2);
 }
@@ -254,7 +254,7 @@ fn next_state(
     let per_commitment_point = channel.get_per_commitment_point(commit_num).unwrap();
     let per_commitment_point1 = channel1.get_per_commitment_point(commit_num).unwrap();
 
-    let sig = channel
+    let (sig, htlc_sigs) = channel
         .sign_counterparty_commitment_tx_phase2(
             &per_commitment_point1,
             commit_num,
@@ -266,7 +266,7 @@ fn next_state(
         )
         .unwrap();
 
-    let sig1 = channel1
+    let (sig1, htlc_sigs1) = channel1
         .sign_counterparty_commitment_tx_phase2(
             &per_commitment_point,
             commit_num,
@@ -286,12 +286,8 @@ fn next_state(
             to_counterparty,
             offered.clone(),
             received.clone(),
-            &bitcoin_vec_to_signature(&sig1.0, SigHashType::All).unwrap(),
-            &sig1
-                .1
-                .into_iter()
-                .map(|s| bitcoin_vec_to_signature(&s, SigHashType::All).unwrap())
-                .collect(),
+            &sig1,
+            &htlc_sigs1,
         )
         .unwrap();
 
@@ -303,11 +299,8 @@ fn next_state(
             to_holder,
             received.clone(),
             offered.clone(),
-            &bitcoin_vec_to_signature(&sig.0, SigHashType::All).unwrap(),
-            &sig.1
-                .into_iter()
-                .map(|s| bitcoin_vec_to_signature(&s, SigHashType::All).unwrap())
-                .collect(),
+            &sig,
+            &htlc_sigs,
         )
         .unwrap();
 

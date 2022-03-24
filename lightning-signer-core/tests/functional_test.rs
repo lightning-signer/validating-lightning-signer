@@ -56,7 +56,7 @@ use self::lightning_signer::util::functional_test_utils::{
     claim_payment, create_announced_chan_between_nodes_with_value, route_payment,
 };
 
-use test_env_log::test;
+use test_log::test;
 
 const ANTI_REORG_DELAY: u32 = 6;
 

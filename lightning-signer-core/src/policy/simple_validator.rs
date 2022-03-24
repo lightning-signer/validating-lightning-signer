@@ -1552,7 +1552,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
 #[cfg(test)]
 mod tests {
     use lightning::ln::PaymentHash;
-    use test_env_log::test;
+    use test_log::test;
 
     use crate::tx::tx::HTLCInfo2;
     use crate::util::key_utils::*;

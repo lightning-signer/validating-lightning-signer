@@ -3,13 +3,12 @@ mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1};
     use bitcoin::{self, OutPoint, Script, Transaction, TxIn, TxOut, Txid};
     use lightning::ln::chan_utils::get_htlc_redeemscript;
-    use test_env_log::test;
+    use test_log::test;
 
-    use crate::channel::{Channel, CommitmentType};
+    use crate::channel::{Channel, CommitmentType, TypedSignature};
     use crate::node::SpendType::{P2shP2wpkh, P2wpkh};
     use crate::policy::validator::ChainState;
     use crate::sign_counterparty_htlc_sweep_tests::tests::HTLCKind::{OfferedHTLC, ReceivedHTLC};
-    use crate::util::crypto_utils::signature_to_bitcoin_vec;
     use crate::util::key_utils::make_test_pubkey;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
@@ -200,7 +199,7 @@ mod tests {
         check_signature(
             &tx,
             input,
-            signature_to_bitcoin_vec(sig),
+            TypedSignature::all(sig),
             &htlc_pubkey,
             htlc_amount_sat,
             &htlc_redeemscript,

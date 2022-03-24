@@ -120,6 +120,15 @@ service Signer {
   rpc ValidateHolderCommitmentTx (ValidateHolderCommitmentTxRequest)
     returns (ValidateHolderCommitmentTxReply);
 
+  // BOLT #3 - Commitment Transaction and attached HTLCs
+  // Validate the counterparty's commitment and HTLC signatures when
+  // commitment_signed received.  Returns the next
+  // per_commitment_point and the holder's revocation secret for the
+  // prior commitment.  This method advances the expected next
+  // commitment number in the signer's state.
+  rpc ValidateHolderCommitmentTxPhase2(ValidateHolderCommitmentTxPhase2Request)
+      returns (ValidateHolderCommitmentTxReply);
+
   // BOLT #2 Validate the counterparty's per_commitment_secret from
   // the revoke_and_ack message.
   // TODO - describe the signer state change when this method is invoked.
@@ -402,6 +411,9 @@ message GetPerCommitmentPointRequest {
 
   // commitment number
   uint64 n = 3;
+
+  // whether to skip releasing the n-2 commitment secret, and just get the point
+  bool point_only = 4;
 }
 
 message GetPerCommitmentPointReply {
@@ -469,6 +481,22 @@ message ValidateHolderCommitmentTxRequest {
   BitcoinSignature commit_signature = 20;
   repeated BitcoinSignature htlc_signatures = 21;
 }
+
+// Validate the counterparty's signatures
+message ValidateHolderCommitmentTxPhase2Request {
+  NodeId node_id = 1;
+
+  ChannelNonce channel_nonce = 2;
+
+
+  CommitmentInfo commitment_info = 4;
+
+  // These signatures for the holder's commitment are provided by the
+  // channel peer in the BOLT #2 commitment_signed message.
+  BitcoinSignature commit_signature = 20;
+  repeated BitcoinSignature htlc_signatures = 21;
+}
+
 
 message ValidateHolderCommitmentTxReply {
   PubKey next_per_commitment_point = 1;
@@ -754,8 +782,11 @@ message UnilateralCloseInfo {
   // Identifies the old channel closed unilaterally by the peer.
   ChannelNonce channel_nonce = 1;
 
-  // Will be None if this is not a CommitmentType::LEGACY channel.
+  // Will be None if this is not a CommitmentType::LEGACY channel (unsupported).
   PubKey commitment_point = 2;
+
+  // The revocation point, if this is a delayed (revocable) payment to us
+  PubKey revocation_pubkey = 3;
 }
 
 message KeyLocator {
@@ -777,6 +808,7 @@ enum SpendType {
   P2PKH = 1;
   P2WPKH = 3;
   P2SH_P2WPKH = 4;
+  P2WSH = 5;
 }
 
 message InputDescriptor {
@@ -797,9 +829,7 @@ message OutputDescriptor {
 }
 
 message Witness {
-  BitcoinSignature signature = 1;
-
-  PubKey pubkey = 2;
+  repeated bytes stack = 1;
 }
   
 // PHASE 2 messages

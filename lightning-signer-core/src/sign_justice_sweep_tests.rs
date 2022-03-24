@@ -3,14 +3,13 @@ mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use bitcoin::{self, OutPoint, Script, Transaction, TxIn, TxOut, Txid};
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
-    use test_env_log::test;
+    use test_log::test;
 
-    use crate::channel::{Channel, ChannelBase, CommitmentType};
+    use crate::channel::{Channel, ChannelBase, CommitmentType, TypedSignature};
     use crate::node::SpendType::{P2shP2wpkh, P2wpkh};
     use crate::policy::validator::ChainState;
     use crate::util::crypto_utils::{
         derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
-        signature_to_bitcoin_vec,
     };
     use crate::util::key_utils::{make_test_key, make_test_pubkey};
     use crate::util::status::{Code, Status};
@@ -164,14 +163,7 @@ mod tests {
         let pubkey =
             get_channel_revocation_pubkey(&node_ctx.node, &chan_ctx.channel_id, &revocation_point);
 
-        check_signature(
-            &tx,
-            input,
-            signature_to_bitcoin_vec(sig),
-            &pubkey,
-            amount_sat,
-            &redeemscript,
-        );
+        check_signature(&tx, input, TypedSignature::all(sig), &pubkey, amount_sat, &redeemscript);
 
         Ok(())
     }

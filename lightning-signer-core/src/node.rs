@@ -14,7 +14,7 @@ use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
-use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, Address, Transaction, TxOut};
@@ -1068,6 +1068,8 @@ impl Node {
     /// * `uniclosekeys` - an optional unilateral close key to use instead of the
     ///   wallet key.  Takes precedence over the `ipaths` entry.  This is used when
     ///   we are sweeping a unilateral close and funding a channel in a single tx.
+    ///   The second item in the tuple is the witness stack suffix - zero or more
+    ///   script parameters and the redeemscript.
     /// * `opaths` - derivation path for change, one per output.  Empty for
     ///   non-change outputs.
     pub fn sign_onchain_tx(
@@ -1076,9 +1078,9 @@ impl Node {
         ipaths: &Vec<Vec<u32>>,
         values_sat: &Vec<u64>,
         spendtypes: &Vec<SpendType>,
-        uniclosekeys: &Vec<Option<SecretKey>>,
+        uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
         opaths: &Vec<Vec<u32>>,
-    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Status> {
+    ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
         let channels_lock = self.channels.lock().unwrap();
         let secp_ctx = Secp256k1::signing_only();
 
@@ -1102,55 +1104,65 @@ impl Node {
 
         validator.validate_onchain_tx(self, channels.clone(), tx, values_sat, opaths)?;
 
-        let mut witvec: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
-        for idx in 0..tx.input.len() {
+        let mut witvec: Vec<Vec<Vec<u8>>> = Vec::new();
+        for (idx, uck) in uniclosekeys.into_iter().enumerate() {
             if spendtypes[idx] == SpendType::Invalid {
                 // If we are signing a PSBT some of the inputs may be
                 // marked as SpendType::Invalid (we skip these), push
                 // an empty witness element instead.
-                witvec.push((vec![], vec![]));
+                witvec.push(vec![]);
             } else {
                 let value_sat = values_sat[idx];
-                let privkey = match uniclosekeys[idx] {
+                let (privkey, mut witness) = match uck {
                     // There was a unilateral_close_key.
-                    Some(sk) => Ok(bitcoin::PrivateKey {
-                        compressed: true,
-                        network: Network::Testnet, // FIXME
-                        key: sk,
-                    }),
+                    // TODO we don't care about the network here
+                    Some((key, stack)) =>
+                        (bitcoin::PrivateKey::new(key.clone(), Network::Testnet), stack),
                     // Derive the HD key.
-                    None => self.get_wallet_privkey(&secp_ctx, &ipaths[idx]),
-                }?;
+                    None => {
+                        let key = self.get_wallet_privkey(&secp_ctx, &ipaths[idx])?;
+                        let redeemscript =
+                            PublicKey::from_secret_key(&secp_ctx, &key.key).serialize().to_vec();
+                        (key, vec![redeemscript])
+                    }
+                };
                 let pubkey = privkey.public_key(&secp_ctx);
                 let script_code = Address::p2pkh(&pubkey, privkey.network).script_pubkey();
                 let sighash = match spendtypes[idx] {
                     SpendType::P2pkh => {
                         // legacy address
-                        Message::from_slice(&tx.signature_hash(0, &script_code, 0x01)[..])
-                            .map_err(|err| internal_error(format!("p2pkh sighash failed: {}", err)))
+                        let sighash = tx.signature_hash(0, &script_code, 0x01);
+                        Ok(sighash)
                     }
                     SpendType::P2wpkh | SpendType::P2shP2wpkh => {
                         // segwit native and wrapped
-                        Message::from_slice(
-                            &SigHashCache::new(tx).signature_hash(
-                                idx,
-                                &script_code,
-                                value_sat,
-                                SigHashType::All,
-                            )[..],
-                        )
-                        .map_err(|err| internal_error(format!("p2wpkh sighash failed: {}", err)))
+                        let sighash = SigHashCache::new(tx).signature_hash(
+                            idx,
+                            &script_code,
+                            value_sat,
+                            SigHashType::All,
+                        );
+                        Ok(sighash)
                     }
-
-                    _ => Err(invalid_argument(format!(
-                        "unsupported spend_type: {}",
-                        spendtypes[idx] as i32
-                    ))),
+                    SpendType::P2wsh => {
+                        let sighash = SigHashCache::new(tx).signature_hash(
+                            idx,
+                            &Script::from(witness[witness.len() - 1].clone()),
+                            value_sat,
+                            SigHashType::All,
+                        );
+                        Ok(sighash)
+                    }
+                    st => Err(invalid_argument(format!("unsupported spend_type={:?}", st))),
                 }?;
-                let sig = secp_ctx.sign(&sighash, &privkey.key);
+                let message = Message::from_slice(&sighash).map_err(|err| {
+                    internal_error(format!("sighash {:?} failed: {}", spendtypes[idx], err))
+                })?;
+                let sig = secp_ctx.sign(&message, &privkey.key);
                 let sigvec = signature_to_bitcoin_vec(sig);
+                witness.insert(0, sigvec);
 
-                witvec.push((sigvec, pubkey.key.serialize().to_vec()));
+                witvec.push(witness);
             }
         }
 
@@ -1265,25 +1277,23 @@ impl Node {
     }
 
     /// Sign a node announcement using the node key
-    pub fn sign_node_announcement(&self, na: &Vec<u8>) -> Result<Vec<u8>, Status> {
+    pub fn sign_node_announcement(&self, na: &Vec<u8>) -> Result<Signature, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let na_hash = Sha256dHash::hash(na);
         let encmsg = secp256k1::Message::from_slice(&na_hash[..])
             .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign(&encmsg, &self.get_node_secret());
-        let res = sig.serialize_der().to_vec();
-        Ok(res)
+        Ok(sig)
     }
 
     /// Sign a channel update using the node key
-    pub fn sign_channel_update(&self, cu: &Vec<u8>) -> Result<Vec<u8>, Status> {
+    pub fn sign_channel_update(&self, cu: &Vec<u8>) -> Result<Signature, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let cu_hash = Sha256dHash::hash(cu);
         let encmsg = secp256k1::Message::from_slice(&cu_hash[..])
             .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign(&encmsg, &self.get_node_secret());
-        let res = sig.serialize_der().to_vec();
-        Ok(res)
+        Ok(sig)
     }
 
     /// Sign an invoice and start tracking incoming payment for its payment hash
@@ -1551,6 +1561,8 @@ pub enum SpendType {
     P2wpkh = 3,
     /// Pay to p2sh wrapped p2wpkh
     P2shP2wpkh = 4,
+    /// Pay to witness script hash
+    P2wsh = 5,
 }
 
 impl TryFrom<i32> for SpendType {
@@ -1562,6 +1574,7 @@ impl TryFrom<i32> for SpendType {
             x if x == SpendType::P2pkh as i32 => SpendType::P2pkh,
             x if x == SpendType::P2wpkh as i32 => SpendType::P2wpkh,
             x if x == SpendType::P2shP2wpkh as i32 => SpendType::P2shP2wpkh,
+            x if x == SpendType::P2wsh as i32 => SpendType::P2wsh,
             _ => return Err(()),
         };
         Ok(res)
@@ -1583,9 +1596,10 @@ mod tests {
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::util::bip143::SigHashCache;
     use bitcoin::{Address, OutPoint, SigHashType};
-    use lightning::ln::PaymentSecret;
+    use lightning::ln::chan_utils::derive_private_key;
+    use lightning::ln::{chan_utils, PaymentSecret};
     use lightning_invoice::{Currency, InvoiceBuilder};
-    use test_env_log::test;
+    use test_log::test;
 
     use crate::channel::ChannelBase;
     use crate::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
@@ -2002,7 +2016,7 @@ mod tests {
     fn sign_node_announcement_test() -> Result<(), ()> {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let ann = hex_decode("000302aaa25e445fef0265b6ab5ec860cd257865d61ef0bbf5b3339c36cbda8b26b74e7f1dca490b65180265b64c4f554450484f544f2d2e302d3139392d67613237336639642d6d6f646465640000").unwrap();
-        let sigvec = node.sign_node_announcement(&ann).unwrap();
+        let sigvec = node.sign_node_announcement(&ann).unwrap().serialize_der().to_vec();
         assert_eq!(sigvec, hex_decode("30450221008ef1109b95f127a7deec63b190b72180f0c2692984eaf501c44b6bfc5c4e915502207a6fa2f250c5327694967be95ff42a94a9c3d00b7fa0fbf7daa854ceb872e439").unwrap());
         Ok(())
     }
@@ -2011,7 +2025,7 @@ mod tests {
     fn sign_channel_update_test() -> Result<(), ()> {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let cu = hex_decode("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00006700000100015e42ddc6010000060000000000000000000000010000000a000000003b023380").unwrap();
-        let sigvec = node.sign_channel_update(&cu).unwrap();
+        let sigvec = node.sign_channel_update(&cu).unwrap().serialize_der().to_vec();
         assert_eq!(sigvec, hex_decode("3045022100be9840696c868b161aaa997f9fa91a899e921ea06c8083b2e1ea32b8b511948d0220352eec7a74554f97c2aed26950b8538ca7d7d7568b42fd8c6f195bd749763fa5").unwrap());
         Ok(())
     }
@@ -2080,22 +2094,67 @@ mod tests {
             "022d223620a359a47ff7f7ac447c85c46c923da53389221a0054c11c1e3ca31d590100000000000000",
         )
         .unwrap();
-        let (channel_id, _) = node.new_channel(None, Some(channel_nonce), &node).unwrap();
+        let (channel_id, chan) = node.new_channel(None, Some(channel_nonce), &node).unwrap();
 
         node.ready_channel(channel_id, None, make_test_channel_setup(), &vec![])
             .expect("ready channel");
 
         let uck = node
-            .with_ready_channel(&channel_id, |chan| chan.get_unilateral_close_key(&None))
+            .with_ready_channel(&channel_id, |chan| chan.get_unilateral_close_key(&None, &None))
             .unwrap();
+        let keys = &chan.as_ref().unwrap().keys;
+        let key = keys.pubkeys().payment_point;
 
         assert_eq!(
             uck,
-            SecretKey::from_slice(
-                &hex_decode("d5f8a9fdd0e4be18c33656944b91dc1f6f2c38ce2a4bbd0ef330ffe4e106127c")
-                    .unwrap()[..]
+            (
+                SecretKey::from_slice(
+                    &hex_decode("d5f8a9fdd0e4be18c33656944b91dc1f6f2c38ce2a4bbd0ef330ffe4e106127c")
+                        .unwrap()[..]
+                )
+                .unwrap(),
+                vec![key.serialize().to_vec()]
             )
-            .unwrap()
+        );
+
+        let secp_ctx = Secp256k1::new();
+        let revocation_secret = SecretKey::from_slice(
+            hex_decode("0101010101010101010101010101010101010101010101010101010101010101")
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+        let revocation_point = PublicKey::from_secret_key(&secp_ctx, &revocation_secret);
+        let commitment_secret = SecretKey::from_slice(
+            hex_decode("0101010101010101010101010101010101010101010101010101010101010102")
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+        let commitment_point = PublicKey::from_secret_key(&secp_ctx, &commitment_secret);
+        let uck = node
+            .with_ready_channel(&channel_id, |chan| {
+                chan.get_unilateral_close_key(&Some(commitment_point), &Some(revocation_point))
+            })
+            .unwrap();
+
+        let seckey =
+            derive_private_key(&secp_ctx, &commitment_point, &keys.delayed_payment_base_key)
+                .unwrap();
+        let pubkey = PublicKey::from_secret_key(&secp_ctx, &seckey);
+
+        let redeem_script = chan_utils::get_revokeable_redeemscript(&revocation_point, 7, &pubkey);
+
+        assert_eq!(
+            uck,
+            (
+                SecretKey::from_slice(
+                    &hex_decode("e6d21169036a5e5def25776027b087a932b8c02388d992661fd73692b29e44a3")
+                        .unwrap()[..]
+                )
+                .unwrap(),
+                vec![vec![], redeem_script.to_bytes()]
+            )
         );
     }
 

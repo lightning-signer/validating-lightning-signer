@@ -6,9 +6,9 @@ mod tests {
         build_htlc_transaction, get_htlc_redeemscript, make_funding_redeemscript,
     };
 
-    use test_env_log::test;
+    use test_log::test;
 
-    use crate::channel::{Channel, ChannelBase, ChannelSetup, CommitmentType};
+    use crate::channel::{Channel, ChannelBase, ChannelSetup, CommitmentType, TypedSignature};
     use crate::policy::validator::{ChainState, EnforcementState};
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
@@ -58,7 +58,7 @@ mod tests {
                 Ok(commitment_tx.trust().built_transaction().transaction.clone())
             })
             .expect("build");
-        let (ser_signature, _) = node
+        let (signature, _) = node
             .with_ready_channel(&channel_id, |chan| {
                 chan.sign_holder_commitment_tx_phase2_redundant(
                     commit_num,
@@ -86,7 +86,7 @@ mod tests {
         check_signature(
             &tx,
             0,
-            ser_signature,
+            TypedSignature::all(signature),
             &funding_pubkey,
             setup.channel_value_sat,
             &channel_funding_redeemscript,
@@ -279,7 +279,7 @@ mod tests {
         check_signature(
             &tx,
             0,
-            sig,
+            TypedSignature::all(sig),
             &funding_pubkey,
             chan_ctx.setup.channel_value_sat,
             &channel_funding_redeemscript,
@@ -292,7 +292,7 @@ mod tests {
             check_signature(
                 &htlc_txs[ndx],
                 0,
-                htlc_sigs[ndx].clone(),
+                TypedSignature::all(htlc_sigs[ndx].clone()),
                 &htlc_pubkey,
                 htlc.amount_msat / 1000,
                 &htlc_redeemscripts[ndx],

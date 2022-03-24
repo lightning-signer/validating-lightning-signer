@@ -190,6 +190,7 @@ pub async fn integration_test(
         node_id: Some(NodeId { data: node_id.clone() }),
         channel_nonce: Some(ChannelNonce { data: channel_nonce.to_vec() }),
         n: 3,
+        point_only: false,
     });
 
     let response = client.get_per_commitment_point(per_commit_request).await?;
