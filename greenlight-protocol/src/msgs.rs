@@ -176,6 +176,29 @@ impl TypedMessage for MemleakReply {
 
 impl_ser!(MemleakReply);
 
+/// CheckFutureSecret
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CheckFutureSecret {
+    pub commitment_number: u64,
+    pub secret: Secret,
+}
+
+impl TypedMessage for CheckFutureSecret {
+    const TYPE: u16 = 22;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CheckFutureSecretReply {
+    pub result: bool,
+}
+
+impl TypedMessage for CheckFutureSecretReply {
+    const TYPE: u16 = 122;
+}
+
+impl_ser!(CheckFutureSecretReply);
+
 /// SignMessage
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignMessage {
@@ -575,6 +598,8 @@ pub enum Message {
     EcdhReply(EcdhReply),
     Memleak(Memleak),
     MemleakReply(MemleakReply),
+    CheckFutureSecret(CheckFutureSecret),
+    CheckFutureSecretReply(CheckFutureSecretReply),
     SignMessage(SignMessage),
     SignMessageReply(SignMessageReply),
     SignChannelUpdate(SignChannelUpdate),
@@ -658,6 +683,8 @@ fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
         EcdhReply::TYPE => Message::EcdhReply(from_vec_no_trailing(&mut data)?),
         Memleak::TYPE => Message::Memleak(from_vec_no_trailing(&mut data)?),
         MemleakReply::TYPE => Message::MemleakReply(from_vec_no_trailing(&mut data)?),
+        CheckFutureSecret::TYPE => Message::CheckFutureSecret(from_vec_no_trailing(&mut data)?),
+        CheckFutureSecretReply::TYPE => Message::CheckFutureSecretReply(from_vec_no_trailing(&mut data)?),
         SignMessage::TYPE => Message::SignMessage(from_vec_no_trailing(&mut data)?),
         SignMessageReply::TYPE => Message::SignMessageReply(from_vec_no_trailing(&mut data)?),
         SignChannelUpdate::TYPE => Message::SignChannelUpdate(from_vec_no_trailing(&mut data)?),

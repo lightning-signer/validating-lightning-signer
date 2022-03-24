@@ -18,7 +18,7 @@ use lightning_signer::bitcoin::consensus::{Decodable, Encodable};
 use lightning_signer::bitcoin::util::bip32::{ChildNumber, KeySource};
 use lightning_signer::bitcoin::util::psbt::PartiallySignedTransaction;
 use lightning_signer::bitcoin::{OutPoint, Transaction};
-use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
+use lightning_signer::channel::{ChannelBase, ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::{Node, NodeConfig, SpendType};
@@ -345,6 +345,14 @@ impl Handler for ChannelHandler {
     fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>> {
         match msg {
             Message::Memleak(_m) => Ok(Box::new(msgs::MemleakReply { result: false })),
+            Message::CheckFutureSecret(m) => {
+                let secret_key = SecretKey::from_slice(&m.secret.0)
+                    .map_err(|_| Status::invalid_argument("bad secret key"))?;
+                let result = self.node.with_ready_channel(&self.channel_id, |chan| {
+                    chan.check_future_secret(m.commitment_number, &secret_key)
+                })?;
+                Ok(Box::new(msgs::CheckFutureSecretReply { result }))
+            }
             Message::Ecdh(m) => {
                 // TODO DRY with root handler
                 let pubkey = PublicKey::from_slice(&m.point.0).expect("pubkey");
