@@ -31,8 +31,8 @@ use lightning_signer::bitcoin::bech32::u5;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
 #[allow(unused_imports)]
 use log::info;
-use secp256k1::rand::rngs::SmallRng;
-use secp256k1::rand::SeedableRng;
+use secp256k1::rand::rngs::{OsRng, SmallRng};
+use secp256k1::rand::{RngCore, SeedableRng};
 use secp256k1::{PublicKey, Secp256k1};
 
 use greenlight_protocol::features::*;
@@ -92,7 +92,14 @@ impl RootHandler {
             key_derivation_style: KeyDerivationStyle::Native,
         };
 
-        let seed = seed_opt.expect("expected a seed");
+        let seed =
+            seed_opt.unwrap_or_else(|| {
+                let mut rng = OsRng::new().unwrap();
+
+                let mut seed = [0; 32];
+                rng.fill_bytes(&mut seed);
+                seed
+            });
 
         let nodes = persister.get_nodes();
         let policy = make_simple_policy(network);
