@@ -109,6 +109,7 @@ impl RootHandler {
             info!("New node {}", node.get_id());
             node.add_allowlist(&allowlist).expect("allowlist");
             persister.new_node(&node.get_id(), &config, &seed);
+            persister.new_chain_tracker(&node.get_id(), &node.get_tracker());
             node
         } else {
             assert_eq!(nodes.len(), 1);
