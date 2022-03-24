@@ -432,11 +432,11 @@ mod tests {
                 OfferedHTLC,
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2shP2wpkh) },
                 |_chan, _cstate, _tx, _input, _commit_num, _redeemscript, amount_sat| {
-                    *amount_sat += 80_000;
+                    *amount_sat += 280_000;
                 },
             ),
             "policy failure: validate_counterparty_htlc_sweep: validate_sweep: validate_fee: \
-             fee above maximum: 81000 > 80000"
+             fee above maximum: 281000 > 200000"
         );
     }
 

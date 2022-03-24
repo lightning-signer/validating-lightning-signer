@@ -707,8 +707,9 @@ mod tests {
                     assert_eq!(chan.enforcement_state.mutual_close_signed, false);
                 }
             ),
-            "policy failure: validate_mutual_close_tx: validate_fee: \
-             fee above maximum: 82000 > 80000"
+            "policy failure: validate_mutual_close_tx: \
+             to_counterparty_value 960000 is smaller than \
+             counterparty_info.broadcaster_value_sat 1000000"
         );
     }
 

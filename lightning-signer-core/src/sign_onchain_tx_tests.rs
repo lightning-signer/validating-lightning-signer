@@ -119,7 +119,7 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
         let ipaths = vec![vec![0u32]];
-        let fee = 81_000u64;
+        let fee = 281_000u64;
         let ival0 = 100u64 + fee;
         let chanamt = 100u64;
         let values_sat = vec![ival0];
@@ -145,7 +145,7 @@ mod tests {
                 &vec![opath.clone()],
             ),
             "policy failure: validate_onchain_tx: \
-             validate_beneficial_value: non-beneficial value above maximum: 81000 > 80000"
+             validate_beneficial_value: non-beneficial value above maximum: 281000 > 200000"
         );
     }
 
@@ -817,7 +817,7 @@ mod tests {
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: validate_onchain_tx: \
-             validate_beneficial_value: non-beneficial value above maximum: 501000 > 80000"
+             validate_beneficial_value: non-beneficial value above maximum: 501000 > 200000"
         );
     }
 
@@ -918,7 +918,7 @@ mod tests {
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: validate_onchain_tx: \
-             validate_beneficial_value: non-beneficial value above maximum: 3001000 > 80000"
+             validate_beneficial_value: non-beneficial value above maximum: 3001000 > 200000"
         );
     }
 
@@ -987,7 +987,7 @@ mod tests {
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: validate_onchain_tx: \
-             validate_beneficial_value: non-beneficial value above maximum: 3001000 > 80000"
+             validate_beneficial_value: non-beneficial value above maximum: 3001000 > 200000"
         );
     }
 
@@ -1035,7 +1035,7 @@ mod tests {
         let channel_amount = 3_000_000;
         let fee = 1000;
         let change = incoming - channel_amount - fee;
-        let push_val_msat = 100_000 * 1000;
+        let push_val_msat = 300_000 * 1000;
 
         let mut chan_ctx = test_chan_ctx_with_push_val(&node_ctx, 1, channel_amount, push_val_msat);
         let mut tx_ctx = test_funding_tx_ctx();
@@ -1059,7 +1059,7 @@ mod tests {
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: validate_onchain_tx: validate_beneficial_value: \
-             non-beneficial value above maximum: 101000 > 80000"
+             non-beneficial value above maximum: 301000 > 200000"
         );
     }
 }
