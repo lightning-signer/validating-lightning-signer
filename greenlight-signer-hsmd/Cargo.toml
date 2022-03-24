@@ -14,8 +14,11 @@ log = "0.4"
 env_logger = "0.9"
 # .4 doesn't compile with 1.45.2
 clap = "=3.0.0-beta.2"
+clap_derive = "=3.0.0-beta.5"
 # 0.2.5 doesn't compile with 1.45.2
 http = "=0.2.4"
+# 1.17 pulls in parking-lot-core which doesn't compile with 1.48.0
+tokio = { version = "=1.16.1", features = ["macros", "rt-multi-thread"], optional = true }
 
 [dependencies.lightning-signer-server]
 path = "../../validating-lightning-signer/lightning-signer-server"
