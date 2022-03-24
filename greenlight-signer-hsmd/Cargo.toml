@@ -21,3 +21,7 @@ http = "=0.2.4"
 path = "../../validating-lightning-signer/lightning-signer-server"
 default_features = false
 features = ["persist_kv_json"]
+
+[[bin]]
+name = "remote_hsmd_vls"
+path = "src/main.rs"
