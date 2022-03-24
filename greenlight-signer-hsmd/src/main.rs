@@ -48,31 +48,32 @@ fn run_parent(fd: RawFd) {
 
 fn signer_loop<C: 'static + Client, H: Handler>(client: C, handler: H) {
     let id = handler.client_id();
-    info!("loop {}: start", id);
+    let pid = std::process::id();
+    info!("loop {} {}: start", pid, id);
     match do_signer_loop(client, handler) {
-        Ok(()) => info!("loop {}: done", id),
-        Err(Error::Eof) => info!("loop {}: ending", id),
-        Err(e) => error!("loop {}: error {:?}", id, e),
+        Ok(()) => info!("loop {} {}: done", pid, id),
+        Err(Error::Eof) => info!("loop {} {}: ending", pid, id),
+        Err(e) => error!("loop {} {}: error {:?}", pid, id, e),
     }
 }
 
 fn do_signer_loop<C: 'static + Client, H: Handler>(mut client: C, handler: H) -> Result<()> {
     loop {
         let msg = client.read()?;
-        info!("loop {}: got {:x?}", handler.client_id(), msg);
+        info!("loop {} {}: got {:x?}", std::process::id(), handler.client_id(), msg);
         match msg {
             Message::ClientHsmFd(m) => {
                 client.write(msgs::ClientHsmFdReply {}).unwrap();
                 let new_client = client.new_client();
-                info!("new client");
-                let handler = handler.for_new_client(m.peer_id, m.dbid);
+                info!("new client {} {} -> {}", std::process::id(), handler.client_id(), new_client.id());
+                let handler = handler.for_new_client(new_client.id(), m.peer_id, m.dbid);
                 thread::spawn(move || signer_loop(new_client, handler));
             }
             msg => {
                 let reply = handler.handle(msg).expect("handle");
                 let v = reply.vec_serialize();
                 client.write_vec(v).unwrap();
-                info!("replied");
+                info!("replied {} {}", std::process::id(), handler.client_id());
             }
         }
     }

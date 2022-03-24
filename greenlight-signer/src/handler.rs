@@ -70,7 +70,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 pub trait Handler {
     fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>>;
     fn client_id(&self) -> u64;
-    fn for_new_client(&self, peer_id: PubKey, dbid: u64) -> ChannelHandler;
+    fn for_new_client(&self, client_id: u64, peer_id: PubKey, dbid: u64) -> ChannelHandler;
 }
 
 /// Protocol handler
@@ -99,12 +99,14 @@ impl RootHandler {
         let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
         let node = if nodes.is_empty() {
             let node = Arc::new(Node::new(config, &seed, &persister, vec![], validator_factory));
+            info!("New node {}", node.get_id());
             node.add_allowlist(&allowlist).expect("allowlist");
             persister.new_node(&node.get_id(), &config, &seed);
             node
         } else {
             assert_eq!(nodes.len(), 1);
             let (node_id, entry) = nodes.into_iter().next().unwrap();
+            info!("Restore node {}", node_id);
             Node::restore_node(&node_id, entry, persister, validator_factory)
         };
 
@@ -283,9 +285,9 @@ impl Handler for RootHandler {
         self.id
     }
 
-    fn for_new_client(&self, peer_id: PubKey, dbid: u64) -> ChannelHandler {
+    fn for_new_client(&self, client_id: u64, peer_id: PubKey, dbid: u64) -> ChannelHandler {
         ChannelHandler {
-            id: self.id,
+            id: client_id,
             node: Arc::clone(&self.node),
             peer_id: PublicKey::from_slice(&peer_id.0).expect("peer_id"),
             dbid,
@@ -694,7 +696,7 @@ impl Handler for ChannelHandler {
         self.id
     }
 
-    fn for_new_client(&self, _peer_id: PubKey, _dbid: u64) -> ChannelHandler {
+    fn for_new_client(&self, _client_id: u64, _peer_id: PubKey, _dbid: u64) -> ChannelHandler {
         unimplemented!("cannot create a sub-handler from a channel handler");
     }
 }
