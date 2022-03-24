@@ -596,7 +596,7 @@ impl Handler for ChannelHandler {
                     .htlc_signatures
                     .iter()
                     .map(|s| {
-                        assert_eq!(s.sighash, SigHashType::All as u8);
+                        assert!(s.sighash == SigHashType::All as u8 || s.sighash == SigHashType::SinglePlusAnyoneCanPay as u8);
                         secp256k1::Signature::from_compact(&s.signature.0).expect("signature")
                     })
                     .collect();
