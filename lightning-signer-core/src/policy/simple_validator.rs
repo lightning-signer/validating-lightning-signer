@@ -211,43 +211,37 @@ impl SimpleValidator {
         &self,
         wallet: &Wallet,
         tx: &Transaction,
-        input: usize,
-        amount_sat: u64,
+        _input: usize,
+        _amount_sat: u64,
         wallet_path: &Vec<u32>,
     ) -> Result<(), ValidationError> {
-        // TODO - remove these checks when we handle multiple inputs/outputs
-        if tx.input.len() != 1 {
-            return transaction_format_err!("bad number of inputs: {} != 1", tx.input.len());
-        }
-        if tx.output.len() != 1 {
-            return transaction_format_err!("bad number of outputs: {} != 1", tx.output.len());
-        }
-        if input != 0 {
-            return transaction_format_err!("bad input index: {} != 0", input);
-        }
-
         // policy-sweep-version
         if tx.version != 2 {
             return transaction_format_err!("bad version: {}", tx.version);
         }
 
-        // policy-sweep-fee-range
-        self.validate_fee(amount_sat, tx.output[0].value)
-            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
+        // LDK now provides multi-input txs, and we can't easily validate fees securely
+        // FIXME Since we see the tx on-chain, we should just get the input amount from there
+
+        // // policy-sweep-fee-range
+        // self.validate_fee(amount_sat, tx.output[0].value)
+        //     .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // policy-sweep-destination-allowlisted
-        let dest_script = &tx.output[0].script_pubkey;
-        if !wallet
-            .can_spend(wallet_path, dest_script)
-            .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
-            && !wallet.allowlist_contains(dest_script)
-        {
-            info!(
-                "dest_script not matched: path={:?}, {}",
-                wallet_path,
-                script_debug(dest_script, wallet.network())
-            );
-            return policy_err!("destination is not in wallet or allowlist");
+        for out in tx.output.iter() {
+            let dest_script = &out.script_pubkey;
+            if !wallet
+                .can_spend(wallet_path, dest_script)
+                .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
+                && !wallet.allowlist_contains(dest_script)
+            {
+                info!(
+                    "dest_script not matched: path={:?}, {}",
+                    wallet_path,
+                    script_debug(dest_script, wallet.network())
+                );
+                return policy_err!("destination is not in wallet or allowlist");
+            }
         }
 
         Ok(())

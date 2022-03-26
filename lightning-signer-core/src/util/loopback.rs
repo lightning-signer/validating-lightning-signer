@@ -9,7 +9,7 @@ use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::{Script, Transaction, TxOut};
 use lightning::chain::keysinterface::{
-    BaseSign, KeyMaterial, KeysInterface, Sign, SpendableOutputDescriptor,
+    BaseSign, KeyMaterial, KeysInterface, Recipient, Sign, SpendableOutputDescriptor,
 };
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
@@ -527,8 +527,11 @@ impl KeysInterface for LoopbackSignerKeysInterface {
     type Signer = LoopbackChannelSigner;
 
     // TODO secret key leaking
-    fn get_node_secret(&self) -> SecretKey {
-        self.get_node().get_node_secret()
+    fn get_node_secret(&self, recipient: Recipient) -> Result<SecretKey, ()> {
+        match recipient {
+            Recipient::Node => Ok(self.get_node().get_node_secret()),
+            Recipient::PhantomNode => Err(()),
+        }
     }
 
     fn get_destination_script(&self) -> Script {
@@ -576,7 +579,12 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         &self,
         hrp_bytes: &[u8],
         invoice_data: &[u5],
+        recipient: Recipient,
     ) -> Result<RecoverableSignature, ()> {
+        match recipient {
+            Recipient::Node => {}
+            Recipient::PhantomNode => return Err(()),
+        };
         self.get_node().sign_invoice(hrp_bytes, invoice_data).map_err(|_| ())
     }
 

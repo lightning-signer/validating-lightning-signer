@@ -63,16 +63,16 @@ test-log = "0.2.8"
 
 # TODO point this and lightning-invoice at next release
 [dependencies.lightning]
-rev = "482a2b9250679abb3c9931497b2324799fbfa087"
+rev = "6176e2f13f677197cfd87de81aacd2627b5226e2"
 git = "https://github.com/lightningdevkit/rust-lightning.git"
-version = "0.0.104"
+version = "0.0.105"
 #path = "../../rust-lightning/lightning"
 default-features = false
 
 [dependencies.lightning-invoice]
-rev = "482a2b9250679abb3c9931497b2324799fbfa087"
+rev = "6176e2f13f677197cfd87de81aacd2627b5226e2"
 git = "https://github.com/lightningdevkit/rust-lightning.git"
-version = "0.12.0"
+version = "0.13.0"
 #path = "../../rust-lightning/lightning-invoice"
 default-features = false
 
