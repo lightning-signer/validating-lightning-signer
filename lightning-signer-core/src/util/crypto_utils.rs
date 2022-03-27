@@ -256,7 +256,10 @@ pub fn bitcoin_vec_to_signature(
 mod tests {
     use super::*;
     use bitcoin::hashes::hex::ToHex;
+    use bitcoin::schnorr::KeyPair;
+    use bitcoin::secp256k1::Message;
     use bitcoin::Network::Testnet;
+    use secp256k1_xonly::XOnlyPublicKey;
 
     #[test]
     fn node_keys_native_test() -> Result<(), ()> {
@@ -316,5 +319,24 @@ mod tests {
             output.to_vec().to_hex(),
             "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0"
         );
+    }
+
+    #[test]
+    fn test_xonly() {
+        let secp = Secp256k1::new();
+        let seckey = SecretKey::from_slice(&[42; 32]).unwrap();
+        let pubkey = PublicKey::from_secret_key(&secp, &seckey);
+        let keypair = KeyPair::from_secret_key(&secp, seckey.clone());
+        let mut xkey = XOnlyPublicKey::from_keypair(&keypair);
+        println!("{}", pubkey);
+        println!("{}", xkey);
+        println!("{}", xkey.serialize().to_hex());
+
+        let tweak = [33u8; 32];
+        xkey.tweak_add_assign(&secp, &tweak).expect("tweak");
+        println!("{}", xkey);
+
+        let msg = Message::from_slice(&[11; 32]).unwrap();
+        let _sig = secp.schnorrsig_sign_no_aux_rand(&msg, &keypair);
     }
 }
