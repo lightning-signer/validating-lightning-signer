@@ -1,8 +1,10 @@
+#![no_std]
+
 use bitcoin::secp256k1::ffi::CPtr;
 use bitcoin::secp256k1::schnorrsig::KeyPair;
 use bitcoin::secp256k1::{ffi, key, Error, Secp256k1, Verification};
 use core::fmt;
-use std::ops::BitXor;
+use core::ops::BitXor;
 
 pub const SCHNORR_PUBLIC_KEY_SIZE: usize = 32;
 
