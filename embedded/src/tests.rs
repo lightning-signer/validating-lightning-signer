@@ -11,7 +11,7 @@ use bitcoin::{Address, Network, OutPoint, PrivateKey, Txid};
 use cortex_m_semihosting::hprintln;
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::bech32::{u5, FromBase32, ToBase32};
-use lightning_signer::bitcoin::{Script, SigHashType, TxIn, TxOut};
+use lightning_signer::bitcoin::{Script, TxIn, TxOut};
 use lightning_signer::channel::{Channel, ChannelBase, ChannelSetup, CommitmentType};
 use lightning_signer::lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning_signer::lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
@@ -23,7 +23,6 @@ use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
-use lightning_signer::util::crypto_utils::bitcoin_vec_to_signature;
 use lightning_signer::wallet::Wallet;
 use lightning_signer::Arc;
 

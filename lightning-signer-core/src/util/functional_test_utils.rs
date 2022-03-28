@@ -22,7 +22,7 @@ use lightning::ln;
 use lightning::ln::channelmanager::{ChainParameters, MIN_FINAL_CLTV_EXPIRY};
 use lightning::chain::BestBlock;
 use lightning::ln::features::InvoiceFeatures;
-use lightning::ln::functional_test_utils::ConnectStyle;
+use lightning::ln::functional_test_utils::{ConnectStyle, test_default_channel_config};
 use lightning::ln::PaymentSecret;
 use lightning::routing::network_graph::NetGraphMsgHandler;
 use lightning::routing::router::{find_route, PaymentParameters, Route, RouteParameters};
@@ -43,6 +43,7 @@ use crate::lightning::routing::network_graph::NetworkGraph;
 
 use core::cmp;
 use bitcoin::bech32::ToBase32;
+use lightning::chain::keysinterface::KeysInterface;
 use log::info;
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 10;
@@ -566,6 +567,11 @@ pub fn update_nodes_with_chan_announce<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'b, '
         node.net_graph_msg_handler.handle_channel_update(upd_2).unwrap();
         node.net_graph_msg_handler.handle_node_announcement(&a_node_announcement).unwrap();
         node.net_graph_msg_handler.handle_node_announcement(&b_node_announcement).unwrap();
+
+        // Note that channel_updates are also delivered to ChannelManagers to ensure we have
+        // forwarding info for local channels even if its not accepted in the network graph.
+        node.node.handle_channel_update(&nodes[a].node.get_our_node_id(), &upd_1);
+        node.node.handle_channel_update(&nodes[b].node.get_our_node_id(), &upd_2);
     }
 }
 
@@ -1146,8 +1152,11 @@ pub fn route_payment<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_route:
     let network_graph = origin_node.network_graph;
     let channels = origin_node.node.list_usable_channels();
     let first_hops = channels.iter().collect::<Vec<_>>();
-    let scorer = test_utils::TestScorer::with_fixed_penalty(0);
-    let route = find_route(&origin_node.node.get_our_node_id(), &params, network_graph, Some(first_hops.as_slice()), &logger, &scorer).unwrap();
+    let scorer = test_utils::TestScorer::with_penalty(0);
+    let seed = [0u8; 32];
+    let keys_manager = test_utils::TestKeysInterface::new(&seed, Network::Testnet);
+    let random_seed_bytes = keys_manager.get_secure_random_bytes();
+    let route = find_route(&origin_node.node.get_our_node_id(), &params, network_graph, Some(first_hops.as_slice()), &logger, &scorer, &random_seed_bytes).unwrap();
     assert_eq!(route.paths.len(), 1);
     assert_eq!(route.paths[0].len(), expected_route.len());
     for (node, hop) in expected_route.iter().zip(route.paths[0].iter()) {
@@ -1211,18 +1220,12 @@ pub fn create_node_chanmgrs<'a, 'b>(
 > {
     let mut chanmgrs = Vec::new();
     for i in 0..node_count {
-        let mut default_config = UserConfig::default();
-        default_config.channel_options.announced_channel = true;
-        default_config
-            .peer_channel_config_limits
-            .force_announced_channel_preference = false;
-        default_config.own_channel_config.our_htlc_minimum_msat = 1000; // sanitization being done by the sender, to exerce receiver logic we need to lift of limit
         let network = Network::Regtest;
         let params = ChainParameters {
             network,
             best_block: BestBlock::from_genesis(network),
         };
-        let node = ChannelManager::new(cfgs[i].fee_estimator, &cfgs[i].chain_monitor, cfgs[i].tx_broadcaster, cfgs[i].logger, &cfgs[i].keys_manager, if node_config[i].is_some() { node_config[i].clone().unwrap() } else { default_config }, params);
+        let node = ChannelManager::new(cfgs[i].fee_estimator, &cfgs[i].chain_monitor, cfgs[i].tx_broadcaster, cfgs[i].logger, &cfgs[i].keys_manager, if node_config[i].is_some() { node_config[i].clone().unwrap() } else { test_default_channel_config() }, params);
         chanmgrs.push(node);
     }
 
@@ -1271,8 +1274,9 @@ pub fn create_network<'a, 'b: 'a, 'c: 'b>(
 
     for i in 0..node_count {
         for j in (i+1)..node_count {
-            nodes[i].node.peer_connected(&nodes[j].node.get_our_node_id(), &msgs::Init { features: InitFeatures::known() });
-            nodes[j].node.peer_connected(&nodes[i].node.get_our_node_id(), &msgs::Init { features: InitFeatures::known() });
+            let init = msgs::Init { features: InitFeatures::known(), remote_network_address: None };
+            nodes[i].node.peer_connected(&nodes[j].node.get_our_node_id(), &init);
+            nodes[j].node.peer_connected(&nodes[i].node.get_our_node_id(), &init);
         }
     }
 

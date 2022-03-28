@@ -15,7 +15,7 @@ use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, SigHashType, Transaction, TxIn, TxOut};
 use bitcoin::{Network, Script};
 use lightning::chain::keysinterface::{
-    DelayedPaymentOutputDescriptor, InMemorySigner, KeyMaterial, KeysInterface,
+    DelayedPaymentOutputDescriptor, InMemorySigner, KeyMaterial, KeysInterface, Recipient,
     SpendableOutputDescriptor, StaticPaymentOutputDescriptor,
 };
 use lightning::ln::msgs::DecodeError;
@@ -285,7 +285,7 @@ impl MyKeysManager {
         let secp_ctx = Secp256k1::signing_only();
         InMemorySigner::new(
             &secp_ctx,
-            self.get_node_secret(),
+            self.get_node_secret(Recipient::Node).unwrap(),
             funding_key,
             revocation_base_key,
             payment_key,
@@ -340,7 +340,7 @@ impl MyKeysManager {
 
         InMemorySigner::new(
             &secp_ctx,
-            self.get_node_secret(),
+            self.get_node_secret(Recipient::Node).unwrap(),
             funding_key,
             revocation_base_key,
             payment_key,
@@ -546,8 +546,12 @@ impl MyKeysManager {
 impl KeysInterface for MyKeysManager {
     type Signer = InMemorySigner;
 
-    fn get_node_secret(&self) -> SecretKey {
-        self.node_secret.clone()
+    // TODO secret key leaking
+    fn get_node_secret(&self, recipient: Recipient) -> Result<SecretKey, ()> {
+        match recipient {
+            Recipient::Node => Ok(self.node_secret.clone()),
+            Recipient::PhantomNode => Err(()),
+        }
     }
 
     fn get_destination_script(&self) -> Script {
@@ -589,11 +593,12 @@ impl KeysInterface for MyKeysManager {
         &self,
         hrp_bytes: &[u8],
         invoice_data: &[u5],
+        recipient: Recipient,
     ) -> Result<RecoverableSignature, ()> {
         let invoice_preimage = construct_invoice_preimage(hrp_bytes, invoice_data);
         Ok(self.secp_ctx.sign_recoverable(
             &Message::from_slice(&Sha256::hash(&invoice_preimage)).unwrap(),
-            &self.get_node_secret(),
+            &self.get_node_secret(recipient)?,
         ))
     }
 

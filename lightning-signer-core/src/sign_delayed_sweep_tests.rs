@@ -216,43 +216,15 @@ mod tests {
     }
 
     #[test]
-    fn sign_delayed_sweep_with_bad_num_inputs() {
-        assert_failed_precondition_err!(
-            sign_delayed_sweep_with_mutators(
-                |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.input.push(tx.input[0].clone());
-                },
-            ),
-            "transaction format: validate_delayed_sweep: validate_sweep: \
-             bad number of inputs: 2 != 1"
-        );
-    }
-
-    #[test]
-    fn sign_delayed_sweep_with_bad_num_outputs() {
-        assert_failed_precondition_err!(
-            sign_delayed_sweep_with_mutators(
-                |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
-                |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.output.push(tx.output[0].clone());
-                },
-            ),
-            "transaction format: validate_delayed_sweep: validate_sweep: \
-             bad number of outputs: 2 != 1"
-        );
-    }
-
-    #[test]
     fn sign_delayed_sweep_with_bad_input_index() {
-        assert_failed_precondition_err!(
+        assert_invalid_argument_err!(
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, _tx, input, _commit_num, _redeemscript, _amount_sat| {
                     *input = 1;
                 },
             ),
-            "transaction format: validate_delayed_sweep: validate_sweep: bad input index: 1 != 0"
+            "sign_delayed_sweep: bad input index: 1 >= 1"
         );
     }
 
@@ -299,6 +271,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // no fee validation for now
     fn sign_delayed_sweep_with_fee_underflow() {
         assert_failed_precondition_err!(
             sign_delayed_sweep_with_mutators(
@@ -314,6 +287,7 @@ mod tests {
 
     // policy-sweep-fee-range
     #[test]
+    #[ignore] // no fee validation for now
     fn sign_delayed_sweep_with_fee_too_small() {
         assert_failed_precondition_err!(
             sign_delayed_sweep_with_mutators(
@@ -329,6 +303,7 @@ mod tests {
 
     // policy-sweep-fee-range
     #[test]
+    #[ignore] // no fee validation for now
     fn sign_delayed_sweep_with_fee_too_large() {
         assert_failed_precondition_err!(
             sign_delayed_sweep_with_mutators(

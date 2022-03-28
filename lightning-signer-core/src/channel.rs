@@ -1163,6 +1163,13 @@ impl Channel {
         amount_sat: u64,
         wallet_path: &Vec<u32>,
     ) -> Result<Signature, Status> {
+        if input >= tx.input.len() {
+            return Err(invalid_argument(format!(
+                "sign_delayed_sweep: bad input index: {} >= {}",
+                input,
+                tx.input.len()
+            )));
+        }
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         self.validator().validate_delayed_sweep(
@@ -1208,6 +1215,14 @@ impl Channel {
         htlc_amount_sat: u64,
         wallet_path: &Vec<u32>,
     ) -> Result<Signature, Status> {
+        if input >= tx.input.len() {
+            return Err(invalid_argument(format!(
+                "sign_counterparty_htlc_sweep: bad input index: {} >= {}",
+                input,
+                tx.input.len()
+            )));
+        }
+
         self.validator().validate_counterparty_htlc_sweep(
             &*self.get_node(),
             &self.setup,
@@ -1252,6 +1267,13 @@ impl Channel {
         amount_sat: u64,
         wallet_path: &Vec<u32>,
     ) -> Result<Signature, Status> {
+        if input >= tx.input.len() {
+            return Err(invalid_argument(format!(
+                "sign_justice_sweep: bad input index: {} >= {}",
+                input,
+                tx.input.len()
+            )));
+        }
         self.validator().validate_justice_sweep(
             &*self.get_node(),
             &self.setup,

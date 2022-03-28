@@ -266,6 +266,7 @@ fn _alt_config() -> UserConfig {
         channel_options: Default::default(),
         accept_forwards_to_priv_channels: true,
         accept_inbound_channels: true,
+        manually_accept_inbound_channels: false
     };
     cfg1.channel_options.announced_channel = true;
     cfg1.peer_channel_config_limits
@@ -389,9 +390,11 @@ fn claim_htlc_outputs_single_tx() {
     claim_payment(&nodes[0], &vec!(&nodes[1])[..], payment_preimage_1);
 
     {
-        confirm_transaction_at(&nodes[0], &revoked_local_txn[0], 100);
+        // NOTE we need a higher confirmation height than the LDK functional tests, because
+        // find_route adds random amounts to the cltv, and get_route is only available within the lightning crate
+        confirm_transaction_at(&nodes[0], &revoked_local_txn[0], 200);
         check_added_monitors!(nodes[0], 1);
-        confirm_transaction_at(&nodes[1], &revoked_local_txn[0], 100);
+        confirm_transaction_at(&nodes[1], &revoked_local_txn[0], 200);
         check_added_monitors!(nodes[1], 1);
         check_closed_event!(nodes[1], 1, ClosureReason::CommitmentTxConfirmed);
         let events = nodes[0].node.get_and_clear_pending_events();
