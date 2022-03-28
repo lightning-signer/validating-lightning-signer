@@ -3,7 +3,7 @@
 use alloc::vec::Vec;
 
 use serde::{de, ser};
-use serde_bolt::{from_vec, to_vec};
+use serde_bolt::{from_vec, to_vec, WireString};
 use serde_bolt::{LargeBytes, Read, Write};
 use serde_derive::{Deserialize, Serialize};
 
@@ -220,6 +220,32 @@ impl TypedMessage for SignMessageReply {
 }
 
 impl_ser!(SignMessageReply);
+
+/// SignBolt12
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignBolt12 {
+    pub message_name: WireString,
+    pub field_name: WireString,
+    pub merkle_root: Sha256,
+    pub public_tweak: Vec<u8>,
+}
+
+impl TypedMessage for SignBolt12 {
+    const TYPE: u16 = 25;
+}
+
+///
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignBolt12Reply {
+    pub signature: Signature,
+}
+
+impl TypedMessage for SignBolt12Reply {
+    const TYPE: u16 = 125;
+}
+
+impl_ser!(SignBolt12Reply);
+
 
 /// Sign channel update
 #[derive(Debug, Serialize, Deserialize)]
@@ -600,6 +626,8 @@ pub enum Message {
     MemleakReply(MemleakReply),
     CheckFutureSecret(CheckFutureSecret),
     CheckFutureSecretReply(CheckFutureSecretReply),
+    SignBolt12(SignBolt12),
+    SignBolt12Reply(SignBolt12Reply),
     SignMessage(SignMessage),
     SignMessageReply(SignMessageReply),
     SignChannelUpdate(SignChannelUpdate),
@@ -685,6 +713,8 @@ fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
         MemleakReply::TYPE => Message::MemleakReply(from_vec_no_trailing(&mut data)?),
         CheckFutureSecret::TYPE => Message::CheckFutureSecret(from_vec_no_trailing(&mut data)?),
         CheckFutureSecretReply::TYPE => Message::CheckFutureSecretReply(from_vec_no_trailing(&mut data)?),
+        SignBolt12::TYPE => Message::SignBolt12(from_vec_no_trailing(&mut data)?),
+        SignBolt12Reply::TYPE => Message::SignBolt12Reply(from_vec_no_trailing(&mut data)?),
         SignMessage::TYPE => Message::SignMessage(from_vec_no_trailing(&mut data)?),
         SignMessageReply::TYPE => Message::SignMessageReply(from_vec_no_trailing(&mut data)?),
         SignChannelUpdate::TYPE => Message::SignChannelUpdate(from_vec_no_trailing(&mut data)?),
