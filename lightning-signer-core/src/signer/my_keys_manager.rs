@@ -30,7 +30,7 @@ use crate::util::crypto_utils::{
 use crate::util::transaction_utils::MAX_VALUE_MSAT;
 use crate::util::{byte_utils, transaction_utils};
 use bitcoin::secp256k1::recovery::RecoverableSignature;
-use bitcoin::secp256k1::schnorrsig::Signature;
+use bitcoin::secp256k1::schnorrsig;
 use bitcoin::util::bip143;
 use hashbrown::HashSet as UnorderedSet;
 use lightning::util::invoice::construct_invoice_preimage;
@@ -217,6 +217,11 @@ impl MyKeysManager {
         res
     }
 
+    /// BOLT 12 x-only pubkey
+    pub fn get_bolt12_pubkey(&self) -> XOnlyPublicKey {
+        XOnlyPublicKey::from_keypair(&self.bolt12_keypair)
+    }
+
     /// BOLT 12 sign
     pub fn sign_bolt12(
         &self,
@@ -224,7 +229,7 @@ impl MyKeysManager {
         fieldname: &[u8],
         merkleroot: &[u8; 32],
         publictweak_opt: Option<&[u8]>,
-    ) -> Result<Signature, ()> {
+    ) -> Result<schnorrsig::Signature, ()> {
         // BIP340 init
         let mut sha = Sha256::engine();
         sha.input("lightning".as_bytes());
@@ -249,7 +254,7 @@ impl MyKeysManager {
             kp.tweak_add_assign(&self.secp_ctx, &tweak).map_err(|_| ())?;
             kp
         } else {
-            unimplemented!("untweaked node xonly key");
+            KeyPair::from_secret_key(&self.secp_ctx, self.node_secret)
         };
         let msg = Message::from_slice(&sig_hash).unwrap();
         Ok(self.secp_ctx.schnorrsig_sign_no_aux_rand(&msg, &kp))
