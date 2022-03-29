@@ -281,11 +281,6 @@ message InitRequest {
 
 message InitReply {
   NodeId node_id = 1;
-
-  XOnlyPubKey bolt12_pubkey = 2;
-  
-  // This is needed until we can do onion decryption in the signer
-  SecKey node_secret = 3;
 }
 
 message GetNodeParamRequest {

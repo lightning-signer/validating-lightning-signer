@@ -362,14 +362,7 @@ impl Signer for SignServer {
                 self.signer.warmstart_with_seed(node_config, hsm_secret)?
             }
         };
-        let node = self.signer.get_node(&node_id)?;
-        let bolt12_pubkey = node.get_bolt12_pubkey();
-        let node_secret = node.get_node_secret();
-        let reply = InitReply {
-            node_id: Some(NodeId { data: node_id.serialize().to_vec() }),
-            bolt12_pubkey: Some(XOnlyPubKey { data: bolt12_pubkey.serialize().to_vec() }),
-            node_secret: Some(SecKey { data: node_secret[..].to_vec() }),
-        };
+        let reply = InitReply { node_id: Some(NodeId { data: node_id.serialize().to_vec() }) };
 
         // We don't want to log the secret, so comment this out by default
         // log_req_reply!(&reply);
