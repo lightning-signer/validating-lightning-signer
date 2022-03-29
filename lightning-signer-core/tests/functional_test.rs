@@ -261,6 +261,7 @@ fn _alt_config() -> UserConfig {
             minimum_depth: 6,
             our_to_self_delay: 145,
             our_htlc_minimum_msat: 1000,
+            negotiate_scid_privacy: false
         },
         peer_channel_config_limits: Default::default(),
         channel_options: Default::default(),
