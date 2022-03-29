@@ -3,7 +3,7 @@ use bitcoin::hashes::hash160::Hash as BitcoinHash160;
 use bitcoin::hashes::sha256::Hash as BitcoinSha256;
 use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
 use bitcoin::secp256k1;
-use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly, Signature};
+use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::address::Payload;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::Network;
@@ -49,7 +49,7 @@ pub(crate) fn channels_seed(node_seed: &[u8]) -> [u8; 32] {
 // This function will panic if the SecretKey::from_slice fails.  Only
 // use where failure is an option (ie, startup).
 pub(crate) fn node_keys_native(
-    secp_ctx: &Secp256k1<SignOnly>,
+    secp_ctx: &Secp256k1<secp256k1::All>,
     node_seed: &[u8],
 ) -> (PublicKey, SecretKey) {
     let node_private_bytes = hkdf_sha256(node_seed, "nodeid".as_bytes(), &[]);
@@ -59,7 +59,7 @@ pub(crate) fn node_keys_native(
 }
 
 pub(crate) fn node_keys_lnd(
-    secp_ctx: &Secp256k1<SignOnly>,
+    secp_ctx: &Secp256k1<secp256k1::All>,
     network: Network,
     master: ExtendedPrivKey,
 ) -> (PublicKey, SecretKey) {
@@ -69,7 +69,7 @@ pub(crate) fn node_keys_lnd(
 }
 
 pub(crate) fn derive_key_lnd(
-    secp_ctx: &Secp256k1<SignOnly>,
+    secp_ctx: &Secp256k1<secp256k1::All>,
     network: Network,
     master: ExtendedPrivKey,
     key_family: u32,
@@ -102,7 +102,7 @@ pub(crate) fn derive_key_lnd(
 // This function will panic if the ExtendedPrivKey::new_master fails.
 // Only use where failure is an option (ie, startup).
 pub(crate) fn get_account_extended_key_native(
-    secp_ctx: &Secp256k1<SignOnly>,
+    secp_ctx: &Secp256k1<secp256k1::All>,
     network: Network,
     node_seed: &[u8],
 ) -> ExtendedPrivKey {
@@ -118,7 +118,7 @@ pub(crate) fn get_account_extended_key_native(
 // This function will panic if the ExtendedPrivKey::new_master fails.
 // Only use where failure is an option (ie, startup).
 pub(crate) fn get_account_extended_key_lnd(
-    secp_ctx: &Secp256k1<SignOnly>,
+    secp_ctx: &Secp256k1<secp256k1::All>,
     network: Network,
     node_seed: &[u8],
 ) -> ExtendedPrivKey {
@@ -256,11 +256,14 @@ pub fn bitcoin_vec_to_signature(
 mod tests {
     use super::*;
     use bitcoin::hashes::hex::ToHex;
+    use bitcoin::schnorr::KeyPair;
+    use bitcoin::secp256k1::Message;
     use bitcoin::Network::Testnet;
+    use secp256k1_xonly::XOnlyPublicKey;
 
     #[test]
     fn node_keys_native_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::signing_only();
+        let secp_ctx = Secp256k1::new();
         let (node_id, _) = node_keys_native(&secp_ctx, &[0u8; 32]);
         let node_id_bytes = node_id.serialize().to_vec();
         assert_eq!(
@@ -272,7 +275,7 @@ mod tests {
 
     #[test]
     fn node_keys_lnd_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::signing_only();
+        let secp_ctx = Secp256k1::new();
         let network = Testnet;
         let master = ExtendedPrivKey::new_master(network.clone(), &[0u8; 32]).unwrap();
         let (node_id, _) = node_keys_lnd(&secp_ctx, network, master);
@@ -296,7 +299,7 @@ mod tests {
 
     #[test]
     fn get_account_extended_key_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::signing_only();
+        let secp_ctx = Secp256k1::new();
         let key = get_account_extended_key_native(&secp_ctx, Network::Testnet, &[0u8; 32]);
         assert_eq!(format!("{}", key), "tprv8ejySXSgpWvEBguEGNFYNcHz29W7QxEodgnwbfLzBCccBnxGAq4vBkgqUYPGR5EnCbLvJE7YQsod6qpid85JhvAfizVpqPg3WsWB6UG3fEL");
         Ok(())
@@ -316,5 +319,24 @@ mod tests {
             output.to_vec().to_hex(),
             "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0"
         );
+    }
+
+    #[test]
+    fn test_xonly() {
+        let secp = Secp256k1::new();
+        let seckey = SecretKey::from_slice(&[42; 32]).unwrap();
+        let pubkey = PublicKey::from_secret_key(&secp, &seckey);
+        let keypair = KeyPair::from_secret_key(&secp, seckey.clone());
+        let mut xkey = XOnlyPublicKey::from_keypair(&keypair);
+        println!("{}", pubkey);
+        println!("{}", xkey);
+        println!("{}", xkey.serialize().to_hex());
+
+        let tweak = [33u8; 32];
+        xkey.tweak_add_assign(&secp, &tweak).expect("tweak");
+        println!("{}", xkey);
+
+        let msg = Message::from_slice(&[11; 32]).unwrap();
+        let _sig = secp.schnorrsig_sign_no_aux_rand(&msg, &keypair);
     }
 }

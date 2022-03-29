@@ -14,7 +14,7 @@ use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::recovery::RecoverableSignature;
-use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signature};
+use bitcoin::secp256k1::{schnorrsig, All, Message, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, Address, Transaction, TxOut};
@@ -34,6 +34,7 @@ use lightning_invoice::{Invoice, RawDataPart, RawHrp, RawInvoice, SignedRawInvoi
 
 #[allow(unused_imports)]
 use log::{debug, info, trace, warn};
+use secp256k1_xonly::XOnlyPublicKey;
 
 use crate::chain::tracker::ChainTracker;
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub};
@@ -634,6 +635,24 @@ impl Node {
             tracker: Mutex::new(tracker),
             state,
         }
+    }
+
+    /// BOLT 12 x-only pubkey
+    pub fn get_bolt12_pubkey(&self) -> XOnlyPublicKey {
+        self.keys_manager.get_bolt12_pubkey()
+    }
+
+    /// BOLT 12 sign
+    pub fn sign_bolt12(
+        &self,
+        messagename: &[u8],
+        fieldname: &[u8],
+        merkleroot: &[u8; 32],
+        publictweak_opt: Option<&[u8]>,
+    ) -> Result<schnorrsig::Signature, Status> {
+        self.keys_manager
+            .sign_bolt12(messagename, fieldname, merkleroot, publictweak_opt)
+            .map_err(|_| internal_error("signature operation failed"))
     }
 
     /// Set the node's validator factory

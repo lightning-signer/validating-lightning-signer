@@ -4,6 +4,7 @@ members = [
     "lightning-signer-core",
     "lightning-signer-server",
     "bitcoind-client",
+    "secp256k1-xonly",
 ]
 
 exclude = [

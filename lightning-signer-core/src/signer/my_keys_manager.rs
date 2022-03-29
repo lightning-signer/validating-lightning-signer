@@ -10,6 +10,7 @@ use bitcoin::hashes::hash160::Hash as Hash160;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::sha256::HashEngine as Sha256State;
 use bitcoin::hashes::{Hash, HashEngine};
+use bitcoin::schnorr::KeyPair;
 use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signing};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, SigHashType, Transaction, TxIn, TxOut};
@@ -29,9 +30,11 @@ use crate::util::crypto_utils::{
 use crate::util::transaction_utils::MAX_VALUE_MSAT;
 use crate::util::{byte_utils, transaction_utils};
 use bitcoin::secp256k1::recovery::RecoverableSignature;
+use bitcoin::secp256k1::schnorrsig;
 use bitcoin::util::bip143;
 use hashbrown::HashSet as UnorderedSet;
 use lightning::util::invoice::construct_invoice_preimage;
+use secp256k1_xonly::XOnlyPublicKey;
 
 /// The key derivation style
 #[derive(Clone, Copy, Debug)]
@@ -69,7 +72,7 @@ impl KeyDerivationStyle {
 
     pub(crate) fn get_account_extended_key(
         &self,
-        secp_ctx: &Secp256k1<secp256k1::SignOnly>,
+        secp_ctx: &Secp256k1<secp256k1::All>,
         network: Network,
         seed: &[u8],
     ) -> ExtendedPrivKey {
@@ -82,12 +85,13 @@ impl KeyDerivationStyle {
 
 /// An implementation of [`KeysInterface`]
 pub struct MyKeysManager {
-    secp_ctx: Secp256k1<secp256k1::SignOnly>,
+    secp_ctx: Secp256k1<secp256k1::All>,
     seed: Vec<u8>,
     key_derivation_style: KeyDerivationStyle,
     network: Network,
     master_key: ExtendedPrivKey,
     node_secret: SecretKey,
+    bolt12_keypair: KeyPair,
     inbound_payment_key: KeyMaterial,
     channel_seed_base: [u8; 32],
     account_extended_key: ExtendedPrivKey,
@@ -118,99 +122,142 @@ impl MyKeysManager {
         starting_time_secs: u64,
         starting_time_nanos: u32,
     ) -> MyKeysManager {
-        let secp_ctx = Secp256k1::signing_only();
-        match ExtendedPrivKey::new_master(network.clone(), seed) {
-            Ok(master_key) => {
-                let (_, node_secret) = match key_derivation_style {
-                    KeyDerivationStyle::Native => node_keys_native(&secp_ctx, seed),
-                    KeyDerivationStyle::Lnd =>
-                        node_keys_lnd(&secp_ctx, network.clone(), master_key),
-                };
-                let destination_script = match master_key
-                    .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(1).unwrap())
-                {
-                    Ok(destination_key) => {
-                        let pubkey_hash160 = Hash160::hash(
-                            &ExtendedPubKey::from_private(&secp_ctx, &destination_key)
-                                .public_key
-                                .key
-                                .serialize()[..],
-                        );
-                        Builder::new()
-                            .push_opcode(opcodes::all::OP_PUSHBYTES_0)
-                            .push_slice(&pubkey_hash160.into_inner())
-                            .into_script()
-                    }
-                    Err(_) => panic!("Your RNG is busted"),
-                };
-                let ldk_shutdown_pubkey = match master_key
-                    .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(2).unwrap())
-                {
-                    Ok(shutdown_key) =>
-                        ExtendedPubKey::from_private(&secp_ctx, &shutdown_key).public_key.key,
-                    Err(_) => panic!("Your RNG is busted"),
-                };
-                let channel_master_key = master_key
-                    .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(3).unwrap())
-                    .expect("Your RNG is busted");
-                let channel_id_master_key = master_key
-                    .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(5).unwrap())
-                    .expect("Your RNG is busted");
+        let secp_ctx = Secp256k1::new();
+        let master_key =
+            ExtendedPrivKey::new_master(network.clone(), seed).expect("your RNG is busted");
+        let (_, node_secret) = match key_derivation_style {
+            KeyDerivationStyle::Native => node_keys_native(&secp_ctx, seed),
+            KeyDerivationStyle::Lnd => node_keys_lnd(&secp_ctx, network.clone(), master_key),
+        };
+        let destination_script =
+            match master_key.ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(1).unwrap()) {
+                Ok(destination_key) => {
+                    let pubkey_hash160 = Hash160::hash(
+                        &ExtendedPubKey::from_private(&secp_ctx, &destination_key)
+                            .public_key
+                            .key
+                            .serialize()[..],
+                    );
+                    Builder::new()
+                        .push_opcode(opcodes::all::OP_PUSHBYTES_0)
+                        .push_slice(&pubkey_hash160.into_inner())
+                        .into_script()
+                }
+                Err(_) => panic!("Your RNG is busted"),
+            };
+        let ldk_shutdown_pubkey =
+            match master_key.ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(2).unwrap()) {
+                Ok(shutdown_key) =>
+                    ExtendedPubKey::from_private(&secp_ctx, &shutdown_key).public_key.key,
+                Err(_) => panic!("Your RNG is busted"),
+            };
+        let channel_master_key = master_key
+            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(3).unwrap())
+            .expect("Your RNG is busted");
+        let channel_id_master_key = master_key
+            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(5).unwrap())
+            .expect("Your RNG is busted");
 
-                let mut unique_start = Sha256::engine();
-                unique_start.input(&byte_utils::be64_to_array(starting_time_secs));
-                unique_start.input(&byte_utils::be32_to_array(starting_time_nanos));
-                unique_start.input(seed);
+        let mut unique_start = Sha256::engine();
+        unique_start.input(&byte_utils::be64_to_array(starting_time_secs));
+        unique_start.input(&byte_utils::be32_to_array(starting_time_nanos));
+        unique_start.input(seed);
 
-                let channel_seed_base = channels_seed(seed);
-                let account_extended_key =
-                    key_derivation_style.get_account_extended_key(&secp_ctx, network, seed);
+        let channel_seed_base = channels_seed(seed);
+        let account_extended_key =
+            key_derivation_style.get_account_extended_key(&secp_ctx, network, seed);
 
-                let rand_bytes_master_key = master_key
-                    .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(4).unwrap())
-                    .expect("Your RNG is busted");
-                let inbound_payment_key: SecretKey = master_key
-                    .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(5).unwrap())
-                    .expect("Your RNG is busted")
-                    .private_key
-                    .key;
-                let mut inbound_pmt_key_bytes = [0; 32];
-                inbound_pmt_key_bytes.copy_from_slice(&inbound_payment_key[..]);
+        let rand_bytes_master_key = master_key
+            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(4).unwrap())
+            .expect("Your RNG is busted");
+        let inbound_payment_key: SecretKey = master_key
+            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(5).unwrap())
+            .expect("Your RNG is busted")
+            .private_key
+            .key;
+        let mut inbound_pmt_key_bytes = [0; 32];
+        inbound_pmt_key_bytes.copy_from_slice(&inbound_payment_key[..]);
 
-                let mut rand_bytes_unique_start = Sha256::engine();
-                rand_bytes_unique_start.input(&byte_utils::be64_to_array(starting_time_secs));
-                rand_bytes_unique_start.input(&byte_utils::be32_to_array(starting_time_nanos));
-                rand_bytes_unique_start.input(seed);
+        let mut rand_bytes_unique_start = Sha256::engine();
+        rand_bytes_unique_start.input(&byte_utils::be64_to_array(starting_time_secs));
+        rand_bytes_unique_start.input(&byte_utils::be32_to_array(starting_time_nanos));
+        rand_bytes_unique_start.input(seed);
 
-                let mut res = MyKeysManager {
-                    secp_ctx,
-                    seed: seed.to_vec(),
-                    key_derivation_style,
-                    network,
-                    master_key,
-                    node_secret,
-                    inbound_payment_key: KeyMaterial(inbound_pmt_key_bytes),
-                    channel_seed_base,
-                    account_extended_key,
-                    destination_script,
-                    ldk_shutdown_pubkey,
-                    channel_master_key,
-                    channel_id_master_key,
-                    channel_id_child_index: AtomicUsize::new(0),
-                    rand_bytes_master_key,
-                    rand_bytes_child_index: AtomicUsize::new(0),
-                    rand_bytes_unique_start,
-                    lnd_basepoint_index: AtomicU32::new(0),
-                    unique_start,
-                    id_to_nonce: Mutex::new(OrderedMap::new()),
-                };
+        let bolt12_child = master_key
+            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(9735).unwrap())
+            .expect("Your RNG is busted")
+            .private_key;
+        let bolt12_keypair = KeyPair::from_secret_key(&secp_ctx, bolt12_child.key);
+        let mut res = MyKeysManager {
+            secp_ctx,
+            seed: seed.to_vec(),
+            key_derivation_style,
+            network,
+            master_key,
+            node_secret,
+            bolt12_keypair,
+            inbound_payment_key: KeyMaterial(inbound_pmt_key_bytes),
+            channel_seed_base,
+            account_extended_key,
+            destination_script,
+            ldk_shutdown_pubkey,
+            channel_master_key,
+            channel_id_master_key,
+            channel_id_child_index: AtomicUsize::new(0),
+            rand_bytes_master_key,
+            rand_bytes_child_index: AtomicUsize::new(0),
+            rand_bytes_unique_start,
+            lnd_basepoint_index: AtomicU32::new(0),
+            unique_start,
+            id_to_nonce: Mutex::new(OrderedMap::new()),
+        };
 
-                let secp_seed = res.get_secure_random_bytes();
-                res.secp_ctx.seeded_randomize(&secp_seed);
-                res
-            }
-            Err(_) => panic!("Your rng is busted"),
-        }
+        let secp_seed = res.get_secure_random_bytes();
+        res.secp_ctx.seeded_randomize(&secp_seed);
+        res
+    }
+
+    /// BOLT 12 x-only pubkey
+    pub fn get_bolt12_pubkey(&self) -> XOnlyPublicKey {
+        XOnlyPublicKey::from_keypair(&self.bolt12_keypair)
+    }
+
+    /// BOLT 12 sign
+    pub fn sign_bolt12(
+        &self,
+        messagename: &[u8],
+        fieldname: &[u8],
+        merkleroot: &[u8; 32],
+        publictweak_opt: Option<&[u8]>,
+    ) -> Result<schnorrsig::Signature, ()> {
+        // BIP340 init
+        let mut sha = Sha256::engine();
+        sha.input("lightning".as_bytes());
+        sha.input(messagename);
+        sha.input(fieldname);
+        let tag_hash = Sha256::from_engine(sha).into_inner();
+        let mut sha = Sha256::engine();
+        sha.input(&tag_hash);
+        sha.input(&tag_hash);
+        // BIP340 done, compute hash of message
+        sha.input(merkleroot);
+        let sig_hash = Sha256::from_engine(sha).into_inner();
+
+        let kp = if let Some(publictweak) = publictweak_opt {
+            // Compute the tweaked key
+            let xpub_ser = XOnlyPublicKey::from_keypair(&self.bolt12_keypair).serialize();
+            let mut sha = Sha256::engine();
+            sha.input(&xpub_ser);
+            sha.input(publictweak);
+            let tweak = Sha256::from_engine(sha).into_inner();
+            let mut kp = self.bolt12_keypair;
+            kp.tweak_add_assign(&self.secp_ctx, &tweak).map_err(|_| ())?;
+            kp
+        } else {
+            KeyPair::from_secret_key(&self.secp_ctx, self.node_secret)
+        };
+        let msg = Message::from_slice(&sig_hash).unwrap();
+        Ok(self.secp_ctx.schnorrsig_sign_no_aux_rand(&msg, &kp))
     }
 
     /// Get the layer-1 xpub
@@ -318,7 +365,7 @@ impl MyKeysManager {
         ndx += 32;
         let commitment_seed = keys_buf[ndx..ndx + 32].try_into().unwrap();
 
-        let secp_ctx = Secp256k1::signing_only();
+        let secp_ctx = Secp256k1::new();
 
         // These need to match the constants defined in lnd/keychain/derivation.go
         // KeyFamilyMultiSig KeyFamily = 0
