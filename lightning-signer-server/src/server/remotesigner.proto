@@ -47,10 +47,6 @@ service Signer {
   rpc RemoveAllowlist (RemoveAllowlistRequest)
       returns (RemoveAllowlistReply);
 
-  // Get layer-1 XPUB for a node.
-  rpc GetExtPubKey (GetExtPubKeyRequest)
-    returns (GetExtPubKeyReply);
-
   // Get node-specific parameters
   rpc GetNodeParam (GetNodeParamRequest)
     returns (GetNodeParamReply);
@@ -290,16 +286,6 @@ message InitReply {
   
   // This is needed until we can do onion decryption in the signer
   SecKey node_secret = 3;
-}
-
-// FIXME - This interface is specific to c-lightning, it returns the
-// XPUB associated with "m/0/0" which won't work for anything else.
-message GetExtPubKeyRequest {
-  NodeId node_id = 1;
-}
-
-message GetExtPubKeyReply {
-  ExtPubKey xpub = 1;
 }
 
 message GetNodeParamRequest {

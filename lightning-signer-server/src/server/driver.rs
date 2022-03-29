@@ -376,23 +376,6 @@ impl Signer for SignServer {
         Ok(Response::new(reply))
     }
 
-    async fn get_ext_pub_key(
-        &self,
-        request: Request<GetExtPubKeyRequest>,
-    ) -> Result<Response<GetExtPubKeyReply>, Status> {
-        let req = request.into_inner();
-        let node_id = self.node_id(req.node_id.clone())?;
-        log_req_enter!(&node_id, &req);
-
-        let node = self.signer.get_node(&node_id)?;
-        let extpubkey = node.get_account_extended_pubkey();
-        let reply =
-            GetExtPubKeyReply { xpub: Some(ExtPubKey { encoded: format!("{}", extpubkey) }) };
-
-        log_req_reply!(&node_id, &reply);
-        Ok(Response::new(reply))
-    }
-
     async fn get_node_param(
         &self,
         request: Request<GetNodeParamRequest>,
