@@ -31,16 +31,16 @@ use lightning_signer::bitcoin::bech32::u5;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
 #[allow(unused_imports)]
 use log::info;
-use secp256k1::rand::rngs::{OsRng, SmallRng};
-use secp256k1::rand::{RngCore, SeedableRng};
-use secp256k1::{PublicKey, Secp256k1};
+use secp256k1::rand::rngs::OsRng;
+use secp256k1::rand::RngCore;
+use secp256k1::PublicKey;
 
 use greenlight_protocol::features::*;
 use greenlight_protocol::model::{
     Basepoints, BitcoinSignature, ExtKey, Htlc, PubKey, PubKey32, RecoverableSignature, Secret,
     Signature,
 };
-use greenlight_protocol::msgs::SerMessage;
+use greenlight_protocol::msgs::{SerMessage, SignBolt12Reply};
 use greenlight_protocol::serde_bolt::LargeBytes;
 use greenlight_protocol::{msgs, msgs::Message, Error as ProtocolError};
 use lightning_signer::util::status::Status;
@@ -126,6 +126,21 @@ impl Handler for RootHandler {
     fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>> {
         match msg {
             Message::Memleak(_m) => Ok(Box::new(msgs::MemleakReply { result: false })),
+            Message::SignBolt12(m) => {
+                let tweak = if m.public_tweak.is_empty() {
+                    None
+                } else {
+                    Some(m.public_tweak.as_slice())
+                };
+                let sig = self.node.sign_bolt12(
+                    &m.message_name.0,
+                    &m.field_name.0,
+                    &m.merkle_root.0,
+                    tweak)?;
+                Ok(Box::new(SignBolt12Reply {
+                    signature: Signature(sig.as_ref().clone())
+                }))
+            }
             Message::SignMessage(m) => {
                 let sig = self.node.sign_message(&m.message)?;
                 let sig_slice = sig.try_into().expect("recoverable signature size");
@@ -134,11 +149,7 @@ impl Handler for RootHandler {
             Message::HsmdInit(_) => {
                 let bip32 = self.node.get_account_extended_pubkey().encode();
                 let node_id = self.node.get_id().serialize();
-                let secp = Secp256k1::new();
-                // FIXME bogus entropy
-                let mut rng = SmallRng::seed_from_u64(0);
-                let (_, bolt12_pubkey) = secp.generate_schnorrsig_keypair(&mut rng);
-                let bolt12_xonly = bolt12_pubkey.serialize();
+                let bolt12_xonly = self.node.get_bolt12_pubkey().serialize();
                 // FIXME bogus onion_reply_secret
                 let onion_reply_secret = [1; 32].try_into().unwrap();
                 Ok(Box::new(msgs::HsmdInitReply {
