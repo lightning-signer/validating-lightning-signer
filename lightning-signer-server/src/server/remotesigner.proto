@@ -200,6 +200,10 @@ service Signer {
   rpc SignInvoice (SignInvoiceRequest)
     returns (RecoverableNodeSignatureReply);
 
+  // BOLT #12 - Offers
+  rpc SignBolt12 (SignBolt12Request)
+    returns (SchnorrSignatureReply);
+
   // BOLT #?? - Sign Message
   rpc SignMessage (SignMessageRequest)
     returns (RecoverableNodeSignatureReply);
@@ -277,8 +281,11 @@ message InitRequest {
 
 message InitReply {
   NodeId node_id = 1;
+
+  XOnlyPubKey bolt12_pubkey = 2;
+  
   // This is needed until we can do onion decryption in the signer
-  SecKey node_secret = 2;
+  SecKey node_secret = 3;
 }
 
 // FIXME - This interface is specific to c-lightning, it returns the
@@ -370,6 +377,10 @@ message SignMutualCloseTxRequest {
 
 message SignatureReply {
   BitcoinSignature signature = 1;
+}
+
+message SchnorrSignatureReply {
+  SchnorrSignature signature = 1;
 }
 
 // Check if the counterparty really knows a secret that we haven't generated
@@ -658,6 +669,18 @@ message RecoverableNodeSignatureReply {
   ECDSARecoverableSignature signature = 1;
 }
 
+// Sign an BOLT12 (Offer) request
+message SignBolt12Request {
+  // https://bolt12.org/
+
+  NodeId node_id = 1;
+
+  string messagename = 2;
+  string fieldname = 3;
+  bytes merkleroot = 4;
+  bytes publictweak = 5;
+}
+
 // Sign an ad-hoc message with the node secret key
 message SignMessageRequest {
   NodeId node_id = 1;
@@ -768,6 +791,16 @@ message ECDSARecoverableSignature {
 
 // DER encoded Bitcoin Signature
 message BitcoinSignature {
+  bytes data = 1;
+}
+
+// BIP340 Schnorr Signature
+message SchnorrSignature {
+  bytes data = 1;
+}
+
+// BIP340 XOnlyPublicKey
+message XOnlyPubKey {
   bytes data = 1;
 }
 
