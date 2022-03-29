@@ -50,7 +50,11 @@ service Signer {
   // Get layer-1 XPUB for a node.
   rpc GetExtPubKey (GetExtPubKeyRequest)
     returns (GetExtPubKeyReply);
-  
+
+  // Get node-specific parameters
+  rpc GetNodeParam (GetNodeParamRequest)
+    returns (GetNodeParamReply);
+
   // BOLT #2 - Peer Protocol - allocate a new channel
   rpc NewChannel (NewChannelRequest)
     returns (NewChannelReply);
@@ -296,6 +300,21 @@ message GetExtPubKeyRequest {
 
 message GetExtPubKeyReply {
   ExtPubKey xpub = 1;
+}
+
+message GetNodeParamRequest {
+  NodeId node_id = 1;
+}
+
+message GetNodeParamReply {
+  // FIXME - This field is specific to c-lightning, it returns the
+  // XPUB associated with "m/0/0" which won't work for anything else.
+  ExtPubKey xpub = 1;
+
+  XOnlyPubKey bolt12_pubkey = 2;
+  
+  // This is needed until we can do onion decryption in the signer
+  SecKey node_secret = 3;
 }
 
 // Initialize a new channel

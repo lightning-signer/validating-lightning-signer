@@ -393,6 +393,28 @@ impl Signer for SignServer {
         Ok(Response::new(reply))
     }
 
+    async fn get_node_param(
+        &self,
+        request: Request<GetNodeParamRequest>,
+    ) -> Result<Response<GetNodeParamReply>, Status> {
+        let req = request.into_inner();
+        let node_id = self.node_id(req.node_id.clone())?;
+        log_req_enter!(&node_id, &req);
+
+        let node = self.signer.get_node(&node_id)?;
+        let extpubkey = node.get_account_extended_pubkey();
+        let bolt12_pubkey = node.get_bolt12_pubkey();
+        let node_secret = node.get_node_secret();
+        let reply = GetNodeParamReply {
+            xpub: Some(ExtPubKey { encoded: format!("{}", extpubkey) }),
+            bolt12_pubkey: Some(XOnlyPubKey { data: bolt12_pubkey.serialize().to_vec() }),
+            node_secret: Some(SecKey { data: node_secret[..].to_vec() }),
+        };
+
+        log_req_reply!(&node_id, &reply);
+        Ok(Response::new(reply))
+    }
+
     async fn new_channel(
         &self,
         request: Request<NewChannelRequest>,
