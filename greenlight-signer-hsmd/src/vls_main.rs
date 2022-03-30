@@ -1,50 +1,24 @@
-use std::convert::TryInto;
-use std::os::unix::io::RawFd;
-use std::{env, fs, thread};
+//! A single-binary hsmd drop-in replacement for CLN, using the VLS library
+
+use std::{env, thread};
 
 use clap::{App, AppSettings, Arg};
-use env_logger::Env;
 use log::{error, info};
-use nix::sys::socket::{socketpair, AddressFamily, SockFlag, SockType};
-use nix::unistd::{close, fork, ForkResult};
-use secp256k1::rand::rngs::OsRng;
-use secp256k1::Secp256k1;
 
 use connection::UnixConnection;
-use greenlight_protocol::model::PubKey;
 use greenlight_protocol::{msgs, msgs::Message, Error, Result};
 use greenlight_signer::greenlight_protocol;
-use lightning_signer::persist::{DummyPersister, Persist};
+use lightning_signer::persist::Persist;
 use lightning_signer::Arc;
 
-use crate::client::{Client, UnixClient};
+use client::{Client, UnixClient};
 use greenlight_signer::handler::{Handler, RootHandler};
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
+use util::read_allowlist;
 
-mod client;
-mod connection;
-
-fn run_parent(fd: RawFd) {
-    let mut client = UnixClient::new(UnixConnection::new(fd));
-    info!("parent: start");
-    client.write(msgs::Memleak {}).unwrap();
-    info!("parent: {:?}", client.read());
-    let secp = Secp256k1::new();
-    let mut rng = OsRng::new().unwrap();
-    let (_, key) = secp.generate_keypair(&mut rng);
-
-    client
-        .write(msgs::ClientHsmFd { peer_id: PubKey(key.serialize()), dbid: 0, capabilities: 0 })
-        .unwrap();
-    info!("parent: {:?}", client.read());
-    let fd = client.recv_fd().expect("fd");
-    info!("parent: received fd {}", fd);
-    let mut client1 = UnixClient::new(UnixConnection::new(fd));
-    client1.write(msgs::Memleak {}).unwrap();
-    info!("parent: client1 {:?}", client1.read());
-}
+mod test;
+use remote_hsmd::*;
+use remote_hsmd::util::{read_integration_test_seed, setup_logging};
 
 fn signer_loop<C: 'static + Client, H: Handler>(client: C, handler: H) {
     let id = handler.client_id();
@@ -80,7 +54,7 @@ fn do_signer_loop<C: 'static + Client, H: Handler>(mut client: C, handler: H) ->
 }
 
 pub fn main() {
-    setup_logging("info");
+    setup_logging("hsmd  ","info");
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
         .about("Greenlight lightning-signer")
@@ -102,7 +76,7 @@ pub fn main() {
         return;
     }
     if matches.is_present("test") {
-        run_test();
+        test::run_test();
     } else {
         let conn = UnixConnection::new(3);
         let client = UnixClient::new(conn);
@@ -112,53 +86,4 @@ pub fn main() {
             RootHandler::new(client.id(), read_integration_test_seed(), persister, allowlist);
         signer_loop(client, handler);
     }
-}
-
-fn read_allowlist() -> Vec<String> {
-    let allowlist_path_res = env::var("ALLOWLIST");
-    if let Ok(allowlist_path) = allowlist_path_res {
-        let file =
-            File::open(&allowlist_path).expect(format!("open {} failed", &allowlist_path).as_str());
-        BufReader::new(file).lines().map(|l| l.expect("line")).collect()
-    } else {
-        Vec::new()
-    }
-}
-
-fn read_integration_test_seed() -> Option<[u8; 32]> {
-    let result = fs::read("hsm_secret");
-    if let Ok(data) = result {
-        Some(data.as_slice().try_into().expect("hsm_secret wrong length"))
-    } else {
-        None
-    }
-}
-
-fn run_test() {
-    info!("starting test");
-    let (fd3, fd4) =
-        socketpair(AddressFamily::Unix, SockType::Stream, None, SockFlag::empty()).unwrap();
-    assert_eq!(fd3, 3);
-    assert_eq!(fd4, 4);
-    match unsafe { fork() } {
-        Ok(ForkResult::Parent { child, .. }) => {
-            info!("child pid {}", child);
-            close(fd3).unwrap();
-            run_parent(fd4)
-        }
-        Ok(ForkResult::Child) => {
-            close(fd4).unwrap();
-            let conn = UnixConnection::new(fd3);
-            let client = UnixClient::new(conn);
-            let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
-            let seed = Some([0; 32]);
-            let handler = RootHandler::new(client.id(), seed, persister, vec![]);
-            signer_loop(client, handler)
-        }
-        Err(_) => {}
-    }
-}
-
-fn setup_logging(level: &str) {
-    env_logger::Builder::from_env(Env::default().default_filter_or(level)).init();
 }
