@@ -362,30 +362,30 @@ impl Signer for SignServer {
                 self.signer.warmstart_with_seed(node_config, hsm_secret)?
             }
         };
-        let node = self.signer.get_node(&node_id)?;
-        let node_secret = node.get_node_secret();
-        let reply = InitReply {
-            node_id: Some(NodeId { data: node_id.serialize().to_vec() }),
-            node_secret: Some(SecKey { data: node_secret[..].to_vec() }),
-        };
+        let reply = InitReply { node_id: Some(NodeId { data: node_id.serialize().to_vec() }) };
 
         // We don't want to log the secret, so comment this out by default
-        //log_req_reply!(&reply);
+        // log_req_reply!(&reply);
         Ok(Response::new(reply))
     }
 
-    async fn get_ext_pub_key(
+    async fn get_node_param(
         &self,
-        request: Request<GetExtPubKeyRequest>,
-    ) -> Result<Response<GetExtPubKeyReply>, Status> {
+        request: Request<GetNodeParamRequest>,
+    ) -> Result<Response<GetNodeParamReply>, Status> {
         let req = request.into_inner();
         let node_id = self.node_id(req.node_id.clone())?;
         log_req_enter!(&node_id, &req);
 
         let node = self.signer.get_node(&node_id)?;
         let extpubkey = node.get_account_extended_pubkey();
-        let reply =
-            GetExtPubKeyReply { xpub: Some(ExtPubKey { encoded: format!("{}", extpubkey) }) };
+        let bolt12_pubkey = node.get_bolt12_pubkey();
+        let node_secret = node.get_node_secret();
+        let reply = GetNodeParamReply {
+            xpub: Some(ExtPubKey { encoded: format!("{}", extpubkey) }),
+            bolt12_pubkey: Some(XOnlyPubKey { data: bolt12_pubkey.serialize().to_vec() }),
+            node_secret: Some(SecKey { data: node_secret[..].to_vec() }),
+        };
 
         log_req_reply!(&node_id, &reply);
         Ok(Response::new(reply))
@@ -1180,6 +1180,31 @@ impl Signer for SignServer {
         let reply = RecoverableNodeSignatureReply {
             signature: Some(EcdsaRecoverableSignature { data: sig_data }),
         };
+        log_req_reply!(&node_id, &reply);
+        Ok(Response::new(reply))
+    }
+
+    async fn sign_bolt12(
+        &self,
+        request: Request<SignBolt12Request>,
+    ) -> Result<Response<SchnorrSignatureReply>, Status> {
+        let req = request.into_inner();
+        let node_id = self.node_id(req.node_id.clone())?;
+        log_req_enter!(&node_id, &req);
+
+        let messagename = req.messagename.as_bytes();
+        let fieldname = req.fieldname.as_bytes();
+        let merkleroot = req.merkleroot.as_slice().try_into().map_err(|err| {
+            invalid_grpc_argument(format!("could not decode merkleroot: {}", err))
+        })?;
+        let publictweak_opt =
+            if req.publictweak.is_empty() { None } else { Some(req.publictweak.as_slice()) };
+
+        let node = self.signer.get_node(&node_id)?;
+        let sig = node.sign_bolt12(messagename, fieldname, merkleroot, publictweak_opt)?;
+        let reply =
+            SchnorrSignatureReply { signature: Some(SchnorrSignature { data: sig[..].to_vec() }) };
+
         log_req_reply!(&node_id, &reply);
         Ok(Response::new(reply))
     }
