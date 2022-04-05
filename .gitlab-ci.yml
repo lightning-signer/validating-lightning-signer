@@ -20,7 +20,7 @@ rust-1.45.2:
 # rust version in Debian bullseye
 rust-1.58.0:
   stage: build
-  image: rust:1.48.0
+  image: rust:1.58.0
   script:
     - (cd lightning-signer-core && cargo build --no-default-features --features=std)  # make sure it builds without test_utils enabled
     - cargo build
