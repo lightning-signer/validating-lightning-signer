@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::process::exit;
 use std::result::Result as StdResult;
 use std::sync::Arc;
 
@@ -86,7 +87,6 @@ impl ProtocolAdapter {
     // Get signer responses from gRPC and feed them back to the parent process
     pub fn start_stream_reader(&self, mut stream: Streaming<SignerResponse>) -> JoinHandle<()> {
         let requests = self.requests.clone();
-        let trigger = self.shutdown_trigger.clone();
         tokio::spawn(async move {
             loop {
                 let resp_opt = stream.next().await;
@@ -96,8 +96,11 @@ impl ProtocolAdapter {
                         if !resp.error.is_empty() {
                             error!("signer error: {}", resp.error);
                             // all signer errors are fatal
-                            trigger.trigger();
-                            break;
+                            // TODO exit more cleanly
+                            // Right now there's no clean way to stop the UNIX fd reader loop (aka "Signer Loop")
+                            // if the adapter determines there's a fatal error in the signer
+                            // sub-process, so just be aggressive here and exit.
+                            exit(1);
                         }
                         let mut reqs = requests.lock().await;
                         let channel_req_opt = reqs.requests.remove(&resp.request_id);
@@ -106,13 +109,15 @@ impl ProtocolAdapter {
                             let send_res = channel_req.reply_tx.send(reply);
                             if send_res.is_err() {
                                 error!("failed to send response back to internal channel");
-                                trigger.trigger();
-                                break;
+                                // TODO exit more cleanly
+                                // see above
+                                exit(1);
                             }
                         } else {
                             error!("got response for unknown request ID {}", resp.request_id);
-                            trigger.trigger();
-                            break;
+                            // TODO exit more cleanly
+                            // see above
+                            exit(1);
                         }
                     }
                     Some(Err(err)) => {
