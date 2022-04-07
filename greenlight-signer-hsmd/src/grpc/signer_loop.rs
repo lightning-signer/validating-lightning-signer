@@ -85,42 +85,44 @@ impl<C: 'static + Client> SignerLoop<C> {
                     self.client.write(msgs::ClientHsmFdReply {}).unwrap();
                     let new_client = self.client.new_client();
                     info!("new client {} -> {}", self.log_prefix, new_client.id());
-                    let peer_id = PublicKey::from_slice(&m.peer_id.0).expect("client pubkey");
+                    let peer_id = PublicKey::from_slice(&m.peer_id.0).expect("client pubkey"); // we don't expect a bad key from lightningd parent
                     let client_id = ClientId { peer_id, dbid: m.dbid };
                     let mut new_loop =
                         SignerLoop::new_for_client(new_client, self.sender.clone(), client_id);
                     spawn_blocking(move || new_loop.start());
                 }
                 _ => {
-                    let reply = self.handle_message(raw_msg);
+                    let reply = self.handle_message(raw_msg)?;
 
                     // Write the reply to the node
-                    self.client.write_vec(reply).unwrap();
+                    self.client.write_vec(reply)?;
                     info!("replied {}", self.log_prefix);
                 }
             }
         }
     }
 
-    fn handle_message(&mut self, message: Vec<u8>) -> Vec<u8> {
-        let reply_rx = self.send_request(message);
+    fn handle_message(&mut self, message: Vec<u8>) -> Result<Vec<u8>> {
+        let reply_rx = self.send_request(message)?;
         self.get_reply(reply_rx)
     }
 
-    fn send_request(&mut self, message: Vec<u8>) -> oneshot::Receiver<ChannelReply> {
+    fn send_request(&mut self, message: Vec<u8>) -> Result<oneshot::Receiver<ChannelReply>> {
         // Create a one-shot channel to receive the reply
         let (reply_tx, reply_rx) = oneshot::channel();
 
         // Send a request to the gRPC handler to send to signer
         let request = ChannelRequest { client_id: self.client_id.clone(), message, reply_tx };
 
-        self.sender.blocking_send(request).map_err(|_| ()).expect("send");
-        reply_rx
+        // This can fail if gRPC adapter shut down
+        self.sender.blocking_send(request).map_err(|_| Error::Eof)?;
+        Ok(reply_rx)
     }
 
-    fn get_reply(&mut self, reply_rx: oneshot::Receiver<ChannelReply>) -> Vec<u8> {
+    fn get_reply(&mut self, reply_rx: oneshot::Receiver<ChannelReply>) -> Result<Vec<u8>> {
         // Wait for the signer reply
-        let reply = reply_rx.blocking_recv().expect(format!("{}: reply", self.log_prefix).as_str());
-        reply.reply
+        // Can fail if the adapter shut down
+        let reply = reply_rx.blocking_recv().map_err(|_| Error::Eof)?;
+        Ok(reply.reply)
     }
 }

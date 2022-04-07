@@ -80,7 +80,7 @@ pub fn main() {
     } else {
         let conn = UnixConnection::new(3);
         let client = UnixClient::new(conn);
-        let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new("signer.kv"));
+        let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new("remote_hsmd_vls.kv"));
         let allowlist = read_allowlist();
         let handler =
             RootHandler::new(client.id(), read_integration_test_seed(), persister, allowlist);

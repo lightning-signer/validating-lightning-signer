@@ -13,6 +13,7 @@ use tonic::{Status, Streaming};
 use super::hsmd::{HsmRequestContext, SignerRequest, SignerResponse};
 use super::signer_loop::{ChannelReply, ChannelRequest};
 use std::sync::atomic::{AtomicU64, Ordering};
+use triggered::Trigger;
 
 struct Requests {
     requests: HashMap<u64, ChannelRequest>,
@@ -24,19 +25,22 @@ struct Requests {
 pub struct ProtocolAdapter {
     receiver: Arc<Mutex<Receiver<ChannelRequest>>>,
     requests: Arc<Mutex<Requests>>,
+    #[allow(unused)]
+    shutdown_trigger: Trigger,
 }
 
 pub type SignerStream =
     Pin<Box<dyn Stream<Item = StdResult<SignerRequest, Status>> + Send + 'static>>;
 
 impl ProtocolAdapter {
-    pub fn new(receiver: Receiver<ChannelRequest>) -> Self {
+    pub fn new(receiver: Receiver<ChannelRequest>, shutdown_trigger: Trigger) -> Self {
         ProtocolAdapter {
             receiver: Arc::new(Mutex::new(receiver)),
             requests: Arc::new(Mutex::new(Requests {
                 requests: HashMap::new(),
                 request_id: AtomicU64::new(0),
             })),
+            shutdown_trigger,
         }
     }
     // Get requests from the parent process and feed them to gRPC.
@@ -82,12 +86,19 @@ impl ProtocolAdapter {
     // Get signer responses from gRPC and feed them back to the parent process
     pub fn start_stream_reader(&self, mut stream: Streaming<SignerResponse>) -> JoinHandle<()> {
         let requests = self.requests.clone();
+        let trigger = self.shutdown_trigger.clone();
         tokio::spawn(async move {
             loop {
                 let resp_opt = stream.next().await;
                 match resp_opt {
                     Some(Ok(resp)) => {
                         info!("got signer response {}", resp.request_id);
+                        if !resp.error.is_empty() {
+                            error!("signer error: {}", resp.error);
+                            // all signer errors are fatal
+                            trigger.trigger();
+                            break;
+                        }
                         let mut reqs = requests.lock().await;
                         let channel_req_opt = reqs.requests.remove(&resp.request_id);
                         if let Some(channel_req) = channel_req_opt {
@@ -95,10 +106,12 @@ impl ProtocolAdapter {
                             let send_res = channel_req.reply_tx.send(reply);
                             if send_res.is_err() {
                                 error!("failed to send response back to internal channel");
+                                trigger.trigger();
                                 break;
                             }
                         } else {
                             error!("got response for unknown request ID {}", resp.request_id);
+                            trigger.trigger();
                             break;
                         }
                     }

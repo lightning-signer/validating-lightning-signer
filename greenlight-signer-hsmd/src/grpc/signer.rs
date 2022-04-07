@@ -1,9 +1,10 @@
 use super::hsmd::{self, PingRequest, SignerRequest, SignerResponse};
 use greenlight_signer::greenlight_protocol::model::PubKey;
 use greenlight_signer::greenlight_protocol::msgs;
-use greenlight_signer::handler::{Handler, RootHandler};
+use greenlight_signer::handler::{Error, Handler, RootHandler};
 use http::Uri;
 use lightning_signer::persist::Persist;
+use lightning_signer::util::status::Status;
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
 use log::{error, info};
 use remote_hsmd::util::{read_allowlist, read_integration_test_seed};
@@ -25,45 +26,67 @@ pub async fn start_signer(port: u16) {
         .authority(addr.to_string().as_str())
         .path_and_query("/")
         .build()
-        .expect("uri");
+        .expect("uri"); // infallible by construction
 
+    connect(uri).await;
+    info!("signer stopping");
+}
+
+async fn connect(uri: Uri) {
     let mut client = hsmd::hsmd_client::HsmdClient::connect(uri).await.expect("client connect");
     let result = client.ping(PingRequest { message: "hello".to_string() }).await.expect("ping");
     let reply = result.into_inner();
     info!("child got {}", reply.message);
     let (sender, receiver) = mpsc::channel(1);
     let response_stream = ReceiverStream::new(receiver);
-    let mut request_stream = client.signer_stream(response_stream).await.unwrap().into_inner();
-    let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new("signer.kv"));
+    let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new("remote_hsmd_vls_grpc2.kv"));
     let allowlist = read_allowlist();
     let root_handler = RootHandler::new(0, read_integration_test_seed(), persister, allowlist);
+
+    let mut request_stream = client.signer_stream(response_stream).await.unwrap().into_inner();
+
     while let Some(item) = request_stream.next().await {
         match item {
             Ok(request) => {
+                let request_id = request.request_id;
                 let response = handle(request, &root_handler);
                 match response {
                     Ok(response) => {
-                        sender.send(response).await.expect("send to internal channel");
+                        let res = sender.send(response).await;
+                        if res.is_err() {
+                            error!("stream closed");
+                            break;
+                        }
                     }
-                    Err(()) => {
+                    Err(e) => {
+                        error!("received error from handler: {:?}", e);
+                        let response = SignerResponse {
+                            request_id,
+                            message: vec![],
+                            error: format!("{:?}", e),
+                        };
+                        let res = sender.send(response).await;
+                        if res.is_err() {
+                            error!("stream closed");
+                        }
                         break;
                     }
                 }
             }
             Err(e) => {
-                error!("signer error - {}", e);
+                error!("error on stream: {}", e);
                 break;
             }
         }
     }
-    info!("child stopping");
 }
 
-fn handle(mut request: SignerRequest, root_handler: &RootHandler) -> StdResult<SignerResponse, ()> {
+fn handle(
+    mut request: SignerRequest,
+    root_handler: &RootHandler,
+) -> StdResult<SignerResponse, Error> {
     let len = request.message.len();
-    let msg = msgs::read_unframed(&mut request.message, len as u32).map_err(|e| {
-        error!("could not decode message for request {} {:?}", request.request_id, e)
-    })?;
+    let msg = msgs::read_unframed(&mut request.message, len as u32)?;
     info!(
         "signer got request {} dbid {} - {:?}",
         request.request_id,
@@ -71,16 +94,17 @@ fn handle(mut request: SignerRequest, root_handler: &RootHandler) -> StdResult<S
         msg
     );
     let reply = if let Some(context) = request.context {
-        let peer = PubKey(context.peer_id.try_into().map_err(|_| ())?);
+        let peer = PubKey(
+            context
+                .peer_id
+                .try_into()
+                .map_err(|_| Error::SigningError(Status::invalid_argument("peer id")))?,
+        );
         let handler = root_handler.for_new_client(context.dbid, peer, context.dbid);
-        handler.handle(msg).map_err(|e| {
-            error!("error while handling message: {:?}", e);
-        })?
+        handler.handle(msg)?
     } else {
-        root_handler.handle(msg).map_err(|e| {
-            error!("error while handling message: {:?}", e);
-        })?
+        root_handler.handle(msg)?
     };
     let ser_res = reply.vec_serialize();
-    Ok(SignerResponse { request_id: request.request_id, message: ser_res })
+    Ok(SignerResponse { request_id: request.request_id, message: ser_res, error: String::new() })
 }

@@ -25,10 +25,10 @@ impl TcpIncoming {
         nodelay: bool,
         keepalive: Option<Duration>,
     ) -> Result<Self, ()> {
-        std_listener.set_nonblocking(true).expect("set_nonblocking");
-        let listener = TcpListener::from_std(std_listener).expect("tokio TcpListener");
+        std_listener.set_nonblocking(true).expect("set_nonblocking"); // should be infallible on a new socket
+        let listener = TcpListener::from_std(std_listener).expect("tokio TcpListener"); // should only fail due to a fatal error in tokio runtime
 
-        let mut inner = AddrIncoming::from_listener(listener).expect("from_listener");
+        let mut inner = AddrIncoming::from_listener(listener).expect("from_listener"); // should be infallible
         inner.set_nodelay(nodelay);
         inner.set_keepalive(keepalive);
         Ok(TcpIncoming { inner })

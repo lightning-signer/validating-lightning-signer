@@ -99,8 +99,8 @@ struct HsmdService {
 }
 
 impl HsmdService {
-    fn new(shutdown_trigger: Trigger, receiver: Receiver<ChannelRequest>) -> Self {
-        let adapter = ProtocolAdapter::new(receiver);
+    fn new(receiver: Receiver<ChannelRequest>, shutdown_trigger: Trigger) -> Self {
+        let adapter = ProtocolAdapter::new(receiver, shutdown_trigger.clone());
         HsmdService {
             shutdown_trigger,
             adapter,
@@ -139,7 +139,7 @@ async fn start_server(listener: TcpListener, addr: SocketAddr, client: UnixClien
 
     let (sender, receiver) = mpsc::channel(1000);
 
-    let server = HsmdService::new(shutdown_trigger.clone(), receiver);
+    let server = HsmdService::new(receiver, shutdown_trigger.clone());
     let trigger1 = shutdown_trigger.clone();
     ctrlc::set_handler(move || {
         trigger1.trigger();
@@ -147,7 +147,8 @@ async fn start_server(listener: TcpListener, addr: SocketAddr, client: UnixClien
 
 
     let incoming =
-        TcpIncoming::new_from_std(listener, false, None).expect("incoming");
+        TcpIncoming::new_from_std(listener, false, None)
+            .expect("incoming"); // new_from_std seems to be infallible
     let service = Server::builder()
         .add_service(hsmd_server::HsmdServer::new(server))
         .serve_with_incoming_shutdown(incoming, shutdown_signal);
@@ -159,9 +160,9 @@ async fn start_server(listener: TcpListener, addr: SocketAddr, client: UnixClien
     });
 
     // Start the gRPC listener loop - the signer will connect to us
-    println!("starting on port {}", addr.port());
-    service.await.expect("service");
-    println!("stopping");
+    info!("starting gRPC service on port {}", addr.port());
+    service.await.expect("during serving the gRPC API");
+    info!("stopping gRPC service");
 }
 
 unsafe fn spawn_signer(listener: TcpListener, port: u16) -> TcpListener {
@@ -186,7 +187,8 @@ unsafe fn spawn_signer(listener: TcpListener, port: u16) -> TcpListener {
 fn allocate_port() -> (TcpListener, SocketAddr) {
     let loopback = Ipv4Addr::new(127, 0, 0, 1);
     let addr = SocketAddrV4::new(loopback, 0);
-    let listener = TcpListener::bind(addr).expect("bind");
+    let listener = TcpListener::bind(addr)
+        .expect("bind"); // this should be infallible
     let addr = listener.local_addr().expect("local");
     (listener, addr)
 }
