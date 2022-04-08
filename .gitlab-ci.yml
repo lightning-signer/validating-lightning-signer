@@ -1,0 +1,14 @@
+cache:
+  paths:
+    - .cache
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  CARGO_HOME: "$CI_PROJECT_DIR/.cache/cargo"
+
+compile:
+  image: rust:1.58.1
+  timeout: 30m
+  script:
+    - rustup component add rustfmt
+    - cargo test --locked
