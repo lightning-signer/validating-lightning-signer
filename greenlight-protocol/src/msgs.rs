@@ -6,7 +6,7 @@ use serde::{de, ser};
 use serde_bolt::{from_vec as sb_from_vec, to_vec, WireString};
 use serde_bolt::{LargeBytes, Read, Write};
 use serde_derive::{Deserialize, Serialize};
-
+use bolt_derive::SerBolt;
 use crate::error::{Error, Result};
 use crate::io::{read_u16, read_u32};
 use crate::model::*;
@@ -20,22 +20,8 @@ pub trait SerBolt {
     fn as_vec(&self) -> Vec<u8>;
 }
 
-macro_rules! impl_ser {
-    ($val_type:ty) => {
-        impl SerBolt for $val_type {
-            fn as_vec(&self) -> Vec<u8> {
-                let message_type = Self::TYPE;
-                let mut buf = message_type.to_be_bytes().to_vec();
-                let mut val_buf = to_vec(&self).expect("serialize");
-                buf.append(&mut val_buf);
-                buf
-            }
-        }
-    };
-}
-
 /// hsmd Init
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct HsmdInit {
     pub key_version: Bip32KeyVersion,
     pub chain_params: BlockId,
@@ -51,7 +37,7 @@ impl TypedMessage for HsmdInit {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct HsmdInitReply {
     pub node_id: PubKey,
     pub bip32: ExtKey,
@@ -63,10 +49,8 @@ impl TypedMessage for HsmdInitReply {
     const TYPE: u16 = 111;
 }
 
-impl_ser!(HsmdInitReply);
-
 /// Connect a new client
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct ClientHsmFd {
     pub peer_id: PubKey,
     pub dbid: u64,
@@ -78,7 +62,7 @@ impl TypedMessage for ClientHsmFd {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct ClientHsmFdReply {
     // TODO fd handling
 }
@@ -87,10 +71,8 @@ impl TypedMessage for ClientHsmFdReply {
     const TYPE: u16 = 109;
 }
 
-impl_ser!(ClientHsmFdReply);
-
 /// Sign invoice
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignInvoice {
     pub u5bytes: Vec<u8>,
     pub hrp: Vec<u8>,
@@ -101,7 +83,7 @@ impl TypedMessage for SignInvoice {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignInvoiceReply {
     pub signature: RecoverableSignature,
 }
@@ -110,10 +92,8 @@ impl TypedMessage for SignInvoiceReply {
     const TYPE: u16 = 108;
 }
 
-impl_ser!(SignInvoiceReply);
-
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignWithdrawal {
     pub utxos: Vec<Utxo>,
     pub psbt: LargeBytes,
@@ -124,7 +104,7 @@ impl TypedMessage for SignWithdrawal {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignWithdrawalReply {
     pub psbt: LargeBytes,
 }
@@ -133,10 +113,8 @@ impl TypedMessage for SignWithdrawalReply {
     const TYPE: u16 = 107;
 }
 
-impl_ser!(SignWithdrawalReply);
-
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct Ecdh {
     pub point: PubKey,
 }
@@ -146,7 +124,7 @@ impl TypedMessage for Ecdh {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct EcdhReply {
     pub secret: Secret,
 }
@@ -155,10 +133,8 @@ impl TypedMessage for EcdhReply {
     const TYPE: u16 = 100;
 }
 
-impl_ser!(EcdhReply);
-
 /// Memleak
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct Memleak {}
 
 impl TypedMessage for Memleak {
@@ -166,7 +142,7 @@ impl TypedMessage for Memleak {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct MemleakReply {
     pub result: bool,
 }
@@ -175,10 +151,8 @@ impl TypedMessage for MemleakReply {
     const TYPE: u16 = 133;
 }
 
-impl_ser!(MemleakReply);
-
 /// CheckFutureSecret
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct CheckFutureSecret {
     pub commitment_number: u64,
     pub secret: Secret,
@@ -189,7 +163,7 @@ impl TypedMessage for CheckFutureSecret {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct CheckFutureSecretReply {
     pub result: bool,
 }
@@ -198,10 +172,8 @@ impl TypedMessage for CheckFutureSecretReply {
     const TYPE: u16 = 122;
 }
 
-impl_ser!(CheckFutureSecretReply);
-
 /// SignMessage
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignMessage {
     pub message: Vec<u8>,
 }
@@ -211,7 +183,7 @@ impl TypedMessage for SignMessage {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignMessageReply {
     pub signature: RecoverableSignature,
 }
@@ -220,10 +192,8 @@ impl TypedMessage for SignMessageReply {
     const TYPE: u16 = 123;
 }
 
-impl_ser!(SignMessageReply);
-
 /// SignBolt12
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignBolt12 {
     pub message_name: WireString,
     pub field_name: WireString,
@@ -236,7 +206,7 @@ impl TypedMessage for SignBolt12 {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignBolt12Reply {
     pub signature: Signature,
 }
@@ -245,11 +215,9 @@ impl TypedMessage for SignBolt12Reply {
     const TYPE: u16 = 125;
 }
 
-impl_ser!(SignBolt12Reply);
-
 
 /// Sign channel update
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignChannelUpdate {
     pub update: Vec<u8>,
 }
@@ -259,7 +227,7 @@ impl TypedMessage for SignChannelUpdate {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignChannelUpdateReply {
     pub update: Vec<u8>,
 }
@@ -268,10 +236,8 @@ impl TypedMessage for SignChannelUpdateReply {
     const TYPE: u16 = 103;
 }
 
-impl_ser!(SignChannelUpdateReply);
-
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignChannelAnnouncement {
     pub announcement: Vec<u8>,
 }
@@ -281,7 +247,7 @@ impl TypedMessage for SignChannelAnnouncement {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignChannelAnnouncementReply {
     pub node_signature: Signature,
     pub bitcoin_signature: Signature,
@@ -291,10 +257,8 @@ impl TypedMessage for SignChannelAnnouncementReply {
     const TYPE: u16 = 102;
 }
 
-impl_ser!(SignChannelAnnouncementReply);
-
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignNodeAnnouncement {
     pub announcement: Vec<u8>,
 }
@@ -304,7 +268,7 @@ impl TypedMessage for SignNodeAnnouncement {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignNodeAnnouncementReply {
     pub node_signature: Signature,
 }
@@ -313,10 +277,8 @@ impl TypedMessage for SignNodeAnnouncementReply {
     const TYPE: u16 = 106;
 }
 
-impl_ser!(SignNodeAnnouncementReply);
-
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct GetPerCommitmentPoint {
     pub commitment_number: u64,
 }
@@ -326,7 +288,7 @@ impl TypedMessage for GetPerCommitmentPoint {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct GetPerCommitmentPointReply {
     pub point: PubKey,
     pub secret: Option<Secret>,
@@ -336,10 +298,8 @@ impl TypedMessage for GetPerCommitmentPointReply {
     const TYPE: u16 = 118;
 }
 
-impl_ser!(GetPerCommitmentPointReply);
-
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct ReadyChannel {
     pub is_outbound: bool,
     pub channel_value: u64,
@@ -361,17 +321,15 @@ impl TypedMessage for ReadyChannel {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct ReadyChannelReply {}
 
 impl TypedMessage for ReadyChannelReply {
     const TYPE: u16 = 131;
 }
 
-impl_ser!(ReadyChannelReply);
-
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct ValidateCommitmentTx {
     pub tx: LargeBytes,
     pub psbt: LargeBytes,
@@ -387,7 +345,7 @@ impl TypedMessage for ValidateCommitmentTx {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct ValidateCommitmentTxReply {
     pub old_commitment_secret: Option<Secret>,
     pub next_per_commitment_point: PubKey,
@@ -397,10 +355,8 @@ impl TypedMessage for ValidateCommitmentTxReply {
     const TYPE: u16 = 135;
 }
 
-impl_ser!(ValidateCommitmentTxReply);
-
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct ValidateRevocation {
     pub commitment_number: u64,
     pub commitment_secret: Secret,
@@ -411,17 +367,15 @@ impl TypedMessage for ValidateRevocation {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct ValidateRevocationReply {}
 
 impl TypedMessage for ValidateRevocationReply {
     const TYPE: u16 = 136;
 }
 
-impl_ser!(ValidateRevocationReply);
-
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignCommitmentTx {
     pub peer_id: PubKey,
     pub dbid: u64,
@@ -436,7 +390,7 @@ impl TypedMessage for SignCommitmentTx {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignRemoteCommitmentTx {
     pub tx: LargeBytes,
     pub psbt: LargeBytes,
@@ -453,7 +407,7 @@ impl TypedMessage for SignRemoteCommitmentTx {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignDelayedPaymentToUs {
     pub commitment_number: u64,
     pub tx: LargeBytes,
@@ -466,7 +420,7 @@ impl TypedMessage for SignDelayedPaymentToUs {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignRemoteHtlcToUs {
     pub remote_per_commitment_point: PubKey,
     pub tx: LargeBytes,
@@ -480,7 +434,7 @@ impl TypedMessage for SignRemoteHtlcToUs {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignLocalHtlcTx {
     pub commitment_number: u64,
     pub tx: LargeBytes,
@@ -494,7 +448,7 @@ impl TypedMessage for SignLocalHtlcTx {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignMutualCloseTx {
     pub tx: LargeBytes,
     pub psbt: LargeBytes,
@@ -506,7 +460,7 @@ impl TypedMessage for SignMutualCloseTx {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignCommitmentTxReply {
     pub signature: BitcoinSignature,
 }
@@ -515,10 +469,8 @@ impl TypedMessage for SignCommitmentTxReply {
     const TYPE: u16 = 105;
 }
 
-impl_ser!(SignCommitmentTxReply);
-
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignTxReply {
     pub signature: BitcoinSignature,
 }
@@ -527,10 +479,8 @@ impl TypedMessage for SignTxReply {
     const TYPE: u16 = 112;
 }
 
-impl_ser!(SignTxReply);
-
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct NewChannel {
     pub node_id: PubKey,
     pub dbid: u64,
@@ -541,17 +491,15 @@ impl TypedMessage for NewChannel {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct NewChannelReply {}
 
 impl TypedMessage for NewChannelReply {
     const TYPE: u16 = 130;
 }
 
-impl_ser!(NewChannelReply);
-
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct GetChannelBasepoints {
     pub node_id: PubKey,
     pub dbid: u64,
@@ -562,7 +510,7 @@ impl TypedMessage for GetChannelBasepoints {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct GetChannelBasepointsReply {
     pub basepoints: Basepoints,
     pub funding: PubKey,
@@ -572,10 +520,8 @@ impl TypedMessage for GetChannelBasepointsReply {
     const TYPE: u16 = 110;
 }
 
-impl_ser!(GetChannelBasepointsReply);
-
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignRemoteHtlcTx {
     pub tx: LargeBytes,
     pub psbt: LargeBytes,
@@ -589,7 +535,7 @@ impl TypedMessage for SignRemoteHtlcTx {
 }
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct SignPenaltyToUs {
     pub revocation_secret: Secret,
     pub tx: LargeBytes,

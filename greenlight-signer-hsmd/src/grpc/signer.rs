@@ -81,10 +81,7 @@ async fn connect(uri: Uri) {
     }
 }
 
-fn handle(
-    request: SignerRequest,
-    root_handler: &RootHandler,
-) -> StdResult<SignerResponse, Error> {
+fn handle(request: SignerRequest, root_handler: &RootHandler) -> StdResult<SignerResponse, Error> {
     let msg = msgs::from_vec(request.message)?;
     info!(
         "signer got request {} dbid {} - {:?}",
