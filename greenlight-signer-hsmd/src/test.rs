@@ -4,7 +4,7 @@ use std::sync::Arc;
 use lightning_signer::persist::DummyPersister;
 use lightning_signer::persist::Persist;
 use log::info;
-use nix::sys::socket::{AddressFamily, socketpair, SockFlag, SockType};
+use nix::sys::socket::{socketpair, AddressFamily, SockFlag, SockType};
 use nix::unistd::{close, fork, ForkResult};
 use secp256k1::rand::rngs::OsRng;
 use secp256k1::Secp256k1;

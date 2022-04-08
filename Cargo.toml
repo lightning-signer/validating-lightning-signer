@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "bolt-derive",
     "greenlight-protocol",
     "greenlight-signer",
     "greenlight-signer-hsmd",

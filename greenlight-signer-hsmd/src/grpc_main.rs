@@ -8,11 +8,11 @@
 //! opposite direction (signer -> node), which makes it more convenient if the signer is behind
 //! NAT.
 
-use std::{env, fs};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::process::exit;
 use std::result::Result as StdResult;
+use std::{env, fs};
 
 use clap::{App, AppSettings, Arg};
 use log::{error, info};
@@ -21,8 +21,8 @@ use nix::unistd::{fork, ForkResult};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::spawn_blocking;
-use tonic::{Request, Response, Status, Streaming};
 use tonic::transport::Server;
+use tonic::{Request, Response, Status, Streaming};
 use triggered::Trigger;
 
 use client::UnixClient;
@@ -31,8 +31,8 @@ use grpc::hsmd::{self, hsmd_server, PingReply, PingRequest};
 use grpc::incoming::TcpIncoming;
 use grpc::signer::start_signer;
 use grpc::signer_loop::{ChannelRequest, SignerLoop};
-use remote_hsmd::*;
 use remote_hsmd::util::setup_logging;
+use remote_hsmd::*;
 
 use crate::grpc::adapter::{ProtocolAdapter, SignerStream};
 use crate::hsmd::SignerResponse;
@@ -101,12 +101,8 @@ struct HsmdService {
 impl HsmdService {
     fn new(receiver: Receiver<ChannelRequest>, shutdown_trigger: Trigger) -> Self {
         let adapter = ProtocolAdapter::new(receiver, shutdown_trigger.clone());
-        HsmdService {
-            shutdown_trigger,
-            adapter,
-        }
+        HsmdService { shutdown_trigger, adapter }
     }
-
 }
 
 #[tonic::async_trait]
@@ -114,14 +110,15 @@ impl hsmd_server::Hsmd for HsmdService {
     async fn ping(&self, request: Request<PingRequest>) -> StdResult<Response<PingReply>, Status> {
         info!("got ping request");
         let r = request.into_inner();
-        Ok(Response::new(PingReply {
-            message: r.message
-        }))
+        Ok(Response::new(PingReply { message: r.message }))
     }
 
     type SignerStreamStream = SignerStream;
 
-    async fn signer_stream(&self, request: Request<Streaming<SignerResponse>>) -> StdResult<Response<Self::SignerStreamStream>, Status> {
+    async fn signer_stream(
+        &self,
+        request: Request<Streaming<SignerResponse>>,
+    ) -> StdResult<Response<Self::SignerStreamStream>, Status> {
         let stream = request.into_inner();
 
         let stream_reader_task = self.adapter.start_stream_reader(stream);
@@ -143,12 +140,10 @@ async fn start_server(listener: TcpListener, addr: SocketAddr, client: UnixClien
     let trigger1 = shutdown_trigger.clone();
     ctrlc::set_handler(move || {
         trigger1.trigger();
-    }).expect("Error setting Ctrl-C handler");
+    })
+    .expect("Error setting Ctrl-C handler");
 
-
-    let incoming =
-        TcpIncoming::new_from_std(listener, false, None)
-            .expect("incoming"); // new_from_std seems to be infallible
+    let incoming = TcpIncoming::new_from_std(listener, false, None).expect("incoming"); // new_from_std seems to be infallible
     let service = Server::builder()
         .add_service(hsmd_server::HsmdServer::new(server))
         .serve_with_incoming_shutdown(incoming, shutdown_signal);
@@ -174,7 +169,7 @@ unsafe fn spawn_signer(listener: TcpListener, port: u16) -> TcpListener {
         Ok(ForkResult::Child) => {
             info!("in child");
             drop(listener);
-            setup_logging("signer" , "debug");
+            setup_logging("signer", "debug");
             start_signer(port);
             exit(0);
         }
@@ -187,8 +182,7 @@ unsafe fn spawn_signer(listener: TcpListener, port: u16) -> TcpListener {
 fn allocate_port() -> (TcpListener, SocketAddr) {
     let loopback = Ipv4Addr::new(127, 0, 0, 1);
     let addr = SocketAddrV4::new(loopback, 0);
-    let listener = TcpListener::bind(addr)
-        .expect("bind"); // this should be infallible
+    let listener = TcpListener::bind(addr).expect("bind"); // this should be infallible
     let addr = listener.local_addr().expect("local");
     (listener, addr)
 }

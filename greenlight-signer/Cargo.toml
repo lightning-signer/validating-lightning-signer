@@ -9,9 +9,14 @@ default = ["std"]
 std = ["secp256k1/rand-std"]
 
 [dependencies]
-lightning-signer-core = { path = "../../validating-lightning-signer/lightning-signer-core", default_features = false, features = ["no-std"] }
 greenlight-protocol = { path = "../greenlight-protocol" }
 secp256k1 = { version = "0.20", default_features = false, features = ["bitcoin_hashes", "rand"] }
 log = { version = "0.4", default_features = false }
 serde = { version = "1.0", default_features = false }
 bit-vec = { version = "0.6", default_features = false }
+
+[dependencies.lightning-signer-core]
+git = "https://gitlab.com/lightning-signer/validating-lightning-signer.git"
+rev = "3b387ee2bc4c1e6ba75f42e048c0492e8db7fc2e"
+default_features = false
+features = ["no-std"]

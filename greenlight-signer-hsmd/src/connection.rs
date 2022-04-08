@@ -77,7 +77,7 @@ impl Read for UnixConnection {
     fn read(&mut self, dest: &mut [u8]) -> SResult<usize> {
         let mut cursor = 0;
         if dest.is_empty() {
-            return Ok(0)
+            return Ok(0);
         }
         if let Some(peek) = self.peek {
             cursor += 1;
@@ -104,23 +104,20 @@ impl Read for UnixConnection {
 
     fn peek(&mut self) -> SResult<Option<u8>> {
         if self.peek.is_some() {
-            return Ok(self.peek)
+            return Ok(self.peek);
         }
         let mut buf = [0; 1];
         let res: io::Result<usize> = self.stream.read(&mut buf);
         return match res {
-            Ok(n) => {
+            Ok(n) =>
                 if n == 0 {
                     Ok(None)
                 } else {
                     assert_eq!(n, 1);
                     self.peek = Some(buf[0]);
                     Ok(self.peek)
-                }
-            }
-            Err(e) => {
-                Err(SError::Message(format!("{}", e)))
-            }
+                },
+            Err(e) => Err(SError::Message(format!("{}", e))),
         };
     }
 }

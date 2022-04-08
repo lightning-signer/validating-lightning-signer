@@ -5,8 +5,8 @@ use serde::Serialize;
 
 use greenlight_protocol::{msgs, Result};
 use greenlight_signer::greenlight_protocol;
-use greenlight_signer::greenlight_protocol::Error;
 use greenlight_signer::greenlight_protocol::serde_bolt::Read;
+use greenlight_signer::greenlight_protocol::Error;
 
 use crate::connection::UnixConnection;
 

@@ -11,7 +11,7 @@ default = ["grpc"]
 grpc = ["tokio", "tonic", "prost"]
 
 [dependencies]
-lightning-signer-core = { path = "../../validating-lightning-signer/lightning-signer-core" }
+lightning-signer-core = { git = "https://gitlab.com/lightning-signer/validating-lightning-signer.git", rev = "3b387ee2bc4c1e6ba75f42e048c0492e8db7fc2e" }
 greenlight-signer = { path = "../greenlight-signer" }
 secp256k1 = { version = "0.20", features = ["rand-std", "bitcoin_hashes"] }
 nix = "0.22"
@@ -36,7 +36,8 @@ triggered = "0.1"
 async-stream = "0.3"
 
 [dependencies.lightning-signer-server]
-path = "../../validating-lightning-signer/lightning-signer-server"
+git = "https://gitlab.com/lightning-signer/validating-lightning-signer.git"
+rev = "3b387ee2bc4c1e6ba75f42e048c0492e8db7fc2e"
 default_features = false
 features = ["persist_kv_json"]
 
