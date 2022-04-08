@@ -45,7 +45,7 @@ fn do_signer_loop<C: 'static + Client, H: Handler>(mut client: C, handler: H) ->
             }
             msg => {
                 let reply = handler.handle(msg).expect("handle");
-                let v = reply.vec_serialize();
+                let v = reply.as_vec();
                 client.write_vec(v).unwrap();
                 info!("replied {} {}", std::process::id(), handler.client_id());
             }

@@ -82,11 +82,10 @@ async fn connect(uri: Uri) {
 }
 
 fn handle(
-    mut request: SignerRequest,
+    request: SignerRequest,
     root_handler: &RootHandler,
 ) -> StdResult<SignerResponse, Error> {
-    let len = request.message.len();
-    let msg = msgs::read_unframed(&mut request.message, len as u32)?;
+    let msg = msgs::from_vec(request.message)?;
     info!(
         "signer got request {} dbid {} - {:?}",
         request.request_id,
@@ -105,6 +104,6 @@ fn handle(
     } else {
         root_handler.handle(msg)?
     };
-    let ser_res = reply.vec_serialize();
+    let ser_res = reply.as_vec();
     Ok(SignerResponse { request_id: request.request_id, message: ser_res, error: String::new() })
 }

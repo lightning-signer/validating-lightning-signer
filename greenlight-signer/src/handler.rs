@@ -40,7 +40,7 @@ use greenlight_protocol::model::{
     Basepoints, BitcoinSignature, ExtKey, Htlc, PubKey, PubKey32, RecoverableSignature, Secret,
     Signature,
 };
-use greenlight_protocol::msgs::{SerMessage, SignBolt12Reply};
+use greenlight_protocol::msgs::{SerBolt, SignBolt12Reply};
 use greenlight_protocol::serde_bolt::LargeBytes;
 use greenlight_protocol::{msgs, msgs::Message, Error as ProtocolError};
 use lightning_signer::util::status::Status;
@@ -68,7 +68,7 @@ impl From<Status> for Error {
 pub type Result<T> = core::result::Result<T, Error>;
 
 pub trait Handler {
-    fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>>;
+    fn handle(&self, msg: Message) -> Result<Box<dyn SerBolt>>;
     fn client_id(&self) -> u64;
     fn for_new_client(&self, client_id: u64, peer_id: PubKey, dbid: u64) -> ChannelHandler;
 }
@@ -123,7 +123,7 @@ impl RootHandler {
 }
 
 impl Handler for RootHandler {
-    fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>> {
+    fn handle(&self, msg: Message) -> Result<Box<dyn SerBolt>> {
         match msg {
             Message::Memleak(_m) => Ok(Box::new(msgs::MemleakReply { result: false })),
             Message::SignBolt12(m) => {
@@ -353,7 +353,7 @@ impl ChannelHandler {
 }
 
 impl Handler for ChannelHandler {
-    fn handle(&self, msg: Message) -> Result<Box<dyn SerMessage>> {
+    fn handle(&self, msg: Message) -> Result<Box<dyn SerBolt>> {
         match msg {
             Message::Memleak(_m) => Ok(Box::new(msgs::MemleakReply { result: false })),
             Message::CheckFutureSecret(m) => {

@@ -3,7 +3,7 @@
 use alloc::vec::Vec;
 
 use serde::{de, ser};
-use serde_bolt::{from_vec, to_vec, WireString};
+use serde_bolt::{from_vec as sb_from_vec, to_vec, WireString};
 use serde_bolt::{LargeBytes, Read, Write};
 use serde_derive::{Deserialize, Serialize};
 
@@ -15,14 +15,15 @@ pub trait TypedMessage {
     const TYPE: u16;
 }
 
-pub trait SerMessage {
-    fn vec_serialize(&self) -> Vec<u8>;
+/// Serialize a message with a type prefix, in BOLT style
+pub trait SerBolt {
+    fn as_vec(&self) -> Vec<u8>;
 }
 
 macro_rules! impl_ser {
     ($val_type:ty) => {
-        impl SerMessage for $val_type {
-            fn vec_serialize(&self) -> Vec<u8> {
+        impl SerBolt for $val_type {
+            fn as_vec(&self) -> Vec<u8> {
                 let message_type = Self::TYPE;
                 let mut buf = message_type.to_be_bytes().to_vec();
                 let mut val_buf = to_vec(&self).expect("serialize");
@@ -665,24 +666,37 @@ fn from_vec_no_trailing<T: TypedMessage>(s: &mut Vec<u8>) -> Result<T>
 where
     T: de::DeserializeOwned,
 {
-    let res: T = from_vec(s)?;
+    let res: T = sb_from_vec(s)?;
     if !s.is_empty() {
         return Err(Error::TrailingBytes(T::TYPE));
     }
     Ok(res)
 }
 
-/// Read a BOLT message:
+/// Read a length framed BOLT message:
 ///
 /// - u32 packet length
 /// - u16 packet type
 /// - data
 pub fn read<R: Read>(reader: &mut R) -> Result<Message> {
     let len = read_u32(reader)?;
-    read_unframed(reader, len)
+    from_reader(reader, len)
 }
 
-pub fn read_unframed<R: Read>(reader: &mut R, len: u32) -> Result<Message> {
+/// Read a BOLT message from a vector:
+///
+/// - u16 packet type
+/// - data
+pub fn from_vec(mut v: Vec<u8>) -> Result<Message> {
+    let len = v.len();
+    from_reader(&mut v, len as u32)
+}
+
+/// Read a BOLT message from a reader:
+///
+/// - u16 packet type
+/// - data
+pub fn from_reader<R: Read>(reader: &mut R, len: u32) -> Result<Message> {
     let mut data = Vec::new();
     if len < 2 {
         return Err(Error::ShortRead);
@@ -807,6 +821,23 @@ mod tests {
     use crate::msgs::Message;
 
     use super::*;
+
+    #[test]
+    fn roundtrip_test() {
+        let msg = SignChannelAnnouncementReply {
+            node_signature: Signature([0; 64]),
+            bitcoin_signature: Signature([1; 64]),
+        };
+
+        let ser = msg.as_vec();
+        let dmsg = from_vec(ser).unwrap();
+        if let Message::SignChannelAnnouncementReply(dmsg) = dmsg {
+            assert_eq!(dmsg.node_signature.0, msg.node_signature.0);
+            assert_eq!(dmsg.bitcoin_signature.0, msg.bitcoin_signature.0);
+        } else {
+            panic!("bad deser type")
+        }
+    }
 
     // ignore tests for now, the trace capture was not on the lightning-signer branch
     #[test]
