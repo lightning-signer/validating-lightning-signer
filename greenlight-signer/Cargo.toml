@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Devrandom <c1.devrandom@niftybox.net>"]
 edition = "2018"
 
+[features]
+default = ["std"]
+std = ["secp256k1/rand-std"]
+
 [dependencies]
 lightning-signer-core = { path = "../../validating-lightning-signer/lightning-signer-core", default_features = false, features = ["no-std"] }
 greenlight-protocol = { path = "../greenlight-protocol" }

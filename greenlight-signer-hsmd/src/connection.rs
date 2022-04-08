@@ -13,14 +13,14 @@ use greenlight_signer::greenlight_protocol;
 use nix::sys::uio::IoVec;
 use nix::unistd::close;
 
-pub(crate) struct UnixConnection {
+pub struct UnixConnection {
     fd: RawFd,
     stream: UnixStream,
     peek: Option<u8>,
 }
 
 impl UnixConnection {
-    pub(crate) fn new(fd: RawFd) -> Self {
+    pub fn new(fd: RawFd) -> Self {
         UnixConnection { fd, stream: unsafe { UnixStream::from_raw_fd(fd) }, peek: None }
     }
 

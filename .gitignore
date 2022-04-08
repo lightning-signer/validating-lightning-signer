@@ -3,3 +3,4 @@
 /coverage.txt
 signer.kv
 target/
+/greenlight-signer-hsmd/src/grpc/hsmd.rs
