@@ -14,6 +14,7 @@ use bitcoin::secp256k1::SecretKey;
 use bitcoin::util::psbt::serialize::Deserialize;
 use bitcoin::{Network, Script, SigHashType};
 use lightning_signer::bitcoin;
+use lightning_signer::bitcoin::bech32::u5;
 use lightning_signer::bitcoin::consensus::{Decodable, Encodable};
 use lightning_signer::bitcoin::util::bip32::{ChildNumber, KeySource};
 use lightning_signer::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -23,12 +24,11 @@ use lightning_signer::lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::{Node, NodeConfig, SpendType};
 use lightning_signer::persist::Persist;
+use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
-use lightning_signer::bitcoin::bech32::u5;
-use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
 #[allow(unused_imports)]
 use log::info;
 use secp256k1::rand::rngs::OsRng;
@@ -87,19 +87,15 @@ impl RootHandler {
         allowlist: Vec<String>,
     ) -> Self {
         let network = Network::Regtest;
-        let config = NodeConfig {
-            network,
-            key_derivation_style: KeyDerivationStyle::Native,
-        };
+        let config = NodeConfig { network, key_derivation_style: KeyDerivationStyle::Native };
 
-        let seed =
-            seed_opt.unwrap_or_else(|| {
-                let mut rng = OsRng::new().unwrap();
+        let seed = seed_opt.unwrap_or_else(|| {
+            let mut rng = OsRng::new().unwrap();
 
-                let mut seed = [0; 32];
-                rng.fill_bytes(&mut seed);
-                seed
-            });
+            let mut seed = [0; 32];
+            rng.fill_bytes(&mut seed);
+            seed
+        });
 
         let nodes = persister.get_nodes();
         let policy = make_simple_policy(network);
@@ -127,19 +123,15 @@ impl Handler for RootHandler {
         match msg {
             Message::Memleak(_m) => Ok(Box::new(msgs::MemleakReply { result: false })),
             Message::SignBolt12(m) => {
-                let tweak = if m.public_tweak.is_empty() {
-                    None
-                } else {
-                    Some(m.public_tweak.as_slice())
-                };
+                let tweak =
+                    if m.public_tweak.is_empty() { None } else { Some(m.public_tweak.as_slice()) };
                 let sig = self.node.sign_bolt12(
                     &m.message_name.0,
                     &m.field_name.0,
                     &m.merkle_root.0,
-                    tweak)?;
-                Ok(Box::new(SignBolt12Reply {
-                    signature: Signature(sig.as_ref().clone())
-                }))
+                    tweak,
+                )?;
+                Ok(Box::new(SignBolt12Reply { signature: Signature(sig.as_ref().clone()) }))
             }
             Message::SignMessage(m) => {
                 let sig = self.node.sign_message(&m.message)?;
@@ -241,7 +233,11 @@ impl Handler for RootHandler {
             Message::SignInvoice(m) => {
                 let hrp = String::from_utf8(m.hrp).expect("hrp");
                 let hrp_bytes = hrp.as_bytes();
-                let data: Vec<_> = m.u5bytes.into_iter().map(|b| u5::try_from_u8(b).expect("invoice not base32")).collect();
+                let data: Vec<_> = m
+                    .u5bytes
+                    .into_iter()
+                    .map(|b| u5::try_from_u8(b).expect("invoice not base32"))
+                    .collect();
                 let sig = self.node.sign_invoice(hrp_bytes, &data)?;
                 let (rid, ser) = sig.serialize_compact();
                 let mut sig_slice = [0u8; 65];
@@ -280,9 +276,11 @@ impl Handler for RootHandler {
                 } else {
                     // We ignore everything in the message other than the commitment number,
                     // since the signer already has this info.
-                    self.node.with_ready_channel(&channel_id, |chan| {
-                        chan.sign_holder_commitment_tx_phase2(m.commitment_number)
-                    })?.0
+                    self.node
+                        .with_ready_channel(&channel_id, |chan| {
+                            chan.sign_holder_commitment_tx_phase2(m.commitment_number)
+                        })?
+                        .0
                 };
                 Ok(Box::new(msgs::SignCommitmentTxReply {
                     signature: BitcoinSignature {
@@ -349,8 +347,7 @@ fn extract_channel_id(dbid: u64) -> ChannelId {
     ChannelId(Sha256Hash::hash(&dbid.to_le_bytes()).into_inner())
 }
 
-impl ChannelHandler {
-}
+impl ChannelHandler {}
 
 impl Handler for ChannelHandler {
     fn handle(&self, msg: Message) -> Result<Box<dyn SerBolt>> {
@@ -628,7 +625,10 @@ impl Handler for ChannelHandler {
                     .htlc_signatures
                     .iter()
                     .map(|s| {
-                        assert!(s.sighash == SigHashType::All as u8 || s.sighash == SigHashType::SinglePlusAnyoneCanPay as u8);
+                        assert!(
+                            s.sighash == SigHashType::All as u8
+                                || s.sighash == SigHashType::SinglePlusAnyoneCanPay as u8
+                        );
                         secp256k1::Signature::from_compact(&s.signature.0).expect("signature")
                     })
                     .collect();

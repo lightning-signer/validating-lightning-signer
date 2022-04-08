@@ -17,8 +17,8 @@ use lightning_signer_server::persist::persist_json::KVJsonPersister;
 use util::read_allowlist;
 
 mod test;
-use remote_hsmd::*;
 use remote_hsmd::util::{read_integration_test_seed, setup_logging};
+use remote_hsmd::*;
 
 fn signer_loop<C: 'static + Client, H: Handler>(client: C, handler: H) {
     let id = handler.client_id();
@@ -39,7 +39,12 @@ fn do_signer_loop<C: 'static + Client, H: Handler>(mut client: C, handler: H) ->
             Message::ClientHsmFd(m) => {
                 client.write(msgs::ClientHsmFdReply {}).unwrap();
                 let new_client = client.new_client();
-                info!("new client {} {} -> {}", std::process::id(), handler.client_id(), new_client.id());
+                info!(
+                    "new client {} {} -> {}",
+                    std::process::id(),
+                    handler.client_id(),
+                    new_client.id()
+                );
                 let handler = handler.for_new_client(new_client.id(), m.peer_id, m.dbid);
                 thread::spawn(move || signer_loop(new_client, handler));
             }
@@ -54,7 +59,7 @@ fn do_signer_loop<C: 'static + Client, H: Handler>(mut client: C, handler: H) ->
 }
 
 pub fn main() {
-    setup_logging("hsmd  ","info");
+    setup_logging("hsmd  ", "info");
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
         .about("Greenlight lightning-signer")

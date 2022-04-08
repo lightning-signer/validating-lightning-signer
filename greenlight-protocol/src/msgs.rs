@@ -2,14 +2,14 @@
 
 use alloc::vec::Vec;
 
+use crate::error::{Error, Result};
+use crate::io::{read_u16, read_u32};
+use crate::model::*;
+use bolt_derive::SerBolt;
 use serde::{de, ser};
 use serde_bolt::{from_vec as sb_from_vec, to_vec, WireString};
 use serde_bolt::{LargeBytes, Read, Write};
 use serde_derive::{Deserialize, Serialize};
-use bolt_derive::SerBolt;
-use crate::error::{Error, Result};
-use crate::io::{read_u16, read_u32};
-use crate::model::*;
 
 pub trait TypedMessage {
     const TYPE: u16;
@@ -214,7 +214,6 @@ pub struct SignBolt12Reply {
 impl TypedMessage for SignBolt12Reply {
     const TYPE: u16 = 125;
 }
-
 
 /// Sign channel update
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
@@ -672,7 +671,8 @@ fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
         Memleak::TYPE => Message::Memleak(from_vec_no_trailing(&mut data)?),
         MemleakReply::TYPE => Message::MemleakReply(from_vec_no_trailing(&mut data)?),
         CheckFutureSecret::TYPE => Message::CheckFutureSecret(from_vec_no_trailing(&mut data)?),
-        CheckFutureSecretReply::TYPE => Message::CheckFutureSecretReply(from_vec_no_trailing(&mut data)?),
+        CheckFutureSecretReply::TYPE =>
+            Message::CheckFutureSecretReply(from_vec_no_trailing(&mut data)?),
         SignBolt12::TYPE => Message::SignBolt12(from_vec_no_trailing(&mut data)?),
         SignBolt12Reply::TYPE => Message::SignBolt12Reply(from_vec_no_trailing(&mut data)?),
         SignMessage::TYPE => Message::SignMessage(from_vec_no_trailing(&mut data)?),

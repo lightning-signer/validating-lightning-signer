@@ -1,8 +1,8 @@
-use std::{env, fs};
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::str::FromStr;
+use std::{env, fs};
 
 pub fn read_allowlist() -> Vec<String> {
     let allowlist_path_res = env::var("ALLOWLIST");
@@ -26,10 +26,7 @@ pub fn read_integration_test_seed() -> Option<[u8; 32]> {
 
 pub fn setup_logging(who: &str, level: &str) {
     use fern::colors::{Color, ColoredLevelConfig};
-    let colors = ColoredLevelConfig::new()
-        .info(Color::Green)
-        .error(Color::Red)
-        .warn(Color::Yellow);
+    let colors = ColoredLevelConfig::new().info(Color::Green).error(Color::Red).warn(Color::Yellow);
     let who = who.to_string();
     fern::Dispatch::new()
         .format(move |out, message, record| {
@@ -47,5 +44,6 @@ pub fn setup_logging(who: &str, level: &str) {
         .level_for("sled", log::LevelFilter::Info)
         .chain(std::io::stdout())
         // .chain(fern::log_file("/tmp/output.log")?)
-        .apply().expect("log config");
+        .apply()
+        .expect("log config");
 }
