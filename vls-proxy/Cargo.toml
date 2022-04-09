@@ -1,5 +1,5 @@
 [package]
-name = "greenlight-signer-hsmd"
+name = "vls-proxy"
 version = "0.1.0"
 authors = ["Devrandom <c1.devrandom@niftybox.net>"]
 edition = "2018"
@@ -11,8 +11,8 @@ default = ["grpc"]
 grpc = ["tokio", "tonic", "prost"]
 
 [dependencies]
-lightning-signer-core = { git = "https://gitlab.com/lightning-signer/validating-lightning-signer.git", rev = "3b387ee2bc4c1e6ba75f42e048c0492e8db7fc2e" }
-greenlight-signer = { path = "../greenlight-signer" }
+lightning-signer-core = { git = "https://gitlab.com/lightning-signer/validating-lightning-signer.git", rev = "3778a66e3c969041e7bcc530e63e6b822a802f72" }
+vls-protocol-signer = { path = "../vls-protocol-signer" }
 secp256k1 = { version = "0.20", features = ["rand-std", "bitcoin_hashes"] }
 nix = "0.22"
 serde = "1.0"
@@ -37,7 +37,7 @@ async-stream = "0.3"
 
 [dependencies.lightning-signer-server]
 git = "https://gitlab.com/lightning-signer/validating-lightning-signer.git"
-rev = "3b387ee2bc4c1e6ba75f42e048c0492e8db7fc2e"
+rev = "3778a66e3c969041e7bcc530e63e6b822a802f72"
 default_features = false
 features = ["persist_kv_json"]
 
@@ -45,7 +45,7 @@ features = ["persist_kv_json"]
 tonic-build = "0.6.2"
 
 [lib]
-name = "remote_hsmd"
+name = "vls_proxy"
 path = "src/lib.rs"
 
 [[bin]]

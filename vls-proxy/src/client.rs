@@ -3,10 +3,10 @@ use std::os::unix::io::RawFd;
 use nix::sys::socket::{socketpair, AddressFamily, SockFlag, SockType};
 use serde::Serialize;
 
-use greenlight_protocol::{msgs, Result};
-use greenlight_signer::greenlight_protocol;
-use greenlight_signer::greenlight_protocol::serde_bolt::Read;
-use greenlight_signer::greenlight_protocol::Error;
+use vls_protocol::{msgs, Result};
+use vls_protocol_signer::vls_protocol;
+use vls_protocol_signer::vls_protocol::serde_bolt::Read;
+use vls_protocol_signer::vls_protocol::Error;
 
 use crate::connection::UnixConnection;
 

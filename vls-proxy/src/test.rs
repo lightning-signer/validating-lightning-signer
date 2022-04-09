@@ -9,9 +9,9 @@ use nix::unistd::{close, fork, ForkResult};
 use secp256k1::rand::rngs::OsRng;
 use secp256k1::Secp256k1;
 
-use greenlight_signer::greenlight_protocol::model::PubKey;
-use greenlight_signer::greenlight_protocol::msgs;
-use greenlight_signer::handler::RootHandler;
+use vls_protocol_signer::vls_protocol::model::PubKey;
+use vls_protocol_signer::vls_protocol::msgs;
+use vls_protocol_signer::handler::RootHandler;
 
 use crate::client::{Client, UnixClient};
 use crate::connection::UnixConnection;
