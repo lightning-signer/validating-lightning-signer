@@ -3,6 +3,7 @@
 members = [
     "bolt-derive",
     "vls-protocol",
+    "vls-protocol-client",
     "vls-protocol-signer",
     "vls-proxy",
 ]

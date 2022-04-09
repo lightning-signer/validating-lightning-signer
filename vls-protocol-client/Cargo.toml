@@ -1,0 +1,15 @@
+[package]
+name = "vls-protocol-client"
+version = "0.1.0"
+edition = "2018"
+
+[features]
+null = ["vls-protocol-signer"]
+grpc = []
+
+[dependencies]
+vls-protocol-signer = { path = "../vls-protocol-signer", optional = true }
+vls-protocol = { path = "../vls-protocol" }
+lightning-signer-core = { git = "https://gitlab.com/lightning-signer/validating-lightning-signer.git", rev = "3778a66e3c969041e7bcc530e63e6b822a802f72" }
+bit-vec = "0.6"
+log = "0.4"

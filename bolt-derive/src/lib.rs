@@ -16,6 +16,17 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 buf
             }
         }
+
+        impl DeBolt for #ident {
+            fn from_vec(mut ser: Vec<u8>) -> Result<Self> {
+                let reader = &mut ser;
+                let message_type = read_u16(reader)?;
+                if message_type != Self::TYPE {
+                    return Err(Error::UnexpectedType(message_type));
+                }
+                from_vec_no_trailing(reader)
+            }
+        }
     };
     output.into()
 }

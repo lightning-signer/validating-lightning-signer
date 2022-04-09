@@ -20,6 +20,10 @@ pub trait SerBolt {
     fn as_vec(&self) -> Vec<u8>;
 }
 
+pub trait DeBolt: Sized {
+    fn from_vec(ser: Vec<u8>) -> Result<Self>;
+}
+
 /// hsmd Init
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct HsmdInit {
