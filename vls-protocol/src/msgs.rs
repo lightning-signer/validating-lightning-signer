@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use crate::error::{Error, Result};
 use crate::io::{read_u16, read_u32};
 use crate::model::*;
-use bolt_derive::SerBolt;
+use bolt_derive::{SerBolt, ReadMessage};
 use serde::{de, ser};
 use serde_bolt::{from_vec as sb_from_vec, to_vec, WireString};
 use serde_bolt::{LargeBytes, Read, Write};
@@ -584,7 +584,7 @@ pub struct Unknown {
 }
 
 /// An enum representing all messages we can read and write
-#[derive(Debug, Serialize)]
+#[derive(ReadMessage, Debug, Serialize)]
 pub enum Message {
     HsmdInit(HsmdInit),
     HsmdInitReply(HsmdInitReply),
@@ -683,78 +683,7 @@ pub fn from_reader<R: Read>(reader: &mut R, len: u32) -> Result<Message> {
         return Err(Error::ShortRead);
     }
 
-    read_message(&mut data, message_type)
-}
-
-fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
-    let message = match message_type {
-        HsmdInit::TYPE => Message::HsmdInit(from_vec_no_trailing(&mut data)?),
-        HsmdInitReply::TYPE => Message::HsmdInitReply(from_vec_no_trailing(&mut data)?),
-        HsmdInit2::TYPE => Message::HsmdInit2(from_vec_no_trailing(&mut data)?),
-        HsmdInit2Reply::TYPE => Message::HsmdInit2Reply(from_vec_no_trailing(&mut data)?),
-        ClientHsmFd::TYPE => Message::ClientHsmFd(from_vec_no_trailing(&mut data)?),
-        ClientHsmFdReply::TYPE => Message::ClientHsmFdReply(from_vec_no_trailing(&mut data)?),
-        SignInvoice::TYPE => Message::SignInvoice(from_vec_no_trailing(&mut data)?),
-        SignInvoiceReply::TYPE => Message::SignInvoiceReply(from_vec_no_trailing(&mut data)?),
-        SignWithdrawal::TYPE => Message::SignWithdrawal(from_vec_no_trailing(&mut data)?),
-        SignWithdrawalReply::TYPE => Message::SignWithdrawalReply(from_vec_no_trailing(&mut data)?),
-        Ecdh::TYPE => Message::Ecdh(from_vec_no_trailing(&mut data)?),
-        EcdhReply::TYPE => Message::EcdhReply(from_vec_no_trailing(&mut data)?),
-        Memleak::TYPE => Message::Memleak(from_vec_no_trailing(&mut data)?),
-        MemleakReply::TYPE => Message::MemleakReply(from_vec_no_trailing(&mut data)?),
-        CheckFutureSecret::TYPE => Message::CheckFutureSecret(from_vec_no_trailing(&mut data)?),
-        CheckFutureSecretReply::TYPE =>
-            Message::CheckFutureSecretReply(from_vec_no_trailing(&mut data)?),
-        SignBolt12::TYPE => Message::SignBolt12(from_vec_no_trailing(&mut data)?),
-        SignBolt12Reply::TYPE => Message::SignBolt12Reply(from_vec_no_trailing(&mut data)?),
-        SignMessage::TYPE => Message::SignMessage(from_vec_no_trailing(&mut data)?),
-        SignMessageReply::TYPE => Message::SignMessageReply(from_vec_no_trailing(&mut data)?),
-        SignChannelUpdate::TYPE => Message::SignChannelUpdate(from_vec_no_trailing(&mut data)?),
-        SignChannelUpdateReply::TYPE =>
-            Message::SignChannelUpdateReply(from_vec_no_trailing(&mut data)?),
-        SignChannelAnnouncement::TYPE =>
-            Message::SignChannelAnnouncement(from_vec_no_trailing(&mut data)?),
-        SignChannelAnnouncementReply::TYPE =>
-            Message::SignChannelAnnouncementReply(from_vec_no_trailing(&mut data)?),
-        SignNodeAnnouncement::TYPE =>
-            Message::SignNodeAnnouncement(from_vec_no_trailing(&mut data)?),
-        SignNodeAnnouncementReply::TYPE =>
-            Message::SignNodeAnnouncementReply(from_vec_no_trailing(&mut data)?),
-        GetPerCommitmentPoint::TYPE =>
-            Message::GetPerCommitmentPoint(from_vec_no_trailing(&mut data)?),
-        GetPerCommitmentPointReply::TYPE =>
-            Message::GetPerCommitmentPointReply(from_vec_no_trailing(&mut data)?),
-        ReadyChannel::TYPE => Message::ReadyChannel(from_vec_no_trailing(&mut data)?),
-        ReadyChannelReply::TYPE => Message::ReadyChannelReply(from_vec_no_trailing(&mut data)?),
-        ValidateCommitmentTx::TYPE =>
-            Message::ValidateCommitmentTx(from_vec_no_trailing(&mut data)?),
-        ValidateCommitmentTxReply::TYPE =>
-            Message::ValidateCommitmentTxReply(from_vec_no_trailing(&mut data)?),
-        ValidateRevocation::TYPE => Message::ValidateRevocation(from_vec_no_trailing(&mut data)?),
-        ValidateRevocationReply::TYPE =>
-            Message::ValidateRevocationReply(from_vec_no_trailing(&mut data)?),
-        SignRemoteCommitmentTx::TYPE =>
-            Message::SignRemoteCommitmentTx(from_vec_no_trailing(&mut data)?),
-        SignDelayedPaymentToUs::TYPE =>
-            Message::SignDelayedPaymentToUs(from_vec_no_trailing(&mut data)?),
-        SignRemoteHtlcToUs::TYPE => Message::SignRemoteHtlcToUs(from_vec_no_trailing(&mut data)?),
-        SignLocalHtlcTx::TYPE => Message::SignLocalHtlcTx(from_vec_no_trailing(&mut data)?),
-        SignCommitmentTx::TYPE => Message::SignCommitmentTx(from_vec_no_trailing(&mut data)?),
-        SignMutualCloseTx::TYPE => Message::SignMutualCloseTx(from_vec_no_trailing(&mut data)?),
-        SignCommitmentTxReply::TYPE =>
-            Message::SignCommitmentTxReply(from_vec_no_trailing(&mut data)?),
-        SignTxReply::TYPE => Message::SignTxReply(from_vec_no_trailing(&mut data)?),
-        GetChannelBasepoints::TYPE =>
-            Message::GetChannelBasepoints(from_vec_no_trailing(&mut data)?),
-        GetChannelBasepointsReply::TYPE =>
-            Message::GetChannelBasepointsReply(from_vec_no_trailing(&mut data)?),
-        NewChannel::TYPE => Message::NewChannel(from_vec_no_trailing(&mut data)?),
-        NewChannelReply::TYPE => Message::NewChannelReply(from_vec_no_trailing(&mut data)?),
-        SignRemoteHtlcTx::TYPE => Message::SignRemoteHtlcTx(from_vec_no_trailing(&mut data)?),
-        SignPenaltyToUs::TYPE => Message::SignPenaltyToUs(from_vec_no_trailing(&mut data)?),
-        _ => Message::Unknown(Unknown { message_type, data: data.clone() }),
-    };
-    Ok(message)
+    Message::read_message(&mut data, message_type)
 }
 
 #[cfg(test)]
@@ -772,7 +701,7 @@ fn read_message_and_data<R: Read>(reader: &mut R) -> Result<(Message, Vec<u8>)> 
     }
     let saved_data = data.clone();
 
-    read_message(&mut data, message_type).map(|m| (m, saved_data))
+    Message::read_message(&mut data, message_type).map(|m| (m, saved_data))
 }
 
 pub fn write<W: Write, T: ser::Serialize + TypedMessage>(writer: &mut W, value: T) -> Result<()> {
