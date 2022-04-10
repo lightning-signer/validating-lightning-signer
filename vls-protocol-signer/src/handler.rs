@@ -151,6 +151,16 @@ impl Handler for RootHandler {
                     onion_reply_secret: Secret(onion_reply_secret),
                 }))
             }
+            Message::HsmdInit2(_) => {
+                let bip32 = self.node.get_account_extended_pubkey().encode();
+                let node_secret = self.node.get_node_secret()[..].try_into().unwrap();
+                let bolt12_xonly = self.node.get_bolt12_pubkey().serialize();
+                Ok(Box::new(msgs::HsmdInit2Reply {
+                    node_secret: Secret(node_secret),
+                    bip32: ExtKey(bip32),
+                    bolt12: PubKey32(bolt12_xonly)
+                }))
+            }
             Message::Ecdh(m) => {
                 let pubkey = PublicKey::from_slice(&m.point.0).expect("pubkey");
                 let secret = self.node.ecdh(&pubkey).as_slice().try_into().unwrap();

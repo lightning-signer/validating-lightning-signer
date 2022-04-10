@@ -53,6 +53,30 @@ impl TypedMessage for HsmdInitReply {
     const TYPE: u16 = 111;
 }
 
+/// Signer Init for LDK
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+pub struct HsmdInit2 {
+    pub derivation_style: u8,
+    pub dev_seed: Option<Secret>,
+    pub network_name: WireString,
+}
+
+impl TypedMessage for HsmdInit2 {
+    const TYPE: u16 = 1011;
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+pub struct HsmdInit2Reply {
+    pub node_secret: Secret,
+    pub bip32: ExtKey,
+    pub bolt12: PubKey32,
+}
+
+impl TypedMessage for HsmdInit2Reply {
+    const TYPE: u16 = 1111;
+}
+
 /// Connect a new client
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 pub struct ClientHsmFd {
@@ -564,6 +588,8 @@ pub struct Unknown {
 pub enum Message {
     HsmdInit(HsmdInit),
     HsmdInitReply(HsmdInitReply),
+    HsmdInit2(HsmdInit2),
+    HsmdInit2Reply(HsmdInit2Reply),
     ClientHsmFd(ClientHsmFd),
     ClientHsmFdReply(ClientHsmFdReply),
     SignInvoice(SignInvoice),
@@ -664,6 +690,8 @@ fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
     let message = match message_type {
         HsmdInit::TYPE => Message::HsmdInit(from_vec_no_trailing(&mut data)?),
         HsmdInitReply::TYPE => Message::HsmdInitReply(from_vec_no_trailing(&mut data)?),
+        HsmdInit2::TYPE => Message::HsmdInit2(from_vec_no_trailing(&mut data)?),
+        HsmdInit2Reply::TYPE => Message::HsmdInit2Reply(from_vec_no_trailing(&mut data)?),
         ClientHsmFd::TYPE => Message::ClientHsmFd(from_vec_no_trailing(&mut data)?),
         ClientHsmFdReply::TYPE => Message::ClientHsmFdReply(from_vec_no_trailing(&mut data)?),
         SignInvoice::TYPE => Message::SignInvoice(from_vec_no_trailing(&mut data)?),

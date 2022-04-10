@@ -28,6 +28,7 @@ pub struct PubKey32(pub [u8; 32]);
 
 macro_rules! array_impl {
     ($ty:ident, $len:tt) => {
+        #[derive(Clone)]
         pub struct $ty(pub [u8; $len]);
 
         impl Debug for $ty {

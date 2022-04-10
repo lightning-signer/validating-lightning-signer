@@ -15,13 +15,15 @@ use lightning::ln::PaymentPreimage;
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::util::bip32::ChildNumber;
 use lightning_signer::lightning;
+use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::INITIAL_COMMITMENT_NUMBER;
 use log::error;
 
 use vls_protocol::Error as ProtocolError;
-use vls_protocol::features::{OPT_ANCHOR_OUTPUTS, OPT_STATIC_REMOTEKEY};
-use vls_protocol::model::{Basepoints, Bip32KeyVersion, BlockId, PubKey, Secret, TxId};
-use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPointReply, HsmdInit, HsmdInitReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignInvoice, SignInvoiceReply, ValidateRevocation, ValidateRevocationReply};
+use vls_protocol::features::{OPT_ANCHOR_OUTPUTS, OPT_MAX, OPT_STATIC_REMOTEKEY};
+use vls_protocol::model::{Basepoints, PubKey, Secret, TxId};
+use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignInvoice, SignInvoiceReply, ValidateRevocation, ValidateRevocationReply};
+use vls_protocol::serde_bolt::WireString;
 
 use crate::bitcoin::{Script, WPubkeyHash};
 use crate::bitcoin::bech32::u5;
@@ -47,15 +49,11 @@ impl From<ProtocolError> for Error {
     }
 }
 
-pub trait Transport {
-    fn call(&self, message: Vec<u8>) -> Result<Vec<u8>, Error>;
-}
-
-pub fn call<T: SerBolt, R: DeBolt>(transport: &dyn Transport, message: T) -> Result<R, Error> {
-    let message_ser = message.as_vec();
-    let result_ser = transport.call(message_ser)?;
-    let result = R::from_vec(result_ser)?;
-    Ok(result)
+pub trait Transport: Send + Sync {
+    /// Perform a call for the node API
+    fn node_call(&self, message: Vec<u8>) -> Result<Vec<u8>, Error>;
+    /// Perform a call for the channel API
+    fn call(&self, dbid: u64, peer_id: PubKey, message: Vec<u8>) -> Result<Vec<u8>, Error>;
 }
 
 #[derive(Clone)]
@@ -76,9 +74,25 @@ fn to_pubkey(pubkey: PublicKey) -> PubKey {
     PubKey(pubkey.serialize())
 }
 
+pub fn call<T: SerBolt, R: DeBolt>(dbid: u64, peer_id: PubKey, transport: &dyn Transport, message: T) -> Result<R, Error> {
+    assert_ne!(dbid, 0, "dbid 0 is reserved");
+    let message_ser = message.as_vec();
+    let result_ser = transport.call(dbid, peer_id, message_ser)?;
+    let result = R::from_vec(result_ser)?;
+    Ok(result)
+}
+
+
+pub fn node_call<T: SerBolt, R: DeBolt>(transport: &dyn Transport, message: T) -> Result<R, Error> {
+    let message_ser = message.as_vec();
+    let result_ser = transport.node_call(message_ser)?;
+    let result = R::from_vec(result_ser)?;
+    Ok(result)
+}
+
 impl SignerClient {
     fn call<T: SerBolt, R: DeBolt>(&self, message: T) -> Result<R, Error> {
-        call(&*self.transport, message)
+        call(self.dbid, to_pubkey(self.peer_id), &*self.transport, message)
             .map_err(|e| {
                 error!("transport error: {:?}", e);
                 e
@@ -89,21 +103,10 @@ impl SignerClient {
         PubKey(self.peer_id.serialize())
     }
 
-    fn new(transport: Arc<dyn Transport>, dbid: u64, channel_value: u64) -> Self {
-        // NOTE this is actually unused by VLS, but it's passed for compatibility with CLN
-        let peer_id = [3; 33];
-        let message = GetChannelBasepoints { node_id: PubKey(peer_id.clone()), dbid };
-        let result: GetChannelBasepointsReply = call(&*transport, message).expect("pubkeys");
-        let channel_keys = ChannelPublicKeys {
-            funding_pubkey: from_pubkey(result.funding),
-            revocation_basepoint: from_pubkey(result.basepoints.revocation),
-            payment_point: from_pubkey(result.basepoints.payment),
-            delayed_payment_basepoint: from_pubkey(result.basepoints.delayed_payment),
-            htlc_basepoint: from_pubkey(result.basepoints.htlc)
-        };
+    fn new(transport: Arc<dyn Transport>, peer_id: PublicKey, dbid: u64, channel_value: u64, channel_keys: ChannelPublicKeys) -> Self {
         SignerClient {
             transport,
-            peer_id: PublicKey::from_slice(&peer_id).unwrap(),
+            peer_id,
             dbid,
             channel_keys,
             channel_value
@@ -212,7 +215,7 @@ impl BaseSign for SignerClient {
         let cp = p.counterparty_parameters.as_ref()
             .expect("counterparty params should exist at this point");
 
-        let mut channel_features = BitVec::new();
+        let mut channel_features = BitVec::from_elem(OPT_MAX, false);
         channel_features.set(OPT_STATIC_REMOTEKEY, true);
         if p.opt_anchors.is_some() {
             channel_features.set(OPT_ANCHOR_OUTPUTS, true);
@@ -247,47 +250,55 @@ pub struct KeysManagerClient {
     next_dbid: AtomicU64,
     key_material: KeyMaterial,
     xpub: ExtendedPubKey,
-    #[allow(unused)]
-    node_id: PublicKey,
+    node_secret: SecretKey,
 }
 
 impl KeysManagerClient {
     /// Create a new VLS client with the given transport
-    pub fn new(transport: Arc<dyn Transport>) -> Self {
+    pub fn new(transport: Arc<dyn Transport>, network: String) -> Self {
         let mut rng = OsRng::new().unwrap();
         let mut key_material_bytes = [0; 32];
         rng.fill_bytes(&mut key_material_bytes);
         
-        let init_message = HsmdInit {
-            key_version: Bip32KeyVersion { pubkey_version: 0, privkey_version: 0 },
-            chain_params: BlockId([0; 32]),
-            encryption_key: None,
-            dev_privkey: None,
-            dev_bip32_seed: None,
-            dev_channel_secrets: None,
-            dev_channel_secrets_shaseed: None
+        let init_message = HsmdInit2 {
+            derivation_style: KeyDerivationStyle::Native as u8,
+            dev_seed: None,
+            network_name: WireString(network.into_bytes())
         };
-        let result: HsmdInitReply = call(&*transport, init_message).expect("HsmdInit");
+        let result: HsmdInit2Reply = node_call(&*transport, init_message).expect("HsmdInit");
         let xpub = ExtendedPubKey::decode(&result.bip32.0)
             .expect("xpub");
-        let node_id = from_pubkey(result.node_id);
-        // TODO node_secret?
+        let node_secret = SecretKey::from_slice(&result.node_secret.0)
+            .expect("node secret");
 
         Self {
             transport,
-            next_dbid: AtomicU64::new(0),
+            next_dbid: AtomicU64::new(1),
             key_material: KeyMaterial(key_material_bytes),
             xpub,
-            node_id,
+            node_secret,
         }
     }
 
     fn call<T: SerBolt, R: DeBolt>(&self, message: T) -> Result<R, Error> {
-        call(&*self.transport, message)
+        node_call(&*self.transport, message)
     }
 
     fn dest_wallet_path() -> Vec<u32> {
         vec![1]
+    }
+
+    fn get_channel_basepoints(&self, dbid: u64, peer_id: PublicKey) -> ChannelPublicKeys {
+        let message = GetChannelBasepoints { node_id: to_pubkey(peer_id), dbid };
+        let result: GetChannelBasepointsReply = self.call(message).expect("pubkeys");
+        let channel_keys = ChannelPublicKeys {
+            funding_pubkey: from_pubkey(result.funding),
+            revocation_basepoint: from_pubkey(result.basepoints.revocation),
+            payment_point: from_pubkey(result.basepoints.payment),
+            delayed_payment_basepoint: from_pubkey(result.basepoints.delayed_payment),
+            htlc_basepoint: from_pubkey(result.basepoints.htlc)
+        };
+        channel_keys
     }
 }
 
@@ -295,7 +306,13 @@ impl KeysInterface for KeysManagerClient {
     type Signer = SignerClient;
 
     fn get_node_secret(&self, recipient: Recipient) -> Result<SecretKey, ()> {
-        todo!()
+        match recipient {
+            Recipient::Node => {}
+            Recipient::PhantomNode => {
+                unimplemented!("no phantom node support");
+            }
+        }
+        Ok(self.node_secret)
     }
 
     fn get_destination_script(&self) -> Script {
@@ -315,7 +332,16 @@ impl KeysInterface for KeysManagerClient {
 
     fn get_channel_signer(&self, _inbound: bool, channel_value_satoshis: u64) -> Self::Signer {
         let dbid = self.next_dbid.fetch_add(1, Ordering::AcqRel);
-        SignerClient::new(self.transport.clone(), dbid, channel_value_satoshis)
+        // NOTE this is actually unused by LDK / VLS, but it's passed for compatibility with CLN
+        let peer_secret = SecretKey::from_slice(&[2; 32]).unwrap();
+        let peer_id = PublicKey::from_secret_key(&Secp256k1::new(), &peer_secret);
+
+        let message = NewChannel { node_id: to_pubkey(peer_id), dbid };
+        let _: NewChannelReply = self.call(message).expect("NewChannel");
+
+        let channel_keys = self.get_channel_basepoints(dbid, peer_id);
+
+        SignerClient::new(self.transport.clone(), peer_id, dbid, channel_value_satoshis, channel_keys)
     }
 
     fn get_secure_random_bytes(&self) -> [u8; 32] {
