@@ -11,7 +11,7 @@ use vls_protocol_signer::vls_protocol::Error;
 use crate::connection::UnixConnection;
 
 pub trait Client: Send {
-    fn write<M: msgs::TypedMessage + Serialize>(&mut self, msg: M) -> Result<()>;
+    fn write<M: msgs::DeBolt + Serialize>(&mut self, msg: M) -> Result<()>;
     fn write_vec(&mut self, v: Vec<u8>) -> Result<()>;
     fn read(&mut self) -> Result<msgs::Message>;
     fn read_raw(&mut self) -> Result<Vec<u8>>;
@@ -35,7 +35,7 @@ impl UnixClient {
 }
 
 impl Client for UnixClient {
-    fn write<M: msgs::TypedMessage + Serialize>(&mut self, msg: M) -> Result<()> {
+    fn write<M: msgs::DeBolt + Serialize>(&mut self, msg: M) -> Result<()> {
         msgs::write(&mut self.conn, msg)?;
         Ok(())
     }

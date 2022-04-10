@@ -1,12 +1,19 @@
 use proc_macro::{self, TokenStream};
-use proc_macro2::Ident;
-use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Data, DataEnum, Type};
+use proc_macro2::{Ident, TokenStream as TokenStream2};
+use quote::{quote, ToTokens};
+use syn::{parse_macro_input, DeriveInput, Data, DataEnum, Error, Fields};
 
 /// Serialize a message with a type prefix, in BOLT style
-#[proc_macro_derive(SerBolt)]
+#[proc_macro_derive(SerBolt, attributes(message_id))]
 pub fn derive_ser_bolt(input: TokenStream) -> TokenStream {
-    let DeriveInput { ident, .. } = parse_macro_input!(input);
+    let input1 = input.clone();
+    let DeriveInput { ident, attrs, .. } = parse_macro_input!(input1);
+    let message_id = attrs.into_iter()
+        .filter(|a| a.path.is_ident("message_id"))
+        .next()
+        .map(|a| a.tokens)
+        .unwrap_or_else(|| Error::new(ident.span(), "missing message_id attribute").into_compile_error());
+
     let output = quote! {
         impl SerBolt for #ident {
             fn as_vec(&self) -> Vec<u8> {
@@ -19,6 +26,7 @@ pub fn derive_ser_bolt(input: TokenStream) -> TokenStream {
         }
 
         impl DeBolt for #ident {
+            const TYPE: u16 = #message_id;
             fn from_vec(mut ser: Vec<u8>) -> Result<Self> {
                 let reader = &mut ser;
                 let message_type = read_u16(reader)?;
@@ -35,27 +43,26 @@ pub fn derive_ser_bolt(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(ReadMessage)]
 pub fn derive_read_message(input: TokenStream) -> TokenStream {
     let DeriveInput { ident, data, .. } = parse_macro_input!(input);
-    let vs_ts = match data {
-        Data::Enum(DataEnum{ variants, ..}) => {
-            variants.iter()
-                .filter(|v| v.ident != "Unknown")
-                .map(|v|
-                    {
-                        let vident = v.ident.clone();
-                        let mut fields = v.fields.iter();
-                        let field = fields.next().expect(format!("must have exactly one field in {}", vident).as_str());
-                        if fields.next().is_some() {
-                            panic!("must have exactly one field in {}", vident);
-                        }
-                        (vident, field.ty.clone())
-                    }
-                ).collect::<Vec<_>>()
+    let mut vs = Vec::new();
+    let mut ts = Vec::new();
+    if let Data::Enum(DataEnum{ variants, ..}) = data {
+        for v in variants {
+            if v.ident == "Unknown" { continue };
+            let vident = v.ident.clone();
+            let field = extract_single_type(&vident, &v.fields);
+            match field {
+                Ok(f) => {
+                    vs.push(vident);
+                    ts.push(f);
+                }
+                Err(e) => {
+                    return e.into_compile_error().into()
+                }
+            }
         }
-        _ => unimplemented!()
-    };
-
-    let (vs, ts): (Vec<Ident>, Vec<Type>) = vs_ts.into_iter().unzip();
-    println!("{}", vs.len());
+    } else {
+        unimplemented!()
+    }
 
     let output = quote! {
         impl #ident {
@@ -70,4 +77,14 @@ pub fn derive_read_message(input: TokenStream) -> TokenStream {
     };
 
     output.into()
+}
+
+fn extract_single_type(vident: &Ident, fields: &Fields) -> Result<TokenStream2, Error> {
+    let mut fields = fields.iter();
+    let field = fields.next()
+        .ok_or_else(|| Error::new(vident.span(), "must have exactly one field"))?;
+    if fields.next().is_some() {
+        return Err(Error::new(vident.span(), "must have exactly one field"))
+    }
+    Ok(field.ty.clone().into_token_stream())
 }
