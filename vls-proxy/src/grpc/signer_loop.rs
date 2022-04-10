@@ -4,9 +4,9 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::spawn_blocking;
 use triggered::Trigger;
 
-use greenlight_protocol::{msgs, msgs::Message, Error, Result};
-use greenlight_signer::greenlight_protocol;
-use remote_hsmd::client::Client;
+use vls_protocol::{msgs, msgs::Message, Error, Result};
+use vls_protocol_signer::vls_protocol;
+use vls_proxy::client::Client;
 
 // mpsc request
 pub struct ChannelRequest {

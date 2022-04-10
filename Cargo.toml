@@ -2,7 +2,7 @@
 
 members = [
     "bolt-derive",
-    "greenlight-protocol",
-    "greenlight-signer",
-    "greenlight-signer-hsmd",
+    "vls-protocol",
+    "vls-protocol-signer",
+    "vls-proxy",
 ]

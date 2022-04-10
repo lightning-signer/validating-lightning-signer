@@ -31,8 +31,8 @@ use grpc::hsmd::{self, hsmd_server, PingReply, PingRequest};
 use grpc::incoming::TcpIncoming;
 use grpc::signer::start_signer;
 use grpc::signer_loop::{ChannelRequest, SignerLoop};
-use remote_hsmd::util::setup_logging;
-use remote_hsmd::*;
+use vls_proxy::util::setup_logging;
+use vls_proxy::*;
 
 use crate::grpc::adapter::{ProtocolAdapter, SignerStream};
 use crate::hsmd::SignerResponse;

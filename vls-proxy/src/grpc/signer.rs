@@ -1,13 +1,9 @@
 use super::hsmd::{self, PingRequest, SignerRequest, SignerResponse};
-use greenlight_signer::greenlight_protocol::model::PubKey;
-use greenlight_signer::greenlight_protocol::msgs;
-use greenlight_signer::handler::{Error, Handler, RootHandler};
 use http::Uri;
 use lightning_signer::persist::Persist;
 use lightning_signer::util::status::Status;
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
 use log::{error, info};
-use remote_hsmd::util::{read_allowlist, read_integration_test_seed};
 use std::convert::TryInto;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::result::Result as StdResult;
@@ -15,6 +11,10 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
+use vls_protocol_signer::handler::{Error, Handler, RootHandler};
+use vls_protocol_signer::vls_protocol::model::PubKey;
+use vls_protocol_signer::vls_protocol::msgs;
+use vls_proxy::util::{read_allowlist, read_integration_test_seed};
 
 /// Signer binary entry point
 #[tokio::main(worker_threads = 2)]

@@ -6,19 +6,19 @@ use clap::{App, AppSettings, Arg};
 use log::{error, info};
 
 use connection::UnixConnection;
-use greenlight_protocol::{msgs, msgs::Message, Error, Result};
-use greenlight_signer::greenlight_protocol;
+use vls_protocol::{msgs, msgs::Message, Error, Result};
+use vls_protocol_signer::vls_protocol;
 use lightning_signer::persist::Persist;
 use lightning_signer::Arc;
 
 use client::{Client, UnixClient};
-use greenlight_signer::handler::{Handler, RootHandler};
+use vls_protocol_signer::handler::{Handler, RootHandler};
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
 use util::read_allowlist;
 
 mod test;
-use remote_hsmd::util::{read_integration_test_seed, setup_logging};
-use remote_hsmd::*;
+use vls_proxy::util::{read_integration_test_seed, setup_logging};
+use vls_proxy::*;
 
 fn signer_loop<C: 'static + Client, H: Handler>(client: C, handler: H) {
     let id = handler.client_id();

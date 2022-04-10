@@ -35,14 +35,14 @@ use secp256k1::rand::rngs::OsRng;
 use secp256k1::rand::RngCore;
 use secp256k1::PublicKey;
 
-use greenlight_protocol::features::*;
-use greenlight_protocol::model::{
+use vls_protocol::features::*;
+use vls_protocol::model::{
     Basepoints, BitcoinSignature, ExtKey, Htlc, PubKey, PubKey32, RecoverableSignature, Secret,
     Signature,
 };
-use greenlight_protocol::msgs::{SerBolt, SignBolt12Reply};
-use greenlight_protocol::serde_bolt::LargeBytes;
-use greenlight_protocol::{msgs, msgs::Message, Error as ProtocolError};
+use vls_protocol::msgs::{SerBolt, SignBolt12Reply};
+use vls_protocol::serde_bolt::LargeBytes;
+use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 use lightning_signer::util::status::Status;
 
 /// Error
