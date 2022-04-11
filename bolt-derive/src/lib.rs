@@ -45,6 +45,8 @@ pub fn derive_read_message(input: TokenStream) -> TokenStream {
     let DeriveInput { ident, data, .. } = parse_macro_input!(input);
     let mut vs = Vec::new();
     let mut ts = Vec::new();
+    let mut error: Option<Error> = None;
+
     if let Data::Enum(DataEnum{ variants, ..}) = data {
         for v in variants {
             if v.ident == "Unknown" { continue };
@@ -56,12 +58,23 @@ pub fn derive_read_message(input: TokenStream) -> TokenStream {
                     ts.push(f);
                 }
                 Err(e) => {
-                    return e.into_compile_error().into()
+                    match error.as_mut() {
+                        None => {
+                            error = Some(e)
+                        },
+                        Some(o) => {
+                            o.combine(e)
+                        }
+                    }
                 }
             }
         }
     } else {
         unimplemented!()
+    }
+
+    if let Some(error) = error {
+        return error.into_compile_error().into();
     }
 
     let output = quote! {
