@@ -28,4 +28,3 @@ stm32f412 = ["stm32f4xx-hal/stm32f412"]
 
 [[example]]
 name = "st7789-lcd"
-required-features = ["fsmc", "fsmc_lcd"] # stm32f412

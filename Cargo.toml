@@ -6,5 +6,8 @@ members = [
     "vls-protocol-client",
     "vls-protocol-signer",
     "vls-proxy",
+]
+
+exclude = [
     "vls-signer-stm32",
 ]
