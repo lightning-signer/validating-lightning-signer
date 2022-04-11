@@ -1,0 +1,61 @@
+[package]
+name = "vls-signer-stm32"
+version = "0.1.0"
+authors = ["Ken Sedgwick <ken@bonsai.com>", "Devrandom <c1.devrandom@niftybox.net>"]
+edition = "2018"
+
+[dependencies]
+embedded-hal = "0.2"
+nb = "1"
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+# Panic behaviour, see https://crates.io/keywords/panic-impl for alternatives
+panic-halt = "0.2"
+display-interface = { version = "0.4.1", optional = true }
+stm32f4 = "0.14.0"
+
+[dependencies.stm32f4xx-hal]
+version = "0.13"
+features = ["stm32f412", "fsmc_lcd"] # replace the model of your microcontroller here
+
+[dev-dependencies]
+embedded-graphics = "0.7.1"
+panic-semihosting = "0.5.3"
+st7789 = "0.6.1"
+
+[features]
+device-selected = []
+fsmc_lcd = ["display-interface"]
+can1 = []
+can2 = []
+fsmc = []
+i2c3 = []
+otg-fs = []
+gpiod = []
+gpioe = []
+gpiof = []
+gpiog = []
+gpio-f412 = ["gpiod", "gpioe", "gpiof", "gpiog"]
+rng = []
+sdio = []
+spi3 = []
+spi4 = []
+spi5 = []
+tim2 = []
+tim8 = []
+usart3 = []
+stm32f412 = ["stm32f4/stm32f412", "device-selected", "gpio-f412",
+    "can1", "can2",
+    "fsmc",
+    "i2c3",
+    "otg-fs",
+    "rng",
+    "sdio",
+    "spi3", "spi4", "spi5",
+    "tim2", "tim8",
+    "usart3",
+]
+
+[[example]]
+name = "st7789-lcd"
+required-features = ["fsmc", "fsmc_lcd"] # stm32f412
