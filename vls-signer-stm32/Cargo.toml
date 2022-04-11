@@ -9,7 +9,6 @@ embedded-hal = "0.2"
 nb = "1"
 cortex-m = "0.7"
 cortex-m-rt = "0.7"
-# Panic behaviour, see https://crates.io/keywords/panic-impl for alternatives
 panic-halt = "0.2"
 display-interface = { version = "0.4.1", optional = true }
 stm32f4 = "0.14.0"
@@ -19,13 +18,11 @@ st7789 = "0.6.1"
 
 [dependencies.stm32f4xx-hal]
 version = "0.13"
-features = ["fsmc_lcd", "fsmc"] # replace the model of your microcontroller here
+features = ["fsmc_lcd", "fsmc"]
 
 [features]
 stm32f412 = ["stm32f4xx-hal/stm32f412"]
-
-[[example]]
-name = "st7789-lcd"
+stm32f413 = ["stm32f4xx-hal/stm32f413"]
 
 [[bin]]
 name = "demo_signer"
