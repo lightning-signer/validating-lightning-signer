@@ -13,18 +13,20 @@ cortex-m-rt = "0.7"
 panic-halt = "0.2"
 display-interface = { version = "0.4.1", optional = true }
 stm32f4 = "0.14.0"
+embedded-graphics = "0.7.1"
+panic-semihosting = "0.5.3"
+st7789 = "0.6.1"
 
 [dependencies.stm32f4xx-hal]
 version = "0.13"
 features = ["fsmc_lcd", "fsmc"] # replace the model of your microcontroller here
-
-[dev-dependencies]
-embedded-graphics = "0.7.1"
-panic-semihosting = "0.5.3"
-st7789 = "0.6.1"
 
 [features]
 stm32f412 = ["stm32f4xx-hal/stm32f412"]
 
 [[example]]
 name = "st7789-lcd"
+
+[[bin]]
+name = "demo_signer"
+path = "src/demo_signer_main.rs"
