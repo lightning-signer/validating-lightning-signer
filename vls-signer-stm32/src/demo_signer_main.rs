@@ -19,6 +19,8 @@
 #![no_std]
 #![no_main]
 
+use rtt_target::{self, rtt_init_print, rprintln};
+
 use core::iter::{Cloned, Cycle};
 use core::slice::Iter;
 
@@ -36,6 +38,9 @@ use stm32f4xx_hal::prelude::*;
 
 #[entry]
 fn main() -> ! {
+    rtt_init_print!(NoBlockTrim);
+    rprintln!("demo_signer starting");
+
     let cp = CorePeripherals::take().unwrap();
     let dp = Peripherals::take().unwrap();
 
