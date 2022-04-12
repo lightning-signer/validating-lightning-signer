@@ -17,12 +17,12 @@ use lightning_signer::bitcoin::util::bip32::ChildNumber;
 use lightning_signer::lightning;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::INITIAL_COMMITMENT_NUMBER;
-use log::{error, info};
+use log::error;
 
 use vls_protocol::{Error as ProtocolError, model};
 use vls_protocol::features::{OPT_ANCHOR_OUTPUTS, OPT_MAX, OPT_STATIC_REMOTEKEY};
 use vls_protocol::model::{Basepoints, BitcoinSignature, Htlc, PubKey, Secret, TxId};
-use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply, SignInvoice, SignInvoiceReply, SignRemoteCommitmentTx2, ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply};
+use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply, SignInvoice, SignInvoiceReply, SignRemoteCommitmentTx2, ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply};
 use vls_protocol::serde_bolt::WireString;
 
 use crate::bitcoin::{Script, secp256k1, SigHashType, WPubkeyHash};
@@ -145,10 +145,10 @@ impl Sign for SignerClient {
 
 impl BaseSign for SignerClient {
     fn get_per_commitment_point(&self, idx: u64, _secp_ctx: &Secp256k1<All>) -> PublicKey {
-        let message = GetPerCommitmentPoint {
+        let message = GetPerCommitmentPoint2 {
             commitment_number: INITIAL_COMMITMENT_NUMBER - idx
         };
-        let result: GetPerCommitmentPointReply = self.call(message).expect("get_per_commitment_point");
+        let result: GetPerCommitmentPoint2Reply = self.call(message).expect("get_per_commitment_point");
         PublicKey::from_slice(&result.point.0).expect("public key")
     }
 

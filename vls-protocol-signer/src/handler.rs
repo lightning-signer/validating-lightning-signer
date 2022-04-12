@@ -394,8 +394,7 @@ impl Handler for ChannelHandler {
                     self.node.with_channel_base(&self.channel_id, |base| {
                         let point = base.get_per_commitment_point(commitment_number)?;
                         let secret = if commitment_number >= 2 {
-                            base.get_per_commitment_secret(commitment_number - 2)
-                                .ok()
+                            Some(base.get_per_commitment_secret(commitment_number - 2)?)
                         } else {
                             None
                         };
@@ -409,6 +408,17 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::GetPerCommitmentPointReply {
                     point: PubKey(point.serialize()),
                     secret: old_secret_reply,
+                }))
+            }
+            Message::GetPerCommitmentPoint2(m) => {
+                let commitment_number = m.commitment_number;
+                let point =
+                    self.node.with_channel_base(&self.channel_id, |base| {
+                        base.get_per_commitment_point(commitment_number)
+                    })?;
+
+                Ok(Box::new(msgs::GetPerCommitmentPoint2Reply {
+                    point: PubKey(point.serialize()),
                 }))
             }
             Message::ReadyChannel(m) => {

@@ -233,10 +233,24 @@ pub struct GetPerCommitmentPoint {
 
 ///
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1018)]
+pub struct GetPerCommitmentPoint2 {
+    pub commitment_number: u64,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(118)]
 pub struct GetPerCommitmentPointReply {
     pub point: PubKey,
     pub secret: Option<Secret>,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1118)]
+pub struct GetPerCommitmentPoint2Reply {
+    pub point: PubKey,
 }
 
 ///
@@ -501,6 +515,8 @@ pub enum Message {
     SignNodeAnnouncementReply(SignNodeAnnouncementReply),
     GetPerCommitmentPoint(GetPerCommitmentPoint),
     GetPerCommitmentPointReply(GetPerCommitmentPointReply),
+    GetPerCommitmentPoint2(GetPerCommitmentPoint2),
+    GetPerCommitmentPoint2Reply(GetPerCommitmentPoint2Reply),
     ReadyChannel(ReadyChannel),
     ReadyChannelReply(ReadyChannelReply),
     ValidateCommitmentTx(ValidateCommitmentTx),
