@@ -17,15 +17,15 @@ use lightning_signer::bitcoin::util::bip32::ChildNumber;
 use lightning_signer::lightning;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::INITIAL_COMMITMENT_NUMBER;
-use log::error;
+use log::{error, info};
 
 use vls_protocol::{Error as ProtocolError, model};
 use vls_protocol::features::{OPT_ANCHOR_OUTPUTS, OPT_MAX, OPT_STATIC_REMOTEKEY};
-use vls_protocol::model::{Basepoints, Htlc, PubKey, Secret, TxId};
-use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply, SignInvoice, SignInvoiceReply, SignRemoteCommitmentTx2, ValidateRevocation, ValidateRevocationReply};
+use vls_protocol::model::{Basepoints, BitcoinSignature, Htlc, PubKey, Secret, TxId};
+use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply, SignInvoice, SignInvoiceReply, SignRemoteCommitmentTx2, ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply};
 use vls_protocol::serde_bolt::WireString;
 
-use crate::bitcoin::{Script, secp256k1, WPubkeyHash};
+use crate::bitcoin::{Script, secp256k1, SigHashType, WPubkeyHash};
 use crate::bitcoin::bech32::u5;
 use crate::bitcoin::secp256k1::rand::RngCore;
 use crate::bitcoin::secp256k1::rand::rngs::OsRng;
@@ -74,6 +74,13 @@ fn to_pubkey(pubkey: PublicKey) -> PubKey {
     PubKey(pubkey.serialize())
 }
 
+fn to_bitcoin_sig(sig: &secp256k1::Signature) -> BitcoinSignature {
+    BitcoinSignature {
+        signature: model::Signature(sig.serialize_compact()),
+        sighash: SigHashType::All as u8,
+    }
+}
+
 pub fn call<T: SerBolt, R: DeBolt>(dbid: u64, peer_id: PubKey, transport: &dyn Transport, message: T) -> Result<R, Error> {
     assert_ne!(dbid, 0, "dbid 0 is reserved");
     let message_ser = message.as_vec();
@@ -88,6 +95,19 @@ pub fn node_call<T: SerBolt, R: DeBolt>(transport: &dyn Transport, message: T) -
     let result_ser = transport.node_call(message_ser)?;
     let result = R::from_vec(result_ser)?;
     Ok(result)
+}
+
+
+fn to_htlcs(htlcs: &Vec<HTLCOutputInCommitment>, is_remote: bool) -> Vec<Htlc> {
+    let htlcs =
+        htlcs.iter()
+            .map(|h| Htlc {
+                side: if h.offered != is_remote { Htlc::LOCAL } else { Htlc::REMOTE },
+                amount: h.amount_msat,
+                payment_hash: model::Sha256(h.payment_hash.0),
+                ctlv_expiry: h.cltv_expiry
+            }).collect();
+    htlcs
 }
 
 impl SignerClient {
@@ -135,7 +155,7 @@ impl BaseSign for SignerClient {
     fn release_commitment_secret(&self, idx: u64) -> [u8; 32] {
         // Getting the point at idx + 2 releases the secret at idx
         let message = GetPerCommitmentPoint {
-            commitment_number: INITIAL_COMMITMENT_NUMBER - (idx + 2)
+            commitment_number: INITIAL_COMMITMENT_NUMBER - idx + 2
         };
         let result: GetPerCommitmentPointReply = self.call(message).expect("get_per_commitment_point");
         let secret = result.secret.expect("secret not released");
@@ -143,8 +163,21 @@ impl BaseSign for SignerClient {
     }
 
     fn validate_holder_commitment(&self, holder_tx: &HolderCommitmentTransaction, preimages: Vec<PaymentPreimage>) -> Result<(), ()> {
-        // TODO phase 2
-        todo!()
+        let tx = holder_tx.trust();
+        let htlcs = to_htlcs(tx.htlcs(), false);
+        let message = ValidateCommitmentTx2 {
+            commitment_number: INITIAL_COMMITMENT_NUMBER - tx.commitment_number(),
+            feerate: tx.feerate_per_kw(),
+            to_local_value_sat: tx.to_broadcaster_value_sat(),
+            to_remote_value_sat: tx.to_countersignatory_value_sat(),
+            htlcs,
+            signature: to_bitcoin_sig(&holder_tx.counterparty_sig),
+            htlc_signatures: holder_tx.counterparty_htlc_sigs
+                .iter().map(|s| to_bitcoin_sig(s)).collect()
+        };
+        let _: ValidateCommitmentTxReply = self.call(message)
+            .map_err(|_| ())?;
+        Ok(())
     }
 
     fn pubkeys(&self) -> &ChannelPublicKeys {
@@ -157,14 +190,7 @@ impl BaseSign for SignerClient {
 
     fn sign_counterparty_commitment(&self, commitment_tx: &CommitmentTransaction, preimages: Vec<PaymentPreimage>, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Vec<Signature>), ()> {
         let tx = commitment_tx.trust();
-        let htlcs = tx.htlcs()
-            .iter()
-            .map(|h| Htlc {
-                side: if h.offered { Htlc::REMOTE } else { Htlc::LOCAL },
-                amount: h.amount_msat / 1000,
-                payment_hash: model::Sha256(h.payment_hash.0),
-                ctlv_expiry: h.cltv_expiry
-            }).collect();
+        let htlcs = to_htlcs(tx.htlcs(), true);
         let message = SignRemoteCommitmentTx2 {
             remote_per_commitment_point: to_pubkey(tx.keys().per_commitment_point),
             commitment_number: INITIAL_COMMITMENT_NUMBER - tx.commitment_number(),
@@ -180,7 +206,7 @@ impl BaseSign for SignerClient {
         let htlc_signatures = result.htlc_signatures.iter()
             .map(|s| Signature::from_compact(&s.signature.0))
             .collect::<Result<Vec<_>, secp256k1::Error>>()
-            .map_err(|e| ())?;
+            .map_err(|_| ())?;
         Ok((signature, htlc_signatures))
     }
 
@@ -224,8 +250,11 @@ impl BaseSign for SignerClient {
     }
 
     fn sign_channel_announcement(&self, msg: &UnsignedChannelAnnouncement, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Signature), ()> {
+        // Prepend a fake prefix to match CLN behavior
+        let mut announcement = [0u8; 258].to_vec();
+        announcement.extend(msg.encode());
         let message = SignChannelAnnouncement {
-            announcement: msg.encode()
+            announcement
         };
         let result: SignChannelAnnouncementReply = self.call(message)
             .map_err(|_|())?;

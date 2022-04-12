@@ -277,6 +277,19 @@ pub struct ValidateCommitmentTx {
 
 ///
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1035)]
+pub struct ValidateCommitmentTx2 {
+    pub commitment_number: u64,
+    pub feerate: u32,
+    pub to_local_value_sat: u64,
+    pub to_remote_value_sat: u64,
+    pub htlcs: Vec<Htlc>,
+    pub signature: BitcoinSignature,
+    pub htlc_signatures: Vec<BitcoinSignature>,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(135)]
 pub struct ValidateCommitmentTxReply {
     pub old_commitment_secret: Option<Secret>,
@@ -490,6 +503,7 @@ pub enum Message {
     ReadyChannel(ReadyChannel),
     ReadyChannelReply(ReadyChannelReply),
     ValidateCommitmentTx(ValidateCommitmentTx),
+    ValidateCommitmentTx2(ValidateCommitmentTx2),
     ValidateCommitmentTxReply(ValidateCommitmentTxReply),
     ValidateRevocation(ValidateRevocation),
     ValidateRevocationReply(ValidateRevocationReply),

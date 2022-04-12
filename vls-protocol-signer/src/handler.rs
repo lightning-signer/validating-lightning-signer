@@ -394,7 +394,8 @@ impl Handler for ChannelHandler {
                     self.node.with_channel_base(&self.channel_id, |base| {
                         let point = base.get_per_commitment_point(commitment_number)?;
                         let secret = if commitment_number >= 2 {
-                            Some(base.get_per_commitment_secret(commitment_number - 2)?)
+                            base.get_per_commitment_secret(commitment_number - 2)
+                                .ok()
                         } else {
                             None
                         };
@@ -678,6 +679,43 @@ impl Handler for ChannelHandler {
                             &witscripts,
                             commit_num,
                             feerate_sat_per_kw,
+                            offered_htlcs.clone(),
+                            received_htlcs.clone(),
+                            &commit_sig,
+                            &htlc_sigs,
+                        )
+                    })?;
+                let old_secret_reply = old_secret.map(|s| Secret(s[..].try_into().unwrap()));
+                Ok(Box::new(msgs::ValidateCommitmentTxReply {
+                    next_per_commitment_point: PubKey(next_per_commitment_point.serialize()),
+                    old_commitment_secret: old_secret_reply,
+                }))
+            }
+            Message::ValidateCommitmentTx2(m) => {
+                let commit_num = m.commitment_number;
+                let feerate_sat_per_kw = m.feerate;
+                let (received_htlcs, offered_htlcs) = extract_htlcs(&m.htlcs);
+                let commit_sig = secp256k1::Signature::from_compact(&m.signature.signature.0)
+                    .expect("signature");
+                assert_eq!(m.signature.sighash, SigHashType::All as u8);
+                let htlc_sigs = m
+                    .htlc_signatures
+                    .iter()
+                    .map(|s| {
+                        assert!(
+                            s.sighash == SigHashType::All as u8
+                                || s.sighash == SigHashType::SinglePlusAnyoneCanPay as u8
+                        );
+                        secp256k1::Signature::from_compact(&s.signature.0).expect("signature")
+                    })
+                    .collect();
+                let (next_per_commitment_point, old_secret) =
+                    self.node.with_ready_channel(&self.channel_id, |chan| {
+                        chan.validate_holder_commitment_tx_phase2(
+                            commit_num,
+                            feerate_sat_per_kw,
+                            m.to_local_value_sat,
+                            m.to_remote_value_sat,
                             offered_htlcs.clone(),
                             received_htlcs.clone(),
                             &commit_sig,
