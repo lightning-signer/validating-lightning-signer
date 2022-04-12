@@ -1,42 +1,40 @@
-//!
-//! Demonstrates use of the Flexible Static Memory Controller to interface with an ST7789 LCD
-//! controller
-//!
-//! Hardware required: an STM32F412G-DISCO board
-//!
-//! Procedure: Compile this example, load it onto the microcontroller, and run it.
-//!
-//! Example run command: `cargo run --release --features stm32f412,fsmc_lcd --example st7789-lcd`
-//!
-//! Expected behavior: The display shows a black background with four colored circles. Periodically,
-//! the color of each circle changes.
-//!
-//! Each circle takes a noticeable amount of time to draw, from top to bottom. Because
-//! embedded-graphics by default does not buffer anything in memory, it sends one pixel at a time
-//! to the LCD controller. The LCD interface can transfer rectangular blocks of pixels more quickly.
-//!
-
 #![no_std]
 #![no_main]
 
-use rtt_target::{self, rtt_init_print, rprintln};
+use core::fmt;
 
-use core::iter::{Cloned, Cycle};
-use core::slice::Iter;
+use heapless::String;
 
 use cortex_m_rt::entry;
 use panic_semihosting as _;
 
-use embedded_graphics::pixelcolor::Rgb565;
-use embedded_graphics::prelude::*;
+use rtt_target::{self, rtt_init_print, rprintln};
 
-use embedded_graphics::primitives::{Circle, PrimitiveStyle};
-use st7789::ST7789;
+use embedded_graphics::{
+    mono_font::{ascii::FONT_9X18_BOLD, MonoTextStyleBuilder},
+    pixelcolor::Rgb565,
+    prelude::*,
+    text::Text,
+};
+
+use st7789::{Orientation, ST7789};
+
 #[allow(unused_imports)]
-use stm32f4xx_hal::fsmc_lcd::{ChipSelect1, ChipSelect3, FsmcLcd, LcdPins, Timing};
-use stm32f4xx_hal::pac::{CorePeripherals, Peripherals};
-use stm32f4xx_hal::gpio::Speed;
-use stm32f4xx_hal::prelude::*;
+use stm32f4xx_hal::{
+    fsmc_lcd::{ChipSelect1, ChipSelect3, FsmcLcd, LcdPins, Timing},
+    pac::{CorePeripherals, Peripherals},
+    gpio::Speed,
+    prelude::*,
+};
+
+pub const SCREEN_WIDTH: i32 = 240;
+pub const SCREEN_HEIGHT: i32 = 240;
+pub const FONT_HEIGHT: i32 = 18;
+#[cfg(feature = "stm32f412")]
+pub const VCENTER_PIX: i32 = (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
+#[cfg(feature = "stm32f413")] // FIXME - why is this needed?  bug w/ PortraitSwapped?
+pub const VCENTER_PIX: i32 = 80 + (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
+pub const HINSET_PIX: i32 = 100;
 
 #[entry]
 fn main() -> ! {
@@ -46,6 +44,7 @@ fn main() -> ! {
     if let (Some(p), Some(cp)) = (Peripherals::take(), CorePeripherals::take()) {
 
         let rcc = p.RCC.constrain();
+
         // Make HCLK faster to allow updating the display more quickly
         let clocks = rcc.cfgr.hclk(100.MHz()).freeze();
 
@@ -53,9 +52,12 @@ fn main() -> ! {
 
         #[cfg(feature = "stm32f413")]
         let gpiob = p.GPIOB.split();
+
+        // both
         let gpiod = p.GPIOD.split();
         let gpioe = p.GPIOE.split();
         let gpiof = p.GPIOF.split();
+
         #[cfg(feature = "stm32f413")]
         let gpiog = p.GPIOG.split();
 
@@ -98,98 +100,46 @@ fn main() -> ! {
         #[cfg(feature = "stm32f413")]
         let mut backlight_control = gpioe.pe5.into_push_pull_output();
 
-        // Speed up timing settings, assuming HCLK is 100 MHz (1 cycle = 10 nanoseconds)
-        // These read timings work to read settings, but slower timings are needed to read from the
-        // frame memory.
-        // Read timing: RD can go low at the same time as D/C changes and CS goes low.
-        // RD must be low for at least 45 ns -> DATAST=8
-        // Also, a read cycle must take at least 160 nanoseconds, so set ADDSET=8. This means
-        // that a whole read takes 16 HCLK cycles (160 nanoseconds).
-        // Bus turnaround time is zero, because no particular interval is required between transactions.
-        let read_timing = Timing::default().data(8).address_setup(8).bus_turnaround(0);
-        // Write timing: Minimum 10 nanoseconds from when WR goes high to CS goes high, so
-        // HCLK can't be faster than 100 MHz.
-        // NWE must be low for at least 15 ns -> DATAST=3
-        // A write cycle must take at least 66 nanoseconds, so ADDSET=3. This means that a whole
-        // write cycle takes 7 HCLK cycles (70 nanoseconds) (an extra HCLK cycle is added after NWE
-        // goes high).
-        // Bus turnaround time is zero, because no particular interval is required between transactions.
         let write_timing = Timing::default().data(3).address_setup(3).bus_turnaround(0);
+        let read_timing = Timing::default().data(8).address_setup(8).bus_turnaround(0);
 
         let (_fsmc, interface) = FsmcLcd::new(p.FSMC, lcd_pins, &read_timing, &write_timing);
 
-        // The 32F412GDISCOVERY board has an FRD154BP2902-CTP LCD. There is no easily available
-        // datasheet, so the behavior of this code is based on the working demonstration C code:
-        // https://github.com/STMicroelectronics/STM32CubeF4/blob/e084518f363e04344dc37822210a75e87377b200/Drivers/BSP/STM32412G-Discovery/stm32412g_discovery_lcd.c
-        // https://github.com/STMicroelectronics/STM32CubeF4/blob/e084518f363e04344dc37822210a75e87377b200/Drivers/BSP/Components/st7789h2/st7789h2.c
+        let mut disp = ST7789::new(interface, lcd_reset, 240, 240);
 
-        // Add LCD controller driver
-        let mut lcd = ST7789::new(interface, lcd_reset, 240, 240);
-        // Initialise the display and clear the screen
-        lcd.init(&mut delay).unwrap();
-        lcd.clear(Rgb565::BLACK).unwrap();
+        disp.init(&mut delay).unwrap();
+
+        #[cfg(feature = "stm32f412")]
+        disp.set_orientation(Orientation::Portrait).unwrap();
+        #[cfg(feature = "stm32f413")]
+        disp.set_orientation(Orientation::PortraitSwapped).unwrap();
 
         // Turn on backlight
         backlight_control.set_high();
 
-        // Draw some circles
-        let test_colors = [
-            Rgb565::new(0x4e >> 3, 0x79 >> 2, 0xa7 >> 3),
-            Rgb565::new(0xf2 >> 3, 0x8e >> 2, 0x2b >> 3),
-            Rgb565::new(0xe1 >> 3, 0x57 >> 2, 0x59 >> 3),
-            Rgb565::new(0x76 >> 3, 0xb7 >> 2, 0xb2 >> 3),
-            Rgb565::new(0x59 >> 3, 0xa1 >> 2, 0x4f >> 3),
-            Rgb565::new(0xed >> 3, 0xc9 >> 2, 0x48 >> 3),
-            Rgb565::new(0xb0 >> 3, 0x7a >> 2, 0xa1 >> 3),
-            Rgb565::new(0xff >> 3, 0x9d >> 2, 0xa7 >> 3),
-            Rgb565::new(0x9c >> 3, 0x75 >> 2, 0x5f >> 3),
-            Rgb565::new(0xba >> 3, 0xb0 >> 2, 0xac >> 3),
-        ];
-        let center_points = [
-            Point::new(70, 70),
-            Point::new(170, 70),
-            Point::new(170, 170),
-            Point::new(70, 170),
-        ];
-        let mut drawer = ColoredCircleDrawer::new(&center_points, &test_colors);
-        loop {
-            drawer.draw(&mut lcd).unwrap();
-            delay.delay_ms(100u16);
-        }
+        let mut format_buf = String::<20>::new();
+        let mut counter = 0;
+        let text_style = MonoTextStyleBuilder::new()
+            .font(&FONT_9X18_BOLD)
+            .text_color(Rgb565::WHITE)
+            .build();
 
+        loop {
+            disp.clear(Rgb565::BLACK).unwrap();
+            
+            format_buf.clear();
+            if fmt::write(&mut format_buf, format_args!("{}", counter)).is_ok() {
+                Text::new(&format_buf, Point::new(HINSET_PIX, VCENTER_PIX), text_style)
+                    .draw(&mut disp)
+                    .unwrap();
+            }
+
+            delay.delay_ms(100u16);
+            counter += 1;
+        }
     }
 
     loop {
         continue;
-    }
-}
-
-/// Draws colored circles of various locations and colors
-struct ColoredCircleDrawer<'a> {
-    /// Infinite iterator over circle center points
-    centers: Cloned<Cycle<Iter<'a, Point>>>,
-    /// Infinite iterator over Rgb565 colors
-    colors: Cloned<Cycle<Iter<'a, Rgb565>>>,
-}
-
-impl<'a> ColoredCircleDrawer<'a> {
-    pub fn new(centers: &'a [Point], colors: &'a [Rgb565]) -> Self {
-        ColoredCircleDrawer {
-            centers: centers.iter().cycle().cloned(),
-            colors: colors.iter().cycle().cloned(),
-        }
-    }
-
-    /// Draws one circle onto a target
-    pub fn draw<T>(&mut self, target: &mut T) -> Result<(), T::Error>
-    where
-        T: DrawTarget<Color = Rgb565>,
-    {
-        let center = self.centers.next().unwrap();
-        let color = self.colors.next().unwrap();
-
-        Circle::new(center, 50)
-            .into_styled(PrimitiveStyle::with_fill(color))
-            .draw(target)
     }
 }

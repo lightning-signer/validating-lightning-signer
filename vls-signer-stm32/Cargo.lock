@@ -554,6 +554,7 @@ dependencies = [
  "display-interface",
  "embedded-graphics",
  "embedded-hal 0.2.7",
+ "heapless",
  "nb 1.0.0",
  "panic-halt",
  "panic-semihosting",
