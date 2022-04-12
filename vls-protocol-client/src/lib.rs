@@ -21,18 +21,19 @@ use log::error;
 
 use vls_protocol::{Error as ProtocolError, model};
 use vls_protocol::features::{OPT_ANCHOR_OUTPUTS, OPT_MAX, OPT_STATIC_REMOTEKEY};
-use vls_protocol::model::{Basepoints, BitcoinSignature, Htlc, PubKey, Secret, TxId};
-use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply, SignInvoice, SignInvoiceReply, SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply};
-use vls_protocol::serde_bolt::WireString;
+use vls_protocol::model::{Basepoints, BitcoinSignature, Htlc, PubKey, Secret, TxId, Utxo};
+use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply, SignInvoice, SignInvoiceReply, SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal, SignWithdrawalReply, ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply};
+use vls_protocol::serde_bolt::{LargeBytes, WireString};
 
-use crate::bitcoin::{Script, secp256k1, SigHashType, WPubkeyHash};
+use crate::bitcoin::{consensus, Script, secp256k1, SigHashType, WPubkeyHash};
 use crate::bitcoin::bech32::u5;
 use crate::bitcoin::secp256k1::rand::RngCore;
 use crate::bitcoin::secp256k1::rand::rngs::OsRng;
 use crate::bitcoin::secp256k1::recovery::{RecoverableSignature, RecoveryId};
 use crate::bitcoin::util::bip32::ExtendedPubKey;
+use crate::bitcoin::util::psbt::PartiallySignedTransaction;
 use crate::bitcoin::util::psbt::serialize::Serialize;
-use crate::lightning::chain::keysinterface::{KeyMaterial, Recipient};
+use crate::lightning::chain::keysinterface::{KeyMaterial, Recipient, SpendableOutputDescriptor};
 use crate::lightning::ln::msgs::DecodeError;
 use crate::lightning::ln::script::ShutdownScript;
 use crate::lightning::util::ser::{Writeable, Writer};
@@ -111,7 +112,10 @@ fn to_htlcs(htlcs: &Vec<HTLCOutputInCommitment>, is_remote: bool) -> Vec<Htlc> {
 }
 
 fn dest_wallet_path() -> Vec<u32> {
-    vec![1]
+    let result = vec![1];
+    // elsewhere we assume that the path has a single component
+    assert_eq!(result.len(), 1);
+    result
 }
 
 impl SignerClient {
@@ -360,6 +364,46 @@ impl KeysManagerClient {
             htlc_basepoint: from_pubkey(result.basepoints.htlc)
         };
         channel_keys
+    }
+
+    pub fn sign_onchain_tx(&self, tx: &Transaction, descriptors: &[&SpendableOutputDescriptor]) -> Vec<Vec<Vec<u8>>> {
+        let utxos = descriptors.into_iter()
+            .map(|d| Self::descriptor_to_utxo(*d))
+            .collect();
+
+        let mut psbt = PartiallySignedTransaction::from_unsigned_tx(tx.clone())
+            .expect("create PSBT");
+
+        let message = SignWithdrawal {
+            utxos,
+            psbt: LargeBytes(consensus::serialize(&psbt))
+        };
+        let result: SignWithdrawalReply = self.call(message).expect("sign failed");
+        let result_psbt: PartiallySignedTransaction =
+            consensus::deserialize(&result.psbt.0).expect("deserialize PSBT");
+        result_psbt.inputs.into_iter()
+            .map(|i| i.final_script_witness.unwrap())
+            .collect()
+    }
+
+    fn descriptor_to_utxo(d: &SpendableOutputDescriptor) -> Utxo {
+        let (amount, keyindex) = match d {
+            SpendableOutputDescriptor::StaticOutput { output, .. } =>
+                (output.value, dest_wallet_path()[0]), // FIXME this makes some assumptions
+            SpendableOutputDescriptor::DelayedPaymentOutput(o) =>
+                todo!(),
+            SpendableOutputDescriptor::StaticPaymentOutput(o) =>
+                todo!(),
+        };
+        Utxo {
+            txid: TxId([0; 32]),
+            outnum: 0,
+            amount,
+            keyindex,
+            is_p2sh: false,
+            script: vec![],
+            close_info: None
+        }
     }
 }
 
