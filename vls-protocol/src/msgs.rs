@@ -413,6 +413,17 @@ pub struct SignMutualCloseTx {
 
 ///
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1021)]
+pub struct SignMutualCloseTx2 {
+    pub to_local_value_sat: u64,
+    pub to_remote_value_sat: u64,
+    pub local_script: Vec<u8>,
+    pub remote_script: Vec<u8>,
+    pub local_wallet_path_hint: Vec<u32>,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(105)]
 pub struct SignCommitmentTxReply {
     pub signature: BitcoinSignature,
@@ -532,6 +543,7 @@ pub enum Message {
     SignLocalHtlcTx(SignLocalHtlcTx),
     SignCommitmentTx(SignCommitmentTx),
     SignMutualCloseTx(SignMutualCloseTx),
+    SignMutualCloseTx2(SignMutualCloseTx2),
     SignTxReply(SignTxReply),
     SignCommitmentTxReply(SignCommitmentTxReply),
     GetChannelBasepoints(GetChannelBasepoints),

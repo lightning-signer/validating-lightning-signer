@@ -78,6 +78,11 @@ fn typed_to_bitcoin_sig(sig: TypedSignature) -> BitcoinSignature {
     }
 }
 
+fn to_script(bytes: &Vec<u8>) -> Option<Script> {
+    if bytes.is_empty() { None }
+    else { Some(Script::from(bytes.clone())) }
+}
+
 /// Result
 pub type Result<T> = core::result::Result<T, Error>;
 
@@ -652,12 +657,19 @@ impl Handler for ChannelHandler {
                 let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
                     chan.sign_mutual_close_tx(&tx, &opaths)
                 })?;
-                Ok(Box::new(msgs::SignTxReply {
-                    signature: BitcoinSignature {
-                        signature: Signature(sig.serialize_compact()),
-                        sighash: SigHashType::All as u8,
-                    },
-                }))
+                Ok(Box::new(msgs::SignTxReply { signature: to_bitcoin_sig(sig) }))
+            }
+            Message::SignMutualCloseTx2(m) => {
+                let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
+                    chan.sign_mutual_close_tx_phase2(
+                        m.to_local_value_sat,
+                        m.to_remote_value_sat,
+                        &to_script(&m.local_script),
+                        &to_script(&m.remote_script),
+                        &m.local_wallet_path_hint
+                    )
+                })?;
+                Ok(Box::new(msgs::SignTxReply { signature: to_bitcoin_sig(sig) }))
             }
             Message::ValidateCommitmentTx(m) => {
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())

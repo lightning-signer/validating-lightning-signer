@@ -22,7 +22,7 @@ use log::error;
 use vls_protocol::{Error as ProtocolError, model};
 use vls_protocol::features::{OPT_ANCHOR_OUTPUTS, OPT_MAX, OPT_STATIC_REMOTEKEY};
 use vls_protocol::model::{Basepoints, BitcoinSignature, Htlc, PubKey, Secret, TxId};
-use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply, SignInvoice, SignInvoiceReply, SignRemoteCommitmentTx2, ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply};
+use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply, SignInvoice, SignInvoiceReply, SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply};
 use vls_protocol::serde_bolt::WireString;
 
 use crate::bitcoin::{Script, secp256k1, SigHashType, WPubkeyHash};
@@ -108,6 +108,10 @@ fn to_htlcs(htlcs: &Vec<HTLCOutputInCommitment>, is_remote: bool) -> Vec<Htlc> {
                 ctlv_expiry: h.cltv_expiry
             }).collect();
     htlcs
+}
+
+fn dest_wallet_path() -> Vec<u32> {
+    vec![1]
 }
 
 impl SignerClient {
@@ -244,9 +248,17 @@ impl BaseSign for SignerClient {
         todo!()
     }
 
-    fn sign_closing_transaction(&self, closing_tx: &ClosingTransaction, _secp_ctx: &Secp256k1<All>) -> Result<Signature, ()> {
-        // onchain
-        todo!()
+    fn sign_closing_transaction(&self, tx: &ClosingTransaction, _secp_ctx: &Secp256k1<All>) -> Result<Signature, ()> {
+        let message = SignMutualCloseTx2 {
+            to_local_value_sat: tx.to_holder_value_sat(),
+            to_remote_value_sat: tx.to_counterparty_value_sat(),
+            local_script: tx.to_holder_script().clone().into_bytes(),
+            remote_script: tx.to_counterparty_script().clone().into_bytes(),
+            local_wallet_path_hint: dest_wallet_path()
+        };
+        let result: SignTxReply = self.call(message)
+            .map_err(|_| ())?;
+        Ok(Signature::from_compact(&result.signature.signature.0).unwrap())
     }
 
     fn sign_channel_announcement(&self, msg: &UnsignedChannelAnnouncement, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Signature), ()> {
@@ -333,12 +345,8 @@ impl KeysManagerClient {
         }
     }
 
-    fn call<T: SerBolt, R: DeBolt>(&self, message: T) -> Result<R, Error> {
+    pub fn call<T: SerBolt, R: DeBolt>(&self, message: T) -> Result<R, Error> {
         node_call(&*self.transport, message)
-    }
-
-    fn dest_wallet_path() -> Vec<u32> {
-        vec![1]
     }
 
     fn get_channel_basepoints(&self, dbid: u64, peer_id: PublicKey) -> ChannelPublicKeys {
@@ -370,7 +378,7 @@ impl KeysInterface for KeysManagerClient {
 
     fn get_destination_script(&self) -> Script {
         let secp_ctx = Secp256k1::new();
-        let wallet_path = Self::dest_wallet_path();
+        let wallet_path = dest_wallet_path();
         let mut key = self.xpub;
         for i in wallet_path {
             key = key.ckd_pub(&secp_ctx, ChildNumber::from_normal_idx(i).unwrap()).unwrap();
