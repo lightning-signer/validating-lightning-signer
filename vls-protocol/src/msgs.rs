@@ -324,6 +324,26 @@ pub struct SignRemoteCommitmentTx {
 
 ///
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1019)]
+pub struct SignRemoteCommitmentTx2 {
+    pub remote_per_commitment_point: PubKey,
+    pub commitment_number: u64,
+    pub feerate: u32,
+    pub to_local_value_sat: u64,
+    pub to_remote_value_sat: u64,
+    pub htlcs: Vec<Htlc>,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1119)]
+pub struct SignCommitmentTxWithHtlcsReply {
+    pub signature: BitcoinSignature,
+    pub htlc_signatures: Vec<BitcoinSignature>,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(12)]
 pub struct SignDelayedPaymentToUs {
     pub commitment_number: u64,
@@ -474,6 +494,8 @@ pub enum Message {
     ValidateRevocation(ValidateRevocation),
     ValidateRevocationReply(ValidateRevocationReply),
     SignRemoteCommitmentTx(SignRemoteCommitmentTx),
+    SignRemoteCommitmentTx2(SignRemoteCommitmentTx2),
+    SignCommitmentTxWithHtlcsReply(SignCommitmentTxWithHtlcsReply),
     SignDelayedPaymentToUs(SignDelayedPaymentToUs),
     SignRemoteHtlcToUs(SignRemoteHtlcToUs),
     SignLocalHtlcTx(SignLocalHtlcTx),

@@ -19,7 +19,7 @@ use lightning_signer::bitcoin::consensus::{Decodable, Encodable};
 use lightning_signer::bitcoin::util::bip32::{ChildNumber, KeySource};
 use lightning_signer::bitcoin::util::psbt::PartiallySignedTransaction;
 use lightning_signer::bitcoin::{OutPoint, Transaction};
-use lightning_signer::channel::{ChannelBase, ChannelId, ChannelSetup, CommitmentType};
+use lightning_signer::channel::{ChannelBase, ChannelId, ChannelSetup, CommitmentType, TypedSignature};
 use lightning_signer::lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::{Node, NodeConfig, SpendType};
@@ -61,6 +61,20 @@ impl From<ProtocolError> for Error {
 impl From<Status> for Error {
     fn from(e: Status) -> Self {
         Error::SigningError(e)
+    }
+}
+
+fn to_bitcoin_sig(sig: secp256k1::Signature) -> BitcoinSignature {
+    BitcoinSignature {
+        signature: Signature(sig.serialize_compact()),
+        sighash: SigHashType::All as u8,
+    }
+}
+
+fn typed_to_bitcoin_sig(sig: TypedSignature) -> BitcoinSignature {
+    BitcoinSignature {
+        signature: Signature(sig.sig.serialize_compact()),
+        sighash: sig.typ as u8,
     }
 }
 
@@ -293,10 +307,7 @@ impl Handler for RootHandler {
                         .0
                 };
                 Ok(Box::new(msgs::SignCommitmentTxReply {
-                    signature: BitcoinSignature {
-                        signature: Signature(sig.serialize_compact()),
-                        sighash: SigHashType::All as u8,
-                    },
+                    signature: to_bitcoin_sig(sig),
                 }))
             }
             // TODO duplicate from ChannelHandler
@@ -470,11 +481,9 @@ impl Handler for ChannelHandler {
                         &output_witscript,
                     )
                 })?;
+
                 Ok(Box::new(msgs::SignTxReply {
-                    signature: BitcoinSignature {
-                        signature: Signature(sig.sig.serialize_compact()),
-                        sighash: sig.typ as u8,
-                    },
+                    signature: typed_to_bitcoin_sig(sig),
                 }))
             }
             Message::SignRemoteCommitmentTx(m) => {
@@ -501,10 +510,30 @@ impl Handler for ChannelHandler {
                     )
                 })?;
                 Ok(Box::new(msgs::SignTxReply {
-                    signature: BitcoinSignature {
-                        signature: Signature(sig.serialize_compact()),
-                        sighash: SigHashType::All as u8,
-                    },
+                    signature: to_bitcoin_sig(sig),
+                }))
+            }
+            Message::SignRemoteCommitmentTx2(m) => {
+                let remote_per_commitment_point =
+                    PublicKey::from_slice(&m.remote_per_commitment_point.0).expect("pubkey");
+                let commit_num = m.commitment_number;
+                let feerate_sat_per_kw = m.feerate;
+                // Flip offered and received
+                let (offered_htlcs, received_htlcs) = extract_htlcs(&m.htlcs);
+                let (sig, htlc_sigs) = self.node.with_ready_channel(&self.channel_id, |chan| {
+                    chan.sign_counterparty_commitment_tx_phase2(
+                        &remote_per_commitment_point,
+                        commit_num,
+                        feerate_sat_per_kw,
+                        m.to_local_value_sat,
+                        m.to_remote_value_sat,
+                        offered_htlcs.clone(),
+                        received_htlcs.clone(),
+                    )
+                })?;
+                Ok(Box::new(msgs::SignCommitmentTxWithHtlcsReply {
+                    signature: to_bitcoin_sig(sig),
+                    htlc_signatures: htlc_sigs.into_iter().map(|s| to_bitcoin_sig(s)).collect()
                 }))
             }
             Message::SignDelayedPaymentToUs(m) => {

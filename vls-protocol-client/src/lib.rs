@@ -19,13 +19,13 @@ use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::INITIAL_COMMITMENT_NUMBER;
 use log::error;
 
-use vls_protocol::Error as ProtocolError;
+use vls_protocol::{Error as ProtocolError, model};
 use vls_protocol::features::{OPT_ANCHOR_OUTPUTS, OPT_MAX, OPT_STATIC_REMOTEKEY};
-use vls_protocol::model::{Basepoints, PubKey, Secret, TxId};
-use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignInvoice, SignInvoiceReply, ValidateRevocation, ValidateRevocationReply};
+use vls_protocol::model::{Basepoints, Htlc, PubKey, Secret, TxId};
+use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply, SignInvoice, SignInvoiceReply, SignRemoteCommitmentTx2, ValidateRevocation, ValidateRevocationReply};
 use vls_protocol::serde_bolt::WireString;
 
-use crate::bitcoin::{Script, WPubkeyHash};
+use crate::bitcoin::{Script, secp256k1, WPubkeyHash};
 use crate::bitcoin::bech32::u5;
 use crate::bitcoin::secp256k1::rand::RngCore;
 use crate::bitcoin::secp256k1::rand::rngs::OsRng;
@@ -156,8 +156,32 @@ impl BaseSign for SignerClient {
     }
 
     fn sign_counterparty_commitment(&self, commitment_tx: &CommitmentTransaction, preimages: Vec<PaymentPreimage>, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Vec<Signature>), ()> {
-        // TODO phase 2
-        todo!()
+        let tx = commitment_tx.trust();
+        let htlcs = tx.htlcs()
+            .iter()
+            .map(|h| Htlc {
+                side: if h.offered { Htlc::REMOTE } else { Htlc::LOCAL },
+                amount: h.amount_msat / 1000,
+                payment_hash: model::Sha256(h.payment_hash.0),
+                ctlv_expiry: h.cltv_expiry
+            }).collect();
+        let message = SignRemoteCommitmentTx2 {
+            remote_per_commitment_point: to_pubkey(tx.keys().per_commitment_point),
+            commitment_number: INITIAL_COMMITMENT_NUMBER - tx.commitment_number(),
+            feerate: tx.feerate_per_kw(),
+            to_local_value_sat: tx.to_countersignatory_value_sat(),
+            to_remote_value_sat: tx.to_broadcaster_value_sat(),
+            htlcs
+        };
+        let result: SignCommitmentTxWithHtlcsReply = self.call(message)
+            .map_err(|_| ())?;
+        let signature = Signature::from_compact(&result.signature.signature.0)
+            .map_err(|_| ())?;
+        let htlc_signatures = result.htlc_signatures.iter()
+            .map(|s| Signature::from_compact(&s.signature.0))
+            .collect::<Result<Vec<_>, secp256k1::Error>>()
+            .map_err(|e| ())?;
+        Ok((signature, htlc_signatures))
     }
 
     fn validate_counterparty_revocation(&self, idx: u64, secret: &SecretKey) -> Result<(), ()> {
