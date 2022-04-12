@@ -8,7 +8,7 @@ use heapless::String;
 use cortex_m_rt::entry;
 use panic_semihosting as _;
 
-use rtt_target::{self, rtt_init_print, rprintln};
+use rtt_target::{self, rprintln, rtt_init_print};
 
 use embedded_graphics::{
     mono_font::{ascii::FONT_9X18_BOLD, MonoTextStyleBuilder},
@@ -22,8 +22,8 @@ use st7789::{Orientation, ST7789};
 #[allow(unused_imports)]
 use stm32f4xx_hal::{
     fsmc_lcd::{ChipSelect1, ChipSelect3, FsmcLcd, LcdPins, Timing},
-    pac::{CorePeripherals, Peripherals},
     gpio::Speed,
+    pac::{CorePeripherals, Peripherals},
     prelude::*,
 };
 
@@ -42,7 +42,6 @@ fn main() -> ! {
     rprintln!("demo_signer starting");
 
     if let (Some(p), Some(cp)) = (Peripherals::take(), CorePeripherals::take()) {
-
         let rcc = p.RCC.constrain();
 
         // Make HCLK faster to allow updating the display more quickly
@@ -119,14 +118,12 @@ fn main() -> ! {
 
         let mut format_buf = String::<20>::new();
         let mut counter = 0;
-        let text_style = MonoTextStyleBuilder::new()
-            .font(&FONT_9X18_BOLD)
-            .text_color(Rgb565::WHITE)
-            .build();
+        let text_style =
+            MonoTextStyleBuilder::new().font(&FONT_9X18_BOLD).text_color(Rgb565::WHITE).build();
 
         loop {
             disp.clear(Rgb565::BLACK).unwrap();
-            
+
             format_buf.clear();
             if fmt::write(&mut format_buf, format_args!("{}", counter)).is_ok() {
                 Text::new(&format_buf, Point::new(HINSET_PIX, VCENTER_PIX), text_style)
