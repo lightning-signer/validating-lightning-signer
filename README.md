@@ -23,7 +23,7 @@ cargo run --bin vls-cli -- [ARGUMENTS]
 ```
 For example, to get help, run:
 ```
-cargo run --bin vls-cli -- help`
+cargo run --bin vls-cli -- help
 ```
 
 Here is an example session:
