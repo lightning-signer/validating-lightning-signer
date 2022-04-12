@@ -1,6 +1,7 @@
 #![allow(missing_docs)]
 
 use alloc::vec::Vec;
+use core::fmt::Debug;
 
 use crate::error::{Error, Result};
 use crate::io::{read_u16, read_u32};
@@ -12,7 +13,7 @@ use serde_bolt::{LargeBytes, Read, Write};
 use serde_derive::{Deserialize, Serialize};
 
 /// Serialize a message with a type prefix, in BOLT style
-pub trait SerBolt {
+pub trait SerBolt: Debug {
     fn as_vec(&self) -> Vec<u8>;
 }
 
