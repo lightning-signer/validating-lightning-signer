@@ -1,0 +1,11 @@
+#!/bin/sh
+
+GITHOOKSDIR=.git/hooks/
+PRECOMMIT=.githooks/pre-commit
+
+if [ ! -f $PRECOMMIT ]; then
+    echo "$PRECOMMIT not found; you need to be in the top-level directory"
+    exit 1
+fi
+
+ln -s ../../$PRECOMMIT $GITHOOKSDIR
