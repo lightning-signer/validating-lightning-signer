@@ -8,4 +8,5 @@ rustup override set nightly
 
 ```
 cargo run --features stm32f412
+cargo run --features stm32f413
 ```
