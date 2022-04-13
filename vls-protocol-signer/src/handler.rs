@@ -14,13 +14,14 @@ use bitcoin::secp256k1::SecretKey;
 use bitcoin::util::psbt::serialize::Deserialize;
 use bitcoin::{Network, Script, SigHashType};
 use lightning_signer::bitcoin;
+use lightning_signer::bitcoin::secp256k1::Secp256k1;
 use lightning_signer::bitcoin::bech32::u5;
 use lightning_signer::bitcoin::consensus::{Decodable, Encodable};
 use lightning_signer::bitcoin::util::bip32::{ChildNumber, KeySource};
 use lightning_signer::bitcoin::util::psbt::PartiallySignedTransaction;
 use lightning_signer::bitcoin::{OutPoint, Transaction};
 use lightning_signer::channel::{ChannelBase, ChannelId, ChannelSetup, CommitmentType, TypedSignature};
-use lightning_signer::lightning::ln::chan_utils::ChannelPublicKeys;
+use lightning_signer::lightning::ln::chan_utils::{ChannelPublicKeys, derive_public_revocation_key};
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::{Node, NodeConfig, SpendType};
 use lightning_signer::persist::Persist;
@@ -219,9 +220,41 @@ impl Handler for RootHandler {
                 let spendtypes = m
                     .utxos
                     .iter()
-                    .map(|u| if u.is_p2sh { SpendType::P2shP2wpkh } else { SpendType::P2wpkh })
+                    .map(|u|
+                        // TODO this is kinda overloading the SignWithdrawal message
+                        // (CLN uses a separate message to sign delayed output to us)
+                        if u.is_p2sh {
+                            SpendType::P2shP2wpkh
+                        } else if let Some(ci) = u.close_info.as_ref() {
+                            if ci.commitment_point.is_some() {
+                                SpendType::P2wsh
+                            } else {
+                                SpendType::P2wpkh
+                            }
+                        } else {
+                            SpendType::P2wpkh
+                        })
                     .collect();
-                let uniclosekeys = m.utxos.iter().map(|_u| None).collect(); // TODO
+                let mut uniclosekeys = Vec::new();
+                let secp_ctx = Secp256k1::new();
+                for utxo in  m.utxos.iter() {
+                    if let Some(ci) = utxo.close_info.as_ref() {
+                        let channel_id = extract_channel_id(ci.channel_id); // dbid
+                        let per_commitment_point =
+                            ci.commitment_point.as_ref().map(|p| PublicKey::from_slice(&p.0).expect("TODO"));
+
+                        let ck = self.node.with_ready_channel(&channel_id, |chan| {
+                            let revocation_pubkey = per_commitment_point.as_ref().map(|p| {
+                                let revocation_basepoint = chan.keys.counterparty_pubkeys().revocation_basepoint;
+                                derive_public_revocation_key(&secp_ctx, p, &revocation_basepoint).expect("TODO")
+                            });
+                            chan.get_unilateral_close_key(&per_commitment_point, &revocation_pubkey)
+                        })?;
+                        uniclosekeys.push(Some(ck));
+                    } else {
+                        uniclosekeys.push(None)
+                    }
+                };
                 let opaths =
                     psbt.outputs.iter().map(|o| extract_output_path(&o.bip32_derivation)).collect();
 
@@ -748,6 +781,16 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::ValidateCommitmentTxReply {
                     next_per_commitment_point: PubKey(next_per_commitment_point.serialize()),
                     old_commitment_secret: old_secret_reply,
+                }))
+            }
+            Message::SignLocalCommitmentTx2(m) => {
+                let (sig, htlc_sigs) = self.node
+                        .with_ready_channel(&self.channel_id, |chan| {
+                            chan.sign_holder_commitment_tx_phase2(m.commitment_number)
+                        })?;
+                Ok(Box::new(msgs::SignCommitmentTxWithHtlcsReply {
+                    signature: to_bitcoin_sig(sig),
+                    htlc_signatures: htlc_sigs.into_iter().map(|s| to_bitcoin_sig(s)).collect()
                 }))
             }
             Message::ValidateRevocation(m) => {

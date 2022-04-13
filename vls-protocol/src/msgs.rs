@@ -338,6 +338,13 @@ pub struct SignCommitmentTx {
 
 ///
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1005)]
+pub struct SignLocalCommitmentTx2 {
+    pub commitment_number: u64,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(19)]
 pub struct SignRemoteCommitmentTx {
     pub tx: LargeBytes,
@@ -542,6 +549,7 @@ pub enum Message {
     SignRemoteHtlcToUs(SignRemoteHtlcToUs),
     SignLocalHtlcTx(SignLocalHtlcTx),
     SignCommitmentTx(SignCommitmentTx),
+    SignLocalCommitmentTx2(SignLocalCommitmentTx2),
     SignMutualCloseTx(SignMutualCloseTx),
     SignMutualCloseTx2(SignMutualCloseTx2),
     SignTxReply(SignTxReply),

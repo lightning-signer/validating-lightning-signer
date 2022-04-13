@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use bit_vec::BitVec;
 use bitcoin::hashes::Hash;
-use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::Transaction;
 use lightning::chain::keysinterface::{BaseSign, Sign};
@@ -21,22 +20,22 @@ use log::error;
 
 use vls_protocol::{Error as ProtocolError, model};
 use vls_protocol::features::{OPT_ANCHOR_OUTPUTS, OPT_MAX, OPT_STATIC_REMOTEKEY};
-use vls_protocol::model::{Basepoints, BitcoinSignature, Htlc, PubKey, Secret, TxId, Utxo};
-use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply, SignInvoice, SignInvoiceReply, SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal, SignWithdrawalReply, ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply};
+use vls_protocol::model::{Basepoints, BitcoinSignature, CloseInfo, Htlc, PubKey, Secret, TxId, Utxo};
+use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply, SignInvoice, SignInvoiceReply, SignLocalCommitmentTx2, SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal, SignWithdrawalReply, ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply};
 use vls_protocol::serde_bolt::{LargeBytes, WireString};
 
-use crate::bitcoin::{consensus, Script, secp256k1, SigHashType, WPubkeyHash};
-use crate::bitcoin::bech32::u5;
-use crate::bitcoin::secp256k1::rand::RngCore;
-use crate::bitcoin::secp256k1::rand::rngs::OsRng;
-use crate::bitcoin::secp256k1::recovery::{RecoverableSignature, RecoveryId};
-use crate::bitcoin::util::bip32::ExtendedPubKey;
-use crate::bitcoin::util::psbt::PartiallySignedTransaction;
-use crate::bitcoin::util::psbt::serialize::Serialize;
-use crate::lightning::chain::keysinterface::{KeyMaterial, Recipient, SpendableOutputDescriptor};
-use crate::lightning::ln::msgs::DecodeError;
-use crate::lightning::ln::script::ShutdownScript;
-use crate::lightning::util::ser::{Writeable, Writer};
+use bitcoin::{consensus, Script, secp256k1, SigHashType, WPubkeyHash};
+use bitcoin::bech32::u5;
+use bitcoin::secp256k1::rand::RngCore;
+use bitcoin::secp256k1::rand::rngs::OsRng;
+use bitcoin::secp256k1::recovery::{RecoverableSignature, RecoveryId};
+use bitcoin::util::bip32::ExtendedPubKey;
+use bitcoin::util::psbt::PartiallySignedTransaction;
+use bitcoin::util::psbt::serialize::Serialize;
+use lightning::chain::keysinterface::{KeyMaterial, Recipient, SpendableOutputDescriptor};
+use lightning::ln::msgs::DecodeError;
+use lightning::ln::script::ShutdownScript;
+use lightning::util::ser::{Writeable, Writer};
 
 #[derive(Debug)]
 pub enum Error {
@@ -118,6 +117,19 @@ fn dest_wallet_path() -> Vec<u32> {
     result
 }
 
+fn dbid_to_channel_id(dbid: u64) -> [u8; 32] {
+    let mut res = [0; 32];
+    let ser_dbid = dbid.to_le_bytes();
+    res[0..8].copy_from_slice(&ser_dbid);
+    res
+}
+
+fn channel_id_to_dbid(slice: &[u8; 32]) -> u64 {
+    let mut s = [0; 8];
+    s.copy_from_slice(&slice[0..8]);
+    u64::from_le_bytes(s)
+}
+
 impl SignerClient {
     fn call<T: SerBolt, R: DeBolt>(&self, message: T) -> Result<R, Error> {
         call(self.dbid, to_pubkey(self.peer_id), &*self.transport, message)
@@ -193,7 +205,7 @@ impl BaseSign for SignerClient {
     }
 
     fn channel_keys_id(&self) -> [u8; 32] {
-        Sha256Hash::hash(&self.dbid.to_le_bytes()).into_inner()
+        dbid_to_channel_id(self.dbid)
     }
 
     fn sign_counterparty_commitment(&self, commitment_tx: &CommitmentTransaction, preimages: Vec<PaymentPreimage>, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Vec<Signature>), ()> {
@@ -213,7 +225,7 @@ impl BaseSign for SignerClient {
             .map_err(|_| ())?;
         let htlc_signatures = result.htlc_signatures.iter()
             .map(|s| Signature::from_compact(&s.signature.0))
-            .collect::<Result<Vec<_>, secp256k1::Error>>()
+            .collect::<Result<Vec<_>, _>>()
             .map_err(|_| ())?;
         Ok((signature, htlc_signatures))
     }
@@ -229,8 +241,17 @@ impl BaseSign for SignerClient {
     }
 
     fn sign_holder_commitment_and_htlcs(&self, commitment_tx: &HolderCommitmentTransaction, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Vec<Signature>), ()> {
-        // TODO phase 2
-        todo!()
+        let message = SignLocalCommitmentTx2 {
+            commitment_number: INITIAL_COMMITMENT_NUMBER - commitment_tx.commitment_number()
+        };
+        let result: SignCommitmentTxWithHtlcsReply = self.call(message).map_err(|_| ())?;
+        let signature = Signature::from_compact(&result.signature.signature.0)
+            .map_err(|_| ())?;
+        let htlc_signatures = result.htlc_signatures.iter()
+            .map(|s| Signature::from_compact(&s.signature.0))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| ())?;
+        Ok((signature, htlc_signatures))
     }
 
     fn unsafe_sign_holder_commitment_and_htlcs(&self, commitment_tx: &HolderCommitmentTransaction, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Vec<Signature>), ()> {
@@ -387,13 +408,28 @@ impl KeysManagerClient {
     }
 
     fn descriptor_to_utxo(d: &SpendableOutputDescriptor) -> Utxo {
-        let (amount, keyindex) = match d {
+        let (amount, keyindex, close_info) = match d {
+            // Mutual close - we are spending a non-delayed output to us on the shutdown key
             SpendableOutputDescriptor::StaticOutput { output, .. } =>
-                (output.value, dest_wallet_path()[0]), // FIXME this makes some assumptions
-            SpendableOutputDescriptor::DelayedPaymentOutput(o) =>
-                todo!(),
+                (output.value, dest_wallet_path()[0], None), // FIXME this makes some assumptions
+            // We force-closed - we are spending a delayed output to us
+            SpendableOutputDescriptor::DelayedPaymentOutput(o) => {
+                (o.output.value, 0, Some(CloseInfo {
+                    channel_id: channel_id_to_dbid(&o.channel_keys_id),
+                    peer_id: PubKey([0; 33]),
+                    commitment_point: Some(to_pubkey(o.per_commitment_point)),
+                    option_anchor_outputs: false,
+                    csv: o.to_self_delay as u32
+                }))},
+            // Remote force-closed - we are spending an non-delayed output to us
             SpendableOutputDescriptor::StaticPaymentOutput(o) =>
-                todo!(),
+                (o.output.value, 0, Some(CloseInfo {
+                    channel_id: channel_id_to_dbid(&o.channel_keys_id),
+                    peer_id: PubKey([0; 33]),
+                    commitment_point: None,
+                    option_anchor_outputs: false,
+                    csv: 0
+                })),
         };
         Utxo {
             txid: TxId([0; 32]),
@@ -402,7 +438,7 @@ impl KeysManagerClient {
             keyindex,
             is_p2sh: false,
             script: vec![],
-            close_info: None
+            close_info
         }
     }
 }
@@ -486,7 +522,10 @@ impl KeysInterface for KeysManagerClient {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn it_works() {
+    fn dbid_test() {
+        assert_eq!(channel_id_to_dbid(&dbid_to_channel_id(0x123456)), 0x123456);
     }
 }
