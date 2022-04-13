@@ -1,4 +1,4 @@
-use log::{Metadata, Record, LevelFilter};
+use log::{LevelFilter, Metadata, Record};
 #[cfg(target_arch = "wasm32")]
 use web_sys;
 
