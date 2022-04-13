@@ -1,0 +1,5 @@
+#!/usr/bin/awk -f
+# parse Cargo.toml and list excluded crates 
+/\]/			{inexcludes=0}
+match($0, /"(.*)"/,m)	{if (inexcludes) print m[1]}
+/^exclude/		{inexcludes=1}
