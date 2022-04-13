@@ -23,6 +23,7 @@ pub trait DeBolt: Sized {
 }
 
 /// hsmd Init
+/// CLN only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(11)]
 pub struct HsmdInit {
@@ -46,6 +47,7 @@ pub struct HsmdInitReply {
 }
 
 /// Signer Init for LDK
+/// LDK only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(1011)]
 pub struct HsmdInit2 {
@@ -64,6 +66,7 @@ pub struct HsmdInit2Reply {
 }
 
 /// Connect a new client
+/// CLN only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(9)]
 pub struct ClientHsmFd {
@@ -124,6 +127,7 @@ pub struct EcdhReply {
 }
 
 /// Memleak
+/// CLN only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(33)]
 pub struct Memleak {}
@@ -224,14 +228,15 @@ pub struct SignNodeAnnouncementReply {
     pub node_signature: Signature,
 }
 
-///
+/// Get per-commitment point n and optionally revoke a point n-2 by releasing the secret
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(18)]
 pub struct GetPerCommitmentPoint {
     pub commitment_number: u64,
 }
 
-///
+/// Get per-commitment point
+/// LDK only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(1018)]
 pub struct GetPerCommitmentPoint2 {
@@ -278,6 +283,7 @@ pub struct ReadyChannel {
 pub struct ReadyChannelReply {}
 
 ///
+/// CLN only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(35)]
 pub struct ValidateCommitmentTx {
@@ -291,6 +297,7 @@ pub struct ValidateCommitmentTx {
 }
 
 ///
+/// LDK only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(1035)]
 pub struct ValidateCommitmentTx2 {
@@ -325,6 +332,7 @@ pub struct ValidateRevocation {
 pub struct ValidateRevocationReply {}
 
 ///
+/// CLN only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(5)]
 pub struct SignCommitmentTx {
@@ -337,6 +345,7 @@ pub struct SignCommitmentTx {
 }
 
 ///
+/// LDK only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(1005)]
 pub struct SignLocalCommitmentTx2 {
@@ -344,6 +353,7 @@ pub struct SignLocalCommitmentTx2 {
 }
 
 ///
+/// CLN only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(19)]
 pub struct SignRemoteCommitmentTx {
@@ -358,6 +368,7 @@ pub struct SignRemoteCommitmentTx {
 }
 
 ///
+/// LDK only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(1019)]
 pub struct SignRemoteCommitmentTx2 {
@@ -378,6 +389,7 @@ pub struct SignCommitmentTxWithHtlcsReply {
 }
 
 ///
+/// CLN only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(12)]
 pub struct SignDelayedPaymentToUs {
@@ -388,6 +400,7 @@ pub struct SignDelayedPaymentToUs {
 }
 
 ///
+/// CLN only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(13)]
 pub struct SignRemoteHtlcToUs {
@@ -410,6 +423,7 @@ pub struct SignLocalHtlcTx {
 }
 
 ///
+/// CLN only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(21)]
 pub struct SignMutualCloseTx {
@@ -419,6 +433,7 @@ pub struct SignMutualCloseTx {
 }
 
 ///
+/// LDK only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(1021)]
 pub struct SignMutualCloseTx2 {
