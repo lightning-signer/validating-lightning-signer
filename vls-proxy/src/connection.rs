@@ -8,10 +8,10 @@ use nix::cmsg_space;
 use nix::sys::socket::{recvmsg, sendmsg, ControlMessage, ControlMessageOwned, MsgFlags};
 use serde_bolt::{Error as SError, Read, Result as SResult, Write};
 
-use vls_protocol::serde_bolt;
-use vls_protocol_signer::vls_protocol;
 use nix::sys::uio::IoVec;
 use nix::unistd::close;
+use vls_protocol::serde_bolt;
+use vls_protocol_signer::vls_protocol;
 
 pub struct UnixConnection {
     fd: RawFd,

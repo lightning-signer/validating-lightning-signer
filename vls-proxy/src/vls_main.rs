@@ -6,15 +6,15 @@ use clap::{App, AppSettings, Arg};
 use log::{error, info};
 
 use connection::UnixConnection;
-use vls_protocol::{msgs, msgs::Message, Error, Result};
-use vls_protocol_signer::vls_protocol;
 use lightning_signer::persist::Persist;
 use lightning_signer::Arc;
+use vls_protocol::{msgs, msgs::Message, Error, Result};
+use vls_protocol_signer::vls_protocol;
 
 use client::{Client, UnixClient};
-use vls_protocol_signer::handler::{Handler, RootHandler};
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
 use util::read_allowlist;
+use vls_protocol_signer::handler::{Handler, RootHandler};
 
 mod test;
 use vls_proxy::util::{read_integration_test_seed, setup_logging};

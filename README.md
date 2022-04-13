@@ -9,3 +9,18 @@ For now, we have in this repo:
 TODO:
 
 - split out the signer gRPC v2 binary from the `vls-proxy` crate.
+
+## Development Information
+
+### Formatting Code
+
+Enable formatting precommit hooks:
+
+    ./scripts/enable-githooks
+
+For some reason, the `ignore` configuration for rustfmt is only available on the nightly channel,
+even though it's documented as stable.
+
+    rustup install nightly
+
+    cargo +nightly fmt
