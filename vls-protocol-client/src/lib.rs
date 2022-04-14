@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -36,6 +37,10 @@ use lightning::chain::keysinterface::{KeyMaterial, Recipient, SpendableOutputDes
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::script::ShutdownScript;
 use lightning::util::ser::{Writeable, Writer};
+
+mod dyn_signer;
+
+pub use dyn_signer::{DynSigner, InnerSign, DynKeysInterface, SpendableKeysInterface};
 
 #[derive(Debug)]
 pub enum Error {
@@ -517,6 +522,21 @@ impl KeysInterface for KeysManagerClient {
 
     fn get_inbound_payment_key_material(&self) -> KeyMaterial {
         self.key_material
+    }
+}
+
+impl InnerSign for SignerClient {
+    fn box_clone(&self) -> Box<dyn InnerSign> {
+        Box::new(self.clone())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), std::io::Error> {
+        // TODO
+        Ok(())
     }
 }
 

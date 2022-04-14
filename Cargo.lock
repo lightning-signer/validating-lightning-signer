@@ -2282,6 +2282,7 @@ dependencies = [
 name = "vls-protocol-client"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bit-vec",
  "lightning-signer-core",
  "log",
