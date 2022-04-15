@@ -2279,6 +2279,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "vls-protocol-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bit-vec",
+ "lightning-signer-core",
+ "log",
+ "vls-protocol",
+ "vls-protocol-signer",
+]
+
+[[package]]
 name = "vls-protocol-signer"
 version = "0.1.0"
 dependencies = [

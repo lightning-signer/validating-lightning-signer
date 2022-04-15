@@ -15,7 +15,7 @@ pub struct Bip32KeyVersion {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BlockId([u8; 32]);
+pub struct BlockId(pub [u8; 32]);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Secret(pub [u8; 32]);
@@ -28,6 +28,7 @@ pub struct PubKey32(pub [u8; 32]);
 
 macro_rules! array_impl {
     ($ty:ident, $len:tt) => {
+        #[derive(Clone)]
         pub struct $ty(pub [u8; $len]);
 
         impl Debug for $ty {

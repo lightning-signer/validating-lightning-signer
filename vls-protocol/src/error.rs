@@ -3,6 +3,7 @@ use serde_bolt::Error as BoltError;
 /// Error
 #[derive(Debug)]
 pub enum Error {
+    UnexpectedType(u16),
     BoltError(BoltError),
     // Include the message type for trailing bytes
     TrailingBytes(u16),
