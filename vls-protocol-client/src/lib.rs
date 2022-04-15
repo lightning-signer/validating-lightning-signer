@@ -266,16 +266,19 @@ impl BaseSign for SignerClient {
         unimplemented!()
     }
 
+    #[allow(unused)]
     fn sign_justice_revoked_output(&self, justice_tx: &Transaction, input: usize, amount: u64, per_commitment_key: &SecretKey, _secp_ctx: &Secp256k1<All>) -> Result<Signature, ()> {
         // onchain
         todo!()
     }
 
+    #[allow(unused)]
     fn sign_justice_revoked_htlc(&self, justice_tx: &Transaction, input: usize, amount: u64, per_commitment_key: &SecretKey, htlc: &HTLCOutputInCommitment, _secp_ctx: &Secp256k1<All>) -> Result<Signature, ()> {
         // onchain
         todo!()
     }
 
+    #[allow(unused)]
     fn sign_counterparty_htlc_transaction(&self, htlc_tx: &Transaction, input: usize, amount: u64, per_commitment_point: &PublicKey, htlc: &HTLCOutputInCommitment, _secp_ctx: &Secp256k1<All>) -> Result<Signature, ()> {
         // onchain
         todo!()
