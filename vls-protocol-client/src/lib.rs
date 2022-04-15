@@ -41,6 +41,7 @@ use lightning::util::ser::{Writeable, Writer};
 mod dyn_signer;
 
 pub use dyn_signer::{DynSigner, InnerSign, DynKeysInterface, SpendableKeysInterface};
+use lightning::util::ser::Readable;
 
 #[derive(Debug)]
 pub enum Error {
@@ -144,10 +145,6 @@ impl SignerClient {
             })
     }
 
-    fn peer_id(&self) -> PubKey {
-        PubKey(self.peer_id.serialize())
-    }
-
     fn new(transport: Arc<dyn Transport>, peer_id: PublicKey, dbid: u64, channel_value: u64, channel_keys: ChannelPublicKeys) -> Self {
         SignerClient {
             transport,
@@ -161,7 +158,11 @@ impl SignerClient {
 
 impl Writeable for SignerClient {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), std::io::Error> {
-        todo!()
+        self.peer_id.write(writer)?;
+        self.dbid.write(writer)?;
+        self.channel_keys.write(writer)?;
+        self.channel_value.write(writer)?;
+        Ok(())
     }
 }
 
@@ -187,7 +188,8 @@ impl BaseSign for SignerClient {
         secret.0
     }
 
-    fn validate_holder_commitment(&self, holder_tx: &HolderCommitmentTransaction, preimages: Vec<PaymentPreimage>) -> Result<(), ()> {
+    fn validate_holder_commitment(&self, holder_tx: &HolderCommitmentTransaction, _preimages: Vec<PaymentPreimage>) -> Result<(), ()> {
+        // TODO preimage handling
         let tx = holder_tx.trust();
         let htlcs = to_htlcs(tx.htlcs(), false);
         let message = ValidateCommitmentTx2 {
@@ -213,7 +215,8 @@ impl BaseSign for SignerClient {
         dbid_to_channel_id(self.dbid)
     }
 
-    fn sign_counterparty_commitment(&self, commitment_tx: &CommitmentTransaction, preimages: Vec<PaymentPreimage>, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Vec<Signature>), ()> {
+    fn sign_counterparty_commitment(&self, commitment_tx: &CommitmentTransaction, _preimages: Vec<PaymentPreimage>, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Vec<Signature>), ()> {
+        // TODO preimage handling
         let tx = commitment_tx.trust();
         let htlcs = to_htlcs(tx.htlcs(), true);
         let message = SignRemoteCommitmentTx2 {
@@ -259,7 +262,7 @@ impl BaseSign for SignerClient {
         Ok((signature, htlc_signatures))
     }
 
-    fn unsafe_sign_holder_commitment_and_htlcs(&self, commitment_tx: &HolderCommitmentTransaction, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Vec<Signature>), ()> {
+    fn unsafe_sign_holder_commitment_and_htlcs(&self, _commitment_tx: &HolderCommitmentTransaction, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Vec<Signature>), ()> {
         unimplemented!()
     }
 
@@ -397,7 +400,7 @@ impl KeysManagerClient {
             .map(|d| Self::descriptor_to_utxo(*d))
             .collect();
 
-        let mut psbt = PartiallySignedTransaction::from_unsigned_tx(tx.clone())
+        let psbt = PartiallySignedTransaction::from_unsigned_tx(tx.clone())
             .expect("create PSBT");
 
         let message = SignWithdrawal {
@@ -497,8 +500,19 @@ impl KeysInterface for KeysManagerClient {
         bytes
     }
 
-    fn read_chan_signer(&self, reader: &[u8]) -> Result<Self::Signer, DecodeError> {
-        todo!()
+    fn read_chan_signer(&self, mut reader: &[u8]) -> Result<Self::Signer, DecodeError> {
+        let peer_id = Readable::read(&mut reader)?;
+        let dbid = Readable::read(&mut reader)?;
+        let channel_keys = Readable::read(&mut reader)?;
+        let channel_value = Readable::read(&mut reader)?;
+
+        Ok(SignerClient {
+            transport: self.transport.clone(),
+            peer_id,
+            dbid,
+            channel_keys,
+            channel_value
+        })
     }
 
     fn sign_invoice(&self, hrp_bytes: &[u8], invoice_data: &[u5], recipient: Recipient) -> Result<RecoverableSignature, ()> {
@@ -535,8 +549,7 @@ impl InnerSign for SignerClient {
     }
 
     fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), std::io::Error> {
-        // TODO
-        Ok(())
+        self.write(writer)
     }
 }
 
