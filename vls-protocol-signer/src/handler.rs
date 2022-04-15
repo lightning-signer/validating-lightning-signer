@@ -14,14 +14,18 @@ use bitcoin::secp256k1::SecretKey;
 use bitcoin::util::psbt::serialize::Deserialize;
 use bitcoin::{Network, Script, SigHashType};
 use lightning_signer::bitcoin;
-use lightning_signer::bitcoin::secp256k1::Secp256k1;
 use lightning_signer::bitcoin::bech32::u5;
 use lightning_signer::bitcoin::consensus::{Decodable, Encodable};
+use lightning_signer::bitcoin::secp256k1::Secp256k1;
 use lightning_signer::bitcoin::util::bip32::{ChildNumber, KeySource};
 use lightning_signer::bitcoin::util::psbt::PartiallySignedTransaction;
 use lightning_signer::bitcoin::{OutPoint, Transaction};
-use lightning_signer::channel::{ChannelBase, ChannelId, ChannelSetup, CommitmentType, TypedSignature};
-use lightning_signer::lightning::ln::chan_utils::{ChannelPublicKeys, derive_public_revocation_key};
+use lightning_signer::channel::{
+    ChannelBase, ChannelId, ChannelSetup, CommitmentType, TypedSignature,
+};
+use lightning_signer::lightning::ln::chan_utils::{
+    derive_public_revocation_key, ChannelPublicKeys,
+};
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::{Node, NodeConfig, SpendType};
 use lightning_signer::persist::Persist;
@@ -73,15 +77,15 @@ fn to_bitcoin_sig(sig: secp256k1::Signature) -> BitcoinSignature {
 }
 
 fn typed_to_bitcoin_sig(sig: TypedSignature) -> BitcoinSignature {
-    BitcoinSignature {
-        signature: Signature(sig.sig.serialize_compact()),
-        sighash: sig.typ as u8,
-    }
+    BitcoinSignature { signature: Signature(sig.sig.serialize_compact()), sighash: sig.typ as u8 }
 }
 
 fn to_script(bytes: &Vec<u8>) -> Option<Script> {
-    if bytes.is_empty() { None }
-    else { Some(Script::from(bytes.clone())) }
+    if bytes.is_empty() {
+        None
+    } else {
+        Some(Script::from(bytes.clone()))
+    }
 }
 
 /// Result
@@ -178,7 +182,7 @@ impl Handler for RootHandler {
                 Ok(Box::new(msgs::HsmdInit2Reply {
                     node_secret: Secret(node_secret),
                     bip32: ExtKey(bip32),
-                    bolt12: PubKey32(bolt12_xonly)
+                    bolt12: PubKey32(bolt12_xonly),
                 }))
             }
             Message::Ecdh(m) => {
@@ -237,16 +241,20 @@ impl Handler for RootHandler {
                     .collect();
                 let mut uniclosekeys = Vec::new();
                 let secp_ctx = Secp256k1::new();
-                for utxo in  m.utxos.iter() {
+                for utxo in m.utxos.iter() {
                     if let Some(ci) = utxo.close_info.as_ref() {
                         let channel_id = extract_channel_id(ci.channel_id); // dbid
-                        let per_commitment_point =
-                            ci.commitment_point.as_ref().map(|p| PublicKey::from_slice(&p.0).expect("TODO"));
+                        let per_commitment_point = ci
+                            .commitment_point
+                            .as_ref()
+                            .map(|p| PublicKey::from_slice(&p.0).expect("TODO"));
 
                         let ck = self.node.with_ready_channel(&channel_id, |chan| {
                             let revocation_pubkey = per_commitment_point.as_ref().map(|p| {
-                                let revocation_basepoint = chan.keys.counterparty_pubkeys().revocation_basepoint;
-                                derive_public_revocation_key(&secp_ctx, p, &revocation_basepoint).expect("TODO")
+                                let revocation_basepoint =
+                                    chan.keys.counterparty_pubkeys().revocation_basepoint;
+                                derive_public_revocation_key(&secp_ctx, p, &revocation_basepoint)
+                                    .expect("TODO")
                             });
                             chan.get_unilateral_close_key(&per_commitment_point, &revocation_pubkey)
                         })?;
@@ -254,7 +262,7 @@ impl Handler for RootHandler {
                     } else {
                         uniclosekeys.push(None)
                     }
-                };
+                }
                 let opaths =
                     psbt.outputs.iter().map(|o| extract_output_path(&o.bip32_derivation)).collect();
 
@@ -344,9 +352,7 @@ impl Handler for RootHandler {
                         })?
                         .0
                 };
-                Ok(Box::new(msgs::SignCommitmentTxReply {
-                    signature: to_bitcoin_sig(sig),
-                }))
+                Ok(Box::new(msgs::SignCommitmentTxReply { signature: to_bitcoin_sig(sig) }))
             }
             // TODO duplicate from ChannelHandler
             Message::SignChannelUpdate(m) => {
@@ -450,14 +456,11 @@ impl Handler for ChannelHandler {
             }
             Message::GetPerCommitmentPoint2(m) => {
                 let commitment_number = m.commitment_number;
-                let point =
-                    self.node.with_channel_base(&self.channel_id, |base| {
-                        base.get_per_commitment_point(commitment_number)
-                    })?;
+                let point = self.node.with_channel_base(&self.channel_id, |base| {
+                    base.get_per_commitment_point(commitment_number)
+                })?;
 
-                Ok(Box::new(msgs::GetPerCommitmentPoint2Reply {
-                    point: PubKey(point.serialize()),
-                }))
+                Ok(Box::new(msgs::GetPerCommitmentPoint2Reply { point: PubKey(point.serialize()) }))
             }
             Message::ReadyChannel(m) => {
                 let txid = bitcoin::Txid::from_slice(&m.funding_txid.0).expect("txid");
@@ -531,9 +534,7 @@ impl Handler for ChannelHandler {
                     )
                 })?;
 
-                Ok(Box::new(msgs::SignTxReply {
-                    signature: typed_to_bitcoin_sig(sig),
-                }))
+                Ok(Box::new(msgs::SignTxReply { signature: typed_to_bitcoin_sig(sig) }))
             }
             Message::SignRemoteCommitmentTx(m) => {
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())
@@ -558,9 +559,7 @@ impl Handler for ChannelHandler {
                         received_htlcs.clone(),
                     )
                 })?;
-                Ok(Box::new(msgs::SignTxReply {
-                    signature: to_bitcoin_sig(sig),
-                }))
+                Ok(Box::new(msgs::SignTxReply { signature: to_bitcoin_sig(sig) }))
             }
             Message::SignRemoteCommitmentTx2(m) => {
                 let remote_per_commitment_point =
@@ -582,7 +581,7 @@ impl Handler for ChannelHandler {
                 })?;
                 Ok(Box::new(msgs::SignCommitmentTxWithHtlcsReply {
                     signature: to_bitcoin_sig(sig),
-                    htlc_signatures: htlc_sigs.into_iter().map(|s| to_bitcoin_sig(s)).collect()
+                    htlc_signatures: htlc_sigs.into_iter().map(|s| to_bitcoin_sig(s)).collect(),
                 }))
             }
             Message::SignDelayedPaymentToUs(m) => {
@@ -699,7 +698,7 @@ impl Handler for ChannelHandler {
                         m.to_remote_value_sat,
                         &to_script(&m.local_script),
                         &to_script(&m.remote_script),
-                        &m.local_wallet_path_hint
+                        &m.local_wallet_path_hint,
                     )
                 })?;
                 Ok(Box::new(msgs::SignTxReply { signature: to_bitcoin_sig(sig) }))
@@ -784,13 +783,12 @@ impl Handler for ChannelHandler {
                 }))
             }
             Message::SignLocalCommitmentTx2(m) => {
-                let (sig, htlc_sigs) = self.node
-                        .with_ready_channel(&self.channel_id, |chan| {
-                            chan.sign_holder_commitment_tx_phase2(m.commitment_number)
-                        })?;
+                let (sig, htlc_sigs) = self.node.with_ready_channel(&self.channel_id, |chan| {
+                    chan.sign_holder_commitment_tx_phase2(m.commitment_number)
+                })?;
                 Ok(Box::new(msgs::SignCommitmentTxWithHtlcsReply {
                     signature: to_bitcoin_sig(sig),
-                    htlc_signatures: htlc_sigs.into_iter().map(|s| to_bitcoin_sig(s)).collect()
+                    htlc_signatures: htlc_sigs.into_iter().map(|s| to_bitcoin_sig(s)).collect(),
                 }))
             }
             Message::ValidateRevocation(m) => {

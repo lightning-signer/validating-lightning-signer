@@ -6,7 +6,7 @@ use core::fmt::Debug;
 use crate::error::{Error, Result};
 use crate::io::{read_u16, read_u32};
 use crate::model::*;
-use bolt_derive::{SerBolt, ReadMessage};
+use bolt_derive::{ReadMessage, SerBolt};
 use serde::{de, ser};
 use serde_bolt::{from_vec as sb_from_vec, to_vec, WireString};
 use serde_bolt::{LargeBytes, Read, Write};
