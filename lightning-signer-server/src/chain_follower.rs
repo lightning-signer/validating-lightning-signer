@@ -9,7 +9,7 @@ use tokio::{task, time};
 use url::Url;
 
 use bitcoin::util::merkleblock::PartialMerkleTree;
-use bitcoin::{Block, BlockHash, OutPoint, Transaction, TxOut, Txid};
+use bitcoin::{Block, BlockHash, Network, OutPoint, Transaction, TxOut, Txid};
 
 use bitcoind_client::{BitcoindClient, BlockSource, Error};
 use lightning_signer::node::Node;
@@ -20,13 +20,12 @@ use lightning_signer::{debug_vals, short_function, vals_str};
 #[allow(unused_imports)]
 use log::{debug, error, info, trace};
 
-const UPDATE_INTERVAL_MSEC: u64 = 100;
-
 /// Follows the longest chain and feeds proofs of watched changes to ChainTracker.
 pub struct ChainFollower {
     node: Arc<Node>,
     client: BitcoindClient,
     state: Mutex<State>,
+    update_interval: u64,
 }
 
 #[derive(Debug, PartialEq)]
@@ -72,7 +71,16 @@ impl ChainFollower {
             rpc_url.password().to_owned().expect("rpc password").to_owned(),
         )
         .await;
-        Arc::new(ChainFollower { node, client, state: Mutex::new(State::Scanning) })
+        let update_interval = match node.network() {
+            Network::Regtest => 100, // poll rapidly, automated testing
+            _ => 60 * 1000,
+        };
+        Arc::new(ChainFollower {
+            node,
+            client,
+            state: Mutex::new(State::Scanning),
+            update_interval,
+        })
     }
 
     pub async fn start(cf_arc: Arc<ChainFollower>) {
@@ -83,7 +91,7 @@ impl ChainFollower {
     }
 
     async fn run(&self) {
-        let mut interval = time::interval(Duration::from_millis(UPDATE_INTERVAL_MSEC));
+        let mut interval = time::interval(Duration::from_millis(self.update_interval));
         loop {
             interval.tick().await;
             loop {
