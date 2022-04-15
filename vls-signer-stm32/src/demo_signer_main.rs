@@ -11,10 +11,7 @@ use panic_semihosting as _;
 use rtt_target::{self, rprintln, rtt_init_print};
 
 use embedded_graphics::{
-    mono_font::{ascii::FONT_9X18_BOLD, MonoTextStyleBuilder},
-    pixelcolor::Rgb565,
-    prelude::*,
-    text::Text,
+    mono_font::MonoTextStyleBuilder, pixelcolor::Rgb565, prelude::*, text::Text,
 };
 
 use st7789::{Orientation, ST7789};
@@ -26,6 +23,8 @@ use stm32f4xx_hal::{
     pac::{CorePeripherals, Peripherals},
     prelude::*,
 };
+
+use profont::PROFONT_24_POINT;
 
 pub const SCREEN_WIDTH: i32 = 240;
 pub const SCREEN_HEIGHT: i32 = 240;
@@ -119,7 +118,7 @@ fn main() -> ! {
         let mut format_buf = String::<20>::new();
         let mut counter = 0;
         let text_style =
-            MonoTextStyleBuilder::new().font(&FONT_9X18_BOLD).text_color(Rgb565::WHITE).build();
+            MonoTextStyleBuilder::new().font(&PROFONT_24_POINT).text_color(Rgb565::WHITE).build();
 
         loop {
             disp.clear(Rgb565::BLACK).unwrap();

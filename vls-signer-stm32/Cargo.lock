@@ -350,6 +350,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "profont"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd908932b251e9f146130df7566e8f7c5b0c6ddb29f6d67571f3579f59043c36"
+dependencies = [
+ "embedded-graphics",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -558,6 +567,7 @@ dependencies = [
  "nb 1.0.0",
  "panic-halt",
  "panic-semihosting",
+ "profont",
  "rtt-target",
  "st7789",
  "stm32f4",
