@@ -194,6 +194,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "723dce4e9f25b6e6c5f35628e144794e5b459216ed7da97b7c4b66cdb3fa82ca"
 
 [[package]]
+name = "fatfs"
+version = "0.4.0"
+source = "git+https://github.com/rafalh/rust-fatfs.git?rev=87fc1ed5074a32b4e0344fcdde77359ef9e75432#87fc1ed5074a32b4e0344fcdde77359ef9e75432"
+dependencies = [
+ "bitflags",
+ "log",
+]
+
+[[package]]
 name = "float-cmp"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -274,6 +283,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "log"
+version = "0.4.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6389c490849ff5bc16be905ae24bc913a9c8892e19b2341dbc175e14c341c2b8"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "memchr"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -323,6 +341,16 @@ name = "panic-halt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de96540e0ebde571dc55c73d60ef407c653844e6f9a1e2fdbd40c07b9252d812"
+
+[[package]]
+name = "panic-probe"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a0fa226f55c70d0d70ad373802f0d65a775478afec75c0f3eee1de5d39057c9"
+dependencies = [
+ "cortex-m",
+ "rtt-target",
+]
 
 [[package]]
 name = "panic-semihosting"
@@ -570,9 +598,11 @@ dependencies = [
  "display-interface",
  "embedded-graphics",
  "embedded-hal 0.2.7",
+ "fatfs",
  "heapless",
  "nb 1.0.0",
  "panic-halt",
+ "panic-probe",
  "panic-semihosting",
  "profont",
  "rtt-target",

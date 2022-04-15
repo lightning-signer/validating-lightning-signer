@@ -6,7 +6,7 @@ use core::fmt;
 use heapless::String;
 
 use cortex_m_rt::entry;
-use panic_semihosting as _;
+use panic_probe as _;
 
 use rtt_target::{self, rprintln, rtt_init_print};
 
@@ -27,6 +27,8 @@ use stm32f4xx_hal::{
 
 use profont::PROFONT_24_POINT;
 
+mod sdcard;
+
 pub const SCREEN_WIDTH: i32 = 240;
 pub const SCREEN_HEIGHT: i32 = 240;
 pub const FONT_HEIGHT: i32 = 18;
@@ -38,7 +40,7 @@ pub const HINSET_PIX: i32 = 100;
 
 #[entry]
 fn main() -> ! {
-    rtt_init_print!(NoBlockTrim);
+    rtt_init_print!(BlockIfFull);
     rprintln!("demo_signer starting");
 
     let p = Peripherals::take().unwrap();
@@ -158,6 +160,8 @@ fn main() -> ! {
 
     let res = sdio.read_block(0, &mut block);
     rprintln!("sdcard read result {:?}", res);
+
+    sdcard::test(sdio);
 
     loop {
         disp.clear(Rgb565::BLACK).unwrap();
