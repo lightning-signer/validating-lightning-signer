@@ -26,12 +26,11 @@ const UPDATE_INTERVAL_MSEC: u64 = 100;
 pub struct ChainFollower {
     node: Arc<Node>,
     client: BitcoindClient,
-    state: State,
+    state: Mutex<State>,
 }
 
 #[derive(Debug, PartialEq)]
 enum State {
-    Disconnected,
     Scanning,
     Synced,
 }
@@ -39,7 +38,6 @@ enum State {
 impl Display for State {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            State::Disconnected => write!(f, "disconnected"),
             State::Scanning => write!(f, "scanning"),
             State::Synced => write!(f, "synced"),
         }
@@ -60,7 +58,7 @@ macro_rules! abbrev {
 }
 
 impl ChainFollower {
-    pub async fn new(node: Arc<Node>, rpc_url: &Url) -> Arc<Mutex<ChainFollower>> {
+    pub async fn new(node: Arc<Node>, rpc_url: &Url) -> Arc<ChainFollower> {
         info!(
             "node {} creating {} follower using {}",
             abbrev!(node.get_id(), 12),
@@ -74,22 +72,22 @@ impl ChainFollower {
             rpc_url.password().to_owned().expect("rpc password").to_owned(),
         )
         .await;
-        let cf_arc =
-            Arc::new(Mutex::new(ChainFollower { node, client, state: State::Disconnected }));
-        let cf_arc_clone = Arc::clone(&cf_arc);
-        task::spawn(async move {
-            ChainFollower::run(&cf_arc_clone).await;
-        });
-        cf_arc
+        Arc::new(ChainFollower { node, client, state: Mutex::new(State::Scanning) })
     }
 
-    async fn run(cf_arc: &Arc<Mutex<ChainFollower>>) {
+    pub async fn start(cf_arc: Arc<ChainFollower>) {
+        let cf_arc_clone = Arc::clone(&cf_arc);
+        task::spawn(async move {
+            cf_arc_clone.run().await;
+        });
+    }
+
+    async fn run(&self) {
         let mut interval = time::interval(Duration::from_millis(UPDATE_INTERVAL_MSEC));
         loop {
             interval.tick().await;
             loop {
-                let mut cf = cf_arc.lock().await;
-                match cf.update().await {
+                match self.update().await {
                     Ok(next) => {
                         if next == ScheduleNext::Pause {
                             break;
@@ -97,8 +95,7 @@ impl ChainFollower {
                         // otherwise loop immediately
                     }
                     Err(err) => {
-                        error!("node {}: {}", abbrev!(cf.node.get_id(), 12), err);
-                        cf.state = State::Disconnected;
+                        error!("node {}: {}", abbrev!(self.node.get_id(), 12), err);
                         break; // Would a shorter pause be better here?
                     }
                 }
@@ -106,19 +103,9 @@ impl ChainFollower {
         }
     }
 
-    // IMPORTANT - the caller must not hold the Node Arc Mutex because deadlock!
-    async fn update(&mut self) -> Result<ScheduleNext, Error> {
-        match self.state {
-            State::Disconnected => {
-                debug!("node {} connected", abbrev!(self.node.get_id(), 12));
-                self.state = State::Scanning;
-                Ok(ScheduleNext::Immediate)
-            }
-            State::Scanning | State::Synced => self.advance().await,
-        }
-    }
+    async fn update(&self) -> Result<ScheduleNext, Error> {
+        let mut state = self.state.lock().await;
 
-    async fn advance(&mut self) -> Result<ScheduleNext, Error> {
         // Fetch the current tip from the tracker
         let (height0, hash0) = {
             // Confine the scope of the tracker, can't span awaits ...
@@ -138,15 +125,16 @@ impl ChainFollower {
                         // Our current block is gone, must be reorg in progress
                         return self.remove_block(height0, hash0).await;
                     }
-                    Some(check_hash0) =>
+                    Some(check_hash0) => {
                         if check_hash0 != hash0 {
                             return self.remove_block(height0, hash0).await;
-                        },
+                        }
+                    }
                 }
                 // Current top block matches
-                if self.state != State::Synced {
+                if *state != State::Synced {
                     info!("node {} synced at height {}", abbrev!(self.node.get_id(), 12), height0);
-                    self.state = State::Synced;
+                    *state = State::Synced;
                 }
                 return Ok(ScheduleNext::Pause);
             }
@@ -156,7 +144,7 @@ impl ChainFollower {
             }
         };
 
-        self.state = State::Scanning;
+        *state = State::Scanning;
 
         // Fetch the next block from bitcoind
         let block = self.client.get_block(&hash).await?;
@@ -189,11 +177,7 @@ impl ChainFollower {
         Ok(ScheduleNext::Immediate)
     }
 
-    async fn remove_block(
-        &mut self,
-        height0: u32,
-        hash0: BlockHash,
-    ) -> Result<ScheduleNext, Error> {
+    async fn remove_block(&self, height0: u32, hash0: BlockHash) -> Result<ScheduleNext, Error> {
         debug!(
             "node {} reorg at height {}, removing hash {}",
             abbrev!(self.node.get_id(), 12),

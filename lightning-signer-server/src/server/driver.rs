@@ -234,7 +234,8 @@ impl SignServer {
 
     async fn start_chain_follower(&self, node_id: &PublicKey) {
         let node = self.signer.get_node(&node_id).expect("valid node");
-        ChainFollower::new(node, &self.rpc_url).await;
+        let cf_arc = ChainFollower::new(node, &self.rpc_url).await;
+        ChainFollower::start(cf_arc).await;
     }
 
     fn htlc_sighash_type(
