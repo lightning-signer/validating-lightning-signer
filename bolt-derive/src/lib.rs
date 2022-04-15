@@ -1,18 +1,21 @@
 use proc_macro::{self, TokenStream};
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, DeriveInput, Data, DataEnum, Error, Fields};
+use syn::{parse_macro_input, Data, DataEnum, DeriveInput, Error, Fields};
 
 /// Serialize a message with a type prefix, in BOLT style
 #[proc_macro_derive(SerBolt, attributes(message_id))]
 pub fn derive_ser_bolt(input: TokenStream) -> TokenStream {
     let input1 = input.clone();
     let DeriveInput { ident, attrs, .. } = parse_macro_input!(input1);
-    let message_id = attrs.into_iter()
+    let message_id = attrs
+        .into_iter()
         .filter(|a| a.path.is_ident("message_id"))
         .next()
         .map(|a| a.tokens)
-        .unwrap_or_else(|| Error::new(ident.span(), "missing message_id attribute").into_compile_error());
+        .unwrap_or_else(|| {
+            Error::new(ident.span(), "missing message_id attribute").into_compile_error()
+        });
 
     let output = quote! {
         impl SerBolt for #ident {
@@ -47,9 +50,11 @@ pub fn derive_read_message(input: TokenStream) -> TokenStream {
     let mut ts = Vec::new();
     let mut error: Option<Error> = None;
 
-    if let Data::Enum(DataEnum{ variants, ..}) = data {
+    if let Data::Enum(DataEnum { variants, .. }) = data {
         for v in variants {
-            if v.ident == "Unknown" { continue };
+            if v.ident == "Unknown" {
+                continue;
+            };
             let vident = v.ident.clone();
             let field = extract_single_type(&vident, &v.fields);
             match field {
@@ -57,16 +62,10 @@ pub fn derive_read_message(input: TokenStream) -> TokenStream {
                     vs.push(vident);
                     ts.push(f);
                 }
-                Err(e) => {
-                    match error.as_mut() {
-                        None => {
-                            error = Some(e)
-                        },
-                        Some(o) => {
-                            o.combine(e)
-                        }
-                    }
-                }
+                Err(e) => match error.as_mut() {
+                    None => error = Some(e),
+                    Some(o) => o.combine(e),
+                },
             }
         }
     } else {
@@ -94,10 +93,10 @@ pub fn derive_read_message(input: TokenStream) -> TokenStream {
 
 fn extract_single_type(vident: &Ident, fields: &Fields) -> Result<TokenStream2, Error> {
     let mut fields = fields.iter();
-    let field = fields.next()
-        .ok_or_else(|| Error::new(vident.span(), "must have exactly one field"))?;
+    let field =
+        fields.next().ok_or_else(|| Error::new(vident.span(), "must have exactly one field"))?;
     if fields.next().is_some() {
-        return Err(Error::new(vident.span(), "must have exactly one field"))
+        return Err(Error::new(vident.span(), "must have exactly one field"));
     }
     Ok(field.ty.clone().into_token_stream())
 }

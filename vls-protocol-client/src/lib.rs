@@ -1,15 +1,18 @@
 use std::any::Any;
 use std::convert::{TryFrom, TryInto};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use bit_vec::BitVec;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::Transaction;
-use lightning::chain::keysinterface::{BaseSign, Sign};
 use lightning::chain::keysinterface::KeysInterface;
-use lightning::ln::chan_utils::{ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction, HolderCommitmentTransaction, HTLCOutputInCommitment};
+use lightning::chain::keysinterface::{BaseSign, Sign};
+use lightning::ln::chan_utils::{
+    ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
+    HTLCOutputInCommitment, HolderCommitmentTransaction,
+};
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::ln::PaymentPreimage;
 use lightning_signer::bitcoin;
@@ -19,20 +22,30 @@ use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::INITIAL_COMMITMENT_NUMBER;
 use log::error;
 
-use vls_protocol::{Error as ProtocolError, model};
 use vls_protocol::features::{OPT_ANCHOR_OUTPUTS, OPT_MAX, OPT_STATIC_REMOTEKEY};
-use vls_protocol::model::{Basepoints, BitcoinSignature, CloseInfo, Htlc, PubKey, Secret, TxId, Utxo};
-use vls_protocol::msgs::{DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply, SignInvoice, SignInvoiceReply, SignLocalCommitmentTx2, SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal, SignWithdrawalReply, ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply};
+use vls_protocol::model::{
+    Basepoints, BitcoinSignature, CloseInfo, Htlc, PubKey, Secret, TxId, Utxo,
+};
+use vls_protocol::msgs::{
+    DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint,
+    GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply, GetPerCommitmentPointReply, HsmdInit2,
+    HsmdInit2Reply, NewChannel, NewChannelReply, ReadyChannel, ReadyChannelReply, SerBolt,
+    SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply,
+    SignInvoice, SignInvoiceReply, SignLocalCommitmentTx2, SignMutualCloseTx2,
+    SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal, SignWithdrawalReply,
+    ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply,
+};
 use vls_protocol::serde_bolt::{LargeBytes, WireString};
+use vls_protocol::{model, Error as ProtocolError};
 
-use bitcoin::{consensus, Script, secp256k1, SigHashType, WPubkeyHash};
 use bitcoin::bech32::u5;
-use bitcoin::secp256k1::rand::RngCore;
 use bitcoin::secp256k1::rand::rngs::OsRng;
+use bitcoin::secp256k1::rand::RngCore;
 use bitcoin::secp256k1::recovery::{RecoverableSignature, RecoveryId};
 use bitcoin::util::bip32::ExtendedPubKey;
-use bitcoin::util::psbt::PartiallySignedTransaction;
 use bitcoin::util::psbt::serialize::Serialize;
+use bitcoin::util::psbt::PartiallySignedTransaction;
+use bitcoin::{consensus, secp256k1, Script, SigHashType, WPubkeyHash};
 use lightning::chain::keysinterface::{KeyMaterial, Recipient, SpendableOutputDescriptor};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::script::ShutdownScript;
@@ -40,13 +53,13 @@ use lightning::util::ser::{Writeable, Writer};
 
 mod dyn_signer;
 
-pub use dyn_signer::{DynSigner, InnerSign, DynKeysInterface, SpendableKeysInterface};
+pub use dyn_signer::{DynKeysInterface, DynSigner, InnerSign, SpendableKeysInterface};
 use lightning::util::ser::Readable;
 
 #[derive(Debug)]
 pub enum Error {
     ProtocolError(ProtocolError),
-    TransportError
+    TransportError,
 }
 
 impl From<ProtocolError> for Error {
@@ -87,14 +100,18 @@ fn to_bitcoin_sig(sig: &secp256k1::Signature) -> BitcoinSignature {
     }
 }
 
-pub fn call<T: SerBolt, R: DeBolt>(dbid: u64, peer_id: PubKey, transport: &dyn Transport, message: T) -> Result<R, Error> {
+pub fn call<T: SerBolt, R: DeBolt>(
+    dbid: u64,
+    peer_id: PubKey,
+    transport: &dyn Transport,
+    message: T,
+) -> Result<R, Error> {
     assert_ne!(dbid, 0, "dbid 0 is reserved");
     let message_ser = message.as_vec();
     let result_ser = transport.call(dbid, peer_id, message_ser)?;
     let result = R::from_vec(result_ser)?;
     Ok(result)
 }
-
 
 pub fn node_call<T: SerBolt, R: DeBolt>(transport: &dyn Transport, message: T) -> Result<R, Error> {
     let message_ser = message.as_vec();
@@ -103,16 +120,16 @@ pub fn node_call<T: SerBolt, R: DeBolt>(transport: &dyn Transport, message: T) -
     Ok(result)
 }
 
-
 fn to_htlcs(htlcs: &Vec<HTLCOutputInCommitment>, is_remote: bool) -> Vec<Htlc> {
-    let htlcs =
-        htlcs.iter()
-            .map(|h| Htlc {
-                side: if h.offered != is_remote { Htlc::LOCAL } else { Htlc::REMOTE },
-                amount: h.amount_msat,
-                payment_hash: model::Sha256(h.payment_hash.0),
-                ctlv_expiry: h.cltv_expiry
-            }).collect();
+    let htlcs = htlcs
+        .iter()
+        .map(|h| Htlc {
+            side: if h.offered != is_remote { Htlc::LOCAL } else { Htlc::REMOTE },
+            amount: h.amount_msat,
+            payment_hash: model::Sha256(h.payment_hash.0),
+            ctlv_expiry: h.cltv_expiry,
+        })
+        .collect();
     htlcs
 }
 
@@ -138,21 +155,20 @@ fn channel_id_to_dbid(slice: &[u8; 32]) -> u64 {
 
 impl SignerClient {
     fn call<T: SerBolt, R: DeBolt>(&self, message: T) -> Result<R, Error> {
-        call(self.dbid, to_pubkey(self.peer_id), &*self.transport, message)
-            .map_err(|e| {
-                error!("transport error: {:?}", e);
-                e
-            })
+        call(self.dbid, to_pubkey(self.peer_id), &*self.transport, message).map_err(|e| {
+            error!("transport error: {:?}", e);
+            e
+        })
     }
 
-    fn new(transport: Arc<dyn Transport>, peer_id: PublicKey, dbid: u64, channel_value: u64, channel_keys: ChannelPublicKeys) -> Self {
-        SignerClient {
-            transport,
-            peer_id,
-            dbid,
-            channel_keys,
-            channel_value
-        }
+    fn new(
+        transport: Arc<dyn Transport>,
+        peer_id: PublicKey,
+        dbid: u64,
+        channel_value: u64,
+        channel_keys: ChannelPublicKeys,
+    ) -> Self {
+        SignerClient { transport, peer_id, dbid, channel_keys, channel_value }
     }
 }
 
@@ -166,29 +182,31 @@ impl Writeable for SignerClient {
     }
 }
 
-impl Sign for SignerClient {
-}
+impl Sign for SignerClient {}
 
 impl BaseSign for SignerClient {
     fn get_per_commitment_point(&self, idx: u64, _secp_ctx: &Secp256k1<All>) -> PublicKey {
-        let message = GetPerCommitmentPoint2 {
-            commitment_number: INITIAL_COMMITMENT_NUMBER - idx
-        };
-        let result: GetPerCommitmentPoint2Reply = self.call(message).expect("get_per_commitment_point");
+        let message = GetPerCommitmentPoint2 { commitment_number: INITIAL_COMMITMENT_NUMBER - idx };
+        let result: GetPerCommitmentPoint2Reply =
+            self.call(message).expect("get_per_commitment_point");
         PublicKey::from_slice(&result.point.0).expect("public key")
     }
 
     fn release_commitment_secret(&self, idx: u64) -> [u8; 32] {
         // Getting the point at idx + 2 releases the secret at idx
-        let message = GetPerCommitmentPoint {
-            commitment_number: INITIAL_COMMITMENT_NUMBER - idx + 2
-        };
-        let result: GetPerCommitmentPointReply = self.call(message).expect("get_per_commitment_point");
+        let message =
+            GetPerCommitmentPoint { commitment_number: INITIAL_COMMITMENT_NUMBER - idx + 2 };
+        let result: GetPerCommitmentPointReply =
+            self.call(message).expect("get_per_commitment_point");
         let secret = result.secret.expect("secret not released");
         secret.0
     }
 
-    fn validate_holder_commitment(&self, holder_tx: &HolderCommitmentTransaction, _preimages: Vec<PaymentPreimage>) -> Result<(), ()> {
+    fn validate_holder_commitment(
+        &self,
+        holder_tx: &HolderCommitmentTransaction,
+        _preimages: Vec<PaymentPreimage>,
+    ) -> Result<(), ()> {
         // TODO preimage handling
         let tx = holder_tx.trust();
         let htlcs = to_htlcs(tx.htlcs(), false);
@@ -199,11 +217,13 @@ impl BaseSign for SignerClient {
             to_remote_value_sat: tx.to_countersignatory_value_sat(),
             htlcs,
             signature: to_bitcoin_sig(&holder_tx.counterparty_sig),
-            htlc_signatures: holder_tx.counterparty_htlc_sigs
-                .iter().map(|s| to_bitcoin_sig(s)).collect()
+            htlc_signatures: holder_tx
+                .counterparty_htlc_sigs
+                .iter()
+                .map(|s| to_bitcoin_sig(s))
+                .collect(),
         };
-        let _: ValidateCommitmentTxReply = self.call(message)
-            .map_err(|_| ())?;
+        let _: ValidateCommitmentTxReply = self.call(message).map_err(|_| ())?;
         Ok(())
     }
 
@@ -215,7 +235,12 @@ impl BaseSign for SignerClient {
         dbid_to_channel_id(self.dbid)
     }
 
-    fn sign_counterparty_commitment(&self, commitment_tx: &CommitmentTransaction, _preimages: Vec<PaymentPreimage>, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Vec<Signature>), ()> {
+    fn sign_counterparty_commitment(
+        &self,
+        commitment_tx: &CommitmentTransaction,
+        _preimages: Vec<PaymentPreimage>,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<(Signature, Vec<Signature>), ()> {
         // TODO preimage handling
         let tx = commitment_tx.trust();
         let htlcs = to_htlcs(tx.htlcs(), true);
@@ -225,13 +250,13 @@ impl BaseSign for SignerClient {
             feerate: tx.feerate_per_kw(),
             to_local_value_sat: tx.to_countersignatory_value_sat(),
             to_remote_value_sat: tx.to_broadcaster_value_sat(),
-            htlcs
+            htlcs,
         };
-        let result: SignCommitmentTxWithHtlcsReply = self.call(message)
-            .map_err(|_| ())?;
-        let signature = Signature::from_compact(&result.signature.signature.0)
-            .map_err(|_| ())?;
-        let htlc_signatures = result.htlc_signatures.iter()
+        let result: SignCommitmentTxWithHtlcsReply = self.call(message).map_err(|_| ())?;
+        let signature = Signature::from_compact(&result.signature.signature.0).map_err(|_| ())?;
+        let htlc_signatures = result
+            .htlc_signatures
+            .iter()
             .map(|s| Signature::from_compact(&s.signature.0))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| ())?;
@@ -241,79 +266,117 @@ impl BaseSign for SignerClient {
     fn validate_counterparty_revocation(&self, idx: u64, secret: &SecretKey) -> Result<(), ()> {
         let message = ValidateRevocation {
             commitment_number: INITIAL_COMMITMENT_NUMBER - idx,
-            commitment_secret: Secret(secret[..].try_into().unwrap())
+            commitment_secret: Secret(secret[..].try_into().unwrap()),
         };
-        let _: ValidateRevocationReply = self.call(message)
-            .map_err(|_|())?;
+        let _: ValidateRevocationReply = self.call(message).map_err(|_| ())?;
         Ok(())
     }
 
-    fn sign_holder_commitment_and_htlcs(&self, commitment_tx: &HolderCommitmentTransaction, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Vec<Signature>), ()> {
+    fn sign_holder_commitment_and_htlcs(
+        &self,
+        commitment_tx: &HolderCommitmentTransaction,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<(Signature, Vec<Signature>), ()> {
         let message = SignLocalCommitmentTx2 {
-            commitment_number: INITIAL_COMMITMENT_NUMBER - commitment_tx.commitment_number()
+            commitment_number: INITIAL_COMMITMENT_NUMBER - commitment_tx.commitment_number(),
         };
         let result: SignCommitmentTxWithHtlcsReply = self.call(message).map_err(|_| ())?;
-        let signature = Signature::from_compact(&result.signature.signature.0)
-            .map_err(|_| ())?;
-        let htlc_signatures = result.htlc_signatures.iter()
+        let signature = Signature::from_compact(&result.signature.signature.0).map_err(|_| ())?;
+        let htlc_signatures = result
+            .htlc_signatures
+            .iter()
             .map(|s| Signature::from_compact(&s.signature.0))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| ())?;
         Ok((signature, htlc_signatures))
     }
 
-    fn unsafe_sign_holder_commitment_and_htlcs(&self, _commitment_tx: &HolderCommitmentTransaction, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Vec<Signature>), ()> {
+    fn unsafe_sign_holder_commitment_and_htlcs(
+        &self,
+        _commitment_tx: &HolderCommitmentTransaction,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<(Signature, Vec<Signature>), ()> {
         unimplemented!()
     }
 
     #[allow(unused)]
-    fn sign_justice_revoked_output(&self, justice_tx: &Transaction, input: usize, amount: u64, per_commitment_key: &SecretKey, _secp_ctx: &Secp256k1<All>) -> Result<Signature, ()> {
+    fn sign_justice_revoked_output(
+        &self,
+        justice_tx: &Transaction,
+        input: usize,
+        amount: u64,
+        per_commitment_key: &SecretKey,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<Signature, ()> {
         // onchain
         todo!()
     }
 
     #[allow(unused)]
-    fn sign_justice_revoked_htlc(&self, justice_tx: &Transaction, input: usize, amount: u64, per_commitment_key: &SecretKey, htlc: &HTLCOutputInCommitment, _secp_ctx: &Secp256k1<All>) -> Result<Signature, ()> {
+    fn sign_justice_revoked_htlc(
+        &self,
+        justice_tx: &Transaction,
+        input: usize,
+        amount: u64,
+        per_commitment_key: &SecretKey,
+        htlc: &HTLCOutputInCommitment,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<Signature, ()> {
         // onchain
         todo!()
     }
 
     #[allow(unused)]
-    fn sign_counterparty_htlc_transaction(&self, htlc_tx: &Transaction, input: usize, amount: u64, per_commitment_point: &PublicKey, htlc: &HTLCOutputInCommitment, _secp_ctx: &Secp256k1<All>) -> Result<Signature, ()> {
+    fn sign_counterparty_htlc_transaction(
+        &self,
+        htlc_tx: &Transaction,
+        input: usize,
+        amount: u64,
+        per_commitment_point: &PublicKey,
+        htlc: &HTLCOutputInCommitment,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<Signature, ()> {
         // onchain
         todo!()
     }
 
-    fn sign_closing_transaction(&self, tx: &ClosingTransaction, _secp_ctx: &Secp256k1<All>) -> Result<Signature, ()> {
+    fn sign_closing_transaction(
+        &self,
+        tx: &ClosingTransaction,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<Signature, ()> {
         let message = SignMutualCloseTx2 {
             to_local_value_sat: tx.to_holder_value_sat(),
             to_remote_value_sat: tx.to_counterparty_value_sat(),
             local_script: tx.to_holder_script().clone().into_bytes(),
             remote_script: tx.to_counterparty_script().clone().into_bytes(),
-            local_wallet_path_hint: dest_wallet_path()
+            local_wallet_path_hint: dest_wallet_path(),
         };
-        let result: SignTxReply = self.call(message)
-            .map_err(|_| ())?;
+        let result: SignTxReply = self.call(message).map_err(|_| ())?;
         Ok(Signature::from_compact(&result.signature.signature.0).unwrap())
     }
 
-    fn sign_channel_announcement(&self, msg: &UnsignedChannelAnnouncement, _secp_ctx: &Secp256k1<All>) -> Result<(Signature, Signature), ()> {
+    fn sign_channel_announcement(
+        &self,
+        msg: &UnsignedChannelAnnouncement,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<(Signature, Signature), ()> {
         // Prepend a fake prefix to match CLN behavior
         let mut announcement = [0u8; 258].to_vec();
         announcement.extend(msg.encode());
-        let message = SignChannelAnnouncement {
-            announcement
-        };
-        let result: SignChannelAnnouncementReply = self.call(message)
-            .map_err(|_|())?;
-        Ok((Signature::from_compact(&result.node_signature.0).unwrap(),
-            Signature::from_compact(&result.bitcoin_signature.0).unwrap()))
+        let message = SignChannelAnnouncement { announcement };
+        let result: SignChannelAnnouncementReply = self.call(message).map_err(|_| ())?;
+        Ok((
+            Signature::from_compact(&result.node_signature.0).unwrap(),
+            Signature::from_compact(&result.bitcoin_signature.0).unwrap(),
+        ))
     }
 
     fn ready_channel(&mut self, p: &ChannelTransactionParameters) {
-        let funding = p.funding_outpoint
-            .expect("funding should exist at this point");
-        let cp = p.counterparty_parameters.as_ref()
+        let funding = p.funding_outpoint.expect("funding should exist at this point");
+        let cp = p
+            .counterparty_parameters
+            .as_ref()
             .expect("counterparty params should exist at this point");
 
         let mut channel_features = BitVec::from_elem(OPT_MAX, false);
@@ -339,7 +402,7 @@ impl BaseSign for SignerClient {
             remote_funding_pubkey: to_pubkey(cp.pubkeys.funding_pubkey),
             remote_to_self_delay: cp.selected_contest_delay,
             remote_shutdown_script: vec![], // TODO
-            channel_type: channel_features.to_bytes()
+            channel_type: channel_features.to_bytes(),
         };
 
         let _: ReadyChannelReply = self.call(message).expect("ready channel");
@@ -360,17 +423,15 @@ impl KeysManagerClient {
         let mut rng = OsRng::new().unwrap();
         let mut key_material_bytes = [0; 32];
         rng.fill_bytes(&mut key_material_bytes);
-        
+
         let init_message = HsmdInit2 {
             derivation_style: KeyDerivationStyle::Native as u8,
             dev_seed: None,
-            network_name: WireString(network.into_bytes())
+            network_name: WireString(network.into_bytes()),
         };
         let result: HsmdInit2Reply = node_call(&*transport, init_message).expect("HsmdInit");
-        let xpub = ExtendedPubKey::decode(&result.bip32.0)
-            .expect("xpub");
-        let node_secret = SecretKey::from_slice(&result.node_secret.0)
-            .expect("node secret");
+        let xpub = ExtendedPubKey::decode(&result.bip32.0).expect("xpub");
+        let node_secret = SecretKey::from_slice(&result.node_secret.0).expect("node secret");
 
         Self {
             transport,
@@ -393,29 +454,25 @@ impl KeysManagerClient {
             revocation_basepoint: from_pubkey(result.basepoints.revocation),
             payment_point: from_pubkey(result.basepoints.payment),
             delayed_payment_basepoint: from_pubkey(result.basepoints.delayed_payment),
-            htlc_basepoint: from_pubkey(result.basepoints.htlc)
+            htlc_basepoint: from_pubkey(result.basepoints.htlc),
         };
         channel_keys
     }
 
-    pub fn sign_onchain_tx(&self, tx: &Transaction, descriptors: &[&SpendableOutputDescriptor]) -> Vec<Vec<Vec<u8>>> {
-        let utxos = descriptors.into_iter()
-            .map(|d| Self::descriptor_to_utxo(*d))
-            .collect();
+    pub fn sign_onchain_tx(
+        &self,
+        tx: &Transaction,
+        descriptors: &[&SpendableOutputDescriptor],
+    ) -> Vec<Vec<Vec<u8>>> {
+        let utxos = descriptors.into_iter().map(|d| Self::descriptor_to_utxo(*d)).collect();
 
-        let psbt = PartiallySignedTransaction::from_unsigned_tx(tx.clone())
-            .expect("create PSBT");
+        let psbt = PartiallySignedTransaction::from_unsigned_tx(tx.clone()).expect("create PSBT");
 
-        let message = SignWithdrawal {
-            utxos,
-            psbt: LargeBytes(consensus::serialize(&psbt))
-        };
+        let message = SignWithdrawal { utxos, psbt: LargeBytes(consensus::serialize(&psbt)) };
         let result: SignWithdrawalReply = self.call(message).expect("sign failed");
         let result_psbt: PartiallySignedTransaction =
             consensus::deserialize(&result.psbt.0).expect("deserialize PSBT");
-        result_psbt.inputs.into_iter()
-            .map(|i| i.final_script_witness.unwrap())
-            .collect()
+        result_psbt.inputs.into_iter().map(|i| i.final_script_witness.unwrap()).collect()
     }
 
     fn descriptor_to_utxo(d: &SpendableOutputDescriptor) -> Utxo {
@@ -424,23 +481,29 @@ impl KeysManagerClient {
             SpendableOutputDescriptor::StaticOutput { output, .. } =>
                 (output.value, dest_wallet_path()[0], None), // FIXME this makes some assumptions
             // We force-closed - we are spending a delayed output to us
-            SpendableOutputDescriptor::DelayedPaymentOutput(o) => {
-                (o.output.value, 0, Some(CloseInfo {
+            SpendableOutputDescriptor::DelayedPaymentOutput(o) => (
+                o.output.value,
+                0,
+                Some(CloseInfo {
                     channel_id: channel_id_to_dbid(&o.channel_keys_id),
                     peer_id: PubKey([0; 33]),
                     commitment_point: Some(to_pubkey(o.per_commitment_point)),
                     option_anchor_outputs: false,
-                    csv: o.to_self_delay as u32
-                }))},
+                    csv: o.to_self_delay as u32,
+                }),
+            ),
             // Remote force-closed - we are spending an non-delayed output to us
-            SpendableOutputDescriptor::StaticPaymentOutput(o) =>
-                (o.output.value, 0, Some(CloseInfo {
+            SpendableOutputDescriptor::StaticPaymentOutput(o) => (
+                o.output.value,
+                0,
+                Some(CloseInfo {
                     channel_id: channel_id_to_dbid(&o.channel_keys_id),
                     peer_id: PubKey([0; 33]),
                     commitment_point: None,
                     option_anchor_outputs: false,
-                    csv: 0
-                })),
+                    csv: 0,
+                }),
+            ),
         };
         Utxo {
             txid: TxId([0; 32]),
@@ -449,7 +512,7 @@ impl KeysManagerClient {
             keyindex,
             is_p2sh: false,
             script: vec![],
-            close_info
+            close_info,
         }
     }
 }
@@ -493,7 +556,13 @@ impl KeysInterface for KeysManagerClient {
 
         let channel_keys = self.get_channel_basepoints(dbid, peer_id);
 
-        SignerClient::new(self.transport.clone(), peer_id, dbid, channel_value_satoshis, channel_keys)
+        SignerClient::new(
+            self.transport.clone(),
+            peer_id,
+            dbid,
+            channel_value_satoshis,
+            channel_keys,
+        )
     }
 
     fn get_secure_random_bytes(&self) -> [u8; 32] {
@@ -514,11 +583,16 @@ impl KeysInterface for KeysManagerClient {
             peer_id,
             dbid,
             channel_keys,
-            channel_value
+            channel_value,
         })
     }
 
-    fn sign_invoice(&self, hrp_bytes: &[u8], invoice_data: &[u5], recipient: Recipient) -> Result<RecoverableSignature, ()> {
+    fn sign_invoice(
+        &self,
+        hrp_bytes: &[u8],
+        invoice_data: &[u5],
+        recipient: Recipient,
+    ) -> Result<RecoverableSignature, ()> {
         match recipient {
             Recipient::Node => {}
             Recipient::PhantomNode => {
@@ -527,14 +601,12 @@ impl KeysInterface for KeysManagerClient {
         }
         let message = SignInvoice {
             u5bytes: invoice_data.iter().map(|u| u.to_u8()).collect(),
-            hrp: hrp_bytes.to_vec()
+            hrp: hrp_bytes.to_vec(),
         };
         let result: SignInvoiceReply = self.call(message).expect("sign_invoice");
-        let rid = RecoveryId::from_i32(result.signature.0[64] as i32)
-            .expect("recovery ID");
+        let rid = RecoveryId::from_i32(result.signature.0[64] as i32).expect("recovery ID");
         let sig = &result.signature.0[0..64];
-        RecoverableSignature::from_compact(sig, rid)
-            .map_err(|_| ())
+        RecoverableSignature::from_compact(sig, rid).map_err(|_| ())
     }
 
     fn get_inbound_payment_key_material(&self) -> KeyMaterial {
