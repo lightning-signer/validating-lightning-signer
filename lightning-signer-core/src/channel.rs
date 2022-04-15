@@ -1787,11 +1787,7 @@ impl Channel {
         tx: &bitcoin::Transaction,
         opaths: &Vec<Vec<u32>>,
     ) -> Result<Signature, Status> {
-        debug!(
-            "{}: allowlist: {:#?}",
-            short_function!(),
-            self.get_node().allowlist().expect("allowlist")
-        );
+        debug_vals!(tx.txid(), self.get_node().allowlist().unwrap());
         if opaths.len() != tx.output.len() {
             return Err(invalid_argument(format!(
                 "{}: bad opath len {} with tx.output len {}",

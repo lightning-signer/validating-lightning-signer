@@ -6,9 +6,11 @@ use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::util::uint::Uint256;
 use bitcoin::{BlockHeader, Network, OutPoint, Transaction, Txid};
 
-use log::error;
+#[allow(unused_imports)]
+use log::{debug, error};
 
 use crate::prelude::*;
+use crate::short_function;
 
 /// Error
 #[derive(Debug, PartialEq)]
@@ -122,6 +124,11 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
                 let mut found = false;
                 for inp in tx.input.iter().rev() {
                     if slot.seen.remove(&inp.previous_output) {
+                        debug!(
+                            "{}: unseeing previously seen outpoint {}",
+                            short_function!(),
+                            &inp.previous_output
+                        );
                         found = true;
                         let inserted = slot.watches.insert(inp.previous_output);
                         assert!(inserted, "we failed to previously remove a watch");
@@ -137,6 +144,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
                 for (vout, _) in tx.output.iter().enumerate() {
                     let outpoint = OutPoint::new(txid, vout as u32);
                     if slot.watches.remove(&outpoint) {
+                        debug!("{}: unwatching outpoint {}", short_function!(), &outpoint);
                         assert!(found, "a watch was previously added without any inputs matching");
                     }
                 }
@@ -207,6 +215,29 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
             .get_mut(&listener)
             .expect("trying to add watches to non-existent listener");
         slot.watches.extend(watches);
+    }
+
+    /// Return all Txid and OutPoint watches for future blocks.
+    pub fn get_all_forward_watches(&self) -> (Vec<Txid>, Vec<OutPoint>) {
+        self.get_all_watches(false)
+    }
+
+    /// Return all Txid and OutPoint watches for removing blocks.
+    pub fn get_all_reverse_watches(&self) -> (Vec<Txid>, Vec<OutPoint>) {
+        self.get_all_watches(true)
+    }
+
+    fn get_all_watches(&self, include_reverse: bool) -> (Vec<Txid>, Vec<OutPoint>) {
+        let mut txid_watches = OrderedSet::new();
+        let mut outpoint_watches = OrderedSet::new();
+        for slot in self.listeners.values() {
+            txid_watches.extend(&slot.txid_watches);
+            outpoint_watches.extend(&slot.watches);
+            if include_reverse {
+                outpoint_watches.extend(&slot.seen);
+            }
+        }
+        (txid_watches.into_iter().collect(), outpoint_watches.into_iter().collect())
     }
 
     fn validate_block(
