@@ -21,7 +21,7 @@ profont = "0.6"
 
 [dependencies.stm32f4xx-hal]
 version = "0.13"
-features = ["fsmc_lcd", "fsmc"]
+features = ["fsmc_lcd", "fsmc", "sdio", "sdio-host"]
 
 [features]
 stm32f412 = ["stm32f4xx-hal/stm32f412"]
