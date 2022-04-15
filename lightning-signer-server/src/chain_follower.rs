@@ -25,8 +25,7 @@ const UPDATE_INTERVAL_MSEC: u64 = 100;
 /// Follows the longest chain and feeds proofs of watched changes to ChainTracker.
 pub struct ChainFollower {
     node: Arc<Node>,
-    rpc_url: Url,
-    client: Option<BitcoindClient>,
+    client: BitcoindClient,
     state: State,
 }
 
@@ -68,12 +67,15 @@ impl ChainFollower {
             node.network(),
             rpc_url
         );
-        let cf_arc = Arc::new(Mutex::new(ChainFollower {
-            node,
-            rpc_url: rpc_url.clone(),
-            client: None,
-            state: State::Disconnected,
-        }));
+        let client = BitcoindClient::new(
+            rpc_url.host_str().expect("rpc host").to_owned(),
+            rpc_url.port().expect("rpc port"),
+            rpc_url.username().to_owned(),
+            rpc_url.password().to_owned().expect("rpc password").to_owned(),
+        )
+        .await;
+        let cf_arc =
+            Arc::new(Mutex::new(ChainFollower { node, client, state: State::Disconnected }));
         let cf_arc_clone = Arc::clone(&cf_arc);
         task::spawn(async move {
             ChainFollower::run(&cf_arc_clone).await;
@@ -96,7 +98,6 @@ impl ChainFollower {
                     }
                     Err(err) => {
                         error!("node {}: {}", abbrev!(cf.node.get_id(), 12), err);
-                        cf.client = None;
                         cf.state = State::Disconnected;
                         break; // Would a shorter pause be better here?
                     }
@@ -109,15 +110,7 @@ impl ChainFollower {
     async fn update(&mut self) -> Result<ScheduleNext, Error> {
         match self.state {
             State::Disconnected => {
-                let client = BitcoindClient::new(
-                    self.rpc_url.host_str().expect("rpc host").to_owned(),
-                    self.rpc_url.port().expect("rpc port"),
-                    self.rpc_url.username().to_owned(),
-                    self.rpc_url.password().to_owned().expect("rpc password").to_owned(),
-                )
-                .await?;
                 debug!("node {} connected", abbrev!(self.node.get_id(), 12));
-                self.client = Some(client);
                 self.state = State::Scanning;
                 Ok(ScheduleNext::Immediate)
             }
@@ -126,8 +119,6 @@ impl ChainFollower {
     }
 
     async fn advance(&mut self) -> Result<ScheduleNext, Error> {
-        let client = self.client.as_ref().unwrap();
-
         // Fetch the current tip from the tracker
         let (height0, hash0) = {
             // Confine the scope of the tracker, can't span awaits ...
@@ -139,19 +130,18 @@ impl ChainFollower {
         };
 
         // Fetch the next block hash from bitcoind
-        let hash = match client.get_block_hash(height0 + 1).await? {
+        let hash = match self.client.get_block_hash(height0 + 1).await? {
             None => {
                 // No new block, confirm that the current block still matches
-                match client.get_block_hash(height0).await? {
+                match self.client.get_block_hash(height0).await? {
                     None => {
                         // Our current block is gone, must be reorg in progress
                         return self.remove_block(height0, hash0).await;
                     }
-                    Some(check_hash0) => {
+                    Some(check_hash0) =>
                         if check_hash0 != hash0 {
                             return self.remove_block(height0, hash0).await;
-                        }
-                    }
+                        },
                 }
                 // Current top block matches
                 if self.state != State::Synced {
@@ -169,7 +159,7 @@ impl ChainFollower {
         self.state = State::Scanning;
 
         // Fetch the next block from bitcoind
-        let block = client.get_block(&hash).await?;
+        let block = self.client.get_block(&hash).await?;
 
         // Is the new block on top of our current tip?
         if block.header.prev_blockhash != hash0 {
@@ -210,8 +200,7 @@ impl ChainFollower {
             height0,
             abbrev!(hash0, 12),
         );
-        let client = self.client.as_ref().unwrap();
-        let block = client.get_block(&hash0).await?;
+        let block = self.client.get_block(&hash0).await?;
         let mut tracker = self.node.get_tracker();
         let (txid_watches, outpoint_watches) = tracker.get_all_reverse_watches();
         let (txs, proof) = build_proof(&block, &txid_watches, &outpoint_watches);

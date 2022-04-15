@@ -68,19 +68,13 @@ pub type BitcoindClientResult<T> = Result<T, Error>;
 
 impl BitcoindClient {
     /// Create a new BitcoindClient
-    pub async fn new(
-        host: String,
-        port: u16,
-        rpc_user: String,
-        rpc_password: String,
-    ) -> std::io::Result<Self> {
+    pub async fn new(host: String, port: u16, rpc_user: String, rpc_password: String) -> Self {
         let url = format!("http://{}:{}", host, port);
         let mut builder = SimpleHttpTransport::builder().url(&url).await.unwrap();
         builder = builder.auth(rpc_user, Some(rpc_password));
         let rpc = Client::with_transport(builder.build());
-
         let client = Self { rpc: Arc::new(Mutex::new(rpc)), host, port };
-        Ok(client)
+        client
     }
 
     /// Make a getblockchaininfo RPC call
