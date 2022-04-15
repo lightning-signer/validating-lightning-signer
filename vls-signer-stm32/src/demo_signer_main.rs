@@ -1,9 +1,11 @@
 #![no_std]
 #![no_main]
+#![feature(alloc_error_handler)]
+extern crate alloc;
 
+use alloc::string::String;
 use core::fmt;
-
-use heapless::String;
+use alloc_cortex_m::CortexMHeap;
 
 use cortex_m_rt::entry;
 use panic_probe as _;
@@ -29,6 +31,10 @@ use profont::PROFONT_24_POINT;
 
 mod sdcard;
 
+#[global_allocator]
+static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
+const HEAP_SIZE: usize = 1024 * 256;
+
 pub const SCREEN_WIDTH: i32 = 240;
 pub const SCREEN_HEIGHT: i32 = 240;
 pub const FONT_HEIGHT: i32 = 18;
@@ -42,6 +48,8 @@ pub const HINSET_PIX: i32 = 100;
 fn main() -> ! {
     rtt_init_print!(BlockIfFull);
     rprintln!("demo_signer starting");
+
+    unsafe { ALLOCATOR.init(cortex_m_rt::heap_start() as usize, HEAP_SIZE) }
 
     let p = Peripherals::take().unwrap();
     let cp = CorePeripherals::take().unwrap();
@@ -138,7 +146,7 @@ fn main() -> ! {
     // Turn on backlight
     backlight_control.set_high();
 
-    let mut format_buf = String::<20>::new();
+    let mut format_buf = String::new();
     let mut counter = 0;
     let text_style =
         MonoTextStyleBuilder::new().font(&PROFONT_24_POINT).text_color(Rgb565::WHITE).build();
@@ -176,4 +184,13 @@ fn main() -> ! {
         delay.delay_ms(100u16);
         counter += 1;
     }
+}
+
+// define what happens in an Out Of Memory (OOM) condition
+#[alloc_error_handler]
+fn alloc_error(_layout: core::alloc::Layout) -> ! {
+    rprintln!("alloc error");
+    cortex_m::asm::bkpt();
+
+    loop {}
 }

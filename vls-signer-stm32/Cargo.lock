@@ -12,6 +12,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloc-cortex-m"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5069e21ec61f3b243a4a4c56d920d3206e6ee86022a67c23e9fe36eb60fc1efd"
+dependencies = [
+ "cortex-m",
+ "linked_list_allocator",
+]
+
+[[package]]
 name = "atomic-polyfill"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -107,15 +117,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "cortex-m-semihosting"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bffa6c1454368a6aa4811ae60964c38e6996d397ff8095a8b9211b1c1f749bc"
-dependencies = [
- "cortex-m",
 ]
 
 [[package]]
@@ -273,6 +274,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec647867e2bf0772e28c8bcde4f0d19a9216916e890543b5a03ed8ef27b8f259"
 
 [[package]]
+name = "linked_list_allocator"
+version = "0.8.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "822add9edb1860698b79522510da17bef885171f75aa395cff099d770c609c24"
+
+[[package]]
 name = "lock_api"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -337,12 +344,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "panic-halt"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de96540e0ebde571dc55c73d60ef407c653844e6f9a1e2fdbd40c07b9252d812"
-
-[[package]]
 name = "panic-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -350,16 +351,6 @@ checksum = "6a0fa226f55c70d0d70ad373802f0d65a775478afec75c0f3eee1de5d39057c9"
 dependencies = [
  "cortex-m",
  "rtt-target",
-]
-
-[[package]]
-name = "panic-semihosting"
-version = "0.5.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3d55dedd501dfd02514646e0af4d7016ce36bc12ae177ef52056989966a1eec"
-dependencies = [
- "cortex-m",
- "cortex-m-semihosting",
 ]
 
 [[package]]
@@ -593,17 +584,15 @@ checksum = "77439c1b53d2303b20d9459b1ade71a83c716e3f9c34f3228c00e6f185d6c002"
 name = "vls-signer-stm32"
 version = "0.1.0"
 dependencies = [
+ "alloc-cortex-m",
  "cortex-m",
  "cortex-m-rt",
  "display-interface",
  "embedded-graphics",
  "embedded-hal 0.2.7",
  "fatfs",
- "heapless",
  "nb 1.0.0",
- "panic-halt",
  "panic-probe",
- "panic-semihosting",
  "profont",
  "rtt-target",
  "st7789",

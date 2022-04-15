@@ -1,3 +1,4 @@
+use alloc::string::String;
 use core::cmp::min;
 use stm32f4xx_hal::sdio::{Sdio, SdCard};
 use fatfs::{FileSystem, FsOptions, Read, Write, Seek, SeekFrom, IoBase, DefaultTimeProvider, LossyOemCpConverter};
@@ -79,6 +80,20 @@ pub fn open(sdio: Sdio<SdCard>) -> Result<FileSystem<Card, DefaultTimeProvider, 
 pub fn test(sdio: Sdio<SdCard>) {
     let fs = open(sdio).unwrap();
     for f in fs.root_dir().iter() {
-        rprintln!("file {:?}", f.unwrap().short_file_name_as_bytes()[0]);
+        let entry = f.unwrap();
+        let filename = entry.file_name();
+        rprintln!("file {:?}", filename);
+        if filename.starts_with("README") {
+            let mut buf = [0u8; 100];
+            let mut file = entry.to_file();
+            loop {
+                let len = file.read(&mut buf).unwrap();
+                if len == 0 {
+                    break;
+                }
+                rprintln!("contents len {}", len);
+                rprintln!("contents {}", String::from_utf8_lossy(&buf[0..len]));
+            }
+        }
     }
 }
