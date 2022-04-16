@@ -133,11 +133,10 @@ impl ChainFollower {
                         // Our current block is gone, must be reorg in progress
                         return self.remove_block(height0, hash0).await;
                     }
-                    Some(check_hash0) => {
+                    Some(check_hash0) =>
                         if check_hash0 != hash0 {
                             return self.remove_block(height0, hash0).await;
-                        }
-                    }
+                        },
                 }
                 // Current top block matches
                 if *state != State::Synced {
