@@ -1,8 +1,8 @@
 use alloc::string::String;
 use core::cmp::min;
 use stm32f4xx_hal::sdio::{Sdio, SdCard};
-use fatfs::{FileSystem, FsOptions, Read, Write, Seek, SeekFrom, IoBase, DefaultTimeProvider, LossyOemCpConverter};
-use rtt_target::rprintln;
+use fatfs::{FileSystem, FsOptions, Read, Write, Seek, SeekFrom, IoBase, DefaultTimeProvider, LossyOemCpConverter, File, TimeProvider, Dir, OemCpConverter};
+use rtt_target::{rprint, rprintln};
 
 const BLOCK_SIZE: usize = 512;
 
@@ -19,7 +19,7 @@ impl Card {
     fn read_block(&mut self, n: u32) -> Result<(), <Self as IoBase>::Error> {
         if n == self.buf_block_index {
             // already have it in cache
-            return Ok(())
+            return Ok(());
         }
         // write out the current block if dirty
         self.write_block()?;
@@ -28,7 +28,7 @@ impl Card {
     }
 
     fn do_read_block(&mut self, n: u32) -> Result<(), <Self as IoBase>::Error> {
-        rprintln!("read block {}", n);
+        // rprintln!("read block {}", n);
         self.sdio.read_block(n, &mut self.buf)
             .map_err(|e| {
                 rprintln!("error {:?}", e);
@@ -40,7 +40,8 @@ impl Card {
 
     fn write_block(&mut self) -> Result<(), <Self as IoBase>::Error> {
         if self.is_dirty {
-            rprintln!("write block {}", self.buf_block_index);
+            // rprintln!("write block {}", self.buf_block_index);
+            rprint!(".");
             self.sdio.write_block(self.buf_block_index, &self.buf)
                 .map_err(|e| {
                     rprintln!("error {:?}", e);
@@ -72,7 +73,7 @@ impl Read for Card {
                 if count == 0 {
                     return Err(e);
                 } else {
-                    return Ok(count)
+                    return Ok(count);
                 }
             }
             let offset = (self.pos % BLOCK_SIZE as u64) as usize;
@@ -105,7 +106,7 @@ impl Write for Card {
                 if count == 0 {
                     return Err(e);
                 } else {
-                    return Ok(count)
+                    return Ok(count);
                 }
             }
             let offset = self.pos as usize % BLOCK_SIZE;
@@ -113,6 +114,7 @@ impl Write for Card {
             let len = min(buf.len(), BLOCK_SIZE - offset);
             // rprintln!("len {}", len);
             self.buf[offset..offset + len].copy_from_slice(&buf[0..len]);
+            self.is_dirty = true;
             buf = &buf[len..];
             self.pos += len as u64;
             count += len;
@@ -121,6 +123,7 @@ impl Write for Card {
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
+        // rprintln!("flush");
         self.write_block()
     }
 }
@@ -145,7 +148,9 @@ impl Seek for Card {
     }
 }
 
-pub fn open(sdio: Sdio<SdCard>) -> Result<FileSystem<Card, DefaultTimeProvider, LossyOemCpConverter>, fatfs::Error<()>> {
+type FS = FileSystem<Card, DefaultTimeProvider, LossyOemCpConverter>;
+
+pub fn open(sdio: Sdio<SdCard>) -> Result<FS, fatfs::Error<()>> {
     let blocks = sdio.card().map(|c| c.block_count()).unwrap();
     let mut card = Card {
         sdio,
@@ -153,7 +158,7 @@ pub fn open(sdio: Sdio<SdCard>) -> Result<FileSystem<Card, DefaultTimeProvider, 
         num_blocks: blocks,
         buf: [0u8; BLOCK_SIZE],
         buf_block_index: 0,
-        is_dirty: false
+        is_dirty: false,
     };
 
     // prefetch the first block, making the buffer a valid copy of what's on disk
@@ -166,13 +171,82 @@ pub fn open(sdio: Sdio<SdCard>) -> Result<FileSystem<Card, DefaultTimeProvider, 
     Ok(fs)
 }
 
+pub fn copy_dir<TP: TimeProvider, OCC: OemCpConverter>(from_dir: Dir<Card, TP, OCC>, to_dir: Dir<Card, TP, OCC>) -> Result<(), fatfs::Error<()>> {
+    for entry_res in from_dir.iter() {
+        let entry = entry_res?;
+        let name = entry.file_name();
+        if entry.is_file() {
+            rprint!("cp {} ", name);
+            let copy = to_dir.create_file(&name)?;
+            let orig = entry.to_file();
+            copy_file(orig, copy)?;
+            rprintln!("");
+        } else if entry.is_dir() && entry.file_name() != "." && entry.file_name() != ".." {
+            rprintln!("cp -r {}", name);
+            let copy = to_dir.create_dir(&name)?;
+            copy_dir(entry.to_dir(), copy)?;
+
+        }
+    }
+    Ok(())
+}
+
+fn rmdir<TP: TimeProvider, OCC: OemCpConverter>(dir: Dir<Card, TP, OCC>)
+    -> Result<(), fatfs::Error<()>> {
+    for f_res in dir.iter() {
+        let f = f_res?;
+        if f.is_file() {
+            rprint!("rm {}", &f.file_name());
+            dir.remove(&f.file_name())?;
+            rprintln!("");
+        } else if f.is_dir() && f.file_name() != "." && f.file_name() != ".." {
+            rprintln!("rmdir {}", &f.file_name());
+            rmdir(f.to_dir())?;
+            dir.remove(&f.file_name())?;
+            rprintln!("");
+        }
+    }
+    Ok(())
+}
+
+pub fn copy_file<TP: TimeProvider, OCC>(mut from: File<Card, TP, OCC>,
+                                        mut to: File<Card, TP, OCC>)
+                                        -> Result<(), fatfs::Error<()>> {
+    let mut buf = [0u8; 1000];
+    loop {
+        let n = from.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        to.write_all(&buf[0..n])?;
+    }
+    Ok(())
+}
+
+// Effectively does:
+//
+// rm -r /b
+// cp -r /a /b
+// ls /
+// cat /readme*
 pub fn test(sdio: Sdio<SdCard>) {
     let fs = open(sdio).unwrap();
+    let root_dir = fs.root_dir();
+
+    if let Ok(from_dir) = root_dir.open_dir("a") {
+        if let Ok(to_dir) = root_dir.open_dir("b") {
+            rmdir(to_dir).expect("rm b");
+        }
+        let to_dir = root_dir.create_dir("b").expect("create b");
+        let copy_res = copy_dir(from_dir, to_dir);
+        rprintln!("copy result: {:?}", copy_res);
+    }
+
     for f in fs.root_dir().iter() {
         let entry = f.unwrap();
         let filename = entry.file_name();
         rprintln!("file {:?}", filename);
-        if filename.starts_with("README") {
+        if filename.starts_with("readme") {
             let mut buf = [0u8; 100];
             let mut file = entry.to_file();
             loop {
@@ -180,7 +254,6 @@ pub fn test(sdio: Sdio<SdCard>) {
                 if len == 0 {
                     break;
                 }
-                rprintln!("contents len {}", len);
                 rprintln!("contents {}", String::from_utf8_lossy(&buf[0..len]));
             }
         }

@@ -22,7 +22,7 @@ panic-probe = { version = "0.2", features = ["print-rtt"] }
 git = "https://github.com/rafalh/rust-fatfs.git"
 rev = "87fc1ed5074a32b4e0344fcdde77359ef9e75432"
 default-features = false
-features = ["alloc"]
+features = ["alloc", "lfn"]
 
 [dependencies.stm32f4xx-hal]
 version = "0.13"
