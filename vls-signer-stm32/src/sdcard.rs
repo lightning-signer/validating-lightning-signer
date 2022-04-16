@@ -4,10 +4,52 @@ use stm32f4xx_hal::sdio::{Sdio, SdCard};
 use fatfs::{FileSystem, FsOptions, Read, Write, Seek, SeekFrom, IoBase, DefaultTimeProvider, LossyOemCpConverter};
 use rtt_target::rprintln;
 
+const BLOCK_SIZE: usize = 512;
+
 pub struct Card {
     pos: u64,
     sdio: Sdio<SdCard>,
-    blocks: u32,
+    num_blocks: u32,
+    buf: [u8; BLOCK_SIZE],
+    buf_block_index: u32,
+    is_dirty: bool,
+}
+
+impl Card {
+    fn read_block(&mut self, n: u32) -> Result<(), <Self as IoBase>::Error> {
+        if n == self.buf_block_index {
+            // already have it in cache
+            return Ok(())
+        }
+        // write out the current block if dirty
+        self.write_block()?;
+
+        self.do_read_block(n)
+    }
+
+    fn do_read_block(&mut self, n: u32) -> Result<(), <Self as IoBase>::Error> {
+        rprintln!("read block {}", n);
+        self.sdio.read_block(n, &mut self.buf)
+            .map_err(|e| {
+                rprintln!("error {:?}", e);
+                ()
+            })?;
+        self.buf_block_index = n;
+        Ok(())
+    }
+
+    fn write_block(&mut self) -> Result<(), <Self as IoBase>::Error> {
+        if self.is_dirty {
+            rprintln!("write block {}", self.buf_block_index);
+            self.sdio.write_block(self.buf_block_index, &self.buf)
+                .map_err(|e| {
+                    rprintln!("error {:?}", e);
+                    ()
+                })?;
+            self.is_dirty = false;
+        }
+        Ok(())
+    }
 }
 
 impl IoBase for Card { type Error = (); }
@@ -16,19 +58,28 @@ impl Read for Card {
     fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, Self::Error> {
         // rprintln!("read {} @ {}", buf.len(), self.pos);
         let mut count = 0;
-        let mut block = [0u8; 512];
         while !buf.is_empty() {
-            let n = (self.pos / 512) as u32;
-            // rprintln!("read block {}", n);
-            self.sdio.read_block(n, &mut block)
-                .map_err(|e| {
-                    rprintln!("error {:?}", e);
-                    ()
-                })?;
-            let offset = (self.pos % 512) as usize;
-            let len = min(buf.len(), (512 - offset) as usize);
-            // rprintln!("len {}", len);
-            buf[0..len].copy_from_slice(&block[offset..offset + len]);
+            let n = (self.pos / BLOCK_SIZE as u64) as u32;
+            if n >= self.num_blocks {
+                // end of disk
+                break;
+            }
+            // fill the buffer
+            if let Err(e) = self.read_block(n) {
+                rprintln!("error {:?} count {}", e, count);
+                // If we didn't manage to read anything, return the error,
+                // otherwise return how many bytes we wrote
+                if count == 0 {
+                    return Err(e);
+                } else {
+                    return Ok(count)
+                }
+            }
+            let offset = (self.pos % BLOCK_SIZE as u64) as usize;
+            // read to the end of the buffer, or the sector, whichever is closer
+            let len = min(buf.len(), (BLOCK_SIZE - offset) as usize);
+            // rprintln!("offset {} len {} block {}", offset, len, self.buf_block);
+            buf[0..len].copy_from_slice(&self.buf[offset..offset + len]);
             buf = &mut buf[len..];
             self.pos += len as u64;
             count += len;
@@ -38,13 +89,39 @@ impl Read for Card {
 }
 
 impl Write for Card {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        todo!()
+    fn write(&mut self, mut buf: &[u8]) -> Result<usize, <Self as IoBase>::Error> {
+        let mut count = 0;
+        while !buf.is_empty() {
+            let n = (self.pos / BLOCK_SIZE as u64) as u32;
+            if n >= self.num_blocks {
+                // end of disk
+                break;
+            }
+
+            // potentially write out a dirty buffer, then fill buffer
+            if let Err(e) = self.read_block(n) {
+                // If we didn't manage to write anything, return the error,
+                // otherwise return how many bytes we wrote
+                if count == 0 {
+                    return Err(e);
+                } else {
+                    return Ok(count)
+                }
+            }
+            let offset = self.pos as usize % BLOCK_SIZE;
+            // write to the end of the buffer, or the sector, whichever is closer
+            let len = min(buf.len(), BLOCK_SIZE - offset);
+            // rprintln!("len {}", len);
+            self.buf[offset..offset + len].copy_from_slice(&buf[0..len]);
+            buf = &buf[len..];
+            self.pos += len as u64;
+            count += len;
+        }
+        Ok(count)
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
-        // TODO
-        Ok(())
+        self.write_block()
     }
 }
 
@@ -57,7 +134,7 @@ impl Seek for Card {
             }
             SeekFrom::End(p) => {
                 // rprintln!("seek end {}", p);
-                self.pos = ((self.blocks as i64 * 512) + p) as u64;
+                self.pos = ((self.num_blocks as usize * BLOCK_SIZE) as i64 + p) as u64;
             }
             SeekFrom::Current(p) => {
                 // rprintln!("seek cur {}", p);
@@ -70,9 +147,21 @@ impl Seek for Card {
 
 pub fn open(sdio: Sdio<SdCard>) -> Result<FileSystem<Card, DefaultTimeProvider, LossyOemCpConverter>, fatfs::Error<()>> {
     let blocks = sdio.card().map(|c| c.block_count()).unwrap();
-    let card = Card { sdio, pos: 0, blocks };
+    let mut card = Card {
+        sdio,
+        pos: 0,
+        num_blocks: blocks,
+        buf: [0u8; BLOCK_SIZE],
+        buf_block_index: 0,
+        is_dirty: false
+    };
+
+    // prefetch the first block, making the buffer a valid copy of what's on disk
+    card.do_read_block(0)?;
+
     rprintln!("before new");
     let fs = FileSystem::new(card, FsOptions::new())?;
+
     rprintln!("after new");
     Ok(fs)
 }
