@@ -4,8 +4,8 @@
 extern crate alloc;
 
 use alloc::string::String;
-use core::fmt;
 use alloc_cortex_m::CortexMHeap;
+use core::fmt;
 
 use cortex_m_rt::entry;
 use panic_probe as _;
@@ -15,6 +15,7 @@ use rtt_target::{self, rprintln, rtt_init_print};
 use embedded_graphics::{
     mono_font::MonoTextStyleBuilder, pixelcolor::Rgb565, prelude::*, text::Text,
 };
+use log::{info, trace};
 
 use st7789::{Orientation, ST7789};
 
@@ -29,6 +30,7 @@ use stm32f4xx_hal::{
 
 use profont::PROFONT_24_POINT;
 
+mod logger;
 mod sdcard;
 
 #[global_allocator]
@@ -48,6 +50,9 @@ pub const HINSET_PIX: i32 = 100;
 fn main() -> ! {
     rtt_init_print!(BlockIfFull);
     rprintln!("demo_signer starting");
+    logger::init().expect("logger");
+    trace!("logger started");
+    info!("logger started");
 
     unsafe { ALLOCATOR.init(cortex_m_rt::heap_start() as usize, HEAP_SIZE) }
 

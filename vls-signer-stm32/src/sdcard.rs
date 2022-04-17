@@ -1,8 +1,11 @@
 use alloc::string::String;
 use core::cmp::min;
-use stm32f4xx_hal::sdio::{Sdio, SdCard};
-use fatfs::{FileSystem, FsOptions, Read, Write, Seek, SeekFrom, IoBase, DefaultTimeProvider, LossyOemCpConverter, File, TimeProvider, Dir, OemCpConverter};
-use rtt_target::{rprint, rprintln};
+use fatfs::{
+    DefaultTimeProvider, Dir, File, FileSystem, FsOptions, IoBase, LossyOemCpConverter,
+    OemCpConverter, Read, Seek, SeekFrom, TimeProvider, Write,
+};
+use log::{debug, error, info};
+use stm32f4xx_hal::sdio::{SdCard, Sdio};
 
 const BLOCK_SIZE: usize = 512;
 
@@ -29,11 +32,10 @@ impl Card {
 
     fn do_read_block(&mut self, n: u32) -> Result<(), <Self as IoBase>::Error> {
         // rprintln!("read block {}", n);
-        self.sdio.read_block(n, &mut self.buf)
-            .map_err(|e| {
-                rprintln!("error {:?}", e);
-                ()
-            })?;
+        self.sdio.read_block(n, &mut self.buf).map_err(|e| {
+            error!("error {:?}", e);
+            ()
+        })?;
         self.buf_block_index = n;
         Ok(())
     }
@@ -41,19 +43,20 @@ impl Card {
     fn write_block(&mut self) -> Result<(), <Self as IoBase>::Error> {
         if self.is_dirty {
             // rprintln!("write block {}", self.buf_block_index);
-            rprint!(".");
-            self.sdio.write_block(self.buf_block_index, &self.buf)
-                .map_err(|e| {
-                    rprintln!("error {:?}", e);
-                    ()
-                })?;
+            // rprint!(".");
+            self.sdio.write_block(self.buf_block_index, &self.buf).map_err(|e| {
+                error!("error {:?}", e);
+                ()
+            })?;
             self.is_dirty = false;
         }
         Ok(())
     }
 }
 
-impl IoBase for Card { type Error = (); }
+impl IoBase for Card {
+    type Error = ();
+}
 
 impl Read for Card {
     fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, Self::Error> {
@@ -67,7 +70,7 @@ impl Read for Card {
             }
             // fill the buffer
             if let Err(e) = self.read_block(n) {
-                rprintln!("error {:?} count {}", e, count);
+                error!("error {:?} count {}", e, count);
                 // If we didn't manage to read anything, return the error,
                 // otherwise return how many bytes we wrote
                 if count == 0 {
@@ -164,54 +167,56 @@ pub fn open(sdio: Sdio<SdCard>) -> Result<FS, fatfs::Error<()>> {
     // prefetch the first block, making the buffer a valid copy of what's on disk
     card.do_read_block(0)?;
 
-    rprintln!("before new");
+    debug!("before new");
     let fs = FileSystem::new(card, FsOptions::new())?;
 
-    rprintln!("after new");
+    debug!("after new");
     Ok(fs)
 }
 
-pub fn copy_dir<TP: TimeProvider, OCC: OemCpConverter>(from_dir: Dir<Card, TP, OCC>, to_dir: Dir<Card, TP, OCC>) -> Result<(), fatfs::Error<()>> {
+pub fn copy_dir<TP: TimeProvider, OCC: OemCpConverter>(
+    from_dir: Dir<Card, TP, OCC>,
+    to_dir: Dir<Card, TP, OCC>,
+) -> Result<(), fatfs::Error<()>> {
     for entry_res in from_dir.iter() {
         let entry = entry_res?;
         let name = entry.file_name();
         if entry.is_file() {
-            rprint!("cp {} ", name);
+            info!("cp {} ", name);
             let copy = to_dir.create_file(&name)?;
             let orig = entry.to_file();
             copy_file(orig, copy)?;
-            rprintln!("");
+            info!("");
         } else if entry.is_dir() && entry.file_name() != "." && entry.file_name() != ".." {
-            rprintln!("cp -r {}", name);
+            info!("cp -r {}", name);
             let copy = to_dir.create_dir(&name)?;
             copy_dir(entry.to_dir(), copy)?;
-
         }
     }
     Ok(())
 }
 
-fn rmdir<TP: TimeProvider, OCC: OemCpConverter>(dir: Dir<Card, TP, OCC>)
-    -> Result<(), fatfs::Error<()>> {
+fn rmdir<TP: TimeProvider, OCC: OemCpConverter>(
+    dir: Dir<Card, TP, OCC>,
+) -> Result<(), fatfs::Error<()>> {
     for f_res in dir.iter() {
         let f = f_res?;
         if f.is_file() {
-            rprint!("rm {}", &f.file_name());
+            info!("rm {}", &f.file_name());
             dir.remove(&f.file_name())?;
-            rprintln!("");
         } else if f.is_dir() && f.file_name() != "." && f.file_name() != ".." {
-            rprintln!("rmdir {}", &f.file_name());
+            info!("rmdir {}", &f.file_name());
             rmdir(f.to_dir())?;
             dir.remove(&f.file_name())?;
-            rprintln!("");
         }
     }
     Ok(())
 }
 
-pub fn copy_file<TP: TimeProvider, OCC>(mut from: File<Card, TP, OCC>,
-                                        mut to: File<Card, TP, OCC>)
-                                        -> Result<(), fatfs::Error<()>> {
+pub fn copy_file<TP: TimeProvider, OCC>(
+    mut from: File<Card, TP, OCC>,
+    mut to: File<Card, TP, OCC>,
+) -> Result<(), fatfs::Error<()>> {
     let mut buf = [0u8; 1000];
     loop {
         let n = from.read(&mut buf)?;
@@ -239,13 +244,13 @@ pub fn test(sdio: Sdio<SdCard>) {
         }
         let to_dir = root_dir.create_dir("b").expect("create b");
         let copy_res = copy_dir(from_dir, to_dir);
-        rprintln!("copy result: {:?}", copy_res);
+        info!("copy result: {:?}", copy_res);
     }
 
     for f in fs.root_dir().iter() {
         let entry = f.unwrap();
         let filename = entry.file_name();
-        rprintln!("file {:?}", filename);
+        info!("file {:?}", filename);
         if filename.starts_with("readme") {
             let mut buf = [0u8; 100];
             let mut file = entry.to_file();
@@ -254,7 +259,7 @@ pub fn test(sdio: Sdio<SdCard>) {
                 if len == 0 {
                     break;
                 }
-                rprintln!("contents {}", String::from_utf8_lossy(&buf[0..len]));
+                info!("contents {}", String::from_utf8_lossy(&buf[0..len]));
             }
         }
     }

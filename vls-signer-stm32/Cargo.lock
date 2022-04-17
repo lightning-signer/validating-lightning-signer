@@ -591,6 +591,7 @@ dependencies = [
  "embedded-graphics",
  "embedded-hal 0.2.7",
  "fatfs",
+ "log",
  "nb 1.0.0",
  "panic-probe",
  "profont",
