@@ -73,10 +73,11 @@ fn main() -> ! {
     let mut delay = cp.SYST.delay(&clocks);
 
     #[cfg(feature = "stm32f413")]
+    let gpioa = p.GPIOA.split();
+    #[cfg(feature = "stm32f413")]
     let gpiob = p.GPIOB.split();
 
     // both
-    let gpioa = p.GPIOA.split();
     let gpioc = p.GPIOC.split();
     let gpiod = p.GPIOD.split();
     let gpioe = p.GPIOE.split();
@@ -121,7 +122,12 @@ fn main() -> ! {
     let d2 = gpioc.pc10.into_alternate().internal_pull_up(true);
     let d3 = gpioc.pc11.into_alternate().internal_pull_up(true);
     let clk = gpioc.pc12.into_alternate().internal_pull_up(false);
+
+    #[cfg(feature = "stm32f412")]
+    let cmd = gpiod.pd2.into_alternate().internal_pull_up(true);
+    #[cfg(feature = "stm32f413")]
     let cmd = gpioa.pa6.into_alternate().internal_pull_up(true);
+
     let mut sdio: Sdio<SdCard> = Sdio::new(p.SDIO, (clk, cmd, d0, d1, d2, d3), &clocks);
 
     #[cfg(feature = "stm32f412")]
