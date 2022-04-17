@@ -12,6 +12,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloc-cortex-m"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5069e21ec61f3b243a4a4c56d920d3206e6ee86022a67c23e9fe36eb60fc1efd"
+dependencies = [
+ "cortex-m",
+ "linked_list_allocator",
+]
+
+[[package]]
 name = "atomic-polyfill"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -110,15 +120,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cortex-m-semihosting"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bffa6c1454368a6aa4811ae60964c38e6996d397ff8095a8b9211b1c1f749bc"
-dependencies = [
- "cortex-m",
-]
-
-[[package]]
 name = "critical-section"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -194,6 +195,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "723dce4e9f25b6e6c5f35628e144794e5b459216ed7da97b7c4b66cdb3fa82ca"
 
 [[package]]
+name = "fatfs"
+version = "0.4.0"
+source = "git+https://github.com/rafalh/rust-fatfs.git?rev=87fc1ed5074a32b4e0344fcdde77359ef9e75432#87fc1ed5074a32b4e0344fcdde77359ef9e75432"
+dependencies = [
+ "bitflags",
+ "log",
+]
+
+[[package]]
 name = "float-cmp"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -264,6 +274,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec647867e2bf0772e28c8bcde4f0d19a9216916e890543b5a03ed8ef27b8f259"
 
 [[package]]
+name = "linked_list_allocator"
+version = "0.8.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "822add9edb1860698b79522510da17bef885171f75aa395cff099d770c609c24"
+
+[[package]]
 name = "lock_api"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -271,6 +287,15 @@ checksum = "327fa5b6a6940e4699ec49a9beae1ea4845c6bab9314e4f84ac68742139d8c53"
 dependencies = [
  "autocfg",
  "scopeguard",
+]
+
+[[package]]
+name = "log"
+version = "0.4.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6389c490849ff5bc16be905ae24bc913a9c8892e19b2341dbc175e14c341c2b8"
+dependencies = [
+ "cfg-if",
 ]
 
 [[package]]
@@ -319,19 +344,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "panic-halt"
-version = "0.2.0"
+name = "panic-probe"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de96540e0ebde571dc55c73d60ef407c653844e6f9a1e2fdbd40c07b9252d812"
-
-[[package]]
-name = "panic-semihosting"
-version = "0.5.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3d55dedd501dfd02514646e0af4d7016ce36bc12ae177ef52056989966a1eec"
+checksum = "6a0fa226f55c70d0d70ad373802f0d65a775478afec75c0f3eee1de5d39057c9"
 dependencies = [
  "cortex-m",
- "cortex-m-semihosting",
+ "rtt-target",
 ]
 
 [[package]]
@@ -437,6 +456,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 
 [[package]]
+name = "sdio-host"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "355c411b00ad0634aa29824b37d0755e931a349b3230ffdef846c140eeed9c09"
+
+[[package]]
 name = "semver"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -510,6 +535,7 @@ dependencies = [
  "fugit-timer",
  "nb 1.0.0",
  "rand_core",
+ "sdio-host",
  "stm32f4",
  "time",
  "void",
@@ -558,15 +584,16 @@ checksum = "77439c1b53d2303b20d9459b1ade71a83c716e3f9c34f3228c00e6f185d6c002"
 name = "vls-signer-stm32"
 version = "0.1.0"
 dependencies = [
+ "alloc-cortex-m",
  "cortex-m",
  "cortex-m-rt",
  "display-interface",
  "embedded-graphics",
  "embedded-hal 0.2.7",
- "heapless",
+ "fatfs",
+ "log",
  "nb 1.0.0",
- "panic-halt",
- "panic-semihosting",
+ "panic-probe",
  "profont",
  "rtt-target",
  "st7789",
