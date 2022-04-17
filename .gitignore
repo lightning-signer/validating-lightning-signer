@@ -4,3 +4,5 @@
 signer.kv
 target/
 /vls-proxy/src/grpc/hsmd.rs
+/TAGS
+rusty-tags.emacs
