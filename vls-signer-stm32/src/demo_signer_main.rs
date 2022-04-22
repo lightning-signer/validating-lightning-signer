@@ -15,7 +15,9 @@ use rtt_target::{self, rprintln, rtt_init_print};
 use embedded_graphics::{
     mono_font::MonoTextStyleBuilder, pixelcolor::Rgb565, prelude::*, text::Text,
 };
-use log::{info, trace};
+
+#[allow(unused_imports)]
+use log::{debug, info, trace};
 
 use st7789::{Orientation, ST7789};
 
@@ -23,15 +25,19 @@ use st7789::{Orientation, ST7789};
 use stm32f4xx_hal::{
     fsmc_lcd::{ChipSelect1, ChipSelect3, FsmcLcd, LcdPins, Timing},
     gpio::Speed,
+    otg_fs::{UsbBus, USB},
     pac::{CorePeripherals, Peripherals},
+    pac::{Interrupt, NVIC, TIM2},
     prelude::*,
     sdio::{ClockFreq, SdCard, Sdio},
+    timer::{Event, FTimerUs},
 };
 
 use profont::PROFONT_24_POINT;
 
 mod logger;
 mod sdcard;
+mod usbserial;
 
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
@@ -72,17 +78,13 @@ fn main() -> ! {
 
     let mut delay = cp.SYST.delay(&clocks);
 
-    #[cfg(feature = "stm32f413")]
     let gpioa = p.GPIOA.split();
     #[cfg(feature = "stm32f413")]
     let gpiob = p.GPIOB.split();
-
-    // both
     let gpioc = p.GPIOC.split();
     let gpiod = p.GPIOD.split();
     let gpioe = p.GPIOE.split();
     let gpiof = p.GPIOF.split();
-
     #[cfg(feature = "stm32f413")]
     let gpiog = p.GPIOG.split();
 
@@ -114,6 +116,22 @@ fn main() -> ! {
         #[cfg(feature = "stm32f413")]
         chip_select: ChipSelect3(gpiog.pg10.into_alternate()),
     };
+
+    // Create a periodic interrupt from TIM2
+    let mut timer = FTimerUs::<TIM2>::new(p.TIM2, &clocks).counter();
+    timer.start(5.millis()).unwrap();
+    timer.listen(Event::Update);
+    usbserial::init(
+        USB {
+            usb_global: p.OTG_FS_GLOBAL,
+            usb_device: p.OTG_FS_DEVICE,
+            usb_pwrclk: p.OTG_FS_PWRCLK,
+            pin_dm: gpioa.pa11.into_alternate(),
+            pin_dp: gpioa.pa12.into_alternate(),
+            hclk: clocks.hclk(),
+        },
+        timer,
+    );
 
     rprintln!("SDIO setup");
 
@@ -190,6 +208,11 @@ fn main() -> ! {
             Text::new(&format_buf, Point::new(HINSET_PIX, VCENTER_PIX), text_style)
                 .draw(&mut disp)
                 .unwrap();
+        }
+
+        // Echo any usbserial characters
+        if let Some(data) = usbserial::read() {
+            usbserial::write(&data[..]);
         }
 
         delay.delay_ms(100u16);
