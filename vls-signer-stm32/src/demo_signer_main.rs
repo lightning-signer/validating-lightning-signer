@@ -38,6 +38,7 @@ use profont::PROFONT_24_POINT;
 mod logger;
 mod sdcard;
 mod usbserial;
+mod timer;
 
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
@@ -130,7 +131,6 @@ fn main() -> ! {
             pin_dp: gpioa.pa12.into_alternate(),
             hclk: clocks.hclk(),
         },
-        timer,
     );
 
     rprintln!("SDIO setup");
@@ -202,6 +202,8 @@ fn main() -> ! {
 
         sdcard::test(sdio);
     }
+
+    timer::start(timer);
 
     loop {
         disp.clear(Rgb565::BLACK).unwrap();

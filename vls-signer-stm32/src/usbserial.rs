@@ -1,30 +1,19 @@
 use alloc::{collections::VecDeque, vec::Vec};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use core::borrow::{Borrow, BorrowMut};
 use core::cell::RefCell;
 use core::ops::Deref;
-use cortex_m::interrupt::{free, Mutex};
-use stm32f4xx_hal::{
-    interrupt,
-    otg_fs::{UsbBus, USB},
-    pac::{Interrupt, NVIC, TIM2},
-    timer::{CounterUs, Event},
-};
+use cortex_m::interrupt::{CriticalSection, free, Mutex};
+use stm32f4xx_hal::otg_fs::{UsbBus, USB};
 use usb_device::{bus::UsbBusAllocator, device::UsbDevice, prelude::*};
 use usbd_serial::SerialPort;
 
 #[allow(unused_imports)]
 use log::{debug, error};
+use crate::timer::{self, TimerListener};
 
 static mut EP_MEMORY: [u32; 1024] = [0; 1024];
 static mut USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None;
-static mut TIMER_LISTENERS: Vec<Box<dyn TimerListener>> = Vec::new();
-static mut TIMER_TIM2: Option<CounterUs<TIM2>> = None;
-
-trait TimerListener {
-    fn on_tick(&self);
-}
 
 pub struct SerialDriverImpl {
     serial: SerialPort<'static, UsbBus<USB>>,
@@ -62,7 +51,7 @@ struct OutputBuffer {
 }
 
 impl SerialDriver {
-    pub(crate) fn new(usb: USB, timer: CounterUs<TIM2>) -> Self {
+    pub(crate) fn new(usb: USB) -> Self {
         let inbuf = InputBuffer { data: [0; READ_BUFSZ], size: 0 };
         let outbuf = OutputBuffer { data: VecDeque::new() };
 
@@ -70,7 +59,6 @@ impl SerialDriver {
         unsafe {
             assert!(USB_BUS.is_none());
             USB_BUS = Some(UsbBus::new(usb, &mut EP_MEMORY));
-            TIMER_TIM2 = Some(timer);
         };
 
         let serial = unsafe { SerialPort::new(USB_BUS.as_ref().unwrap()) };
@@ -84,18 +72,13 @@ impl SerialDriver {
                 .build()
         };
 
-        // Enable interrupts
-        NVIC::unpend(Interrupt::TIM2);
-        unsafe {
-            NVIC::unmask(Interrupt::TIM2);
-        };
         let serial_driver_impl =
             SerialDriverImpl { serial: serial, usb_dev, inbuf, outbuf };
         let serial_driver = SerialDriver {
             inner: Arc::new(Mutex::new(RefCell::new(serial_driver_impl)))
         };
-        unsafe { TIMER_LISTENERS.push(Box::new(serial_driver.clone())); }
 
+        timer::add_listener(Box::new(serial_driver.clone()));
         serial_driver
     }
 
@@ -115,22 +98,10 @@ impl SerialDriver {
 }
 
 impl TimerListener for SerialDriver {
-    fn on_tick(&self) {
-        free(|cs| {
-            let mut serial = self.inner.deref().borrow(cs).borrow_mut();
-            serial.append_inbuf();
-            serial.drain_outbuf();
-        });
-    }
-}
-
-#[interrupt]
-fn TIM2() {
-    unsafe {
-        for listener in &TIMER_LISTENERS {
-            listener.on_tick();
-        }
-        TIMER_TIM2.as_mut().unwrap().clear_interrupt(Event::Update);
+    fn on_tick(&self, cs: &CriticalSection) {
+        let mut serial = self.inner.deref().borrow(cs).borrow_mut();
+        serial.append_inbuf();
+        serial.drain_outbuf();
     }
 }
 
