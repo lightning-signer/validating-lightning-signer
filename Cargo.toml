@@ -3,6 +3,7 @@
 members = [
     "lightning-signer-core",
     "lightning-signer-server",
+    "vls-frontend",
     "bitcoind-client",
     "secp256k1-xonly",
 ]

@@ -28,6 +28,7 @@ anyhow = "1.0"
 log = { version="0.4.14", features = [ "std" ] }
 time = "0.2"
 lightning-signer-core = { path = "../lightning-signer-core", features = ["debug", "test_utils"] }
+vls-frontend = { path = "../vls-frontend" }
 bitcoind-client = { path = "../bitcoind-client" }
 backtrace = "0.3"
 bip39 = {version = "1.0.0", features = ["rand"] }
@@ -47,6 +48,7 @@ ctrlc = { version = "3.1.9", features = ["termination"] }
 triggered = "0.1.1"
 tracing = { version = "0.1.32" }
 tracing-subscriber = { version = "0.3.9" }
+async-trait = "0.1"
 
 url = { version = "2.2", optional = true }
 

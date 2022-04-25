@@ -672,7 +672,8 @@ impl Node {
         PublicKey::from_secret_key(&secp_ctx, key)
     }
 
-    fn log_prefix(&self) -> String {
+    /// Get suitable node identity string for logging
+    pub fn log_prefix(&self) -> String {
         self.get_id().to_hex()[0..4].to_string()
     }
 

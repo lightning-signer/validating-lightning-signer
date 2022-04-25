@@ -16,7 +16,6 @@ pub mod util;
 #[macro_use]
 #[cfg(feature = "grpc")]
 pub mod client;
-pub mod chain_follower;
 #[cfg(feature = "grpc")]
 pub mod server;
 

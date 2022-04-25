@@ -864,6 +864,7 @@ name = "lightning-signer-server"
 version = "0.1.0-5"
 dependencies = [
  "anyhow",
+ "async-trait",
  "backtrace",
  "bip39",
  "bitcoin",
@@ -891,6 +892,7 @@ dependencies = [
  "tracing-subscriber",
  "triggered",
  "url",
+ "vls-frontend",
 ]
 
 [[package]]
@@ -2186,6 +2188,21 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
+
+[[package]]
+name = "vls-frontend"
+version = "0.1.0-5"
+dependencies = [
+ "async-trait",
+ "bitcoin",
+ "bitcoind-client",
+ "env_logger",
+ "lightning-signer-core",
+ "log",
+ "test-log",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "want"
