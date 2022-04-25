@@ -182,25 +182,28 @@ fn main() -> ! {
     let text_style =
         MonoTextStyleBuilder::new().font(&PROFONT_24_POINT).text_color(Rgb565::WHITE).build();
 
-    rprintln!("detecting sdcard");
-    loop {
-        match sdio.init(ClockFreq::F24Mhz) {
-            Ok(_) => break,
-            Err(e) => rprintln!("waiting for sdio - {:?}", e),
+    #[cfg(feature = "sdio")]
+    {
+        rprintln!("detecting sdcard");
+        loop {
+            match sdio.init(ClockFreq::F24Mhz) {
+                Ok(_) => break,
+                Err(e) => rprintln!("waiting for sdio - {:?}", e),
+            }
+
+            delay.delay_ms(1000u32);
         }
 
-        delay.delay_ms(1000u32);
+        let nblocks = sdio.card().map(|c| c.block_count());
+        rprintln!("sdcard detected: nbr of blocks: {:?}", nblocks);
+
+        let mut block = [0u8; 512];
+
+        let res = sdio.read_block(0, &mut block);
+        rprintln!("sdcard read result {:?}", res);
+
+        sdcard::test(sdio);
     }
-
-    let nblocks = sdio.card().map(|c| c.block_count());
-    rprintln!("sdcard detected: nbr of blocks: {:?}", nblocks);
-
-    let mut block = [0u8; 512];
-
-    let res = sdio.read_block(0, &mut block);
-    rprintln!("sdcard read result {:?}", res);
-
-    sdcard::test(sdio);
 
     loop {
         disp.clear(Rgb565::BLACK).unwrap();
