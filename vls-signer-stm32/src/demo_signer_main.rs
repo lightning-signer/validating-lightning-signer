@@ -6,7 +6,6 @@ extern crate alloc;
 use alloc::string::String;
 use alloc_cortex_m::CortexMHeap;
 use core::fmt;
-use cortex_m::interrupt::free;
 
 use cortex_m_rt::entry;
 use panic_probe as _;
@@ -35,7 +34,6 @@ use stm32f4xx_hal::{
 };
 
 use profont::PROFONT_24_POINT;
-use usbserial::SERIAL;
 
 mod logger;
 mod sdcard;
@@ -123,7 +121,7 @@ fn main() -> ! {
     let mut timer = FTimerUs::<TIM2>::new(p.TIM2, &clocks).counter();
     timer.start(5.millis()).unwrap();
     timer.listen(Event::Update);
-    usbserial::SerialDriver::init(
+    let serial = usbserial::SerialDriver::new(
         USB {
             usb_global: p.OTG_FS_GLOBAL,
             usb_device: p.OTG_FS_DEVICE,
@@ -217,10 +215,8 @@ fn main() -> ! {
 
         // Echo any usbserial characters, release the critical section to pretend
         // we spent a long time processing the request ...
-        if let Some(data) = free(|cs| SERIAL.borrow(cs).borrow_mut().as_mut().unwrap().read()) {
-            free(|cs| {
-                SERIAL.borrow(cs).borrow_mut().as_mut().unwrap().write(&data[..]);
-            });
+        if let Some(data) = serial.read() {
+            serial.write(&data);
         }
         delay.delay_ms(100u16);
         counter += 1;
