@@ -12,7 +12,6 @@ use usbd_serial::SerialPort;
 use log::{debug, error};
 use crate::timer::{self, TimerListener};
 
-static mut EP_MEMORY: [u32; 1024] = [0; 1024];
 static mut USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None;
 
 pub struct SerialDriverImpl {
@@ -55,10 +54,13 @@ impl SerialDriver {
         let inbuf = InputBuffer { data: [0; READ_BUFSZ], size: 0 };
         let outbuf = OutputBuffer { data: VecDeque::new() };
 
-        // This is called once on startup
+        // This works at most once for now
         unsafe {
-            assert!(USB_BUS.is_none());
-            USB_BUS = Some(UsbBus::new(usb, &mut EP_MEMORY));
+            if USB_BUS.is_none() {
+                // Allocate memory for the USB driver that lasts to the end of the program ('static)
+                let ep_memory = Box::leak(Box::new([0u32; 1024]));
+                USB_BUS = Some(UsbBus::new(usb, ep_memory));
+            }
         };
 
         let serial = unsafe { SerialPort::new(USB_BUS.as_ref().unwrap()) };
