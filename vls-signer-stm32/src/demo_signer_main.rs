@@ -36,6 +36,7 @@ use stm32f4xx_hal::{
 use profont::PROFONT_24_POINT;
 
 mod logger;
+#[cfg(feature = "sdio")]
 mod sdcard;
 mod timer;
 mod usbserial;
@@ -82,6 +83,7 @@ fn main() -> ! {
     let gpioa = p.GPIOA.split();
     #[cfg(feature = "stm32f413")]
     let gpiob = p.GPIOB.split();
+    #[cfg(feature = "sdio")]
     let gpioc = p.GPIOC.split();
     let gpiod = p.GPIOD.split();
     let gpioe = p.GPIOE.split();
@@ -131,20 +133,22 @@ fn main() -> ! {
         hclk: clocks.hclk(),
     });
 
-    rprintln!("SDIO setup");
+    #[cfg(feature = "sdio")]
+    let mut sdio: Sdio<SdCard> = {
+        info!("SDIO setup");
+        let d0 = gpioc.pc8.into_alternate().internal_pull_up(true);
+        let d1 = gpioc.pc9.into_alternate().internal_pull_up(true);
+        let d2 = gpioc.pc10.into_alternate().internal_pull_up(true);
+        let d3 = gpioc.pc11.into_alternate().internal_pull_up(true);
+        let clk = gpioc.pc12.into_alternate().internal_pull_up(false);
 
-    let d0 = gpioc.pc8.into_alternate().internal_pull_up(true);
-    let d1 = gpioc.pc9.into_alternate().internal_pull_up(true);
-    let d2 = gpioc.pc10.into_alternate().internal_pull_up(true);
-    let d3 = gpioc.pc11.into_alternate().internal_pull_up(true);
-    let clk = gpioc.pc12.into_alternate().internal_pull_up(false);
+        #[cfg(feature = "stm32f412")]
+        let cmd = gpiod.pd2.into_alternate().internal_pull_up(true);
+        #[cfg(feature = "stm32f413")]
+        let cmd = gpioa.pa6.into_alternate().internal_pull_up(true);
 
-    #[cfg(feature = "stm32f412")]
-    let cmd = gpiod.pd2.into_alternate().internal_pull_up(true);
-    #[cfg(feature = "stm32f413")]
-    let cmd = gpioa.pa6.into_alternate().internal_pull_up(true);
-
-    let mut sdio: Sdio<SdCard> = Sdio::new(p.SDIO, (clk, cmd, d0, d1, d2, d3), &clocks);
+        Sdio::new(p.SDIO, (clk, cmd, d0, d1, d2, d3), &clocks)
+    };
 
     #[cfg(feature = "stm32f412")]
     let lcd_reset = gpiod.pd11.into_push_pull_output().speed(Speed::VeryHigh);
