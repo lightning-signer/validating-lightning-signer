@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use cortex_m::interrupt::{CriticalSection, free};
+use cortex_m::interrupt::{free, CriticalSection};
 use stm32f4xx_hal::{
     interrupt,
     pac::{Interrupt, NVIC, TIM2},

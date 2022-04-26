@@ -37,8 +37,8 @@ use profont::PROFONT_24_POINT;
 
 mod logger;
 mod sdcard;
-mod usbserial;
 mod timer;
+mod usbserial;
 
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
@@ -122,16 +122,14 @@ fn main() -> ! {
     let mut timer = FTimerUs::<TIM2>::new(p.TIM2, &clocks).counter();
     timer.start(5.millis()).unwrap();
     timer.listen(Event::Update);
-    let serial = usbserial::SerialDriver::new(
-        USB {
-            usb_global: p.OTG_FS_GLOBAL,
-            usb_device: p.OTG_FS_DEVICE,
-            usb_pwrclk: p.OTG_FS_PWRCLK,
-            pin_dm: gpioa.pa11.into_alternate(),
-            pin_dp: gpioa.pa12.into_alternate(),
-            hclk: clocks.hclk(),
-        },
-    );
+    let serial = usbserial::SerialDriver::new(USB {
+        usb_global: p.OTG_FS_GLOBAL,
+        usb_device: p.OTG_FS_DEVICE,
+        usb_pwrclk: p.OTG_FS_PWRCLK,
+        pin_dm: gpioa.pa11.into_alternate(),
+        pin_dp: gpioa.pa12.into_alternate(),
+        hclk: clocks.hclk(),
+    });
 
     rprintln!("SDIO setup");
 

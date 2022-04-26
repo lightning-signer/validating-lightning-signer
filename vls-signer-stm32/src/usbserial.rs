@@ -1,16 +1,16 @@
-use alloc::{collections::VecDeque, vec::Vec};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use alloc::{collections::VecDeque, vec::Vec};
 use core::cell::RefCell;
 use core::ops::Deref;
-use cortex_m::interrupt::{CriticalSection, free, Mutex};
+use cortex_m::interrupt::{free, CriticalSection, Mutex};
 use stm32f4xx_hal::otg_fs::{UsbBus, USB};
 use usb_device::{bus::UsbBusAllocator, device::UsbDevice, prelude::*};
 use usbd_serial::SerialPort;
 
+use crate::timer::{self, TimerListener};
 #[allow(unused_imports)]
 use log::{debug, error};
-use crate::timer::{self, TimerListener};
 
 static mut USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None;
 
@@ -74,11 +74,9 @@ impl SerialDriver {
                 .build()
         };
 
-        let serial_driver_impl =
-            SerialDriverImpl { serial: serial, usb_dev, inbuf, outbuf };
-        let serial_driver = SerialDriver {
-            inner: Arc::new(Mutex::new(RefCell::new(serial_driver_impl)))
-        };
+        let serial_driver_impl = SerialDriverImpl { serial: serial, usb_dev, inbuf, outbuf };
+        let serial_driver =
+            SerialDriver { inner: Arc::new(Mutex::new(RefCell::new(serial_driver_impl))) };
 
         timer::add_listener(Box::new(serial_driver.clone()));
         serial_driver
