@@ -1,28 +1,29 @@
+use alloc::boxed::Box;
+use alloc::sync::Arc;
 use alloc::{collections::VecDeque, vec::Vec};
 use core::cell::RefCell;
-use cortex_m::interrupt::{free, Mutex};
-use stm32f4xx_hal::{
-    interrupt,
-    otg_fs::{UsbBus, USB},
-    pac::{Interrupt, NVIC, TIM2},
-    timer::{CounterUs, Event},
-};
+use core::ops::Deref;
+use cortex_m::interrupt::{free, CriticalSection, Mutex};
+use stm32f4xx_hal::otg_fs::{UsbBus, USB};
 use usb_device::{bus::UsbBusAllocator, device::UsbDevice, prelude::*};
 use usbd_serial::SerialPort;
 
+use crate::timer::{self, TimerListener};
 #[allow(unused_imports)]
 use log::{debug, error};
 
-static mut EP_MEMORY: [u32; 1024] = [0; 1024];
-pub static SERIAL: Mutex<RefCell<Option<SerialDriver>>> = Mutex::new(RefCell::new(None));
 static mut USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None;
 
-pub struct SerialDriver {
+pub struct SerialDriverImpl {
     serial: SerialPort<'static, UsbBus<USB>>,
     usb_dev: UsbDevice<'static, UsbBus<USB>>,
-    timer_tim2: CounterUs<TIM2>,
     inbuf: InputBuffer,
     outbuf: OutputBuffer,
+}
+
+#[derive(Clone)]
+pub struct SerialDriver {
+    inner: Arc<Mutex<RefCell<SerialDriverImpl>>>,
 }
 
 const READ_BUFSZ: usize = 1024;
@@ -49,14 +50,17 @@ struct OutputBuffer {
 }
 
 impl SerialDriver {
-    pub(crate) fn init(usb: USB, timer: CounterUs<TIM2>) {
+    pub(crate) fn new(usb: USB) -> Self {
         let inbuf = InputBuffer { data: [0; READ_BUFSZ], size: 0 };
         let outbuf = OutputBuffer { data: VecDeque::new() };
 
-        // This is called once on startup
+        // This works at most once for now
         unsafe {
-            assert!(USB_BUS.is_none());
-            USB_BUS = Some(UsbBus::new(usb, &mut EP_MEMORY));
+            if USB_BUS.is_none() {
+                // Allocate memory for the USB driver that lasts to the end of the program ('static)
+                let ep_memory = Box::leak(Box::new([0u32; 1024]));
+                USB_BUS = Some(UsbBus::new(usb, ep_memory));
+            }
         };
 
         let serial = unsafe { SerialPort::new(USB_BUS.as_ref().unwrap()) };
@@ -70,31 +74,38 @@ impl SerialDriver {
                 .build()
         };
 
-        // Enable interrupts
-        NVIC::unpend(Interrupt::TIM2);
-        unsafe {
-            NVIC::unmask(Interrupt::TIM2);
-        };
+        let serial_driver_impl = SerialDriverImpl { serial: serial, usb_dev, inbuf, outbuf };
         let serial_driver =
-            SerialDriver { serial: serial, usb_dev, timer_tim2: timer, inbuf, outbuf };
-        free(|cs| SERIAL.borrow(cs).replace(Some(serial_driver)));
+            SerialDriver { inner: Arc::new(Mutex::new(RefCell::new(serial_driver_impl))) };
+
+        timer::add_listener(Box::new(serial_driver.clone()));
+        serial_driver
+    }
+
+    pub fn read(&self) -> Option<Vec<u8>> {
+        free(|cs| {
+            let mut inner = self.inner.deref().borrow(cs).borrow_mut();
+            inner.read()
+        })
+    }
+
+    pub fn write(&self, data: &[u8]) {
+        free(|cs| {
+            let mut inner = self.inner.deref().borrow(cs).borrow_mut();
+            inner.write(data)
+        })
     }
 }
 
-#[interrupt]
-fn TIM2() {
-    free(|cs| {
-        let mut serial_lock = SERIAL.borrow(cs).borrow_mut();
-        let serial = serial_lock.as_mut().unwrap();
-        serial.timer_tim2.clear_interrupt(Event::Update);
-
+impl TimerListener for SerialDriver {
+    fn on_tick(&self, cs: &CriticalSection) {
+        let mut serial = self.inner.deref().borrow(cs).borrow_mut();
         serial.append_inbuf();
-
         serial.drain_outbuf();
-    });
+    }
 }
 
-impl SerialDriver {
+impl SerialDriverImpl {
     pub fn read(&mut self) -> Option<Vec<u8>> {
         self.append_inbuf();
         self.inbuf.harvest()

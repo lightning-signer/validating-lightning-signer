@@ -6,7 +6,6 @@ extern crate alloc;
 use alloc::string::String;
 use alloc_cortex_m::CortexMHeap;
 use core::fmt;
-use cortex_m::interrupt::free;
 
 use cortex_m_rt::entry;
 use panic_probe as _;
@@ -35,10 +34,11 @@ use stm32f4xx_hal::{
 };
 
 use profont::PROFONT_24_POINT;
-use usbserial::SERIAL;
 
 mod logger;
+#[cfg(feature = "sdio")]
 mod sdcard;
+mod timer;
 mod usbserial;
 
 #[global_allocator]
@@ -83,6 +83,7 @@ fn main() -> ! {
     let gpioa = p.GPIOA.split();
     #[cfg(feature = "stm32f413")]
     let gpiob = p.GPIOB.split();
+    #[cfg(feature = "sdio")]
     let gpioc = p.GPIOC.split();
     let gpiod = p.GPIOD.split();
     let gpioe = p.GPIOE.split();
@@ -123,32 +124,31 @@ fn main() -> ! {
     let mut timer = FTimerUs::<TIM2>::new(p.TIM2, &clocks).counter();
     timer.start(5.millis()).unwrap();
     timer.listen(Event::Update);
-    usbserial::SerialDriver::init(
-        USB {
-            usb_global: p.OTG_FS_GLOBAL,
-            usb_device: p.OTG_FS_DEVICE,
-            usb_pwrclk: p.OTG_FS_PWRCLK,
-            pin_dm: gpioa.pa11.into_alternate(),
-            pin_dp: gpioa.pa12.into_alternate(),
-            hclk: clocks.hclk(),
-        },
-        timer,
-    );
+    let serial = usbserial::SerialDriver::new(USB {
+        usb_global: p.OTG_FS_GLOBAL,
+        usb_device: p.OTG_FS_DEVICE,
+        usb_pwrclk: p.OTG_FS_PWRCLK,
+        pin_dm: gpioa.pa11.into_alternate(),
+        pin_dp: gpioa.pa12.into_alternate(),
+        hclk: clocks.hclk(),
+    });
 
-    rprintln!("SDIO setup");
+    #[cfg(feature = "sdio")]
+    let mut sdio: Sdio<SdCard> = {
+        info!("SDIO setup");
+        let d0 = gpioc.pc8.into_alternate().internal_pull_up(true);
+        let d1 = gpioc.pc9.into_alternate().internal_pull_up(true);
+        let d2 = gpioc.pc10.into_alternate().internal_pull_up(true);
+        let d3 = gpioc.pc11.into_alternate().internal_pull_up(true);
+        let clk = gpioc.pc12.into_alternate().internal_pull_up(false);
 
-    let d0 = gpioc.pc8.into_alternate().internal_pull_up(true);
-    let d1 = gpioc.pc9.into_alternate().internal_pull_up(true);
-    let d2 = gpioc.pc10.into_alternate().internal_pull_up(true);
-    let d3 = gpioc.pc11.into_alternate().internal_pull_up(true);
-    let clk = gpioc.pc12.into_alternate().internal_pull_up(false);
+        #[cfg(feature = "stm32f412")]
+        let cmd = gpiod.pd2.into_alternate().internal_pull_up(true);
+        #[cfg(feature = "stm32f413")]
+        let cmd = gpioa.pa6.into_alternate().internal_pull_up(true);
 
-    #[cfg(feature = "stm32f412")]
-    let cmd = gpiod.pd2.into_alternate().internal_pull_up(true);
-    #[cfg(feature = "stm32f413")]
-    let cmd = gpioa.pa6.into_alternate().internal_pull_up(true);
-
-    let mut sdio: Sdio<SdCard> = Sdio::new(p.SDIO, (clk, cmd, d0, d1, d2, d3), &clocks);
+        Sdio::new(p.SDIO, (clk, cmd, d0, d1, d2, d3), &clocks)
+    };
 
     #[cfg(feature = "stm32f412")]
     let lcd_reset = gpiod.pd11.into_push_pull_output().speed(Speed::VeryHigh);
@@ -182,25 +182,30 @@ fn main() -> ! {
     let text_style =
         MonoTextStyleBuilder::new().font(&PROFONT_24_POINT).text_color(Rgb565::WHITE).build();
 
-    rprintln!("detecting sdcard");
-    loop {
-        match sdio.init(ClockFreq::F24Mhz) {
-            Ok(_) => break,
-            Err(e) => rprintln!("waiting for sdio - {:?}", e),
+    #[cfg(feature = "sdio")]
+    {
+        rprintln!("detecting sdcard");
+        loop {
+            match sdio.init(ClockFreq::F24Mhz) {
+                Ok(_) => break,
+                Err(e) => rprintln!("waiting for sdio - {:?}", e),
+            }
+
+            delay.delay_ms(1000u32);
         }
 
-        delay.delay_ms(1000u32);
+        let nblocks = sdio.card().map(|c| c.block_count());
+        rprintln!("sdcard detected: nbr of blocks: {:?}", nblocks);
+
+        let mut block = [0u8; 512];
+
+        let res = sdio.read_block(0, &mut block);
+        rprintln!("sdcard read result {:?}", res);
+
+        sdcard::test(sdio);
     }
 
-    let nblocks = sdio.card().map(|c| c.block_count());
-    rprintln!("sdcard detected: nbr of blocks: {:?}", nblocks);
-
-    let mut block = [0u8; 512];
-
-    let res = sdio.read_block(0, &mut block);
-    rprintln!("sdcard read result {:?}", res);
-
-    sdcard::test(sdio);
+    timer::start(timer);
 
     loop {
         disp.clear(Rgb565::BLACK).unwrap();
@@ -214,10 +219,8 @@ fn main() -> ! {
 
         // Echo any usbserial characters, release the critical section to pretend
         // we spent a long time processing the request ...
-        if let Some(data) = free(|cs| SERIAL.borrow(cs).borrow_mut().as_mut().unwrap().read()) {
-            free(|cs| {
-                SERIAL.borrow(cs).borrow_mut().as_mut().unwrap().write(&data[..]);
-            });
+        if let Some(data) = serial.read() {
+            serial.write(&data);
         }
         delay.delay_ms(100u16);
         counter += 1;

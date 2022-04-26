@@ -4,21 +4,21 @@
 rustup override set nightly
 ```
 
-#### Running
-
-Connect the `ST_LINK` port to host computer using USB cable.
-
-```
-cargo run --features stm32f412
-cargo run --features stm32f413
-```
-
 #### SD Card Setup
 
 For now, please format the root device, without any partitions.
 
 ```sh
 sudo mkfs.vfat -F32 /dev/sdX
+```
+
+#### Running
+
+Connect the `ST_LINK` port to host computer using USB cable.
+
+```
+cargo run --features stm32f412,sdio
+cargo run --features stm32f413,sdio
 ```
 
 #### Connecting to Serial Port
