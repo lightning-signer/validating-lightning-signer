@@ -6,11 +6,11 @@ edition = "2018"
 
 [features]
 default = ["std"]
-std = ["secp256k1/rand-std"]
+std = ["secp256k1/rand-std", "vls-protocol/std"]
 
 [dependencies]
 vls-protocol = { path = "../vls-protocol" }
-secp256k1 = { version = "0.20", default_features = false, features = ["bitcoin_hashes", "rand"] }
+secp256k1 = { version = "0.20", default_features = false, features = ["rand"] }
 log = { version = "0.4", default_features = false }
 serde = { version = "1.0", default_features = false }
 bit-vec = { version = "0.6", default_features = false }

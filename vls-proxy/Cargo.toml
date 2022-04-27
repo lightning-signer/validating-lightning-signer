@@ -12,7 +12,7 @@ grpc = ["tokio", "tonic", "prost"]
 
 [dependencies]
 lightning-signer-core = { git = "https://gitlab.com/lightning-signer/validating-lightning-signer.git", rev = "3778a66e3c969041e7bcc530e63e6b822a802f72" }
-vls-protocol-signer = { path = "../vls-protocol-signer" }
+vls-protocol-signer = { path = "../vls-protocol-signer", features = ["std"] }
 secp256k1 = { version = "0.20", features = ["rand-std", "bitcoin_hashes"] }
 nix = "0.22"
 serde = "1.0"
