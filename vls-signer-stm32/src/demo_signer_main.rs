@@ -219,9 +219,9 @@ fn main() -> ! {
 
         // Echo any usbserial characters, release the critical section to pretend
         // we spent a long time processing the request ...
-        if let Some(data) = serial.read() {
-            serial.write(&data);
-        }
+        let mut data = [0; 1024];
+        let n = serial.do_read(&mut data);
+        serial.do_write(&data[0..n]);
         delay.delay_ms(100u16);
         counter += 1;
     }
