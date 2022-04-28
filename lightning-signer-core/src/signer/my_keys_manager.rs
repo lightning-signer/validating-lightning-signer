@@ -123,8 +123,14 @@ impl MyKeysManager {
         starting_time_nanos: u32,
     ) -> MyKeysManager {
         let secp_ctx = Secp256k1::new();
-        let master_key =
-            ExtendedPrivKey::new_master(network.clone(), seed).expect("your RNG is busted");
+        let master_key = match key_derivation_style {
+            KeyDerivationStyle::Native => {
+                let master_seed = hkdf_sha256(seed, "bip32 seed".as_bytes(), &[]);
+                ExtendedPrivKey::new_master(network.clone(), &master_seed)
+            }
+            KeyDerivationStyle::Lnd => ExtendedPrivKey::new_master(network.clone(), seed),
+        }
+        .expect("your RNG is busted");
         let (_, node_secret) = match key_derivation_style {
             KeyDerivationStyle::Native => node_keys_native(&secp_ctx, seed),
             KeyDerivationStyle::Lnd => node_keys_lnd(&secp_ctx, network.clone(), master_key),
