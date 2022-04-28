@@ -36,8 +36,8 @@ use lightning_signer::util::status;
 use lightning_signer::Arc;
 #[allow(unused_imports)]
 use log::info;
-use secp256k1::rand::rngs::OsRng;
-use secp256k1::rand::RngCore;
+#[cfg(feature = "std")]
+use secp256k1::rand::{rngs::OsRng, RngCore};
 use secp256k1::PublicKey;
 
 use lightning_signer::util::status::Status;
@@ -114,11 +114,15 @@ impl RootHandler {
         let config = NodeConfig { network, key_derivation_style: KeyDerivationStyle::Native };
 
         let seed = seed_opt.unwrap_or_else(|| {
-            let mut rng = OsRng::new().unwrap();
-
-            let mut seed = [0; 32];
-            rng.fill_bytes(&mut seed);
-            seed
+            #[cfg(feature = "std")]
+            {
+                let mut seed = [0; 32];
+                let mut rng = OsRng::new().unwrap();
+                rng.fill_bytes(&mut seed);
+                seed
+            }
+            #[cfg(not(feature = "std"))]
+            todo!("no RNG available in no_std environments yet");
         });
 
         let nodes = persister.get_nodes();

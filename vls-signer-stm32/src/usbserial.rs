@@ -1,16 +1,18 @@
 use alloc::boxed::Box;
+use alloc::collections::VecDeque;
 use alloc::sync::Arc;
-use alloc::{collections::VecDeque, vec::Vec};
 use core::cell::RefCell;
+use core::cmp::min;
 use core::ops::Deref;
 use cortex_m::interrupt::{free, CriticalSection, Mutex};
 use stm32f4xx_hal::otg_fs::{UsbBus, USB};
 use usb_device::{bus::UsbBusAllocator, device::UsbDevice, prelude::*};
 use usbd_serial::SerialPort;
+use vls_protocol_signer::vls_protocol::serde_bolt::{self, Read, Write};
 
 use crate::timer::{self, TimerListener};
 #[allow(unused_imports)]
-use log::{debug, error};
+use log::{debug, error, info};
 
 static mut USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None;
 
@@ -24,6 +26,7 @@ pub struct SerialDriverImpl {
 #[derive(Clone)]
 pub struct SerialDriver {
     inner: Arc<Mutex<RefCell<SerialDriverImpl>>>,
+    peek: Option<u8>,
 }
 
 const READ_BUFSZ: usize = 1024;
@@ -34,14 +37,15 @@ struct InputBuffer {
 }
 
 impl InputBuffer {
-    pub fn harvest(&mut self) -> Option<Vec<u8>> {
-        let sz = self.size;
+    pub fn read(&mut self, dest: &mut [u8]) -> usize {
+        let sz = min(self.size, dest.len());
         if sz == 0 {
-            None
-        } else {
-            self.size = 0;
-            Some(self.data[..sz].to_vec())
+            return sz;
         }
+        dest[0..sz].copy_from_slice(&self.data[0..sz]);
+        self.data.copy_within(sz..self.size, 0);
+        self.size -= sz;
+        sz
     }
 }
 
@@ -74,22 +78,26 @@ impl SerialDriver {
                 .build()
         };
 
-        let serial_driver_impl = SerialDriverImpl { serial: serial, usb_dev, inbuf, outbuf };
-        let serial_driver =
-            SerialDriver { inner: Arc::new(Mutex::new(RefCell::new(serial_driver_impl))) };
+        info!("state {:?}", usb_dev.state());
+        let serial_driver_impl = SerialDriverImpl { serial, usb_dev, inbuf, outbuf };
+        let serial_driver = SerialDriver {
+            inner: Arc::new(Mutex::new(RefCell::new(serial_driver_impl))),
+            peek: None,
+        };
 
         timer::add_listener(Box::new(serial_driver.clone()));
         serial_driver
     }
 
-    pub fn read(&self) -> Option<Vec<u8>> {
+    /// Return Some() if there are bytes available, otherwise None
+    pub fn do_read(&self, dest: &mut [u8]) -> usize {
         free(|cs| {
             let mut inner = self.inner.deref().borrow(cs).borrow_mut();
-            inner.read()
+            inner.read(dest)
         })
     }
 
-    pub fn write(&self, data: &[u8]) {
+    pub fn do_write(&self, data: &[u8]) {
         free(|cs| {
             let mut inner = self.inner.deref().borrow(cs).borrow_mut();
             inner.write(data)
@@ -106,9 +114,9 @@ impl TimerListener for SerialDriver {
 }
 
 impl SerialDriverImpl {
-    pub fn read(&mut self) -> Option<Vec<u8>> {
+    pub fn read(&mut self, dest: &mut [u8]) -> usize {
         self.append_inbuf();
-        self.inbuf.harvest()
+        self.inbuf.read(dest)
     }
 
     pub fn write(&mut self, outgoing: &[u8]) {
@@ -120,6 +128,7 @@ impl SerialDriverImpl {
         let size = self.inbuf.size;
         if size < self.inbuf.data.len() {
             if self.usb_dev.poll(&mut [&mut self.serial]) {
+                info!("state {:?}", self.usb_dev.state());
                 match self.serial.read(&mut self.inbuf.data[size..]) {
                     Ok(count) => self.inbuf.size += count,
                     Err(UsbError::WouldBlock) => {}
@@ -140,5 +149,39 @@ impl SerialDriverImpl {
                 Err(err) => error!("drain_outbuf: serial.write error: {:?}", err),
             }
         }
+    }
+}
+
+impl Read for SerialDriver {
+    type Error = serde_bolt::Error;
+
+    fn read(&mut self, dest: &mut [u8]) -> serde_bolt::Result<usize> {
+        loop {
+            let sz = self.do_read(dest);
+            if sz > 0 {
+                return Ok(sz);
+            }
+            // TODO delay
+        }
+    }
+
+    fn peek(&mut self) -> serde_bolt::Result<Option<u8>> {
+        if self.peek.is_some() {
+            return Ok(self.peek);
+        }
+        let mut buf = [0; 1];
+        let n = self.do_read(&mut buf);
+        assert_eq!(n, 1);
+        self.peek = Some(buf[0]);
+        Ok(self.peek)
+    }
+}
+
+impl Write for SerialDriver {
+    type Error = serde_bolt::Error;
+
+    fn write_all(&mut self, buf: &[u8]) -> serde_bolt::Result<()> {
+        self.do_write(buf);
+        Ok(())
     }
 }
