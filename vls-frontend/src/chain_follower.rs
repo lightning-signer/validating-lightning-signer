@@ -12,17 +12,17 @@ use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Block, BlockHash, Network, OutPoint, Transaction, TxOut, Txid};
 
 use bitcoind_client::{BitcoindClient, BlockSource, Error};
-use lightning_signer::node::Node;
-use lightning_signer::wallet::Wallet;
 
 #[allow(unused_imports)]
 use lightning_signer::{debug_vals, short_function, vals_str};
 #[allow(unused_imports)]
 use log::{debug, error, info, trace};
 
+use crate::ChainTrack;
+
 /// Follows the longest chain and feeds proofs of watched changes to ChainTracker.
 pub struct ChainFollower {
-    node: Arc<Node>,
+    tracker: Arc<dyn ChainTrack>,
     client: BitcoindClient,
     state: Mutex<State>,
     update_interval: u64,
@@ -52,18 +52,13 @@ enum ScheduleNext {
 
 macro_rules! abbrev {
     ($str: expr, $sz: expr) => {{
-        format!("{}..", $str.to_string()[0..$sz].to_string())
+        format!("{}...", $str.to_string()[0..$sz].to_string())
     }};
 }
 
 impl ChainFollower {
-    pub async fn new(node: Arc<Node>, rpc_url: &Url) -> Arc<ChainFollower> {
-        info!(
-            "node {} creating {} follower using {}",
-            abbrev!(node.get_id(), 12),
-            node.network(),
-            rpc_url
-        );
+    pub async fn new(tracker: Arc<dyn ChainTrack>, rpc_url: &Url) -> Arc<ChainFollower> {
+        info!("{} created using {}", tracker.log_prefix(), rpc_url);
         let client = BitcoindClient::new(
             rpc_url.host_str().expect("rpc host").to_owned(),
             rpc_url.port().expect("rpc port"),
@@ -71,12 +66,12 @@ impl ChainFollower {
             rpc_url.password().to_owned().expect("rpc password").to_owned(),
         )
         .await;
-        let update_interval = match node.network() {
+        let update_interval = match tracker.network() {
             Network::Regtest => 100, // poll rapidly, automated testing
             _ => 60 * 1000,
         };
         Arc::new(ChainFollower {
-            node,
+            tracker,
             client,
             state: Mutex::new(State::Scanning),
             update_interval,
@@ -103,7 +98,7 @@ impl ChainFollower {
                         // otherwise loop immediately
                     }
                     Err(err) => {
-                        error!("node {}: {}", abbrev!(self.node.get_id(), 12), err);
+                        error!("{}: {}", self.tracker.log_prefix(), err);
                         break; // Would a shorter pause be better here?
                     }
                 }
@@ -115,14 +110,7 @@ impl ChainFollower {
         let mut state = self.state.lock().await;
 
         // Fetch the current tip from the tracker
-        let (height0, hash0) = {
-            // Confine the scope of the tracker, can't span awaits ...
-            let tracker = self.node.get_tracker();
-            let height = tracker.height();
-            let header = tracker.tip();
-            let hash = header.block_hash();
-            (height, hash)
-        };
+        let (height0, hash0) = self.tracker.tip_info().await;
 
         // Fetch the next block hash from bitcoind
         let hash = match self.client.get_block_hash(height0 + 1).await? {
@@ -140,7 +128,7 @@ impl ChainFollower {
                 }
                 // Current top block matches
                 if *state != State::Synced {
-                    info!("node {} synced at height {}", abbrev!(self.node.get_id(), 12), height0);
+                    info!("{} synced at height {}", self.tracker.log_prefix(), height0);
                     *state = State::Synced;
                 }
                 return Ok(ScheduleNext::Pause);
@@ -165,46 +153,28 @@ impl ChainFollower {
         // Add this block
         let height = height0 + 1;
         if height % 2016 == 0 {
-            info!("node {} at height {}", abbrev!(self.node.get_id(), 12), height);
+            info!("{} at height {}", self.tracker.log_prefix(), height);
         }
 
-        let mut tracker = self.node.get_tracker();
-        let (txid_watches, outpoint_watches) = tracker.get_all_forward_watches();
+        let (txid_watches, outpoint_watches) = self.tracker.forward_watches().await;
         let (txs, proof) = build_proof(&block, &txid_watches, &outpoint_watches);
         // debug!("node {} at height {} adding {}", abbrev!(self.node.get_id(), 12), height, hash);
-        let rv = tracker.add_block(block.header, txs, proof);
-        if rv.is_err() {
-            panic!(
-                "tracker.add_block failed at height {}: {:?}: {}",
-                height,
-                rv.unwrap_err(),
-                vals_str!(block.header)
-            );
-        }
+        self.tracker.add_block(block.header, txs, proof).await;
         Ok(ScheduleNext::Immediate)
     }
 
     async fn remove_block(&self, height0: u32, hash0: BlockHash) -> Result<ScheduleNext, Error> {
         debug!(
-            "node {} reorg at height {}, removing hash {}",
-            abbrev!(self.node.get_id(), 12),
+            "{} reorg at height {}, removing hash {}",
+            self.tracker.log_prefix(),
             height0,
             abbrev!(hash0, 12),
         );
         let block = self.client.get_block(&hash0).await?;
-        let mut tracker = self.node.get_tracker();
-        let (txid_watches, outpoint_watches) = tracker.get_all_reverse_watches();
+        let (txid_watches, outpoint_watches) = self.tracker.reverse_watches().await;
         let (txs, proof) = build_proof(&block, &txid_watches, &outpoint_watches);
         // The tracker will reverse the txs in remove_block, so leave normal order here.
-        let rv = tracker.remove_block(txs, proof);
-        if rv.is_err() {
-            panic!(
-                "tracker.remove_block failed at height {}: {:?}: {}",
-                height0,
-                rv.unwrap_err(),
-                vals_str!(block.header)
-            );
-        }
+        self.tracker.remove_block(txs, proof).await;
         Ok(ScheduleNext::Immediate)
     }
 }

@@ -42,9 +42,11 @@ use lightning_signer::{channel, containing_function, debug_vals, short_function,
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::*;
 
-use crate::chain_follower::ChainFollower;
+use vls_frontend::Frontend;
+
 use crate::fslogger::FilesystemLogger;
 use crate::persist::persist_json::KVJsonPersister;
+use crate::server::nodefront::SignerFront;
 use crate::server::remotesigner::version_server::Version;
 use crate::NETWORK_NAMES;
 use crate::SERVER_APP_NAME;
@@ -114,9 +116,9 @@ macro_rules! log_req_reply {
 }
 
 struct SignServer {
-    pub signer: MultiSigner,
+    pub signer: Arc<MultiSigner>,
     pub network: Network,
-    pub rpc_url: Url,
+    pub frontend: Frontend,
 }
 
 pub(super) fn invalid_grpc_argument(msg: impl Into<String>) -> Status {
@@ -230,12 +232,6 @@ impl SignServer {
                 Ok(Some((key, redeemscript)))
             }
         }
-    }
-
-    async fn start_chain_follower(&self, node_id: &PublicKey) {
-        let node = self.signer.get_node(&node_id).expect("valid node");
-        let cf_arc = ChainFollower::new(node, &self.rpc_url).await;
-        ChainFollower::start(cf_arc).await;
     }
 
     fn htlc_sighash_type(
@@ -372,7 +368,7 @@ impl Signer for SignServer {
             }
         };
 
-        self.start_chain_follower(&node_id).await;
+        self.frontend.start_follower(self.frontend.signer.tracker(&node_id)).await;
 
         let reply = InitReply { node_id: Some(NodeId { data: node_id.serialize().to_vec() }) };
 
@@ -1566,17 +1562,20 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     }
     let policy = policy(&matches, network);
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
-    let signer =
-        MultiSigner::new_with_persister(persister, test_mode, initial_allowlist, validator_factory);
+    let signer = Arc::new(MultiSigner::new_with_persister(
+        persister,
+        test_mode,
+        initial_allowlist,
+        validator_factory,
+    ));
 
     let rpc_s: String = matches.value_of_t("rpc").expect("rpc url string");
     let rpc_url = Url::parse(&rpc_s).expect("malformed rpc url");
 
-    let server = SignServer { signer, network, rpc_url };
+    let frontend = Frontend::new(Arc::new(SignerFront { signer: Arc::clone(&signer) }), rpc_url);
+    frontend.start().await;
 
-    for node_id in server.signer.get_node_ids().into_iter() {
-        server.start_chain_follower(&node_id).await;
-    }
+    let server = SignServer { signer, network, frontend };
 
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
     ctrlc::set_handler(move || {
