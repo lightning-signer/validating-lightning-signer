@@ -18,7 +18,7 @@ cortex-m-rt = { version = "0.6.10", optional = true }
 cortex-m-semihosting = { version = "0.3.3", optional = true }
 alloc-cortex-m = { version = "0.4.1", optional = true }
 
-lightning-signer-core = { path="../lightning-signer-core", default-features = false }
+lightning-signer-core = { path = "../lightning-signer-core", default-features = false }
 
 [patch.crates-io]
 # See also https://github.com/rust-bitcoin/rust-secp256k1/pull/299 and https://github.com/bitcoin-core/secp256k1/pull/956

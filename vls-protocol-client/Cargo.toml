@@ -1,0 +1,16 @@
+[package]
+name = "vls-protocol-client"
+version = "0.1.0"
+edition = "2018"
+
+[features]
+null = ["vls-protocol-signer"]
+grpc = []
+
+[dependencies]
+vls-protocol-signer = { path = "../vls-protocol-signer", optional = true }
+vls-protocol = { path = "../vls-protocol" }
+lightning-signer-core = { path = "../lightning-signer-core" }
+bit-vec = "0.6"
+log = "0.4"
+anyhow = "1.0"

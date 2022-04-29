@@ -1,0 +1,52 @@
+[package]
+name = "vls-signer-stm32"
+version = "0.1.0"
+authors = ["Ken Sedgwick <ken@bonsai.com>", "Devrandom <c1.devrandom@niftybox.net>"]
+edition = "2018"
+
+[dependencies]
+embedded-hal = "0.2"
+nb = "1"
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+alloc-cortex-m = { version = "0.4.1" }
+display-interface = { version = "0.4.1", optional = true }
+stm32f4 = "0.14.0"
+embedded-graphics = "0.7.1"
+st7789 = { version = "0.6.1", default-features = false, features = ["graphics", "buffer"] }
+rtt-target = { version = "0.3.1", features = ["cortex-m"] }
+profont = "0.6"
+panic-probe = { version = "0.2", features = ["print-rtt"] }
+log = "0.4"
+usb-device = "0.2.5"
+usbd-serial = "0.1.0"
+vls-protocol-signer = { path = "../vls-protocol-signer", default-features = false }
+
+[dependencies.fatfs]
+git = "https://github.com/rafalh/rust-fatfs.git"
+rev = "87fc1ed5074a32b4e0344fcdde77359ef9e75432"
+default-features = false
+features = [
+    "alloc",
+    "lfn",
+#    "log_level_trace"
+]
+
+[dependencies.stm32f4xx-hal]
+version = "0.13"
+features = ["fsmc_lcd", "fsmc", "sdio", "sdio-host", "otg-fs", "usb_fs"]
+
+[features]
+stm32f412 = ["stm32f4xx-hal/stm32f412"]
+stm32f413 = ["stm32f4xx-hal/stm32f413"]
+sdio = []
+
+[[bin]]
+name = "demo_signer"
+path = "src/demo_signer_main.rs"
+
+[profile.dev]
+debug = 2
+
+[profile.release]
+debug = 1

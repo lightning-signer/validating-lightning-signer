@@ -6,9 +6,16 @@ members = [
     "vls-frontend",
     "bitcoind-client",
     "secp256k1-xonly",
+
+    "bolt-derive",
+    "vls-protocol",
+    "vls-protocol-client",
+    "vls-protocol-signer",
+    "vls-proxy",
 ]
 
 exclude = [
+    "vls-signer-stm32",
     "embedded",
     "wasm"
 ]
