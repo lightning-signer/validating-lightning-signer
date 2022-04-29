@@ -12,6 +12,10 @@ use serde_bolt::{from_vec as sb_from_vec, to_vec, WireString};
 use serde_bolt::{LargeBytes, Read, Write};
 use serde_derive::{Deserialize, Serialize};
 
+use log::error;
+
+const MAX_MESSAGE_SIZE: u32 = 65536;
+
 /// Serialize a message with a type prefix, in BOLT style
 pub trait SerBolt: Debug {
     fn as_vec(&self) -> Vec<u8>;
@@ -367,6 +371,24 @@ pub struct SignRemoteCommitmentTx {
     pub feerate: u32,
 }
 
+/// Ping request
+/// LDK only
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1000)]
+pub struct Ping {
+    pub id: u16,
+    pub message: WireString,
+}
+
+/// Ping reply
+/// LDK only
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1100)]
+pub struct Pong {
+    pub id: u16,
+    pub message: WireString,
+}
+
 ///
 /// LDK only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
@@ -520,6 +542,8 @@ pub struct Unknown {
 /// An enum representing all messages we can read and write
 #[derive(ReadMessage, Debug, Serialize)]
 pub enum Message {
+    Ping(Ping),
+    Pong(Pong),
     HsmdInit(HsmdInit),
     HsmdInitReply(HsmdInitReply),
     HsmdInit2(HsmdInit2),
@@ -616,6 +640,10 @@ pub fn from_reader<R: Read>(reader: &mut R, len: u32) -> Result<Message> {
     let mut data = Vec::new();
     if len < 2 {
         return Err(Error::ShortRead);
+    }
+    if len > MAX_MESSAGE_SIZE {
+        error!("message too large {}", len);
+        return Err(Error::MessageTooLarge);
     }
     data.resize(len as usize - 2, 0);
     let message_type = read_u16(reader)?;

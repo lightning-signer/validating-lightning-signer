@@ -910,6 +910,7 @@ name = "vls-protocol"
 version = "0.1.0"
 dependencies = [
  "bolt-derive",
+ "log",
  "serde",
  "serde_bolt",
  "serde_derive",

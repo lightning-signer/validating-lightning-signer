@@ -8,6 +8,7 @@ pub enum Error {
     // Include the message type for trailing bytes
     TrailingBytes(u16),
     ShortRead,
+    MessageTooLarge,
     Eof,
 }
 

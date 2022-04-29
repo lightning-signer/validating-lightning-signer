@@ -12,7 +12,7 @@ use vls_protocol_signer::vls_protocol::serde_bolt::{self, Read, Write};
 
 use crate::timer::{self, TimerListener};
 #[allow(unused_imports)]
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 
 static mut USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None;
 
@@ -78,7 +78,7 @@ impl SerialDriver {
                 .build()
         };
 
-        info!("state {:?}", usb_dev.state());
+        trace!("state {:?}", usb_dev.state());
         let serial_driver_impl = SerialDriverImpl { serial, usb_dev, inbuf, outbuf };
         let serial_driver = SerialDriver {
             inner: Arc::new(Mutex::new(RefCell::new(serial_driver_impl))),
@@ -128,7 +128,7 @@ impl SerialDriverImpl {
         let size = self.inbuf.size;
         if size < self.inbuf.data.len() {
             if self.usb_dev.poll(&mut [&mut self.serial]) {
-                info!("state {:?}", self.usb_dev.state());
+                trace!("state {:?}", self.usb_dev.state());
                 match self.serial.read(&mut self.inbuf.data[size..]) {
                     Ok(count) => self.inbuf.size += count,
                     Err(UsbError::WouldBlock) => {}
@@ -156,9 +156,15 @@ impl Read for SerialDriver {
     type Error = serde_bolt::Error;
 
     fn read(&mut self, dest: &mut [u8]) -> serde_bolt::Result<usize> {
+        if let Some(p) = self.peek.take() {
+            dest[0] = p;
+            return Ok(1);
+        }
+
         loop {
             let sz = self.do_read(dest);
             if sz > 0 {
+                trace!("read {:x?}", &dest[0..sz]);
                 return Ok(sz);
             }
             // TODO delay

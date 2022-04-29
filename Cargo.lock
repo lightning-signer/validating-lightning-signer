@@ -2320,6 +2320,7 @@ version = "0.1.0"
 dependencies = [
  "bolt-derive",
  "hex 0.4.3",
+ "log",
  "regex 1.5.5",
  "serde",
  "serde_bolt",
@@ -2354,6 +2355,7 @@ dependencies = [
 name = "vls-proxy"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-stream",
  "chrono",
  "clap",

@@ -34,6 +34,8 @@ use stm32f4xx_hal::{
 };
 
 use profont::PROFONT_24_POINT;
+use vls_protocol_signer::vls_protocol::msgs::{self, Message};
+use vls_protocol_signer::vls_protocol::serde_bolt::WireString;
 
 mod logger;
 #[cfg(feature = "sdio")]
@@ -124,7 +126,7 @@ fn main() -> ! {
     let mut timer = FTimerUs::<TIM2>::new(p.TIM2, &clocks).counter();
     timer.start(5.millis()).unwrap();
     timer.listen(Event::Update);
-    let serial = usbserial::SerialDriver::new(USB {
+    let mut serial = usbserial::SerialDriver::new(USB {
         usb_global: p.OTG_FS_GLOBAL,
         usb_device: p.OTG_FS_DEVICE,
         usb_pwrclk: p.OTG_FS_PWRCLK,
@@ -184,23 +186,23 @@ fn main() -> ! {
 
     #[cfg(feature = "sdio")]
     {
-        rprintln!("detecting sdcard");
+        info!("detecting sdcard");
         loop {
             match sdio.init(ClockFreq::F24Mhz) {
                 Ok(_) => break,
-                Err(e) => rprintln!("waiting for sdio - {:?}", e),
+                Err(e) => info!("waiting for sdio - {:?}", e),
             }
 
             delay.delay_ms(1000u32);
         }
 
         let nblocks = sdio.card().map(|c| c.block_count());
-        rprintln!("sdcard detected: nbr of blocks: {:?}", nblocks);
+        info!("sdcard detected: nbr of blocks: {:?}", nblocks);
 
         let mut block = [0u8; 512];
 
         let res = sdio.read_block(0, &mut block);
-        rprintln!("sdcard read result {:?}", res);
+        info!("sdcard read result {:?}", res);
 
         sdcard::test(sdio);
     }
@@ -208,21 +210,32 @@ fn main() -> ! {
     timer::start(timer);
 
     loop {
-        disp.clear(Rgb565::BLACK).unwrap();
+        if counter % 100 == 0 || counter < 100 {
+            disp.clear(Rgb565::BLACK).unwrap();
 
-        format_buf.clear();
-        if fmt::write(&mut format_buf, format_args!("{}", counter)).is_ok() {
-            Text::new(&format_buf, Point::new(HINSET_PIX, VCENTER_PIX), text_style)
-                .draw(&mut disp)
-                .unwrap();
+            format_buf.clear();
+            if fmt::write(&mut format_buf, format_args!("{}", counter)).is_ok() {
+                Text::new(&format_buf, Point::new(HINSET_PIX, VCENTER_PIX), text_style)
+                    .draw(&mut disp)
+                    .unwrap();
+            }
         }
-
-        // Echo any usbserial characters, release the critical section to pretend
-        // we spent a long time processing the request ...
-        let mut data = [0; 1024];
-        let n = serial.do_read(&mut data);
-        serial.do_write(&data[0..n]);
-        delay.delay_ms(100u16);
+        let message = msgs::read(&mut serial).expect("message read failed");
+        match message {
+            Message::Ping(p) => {
+                info!("got ping with {} {}", p.id, String::from_utf8(p.message.0).unwrap());
+                let reply =
+                    msgs::Pong { id: p.id, message: WireString("pong".as_bytes().to_vec()) };
+                msgs::write(&mut serial, reply).expect("message write failed");
+            }
+            Message::Unknown(u) => {
+                panic!("Unknown message type {}", u.message_type);
+            }
+            _ => {
+                panic!("Unhandled message");
+            }
+        }
+        // delay.delay_ms(100u16);
         counter += 1;
     }
 }
@@ -231,7 +244,7 @@ fn main() -> ! {
 #[alloc_error_handler]
 fn alloc_error(_layout: core::alloc::Layout) -> ! {
     rprintln!("alloc error");
-    cortex_m::asm::bkpt();
-
-    loop {}
+    cortex_m::asm::udf();
+    // cortex_m::asm::bkpt();
+    // loop {}
 }
