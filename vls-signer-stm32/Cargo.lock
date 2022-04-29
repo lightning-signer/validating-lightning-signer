@@ -452,7 +452,6 @@ dependencies = [
 [[package]]
 name = "lightning-signer-core"
 version = "0.1.0-5"
-source = "git+https://gitlab.com/lightning-signer/validating-lightning-signer.git?rev=3778a66e3c969041e7bcc530e63e6b822a802f72#3778a66e3c969041e7bcc530e63e6b822a802f72"
 dependencies = [
  "anyhow",
  "bitcoin",
@@ -725,7 +724,6 @@ dependencies = [
 [[package]]
 name = "secp256k1-xonly"
 version = "0.1.0"
-source = "git+https://gitlab.com/lightning-signer/validating-lightning-signer.git?rev=3778a66e3c969041e7bcc530e63e6b822a802f72#3778a66e3c969041e7bcc530e63e6b822a802f72"
 dependencies = [
  "bitcoin",
 ]

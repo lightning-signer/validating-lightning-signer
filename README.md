@@ -43,6 +43,12 @@ channel_id=$(cargo run --bin vls-cli -- channel new -n $node_id)
 cargo run --bin vls-cli -- channel list -n $node_id
 ```
 
+## Additional Crates
+
+- a `no_std` CLN-compatible wire protocol encoder/decoder crate in [./vls-protocol](./vls-protocol)
+- a `no_std` VLS handler for the protocol - in [./vls-protocol-signer](vls-protocol-signer/README.md)
+- a replacement for the UNIX `hsmd` binary, implemented in Rust in [./vls-proxy](./vls-proxy). This binary is suitable for replacing `hsmd` when running C-Lightning integration tests.
+
 ## Development Information
 
 ### Formatting Code
@@ -58,14 +64,12 @@ even though it's documented as stable.
 
     cargo +nightly fmt
 
-### Building Rust Lightning Signer
+### Building Validating Lightning Signer
+
+Build VLS and related crates:
 
     cargo build
 
-or if you want to disable grpc (grpc is the only default feature):
-
-    cargo build --no-default-features
-    
 ### Running Unit Tests
 
     cargo test
@@ -74,7 +78,7 @@ To enable logging for a failing test (adjust log level to preference):
 
     RUST_LOG=trace cargo test
     
-### Running the Server
+### Running the gRPC Server
 
     cargo run --bin vlsd
 
