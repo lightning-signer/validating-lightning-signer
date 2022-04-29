@@ -5,6 +5,7 @@ rust-latest:
   stage: build
   image: rust:latest
   script:
+    - rustup component add rustfmt
     - (cd lightning-signer-core && cargo build --no-default-features --features=std)  # make sure it builds without test_utils enabled
     - cargo build
     - cargo test
@@ -22,6 +23,7 @@ rust-1.58.0:
   stage: build
   image: rust:1.58.0
   script:
+    - rustup component add rustfmt
     - (cd lightning-signer-core && cargo build --no-default-features --features=std)  # make sure it builds without test_utils enabled
     - cargo build
     - cargo test
