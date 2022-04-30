@@ -45,6 +45,10 @@ sdio = []
 name = "demo_signer"
 path = "src/demo_signer_main.rs"
 
+[[bin]]
+name = "test"
+path = "src/test_main.rs"
+
 [profile.dev]
 debug = 2
 

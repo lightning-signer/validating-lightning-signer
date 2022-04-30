@@ -5,7 +5,9 @@ use fatfs::{
     OemCpConverter, Read, Seek, SeekFrom, TimeProvider, Write,
 };
 use log::{debug, error, info};
-use stm32f4xx_hal::sdio::{SdCard, Sdio};
+use stm32f4xx_hal::prelude::*;
+use stm32f4xx_hal::sdio::{ClockFreq, SdCard, Sdio};
+use stm32f4xx_hal::timer::SysDelay;
 
 const BLOCK_SIZE: usize = 512;
 
@@ -226,6 +228,21 @@ pub fn copy_file<TP: TimeProvider, OCC>(
         to.write_all(&buf[0..n])?;
     }
     Ok(())
+}
+
+pub fn init_sdio(sdio: &mut Sdio<SdCard>, delay: &mut SysDelay) {
+    info!("detecting sdcard");
+    loop {
+        match sdio.init(ClockFreq::F24Mhz) {
+            Ok(_) => break,
+            Err(e) => info!("waiting for sdio - {:?}", e),
+        }
+
+        delay.delay_ms(1000u32);
+    }
+
+    let nblocks = sdio.card().map(|c| c.block_count());
+    info!("sdcard detected: nbr of blocks: {:?}", nblocks);
 }
 
 // Effectively does:

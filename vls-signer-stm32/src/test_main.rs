@@ -1,4 +1,4 @@
-//! Run the signer, listening to the serial port
+//! Exercise hardware components.  See README.md for details.
 
 #![no_std]
 #![no_main]
@@ -6,15 +6,13 @@
 extern crate alloc;
 
 use alloc::format;
-use alloc::string::String;
 
 use cortex_m_rt::entry;
 
+use stm32f4xx_hal::prelude::*;
+
 #[allow(unused_imports)]
 use log::{debug, info, trace};
-
-use vls_protocol_signer::vls_protocol::msgs::{self, Message};
-use vls_protocol_signer::vls_protocol::serde_bolt::WireString;
 
 mod device;
 mod logger;
@@ -53,22 +51,12 @@ fn main() -> ! {
             disp.clear_screen();
             disp.show_text(format!("{}", counter));
         }
-        let message = msgs::read(&mut serial).expect("message read failed");
-        match message {
-            Message::Ping(p) => {
-                info!("got ping with {} {}", p.id, String::from_utf8(p.message.0).unwrap());
-                let reply =
-                    msgs::Pong { id: p.id, message: WireString("pong".as_bytes().to_vec()) };
-                msgs::write(&mut serial, reply).expect("message write failed");
-            }
-            Message::Unknown(u) => {
-                panic!("Unknown message type {}", u.message_type);
-            }
-            _ => {
-                panic!("Unhandled message");
-            }
-        }
-        // delay.delay_ms(100u16);
+        // Echo any usbserial characters
+        let mut data = [0; 1024];
+        let n = serial.do_read(&mut data);
+        serial.do_write(&data[0..n]);
+
+        delay.delay_ms(100u16);
         counter += 1;
     }
 }
