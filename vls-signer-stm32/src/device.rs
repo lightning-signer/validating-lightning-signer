@@ -80,6 +80,10 @@ pub fn init_allocator() {
     unsafe { ALLOCATOR.init(cortex_m_rt::heap_start() as usize, HEAP_SIZE) }
 }
 
+pub fn heap_bytes_used() -> usize {
+    ALLOCATOR.used()
+}
+
 pub fn make_lcd<PINS: fsmc_lcd::Pins<Lcds = Lcd<B>>, B: SubBank>(
     fsmc: FSMC,
     lcd_pins: PINS,

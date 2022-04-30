@@ -7,14 +7,21 @@ extern crate alloc;
 
 use alloc::format;
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use cortex_m_rt::entry;
 
 #[allow(unused_imports)]
 use log::{debug, info, trace};
 
-use vls_protocol_signer::vls_protocol::msgs::{self, Message};
-use vls_protocol_signer::vls_protocol::serde_bolt::WireString;
+use device::heap_bytes_used;
+use lightning_signer::persist::{DummyPersister, Persist};
+use lightning_signer::Arc;
+use vls_protocol::msgs::{self, Message};
+use vls_protocol::serde_bolt::WireString;
+use vls_protocol_signer::handler::{Handler, RootHandler};
+use vls_protocol_signer::lightning_signer;
+use vls_protocol_signer::vls_protocol;
 
 mod device;
 mod logger;
@@ -48,11 +55,24 @@ fn main() -> ! {
 
     timer::start(timer);
 
+    disp.clear_screen();
+    disp.show_text("init");
+
+    let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
+    let init: msgs::HsmdInit2 =
+        msgs::read_message(&mut serial).expect("failed to read init message");
+    info!("init {:?}", init);
+    let allowlist = init.dev_allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
+    let seed_opt = init.dev_seed.as_ref().map(|s| s.0);
+    let root_handler = RootHandler::new(0, seed_opt, persister, allowlist);
+    let init_reply = root_handler.handle(Message::HsmdInit2(init)).expect("handle init");
+    msgs::write_vec(&mut serial, init_reply.as_vec()).expect("write init reply");
+
+    info!("used {} bytes", heap_bytes_used());
+
     loop {
-        if counter % 100 == 0 || counter < 100 {
-            disp.clear_screen();
-            disp.show_text(format!("{}", counter));
-        }
+        disp.clear_screen();
+        disp.show_text(format!("{}", counter));
         let message = msgs::read(&mut serial).expect("message read failed");
         match message {
             Message::Ping(p) => {
@@ -71,4 +91,8 @@ fn main() -> ! {
         // delay.delay_ms(100u16);
         counter += 1;
     }
+}
+
+fn from_wire_string(s: &WireString) -> String {
+    String::from_utf8(s.0.to_vec()).expect("malformed string")
 }

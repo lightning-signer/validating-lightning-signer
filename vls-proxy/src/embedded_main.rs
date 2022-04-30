@@ -12,17 +12,19 @@ use log::{error, info};
 use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, SetArg};
 
 use connection::UnixConnection;
+use lightning_signer::bitcoin::Network;
 use lightning_signer::persist::Persist;
 use lightning_signer::Arc;
 
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
 use util::read_allowlist;
+use vls_protocol_signer::vls_protocol::model::Secret;
 use vls_protocol_signer::vls_protocol::msgs::{self, Message};
 use vls_protocol_signer::vls_protocol::serde_bolt;
 use vls_protocol_signer::vls_protocol::serde_bolt::WireString;
 
 use vls_proxy::client::UnixClient;
-use vls_proxy::util::setup_logging;
+use vls_proxy::util::{read_integration_test_seed, setup_logging};
 use vls_proxy::*;
 
 struct SerialWrap {
@@ -99,6 +101,21 @@ fn run_test(serial_port: String) -> anyhow::Result<()> {
     let file = File::options().read(true).write(true).open(serial_port)?;
     let mut serial = SerialWrap::new(file);
     let mut id = 0u16;
+    let allowlist =
+        read_allowlist().into_iter().map(|s| WireString(s.as_bytes().to_vec())).collect::<Vec<_>>();
+    let seed = read_integration_test_seed().map(|s| Secret(s)).or(Some(Secret([1; 32]))); // FIXME remove this
+    info!("allowlist {:?} seed {:?}", allowlist, seed);
+    let init = msgs::HsmdInit2 {
+        derivation_style: 0,
+        network_name: WireString(Network::Testnet.to_string().as_bytes().to_vec()),
+        dev_seed: seed,
+        dev_allowlist: allowlist,
+    };
+    msgs::write(&mut serial, init).expect("write init");
+    let init_reply: msgs::HsmdInit2Reply =
+        msgs::read_message(&mut serial).expect("failed to read init reply message");
+    info!("init reply {:?}", init_reply);
+
     loop {
         let ping = msgs::Ping { id, message: WireString("ping".as_bytes().to_vec()) };
         msgs::write(&mut serial, ping).expect("write");

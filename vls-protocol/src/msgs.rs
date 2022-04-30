@@ -56,8 +56,9 @@ pub struct HsmdInitReply {
 #[message_id(1011)]
 pub struct HsmdInit2 {
     pub derivation_style: u8,
-    pub dev_seed: Option<Secret>,
     pub network_name: WireString,
+    pub dev_seed: Option<Secret>,
+    pub dev_allowlist: Vec<WireString>,
 }
 
 ///
@@ -613,7 +614,7 @@ where
     Ok(res)
 }
 
-/// Read a length framed BOLT message:
+/// Read a length framed BOLT message of any type:
 ///
 /// - u32 packet length
 /// - u16 packet type
@@ -653,6 +654,12 @@ pub fn from_vec(mut v: Vec<u8>) -> Result<Message> {
 /// - u16 packet type
 /// - data
 pub fn from_reader<R: Read>(reader: &mut R, len: u32) -> Result<Message> {
+    let (mut data, message_type) = message_and_type_from_reader(reader, len)?;
+
+    Message::read_message(&mut data, message_type)
+}
+
+fn message_and_type_from_reader<R: Read>(reader: &mut R, len: u32) -> Result<(Vec<u8>, u16)> {
     let mut data = Vec::new();
     if len < 2 {
         return Err(Error::ShortRead);
@@ -667,8 +674,7 @@ pub fn from_reader<R: Read>(reader: &mut R, len: u32) -> Result<Message> {
     if len < data.len() {
         return Err(Error::ShortRead);
     }
-
-    Message::read_message(&mut data, message_type)
+    Ok((data, message_type))
 }
 
 #[cfg(test)]
