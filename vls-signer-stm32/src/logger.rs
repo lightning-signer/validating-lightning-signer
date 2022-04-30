@@ -5,7 +5,11 @@ struct SimpleLogger;
 
 impl log::Log for SimpleLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= Level::Debug
+        #[cfg(feature = "trace")]
+        let res = metadata.level() <= Level::Trace;
+        #[cfg(not(feature = "trace"))]
+        let res = metadata.level() <= Level::Debug;
+        res
     }
 
     fn log(&self, record: &Record) {

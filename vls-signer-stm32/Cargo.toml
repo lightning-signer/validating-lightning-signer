@@ -40,6 +40,7 @@ features = ["fsmc_lcd", "fsmc", "sdio", "sdio-host", "otg-fs", "usb_fs"]
 stm32f412 = ["stm32f4xx-hal/stm32f412"]
 stm32f413 = ["stm32f4xx-hal/stm32f413"]
 sdio = []
+trace = []
 
 [[bin]]
 name = "demo_signer"
@@ -53,4 +54,5 @@ path = "src/test_main.rs"
 debug = 2
 
 [profile.release]
+# opt-level = "z"
 debug = 1
