@@ -1,4 +1,4 @@
-use alloc::string::String;
+use alloc::string::ToString;
 use alloc_cortex_m::CortexMHeap;
 use core::convert::Infallible;
 use cortex_m::peripheral::SYST;
@@ -66,7 +66,8 @@ pub const HINSET_PIX: u16 = 100;
 
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
-const HEAP_SIZE: usize = 1024 * 256;
+// 128K heap, leaving 128K for stack (which is overkill)
+const HEAP_SIZE: usize = 1024 * 128;
 
 pub fn make_timer(clocks: &Clocks, tim2: TIM2) -> Counter<TIM2, 1000000> {
     let mut timer = FTimerUs::<TIM2>::new(tim2, &clocks).counter();
@@ -137,10 +138,10 @@ impl Display {
         self.inner.clear(Rgb565::BLACK).unwrap();
     }
 
-    pub fn show_text(&mut self, text: String) {
+    pub fn show_text<S: ToString>(&mut self, text: S) {
         let text_style =
             MonoTextStyleBuilder::new().font(&PROFONT_24_POINT).text_color(Rgb565::WHITE).build();
-        Text::new(&text, Point::new(HINSET_PIX as i32, VCENTER_PIX as i32), text_style)
+        Text::new(&text.to_string(), Point::new(HINSET_PIX as i32, VCENTER_PIX as i32), text_style)
             .draw(&mut self.inner)
             .unwrap();
     }
