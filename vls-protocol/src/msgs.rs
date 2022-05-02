@@ -623,6 +623,22 @@ pub fn read<R: Read>(reader: &mut R) -> Result<Message> {
     from_reader(reader, len)
 }
 
+/// Read a specific message type from a length framed BOLT message:
+///
+/// - u32 packet length
+/// - u16 packet type
+/// - data
+pub fn read_message<R: Read, T: DeBolt>(reader: &mut R) -> Result<T> {
+    let len = read_u32(reader)?;
+    let mut data = Vec::new();
+    data.resize(len as usize, 0);
+    let actual = reader.read(&mut data)?;
+    if actual < data.len() {
+        return Err(Error::ShortRead);
+    }
+    T::from_vec(data)
+}
+
 /// Read a BOLT message from a vector:
 ///
 /// - u16 packet type

@@ -43,13 +43,33 @@ impl SerialWrap {
 impl serde_bolt::Read for SerialWrap {
     type Error = serde_bolt::Error;
 
-    fn read(&mut self, buf: &mut [u8]) -> serde_bolt::Result<usize> {
-        if let Some(p) = self.peek.take() {
-            buf[0] = p;
-            return Ok(1);
+    fn read(&mut self, mut buf: &mut [u8]) -> serde_bolt::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
         }
 
-        self.inner.read(buf).map_err(|e| serde_bolt::Error::Message(e.to_string()))
+        let mut nread = 0;
+
+        if let Some(p) = self.peek.take() {
+            buf[0] = p;
+            nread += 1;
+            let len = buf.len();
+            buf = &mut buf[1..len];
+        }
+
+        // Not well documented in serde_bolt, but we are expected to block
+        // until we can read the whole buf or until we get to EOF.
+        while !buf.is_empty() {
+            let n = self.inner.read(buf).map_err(|e| serde_bolt::Error::Message(e.to_string()))?;
+            if n == 0 {
+                // we are at EOF
+                return if nread != 0 { Ok(nread) } else { Err(serde_bolt::Error::Eof) };
+            }
+            nread += n;
+            let len = buf.len();
+            buf = &mut buf[n..len];
+        }
+        Ok(nread)
     }
 
     fn peek(&mut self) -> serde_bolt::Result<Option<u8>> {

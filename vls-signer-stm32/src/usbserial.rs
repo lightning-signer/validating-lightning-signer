@@ -158,6 +158,7 @@ impl Read for SerialDriver {
     fn read(&mut self, dest: &mut [u8]) -> serde_bolt::Result<usize> {
         if let Some(p) = self.peek.take() {
             dest[0] = p;
+            trace!("read {:x?}", &dest[0..1]);
             return Ok(1);
         }
 
@@ -187,6 +188,7 @@ impl Write for SerialDriver {
     type Error = serde_bolt::Error;
 
     fn write_all(&mut self, buf: &[u8]) -> serde_bolt::Result<()> {
+        trace!("write {:x?}", buf);
         self.do_write(buf);
         Ok(())
     }
