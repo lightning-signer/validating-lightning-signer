@@ -155,21 +155,34 @@ impl SerialDriverImpl {
 impl Read for SerialDriver {
     type Error = serde_bolt::Error;
 
-    fn read(&mut self, dest: &mut [u8]) -> serde_bolt::Result<usize> {
-        if let Some(p) = self.peek.take() {
-            dest[0] = p;
-            trace!("read {:x?}", &dest[0..1]);
-            return Ok(1);
+    fn read(&mut self, mut buf: &mut [u8]) -> serde_bolt::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
         }
 
-        loop {
-            let sz = self.do_read(dest);
-            if sz > 0 {
-                trace!("read {:x?}", &dest[0..sz]);
-                return Ok(sz);
-            }
-            // TODO delay
+        let mut nread = 0;
+
+        if let Some(p) = self.peek.take() {
+            buf[0] = p;
+            nread += 1;
+            let len = buf.len();
+            trace!("read {:x?}", &buf[0..1]);
+            buf = &mut buf[1..len];
         }
+
+        // Not well documented in serde_bolt, but we are expected to block
+        // until we can read the whole buf or until we get to EOF.
+        while !buf.is_empty() {
+            let n = self.do_read(buf);
+            if n == 0 {
+                // TODO delay
+                continue;
+            }
+            nread += n;
+            let len = buf.len();
+            buf = &mut buf[n..len];
+        }
+        Ok(nread)
     }
 
     fn peek(&mut self) -> serde_bolt::Result<Option<u8>> {

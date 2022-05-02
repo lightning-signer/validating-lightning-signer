@@ -94,7 +94,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 pub trait Handler {
     fn handle(&self, msg: Message) -> Result<Box<dyn SerBolt>>;
     fn client_id(&self) -> u64;
-    fn for_new_client(&self, client_id: u64, peer_id: PubKey, dbid: u64) -> ChannelHandler;
+    fn for_new_client(&self, client_id: u64, peer_id: Option<PubKey>, dbid: u64) -> ChannelHandler;
 }
 
 /// Protocol handler
@@ -382,11 +382,12 @@ impl Handler for RootHandler {
         self.id
     }
 
-    fn for_new_client(&self, client_id: u64, peer_id: PubKey, dbid: u64) -> ChannelHandler {
+    fn for_new_client(&self, client_id: u64, peer_id: Option<PubKey>, dbid: u64) -> ChannelHandler {
+        let peer_id = peer_id.map(|p| PublicKey::from_slice(&p.0).expect("peer_id"));
         ChannelHandler {
             id: client_id,
             node: Arc::clone(&self.node),
-            peer_id: PublicKey::from_slice(&peer_id.0).expect("peer_id"),
+            peer_id,
             dbid,
             channel_id: extract_channel_id(dbid),
         }
@@ -413,7 +414,7 @@ fn extract_psbt_output_paths(psbt: &PartiallySignedTransaction) -> Vec<Vec<u32>>
 pub struct ChannelHandler {
     pub(crate) id: u64,
     pub node: Arc<Node>,
-    pub peer_id: PublicKey,
+    pub peer_id: Option<PublicKey>,
     pub dbid: u64,
     pub channel_id: ChannelId,
 }
@@ -878,7 +879,12 @@ impl Handler for ChannelHandler {
         self.id
     }
 
-    fn for_new_client(&self, _client_id: u64, _peer_id: PubKey, _dbid: u64) -> ChannelHandler {
+    fn for_new_client(
+        &self,
+        _client_id: u64,
+        _peer_id: Option<PubKey>,
+        _dbid: u64,
+    ) -> ChannelHandler {
         unimplemented!("cannot create a sub-handler from a channel handler");
     }
 }
