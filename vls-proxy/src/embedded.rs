@@ -166,6 +166,10 @@ impl<C: 'static + Client> SignerLoop<C> {
                         SignerLoop::new_for_client(new_client, self.serial.clone(), client_id);
                     thread::spawn(move || new_loop.start());
                 }
+                Message::Memleak(_) => {
+                    let reply = msgs::MemleakReply { result: false };
+                    self.client.write(reply)?;
+                }
                 _ => {
                     let reply = self.handle_message(raw_msg)?;
 
