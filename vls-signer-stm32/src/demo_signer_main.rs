@@ -17,11 +17,12 @@ use log::{debug, info, trace};
 use device::heap_bytes_used;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::Arc;
-use vls_protocol::msgs::{self, Message};
+use vls_protocol::msgs::{self, Message, read_serial_request_header, write_serial_response_header};
 use vls_protocol::serde_bolt::WireString;
 use vls_protocol_signer::handler::{Handler, RootHandler};
 use vls_protocol_signer::lightning_signer;
 use vls_protocol_signer::vls_protocol;
+use crate::vls_protocol::model::PubKey;
 
 mod device;
 mod logger;
@@ -38,8 +39,6 @@ fn main() -> ! {
 
     #[allow(unused)]
     let (mut delay, timer, mut serial, mut sdio, mut disp) = device::make_devices();
-
-    let mut counter = 0;
 
     #[cfg(feature = "sdio")]
     {
@@ -59,6 +58,9 @@ fn main() -> ! {
     disp.show_text("init");
 
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
+    let (sequence, dbid) = read_serial_request_header(&mut serial).expect("read init header");
+    assert_eq!(dbid, 0);
+    assert_eq!(sequence, 0);
     let init: msgs::HsmdInit2 =
         msgs::read_message(&mut serial).expect("failed to read init message");
     info!("init {:?}", init);
@@ -66,30 +68,25 @@ fn main() -> ! {
     let seed_opt = init.dev_seed.as_ref().map(|s| s.0);
     let root_handler = RootHandler::new(0, seed_opt, persister, allowlist);
     let init_reply = root_handler.handle(Message::HsmdInit2(init)).expect("handle init");
+    write_serial_response_header(&mut serial, sequence).expect("write init header");
     msgs::write_vec(&mut serial, init_reply.as_vec()).expect("write init reply");
 
     info!("used {} bytes", heap_bytes_used());
 
     loop {
+        let (sequence, dbid) = read_serial_request_header(&mut serial).expect("read request header");
         disp.clear_screen();
-        disp.show_text(format!("{}", counter));
+        disp.show_text(format!("req {}", sequence));
         let message = msgs::read(&mut serial).expect("message read failed");
-        match message {
-            Message::Ping(p) => {
-                info!("got ping with {} {}", p.id, String::from_utf8(p.message.0).unwrap());
-                let reply =
-                    msgs::Pong { id: p.id, message: WireString("pong".as_bytes().to_vec()) };
-                msgs::write(&mut serial, reply).expect("message write failed");
-            }
-            Message::Unknown(u) => {
-                panic!("Unknown message type {}", u.message_type);
-            }
-            _ => {
-                panic!("Unhandled message");
-            }
-        }
-        // delay.delay_ms(100u16);
-        counter += 1;
+        let reply = if dbid > 0 {
+            let peer_id = PubKey([0; 33]); // FIXME
+            let handler = root_handler.for_new_client(0, peer_id, dbid);
+            handler.handle(message).expect("handle")
+        } else {
+            root_handler.handle(message).expect("handle")
+        };
+        write_serial_response_header(&mut serial, sequence).expect("write reply header");
+        msgs::write_vec(&mut serial, reply.as_vec()).expect("write reply");
     }
 }
 

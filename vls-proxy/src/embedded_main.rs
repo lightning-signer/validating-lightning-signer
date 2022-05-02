@@ -111,15 +111,21 @@ fn run_test(serial_port: String) -> anyhow::Result<()> {
         dev_seed: seed,
         dev_allowlist: allowlist,
     };
-    msgs::write(&mut serial, init).expect("write init");
-    let init_reply: msgs::HsmdInit2Reply =
-        msgs::read_message(&mut serial).expect("failed to read init reply message");
+    let mut sequence = 0;
+    msgs::write_serial_request_header(&mut serial, sequence, 0)?;
+    msgs::write(&mut serial, init)?;
+    msgs::read_serial_response_header(&mut serial, sequence)?;
+    sequence += 1;
+    let init_reply: msgs::HsmdInit2Reply = msgs::read_message(&mut serial)?;
     info!("init reply {:?}", init_reply);
 
     loop {
+        msgs::write_serial_request_header(&mut serial, sequence, 0)?;
         let ping = msgs::Ping { id, message: WireString("ping".as_bytes().to_vec()) };
-        msgs::write(&mut serial, ping).expect("write");
-        let reply = msgs::read(&mut serial).expect("read");
+        msgs::write(&mut serial, ping)?;
+        msgs::read_serial_response_header(&mut serial, sequence)?;
+        sequence = sequence.wrapping_add(1);
+        let reply = msgs::read(&mut serial)?;
         match reply {
             Message::Pong(p) => {
                 info!("got reply {} {}", p.id, String::from_utf8(p.message.0).unwrap());

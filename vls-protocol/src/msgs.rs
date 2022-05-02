@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use crate::error::{Error, Result};
-use crate::io::{read_u16, read_u32};
+use crate::io::{read_u16, read_u32, read_u64};
 use crate::model::*;
 use bolt_derive::{ReadMessage, SerBolt};
 use serde::{de, ser};
@@ -707,6 +707,54 @@ pub fn write_vec<W: Write>(writer: &mut W, buf: Vec<u8>) -> Result<()> {
     let len: u32 = buf.len() as u32;
     writer.write_all(&len.to_be_bytes())?;
     writer.write_all(&buf)?;
+    Ok(())
+}
+
+/// Write a serial request header that includes two magic bytes, two sequence bytes and dbid
+pub fn write_serial_request_header<W: Write>(
+    writer: &mut W,
+    sequence: u16,
+    dbid: u64,
+) -> Result<()> {
+    writer.write_all(&0xaa55u16.to_be_bytes())?;
+    writer.write_all(&sequence.to_be_bytes())?;
+    writer.write_all(&dbid.to_be_bytes())?;
+    Ok(())
+}
+
+/// Write a serial response header that includes two magic bytes and two sequence bytes
+pub fn write_serial_response_header<W: Write>(writer: &mut W, sequence: u16) -> Result<()> {
+    writer.write_all(&0x5aa5u16.to_be_bytes())?;
+    writer.write_all(&sequence.to_be_bytes())?;
+    Ok(())
+}
+
+/// Read the serial request header and return the sequence number and dbid.
+/// Returns BadFraming if the magic is wrong.
+pub fn read_serial_request_header<R: Read>(reader: &mut R) -> Result<(u16, u64)> {
+    let magic = read_u16(reader)?;
+    if magic != 0xaa55 {
+        error!("bad magic {:02x}", magic);
+        return Err(Error::BadFraming);
+    }
+    let sequence = read_u16(reader)?;
+    let dbid = read_u64(reader)?;
+    Ok((sequence, dbid))
+}
+
+/// Read the serial response header and match the expected sequence number
+/// Returns BadFraming if the magic or sequence are wrong.
+pub fn read_serial_response_header<R: Read>(reader: &mut R, expected_sequence: u16) -> Result<()> {
+    let magic = read_u16(reader)?;
+    if magic != 0x5aa5u16 {
+        error!("bad magic {:02x}", magic);
+        return Err(Error::BadFraming);
+    }
+    let sequence = read_u16(reader)?;
+    if sequence != expected_sequence {
+        error!("sequence {} != expected {}", sequence, expected_sequence);
+        return Err(Error::BadFraming);
+    }
     Ok(())
 }
 

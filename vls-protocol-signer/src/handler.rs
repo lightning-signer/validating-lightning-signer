@@ -47,7 +47,7 @@ use vls_protocol::model::{
     Signature,
 };
 use vls_protocol::msgs::{SerBolt, SignBolt12Reply};
-use vls_protocol::serde_bolt::LargeBytes;
+use vls_protocol::serde_bolt::{LargeBytes, WireString};
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 
 /// Error
@@ -149,6 +149,12 @@ impl RootHandler {
 impl Handler for RootHandler {
     fn handle(&self, msg: Message) -> Result<Box<dyn SerBolt>> {
         match msg {
+            Message::Ping(p) => {
+                info!("got ping with {} {}", p.id, String::from_utf8(p.message.0).unwrap());
+                let reply =
+                    msgs::Pong { id: p.id, message: WireString("pong".as_bytes().to_vec()) };
+                Ok(Box::new(reply))
+            }
             Message::Memleak(_m) => Ok(Box::new(msgs::MemleakReply { result: false })),
             Message::SignBolt12(m) => {
                 let tweak =
