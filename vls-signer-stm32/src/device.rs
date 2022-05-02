@@ -25,9 +25,11 @@ use embedded_graphics::{
     mono_font::MonoTextStyleBuilder, pixelcolor::Rgb565, prelude::*, text::Text,
 };
 
-use profont::PROFONT_24_POINT;
+use profont::{PROFONT_18_POINT, PROFONT_24_POINT};
 
 use crate::usbserial::SerialDriver;
+
+const TEXT_COLOR: Rgb565 = Rgb565::new(255, 255, 255);
 
 #[cfg(feature = "stm32f412")]
 mod device_specific {
@@ -57,7 +59,7 @@ use device_specific::*;
 
 pub const SCREEN_WIDTH: u16 = 240;
 pub const SCREEN_HEIGHT: u16 = 240;
-pub const FONT_HEIGHT: u16 = 18;
+pub const FONT_HEIGHT: u16 = 24;
 #[cfg(feature = "stm32f412")]
 pub const VCENTER_PIX: u16 = (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
 #[cfg(feature = "stm32f413")] // FIXME - why is this needed?  bug w/ PortraitSwapped?
@@ -144,10 +146,24 @@ impl Display {
 
     pub fn show_text<S: ToString>(&mut self, text: S) {
         let text_style =
-            MonoTextStyleBuilder::new().font(&PROFONT_24_POINT).text_color(Rgb565::WHITE).build();
+            MonoTextStyleBuilder::new().font(&PROFONT_24_POINT).text_color(TEXT_COLOR).build();
         Text::new(&text.to_string(), Point::new(HINSET_PIX as i32, VCENTER_PIX as i32), text_style)
             .draw(&mut self.inner)
             .unwrap();
+    }
+
+    pub fn show_texts<S: ToString>(&mut self, texts: &[S]) {
+        let text_style =
+            MonoTextStyleBuilder::new().font(&PROFONT_18_POINT).text_color(TEXT_COLOR).build();
+
+        let mut y = VCENTER_PIX as i32 - texts.len() as i32 * (FONT_HEIGHT as i32 + 2) / 2;
+        for text in texts {
+            info!("show {} {}.", text.to_string(), y);
+            Text::new(&text.to_string(), Point::new(10, y), text_style)
+                .draw(&mut self.inner)
+                .unwrap();
+            y += FONT_HEIGHT as i32 + 2;
+        }
     }
 }
 

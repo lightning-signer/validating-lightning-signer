@@ -22,7 +22,6 @@ use vls_protocol::serde_bolt::WireString;
 use vls_protocol_signer::handler::{Handler, RootHandler};
 use vls_protocol_signer::lightning_signer;
 use vls_protocol_signer::vls_protocol;
-use crate::vls_protocol::model::PubKey;
 
 mod device;
 mod logger;
@@ -75,12 +74,13 @@ fn main() -> ! {
 
     loop {
         let (sequence, dbid) = read_serial_request_header(&mut serial).expect("read request header");
-        disp.clear_screen();
-        disp.show_text(format!("req {}", sequence));
         let message = msgs::read(&mut serial).expect("message read failed");
+        disp.clear_screen();
+        let mut message_d = format!("{:?}", message);
+        message_d.truncate(20);
+        disp.show_texts(&[format!("req # {}", sequence), message_d]);
         let reply = if dbid > 0 {
-            let peer_id = PubKey([0; 33]); // FIXME
-            let handler = root_handler.for_new_client(0, peer_id, dbid);
+            let handler = root_handler.for_new_client(0, None, dbid);
             handler.handle(message).expect("handle")
         } else {
             root_handler.handle(message).expect("handle")
