@@ -3,4 +3,5 @@
 extern crate alloc;
 
 pub mod handler;
+pub use lightning_signer;
 pub use vls_protocol;

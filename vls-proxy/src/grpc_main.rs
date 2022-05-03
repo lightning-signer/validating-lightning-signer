@@ -8,15 +8,14 @@
 //! opposite direction (signer -> node), which makes it more convenient if the signer is behind
 //! NAT.
 
+use std::env;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
-use std::os::unix::io::{AsRawFd, RawFd};
 use std::process::exit;
 use std::result::Result as StdResult;
-use std::{env, fs};
 
 use clap::{App, AppSettings, Arg};
+#[allow(unused_imports)]
 use log::{error, info};
-use nix::libc;
 use nix::unistd::{fork, ForkResult};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
@@ -26,7 +25,7 @@ use tonic::{Request, Response, Status, Streaming};
 use triggered::Trigger;
 
 use client::UnixClient;
-use connection::UnixConnection;
+use connection::{open_parent_fd, UnixConnection};
 use grpc::hsmd::{self, hsmd_server, PingReply, PingRequest};
 use grpc::incoming::TcpIncoming;
 use grpc::signer::start_signer;
@@ -39,14 +38,10 @@ use crate::hsmd::SignerResponse;
 
 pub mod grpc;
 
-const PARENT_FD: u16 = 3;
-
 /// Implement both the hsmd replacement and the signer in a single binary.
 /// The signer is forked off as a separate process.
 pub fn main() {
-    // Only use fd 3 if we are really running with a lightningd parent, so we don't conflict with future fd allocation
-    // Check this before opening any files or sockets!
-    let have_parent = unsafe { libc::fcntl(PARENT_FD as libc::c_int, libc::F_GETFD) } != -1;
+    let parent_fd = open_parent_fd();
 
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
@@ -75,15 +70,6 @@ pub fn main() {
     let listener = unsafe { spawn_signer(listener, addr.port()) };
 
     setup_logging("hsmd  ", "debug");
-
-    let file = fs::File::open("/dev/null").unwrap();
-
-    let parent_fd = if have_parent {
-        RawFd::from(PARENT_FD)
-    } else {
-        error!("no parent on {}", PARENT_FD);
-        file.as_raw_fd()
-    };
 
     // Note that this is unsafe if we use the wrong fd
     let conn = UnixConnection::new(parent_fd);

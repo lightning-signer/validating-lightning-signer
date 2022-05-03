@@ -705,8 +705,7 @@ checksum = "355c411b00ad0634aa29824b37d0755e931a349b3230ffdef846c140eeed9c09"
 [[package]]
 name = "secp256k1"
 version = "0.20.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97d03ceae636d0fed5bae6a7f4f664354c5f4fcedf6eef053fef17e49f837d0a"
+source = "git+https://github.com/devrandom/rust-secp256k1.git?rev=4e745ebe7e4c9cd0a7e9c8d5c42e989522e52f71#4e745ebe7e4c9cd0a7e9c8d5c42e989522e52f71"
 dependencies = [
  "rand",
  "secp256k1-sys",
@@ -714,9 +713,8 @@ dependencies = [
 
 [[package]]
 name = "secp256k1-sys"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "957da2573cde917463ece3570eab4a0b3f19de6f1646cde62e6fd3868f566036"
+version = "0.4.1"
+source = "git+https://github.com/devrandom/rust-secp256k1.git?rev=4e745ebe7e4c9cd0a7e9c8d5c42e989522e52f71#4e745ebe7e4c9cd0a7e9c8d5c42e989522e52f71"
 dependencies = [
  "cc",
 ]
@@ -910,6 +908,7 @@ name = "vls-protocol"
 version = "0.1.0"
 dependencies = [
  "bolt-derive",
+ "log",
  "serde",
  "serde_bolt",
  "serde_derive",

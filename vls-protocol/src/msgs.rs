@@ -4,13 +4,17 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use crate::error::{Error, Result};
-use crate::io::{read_u16, read_u32};
+use crate::io::{read_u16, read_u32, read_u64};
 use crate::model::*;
 use bolt_derive::{ReadMessage, SerBolt};
 use serde::{de, ser};
 use serde_bolt::{from_vec as sb_from_vec, to_vec, WireString};
 use serde_bolt::{LargeBytes, Read, Write};
 use serde_derive::{Deserialize, Serialize};
+
+use log::error;
+
+const MAX_MESSAGE_SIZE: u32 = 65536;
 
 /// Serialize a message with a type prefix, in BOLT style
 pub trait SerBolt: Debug {
@@ -52,8 +56,9 @@ pub struct HsmdInitReply {
 #[message_id(1011)]
 pub struct HsmdInit2 {
     pub derivation_style: u8,
-    pub dev_seed: Option<Secret>,
     pub network_name: WireString,
+    pub dev_seed: Option<Secret>,
+    pub dev_allowlist: Vec<WireString>,
 }
 
 ///
@@ -367,6 +372,24 @@ pub struct SignRemoteCommitmentTx {
     pub feerate: u32,
 }
 
+/// Ping request
+/// LDK only
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1000)]
+pub struct Ping {
+    pub id: u16,
+    pub message: WireString,
+}
+
+/// Ping reply
+/// LDK only
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1100)]
+pub struct Pong {
+    pub id: u16,
+    pub message: WireString,
+}
+
 ///
 /// LDK only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
@@ -520,6 +543,8 @@ pub struct Unknown {
 /// An enum representing all messages we can read and write
 #[derive(ReadMessage, Debug, Serialize)]
 pub enum Message {
+    Ping(Ping),
+    Pong(Pong),
     HsmdInit(HsmdInit),
     HsmdInitReply(HsmdInitReply),
     HsmdInit2(HsmdInit2),
@@ -589,7 +614,7 @@ where
     Ok(res)
 }
 
-/// Read a length framed BOLT message:
+/// Read a length framed BOLT message of any type:
 ///
 /// - u32 packet length
 /// - u16 packet type
@@ -597,6 +622,31 @@ where
 pub fn read<R: Read>(reader: &mut R) -> Result<Message> {
     let len = read_u32(reader)?;
     from_reader(reader, len)
+}
+
+/// Read a specific message type from a length framed BOLT message:
+///
+/// - u32 packet length
+/// - u16 packet type
+/// - data
+pub fn read_message<R: Read, T: DeBolt>(reader: &mut R) -> Result<T> {
+    T::from_vec(read_raw(reader)?)
+}
+
+/// Read a raw message from a length framed BOLT message:
+///
+/// - u32 packet length (not returned in the result)
+/// - u16 packet type
+/// - data
+pub fn read_raw<R: Read>(reader: &mut R) -> Result<Vec<u8>> {
+    let len = read_u32(reader)?;
+    let mut data = Vec::new();
+    data.resize(len as usize, 0);
+    let actual = reader.read(&mut data)?;
+    if actual < data.len() {
+        return Err(Error::ShortRead);
+    }
+    Ok(data)
 }
 
 /// Read a BOLT message from a vector:
@@ -613,9 +663,19 @@ pub fn from_vec(mut v: Vec<u8>) -> Result<Message> {
 /// - u16 packet type
 /// - data
 pub fn from_reader<R: Read>(reader: &mut R, len: u32) -> Result<Message> {
+    let (mut data, message_type) = message_and_type_from_reader(reader, len)?;
+
+    Message::read_message(&mut data, message_type)
+}
+
+fn message_and_type_from_reader<R: Read>(reader: &mut R, len: u32) -> Result<(Vec<u8>, u16)> {
     let mut data = Vec::new();
     if len < 2 {
         return Err(Error::ShortRead);
+    }
+    if len > MAX_MESSAGE_SIZE {
+        error!("message too large {}", len);
+        return Err(Error::MessageTooLarge);
     }
     data.resize(len as usize - 2, 0);
     let message_type = read_u16(reader)?;
@@ -623,8 +683,7 @@ pub fn from_reader<R: Read>(reader: &mut R, len: u32) -> Result<Message> {
     if len < data.len() {
         return Err(Error::ShortRead);
     }
-
-    Message::read_message(&mut data, message_type)
+    Ok((data, message_type))
 }
 
 #[cfg(test)]
@@ -657,6 +716,54 @@ pub fn write_vec<W: Write>(writer: &mut W, buf: Vec<u8>) -> Result<()> {
     let len: u32 = buf.len() as u32;
     writer.write_all(&len.to_be_bytes())?;
     writer.write_all(&buf)?;
+    Ok(())
+}
+
+/// Write a serial request header that includes two magic bytes, two sequence bytes and dbid
+pub fn write_serial_request_header<W: Write>(
+    writer: &mut W,
+    sequence: u16,
+    dbid: u64,
+) -> Result<()> {
+    writer.write_all(&0xaa55u16.to_be_bytes())?;
+    writer.write_all(&sequence.to_be_bytes())?;
+    writer.write_all(&dbid.to_be_bytes())?;
+    Ok(())
+}
+
+/// Write a serial response header that includes two magic bytes and two sequence bytes
+pub fn write_serial_response_header<W: Write>(writer: &mut W, sequence: u16) -> Result<()> {
+    writer.write_all(&0x5aa5u16.to_be_bytes())?;
+    writer.write_all(&sequence.to_be_bytes())?;
+    Ok(())
+}
+
+/// Read the serial request header and return the sequence number and dbid.
+/// Returns BadFraming if the magic is wrong.
+pub fn read_serial_request_header<R: Read>(reader: &mut R) -> Result<(u16, u64)> {
+    let magic = read_u16(reader)?;
+    if magic != 0xaa55 {
+        error!("bad magic {:02x}", magic);
+        return Err(Error::BadFraming);
+    }
+    let sequence = read_u16(reader)?;
+    let dbid = read_u64(reader)?;
+    Ok((sequence, dbid))
+}
+
+/// Read the serial response header and match the expected sequence number
+/// Returns BadFraming if the magic or sequence are wrong.
+pub fn read_serial_response_header<R: Read>(reader: &mut R, expected_sequence: u16) -> Result<()> {
+    let magic = read_u16(reader)?;
+    if magic != 0x5aa5u16 {
+        error!("bad magic {:02x}", magic);
+        return Err(Error::BadFraming);
+    }
+    let sequence = read_u16(reader)?;
+    if sequence != expected_sequence {
+        error!("sequence {} != expected {}", sequence, expected_sequence);
+        return Err(Error::BadFraming);
+    }
     Ok(())
 }
 

@@ -20,7 +20,7 @@ panic-probe = { version = "0.2", features = ["print-rtt"] }
 log = "0.4"
 usb-device = "0.2.5"
 usbd-serial = "0.1.0"
-vls-protocol-signer = { path = "../vls-protocol-signer", default-features = false }
+vls-protocol-signer = { path = "../vls-protocol-signer", default-features = false, features = ["secp-lowmemory"] }
 
 [dependencies.fatfs]
 git = "https://github.com/rafalh/rust-fatfs.git"
@@ -40,13 +40,27 @@ features = ["fsmc_lcd", "fsmc", "sdio", "sdio-host", "otg-fs", "usb_fs"]
 stm32f412 = ["stm32f4xx-hal/stm32f412"]
 stm32f413 = ["stm32f4xx-hal/stm32f413"]
 sdio = []
+trace = []
 
 [[bin]]
 name = "demo_signer"
 path = "src/demo_signer_main.rs"
 
+[[bin]]
+name = "test"
+path = "src/test_main.rs"
+
+[patch.crates-io]
+# See also https://github.com/rust-bitcoin/rust-secp256k1/pull/299 and https://github.com/bitcoin-core/secp256k1/pull/956
+
+# Uncomment this line to use a low-memory version of secp256k1 with static precomputation
+secp256k1 = { git = "https://github.com/devrandom/rust-secp256k1.git", rev = "4e745ebe7e4c9cd0a7e9c8d5c42e989522e52f71" }
+
 [profile.dev]
+opt-level = "z"
 debug = 2
 
 [profile.release]
+opt-level = "z"
+#opt-level = 2
 debug = 1

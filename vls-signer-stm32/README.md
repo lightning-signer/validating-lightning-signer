@@ -12,14 +12,16 @@ For now, please format the root device, without any partitions.
 sudo mkfs.vfat -F32 /dev/sdX
 ```
 
-#### Running
+#### Hardware Test
 
-Connect the `ST_LINK` port to host computer using USB cable.
+Connect the `ST_LINK` port to host computer using USB cable.  Omit the `sdio` feature if you don't have an SDcard inserted.
 
 ```
-cargo run --features stm32f412,sdio
-cargo run --features stm32f413,sdio
+cargo run --features stm32f412,sdio --release --bin test
+cargo run --features stm32f413,sdio --release --bin test
 ```
+
+Note that compiling with `--release` greatly reduces flash size, and therefore flashing time.
 
 #### Connecting to Serial Port
 
@@ -32,6 +34,15 @@ sudo screen /dev/ttyACM1 19200
 ```
 
 Device will echo typed characters ...
+
+#### Run Signer
+
+Run the signer.  Omit the `sdio` feature if you don't have an SDcard inserted.
+
+```
+cargo run --features stm32f412,sdio --release --bin demo_signer
+cargo run --features stm32f413,sdio --release --bin demo_signer
+```
 
 #### Reference
 

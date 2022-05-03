@@ -428,6 +428,7 @@ impl KeysManagerClient {
             derivation_style: KeyDerivationStyle::Native as u8,
             dev_seed: None,
             network_name: WireString(network.into_bytes()),
+            dev_allowlist: vec![],
         };
         let result: HsmdInit2Reply = node_call(&*transport, init_message).expect("HsmdInit");
         let xpub = ExtendedPubKey::decode(&result.bip32.0).expect("xpub");

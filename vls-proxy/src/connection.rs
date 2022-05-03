@@ -1,17 +1,20 @@
-use std::io;
 use std::io::{Read as _, Write as _};
-use std::os::unix::io::{FromRawFd, RawFd};
+use std::os::unix::io::{FromRawFd, IntoRawFd, RawFd};
 use std::os::unix::net::UnixStream;
+use std::{fs, io};
 
 use log::{error, info, trace};
 use nix::cmsg_space;
 use nix::sys::socket::{recvmsg, sendmsg, ControlMessage, ControlMessageOwned, MsgFlags};
 use serde_bolt::{Error as SError, Read, Result as SResult, Write};
 
+use nix::libc;
 use nix::sys::uio::IoVec;
 use nix::unistd::close;
 use vls_protocol::serde_bolt;
 use vls_protocol_signer::vls_protocol;
+
+const PARENT_FD: u16 = 3;
 
 pub struct UnixConnection {
     fd: RawFd,
@@ -129,4 +132,21 @@ impl Write for UnixConnection {
         self.stream.write_all(buf).map_err(|e| SError::Message(format!("{}", e)))?;
         Ok(())
     }
+}
+
+pub fn open_parent_fd() -> RawFd {
+    // Only use fd 3 if we are really running with a lightningd parent, so we don't conflict with future fd allocation
+    // Check this before opening any files or sockets!
+    let have_parent = unsafe { libc::fcntl(PARENT_FD as libc::c_int, libc::F_GETFD) } != -1;
+
+    let dummy_file = fs::File::open("/dev/null").unwrap().into_raw_fd();
+
+    let parent_fd = if have_parent {
+        close(dummy_file).expect("close dummy");
+        RawFd::from(PARENT_FD)
+    } else {
+        error!("no parent on {}, using /dev/null", PARENT_FD);
+        dummy_file
+    };
+    parent_fd
 }

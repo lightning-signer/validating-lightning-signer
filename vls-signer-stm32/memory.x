@@ -11,3 +11,11 @@ MEMORY
 /* The stack is of the full descending type. */
 /* NOTE Do NOT modify `_stack_start` unless you know what you are doing */
 _stack_start = ORIGIN(RAM) + LENGTH(RAM);
+
+/*
+ STM32F413 - 64K region is aliased to this region flanked by reserved areas,
+ to fail fast if stack overflows.  Unfortunately, it also causes probe-run to display
+ backtraces incorrectly and is not suitable for the STM32F412.
+
+_stack_start = 0x10010000;
+*/

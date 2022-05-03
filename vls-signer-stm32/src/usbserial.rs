@@ -12,7 +12,7 @@ use vls_protocol_signer::vls_protocol::serde_bolt::{self, Read, Write};
 
 use crate::timer::{self, TimerListener};
 #[allow(unused_imports)]
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 
 static mut USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None;
 
@@ -78,7 +78,7 @@ impl SerialDriver {
                 .build()
         };
 
-        info!("state {:?}", usb_dev.state());
+        trace!("state {:?}", usb_dev.state());
         let serial_driver_impl = SerialDriverImpl { serial, usb_dev, inbuf, outbuf };
         let serial_driver = SerialDriver {
             inner: Arc::new(Mutex::new(RefCell::new(serial_driver_impl))),
@@ -128,7 +128,7 @@ impl SerialDriverImpl {
         let size = self.inbuf.size;
         if size < self.inbuf.data.len() {
             if self.usb_dev.poll(&mut [&mut self.serial]) {
-                info!("state {:?}", self.usb_dev.state());
+                trace!("state {:?}", self.usb_dev.state());
                 match self.serial.read(&mut self.inbuf.data[size..]) {
                     Ok(count) => self.inbuf.size += count,
                     Err(UsbError::WouldBlock) => {}
@@ -155,14 +155,34 @@ impl SerialDriverImpl {
 impl Read for SerialDriver {
     type Error = serde_bolt::Error;
 
-    fn read(&mut self, dest: &mut [u8]) -> serde_bolt::Result<usize> {
-        loop {
-            let sz = self.do_read(dest);
-            if sz > 0 {
-                return Ok(sz);
-            }
-            // TODO delay
+    fn read(&mut self, mut buf: &mut [u8]) -> serde_bolt::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
         }
+
+        let mut nread = 0;
+
+        if let Some(p) = self.peek.take() {
+            buf[0] = p;
+            nread += 1;
+            let len = buf.len();
+            trace!("read {:x?}", &buf[0..1]);
+            buf = &mut buf[1..len];
+        }
+
+        // Not well documented in serde_bolt, but we are expected to block
+        // until we can read the whole buf or until we get to EOF.
+        while !buf.is_empty() {
+            let n = self.do_read(buf);
+            if n == 0 {
+                // TODO delay
+                continue;
+            }
+            nread += n;
+            let len = buf.len();
+            buf = &mut buf[n..len];
+        }
+        Ok(nread)
     }
 
     fn peek(&mut self) -> serde_bolt::Result<Option<u8>> {
@@ -181,6 +201,7 @@ impl Write for SerialDriver {
     type Error = serde_bolt::Error;
 
     fn write_all(&mut self, buf: &[u8]) -> serde_bolt::Result<()> {
+        trace!("write {:x?}", buf);
         self.do_write(buf);
         Ok(())
     }

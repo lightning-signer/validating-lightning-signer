@@ -1,11 +1,15 @@
-use log::{Level, Metadata, Record};
-use rtt_target::rprintln;
+use log::{info, trace, Level, Metadata, Record};
+use rtt_target::{rprintln, rtt_init_print};
 
 struct SimpleLogger;
 
 impl log::Log for SimpleLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= Level::Trace
+        #[cfg(feature = "trace")]
+        let res = metadata.level() <= Level::Trace;
+        #[cfg(not(feature = "trace"))]
+        let res = metadata.level() <= Level::Debug;
+        res
     }
 
     fn log(&self, record: &Record) {
@@ -22,5 +26,10 @@ use log::{LevelFilter, SetLoggerError};
 static LOGGER: SimpleLogger = SimpleLogger;
 
 pub fn init() -> Result<(), SetLoggerError> {
-    log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))
+    rtt_init_print!(BlockIfFull);
+    rprintln!("demo_signer starting");
+    log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))?;
+    trace!("logger started");
+    info!("logger started");
+    Ok(())
 }
