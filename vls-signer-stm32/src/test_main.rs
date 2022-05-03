@@ -28,7 +28,7 @@ fn main() -> ! {
     device::init_allocator();
 
     #[allow(unused)]
-    let (mut delay, timer, mut serial, mut sdio, mut disp) = device::make_devices();
+    let (mut delay, timer1, timer2, mut serial, mut sdio, mut disp) = device::make_devices();
 
     let mut counter = 0;
 
@@ -44,7 +44,7 @@ fn main() -> ! {
         sdcard::test(sdio);
     }
 
-    timer::start(timer);
+    timer::start_tim2_interrupt(timer2);
 
     loop {
         if counter % 100 == 0 || counter < 100 {

@@ -13,12 +13,12 @@ use stm32f4xx_hal::{
     gpio::Speed,
     otg_fs::{UsbBus, USB},
     pac::{CorePeripherals, Peripherals},
-    pac::{Interrupt, NVIC, TIM2},
+    pac::{Interrupt, NVIC, TIM5, TIM2},
     prelude::*,
     rcc::{Clocks, Rcc},
     sdio::{ClockFreq, SdCard, Sdio},
     timer::{Counter, SysDelay},
-    timer::{Event, FTimerUs},
+    timer::{Event, FTimerUs, FTimerMs},
 };
 
 use embedded_graphics::{
@@ -167,8 +167,8 @@ impl Display {
     }
 }
 
-pub(crate) fn make_devices(
-) -> (SysDelay, Counter<TIM2, 1000000>, SerialDriver, Sdio<SdCard>, Display) {
+pub fn make_devices(
+) -> (SysDelay, Counter<TIM5, 1000000>, Counter<TIM2, 1000000>, SerialDriver, Sdio<SdCard>, Display) {
     let p = Peripherals::take().unwrap();
     let cp = CorePeripherals::take().unwrap();
     let rcc = p.RCC.constrain();
@@ -214,8 +214,12 @@ pub(crate) fn make_devices(
         chip_select: ChipSelect3(gpiog.pg10.into_alternate()),
     };
 
+    // Create a free timer from TIM5
+    let mut timer1 = FTimerUs::<_>::new(p.TIM5, &clocks).counter();
+    // wraps around every 1000 seconds
+    timer1.start(1000.secs()).expect("start TIM5");
     // Create a periodic interrupt from TIM2
-    let timer = make_timer(&clocks, p.TIM2);
+    let timer2 = make_timer(&clocks, p.TIM2);
     let serial = SerialDriver::new(USB {
         usb_global: p.OTG_FS_GLOBAL,
         usb_device: p.OTG_FS_DEVICE,
@@ -253,7 +257,7 @@ pub(crate) fn make_devices(
 
     let disp =
         Display { inner: make_display(p.FSMC, lcd_pins, lcd_reset, &mut delay, backlight_control) };
-    (delay, timer, serial, sdio, disp)
+    (delay, timer1, timer2, serial, sdio, disp)
 }
 
 // define what happens in an Out Of Memory (OOM) condition
