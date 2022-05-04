@@ -7,8 +7,10 @@ impl log::Log for SimpleLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         #[cfg(feature = "trace")]
         let res = metadata.level() <= Level::Trace;
-        #[cfg(not(feature = "trace"))]
+        #[cfg(feature = "debug")]
         let res = metadata.level() <= Level::Debug;
+        #[cfg(all(not(feature = "debug"), not(feature = "trace")))]
+        let res = metadata.level() <= Level::Info;
         res
     }
 

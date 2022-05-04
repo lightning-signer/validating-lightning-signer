@@ -41,6 +41,7 @@ stm32f412 = ["stm32f4xx-hal/stm32f412"]
 stm32f413 = ["stm32f4xx-hal/stm32f413"]
 sdio = []
 trace = []
+debug = []
 
 [[bin]]
 name = "demo_signer"
