@@ -36,7 +36,7 @@ const TEXT_COLOR: Rgb565 = Rgb565::new(255, 255, 255);
 #[cfg(feature = "stm32f412")]
 mod device_specific {
     use stm32f4xx_hal::{
-        fsmc_lcd::SubBank3,
+        fsmc_lcd::SubBank1,
         gpio::{Output, Pin},
     };
 
@@ -268,7 +268,7 @@ pub fn make_devices(
     let lcd_reset = gpiob.pb13.into_push_pull_output().speed(Speed::VeryHigh);
 
     #[cfg(feature = "stm32f412")]
-    let mut backlight_control = gpiof.pf5.into_push_pull_output();
+    let backlight_control = gpiof.pf5.into_push_pull_output();
     #[cfg(feature = "stm32f413")]
     let backlight_control = gpioe.pe5.into_push_pull_output();
 
