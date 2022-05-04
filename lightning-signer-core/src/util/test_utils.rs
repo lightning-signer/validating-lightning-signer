@@ -860,10 +860,12 @@ pub fn channel_commitment(
         .node
         .with_ready_channel(&chan_ctx.channel_id, |chan| {
             let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
+            let txkeys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+
             let tx = chan
                 .make_holder_commitment_tx(
                     commit_num,
-                    &per_commitment_point,
+                    &txkeys,
                     feerate_per_kw,
                     to_broadcaster,
                     to_countersignatory,

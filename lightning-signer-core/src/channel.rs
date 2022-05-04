@@ -676,6 +676,7 @@ impl Channel {
     fn check_holder_tx_signatures(
         &self,
         per_commitment_point: &PublicKey,
+        txkeys: &TxCreationKeys,
         feerate_per_kw: u32,
         counterparty_commit_sig: &Signature,
         counterparty_htlc_sigs: &Vec<Signature>,
@@ -706,9 +707,6 @@ impl Channel {
             )
             .map_err(|ve| policy_error(format!("commit sig verify failed: {}", ve)))?;
 
-        let txkeys = self
-            .make_holder_tx_keys(&per_commitment_point)
-            .map_err(|err| internal_error(format!("make_holder_tx_keys failed: {}", err)))?;
         let commitment_txid = recomposed_tx.trust().txid();
         let to_self_delay = self.setup.counterparty_selected_contest_delay;
 
@@ -839,9 +837,10 @@ impl Channel {
         let htlcs =
             Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
 
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
-            &per_commitment_point,
+            &txkeys,
             feerate_per_kw,
             to_holder_value_sat,
             to_counterparty_value_sat,
@@ -850,6 +849,7 @@ impl Channel {
 
         self.check_holder_tx_signatures(
             &per_commitment_point,
+            &txkeys,
             feerate_per_kw,
             counterparty_commit_sig,
             counterparty_htlc_sigs,
@@ -893,9 +893,10 @@ impl Channel {
             Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
-            &per_commitment_point,
+            &txkeys,
             info2.feerate_per_kw,
             info2.to_broadcaster_value_sat,
             info2.to_countersigner_value_sat,
@@ -974,9 +975,10 @@ impl Channel {
         let mut htlc_dummy_sigs = Vec::with_capacity(htlcs.len());
         htlc_dummy_sigs.resize(htlcs.len(), Self::dummy_sig());
 
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
         let commitment_tx = self.make_holder_commitment_tx(
             commitment_number,
-            &per_commitment_point,
+            &txkeys,
             feerate_per_kw,
             to_holder_value_sat,
             to_counterparty_value_sat,
@@ -1005,7 +1007,7 @@ impl Channel {
     // This function is needed for testing with mutated keys.
     pub(crate) fn make_holder_commitment_tx_with_keys(
         &self,
-        keys: TxCreationKeys,
+        keys: &TxCreationKeys,
         commitment_number: u64,
         feerate_per_kw: u32,
         to_holder_value_sat: u64,
@@ -1022,7 +1024,7 @@ impl Channel {
             self.setup.option_anchor_outputs(),
             self.keys.pubkeys().funding_pubkey,
             self.keys.counterparty_pubkeys().funding_pubkey,
-            keys,
+            keys.clone(),
             feerate_per_kw,
             &mut htlcs_with_aux,
             &parameters,
@@ -1033,15 +1035,14 @@ impl Channel {
     pub(crate) fn make_holder_commitment_tx(
         &self,
         commitment_number: u64,
-        per_commitment_point: &PublicKey,
+        txkeys: &TxCreationKeys,
         feerate_per_kw: u32,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
         htlcs: Vec<HTLCOutputInCommitment>,
     ) -> Result<CommitmentTransaction, Status> {
-        let keys = self.make_holder_tx_keys(per_commitment_point).unwrap();
         Ok(self.make_holder_commitment_tx_with_keys(
-            keys,
+            txkeys,
             commitment_number,
             feerate_per_kw,
             to_holder_value_sat,
@@ -1582,6 +1583,7 @@ impl Channel {
         output_witscripts: &Vec<Vec<u8>>,
         commitment_number: u64,
         per_commitment_point: PublicKey,
+        txkeys: &TxCreationKeys,
         feerate_per_kw: u32,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
@@ -1645,7 +1647,7 @@ impl Channel {
 
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
-            &per_commitment_point,
+            txkeys,
             feerate_per_kw,
             info.to_broadcaster_value_sat,
             info.to_countersigner_value_sat,
@@ -1705,12 +1707,17 @@ impl Channel {
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
         let validator = self.validator();
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
+        let txkeys = self
+            .make_holder_tx_keys(&per_commitment_point)
+            .map_err(|err| internal_error(format!("make_holder_tx_keys failed: {}", err)))?;
+
         let (recomposed_tx, info2, incoming_payment_summary) = self
             .make_validated_recomposed_holder_commitment_tx(
                 tx,
                 output_witscripts,
                 commitment_number,
                 per_commitment_point,
+                &txkeys,
                 feerate_per_kw,
                 offered_htlcs,
                 received_htlcs,
@@ -1723,6 +1730,7 @@ impl Channel {
 
         self.check_holder_tx_signatures(
             &per_commitment_point,
+            &txkeys,
             feerate_per_kw,
             counterparty_commit_sig,
             counterparty_htlc_sigs,

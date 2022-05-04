@@ -46,10 +46,11 @@ mod tests {
             .with_ready_channel(&channel_id, |chan| {
                 chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
                 let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
+                let txkeys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
                 let commitment_tx = chan
                     .make_holder_commitment_tx(
                         commit_num,
-                        &per_commitment_point,
+                        &txkeys,
                         0,
                         to_holder_value_sat,
                         to_counterparty_value_sat,
@@ -197,7 +198,7 @@ mod tests {
 
                 let per_commitment_point =
                     chan.get_per_commitment_point(commit_tx_ctx.commit_num).expect("point");
-                let keys = chan.make_holder_tx_keys(&per_commitment_point)?;
+                let txkeys = chan.make_holder_tx_keys(&per_commitment_point)?;
 
                 let htlcs = Channel::htlcs_info2_to_oic(
                     commit_tx_ctx.offered_htlcs.clone(),
@@ -205,7 +206,7 @@ mod tests {
                 );
 
                 let commitment_tx = chan.make_holder_commitment_tx_with_keys(
-                    keys.clone(),
+                    &txkeys,
                     commit_tx_ctx.commit_num,
                     commit_tx_ctx.feerate_per_kw,
                     commit_tx_ctx.to_broadcaster,
@@ -238,8 +239,8 @@ mod tests {
                             chan_ctx.setup.counterparty_selected_contest_delay,
                             &htlc,
                             chan_ctx.setup.option_anchor_outputs(),
-                            &keys.broadcaster_delayed_payment_key,
-                            &keys.revocation_key,
+                            &txkeys.broadcaster_delayed_payment_key,
+                            &txkeys.revocation_key,
                         )
                     })
                     .collect::<Vec<Transaction>>();
@@ -247,7 +248,11 @@ mod tests {
                 let htlc_redeemscripts = htlcs
                     .iter()
                     .map(|htlc| {
-                        get_htlc_redeemscript(&htlc, chan_ctx.setup.option_anchor_outputs(), &keys)
+                        get_htlc_redeemscript(
+                            &htlc,
+                            chan_ctx.setup.option_anchor_outputs(),
+                            &txkeys,
+                        )
                     })
                     .collect::<Vec<Script>>();
 
