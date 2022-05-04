@@ -15,12 +15,12 @@ use stm32f4xx_hal::{
     gpio::Speed,
     otg_fs::{UsbBus, USB},
     pac::{CorePeripherals, Peripherals},
-    pac::{Interrupt, NVIC, TIM5, TIM2},
+    pac::{Interrupt, NVIC, TIM2, TIM5},
     prelude::*,
     rcc::{Clocks, Rcc},
     sdio::{ClockFreq, SdCard, Sdio},
     timer::{Counter, SysDelay},
-    timer::{Event, FTimerUs, FTimerMs},
+    timer::{Event, FTimerMs, FTimerUs},
 };
 
 use embedded_graphics::{
@@ -177,16 +177,15 @@ pub struct FreeTimer {
 
 impl FreeTimer {
     pub fn new(inner: Counter<TIM5, 1000000>) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(inner))
-        }
+        Self { inner: Arc::new(Mutex::new(inner)) }
     }
     pub fn now(&self) -> fugit::TimerInstantU32<1000000> {
         free(|cs| self.inner.borrow(&cs).now())
     }
 }
 
-pub fn make_devices() -> (SysDelay, FreeTimer, Counter<TIM2, 1000000>, SerialDriver, Sdio<SdCard>, Display) {
+pub fn make_devices(
+) -> (SysDelay, FreeTimer, Counter<TIM2, 1000000>, SerialDriver, Sdio<SdCard>, Display) {
     let p = Peripherals::take().unwrap();
     let cp = CorePeripherals::take().unwrap();
     let rcc = p.RCC.constrain();
