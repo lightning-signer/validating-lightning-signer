@@ -508,6 +508,7 @@ pub struct Node {
     allowlist: Mutex<UnorderedSet<Allowable>>,
     tracker: Mutex<ChainTracker<ChainMonitor>>,
     pub(crate) state: Mutex<NodeState>,
+    node_id: PublicKey,
 }
 
 impl Wallet for Node {
@@ -634,6 +635,7 @@ impl Node {
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
             tracker: Mutex::new(tracker),
             state,
+            node_id,
         }
     }
 
@@ -663,8 +665,7 @@ impl Node {
 
     /// Get the node ID, which is the same as the node public key
     pub fn get_id(&self) -> PublicKey {
-        let key = &self.keys_manager.get_node_secret(Recipient::Node).unwrap();
-        Self::id_from_key(key)
+        self.node_id
     }
 
     fn id_from_key(key: &SecretKey) -> PublicKey {
