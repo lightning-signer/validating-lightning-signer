@@ -45,10 +45,11 @@ mod tests {
         let tx = node
             .with_ready_channel(&channel_id, |chan| {
                 chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
-
+                let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
                 let commitment_tx = chan
                     .make_holder_commitment_tx(
                         commit_num,
+                        &per_commitment_point,
                         0,
                         to_holder_value_sat,
                         to_counterparty_value_sat,
