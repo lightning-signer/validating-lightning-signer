@@ -1,7 +1,13 @@
+use core::cell::RefCell;
 use log::{info, trace, Level, Metadata, Record};
-use rtt_target::{rprintln, rtt_init_print};
+use rtt_target::{rprint, rprintln, rtt_init_print};
 
-struct SimpleLogger;
+struct SimpleLogger {
+    timer: RefCell<Option<FreeTimer>>
+}
+
+unsafe impl Sync for SimpleLogger {
+}
 
 impl log::Log for SimpleLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
@@ -16,6 +22,10 @@ impl log::Log for SimpleLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
+            let timer_ref = self.timer.borrow();
+            if let Some(timer) = timer_ref.as_ref() {
+                rprint!("{} ", timer.now().duration_since_epoch().to_millis());
+            }
             rprintln!("{} {} - {}", record.target(), record.level(), record.args());
         }
     }
@@ -24,8 +34,9 @@ impl log::Log for SimpleLogger {
 }
 
 use log::{LevelFilter, SetLoggerError};
+use crate::device::FreeTimer;
 
-static LOGGER: SimpleLogger = SimpleLogger;
+static LOGGER: SimpleLogger = SimpleLogger { timer: RefCell::new(None) };
 
 pub fn init() -> Result<(), SetLoggerError> {
     rtt_init_print!(BlockIfFull);
@@ -34,4 +45,8 @@ pub fn init() -> Result<(), SetLoggerError> {
     trace!("logger started");
     info!("logger started");
     Ok(())
+}
+
+pub fn set_timer(timer: FreeTimer) {
+    *LOGGER.timer.borrow_mut() = Some(timer);
 }

@@ -39,6 +39,8 @@ fn main() -> ! {
     #[allow(unused)]
     let (mut delay, timer1, timer2, mut serial, mut sdio, mut disp) = device::make_devices();
 
+    logger::set_timer(timer1.clone());
+
     #[cfg(feature = "sdio")]
     {
         sdcard::init_sdio(&mut sdio, &mut delay);

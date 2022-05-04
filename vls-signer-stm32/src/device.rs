@@ -1,6 +1,8 @@
 use alloc::string::ToString;
+use alloc::sync::Arc;
 use alloc_cortex_m::CortexMHeap;
 use core::convert::Infallible;
+use cortex_m::interrupt::{free, Mutex};
 use cortex_m::peripheral::SYST;
 use embedded_hal::digital::v2::OutputPin;
 use log::info;
@@ -167,8 +169,24 @@ impl Display {
     }
 }
 
-pub fn make_devices(
-) -> (SysDelay, Counter<TIM5, 1000000>, Counter<TIM2, 1000000>, SerialDriver, Sdio<SdCard>, Display) {
+/// A timer that can be cloned
+#[derive(Clone)]
+pub struct FreeTimer {
+    inner: Arc<Mutex<Counter<TIM5, 1000000>>>,
+}
+
+impl FreeTimer {
+    pub fn new(inner: Counter<TIM5, 1000000>) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(inner))
+        }
+    }
+    pub fn now(&self) -> fugit::TimerInstantU32<1000000> {
+        free(|cs| self.inner.borrow(&cs).now())
+    }
+}
+
+pub fn make_devices() -> (SysDelay, FreeTimer, Counter<TIM2, 1000000>, SerialDriver, Sdio<SdCard>, Display) {
     let p = Peripherals::take().unwrap();
     let cp = CorePeripherals::take().unwrap();
     let rcc = p.RCC.constrain();
@@ -257,7 +275,7 @@ pub fn make_devices(
 
     let disp =
         Display { inner: make_display(p.FSMC, lcd_pins, lcd_reset, &mut delay, backlight_control) };
-    (delay, timer1, timer2, serial, sdio, disp)
+    (delay, FreeTimer::new(timer1), timer2, serial, sdio, disp)
 }
 
 // define what happens in an Out Of Memory (OOM) condition
