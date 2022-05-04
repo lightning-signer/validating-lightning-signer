@@ -20,6 +20,7 @@ panic-probe = { version = "0.2", features = ["print-rtt"] }
 log = "0.4"
 usb-device = "0.2.5"
 usbd-serial = "0.1.0"
+fugit = "0.3"
 vls-protocol-signer = { path = "../vls-protocol-signer", default-features = false, features = ["secp-lowmemory"] }
 
 [dependencies.fatfs]
@@ -41,6 +42,7 @@ stm32f412 = ["stm32f4xx-hal/stm32f412"]
 stm32f413 = ["stm32f4xx-hal/stm32f413"]
 sdio = []
 trace = []
+debug = []
 
 [[bin]]
 name = "demo_signer"

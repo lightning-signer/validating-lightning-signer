@@ -2,7 +2,7 @@ use core::any::Any;
 use core::fmt;
 use core::fmt::{Debug, Error, Formatter};
 
-use bitcoin::hashes::hex;
+use bitcoin::hashes::hex::{self, FromHex};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
@@ -675,7 +675,8 @@ impl Channel {
 
     fn check_holder_tx_signatures(
         &self,
-        commitment_number: u64,
+        per_commitment_point: &PublicKey,
+        txkeys: &TxCreationKeys,
         feerate_per_kw: u32,
         counterparty_commit_sig: &Signature,
         counterparty_htlc_sigs: &Vec<Signature>,
@@ -698,8 +699,7 @@ impl Channel {
             )
             .map_err(|ve| internal_error(format!("sighash failed: {}", ve)))?;
 
-        let secp_ctx = Secp256k1::new();
-        secp_ctx
+        self.secp_ctx
             .verify(
                 &sighash,
                 &counterparty_commit_sig,
@@ -707,15 +707,11 @@ impl Channel {
             )
             .map_err(|ve| policy_error(format!("commit sig verify failed: {}", ve)))?;
 
-        let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
-        let txkeys = self
-            .make_holder_tx_keys(&per_commitment_point)
-            .map_err(|err| internal_error(format!("make_holder_tx_keys failed: {}", err)))?;
         let commitment_txid = recomposed_tx.trust().txid();
         let to_self_delay = self.setup.counterparty_selected_contest_delay;
 
         let htlc_pubkey = derive_public_key(
-            &secp_ctx,
+            &self.secp_ctx,
             &per_commitment_point,
             &self.keys.counterparty_pubkeys().htlc_basepoint,
         )
@@ -753,7 +749,7 @@ impl Channel {
             )
             .map_err(|err| invalid_argument(format!("sighash failed for htlc {}: {}", ndx, err)))?;
 
-            secp_ctx
+            self.secp_ctx
                 .verify(&recomposed_tx_sighash, &counterparty_htlc_sigs[ndx], &htlc_pubkey)
                 .map_err(|err| {
                     policy_error(format!("commit sig verify failed for htlc {}: {}", ndx, err))
@@ -799,9 +795,9 @@ impl Channel {
         counterparty_commit_sig: &Signature,
         counterparty_htlc_sigs: &Vec<Signature>,
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
-        let commitment_point = &self.get_per_commitment_point(commitment_number)?;
+        let per_commitment_point = &self.get_per_commitment_point(commitment_number)?;
         let info2 = self.build_holder_commitment_info(
-            &commitment_point,
+            &per_commitment_point,
             to_holder_value_sat,
             to_counterparty_value_sat,
             offered_htlcs,
@@ -822,7 +818,7 @@ impl Channel {
             .validate_holder_commitment_tx(
                 &self.enforcement_state,
                 commitment_number,
-                &commitment_point,
+                &per_commitment_point,
                 &self.setup,
                 &self.get_chain_state(),
                 &info2,
@@ -841,8 +837,10 @@ impl Channel {
         let htlcs =
             Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
 
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
+            &txkeys,
             feerate_per_kw,
             to_holder_value_sat,
             to_counterparty_value_sat,
@@ -850,7 +848,8 @@ impl Channel {
         )?;
 
         self.check_holder_tx_signatures(
-            commitment_number,
+            &per_commitment_point,
+            &txkeys,
             feerate_per_kw,
             counterparty_commit_sig,
             counterparty_htlc_sigs,
@@ -892,9 +891,12 @@ impl Channel {
 
         let htlcs =
             Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
+        let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
+            &txkeys,
             info2.feerate_per_kw,
             info2.to_broadcaster_value_sat,
             info2.to_countersigner_value_sat,
@@ -905,18 +907,14 @@ impl Channel {
         // to be passed in to this call.  It would have been better if HolderCommitmentTransaction
         // didn't require the remote sig.
         // TODO consider if we actually want the sig for policy checks
-        let dummy_sig = Secp256k1::new().sign(
-            &secp256k1::Message::from_slice(&[42; 32]).unwrap(),
-            &SecretKey::from_slice(&[42; 32]).unwrap(),
-        );
         let htlcs_len = recomposed_tx.htlcs().len();
         let mut htlc_dummy_sigs = Vec::with_capacity(htlcs_len);
-        htlc_dummy_sigs.resize(htlcs_len, dummy_sig);
+        htlc_dummy_sigs.resize(htlcs_len, Self::dummy_sig());
 
         // Holder commitments need an extra wrapper for the LDK signature routine.
         let recomposed_holder_tx = HolderCommitmentTransaction::new(
             recomposed_tx,
-            dummy_sig,
+            Self::dummy_sig(),
             htlc_dummy_sigs,
             &self.keys.pubkeys().funding_pubkey,
             &self.keys.counterparty_pubkeys().funding_pubkey,
@@ -948,10 +946,10 @@ impl Channel {
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> Result<(Signature, Vec<Signature>), Status> {
-        let commitment_point = &self.get_per_commitment_point(commitment_number)?;
+        let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         let info2 = self.build_holder_commitment_info(
-            &commitment_point,
+            &per_commitment_point,
             to_holder_value_sat,
             to_counterparty_value_sat,
             offered_htlcs.clone(),
@@ -962,7 +960,7 @@ impl Channel {
         self.validator().validate_holder_commitment_tx(
             &self.enforcement_state,
             commitment_number,
-            &commitment_point,
+            &per_commitment_point,
             &self.setup,
             &self.get_chain_state(),
             &info2,
@@ -974,15 +972,13 @@ impl Channel {
         // to be passed in to this call.  It would have been better if HolderCommitmentTransaction
         // didn't require the remote sig.
         // TODO consider if we actually want the sig for policy checks
-        let dummy_sig = Secp256k1::new().sign(
-            &secp256k1::Message::from_slice(&[42; 32]).unwrap(),
-            &SecretKey::from_slice(&[42; 32]).unwrap(),
-        );
         let mut htlc_dummy_sigs = Vec::with_capacity(htlcs.len());
-        htlc_dummy_sigs.resize(htlcs.len(), dummy_sig);
+        htlc_dummy_sigs.resize(htlcs.len(), Self::dummy_sig());
 
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
         let commitment_tx = self.make_holder_commitment_tx(
             commitment_number,
+            &txkeys,
             feerate_per_kw,
             to_holder_value_sat,
             to_counterparty_value_sat,
@@ -992,7 +988,7 @@ impl Channel {
 
         let holder_commitment_tx = HolderCommitmentTransaction::new(
             commitment_tx,
-            dummy_sig,
+            Self::dummy_sig(),
             htlc_dummy_sigs,
             &self.keys.pubkeys().funding_pubkey,
             &self.keys.counterparty_pubkeys().funding_pubkey,
@@ -1011,7 +1007,7 @@ impl Channel {
     // This function is needed for testing with mutated keys.
     pub(crate) fn make_holder_commitment_tx_with_keys(
         &self,
-        keys: TxCreationKeys,
+        keys: &TxCreationKeys,
         commitment_number: u64,
         feerate_per_kw: u32,
         to_holder_value_sat: u64,
@@ -1028,7 +1024,7 @@ impl Channel {
             self.setup.option_anchor_outputs(),
             self.keys.pubkeys().funding_pubkey,
             self.keys.counterparty_pubkeys().funding_pubkey,
-            keys,
+            keys.clone(),
             feerate_per_kw,
             &mut htlcs_with_aux,
             &parameters,
@@ -1039,15 +1035,14 @@ impl Channel {
     pub(crate) fn make_holder_commitment_tx(
         &self,
         commitment_number: u64,
+        txkeys: &TxCreationKeys,
         feerate_per_kw: u32,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
         htlcs: Vec<HTLCOutputInCommitment>,
     ) -> Result<CommitmentTransaction, Status> {
-        let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
-        let keys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
         Ok(self.make_holder_commitment_tx_with_keys(
-            keys,
+            txkeys,
             commitment_number,
             feerate_per_kw,
             to_holder_value_sat,
@@ -1587,6 +1582,8 @@ impl Channel {
         tx: &bitcoin::Transaction,
         output_witscripts: &Vec<Vec<u8>>,
         commitment_number: u64,
+        per_commitment_point: PublicKey,
+        txkeys: &TxCreationKeys,
         feerate_per_kw: u32,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
@@ -1612,9 +1609,8 @@ impl Channel {
             output_witscripts,
         )?;
 
-        let commitment_point = &self.get_per_commitment_point(commitment_number)?;
         let info2 = self.build_holder_commitment_info(
-            &commitment_point,
+            &per_commitment_point,
             info.to_broadcaster_value_sat,
             info.to_countersigner_value_sat,
             offered_htlcs.clone(),
@@ -1629,7 +1625,7 @@ impl Channel {
             .validate_holder_commitment_tx(
                 &self.enforcement_state,
                 commitment_number,
-                &commitment_point,
+                &per_commitment_point,
                 &self.setup,
                 &self.get_chain_state(),
                 &info2,
@@ -1651,6 +1647,7 @@ impl Channel {
 
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
+            txkeys,
             feerate_per_kw,
             info.to_broadcaster_value_sat,
             info.to_countersigner_value_sat,
@@ -1709,11 +1706,18 @@ impl Channel {
         counterparty_htlc_sigs: &Vec<Signature>,
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
         let validator = self.validator();
+        let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
+        let txkeys = self
+            .make_holder_tx_keys(&per_commitment_point)
+            .map_err(|err| internal_error(format!("make_holder_tx_keys failed: {}", err)))?;
+
         let (recomposed_tx, info2, incoming_payment_summary) = self
             .make_validated_recomposed_holder_commitment_tx(
                 tx,
                 output_witscripts,
                 commitment_number,
+                per_commitment_point,
+                &txkeys,
                 feerate_per_kw,
                 offered_htlcs,
                 received_htlcs,
@@ -1725,7 +1729,8 @@ impl Channel {
             self.enforcement_state.claimable_balances(&*state, Some(&info2), None, &self.setup);
 
         self.check_holder_tx_signatures(
-            commitment_number,
+            &per_commitment_point,
+            &txkeys,
             feerate_per_kw,
             counterparty_commit_sig,
             counterparty_htlc_sigs,
@@ -1984,6 +1989,10 @@ impl Channel {
         let node = self.get_node();
         node.htlcs_fulfilled(&self.id0, preimages, validator);
     }
+
+    fn dummy_sig() -> Signature {
+        Signature::from_compact(&Vec::from_hex("eb299947b140c0e902243ee839ca58c71291f4cce49ac0367fb4617c4b6e890f18bc08b9be6726c090af4c6b49b2277e134b34078f710a72a5752e39f0139149").unwrap()).unwrap()
+    }
 }
 
 /// Convert a nonce to a channel ID, by hashing via SHA256
@@ -1992,4 +2001,20 @@ pub fn channel_nonce_to_id(nonce: &Vec<u8>) -> ChannelId {
     // Hash the client supplied channel nonce
     let hash = Sha256Hash::hash(nonce);
     ChannelId(hash.into_inner())
+}
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::hashes::hex::ToHex;
+    use bitcoin::secp256k1::{self, Secp256k1, SecretKey};
+
+    #[test]
+    fn test_dummy_sig() {
+        let dummy_sig = Secp256k1::new().sign(
+            &secp256k1::Message::from_slice(&[42; 32]).unwrap(),
+            &SecretKey::from_slice(&[42; 32]).unwrap(),
+        );
+        let ser = dummy_sig.serialize_compact();
+        assert_eq!("eb299947b140c0e902243ee839ca58c71291f4cce49ac0367fb4617c4b6e890f18bc08b9be6726c090af4c6b49b2277e134b34078f710a72a5752e39f0139149", ser.to_hex());
+    }
 }
