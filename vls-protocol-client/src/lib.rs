@@ -20,7 +20,7 @@ use lightning_signer::bitcoin::util::bip32::ChildNumber;
 use lightning_signer::lightning;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::util::INITIAL_COMMITMENT_NUMBER;
-use log::error;
+use log::{debug, error};
 
 use vls_protocol::features::{OPT_ANCHOR_OUTPUTS, OPT_MAX, OPT_STATIC_REMOTEKEY};
 use vls_protocol::model::{
@@ -108,15 +108,19 @@ pub fn call<T: SerBolt, R: DeBolt>(
 ) -> Result<R, Error> {
     assert_ne!(dbid, 0, "dbid 0 is reserved");
     let message_ser = message.as_vec();
+    debug!("signer call {:?}", message);
     let result_ser = transport.call(dbid, peer_id, message_ser)?;
     let result = R::from_vec(result_ser)?;
+    debug!("signer result {:?}", result);
     Ok(result)
 }
 
 pub fn node_call<T: SerBolt, R: DeBolt>(transport: &dyn Transport, message: T) -> Result<R, Error> {
+    debug!("signer call {:?}", message);
     let message_ser = message.as_vec();
     let result_ser = transport.node_call(message_ser)?;
     let result = R::from_vec(result_ser)?;
+    debug!("signer result {:?}", result);
     Ok(result)
 }
 

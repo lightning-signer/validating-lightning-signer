@@ -1,6 +1,7 @@
 use super::hsmd::{self, PingRequest, SignerRequest, SignerResponse};
 use crate::util::{read_allowlist, read_integration_test_seed};
 use http::Uri;
+use lightning_signer::bitcoin::Network;
 use lightning_signer::persist::Persist;
 use lightning_signer::util::status::Status;
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
@@ -19,7 +20,7 @@ use vls_protocol_signer::vls_protocol::msgs;
 /// Signer binary entry point
 #[tokio::main(worker_threads = 2)]
 pub async fn start_signer_localhost(port: u16) {
-    let loopback = Ipv4Addr::new(127, 0, 0, 1);
+    let loopback = Ipv4Addr::LOCALHOST;
     let addr = SocketAddrV4::new(loopback, port);
     let uri = Uri::builder()
         .scheme("http")
@@ -28,25 +29,27 @@ pub async fn start_signer_localhost(port: u16) {
         .build()
         .expect("uri"); // infallible by construction
 
-    connect(uri).await;
+    let network = Network::Testnet; // FIXME
+    connect("remote_hsmd_vls_grpc2.kv", uri, network).await;
     info!("signer stopping");
 }
 
 /// Signer binary entry point
 #[tokio::main(worker_threads = 2)]
-pub async fn start_signer(uri: Uri) {
-    connect(uri).await;
+pub async fn start_signer(datadir: &str, uri: Uri, network: Network) {
+    connect(datadir, uri, network).await;
     info!("signer stopping");
 }
 
-async fn connect(uri: Uri) {
+async fn connect(datadir: &str, uri: Uri, network: Network) {
+    let data_path = format!("{}/{}", datadir, network.to_string());
     let mut client = hsmd::hsmd_client::HsmdClient::connect(uri).await.expect("client connect");
     let result = client.ping(PingRequest { message: "hello".to_string() }).await.expect("ping");
     let reply = result.into_inner();
-    info!("child got {}", reply.message);
+    info!("ping result {}", reply.message);
     let (sender, receiver) = mpsc::channel(1);
     let response_stream = ReceiverStream::new(receiver);
-    let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new("remote_hsmd_vls_grpc2.kv"));
+    let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new(&data_path));
     let allowlist = read_allowlist();
     let root_handler = RootHandler::new(0, read_integration_test_seed(), persister, allowlist);
 
@@ -108,6 +111,7 @@ fn handle(request: SignerRequest, root_handler: &RootHandler) -> StdResult<Signe
     } else {
         root_handler.handle(msg)?
     };
+    info!("signer sending reply {} - {:?}", request.request_id, reply);
     let ser_res = reply.as_vec();
     Ok(SignerResponse { request_id: request.request_id, message: ser_res, error: String::new() })
 }

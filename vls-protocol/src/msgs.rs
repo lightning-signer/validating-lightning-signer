@@ -21,7 +21,7 @@ pub trait SerBolt: Debug {
     fn as_vec(&self) -> Vec<u8>;
 }
 
-pub trait DeBolt: Sized {
+pub trait DeBolt: Debug + Sized {
     const TYPE: u16;
     fn from_vec(ser: Vec<u8>) -> Result<Self>;
 }
