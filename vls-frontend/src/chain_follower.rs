@@ -67,7 +67,7 @@ impl ChainFollower {
         )
         .await;
         let update_interval = match tracker.network() {
-            Network::Regtest => 100, // poll rapidly, automated testing
+            Network::Regtest => 5000, // poll rapidly, automated testing
             _ => 60 * 1000,
         };
         Arc::new(ChainFollower {
