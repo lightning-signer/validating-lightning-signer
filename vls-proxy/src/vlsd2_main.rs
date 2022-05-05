@@ -1,7 +1,10 @@
 use clap::{App, AppSettings, Arg};
 use grpc::signer::start_signer;
 
+pub mod client;
+pub mod connection;
 pub mod grpc;
+pub mod util;
 
 pub fn main() {
     let app = App::new("signer")

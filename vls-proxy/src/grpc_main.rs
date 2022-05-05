@@ -11,26 +11,19 @@
 use std::env;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
 use std::process::exit;
-use std::result::Result as StdResult;
 
 use clap::{App, AppSettings, Arg};
 #[allow(unused_imports)]
 use log::{error, info};
 use nix::unistd::{fork, ForkResult};
-use tokio::sync::mpsc;
-use tokio::sync::mpsc::Receiver;
 use tokio::task::spawn_blocking;
-use tonic::transport::Server;
-use tonic::{Request, Response, Status, Streaming};
-use triggered::Trigger;
 
 use client::UnixClient;
 use connection::{open_parent_fd, UnixConnection};
-use grpc::adapter::{ProtocolAdapter, SignerStream};
-use grpc::hsmd::{self, hsmd_server, PingReply, PingRequest, SignerResponse};
+use grpc::adapter::HsmdService;
 use grpc::incoming::TcpIncoming;
 use grpc::signer::start_signer_localhost;
-use grpc::signer_loop::{ChannelRequest, SignerLoop};
+use grpc::signer_loop::SignerLoop;
 use vls_proxy::util::setup_logging;
 use vls_proxy::*;
 
@@ -75,62 +68,21 @@ pub fn main() {
     start_server(listener, addr, client);
 }
 
-#[derive(Clone)]
-struct HsmdService {
-    #[allow(unused)]
-    shutdown_trigger: Trigger,
-    adapter: ProtocolAdapter,
-}
-
-impl HsmdService {
-    fn new(receiver: Receiver<ChannelRequest>, shutdown_trigger: Trigger) -> Self {
-        let adapter = ProtocolAdapter::new(receiver, shutdown_trigger.clone());
-        HsmdService { shutdown_trigger, adapter }
-    }
-}
-
-#[tonic::async_trait]
-impl hsmd_server::Hsmd for HsmdService {
-    async fn ping(&self, request: Request<PingRequest>) -> StdResult<Response<PingReply>, Status> {
-        info!("got ping request");
-        let r = request.into_inner();
-        Ok(Response::new(PingReply { message: r.message }))
-    }
-
-    type SignerStreamStream = SignerStream;
-
-    async fn signer_stream(
-        &self,
-        request: Request<Streaming<SignerResponse>>,
-    ) -> StdResult<Response<Self::SignerStreamStream>, Status> {
-        let stream = request.into_inner();
-
-        let stream_reader_task = self.adapter.start_stream_reader(stream);
-
-        let stream = self.adapter.writer_stream(stream_reader_task).await;
-
-        Ok(Response::new(stream as Self::SignerStreamStream))
-    }
-}
-
 // hsmd replacement entry point
 #[tokio::main(worker_threads = 2)]
 async fn start_server(listener: TcpListener, addr: SocketAddr, client: UnixClient) {
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
 
-    let (sender, receiver) = mpsc::channel(1000);
-
-    let server = HsmdService::new(receiver, shutdown_trigger.clone());
+    let server = HsmdService::new(shutdown_trigger.clone());
     let trigger1 = shutdown_trigger.clone();
     ctrlc::set_handler(move || {
         trigger1.trigger();
     })
     .expect("Error setting Ctrl-C handler");
 
-    let incoming = TcpIncoming::new_from_std(listener, false, None).expect("incoming"); // new_from_std seems to be infallible
-    let service = Server::builder()
-        .add_service(hsmd_server::HsmdServer::new(server))
-        .serve_with_incoming_shutdown(incoming, shutdown_signal);
+    let incoming = TcpIncoming::new_from_std(listener, false, None).expect("listen incoming"); // new_from_std seems to be infallible
+
+    let sender = server.sender();
 
     // Start the UNIX fd listener loop
     spawn_blocking(|| {
@@ -140,7 +92,7 @@ async fn start_server(listener: TcpListener, addr: SocketAddr, client: UnixClien
 
     // Start the gRPC listener loop - the signer will connect to us
     info!("starting gRPC service on port {}", addr.port());
-    service.await.expect("during serving the gRPC API");
+    server.start(incoming, shutdown_signal).await.expect("error while serving");
     info!("stopping gRPC service");
 }
 

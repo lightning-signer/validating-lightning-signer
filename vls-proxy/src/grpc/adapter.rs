@@ -6,15 +6,19 @@ use std::sync::Arc;
 
 use futures::{Stream, StreamExt};
 use log::{error, info};
-use tokio::sync::mpsc::Receiver;
-use tokio::sync::Mutex;
+use secp256k1::PublicKey;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinHandle;
-use tonic::{Status, Streaming};
+use tonic::{transport::Server, Request, Response, Status, Streaming};
 
-use super::hsmd::{HsmRequestContext, SignerRequest, SignerResponse};
-use super::signer_loop::{ChannelReply, ChannelRequest};
+use super::hsmd::{
+    hsmd_server, HsmRequestContext, PingReply, PingRequest, SignerRequest, SignerResponse,
+};
+use super::incoming::TcpIncoming;
 use std::sync::atomic::{AtomicU64, Ordering};
-use triggered::Trigger;
+use tonic::transport::Error;
+use triggered::{Listener, Trigger};
 
 struct Requests {
     requests: HashMap<u64, ChannelRequest>,
@@ -133,5 +137,83 @@ impl ProtocolAdapter {
                 }
             }
         })
+    }
+}
+
+/// A request
+/// Responses are received on the oneshot sender inside this struct
+pub struct ChannelRequest {
+    pub message: Vec<u8>,
+    pub reply_tx: oneshot::Sender<ChannelReply>,
+    pub client_id: Option<ClientId>,
+}
+
+// mpsc reply
+pub struct ChannelReply {
+    pub reply: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ClientId {
+    pub peer_id: PublicKey,
+    pub dbid: u64,
+}
+
+/// Listens for a connection from the signer, and then sends requests to it
+#[derive(Clone)]
+pub struct HsmdService {
+    #[allow(unused)]
+    shutdown_trigger: Trigger,
+    adapter: ProtocolAdapter,
+    sender: Sender<ChannelRequest>,
+}
+
+impl HsmdService {
+    /// Create the service
+    pub fn new(shutdown_trigger: Trigger) -> Self {
+        let (sender, receiver) = mpsc::channel(1000);
+        let adapter = ProtocolAdapter::new(receiver, shutdown_trigger.clone());
+
+        HsmdService { shutdown_trigger, adapter, sender }
+    }
+
+    pub async fn start(
+        self,
+        incoming: TcpIncoming,
+        shutdown_signal: Listener,
+    ) -> Result<(), Error> {
+        let service = Server::builder()
+            .add_service(hsmd_server::HsmdServer::new(self))
+            .serve_with_incoming_shutdown(incoming, shutdown_signal);
+        service.await
+    }
+
+    /// Get the sender for the request channel
+    pub fn sender(&self) -> Sender<ChannelRequest> {
+        self.sender.clone()
+    }
+}
+
+#[tonic::async_trait]
+impl hsmd_server::Hsmd for HsmdService {
+    async fn ping(&self, request: Request<PingRequest>) -> StdResult<Response<PingReply>, Status> {
+        info!("got ping request");
+        let r = request.into_inner();
+        Ok(Response::new(PingReply { message: r.message }))
+    }
+
+    type SignerStreamStream = SignerStream;
+
+    async fn signer_stream(
+        &self,
+        request: Request<Streaming<SignerResponse>>,
+    ) -> StdResult<Response<Self::SignerStreamStream>, Status> {
+        let stream = request.into_inner();
+
+        let stream_reader_task = self.adapter.start_stream_reader(stream);
+
+        let stream = self.adapter.writer_stream(stream_reader_task).await;
+
+        Ok(Response::new(stream as Self::SignerStreamStream))
     }
 }

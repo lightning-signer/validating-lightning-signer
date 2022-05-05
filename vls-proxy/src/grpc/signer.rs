@@ -1,4 +1,5 @@
 use super::hsmd::{self, PingRequest, SignerRequest, SignerResponse};
+use crate::util::{read_allowlist, read_integration_test_seed};
 use http::Uri;
 use lightning_signer::persist::Persist;
 use lightning_signer::util::status::Status;
@@ -14,7 +15,6 @@ use tokio_stream::StreamExt;
 use vls_protocol_signer::handler::{Error, Handler, RootHandler};
 use vls_protocol_signer::vls_protocol::model::PubKey;
 use vls_protocol_signer::vls_protocol::msgs;
-use vls_proxy::util::{read_allowlist, read_integration_test_seed};
 
 /// Signer binary entry point
 #[tokio::main(worker_threads = 2)]
