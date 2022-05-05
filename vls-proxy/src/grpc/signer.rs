@@ -18,7 +18,7 @@ use vls_proxy::util::{read_allowlist, read_integration_test_seed};
 
 /// Signer binary entry point
 #[tokio::main(worker_threads = 2)]
-pub async fn start_signer(port: u16) {
+pub async fn start_signer_localhost(port: u16) {
     let loopback = Ipv4Addr::new(127, 0, 0, 1);
     let addr = SocketAddrV4::new(loopback, port);
     let uri = Uri::builder()
@@ -28,6 +28,13 @@ pub async fn start_signer(port: u16) {
         .build()
         .expect("uri"); // infallible by construction
 
+    connect(uri).await;
+    info!("signer stopping");
+}
+
+/// Signer binary entry point
+#[tokio::main(worker_threads = 2)]
+pub async fn start_signer(uri: Uri) {
     connect(uri).await;
     info!("signer stopping");
 }

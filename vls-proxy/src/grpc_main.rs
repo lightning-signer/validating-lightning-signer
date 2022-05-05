@@ -26,15 +26,13 @@ use triggered::Trigger;
 
 use client::UnixClient;
 use connection::{open_parent_fd, UnixConnection};
-use grpc::hsmd::{self, hsmd_server, PingReply, PingRequest};
+use grpc::adapter::{ProtocolAdapter, SignerStream};
+use grpc::hsmd::{self, hsmd_server, PingReply, PingRequest, SignerResponse};
 use grpc::incoming::TcpIncoming;
-use grpc::signer::start_signer;
+use grpc::signer::start_signer_localhost;
 use grpc::signer_loop::{ChannelRequest, SignerLoop};
 use vls_proxy::util::setup_logging;
 use vls_proxy::*;
-
-use crate::grpc::adapter::{ProtocolAdapter, SignerStream};
-use crate::hsmd::SignerResponse;
 
 pub mod grpc;
 
@@ -47,7 +45,7 @@ pub fn main() {
         .setting(AppSettings::NoAutoVersion)
         .about("Greenlight lightning-signer")
         .arg(
-            Arg::new("--dev-disconnect")
+            Arg::new("dev-disconnect")
                 .about("ignored dev flag")
                 .long("dev-disconnect")
                 .takes_value(true),
@@ -156,7 +154,7 @@ unsafe fn spawn_signer(listener: TcpListener, port: u16) -> TcpListener {
             info!("in child");
             drop(listener);
             setup_logging("signer", "debug");
-            start_signer(port);
+            start_signer_localhost(port);
             exit(0);
         }
         Err(_) => {
