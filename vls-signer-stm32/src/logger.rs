@@ -3,11 +3,10 @@ use log::{info, trace, Level, Metadata, Record};
 use rtt_target::{rprint, rprintln, rtt_init_print};
 
 struct SimpleLogger {
-    timer: RefCell<Option<FreeTimer>>
+    timer: RefCell<Option<FreeTimer>>,
 }
 
-unsafe impl Sync for SimpleLogger {
-}
+unsafe impl Sync for SimpleLogger {}
 
 impl log::Log for SimpleLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
@@ -33,8 +32,8 @@ impl log::Log for SimpleLogger {
     fn flush(&self) {}
 }
 
-use log::{LevelFilter, SetLoggerError};
 use crate::device::FreeTimer;
+use log::{LevelFilter, SetLoggerError};
 
 static LOGGER: SimpleLogger = SimpleLogger { timer: RefCell::new(None) };
 

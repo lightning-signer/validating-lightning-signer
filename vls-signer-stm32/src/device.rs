@@ -15,12 +15,12 @@ use stm32f4xx_hal::{
     gpio::Speed,
     otg_fs::{UsbBus, USB},
     pac::{CorePeripherals, Peripherals},
-    pac::{Interrupt, NVIC, TIM5, TIM2},
+    pac::{Interrupt, NVIC, TIM2, TIM5},
     prelude::*,
     rcc::{Clocks, Rcc},
     sdio::{ClockFreq, SdCard, Sdio},
     timer::{Counter, SysDelay},
-    timer::{Event, FTimerUs, FTimerMs},
+    timer::{Event, FTimerMs, FTimerUs},
 };
 
 use embedded_graphics::{
@@ -36,7 +36,7 @@ const TEXT_COLOR: Rgb565 = Rgb565::new(255, 255, 255);
 #[cfg(feature = "stm32f412")]
 mod device_specific {
     use stm32f4xx_hal::{
-        fsmc_lcd::SubBank3,
+        fsmc_lcd::SubBank1,
         gpio::{Output, Pin},
     };
 
@@ -177,16 +177,15 @@ pub struct FreeTimer {
 
 impl FreeTimer {
     pub fn new(inner: Counter<TIM5, 1000000>) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(inner))
-        }
+        Self { inner: Arc::new(Mutex::new(inner)) }
     }
     pub fn now(&self) -> fugit::TimerInstantU32<1000000> {
         free(|cs| self.inner.borrow(&cs).now())
     }
 }
 
-pub fn make_devices() -> (SysDelay, FreeTimer, Counter<TIM2, 1000000>, SerialDriver, Sdio<SdCard>, Display) {
+pub fn make_devices(
+) -> (SysDelay, FreeTimer, Counter<TIM2, 1000000>, SerialDriver, Sdio<SdCard>, Display) {
     let p = Peripherals::take().unwrap();
     let cp = CorePeripherals::take().unwrap();
     let rcc = p.RCC.constrain();
@@ -269,7 +268,7 @@ pub fn make_devices() -> (SysDelay, FreeTimer, Counter<TIM2, 1000000>, SerialDri
     let lcd_reset = gpiob.pb13.into_push_pull_output().speed(Speed::VeryHigh);
 
     #[cfg(feature = "stm32f412")]
-    let mut backlight_control = gpiof.pf5.into_push_pull_output();
+    let backlight_control = gpiof.pf5.into_push_pull_output();
     #[cfg(feature = "stm32f413")]
     let backlight_control = gpioe.pe5.into_push_pull_output();
 

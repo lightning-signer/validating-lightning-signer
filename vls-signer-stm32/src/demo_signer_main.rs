@@ -17,7 +17,7 @@ use log::{debug, info, trace};
 use device::heap_bytes_used;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::Arc;
-use vls_protocol::msgs::{self, Message, read_serial_request_header, write_serial_response_header};
+use vls_protocol::msgs::{self, read_serial_request_header, write_serial_response_header, Message};
 use vls_protocol::serde_bolt::WireString;
 use vls_protocol_signer::handler::{Handler, RootHandler};
 use vls_protocol_signer::lightning_signer;
@@ -75,7 +75,8 @@ fn main() -> ! {
     info!("used {} bytes", heap_bytes_used());
 
     loop {
-        let (sequence, dbid) = read_serial_request_header(&mut serial).expect("read request header");
+        let (sequence, dbid) =
+            read_serial_request_header(&mut serial).expect("read request header");
         let message = msgs::read(&mut serial).expect("message read failed");
         disp.clear_screen();
         let mut message_d = format!("{:?}", message);
