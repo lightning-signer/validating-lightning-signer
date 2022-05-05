@@ -168,14 +168,14 @@ pub struct SignMessage {
 
 ///
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
-#[message_id(25)]
+#[message_id(123)]
 pub struct SignMessageReply {
     pub signature: RecoverableSignature,
 }
 
 /// SignBolt12
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
-#[message_id(123)]
+#[message_id(25)]
 pub struct SignBolt12 {
     pub message_name: WireString,
     pub field_name: WireString,
