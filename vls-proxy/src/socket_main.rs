@@ -40,9 +40,7 @@ pub fn main() {
     setup_logging("hsmd  ", "debug");
 
     // Unfortunately, we can't easily be passed arguments, so use env vars to configure
-    let port = env::var("VLS_PORT")
-        .map(|s| s.parse().expect("VLS_PORT parse"))
-        .unwrap_or(7701);
+    let port = env::var("VLS_PORT").map(|s| s.parse().expect("VLS_PORT parse")).unwrap_or(7701);
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
 
     // Note that this is unsafe if we use the wrong fd

@@ -1,9 +1,9 @@
+use clap::{App, Arg, ArgMatches};
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::str::FromStr;
 use std::{env, fs};
-use clap::{App, Arg, ArgMatches};
 
 pub fn read_allowlist() -> Vec<String> {
     let allowlist_path_res = env::var("ALLOWLIST");
@@ -50,15 +50,14 @@ pub fn setup_logging(who: &str, level: &str) {
 }
 
 pub fn add_hsmd_args(app: App) -> App {
-    app
-        .arg(
-            Arg::new("dev-disconnect")
-                .about("ignored dev flag")
-                .long("dev-disconnect")
-                .takes_value(true),
-        )
-        .arg(Arg::from("--log-io ignored dev flag"))
-        .arg(Arg::from("--version show a dummy version"))
+    app.arg(
+        Arg::new("dev-disconnect")
+            .about("ignored dev flag")
+            .long("dev-disconnect")
+            .takes_value(true),
+    )
+    .arg(Arg::from("--log-io ignored dev flag"))
+    .arg(Arg::from("--version show a dummy version"))
 }
 
 pub fn handle_hsmd_version(matches: &ArgMatches) -> bool {
@@ -72,4 +71,3 @@ pub fn handle_hsmd_version(matches: &ArgMatches) -> bool {
         false
     }
 }
-

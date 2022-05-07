@@ -17,7 +17,9 @@ use util::read_allowlist;
 use vls_protocol_signer::handler::{Handler, RootHandler};
 
 mod test;
-use vls_proxy::util::{add_hsmd_args, handle_hsmd_version, read_integration_test_seed, setup_logging};
+use vls_proxy::util::{
+    add_hsmd_args, handle_hsmd_version, read_integration_test_seed, setup_logging,
+};
 use vls_proxy::*;
 
 fn signer_loop<C: 'static + Client, H: Handler>(client: C, handler: H) {
@@ -67,7 +69,7 @@ pub fn main() {
     let app = add_hsmd_args(app);
     let matches = app.get_matches();
     if handle_hsmd_version(&matches) {
-        return
+        return;
     }
     if matches.is_present("test") {
         test::run_test();
