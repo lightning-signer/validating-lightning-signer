@@ -1,6 +1,6 @@
 //! A single-binary hsmd drop-in replacement for CLN, using the VLS library
 
-use std::{env, thread};
+use std::thread;
 
 use clap::{App, AppSettings, Arg};
 use log::{error, info};
@@ -17,7 +17,7 @@ use util::read_allowlist;
 use vls_protocol_signer::handler::{Handler, RootHandler};
 
 mod test;
-use vls_proxy::util::{read_integration_test_seed, setup_logging};
+use vls_proxy::util::{add_hsmd_args, handle_hsmd_version, read_integration_test_seed, setup_logging};
 use vls_proxy::*;
 
 fn signer_loop<C: 'static + Client, H: Handler>(client: C, handler: H) {
@@ -63,22 +63,11 @@ pub fn main() {
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
         .about("Greenlight lightning-signer")
-        .arg(
-            Arg::new("--dev-disconnect")
-                .about("ignored dev flag")
-                .long("dev-disconnect")
-                .takes_value(true),
-        )
-        .arg(Arg::from("--log-io ignored dev flag"))
-        .arg(Arg::from("--version show a dummy version"))
         .arg(Arg::from("--test run a test emulating lightningd/hsmd"));
+    let app = add_hsmd_args(app);
     let matches = app.get_matches();
-    if matches.is_present("version") {
-        // Pretend to be the right version, given to us by an env var
-        let version =
-            env::var("GREENLIGHT_VERSION").expect("set GREENLIGHT_VERSION to match c-lightning");
-        println!("{}", version);
-        return;
+    if handle_hsmd_version(&matches) {
+        return
     }
     if matches.is_present("test") {
         test::run_test();

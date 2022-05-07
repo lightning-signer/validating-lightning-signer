@@ -1,4 +1,5 @@
-//! A single-binary hsmd drop-in replacement for CLN, using the VLS library
+//! A single-binary hsmd drop-in replacement for CLN, connecting to an embedded
+//! VLS over a USB / serial connection.
 
 use std::env;
 
@@ -50,7 +51,7 @@ pub fn main() -> anyhow::Result<()> {
     setup_logging("hsmd  ", "info");
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
-        .about("Greenlight lightning-signer")
+        .about("CLN:serial - connects to an embedded VLS over a USB / serial connection")
         .arg(
             Arg::new("--dev-disconnect")
                 .about("ignored dev flag")
