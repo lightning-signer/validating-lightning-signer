@@ -8,11 +8,10 @@
 //! opposite direction (signer -> node), which makes it more convenient if the signer is behind
 //! NAT.
 
-use std::env;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
 use std::process::exit;
 
-use clap::{App, AppSettings, Arg};
+use clap::{App, AppSettings};
 #[allow(unused_imports)]
 use log::{error, info};
 use nix::unistd::{fork, ForkResult};
@@ -24,7 +23,7 @@ use grpc::adapter::HsmdService;
 use grpc::incoming::TcpIncoming;
 use grpc::signer::start_signer_localhost;
 use grpc::signer_loop::SignerLoop;
-use vls_proxy::util::setup_logging;
+use vls_proxy::util::{add_hsmd_args, handle_hsmd_version, setup_logging};
 use vls_proxy::*;
 
 pub mod grpc;
@@ -36,21 +35,10 @@ pub fn main() {
 
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
-        .about("Greenlight lightning-signer")
-        .arg(
-            Arg::new("dev-disconnect")
-                .about("ignored dev flag")
-                .long("dev-disconnect")
-                .takes_value(true),
-        )
-        .arg(Arg::from("--log-io ignored dev flag"))
-        .arg(Arg::from("--version show a dummy version"));
+        .about("CLN:socket test - for use with the CLN integration test suite");
+    let app = add_hsmd_args(app);
     let matches = app.get_matches();
-    if matches.is_present("version") {
-        // Pretend to be the right version, given to us by an env var
-        let version =
-            env::var("GREENLIGHT_VERSION").expect("set GREENLIGHT_VERSION to match c-lightning");
-        println!("{}", version);
+    if handle_hsmd_version(&matches) {
         return;
     }
 
