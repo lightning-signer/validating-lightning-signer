@@ -82,15 +82,9 @@ mod tests {
 
         let secp_ctx = Secp256k1::signing_only();
         let node_ctx = TestNodeContext { node, secp_ctx };
-        let chan_ctx = TestChannelContext {
-            channel_id,
-            setup: setup.clone(),
-            counterparty_keys: make_test_counterparty_keys(
-                &node_ctx,
-                &channel_id,
-                setup.channel_value_sat,
-            ),
-        };
+        let counterparty_keys =
+            make_test_counterparty_keys(&node_ctx, &channel_id, setup.channel_value_sat);
+        let chan_ctx = TestChannelContext { channel_id, setup: setup.clone(), counterparty_keys };
 
         let (sig, tx, remote_per_commitment_point, input, htlc_redeemscript, htlc_amount_sat) =
             node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {

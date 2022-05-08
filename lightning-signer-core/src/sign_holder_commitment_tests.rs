@@ -75,9 +75,9 @@ mod tests {
         assert_eq!(
             tx.txid().to_hex(),
             if setup.commitment_type == CommitmentType::Anchors {
-                "2b8ee59e301a0d0af2d1bfd0a105970978800c0dc8338a034234bc4ec93a5c13"
+                "35d42554e19cc82267c29b813d8a9465b762c730a1958b31f147080d302b6fbd"
             } else {
-                "991422f2c0d308b9319f9aec28ccef4bffedf5d36965ec7346155537b8800844"
+                "ae3b1c99071772622e336cf674c6f26bf5ef8860b6487b7cdf82e7d86cf23a42"
             }
         );
 
@@ -270,9 +270,9 @@ mod tests {
         assert_eq!(
             tx.txid().to_hex(),
             if chan_ctx.setup.commitment_type == CommitmentType::StaticRemoteKey {
-                "d236f61c3e0fb3221fab61f97696077df3514e3d602561a6d2050d79777eb362"
+                "54cb4849bc8cb6474bc0209665ad88519121a1a2c35b0ac59aa1c0f0e42a772e"
             } else {
-                "175502b7af99be693c01be3c033473d39379ff9567b39d238f734ab7e3e58937"
+                "dd2ace31bff26915c6a1e30b44918a0743b09d08e35eff56c8bc00c09b70498a"
             }
         );
 

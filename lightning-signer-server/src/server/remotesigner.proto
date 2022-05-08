@@ -303,18 +303,15 @@ message NewChannelRequest {
   NodeId node_id = 1;
 
   // This is used for key generation, for the temporary channel ID
-  // and as a lookup identifier, and must be unique.
+  // and as a lookup identifier, and must be unique and either 8 or 32 bytes.
   //
   // This is used as a lookup identifier until the channel is established
   // with ReadyChannel.  At ReadyChannel the initial channel nonce may
   // be optionally replaced with a permanent channel nonce for further
   // API calls.
   //
-  // NOTE: the internal channel ID is set to the channel nonce hashed
-  // with sha256.
-  //
-  // Optional. A unique pseudo-random one is generated if not specified
-  // and will be returned in the reply.
+  // Currently this is required.
+  // TODO make optional?
   ChannelNonce channel_nonce0 = 2;
 }
 
@@ -729,7 +726,7 @@ message NodeId {
 }
 
 // A client-side unique ID for the channel, not necessarily related to
-// the BOLT temporary/permanent node ID
+// the BOLT temporary/permanent node ID.  Exactly 8 or 32 bytes.
 message ChannelNonce {
   bytes data = 1;
 }

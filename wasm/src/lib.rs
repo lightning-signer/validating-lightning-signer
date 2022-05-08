@@ -39,7 +39,7 @@ pub struct JSChannelId(ChannelId);
 impl JSChannelId {
     #[wasm_bindgen(js_name = toString)]
     pub fn to_string(&self) -> String {
-        format!("ChannelId({})", self.0 .0.to_hex())
+        format!("ChannelId({})", self.0.as_slice().to_hex())
     }
 }
 
@@ -193,7 +193,7 @@ impl JSNode {
 
     #[wasm_bindgen]
     pub fn new_channel(&self) -> JSChannelId {
-        let (channel_id, _) = self.node.new_channel(None, None, &self.node).unwrap();
+        let (channel_id, _) = self.node.new_channel(None, &self.node).unwrap();
         JSChannelId(channel_id)
     }
 
@@ -218,7 +218,7 @@ impl JSNode {
             counterparty_shutdown_script: None,
             commitment_type: CommitmentType::Legacy,
         };
-        let _channel = self.node.ready_channel(id.0, None, setup, &vec![]).map_err(from_status)?;
+        let _channel = self.node.ready_channel(id.0.clone(), None, setup, &vec![]).map_err(from_status)?;
         Ok(())
     }
 

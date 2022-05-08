@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use crate::channel::ChannelId;
     use bitcoin;
     use bitcoin::hashes::hex::{FromHex, ToHex};
     use bitcoin::secp256k1::SecretKey;
@@ -7,7 +8,6 @@ mod tests {
     use lightning::ln::chan_utils::ChannelPublicKeys;
     use test_log::test;
 
-    use crate::channel::channel_nonce_to_id;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
 
@@ -15,25 +15,26 @@ mod tests {
     macro_rules! hex_script (($hex:expr) => (Script::from(hex!($hex))));
 
     fn check_basepoints(basepoints: &ChannelPublicKeys) {
+        let points = [
+            basepoints.funding_pubkey,
+            basepoints.revocation_basepoint,
+            basepoints.payment_point,
+            basepoints.delayed_payment_basepoint,
+            basepoints.htlc_basepoint,
+        ]
+        .iter()
+        .map(|p| p.serialize().to_vec().to_hex())
+        .collect::<Vec<_>>();
+
         assert_eq!(
-            basepoints.funding_pubkey.serialize().to_vec().to_hex(),
-            "02868b7bc9b6d307509ed97758636d2d3628970bbd3bd36d279f8d3cde8ccd45ae"
-        );
-        assert_eq!(
-            basepoints.revocation_basepoint.serialize().to_vec().to_hex(),
-            "02982b69bb2d70b083921cbc862c0bcf7761b55d7485769ddf81c2947155b1afe4"
-        );
-        assert_eq!(
-            basepoints.payment_point.serialize().to_vec().to_hex(),
-            "026bb6655b5e0b5ff80d078d548819f57796013b09de8085ddc04b49854ae1e483"
-        );
-        assert_eq!(
-            basepoints.delayed_payment_basepoint.serialize().to_vec().to_hex(),
-            "0291dfb201bc87a2da8c7ffe0a7cf9691962170896535a7fd00d8ee4406a405e98"
-        );
-        assert_eq!(
-            basepoints.htlc_basepoint.serialize().to_vec().to_hex(),
-            "02c0c8ff7278e50bd07d7b80c109621d44f895e216400a7e95b09f544eb3fafee2"
+            points,
+            vec![
+                "038ad68f4825b5b9db24e274d79b26887b46a70b8a16a720d69e363c858cd7907e",
+                "02662e5e76a56a9dca49130bfd6990d9fc71501c4b7d799d253bbd365b72ac72d8",
+                "03ee671ff5bf6450b8b3cad584b49a68265978f9b2bd5f7ff144eb6972dd6bd35a",
+                "022e399383d20b0157178d8927a102829ddedd12cea977527afce1d374dbedd553",
+                "02e25506cc6c4b9f888d682487d3b8d969a56e13b623da743d9c9d56c763931c49"
+            ]
         );
     }
 
@@ -53,10 +54,9 @@ mod tests {
     #[test]
     fn ready_channel_not_exist_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let channel_nonce_x = "nonceX".as_bytes().to_vec();
-        let channel_id_x = channel_nonce_to_id(&channel_nonce_x);
+        let channel_id_x = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
         let status: Result<_, Status> =
-            node.ready_channel(channel_id_x, None, make_test_channel_setup(), &vec![]);
+            node.ready_channel(channel_id_x.clone(), None, make_test_channel_setup(), &vec![]);
         assert!(status.is_err());
         let err = status.unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
@@ -77,15 +77,18 @@ mod tests {
     #[test]
     fn ready_channel_dual_channelid_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let channel_nonce = "nonce1".as_bytes().to_vec();
-        let channel_id = channel_nonce_to_id(&channel_nonce);
-        node.new_channel(Some(channel_id), Some(channel_nonce), &node).expect("new_channel");
+        let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
+        node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
 
         // Issue ready_channel w/ an alternate id.
-        let channel_nonce_x = "nonceX".as_bytes().to_vec();
-        let channel_id_x = channel_nonce_to_id(&channel_nonce_x);
-        node.ready_channel(channel_id, Some(channel_id_x), make_test_channel_setup(), &vec![])
-            .expect("ready_channel");
+        let channel_id_x = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
+        node.ready_channel(
+            channel_id.clone(),
+            Some(channel_id_x.clone()),
+            make_test_channel_setup(),
+            &vec![],
+        )
+        .expect("ready_channel");
 
         // Original channel_id should work with_ready_channel.
         let val = node.with_ready_channel(&channel_id, |_chan| Ok(42)).expect("u32");
@@ -100,8 +103,7 @@ mod tests {
     fn with_ready_channel_not_exist_test() {
         let (node, _channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
-        let channel_nonce_x = "nonceX".as_bytes().to_vec();
-        let channel_id_x = channel_nonce_to_id(&channel_nonce_x);
+        let channel_id_x = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
 
         let status: Result<(), Status> = node.with_ready_channel(&channel_id_x, |_chan| Ok(()));
         assert!(status.is_err());
@@ -113,9 +115,8 @@ mod tests {
     #[test]
     fn channel_stub_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let channel_nonce = "nonce1".as_bytes().to_vec();
-        let channel_id = channel_nonce_to_id(&channel_nonce);
-        node.new_channel(Some(channel_id), Some(channel_nonce), &node).expect("new_channel");
+        let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
+        node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
 
         // with_ready_channel should return not ready.
         let result: Result<(), Status> = node.with_ready_channel(&channel_id, |_chan| {
@@ -155,7 +156,7 @@ mod tests {
         // check_future_secret should work.
         let n: u64 = 10;
         let suggested = SecretKey::from_slice(
-            hex_decode("4220531d6c8b15d66953c46b5c4d67c921943431452d5543d8805b9903c6b858")
+            hex_decode("2f87fef68f2bafdb3c6425921894af44da9a984075c70c7ba31ccd551b3585db")
                 .unwrap()
                 .as_slice(),
         )
@@ -178,9 +179,8 @@ mod tests {
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
 
         // Try and create the channel again.
-        let channel_nonce = "nonce1".as_bytes().to_vec();
-        let channel_id = channel_nonce_to_id(&channel_nonce);
-        let result = node.new_channel(Some(channel_id), Some(channel_nonce), &node);
+        let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
+        let result = node.new_channel(Some(channel_id), &node);
         let err = result.err().unwrap();
         assert_eq!(err.code(), Code::InvalidArgument);
         assert_eq!(err.message(), format!("channel already exists: {}", TEST_CHANNEL_ID[0]));
@@ -202,15 +202,15 @@ mod tests {
     #[test]
     fn ready_channel_unknown_holder_shutdown_script() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let channel_nonce = "nonce1".as_bytes().to_vec();
-        let channel_id = channel_nonce_to_id(&channel_nonce);
-        node.new_channel(Some(channel_id), Some(channel_nonce), &node).expect("new_channel");
+        let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
+        node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
         let mut setup = make_test_channel_setup();
         setup.holder_shutdown_script =
             Some(hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565"));
         let holder_shutdown_key_path = vec![];
+        let result = node.ready_channel(channel_id, None, setup.clone(), &holder_shutdown_key_path);
         assert_failed_precondition_err!(
-            node.ready_channel(channel_id, None, setup.clone(), &holder_shutdown_key_path),
+            result,
             "policy failure: validate_ready_channel: \
              holder_shutdown_script is not in wallet or allowlist"
         );
@@ -219,38 +219,28 @@ mod tests {
     #[test]
     fn ready_channel_holder_shutdown_script_in_allowlist() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let channel_nonce = "nonce1".as_bytes().to_vec();
-        let channel_id = channel_nonce_to_id(&channel_nonce);
-        node.new_channel(Some(channel_id), Some(channel_nonce), &node).expect("new_channel");
+        let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
+        node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
         let mut setup = make_test_channel_setup();
         setup.holder_shutdown_script =
             Some(hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565"));
         node.add_allowlist(&vec!["tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z".to_string()])
             .expect("added allowlist");
         let holder_shutdown_key_path = vec![];
-        assert_status_ok!(node.ready_channel(
-            channel_id,
-            None,
-            setup.clone(),
-            &holder_shutdown_key_path
-        ));
+        let result = node.ready_channel(channel_id, None, setup.clone(), &holder_shutdown_key_path);
+        assert_status_ok!(result);
     }
 
     #[test]
     fn ready_channel_holder_shutdown_script_in_wallet() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let channel_nonce = "nonce1".as_bytes().to_vec();
-        let channel_id = channel_nonce_to_id(&channel_nonce);
-        node.new_channel(Some(channel_id), Some(channel_nonce), &node).expect("new_channel");
+        let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
+        node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
         let mut setup = make_test_channel_setup();
         setup.holder_shutdown_script =
             Some(hex_script!("0014b76dd61e41b5ef052af21cda3260888c070bb9af"));
         let holder_shutdown_key_path = vec![7];
-        assert_status_ok!(node.ready_channel(
-            channel_id,
-            None,
-            setup.clone(),
-            &holder_shutdown_key_path
-        ));
+        let result = node.ready_channel(channel_id, None, setup.clone(), &holder_shutdown_key_path);
+        assert_status_ok!(result);
     }
 }

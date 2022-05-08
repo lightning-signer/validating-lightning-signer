@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use futures::{Stream, StreamExt};
 use log::{error, info};
-use secp256k1::PublicKey;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinHandle;
@@ -64,7 +63,7 @@ impl ProtocolAdapter {
                     let mut reqs = requests.lock().await;
                     let request_id = reqs.request_id.fetch_add(1, Ordering::AcqRel);
                     let context = req.client_id.as_ref().map(|c| HsmRequestContext {
-                        peer_id: c.peer_id.serialize().to_vec(),
+                        peer_id: c.peer_id.to_vec(),
                         dbid: c.dbid,
                         capabilities: 0,
                     });
@@ -155,7 +154,7 @@ pub struct ChannelReply {
 
 #[derive(Clone, Debug)]
 pub struct ClientId {
-    pub peer_id: PublicKey,
+    pub peer_id: [u8; 33],
     pub dbid: u64,
 }
 

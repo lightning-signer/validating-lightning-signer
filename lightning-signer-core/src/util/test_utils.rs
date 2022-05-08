@@ -36,8 +36,7 @@ use super::key_utils::{
     make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
 };
 use crate::channel::{
-    channel_nonce_to_id, Channel, ChannelBase, ChannelId, ChannelSetup, ChannelStub,
-    CommitmentType, TypedSignature,
+    Channel, ChannelBase, ChannelId, ChannelSetup, ChannelStub, CommitmentType, TypedSignature,
 };
 use crate::node::SpendType;
 use crate::node::{Node, NodeConfig};
@@ -326,11 +325,11 @@ pub fn init_node_and_channel(
         let header = make_testnet_header(tracker.tip(), Default::default());
         tracker.add_block(header, vec![], None).unwrap();
     }
-    let channel_nonce = "nonce1".as_bytes().to_vec();
-    let channel_id = channel_nonce_to_id(&channel_nonce);
-    node.new_channel(Some(channel_id), Some(channel_nonce), &node).expect("new_channel");
+    let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
+    node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
     let holder_shutdown_key_path = vec![];
-    node.ready_channel(channel_id, None, setup, &holder_shutdown_key_path).expect("ready channel");
+    node.ready_channel(channel_id.clone(), None, setup, &holder_shutdown_key_path)
+        .expect("ready channel");
     (node, channel_id)
 }
 
@@ -536,8 +535,7 @@ pub fn test_chan_ctx_with_push_val(
     channel_value_sat: u64,
     push_value_msat: u64,
 ) -> TestChannelContext {
-    let channel_nonce0 = format!("nonce{}", nn).as_bytes().to_vec();
-    let channel_id = channel_nonce_to_id(&channel_nonce0);
+    let channel_id = ChannelId::new(&nn.to_le_bytes());
     let setup = ChannelSetup {
         is_outbound: true,
         channel_value_sat,
@@ -551,17 +549,11 @@ pub fn test_chan_ctx_with_push_val(
         commitment_type: CommitmentType::StaticRemoteKey,
     };
 
-    node_ctx
-        .node
-        .new_channel(Some(channel_id), Some(channel_nonce0), &node_ctx.node)
-        .expect("new_channel");
+    node_ctx.node.new_channel(Some(channel_id.clone()), &node_ctx.node).expect("new_channel");
 
     // Make counterparty keys that match.
-    TestChannelContext {
-        channel_id,
-        setup,
-        counterparty_keys: make_test_counterparty_keys(&node_ctx, &channel_id, channel_value_sat),
-    }
+    let counterparty_keys = make_test_counterparty_keys(&node_ctx, &channel_id, channel_value_sat);
+    TestChannelContext { channel_id, setup, counterparty_keys }
 }
 
 pub fn set_next_holder_commit_num_for_testing(
@@ -725,7 +717,12 @@ pub fn funding_tx_ready_channel(
     let holder_shutdown_key_path = vec![];
     node_ctx
         .node
-        .ready_channel(chan_ctx.channel_id, None, chan_ctx.setup.clone(), &holder_shutdown_key_path)
+        .ready_channel(
+            chan_ctx.channel_id.clone(),
+            None,
+            chan_ctx.setup.clone(),
+            &holder_shutdown_key_path,
+        )
         .err()
 }
 
@@ -739,7 +736,12 @@ pub fn synthesize_ready_channel(
     let holder_shutdown_key_path = vec![];
     node_ctx
         .node
-        .ready_channel(chan_ctx.channel_id, None, chan_ctx.setup.clone(), &holder_shutdown_key_path)
+        .ready_channel(
+            chan_ctx.channel_id.clone(),
+            None,
+            chan_ctx.setup.clone(),
+            &holder_shutdown_key_path,
+        )
         .expect("Channel");
     node_ctx
         .node
@@ -912,11 +914,8 @@ pub fn setup_funded_channel_with_setup(
     let secp_ctx = Secp256k1::signing_only();
     let node_ctx = TestNodeContext { node, secp_ctx };
     let channel_value_sat = setup.channel_value_sat;
-    let mut chan_ctx = TestChannelContext {
-        channel_id,
-        setup,
-        counterparty_keys: make_test_counterparty_keys(&node_ctx, &channel_id, channel_value_sat),
-    };
+    let counterparty_keys = make_test_counterparty_keys(&node_ctx, &channel_id, channel_value_sat);
+    let mut chan_ctx = TestChannelContext { channel_id, setup, counterparty_keys };
 
     // Pretend we funded the channel and ran for a while ...
     chan_ctx.setup.funding_outpoint =
@@ -1155,8 +1154,10 @@ pub const TEST_SEED: &[&str] = &[
     "6c696768746e696e672d32000000000000000000000000000000000000000000",
 ];
 
-pub const TEST_CHANNEL_ID: &[&str] =
-    &["0a78009591722cc84825ca95ee7ffa52428047ed12c9076044ebfe8665f9657f"]; // TEST_SEED[1], "nonce1"
+pub const TEST_CHANNEL_ID: &[&str] = &[
+    "0100000000000000000000000000000000000000000000000000000000000000",
+    "0200000000000000000000000000000000000000000000000000000000000000",
+];
 
 pub fn build_tx_scripts(
     keys: &TxCreationKeys,
@@ -1578,14 +1579,11 @@ pub fn mine_header_with_bits(
 }
 
 pub fn make_node_and_channel(
-    channel_nonce: &Vec<u8>,
     channel_id: ChannelId,
 ) -> (PublicKey, Arc<Node>, ChannelStub, [u8; 32]) {
     let (node_id, node, seed) = make_node();
 
-    let (_, channel) = node
-        .new_channel(Some(channel_id), Some(channel_nonce.clone()), &Arc::clone(&node))
-        .unwrap();
+    let (_, channel) = node.new_channel(Some(channel_id), &Arc::clone(&node)).unwrap();
     (node_id, node, channel.unwrap(), seed)
 }
 

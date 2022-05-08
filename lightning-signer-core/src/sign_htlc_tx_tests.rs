@@ -219,15 +219,15 @@ mod tests {
 
         let expected_txid = if commitment_type == CommitmentType::StaticRemoteKey {
             if is_offered {
-                "66a108d7722fdb160206ba075a49c03c9e0174421c0c845cddd4a5b931fa5ab5"
+                "b93508d29f4866913340ce050c1f2fc366ac84824f1f4db388350cfa25a4f5cb"
             } else {
-                "a052c48d7cba8eb1107d72b15741292267d4f4af754a7136168de50d4359b714"
+                "09bf12e4a113411134d9d8ee25e0d8e8ec3733867fe60bb4b8bebf29e393a08c"
             }
         } else {
             if is_offered {
-                "81688eca802d9676c24ed8ec444fd5f47991d44f18d8096cede1915ce4a907cb"
+                "cfb49b53f0ff73d3209372a56c9f7f64694ffa3f4a315c1216dbf24b95389ff9"
             } else {
-                "944edd4d2bdc576a9275a920c61c720c7487e8a908d05a7381216047d762c281"
+                "6362ca6888aa61bb626aa55309af5e009e7c59211942a681bb6fca5625ba60e5"
             }
         };
         assert_eq!(htlc_tx.txid().to_hex(), expected_txid);
@@ -338,15 +338,15 @@ mod tests {
 
         let expected_txid = if commitment_type == CommitmentType::StaticRemoteKey {
             if is_offered {
-                "783ca2bb360dc712301d43daef0dbae2e15a8f06dcc73062b24e1d86cb918e5c"
+                "7358f246581726b4b5f51e361fb53e7ac23b46d05291ec9ed145835124291fe3"
             } else {
-                "89cf05ddaef231827291e32cc67d17810b867614bbb8e1a39c001f62f57421ab"
+                "fd07a2d0bb62a2d6d64442e4ebb2208c0a64cee4a9727f02f457f26975960892"
             }
         } else {
             if is_offered {
-                "f108967616fc7d97c672d66c4885bcf02a78eabd5c38239ce548922cdb16bbe0"
+                "59b9970727ae7a00576c5f0c0b4405882fb90d30a826d45dc713e905e355db47"
             } else {
-                "41c6974ee15c8c5de8f23c64942061a0dad581442218afff28fb84ddce713866"
+                "a91d7f6fa13193b7aeab704d3585c0e9de54d4982227fe4b13ea94d8ae42542e"
             }
         };
         assert_eq!(htlc_tx.txid().to_hex(), expected_txid);

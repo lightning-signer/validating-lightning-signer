@@ -176,8 +176,8 @@ fn invoice_test() {
     let signer_node2 = nodes[2].keys_manager.get_node();
     let channel_keys2 = signer_node2.channels().keys().cloned().collect::<Vec<_>>();
     // The actual balance is lower because of fees
-    assert_eq!(holder_balances(&signer_node0, channel_keys0[0], true), (100_000, 99_817, 99_817));
-    assert_eq!(holder_balances(&signer_node2, channel_keys2[0], false), (0, 0, 0));
+    assert_eq!(holder_balances(&signer_node0, channel_keys0[0].clone(), true), (100_000, 99_817, 99_817));
+    assert_eq!(holder_balances(&signer_node2, channel_keys2[0].clone(), false), (0, 0, 0));
 
     assert_eq!(signer_node0.get_state().excess_amount, 0);
     assert_eq!(signer_node1.get_state().excess_amount, 0);
@@ -191,8 +191,8 @@ fn invoice_test() {
     );
 
     // an extra satoshi was consumed as fee
-    assert_eq!(holder_balances(&signer_node0, channel_keys0[0], true), (92_999, 92_816, 92_816));
-    assert_eq!(holder_balances(&signer_node2, channel_keys2[0], false), (7_000, 7_000, 7_000));
+    assert_eq!(holder_balances(&signer_node0, channel_keys0[0].clone(), true), (92_999, 92_816, 92_816));
+    assert_eq!(holder_balances(&signer_node2, channel_keys2[0].clone(), false), (7_000, 7_000, 7_000));
 
     assert_eq!(signer_node0.get_state().excess_amount, 0);
     // Gained routing fee

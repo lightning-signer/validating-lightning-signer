@@ -109,8 +109,6 @@ pub struct MyKeysManager {
     lnd_basepoint_index: AtomicU32,
 
     unique_start: Sha256State,
-
-    id_to_nonce: Mutex<OrderedMap<ChannelId, Vec<u8>>>,
 }
 
 impl MyKeysManager {
@@ -215,7 +213,6 @@ impl MyKeysManager {
             rand_bytes_unique_start,
             lnd_basepoint_index: AtomicU32::new(0),
             unique_start,
-            id_to_nonce: Mutex::new(OrderedMap::new()),
         };
 
         let secp_seed = res.get_secure_random_bytes();
@@ -280,49 +277,57 @@ impl MyKeysManager {
     }
 
     // Re-derive existing channel keys
-    fn derive_channel_keys(
-        &self,
-        channel_value_sat: u64,
-        channel_id_slice: &[u8; 32],
-    ) -> InMemorySigner {
-        let channel_id = ChannelId(*channel_id_slice);
-        let nonce = {
-            let id_to_nonce = self.id_to_nonce.lock().unwrap();
-            id_to_nonce.get(&channel_id).expect("unknown channel ID").clone()
-        };
-        self.get_channel_keys_with_id(channel_id, nonce.as_slice(), channel_value_sat)
+    fn derive_channel_keys(&self, channel_value_sat: u64, keys_id: &[u8; 32]) -> InMemorySigner {
+        self.get_channel_keys_with_keys_id(keys_id.clone(), channel_value_sat)
     }
 
     pub(crate) fn get_channel_keys_with_id(
         &self,
         channel_id: ChannelId,
-        channel_nonce: &[u8],
         channel_value_sat: u64,
     ) -> InMemorySigner {
         let res = match self.key_derivation_style {
-            KeyDerivationStyle::Native => self.get_channel_keys_with_nonce_native(
-                channel_id,
-                channel_nonce,
-                channel_value_sat,
-            ),
+            KeyDerivationStyle::Native =>
+                self.get_channel_keys_with_nonce_native(channel_id, channel_value_sat),
             KeyDerivationStyle::Lnd =>
-                self.get_channel_keys_with_nonce_lnd(channel_id, channel_nonce, channel_value_sat),
+                self.get_channel_keys_with_nonce_lnd(channel_id, channel_value_sat),
         };
-        self.id_to_nonce.lock().unwrap().insert(channel_id, channel_nonce.to_vec());
+        res
+    }
+
+    pub(crate) fn get_channel_keys_with_keys_id(
+        &self,
+        keys_id: [u8; 32],
+        channel_value_sat: u64,
+    ) -> InMemorySigner {
+        let res = match self.key_derivation_style {
+            KeyDerivationStyle::Native =>
+                self.get_channel_keys_with_keys_id_native(keys_id, channel_value_sat),
+            KeyDerivationStyle::Lnd =>
+                self.get_channel_keys_with_keys_id_lnd(keys_id, channel_value_sat),
+        };
         res
     }
 
     fn get_channel_keys_with_nonce_native(
         &self,
         channel_id: ChannelId,
-        channel_nonce: &[u8],
+        channel_value_sat: u64,
+    ) -> InMemorySigner {
+        // aka channel_seed
+        let keys_id =
+            hkdf_sha256(&self.channel_seed_base, "per-peer seed".as_bytes(), channel_id.as_slice());
+
+        self.get_channel_keys_with_keys_id_native(keys_id, channel_value_sat)
+    }
+
+    fn get_channel_keys_with_keys_id_native(
+        &self,
+        keys_id: [u8; 32],
         channel_value_sat: u64,
     ) -> InMemorySigner {
         let hkdf_info = "c-lightning";
-        let channel_seed =
-            hkdf_sha256(&self.channel_seed_base, "per-peer seed".as_bytes(), channel_nonce);
-
-        let keys_buf = hkdf_sha256_keys(&channel_seed, hkdf_info.as_bytes(), &[]);
+        let keys_buf = hkdf_sha256_keys(&keys_id, hkdf_info.as_bytes(), &[]);
         let mut ndx = 0;
         let funding_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
@@ -346,23 +351,32 @@ impl MyKeysManager {
             htlc_base_key,
             commitment_seed,
             channel_value_sat,
-            channel_id.0,
+            keys_id,
         )
     }
 
     fn get_channel_keys_with_nonce_lnd(
         &self,
         channel_id: ChannelId,
-        channel_nonce: &[u8],
         channel_value_sat: u64,
     ) -> InMemorySigner {
         // FIXME - How does lnd generate it's commitment seed? This is a stripped
         // native (really c-lightning) version.
         //
+        // aka channel_seed
+        let keys_id =
+            hkdf_sha256(&self.channel_seed_base, "per-peer seed".as_bytes(), channel_id.as_slice());
+
+        self.get_channel_keys_with_keys_id_lnd(keys_id, channel_value_sat)
+    }
+
+    fn get_channel_keys_with_keys_id_lnd(
+        &self,
+        keys_id: [u8; 32],
+        channel_value_sat: u64,
+    ) -> InMemorySigner {
         let hkdf_info = "c-lightning";
-        let channel_seed =
-            hkdf_sha256(&self.channel_seed_base, "per-peer seed".as_bytes(), channel_nonce);
-        let keys_buf = hkdf_sha256_keys(&channel_seed, hkdf_info.as_bytes(), &[]);
+        let keys_buf = hkdf_sha256_keys(&keys_id, hkdf_info.as_bytes(), &[]);
         let mut ndx = 0;
         ndx += 32;
         ndx += 32;
@@ -401,11 +415,11 @@ impl MyKeysManager {
             htlc_base_key,
             commitment_seed,
             channel_value_sat,
-            channel_id.0,
+            keys_id,
         )
     }
 
-    pub(crate) fn get_channel_id(&self) -> [u8; 32] {
+    pub(crate) fn get_channel_id(&self) -> ChannelId {
         let mut sha = self.unique_start.clone();
 
         let child_ix = self.increment_channel_id_child_index();
@@ -418,7 +432,9 @@ impl MyKeysManager {
             .expect("Your RNG is busted");
         sha.input(&child_privkey.private_key.key[..]);
 
-        Sha256::from_engine(sha).into_inner()
+        let random_bytes = Sha256::from_engine(sha).into_inner();
+
+        ChannelId::new(&random_bytes)
     }
 
     pub(crate) fn increment_channel_id_child_index(&self) -> usize {
@@ -667,7 +683,7 @@ mod tests {
     use super::*;
     use lightning::chain::keysinterface::BaseSign;
 
-    use crate::util::test_utils::hex_encode;
+    use crate::util::test_utils::{hex_decode, hex_encode, TEST_CHANNEL_ID};
     use test_log::test;
 
     #[test]
@@ -703,10 +719,8 @@ mod tests {
     }
 
     fn make_test_keys(manager: MyKeysManager) -> InMemorySigner {
-        let channel_id = ChannelId([0u8; 32]);
-        let mut channel_nonce = [0u8; 32];
-        channel_nonce[0] = 1u8;
-        manager.get_channel_keys_with_id(channel_id, &channel_nonce, 0)
+        let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
+        manager.get_channel_keys_with_id(channel_id, 0)
     }
 
     #[test]

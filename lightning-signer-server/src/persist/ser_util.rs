@@ -5,7 +5,6 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeSet as Set;
-use std::convert::TryInto;
 
 use crate::lightning;
 use bitcoin::hashes::Hash;
@@ -54,7 +53,7 @@ impl SerializeAs<ChannelId> for ChannelIdHandler {
     where
         S: Serializer,
     {
-        serializer.serialize_str(hex::encode(source.0).as_str())
+        serializer.serialize_str(hex::encode(source.as_slice()).as_str())
     }
 }
 
@@ -64,7 +63,7 @@ impl<'de> DeserializeAs<'de, ChannelId> for ChannelIdHandler {
         D: Deserializer<'de>,
     {
         let res = <Cow<'de, str> as Deserialize<'de>>::deserialize(deserializer).unwrap();
-        let key = ChannelId(hex::decode(&*res).unwrap().as_slice().try_into().unwrap());
+        let key = ChannelId::new(&hex::decode(&*res).unwrap());
         Ok(key)
     }
 }

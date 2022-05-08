@@ -78,8 +78,7 @@ pub trait Transport: Send + Sync {
 #[derive(Clone)]
 pub struct SignerClient {
     transport: Arc<dyn Transport>,
-    // NOTE this is actually unused by VLS, but it's passed for compatibility with CLN
-    peer_id: PublicKey,
+    peer_id: [u8; 33],
     dbid: u64,
     channel_keys: ChannelPublicKeys,
     channel_value: u64,
@@ -159,7 +158,7 @@ fn channel_id_to_dbid(slice: &[u8; 32]) -> u64 {
 
 impl SignerClient {
     fn call<T: SerBolt, R: DeBolt>(&self, message: T) -> Result<R, Error> {
-        call(self.dbid, to_pubkey(self.peer_id), &*self.transport, message).map_err(|e| {
+        call(self.dbid, PubKey(self.peer_id), &*self.transport, message).map_err(|e| {
             error!("transport error: {:?}", e);
             e
         })
@@ -167,7 +166,7 @@ impl SignerClient {
 
     fn new(
         transport: Arc<dyn Transport>,
-        peer_id: PublicKey,
+        peer_id: [u8; 33],
         dbid: u64,
         channel_value: u64,
         channel_keys: ChannelPublicKeys,
@@ -451,8 +450,8 @@ impl KeysManagerClient {
         node_call(&*self.transport, message)
     }
 
-    fn get_channel_basepoints(&self, dbid: u64, peer_id: PublicKey) -> ChannelPublicKeys {
-        let message = GetChannelBasepoints { node_id: to_pubkey(peer_id), dbid };
+    fn get_channel_basepoints(&self, dbid: u64, peer_id: [u8; 33]) -> ChannelPublicKeys {
+        let message = GetChannelBasepoints { node_id: PubKey(peer_id), dbid };
         let result: GetChannelBasepointsReply = self.call(message).expect("pubkeys");
         let channel_keys = ChannelPublicKeys {
             funding_pubkey: from_pubkey(result.funding),
@@ -552,11 +551,11 @@ impl KeysInterface for KeysManagerClient {
 
     fn get_channel_signer(&self, _inbound: bool, channel_value_satoshis: u64) -> Self::Signer {
         let dbid = self.next_dbid.fetch_add(1, Ordering::AcqRel);
-        // NOTE this is actually unused by LDK / VLS, but it's passed for compatibility with CLN
-        let peer_secret = SecretKey::from_slice(&[2; 32]).unwrap();
-        let peer_id = PublicKey::from_secret_key(&Secp256k1::new(), &peer_secret);
+        // We don't use the peer_id, because it's not easy to get at this point within the LDK framework.
+        // The dbid is unique, so that's enough for our purposes.
+        let peer_id = [0u8; 33];
 
-        let message = NewChannel { node_id: to_pubkey(peer_id), dbid };
+        let message = NewChannel { node_id: PubKey(peer_id.clone()), dbid };
         let _: NewChannelReply = self.call(message).expect("NewChannel");
 
         let channel_keys = self.get_channel_basepoints(dbid, peer_id);

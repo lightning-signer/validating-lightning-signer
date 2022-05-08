@@ -303,7 +303,7 @@ mod tests {
             &secp_ctx,
         );
 
-        let channel_id = ChannelId([1; 32]);
+        let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
         assert!(signer.get_channel(&node_id, &channel_id).is_err());
         assert!(signer.get_node(&node_id).is_err());
 
