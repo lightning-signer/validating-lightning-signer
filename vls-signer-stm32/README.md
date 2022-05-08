@@ -14,7 +14,8 @@ sudo mkfs.vfat -F32 /dev/sdX
 
 #### Hardware Test
 
-Connect the `ST_LINK` port to host computer using USB cable.  Omit the `sdio` feature if you don't have an SDcard inserted.
+Connect the `ST_LINK` port to host computer using USB cable.  Omit the
+`sdio` feature if you don't have an SDcard inserted.
 
 ```
 cargo run --features stm32f412,sdio --release --bin test
@@ -35,13 +36,26 @@ sudo screen /dev/ttyACM1 19200
 
 Device will echo typed characters ...
 
-#### Run Signer
+#### Run Signer Demo
 
-Run the signer.  Omit the `sdio` feature if you don't have an SDcard inserted.
+1. Connect the `ST_LINK` port to the host computer using a USB cable.
 
+2. From a terminal shell in this directory run the `demo_signer`:
+   - Set the `--features` flag to the specific board model you are using.
+   - Omit the `sdio` feature if you don't have a formatted SDcard inserted.
+   For example, using the STM32F413:
 ```
-cargo run --features stm32f412,sdio --release --bin demo_signer
 cargo run --features stm32f413,sdio --release --bin demo_signer
+```
+   Wait for the demo_signer to finish loading and start executing.
+
+3. Connect the user serial port (`USB_USER` on the `stm32f412` or
+   `USB_OTG_FS` on the `stm32f413`) to the host computer.
+
+4. In a second terminal shell, change directories to the top-level
+   `vls-hsmd` directory and execute the desired test:
+```
+make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_pay
 ```
 
 #### Reference
