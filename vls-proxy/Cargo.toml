@@ -61,3 +61,10 @@ path = "src/embedded_main.rs"
 name = "remote_hsmd_vls_grpc2"
 path = "src/grpc_main.rs"
 required-features = ["grpc"]
+
+[[bin]]
+# A signer that connects to the node using a gRPC protocol
+# (standalone version of remote_hsmd_vls_grpc2)
+name = "vlsd2"
+path = "src/vlsd2_main.rs"
+required-features = ["grpc"]

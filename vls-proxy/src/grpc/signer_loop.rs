@@ -4,27 +4,10 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::spawn_blocking;
 use triggered::Trigger;
 
+use super::adapter::{ChannelReply, ChannelRequest, ClientId};
+use crate::client::Client;
 use vls_protocol::{msgs, msgs::Message, Error, Result};
 use vls_protocol_signer::vls_protocol;
-use vls_proxy::client::Client;
-
-// mpsc request
-pub struct ChannelRequest {
-    pub message: Vec<u8>,
-    pub reply_tx: oneshot::Sender<ChannelReply>,
-    pub client_id: Option<ClientId>,
-}
-
-// mpsc reply
-pub struct ChannelReply {
-    pub reply: Vec<u8>,
-}
-
-#[derive(Clone, Debug)]
-pub struct ClientId {
-    pub peer_id: PublicKey,
-    pub dbid: u64,
-}
 
 /// Implement the hsmd UNIX fd protocol.
 /// This doesn't actually perform the signing - the hsmd packets are transported via gRPC to the

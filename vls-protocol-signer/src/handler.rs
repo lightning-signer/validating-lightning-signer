@@ -185,10 +185,17 @@ impl Handler for RootHandler {
                     onion_reply_secret: Secret(onion_reply_secret),
                 }))
             }
-            Message::HsmdInit2(_) => {
+            Message::HsmdInit2(m) => {
                 let bip32 = self.node.get_account_extended_pubkey().encode();
                 let node_secret = self.node.get_node_secret()[..].try_into().unwrap();
                 let bolt12_xonly = self.node.get_bolt12_pubkey().serialize();
+                let allowlist = m
+                    .dev_allowlist
+                    .into_iter()
+                    .map(|ws| String::from_utf8(ws.0).expect("utf8"))
+                    .collect();
+                // FIXME disable in production
+                self.node.add_allowlist(&allowlist)?;
                 Ok(Box::new(msgs::HsmdInit2Reply {
                     node_secret: Secret(node_secret),
                     bip32: ExtKey(bip32),

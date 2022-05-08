@@ -3,4 +3,5 @@
 
 pub mod client;
 pub mod connection;
+pub mod grpc;
 pub mod util;
