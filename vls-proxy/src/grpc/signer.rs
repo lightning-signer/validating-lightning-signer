@@ -106,7 +106,7 @@ fn handle(request: SignerRequest, root_handler: &RootHandler) -> StdResult<Signe
                 .try_into()
                 .map_err(|_| Error::SigningError(Status::invalid_argument("peer id")))?,
         );
-        let handler = root_handler.for_new_client(context.dbid, Some(peer), context.dbid);
+        let handler = root_handler.for_new_client(context.dbid, peer, context.dbid);
         handler.handle(msg)?
     } else {
         root_handler.handle(msg)?

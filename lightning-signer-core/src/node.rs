@@ -487,7 +487,7 @@ impl Allowable {
 /// let config = TEST_NODE_CONFIG;
 /// let validator_factory = Arc::new(SimpleValidatorFactory::new());
 /// let node = Arc::new(Node::new(config, &seed, &persister, vec![], validator_factory));
-/// let (channel_id, opt_stub) = node.new_channel(None, None, &node).expect("new channel");
+/// let (channel_id, opt_stub) = node.new_channel(None, &node).expect("new channel");
 /// assert!(opt_stub.is_some());
 /// let channel_slot_mutex = node.get_channel(&channel_id).expect("get channel");
 /// let channel_slot = channel_slot_mutex.lock().expect("lock");
@@ -750,42 +750,25 @@ impl Node {
     /// The initial channel ID may be specified in `opt_channel_id`.  If the channel
     /// with this ID already exists, the existing stub is returned.
     ///
-    /// If unspecified, the channel nonce will default to the channel ID.
+    /// If unspecified, a channel ID will be generated.
     ///
     /// This function will return an invalid_argument [Status] if there is
-    /// an existing channel with this ID and it's not a compatible stub
-    /// channel.
+    /// an existing channel with this ID and it's not a stub channel.
     ///
     /// Returns the channel ID and the stub.
-    // TODO the relationship between nonce and ID is different from
-    // the behavior used in the gRPC driver.  Here the nonce defaults to the ID
-    // but in the gRPC driver, the nonce is supplied by the caller, and the ID
-    // is set to the sha256 of the nonce.
     pub fn new_channel(
         &self,
         opt_channel_id: Option<ChannelId>,
-        opt_channel_nonce0: Option<Vec<u8>>,
         arc_self: &Arc<Node>,
     ) -> Result<(ChannelId, Option<ChannelStub>), Status> {
-        let channel_id =
-            opt_channel_id.unwrap_or_else(|| ChannelId(self.keys_manager.get_channel_id()));
-        let channel_nonce0 = opt_channel_nonce0.unwrap_or_else(|| channel_id.0.to_vec());
+        let channel_id = opt_channel_id.unwrap_or_else(|| self.keys_manager.get_channel_id());
         let mut channels = self.channels.lock().unwrap();
 
-        // Is there a preexisting channel slot?
+        // Is there an existing channel slot?
         let maybe_slot = channels.get(&channel_id);
         if maybe_slot.is_some() {
             match &*maybe_slot.unwrap().lock().unwrap() {
                 ChannelSlot::Stub(stub) => {
-                    if channel_nonce0 != stub.nonce {
-                        return Err(invalid_argument(format!(
-                            "new_channel nonce mismatch with existing stub: \
-                             channel_id={} channel_nonce0={} stub.nonce={}",
-                            channel_id,
-                            channel_nonce0.to_hex(),
-                            stub.nonce.to_hex()
-                        )));
-                    }
                     // This stub is "embryonic" (hasn't signed a commitment).  This
                     // can happen if the initial channel create to this peer failed
                     // in negotiation.  It's ok to just use this stub.
@@ -800,34 +783,29 @@ impl Node {
         }
 
         let channel_value_sat = 0; // Placeholder value, not known yet.
-        let keys = self.keys_manager.get_channel_keys_with_id(
-            channel_id,
-            channel_nonce0.as_slice(),
-            channel_value_sat,
-        );
+        let keys =
+            self.keys_manager.get_channel_keys_with_id(channel_id.clone(), channel_value_sat);
 
         let stub = ChannelStub {
             node: Arc::downgrade(arc_self),
-            nonce: channel_nonce0,
             secp_ctx: Secp256k1::new(),
             keys,
-            id0: channel_id,
+            id0: channel_id.clone(),
         };
         // TODO this clone is expensive
-        channels.insert(channel_id, Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone()))));
+        channels.insert(channel_id.clone(), Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone()))));
         self.persister
             .new_channel(&self.get_id(), &stub)
             // Persist.new_channel should only fail if the channel was previously persisted.
             // So if it did fail, we have an internal error.
             .expect("channel was in storage but not in memory");
-        Ok((channel_id, Some(stub)))
+        Ok((channel_id.clone(), Some(stub)))
     }
 
     pub(crate) fn restore_channel(
         &self,
         channel_id0: ChannelId,
         channel_id: Option<ChannelId>,
-        nonce: Vec<u8>,
         channel_value_sat: u64,
         channel_setup: Option<ChannelSetup>,
         enforcement_state: EnforcementState,
@@ -835,20 +813,16 @@ impl Node {
     ) -> Result<Arc<Mutex<ChannelSlot>>, ()> {
         let mut channels = self.channels.lock().unwrap();
         assert!(!channels.contains_key(&channel_id0));
-        let mut keys = self.keys_manager.get_channel_keys_with_id(
-            channel_id0,
-            nonce.as_slice(),
-            channel_value_sat,
-        );
+        let mut keys =
+            self.keys_manager.get_channel_keys_with_id(channel_id0.clone(), channel_value_sat);
 
         let slot = match channel_setup {
             None => {
                 let stub = ChannelStub {
                     node: Arc::downgrade(arc_self),
-                    nonce,
                     secp_ctx: Secp256k1::new(),
                     keys,
-                    id0: channel_id0,
+                    id0: channel_id0.clone(),
                 };
                 // TODO this clone is expensive
                 let slot = Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone())));
@@ -865,13 +839,12 @@ impl Node {
                 let monitor = ChainMonitor::new(funding_outpoint, 0);
                 let channel = Channel {
                     node: Arc::downgrade(arc_self),
-                    nonce,
                     secp_ctx: Secp256k1::new(),
                     keys,
                     enforcement_state,
                     setup,
-                    id0: channel_id0,
-                    id: channel_id,
+                    id0: channel_id0.clone(),
+                    id: channel_id.clone(),
                     monitor,
                 };
                 // TODO this clone is expensive
@@ -929,7 +902,6 @@ impl Node {
             node.restore_channel(
                 channel_id0,
                 channel_entry.id,
-                channel_entry.nonce,
                 channel_entry.channel_value_satoshis,
                 channel_entry.channel_setup,
                 channel_entry.enforcement_state,
@@ -981,7 +953,7 @@ impl Node {
         let validator = self.validator_factory.lock().unwrap().make_validator(
             self.network(),
             self.get_id(),
-            Some(channel_id0),
+            Some(channel_id0.clone()),
         );
 
         let chan = {
@@ -1022,13 +994,12 @@ impl Node {
             let enforcement_state = EnforcementState::new(initial_holder_value_sat);
             Channel {
                 node: Weak::clone(&stub.node),
-                nonce: stub.nonce.clone(),
                 secp_ctx: stub.secp_ctx.clone(),
                 keys,
                 enforcement_state,
                 setup: setup.clone(),
-                id0: channel_id0,
-                id: opt_channel_id,
+                id0: channel_id0.clone(),
+                id: opt_channel_id.clone(),
                 monitor,
             }
         };
@@ -1044,10 +1015,10 @@ impl Node {
 
         // If a permanent channel_id was provided use it, otherwise
         // continue with the initial channel_id0.
-        let chan_id = opt_channel_id.unwrap_or(channel_id0);
+        let chan_id = opt_channel_id.unwrap_or(channel_id0.clone());
 
         // Associate the new ready channel with the channel id.
-        channels.insert(chan_id, chan_arc.clone());
+        channels.insert(chan_id.clone(), chan_arc.clone());
 
         // If we are using a new permanent channel_id additionally
         // associate the channel with the original (initial)
@@ -1665,14 +1636,14 @@ mod tests {
     fn new_channel_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
 
-        let (channel_id, _) = node.new_channel(None, None, &node).unwrap();
+        let (channel_id, _) = node.new_channel(None, &node).unwrap();
         assert!(node.get_channel(&channel_id).is_ok());
     }
 
     #[test]
     fn bad_channel_lookup_test() -> Result<(), ()> {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let channel_id = ChannelId([1; 32]);
+        let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
         assert!(node.get_channel(&channel_id).is_err());
         Ok(())
     }
@@ -1693,7 +1664,7 @@ mod tests {
 
         let mut state = node.state.lock().unwrap();
         let hash1 = PaymentHash([1; 32]);
-        let channel_id1 = ChannelId([1; 32]);
+        let channel_id2 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
 
         // Create a strict invoice validator and one that does not validate invoices
         let mut policy = make_simple_policy(Network::Testnet);
@@ -1708,7 +1679,7 @@ mod tests {
 
         state
             .validate_and_apply_payments(
-                &channel_id1,
+                &channel_id2,
                 &Map::new(),
                 &vec![(hash, 99)].into_iter().collect(),
                 &Default::default(),
@@ -1997,7 +1968,7 @@ mod tests {
         let n: u64 = 10;
 
         let suggested = SecretKey::from_slice(
-            hex_decode("4220531d6c8b15d66953c46b5c4d67c921943431452d5543d8805b9903c6b858")
+            hex_decode("2f87fef68f2bafdb3c6425921894af44da9a984075c70c7ba31ccd551b3585db")
                 .unwrap()
                 .as_slice(),
         )
@@ -2112,13 +2083,9 @@ mod tests {
     #[test]
     fn get_unilateral_close_key_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let channel_nonce = hex_decode(
-            "022d223620a359a47ff7f7ac447c85c46c923da53389221a0054c11c1e3ca31d590100000000000000",
-        )
-        .unwrap();
-        let (channel_id, chan) = node.new_channel(None, Some(channel_nonce), &node).unwrap();
+        let (channel_id, chan) = node.new_channel(None, &node).unwrap();
 
-        node.ready_channel(channel_id, None, make_test_channel_setup(), &vec![])
+        node.ready_channel(channel_id.clone(), None, make_test_channel_setup(), &vec![])
             .expect("ready channel");
 
         let uck = node
@@ -2131,7 +2098,7 @@ mod tests {
             uck,
             (
                 SecretKey::from_slice(
-                    &hex_decode("d5f8a9fdd0e4be18c33656944b91dc1f6f2c38ce2a4bbd0ef330ffe4e106127c")
+                    &hex_decode("e6eb522940c9d1dcffc82f4eaff5b81ad318bdaa952061fa73fd6f717f73e160")
                         .unwrap()[..]
                 )
                 .unwrap(),
@@ -2171,7 +2138,7 @@ mod tests {
             uck,
             (
                 SecretKey::from_slice(
-                    &hex_decode("e6d21169036a5e5def25776027b087a932b8c02388d992661fd73692b29e44a3")
+                    &hex_decode("fd5f03ea7b42be9a045097dfa1ef007a430f576302c76e6e6265812f1d1ce18f")
                         .unwrap()[..]
                 )
                 .unwrap(),

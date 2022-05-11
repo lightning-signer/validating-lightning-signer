@@ -23,7 +23,7 @@ use crate::lightning;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
 
-use lightning_signer::channel::{channel_nonce_to_id, ChannelId, ChannelSetup, CommitmentType};
+use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::node::SpendType;
 use lightning_signer::node::{self};
 use lightning_signer::persist::{DummyPersister, Persist};
@@ -34,7 +34,6 @@ use lightning_signer::signer::multi_signer::MultiSigner;
 use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::crypto_utils::bitcoin_vec_to_signature;
-use lightning_signer::util::debug_utils::DebugBytes;
 use lightning_signer::util::log_utils::{parse_log_level_filter, LOG_LEVEL_FILTER_NAMES};
 use lightning_signer::util::status;
 use lightning_signer::util::status::invalid_argument;
@@ -168,13 +167,11 @@ impl SignServer {
     // NOTE - this "channel_id" does *not* correspond to the
     // channel_id defined in BOLT #2.
     fn channel_id(&self, channel_nonce: &Option<ChannelNonce>) -> Result<ChannelId, Status> {
-        let nonce = channel_nonce
-            .as_ref()
-            .ok_or_else(|| invalid_grpc_argument("missing channel nonce"))?
-            .data
-            .clone();
-        let res = channel_nonce_to_id(&nonce);
-        Ok(res)
+        if let Some(nonce) = channel_nonce {
+            Ok(ChannelId::new(&nonce.data))
+        } else {
+            return Err(invalid_grpc_argument("missing channel nonce"));
+        }
     }
 
     fn convert_htlcs(&self, msg_htlcs: &Vec<HtlcInfo>) -> Result<Vec<HTLCInfo2>, Status> {
@@ -405,23 +402,14 @@ impl Signer for SignServer {
     ) -> Result<Response<NewChannelReply>, Status> {
         let req = request.into_inner();
         let node_id = self.node_id(req.node_id.clone())?;
-        // If the nonce is specified, the channel ID is the sha256 of the nonce
-        // If the nonce is not specified, the channel ID is the nonce, per Node::new_channel
-        // TODO this is inconsistent
-        let opt_channel_id = req.channel_nonce0.as_ref().map(|n| channel_nonce_to_id(&n.data));
-        let opt_channel_nonce0 = req.channel_nonce0.as_ref().map(|cn| cn.data.clone());
-        log_req_enter!(
-            &node_id,
-            &opt_channel_id,
-            opt_channel_nonce0.as_ref().map(|vv| DebugBytes(&vv[..])),
-            &req
-        );
+        let channel_id = self.channel_id(&req.channel_nonce0)?;
+        log_req_enter!(&node_id, &channel_id, &req);
 
         let node = self.signer.get_node(&node_id)?;
-        let (channel_id, stub) = node.new_channel(opt_channel_id, opt_channel_nonce0, &node)?;
-        let stub = stub.ok_or_else(|| invalid_grpc_argument("channel already exists"))?;
+        let (channel_id, stub) = node.new_channel(Some(channel_id), &node)?;
+        stub.ok_or_else(|| invalid_grpc_argument("channel already exists"))?;
 
-        let reply = NewChannelReply { channel_nonce0: Some(ChannelNonce { data: stub.nonce }) };
+        let reply = NewChannelReply { channel_nonce0: req.channel_nonce0 };
         log_req_reply!(&node_id, &channel_id, &reply);
         Ok(Response::new(reply))
     }
@@ -459,11 +447,12 @@ impl Signer for SignServer {
         let req = request.into_inner();
         let node_id = self.node_id(req.node_id.clone())?;
         let channel_id0 = self.channel_id(&req.channel_nonce0)?;
-        let opt_channel_id = req
-            .option_channel_nonce
-            .as_ref()
-            .map_or(None, |nonce| Some(channel_nonce_to_id(&nonce.data)));
-        log_req_enter!(&node_id, &channel_id0, opt_channel_id, &req);
+        let new_channel_id = if let Some(ref new_nonce) = req.option_channel_nonce {
+            Some(self.channel_id(&Some(new_nonce.clone()))?)
+        } else {
+            None
+        };
+        log_req_enter!(&node_id, &channel_id0, new_channel_id, &req);
 
         let req_outpoint = req
             .funding_outpoint
@@ -520,9 +509,14 @@ impl Signer for SignServer {
             commitment_type: convert_commitment_type(req.commitment_type),
         };
         let node = self.signer.get_node(&node_id)?;
-        node.ready_channel(channel_id0, opt_channel_id, setup, &holder_shutdown_key_path)?;
+        node.ready_channel(
+            channel_id0.clone(),
+            new_channel_id.clone(),
+            setup,
+            &holder_shutdown_key_path,
+        )?;
         let reply = ReadyChannelReply {};
-        log_req_reply!(&node_id, &channel_id0, opt_channel_id, &reply);
+        log_req_reply!(&node_id, &channel_id0, new_channel_id, &reply);
         Ok(Response::new(reply))
     }
 
@@ -1376,8 +1370,8 @@ impl Signer for SignServer {
             .iter()
             .map(|(id, chan_mutex)| {
                 let chan = chan_mutex.lock().unwrap();
-                info!("chan id={} nonce={} id_in_obj={}", id, hex::encode(chan.nonce()), chan.id());
-                chan.nonce()
+                info!("chan id={} id_in_obj={}", id, chan.id());
+                chan.id().inner().clone()
             })
             .map(|nonce| ChannelNonce { data: nonce })
             .collect();

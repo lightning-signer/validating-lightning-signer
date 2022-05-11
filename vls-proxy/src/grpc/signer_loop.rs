@@ -1,5 +1,4 @@
 use log::{debug, error, info};
-use secp256k1::PublicKey;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::spawn_blocking;
 use triggered::Trigger;
@@ -67,7 +66,7 @@ impl<C: 'static + Client> SignerLoop<C> {
                     self.client.write(msgs::ClientHsmFdReply {}).unwrap();
                     let new_client = self.client.new_client();
                     info!("new client {} -> {}", self.log_prefix, new_client.id());
-                    let peer_id = PublicKey::from_slice(&m.peer_id.0).expect("client pubkey"); // we don't expect a bad key from lightningd parent
+                    let peer_id = m.peer_id.0;
                     let client_id = ClientId { peer_id, dbid: m.dbid };
                     let mut new_loop =
                         SignerLoop::new_for_client(new_client, self.sender.clone(), client_id);

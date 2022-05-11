@@ -117,7 +117,7 @@ impl SimpleValidator {
     fn log_prefix(&self) -> String {
         let short_node_id = &self.node_id.to_hex()[0..4];
         let short_channel_id =
-            self.channel_id.map(|c| c.0.to_hex()[0..4].to_string()).unwrap_or("".to_string());
+            self.channel_id.as_ref().map(|c| c.as_slice()[0..4].to_hex()).unwrap_or("".to_string());
         format!("{}/{}", short_node_id, short_channel_id)
     }
 

@@ -15,7 +15,6 @@ pub struct NodeEntry {
 #[allow(missing_docs)]
 #[derive(Debug)]
 pub struct ChannelEntry {
-    pub nonce: Vec<u8>,
     pub channel_value_satoshis: u64,
     pub channel_setup: Option<ChannelSetup>,
     // Permanent channel ID if different from the initial channel ID

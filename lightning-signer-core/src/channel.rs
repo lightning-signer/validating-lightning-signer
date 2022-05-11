@@ -3,7 +3,6 @@ use core::fmt;
 use core::fmt::{Debug, Error, Formatter};
 
 use bitcoin::hashes::hex::{self, FromHex};
-use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{self, All, Message, PublicKey, Secp256k1, SecretKey, Signature};
@@ -45,9 +44,26 @@ use crate::{Arc, Weak};
 ///
 /// A channel may have more than one ID.
 ///
-// TODO document how channel IDs are supplied / derived
-#[derive(PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
-pub struct ChannelId(pub [u8; 32]);
+/// The channel keys are derived from this and a base key.
+#[derive(PartialEq, Eq, Clone, PartialOrd, Ord)]
+pub struct ChannelId(Vec<u8>);
+
+impl ChannelId {
+    /// Create an ID
+    pub fn new(inner: &[u8]) -> Self {
+        Self(inner.to_vec())
+    }
+
+    /// Convert to a byte slice
+    pub fn as_slice(&self) -> &[u8] {
+        self.0.as_slice()
+    }
+
+    /// Get a reference to the byte vector
+    pub fn inner(&self) -> &Vec<u8> {
+        &self.0
+    }
+}
 
 impl Debug for ChannelId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -162,9 +178,6 @@ pub trait ChannelBase: Any {
     fn get_per_commitment_secret(&self, commitment_number: u64) -> Result<SecretKey, Status>;
     /// Check a future secret to support `option_data_loss_protect`
     fn check_future_secret(&self, commit_num: u64, suggested: &SecretKey) -> Result<bool, Status>;
-    /// Get the channel nonce, used to derive the channel keys
-    // TODO should this be exposed?
-    fn nonce(&self) -> Vec<u8>;
     /// Returns the validator for this channel
     fn validator(&self) -> Arc<dyn Validator>;
 
@@ -188,19 +201,11 @@ pub enum ChannelSlot {
 }
 
 impl ChannelSlot {
-    /// Get the channel nonce, used to derive the channel keys
-    pub fn nonce(&self) -> Vec<u8> {
-        match self {
-            ChannelSlot::Stub(stub) => stub.nonce(),
-            ChannelSlot::Ready(chan) => chan.nonce(),
-        }
-    }
-
     /// The initial channel ID
     pub fn id(&self) -> ChannelId {
         match self {
-            ChannelSlot::Stub(stub) => stub.id0,
-            ChannelSlot::Ready(chan) => chan.id0,
+            ChannelSlot::Stub(stub) => stub.id0.clone(),
+            ChannelSlot::Ready(chan) => chan.id0.clone(),
         }
     }
 
@@ -218,8 +223,6 @@ impl ChannelSlot {
 pub struct ChannelStub {
     /// A backpointer to the node
     pub node: Weak<Node>,
-    /// The channel nonce, used to derive keys
-    pub nonce: Vec<u8>,
     pub(crate) secp_ctx: Secp256k1<All>,
     /// The signer for this channel
     pub keys: InMemorySigner,
@@ -232,7 +235,6 @@ pub struct ChannelStub {
 impl fmt::Debug for ChannelStub {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ChannelStub")
-            .field("nonce", &self.nonce)
             .field("keys", &DebugInMemorySigner(&self.keys))
             .field("id0", &self.id0)
             .finish()
@@ -272,16 +274,12 @@ impl ChannelBase for ChannelStub {
         Ok(suggested[..] == secret_data)
     }
 
-    fn nonce(&self) -> Vec<u8> {
-        self.nonce.clone()
-    }
-
     fn validator(&self) -> Arc<dyn Validator> {
         let node = self.node.upgrade().unwrap();
         let v = node.validator_factory.lock().unwrap().make_validator(
             node.network(),
             node.get_id(),
-            Some(self.id0),
+            Some(self.id0.clone()),
         );
         v
     }
@@ -312,8 +310,6 @@ impl ChannelStub {
 pub struct Channel {
     /// A backpointer to the node
     pub node: Weak<Node>,
-    /// The channel nonce, used to derive keys
-    pub nonce: Vec<u8>,
     /// The logger
     pub(crate) secp_ctx: Secp256k1<All>,
     /// The signer for this channel
@@ -391,16 +387,12 @@ impl ChannelBase for Channel {
         Ok(suggested[..] == secret_data)
     }
 
-    fn nonce(&self) -> Vec<u8> {
-        self.nonce.clone()
-    }
-
     fn validator(&self) -> Arc<dyn Validator> {
         let node = self.get_node();
         let v = node.validator_factory.lock().unwrap().make_validator(
             self.network(),
             node.get_id(),
-            Some(self.id0),
+            Some(self.id0.clone()),
         );
         v
     }
@@ -409,7 +401,7 @@ impl ChannelBase for Channel {
 impl Channel {
     /// The channel ID
     pub fn id(&self) -> ChannelId {
-        self.id.unwrap_or(self.id0)
+        self.id.clone().unwrap_or(self.id0.clone())
     }
 
     #[allow(missing_docs)]
@@ -1993,14 +1985,6 @@ impl Channel {
     fn dummy_sig() -> Signature {
         Signature::from_compact(&Vec::from_hex("eb299947b140c0e902243ee839ca58c71291f4cce49ac0367fb4617c4b6e890f18bc08b9be6726c090af4c6b49b2277e134b34078f710a72a5752e39f0139149").unwrap()).unwrap()
     }
-}
-
-/// Convert a nonce to a channel ID, by hashing via SHA256
-pub fn channel_nonce_to_id(nonce: &Vec<u8>) -> ChannelId {
-    // Impedance mismatch - we want a 32 byte channel ID for internal use
-    // Hash the client supplied channel nonce
-    let hash = Sha256Hash::hash(nonce);
-    ChannelId(hash.into_inner())
 }
 
 #[cfg(test)]

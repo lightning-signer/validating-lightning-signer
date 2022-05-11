@@ -68,7 +68,6 @@ impl<'a> Persist for KVJsonPersister<'a> {
             .transaction(|txn| {
                 let id = NodeChannelId::new(node_id, &stub.id0);
                 let entry = ChannelEntry {
-                    nonce: stub.nonce.clone(),
                     channel_value_satoshis,
                     channel_setup: None,
                     id: None,
@@ -118,10 +117,9 @@ impl<'a> Persist for KVJsonPersister<'a> {
             .transaction(|txn| {
                 let node_channel_id = NodeChannelId::new(node_id, &channel.id0);
                 let entry = ChannelEntry {
-                    nonce: channel.nonce.clone(),
                     channel_value_satoshis,
                     channel_setup: Some(channel.setup.clone()),
-                    id: channel.id,
+                    id: channel.id.clone(),
                     enforcement_state: channel.enforcement_state.clone(),
                 };
                 if txn.get(node_channel_id.clone()).unwrap().is_none() {
@@ -213,7 +211,7 @@ mod tests {
     use tempfile::TempDir;
     use test_log::test;
 
-    use lightning_signer::channel::{channel_nonce_to_id, ChannelSlot};
+    use lightning_signer::channel::ChannelSlot;
     use lightning_signer::node::Node;
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
     use lightning_signer::util::test_utils::*;
@@ -234,11 +232,10 @@ mod tests {
 
     #[test]
     fn round_trip_signer_test() {
-        let channel_nonce = "nonce0".as_bytes().to_vec();
-        let channel_id0 = channel_nonce_to_id(&channel_nonce);
+        let channel_id0 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
         let validator_factory = Arc::new(SimpleValidatorFactory::new());
 
-        let (node_id, node_arc, stub, seed) = make_node_and_channel(&channel_nonce, channel_id0);
+        let (node_id, node_arc, stub, seed) = make_node_and_channel(channel_id0.clone());
 
         let node = &*node_arc;
 
@@ -268,11 +265,11 @@ mod tests {
                 let dummy_pubkey = make_dummy_pubkey(0x12);
                 let setup = create_test_channel_setup(dummy_pubkey);
 
-                let channel_nonce1 = "nonce1".as_bytes().to_vec();
-                let channel_id1 = channel_nonce_to_id(&channel_nonce1);
+                let channel_id1 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
 
-                let channel =
-                    node.ready_channel(channel_id0, Some(channel_id1), setup, &vec![]).unwrap();
+                let channel = node
+                    .ready_channel(channel_id0.clone(), Some(channel_id1.clone()), setup, &vec![])
+                    .unwrap();
                 persister.update_channel(&node_id, &channel).unwrap();
 
                 let nodes = Node::restore_nodes(Arc::clone(&persister), validator_factory.clone());

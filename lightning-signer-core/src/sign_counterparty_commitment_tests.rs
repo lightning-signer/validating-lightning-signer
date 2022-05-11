@@ -102,7 +102,7 @@ mod tests {
 
         assert_eq!(
             tx.txid().to_hex(),
-            "d167e8e687f93170e787d210bac57538910050138b7d088684fe7fdcf735bf6d"
+            "1645eee89d5a231702eda1c1b02dee7d42742c8b763c731b7b4cf7936054eae6"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -214,7 +214,7 @@ mod tests {
 
         assert_eq!(
             tx.txid().to_hex(),
-            "98fe7f855e1cc99ca29a7c18caf1b8c6ac81fcdc44a854c60bf1b28d390323c4"
+            "08491fe78992b402bbc51771386395fc81bf20d0178b4156bc039b5a84e92aea"
         );
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
@@ -277,7 +277,7 @@ mod tests {
                 let tx = trusted_tx.built_transaction();
                 assert_eq!(
                     tx.txid.to_hex(),
-                    "b7a48f1201c6d5bddf5c2a247a9c622969fc5048e84f0d25b00b8fa40815632b"
+                    "3b157ff3091373a904ccf571f913eef9bdb94b9a6acda0651df2c240c63df22b"
                 );
                 Ok(tx.transaction.clone())
             })

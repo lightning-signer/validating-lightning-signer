@@ -8,7 +8,6 @@ use core::convert::TryInto;
 
 use bitcoin::blockdata::script;
 use bitcoin::consensus::deserialize;
-use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::util::psbt::serialize::Deserialize;
@@ -94,7 +93,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 pub trait Handler {
     fn handle(&self, msg: Message) -> Result<Box<dyn SerBolt>>;
     fn client_id(&self) -> u64;
-    fn for_new_client(&self, client_id: u64, peer_id: Option<PubKey>, dbid: u64) -> ChannelHandler;
+    fn for_new_client(&self, client_id: u64, peer_id: PubKey, dbid: u64) -> ChannelHandler;
 }
 
 /// Protocol handler
@@ -143,6 +142,14 @@ impl RootHandler {
         };
 
         Self { id, node }
+    }
+
+    fn channel_id(node_id: &PubKey, dbid: u64) -> ChannelId {
+        let mut nonce = [0u8; 33 + 8];
+        nonce[0..33].copy_from_slice(&node_id.0);
+        nonce[33..].copy_from_slice(&dbid.to_le_bytes());
+        let channel_id = ChannelId::new(&nonce);
+        channel_id
     }
 }
 
@@ -208,16 +215,12 @@ impl Handler for RootHandler {
                 Ok(Box::new(msgs::EcdhReply { secret: Secret(secret) }))
             }
             Message::NewChannel(m) => {
-                let _peer_id = extract_pubkey(&m.node_id);
-                let channel_id = extract_channel_id(m.dbid);
-                // TODO mix in the peer_id
-                let nonce = m.dbid.to_le_bytes();
-                self.node.new_channel(Some(channel_id), Some(nonce.to_vec()), &self.node)?;
+                let channel_id = Self::channel_id(&m.node_id, m.dbid);
+                self.node.new_channel(Some(channel_id), &self.node)?;
                 Ok(Box::new(msgs::NewChannelReply {}))
             }
             Message::GetChannelBasepoints(m) => {
-                let _peer_id = extract_pubkey(&m.node_id);
-                let channel_id = extract_channel_id(m.dbid);
+                let channel_id = Self::channel_id(&m.node_id, m.dbid);
                 let bps = self
                     .node
                     .with_channel_base(&channel_id, |base| Ok(base.get_channel_basepoints()))?;
@@ -260,7 +263,7 @@ impl Handler for RootHandler {
                 let secp_ctx = Secp256k1::new();
                 for utxo in m.utxos.iter() {
                     if let Some(ci) = utxo.close_info.as_ref() {
-                        let channel_id = extract_channel_id(ci.channel_id); // dbid
+                        let channel_id = Self::channel_id(&ci.peer_id, ci.channel_id);
                         let per_commitment_point = ci
                             .commitment_point
                             .as_ref()
@@ -342,7 +345,7 @@ impl Handler for RootHandler {
             }
             Message::SignCommitmentTx(m) => {
                 // TODO why not channel handler??
-                let channel_id = extract_channel_id(m.dbid);
+                let channel_id = Self::channel_id(&m.peer_id, m.dbid);
                 let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())
                     .expect("psbt");
                 let mut tx_bytes = m.tx.0.clone();
@@ -389,14 +392,15 @@ impl Handler for RootHandler {
         self.id
     }
 
-    fn for_new_client(&self, client_id: u64, peer_id: Option<PubKey>, dbid: u64) -> ChannelHandler {
-        let peer_id = peer_id.map(|p| PublicKey::from_slice(&p.0).expect("peer_id"));
+    // FIXME peer_id should be mandatory
+    fn for_new_client(&self, client_id: u64, peer_id: PubKey, dbid: u64) -> ChannelHandler {
+        let channel_id = Self::channel_id(&peer_id, dbid);
         ChannelHandler {
             id: client_id,
             node: Arc::clone(&self.node),
-            peer_id,
+            peer_id: peer_id.0,
             dbid,
-            channel_id: extract_channel_id(dbid),
+            channel_id,
         }
     }
 }
@@ -421,13 +425,9 @@ fn extract_psbt_output_paths(psbt: &PartiallySignedTransaction) -> Vec<Vec<u32>>
 pub struct ChannelHandler {
     pub(crate) id: u64,
     pub node: Arc<Node>,
-    pub peer_id: Option<PublicKey>,
+    pub peer_id: [u8; 33],
     pub dbid: u64,
     pub channel_id: ChannelId,
-}
-
-fn extract_channel_id(dbid: u64) -> ChannelId {
-    ChannelId(Sha256Hash::hash(&dbid.to_le_bytes()).into_inner())
 }
 
 impl ChannelHandler {}
@@ -519,7 +519,12 @@ impl Handler for ChannelHandler {
                     counterparty_shutdown_script,
                     commitment_type: extract_commitment_type(&m.channel_type),
                 };
-                self.node.ready_channel(self.channel_id, None, setup, &holder_shutdown_key_path)?;
+                self.node.ready_channel(
+                    self.channel_id.clone(),
+                    None,
+                    setup,
+                    &holder_shutdown_key_path,
+                )?;
 
                 Ok(Box::new(msgs::ReadyChannelReply {}))
             }
@@ -886,12 +891,7 @@ impl Handler for ChannelHandler {
         self.id
     }
 
-    fn for_new_client(
-        &self,
-        _client_id: u64,
-        _peer_id: Option<PubKey>,
-        _dbid: u64,
-    ) -> ChannelHandler {
+    fn for_new_client(&self, _client_id: u64, _peer_id: PubKey, _dbid: u64) -> ChannelHandler {
         unimplemented!("cannot create a sub-handler from a channel handler");
     }
 }

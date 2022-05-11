@@ -1,5 +1,4 @@
 use std::collections::BTreeMap as OrderedMap;
-use std::convert::TryInto;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::iter::FromIterator;
@@ -49,8 +48,6 @@ impl From<NodeEntry> for CoreNodeEntry {
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub struct ChannelEntry {
-    #[serde_as(as = "Hex")]
-    pub nonce: Vec<u8>,
     pub channel_value_satoshis: u64,
     #[serde_as(as = "Option<ChannelSetupDef>")]
     pub channel_setup: Option<ChannelSetup>,
@@ -64,7 +61,6 @@ pub struct ChannelEntry {
 impl From<ChannelEntry> for CoreChannelEntry {
     fn from(e: ChannelEntry) -> Self {
         CoreChannelEntry {
-            nonce: e.nonce,
             channel_value_satoshis: e.channel_value_satoshis,
             channel_setup: e.channel_setup,
             id: e.id,
@@ -86,14 +82,14 @@ pub struct NodeChannelId(Vec<u8>);
 impl NodeChannelId {
     pub fn new(node_id: &PublicKey, channel_id: &ChannelId) -> Self {
         let mut res = Vec::with_capacity(65);
-        res.append(node_id.serialize().to_vec().as_mut());
-        res.append(channel_id.0.to_vec().as_mut());
+        res.append(&mut node_id.serialize().to_vec());
+        res.append(&mut channel_id.inner().clone());
         Self(res)
     }
 
     pub fn new_prefix(node_id: &PublicKey) -> Self {
         let mut res = Vec::with_capacity(33);
-        res.append(node_id.serialize().to_vec().as_mut());
+        res.append(&mut node_id.serialize().to_vec());
         Self(res)
     }
 
@@ -102,7 +98,7 @@ impl NodeChannelId {
     }
 
     pub fn channel_id(&self) -> ChannelId {
-        ChannelId(self.0.as_slice()[33..].try_into().unwrap())
+        ChannelId::new(&self.0.as_slice()[33..])
     }
 }
 

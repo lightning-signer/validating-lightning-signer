@@ -67,7 +67,7 @@ impl From<PublicKey> for NodeId {
 
 impl From<ChannelId> for ChannelNonce {
     fn from(c: ChannelId) -> Self {
-        ChannelNonce { data: c.0.to_vec() }
+        ChannelNonce { data: c.inner().clone() }
     }
 }
 

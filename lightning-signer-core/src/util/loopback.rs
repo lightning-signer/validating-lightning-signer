@@ -94,7 +94,7 @@ impl LoopbackChannelSigner {
             .expect("must be able to get basepoints");
         LoopbackChannelSigner {
             node_id: *node_id,
-            channel_id: *channel_id,
+            channel_id: channel_id.clone(),
             signer: signer.clone(),
             pubkeys,
             is_outbound,
@@ -197,7 +197,7 @@ impl LoopbackChannelSigner {
 
 impl Writeable for LoopbackChannelSigner {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), IOError> {
-        self.channel_id.0.write(writer)?;
+        self.channel_id.inner().write(writer)?;
         self.is_outbound.write(writer)?;
         self.channel_value_sat.write(writer)?;
         Ok(())
@@ -264,7 +264,11 @@ impl BaseSign for LoopbackChannelSigner {
     }
 
     fn channel_keys_id(&self) -> [u8; 32] {
-        self.channel_id.0
+        self.signer
+            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+                Ok(chan.keys.channel_keys_id())
+            })
+            .expect("missing channel")
     }
 
     // TODO - Couldn't this return a declared error signature?
@@ -516,7 +520,7 @@ impl BaseSign for LoopbackChannelSigner {
         let node = self.signer.get_node(&self.node_id).expect("no such node");
 
         let holder_shutdown_key_path = vec![];
-        node.ready_channel(self.channel_id, None, setup, &holder_shutdown_key_path)
+        node.ready_channel(self.channel_id.clone(), None, setup, &holder_shutdown_key_path)
             .expect("channel already ready or does not exist");
     }
 }
@@ -548,7 +552,7 @@ impl KeysInterface for LoopbackSignerKeysInterface {
 
     fn get_channel_signer(&self, is_inbound: bool, channel_value_sat: u64) -> Self::Signer {
         let node = self.signer.get_node(&self.node_id).unwrap();
-        let (channel_id, _) = node.new_channel(None, None, &node).unwrap();
+        let (channel_id, _) = node.new_channel(None, &node).unwrap();
         LoopbackChannelSigner::new(
             &self.node_id,
             &channel_id,
@@ -563,7 +567,7 @@ impl KeysInterface for LoopbackSignerKeysInterface {
     }
 
     fn read_chan_signer(&self, mut reader: &[u8]) -> Result<Self::Signer, DecodeError> {
-        let channel_id = ChannelId(Readable::read(&mut reader)?);
+        let channel_id = ChannelId::new(&Vec::read(&mut reader)?);
         let is_outbound = Readable::read(&mut reader)?;
         let channel_value_sat = Readable::read(&mut reader)?;
         Ok(LoopbackChannelSigner::new(
