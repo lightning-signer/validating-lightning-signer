@@ -121,14 +121,7 @@ impl MyKeysManager {
         starting_time_nanos: u32,
     ) -> MyKeysManager {
         let secp_ctx = Secp256k1::new();
-        let master_key = match key_derivation_style {
-            KeyDerivationStyle::Native => {
-                let master_seed = hkdf_sha256(seed, "bip32 seed".as_bytes(), &[]);
-                ExtendedPrivKey::new_master(network.clone(), &master_seed)
-            }
-            KeyDerivationStyle::Lnd => ExtendedPrivKey::new_master(network.clone(), seed),
-        }
-        .expect("your RNG is busted");
+        let master_key = Self::derive_master_key(seed, key_derivation_style, network);
         let (_, node_secret) = match key_derivation_style {
             KeyDerivationStyle::Native => node_keys_native(&secp_ctx, seed),
             KeyDerivationStyle::Lnd => node_keys_lnd(&secp_ctx, network.clone(), master_key),
@@ -149,12 +142,11 @@ impl MyKeysManager {
                 }
                 Err(_) => panic!("Your RNG is busted"),
             };
+        let ldk_shutdown_xprv = master_key
+            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(2).unwrap())
+            .expect("Your RNG is busted");
         let ldk_shutdown_pubkey =
-            match master_key.ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(2).unwrap()) {
-                Ok(shutdown_key) =>
-                    ExtendedPubKey::from_private(&secp_ctx, &shutdown_key).public_key.key,
-                Err(_) => panic!("Your RNG is busted"),
-            };
+            ExtendedPubKey::from_private(&secp_ctx, &ldk_shutdown_xprv).public_key.key;
         let channel_master_key = master_key
             .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(3).unwrap())
             .expect("Your RNG is busted");
@@ -218,6 +210,22 @@ impl MyKeysManager {
         let secp_seed = res.get_secure_random_bytes();
         res.secp_ctx.seeded_randomize(&secp_seed);
         res
+    }
+
+    fn derive_master_key(
+        seed: &[u8],
+        key_derivation_style: KeyDerivationStyle,
+        network: Network,
+    ) -> ExtendedPrivKey {
+        let master_key = match key_derivation_style {
+            KeyDerivationStyle::Native => {
+                let master_seed = hkdf_sha256(seed, "bip32 seed".as_bytes(), &[]);
+                ExtendedPrivKey::new_master(network.clone(), &master_seed)
+            }
+            KeyDerivationStyle::Lnd => ExtendedPrivKey::new_master(network.clone(), seed),
+        }
+        .expect("your RNG is busted");
+        master_key
     }
 
     /// BOLT 12 x-only pubkey
@@ -569,23 +577,19 @@ impl MyKeysManager {
                 SpendableOutputDescriptor::StaticOutput { ref output, .. } => {
                     let derivation_idx =
                         if output.script_pubkey == self.destination_script { 1 } else { 2 };
-                    let secret = {
-                        // Note that when we aren't serializing the key, network doesn't matter
-                        match ExtendedPrivKey::new_master(Network::Testnet, &self.seed) {
-                            Ok(master_key) => {
-                                match master_key.ckd_priv(
-                                    &secp_ctx,
-                                    ChildNumber::from_hardened_idx(derivation_idx)
-                                        .expect("key space exhausted"),
-                                ) {
-                                    Ok(key) => key,
-                                    Err(_) => panic!("Your RNG is busted"),
-                                }
-                            }
-                            Err(_) => panic!("Your rng is busted"),
-                        }
-                    };
-                    let pubkey = ExtendedPubKey::from_private(&secp_ctx, &secret).public_key;
+                    let master_key = Self::derive_master_key(
+                        &self.seed,
+                        self.key_derivation_style,
+                        self.network,
+                    );
+                    let secret_key = master_key
+                        .ckd_priv(
+                            &secp_ctx,
+                            ChildNumber::from_hardened_idx(derivation_idx)
+                                .expect("key space exhausted"),
+                        )
+                        .expect("Your RNG is busted");
+                    let pubkey = ExtendedPubKey::from_private(&secp_ctx, &secret_key).public_key;
                     if derivation_idx == 2 {
                         assert_eq!(pubkey.key, self.ldk_shutdown_pubkey);
                     }
@@ -600,7 +604,7 @@ impl MyKeysManager {
                         )[..],
                     )
                     .unwrap();
-                    let sig = secp_ctx.sign(&sighash, &secret.private_key.key);
+                    let sig = secp_ctx.sign(&sighash, &secret_key.private_key.key);
                     spend_tx.input[input_idx].witness.push(sig.serialize_der().to_vec());
                     spend_tx.input[input_idx].witness[0].push(SigHashType::All as u8);
                     spend_tx.input[input_idx].witness.push(pubkey.key.serialize().to_vec());
