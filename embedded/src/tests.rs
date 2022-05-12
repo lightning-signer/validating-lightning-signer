@@ -21,7 +21,7 @@ use lightning_signer::lightning_invoice::{
 use lightning_signer::node::{Node, NodeConfig, SpendType};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
-use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
+use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::wallet::Wallet;
 use lightning_signer::Arc;

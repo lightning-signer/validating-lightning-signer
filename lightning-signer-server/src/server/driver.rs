@@ -30,8 +30,8 @@ use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::{
     make_simple_policy, SimplePolicy, SimpleValidatorFactory,
 };
+use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::signer::multi_signer::MultiSigner;
-use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::crypto_utils::bitcoin_vec_to_signature;
 use lightning_signer::util::log_utils::{parse_log_level_filter, LOG_LEVEL_FILTER_NAMES};

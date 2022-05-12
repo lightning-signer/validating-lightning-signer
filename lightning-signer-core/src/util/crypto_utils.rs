@@ -5,8 +5,6 @@ use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
 use bitcoin::util::address::Payload;
-use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::Network;
 use bitcoin::{bech32, Script, SigHashType};
 
 fn hkdf_extract_expand(salt: &[u8], secret: &[u8], info: &[u8], output: &mut [u8]) {
@@ -40,100 +38,6 @@ pub(crate) fn hkdf_sha256_keys(secret: &[u8], info: &[u8], salt: &[u8]) -> [u8; 
     let mut result = [0u8; 32 * 6];
     hkdf_extract_expand(salt, secret, info, &mut result);
     result
-}
-
-pub(crate) fn channels_seed(node_seed: &[u8]) -> [u8; 32] {
-    hkdf_sha256(node_seed, "peer seed".as_bytes(), &[])
-}
-
-// This function will panic if the SecretKey::from_slice fails.  Only
-// use where failure is an option (ie, startup).
-pub(crate) fn node_keys_native(
-    secp_ctx: &Secp256k1<secp256k1::All>,
-    node_seed: &[u8],
-) -> (PublicKey, SecretKey) {
-    let node_private_bytes = hkdf_sha256(node_seed, "nodeid".as_bytes(), &[]);
-    let node_secret_key = SecretKey::from_slice(&node_private_bytes).unwrap();
-    let node_id = PublicKey::from_secret_key(&secp_ctx, &node_secret_key);
-    (node_id, node_secret_key)
-}
-
-pub(crate) fn node_keys_lnd(
-    secp_ctx: &Secp256k1<secp256k1::All>,
-    network: Network,
-    master: ExtendedPrivKey,
-) -> (PublicKey, SecretKey) {
-    let key_family_node_key = 6;
-    let index = 0;
-    derive_key_lnd(secp_ctx, network, master, key_family_node_key, index)
-}
-
-pub(crate) fn derive_key_lnd(
-    secp_ctx: &Secp256k1<secp256k1::All>,
-    network: Network,
-    master: ExtendedPrivKey,
-    key_family: u32,
-    index: u32,
-) -> (PublicKey, SecretKey) {
-    let bip43purpose = 1017;
-    #[rustfmt::skip]
-    let coin_type = match network { 
-        bitcoin::Network::Bitcoin => 0,
-        bitcoin::Network::Testnet => 1,
-        bitcoin::Network::Regtest => 1, 
-        bitcoin::Network::Signet => 1, 
-    };
-    let branch = 0;
-    let node_ext_prv = master
-        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(bip43purpose).unwrap())
-        .unwrap()
-        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(coin_type).unwrap())
-        .unwrap()
-        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(key_family).unwrap())
-        .unwrap()
-        .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(branch).unwrap())
-        .unwrap()
-        .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(index).unwrap())
-        .unwrap();
-    let node_ext_pub = &ExtendedPubKey::from_private(&secp_ctx, &node_ext_prv);
-    (node_ext_pub.public_key.key, node_ext_prv.private_key.key)
-}
-
-// This function will panic if the ExtendedPrivKey::new_master fails.
-// Only use where failure is an option (ie, startup).
-pub(crate) fn get_account_extended_key_native(
-    secp_ctx: &Secp256k1<secp256k1::All>,
-    network: Network,
-    node_seed: &[u8],
-) -> ExtendedPrivKey {
-    let bip32_seed = hkdf_sha256(node_seed, "bip32 seed".as_bytes(), &[]);
-    let master = ExtendedPrivKey::new_master(network.clone(), &bip32_seed).unwrap();
-    master
-        .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(0).unwrap())
-        .unwrap()
-        .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(0).unwrap())
-        .unwrap()
-}
-
-// This function will panic if the ExtendedPrivKey::new_master fails.
-// Only use where failure is an option (ie, startup).
-pub(crate) fn get_account_extended_key_lnd(
-    secp_ctx: &Secp256k1<secp256k1::All>,
-    network: Network,
-    node_seed: &[u8],
-) -> ExtendedPrivKey {
-    // Must match btcsuite/btcwallet/waddrmgr/scoped_manager.go
-    let master = ExtendedPrivKey::new_master(network.clone(), node_seed).unwrap();
-    let purpose = 84;
-    let cointype = 0;
-    let account = 0;
-    master
-        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(purpose).unwrap())
-        .unwrap()
-        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(cointype).unwrap())
-        .unwrap()
-        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(account).unwrap())
-        .unwrap()
 }
 
 pub(crate) fn derive_public_key<T: secp256k1::Signing>(
@@ -258,52 +162,7 @@ mod tests {
     use bitcoin::hashes::hex::ToHex;
     use bitcoin::schnorr::KeyPair;
     use bitcoin::secp256k1::Message;
-    use bitcoin::Network::Testnet;
     use secp256k1_xonly::XOnlyPublicKey;
-
-    #[test]
-    fn node_keys_native_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::new();
-        let (node_id, _) = node_keys_native(&secp_ctx, &[0u8; 32]);
-        let node_id_bytes = node_id.serialize().to_vec();
-        assert_eq!(
-            node_id_bytes.to_hex(),
-            "02058e8b6c2ad363ec59aa136429256d745164c2bdc87f98f0a68690ec2c5c9b0b"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn node_keys_lnd_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::new();
-        let network = Testnet;
-        let master = ExtendedPrivKey::new_master(network.clone(), &[0u8; 32]).unwrap();
-        let (node_id, _) = node_keys_lnd(&secp_ctx, network, master);
-        let node_id_bytes = node_id.serialize().to_vec();
-        assert_eq!(
-            node_id_bytes.to_hex(),
-            "0287a5eab0a005ea7f08a876257b98868b1e5b5a9167385904396743faa61a4745"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn channels_seed_test() -> Result<(), ()> {
-        let seed = channels_seed(&[0u8; 32]);
-        assert_eq!(
-            seed.to_hex(),
-            "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn get_account_extended_key_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::new();
-        let key = get_account_extended_key_native(&secp_ctx, Network::Testnet, &[0u8; 32]);
-        assert_eq!(format!("{}", key), "tprv8ejySXSgpWvEBguEGNFYNcHz29W7QxEodgnwbfLzBCccBnxGAq4vBkgqUYPGR5EnCbLvJE7YQsod6qpid85JhvAfizVpqPg3WsWB6UG3fEL");
-        Ok(())
-    }
 
     #[test]
     fn test_hkdf() {
