@@ -15,7 +15,7 @@ use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::node::{Node, NodeConfig};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
-use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
+use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::util::key_utils::make_test_key;
 use lightning_signer::Arc;
 use lightning_signer::{bitcoin, lightning};

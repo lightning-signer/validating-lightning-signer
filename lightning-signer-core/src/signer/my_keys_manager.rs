@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::convert::{TryFrom, TryInto};
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use bitcoin::bech32::u5;
@@ -22,11 +21,8 @@ use lightning::chain::keysinterface::{
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::script::ShutdownScript;
 
+use super::derive::{self, KeyDerivationStyle};
 use crate::channel::ChannelId;
-use crate::util::crypto_utils::{
-    channels_seed, derive_key_lnd, get_account_extended_key_lnd, get_account_extended_key_native,
-    hkdf_sha256, hkdf_sha256_keys, node_keys_lnd, node_keys_native,
-};
 use crate::util::transaction_utils::MAX_VALUE_MSAT;
 use crate::util::{byte_utils, transaction_utils};
 use bitcoin::secp256k1::recovery::RecoverableSignature;
@@ -35,53 +31,6 @@ use bitcoin::util::bip143;
 use hashbrown::HashSet as UnorderedSet;
 use lightning::util::invoice::construct_invoice_preimage;
 use secp256k1_xonly::XOnlyPublicKey;
-
-/// The key derivation style
-#[derive(Clone, Copy, Debug)]
-pub enum KeyDerivationStyle {
-    /// Our preferred style, C-lightning compatible
-    Native = 1,
-    /// The LND style
-    Lnd = 2,
-}
-
-impl TryFrom<u8> for KeyDerivationStyle {
-    type Error = ();
-
-    fn try_from(v: u8) -> Result<Self, Self::Error> {
-        use KeyDerivationStyle::{Lnd, Native};
-        match v {
-            x if x == Native as u8 => Ok(Native),
-            x if x == Lnd as u8 => Ok(Lnd),
-            _ => Err(()),
-        }
-    }
-}
-
-impl KeyDerivationStyle {
-    pub(crate) fn get_key_path_len(&self) -> usize {
-        match self {
-            // c-lightning uses a single BIP32 chain for both external
-            // and internal (change) addresses.
-            KeyDerivationStyle::Native => 1,
-            // lnd uses two BIP32 branches, one for external and one
-            // for internal (change) addresses.
-            KeyDerivationStyle::Lnd => 2,
-        }
-    }
-
-    pub(crate) fn get_account_extended_key(
-        &self,
-        secp_ctx: &Secp256k1<secp256k1::All>,
-        network: Network,
-        seed: &[u8],
-    ) -> ExtendedPrivKey {
-        match self {
-            KeyDerivationStyle::Native => get_account_extended_key_native(secp_ctx, network, seed),
-            KeyDerivationStyle::Lnd => get_account_extended_key_lnd(secp_ctx, network, seed),
-        }
-    }
-}
 
 /// An implementation of [`KeysInterface`]
 pub struct MyKeysManager {
@@ -121,27 +70,24 @@ impl MyKeysManager {
         starting_time_nanos: u32,
     ) -> MyKeysManager {
         let secp_ctx = Secp256k1::new();
-        let master_key = Self::derive_master_key(seed, key_derivation_style, network);
-        let (_, node_secret) = match key_derivation_style {
-            KeyDerivationStyle::Native => node_keys_native(&secp_ctx, seed),
-            KeyDerivationStyle::Lnd => node_keys_lnd(&secp_ctx, network.clone(), master_key),
+        let key_derive = derive::key_derive(key_derivation_style, network);
+        let master_key = key_derive.master_key(seed);
+        let (_, node_secret) = key_derive.node_keys(seed, &secp_ctx);
+        let destination_key = master_key
+            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(1).unwrap())
+            .expect("Your RNG is busted");
+        let destination_script = {
+            let pubkey_hash160 = Hash160::hash(
+                &ExtendedPubKey::from_private(&secp_ctx, &destination_key)
+                    .public_key
+                    .key
+                    .serialize()[..],
+            );
+            Builder::new()
+                .push_opcode(opcodes::all::OP_PUSHBYTES_0)
+                .push_slice(&pubkey_hash160.into_inner())
+                .into_script()
         };
-        let destination_script =
-            match master_key.ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(1).unwrap()) {
-                Ok(destination_key) => {
-                    let pubkey_hash160 = Hash160::hash(
-                        &ExtendedPubKey::from_private(&secp_ctx, &destination_key)
-                            .public_key
-                            .key
-                            .serialize()[..],
-                    );
-                    Builder::new()
-                        .push_opcode(opcodes::all::OP_PUSHBYTES_0)
-                        .push_slice(&pubkey_hash160.into_inner())
-                        .into_script()
-                }
-                Err(_) => panic!("Your RNG is busted"),
-            };
         let ldk_shutdown_xprv = master_key
             .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(2).unwrap())
             .expect("Your RNG is busted");
@@ -159,7 +105,7 @@ impl MyKeysManager {
         unique_start.input(&byte_utils::be32_to_array(starting_time_nanos));
         unique_start.input(seed);
 
-        let channel_seed_base = channels_seed(seed);
+        let channel_seed_base = key_derive.channels_seed(seed);
         let account_extended_key =
             key_derivation_style.get_account_extended_key(&secp_ctx, network, seed);
 
@@ -210,22 +156,6 @@ impl MyKeysManager {
         let secp_seed = res.get_secure_random_bytes();
         res.secp_ctx.seeded_randomize(&secp_seed);
         res
-    }
-
-    fn derive_master_key(
-        seed: &[u8],
-        key_derivation_style: KeyDerivationStyle,
-        network: Network,
-    ) -> ExtendedPrivKey {
-        let master_key = match key_derivation_style {
-            KeyDerivationStyle::Native => {
-                let master_seed = hkdf_sha256(seed, "bip32 seed".as_bytes(), &[]);
-                ExtendedPrivKey::new_master(network.clone(), &master_seed)
-            }
-            KeyDerivationStyle::Lnd => ExtendedPrivKey::new_master(network.clone(), seed),
-        }
-        .expect("your RNG is busted");
-        master_key
     }
 
     /// BOLT 12 x-only pubkey
@@ -294,13 +224,11 @@ impl MyKeysManager {
         channel_id: ChannelId,
         channel_value_sat: u64,
     ) -> InMemorySigner {
-        let res = match self.key_derivation_style {
-            KeyDerivationStyle::Native =>
-                self.get_channel_keys_with_nonce_native(channel_id, channel_value_sat),
-            KeyDerivationStyle::Lnd =>
-                self.get_channel_keys_with_nonce_lnd(channel_id, channel_value_sat),
-        };
-        res
+        let key_derive = derive::key_derive(self.key_derivation_style, self.network);
+        // aka channel_seed
+        let keys_id = key_derive.keys_id(channel_id, &self.channel_seed_base);
+
+        self.get_channel_keys_with_keys_id(keys_id, channel_value_sat)
     }
 
     pub(crate) fn get_channel_keys_with_keys_id(
@@ -308,110 +236,25 @@ impl MyKeysManager {
         keys_id: [u8; 32],
         channel_value_sat: u64,
     ) -> InMemorySigner {
-        let res = match self.key_derivation_style {
-            KeyDerivationStyle::Native =>
-                self.get_channel_keys_with_keys_id_native(keys_id, channel_value_sat),
-            KeyDerivationStyle::Lnd =>
-                self.get_channel_keys_with_keys_id_lnd(keys_id, channel_value_sat),
-        };
-        res
-    }
-
-    fn get_channel_keys_with_nonce_native(
-        &self,
-        channel_id: ChannelId,
-        channel_value_sat: u64,
-    ) -> InMemorySigner {
-        // aka channel_seed
-        let keys_id =
-            hkdf_sha256(&self.channel_seed_base, "per-peer seed".as_bytes(), channel_id.as_slice());
-
-        self.get_channel_keys_with_keys_id_native(keys_id, channel_value_sat)
-    }
-
-    fn get_channel_keys_with_keys_id_native(
-        &self,
-        keys_id: [u8; 32],
-        channel_value_sat: u64,
-    ) -> InMemorySigner {
-        let hkdf_info = "c-lightning";
-        let keys_buf = hkdf_sha256_keys(&keys_id, hkdf_info.as_bytes(), &[]);
-        let mut ndx = 0;
-        let funding_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
-        ndx += 32;
-        let revocation_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
-        ndx += 32;
-        let htlc_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
-        ndx += 32;
-        let payment_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
-        ndx += 32;
-        let delayed_payment_base_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
-        ndx += 32;
-        let commitment_seed = keys_buf[ndx..ndx + 32].try_into().unwrap();
-        let secp_ctx = Secp256k1::signing_only();
-        InMemorySigner::new(
-            &secp_ctx,
-            self.get_node_secret(Recipient::Node).unwrap(),
-            funding_key,
-            revocation_base_key,
-            payment_key,
-            delayed_payment_base_key,
-            htlc_base_key,
-            commitment_seed,
-            channel_value_sat,
-            keys_id,
-        )
-    }
-
-    fn get_channel_keys_with_nonce_lnd(
-        &self,
-        channel_id: ChannelId,
-        channel_value_sat: u64,
-    ) -> InMemorySigner {
-        // FIXME - How does lnd generate it's commitment seed? This is a stripped
-        // native (really c-lightning) version.
-        //
-        // aka channel_seed
-        let keys_id =
-            hkdf_sha256(&self.channel_seed_base, "per-peer seed".as_bytes(), channel_id.as_slice());
-
-        self.get_channel_keys_with_keys_id_lnd(keys_id, channel_value_sat)
-    }
-
-    fn get_channel_keys_with_keys_id_lnd(
-        &self,
-        keys_id: [u8; 32],
-        channel_value_sat: u64,
-    ) -> InMemorySigner {
-        let hkdf_info = "c-lightning";
-        let keys_buf = hkdf_sha256_keys(&keys_id, hkdf_info.as_bytes(), &[]);
-        let mut ndx = 0;
-        ndx += 32;
-        ndx += 32;
-        ndx += 32;
-        ndx += 32;
-        ndx += 32;
-        let commitment_seed = keys_buf[ndx..ndx + 32].try_into().unwrap();
-
+        let key_derive = derive::key_derive(self.key_derivation_style, self.network);
         let secp_ctx = Secp256k1::new();
 
-        // These need to match the constants defined in lnd/keychain/derivation.go
-        // KeyFamilyMultiSig KeyFamily = 0
-        // KeyFamilyRevocationBase = 1
-        // KeyFamilyHtlcBase KeyFamily = 2
-        // KeyFamilyPaymentBase KeyFamily = 3
-        // KeyFamilyDelayBase KeyFamily = 4
+        // TODO lnd specific code
         let basepoint_index = self.lnd_basepoint_index.fetch_add(1, Ordering::AcqRel);
-        let (_, funding_key) =
-            derive_key_lnd(&secp_ctx, self.network, self.master_key, 0, basepoint_index);
-        let (_, revocation_base_key) =
-            derive_key_lnd(&secp_ctx, self.network, self.master_key, 1, basepoint_index);
-        let (_, htlc_base_key) =
-            derive_key_lnd(&secp_ctx, self.network, self.master_key, 2, basepoint_index);
-        let (_, payment_key) =
-            derive_key_lnd(&secp_ctx, self.network, self.master_key, 3, basepoint_index);
-        let (_, delayed_payment_base_key) =
-            derive_key_lnd(&secp_ctx, self.network, self.master_key, 4, basepoint_index);
+        let (
+            funding_key,
+            revocation_base_key,
+            htlc_base_key,
+            payment_key,
+            delayed_payment_base_key,
+            commitment_seed,
+        ) = key_derive.channel_keys(
+            &self.seed,
+            &keys_id,
+            basepoint_index,
+            &self.master_key,
+            &secp_ctx,
+        );
 
         InMemorySigner::new(
             &secp_ctx,
@@ -527,6 +370,7 @@ impl MyKeysManager {
             change_destination_script,
         )?;
 
+        let key_derive = derive::key_derive(self.key_derivation_style, self.network);
         let mut keys_cache: Option<(InMemorySigner, [u8; 32])> = None;
         let mut input_idx = 0;
         for outp in descriptors {
@@ -577,11 +421,7 @@ impl MyKeysManager {
                 SpendableOutputDescriptor::StaticOutput { ref output, .. } => {
                     let derivation_idx =
                         if output.script_pubkey == self.destination_script { 1 } else { 2 };
-                    let master_key = Self::derive_master_key(
-                        &self.seed,
-                        self.key_derivation_style,
-                        self.network,
-                    );
+                    let master_key = key_derive.master_key(&self.seed);
                     let secret_key = master_key
                         .ckd_priv(
                             &secp_ctx,
@@ -683,12 +523,44 @@ impl KeysInterface for MyKeysManager {
 #[cfg(test)]
 mod tests {
     use crate::util::INITIAL_COMMITMENT_NUMBER;
+    use bitcoin::Network::Testnet;
 
     use super::*;
-    use lightning::chain::keysinterface::BaseSign;
+    use lightning::chain::keysinterface::{BaseSign, KeysManager};
 
     use crate::util::test_utils::{hex_decode, hex_encode, TEST_CHANNEL_ID};
     use test_log::test;
+
+    #[test]
+    fn compare_ldk_keys_manager_test() -> Result<(), ()> {
+        let seed = [0x11u8; 32];
+        let ldk = KeysManager::new(&seed, 1, 1);
+        let my = MyKeysManager::new(KeyDerivationStyle::Ldk, &seed, Network::Testnet, 1, 1);
+        assert_eq!(
+            ldk.get_node_secret(Recipient::Node).unwrap(),
+            my.get_node_secret(Recipient::Node).unwrap()
+        );
+        let key_derive = derive::key_derive(KeyDerivationStyle::Ldk, Testnet);
+        let channel_id = ChannelId::new(&[33u8; 32]);
+        // Get a somewhat random keys_id
+        let keys_id = key_derive.keys_id(channel_id, &my.channel_seed_base);
+        let ldk_chan = ldk.derive_channel_keys(1000, &keys_id);
+        let my_chan = my.derive_channel_keys(1000, &keys_id);
+        let secp_ctx = Secp256k1::new();
+        assert_eq!(ldk_chan.funding_key, my_chan.funding_key);
+        assert_eq!(ldk_chan.revocation_base_key, my_chan.revocation_base_key);
+        assert_eq!(ldk_chan.htlc_base_key, my_chan.htlc_base_key);
+        assert_eq!(ldk_chan.payment_key, my_chan.payment_key);
+        assert_eq!(ldk_chan.delayed_payment_base_key, my_chan.delayed_payment_base_key);
+        assert_eq!(ldk_chan.funding_key, my_chan.funding_key);
+        assert_eq!(
+            ldk_chan.get_per_commitment_point(123, &secp_ctx),
+            my_chan.get_per_commitment_point(123, &secp_ctx)
+        );
+        // a bit redundant, because we checked them all above
+        assert!(ldk_chan.pubkeys() == my_chan.pubkeys());
+        Ok(())
+    }
 
     #[test]
     fn keys_test_native() -> Result<(), ()> {

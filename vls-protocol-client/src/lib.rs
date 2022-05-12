@@ -18,7 +18,7 @@ use lightning::ln::PaymentPreimage;
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::util::bip32::ChildNumber;
 use lightning_signer::lightning;
-use lightning_signer::signer::my_keys_manager::KeyDerivationStyle;
+use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::util::INITIAL_COMMITMENT_NUMBER;
 use log::{debug, error};
 

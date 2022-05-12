@@ -44,7 +44,7 @@ use crate::persist::{DummyPersister, Persist};
 use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::ChainState;
 use crate::prelude::*;
-use crate::signer::my_keys_manager::KeyDerivationStyle;
+use crate::signer::derive::KeyDerivationStyle;
 use crate::tx::script::{
     get_p2wpkh_redeemscript, get_to_countersignatory_with_anchors_redeemscript,
     ANCHOR_OUTPUT_VALUE_SATOSHI,
