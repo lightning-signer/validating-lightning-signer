@@ -248,7 +248,13 @@ impl MyKeysManager {
             payment_key,
             delayed_payment_base_key,
             commitment_seed,
-        ) = key_derive.channel_keys(&keys_id, basepoint_index, &self.master_key);
+        ) = key_derive.channel_keys(
+            &self.seed,
+            &keys_id,
+            basepoint_index,
+            &self.master_key,
+            &secp_ctx,
+        );
 
         InMemorySigner::new(
             &secp_ctx,
@@ -517,12 +523,44 @@ impl KeysInterface for MyKeysManager {
 #[cfg(test)]
 mod tests {
     use crate::util::INITIAL_COMMITMENT_NUMBER;
+    use bitcoin::Network::Testnet;
 
     use super::*;
-    use lightning::chain::keysinterface::BaseSign;
+    use lightning::chain::keysinterface::{BaseSign, KeysManager};
 
     use crate::util::test_utils::{hex_decode, hex_encode, TEST_CHANNEL_ID};
     use test_log::test;
+
+    #[test]
+    fn compare_ldk_keys_manager_test() -> Result<(), ()> {
+        let seed = [0x11u8; 32];
+        let ldk = KeysManager::new(&seed, 1, 1);
+        let my = MyKeysManager::new(KeyDerivationStyle::Ldk, &seed, Network::Testnet, 1, 1);
+        assert_eq!(
+            ldk.get_node_secret(Recipient::Node).unwrap(),
+            my.get_node_secret(Recipient::Node).unwrap()
+        );
+        let key_derive = derive::key_derive(KeyDerivationStyle::Ldk, Testnet);
+        let channel_id = ChannelId::new(&[33u8; 32]);
+        // Get a somewhat random keys_id
+        let keys_id = key_derive.keys_id(channel_id, &my.channel_seed_base);
+        let ldk_chan = ldk.derive_channel_keys(1000, &keys_id);
+        let my_chan = my.derive_channel_keys(1000, &keys_id);
+        let secp_ctx = Secp256k1::new();
+        assert_eq!(ldk_chan.funding_key, my_chan.funding_key);
+        assert_eq!(ldk_chan.revocation_base_key, my_chan.revocation_base_key);
+        assert_eq!(ldk_chan.htlc_base_key, my_chan.htlc_base_key);
+        assert_eq!(ldk_chan.payment_key, my_chan.payment_key);
+        assert_eq!(ldk_chan.delayed_payment_base_key, my_chan.delayed_payment_base_key);
+        assert_eq!(ldk_chan.funding_key, my_chan.funding_key);
+        assert_eq!(
+            ldk_chan.get_per_commitment_point(123, &secp_ctx),
+            my_chan.get_per_commitment_point(123, &secp_ctx)
+        );
+        // a bit redundant, because we checked them all above
+        assert!(ldk_chan.pubkeys() == my_chan.pubkeys());
+        Ok(())
+    }
 
     #[test]
     fn keys_test_native() -> Result<(), ()> {
