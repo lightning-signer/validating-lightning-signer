@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::util::crypto_utils::hkdf_sha256;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use bitcoin::bech32::u5;
@@ -156,6 +157,11 @@ impl MyKeysManager {
         let secp_seed = res.get_secure_random_bytes();
         res.secp_ctx.seeded_randomize(&secp_seed);
         res
+    }
+
+    /// onion reply secret
+    pub fn get_onion_reply_secret(&self) -> [u8; 32]{
+        return hkdf_sha256(&self.seed, "onion reply secret".as_bytes(), &[]);
     }
 
     /// BOLT 12 x-only pubkey

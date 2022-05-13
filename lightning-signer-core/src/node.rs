@@ -640,6 +640,11 @@ impl Node {
         }
     }
 
+    /// onion reply secret
+    pub fn get_onion_reply_secret(&self) -> [u8; 32] {
+        self.keys_manager.get_onion_reply_secret()
+    }
+
     /// BOLT 12 x-only pubkey
     pub fn get_bolt12_pubkey(&self) -> XOnlyPublicKey {
         self.keys_manager.get_bolt12_pubkey()
