@@ -183,8 +183,7 @@ impl Handler for RootHandler {
                 let bip32 = self.node.get_account_extended_pubkey().encode();
                 let node_id = self.node.get_id().serialize();
                 let bolt12_xonly = self.node.get_bolt12_pubkey().serialize();
-                // FIXME bogus onion_reply_secret
-                let onion_reply_secret = [1; 32].try_into().unwrap();
+                let onion_reply_secret = self.node.get_onion_reply_secret();
                 Ok(Box::new(msgs::HsmdInitReply {
                     node_id: PubKey(node_id),
                     bip32: ExtKey(bip32),
