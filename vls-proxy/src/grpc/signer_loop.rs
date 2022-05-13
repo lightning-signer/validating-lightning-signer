@@ -3,10 +3,53 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::spawn_blocking;
 use triggered::Trigger;
 
+use async_trait::async_trait;
+
 use super::adapter::{ChannelReply, ChannelRequest, ClientId};
 use crate::client::Client;
 use vls_protocol::{msgs, msgs::Message, Error, Result};
+use vls_protocol_client::SignerPort;
 use vls_protocol_signer::vls_protocol;
+
+pub struct GrpcSignerPort {
+    sender: mpsc::Sender<ChannelRequest>,
+}
+
+#[async_trait]
+impl SignerPort for GrpcSignerPort {
+    async fn handle_message(&mut self, message: Vec<u8>) -> Result<Vec<u8>> {
+        let reply_rx = self.send_request(message).await?;
+        self.get_reply(reply_rx).await
+    }
+}
+
+impl GrpcSignerPort {
+    pub fn new(sender: mpsc::Sender<ChannelRequest>) -> Self {
+        GrpcSignerPort { sender }
+    }
+
+    async fn send_request(&mut self, message: Vec<u8>) -> Result<oneshot::Receiver<ChannelReply>> {
+        // Create a one-shot channel to receive the reply
+        let (reply_tx, reply_rx) = oneshot::channel();
+
+        // Send a request to the gRPC handler to send to signer
+        let request = ChannelRequest { client_id: None, message, reply_tx };
+
+        // This can fail if gRPC adapter shut down
+        self.sender.send(request).await.map_err(|_| Error::Eof)?;
+        Ok(reply_rx)
+    }
+
+    async fn get_reply(&mut self, reply_rx: oneshot::Receiver<ChannelReply>) -> Result<Vec<u8>> {
+        // Wait for the signer reply
+        // Can fail if the adapter shut down
+        let reply = spawn_blocking(move || reply_rx.blocking_recv())
+            .await
+            .map_err(|_| Error::Eof)?
+            .map_err(|_| Error::Eof)?;
+        Ok(reply.reply)
+    }
+}
 
 /// Implement the hsmd UNIX fd protocol.
 /// This doesn't actually perform the signing - the hsmd packets are transported via gRPC to the

@@ -17,7 +17,7 @@ use client::UnixClient;
 use connection::{open_parent_fd, UnixConnection};
 use grpc::adapter::HsmdService;
 use grpc::incoming::TcpIncoming;
-use grpc::signer_loop::SignerLoop;
+use grpc::signer_loop::{GrpcSignerPort, SignerLoop};
 use vls_proxy::util::{add_hsmd_args, handle_hsmd_version, setup_logging};
 use vls_proxy::*;
 
@@ -64,9 +64,10 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
     let incoming = TcpIncoming::new(addr, false, None).expect("listen incoming"); // new_from_std seems to be infallible
 
     let sender = server.sender();
+    let grpc_signer_port = GrpcSignerPort::new(sender.clone());
 
     // Start the UNIX fd listener loop
-    spawn_blocking(|| {
+    spawn_blocking(move || {
         let mut signer_loop = SignerLoop::new(client, sender, shutdown_trigger);
         signer_loop.start()
     });
