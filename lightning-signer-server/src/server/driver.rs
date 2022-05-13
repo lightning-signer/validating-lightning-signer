@@ -385,11 +385,11 @@ impl Signer for SignServer {
         let node = self.signer.get_node(&node_id)?;
         let extpubkey = node.get_account_extended_pubkey();
         let bolt12_pubkey = node.get_bolt12_pubkey();
-        let node_secret = node.get_node_secret();
+        let onion_reply_secret = node.get_onion_reply_secret();
         let reply = GetNodeParamReply {
             xpub: Some(ExtPubKey { encoded: format!("{}", extpubkey) }),
             bolt12_pubkey: Some(XOnlyPubKey { data: bolt12_pubkey.serialize().to_vec() }),
-            node_secret: Some(SecKey { data: node_secret[..].to_vec() }),
+            onion_reply_secret: Some(SecKey { data: onion_reply_secret[..].to_vec() }),
         };
 
         log_req_reply!(&node_id, &reply);
