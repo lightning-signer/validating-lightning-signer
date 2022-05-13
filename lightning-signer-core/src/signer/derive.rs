@@ -189,11 +189,14 @@ impl KeyDerive for LdkKeyDerive {
     fn keys_id(&self, channel_id: ChannelId, channel_seed_base: &[u8; 32]) -> [u8; 32] {
         let mut res =
             hkdf_sha256(channel_seed_base, "per-peer seed".as_bytes(), channel_id.as_slice());
-        // The stock KeysManager requires the first four bytes of the keys ID to be zero
+        // The stock KeysManager requires the first four bytes of the keys ID to be zero,
+        // and the byte after that to be 127 or less.  The big-endian interpretation is used as
+        // a derivation index, and it must be less than 2^31.
         res[0] = 0;
         res[1] = 0;
         res[2] = 0;
         res[3] = 0;
+        res[4] &= 0x7f;
         res
     }
 }
