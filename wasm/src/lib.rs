@@ -218,7 +218,8 @@ impl JSNode {
             counterparty_shutdown_script: None,
             commitment_type: CommitmentType::Legacy,
         };
-        let _channel = self.node.ready_channel(id.0.clone(), None, setup, &vec![]).map_err(from_status)?;
+        let _channel =
+            self.node.ready_channel(id.0.clone(), None, setup, &vec![]).map_err(from_status)?;
         Ok(())
     }
 

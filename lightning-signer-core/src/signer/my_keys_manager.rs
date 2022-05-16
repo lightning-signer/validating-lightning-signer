@@ -160,7 +160,7 @@ impl MyKeysManager {
     }
 
     /// onion reply secret
-    pub fn get_onion_reply_secret(&self) -> [u8; 32]{
+    pub fn get_onion_reply_secret(&self) -> [u8; 32] {
         return hkdf_sha256(&self.seed, "onion reply secret".as_bytes(), &[]);
     }
 
