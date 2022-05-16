@@ -294,8 +294,11 @@ message GetNodeParamReply {
 
   XOnlyPubKey bolt12_pubkey = 2;
   
-  // This is needed until we can do onion decryption in the signer
+  // Used by CLN to create blinded paths.
   SecKey onion_reply_secret = 3;
+
+  // Used by LDK for onion decryption and peer session setup.
+  SecKey node_secret = 4;
 }
 
 // Initialize a new channel
