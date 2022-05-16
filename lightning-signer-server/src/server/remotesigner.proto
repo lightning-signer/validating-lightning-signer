@@ -710,10 +710,13 @@ message NodeConfig {
   // The KeyDerivationStyle controls how nodeid and HD keys are
   // derived from the seed.  Being compatible with specific node
   // imlementations allows for comparison during integration testing.
+  // NOTE - this definition should be kept in sync with the internal
+  // enum defined in `derive.rs`
   enum KeyDerivationStyle {
     INVALID = 0;
     NATIVE = 1;
-    LND = 2;
+    LDK = 2;
+    LND = 3;
   }
   KeyDerivationStyle key_derivation_style = 1;
 }

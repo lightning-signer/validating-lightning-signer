@@ -298,12 +298,12 @@ fn convert_node_config(
     proto_node_config: NodeConfig,
 ) -> anyhow::Result<node::NodeConfig> {
     let proto_style = proto_node_config.key_derivation_style;
-    let key_derivation_style = if proto_style == node_config::KeyDerivationStyle::Lnd as i32 {
-        Ok(KeyDerivationStyle::Lnd)
-    } else if proto_style == node_config::KeyDerivationStyle::Native as i32 {
-        Ok(KeyDerivationStyle::Native)
-    } else {
-        Err(anyhow!("invalid key derivation style"))
+    use node_config::KeyDerivationStyle::{Ldk, Lnd, Native};
+    let key_derivation_style = match proto_style {
+        x if x == Native as i32 => Ok(KeyDerivationStyle::Native),
+        x if x == Ldk as i32 => Ok(KeyDerivationStyle::Ldk),
+        x if x == Lnd as i32 => Ok(KeyDerivationStyle::Lnd),
+        _ => Err(anyhow!("invalid key derivation style")),
     }?;
     let supplied_network = Network::from_str(&chainparams.network_name).expect("bad network");
     if supplied_network != network {
@@ -330,13 +330,9 @@ impl Signer for SignServer {
         info!("ENTER init");
         // We don't want to log the secret, so comment this out by default
         //debug!("req={}", json!(&req));
+
         let proto_node_config =
             req.node_config.ok_or_else(|| invalid_grpc_argument("missing node_config"))?;
-        if proto_node_config.key_derivation_style != node_config::KeyDerivationStyle::Native as i32
-            && proto_node_config.key_derivation_style != node_config::KeyDerivationStyle::Lnd as i32
-        {
-            return Err(invalid_grpc_argument("unknown node_config.key_derivation_style"));
-        }
 
         let proto_chainparams =
             req.chainparams.ok_or_else(|| invalid_grpc_argument("missing chainparams"))?;
