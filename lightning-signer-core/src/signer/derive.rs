@@ -279,6 +279,9 @@ pub fn key_derive(style: KeyDerivationStyle, network: Network) -> Box<dyn KeyDer
 }
 
 /// The key derivation style
+///
+/// NOTE - This enum should be kept in sync with the grpc definition in `remotesigner.proto`
+/// and `convert_node_config` in `driver.rs`
 #[derive(Clone, Copy, Debug)]
 pub enum KeyDerivationStyle {
     /// Our preferred style, C-lightning compatible
@@ -293,9 +296,10 @@ impl TryFrom<u8> for KeyDerivationStyle {
     type Error = ();
 
     fn try_from(v: u8) -> Result<Self, Self::Error> {
-        use KeyDerivationStyle::{Lnd, Native};
+        use KeyDerivationStyle::{Ldk, Lnd, Native};
         match v {
             x if x == Native as u8 => Ok(Native),
+            x if x == Ldk as u8 => Ok(Ldk),
             x if x == Lnd as u8 => Ok(Lnd),
             _ => Err(()),
         }
