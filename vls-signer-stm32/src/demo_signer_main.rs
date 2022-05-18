@@ -17,6 +17,7 @@ use log::{debug, info, trace};
 use device::heap_bytes_used;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::Arc;
+use vls_protocol::model::PubKey;
 use vls_protocol::msgs::{self, read_serial_request_header, write_serial_response_header, Message};
 use vls_protocol::serde_bolt::WireString;
 use vls_protocol_signer::handler::{Handler, RootHandler};
@@ -74,17 +75,29 @@ fn main() -> ! {
 
     info!("used {} bytes", heap_bytes_used());
 
+    // HACK - use a dummy peer_id until it is plumbed
+    let dummy_peer = PubKey([0; 33]);
     loop {
         let (sequence, dbid) =
             read_serial_request_header(&mut serial).expect("read request header");
-        let message = msgs::read(&mut serial).expect("message read failed");
+        let mut message = msgs::read(&mut serial).expect("message read failed");
+
+        // Override the peerid when it is passed in certain messages
+        match message {
+            Message::NewChannel(ref mut m) => m.node_id = dummy_peer.clone(),
+            Message::ClientHsmFd(ref mut m) => m.peer_id = dummy_peer.clone(),
+            Message::GetChannelBasepoints(ref mut m) => m.node_id = dummy_peer.clone(),
+            Message::SignCommitmentTx(ref mut m) => m.peer_id = dummy_peer.clone(),
+            _ => {}
+        };
+
         disp.clear_screen();
         let mut message_d = format!("{:?}", message);
         message_d.truncate(20);
         disp.show_texts(&[format!("req # {}", sequence), message_d.clone()]);
         let start = timer1.now();
         let reply = if dbid > 0 {
-            let handler = root_handler.for_new_client(0, None, dbid);
+            let handler = root_handler.for_new_client(0, dummy_peer.clone(), dbid);
             handler.handle(message).expect("handle")
         } else {
             root_handler.handle(message).expect("handle")
