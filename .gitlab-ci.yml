@@ -45,6 +45,17 @@ wasm:
     - wasm-pack test --firefox --headless
     - cargo test
 
+## This currently fails with:
+##   error: package `stm32f4xx-hal v0.13.0` cannot be built because it
+##   requires rustc 1.59 or newer, while the currently active rustc
+##   version is 1.57.0-nightly
+#
+# demo-signer:
+#   stage: build
+#   image: devrandom01/rust-qemu:nightly
+#   script:
+#     - cd vls-signer-stm32 && cargo build --features stm32f412,sdio --release --bin demo_signer
+
 coverage:
   stage: build
   image: rust:latest
