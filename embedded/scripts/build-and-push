@@ -2,7 +2,7 @@
 
 set -e
 
-TAG=devrandom01/rust-qemu:nightly
+TAG=devrandom01/rust-qemu:nightly-1-63-2022-05-16
 
 docker build -t $TAG .
 docker push $TAG
