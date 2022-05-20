@@ -7,17 +7,21 @@
 
 use std::env;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 
 use clap::{App, AppSettings};
 #[allow(unused_imports)]
 use log::{error, info};
 use tokio::task::spawn_blocking;
+use url::Url;
 
 use client::UnixClient;
 use connection::{open_parent_fd, UnixConnection};
 use grpc::adapter::HsmdService;
 use grpc::incoming::TcpIncoming;
 use grpc::signer_loop::{GrpcSignerPort, SignerLoop};
+use vls_frontend::Frontend;
+use vls_proxy::portfront::SignerPortFront;
 use vls_proxy::util::{add_hsmd_args, handle_hsmd_version, setup_logging};
 use vls_proxy::*;
 
@@ -63,8 +67,14 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
 
     let incoming = TcpIncoming::new(addr, false, None).expect("listen incoming"); // new_from_std seems to be infallible
 
+    // FIXME - need rpc url config
+    let rpc_s = "http://user:pass@localhost:18332";
+    let rpc_url = Url::parse(&rpc_s).expect("malformed rpc url");
     let sender = server.sender();
-    let grpc_signer_port = GrpcSignerPort::new(sender.clone());
+    let signer_port = GrpcSignerPort::new(sender.clone());
+    let frontend =
+        Frontend::new(Arc::new(SignerPortFront { signer_port: Arc::new(signer_port) }), rpc_url);
+    frontend.start().await;
 
     // Start the UNIX fd listener loop
     spawn_blocking(move || {
