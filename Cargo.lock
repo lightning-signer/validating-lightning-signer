@@ -2382,6 +2382,7 @@ dependencies = [
  "triggered",
  "url",
  "vls-frontend",
+ "vls-protocol",
  "vls-protocol-client",
  "vls-protocol-signer",
 ]

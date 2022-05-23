@@ -531,6 +531,69 @@ pub struct SignPenaltyToUs {
     pub wscript: Vec<u8>,
 }
 
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2002)]
+pub struct TipInfo {}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2102)]
+pub struct TipInfoReply {
+    pub height: u32,
+    pub block_hash: BlockHash,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2003)]
+pub struct ForwardWatches {}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2103)]
+pub struct ForwardWatchesReply {
+    pub txids: Vec<TxId>,
+    pub outpoints: Vec<OutPoint>,
+}
+
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2004)]
+pub struct ReverseWatches {}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2104)]
+pub struct ReverseWatchesReply {
+    pub txids: Vec<TxId>,
+    pub outpoints: Vec<OutPoint>,
+}
+
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2005)]
+pub struct AddBlock {
+    pub header: LargeBytes,
+    pub txs: Vec<LargeBytes>,
+    pub txs_proof: Option<LargeBytes>,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2105)]
+pub struct AddBlockReply {}
+
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2006)]
+pub struct RemoveBlock {
+    pub txs: Vec<LargeBytes>,
+    pub txs_proof: Option<LargeBytes>,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2106)]
+pub struct RemoveBlockReply {}
+
 /// An unknown message
 #[derive(Debug, Serialize)]
 pub struct Unknown {
@@ -600,6 +663,16 @@ pub enum Message {
     NewChannelReply(NewChannelReply),
     SignRemoteHtlcTx(SignRemoteHtlcTx),
     SignPenaltyToUs(SignPenaltyToUs),
+    TipInfo(TipInfo),
+    TipInfoReply(TipInfoReply),
+    ForwardWatches(ForwardWatches),
+    ForwardWatchesReply(ForwardWatchesReply),
+    ReverseWatches(ReverseWatches),
+    ReverseWatchesReply(ReverseWatchesReply),
+    AddBlock(AddBlock),
+    AddBlockReply(AddBlockReply),
+    RemoveBlock(RemoveBlock),
+    RemoveBlockReply(RemoveBlockReply),
     Unknown(Unknown),
 }
 

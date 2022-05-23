@@ -4,17 +4,25 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use tokio::sync::Mutex;
 
+use bitcoin::consensus::serialize;
+use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{self, BlockHash, BlockHeader, Network, OutPoint, Txid};
 
 use vls_frontend::{ChainTrack, ChainTrackDirectory};
+use vls_protocol::msgs::{self, Message, SerBolt};
+use vls_protocol::serde_bolt::LargeBytes;
 use vls_protocol_client::SignerPort;
 
-/// Implements ChainTrackDirectory using calls to remote MultiSigner
+#[allow(unused_imports)]
+use log::debug;
+
+/// Implements ChainTrackDirectory using RPC to remote MultiSigner
 pub struct SignerPortFront {
-    pub signer_port: Arc<dyn SignerPort>,
+    pub signer_port: Arc<Mutex<dyn SignerPort>>,
 }
 
 #[async_trait]
@@ -22,50 +30,118 @@ impl ChainTrackDirectory for SignerPortFront {
     fn tracker(&self, _node_id: &PublicKey) -> Arc<dyn ChainTrack> {
         unimplemented!()
     }
+
     async fn trackers(&self) -> Vec<Arc<dyn ChainTrack>> {
-        unimplemented!()
+        vec![Arc::new(NodePortFront { signer_port: Arc::clone(&self.signer_port) })
+            as Arc<dyn ChainTrack>]
     }
 }
 
-/// Implements ChainTrack using calls to inplace node
-pub(crate) struct NodePortFront {}
+/// Implements ChainTrack using RPC to remote node
+pub(crate) struct NodePortFront {
+    pub signer_port: Arc<Mutex<dyn SignerPort>>,
+}
 
 #[async_trait]
 impl ChainTrack for NodePortFront {
     fn log_prefix(&self) -> String {
-        unimplemented!()
+        format!("tracker")
     }
 
     fn network(&self) -> Network {
-        unimplemented!()
+        Network::Regtest // FIXME - this needs plmubing!
     }
 
     async fn tip_info(&self) -> (u32, BlockHash) {
-        unimplemented!()
+        let req = msgs::TipInfo {};
+        let mut port = self.signer_port.lock().await;
+        let reply = port.handle_message(req.as_vec()).await.expect("TipInfo failed");
+        if let Ok(Message::TipInfoReply(m)) = msgs::from_vec(reply) {
+            (m.height, BlockHash::from_slice(&m.block_hash.0).unwrap())
+        } else {
+            panic!("unexpected TipInfoReply");
+        }
     }
 
     async fn forward_watches(&self) -> (Vec<Txid>, Vec<OutPoint>) {
-        unimplemented!()
+        let req = msgs::ForwardWatches {};
+        let mut port = self.signer_port.lock().await;
+        let reply = port.handle_message(req.as_vec()).await.expect("ForwardWatches failed");
+        if let Ok(Message::ForwardWatchesReply(m)) = msgs::from_vec(reply) {
+            (
+                m.txids.iter().map(|txid| Txid::from_slice(&txid.0).expect("bad txid")).collect(),
+                m.outpoints
+                    .iter()
+                    .map(|op| {
+                        OutPoint::new(
+                            Txid::from_slice(&op.txid.0).expect("bad outpoint txid"),
+                            op.vout,
+                        )
+                    })
+                    .collect(),
+            )
+        } else {
+            panic!("unexpected ForwardWatchesReply");
+        }
     }
 
     async fn reverse_watches(&self) -> (Vec<Txid>, Vec<OutPoint>) {
-        unimplemented!()
+        let req = msgs::ReverseWatches {};
+        let mut port = self.signer_port.lock().await;
+        let reply = port.handle_message(req.as_vec()).await.expect("ReverseWatches failed");
+        if let Ok(Message::ReverseWatchesReply(m)) = msgs::from_vec(reply) {
+            (
+                m.txids.iter().map(|txid| Txid::from_slice(&txid.0).expect("bad txid")).collect(),
+                m.outpoints
+                    .iter()
+                    .map(|op| {
+                        OutPoint::new(
+                            Txid::from_slice(&op.txid.0).expect("bad outpoint txid"),
+                            op.vout,
+                        )
+                    })
+                    .collect(),
+            )
+        } else {
+            panic!("unexpected ReverseWatchesReply");
+        }
     }
 
     async fn add_block(
         &self,
-        _header: BlockHeader,
-        _txs: Vec<bitcoin::Transaction>,
-        _txs_proof: Option<PartialMerkleTree>,
+        header: BlockHeader,
+        txs: Vec<bitcoin::Transaction>,
+        txs_proof: Option<PartialMerkleTree>,
     ) {
-        unimplemented!()
+        let req = msgs::AddBlock {
+            header: LargeBytes(serialize(&header)),
+            txs: txs.iter().map(|tx| LargeBytes(serialize(&tx))).collect(),
+            txs_proof: txs_proof.map(|prf| LargeBytes(serialize(&prf))),
+        };
+        let mut port = self.signer_port.lock().await;
+        let reply = port.handle_message(req.as_vec()).await.expect("AddBlock failed");
+        if let Ok(Message::AddBlockReply(_)) = msgs::from_vec(reply) {
+            return;
+        } else {
+            panic!("unexpected AddBlockReply");
+        }
     }
 
     async fn remove_block(
         &self,
-        _txs: Vec<bitcoin::Transaction>,
-        _txs_proof: Option<PartialMerkleTree>,
+        txs: Vec<bitcoin::Transaction>,
+        txs_proof: Option<PartialMerkleTree>,
     ) {
-        unimplemented!()
+        let req = msgs::RemoveBlock {
+            txs: txs.iter().map(|tx| LargeBytes(serialize(&tx))).collect(),
+            txs_proof: txs_proof.map(|prf| LargeBytes(serialize(&prf))),
+        };
+        let mut port = self.signer_port.lock().await;
+        let reply = port.handle_message(req.as_vec()).await.expect("RemoveBlock failed");
+        if let Ok(Message::RemoveBlockReply(_)) = msgs::from_vec(reply) {
+            return;
+        } else {
+            panic!("unexpected RemoveBlockReply");
+        }
     }
 }

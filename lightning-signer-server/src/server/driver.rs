@@ -1565,7 +1565,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let rpc_url = Url::parse(&rpc_s).expect("malformed rpc url");
 
     let frontend = Frontend::new(Arc::new(SignerFront { signer: Arc::clone(&signer) }), rpc_url);
-    frontend.start().await;
+    frontend.start();
 
     let server = SignServer { signer, network, frontend };
 

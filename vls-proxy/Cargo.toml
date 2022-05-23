@@ -14,6 +14,7 @@ grpc = ["tokio", "tokio-stream", "tonic", "prost", "async-stream", "url"]
 lightning-signer-core = { path = "../lightning-signer-core" }
 vls-protocol-signer = { path = "../vls-protocol-signer", features = ["std"] }
 vls-protocol-client = { path = "../vls-protocol-client" }
+vls-protocol = { path = "../vls-protocol" }
 vls-frontend = { path = "../vls-frontend" }
 secp256k1 = { version = "0.20", features = ["rand-std", "bitcoin_hashes"] }
 nix = "0.22"

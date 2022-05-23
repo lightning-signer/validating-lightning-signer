@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use tokio::task;
+
 use url::Url;
 
 use crate::{chain_follower::ChainFollower, ChainTrack, ChainTrackDirectory};
@@ -15,11 +17,16 @@ impl Frontend {
         Frontend { signer, rpc_url }
     }
 
-    /// Start a chain follower for each existing tracker
-    pub async fn start(&self) {
-        for tracker in self.signer.trackers().await {
-            self.start_follower(tracker).await;
-        }
+    /// Start a task which creates a chain follower for each existing tracker
+    pub fn start(&self) {
+        let signer = Arc::clone(&self.signer);
+        let rpc_url = self.rpc_url.clone();
+        task::spawn(async move {
+            for tracker in signer.trackers().await {
+                let cf_arc = ChainFollower::new(tracker, &rpc_url).await;
+                ChainFollower::start(cf_arc).await;
+            }
+        });
     }
 
     /// Start a chain follower for a specific tracker

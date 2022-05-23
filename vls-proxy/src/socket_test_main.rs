@@ -16,6 +16,7 @@ use clap::{App, AppSettings};
 #[allow(unused_imports)]
 use log::{error, info};
 use nix::unistd::{fork, ForkResult};
+use tokio::sync::Mutex;
 use tokio::task::spawn_blocking;
 use url::Url;
 
@@ -27,7 +28,7 @@ use grpc::signer::start_signer_localhost;
 use grpc::signer_loop::{GrpcSignerPort, SignerLoop};
 use vls_frontend::Frontend;
 use vls_proxy::portfront::SignerPortFront;
-use vls_proxy::util::{add_hsmd_args, handle_hsmd_version, setup_logging};
+use vls_proxy::util::{add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, setup_logging};
 use vls_proxy::*;
 
 pub mod grpc;
@@ -75,14 +76,12 @@ async fn start_server(listener: TcpListener, addr: SocketAddr, client: UnixClien
     let incoming = TcpIncoming::new_from_std(listener, false, None).expect("listen incoming"); // new_from_std seems to be infallible
 
     let sender = server.sender();
-
-    // FIXME - need rpc url config
-    let rpc_s = "http://user:pass@localhost:18332";
-    let rpc_url = Url::parse(&rpc_s).expect("malformed rpc url");
     let signer_port = GrpcSignerPort::new(sender.clone());
-    let frontend =
-        Frontend::new(Arc::new(SignerPortFront { signer_port: Arc::new(signer_port) }), rpc_url);
-    frontend.start().await;
+    let frontend = Frontend::new(
+        Arc::new(SignerPortFront { signer_port: Arc::new(Mutex::new(signer_port)) }),
+        Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
+    );
+    frontend.start();
 
     // Start the UNIX fd listener loop
     spawn_blocking(|| {
