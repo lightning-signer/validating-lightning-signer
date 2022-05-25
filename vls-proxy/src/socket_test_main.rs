@@ -66,7 +66,7 @@ pub fn main() {
 async fn start_server(listener: TcpListener, addr: SocketAddr, client: UnixClient) {
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
 
-    let server = HsmdService::new(shutdown_trigger.clone());
+    let server = HsmdService::new(shutdown_trigger.clone(), shutdown_signal.clone());
     let trigger1 = shutdown_trigger.clone();
     ctrlc::set_handler(move || {
         trigger1.trigger();

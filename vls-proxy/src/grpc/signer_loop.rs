@@ -95,6 +95,7 @@ impl<C: 'static + Client> SignerLoop<C> {
         }
         if let Some(trigger) = self.shutdown_trigger.as_ref() {
             trigger.trigger();
+            info!("loop {}: triggered shutdown", self.log_prefix);
         }
     }
 
