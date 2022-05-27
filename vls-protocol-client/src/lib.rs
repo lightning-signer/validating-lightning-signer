@@ -52,9 +52,11 @@ use lightning::ln::script::ShutdownScript;
 use lightning::util::ser::{Writeable, Writer};
 
 mod dyn_signer;
+pub mod signer_port;
 
 pub use dyn_signer::{DynKeysInterface, DynSigner, InnerSign, SpendableKeysInterface};
 use lightning::util::ser::Readable;
+pub use signer_port::SignerPort;
 
 #[derive(Debug)]
 pub enum Error {

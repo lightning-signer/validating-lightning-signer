@@ -71,3 +71,7 @@ pub fn handle_hsmd_version(matches: &ArgMatches) -> bool {
         false
     }
 }
+
+pub fn bitcoind_rpc_url() -> String {
+    env::var("BITCOIND_RPC_URL").expect("env var BITCOIND_RPC_URL")
+}

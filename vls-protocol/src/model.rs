@@ -102,6 +102,15 @@ array_impl!(ExtKey, 78);
 pub struct Sha256(pub [u8; 32]);
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct BlockHash(pub [u8; 32]);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OutPoint {
+    pub txid: TxId,
+    pub vout: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Basepoints {
     pub revocation: PubKey,
     pub payment: PubKey,

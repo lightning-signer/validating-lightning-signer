@@ -42,8 +42,8 @@ use secp256k1::PublicKey;
 use lightning_signer::util::status::Status;
 use vls_protocol::features::*;
 use vls_protocol::model::{
-    Basepoints, BitcoinSignature, ExtKey, Htlc, PubKey, PubKey32, RecoverableSignature, Secret,
-    Signature,
+    Basepoints, BitcoinSignature, BlockHash, ExtKey, Htlc, OutPoint as ModelOutPoint, PubKey,
+    PubKey32, RecoverableSignature, Secret, Signature, TxId,
 };
 use vls_protocol::msgs::{SerBolt, SignBolt12Reply};
 use vls_protocol::serde_bolt::{LargeBytes, WireString};
@@ -381,8 +381,63 @@ impl Handler for RootHandler {
                 update[2..2 + 64].copy_from_slice(&sig.serialize_compact());
                 Ok(Box::new(msgs::SignChannelUpdateReply { update }))
             }
-            Message::Unknown(u) =>
-                unimplemented!("loop {}: unknown message type {}", self.id, u.message_type),
+            Message::TipInfo(_) => {
+                let tracker = self.node.get_tracker();
+                Ok(Box::new(msgs::TipInfoReply {
+                    height: tracker.height(),
+                    block_hash: BlockHash(tracker.tip().block_hash()[..].try_into().unwrap()),
+                }))
+            }
+            Message::ForwardWatches(_) => {
+                let (txids, outpoints) = self.node.get_tracker().get_all_forward_watches();
+                Ok(Box::new(msgs::ForwardWatchesReply {
+                    txids: txids.iter().map(|txid| TxId(txid[..].try_into().unwrap())).collect(),
+                    outpoints: outpoints
+                        .iter()
+                        .map(|op| ModelOutPoint {
+                            txid: TxId(op.txid[..].try_into().unwrap()),
+                            vout: op.vout,
+                        })
+                        .collect(),
+                }))
+            }
+            Message::ReverseWatches(_) => {
+                let (txids, outpoints) = self.node.get_tracker().get_all_reverse_watches();
+                Ok(Box::new(msgs::ReverseWatchesReply {
+                    txids: txids.iter().map(|txid| TxId(txid[..].try_into().unwrap())).collect(),
+                    outpoints: outpoints
+                        .iter()
+                        .map(|op| ModelOutPoint {
+                            txid: TxId(op.txid[..].try_into().unwrap()),
+                            vout: op.vout,
+                        })
+                        .collect(),
+                }))
+            }
+            Message::AddBlock(m) => {
+                self.node
+                    .get_tracker()
+                    .add_block(
+                        deserialize(m.header.0.as_slice()).expect("header"),
+                        m.txs.iter().map(|tx| deserialize(tx.0.as_slice()).expect("tx")).collect(),
+                        m.txs_proof.map(|prf| deserialize(prf.0.as_slice()).expect("txs_proof")),
+                    )
+                    .expect("add_block");
+                Ok(Box::new(msgs::AddBlockReply {}))
+            }
+            Message::RemoveBlock(m) => {
+                self.node
+                    .get_tracker()
+                    .remove_block(
+                        m.txs.iter().map(|tx| deserialize(tx.0.as_slice()).expect("tx")).collect(),
+                        m.txs_proof.map(|prf| deserialize(prf.0.as_slice()).expect("txs_proof")),
+                    )
+                    .expect("add_block");
+                Ok(Box::new(msgs::RemoveBlockReply {}))
+            }
+            Message::Unknown(u) => {
+                unimplemented!("loop {}: unknown message type {}", self.id, u.message_type)
+            }
             m => unimplemented!("loop {}: unimplemented message {:?}", self.id, m),
         }
     }
@@ -880,8 +935,9 @@ impl Handler for ChannelHandler {
                     node_signature: Signature(sig.serialize_compact()),
                 }))
             }
-            Message::Unknown(u) =>
-                unimplemented!("cloop {}: unknown message type {}", self.id, u.message_type),
+            Message::Unknown(u) => {
+                unimplemented!("cloop {}: unknown message type {}", self.id, u.message_type)
+            }
             m => unimplemented!("cloop {}: unimplemented message {:?}", self.id, m),
         }
     }

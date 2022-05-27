@@ -2332,6 +2332,7 @@ name = "vls-protocol-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bit-vec",
  "lightning-signer-core",
  "log",
@@ -2357,6 +2358,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-stream",
+ "async-trait",
+ "bitcoin",
  "chrono",
  "clap",
  "clap_derive",
@@ -2377,6 +2380,10 @@ dependencies = [
  "tonic",
  "tonic-build",
  "triggered",
+ "url",
+ "vls-frontend",
+ "vls-protocol",
+ "vls-protocol-client",
  "vls-protocol-signer",
 ]
 

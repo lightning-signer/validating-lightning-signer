@@ -10,20 +10,25 @@
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
 use std::process::exit;
+use std::sync::Arc;
 
 use clap::{App, AppSettings};
 #[allow(unused_imports)]
 use log::{error, info};
 use nix::unistd::{fork, ForkResult};
+use tokio::sync::Mutex;
 use tokio::task::spawn_blocking;
+use url::Url;
 
 use client::UnixClient;
 use connection::{open_parent_fd, UnixConnection};
 use grpc::adapter::HsmdService;
 use grpc::incoming::TcpIncoming;
 use grpc::signer::start_signer_localhost;
-use grpc::signer_loop::SignerLoop;
-use vls_proxy::util::{add_hsmd_args, handle_hsmd_version, setup_logging};
+use grpc::signer_loop::{GrpcSignerPort, SignerLoop};
+use vls_frontend::Frontend;
+use vls_proxy::portfront::SignerPortFront;
+use vls_proxy::util::{add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, setup_logging};
 use vls_proxy::*;
 
 pub mod grpc;
@@ -61,7 +66,7 @@ pub fn main() {
 async fn start_server(listener: TcpListener, addr: SocketAddr, client: UnixClient) {
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
 
-    let server = HsmdService::new(shutdown_trigger.clone());
+    let server = HsmdService::new(shutdown_trigger.clone(), shutdown_signal.clone());
     let trigger1 = shutdown_trigger.clone();
     ctrlc::set_handler(move || {
         trigger1.trigger();
@@ -71,6 +76,12 @@ async fn start_server(listener: TcpListener, addr: SocketAddr, client: UnixClien
     let incoming = TcpIncoming::new_from_std(listener, false, None).expect("listen incoming"); // new_from_std seems to be infallible
 
     let sender = server.sender();
+    let signer_port = GrpcSignerPort::new(sender.clone());
+    let frontend = Frontend::new(
+        Arc::new(SignerPortFront { signer_port: Arc::new(Mutex::new(signer_port)) }),
+        Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
+    );
+    frontend.start();
 
     // Start the UNIX fd listener loop
     spawn_blocking(|| {
