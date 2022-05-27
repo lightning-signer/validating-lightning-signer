@@ -2,8 +2,12 @@
 //! VLS over a USB / serial connection.
 
 use std::env;
+use std::sync::{Arc, Mutex};
+
+use tokio::runtime;
 
 use clap::{App, AppSettings, Arg};
+use url::Url;
 
 #[allow(unused_imports)]
 use log::{error, info};
@@ -13,9 +17,11 @@ use connection::{open_parent_fd, UnixConnection};
 use vls_protocol_signer::vls_protocol::msgs::{self, Message};
 use vls_protocol_signer::vls_protocol::serde_bolt::WireString;
 
-use embedded::{connect, SignerLoop};
+use embedded::{connect, SerialSignerPort, SignerLoop};
+use vls_frontend::Frontend;
 use vls_proxy::client::UnixClient;
-use vls_proxy::util::setup_logging;
+use vls_proxy::portfront::SignerPortFront;
+use vls_proxy::util::{bitcoind_rpc_url, setup_logging};
 use vls_proxy::*;
 
 mod embedded;
@@ -77,7 +83,28 @@ pub fn main() -> anyhow::Result<()> {
     } else {
         let conn = UnixConnection::new(parent_fd);
         let client = UnixClient::new(conn);
-        let serial = connect(serial_port)?;
+        let serial = Arc::new(Mutex::new(connect(serial_port)?));
+
+        let signer_port = SerialSignerPort::new(serial.clone());
+        let frontend = Frontend::new(
+            Arc::new(SignerPortFront { signer_port: Box::new(signer_port) }),
+            Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
+        );
+
+        let runtime = std::thread::spawn(|| {
+            runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("serial-main")
+                .worker_threads(2) // for debugging
+                .build()
+        })
+        .join()
+        .expect("runtime join")
+        .expect("runtime");
+        runtime.block_on(async {
+            frontend.start();
+        });
+
         let mut signer_loop = SignerLoop::new(client, serial);
         signer_loop.start();
     }

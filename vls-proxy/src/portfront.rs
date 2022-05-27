@@ -4,7 +4,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tokio::sync::Mutex;
 
 use bitcoin::consensus::serialize;
 use bitcoin::hashes::Hash;
@@ -22,7 +21,7 @@ use log::debug;
 
 /// Implements ChainTrackDirectory using RPC to remote MultiSigner
 pub struct SignerPortFront {
-    pub signer_port: Arc<Mutex<dyn SignerPort>>,
+    pub signer_port: Box<dyn SignerPort>,
 }
 
 #[async_trait]
@@ -32,14 +31,14 @@ impl ChainTrackDirectory for SignerPortFront {
     }
 
     async fn trackers(&self) -> Vec<Arc<dyn ChainTrack>> {
-        vec![Arc::new(NodePortFront { signer_port: Arc::clone(&self.signer_port) })
+        vec![Arc::new(NodePortFront { signer_port: self.signer_port.clone() })
             as Arc<dyn ChainTrack>]
     }
 }
 
 /// Implements ChainTrack using RPC to remote node
 pub(crate) struct NodePortFront {
-    pub signer_port: Arc<Mutex<dyn SignerPort>>,
+    pub signer_port: Box<dyn SignerPort>,
 }
 
 #[async_trait]
@@ -54,8 +53,7 @@ impl ChainTrack for NodePortFront {
 
     async fn tip_info(&self) -> (u32, BlockHash) {
         let req = msgs::TipInfo {};
-        let mut port = self.signer_port.lock().await;
-        let reply = port.handle_message(req.as_vec()).await.expect("TipInfo failed");
+        let reply = self.signer_port.handle_message(req.as_vec()).await.expect("TipInfo failed");
         if let Ok(Message::TipInfoReply(m)) = msgs::from_vec(reply) {
             (m.height, BlockHash::from_slice(&m.block_hash.0).unwrap())
         } else {
@@ -65,8 +63,8 @@ impl ChainTrack for NodePortFront {
 
     async fn forward_watches(&self) -> (Vec<Txid>, Vec<OutPoint>) {
         let req = msgs::ForwardWatches {};
-        let mut port = self.signer_port.lock().await;
-        let reply = port.handle_message(req.as_vec()).await.expect("ForwardWatches failed");
+        let reply =
+            self.signer_port.handle_message(req.as_vec()).await.expect("ForwardWatches failed");
         if let Ok(Message::ForwardWatchesReply(m)) = msgs::from_vec(reply) {
             (
                 m.txids.iter().map(|txid| Txid::from_slice(&txid.0).expect("bad txid")).collect(),
@@ -87,8 +85,8 @@ impl ChainTrack for NodePortFront {
 
     async fn reverse_watches(&self) -> (Vec<Txid>, Vec<OutPoint>) {
         let req = msgs::ReverseWatches {};
-        let mut port = self.signer_port.lock().await;
-        let reply = port.handle_message(req.as_vec()).await.expect("ReverseWatches failed");
+        let reply =
+            self.signer_port.handle_message(req.as_vec()).await.expect("ReverseWatches failed");
         if let Ok(Message::ReverseWatchesReply(m)) = msgs::from_vec(reply) {
             (
                 m.txids.iter().map(|txid| Txid::from_slice(&txid.0).expect("bad txid")).collect(),
@@ -118,8 +116,7 @@ impl ChainTrack for NodePortFront {
             txs: txs.iter().map(|tx| LargeBytes(serialize(&tx))).collect(),
             txs_proof: txs_proof.map(|prf| LargeBytes(serialize(&prf))),
         };
-        let mut port = self.signer_port.lock().await;
-        let reply = port.handle_message(req.as_vec()).await.expect("AddBlock failed");
+        let reply = self.signer_port.handle_message(req.as_vec()).await.expect("AddBlock failed");
         if let Ok(Message::AddBlockReply(_)) = msgs::from_vec(reply) {
             return;
         } else {
@@ -136,8 +133,8 @@ impl ChainTrack for NodePortFront {
             txs: txs.iter().map(|tx| LargeBytes(serialize(&tx))).collect(),
             txs_proof: txs_proof.map(|prf| LargeBytes(serialize(&prf))),
         };
-        let mut port = self.signer_port.lock().await;
-        let reply = port.handle_message(req.as_vec()).await.expect("RemoveBlock failed");
+        let reply =
+            self.signer_port.handle_message(req.as_vec()).await.expect("RemoveBlock failed");
         if let Ok(Message::RemoveBlockReply(_)) = msgs::from_vec(reply) {
             return;
         } else {

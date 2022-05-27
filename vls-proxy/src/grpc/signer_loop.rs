@@ -17,9 +17,13 @@ pub struct GrpcSignerPort {
 
 #[async_trait]
 impl SignerPort for GrpcSignerPort {
-    async fn handle_message(&mut self, message: Vec<u8>) -> Result<Vec<u8>> {
+    async fn handle_message(&self, message: Vec<u8>) -> Result<Vec<u8>> {
         let reply_rx = self.send_request(message).await?;
         self.get_reply(reply_rx).await
+    }
+
+    fn clone(&self) -> Box<dyn SignerPort> {
+        Box::new(Self { sender: self.sender.clone() })
     }
 }
 
@@ -28,7 +32,7 @@ impl GrpcSignerPort {
         GrpcSignerPort { sender }
     }
 
-    async fn send_request(&mut self, message: Vec<u8>) -> Result<oneshot::Receiver<ChannelReply>> {
+    async fn send_request(&self, message: Vec<u8>) -> Result<oneshot::Receiver<ChannelReply>> {
         // Create a one-shot channel to receive the reply
         let (reply_tx, reply_rx) = oneshot::channel();
 
@@ -40,7 +44,7 @@ impl GrpcSignerPort {
         Ok(reply_rx)
     }
 
-    async fn get_reply(&mut self, reply_rx: oneshot::Receiver<ChannelReply>) -> Result<Vec<u8>> {
+    async fn get_reply(&self, reply_rx: oneshot::Receiver<ChannelReply>) -> Result<Vec<u8>> {
         // Wait for the signer reply
         // Can fail if the adapter shut down
         let reply = spawn_blocking(move || reply_rx.blocking_recv())
