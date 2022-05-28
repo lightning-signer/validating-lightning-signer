@@ -5,7 +5,6 @@ members = [
     "lightning-signer-server",
     "vls-frontend",
     "bitcoind-client",
-    "secp256k1-xonly",
 
     "bolt-derive",
     "vls-protocol",
@@ -17,5 +16,5 @@ members = [
 exclude = [
     "vls-signer-stm32",
     "embedded",
-    "wasm"
+    "wasm",
 ]

@@ -11,14 +11,14 @@ use bitcoin::consensus::deserialize;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::util::psbt::serialize::Deserialize;
-use bitcoin::{Network, Script, SigHashType};
+use bitcoin::{EcdsaSighashType, Network, Script};
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::bech32::u5;
 use lightning_signer::bitcoin::consensus::{Decodable, Encodable};
-use lightning_signer::bitcoin::secp256k1::Secp256k1;
+use lightning_signer::bitcoin::secp256k1;
 use lightning_signer::bitcoin::util::bip32::{ChildNumber, KeySource};
 use lightning_signer::bitcoin::util::psbt::PartiallySignedTransaction;
-use lightning_signer::bitcoin::{OutPoint, Transaction};
+use lightning_signer::bitcoin::{OutPoint, Transaction, Witness};
 use lightning_signer::channel::{
     ChannelBase, ChannelId, ChannelSetup, CommitmentType, TypedSignature,
 };
@@ -37,7 +37,7 @@ use lightning_signer::Arc;
 use log::info;
 #[cfg(feature = "std")]
 use secp256k1::rand::{rngs::OsRng, RngCore};
-use secp256k1::PublicKey;
+use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
 use lightning_signer::util::status::Status;
 use vls_protocol::features::*;
@@ -68,10 +68,10 @@ impl From<Status> for Error {
     }
 }
 
-fn to_bitcoin_sig(sig: secp256k1::Signature) -> BitcoinSignature {
+fn to_bitcoin_sig(sig: ecdsa::Signature) -> BitcoinSignature {
     BitcoinSignature {
         signature: Signature(sig.serialize_compact()),
-        sighash: SigHashType::All as u8,
+        sighash: EcdsaSighashType::All as u8,
     }
 }
 
@@ -311,7 +311,7 @@ impl Handler for RootHandler {
 
                 for (i, stack) in witvec.into_iter().enumerate() {
                     if !stack.is_empty() {
-                        psbt.inputs[i].final_script_witness = Some(stack);
+                        psbt.inputs[i].final_script_witness = Some(Witness::from_vec(stack));
                     }
                 }
 
@@ -459,7 +459,7 @@ impl Handler for RootHandler {
     }
 }
 
-fn extract_output_path(x: &BTreeMap<bitcoin::util::ecdsa::PublicKey, KeySource>) -> Vec<u32> {
+fn extract_output_path(x: &BTreeMap<PublicKey, KeySource>) -> Vec<u32> {
     if x.is_empty() {
         return Vec::new();
     }
@@ -688,7 +688,7 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature {
                         signature: Signature(sig.serialize_compact()),
-                        sighash: SigHashType::All as u8,
+                        sighash: EcdsaSighashType::All as u8,
                     },
                 }))
             }
@@ -720,7 +720,7 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature {
                         signature: Signature(sig.serialize_compact()),
-                        sighash: SigHashType::All as u8,
+                        sighash: EcdsaSighashType::All as u8,
                     },
                 }))
             }
@@ -789,18 +789,18 @@ impl Handler for ChannelHandler {
                 let commit_num = m.commitment_number;
                 let feerate_sat_per_kw = m.feerate;
                 let (received_htlcs, offered_htlcs) = extract_htlcs(&m.htlcs);
-                let commit_sig = secp256k1::Signature::from_compact(&m.signature.signature.0)
-                    .expect("signature");
-                assert_eq!(m.signature.sighash, SigHashType::All as u8);
+                let commit_sig =
+                    ecdsa::Signature::from_compact(&m.signature.signature.0).expect("signature");
+                assert_eq!(m.signature.sighash, EcdsaSighashType::All as u8);
                 let htlc_sigs = m
                     .htlc_signatures
                     .iter()
                     .map(|s| {
                         assert!(
-                            s.sighash == SigHashType::All as u8
-                                || s.sighash == SigHashType::SinglePlusAnyoneCanPay as u8
+                            s.sighash == EcdsaSighashType::All as u8
+                                || s.sighash == EcdsaSighashType::SinglePlusAnyoneCanPay as u8
                         );
-                        secp256k1::Signature::from_compact(&s.signature.0).expect("signature")
+                        ecdsa::Signature::from_compact(&s.signature.0).expect("signature")
                     })
                     .collect();
                 let (next_per_commitment_point, old_secret) =
@@ -826,18 +826,18 @@ impl Handler for ChannelHandler {
                 let commit_num = m.commitment_number;
                 let feerate_sat_per_kw = m.feerate;
                 let (received_htlcs, offered_htlcs) = extract_htlcs(&m.htlcs);
-                let commit_sig = secp256k1::Signature::from_compact(&m.signature.signature.0)
-                    .expect("signature");
-                assert_eq!(m.signature.sighash, SigHashType::All as u8);
+                let commit_sig =
+                    ecdsa::Signature::from_compact(&m.signature.signature.0).expect("signature");
+                assert_eq!(m.signature.sighash, EcdsaSighashType::All as u8);
                 let htlc_sigs = m
                     .htlc_signatures
                     .iter()
                     .map(|s| {
                         assert!(
-                            s.sighash == SigHashType::All as u8
-                                || s.sighash == SigHashType::SinglePlusAnyoneCanPay as u8
+                            s.sighash == EcdsaSighashType::All as u8
+                                || s.sighash == EcdsaSighashType::SinglePlusAnyoneCanPay as u8
                         );
-                        secp256k1::Signature::from_compact(&s.signature.0).expect("signature")
+                        ecdsa::Signature::from_compact(&s.signature.0).expect("signature")
                     })
                     .collect();
                 let (next_per_commitment_point, old_secret) =
@@ -904,7 +904,7 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::SignTxReply {
                     signature: BitcoinSignature {
                         signature: Signature(sig.serialize_compact()),
-                        sighash: SigHashType::All as u8,
+                        sighash: EcdsaSighashType::All as u8,
                     },
                 }))
             }
@@ -1012,7 +1012,7 @@ mod tests {
             97, 224, 127, 128, 202, 94, 58, 56, 171, 51, 106, 153, 217, 229, 22, 217, 94, 169, 47,
             55, 71, 237, 36, 128, 102, 148, 61,
         ];
-        secp256k1::Signature::from_compact(&sig).expect("signature");
+        ecdsa::Signature::from_compact(&sig).expect("signature");
     }
 
     #[test]

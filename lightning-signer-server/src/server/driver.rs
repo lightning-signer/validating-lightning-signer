@@ -15,9 +15,9 @@ use url::Url;
 
 use bitcoin::consensus::{deserialize, encode};
 use bitcoin::hashes::Hash as BitcoinHash;
-use bitcoin::secp256k1::{PublicKey, SecretKey, Signature};
+use bitcoin::secp256k1::{ecdsa::Signature, PublicKey, SecretKey};
 use bitcoin::util::psbt::serialize::Deserialize;
-use bitcoin::{self, Network, OutPoint, Script, SigHashType};
+use bitcoin::{self, EcdsaSighashType, Network, OutPoint, Script};
 
 use crate::lightning;
 use lightning::ln::chan_utils::ChannelPublicKeys;
@@ -235,13 +235,13 @@ impl SignServer {
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
-    ) -> Result<SigHashType, Status> {
+    ) -> Result<EcdsaSighashType, Status> {
         self.signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
                 Ok(if chan.setup.option_anchor_outputs() {
-                    SigHashType::SinglePlusAnyoneCanPay
+                    EcdsaSighashType::SinglePlusAnyoneCanPay
                 } else {
-                    SigHashType::All
+                    EcdsaSighashType::All
                 })
             })
             .map_err(|e| e.into())
@@ -250,7 +250,7 @@ impl SignServer {
 
 fn signature_from_proto(
     proto_sig: &BitcoinSignature,
-    sighash_type: SigHashType,
+    sighash_type: EcdsaSighashType,
 ) -> Result<Signature, Status> {
     bitcoin_vec_to_signature(&proto_sig.data, sighash_type).map_err(|err| {
         invalid_grpc_argument(format!("trouble in bitcoin_vec_to_signature: {}", err))
@@ -783,14 +783,14 @@ impl Signer for SignServer {
         let proto_sig = req
             .commit_signature
             .ok_or_else(|| invalid_grpc_argument("missing commit_signature"))?;
-        let commit_sig = signature_from_proto(&proto_sig, SigHashType::All)?;
+        let commit_sig = signature_from_proto(&proto_sig, EcdsaSighashType::All)?;
 
-        let htlc_sighashtype = self.htlc_sighash_type(&node_id, &channel_id)?;
+        let htlc_sighash_type = self.htlc_sighash_type(&node_id, &channel_id)?;
 
         let htlc_sigs = req
             .htlc_signatures
             .iter()
-            .map(|sig| signature_from_proto(sig, htlc_sighashtype))
+            .map(|sig| signature_from_proto(sig, htlc_sighash_type))
             .collect::<Result<Vec<_>, Status>>()?;
         let commit_num = req.commit_num;
         let feerate_sat_per_kw = req.feerate_sat_per_kw;
@@ -1282,14 +1282,14 @@ impl Signer for SignServer {
         let proto_sig = req
             .commit_signature
             .ok_or_else(|| invalid_grpc_argument("missing commit_signature"))?;
-        let commit_sig = signature_from_proto(&proto_sig, SigHashType::All)?;
+        let commit_sig = signature_from_proto(&proto_sig, EcdsaSighashType::All)?;
 
-        let htlc_sighashtype = self.htlc_sighash_type(&node_id, &channel_id)?;
+        let htlc_sighash_type = self.htlc_sighash_type(&node_id, &channel_id)?;
 
         let htlc_sigs = req
             .htlc_signatures
             .iter()
-            .map(|sig| signature_from_proto(sig, htlc_sighashtype))
+            .map(|sig| signature_from_proto(sig, htlc_sighash_type))
             .collect::<Result<Vec<_>, Status>>()?;
 
         let (point, old_secret) =

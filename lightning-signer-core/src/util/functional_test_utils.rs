@@ -14,7 +14,7 @@ use bitcoin::hash_types::BlockHash;
 use bitcoin::hashes::Hash;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::hex::ToHex;
-use bitcoin::secp256k1::key::PublicKey;
+use bitcoin::secp256k1::PublicKey;
 use chain::transaction::OutPoint;
 use lightning::chain;
 use lightning::chain::{Confirm, Listen, chaininterface};
@@ -88,11 +88,23 @@ pub fn connect_blocks<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, depth: u32) ->
         _ => false,
     };
 
-    let mut block = make_block(tip_for_node(node), vec![]);
+    let coinbase = Transaction {
+        version: 0,
+        lock_time: depth,
+        input: vec![],
+        output: vec![]
+    };
+    let mut block = make_block(tip_for_node(node), vec![coinbase]);
     assert!(depth >= 1);
-    for _ in 0..depth - 1 {
+    for d in 0..depth - 1 {
+        let coinbase = Transaction {
+            version: 0,
+            lock_time: d,
+            input: vec![],
+            output: vec![]
+        };
         do_connect_block(node, &block, skip_intermediaries);
-        block = make_block(tip_for_node(node), vec![]);
+        block = make_block(tip_for_node(node), vec![coinbase]);
     }
     connect_block(node, &block);
     block.header.block_hash()
@@ -380,7 +392,7 @@ pub fn create_funding_transaction<'a, 'b, 'c>(node: &Node<'a, 'b, 'c>, expected_
     let events = node.node.get_and_clear_pending_events();
     assert_eq!(events.len(), 1);
     match events[0] {
-        Event::FundingGenerationReady { ref temporary_channel_id, ref channel_value_satoshis, ref output_script, user_channel_id } => {
+        Event::FundingGenerationReady { ref temporary_channel_id, ref channel_value_satoshis, ref output_script, user_channel_id, .. } => {
             assert_eq!(*channel_value_satoshis, expected_chan_value);
             assert_eq!(user_channel_id, expected_user_chan_id);
 
@@ -401,7 +413,8 @@ pub fn create_chan_between_nodes_with_value_init<'a, 'b, 'c>(node_a: &Node<'a, '
 
     let (temporary_channel_id, tx, funding_output) = create_funding_transaction(node_a, channel_value, 42);
 
-    node_a.node.funding_transaction_generated(&temporary_channel_id, tx.clone()).unwrap();
+    let cp_id = node_b.node.get_our_node_id();
+    node_a.node.funding_transaction_generated(&temporary_channel_id, &cp_id, tx.clone()).unwrap();
     check_added_monitors!(node_a, 0);
 
     node_b.node.handle_funding_created(&node_a.node.get_our_node_id(), &get_event_msg!(node_a, MessageSendEvent::SendFundingCreated, node_b.node.get_our_node_id()));
@@ -596,7 +609,7 @@ macro_rules! check_spends {
 			for output in $tx.output.iter() {
 				total_value_out += output.value;
 			}
-			let min_fee = ($tx.get_weight() as u64 + 3) / 4; // One sat per vbyte (ie per weight/4, rounded up)
+			let min_fee = ($tx.weight() as u64 + 3) / 4; // One sat per vbyte (ie per weight/4, rounded up)
 			// Input amount - output amount = fee, so check that out + min_fee is smaller than input
 			assert!(total_value_out + min_fee <= total_value_in);
 			$tx.verify(get_output).unwrap();
@@ -654,7 +667,8 @@ pub fn close_channel<'a, 'b, 'c>(outbound_node: &Node<'a, 'b, 'c>, inbound_node:
     let (node_b, broadcaster_b, struct_b) = if close_inbound_first { (&outbound_node.node, &outbound_node.tx_broadcaster, outbound_node) } else { (&inbound_node.node, &inbound_node.tx_broadcaster, inbound_node) };
     let (tx_a, tx_b);
 
-    node_a.close_channel(channel_id).unwrap();
+    let cp_id = node_b.get_our_node_id();
+    node_a.close_channel(channel_id, &cp_id).unwrap();
     node_b.handle_shutdown(&node_a.get_our_node_id(), &InitFeatures::known(), &get_event_msg!(struct_a, MessageSendEvent::SendShutdown, node_b.get_our_node_id()));
 
     let events_1 = node_b.get_and_clear_pending_msg_events();
@@ -918,7 +932,7 @@ macro_rules! expect_payment_forwarded {
 		let events = $node.node.get_and_clear_pending_events();
 		assert_eq!(events.len(), 1);
 		match events[0] {
-			Event::PaymentForwarded { fee_earned_msat, claim_from_onchain_tx } => {
+			Event::PaymentForwarded { fee_earned_msat, claim_from_onchain_tx, .. } => {
 				assert_eq!(fee_earned_msat, $expected_fee);
 				assert_eq!(claim_from_onchain_tx, $upstream_force_closed);
 			},

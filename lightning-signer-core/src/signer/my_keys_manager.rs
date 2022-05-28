@@ -10,10 +10,10 @@ use bitcoin::hashes::hash160::Hash as Hash160;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::sha256::HashEngine as Sha256State;
 use bitcoin::hashes::{Hash, HashEngine};
-use bitcoin::schnorr::KeyPair;
 use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signing};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::{secp256k1, SigHashType, Transaction, TxIn, TxOut};
+use bitcoin::util::key::KeyPair;
+use bitcoin::{secp256k1, EcdsaSighashType, Transaction, TxIn, TxOut, Witness};
 use bitcoin::{Network, Script};
 use lightning::chain::keysinterface::{
     DelayedPaymentOutputDescriptor, InMemorySigner, KeyMaterial, KeysInterface, Recipient,
@@ -26,12 +26,12 @@ use super::derive::{self, KeyDerivationStyle};
 use crate::channel::ChannelId;
 use crate::util::transaction_utils::MAX_VALUE_MSAT;
 use crate::util::{byte_utils, transaction_utils};
-use bitcoin::secp256k1::recovery::RecoverableSignature;
-use bitcoin::secp256k1::schnorrsig;
-use bitcoin::util::bip143;
+use bitcoin::secp256k1::ecdsa::RecoverableSignature;
+use bitcoin::secp256k1::schnorr;
+use bitcoin::secp256k1::XOnlyPublicKey;
+use bitcoin::util::sighash;
 use hashbrown::HashSet as UnorderedSet;
 use lightning::util::invoice::construct_invoice_preimage;
-use secp256k1_xonly::XOnlyPublicKey;
 
 /// An implementation of [`KeysInterface`]
 pub struct MyKeysManager {
@@ -79,10 +79,7 @@ impl MyKeysManager {
             .expect("Your RNG is busted");
         let destination_script = {
             let pubkey_hash160 = Hash160::hash(
-                &ExtendedPubKey::from_private(&secp_ctx, &destination_key)
-                    .public_key
-                    .key
-                    .serialize()[..],
+                &ExtendedPubKey::from_priv(&secp_ctx, &destination_key).public_key.serialize()[..],
             );
             Builder::new()
                 .push_opcode(opcodes::all::OP_PUSHBYTES_0)
@@ -93,7 +90,7 @@ impl MyKeysManager {
             .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(2).unwrap())
             .expect("Your RNG is busted");
         let ldk_shutdown_pubkey =
-            ExtendedPubKey::from_private(&secp_ctx, &ldk_shutdown_xprv).public_key.key;
+            ExtendedPubKey::from_priv(&secp_ctx, &ldk_shutdown_xprv).public_key;
         let channel_master_key = master_key
             .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(3).unwrap())
             .expect("Your RNG is busted");
@@ -116,8 +113,7 @@ impl MyKeysManager {
         let inbound_payment_key: SecretKey = master_key
             .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(5).unwrap())
             .expect("Your RNG is busted")
-            .private_key
-            .key;
+            .private_key;
         let mut inbound_pmt_key_bytes = [0; 32];
         inbound_pmt_key_bytes.copy_from_slice(&inbound_payment_key[..]);
 
@@ -130,7 +126,7 @@ impl MyKeysManager {
             .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(9735).unwrap())
             .expect("Your RNG is busted")
             .private_key;
-        let bolt12_keypair = KeyPair::from_secret_key(&secp_ctx, bolt12_child.key);
+        let bolt12_keypair = KeyPair::from_secret_key(&secp_ctx, bolt12_child);
         let mut res = MyKeysManager {
             secp_ctx,
             seed: seed.to_vec(),
@@ -176,7 +172,7 @@ impl MyKeysManager {
         fieldname: &[u8],
         merkleroot: &[u8; 32],
         publictweak_opt: Option<&[u8]>,
-    ) -> Result<schnorrsig::Signature, ()> {
+    ) -> Result<schnorr::Signature, ()> {
         // BIP340 init
         let mut sha = Sha256::engine();
         sha.input("lightning".as_bytes());
@@ -204,7 +200,7 @@ impl MyKeysManager {
             KeyPair::from_secret_key(&self.secp_ctx, self.node_secret)
         };
         let msg = Message::from_slice(&sig_hash).unwrap();
-        Ok(self.secp_ctx.schnorrsig_sign_no_aux_rand(&msg, &kp))
+        Ok(self.secp_ctx.sign_schnorr_no_aux_rand(&msg, &kp))
     }
 
     /// Get the layer-1 xpub
@@ -287,7 +283,7 @@ impl MyKeysManager {
                 ChildNumber::from_hardened_idx(child_ix as u32).expect("key space exhausted"),
             )
             .expect("Your RNG is busted");
-        sha.input(&child_privkey.private_key.key[..]);
+        sha.input(child_privkey.private_key.as_ref());
 
         let random_bytes = Sha256::from_engine(sha).into_inner();
 
@@ -328,7 +324,7 @@ impl MyKeysManager {
                         previous_output: descriptor.outpoint.into_bitcoin_outpoint(),
                         script_sig: Script::new(),
                         sequence: 0,
-                        witness: Vec::new(),
+                        witness: Witness::default(),
                     });
                     witness_weight += StaticPaymentOutputDescriptor::MAX_WITNESS_LENGTH;
                     input_value += descriptor.output.value;
@@ -341,7 +337,7 @@ impl MyKeysManager {
                         previous_output: descriptor.outpoint.into_bitcoin_outpoint(),
                         script_sig: Script::new(),
                         sequence: descriptor.to_self_delay as u32,
-                        witness: Vec::new(),
+                        witness: Witness::default(),
                     });
                     witness_weight += DelayedPaymentOutputDescriptor::MAX_WITNESS_LENGTH;
                     input_value += descriptor.output.value;
@@ -354,7 +350,7 @@ impl MyKeysManager {
                         previous_output: outpoint.into_bitcoin_outpoint(),
                         script_sig: Script::new(),
                         sequence: 0,
-                        witness: Vec::new(),
+                        witness: Witness::default(),
                     });
                     witness_weight += 1 + 73 + 34;
                     input_value += output.value;
@@ -393,17 +389,19 @@ impl MyKeysManager {
                             descriptor.channel_keys_id,
                         ));
                     }
-                    spend_tx.input[input_idx].witness = keys_cache
-                        .as_ref()
-                        .unwrap()
-                        .0
-                        .sign_counterparty_payment_input(
-                            &spend_tx,
-                            input_idx,
-                            &descriptor,
-                            &secp_ctx,
-                        )
-                        .unwrap();
+                    spend_tx.input[input_idx].witness = Witness::from_vec(
+                        keys_cache
+                            .as_ref()
+                            .unwrap()
+                            .0
+                            .sign_counterparty_payment_input(
+                                &spend_tx,
+                                input_idx,
+                                &descriptor,
+                                &secp_ctx,
+                            )
+                            .unwrap(),
+                    );
                 }
                 SpendableOutputDescriptor::DelayedPaymentOutput(descriptor) => {
                     if keys_cache.is_none()
@@ -417,12 +415,14 @@ impl MyKeysManager {
                             descriptor.channel_keys_id,
                         ));
                     }
-                    spend_tx.input[input_idx].witness = keys_cache
-                        .as_ref()
-                        .unwrap()
-                        .0
-                        .sign_dynamic_p2wsh_input(&spend_tx, input_idx, &descriptor, &secp_ctx)
-                        .unwrap();
+                    spend_tx.input[input_idx].witness = Witness::from_vec(
+                        keys_cache
+                            .as_ref()
+                            .unwrap()
+                            .0
+                            .sign_dynamic_p2wsh_input(&spend_tx, input_idx, &descriptor, &secp_ctx)
+                            .unwrap(),
+                    );
                 }
                 SpendableOutputDescriptor::StaticOutput { ref output, .. } => {
                     let derivation_idx =
@@ -435,25 +435,30 @@ impl MyKeysManager {
                                 .expect("key space exhausted"),
                         )
                         .expect("Your RNG is busted");
-                    let pubkey = ExtendedPubKey::from_private(&secp_ctx, &secret_key).public_key;
+                    let pubkey = bitcoin::PublicKey::new(
+                        ExtendedPubKey::from_priv(&secp_ctx, &secret_key).public_key,
+                    );
                     if derivation_idx == 2 {
-                        assert_eq!(pubkey.key, self.ldk_shutdown_pubkey);
+                        assert_eq!(pubkey.inner, self.ldk_shutdown_pubkey);
                     }
                     let witness_script =
                         bitcoin::Address::p2pkh(&pubkey, Network::Testnet).script_pubkey();
                     let sighash = Message::from_slice(
-                        &bip143::SigHashCache::new(&spend_tx).signature_hash(
-                            input_idx,
-                            &witness_script,
-                            output.value,
-                            SigHashType::All,
-                        )[..],
+                        &sighash::SighashCache::new(&spend_tx)
+                            .segwit_signature_hash(
+                                input_idx,
+                                &witness_script,
+                                output.value,
+                                EcdsaSighashType::All,
+                            )
+                            .unwrap()[..],
                     )
                     .unwrap();
-                    let sig = secp_ctx.sign(&sighash, &secret_key.private_key.key);
-                    spend_tx.input[input_idx].witness.push(sig.serialize_der().to_vec());
-                    spend_tx.input[input_idx].witness[0].push(SigHashType::All as u8);
-                    spend_tx.input[input_idx].witness.push(pubkey.key.serialize().to_vec());
+                    let sig = secp_ctx.sign_ecdsa(&sighash, &secret_key.private_key);
+                    let mut sig_ser = sig.serialize_der().to_vec();
+                    sig_ser.push(EcdsaSighashType::All as u8);
+                    spend_tx.input[input_idx].witness.push(sig_ser);
+                    spend_tx.input[input_idx].witness.push(pubkey.inner.serialize().to_vec());
                 }
             }
             input_idx += 1;
@@ -498,7 +503,7 @@ impl KeysInterface for MyKeysManager {
                 ChildNumber::from_hardened_idx(child_ix as u32).expect("key space exhausted"),
             )
             .expect("Your RNG is busted");
-        sha.input(&child_privkey.private_key.key[..]);
+        sha.input(child_privkey.private_key.as_ref());
 
         sha.input(b"Unique Secure Random Bytes Salt");
         Sha256::from_engine(sha).into_inner()
@@ -515,7 +520,7 @@ impl KeysInterface for MyKeysManager {
         recipient: Recipient,
     ) -> Result<RecoverableSignature, ()> {
         let invoice_preimage = construct_invoice_preimage(hrp_bytes, invoice_data);
-        Ok(self.secp_ctx.sign_recoverable(
+        Ok(self.secp_ctx.sign_ecdsa_recoverable(
             &Message::from_slice(&Sha256::hash(&invoice_preimage)).unwrap(),
             &self.get_node_secret(recipient)?,
         ))

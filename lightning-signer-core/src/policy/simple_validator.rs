@@ -1,8 +1,8 @@
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::policy::DUST_RELAY_TX_FEE;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-use bitcoin::util::bip143::SigHashCache;
-use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
+use bitcoin::util::sighash::SighashCache;
+use bitcoin::{self, EcdsaSighashType, Network, Script, Sighash, Transaction};
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, htlc_success_tx_weight, htlc_timeout_tx_weight,
@@ -699,19 +699,20 @@ impl Validator for SimpleValidator {
         redeemscript: &Script,
         htlc_amount_sat: u64,
         output_witscript: &Script,
-    ) -> Result<(u32, HTLCOutputInCommitment, SigHash, SigHashType), ValidationError> {
+    ) -> Result<(u32, HTLCOutputInCommitment, Sighash, EcdsaSighashType), ValidationError> {
         let to_self_delay = if is_counterparty {
             setup.holder_selected_contest_delay // the local side imposes this value
         } else {
             setup.counterparty_selected_contest_delay // the remote side imposes this value
         };
         let sighash_type = if is_counterparty && setup.option_anchor_outputs() {
-            SigHashType::SinglePlusAnyoneCanPay
+            EcdsaSighashType::SinglePlusAnyoneCanPay
         } else {
-            SigHashType::All
+            EcdsaSighashType::All
         };
-        let original_tx_sighash =
-            SigHashCache::new(tx).signature_hash(0, &redeemscript, htlc_amount_sat, sighash_type);
+        let original_tx_sighash = SighashCache::new(tx)
+            .segwit_signature_hash(0, &redeemscript, htlc_amount_sat, sighash_type)
+            .unwrap();
 
         let offered = if parse_offered_htlc_script(redeemscript, setup.option_anchor_outputs())
             .is_ok()
@@ -767,12 +768,9 @@ impl Validator for SimpleValidator {
             &txkeys.revocation_key,
         );
 
-        let recomposed_tx_sighash = SigHashCache::new(&recomposed_tx).signature_hash(
-            0,
-            &redeemscript,
-            htlc_amount_sat,
-            sighash_type,
-        );
+        let recomposed_tx_sighash = SighashCache::new(&recomposed_tx)
+            .segwit_signature_hash(0, &redeemscript, htlc_amount_sat, sighash_type)
+            .unwrap();
 
         if recomposed_tx_sighash != original_tx_sighash {
             debug_failed_vals!(

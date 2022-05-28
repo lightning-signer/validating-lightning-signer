@@ -7,14 +7,16 @@ use bitcoin::hash_types::Txid;
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::{hex, hex::FromHex, Hash};
 use bitcoin::network::constants::Network;
-use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1, SecretKey, SignOnly, Signature};
-use bitcoin::util::bip143::SigHashCache;
+use bitcoin::secp256k1::{
+    self, ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey, SignOnly,
+};
 use bitcoin::util::hash::bitcoin_merkle_root;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::util::psbt::serialize::Serialize;
+use bitcoin::util::sighash::SighashCache;
 use bitcoin::{
-    Address, Block, BlockHash, BlockHeader, OutPoint as BitcoinOutPoint, SigHashType, Transaction,
-    TxIn, TxMerkleNode, TxOut,
+    Address, Block, BlockHash, BlockHeader, EcdsaSighashType, OutPoint as BitcoinOutPoint,
+    Transaction, TxIn, TxMerkleNode, TxOut, Witness,
 };
 use chain::chaininterface;
 use lightning::chain;
@@ -232,7 +234,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
         update_res
     }
 
-    fn release_pending_monitor_events(&self) -> Vec<MonitorEvent> {
+    fn release_pending_monitor_events(&self) -> Vec<(OutPoint, Vec<MonitorEvent>)> {
         return self.chain_monitor.release_pending_monitor_events();
     }
 }
@@ -355,7 +357,7 @@ pub fn make_test_funding_wallet_input() -> TxIn {
         previous_output: bitcoin::OutPoint { txid: Default::default(), vout: 0 },
         script_sig: Script::new(),
         sequence: 0,
-        witness: vec![],
+        witness: Witness::default(),
     }
 }
 
@@ -774,7 +776,7 @@ pub fn funding_tx_validate_sig(
     witvec: &Vec<Vec<Vec<u8>>>,
 ) {
     for ndx in 0..tx.input.len() {
-        tx.input[ndx].witness = witvec[ndx].clone()
+        tx.input[ndx].witness = Witness::from_vec(witvec[ndx].clone())
     }
     let verify_result = tx.verify(|outpoint| {
         // hack, we collude w/ funding_tx_add_wallet_input
@@ -987,20 +989,22 @@ pub fn counterparty_sign_holder_commitment(
                 let htlc_redeemscript =
                     get_htlc_redeemscript(&htlc, chan_ctx.setup.option_anchor_outputs(), &keys);
                 let sig_hash_type = if chan_ctx.setup.option_anchor_outputs() {
-                    SigHashType::SinglePlusAnyoneCanPay
+                    EcdsaSighashType::SinglePlusAnyoneCanPay
                 } else {
-                    SigHashType::All
+                    EcdsaSighashType::All
                 };
                 let htlc_sighash = Message::from_slice(
-                    &SigHashCache::new(&htlc_tx).signature_hash(
-                        0,
-                        &htlc_redeemscript,
-                        htlc.amount_msat / 1000,
-                        sig_hash_type,
-                    )[..],
+                    &SighashCache::new(&htlc_tx)
+                        .segwit_signature_hash(
+                            0,
+                            &htlc_redeemscript,
+                            htlc.amount_msat / 1000,
+                            sig_hash_type,
+                        )
+                        .unwrap()[..],
                 )
                 .unwrap();
-                htlc_sigs.push(node_ctx.secp_ctx.sign(&htlc_sighash, &counterparty_htlc_key));
+                htlc_sigs.push(node_ctx.secp_ctx.sign_ecdsa(&htlc_sighash, &counterparty_htlc_key));
             }
             Ok((commitment_sig, htlc_sigs))
         })
@@ -1115,14 +1119,14 @@ pub fn make_test_commitment_tx() -> bitcoin::Transaction {
         previous_output: BitcoinOutPoint { txid: Default::default(), vout: 0 },
         script_sig: Script::new(),
         sequence: 0,
-        witness: vec![],
+        witness: Witness::default(),
     };
     bitcoin::Transaction {
         version: 2,
         lock_time: 0,
         input: vec![input],
         output: vec![TxOut {
-            script_pubkey: payload_for_p2wpkh(&make_test_bitcoin_pubkey(1).key).script_pubkey(),
+            script_pubkey: payload_for_p2wpkh(&make_test_bitcoin_pubkey(1).inner).script_pubkey(),
             value: 300,
         }],
     }
@@ -1327,15 +1331,14 @@ pub fn check_signature(
     input_value_sat: u64,
     redeemscript: &Script,
 ) {
-    let sighashtype = SigHashType::All;
-    check_signature_with_sighashtype(
+    check_signature_with_sighash_type(
         tx,
         input,
         signature,
         pubkey,
         input_value_sat,
         redeemscript,
-        sighashtype,
+        EcdsaSighashType::All,
     );
 }
 
@@ -1348,41 +1351,37 @@ pub fn check_counterparty_htlc_signature(
     redeemscript: &Script,
     opt_anchors: bool,
 ) {
-    let sighashtype =
-        if opt_anchors { SigHashType::SinglePlusAnyoneCanPay } else { SigHashType::All };
-    check_signature_with_sighashtype(
+    let sighash_type =
+        if opt_anchors { EcdsaSighashType::SinglePlusAnyoneCanPay } else { EcdsaSighashType::All };
+    check_signature_with_sighash_type(
         tx,
         input,
         signature,
         pubkey,
         input_value_sat,
         redeemscript,
-        sighashtype,
+        sighash_type,
     );
 }
 
-pub fn check_signature_with_sighashtype(
+pub fn check_signature_with_sighash_type(
     tx: &bitcoin::Transaction,
     input: usize,
     signature: TypedSignature,
     pubkey: &PublicKey,
     input_value_sat: u64,
     redeemscript: &Script,
-    sighashtype: SigHashType,
+    sighash_type: EcdsaSighashType,
 ) {
-    let sighash =
-        Message::from_slice(
-            &SigHashCache::new(tx).signature_hash(
-                input,
-                &redeemscript,
-                input_value_sat,
-                sighashtype,
-            )[..],
-        )
-        .expect("sighash");
-    assert_eq!(signature.typ, sighashtype);
+    let sighash = Message::from_slice(
+        &SighashCache::new(tx)
+            .segwit_signature_hash(input, &redeemscript, input_value_sat, sighash_type)
+            .unwrap()[..],
+    )
+    .expect("sighash");
+    assert_eq!(signature.typ, sighash_type);
     let secp_ctx = Secp256k1::new();
-    secp_ctx.verify(&sighash, &signature.sig, &pubkey).expect("verify");
+    secp_ctx.verify_ecdsa(&sighash, &signature.sig, &pubkey).expect("verify");
 }
 
 pub fn sign_commitment_tx_with_mutators_setup(
@@ -1519,7 +1518,7 @@ pub fn make_txin(vout: u32) -> TxIn {
         previous_output: make_outpoint(vout),
         script_sig: Default::default(),
         sequence: 0,
-        witness: vec![],
+        witness: Witness::default(),
     }
 }
 
@@ -1533,8 +1532,9 @@ pub fn make_header(tip: BlockHeader, merkle_root: TxMerkleNode) -> BlockHeader {
 }
 
 pub fn make_block(tip: BlockHeader, txs: Vec<Transaction>) -> Block {
+    assert!(!txs.is_empty());
     let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
-    let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).into();
+    let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).unwrap().into();
     let header = make_header(tip, merkle_root);
     Block { header, txdata: txs }
 }

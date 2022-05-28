@@ -4,7 +4,7 @@ mod tests {
 
     use bitcoin::hash_types::Txid;
     use bitcoin::hashes::Hash;
-    use bitcoin::secp256k1::Signature;
+    use bitcoin::secp256k1::ecdsa::Signature;
     use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::{self, Transaction};
     use lightning::chain::keysinterface::BaseSign;

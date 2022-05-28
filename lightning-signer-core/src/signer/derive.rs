@@ -118,8 +118,7 @@ impl KeyDerive for LdkKeyDerive {
         let node_secret_key = master
             .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(0).unwrap())
             .expect("Your RNG is busted")
-            .private_key
-            .key;
+            .private_key;
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node_secret_key);
         (node_id, node_secret_key)
     }
@@ -151,7 +150,7 @@ impl KeyDerive for LdkKeyDerive {
                 ChildNumber::from_hardened_idx(chan_id as u32).expect("key space exhausted"),
             )
             .expect("Your RNG is busted");
-        unique_start.input(&child_privkey.private_key.key[..]);
+        unique_start.input(child_privkey.private_key.as_ref());
 
         let channel_seed = Sha256::from_engine(unique_start).into_inner();
 
@@ -382,10 +381,10 @@ pub(crate) fn derive_key_lnd(
     let bip43purpose = 1017;
     #[rustfmt::skip]
     let coin_type = match network {
-        bitcoin::Network::Bitcoin => 0,
-        bitcoin::Network::Testnet => 1,
-        bitcoin::Network::Regtest => 1,
-        bitcoin::Network::Signet => 1,
+        Network::Bitcoin => 0,
+        Network::Testnet => 1,
+        Network::Regtest => 1,
+        Network::Signet => 1,
     };
     let branch = 0;
     let node_ext_prv = master
@@ -399,8 +398,8 @@ pub(crate) fn derive_key_lnd(
         .unwrap()
         .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(index).unwrap())
         .unwrap();
-    let node_ext_pub = &ExtendedPubKey::from_private(&secp_ctx, &node_ext_prv);
-    (node_ext_pub.public_key.key, node_ext_prv.private_key.key)
+    let node_ext_pub = &ExtendedPubKey::from_priv(&secp_ctx, &node_ext_prv);
+    (node_ext_pub.public_key, node_ext_prv.private_key)
 }
 
 #[cfg(test)]

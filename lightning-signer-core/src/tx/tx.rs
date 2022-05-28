@@ -12,7 +12,7 @@ use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::{Hash, HashEngine};
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::address::Payload;
-use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut};
+use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut, Witness};
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
@@ -77,7 +77,7 @@ pub(crate) fn build_commitment_tx(
             script_sig: Script::new(),
             sequence: ((0x80 as u32) << 8 * 3)
                 | ((obscured_commitment_transaction_number >> 3 * 8) as u32),
-            witness: Vec::new(),
+            witness: Witness::default(),
         });
         ins
     };

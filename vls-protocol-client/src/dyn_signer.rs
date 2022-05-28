@@ -2,8 +2,8 @@ use std::any::Any;
 use std::io::Read;
 
 use bitcoin::bech32::u5;
-use bitcoin::secp256k1::recovery::RecoverableSignature;
-use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
+use bitcoin::secp256k1::ecdsa::RecoverableSignature;
+use bitcoin::secp256k1::{ecdsa::Signature, PublicKey, Secp256k1, SecretKey};
 use bitcoin::Script;
 use bitcoin::{secp256k1, Transaction};
 use lightning::chain::keysinterface::BaseSign;

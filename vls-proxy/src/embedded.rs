@@ -13,6 +13,7 @@ use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, SetArg};
 use secp256k1::PublicKey;
 
 use lightning_signer::bitcoin;
+use lightning_signer::bitcoin::secp256k1;
 use vls_protocol::model::Secret;
 use vls_protocol::{msgs, msgs::Message, serde_bolt, serde_bolt::WireString, Error, Result};
 use vls_protocol_client::SignerPort;

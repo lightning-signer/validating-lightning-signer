@@ -52,12 +52,6 @@ path = "src/demo_signer_main.rs"
 name = "test"
 path = "src/test_main.rs"
 
-[patch.crates-io]
-# See also https://github.com/rust-bitcoin/rust-secp256k1/pull/299 and https://github.com/bitcoin-core/secp256k1/pull/956
-
-# Uncomment this line to use a low-memory version of secp256k1 with static precomputation
-secp256k1 = { git = "https://github.com/devrandom/rust-secp256k1.git", rev = "4e745ebe7e4c9cd0a7e9c8d5c42e989522e52f71" }
-
 [profile.dev]
 opt-level = "z"
 debug = 2

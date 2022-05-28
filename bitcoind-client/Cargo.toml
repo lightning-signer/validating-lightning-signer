@@ -20,7 +20,6 @@ path = "src/lib.rs"
 
 [dependencies]
 log = { version="0.4.14", features = [ "std" ] }
-bitcoin = { version = "0.27", features = ["bitcoinconsensus"]}
 serde = { version = "1.0.105", features = ["derive"]}
 serde_json = { version = "1.0.48" }
 tokio = { version = "1.6", features = ["macros", "rt-multi-thread"] }

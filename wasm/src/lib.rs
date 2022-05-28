@@ -4,7 +4,7 @@ extern crate log;
 use std::str::FromStr;
 
 use bitcoin::hashes::hex::ToHex;
-use bitcoin::secp256k1::{PublicKey, Signature as BitcoinSignature};
+use bitcoin::secp256k1::{ecdsa::Signature as BitcoinSignature, PublicKey};
 use bitcoin::{Network, OutPoint};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use log::LevelFilter;

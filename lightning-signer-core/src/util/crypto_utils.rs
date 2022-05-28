@@ -3,9 +3,9 @@ use bitcoin::hashes::hash160::Hash as BitcoinHash160;
 use bitcoin::hashes::sha256::Hash as BitcoinSha256;
 use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
 use bitcoin::secp256k1;
-use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signature};
-use bitcoin::util::address::Payload;
-use bitcoin::{bech32, Script, SigHashType};
+use bitcoin::secp256k1::{ecdsa::Signature, PublicKey, Secp256k1, SecretKey};
+use bitcoin::util::address::{Payload, WitnessVersion};
+use bitcoin::{EcdsaSighashType, Script};
 
 fn hkdf_extract_expand(salt: &[u8], secret: &[u8], info: &[u8], output: &mut [u8]) {
     let mut hmac = HmacEngine::<BitcoinSha256>::new(salt);
@@ -118,7 +118,7 @@ pub(crate) fn payload_for_p2wpkh(key: &PublicKey) -> Payload {
     let mut hash_engine = BitcoinHash160::engine();
     hash_engine.input(&key.serialize());
     Payload::WitnessProgram {
-        version: bech32::u5::try_from_u8(0).expect("0<32"),
+        version: WitnessVersion::V0,
         program: BitcoinHash160::from_engine(hash_engine)[..].to_vec(),
     }
 }
@@ -127,7 +127,7 @@ pub(crate) fn payload_for_p2wsh(script: &Script) -> Payload {
     let mut hash_engine = BitcoinSha256::engine();
     hash_engine.input(&script[..]);
     Payload::WitnessProgram {
-        version: bech32::u5::try_from_u8(0).expect("0<32"),
+        version: WitnessVersion::V0,
         program: BitcoinSha256::from_engine(hash_engine)[..].to_vec(),
     }
 }
@@ -135,14 +135,14 @@ pub(crate) fn payload_for_p2wsh(script: &Script) -> Payload {
 /// Convert a [Signature] to Bitcoin signature bytes, with SIGHASH_ALL
 pub fn signature_to_bitcoin_vec(sig: Signature) -> Vec<u8> {
     let mut sigvec = sig.serialize_der().to_vec();
-    sigvec.push(SigHashType::All as u8);
+    sigvec.push(EcdsaSighashType::All as u8);
     sigvec
 }
 
-/// Convert a Bitcoin signature bytes, with the specified SigHashType, to [Signature]
+/// Convert a Bitcoin signature bytes, with the specified EcdsaSighashType, to [Signature]
 pub fn bitcoin_vec_to_signature(
     sigvec: &Vec<u8>,
-    sighashtype: SigHashType,
+    sighash_type: EcdsaSighashType,
 ) -> Result<Signature, bitcoin::secp256k1::Error> {
     let len = sigvec.len();
     if len == 0 {
@@ -150,7 +150,7 @@ pub fn bitcoin_vec_to_signature(
     }
     let mut sv = sigvec.clone();
     let mode = sv.pop().ok_or_else(|| bitcoin::secp256k1::Error::InvalidSignature)?;
-    if mode != sighashtype as u8 {
+    if mode != sighash_type as u8 {
         return Err(bitcoin::secp256k1::Error::InvalidSignature);
     }
     Ok(Signature::from_der(&sv[..])?)
@@ -160,9 +160,9 @@ pub fn bitcoin_vec_to_signature(
 mod tests {
     use super::*;
     use bitcoin::hashes::hex::ToHex;
-    use bitcoin::schnorr::KeyPair;
     use bitcoin::secp256k1::Message;
-    use secp256k1_xonly::XOnlyPublicKey;
+    use bitcoin::secp256k1::XOnlyPublicKey;
+    use bitcoin::util::key::KeyPair;
 
     #[test]
     fn test_hkdf() {
@@ -196,6 +196,6 @@ mod tests {
         println!("{}", xkey);
 
         let msg = Message::from_slice(&[11; 32]).unwrap();
-        let _sig = secp.schnorrsig_sign_no_aux_rand(&msg, &keypair);
+        let _sig = secp.sign_schnorr_no_aux_rand(&msg, &keypair);
     }
 }

@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin::{self, OutPoint, Script, Transaction, TxIn, TxOut, Txid};
+    use bitcoin::{self, OutPoint, Script, Transaction, TxIn, TxOut, Txid, Witness};
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
     use test_log::test;
 
@@ -24,7 +24,7 @@ mod tests {
                 previous_output: OutPoint { txid, vout },
                 script_sig: Script::new(),
                 sequence: contest_delay as u32,
-                witness: vec![],
+                witness: Witness::default(),
             }],
             output: vec![TxOut { script_pubkey: script_pubkey, value: amount_sat }],
         }

@@ -20,12 +20,6 @@ alloc-cortex-m = { version = "0.4.1", optional = true }
 
 lightning-signer-core = { path = "../lightning-signer-core", default-features = false }
 
-[patch.crates-io]
-# See also https://github.com/rust-bitcoin/rust-secp256k1/pull/299 and https://github.com/bitcoin-core/secp256k1/pull/956
-
-# Uncomment this line to use a low-memory version of secp256k1 with static precomputation
-#secp256k1 = { git = "https://github.com/devrandom/rust-secp256k1.git", rev = "4e745ebe7e4c9cd0a7e9c8d5c42e989522e52f71" }
-
 [[bin]]
 name = "embedded"
 test = false

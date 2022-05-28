@@ -358,6 +358,7 @@ pub fn max_target(network: Network) -> Uint256 {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::Witness;
     use core::iter::FromIterator;
 
     use crate::bitcoin::blockdata::constants::genesis_block;
@@ -484,7 +485,7 @@ mod tests {
             previous_output: second_watch,
             script_sig: Default::default(),
             sequence: 0,
-            witness: vec![],
+            witness: Witness::default(),
         }]);
 
         add_block(&mut tracker, tx2.clone())?;
@@ -512,7 +513,8 @@ mod tests {
         let txids = [tx.txid()];
         let proof = PartialMerkleTree::from_txids(&txids, &[true]);
 
-        let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).into();
+        // unwrap is OK, because we have non-empty txids
+        let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).unwrap().into();
 
         tracker.add_block(make_header(tracker.tip(), merkle_root), vec![tx], Some(proof))
     }
@@ -538,7 +540,8 @@ mod tests {
             output: vec![Default::default()],
         }];
         let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
-        let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).into();
+        // unwrap is OK, because we have non-empty txids
+        let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).unwrap().into();
 
         let header = make_header(tracker.tip(), merkle_root);
         let proof = PartialMerkleTree::from_txids(txids.as_slice(), &[true]);

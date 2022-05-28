@@ -8,7 +8,7 @@ use std::collections::BTreeSet as Set;
 
 use crate::lightning;
 use bitcoin::hashes::Hash;
-use bitcoin::secp256k1::key::PublicKey;
+use bitcoin::secp256k1::PublicKey;
 use bitcoin::{OutPoint, Script, Txid};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;

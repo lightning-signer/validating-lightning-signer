@@ -49,7 +49,7 @@ impl<'a> core::fmt::Debug for DebugPayload<'a> {
             Payload::ScriptHash(ref hash) => hex::format_hex(hash, f),
             Payload::WitnessProgram { version: ver, program: ref prog } => f
                 .debug_struct("WitnessProgram")
-                .field("version", &ver.to_u8())
+                .field("version", &ver)
                 .field("program", &prog.to_hex())
                 .finish(),
         }
