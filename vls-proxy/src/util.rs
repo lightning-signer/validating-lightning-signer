@@ -25,9 +25,10 @@ pub fn read_integration_test_seed() -> Option<[u8; 32]> {
     }
 }
 
-pub fn setup_logging(who: &str, level: &str) {
+pub fn setup_logging(who: &str, level_arg: &str) {
     use fern::colors::{Color, ColoredLevelConfig};
     let colors = ColoredLevelConfig::new().info(Color::Green).error(Color::Red).warn(Color::Yellow);
+    let level = env::var("RUST_LOG").unwrap_or(level_arg.to_string());
     let who = who.to_string();
     fern::Dispatch::new()
         .format(move |out, message, record| {
@@ -40,7 +41,7 @@ pub fn setup_logging(who: &str, level: &str) {
                 message
             ))
         })
-        .level(log::LevelFilter::from_str(level).expect("level"))
+        .level(log::LevelFilter::from_str(&level).expect("level"))
         .level_for("h2", log::LevelFilter::Info)
         .level_for("sled", log::LevelFilter::Info)
         .chain(std::io::stdout())
