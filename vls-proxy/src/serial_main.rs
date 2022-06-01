@@ -94,7 +94,7 @@ pub fn main() -> anyhow::Result<()> {
         let runtime = std::thread::spawn(|| {
             runtime::Builder::new_multi_thread()
                 .enable_all()
-                .thread_name("serial-main")
+                .thread_name("serial-frontend")
                 .worker_threads(2) // for debugging
                 .build()
         })
