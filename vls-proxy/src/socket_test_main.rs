@@ -16,7 +16,6 @@ use clap::{App, AppSettings};
 #[allow(unused_imports)]
 use log::{error, info};
 use nix::unistd::{fork, ForkResult};
-use tokio::sync::Mutex;
 use tokio::task::spawn_blocking;
 use url::Url;
 
@@ -78,7 +77,7 @@ async fn start_server(listener: TcpListener, addr: SocketAddr, client: UnixClien
     let sender = server.sender();
     let signer_port = GrpcSignerPort::new(sender.clone());
     let frontend = Frontend::new(
-        Arc::new(SignerPortFront { signer_port: Arc::new(Mutex::new(signer_port)) }),
+        Arc::new(SignerPortFront { signer_port: Box::new(signer_port) }),
         Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
     );
     frontend.start();

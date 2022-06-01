@@ -4,6 +4,9 @@ use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use async_trait::async_trait;
+use tokio::task::spawn_blocking;
+
 use bitcoin::Network;
 use log::{debug, error, info};
 use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, SetArg};
@@ -12,6 +15,7 @@ use secp256k1::PublicKey;
 use lightning_signer::bitcoin;
 use vls_protocol::model::Secret;
 use vls_protocol::{msgs, msgs::Message, serde_bolt, serde_bolt::WireString, Error, Result};
+use vls_protocol_client::SignerPort;
 use vls_protocol_signer::vls_protocol;
 use vls_proxy::client::Client;
 use vls_proxy::util::{read_allowlist, read_integration_test_seed};
@@ -116,6 +120,40 @@ pub struct ClientId {
     pub dbid: u64,
 }
 
+pub struct SerialSignerPort {
+    serial: Arc<Mutex<SerialWrap>>,
+}
+
+#[async_trait]
+impl SignerPort for SerialSignerPort {
+    async fn handle_message(&self, message: Vec<u8>) -> Result<Vec<u8>> {
+        let serial = Arc::clone(&self.serial);
+        spawn_blocking(move || {
+            let mut serial_guard = serial.lock().unwrap();
+            let serial = &mut *serial_guard;
+            let dbid = 0;
+            msgs::write_serial_request_header(serial, serial.sequence, dbid)?;
+            msgs::write_vec(serial, message)?;
+            msgs::read_serial_response_header(serial, serial.sequence)?;
+            serial.sequence = serial.sequence.wrapping_add(1);
+            let reply = msgs::read_raw(serial)?;
+            Ok(reply)
+        })
+        .await
+        .map_err(|_| Error::Eof)?
+    }
+
+    fn clone(&self) -> Box<dyn SignerPort> {
+        Box::new(Self { serial: self.serial.clone() })
+    }
+}
+
+impl SerialSignerPort {
+    pub fn new(serial: Arc<Mutex<SerialWrap>>) -> Self {
+        SerialSignerPort { serial }
+    }
+}
+
 /// Implement the hsmd UNIX fd protocol.
 /// This doesn't actually perform the signing - the hsmd packets are transported via serial to the
 /// real signer.
@@ -128,9 +166,9 @@ pub struct SignerLoop<C: 'static + Client> {
 
 impl<C: 'static + Client> SignerLoop<C> {
     /// Create a loop for the root (lightningd) connection, but doesn't start it yet
-    pub fn new(client: C, serial: SerialWrap) -> Self {
+    pub fn new(client: C, serial: Arc<Mutex<SerialWrap>>) -> Self {
         let log_prefix = format!("{}/{}", std::process::id(), client.id());
-        Self { client, log_prefix, serial: Arc::new(Mutex::new(serial)), client_id: None }
+        Self { client, log_prefix, serial, client_id: None }
     }
 
     // Create a loop for a non-root connection
