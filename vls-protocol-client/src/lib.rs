@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use bit_vec::BitVec;
 use bitcoin::hashes::Hash;
-use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signature};
+use bitcoin::secp256k1::{ecdsa::Signature, All, PublicKey, Secp256k1, SecretKey};
 use bitcoin::Transaction;
 use lightning::chain::keysinterface::KeysInterface;
 use lightning::chain::keysinterface::{BaseSign, Sign};
@@ -39,13 +39,12 @@ use vls_protocol::serde_bolt::{LargeBytes, WireString};
 use vls_protocol::{model, Error as ProtocolError};
 
 use bitcoin::bech32::u5;
+use bitcoin::secp256k1::ecdsa::{self, RecoverableSignature, RecoveryId};
 use bitcoin::secp256k1::rand::rngs::OsRng;
 use bitcoin::secp256k1::rand::RngCore;
-use bitcoin::secp256k1::recovery::{RecoverableSignature, RecoveryId};
 use bitcoin::util::bip32::ExtendedPubKey;
-use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::util::psbt::PartiallySignedTransaction;
-use bitcoin::{consensus, secp256k1, Script, SigHashType, WPubkeyHash};
+use bitcoin::{consensus, EcdsaSighashType, Script, WPubkeyHash};
 use lightning::chain::keysinterface::{KeyMaterial, Recipient, SpendableOutputDescriptor};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::script::ShutdownScript;
@@ -94,10 +93,10 @@ fn to_pubkey(pubkey: PublicKey) -> PubKey {
     PubKey(pubkey.serialize())
 }
 
-fn to_bitcoin_sig(sig: &secp256k1::Signature) -> BitcoinSignature {
+fn to_bitcoin_sig(sig: &ecdsa::Signature) -> BitcoinSignature {
     BitcoinSignature {
         signature: model::Signature(sig.serialize_compact()),
-        sighash: SigHashType::All as u8,
+        sighash: EcdsaSighashType::All as u8,
     }
 }
 
@@ -478,7 +477,7 @@ impl KeysManagerClient {
         let result: SignWithdrawalReply = self.call(message).expect("sign failed");
         let result_psbt: PartiallySignedTransaction =
             consensus::deserialize(&result.psbt.0).expect("deserialize PSBT");
-        result_psbt.inputs.into_iter().map(|i| i.final_script_witness.unwrap()).collect()
+        result_psbt.inputs.into_iter().map(|i| i.final_script_witness.unwrap().to_vec()).collect()
     }
 
     fn descriptor_to_utxo(d: &SpendableOutputDescriptor) -> Utxo {
@@ -544,7 +543,7 @@ impl KeysInterface for KeysManagerClient {
             key = key.ckd_pub(&secp_ctx, ChildNumber::from_normal_idx(i).unwrap()).unwrap();
         }
         let pubkey = key.public_key;
-        Script::new_v0_wpkh(&WPubkeyHash::hash(&pubkey.serialize()))
+        Script::new_v0_p2wpkh(&WPubkeyHash::hash(&pubkey.serialize()))
     }
 
     fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {

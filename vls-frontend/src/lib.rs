@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Transaction, Txid};
+use lightning_signer::bitcoin;
 
 mod chain_follower;
 pub mod frontend;

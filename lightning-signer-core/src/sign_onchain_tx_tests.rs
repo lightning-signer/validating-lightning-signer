@@ -6,7 +6,7 @@ mod tests {
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use bitcoin::util::psbt::serialize::Serialize;
-    use bitcoin::{self, Address, Network, OutPoint, Script, Transaction, TxIn, TxOut};
+    use bitcoin::{self, Address, Network, OutPoint, Script, Transaction, TxIn, TxOut, Witness};
 
     use test_log::test;
 
@@ -32,14 +32,14 @@ mod tests {
             previous_output: OutPoint { txid: Default::default(), vout: 0 },
             script_sig: Script::new(),
             sequence: 0,
-            witness: vec![],
+            witness: Witness::default(),
         };
 
         let input2 = TxIn {
             previous_output: OutPoint { txid: Default::default(), vout: 1 },
             script_sig: Script::new(),
             sequence: 0,
-            witness: vec![],
+            witness: Witness::default(),
         };
         let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1, input2], chanamt);
         let spendtypes = vec![SpendType::P2wpkh, SpendType::P2wpkh];
@@ -55,8 +55,8 @@ mod tests {
                 .unwrap()
         };
 
-        tx.input[0].witness = witvec[0].clone();
-        tx.input[1].witness = witvec[1].clone();
+        tx.input[0].witness = Witness::from_vec(witvec[0].clone());
+        tx.input[1].witness = Witness::from_vec(witvec[1].clone());
 
         let outs = vec![
             TxOut { value: ival0, script_pubkey: address(0).script_pubkey() },
@@ -83,7 +83,7 @@ mod tests {
             previous_output: OutPoint { txid, vout: 0 },
             script_sig: Script::new(),
             sequence: 0,
-            witness: vec![],
+            witness: Witness::default(),
         };
 
         let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1], chanamt);
@@ -100,7 +100,7 @@ mod tests {
                 .unwrap()
         };
 
-        tx.input[0].witness = witvec[0].clone();
+        tx.input[0].witness = Witness::from_vec(witvec[0].clone());
 
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec![TxOut { value: ival0, script_pubkey: address(0).script_pubkey() }];
@@ -128,7 +128,7 @@ mod tests {
             previous_output: OutPoint { txid, vout: 0 },
             script_sig: Script::new(),
             sequence: 0,
-            witness: vec![],
+            witness: Witness::default(),
         };
 
         let (opath, tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1], chanamt);
@@ -163,7 +163,7 @@ mod tests {
             previous_output: OutPoint { txid, vout: 0 },
             script_sig: Script::new(),
             sequence: 0,
-            witness: vec![],
+            witness: Witness::default(),
         };
 
         let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1], chanamt);
@@ -190,7 +190,7 @@ mod tests {
 
         let address = Address::p2wpkh(&uniclosepubkey, Network::Testnet).unwrap();
 
-        tx.input[0].witness = witvec[0].clone();
+        tx.input[0].witness = Witness::from_vec(witvec[0].clone());
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec![TxOut { value: ival0, script_pubkey: address.script_pubkey() }];
         println!("{:?}", &outs[0].script_pubkey);
@@ -213,7 +213,7 @@ mod tests {
             previous_output: OutPoint { txid, vout: 0 },
             script_sig: Script::new(),
             sequence: 0,
-            witness: vec![],
+            witness: Witness::default(),
         };
 
         let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1], 100);
@@ -256,7 +256,7 @@ mod tests {
             previous_output: OutPoint { txid, vout: 0 },
             script_sig: Script::new(),
             sequence: 0,
-            witness: vec![],
+            witness: Witness::default(),
         };
 
         let (opath, mut tx) =
@@ -291,7 +291,7 @@ mod tests {
             )
             .into_script();
 
-        tx.input[0].witness = witvec[0].clone();
+        tx.input[0].witness = Witness::from_vec(witvec[0].clone());
 
         println!("{:?}", tx.input[0].script_sig);
         let outs = vec![TxOut { value: ival0, script_pubkey: address(0).script_pubkey() }];
@@ -318,19 +318,19 @@ mod tests {
                 previous_output: OutPoint { txid: txids[0], vout: 0 },
                 script_sig: Script::new(),
                 sequence: 0,
-                witness: vec![],
+                witness: Witness::default(),
             },
             TxIn {
                 previous_output: OutPoint { txid: txids[1], vout: 0 },
                 script_sig: Script::new(),
                 sequence: 0,
-                witness: vec![],
+                witness: Witness::default(),
             },
             TxIn {
                 previous_output: OutPoint { txid: txids[2], vout: 0 },
                 script_sig: Script::new(),
                 sequence: 0,
-                witness: vec![],
+                witness: Witness::default(),
             },
         ];
 

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1};
-    use bitcoin::{self, OutPoint, Script, Transaction, TxIn, TxOut, Txid};
+    use bitcoin::{self, OutPoint, Script, Transaction, TxIn, TxOut, Txid, Witness};
     use lightning::ln::chan_utils::get_htlc_redeemscript;
     use test_log::test;
 
@@ -33,7 +33,7 @@ mod tests {
                 previous_output: OutPoint { txid, vout },
                 script_sig: Script::new(),
                 sequence: if is_anchors { 1 } else { 0 },
-                witness: vec![],
+                witness: Witness::default(),
             }],
             output: vec![TxOut { script_pubkey: script_pubkey, value: amount_sat }],
         }
@@ -54,7 +54,7 @@ mod tests {
                 previous_output: OutPoint { txid, vout },
                 script_sig: Script::new(),
                 sequence: if is_anchors { 1 } else { 0 },
-                witness: vec![],
+                witness: Witness::default(),
             }],
             output: vec![TxOut { script_pubkey: script_pubkey, value: amount_sat }],
         }

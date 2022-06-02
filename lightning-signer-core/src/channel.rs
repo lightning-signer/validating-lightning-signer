@@ -5,9 +5,9 @@ use core::fmt::{Debug, Error, Formatter};
 use bitcoin::hashes::hex::{self, FromHex};
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
-use bitcoin::secp256k1::{self, All, Message, PublicKey, Secp256k1, SecretKey, Signature};
-use bitcoin::util::bip143::SigHashCache;
-use bitcoin::{Network, OutPoint, Script, SigHashType, Transaction};
+use bitcoin::secp256k1::{self, ecdsa::Signature, All, Message, PublicKey, Secp256k1, SecretKey};
+use bitcoin::util::sighash::SighashCache;
+use bitcoin::{EcdsaSighashType, Network, OutPoint, Script, Transaction};
 use lightning::chain;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface};
 use lightning::ln::chan_utils::{
@@ -77,13 +77,13 @@ impl fmt::Display for ChannelId {
     }
 }
 
-/// Bitcoin Signature which specifies SigHashType
+/// Bitcoin Signature which specifies EcdsaSighashType
 #[derive(Debug)]
 pub struct TypedSignature {
     /// The signature
     pub sig: Signature,
     /// The sighash type
-    pub typ: SigHashType,
+    pub typ: EcdsaSighashType,
 }
 
 impl TypedSignature {
@@ -96,7 +96,7 @@ impl TypedSignature {
 
     /// A TypedSignature with SIGHASH_ALL
     pub fn all(sig: Signature) -> Self {
-        Self { sig, typ: SigHashType::All }
+        Self { sig, typ: EcdsaSighashType::All }
     }
 }
 
@@ -679,20 +679,20 @@ impl Channel {
             &self.setup.counterparty_points.funding_pubkey,
         );
 
-        let sighash =
-            Message::from_slice(
-                &SigHashCache::new(&recomposed_tx.trust().built_transaction().transaction)
-                    .signature_hash(
-                        0,
-                        &redeemscript,
-                        self.setup.channel_value_sat,
-                        SigHashType::All,
-                    )[..],
-            )
-            .map_err(|ve| internal_error(format!("sighash failed: {}", ve)))?;
+        let sighash = Message::from_slice(
+            &SighashCache::new(&recomposed_tx.trust().built_transaction().transaction)
+                .segwit_signature_hash(
+                    0,
+                    &redeemscript,
+                    self.setup.channel_value_sat,
+                    EcdsaSighashType::All,
+                )
+                .unwrap()[..],
+        )
+        .map_err(|ve| internal_error(format!("sighash failed: {}", ve)))?;
 
         self.secp_ctx
-            .verify(
+            .verify_ecdsa(
                 &sighash,
                 &counterparty_commit_sig,
                 &self.setup.counterparty_points.funding_pubkey,
@@ -710,9 +710,9 @@ impl Channel {
         .map_err(|err| internal_error(format!("derive_public_key failed: {}", err)))?;
 
         let sig_hash_type = if self.setup.option_anchor_outputs() {
-            SigHashType::SinglePlusAnyoneCanPay
+            EcdsaSighashType::SinglePlusAnyoneCanPay
         } else {
-            SigHashType::All
+            EcdsaSighashType::All
         };
 
         for ndx in 0..recomposed_tx.htlcs().len() {
@@ -732,17 +732,19 @@ impl Channel {
             );
 
             let recomposed_tx_sighash = Message::from_slice(
-                &SigHashCache::new(&recomposed_htlc_tx).signature_hash(
-                    0,
-                    &htlc_redeemscript,
-                    htlc.amount_msat / 1000,
-                    sig_hash_type,
-                )[..],
+                &SighashCache::new(&recomposed_htlc_tx)
+                    .segwit_signature_hash(
+                        0,
+                        &htlc_redeemscript,
+                        htlc.amount_msat / 1000,
+                        sig_hash_type,
+                    )
+                    .unwrap()[..],
             )
             .map_err(|err| invalid_argument(format!("sighash failed for htlc {}: {}", ndx, err)))?;
 
             self.secp_ctx
-                .verify(&recomposed_tx_sighash, &counterparty_htlc_sigs[ndx], &htlc_pubkey)
+                .verify_ecdsa(&recomposed_tx_sighash, &counterparty_htlc_sigs[ndx], &htlc_pubkey)
                 .map_err(|err| {
                     policy_error(format!("commit sig verify failed for htlc {}: {}", ndx, err))
                 })?;
@@ -1170,12 +1172,9 @@ impl Channel {
         )?;
 
         let sighash = Message::from_slice(
-            &SigHashCache::new(tx).signature_hash(
-                input,
-                &redeemscript,
-                amount_sat,
-                SigHashType::All,
-            )[..],
+            &SighashCache::new(tx)
+                .segwit_signature_hash(input, &redeemscript, amount_sat, EcdsaSighashType::All)
+                .unwrap()[..],
         )
         .map_err(|_| Status::internal("failed to sighash"))?;
 
@@ -1186,7 +1185,7 @@ impl Channel {
         )
         .map_err(|_| Status::internal("failed to derive key"))?;
 
-        let sig = self.secp_ctx.sign(&sighash, &privkey);
+        let sig = self.secp_ctx.sign_ecdsa(&sighash, &privkey);
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok(sig)
@@ -1222,12 +1221,9 @@ impl Channel {
         )?;
 
         let htlc_sighash = Message::from_slice(
-            &SigHashCache::new(tx).signature_hash(
-                input,
-                &redeemscript,
-                htlc_amount_sat,
-                SigHashType::All,
-            )[..],
+            &SighashCache::new(tx)
+                .segwit_signature_hash(input, &redeemscript, htlc_amount_sat, EcdsaSighashType::All)
+                .unwrap()[..],
         )
         .map_err(|_| Status::internal("failed to sighash"))?;
 
@@ -1238,7 +1234,7 @@ impl Channel {
         )
         .map_err(|_| Status::internal("failed to derive key"))?;
 
-        let sig = self.secp_ctx.sign(&htlc_sighash, &htlc_privkey);
+        let sig = self.secp_ctx.sign_ecdsa(&htlc_sighash, &htlc_privkey);
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok(sig)
@@ -1272,12 +1268,9 @@ impl Channel {
         )?;
 
         let sighash = Message::from_slice(
-            &SigHashCache::new(tx).signature_hash(
-                input,
-                &redeemscript,
-                amount_sat,
-                SigHashType::All,
-            )[..],
+            &SighashCache::new(tx)
+                .segwit_signature_hash(input, &redeemscript, amount_sat, EcdsaSighashType::All)
+                .unwrap()[..],
         )
         .map_err(|_| Status::internal("failed to sighash"))?;
 
@@ -1288,7 +1281,7 @@ impl Channel {
         )
         .map_err(|_| Status::internal("failed to derive key"))?;
 
-        let sig = self.secp_ctx.sign(&sighash, &privkey);
+        let sig = self.secp_ctx.sign_ecdsa(&sighash, &privkey);
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok(sig)
@@ -1300,8 +1293,8 @@ impl Channel {
         let encmsg = secp256k1::Message::from_slice(&ann_hash[..]).expect("encmsg failed");
 
         (
-            self.secp_ctx.sign(&encmsg, &self.get_node().get_node_secret()),
-            self.secp_ctx.sign(&encmsg, &self.keys.funding_key),
+            self.secp_ctx.sign_ecdsa(&encmsg, &self.get_node().get_node_secret()),
+            self.secp_ctx.sign_ecdsa(&encmsg, &self.keys.funding_key),
         )
     }
 
@@ -1877,7 +1870,7 @@ impl Channel {
         is_counterparty: bool,
         txkeys: TxCreationKeys,
     ) -> Result<TypedSignature, Status> {
-        let (feerate_per_kw, htlc, recomposed_tx_sighash, sighashtype) =
+        let (feerate_per_kw, htlc, recomposed_tx_sighash, sighash_type) =
             self.validator().decode_and_validate_htlc_tx(
                 is_counterparty,
                 &self.setup,
@@ -1924,8 +1917,8 @@ impl Channel {
             .map_err(|_| Status::internal("failed to sighash recomposed"))?;
 
         Ok(TypedSignature {
-            sig: self.secp_ctx.sign(&htlc_sighash, &htlc_privkey),
-            typ: sighashtype,
+            sig: self.secp_ctx.sign_ecdsa(&htlc_sighash, &htlc_privkey),
+            typ: sighash_type,
         })
     }
 
@@ -1994,7 +1987,7 @@ mod tests {
 
     #[test]
     fn test_dummy_sig() {
-        let dummy_sig = Secp256k1::new().sign(
+        let dummy_sig = Secp256k1::new().sign_ecdsa(
             &secp256k1::Message::from_slice(&[42; 32]).unwrap(),
             &SecretKey::from_slice(&[42; 32]).unwrap(),
         );

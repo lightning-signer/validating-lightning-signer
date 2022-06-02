@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::opcodes::Class;
+use bitcoin::blockdata::opcodes::ClassifyContext::Legacy;
 use bitcoin::blockdata::script::{read_scriptint, Builder, Instruction, Instructions};
 use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::Hash;
@@ -35,7 +36,7 @@ pub(crate) fn expect_number(iter: &mut Instructions) -> Result<i64, ValidationEr
     let ins = expect_next(iter)?;
     match ins {
         blockdata::script::Instruction::Op(op) => {
-            let cls = op.classify();
+            let cls = op.classify(Legacy);
             match cls {
                 Class::PushNum(i) => Ok(i as i64),
                 _ => Err(mismatch_error(format!("expected PushNum, saw {:?}", cls))),

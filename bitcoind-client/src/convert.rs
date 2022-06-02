@@ -4,6 +4,7 @@ use bitcoin::consensus::encode;
 use bitcoin::hashes::hex::{FromHex, ToHex};
 use bitcoin::util::uint::Uint256;
 use bitcoin::{Block, BlockHash, BlockHeader, TxMerkleNode};
+use lightning_signer::bitcoin;
 use serde::Deserialize;
 
 use crate::bitcoind_client::BlockHeaderData;

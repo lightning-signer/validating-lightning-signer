@@ -7,7 +7,7 @@ pub fn make_test_bitcoin_key(i: u8) -> (bitcoin::PublicKey, bitcoin::PrivateKey)
     let secp_ctx = Secp256k1::signing_only();
     let secret_key = SecretKey::from_slice(&[i; 32]).unwrap();
     let private_key =
-        bitcoin::PrivateKey { compressed: true, network: Network::Testnet, key: secret_key };
+        bitcoin::PrivateKey { compressed: true, network: Network::Testnet, inner: secret_key };
     return (private_key.public_key(&secp_ctx), private_key);
 }
 

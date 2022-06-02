@@ -16,7 +16,6 @@ vls-protocol-signer = { path = "../vls-protocol-signer", features = ["std"] }
 vls-protocol-client = { path = "../vls-protocol-client" }
 vls-protocol = { path = "../vls-protocol" }
 vls-frontend = { path = "../vls-frontend" }
-secp256k1 = { version = "0.20", features = ["rand-std", "bitcoin_hashes"] }
 nix = "0.22"
 serde = "1.0"
 log = "0.4"
@@ -38,7 +37,6 @@ async-stream = { version = "0.3", optional = true }
 anyhow = "1.0"
 async-trait = "0.1"
 url = { version = "2.2", optional = true }
-bitcoin = { version = "0.27", features = ["bitcoinconsensus"]}
 
 [dependencies.lightning-signer-server]
 path = "../lightning-signer-server"

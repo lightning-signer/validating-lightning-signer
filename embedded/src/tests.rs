@@ -6,7 +6,7 @@ use core::time::Duration;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::Secp256k1;
-use bitcoin::{Address, Network, OutPoint, PrivateKey, Txid};
+use bitcoin::{Address, Network, OutPoint, PrivateKey, Txid, Witness};
 #[cfg(feature = "device")]
 use cortex_m_semihosting::hprintln;
 use lightning_signer::bitcoin;
@@ -222,14 +222,14 @@ fn sign_funding(node: &Arc<Node>) {
         previous_output: OutPoint { txid: Default::default(), vout: 0 },
         script_sig: Script::new(),
         sequence: 0,
-        witness: vec![],
+        witness: Witness::default(),
     };
 
     let input2 = TxIn {
         previous_output: OutPoint { txid: Default::default(), vout: 1 },
         script_sig: Script::new(),
         sequence: 0,
-        witness: vec![],
+        witness: Witness::default(),
     };
     let (opath, tx) = make_test_funding_tx(&node, vec![input1, input2], chanamt);
     let spendtypes = vec![SpendType::P2wpkh, SpendType::P2wpkh];

@@ -10,6 +10,7 @@ use url::Url;
 
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Block, BlockHash, Network, OutPoint, Transaction, TxOut, Txid};
+use lightning_signer::bitcoin;
 
 use bitcoind_client::{BitcoindClient, BlockSource, Error};
 
@@ -248,6 +249,7 @@ mod tests {
 
     use bitcoin::{Block, BlockHeader, OutPoint, TxIn, TxMerkleNode, TxOut};
 
+    use crate::bitcoin::Witness;
     use test_log::test;
 
     fn make_tx(previous_outputs: Vec<OutPoint>, outputs: Vec<TxOut>) -> Transaction {
@@ -260,7 +262,7 @@ mod tests {
                     previous_output: *previous_output,
                     script_sig: Default::default(),
                     sequence: 0,
-                    witness: vec![],
+                    witness: Witness::default(),
                 })
                 .collect(),
             output: outputs,

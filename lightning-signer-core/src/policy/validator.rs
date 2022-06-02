@@ -3,7 +3,7 @@ extern crate scopeguard;
 use core::cmp::{max, min};
 
 use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::{self, Network, Script, SigHash, SigHashType, Transaction};
+use bitcoin::{self, EcdsaSighashType, Network, Script, Sighash, Transaction};
 use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::ln::PaymentHash;
@@ -104,7 +104,7 @@ pub trait Validator {
         redeemscript: &Script,
         htlc_amount_sat: u64,
         output_witscript: &Script,
-    ) -> Result<(u32, HTLCOutputInCommitment, SigHash, SigHashType), ValidationError>;
+    ) -> Result<(u32, HTLCOutputInCommitment, Sighash, EcdsaSighashType), ValidationError>;
 
     /// Phase 2 validation of 2nd level HTLC tx
     fn validate_htlc_tx(

@@ -9,7 +9,8 @@ use bitcoin::consensus::serialize;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::merkleblock::PartialMerkleTree;
-use bitcoin::{self, BlockHash, BlockHeader, Network, OutPoint, Txid};
+use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
+use lightning_signer::bitcoin;
 
 use vls_frontend::{ChainTrack, ChainTrackDirectory};
 use vls_protocol::msgs::{self, Message, SerBolt};

@@ -32,6 +32,7 @@ use lightning::ln::msgs::{ChannelMessageHandler, ChannelUpdate};
 use lightning::util::config::{ChannelHandshakeConfig, UserConfig};
 use lightning::util::events::{Event, EventsProvider, MessageSendEvent, MessageSendEventsProvider, ClosureReason};
 use lightning::util::logger::Logger;
+use lightning_invoice::payment::Payer;
 
 use lightning_signer::policy::null_validator::NullValidatorFactory;
 use lightning_signer::signer::multi_signer::MultiSigner;
@@ -261,6 +262,7 @@ fn _alt_config() -> UserConfig {
             minimum_depth: 6,
             our_to_self_delay: 145,
             our_htlc_minimum_msat: 1000,
+            max_inbound_htlc_value_in_flight_percent_of_channel: 100,
             negotiate_scid_privacy: false
         },
         peer_channel_config_limits: Default::default(),
@@ -296,7 +298,8 @@ fn channel_force_close_test() {
     );
 
     // Close channel forcefully
-    let _ = nodes[0].node.force_close_channel(&chan.2);
+    let cp_id = nodes[1].node.get_our_node_id();
+    let _ = nodes[0].node.force_close_channel(&chan.2, &cp_id);
 
     check_closed_broadcast!(nodes[0], true);
 
@@ -488,7 +491,8 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
     // responds by (1) broadcasting a channel update and (2) adding a new ChannelMonitor.
     let mut force_closing_node = 0; // Alice force-closes
     if !broadcast_alice { force_closing_node = 1; } // Bob force-closes
-    nodes[force_closing_node].node.force_close_channel(&chan_ab.2).unwrap();
+    let cp_id = nodes[1 - force_closing_node].node.node_id();
+    nodes[force_closing_node].node.force_close_channel(&chan_ab.2, &cp_id).unwrap();
     check_closed_broadcast!(nodes[force_closing_node], true);
     check_added_monitors!(nodes[force_closing_node], 1);
     check_closed_event!(nodes[force_closing_node], 1, ClosureReason::HolderForceClosed);

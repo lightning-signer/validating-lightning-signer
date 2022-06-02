@@ -38,7 +38,7 @@ pub fn maybe_add_change_output(
     let mut change_output = TxOut { script_pubkey: change_destination_script, value: 0 };
     let change_len = change_output.consensus_encode(&mut sink()).map_err(|_| ())?;
     let mut weight_with_change: i64 =
-        tx.get_weight() as i64 + 2 + witness_max_weight as i64 + change_len as i64 * 4;
+        tx.weight() as i64 + 2 + witness_max_weight as i64 + change_len as i64 * 4;
     // Include any extra bytes required to push an extra output.
     weight_with_change += (VarInt(tx.output.len() as u64 + 1).len()
         - VarInt(tx.output.len() as u64).len()) as i64
@@ -50,8 +50,7 @@ pub fn maybe_add_change_output(
         change_output.value = change_value as u64;
         tx.output.push(change_output);
     } else if (input_value - output_value) as i64
-        - (tx.get_weight() as i64 + 2 + witness_max_weight as i64)
-            * feerate_sat_per_1000_weight as i64
+        - (tx.weight() as i64 + 2 + witness_max_weight as i64) * feerate_sat_per_1000_weight as i64
             / 1000
         < 0
     {

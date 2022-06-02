@@ -13,12 +13,13 @@ use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::ecdh::SharedSecret;
-use bitcoin::secp256k1::recovery::RecoverableSignature;
-use bitcoin::secp256k1::{schnorrsig, All, Message, PublicKey, Secp256k1, SecretKey, Signature};
-use bitcoin::util::bip143::SigHashCache;
+use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
+use bitcoin::secp256k1::{schnorr, All, Message, PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::{secp256k1, Address, Transaction, TxOut};
-use bitcoin::{Network, OutPoint, Script, SigHashType};
+use bitcoin::util::key::XOnlyPublicKey;
+use bitcoin::util::sighash::SighashCache;
+use bitcoin::{secp256k1, Address, PrivateKey, Transaction, TxOut};
+use bitcoin::{EcdsaSighashType, Network, OutPoint, Script};
 use lightning::chain;
 use lightning::chain::keysinterface::{
     BaseSign, KeyMaterial, KeysInterface, Recipient, SpendableOutputDescriptor,
@@ -34,7 +35,6 @@ use lightning_invoice::{Invoice, RawDataPart, RawHrp, RawInvoice, SignedRawInvoi
 
 #[allow(unused_imports)]
 use log::{debug, info, trace, warn};
-use secp256k1_xonly::XOnlyPublicKey;
 
 use crate::chain::tracker::ChainTracker;
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub};
@@ -657,7 +657,7 @@ impl Node {
         fieldname: &[u8],
         merkleroot: &[u8; 32],
         publictweak_opt: Option<&[u8]>,
-    ) -> Result<schnorrsig::Signature, Status> {
+    ) -> Result<schnorr::Signature, Status> {
         self.keys_manager
             .sign_bolt12(messagename, fieldname, merkleroot, publictweak_opt)
             .map_err(|_| internal_error("signature operation failed"))
@@ -1121,7 +1121,7 @@ impl Node {
                     None => {
                         let key = self.get_wallet_privkey(&secp_ctx, &ipaths[idx])?;
                         let redeemscript =
-                            PublicKey::from_secret_key(&secp_ctx, &key.key).serialize().to_vec();
+                            PublicKey::from_secret_key(&secp_ctx, &key.inner).serialize().to_vec();
                         (key, vec![redeemscript])
                     }
                 };
@@ -1135,21 +1135,25 @@ impl Node {
                     }
                     SpendType::P2wpkh | SpendType::P2shP2wpkh => {
                         // segwit native and wrapped
-                        let sighash = SigHashCache::new(tx).signature_hash(
-                            idx,
-                            &script_code,
-                            value_sat,
-                            SigHashType::All,
-                        );
+                        let sighash = SighashCache::new(tx)
+                            .segwit_signature_hash(
+                                idx,
+                                &script_code,
+                                value_sat,
+                                EcdsaSighashType::All,
+                            )
+                            .unwrap();
                         Ok(sighash)
                     }
                     SpendType::P2wsh => {
-                        let sighash = SigHashCache::new(tx).signature_hash(
-                            idx,
-                            &Script::from(witness[witness.len() - 1].clone()),
-                            value_sat,
-                            SigHashType::All,
-                        );
+                        let sighash = SighashCache::new(tx)
+                            .segwit_signature_hash(
+                                idx,
+                                &Script::from(witness[witness.len() - 1].clone()),
+                                value_sat,
+                                EcdsaSighashType::All,
+                            )
+                            .unwrap();
                         Ok(sighash)
                     }
                     st => Err(invalid_argument(format!("unsupported spend_type={:?}", st))),
@@ -1157,7 +1161,7 @@ impl Node {
                 let message = Message::from_slice(&sighash).map_err(|err| {
                     internal_error(format!("sighash {:?} failed: {}", spendtypes[idx], err))
                 })?;
-                let sig = secp_ctx.sign(&message, &privkey.key);
+                let sig = secp_ctx.sign_ecdsa(&message, &privkey.inner);
                 let sigvec = signature_to_bitcoin_vec(sig);
                 witness.insert(0, sigvec);
 
@@ -1222,7 +1226,7 @@ impl Node {
         &self,
         secp_ctx: &Secp256k1<secp256k1::SignOnly>,
         child_path: &Vec<u32>,
-    ) -> Result<bitcoin::PrivateKey, Status> {
+    ) -> Result<PrivateKey, Status> {
         if child_path.len() != self.node_config.key_derivation_style.get_key_path_len() {
             return Err(invalid_argument(format!(
                 "get_wallet_key: bad child_path len : {}",
@@ -1238,7 +1242,7 @@ impl Node {
                 .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(*elem).unwrap())
                 .map_err(|err| internal_error(format!("derive child_path failed: {}", err)))?;
         }
-        Ok(xkey.private_key)
+        Ok(PrivateKey::new(xkey.private_key, self.network()))
     }
 
     pub(crate) fn get_wallet_pubkey(
@@ -1272,7 +1276,7 @@ impl Node {
     /// Get the layer-1 xpub
     pub fn get_account_extended_pubkey(&self) -> ExtendedPubKey {
         let secp_ctx = Secp256k1::signing_only();
-        ExtendedPubKey::from_private(&secp_ctx, &self.get_account_extended_key())
+        ExtendedPubKey::from_priv(&secp_ctx, &self.get_account_extended_key())
     }
 
     /// Sign a node announcement using the node key
@@ -1281,7 +1285,7 @@ impl Node {
         let na_hash = Sha256dHash::hash(na);
         let encmsg = secp256k1::Message::from_slice(&na_hash[..])
             .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
-        let sig = secp_ctx.sign(&encmsg, &self.get_node_secret());
+        let sig = secp_ctx.sign_ecdsa(&encmsg, &self.get_node_secret());
         Ok(sig)
     }
 
@@ -1291,7 +1295,7 @@ impl Node {
         let cu_hash = Sha256dHash::hash(cu);
         let encmsg = secp256k1::Message::from_slice(&cu_hash[..])
             .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
-        let sig = secp_ctx.sign(&encmsg, &self.get_node_secret());
+        let sig = secp_ctx.sign_ecdsa(&encmsg, &self.get_node_secret());
         Ok(sig)
     }
 
@@ -1345,7 +1349,7 @@ impl Node {
         let secp_ctx = Secp256k1::signing_only();
         let hash = Sha256Hash::hash(&invoice_preimage);
         let message = secp256k1::Message::from_slice(&hash).unwrap();
-        let sig = secp_ctx.sign_recoverable(&message, &self.get_node_secret());
+        let sig = secp_ctx.sign_ecdsa_recoverable(&message, &self.get_node_secret());
 
         raw_invoice
             .sign::<_, ()>(|_| Ok(sig))
@@ -1360,7 +1364,7 @@ impl Node {
         let hash = Sha256dHash::hash(&buffer);
         let encmsg = secp256k1::Message::from_slice(&hash[..])
             .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
-        let sig = secp_ctx.sign_recoverable(&encmsg, &self.get_node_secret());
+        let sig = secp_ctx.sign_ecdsa_recoverable(&encmsg, &self.get_node_secret());
         let (rid, sig) = sig.serialize_compact();
         let mut res = sig.to_vec();
         res.push(rid.to_i32() as u8);
@@ -1378,7 +1382,7 @@ impl Node {
     pub fn ecdh(&self, other_key: &PublicKey) -> Vec<u8> {
         let our_key = self.keys_manager.get_node_secret(Recipient::Node).unwrap();
         let ss = SharedSecret::new(&other_key, &our_key);
-        ss[..].to_vec()
+        ss.as_ref().to_vec()
     }
 
     /// See [`MyKeysManager::spend_spendable_outputs`].
@@ -1591,10 +1595,10 @@ mod tests {
     use bitcoin::hashes::sha256d::Hash as Sha256dHash;
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1;
-    use bitcoin::secp256k1::recovery::{RecoverableSignature, RecoveryId};
+    use bitcoin::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
     use bitcoin::secp256k1::SecretKey;
-    use bitcoin::util::bip143::SigHashCache;
-    use bitcoin::{Address, OutPoint, SigHashType};
+    use bitcoin::util::sighash::SighashCache;
+    use bitcoin::{Address, EcdsaSighashType, OutPoint};
     use lightning::ln::chan_utils::derive_private_key;
     use lightning::ln::{chan_utils, PaymentSecret};
     use lightning_invoice::{Currency, InvoiceBuilder};
@@ -2004,10 +2008,10 @@ mod tests {
         let ca_hash = Sha256dHash::hash(&ann);
         let encmsg = secp256k1::Message::from_slice(&ca_hash[..]).expect("encmsg");
         let secp_ctx = Secp256k1::new();
-        secp_ctx.verify(&encmsg, &nsig, &node.get_id()).expect("verify nsig");
+        secp_ctx.verify_ecdsa(&encmsg, &nsig, &node.get_id()).expect("verify nsig");
         let _res: Result<(), Status> = node.with_ready_channel(&channel_id, |chan| {
             let funding_pubkey = PublicKey::from_secret_key(&secp_ctx, &chan.keys.funding_key);
-            Ok(secp_ctx.verify(&encmsg, &bsig, &funding_pubkey).expect("verify bsig"))
+            Ok(secp_ctx.verify_ecdsa(&encmsg, &bsig, &funding_pubkey).expect("verify bsig"))
         });
     }
 
@@ -2174,10 +2178,9 @@ mod tests {
         buffer.extend(message);
         let hash = Sha256dHash::hash(&buffer);
         let encmsg = secp256k1::Message::from_slice(&hash[..]).unwrap();
-        let sig =
-            secp256k1::Signature::from_compact(&rsig.to_standard().serialize_compact()).unwrap();
-        let pubkey = secp_ctx.recover(&encmsg, &rsig).unwrap();
-        assert!(secp_ctx.verify(&encmsg, &sig, &pubkey).is_ok());
+        let sig = Signature::from_compact(&rsig.to_standard().serialize_compact()).unwrap();
+        let pubkey = secp_ctx.recover_ecdsa(&encmsg, &rsig).unwrap();
+        assert!(secp_ctx.verify_ecdsa(&encmsg, &sig, &pubkey).is_ok());
         assert_eq!(pubkey.serialize().to_vec(), node.get_id().serialize().to_vec());
     }
 
@@ -2240,8 +2243,9 @@ mod tests {
         );
         let value = 600_000_000;
 
-        let sighash =
-            &SigHashCache::new(&tx).signature_hash(1, &script_code, value, SigHashType::All)[..];
+        let sighash = &SighashCache::new(&tx)
+            .segwit_signature_hash(1, &script_code, value, EcdsaSighashType::All)
+            .unwrap()[..];
         assert_eq!(
             hex_encode(sighash),
             "c37af31116d1b27caf68aae9e3ac82f1477929014d5b917657d0eb49478cb670"

@@ -1,6 +1,7 @@
 use std::os::unix::io::RawFd;
 use std::sync::Arc;
 
+use lightning_signer::bitcoin::secp256k1;
 use lightning_signer::persist::DummyPersister;
 use lightning_signer::persist::Persist;
 use log::info;
