@@ -40,6 +40,7 @@ use secp256k1::rand::{rngs::OsRng, RngCore};
 use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
 use lightning_signer::util::status::Status;
+use psbt_fixup::{decode_and_extract_output_paths, decode_and_extract_witscripts};
 use vls_protocol::features::*;
 use vls_protocol::model::{
     Basepoints, BitcoinSignature, BlockHash, ExtKey, Htlc, OutPoint as ModelOutPoint, PubKey,
@@ -345,8 +346,6 @@ impl Handler for RootHandler {
             Message::SignCommitmentTx(m) => {
                 // TODO why not channel handler??
                 let channel_id = Self::channel_id(&m.peer_id, m.dbid);
-                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())
-                    .expect("psbt");
                 let mut tx_bytes = m.tx.0.clone();
                 let tx: Transaction = deserialize(&mut tx_bytes).expect("tx");
 
@@ -354,11 +353,7 @@ impl Handler for RootHandler {
                 // with mutual close transactions.  We can tell the difference because
                 // the locktime field will be set to 0 for a mutual close.
                 let sig = if tx.lock_time == 0 {
-                    let opaths = psbt
-                        .outputs
-                        .iter()
-                        .map(|o| extract_output_path(&o.bip32_derivation))
-                        .collect();
+                    let opaths = decode_and_extract_output_paths(&m.psbt.0);
                     self.node.with_ready_channel(&channel_id, |chan| {
                         chan.sign_mutual_close_tx(&tx, &opaths)
                     })?
@@ -614,11 +609,9 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::SignTxReply { signature: typed_to_bitcoin_sig(sig) }))
             }
             Message::SignRemoteCommitmentTx(m) => {
-                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())
-                    .expect("psbt");
+                let witscripts = decode_and_extract_witscripts(&m.psbt.0);
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
-                let witscripts = extract_witscripts(&psbt);
                 let remote_per_commitment_point =
                     PublicKey::from_slice(&m.remote_per_commitment_point.0).expect("pubkey");
                 let commit_num = m.commitment_number;
@@ -781,11 +774,9 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::SignTxReply { signature: to_bitcoin_sig(sig) }))
             }
             Message::ValidateCommitmentTx(m) => {
-                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())
-                    .expect("psbt");
+                let witscripts = decode_and_extract_witscripts(&m.psbt.0);
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
-                let witscripts = extract_witscripts(&psbt);
                 let commit_num = m.commitment_number;
                 let feerate_sat_per_kw = m.feerate;
                 let (received_htlcs, offered_htlcs) = extract_htlcs(&m.htlcs);
@@ -970,7 +961,9 @@ fn extract_commitment_type(channel_type: &Vec<u8>) -> CommitmentType {
     }
 }
 
-fn extract_witscripts(psbt: &PartiallySignedTransaction) -> Vec<Vec<u8>> {
+// TODO put back once psbt-fixup goes away
+#[allow(unused)]
+fn extract_witscripts_new(psbt: &PartiallySignedTransaction) -> Vec<Vec<u8>> {
     psbt.outputs
         .iter()
         .map(|o| o.witness_script.clone().unwrap_or(Script::new()))
