@@ -31,6 +31,22 @@ impl ChainTrackDirectory for SignerFront {
     }
 }
 
+/// Implements ChainTrackDirectory using single inplace node
+pub struct SingleFront {
+    pub node: Arc<Node>,
+}
+
+#[async_trait]
+impl ChainTrackDirectory for SingleFront {
+    fn tracker(&self, _node_id: &PublicKey) -> Arc<dyn ChainTrack> {
+        // There are no additional added trackers for new nodes in the single case.
+        unimplemented!();
+    }
+    async fn trackers(&self) -> Vec<Arc<dyn ChainTrack>> {
+        vec![Arc::new(NodeFront { node: Arc::clone(&self.node) })]
+    }
+}
+
 /// Implements ChainTrack using calls to inplace node
 pub(crate) struct NodeFront {
     node: Arc<Node>,

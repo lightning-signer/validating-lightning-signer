@@ -159,7 +159,7 @@ impl ChainFollower {
 
         let (txid_watches, outpoint_watches) = self.tracker.forward_watches().await;
         let (txs, proof) = build_proof(&block, &txid_watches, &outpoint_watches);
-        // debug!("node {} at height {} adding {}", abbrev!(self.node.get_id(), 12), height, hash);
+        // debug!("node {} at height {} adding {}", self.tracker.log_prefix(), height, hash);
         self.tracker.add_block(block.header, txs, proof).await;
         Ok(ScheduleNext::Immediate)
     }

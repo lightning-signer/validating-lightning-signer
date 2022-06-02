@@ -4,6 +4,8 @@ use tokio::task;
 
 use url::Url;
 
+use log::info;
+
 use crate::{chain_follower::ChainFollower, ChainTrack, ChainTrackDirectory};
 
 pub struct Frontend {
@@ -27,6 +29,7 @@ impl Frontend {
                 ChainFollower::start(cf_arc).await;
             }
         });
+        info!("frontend started");
     }
 
     /// Start a chain follower for a specific tracker

@@ -4,21 +4,24 @@ use std::thread;
 
 use clap::{App, AppSettings, Arg};
 use log::{error, info};
+use url::Url;
 
 use connection::UnixConnection;
 use lightning_signer::persist::Persist;
 use lightning_signer::Arc;
+use vls_frontend::Frontend;
 use vls_protocol::{msgs, msgs::Message, Error, Result};
 use vls_protocol_signer::vls_protocol;
 
 use client::{Client, UnixClient};
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
-use util::read_allowlist;
+use lightning_signer_server::server::nodefront::SingleFront;
+use util::{create_runtime, read_allowlist};
 use vls_protocol_signer::handler::{Handler, RootHandler};
 
 mod test;
 use vls_proxy::util::{
-    add_hsmd_args, handle_hsmd_version, read_integration_test_seed, setup_logging,
+    add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, read_integration_test_seed, setup_logging,
 };
 use vls_proxy::*;
 
@@ -80,6 +83,17 @@ pub fn main() {
         let allowlist = read_allowlist();
         let handler =
             RootHandler::new(client.id(), read_integration_test_seed(), persister, allowlist);
+
+        let frontend = Frontend::new(
+            Arc::new(SingleFront { node: Arc::clone(&handler.node) }),
+            Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
+        );
+
+        let runtime = create_runtime("inplace-frontend");
+        runtime.block_on(async {
+            frontend.start();
+        });
+
         signer_loop(client, handler);
     }
 }

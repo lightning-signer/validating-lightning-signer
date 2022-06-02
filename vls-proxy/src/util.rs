@@ -5,6 +5,8 @@ use std::io::{BufRead, BufReader};
 use std::str::FromStr;
 use std::{env, fs};
 
+use tokio::runtime::{self, Runtime};
+
 pub fn read_allowlist() -> Vec<String> {
     let allowlist_path_res = env::var("ALLOWLIST");
     if let Ok(allowlist_path) = allowlist_path_res {
@@ -25,9 +27,10 @@ pub fn read_integration_test_seed() -> Option<[u8; 32]> {
     }
 }
 
-pub fn setup_logging(who: &str, level: &str) {
+pub fn setup_logging(who: &str, level_arg: &str) {
     use fern::colors::{Color, ColoredLevelConfig};
     let colors = ColoredLevelConfig::new().info(Color::Green).error(Color::Red).warn(Color::Yellow);
+    let level = env::var("RUST_LOG").unwrap_or(level_arg.to_string());
     let who = who.to_string();
     fern::Dispatch::new()
         .format(move |out, message, record| {
@@ -40,7 +43,7 @@ pub fn setup_logging(who: &str, level: &str) {
                 message
             ))
         })
-        .level(log::LevelFilter::from_str(level).expect("level"))
+        .level(log::LevelFilter::from_str(&level).expect("level"))
         .level_for("h2", log::LevelFilter::Info)
         .level_for("sled", log::LevelFilter::Info)
         .chain(std::io::stdout())
@@ -74,4 +77,18 @@ pub fn handle_hsmd_version(matches: &ArgMatches) -> bool {
 
 pub fn bitcoind_rpc_url() -> String {
     env::var("BITCOIND_RPC_URL").expect("env var BITCOIND_RPC_URL")
+}
+
+pub fn create_runtime(thread_name: &str) -> Runtime {
+    let thrname = thread_name.to_string();
+    std::thread::spawn(|| {
+        runtime::Builder::new_multi_thread()
+            .enable_all()
+            .thread_name(thrname)
+            .worker_threads(2) // for debugging
+            .build()
+    })
+    .join()
+    .expect("runtime join")
+    .expect("runtime")
 }
