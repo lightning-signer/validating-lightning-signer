@@ -2,8 +2,6 @@
 
 use std::thread;
 
-use tokio::runtime;
-
 use clap::{App, AppSettings, Arg};
 use log::{error, info};
 use url::Url;
@@ -18,7 +16,7 @@ use vls_protocol_signer::vls_protocol;
 use client::{Client, UnixClient};
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
 use lightning_signer_server::server::nodefront::SingleFront;
-use util::read_allowlist;
+use util::{create_runtime, read_allowlist};
 use vls_protocol_signer::handler::{Handler, RootHandler};
 
 mod test;
@@ -91,16 +89,7 @@ pub fn main() {
             Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
         );
 
-        let runtime = std::thread::spawn(|| {
-            runtime::Builder::new_multi_thread()
-                .enable_all()
-                .thread_name("inplace-frontend")
-                .worker_threads(2) // for debugging
-                .build()
-        })
-        .join()
-        .expect("runtime join")
-        .expect("runtime");
+        let runtime = create_runtime("inplace-frontend");
         runtime.block_on(async {
             frontend.start();
         });

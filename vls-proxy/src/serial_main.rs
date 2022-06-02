@@ -4,8 +4,6 @@
 use std::env;
 use std::sync::{Arc, Mutex};
 
-use tokio::runtime;
-
 use clap::{App, AppSettings, Arg};
 use url::Url;
 
@@ -21,7 +19,7 @@ use embedded::{connect, SerialSignerPort, SignerLoop};
 use vls_frontend::Frontend;
 use vls_proxy::client::UnixClient;
 use vls_proxy::portfront::SignerPortFront;
-use vls_proxy::util::{bitcoind_rpc_url, setup_logging};
+use vls_proxy::util::{bitcoind_rpc_url, create_runtime, setup_logging};
 use vls_proxy::*;
 
 mod embedded;
@@ -91,16 +89,7 @@ pub fn main() -> anyhow::Result<()> {
             Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
         );
 
-        let runtime = std::thread::spawn(|| {
-            runtime::Builder::new_multi_thread()
-                .enable_all()
-                .thread_name("serial-frontend")
-                .worker_threads(2) // for debugging
-                .build()
-        })
-        .join()
-        .expect("runtime join")
-        .expect("runtime");
+        let runtime = create_runtime("serial-frontend");
         runtime.block_on(async {
             frontend.start();
         });

@@ -5,6 +5,8 @@ use std::io::{BufRead, BufReader};
 use std::str::FromStr;
 use std::{env, fs};
 
+use tokio::runtime::{self, Runtime};
+
 pub fn read_allowlist() -> Vec<String> {
     let allowlist_path_res = env::var("ALLOWLIST");
     if let Ok(allowlist_path) = allowlist_path_res {
@@ -75,4 +77,18 @@ pub fn handle_hsmd_version(matches: &ArgMatches) -> bool {
 
 pub fn bitcoind_rpc_url() -> String {
     env::var("BITCOIND_RPC_URL").expect("env var BITCOIND_RPC_URL")
+}
+
+pub fn create_runtime(thread_name: &str) -> Runtime {
+    let thrname = thread_name.to_string();
+    std::thread::spawn(|| {
+        runtime::Builder::new_multi_thread()
+            .enable_all()
+            .thread_name(thrname)
+            .worker_threads(2) // for debugging
+            .build()
+    })
+    .join()
+    .expect("runtime join")
+    .expect("runtime")
 }
