@@ -1,6 +1,8 @@
 use std::any::Any;
 use std::io::Read;
 
+use delegate::delegate;
+
 use bitcoin::bech32::u5;
 use bitcoin::secp256k1::ecdsa::RecoverableSignature;
 use bitcoin::secp256k1::{ecdsa::Signature, PublicKey, Secp256k1, SecretKey};
@@ -61,136 +63,91 @@ impl Readable for DynSigner {
 }
 
 impl BaseSign for DynSigner {
-    fn get_per_commitment_point(
-        &self,
-        idx: u64,
-        secp_ctx: &Secp256k1<secp256k1::All>,
-    ) -> PublicKey {
-        self.inner.get_per_commitment_point(idx, secp_ctx)
-    }
+    delegate! {
+        to self.inner {
+            fn get_per_commitment_point(
+                &self,
+                idx: u64,
+                secp_ctx: &Secp256k1<secp256k1::All>,
+            ) -> PublicKey;
 
-    fn release_commitment_secret(&self, idx: u64) -> [u8; 32] {
-        self.inner.release_commitment_secret(idx)
-    }
+            fn release_commitment_secret(&self, idx: u64) -> [u8; 32];
 
-    fn validate_holder_commitment(
-        &self,
-        holder_tx: &HolderCommitmentTransaction,
-        preimages: Vec<PaymentPreimage>,
-    ) -> Result<(), ()> {
-        self.inner.validate_holder_commitment(holder_tx, preimages)
-    }
+            fn validate_holder_commitment(
+                &self,
+                holder_tx: &HolderCommitmentTransaction,
+                preimages: Vec<PaymentPreimage>,
+            ) -> Result<(), ()>;
 
-    fn pubkeys(&self) -> &ChannelPublicKeys {
-        self.inner.pubkeys()
-    }
+            fn pubkeys(&self) -> &ChannelPublicKeys;
 
-    fn channel_keys_id(&self) -> [u8; 32] {
-        self.inner.channel_keys_id()
-    }
+            fn channel_keys_id(&self) -> [u8; 32];
 
-    fn sign_counterparty_commitment(
-        &self,
-        commitment_tx: &CommitmentTransaction,
-        preimages: Vec<PaymentPreimage>,
-        secp_ctx: &Secp256k1<secp256k1::All>,
-    ) -> Result<(Signature, Vec<Signature>), ()> {
-        self.inner.sign_counterparty_commitment(commitment_tx, preimages, secp_ctx)
-    }
+            fn sign_counterparty_commitment(
+                &self,
+                commitment_tx: &CommitmentTransaction,
+                preimages: Vec<PaymentPreimage>,
+                secp_ctx: &Secp256k1<secp256k1::All>,
+            ) -> Result<(Signature, Vec<Signature>), ()>;
 
-    fn validate_counterparty_revocation(&self, idx: u64, secret: &SecretKey) -> Result<(), ()> {
-        self.inner.validate_counterparty_revocation(idx, secret)
-    }
+            fn validate_counterparty_revocation(
+                &self, idx: u64, secret: &SecretKey) -> Result<(), ()>;
 
-    fn sign_holder_commitment_and_htlcs(
-        &self,
-        commitment_tx: &HolderCommitmentTransaction,
-        secp_ctx: &Secp256k1<secp256k1::All>,
-    ) -> Result<(Signature, Vec<Signature>), ()> {
-        self.inner.sign_holder_commitment_and_htlcs(commitment_tx, secp_ctx)
-    }
+            fn sign_holder_commitment_and_htlcs(
+                &self,
+                commitment_tx: &HolderCommitmentTransaction,
+                secp_ctx: &Secp256k1<secp256k1::All>,
+            ) -> Result<(Signature, Vec<Signature>), ()>;
 
-    fn unsafe_sign_holder_commitment_and_htlcs(
-        &self,
-        commitment_tx: &HolderCommitmentTransaction,
-        secp_ctx: &Secp256k1<secp256k1::All>,
-    ) -> Result<(Signature, Vec<Signature>), ()> {
-        self.inner.unsafe_sign_holder_commitment_and_htlcs(commitment_tx, secp_ctx)
-    }
+            fn unsafe_sign_holder_commitment_and_htlcs(
+                &self,
+                commitment_tx: &HolderCommitmentTransaction,
+                secp_ctx: &Secp256k1<secp256k1::All>,
+            ) -> Result<(Signature, Vec<Signature>), ()>;
 
-    fn sign_justice_revoked_output(
-        &self,
-        justice_tx: &Transaction,
-        input: usize,
-        amount: u64,
-        per_commitment_key: &SecretKey,
-        secp_ctx: &Secp256k1<secp256k1::All>,
-    ) -> Result<Signature, ()> {
-        self.inner.sign_justice_revoked_output(
-            justice_tx,
-            input,
-            amount,
-            per_commitment_key,
-            secp_ctx,
-        )
-    }
+            fn sign_justice_revoked_output(
+                &self,
+                justice_tx: &Transaction,
+                input: usize,
+                amount: u64,
+                per_commitment_key: &SecretKey,
+                secp_ctx: &Secp256k1<secp256k1::All>,
+            ) -> Result<Signature, ()>;
 
-    fn sign_justice_revoked_htlc(
-        &self,
-        justice_tx: &Transaction,
-        input: usize,
-        amount: u64,
-        per_commitment_key: &SecretKey,
-        htlc: &HTLCOutputInCommitment,
-        secp_ctx: &Secp256k1<secp256k1::All>,
-    ) -> Result<Signature, ()> {
-        self.inner.sign_justice_revoked_htlc(
-            justice_tx,
-            input,
-            amount,
-            per_commitment_key,
-            htlc,
-            secp_ctx,
-        )
-    }
+            fn sign_justice_revoked_htlc(
+                &self,
+                justice_tx: &Transaction,
+                input: usize,
+                amount: u64,
+                per_commitment_key: &SecretKey,
+                htlc: &HTLCOutputInCommitment,
+                secp_ctx: &Secp256k1<secp256k1::All>,
+            ) -> Result<Signature, ()>;
 
-    fn sign_counterparty_htlc_transaction(
-        &self,
-        htlc_tx: &Transaction,
-        input: usize,
-        amount: u64,
-        per_commitment_point: &PublicKey,
-        htlc: &HTLCOutputInCommitment,
-        secp_ctx: &Secp256k1<secp256k1::All>,
-    ) -> Result<Signature, ()> {
-        self.inner.sign_counterparty_htlc_transaction(
-            htlc_tx,
-            input,
-            amount,
-            per_commitment_point,
-            htlc,
-            secp_ctx,
-        )
-    }
+            fn sign_counterparty_htlc_transaction(
+                &self,
+                htlc_tx: &Transaction,
+                input: usize,
+                amount: u64,
+                per_commitment_point: &PublicKey,
+                htlc: &HTLCOutputInCommitment,
+                secp_ctx: &Secp256k1<secp256k1::All>,
+            ) -> Result<Signature, ()>;
 
-    fn sign_closing_transaction(
-        &self,
-        closing_tx: &ClosingTransaction,
-        secp_ctx: &Secp256k1<secp256k1::All>,
-    ) -> Result<Signature, ()> {
-        self.inner.sign_closing_transaction(closing_tx, secp_ctx)
-    }
+            fn sign_closing_transaction(
+                &self,
+                closing_tx: &ClosingTransaction,
+                secp_ctx: &Secp256k1<secp256k1::All>,
+            ) -> Result<Signature, ()>;
 
-    fn sign_channel_announcement(
-        &self,
-        msg: &UnsignedChannelAnnouncement,
-        secp_ctx: &Secp256k1<secp256k1::All>,
-    ) -> Result<(Signature, Signature), ()> {
-        self.inner.sign_channel_announcement(msg, secp_ctx)
-    }
+            fn sign_channel_announcement(
+                &self,
+                msg: &UnsignedChannelAnnouncement,
+                secp_ctx: &Secp256k1<secp256k1::All>,
+            ) -> Result<(Signature, Signature), ()>;
 
-    fn ready_channel(&mut self, channel_parameters: &ChannelTransactionParameters) {
-        self.inner.ready_channel(channel_parameters)
+            fn ready_channel(&mut self, channel_parameters: &ChannelTransactionParameters);
+        }
     }
 }
 
@@ -244,41 +201,30 @@ impl DynKeysInterface {
 impl KeysInterface for DynKeysInterface {
     type Signer = DynSigner;
 
-    fn get_node_secret(&self, recipient: Recipient) -> Result<SecretKey, ()> {
-        self.inner.get_node_secret(recipient)
-    }
+    delegate! {
+        to self.inner {
+            fn get_node_secret(&self, recipient: Recipient) -> Result<SecretKey, ()>;
 
-    fn get_destination_script(&self) -> Script {
-        self.inner.get_destination_script()
-    }
+            fn get_destination_script(&self) -> Script;
 
-    fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {
-        self.inner.get_shutdown_scriptpubkey()
-    }
+            fn get_shutdown_scriptpubkey(&self) -> ShutdownScript;
 
-    fn get_channel_signer(&self, inbound: bool, channel_value_satoshis: u64) -> Self::Signer {
-        self.inner.get_channel_signer(inbound, channel_value_satoshis)
-    }
+            fn get_channel_signer(
+                &self, inbound: bool, channel_value_satoshis: u64) -> Self::Signer;
 
-    fn get_secure_random_bytes(&self) -> [u8; 32] {
-        self.inner.get_secure_random_bytes()
-    }
+            fn get_secure_random_bytes(&self) -> [u8; 32];
 
-    fn read_chan_signer(&self, reader: &[u8]) -> Result<Self::Signer, DecodeError> {
-        self.inner.read_chan_signer(reader)
-    }
+            fn read_chan_signer(&self, reader: &[u8]) -> Result<Self::Signer, DecodeError>;
 
-    fn sign_invoice(
-        &self,
-        hrp_bytes: &[u8],
-        invoice_data: &[u5],
-        recipient: Recipient,
-    ) -> Result<RecoverableSignature, ()> {
-        self.inner.sign_invoice(hrp_bytes, invoice_data, recipient)
-    }
+            fn sign_invoice(
+                &self,
+                hrp_bytes: &[u8],
+                invoice_data: &[u5],
+                recipient: Recipient,
+            ) -> Result<RecoverableSignature, ()>;
 
-    fn get_inbound_payment_key_material(&self) -> KeyMaterial {
-        self.inner.get_inbound_payment_key_material()
+            fn get_inbound_payment_key_material(&self) -> KeyMaterial;
+        }
     }
 }
 
@@ -301,28 +247,20 @@ pub trait SpendableKeysInterface: KeysInterface + Send + Sync {
 }
 
 impl SpendableKeysInterface for DynKeysInterface {
-    fn spend_spendable_outputs(
-        &self,
-        descriptors: &[&SpendableOutputDescriptor],
-        outputs: Vec<TxOut>,
-        change_destination_script: Script,
-        feerate_sat_per_1000_weight: u32,
-        secp_ctx: &Secp256k1<secp256k1::All>,
-    ) -> anyhow::Result<Transaction> {
-        self.inner.spend_spendable_outputs(
-            descriptors,
-            outputs,
-            change_destination_script,
-            feerate_sat_per_1000_weight,
-            secp_ctx,
-        )
-    }
+    delegate! {
+        to self.inner {
+            fn spend_spendable_outputs(
+                &self,
+                descriptors: &[&SpendableOutputDescriptor],
+                outputs: Vec<TxOut>,
+                change_destination_script: Script,
+                feerate_sat_per_1000_weight: u32,
+                secp_ctx: &Secp256k1<secp256k1::All>,
+            ) -> anyhow::Result<Transaction>;
 
-    fn get_sweep_address(&self) -> Address {
-        self.inner.get_sweep_address()
-    }
+            fn get_sweep_address(&self) -> Address;
 
-    fn get_node_id(&self) -> PublicKey {
-        self.inner.get_node_id()
+            fn get_node_id(&self) -> PublicKey;
+        }
     }
 }
