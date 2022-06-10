@@ -66,7 +66,7 @@ test-log = "0.2.8"
 #git = "https://github.com/lightningdevkit/rust-lightning.git"
 #rev = "08ab6581f1c6254a7765340c5c7a553db58d3a89"
 #path = "../../rust-lightning/lightning"
-version = "0.0.107"
+version = "0.0.108"
 default-features = false
 features = ["grind_signatures"]
 
@@ -74,7 +74,7 @@ features = ["grind_signatures"]
 #path = "../../rust-lightning/lightning-invoice"
 #git = "https://github.com/lightningdevkit/rust-lightning.git"
 #rev = "08ab6581f1c6254a7765340c5c7a553db58d3a89"
-version = "0.15.0"
+version = "0.16.0"
 default-features = false
 
 [dependencies.bitcoin]
