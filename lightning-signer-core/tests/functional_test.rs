@@ -48,6 +48,7 @@ use lightning_signer::policy::simple_validator::{make_simple_policy, SimplePolic
 use lightning_signer::{
     check_closed_event,
     check_added_monitors, check_closed_broadcast, check_spends, expect_payment_failed,
+    expect_payment_claimed,
     expect_payment_forwarded,
     expect_pending_htlcs_forwardable_from_events,
     expect_pending_htlcs_forwardable_ignore, get_htlc_update_msgs, get_local_commitment_txn,
@@ -96,14 +97,14 @@ fn create_node_cfg<'a>(signer: &Arc<MultiSigner>, chanmon_cfgs: &'a Vec<TestChan
     let chain_monitor = TestChainMonitor::new(
         Some(&chanmon_cfgs[idx].chain_source),
         &chanmon_cfgs[idx].tx_broadcaster,
-        &chanmon_cfgs[idx].logger,
+        Arc::clone(&chanmon_cfgs[idx].logger),
         &chanmon_cfgs[idx].fee_estimator,
         &chanmon_cfgs[idx].persister,
     );
 
     let cfg = NodeCfg {
         chain_source: &chanmon_cfgs[idx].chain_source,
-        logger: &chanmon_cfgs[idx].logger,
+        logger: Arc::clone(&chanmon_cfgs[idx].logger),
         tx_broadcaster: &chanmon_cfgs[idx].tx_broadcaster,
         fee_estimator: &chanmon_cfgs[idx].fee_estimator,
         chain_monitor,
@@ -476,7 +477,7 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
 
     // Steps (1) and (2):
     // Send an HTLC Alice --> Bob --> Carol, but Carol doesn't settle the HTLC back.
-    let (payment_preimage, _payment_hash, _payment_secret) = route_payment(&nodes[0], &vec!(&nodes[1], &nodes[2]), 3_000_000);
+    let (payment_preimage, payment_hash, _payment_secret) = route_payment(&nodes[0], &vec!(&nodes[1], &nodes[2]), 3_000_000);
 
     // Check that Alice's commitment transaction now contains an output for this HTLC.
     let alice_txn = get_local_commitment_txn!(nodes[0], chan_ab.2);
@@ -517,8 +518,9 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
     // Step (5):
     // Carol then claims the funds and sends an update_fulfill message to Bob, and they go through the
     // process of removing the HTLC from their commitment transactions.
-    assert!(nodes[2].node.claim_funds(payment_preimage));
+    nodes[2].node.claim_funds(payment_preimage);
     check_added_monitors!(nodes[2], 1);
+    expect_payment_claimed!(nodes[2], payment_hash, 3_000_000);
     let carol_updates = get_htlc_update_msgs!(nodes[2], nodes[1].node.get_our_node_id());
     assert!(carol_updates.update_add_htlcs.is_empty());
     assert!(carol_updates.update_fail_htlcs.is_empty());

@@ -156,7 +156,7 @@ pub struct TestChainMonitor<'a> {
         &'a test_utils::TestChainSource,
         &'a chaininterface::BroadcasterInterface,
         &'a test_utils::TestFeeEstimator,
-        &'a test_utils::TestLogger,
+        Arc<test_utils::TestLogger>,
         &'a chainmonitor::Persist<LoopbackChannelSigner>,
     >,
     pub update_ret: Mutex<Option<Result<(), chain::ChannelMonitorUpdateErr>>>,
@@ -168,7 +168,7 @@ impl<'a> TestChainMonitor<'a> {
     pub fn new(
         chain_source: Option<&'a test_utils::TestChainSource>,
         broadcaster: &'a chaininterface::BroadcasterInterface,
-        logger: &'a test_utils::TestLogger,
+        logger: Arc<test_utils::TestLogger>,
         fee_estimator: &'a test_utils::TestFeeEstimator,
         persister: &'a chainmonitor::Persist<LoopbackChannelSigner>,
     ) -> Self {
