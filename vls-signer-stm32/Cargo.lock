@@ -103,19 +103,6 @@ checksum = "349f9b6a179ed607305526ca489b34ad0a41aed5f7980fa90eb03160b69598fb"
 
 [[package]]
 name = "bitcoin"
-version = "0.27.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a41df6ad9642c5c15ae312dd3d074de38fd3eb7cc87ad4ce10f90292a83fe4d"
-dependencies = [
- "bech32",
- "bitcoin_hashes",
- "core2",
- "hashbrown 0.8.2",
- "secp256k1 0.20.3",
-]
-
-[[package]]
-name = "bitcoin"
 version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05bba324e6baf655b882df672453dbbc527bc938cadd27750ae510aaccc3a66a"
@@ -124,7 +111,7 @@ dependencies = [
  "bitcoin_hashes",
  "core2",
  "hashbrown 0.8.2",
- "secp256k1 0.22.1",
+ "secp256k1",
 ]
 
 [[package]]
@@ -432,7 +419,7 @@ version = "0.0.108"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d885bf509066af86ae85354c8959028ad6192c22a2657ef8271e94029d30f9d0"
 dependencies = [
- "bitcoin 0.28.1",
+ "bitcoin",
  "core2",
  "hashbrown 0.11.2",
 ]
@@ -449,7 +436,7 @@ dependencies = [
  "hashbrown 0.11.2",
  "lightning",
  "num-traits",
- "secp256k1 0.22.1",
+ "secp256k1",
 ]
 
 [[package]]
@@ -457,7 +444,7 @@ name = "lightning-signer-core"
 version = "0.1.0-5"
 dependencies = [
  "anyhow",
- "bitcoin 0.28.1",
+ "bitcoin",
  "core2",
  "hashbrown 0.9.1",
  "itertools",
@@ -568,13 +555,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "psbt-fixup"
-version = "0.1.0"
-dependencies = [
- "bitcoin 0.27.1",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -622,29 +602,11 @@ checksum = "355c411b00ad0634aa29824b37d0755e931a349b3230ffdef846c140eeed9c09"
 
 [[package]]
 name = "secp256k1"
-version = "0.20.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97d03ceae636d0fed5bae6a7f4f664354c5f4fcedf6eef053fef17e49f837d0a"
-dependencies = [
- "secp256k1-sys 0.4.2",
-]
-
-[[package]]
-name = "secp256k1"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26947345339603ae8395f68e2f3d85a6b0a8ddfe6315818e80b8504415099db0"
 dependencies = [
- "secp256k1-sys 0.5.2",
-]
-
-[[package]]
-name = "secp256k1-sys"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "957da2573cde917463ece3570eab4a0b3f19de6f1646cde62e6fd3868f566036"
-dependencies = [
- "cc",
+ "secp256k1-sys",
 ]
 
 [[package]]
@@ -851,7 +813,6 @@ dependencies = [
  "bit-vec",
  "lightning-signer-core",
  "log",
- "psbt-fixup",
  "serde",
  "vls-protocol",
 ]

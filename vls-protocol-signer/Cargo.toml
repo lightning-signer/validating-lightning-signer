@@ -6,7 +6,7 @@ edition = "2018"
 
 [features]
 default = ["std"]
-std = ["vls-protocol/std", "lightning-signer-core/std", "psbt-fixup/std"]
+std = ["vls-protocol/std", "lightning-signer-core/std"]
 secp-lowmemory = ["lightning-signer-core/secp-lowmemory"]
 
 [dependencies]
@@ -14,7 +14,6 @@ vls-protocol = { path = "../vls-protocol" }
 log = { version = "0.4", default_features = false }
 serde = { version = "1.0", default_features = false }
 bit-vec = { version = "0.6", default_features = false }
-psbt-fixup = { path = "../psbt-fixup" }
 
 [dependencies.lightning-signer-core]
 path = "../lightning-signer-core"
