@@ -571,6 +571,7 @@ impl Node {
         allowlist: Vec<Allowable>,
         validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Node {
+        info!("creating node on {}", node_config.network);
         let genesis = genesis_block(node_config.network);
 
         // TODO supply current tip

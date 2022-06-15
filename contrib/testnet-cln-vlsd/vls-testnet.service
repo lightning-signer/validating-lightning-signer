@@ -1,0 +1,17 @@
+[Unit]
+Description=Testnet Validating Lightning Signer
+
+[Service]
+WorkingDirectory=/home/vls
+Environment=ALLOWLIST=/home/vls/ALLOWLIST
+ExecStart=/usr/local/bin/vlsd2 --network=testnet --connect=http://127.0.0.1:17701
+User=vls
+Group=vls
+Type=simple
+KillMode=process
+TimeoutSec=180
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
