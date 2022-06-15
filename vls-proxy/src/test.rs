@@ -1,7 +1,7 @@
 use std::os::unix::io::RawFd;
 use std::sync::Arc;
 
-use lightning_signer::bitcoin::secp256k1;
+use lightning_signer::bitcoin::{secp256k1, Network};
 use lightning_signer::persist::DummyPersister;
 use lightning_signer::persist::Persist;
 use log::info;
@@ -56,7 +56,7 @@ pub(crate) fn run_test() {
             let client = UnixClient::new(conn);
             let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
             let seed = Some([0; 32]);
-            let handler = RootHandler::new(client.id(), seed, persister, vec![]);
+            let handler = RootHandler::new(Network::Regtest, client.id(), seed, persister, vec![]);
             signer_loop(client, handler)
         }
         Err(_) => {}

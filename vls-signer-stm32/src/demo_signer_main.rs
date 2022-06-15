@@ -15,6 +15,7 @@ use cortex_m_rt::entry;
 use log::{debug, info, trace};
 
 use device::heap_bytes_used;
+use lightning_signer::bitcoin::Network;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::Arc;
 use vls_protocol::model::PubKey;
@@ -68,7 +69,8 @@ fn main() -> ! {
     info!("init {:?}", init);
     let allowlist = init.dev_allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
     let seed_opt = init.dev_seed.as_ref().map(|s| s.0);
-    let root_handler = RootHandler::new(0, seed_opt, persister, allowlist);
+    let network = Network::Regtest; // TODO - get from config/args/env somehow
+    let root_handler = RootHandler::new(network, 0, seed_opt, persister, allowlist);
     let init_reply = root_handler.handle(Message::HsmdInit2(init)).expect("handle init");
     write_serial_response_header(&mut serial, sequence).expect("write init header");
     msgs::write_vec(&mut serial, init_reply.as_vec()).expect("write init reply");

@@ -7,6 +7,7 @@ use log::{error, info};
 use url::Url;
 
 use connection::UnixConnection;
+use lightning_signer::bitcoin::Network;
 use lightning_signer::persist::Persist;
 use lightning_signer::Arc;
 use vls_frontend::Frontend;
@@ -81,8 +82,14 @@ pub fn main() {
         let client = UnixClient::new(conn);
         let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new("remote_hsmd_vls.kv"));
         let allowlist = read_allowlist();
-        let handler =
-            RootHandler::new(client.id(), read_integration_test_seed(), persister, allowlist);
+        let network = Network::Regtest; // TODO - use config/args/env
+        let handler = RootHandler::new(
+            network,
+            client.id(),
+            read_integration_test_seed(),
+            persister,
+            allowlist,
+        );
 
         let frontend = Frontend::new(
             Arc::new(SingleFront { node: Arc::clone(&handler.node) }),

@@ -37,6 +37,7 @@ pub async fn start_signer_localhost(port: u16) {
 /// Signer binary entry point
 #[tokio::main(worker_threads = 2)]
 pub async fn start_signer(datadir: &str, uri: Uri, network: Network) {
+    info!("signer starting on {} connecting to {}", network, uri);
     connect(datadir, uri, network).await;
     info!("signer stopping");
 }
@@ -51,7 +52,8 @@ async fn connect(datadir: &str, uri: Uri, network: Network) {
     let response_stream = ReceiverStream::new(receiver);
     let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new(&data_path));
     let allowlist = read_allowlist();
-    let root_handler = RootHandler::new(0, read_integration_test_seed(), persister, allowlist);
+    let root_handler =
+        RootHandler::new(network, 0, read_integration_test_seed(), persister, allowlist);
 
     let mut request_stream = client.signer_stream(response_stream).await.unwrap().into_inner();
 

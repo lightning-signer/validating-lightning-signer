@@ -104,12 +104,12 @@ pub struct RootHandler {
 
 impl RootHandler {
     pub fn new(
+        network: Network,
         id: u64,
         seed_opt: Option<[u8; 32]>,
         persister: Arc<dyn Persist>,
         allowlist: Vec<String>,
     ) -> Self {
-        let network = Network::Regtest;
         let config = NodeConfig { network, key_derivation_style: KeyDerivationStyle::Native };
 
         let seed = seed_opt.unwrap_or_else(|| {

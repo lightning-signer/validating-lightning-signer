@@ -903,7 +903,7 @@ impl Node {
             state,
         ));
         assert_eq!(&node.get_id(), node_id);
-        info!("Restore node {}", node_id);
+        info!("Restore node {} on {}", node_id, config.network);
         for (channel_id0, channel_entry) in persister.get_node_channels(node_id) {
             info!("  Restore channel {}", channel_id0);
             node.restore_channel(
