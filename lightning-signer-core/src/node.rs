@@ -1430,6 +1430,22 @@ impl Node {
         Ok(())
     }
 
+    /// Replace the nodes allowlist with the provided allowlist.
+    pub fn set_allowlist(&self, addlist: &Vec<String>) -> Result<(), Status> {
+        let allowables = addlist
+            .iter()
+            .map(|addrstr| Allowable::from_str(addrstr, self.network()))
+            .collect::<Result<Vec<Allowable>, String>>()
+            .map_err(|s| invalid_argument(format!("could not parse {}", s)))?;
+        let mut alset = self.allowlist.lock().unwrap();
+        alset.clear();
+        for a in allowables {
+            alset.insert(a);
+        }
+        self.update_allowlist(&alset)?;
+        Ok(())
+    }
+
     fn update_allowlist(&self, alset: &MutexGuard<UnorderedSet<Allowable>>) -> Result<(), Status> {
         let wlvec = (*alset).iter().map(|a| a.to_string(self.network())).collect();
         self.persister
@@ -2297,6 +2313,13 @@ mod tests {
         assert!(vecs_match(
             node.allowlist().expect("allowlist").clone(),
             vec![prefix(&adds0[1]), prefix(&adds0[2])]
+        ));
+
+        // set should replace the elements
+        assert_status_ok!(node.set_allowlist(&removes0));
+        assert!(vecs_match(
+            node.allowlist().expect("allowlist").clone(),
+            removes0.iter().map(|e| prefix(e)).collect()
         ));
 
         // can't add bogus addresses
