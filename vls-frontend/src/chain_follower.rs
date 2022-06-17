@@ -80,6 +80,13 @@ impl ChainFollower {
     }
 
     pub async fn start(cf_arc: Arc<ChainFollower>) {
+        use std::env;
+        let enable = env::var("VLS_CHAINFOLLOWER_ENABLE")
+            .map(|s| s.parse().expect("VLS_CHAINFOLLOWER_ENABLE parse"))
+            .unwrap_or(0);
+        if enable != 1 {
+            return;
+        }
         let cf_arc_clone = Arc::clone(&cf_arc);
         task::spawn(async move {
             cf_arc_clone.run().await;

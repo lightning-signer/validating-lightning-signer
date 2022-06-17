@@ -571,6 +571,7 @@ impl Node {
         allowlist: Vec<Allowable>,
         validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Node {
+        info!("creating node on {}", node_config.network);
         let genesis = genesis_block(node_config.network);
 
         // TODO supply current tip
@@ -902,7 +903,7 @@ impl Node {
             state,
         ));
         assert_eq!(&node.get_id(), node_id);
-        info!("Restore node {}", node_id);
+        info!("Restore node {} on {}", node_id, config.network);
         for (channel_id0, channel_entry) in persister.get_node_channels(node_id) {
             info!("  Restore channel {}", channel_id0);
             node.restore_channel(
@@ -1422,6 +1423,22 @@ impl Node {
             .collect::<Result<Vec<Allowable>, String>>()
             .map_err(|s| invalid_argument(format!("could not parse {}", s)))?;
         let mut alset = self.allowlist.lock().unwrap();
+        for a in allowables {
+            alset.insert(a);
+        }
+        self.update_allowlist(&alset)?;
+        Ok(())
+    }
+
+    /// Replace the nodes allowlist with the provided allowlist.
+    pub fn set_allowlist(&self, addlist: &Vec<String>) -> Result<(), Status> {
+        let allowables = addlist
+            .iter()
+            .map(|addrstr| Allowable::from_str(addrstr, self.network()))
+            .collect::<Result<Vec<Allowable>, String>>()
+            .map_err(|s| invalid_argument(format!("could not parse {}", s)))?;
+        let mut alset = self.allowlist.lock().unwrap();
+        alset.clear();
         for a in allowables {
             alset.insert(a);
         }
@@ -2296,6 +2313,13 @@ mod tests {
         assert!(vecs_match(
             node.allowlist().expect("allowlist").clone(),
             vec![prefix(&adds0[1]), prefix(&adds0[2])]
+        ));
+
+        // set should replace the elements
+        assert_status_ok!(node.set_allowlist(&removes0));
+        assert!(vecs_match(
+            node.allowlist().expect("allowlist").clone(),
+            removes0.iter().map(|e| prefix(e)).collect()
         ));
 
         // can't add bogus addresses

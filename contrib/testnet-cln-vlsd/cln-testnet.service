@@ -1,0 +1,19 @@
+[Unit]
+Description=Testnet Core Lightning Daemon
+Requires=bitcoind.service
+After=bitcoind.service
+
+[Service]
+EnvironmentFile=/home/cln/.lightning/testnet-env
+ExecStart=/usr/local/bin/lightningd --conf=/home/cln/.lightning/testnet-config --network=testnet --log-file=/home/cln/.lightning/testnet/lightning.log
+PIDFile=/home/cln/.lightning/lightningd-testnet.pid
+User=cln
+Group=cln
+Type=simple
+KillMode=process
+TimeoutSec=180
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
