@@ -53,7 +53,7 @@ backtrace = { version = "0.3", optional = true }
 tonic = { version = "0.6.2", optional = true, default-features = false }
 
 hashbrown = "0.9" # match hashbrown dependency version via tonic/h2/indexmap
-itertools = { version = "0.9", default-features = false }
+itertools = { version = "0.10", default-features = false }
 
 [dev-dependencies]
 tempfile = "3.2.0"
