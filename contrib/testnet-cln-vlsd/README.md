@@ -1,7 +1,7 @@
 
 #### Setup
 
-1. Follow the [First Time Setup Instructions](../../SETUP.md).
+1. Follow the [First Time Setup Instructions](https://gitlab.com/lightning-signer/vls-hsmd/-/blob/main/SETUP.md).
 
 Setup bitcoind service
 
