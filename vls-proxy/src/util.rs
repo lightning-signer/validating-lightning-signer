@@ -1,3 +1,4 @@
+#[cfg(feature = "main")]
 use clap::{App, Arg, ArgMatches};
 use std::convert::TryInto;
 use std::fs::File;
@@ -27,6 +28,7 @@ pub fn read_integration_test_seed() -> Option<[u8; 32]> {
     }
 }
 
+#[cfg(feature = "main")]
 pub fn setup_logging(who: &str, level_arg: &str) {
     use fern::colors::{Color, ColoredLevelConfig};
     let colors = ColoredLevelConfig::new().info(Color::Green).error(Color::Red).warn(Color::Yellow);
@@ -52,6 +54,7 @@ pub fn setup_logging(who: &str, level_arg: &str) {
         .expect("log config");
 }
 
+#[cfg(feature = "main")]
 pub fn add_hsmd_args(app: App) -> App {
     app.arg(
         Arg::new("dev-disconnect")
@@ -63,6 +66,7 @@ pub fn add_hsmd_args(app: App) -> App {
     .arg(Arg::from("--version show a dummy version"))
 }
 
+#[cfg(feature = "main")]
 pub fn handle_hsmd_version(matches: &ArgMatches) -> bool {
     if matches.is_present("version") {
         // Pretend to be the right version, given to us by an env var
