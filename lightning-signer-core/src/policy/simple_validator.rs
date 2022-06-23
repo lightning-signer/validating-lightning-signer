@@ -1512,7 +1512,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_htlcs: 1000,
             max_htlc_value_sat: 16_777_216,
             use_chain_state: false,
-            min_feerate_per_kw: 1000,
+            min_feerate_per_kw: 253, // mainnet observed
             max_feerate_per_kw: 1000 * 1000,
             min_fee: 100,
             max_fee: 1000,
