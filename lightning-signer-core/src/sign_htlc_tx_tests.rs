@@ -626,19 +626,19 @@ mod tests {
     // policy-htlc-fee-range
     generate_failed_precondition_error_with_mutated_tx!(
         low_feerate,
-        |tms| tms.tx.output[0].value = 999_800, // htlc_amount_sat is 1_000_000
+        |tms| tms.tx.output[0].value = 999_885, // htlc_amount_sat is 1_000_000
         |ectx: ErrMsgContext| {
             if ectx.is_offered {
                 format!(
                     "policy failure: validate_htlc_tx: \
-                     feerate_per_kw of {} is smaller than the minimum of 500",
-                    if ectx.opt_anchors { 301 } else { 302 }
+                     feerate_per_kw of {} is smaller than the minimum of 253",
+                    if ectx.opt_anchors { 173 } else { 174 }
                 )
             } else {
                 format!(
                     "policy failure: validate_htlc_tx: \
-                     feerate_per_kw of {} is smaller than the minimum of 500",
-                    if ectx.opt_anchors { 284 } else { 285 }
+                     feerate_per_kw of {} is smaller than the minimum of 253",
+                    if ectx.opt_anchors { 163 } else { 164 }
                 )
             }
         }
