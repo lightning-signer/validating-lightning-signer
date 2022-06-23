@@ -384,6 +384,7 @@ pub struct EnforcementStateDef {
     #[serde_as(as = "Option<CommitmentInfo2Def>")]
     pub previous_counterparty_commit_info: Option<CommitmentInfo2>,
     pub mutual_close_signed: bool,
+    pub holder_commitment_signed: bool,
     #[serde(default)] // TODO remove default once everyone upgrades
     pub initial_holder_value: u64,
 }

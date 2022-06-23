@@ -256,6 +256,8 @@ mod tests {
                     })
                     .collect::<Vec<Script>>();
 
+                assert_eq!(chan.enforcement_state.holder_commitment_signed, true);
+
                 Ok((
                     sig,
                     htlc_sigs,

@@ -242,6 +242,7 @@ pub struct EnforcementState {
     pub current_counterparty_commit_info: Option<CommitmentInfo2>,
     pub previous_counterparty_commit_info: Option<CommitmentInfo2>,
     pub mutual_close_signed: bool,
+    pub holder_commitment_signed: bool,
     pub initial_holder_value: u64,
 }
 
@@ -261,6 +262,7 @@ impl EnforcementState {
             current_counterparty_commit_info: None,
             previous_counterparty_commit_info: None,
             mutual_close_signed: false,
+            holder_commitment_signed: false,
             initial_holder_value,
         }
     }

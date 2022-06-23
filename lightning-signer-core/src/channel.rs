@@ -878,7 +878,7 @@ impl Channel {
 
     /// Sign a holder commitment when force-closing
     pub fn sign_holder_commitment_tx_phase2(
-        &self,
+        &mut self,
         commitment_number: u64,
     ) -> Result<(Signature, Vec<Signature>), Status> {
         let info2 = self.enforcement_state.get_current_holder_commitment_info(commitment_number)?;
@@ -920,6 +920,7 @@ impl Channel {
             .sign_holder_commitment_and_htlcs(&recomposed_holder_tx, &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
 
+        self.enforcement_state.holder_commitment_signed = true;
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok((sig, htlc_sigs))
@@ -932,7 +933,7 @@ impl Channel {
     /// and doesn't require re-validation of the holder tx.
     // TODO anchors support once upstream supports it
     pub fn sign_holder_commitment_tx_phase2_redundant(
-        &self,
+        &mut self,
         commitment_number: u64,
         feerate_per_kw: u32,
         to_holder_value_sat: u64,
@@ -993,6 +994,7 @@ impl Channel {
             .sign_holder_commitment_and_htlcs(&holder_commitment_tx, &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
 
+        self.enforcement_state.holder_commitment_signed = true;
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok((sig, htlc_sigs))
