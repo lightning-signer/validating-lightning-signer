@@ -723,6 +723,9 @@ impl Channel {
             EcdsaSighashType::All
         };
 
+        let build_feerate =
+            if self.setup.option_anchors_zero_fee_htlc() { 0 } else { feerate_per_kw };
+
         for ndx in 0..recomposed_tx.htlcs().len() {
             let htlc = &recomposed_tx.htlcs()[ndx];
 
@@ -731,7 +734,7 @@ impl Channel {
 
             let recomposed_htlc_tx = build_htlc_transaction(
                 &commitment_txid,
-                feerate_per_kw,
+                build_feerate,
                 to_self_delay,
                 htlc,
                 self.setup.option_anchors(),
@@ -895,11 +898,13 @@ impl Channel {
             Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
+        let build_feerate =
+            if self.setup.option_anchors_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };
         let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
             &txkeys,
-            info2.feerate_per_kw,
+            build_feerate,
             info2.to_broadcaster_value_sat,
             info2.to_countersigner_value_sat,
             htlcs,
@@ -978,11 +983,13 @@ impl Channel {
         let mut htlc_dummy_sigs = Vec::with_capacity(htlcs.len());
         htlc_dummy_sigs.resize(htlcs.len(), Self::dummy_sig());
 
+        let build_feerate =
+            if self.setup.option_anchors_zero_fee_htlc() { 0 } else { feerate_per_kw };
         let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
         let commitment_tx = self.make_holder_commitment_tx(
             commitment_number,
             &txkeys,
-            feerate_per_kw,
+            build_feerate,
             to_holder_value_sat,
             to_counterparty_value_sat,
             htlcs,

@@ -975,11 +975,14 @@ pub fn counterparty_sign_holder_commitment(
             )
             .expect("counterparty_htlc_key");
 
+            let build_feerate =
+                if chan_ctx.setup.option_anchors_zero_fee_htlc() { 0 } else { tx.feerate_per_kw() };
+
             let mut htlc_sigs = Vec::with_capacity(tx.htlcs().len());
             for htlc in tx.htlcs() {
                 let htlc_tx = build_htlc_transaction(
                     &commitment_txid,
-                    tx.feerate_per_kw(),
+                    build_feerate,
                     chan_ctx.setup.counterparty_selected_contest_delay,
                     htlc,
                     chan_ctx.setup.option_anchors(),

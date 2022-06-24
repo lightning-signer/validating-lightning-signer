@@ -762,19 +762,16 @@ impl Validator for SimpleValidator {
         let commitment_txid = tx.input[0].previous_output.txid;
         let total_fee = htlc_amount_sat - tx.output[0].value;
 
-        // Derive the feerate_per_kw used to generate this
-        // transaction.  Compensate for the total_fee being rounded
-        // down when computed.
-        //
-        // NOTE - the feerate calculation will not be correct if
-        // option_anchors_zero_fee_htlc is in force, but it won't
-        // matter since the feerate won't be used in that case.
-        let weight = if offered {
-            htlc_timeout_tx_weight(setup.option_anchors())
+        let build_feerate = if setup.option_anchors_zero_fee_htlc() {
+            0
         } else {
-            htlc_success_tx_weight(setup.option_anchors())
+            let weight = if offered {
+                htlc_timeout_tx_weight(setup.option_anchors())
+            } else {
+                htlc_success_tx_weight(setup.option_anchors())
+            };
+            estimate_feerate_per_kw(total_fee, weight)
         };
-        let feerate_per_kw = estimate_feerate_per_kw(total_fee, weight);
 
         let htlc = HTLCOutputInCommitment {
             offered,
@@ -787,7 +784,7 @@ impl Validator for SimpleValidator {
         // Recompose the transaction.
         let recomposed_tx = build_htlc_transaction(
             &commitment_txid,
-            feerate_per_kw,
+            build_feerate,
             to_self_delay,
             &htlc,
             setup.option_anchors(),
@@ -848,12 +845,12 @@ impl Validator for SimpleValidator {
         // - policy-htlc-revocation-pubkey
         // - policy-htlc-delayed-pubkey
 
-        Ok((feerate_per_kw, htlc, recomposed_tx_sighash, sighash_type))
+        Ok((build_feerate, htlc, recomposed_tx_sighash, sighash_type))
     }
 
     fn validate_htlc_tx(
         &self,
-        _setup: &ChannelSetup,
+        setup: &ChannelSetup,
         _cstate: &ChainState,
         _is_counterparty: bool,
         htlc: &HTLCOutputInCommitment,
@@ -872,12 +869,14 @@ impl Validator for SimpleValidator {
         }
 
         // policy-htlc-fee-range
-        if feerate_per_kw < self.policy.min_feerate_per_kw {
-            return policy_err!(
-                "feerate_per_kw of {} is smaller than the minimum of {}",
-                feerate_per_kw,
-                self.policy.min_feerate_per_kw
-            );
+        if !setup.option_anchors_zero_fee_htlc() {
+            if feerate_per_kw < self.policy.min_feerate_per_kw {
+                return policy_err!(
+                    "feerate_per_kw of {} is smaller than the minimum of {}",
+                    feerate_per_kw,
+                    self.policy.min_feerate_per_kw
+                );
+            }
         }
         if feerate_per_kw > self.policy.max_feerate_per_kw {
             return policy_err!(

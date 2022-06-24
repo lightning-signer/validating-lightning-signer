@@ -61,9 +61,11 @@ mod tests {
             })
             .expect("point");
 
+        let build_feerate = if setup.option_anchors_zero_fee_htlc() { 0 } else { feerate_per_kw };
+
         let htlc_tx = build_htlc_transaction(
             &commitment_txid,
-            feerate_per_kw,
+            build_feerate,
             to_self_delay,
             &htlc,
             setup.option_anchors(),
@@ -178,9 +180,12 @@ mod tests {
                     transaction_output_index: Some(0),
                 };
 
+                let build_feerate =
+                    if setup.option_anchors_zero_fee_htlc() { 0 } else { feerate_per_kw };
+
                 let mut htlc_tx = build_htlc_transaction(
                     &commitment_txid,
-                    feerate_per_kw,
+                    build_feerate,
                     to_self_delay,
                     &htlc,
                     channel_parameters.opt_anchors.is_some(),
@@ -296,9 +301,12 @@ mod tests {
                     transaction_output_index: Some(0),
                 };
 
+                let build_feerate =
+                    if setup.option_anchors_zero_fee_htlc() { 0 } else { feerate_per_kw };
+
                 let mut htlc_tx = build_htlc_transaction(
                     &commitment_txid,
-                    feerate_per_kw,
+                    build_feerate,
                     to_self_delay,
                     &htlc,
                     channel_parameters.opt_anchors.is_some(),
