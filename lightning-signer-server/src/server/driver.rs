@@ -238,7 +238,7 @@ impl SignServer {
     ) -> Result<EcdsaSighashType, Status> {
         self.signer
             .with_ready_channel(&node_id, &channel_id, |chan| {
-                Ok(if chan.setup.option_anchor_outputs() {
+                Ok(if chan.setup.option_anchors() {
                     EcdsaSighashType::SinglePlusAnyoneCanPay
                 } else {
                     EcdsaSighashType::All

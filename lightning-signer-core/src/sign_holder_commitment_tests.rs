@@ -238,7 +238,7 @@ mod tests {
                             commit_tx_ctx.feerate_per_kw,
                             chan_ctx.setup.counterparty_selected_contest_delay,
                             &htlc,
-                            chan_ctx.setup.option_anchor_outputs(),
+                            chan_ctx.setup.option_anchors(),
                             &txkeys.broadcaster_delayed_payment_key,
                             &txkeys.revocation_key,
                         )
@@ -248,11 +248,7 @@ mod tests {
                 let htlc_redeemscripts = htlcs
                     .iter()
                     .map(|htlc| {
-                        get_htlc_redeemscript(
-                            &htlc,
-                            chan_ctx.setup.option_anchor_outputs(),
-                            &txkeys,
-                        )
+                        get_htlc_redeemscript(&htlc, chan_ctx.setup.option_anchors(), &txkeys)
                     })
                     .collect::<Vec<Script>>();
 

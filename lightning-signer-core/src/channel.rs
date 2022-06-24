@@ -164,7 +164,7 @@ impl ChannelSetup {
     }
 
     /// True if this channel uses anchors.
-    pub fn option_anchor_outputs(&self) -> bool {
+    pub fn option_anchors(&self) -> bool {
         self.commitment_type == CommitmentType::Anchors
             || self.commitment_type == CommitmentType::AnchorsZeroFeeHtlc
     }
@@ -531,7 +531,7 @@ impl Channel {
             info,
             obscured_commitment_transaction_number,
             self.setup.funding_outpoint,
-            self.setup.option_anchor_outputs(),
+            self.setup.option_anchors(),
             workaround_local_funding_pubkey,
             workaround_remote_funding_pubkey,
         ))
@@ -642,7 +642,7 @@ impl Channel {
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             to_counterparty_value_sat,
             to_holder_value_sat,
-            self.setup.option_anchor_outputs(),
+            self.setup.option_anchors(),
             self.keys.counterparty_pubkeys().funding_pubkey,
             self.keys.pubkeys().funding_pubkey,
             keys,
@@ -717,7 +717,7 @@ impl Channel {
         )
         .map_err(|err| internal_error(format!("derive_public_key failed: {}", err)))?;
 
-        let sig_hash_type = if self.setup.option_anchor_outputs() {
+        let sig_hash_type = if self.setup.option_anchors() {
             EcdsaSighashType::SinglePlusAnyoneCanPay
         } else {
             EcdsaSighashType::All
@@ -727,14 +727,14 @@ impl Channel {
             let htlc = &recomposed_tx.htlcs()[ndx];
 
             let htlc_redeemscript =
-                get_htlc_redeemscript(htlc, self.setup.option_anchor_outputs(), &txkeys);
+                get_htlc_redeemscript(htlc, self.setup.option_anchors(), &txkeys);
 
             let recomposed_htlc_tx = build_htlc_transaction(
                 &commitment_txid,
                 feerate_per_kw,
                 to_self_delay,
                 htlc,
-                self.setup.option_anchor_outputs(),
+                self.setup.option_anchors(),
                 &txkeys.broadcaster_delayed_payment_key,
                 &txkeys.revocation_key,
             );
@@ -1025,7 +1025,7 @@ impl Channel {
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             to_holder_value_sat,
             to_counterparty_value_sat,
-            self.setup.option_anchor_outputs(),
+            self.setup.option_anchors(),
             self.keys.pubkeys().funding_pubkey,
             self.keys.counterparty_pubkeys().funding_pubkey,
             keys.clone(),
@@ -1096,7 +1096,7 @@ impl Channel {
                 selected_contest_delay: self.setup.counterparty_selected_contest_delay,
             }),
             funding_outpoint: Some(funding_outpoint),
-            opt_anchors: if self.setup.option_anchor_outputs() { Some(()) } else { None },
+            opt_anchors: if self.setup.option_anchors() { Some(()) } else { None },
         };
         channel_parameters
     }

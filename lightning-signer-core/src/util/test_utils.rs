@@ -982,13 +982,13 @@ pub fn counterparty_sign_holder_commitment(
                     tx.feerate_per_kw(),
                     chan_ctx.setup.counterparty_selected_contest_delay,
                     htlc,
-                    chan_ctx.setup.option_anchor_outputs(),
+                    chan_ctx.setup.option_anchors(),
                     &txkeys.broadcaster_delayed_payment_key,
                     &txkeys.revocation_key,
                 );
                 let htlc_redeemscript =
-                    get_htlc_redeemscript(&htlc, chan_ctx.setup.option_anchor_outputs(), &keys);
-                let sig_hash_type = if chan_ctx.setup.option_anchor_outputs() {
+                    get_htlc_redeemscript(&htlc, chan_ctx.setup.option_anchors(), &keys);
+                let sig_hash_type = if chan_ctx.setup.option_anchors() {
                     EcdsaSighashType::SinglePlusAnyoneCanPay
                 } else {
                     EcdsaSighashType::All
