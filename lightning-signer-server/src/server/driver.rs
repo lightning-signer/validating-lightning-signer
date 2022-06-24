@@ -287,6 +287,10 @@ fn convert_commitment_type(proto_commitment_type: i32) -> channel::CommitmentTyp
         CommitmentType::StaticRemoteKey
     } else if proto_commitment_type == ready_channel_request::CommitmentType::Anchors as i32 {
         CommitmentType::Anchors
+    } else if proto_commitment_type
+        == ready_channel_request::CommitmentType::AnchorsZeroFeeHtlc as i32
+    {
+        CommitmentType::AnchorsZeroFeeHtlc
     } else {
         panic!("invalid commitment type")
     }

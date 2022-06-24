@@ -192,6 +192,7 @@ impl LoopbackChannelSigner {
     fn option_anchor_outputs(&self) -> bool {
         let setup = self.get_channel_setup().expect("not ready");
         setup.commitment_type == CommitmentType::Anchors
+            || setup.commitment_type == CommitmentType::AnchorsZeroFeeHtlc
     }
 }
 

@@ -767,6 +767,10 @@ impl Validator for SimpleValidator {
         // Derive the feerate_per_kw used to generate this
         // transaction.  Compensate for the total_fee being rounded
         // down when computed.
+        //
+        // NOTE - the feerate calculation will not be correct if
+        // option_anchors_zero_fee_htlc is in force, but it won't
+        // matter since the feerate won't be used in that case.
         let weight = if offered {
             htlc_timeout_tx_weight(setup.option_anchor_outputs())
         } else {
@@ -1431,9 +1435,14 @@ impl SimpleValidator {
 
         let mut htlc_value_sat: u64 = 0;
 
-        let offered_htlc_dust_limit = MIN_DUST_LIMIT_SATOSHIS
-            + (info.feerate_per_kw as u64 * htlc_timeout_tx_weight(setup.option_anchor_outputs())
-                / 1000);
+        let offered_htlc_dust_limit = if setup.option_anchors_zero_fee_htlc() {
+            0
+        } else {
+            MIN_DUST_LIMIT_SATOSHIS
+                + (info.feerate_per_kw as u64
+                    * htlc_timeout_tx_weight(setup.option_anchor_outputs())
+                    / 1000)
+        };
         for htlc in &info.offered_htlcs {
             // TODO - this check should be converted into two checks, one the first time
             // the HTLC is introduced and the other every time it is encountered.
@@ -1455,9 +1464,14 @@ impl SimpleValidator {
             }
         }
 
-        let received_htlc_dust_limit = MIN_DUST_LIMIT_SATOSHIS
-            + (info.feerate_per_kw as u64 * htlc_success_tx_weight(setup.option_anchor_outputs())
-                / 1000);
+        let received_htlc_dust_limit = if setup.option_anchors_zero_fee_htlc() {
+            0
+        } else {
+            MIN_DUST_LIMIT_SATOSHIS
+                + (info.feerate_per_kw as u64
+                    * htlc_success_tx_weight(setup.option_anchor_outputs())
+                    / 1000)
+        };
         for htlc in &info.received_htlcs {
             // TODO - this check should be converted into two checks, one the first time
             // the HTLC is introduced and the other every time it is encountered.

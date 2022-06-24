@@ -940,7 +940,10 @@ fn extract_commitment_type(channel_type: &Vec<u8>) -> CommitmentType {
     let features = BitVec::from_bytes(
         &channel_type.iter().rev().map(|bb| bb.reverse_bits()).collect::<Vec<u8>>(),
     );
-    if features.get(OPT_ANCHOR_OUTPUTS).unwrap_or_default() {
+    if features.get(OPT_ANCHORS_ZERO_FEE_HTLC_TX).unwrap_or_default() {
+        assert_eq!(features.get(OPT_STATIC_REMOTEKEY).unwrap_or_default(), true);
+        CommitmentType::AnchorsZeroFeeHtlc
+    } else if features.get(OPT_ANCHOR_OUTPUTS).unwrap_or_default() {
         assert_eq!(features.get(OPT_STATIC_REMOTEKEY).unwrap_or_default(), true);
         CommitmentType::Anchors
     } else if features.get(OPT_STATIC_REMOTEKEY).unwrap_or_default() {

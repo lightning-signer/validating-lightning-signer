@@ -109,6 +109,8 @@ pub enum CommitmentType {
     StaticRemoteKey,
     /// Anchors
     Anchors,
+    /// Anchors, zero fee htlc
+    AnchorsZeroFeeHtlc,
 }
 
 /// The negotiated parameters for the [Channel]
@@ -164,6 +166,12 @@ impl ChannelSetup {
     /// True if this channel uses anchors.
     pub fn option_anchor_outputs(&self) -> bool {
         self.commitment_type == CommitmentType::Anchors
+            || self.commitment_type == CommitmentType::AnchorsZeroFeeHtlc
+    }
+
+    /// True if this channel uses zero fee htlc with anchors
+    pub fn option_anchors_zero_fee_htlc(&self) -> bool {
+        self.commitment_type == CommitmentType::AnchorsZeroFeeHtlc
     }
 }
 
