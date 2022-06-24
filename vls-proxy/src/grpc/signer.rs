@@ -29,7 +29,7 @@ pub async fn start_signer_localhost(port: u16) {
         .build()
         .expect("uri"); // infallible by construction
 
-    let network = Network::Testnet; // FIXME
+    let network = Network::Regtest; // FIXME
     connect("remote_hsmd.kv", uri, network).await;
     info!("signer stopping");
 }
