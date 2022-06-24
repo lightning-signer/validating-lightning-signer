@@ -14,8 +14,8 @@ fn make_test_subapp() -> App<'static> {
 }
 
 #[tokio::main]
-async fn test_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = driver::connect().await?;
+async fn test_subcommand(matches: &ArgMatches, rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = driver::connect(rpc_url).await?;
 
     match matches.subcommand() {
         Some(("integration", _)) => driver::integration_test(&mut client).await?,
@@ -29,8 +29,9 @@ async fn test_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
 }
 
 #[tokio::main]
-async fn ping_subcommand() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = driver::connect().await?;
+async fn ping_subcommand(rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Connect to {}", rpc_url);
+    let mut client = driver::connect(rpc_url).await?;
     driver::ping(&mut client).await
 }
 
@@ -57,8 +58,8 @@ fn make_node_subapp() -> App<'static> {
 }
 
 #[tokio::main]
-async fn node_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = driver::connect().await?;
+async fn node_subcommand(matches: &ArgMatches, rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = driver::connect(rpc_url).await?;
 
     match matches.subcommand() {
         Some(("new", matches)) => {
@@ -105,8 +106,8 @@ fn make_chan_subapp() -> App<'static> {
 }
 
 #[tokio::main]
-async fn chan_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = driver::connect().await?;
+async fn chan_subcommand(matches: &ArgMatches, rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = driver::connect(rpc_url).await?;
     // TODO give a nice error message if node_id is missing
     let node_id = hex::decode(matches.value_of("node").expect("missing node_id"))?;
 
@@ -153,8 +154,8 @@ fn make_allowlist_subapp() -> App<'static> {
 }
 
 #[tokio::main]
-async fn alst_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = driver::connect().await?;
+async fn alst_subcommand(matches: &ArgMatches, rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = driver::connect(rpc_url).await?;
     // TODO give a nice error message if node_id is missing
     let node_id = hex::decode(matches.value_of("node").expect("missing node_id"))?;
 
@@ -177,6 +178,26 @@ async fn alst_subcommand(matches: &ArgMatches) -> Result<(), Box<dyn std::error:
     Ok(())
 }
 
+fn parse_rpc_url(matches: &ArgMatches) -> String {
+    let raw_rpc_value = matches.value_of("rpc").expect("rpc");
+
+    let rpc_url = match raw_rpc_value.parse::<u16>() {
+        Ok(_) => {
+            // Port number suplied.
+            let mut base_url = String::from("http://127.0.0.1:");
+            base_url.push_str(raw_rpc_value);
+            base_url
+        },
+        Err(_) => {
+            match url::Url::parse(raw_rpc_value) {
+                Ok(_) => String::from(raw_rpc_value),
+                _ => panic!("Invalid rpc_value")
+            }
+        }
+    };
+    rpc_url
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let test_subapp = make_test_subapp();
     let node_subapp = make_node_subapp();
@@ -192,6 +213,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .global(true)
                 .validator(|v| hex::decode(v)),
         )
+        .arg(
+            Arg::new("rpc")
+            .about("Either port number or uri")
+                .short('c')
+                .long("rpc")
+                .takes_value(true)
+                .global(true)
+                .default_value("http://127.0.0.1:50051")
+                .validator(|value| {
+                    let is_port = value.parse::<u16>().is_ok();
+                    let is_url = url::Url::parse(value).is_ok();
+                    if is_port || is_url {
+                        Ok("")
+                    } else {
+                        Err("Value is neither a port number nor a valid uri.")
+                    }
+                }),
+        )
         .subcommand(test_subapp)
         .subcommand(node_subapp)
         .subcommand(chan_subapp)
@@ -199,12 +238,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .subcommand(App::new("ping"));
     let matches = app.clone().get_matches();
 
+
+    let rpc_url = parse_rpc_url(&matches);
+    let rpc = rpc_url.as_str();
+    println!("Rpc: {}", rpc_url);
+
     match matches.subcommand() {
-        Some(("test", submatches)) => test_subcommand(submatches)?,
-        Some(("ping", _)) => ping_subcommand()?,
-        Some(("node", submatches)) => node_subcommand(submatches)?,
-        Some(("channel", submatches)) => chan_subcommand(submatches)?,
-        Some(("allowlist", submatches)) => alst_subcommand(submatches)?,
+        Some(("test", submatches)) => test_subcommand(submatches, rpc)?,
+        Some(("ping", _)) => ping_subcommand(rpc)?,
+        Some(("node", submatches)) => node_subcommand(submatches, rpc)?,
+        Some(("channel", submatches)) => chan_subcommand(submatches, rpc)?,
+        Some(("allowlist", submatches)) => alst_subcommand(submatches, rpc)?,
         Some((name, _)) => panic!("unimplemented command {}", name),
         None => panic!("unmatched command?!"),
     };
