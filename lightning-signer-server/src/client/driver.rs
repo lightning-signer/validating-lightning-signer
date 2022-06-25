@@ -13,7 +13,9 @@ use crate::server::remotesigner::{
 use bip39::{Language, Mnemonic};
 use rand::{OsRng, Rng};
 
-pub async fn connect(uri: &str) -> Result<SignerClient<transport::Channel>, Box<dyn std::error::Error>> {
+pub async fn connect(
+    uri: &str,
+) -> Result<SignerClient<transport::Channel>, Box<dyn std::error::Error>> {
     let uri_clone = String::from(uri);
     Ok(SignerClient::connect(uri_clone).await?)
 }
