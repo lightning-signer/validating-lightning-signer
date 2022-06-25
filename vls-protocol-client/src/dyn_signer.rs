@@ -4,10 +4,8 @@ use std::io::Read;
 use delegate::delegate;
 
 use bitcoin::bech32::u5;
-use bitcoin::secp256k1::ecdsa::RecoverableSignature;
-use bitcoin::secp256k1::{ecdsa::Signature, PublicKey, Secp256k1, SecretKey};
-use bitcoin::Script;
-use bitcoin::{secp256k1, Transaction};
+use bitcoin::psbt::PartiallySignedTransaction;
+use bitcoin::{secp256k1, Script, Transaction, TxOut};
 use lightning::chain::keysinterface::BaseSign;
 use lightning::chain::keysinterface::InMemorySigner;
 use lightning::chain::keysinterface::Sign;
@@ -22,9 +20,10 @@ use lightning::ln::PaymentPreimage;
 use lightning::util::ser::Readable;
 use lightning::util::ser::{Writeable, Writer};
 use lightning_signer::bitcoin;
-use lightning_signer::bitcoin::TxOut;
 use lightning_signer::lightning;
 use lightning_signer::lightning::chain::keysinterface::SpendableOutputDescriptor;
+use secp256k1::ecdsa::RecoverableSignature;
+use secp256k1::{ecdsa::Signature, PublicKey, Secp256k1, SecretKey};
 
 use crate::bitcoin::Address;
 use lightning_signer::util::loopback::LoopbackChannelSigner;
@@ -243,7 +242,16 @@ pub trait SpendableKeysInterface: KeysInterface + Send + Sync {
     /// This is implemented by setting the change destination to spend_spendable_outputs to this address.
     fn get_sweep_address(&self) -> Address;
 
+    /// Get the node ID
     fn get_node_id(&self) -> PublicKey;
+
+    /// Sign for the layer-1 wallet
+    /// TODO can we use the derivation path in the psbt?
+    fn sign_from_wallet(
+        &self,
+        psbt: &PartiallySignedTransaction,
+        derivations: Vec<u32>,
+    ) -> PartiallySignedTransaction;
 }
 
 impl SpendableKeysInterface for DynKeysInterface {
@@ -261,6 +269,8 @@ impl SpendableKeysInterface for DynKeysInterface {
             fn get_sweep_address(&self) -> Address;
 
             fn get_node_id(&self) -> PublicKey;
+
+            fn sign_from_wallet(&self, psbt: &PartiallySignedTransaction, derivations: Vec<u32>) -> PartiallySignedTransaction;
         }
     }
 }
