@@ -879,7 +879,7 @@ mod tests {
         |ectx: ErrMsgContext| format!(
             "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
              offered htlc.value_sat 1000 less than dust limit {}",
-            if ectx.opt_anchors { 2328 } else { 2319 }
+            if ectx.opt_anchors { 1129 } else { 1125 }
         )
     );
 
@@ -898,7 +898,7 @@ mod tests {
         |ectx: ErrMsgContext| format!(
             "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
              received htlc.value_sat 1000 less than dust limit {}",
-            if ectx.opt_anchors { 2448 } else { 2439 }
+            if ectx.opt_anchors { 1177 } else { 1173 }
         )
     );
 
