@@ -3,7 +3,6 @@ use clap::{App, Arg, ArgMatches};
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::str::FromStr;
 use std::{env, fs};
 
 use tokio::runtime::{self, Runtime};
@@ -31,6 +30,8 @@ pub fn read_integration_test_seed() -> Option<[u8; 32]> {
 #[cfg(feature = "main")]
 pub fn setup_logging(who: &str, level_arg: &str) {
     use fern::colors::{Color, ColoredLevelConfig};
+    use std::str::FromStr;
+
     let colors = ColoredLevelConfig::new().info(Color::Green).error(Color::Red).warn(Color::Yellow);
     let level = env::var("RUST_LOG").unwrap_or(level_arg.to_string());
     let who = who.to_string();
