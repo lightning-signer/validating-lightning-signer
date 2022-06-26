@@ -1,5 +1,4 @@
 use bitcoin::hashes::hex::ToHex;
-use bitcoin::policy::DUST_RELAY_TX_FEE;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::sighash::SighashCache;
 use bitcoin::{self, EcdsaSighashType, Network, Script, Sighash, Transaction};
@@ -1407,7 +1406,7 @@ impl SimpleValidator {
         let mut htlc_value_sat: u64 = 0;
 
         let offered_htlc_dust_limit = MIN_DUST_LIMIT_SATOSHIS
-            + (DUST_RELAY_TX_FEE as u64 * htlc_timeout_tx_weight(setup.option_anchor_outputs())
+            + (info.feerate_per_kw as u64 * htlc_timeout_tx_weight(setup.option_anchor_outputs())
                 / 1000);
         for htlc in &info.offered_htlcs {
             // TODO - this check should be converted into two checks, one the first time
@@ -1431,7 +1430,7 @@ impl SimpleValidator {
         }
 
         let received_htlc_dust_limit = MIN_DUST_LIMIT_SATOSHIS
-            + (DUST_RELAY_TX_FEE as u64 * htlc_success_tx_weight(setup.option_anchor_outputs())
+            + (info.feerate_per_kw as u64 * htlc_success_tx_weight(setup.option_anchor_outputs())
                 / 1000);
         for htlc in &info.received_htlcs {
             // TODO - this check should be converted into two checks, one the first time
@@ -1630,7 +1629,7 @@ mod tests {
             to_self_delay,
             offered_htlcs,
             received_htlcs,
-            7500,
+            6500,
         )
     }
 

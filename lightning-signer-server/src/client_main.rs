@@ -14,7 +14,10 @@ fn make_test_subapp() -> App<'static> {
 }
 
 #[tokio::main]
-async fn test_subcommand(matches: &ArgMatches, rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn test_subcommand(
+    matches: &ArgMatches,
+    rpc_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut client = driver::connect(rpc_url).await?;
 
     match matches.subcommand() {
@@ -58,7 +61,10 @@ fn make_node_subapp() -> App<'static> {
 }
 
 #[tokio::main]
-async fn node_subcommand(matches: &ArgMatches, rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn node_subcommand(
+    matches: &ArgMatches,
+    rpc_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut client = driver::connect(rpc_url).await?;
 
     match matches.subcommand() {
@@ -106,7 +112,10 @@ fn make_chan_subapp() -> App<'static> {
 }
 
 #[tokio::main]
-async fn chan_subcommand(matches: &ArgMatches, rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn chan_subcommand(
+    matches: &ArgMatches,
+    rpc_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut client = driver::connect(rpc_url).await?;
     // TODO give a nice error message if node_id is missing
     let node_id = hex::decode(matches.value_of("node").expect("missing node_id"))?;
@@ -154,7 +163,10 @@ fn make_allowlist_subapp() -> App<'static> {
 }
 
 #[tokio::main]
-async fn alst_subcommand(matches: &ArgMatches, rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn alst_subcommand(
+    matches: &ArgMatches,
+    rpc_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut client = driver::connect(rpc_url).await?;
     // TODO give a nice error message if node_id is missing
     let node_id = hex::decode(matches.value_of("node").expect("missing node_id"))?;
@@ -187,13 +199,11 @@ fn parse_rpc_url(matches: &ArgMatches) -> String {
             let mut base_url = String::from("http://127.0.0.1:");
             base_url.push_str(raw_rpc_value);
             base_url
-        },
-        Err(_) => {
-            match url::Url::parse(raw_rpc_value) {
-                Ok(_) => String::from(raw_rpc_value),
-                _ => panic!("Invalid rpc_value")
-            }
         }
+        Err(_) => match url::Url::parse(raw_rpc_value) {
+            Ok(_) => String::from(raw_rpc_value),
+            _ => panic!("Invalid rpc_value"),
+        },
     };
     rpc_url
 }
@@ -237,7 +247,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .subcommand(alst_subapp)
         .subcommand(App::new("ping"));
     let matches = app.clone().get_matches();
-
 
     let rpc_url = parse_rpc_url(&matches);
     let rpc = rpc_url.as_str();
