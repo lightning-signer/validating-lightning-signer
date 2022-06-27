@@ -632,13 +632,13 @@ mod tests {
                 format!(
                     "policy failure: validate_htlc_tx: \
                      feerate_per_kw of {} is smaller than the minimum of 253",
-                    if ectx.opt_anchors { 173 } else { 174 }
+                    if ectx.opt_anchors { 174 } else { 174 }
                 )
             } else {
                 format!(
                     "policy failure: validate_htlc_tx: \
                      feerate_per_kw of {} is smaller than the minimum of 253",
-                    if ectx.opt_anchors { 163 } else { 164 }
+                    if ectx.opt_anchors { 164 } else { 165 }
                 )
             }
         }
@@ -653,13 +653,13 @@ mod tests {
                 format!(
                     "policy failure: validate_htlc_tx: \
                      feerate_per_kw of {} is larger than the maximum of 16000",
-                    if ectx.opt_anchors { 30031 } else { 30166 }
+                    if ectx.opt_anchors { 30031 } else { 30167 }
                 )
             } else {
                 format!(
                     "policy failure: validate_htlc_tx: \
                      feerate_per_kw of {} is larger than the maximum of 16000",
-                    if ectx.opt_anchors { 28329 } else { 28450 }
+                    if ectx.opt_anchors { 28330 } else { 28450 }
                 )
             }
         }
