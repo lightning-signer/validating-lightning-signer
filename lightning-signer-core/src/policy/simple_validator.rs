@@ -8,7 +8,7 @@ use lightning::ln::chan_utils::{
     make_funding_redeemscript, ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
-use log::{debug, info};
+use log::{debug, error, info};
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::policy::validator::EnforcementState;
@@ -99,6 +99,24 @@ pub struct SimplePolicy {
     pub enforce_balance: bool,
     /// Maximum layer-2 fee
     pub max_routing_fee_msat: u64,
+    /// Developer flags - DO NOT USE IN PRODUCTION
+    pub dev_flags: Option<PolicyDevFlags>,
+}
+
+/// Development flags included in SimplePolicy
+#[derive(Clone)]
+pub struct PolicyDevFlags {
+    /// Allow sending to unknown destinations
+    pub disable_beneficial_balance_checks: bool,
+}
+
+const DEFAULT_DEV_FLAGS: PolicyDevFlags =
+    PolicyDevFlags { disable_beneficial_balance_checks: false };
+
+impl Default for PolicyDevFlags {
+    fn default() -> Self {
+        DEFAULT_DEV_FLAGS
+    }
 }
 
 /// A simple validator.
@@ -188,11 +206,19 @@ impl SimpleValidator {
             ))
         })?;
         if non_beneficial > self.policy.max_fee {
-            return policy_err!(
-                "non-beneficial value above maximum: {} > {}",
-                non_beneficial,
-                self.policy.max_fee
-            );
+            let dev_flags = self.policy.dev_flags.as_ref().unwrap_or(&DEFAULT_DEV_FLAGS);
+            if dev_flags.disable_beneficial_balance_checks {
+                error!(
+                    "DEV IGNORE non-beneficial value above maximum: {} > {}",
+                    non_beneficial, self.policy.max_fee
+                );
+            } else {
+                return policy_err!(
+                    "non-beneficial value above maximum: {} > {}",
+                    non_beneficial,
+                    self.policy.max_fee
+                );
+            }
         }
         Ok(())
     }
@@ -1518,6 +1544,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             require_invoices: false,
             enforce_balance: false,
             max_routing_fee_msat: 10000,
+            dev_flags: None,
         }
     } else {
         SimplePolicy {
@@ -1536,6 +1563,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             require_invoices: false,
             enforce_balance: false,
             max_routing_fee_msat: 10000,
+            dev_flags: None,
         }
     }
 }
@@ -1567,6 +1595,7 @@ mod tests {
             require_invoices: false,
             enforce_balance: false,
             max_routing_fee_msat: 10000,
+            dev_flags: None,
         };
 
         SimpleValidator {
