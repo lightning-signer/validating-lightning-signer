@@ -24,7 +24,7 @@ use crate::util::debug_utils::{
     script_debug, DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugTxCreationKeys,
     DebugVecVecU8,
 };
-use crate::util::transaction_utils::MIN_DUST_LIMIT_SATOSHIS;
+use crate::util::transaction_utils::{estimate_feerate_per_kw, MIN_DUST_LIMIT_SATOSHIS};
 use crate::wallet::Wallet;
 
 extern crate scopeguard;
@@ -746,7 +746,7 @@ impl Validator for SimpleValidator {
         } else {
             htlc_success_tx_weight(setup.option_anchor_outputs())
         };
-        let feerate_per_kw = (((total_fee * 1000) + weight - 1) / weight) as u32;
+        let feerate_per_kw = estimate_feerate_per_kw(total_fee, weight);
 
         let htlc = HTLCOutputInCommitment {
             offered,

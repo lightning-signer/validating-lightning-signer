@@ -60,3 +60,44 @@ pub fn maybe_add_change_output(
 
     Ok(())
 }
+
+/// Estimate the feerate for an HTLC transaction
+pub(crate) fn estimate_feerate_per_kw(total_fee: u64, weight: u64) -> u32 {
+    // we want the highest feerate that can give rise to this total fee
+    (((total_fee * 1000) + 999) / weight) as u32
+}
+
+#[cfg(test)]
+mod tests {
+    use lightning::ln::chan_utils::{htlc_success_tx_weight, htlc_timeout_tx_weight};
+
+    #[test]
+    fn test_estimate_feerate() {
+        let weights = vec![
+            htlc_timeout_tx_weight(false),
+            htlc_timeout_tx_weight(true),
+            htlc_success_tx_weight(false),
+            htlc_success_tx_weight(true),
+        ];
+
+        // make sure the feerate is not lower than 253 at the low end,
+        // so as not to fail policy check
+        let feerate = 253;
+        for weight in &weights {
+            let total_fee = (feerate as u64 * *weight) / 1000;
+            let estimated_feerate = super::estimate_feerate_per_kw(total_fee, *weight);
+            assert!(estimated_feerate >= 253);
+        }
+
+        // make sure that the total tx fee stays the same after estimating the rate and recomputing the fee
+        // so as to recreate an identical transaction
+        for feerate in (300..5000).step_by(10) {
+            for weight in &weights {
+                let total_fee = (feerate as u64 * *weight) / 1000;
+                let estimated_feerate = super::estimate_feerate_per_kw(total_fee, *weight);
+                let recovered_total_fee = (estimated_feerate as u64 * *weight) / 1000;
+                assert_eq!(total_fee, recovered_total_fee);
+            }
+        }
+    }
+}
