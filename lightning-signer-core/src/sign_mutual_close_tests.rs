@@ -97,7 +97,7 @@ mod tests {
                 feerate_per_kw,
             });
             estate.previous_counterparty_commit_info = None;
-            estate.mutual_close_signed = false;
+            estate.channel_closed = false;
             Ok(())
         })
         .expect("state setup");
@@ -220,7 +220,7 @@ mod tests {
         // policy-revoke-not-closed
         // Channel is marked closed.
         assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
-            assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+            assert_eq!(chan.enforcement_state.channel_closed, true);
             Ok(())
         }));
 
@@ -352,7 +352,7 @@ mod tests {
         // policy-revoke-not-closed
         // Channel is marked closed.
         assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
-            assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+            assert_eq!(chan.enforcement_state.channel_closed, true);
             Ok(())
         }));
 
@@ -398,7 +398,7 @@ mod tests {
             },
             |chan| {
                 // Channel should be marked closed
-                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+                assert_eq!(chan.enforcement_state.channel_closed, true);
             }
         ));
     }
@@ -414,7 +414,7 @@ mod tests {
             },
             |chan| {
                 // Channel should be marked closed
-                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+                assert_eq!(chan.enforcement_state.channel_closed, true);
             }
         ));
     }
@@ -434,7 +434,7 @@ mod tests {
             },
             |chan| {
                 // Channel should be marked closed
-                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+                assert_eq!(chan.enforcement_state.channel_closed, true);
             }
         ));
     }
@@ -450,7 +450,7 @@ mod tests {
             },
             |chan| {
                 // Channel should be marked closed
-                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+                assert_eq!(chan.enforcement_state.channel_closed, true);
             }
         ));
     }
@@ -489,7 +489,7 @@ mod tests {
             },
             |chan| {
                 // Channel should be marked closed
-                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+                assert_eq!(chan.enforcement_state.channel_closed, true);
             }
         ));
     }
@@ -529,7 +529,7 @@ mod tests {
             },
             |chan| {
                 // Channel should be marked closed
-                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+                assert_eq!(chan.enforcement_state.channel_closed, true);
             }
         ));
     }
@@ -582,7 +582,7 @@ mod tests {
             },
             |chan| {
                 // Channel should be marked closed
-                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+                assert_eq!(chan.enforcement_state.channel_closed, true);
             }
         ));
     }
@@ -605,7 +605,7 @@ mod tests {
             },
             |chan| {
                 // Channel should be marked closed
-                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+                assert_eq!(chan.enforcement_state.channel_closed, true);
             }
         ));
     }
@@ -628,7 +628,7 @@ mod tests {
             },
             |chan| {
                 // Channel should be marked closed
-                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+                assert_eq!(chan.enforcement_state.channel_closed, true);
             }
         ));
     }
@@ -651,7 +651,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: holder output not to wallet or in allowlist"
@@ -677,7 +677,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
@@ -703,7 +703,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
@@ -730,7 +730,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: validate_fee: \
@@ -764,7 +764,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "transaction format: decode_and_validate_mutual_close_tx: invalid number of outputs: 3"
@@ -788,7 +788,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should be not marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "sign_mutual_close_tx: bad opath len 3 with tx.output len 2"
@@ -816,7 +816,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: holder output not to wallet or in allowlist"
@@ -870,7 +870,7 @@ mod tests {
             },
             |chan| {
                 // Channel should be marked closed
-                assert_eq!(chan.enforcement_state.mutual_close_signed, true);
+                assert_eq!(chan.enforcement_state.channel_closed, true);
             }
         ));
     }
@@ -887,7 +887,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: decode_and_validate_mutual_close_tx: \
@@ -907,7 +907,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: decode_and_validate_mutual_close_tx: \
@@ -935,7 +935,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: cannot close with pending htlcs"
@@ -962,7 +962,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: cannot close with pending htlcs"
@@ -993,7 +993,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: cannot close with pending htlcs"
@@ -1024,7 +1024,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: cannot close with pending htlcs"
@@ -1058,7 +1058,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
@@ -1094,7 +1094,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
@@ -1130,7 +1130,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
@@ -1166,7 +1166,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
@@ -1202,7 +1202,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
@@ -1238,7 +1238,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
@@ -1274,7 +1274,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
@@ -1310,7 +1310,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
@@ -1334,7 +1334,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
@@ -1358,7 +1358,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
@@ -1382,7 +1382,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
@@ -1405,7 +1405,7 @@ mod tests {
                 },
                 |chan| {
                     // Channel should not be marked closed
-                    assert_eq!(chan.enforcement_state.mutual_close_signed, false);
+                    assert_eq!(chan.enforcement_state.channel_closed, false);
                 }
             ),
             "policy failure: validate_mutual_close_tx: \

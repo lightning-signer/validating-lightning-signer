@@ -627,7 +627,7 @@ mod tests {
         |_tms| {},
         |_kms| {},
         |vms| {
-            vms.chan.enforcement_state.holder_commitment_signed = true;
+            vms.chan.enforcement_state.channel_closed = true;
         },
         |vs| {
             // Channel state should stay advanced
@@ -640,13 +640,13 @@ mod tests {
     generate_failed_precondition_error_with_mutated_validation_input!(
         not_after_signed,
         |vms| {
-            vms.chan.enforcement_state.holder_commitment_signed = true;
+            vms.chan.enforcement_state.channel_closed = true;
         },
         |vs| {
             // Channel state should not advance.
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
         },
-        |_| "policy failure: validate_holder_commitment_tx: holder commitment already signed"
+        |_| "policy failure: validate_holder_commitment_tx: channel is closing"
     );
 
     // policy-commitment-retry-same
@@ -761,13 +761,13 @@ mod tests {
     generate_failed_precondition_error_with_mutated_validation_input!(
         not_closed,
         |vms| {
-            vms.chan.enforcement_state.mutual_close_signed = true;
+            vms.chan.enforcement_state.channel_closed = true;
         },
         |vs| {
             // Channel state should not advance.
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
         },
-        |_| "policy failure: validate_holder_commitment_tx: mutual close already signed"
+        |_| "policy failure: validate_holder_commitment_tx: channel is closing"
     );
 
     // policy-revoke-not-closed
@@ -777,7 +777,7 @@ mod tests {
         |_tms| {},
         |_kms| {},
         |vms| {
-            vms.chan.enforcement_state.mutual_close_signed = true;
+            vms.chan.enforcement_state.channel_closed = true;
         },
         |vs| {
             // Channel state should advance.
