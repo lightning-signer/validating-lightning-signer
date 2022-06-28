@@ -47,10 +47,7 @@ impl GrpcSignerPort {
     async fn get_reply(&self, reply_rx: oneshot::Receiver<ChannelReply>) -> Result<Vec<u8>> {
         // Wait for the signer reply
         // Can fail if the adapter shut down
-        let reply = spawn_blocking(move || reply_rx.blocking_recv())
-            .await
-            .map_err(|_| Error::Eof)?
-            .map_err(|_| Error::Eof)?;
+        let reply = reply_rx.await.map_err(|_| Error::Eof)?;
         Ok(reply.reply)
     }
 }
