@@ -256,6 +256,8 @@ mod tests {
                     })
                     .collect::<Vec<Script>>();
 
+                assert_eq!(chan.enforcement_state.channel_closed, true);
+
                 Ok((
                     sig,
                     htlc_sigs,
@@ -357,15 +359,13 @@ mod tests {
     generate_status_ok_variations!(success, |_| {});
 
     generate_status_ok_variations!(ok_after_mutual_close, |sms| {
-        // Set the mutual_close_signed flag
-        sms.estate.mutual_close_signed = true;
+        sms.estate.channel_closed = true;
     });
 
     generate_status_ok_retry_variations!(success, |_| {});
 
     generate_status_ok_retry_variations!(ok_after_mutual_close, |sms| {
-        // Set the mutual_close_signed flag
-        sms.estate.mutual_close_signed = true;
+        sms.estate.channel_closed = true;
     });
 
     #[allow(dead_code)]

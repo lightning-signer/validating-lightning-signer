@@ -668,9 +668,9 @@ impl Validator for SimpleValidator {
         // policy-revoke-not-closed
         // It's ok to validate the current state when closed, but not ok to validate
         // a new state.
-        if commit_num == estate.next_holder_commit_num && estate.mutual_close_signed {
+        if commit_num == estate.next_holder_commit_num && estate.channel_closed {
             debug_failed_vals!(estate);
-            return policy_err!("mutual close already signed");
+            return policy_err!("channel is closing");
         }
 
         *debug_on_return = false;
