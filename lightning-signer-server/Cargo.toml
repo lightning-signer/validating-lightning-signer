@@ -27,7 +27,7 @@ path = "src/lib.rs"
 anyhow = "1.0"
 log = { version="0.4.14", features = [ "std" ] }
 time = "0.2"
-lightning-signer-core = { path = "../lightning-signer-core", features = ["debug", "test_utils"] }
+lightning-signer-core = { path = "../lightning-signer-core", features = ["debug"] }
 vls-frontend = { path = "../vls-frontend" }
 bitcoind-client = { path = "../bitcoind-client" }
 backtrace = "0.3"
