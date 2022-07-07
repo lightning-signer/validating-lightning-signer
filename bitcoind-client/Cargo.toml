@@ -13,6 +13,7 @@ rust-version = "1.45.2"
 [features]
 default = ["log_pretty_print"]
 log_pretty_print = []
+test_utils = ["lightning-signer-core/test_utils"]
 
 [lib]
 name = "bitcoind_client"
@@ -23,7 +24,7 @@ log = { version="0.4.14", features = [ "std" ] }
 serde = { version = "1.0.105", features = ["derive"]}
 serde_json = { version = "1.0.48" }
 tokio = { version = "1.6", features = ["macros", "rt-multi-thread"] }
-lightning-signer-core = { path = "../lightning-signer-core", features = ["debug", "test_utils"] }
+lightning-signer-core = { path = "../lightning-signer-core", features = ["debug"] }
 
 url = "2.2"
 jsonrpc-async = "2.0.2"

@@ -14,7 +14,7 @@ main = ["clap", "clap_derive", "ctrlc", "fern"]
 [dependencies]
 lightning-signer-core = { path = "../lightning-signer-core" }
 vls-protocol-signer = { path = "../vls-protocol-signer", features = ["std"] }
-vls-protocol-client = { path = "../vls-protocol-client" }
+vls-protocol-client = { path = "../vls-protocol-client", features = ["test_utils"] }
 vls-protocol = { path = "../vls-protocol" }
 vls-frontend = { path = "../vls-frontend" }
 nix = "0.22"
