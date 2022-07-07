@@ -295,6 +295,7 @@ impl BaseSign for SignerClient {
         Ok((signature, htlc_signatures))
     }
 
+    #[cfg(feature = "test_utils")]
     fn unsafe_sign_holder_commitment_and_htlcs(
         &self,
         _commitment_tx: &HolderCommitmentTransaction,

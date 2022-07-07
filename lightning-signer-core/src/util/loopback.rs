@@ -1,5 +1,5 @@
 #![allow(missing_docs)]
-use std::convert::TryInto;
+use core::convert::TryInto;
 
 use bitcoin::bech32::u5;
 use bitcoin::hash_types::WPubkeyHash;
@@ -26,6 +26,7 @@ use log::{debug, error, info};
 use crate::channel::{ChannelBase, ChannelId, ChannelSetup, CommitmentType};
 use crate::io_extras::Error as IOError;
 use crate::node::Node;
+use crate::prelude::*;
 use crate::signer::multi_signer::MultiSigner;
 use crate::tx::tx::HTLCInfo2;
 use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey};

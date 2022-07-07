@@ -98,6 +98,7 @@ impl BaseSign for DynSigner {
                 secp_ctx: &Secp256k1<secp256k1::All>,
             ) -> Result<(Signature, Vec<Signature>), ()>;
 
+            #[cfg(feature = "test_utils")]
             fn unsafe_sign_holder_commitment_and_htlcs(
                 &self,
                 commitment_tx: &HolderCommitmentTransaction,
