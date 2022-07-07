@@ -12,7 +12,7 @@ rust-version = "1.58.0"
 build = "build.rs"
 
 [features]
-default = ["grpc", "log_pretty_print"]
+default = ["log_pretty_print"]
 grpc = ["tokio", "tonic", "prost", "serde", "serde_json", "clap", "url", "lightning-signer-core/grpc"]
 persist_kv_json = [ "kv", "persist" ]
 persist = [ "serde", "serde_json", "serde_with", "bitcoin/use-serde" ]
