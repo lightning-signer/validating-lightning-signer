@@ -44,7 +44,7 @@ serde = { version = "1.0.105", features = ["derive"], optional = true }
 serde_json = { version = "1.0.48", optional = true }
 serde_with = { version = "1.6.4", features = ["hex"], optional = true }
 clap = { version = "=3.0.0-beta.2", optional = true }
-bitcoin = { version = "0.28.1", features = ["bitcoinconsensus"]}  # FIXME REMOVE
+bitcoin = { version = "0.28.1" }
 ctrlc = { version = "3.1.9", features = ["termination"], optional = true }
 triggered = "0.1.1"
 tracing = { version = "0.1.32" }
