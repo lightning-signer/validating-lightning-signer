@@ -369,14 +369,6 @@ impl Handler for RootHandler {
                 };
                 Ok(Box::new(msgs::SignCommitmentTxReply { signature: to_bitcoin_sig(sig) }))
             }
-            // TODO duplicate from ChannelHandler
-            Message::SignChannelUpdate(m) => {
-                let message = m.update[2 + 64..].to_vec();
-                let sig = self.node.sign_channel_update(&message)?;
-                let mut update = m.update;
-                update[2..2 + 64].copy_from_slice(&sig.serialize_compact());
-                Ok(Box::new(msgs::SignChannelUpdateReply { update }))
-            }
             Message::TipInfo(_) => {
                 let tracker = self.node.get_tracker();
                 Ok(Box::new(msgs::TipInfoReply {
