@@ -15,8 +15,8 @@ use vls_protocol::{msgs, msgs::Message, Error, Result};
 use vls_protocol_signer::vls_protocol;
 
 use client::{Client, UnixClient};
+use lightning_signer_server::nodefront::SingleFront;
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
-use lightning_signer_server::server::nodefront::SingleFront;
 use util::{create_runtime, read_allowlist};
 use vls_protocol_signer::handler::{Handler, RootHandler};
 

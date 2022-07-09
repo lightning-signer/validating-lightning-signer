@@ -11,11 +11,14 @@ extern crate tonic;
 use lightning_signer::lightning;
 
 pub mod fslogger;
+#[cfg(feature = "persist")]
 pub mod persist;
 pub mod util;
 #[macro_use]
 #[cfg(feature = "grpc")]
 pub mod client;
+#[cfg(feature = "frontend")]
+pub mod nodefront;
 #[cfg(feature = "grpc")]
 pub mod server;
 

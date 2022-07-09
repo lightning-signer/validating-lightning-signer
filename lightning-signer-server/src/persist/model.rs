@@ -120,7 +120,6 @@ impl AsRef<[u8]> for NodeChannelId {
     }
 }
 
-
 #[cfg(feature = "persist_kv_json")]
 impl<'a> Key<'a> for NodeChannelId {
     fn from_raw_key(r: &'a Raw) -> Result<Self, kv::Error> {

@@ -13,13 +13,14 @@ build = "build.rs"
 
 [features]
 default = ["log_pretty_print"]
-grpc = ["tokio", "tonic", "prost", "serde", "serde_json", "clap", "url", "lightning-signer-core/grpc"]
+grpc = ["frontend", "tokio", "tonic", "prost", "serde", "serde_json", "clap", "url", "lightning-signer-core/grpc"]
 persist_kv_json = [ "kv", "persist" ]
 persist = [ "serde", "serde_json", "serde_with", "bitcoin/use-serde" ]
 log_pretty_print = []
 chain_test = ["clap", "url", "bitcoind-client"]
 test_utils = ["lightning-signer-core/test_utils"]
-bins = ["vls-frontend", "bip39", "rand", "ctrlc"]
+bins = ["bip39", "rand", "ctrlc"]
+frontend = ["vls-frontend"]
 
 [lib]
 name = "lightning_signer_server"
