@@ -334,14 +334,6 @@ impl Handler for RootHandler {
                 sig_slice[64] = rid.to_i32() as u8;
                 Ok(Box::new(msgs::SignInvoiceReply { signature: RecoverableSignature(sig_slice) }))
             }
-            Message::SignNodeAnnouncement(m) => {
-                let message = m.announcement[64 + 2..].to_vec();
-                let sig = self.node.sign_node_announcement(&message)?;
-
-                Ok(Box::new(msgs::SignNodeAnnouncementReply {
-                    node_signature: Signature(sig.serialize_compact()),
-                }))
-            }
             Message::SignCommitmentTx(m) => {
                 // TODO why not channel handler??
                 let channel_id = Self::channel_id(&m.peer_id, m.dbid);
@@ -914,7 +906,8 @@ impl Handler for ChannelHandler {
                 }))
             }
             Message::SignNodeAnnouncement(m) => {
-                // TODO DRY (and why is this called in the per-channel handler??)
+                // This is called from gossipd, which is non-root and thus looks like channel ...
+                assert_eq!(self.dbid, 0);
                 let message = m.announcement[64 + 2..].to_vec();
                 let sig = self.node.sign_node_announcement(&message)?;
 
