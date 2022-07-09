@@ -913,7 +913,6 @@ dependencies = [
  "ctrlc",
  "env_logger",
  "hex 0.3.2",
- "hyper",
  "kv",
  "lightning-signer-core",
  "log",

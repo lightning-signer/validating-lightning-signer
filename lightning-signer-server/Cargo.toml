@@ -12,12 +12,15 @@ rust-version = "1.58.0"
 build = "build.rs"
 
 [features]
-default = ["grpc", "persist_kv_json", "log_pretty_print"]
-grpc = ["tokio", "tonic", "prost", "serde", "serde_json", "clap", "url", "lightning-signer-core/grpc"]
-persist_kv_json = [ "kv", "serde", "serde_json", "serde_with", "bitcoin/use-serde" ]
+default = ["log_pretty_print"]
+grpc = ["frontend", "tokio", "tonic", "prost", "serde", "serde_json", "clap", "url", "lightning-signer-core/grpc"]
+persist_kv_json = [ "kv", "persist" ]
+persist = [ "serde", "serde_json", "serde_with", "bitcoin/use-serde" ]
 log_pretty_print = []
-chain_test = ["clap", "url"]
+chain_test = ["clap", "url", "bitcoind-client"]
 test_utils = ["lightning-signer-core/test_utils"]
+bins = ["bip39", "rand", "ctrlc"]
+frontend = ["vls-frontend"]
 
 [lib]
 name = "lightning_signer_server"
@@ -28,23 +31,22 @@ anyhow = "1.0"
 log = { version="0.4.14", features = [ "std" ] }
 time = "0.2"
 lightning-signer-core = { path = "../lightning-signer-core", features = ["debug"] }
-vls-frontend = { path = "../vls-frontend" }
-bitcoind-client = { path = "../bitcoind-client" }
+vls-frontend = { path = "../vls-frontend", optional = true }
+bitcoind-client = { path = "../bitcoind-client", optional = true }
 backtrace = "0.3"
-bip39 = {version = "1.0.0", features = ["rand"] }
+bip39 = { version = "1.0.0", features = ["rand"], optional = true }
 hex = "0.3.2"
-rand = "0.4"
+rand = { version = "0.4", optional = true }
 kv = { version = "0.22.0", features = ["json-value"], optional = true }
 tonic = { version = "0.6", optional = true }
 prost = { version = "0.9", optional = true }
-hyper = "0.14"
 tokio = { version = "1.17", features = ["macros", "rt-multi-thread"], optional = true }
 serde = { version = "1.0.105", features = ["derive"], optional = true }
 serde_json = { version = "1.0.48", optional = true }
 serde_with = { version = "1.6.4", features = ["hex"], optional = true }
 clap = { version = "=3.0.0-beta.2", optional = true }
-bitcoin = { version = "0.28.1", features = ["bitcoinconsensus"]}  # FIXME REMOVE
-ctrlc = { version = "3.1.9", features = ["termination"] }
+bitcoin = { version = "0.28.1" }
+ctrlc = { version = "3.1.9", features = ["termination"], optional = true }
 triggered = "0.1.1"
 tracing = { version = "0.1.32" }
 tracing-subscriber = { version = "0.3.9" }
@@ -65,19 +67,19 @@ tonic-build = "0.6"
 [[bin]]
 name = "vls-cli"
 path = "src/client_main.rs"
-required-features = ["grpc"]
+required-features = ["bins", "grpc"]
 
 [[bin]]
 name = "vlsd"
 path = "src/server_main.rs"
-required-features = ["grpc"]
+required-features = ["bins", "grpc"]
 
 [[bin]]
 name = "persist_test"
 path = "src/persist_test_main.rs"
-required-features = ["persist_kv_json", "test_utils"]
+required-features = ["bins", "persist_kv_json", "test_utils"]
 
 [[bin]]
 name = "chain_test"
 path = "src/chain_test_main.rs"
-required-features = ["chain_test"]
+required-features = ["bins", "chain_test"]

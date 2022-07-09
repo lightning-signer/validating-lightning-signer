@@ -6,6 +6,7 @@ use std::iter::FromIterator;
 use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{Network, OutPoint};
+#[cfg(feature = "persist_kv_json")]
 use kv::{Key, Raw};
 use lightning_signer::chain::tracker::{ChainTracker, ListenSlot};
 use serde::{Deserialize, Serialize};
@@ -119,6 +120,7 @@ impl AsRef<[u8]> for NodeChannelId {
     }
 }
 
+#[cfg(feature = "persist_kv_json")]
 impl<'a> Key<'a> for NodeChannelId {
     fn from_raw_key(r: &'a Raw) -> Result<Self, kv::Error> {
         Ok(NodeChannelId(r.to_vec()))
