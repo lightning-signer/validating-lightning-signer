@@ -100,8 +100,8 @@ More dependencies:
 Run coverage:
 
     ./scripts/run-kcov
-    ./scripts/run-kcov-functional
-    ./scripts/run-kcov-all
+    ./scripts/run-kcov --lib
+    ./scripts/run-kcov --test functional_test
         
 View Coverage Report:
 
