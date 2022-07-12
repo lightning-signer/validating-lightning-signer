@@ -332,6 +332,15 @@ mod tests {
                     );
                 }
             }
+            paste! {
+                #[test]
+                fn [<$name _zerofee>]() {
+                    assert_status_ok!(
+                        sign_holder_commitment_tx_with_mutators(
+                            CommitmentType::AnchorsZeroFeeHtlc, $sms)
+                    );
+                }
+            }
         };
     }
 
@@ -352,6 +361,15 @@ mod tests {
                     assert_status_ok!(
                         sign_holder_commitment_tx_retry_with_mutators(
                             CommitmentType::Anchors, $sms)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _retry_zerofee>]() {
+                    assert_status_ok!(
+                        sign_holder_commitment_tx_retry_with_mutators(
+                            CommitmentType::AnchorsZeroFeeHtlc, $sms)
                     );
                 }
             }
