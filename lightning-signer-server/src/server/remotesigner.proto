@@ -359,6 +359,7 @@ message ReadyChannelRequest {
     LEGACY = 0;
     STATIC_REMOTEKEY = 1;
     ANCHORS = 2;
+    ANCHORS_ZERO_FEE_HTLC = 3;
   }
   CommitmentType commitment_type = 14;
 }

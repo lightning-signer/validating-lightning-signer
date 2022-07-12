@@ -431,7 +431,7 @@ pub struct SignRemoteHtlcToUs {
     pub tx: LargeBytes,
     pub psbt: LargeBytes,
     pub wscript: Vec<u8>,
-    pub option_anchor_outputs: bool,
+    pub option_anchors: bool,
 }
 
 ///
@@ -442,7 +442,7 @@ pub struct SignLocalHtlcTx {
     pub tx: LargeBytes,
     pub psbt: LargeBytes,
     pub wscript: Vec<u8>,
-    pub option_anchor_outputs: bool,
+    pub option_anchors: bool,
 }
 
 ///
@@ -518,7 +518,7 @@ pub struct SignRemoteHtlcTx {
     pub psbt: LargeBytes,
     pub wscript: Vec<u8>,
     pub remote_per_commitment_point: PubKey,
-    pub option_anchor_outputs: bool,
+    pub option_anchors: bool,
 }
 
 ///

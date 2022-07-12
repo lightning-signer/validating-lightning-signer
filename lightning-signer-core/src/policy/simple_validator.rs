@@ -730,7 +730,7 @@ impl Validator for SimpleValidator {
         } else {
             setup.counterparty_selected_contest_delay // the remote side imposes this value
         };
-        let sighash_type = if is_counterparty && setup.option_anchor_outputs() {
+        let sighash_type = if is_counterparty && setup.option_anchors() {
             EcdsaSighashType::SinglePlusAnyoneCanPay
         } else {
             EcdsaSighashType::All
@@ -739,11 +739,9 @@ impl Validator for SimpleValidator {
             .segwit_signature_hash(0, &redeemscript, htlc_amount_sat, sighash_type)
             .unwrap();
 
-        let offered = if parse_offered_htlc_script(redeemscript, setup.option_anchor_outputs())
-            .is_ok()
-        {
+        let offered = if parse_offered_htlc_script(redeemscript, setup.option_anchors()).is_ok() {
             true
-        } else if parse_received_htlc_script(redeemscript, setup.option_anchor_outputs()).is_ok() {
+        } else if parse_received_htlc_script(redeemscript, setup.option_anchors()).is_ok() {
             false
         } else {
             debug_failed_vals!(
@@ -764,15 +762,16 @@ impl Validator for SimpleValidator {
         let commitment_txid = tx.input[0].previous_output.txid;
         let total_fee = htlc_amount_sat - tx.output[0].value;
 
-        // Derive the feerate_per_kw used to generate this
-        // transaction.  Compensate for the total_fee being rounded
-        // down when computed.
-        let weight = if offered {
-            htlc_timeout_tx_weight(setup.option_anchor_outputs())
+        let build_feerate = if setup.option_anchors_zero_fee_htlc() {
+            0
         } else {
-            htlc_success_tx_weight(setup.option_anchor_outputs())
+            let weight = if offered {
+                htlc_timeout_tx_weight(setup.option_anchors())
+            } else {
+                htlc_success_tx_weight(setup.option_anchors())
+            };
+            estimate_feerate_per_kw(total_fee, weight)
         };
-        let feerate_per_kw = estimate_feerate_per_kw(total_fee, weight);
 
         let htlc = HTLCOutputInCommitment {
             offered,
@@ -785,10 +784,10 @@ impl Validator for SimpleValidator {
         // Recompose the transaction.
         let recomposed_tx = build_htlc_transaction(
             &commitment_txid,
-            feerate_per_kw,
+            build_feerate,
             to_self_delay,
             &htlc,
-            setup.option_anchor_outputs(),
+            setup.option_anchors(),
             &txkeys.broadcaster_delayed_payment_key,
             &txkeys.revocation_key,
         );
@@ -808,7 +807,7 @@ impl Validator for SimpleValidator {
                 output_witscript
             );
             let (revocation_key, contest_delay, delayed_pubkey) =
-                parse_revokeable_redeemscript(output_witscript, setup.option_anchor_outputs())
+                parse_revokeable_redeemscript(output_witscript, setup.option_anchors())
                     .unwrap_or_else(|_| (vec![], 0, vec![]));
             debug!(
                 "ORIGINAL_TX={:#?}\n\
@@ -846,12 +845,12 @@ impl Validator for SimpleValidator {
         // - policy-htlc-revocation-pubkey
         // - policy-htlc-delayed-pubkey
 
-        Ok((feerate_per_kw, htlc, recomposed_tx_sighash, sighash_type))
+        Ok((build_feerate, htlc, recomposed_tx_sighash, sighash_type))
     }
 
     fn validate_htlc_tx(
         &self,
-        _setup: &ChannelSetup,
+        setup: &ChannelSetup,
         _cstate: &ChainState,
         _is_counterparty: bool,
         htlc: &HTLCOutputInCommitment,
@@ -870,12 +869,14 @@ impl Validator for SimpleValidator {
         }
 
         // policy-htlc-fee-range
-        if feerate_per_kw < self.policy.min_feerate_per_kw {
-            return policy_err!(
-                "feerate_per_kw of {} is smaller than the minimum of {}",
-                feerate_per_kw,
-                self.policy.min_feerate_per_kw
-            );
+        if !setup.option_anchors_zero_fee_htlc() {
+            if feerate_per_kw < self.policy.min_feerate_per_kw {
+                return policy_err!(
+                    "feerate_per_kw of {} is smaller than the minimum of {}",
+                    feerate_per_kw,
+                    self.policy.min_feerate_per_kw
+                );
+            }
         }
         if feerate_per_kw > self.policy.max_feerate_per_kw {
             return policy_err!(
@@ -1271,7 +1272,7 @@ impl Validator for SimpleValidator {
             _payment_hash_vec,
             _local_htlc_pubkey,
             cltv_expiry,
-        )) = parse_received_htlc_script(redeemscript, setup.option_anchor_outputs())
+        )) = parse_received_htlc_script(redeemscript, setup.option_anchors())
         {
             // It's a received htlc (counterparty perspective)
             if cltv_expiry < 0 || cltv_expiry > u32::MAX as i64 {
@@ -1291,7 +1292,7 @@ impl Validator for SimpleValidator {
             _remote_htlc_pubkey,
             _local_htlc_pubkey,
             _payment_hash_vec,
-        )) = parse_offered_htlc_script(redeemscript, setup.option_anchor_outputs())
+        )) = parse_offered_htlc_script(redeemscript, setup.option_anchors())
         {
             // It's an offered htlc (counterparty perspective)
 
@@ -1310,7 +1311,7 @@ impl Validator for SimpleValidator {
 
         // policy-sweep-sequence
         let seq = tx.input[0].sequence;
-        let valid_seqs = if setup.option_anchor_outputs() {
+        let valid_seqs = if setup.option_anchors() {
             SimpleValidator::ANCHOR_SEQS.to_vec()
         } else {
             SimpleValidator::NON_ANCHOR_SEQS.to_vec()
@@ -1431,9 +1432,13 @@ impl SimpleValidator {
 
         let mut htlc_value_sat: u64 = 0;
 
-        let offered_htlc_dust_limit = MIN_DUST_LIMIT_SATOSHIS
-            + (info.feerate_per_kw as u64 * htlc_timeout_tx_weight(setup.option_anchor_outputs())
-                / 1000);
+        let offered_htlc_dust_limit = if setup.option_anchors_zero_fee_htlc() {
+            0
+        } else {
+            MIN_DUST_LIMIT_SATOSHIS
+                + (info.feerate_per_kw as u64 * htlc_timeout_tx_weight(setup.option_anchors())
+                    / 1000)
+        };
         for htlc in &info.offered_htlcs {
             // TODO - this check should be converted into two checks, one the first time
             // the HTLC is introduced and the other every time it is encountered.
@@ -1455,9 +1460,13 @@ impl SimpleValidator {
             }
         }
 
-        let received_htlc_dust_limit = MIN_DUST_LIMIT_SATOSHIS
-            + (info.feerate_per_kw as u64 * htlc_success_tx_weight(setup.option_anchor_outputs())
-                / 1000);
+        let received_htlc_dust_limit = if setup.option_anchors_zero_fee_htlc() {
+            0
+        } else {
+            MIN_DUST_LIMIT_SATOSHIS
+                + (info.feerate_per_kw as u64 * htlc_success_tx_weight(setup.option_anchors())
+                    / 1000)
+        };
         for htlc in &info.received_htlcs {
             // TODO - this check should be converted into two checks, one the first time
             // the HTLC is introduced and the other every time it is encountered.

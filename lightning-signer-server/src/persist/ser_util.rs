@@ -173,6 +173,7 @@ pub enum CommitmentTypeDef {
     Legacy,
     StaticRemoteKey,
     Anchors,
+    AnchorsZeroFeeHtlc,
 }
 
 #[derive(Deserialize)]

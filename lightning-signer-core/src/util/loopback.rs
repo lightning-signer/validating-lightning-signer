@@ -189,9 +189,10 @@ impl LoopbackChannelSigner {
         vec![1]
     }
 
-    fn option_anchor_outputs(&self) -> bool {
+    fn option_anchors(&self) -> bool {
         let setup = self.get_channel_setup().expect("not ready");
         setup.commitment_type == CommitmentType::Anchors
+            || setup.commitment_type == CommitmentType::AnchorsZeroFeeHtlc
     }
 }
 
@@ -405,7 +406,7 @@ impl BaseSign for LoopbackChannelSigner {
         let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
         let tx_keys = self.make_counterparty_tx_keys(&per_commitment_point, secp_ctx)?;
         let redeem_script =
-            chan_utils::get_htlc_redeemscript(&htlc, self.option_anchor_outputs(), &tx_keys);
+            chan_utils::get_htlc_redeemscript(&htlc, self.option_anchors(), &tx_keys);
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2
@@ -437,7 +438,7 @@ impl BaseSign for LoopbackChannelSigner {
     ) -> Result<Signature, ()> {
         let chan_keys = self.make_counterparty_tx_keys(per_commitment_point, secp_ctx)?;
         let redeem_script =
-            chan_utils::get_htlc_redeemscript(htlc, self.option_anchor_outputs(), &chan_keys);
+            chan_utils::get_htlc_redeemscript(htlc, self.option_anchors(), &chan_keys);
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2

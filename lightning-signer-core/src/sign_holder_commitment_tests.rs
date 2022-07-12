@@ -229,16 +229,22 @@ mod tests {
                 let (sig, htlc_sigs) =
                     chan.sign_holder_commitment_tx_phase2(commit_tx_ctx.commit_num)?;
 
+                let build_feerate = if chan_ctx.setup.option_anchors_zero_fee_htlc() {
+                    0
+                } else {
+                    commit_tx_ctx.feerate_per_kw
+                };
+
                 let htlc_txs = trusted_tx
                     .htlcs()
                     .iter()
                     .map(|htlc| {
                         build_htlc_transaction(
                             &tx.transaction.txid(),
-                            commit_tx_ctx.feerate_per_kw,
+                            build_feerate,
                             chan_ctx.setup.counterparty_selected_contest_delay,
                             &htlc,
-                            chan_ctx.setup.option_anchor_outputs(),
+                            chan_ctx.setup.option_anchors(),
                             &txkeys.broadcaster_delayed_payment_key,
                             &txkeys.revocation_key,
                         )
@@ -248,11 +254,7 @@ mod tests {
                 let htlc_redeemscripts = htlcs
                     .iter()
                     .map(|htlc| {
-                        get_htlc_redeemscript(
-                            &htlc,
-                            chan_ctx.setup.option_anchor_outputs(),
-                            &txkeys,
-                        )
+                        get_htlc_redeemscript(&htlc, chan_ctx.setup.option_anchors(), &txkeys)
                     })
                     .collect::<Vec<Script>>();
 
@@ -330,6 +332,15 @@ mod tests {
                     );
                 }
             }
+            paste! {
+                #[test]
+                fn [<$name _zerofee>]() {
+                    assert_status_ok!(
+                        sign_holder_commitment_tx_with_mutators(
+                            CommitmentType::AnchorsZeroFeeHtlc, $sms)
+                    );
+                }
+            }
         };
     }
 
@@ -350,6 +361,15 @@ mod tests {
                     assert_status_ok!(
                         sign_holder_commitment_tx_retry_with_mutators(
                             CommitmentType::Anchors, $sms)
+                    );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _retry_zerofee>]() {
+                    assert_status_ok!(
+                        sign_holder_commitment_tx_retry_with_mutators(
+                            CommitmentType::AnchorsZeroFeeHtlc, $sms)
                     );
                 }
             }
