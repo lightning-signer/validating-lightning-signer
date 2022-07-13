@@ -12,7 +12,6 @@ pub mod debug_utils;
 /// Logging
 pub mod log_utils;
 /// An implementation of the LDK Sign trait for integration with LDK based nodes
-#[cfg(feature = "test_utils")]
 pub mod loopback;
 #[allow(missing_docs)]
 pub mod test_logger;
