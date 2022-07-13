@@ -292,7 +292,7 @@ impl OnchainValidator {
         // had enough confirmations.
         if commit_num > 0 {
             if cstate.funding_depth < self.policy.min_funding_depth as u32 {
-                return policy_err!(
+                policy_err!(self, "other",
                     "tried commitment {} when funding is not buried at depth {}",
                     commit_num,
                     cstate.funding_depth
@@ -300,7 +300,7 @@ impl OnchainValidator {
             }
 
             if cstate.closing_depth > 0 {
-                return policy_err!(
+                policy_err!(self, "other",
                     "tried commitment {} after closed on-chain at depth {}",
                     commit_num,
                     cstate.closing_depth

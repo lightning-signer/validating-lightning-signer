@@ -175,8 +175,8 @@ macro_rules! mismatch_err {
 
 #[allow(unused)]
 macro_rules! policy_err {
-	($($arg:tt)*) => (
-            Err(policy_error(format!(
+	($obj:expr, $tag:tt, $($arg:tt)*) => (
+            return Err(policy_error(format!(
                 "{}: {}",
                 short_function!(),
                 format!($($arg)*)
