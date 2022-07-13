@@ -321,7 +321,7 @@ impl EnforcementState {
     ) -> Result<(), ValidationError> {
         let current = self.next_holder_commit_num;
         if num != current && num != current + 1 {
-            return policy_err!("invalid progression: {} to {}", current, num);
+            policy_err!(self, "other",  "invalid progression: {} to {}", current, num);
         }
         // TODO - should we enforce policy-v2-commitment-retry-same here?
         debug!("next_holder_commit_num {} -> {}", current, num);
@@ -337,7 +337,7 @@ impl EnforcementState {
     ) -> Result<CommitmentInfo2, ValidationError> {
         // Make sure they are asking for the correct commitment (in sync).
         if commitment_number + 1 != self.next_holder_commit_num {
-            return policy_err!(
+            policy_err!(self, "other",
                 "invalid next holder commitment number: {} != {}",
                 commitment_number + 1,
                 self.next_holder_commit_num
@@ -354,7 +354,7 @@ impl EnforcementState {
         current_commitment_info: CommitmentInfo2,
     ) -> Result<(), ValidationError> {
         if num == 0 {
-            return policy_err!("can't set next to 0");
+            policy_err!(self, "other",  "can't set next to 0");
         }
 
         // The initial commitment is special, it can advance even though next_revoke is 0.
@@ -362,14 +362,14 @@ impl EnforcementState {
 
         // Ensure that next_commit is ok relative to next_revoke
         if num < self.next_counterparty_revoke_num + delta {
-            return policy_err!(
+            policy_err!(self, "other",
                 "{} too small relative to next_counterparty_revoke_num {}",
                 num,
                 self.next_counterparty_revoke_num
             );
         }
         if num > self.next_counterparty_revoke_num + 2 {
-            return policy_err!(
+            policy_err!(self, "other",
                 "{} too large relative to next_counterparty_revoke_num {}",
                 num,
                 self.next_counterparty_revoke_num
@@ -392,7 +392,7 @@ impl EnforcementState {
                     current_point,
                     self.current_counterparty_point.unwrap()
                 );
-                return policy_err!("retry {}: point different than prior", num);
+                policy_err!(self, "other",  "retry {}: point different than prior", num);
             }
         } else if num == current + 1 {
             self.previous_counterparty_point = self.current_counterparty_point;
@@ -400,7 +400,7 @@ impl EnforcementState {
             self.current_counterparty_point = Some(current_point);
             self.current_counterparty_commit_info = Some(current_commitment_info);
         } else {
-            return policy_err!("invalid progression: {} to {}", current, num);
+            policy_err!(self, "other",  "invalid progression: {} to {}", current, num);
         }
 
         self.next_counterparty_commit_num = num;
@@ -415,7 +415,7 @@ impl EnforcementState {
         } else if num + 2 == self.next_counterparty_commit_num {
             &self.previous_counterparty_point
         } else {
-            return policy_err!(
+            policy_err!(self, "other",
                 "{} out of range, next is {}",
                 num,
                 self.next_counterparty_commit_num
@@ -441,7 +441,7 @@ impl EnforcementState {
         } else if num + 2 == self.next_counterparty_commit_num {
             self.previous_counterparty_commit_info.clone()
         } else {
-            return policy_err!(
+            policy_err!(self, "other",
                 "{} out of range, next is {}",
                 num,
                 self.next_counterparty_commit_num
@@ -460,19 +460,19 @@ impl EnforcementState {
     /// Set next counterparty revoked commitment number
     pub fn set_next_counterparty_revoke_num(&mut self, num: u64) -> Result<(), ValidationError> {
         if num == 0 {
-            return policy_err!("can't set next to 0");
+            policy_err!(self, "other",  "can't set next to 0");
         }
 
         // Ensure that next_revoke is ok relative to next_commit.
         if num + 2 < self.next_counterparty_commit_num {
-            return policy_err!(
+            policy_err!(self, "other",
                 "{} too small relative to next_counterparty_commit_num {}",
                 num,
                 self.next_counterparty_commit_num
             );
         }
         if num + 1 > self.next_counterparty_commit_num {
-            return policy_err!(
+            policy_err!(self, "other",
                 "{} too large relative to next_counterparty_commit_num {}",
                 num,
                 self.next_counterparty_commit_num
@@ -481,7 +481,7 @@ impl EnforcementState {
 
         let current = self.next_counterparty_revoke_num;
         if num != current && num != current + 1 {
-            return policy_err!("invalid progression: {} to {}", current, num);
+            policy_err!(self, "other",  "invalid progression: {} to {}", current, num);
         }
 
         // Remove any revoked commitment state.
