@@ -16,6 +16,7 @@ default = ["std", "env_logger", "log_pretty_print"]
 
 no-std = ["lightning/no-std", "lightning-invoice/no-std", "bitcoin/no-std", "core2/alloc"]
 std = ["lightning/std", "lightning-invoice/std", "bitcoin/std", "bitcoin/rand", "bitcoin/bitcoinconsensus", "rand"]
+serde = ["bitcoin/use-serde"]
 secp-lowmemory = ["bitcoin/secp-lowmemory"]
 
 # if you use tonic, this is convenient for auto-conversion of MySigner Status to tonic::Status

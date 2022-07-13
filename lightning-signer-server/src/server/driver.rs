@@ -17,13 +17,14 @@ use bitcoin::consensus::{deserialize, encode};
 use bitcoin::hashes::Hash as BitcoinHash;
 use bitcoin::secp256k1::{ecdsa::Signature, PublicKey, SecretKey};
 use bitcoin::util::psbt::serialize::Deserialize;
-use bitcoin::{self, EcdsaSighashType, Network, OutPoint, Script};
+use bitcoin::{EcdsaSighashType, Network, OutPoint, Script};
 
-use crate::lightning;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
 
+use lightning_signer::bitcoin;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
+use lightning_signer::lightning;
 use lightning_signer::node::SpendType;
 use lightning_signer::node::{self};
 use lightning_signer::persist::{DummyPersister, Persist};

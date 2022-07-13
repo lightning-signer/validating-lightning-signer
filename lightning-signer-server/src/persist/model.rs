@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::hex::Hex;
 use serde_with::serde_as;
 
+use lightning_signer::bitcoin;
 use lightning_signer::channel::ChannelId;
 use lightning_signer::channel::ChannelSetup;
 use lightning_signer::monitor::ChainMonitor;

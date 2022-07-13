@@ -907,7 +907,6 @@ dependencies = [
  "async-trait",
  "backtrace",
  "bip39",
- "bitcoin",
  "bitcoind-client",
  "clap",
  "ctrlc",

@@ -18,6 +18,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::serde_as;
 use serde_with::{DeserializeAs, SerializeAs};
 
+use lightning_signer::bitcoin;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::monitor::State as ChainMonitorState;
 use lightning_signer::policy::validator::EnforcementState;

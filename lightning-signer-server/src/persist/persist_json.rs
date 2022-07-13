@@ -1,6 +1,7 @@
 use kv::{Bucket, Config, Json, Store, TransactionError};
 
 use bitcoin::secp256k1::PublicKey;
+use lightning_signer::bitcoin;
 use lightning_signer::chain::tracker::ChainTracker;
 
 use lightning_signer::channel::{Channel, ChannelId, ChannelStub};

@@ -72,7 +72,7 @@ Build VLS and related crates:
 
 ### Running Unit Tests
 
-    cargo test
+    cargo test --features test_utils
     
 To enable logging for a failing test (adjust log level to preference):
 
