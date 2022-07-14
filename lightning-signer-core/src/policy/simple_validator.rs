@@ -11,6 +11,7 @@ use lightning::ln::PaymentHash;
 use log::{debug, error, info};
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
+use crate::policy::filter::{FilterResult, PolicyFilter};
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
 use crate::policy::Policy;
@@ -102,11 +103,17 @@ pub struct SimplePolicy {
     pub max_routing_fee_msat: u64,
     /// Developer flags - DO NOT USE IN PRODUCTION
     pub dev_flags: Option<PolicyDevFlags>,
+    /// Policy filter
+    pub filter: PolicyFilter,
 }
 
 impl Policy for SimplePolicy {
-    fn policy_error(&self, _tag: String, msg: String) -> Result<(), ValidationError> {
-        return Err(policy_error(msg));
+    fn policy_error(&self, tag: String, msg: String) -> Result<(), ValidationError> {
+        if self.filter.filter(tag) == FilterResult::Error {
+            Err(policy_error(msg))
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -1648,6 +1655,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             enforce_balance: false,
             max_routing_fee_msat: 10000,
             dev_flags: None,
+            filter: PolicyFilter::default(),
         }
     } else {
         SimplePolicy {
@@ -1667,6 +1675,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             enforce_balance: false,
             max_routing_fee_msat: 10000,
             dev_flags: None,
+            filter: PolicyFilter::default(),
         }
     }
 }
@@ -1699,6 +1708,7 @@ mod tests {
             enforce_balance: false,
             max_routing_fee_msat: 10000,
             dev_flags: None,
+            filter: PolicyFilter::default(),
         };
 
         SimpleValidator {

@@ -1,6 +1,8 @@
 /// Policy errors
 #[macro_use]
 pub mod error;
+/// Filter
+pub mod filter;
 /// Null policy enforcement
 #[cfg(feature = "test_utils")]
 pub mod null_validator;

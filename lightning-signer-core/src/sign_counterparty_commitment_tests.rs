@@ -5,11 +5,13 @@ mod tests {
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::PublicKey;
     use bitcoin::util::psbt::serialize::Serialize;
+    use bitcoin::Network;
     use lightning::chain::keysinterface::BaseSign;
     use lightning::ln::chan_utils::{
         make_funding_redeemscript, BuiltCommitmentTransaction, TxCreationKeys,
     };
     use lightning::ln::PaymentHash;
+    use std::sync::Arc;
     use test_log::test;
 
     use crate::channel::{Channel, ChannelSetup, CommitmentType, TypedSignature};
@@ -21,7 +23,17 @@ mod tests {
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
 
+    use crate::node::Node;
+    use crate::policy::filter::PolicyFilter;
+    use crate::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
     use paste::paste;
+
+    fn disable_policies(node: &Arc<Node>) {
+        let mut policy = make_simple_policy(Network::Testnet);
+        policy.filter = PolicyFilter::new_permissive();
+        *node.validator_factory.lock().unwrap() =
+            Arc::new(SimpleValidatorFactory::new_with_policy(policy));
+    }
 
     #[test]
     fn sign_counterparty_commitment_tx_static_test() {
@@ -316,20 +328,28 @@ mod tests {
         witscripts: &'a mut Vec<Vec<u8>>,
     }
 
-    fn sign_counterparty_commitment_tx_with_mutators<StateMutator, KeysMutator, TxMutator>(
+    fn sign_counterparty_commitment_tx_with_mutators<
+        StateMutator,
+        KeysMutator,
+        TxMutator,
+        NodeMutator,
+    >(
         is_phase2: bool,
         commitment_type: CommitmentType,
         statemut: StateMutator,
         keysmut: KeysMutator,
         txmut: TxMutator,
+        nodemut: NodeMutator,
     ) -> Result<(), Status>
     where
+        NodeMutator: Fn(&Arc<Node>),
         StateMutator: Fn(&mut EnforcementState),
         KeysMutator: Fn(&mut TxCreationKeys),
         TxMutator: Fn(&mut TxMutationState),
     {
         let (node, setup, channel_id, offered_htlcs, received_htlcs) =
             sign_commitment_tx_with_mutators_setup(commitment_type);
+        nodemut(&node);
 
         let remote_percommitment_point = make_test_pubkey(10);
 
@@ -447,6 +467,9 @@ mod tests {
             |_tms| {
                 // don't mutate the tx, should pass
             },
+            |_node| {
+                // don't mutate the node
+            },
         ));
     }
 
@@ -463,6 +486,9 @@ mod tests {
             },
             |_tms| {
                 // don't mutate the tx, should pass
+            },
+            |_node| {
+                // don't mutate the node
             },
         ));
     }
@@ -481,6 +507,9 @@ mod tests {
             |_tms| {
                 // don't mutate the tx, should pass
             },
+            |_node| {
+                // don't mutate the node
+            },
         ));
     }
 
@@ -497,6 +526,9 @@ mod tests {
             },
             |_tms| {
                 // don't mutate the tx, should pass
+            },
+            |_node| {
+                // don't mutate the node
             },
         ));
     }
@@ -522,7 +554,7 @@ mod tests {
                 fn [<$name _phase1_static>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
-                            false, CommitmentType::StaticRemoteKey, $sm, $km, $tm),
+                            false, CommitmentType::StaticRemoteKey, $sm, $km, $tm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE1_STATIC)
                     );
                 }
@@ -532,7 +564,7 @@ mod tests {
                 fn [<$name _phase1_anchors>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
-                            false, CommitmentType::Anchors, $sm, $km, $tm),
+                            false, CommitmentType::Anchors, $sm, $km, $tm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE1_ANCHORS)
                     );
                 }
@@ -547,7 +579,7 @@ mod tests {
                 fn [<$name _phase2_static>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
-                            true, CommitmentType::StaticRemoteKey, $sm, $km, $tm),
+                            true, CommitmentType::StaticRemoteKey, $sm, $km, $tm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE2_STATIC)
                     );
                 }
@@ -557,7 +589,7 @@ mod tests {
                 fn [<$name _phase2_anchors>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
-                            true, CommitmentType::Anchors, $sm, $km, $tm),
+                            true, CommitmentType::Anchors, $sm, $km, $tm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE2_ANCHORS)
                     );
                 }
@@ -575,6 +607,32 @@ mod tests {
     macro_rules! generate_failed_precondition_error_with_mutated_state {
         ($name: ident, $sm: expr, $errmsg: expr) => {
             generate_failed_precondition_error_variations!($name, $sm, |_| {}, |_| {}, $errmsg);
+            paste! {
+                #[test]
+                fn [<$name _phase2_static_warn>]() {
+                    assert_status_ok!(sign_counterparty_commitment_tx_with_mutators(
+                        true, // is_phase2
+                        CommitmentType::StaticRemoteKey,
+                        $sm,
+                        |_| {},
+                        |_| {},
+                        disable_policies,
+                    ));
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _phase1_static_warn>]() {
+                    assert_status_ok!(sign_counterparty_commitment_tx_with_mutators(
+                        false,
+                        CommitmentType::StaticRemoteKey,
+                        $sm,
+                        |_| {},
+                        |_| {},
+                        disable_policies,
+                    ));
+                }
+            }
         };
     }
 
@@ -611,6 +669,13 @@ mod tests {
         |_| "policy failure: validate_counterparty_commitment_tx: \
          invalid attempt to sign counterparty commit_num 23 with next_counterparty_revoke_num 21"
     );
+
+    fn disable_policies(node: &Arc<Node>) {
+        let mut policy = make_simple_policy(Network::Testnet);
+        policy.filter = PolicyFilter::new_warn_all();
+        *node.validator_factory.lock().unwrap() =
+            Arc::new(SimpleValidatorFactory::new_with_policy(policy));
+    }
 
     // policy-commitment-version
     generate_failed_precondition_error_phase1_with_mutated_tx!(
