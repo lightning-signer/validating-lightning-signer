@@ -8,7 +8,7 @@ use lightning::ln::chan_utils::{
     make_funding_redeemscript, ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
-use log::{debug, error, info};
+use log::*;
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::policy::filter::{FilterResult, PolicyFilter};
@@ -109,9 +109,10 @@ pub struct SimplePolicy {
 
 impl Policy for SimplePolicy {
     fn policy_error(&self, tag: String, msg: String) -> Result<(), ValidationError> {
-        if self.filter.filter(tag) == FilterResult::Error {
+        if self.filter.filter(tag.clone()) == FilterResult::Error {
             Err(policy_error(msg))
         } else {
+            warn!("policy failed: {} {}", tag, msg);
             Ok(())
         }
     }
