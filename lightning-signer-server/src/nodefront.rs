@@ -7,8 +7,9 @@ use async_trait::async_trait;
 
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::merkleblock::PartialMerkleTree;
-use bitcoin::{self, BlockHash, BlockHeader, Network, OutPoint, Txid};
+use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
 
+use lightning_signer::bitcoin;
 use lightning_signer::node::Node;
 use lightning_signer::signer::multi_signer::MultiSigner;
 use lightning_signer::wallet::Wallet;

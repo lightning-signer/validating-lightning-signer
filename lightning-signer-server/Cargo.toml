@@ -15,11 +15,11 @@ build = "build.rs"
 default = ["log_pretty_print"]
 grpc = ["frontend", "tokio", "tonic", "prost", "serde", "serde_json", "clap", "url", "lightning-signer-core/grpc"]
 persist_kv_json = [ "kv", "persist" ]
-persist = [ "serde", "serde_json", "serde_with", "bitcoin/use-serde" ]
+persist = [ "serde", "serde_json", "serde_with", "lightning-signer-core/serde" ]
 log_pretty_print = []
 chain_test = ["clap", "url", "bitcoind-client"]
 test_utils = ["lightning-signer-core/test_utils"]
-bins = ["bip39", "rand", "ctrlc"]
+bins = ["bip39", "rand", "ctrlc", "grpc"]
 frontend = ["vls-frontend"]
 
 [lib]
@@ -45,7 +45,6 @@ serde = { version = "1.0.105", features = ["derive"], optional = true }
 serde_json = { version = "1.0.48", optional = true }
 serde_with = { version = "1.6.4", features = ["hex"], optional = true }
 clap = { version = "=3.0.0-beta.2", optional = true }
-bitcoin = { version = "0.28.1" }
 ctrlc = { version = "3.1.9", features = ["termination"], optional = true }
 triggered = "0.1.1"
 tracing = { version = "0.1.32" }

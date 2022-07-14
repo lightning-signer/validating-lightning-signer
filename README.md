@@ -10,7 +10,9 @@ The gRPC server is a reference implementation of a signer which listens for requ
 
 It can be started via:
 ```
-cargo run --bin vlsd
+alias vlsd="cargo run --features bins --bin vlsd"
+alias vls-cli="cargo run --features bins --bin vls-cli --"
+vlsd
 ```
 
 The server will persist its state to `.lightning-signer` in the current directory.
@@ -19,28 +21,28 @@ The server will persist its state to `.lightning-signer` in the current director
 
 Assuming the server is running (see above), the admin CLI can be invoked as follows:
 ```shell
-cargo run --bin vls-cli -- [ARGUMENTS]
+vls-cli [ARGUMENTS]
 ```
 For example, to get help, run:
 ```
-cargo run --bin vls-cli -- help
+cargo run --features bins --bin vls-cli -- help
 ```
 
 Here is an example session:
 
 ```shell
 # this outputs the new mnemonic phrase to stderr
-node_id=$(cargo run --bin vls-cli -- node new)
+node_id=$(vls-cli node new)
 
 # alternatively, supply the mnemonic phrase on stdin
-# cargo run --bin vls-cli -- node new --mnemonic
+# vls-cli node new --mnemonic
 
 # insert an address into the allowlist
-cargo run --bin vls-cli -- -n $node_id allowlist add tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z
-cargo run --bin vls-cli -- -n $node_id allowlist list
+vls-cli -n $node_id allowlist add tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z
+vls-cli -n $node_id allowlist list
 
-channel_id=$(cargo run --bin vls-cli -- channel new -n $node_id)
-cargo run --bin vls-cli -- channel list -n $node_id
+channel_id=$(vls-cli channel new -n $node_id)
+vls-cli channel list -n $node_id
 ```
 
 ## Additional Crates
@@ -72,7 +74,7 @@ Build VLS and related crates:
 
 ### Running Unit Tests
 
-    cargo test
+    cargo test --features test_utils
     
 To enable logging for a failing test (adjust log level to preference):
 

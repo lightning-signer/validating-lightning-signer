@@ -2,6 +2,7 @@ use core::convert::TryInto;
 
 use bitcoin::secp256k1::{ecdsa::Signature, PublicKey, SecretKey};
 
+use lightning_signer::bitcoin;
 use lightning_signer::channel::{ChannelId, TypedSignature};
 use lightning_signer::util::crypto_utils::signature_to_bitcoin_vec;
 use lightning_signer::util::INITIAL_COMMITMENT_NUMBER;

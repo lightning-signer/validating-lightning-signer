@@ -3,7 +3,6 @@
 #![allow(bare_trait_objects)]
 #![allow(ellipsis_inclusive_range_patterns)]
 
-extern crate bitcoin;
 extern crate hex;
 #[cfg(feature = "grpc")]
 extern crate tonic;
