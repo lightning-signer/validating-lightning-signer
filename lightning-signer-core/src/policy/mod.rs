@@ -10,3 +10,12 @@ pub mod onchain_validator;
 pub mod simple_validator;
 /// Policy enforcement interface
 pub mod validator;
+
+use crate::prelude::*;
+
+/// An enforcement policy
+pub trait Policy {
+    /// A policy error has occured.
+    /// Policy errors can be converted to warnings by returning `Ok(())`
+    fn policy_error(&self, _tag: String, msg: String) -> Result<(), error::ValidationError>;
+}

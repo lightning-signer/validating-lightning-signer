@@ -8,6 +8,7 @@ use crate::policy::error::policy_error;
 use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
+use crate::policy::Policy;
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
@@ -53,6 +54,12 @@ pub struct OnchainValidator {
 /// Policy to configure the onchain validator
 pub struct OnchainPolicy {
     min_funding_depth: u16,
+}
+
+impl Policy for OnchainPolicy {
+    fn policy_error(&self, _tag: String, msg: String) -> Result<(), ValidationError> {
+        return Err(policy_error(msg));
+    }
 }
 
 fn make_onchain_policy(_network: Network) -> OnchainPolicy {
@@ -279,6 +286,10 @@ impl Validator for OnchainValidator {
 
     fn minimum_initial_balance(&self, holder_value_msat: u64) -> u64 {
         self.inner.minimum_initial_balance(holder_value_msat)
+    }
+
+    fn policy(&self) -> Box<&dyn Policy> {
+        Box::new(&self.policy)
     }
 }
 

@@ -944,6 +944,7 @@ mod tests {
         node_ctx
             .node
             .with_ready_channel(&chan_ctx.channel_id, |chan| {
+                let validator = chan.validator();
                 let state = &mut chan.enforcement_state;
 
                 // We'll need a placeholder; actual values not checked here ...
@@ -956,7 +957,8 @@ mod tests {
 
                 // can't set next_commit to 0 (what would current point be?)
                 assert_policy_err!(
-                    state.set_next_counterparty_commit_num(
+                    validator.set_next_counterparty_commit_num(
+                        state,
                         0,
                         make_test_pubkey(0x08),
                         commit_info.clone()
@@ -967,13 +969,14 @@ mod tests {
 
                 // can't set next_revoke to 0 either
                 assert_policy_err!(
-                    state.set_next_counterparty_revoke_num(0),
+                    validator.set_next_counterparty_revoke_num(state, 0),
                     "set_next_counterparty_revoke_num: can\'t set next to 0"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 0);
 
                 // ADVANCE next_commit to 1
-                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                assert_validation_ok!(validator.set_next_counterparty_commit_num(
+                    state,
                     1,
                     make_test_pubkey(0x10),
                     commit_info.clone()
@@ -984,7 +987,8 @@ mod tests {
                 // commit 1: next    <- next_commit
 
                 // retries are ok
-                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                assert_validation_ok!(validator.set_next_counterparty_commit_num(
+                    state,
                     1,
                     make_test_pubkey(0x10),
                     commit_info.clone()
@@ -994,7 +998,8 @@ mod tests {
 
                 // can't skip next_commit forward
                 assert_policy_err!(
-                    state.set_next_counterparty_commit_num(
+                    validator.set_next_counterparty_commit_num(
+                        state,
                         3,
                         make_test_pubkey(0x14),
                         commit_info.clone()
@@ -1006,14 +1011,15 @@ mod tests {
 
                 // can't skip next_revoke forward
                 assert_policy_err!(
-                    state.set_next_counterparty_revoke_num(1),
+                    validator.set_next_counterparty_revoke_num(state, 1),
                     "set_next_counterparty_revoke_num: \
                      1 too large relative to next_counterparty_commit_num 1"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 0);
 
                 // ADVANCE next_commit to 2
-                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                assert_validation_ok!(validator.set_next_counterparty_commit_num(
+                    state,
                     2,
                     make_test_pubkey(0x12),
                     commit_info.clone()
@@ -1025,7 +1031,8 @@ mod tests {
                 // commit 2: next    <- next_commit
 
                 // retries are ok
-                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                assert_validation_ok!(validator.set_next_counterparty_commit_num(
+                    state,
                     2,
                     make_test_pubkey(0x12),
                     commit_info.clone()
@@ -1035,7 +1042,8 @@ mod tests {
 
                 // can't commit old thing
                 assert_policy_err!(
-                    state.set_next_counterparty_commit_num(
+                    validator.set_next_counterparty_commit_num(
+                        state,
                         1,
                         make_test_pubkey(0x10),
                         commit_info.clone()
@@ -1046,7 +1054,8 @@ mod tests {
 
                 // can't advance commit again
                 assert_policy_err!(
-                    state.set_next_counterparty_commit_num(
+                    validator.set_next_counterparty_commit_num(
+                        state,
                         3,
                         make_test_pubkey(0x14),
                         commit_info.clone()
@@ -1058,21 +1067,21 @@ mod tests {
 
                 // can't (ever) set next_revoke to 0
                 assert_policy_err!(
-                    state.set_next_counterparty_revoke_num(0),
+                    validator.set_next_counterparty_revoke_num(state, 0),
                     "set_next_counterparty_revoke_num: can\'t set next to 0"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 0);
 
                 // can't skip revoke ahead
                 assert_policy_err!(
-                    state.set_next_counterparty_revoke_num(2),
+                    validator.set_next_counterparty_revoke_num(state, 2),
                     "set_next_counterparty_revoke_num: 2 too large relative to \
                      next_counterparty_commit_num 2"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 0);
 
                 // REVOKE commit 0
-                assert_validation_ok!(state.set_next_counterparty_revoke_num(1));
+                assert_validation_ok!(validator.set_next_counterparty_revoke_num(state, 1));
                 assert_eq!(state.next_counterparty_revoke_num, 1);
                 assert_eq!(state.next_counterparty_commit_num, 2);
                 // commit 0: revoked
@@ -1080,13 +1089,14 @@ mod tests {
                 // commit 2: next      <- next_commit
 
                 // retries are ok
-                assert_validation_ok!(state.set_next_counterparty_revoke_num(1));
+                assert_validation_ok!(validator.set_next_counterparty_revoke_num(state, 1));
                 assert_eq!(state.next_counterparty_revoke_num, 1);
                 assert_eq!(state.next_counterparty_commit_num, 2);
 
                 // can't retry the previous commit anymore
                 assert_policy_err!(
-                    state.set_next_counterparty_commit_num(
+                    validator.set_next_counterparty_commit_num(
+                        state,
                         2,
                         make_test_pubkey(0x12),
                         commit_info.clone()
@@ -1098,7 +1108,8 @@ mod tests {
 
                 // can't skip commit ahead
                 assert_policy_err!(
-                    state.set_next_counterparty_commit_num(
+                    validator.set_next_counterparty_commit_num(
+                        state,
                         4,
                         make_test_pubkey(0x16),
                         commit_info.clone()
@@ -1110,21 +1121,22 @@ mod tests {
 
                 // can't revoke backwards
                 assert_policy_err!(
-                    state.set_next_counterparty_revoke_num(0),
+                    validator.set_next_counterparty_revoke_num(state, 0),
                     "set_next_counterparty_revoke_num: can\'t set next to 0"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 1);
 
                 // can't skip revoke ahead
                 assert_policy_err!(
-                    state.set_next_counterparty_revoke_num(2),
+                    validator.set_next_counterparty_revoke_num(state, 2),
                     "set_next_counterparty_revoke_num: 2 too large \
                      relative to next_counterparty_commit_num 2"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 1);
 
                 // ADVANCE next_commit to 3
-                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                assert_validation_ok!(validator.set_next_counterparty_commit_num(
+                    state,
                     3,
                     make_test_pubkey(0x14),
                     commit_info.clone()
@@ -1137,7 +1149,8 @@ mod tests {
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // retries ok
-                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                assert_validation_ok!(validator.set_next_counterparty_commit_num(
+                    state,
                     3,
                     make_test_pubkey(0x14),
                     commit_info.clone()
@@ -1145,13 +1158,13 @@ mod tests {
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // Can still retry the old revoke (they may not have seen our commit).
-                assert_validation_ok!(state.set_next_counterparty_revoke_num(1));
+                assert_validation_ok!(validator.set_next_counterparty_revoke_num(state, 1));
                 assert_eq!(state.next_counterparty_revoke_num, 1);
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // Can't skip revoke ahead
                 assert_policy_err!(
-                    state.set_next_counterparty_revoke_num(3),
+                    validator.set_next_counterparty_revoke_num(state, 3),
                     "set_next_counterparty_revoke_num: 3 too large relative to \
                      next_counterparty_commit_num 3"
                 );
@@ -1159,7 +1172,8 @@ mod tests {
 
                 // can't commit ahead until revoke catches up
                 assert_policy_err!(
-                    state.set_next_counterparty_commit_num(
+                    validator.set_next_counterparty_commit_num(
+                        state,
                         4,
                         make_test_pubkey(0x16),
                         commit_info.clone()
@@ -1171,7 +1185,8 @@ mod tests {
 
                 // can't commit behind
                 assert_policy_err!(
-                    state.set_next_counterparty_commit_num(
+                    validator.set_next_counterparty_commit_num(
+                        state,
                         2,
                         make_test_pubkey(0x12),
                         commit_info.clone()
@@ -1182,7 +1197,7 @@ mod tests {
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // REVOKE commit 1
-                assert_validation_ok!(state.set_next_counterparty_revoke_num(2));
+                assert_validation_ok!(validator.set_next_counterparty_revoke_num(state, 2));
                 // commit 1: revoked
                 // commit 2: current   <- next_revoke
                 // commit 3: next      <- next_commit
@@ -1190,20 +1205,20 @@ mod tests {
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // revoke retries ok
-                assert_validation_ok!(state.set_next_counterparty_revoke_num(2));
+                assert_validation_ok!(validator.set_next_counterparty_revoke_num(state, 2));
                 assert_eq!(state.next_counterparty_revoke_num, 2);
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // can't revoke backwards
                 assert_policy_err!(
-                    state.set_next_counterparty_revoke_num(1),
+                    validator.set_next_counterparty_revoke_num(state, 1),
                     "set_next_counterparty_revoke_num: invalid progression: 2 to 1"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 2);
 
                 // can't revoke ahead until next commit
                 assert_policy_err!(
-                    state.set_next_counterparty_revoke_num(3),
+                    validator.set_next_counterparty_revoke_num(state, 3),
                     "set_next_counterparty_revoke_num: 3 too large relative to \
                      next_counterparty_commit_num 3"
                 );
@@ -1211,7 +1226,8 @@ mod tests {
 
                 // commit retry not ok anymore
                 assert_policy_err!(
-                    state.set_next_counterparty_commit_num(
+                    validator.set_next_counterparty_commit_num(
+                        state,
                         3,
                         make_test_pubkey(0x14),
                         commit_info.clone()
@@ -1223,7 +1239,8 @@ mod tests {
 
                 // can't skip commit ahead
                 assert_policy_err!(
-                    state.set_next_counterparty_commit_num(
+                    validator.set_next_counterparty_commit_num(
+                        state,
                         5,
                         make_test_pubkey(0x18),
                         commit_info.clone()
@@ -1234,7 +1251,8 @@ mod tests {
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // ADVANCE next_commit to 4
-                assert_validation_ok!(state.set_next_counterparty_commit_num(
+                assert_validation_ok!(validator.set_next_counterparty_commit_num(
+                    state,
                     4,
                     make_test_pubkey(0x16),
                     commit_info.clone()

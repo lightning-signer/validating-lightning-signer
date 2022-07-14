@@ -13,6 +13,7 @@ use log::{debug, error, info};
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
+use crate::policy::Policy;
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
@@ -101,6 +102,12 @@ pub struct SimplePolicy {
     pub max_routing_fee_msat: u64,
     /// Developer flags - DO NOT USE IN PRODUCTION
     pub dev_flags: Option<PolicyDevFlags>,
+}
+
+impl Policy for SimplePolicy {
+    fn policy_error(&self, _tag: String, msg: String) -> Result<(), ValidationError> {
+        return Err(policy_error(msg));
+    }
 }
 
 /// Development flags included in SimplePolicy
@@ -454,18 +461,18 @@ impl Validator for SimpleValidator {
                         }
 
                         let push_val_sat = chan.setup.push_value_msat / 1000;
-                        let our_value =
-                            if chan.setup.is_outbound {
-                                chan.setup
-                                    .channel_value_sat
-                                    .checked_sub(push_val_sat)
-                                    .expect("push value underflow checked in ready_channel")
-                            } else {
-                                policy_err!(self, "other",
+                        if !chan.setup.is_outbound {
+                            policy_err!(
+                                self,
+                                "other",
                                 "can't sign for inbound channel: dual-funding not supported yet",
                             );
-                                // push_val_sat
-                            };
+                        }
+                        let our_value = chan
+                            .setup
+                            .channel_value_sat
+                            .checked_sub(push_val_sat)
+                            .expect("push value underflow checked in ready_channel");
                         debug!("output {} ({}) funds channel {}", outndx, output.value, chan.id());
                         beneficial_sum =
                             add_beneficial_output!(beneficial_sum, our_value, "channel value")?;
@@ -587,22 +594,35 @@ impl Validator for SimpleValidator {
         // Is this a retry?
         if commit_num + 1 == estate.next_counterparty_commit_num {
             // The commit_point must be the same as previous
-            let prev_commit_point = estate.get_previous_counterparty_point(commit_num)?;
-            if *commitment_point != prev_commit_point {
-                policy_err!(
-                    self,
-                    "other",
-                    "retry of sign_counterparty_commitment {} with changed point: \
+            let prev_commit_point = estate.get_previous_counterparty_point(commit_num);
+            match prev_commit_point {
+                None => {
+                    policy_err!(
+                        self,
+                        "other",
+                        "retry of sign_counterparty_commitment {} with no prev point: \
+                             new {}",
+                        commit_num,
+                        commitment_point
+                    );
+                }
+                Some(prev) =>
+                    if *commitment_point != prev {
+                        policy_err!(
+                            self,
+                            "other",
+                            "retry of sign_counterparty_commitment {} with changed point: \
                              prev {} != new {}",
-                    commit_num,
-                    &prev_commit_point,
-                    &commitment_point
-                );
+                            commit_num,
+                            prev,
+                            commitment_point
+                        );
+                    },
             }
 
             // The CommitmentInfo2 must be the same as previously
-            let prev_commit_info = estate.get_previous_counterparty_commit_info(commit_num)?;
-            if *info2 != prev_commit_info {
+            let prev_commit_info = estate.get_previous_counterparty_commit_info(commit_num);
+            if Some(info2) != prev_commit_info.as_ref() {
                 debug_vals!(*info2, prev_commit_info);
                 policy_err!(
                     self,
@@ -725,17 +745,30 @@ impl Validator for SimpleValidator {
 
         // policy-commitment-previous-revoked (partial: secret validated, but not stored here)
         let supplied_commit_point = PublicKey::from_secret_key(&secp_ctx, &commitment_secret);
-        let prev_commit_point = state.get_previous_counterparty_point(revoke_num)?;
-        if supplied_commit_point != prev_commit_point {
-            debug_failed_vals!(state, revoke_num, commitment_secret);
-            policy_err!(
-                self,
-                "other",
-                "revocation commit point mismatch for commit_num {}: supplied {}, previous {}",
-                revoke_num,
-                supplied_commit_point,
-                prev_commit_point
-            );
+        let prev_commit_point = state.get_previous_counterparty_point(revoke_num);
+        match prev_commit_point {
+            None => {
+                debug_failed_vals!(state, revoke_num, commitment_secret);
+                policy_err!(
+                    self,
+                    "other",
+                    "revocation commit point mismatch for commit_num {}: supplied {}, previous is None",
+                    revoke_num,
+                    supplied_commit_point
+                );
+            }
+            Some(prev) =>
+                if supplied_commit_point != prev {
+                    debug_failed_vals!(state, revoke_num, commitment_secret);
+                    policy_err!(
+                        self,
+                        "other",
+                        "revocation commit point mismatch for commit_num {}: supplied {}, previous {}",
+                        revoke_num,
+                        supplied_commit_point,
+                        prev
+                    );
+                },
         }
 
         Ok(())
@@ -1422,10 +1455,9 @@ impl Validator for SimpleValidator {
         };
         // policy-routing-balanced
         if self.policy.require_invoices && incoming + max_to_invoice < outgoing {
-            policy_err!(self, "other", "incoming < outgoing")
-        } else {
-            Ok(())
+            policy_err!(self, "other", "incoming < outgoing");
         }
+        Ok(())
     }
 
     fn enforce_balance(&self) -> bool {
@@ -1434,6 +1466,10 @@ impl Validator for SimpleValidator {
 
     fn minimum_initial_balance(&self, holder_value_msat: u64) -> u64 {
         holder_value_msat / 1000
+    }
+
+    fn policy(&self) -> Box<&dyn Policy> {
+        Box::new(&self.policy)
     }
 }
 
@@ -2074,5 +2110,136 @@ mod tests {
             ),
             "validate_expiry: received HTLC expiry too late: 2441 > 2440"
         );
+    }
+
+    #[test]
+    fn enforcement_state_previous_counterparty_point_test() {
+        let mut state = EnforcementState::new(0);
+        let validator = make_test_validator();
+
+        let point0 = make_test_pubkey(0x12);
+        let commit_info = make_test_commitment_info();
+
+        // you can never set next to 0
+        assert_policy_err!(
+            validator.set_next_counterparty_commit_num(
+                &mut state,
+                0,
+                point0.clone(),
+                commit_info.clone()
+            ),
+            "set_next_counterparty_commit_num: can\'t set next to 0"
+        );
+
+        // point for 0 is not set yet
+        assert_eq!(state.get_previous_counterparty_point(0), None);
+
+        // can't look forward either
+        assert_eq!(state.get_previous_counterparty_point(1), None);
+
+        // can't skip forward
+        assert_policy_err!(
+            validator.set_next_counterparty_commit_num(
+                &mut state,
+                2,
+                point0.clone(),
+                commit_info.clone()
+            ),
+            "set_next_counterparty_commit_num: invalid progression: 0 to 2"
+        );
+
+        // set point 0
+        assert!(validator
+            .set_next_counterparty_commit_num(&mut state, 1, point0.clone(), commit_info.clone())
+            .is_ok());
+
+        // and now you can get it.
+        assert_eq!(state.get_previous_counterparty_point(0).unwrap(), point0.clone());
+
+        // you can set it again to the same thing (retry)
+        // policy-v2-commitment-retry-same
+        assert!(validator
+            .set_next_counterparty_commit_num(&mut state, 1, point0.clone(), commit_info.clone())
+            .is_ok());
+        assert_eq!(state.next_counterparty_commit_num, 1);
+
+        // but setting it to something else is an error
+        // policy-v2-commitment-retry-same
+        let point1 = make_test_pubkey(0x16);
+        assert_policy_err!(
+            validator.set_next_counterparty_commit_num(
+                &mut state,
+                1,
+                point1.clone(),
+                commit_info.clone()
+            ),
+            "set_next_counterparty_commit_num: retry 1: point different than prior"
+        );
+        assert_eq!(state.next_counterparty_commit_num, 1);
+
+        // can't get commit_num 1 yet
+        assert_eq!(state.get_previous_counterparty_point(1), None);
+
+        // can't skip forward
+        assert_policy_err!(
+            validator.set_next_counterparty_commit_num(
+                &mut state,
+                3,
+                point1.clone(),
+                commit_info.clone()
+            ),
+            "set_next_counterparty_commit_num: \
+             3 too large relative to next_counterparty_revoke_num 0"
+        );
+        assert_eq!(state.next_counterparty_commit_num, 1);
+
+        // set point 1
+        assert!(validator
+            .set_next_counterparty_commit_num(&mut state, 2, point1.clone(), commit_info.clone())
+            .is_ok());
+        assert_eq!(state.next_counterparty_commit_num, 2);
+
+        // you can still get commit_num 0
+        assert_eq!(state.get_previous_counterparty_point(0).unwrap(), point0.clone());
+
+        // Now you can get commit_num 1
+        assert_eq!(state.get_previous_counterparty_point(1).unwrap(), point1.clone());
+
+        // can't look forward
+        assert_eq!(state.get_previous_counterparty_point(2), None);
+
+        // can't skip forward
+        assert_policy_err!(
+            validator.set_next_counterparty_commit_num(
+                &mut state,
+                4,
+                point1.clone(),
+                commit_info.clone()
+            ),
+            "set_next_counterparty_commit_num: 4 too large \
+             relative to next_counterparty_revoke_num 0"
+        );
+        assert_eq!(state.next_counterparty_commit_num, 2);
+
+        assert!(validator.set_next_counterparty_revoke_num(&mut state, 1).is_ok());
+
+        // set point 2
+        let point2 = make_test_pubkey(0x20);
+        assert!(validator
+            .set_next_counterparty_commit_num(&mut state, 3, point2.clone(), commit_info.clone())
+            .is_ok());
+        assert_eq!(state.next_counterparty_commit_num, 3);
+
+        // You can't get commit_num 0 anymore
+        assert_eq!(state.get_previous_counterparty_point(0), None);
+
+        // you can still get commit_num 1
+        assert_eq!(state.get_previous_counterparty_point(1).unwrap(), point1.clone());
+
+        // now you can get commit_num 2
+        assert_eq!(state.get_previous_counterparty_point(2).unwrap(), point2.clone());
+
+        // can't look forward
+        assert_eq!(state.get_previous_counterparty_point(3), None);
     }
 }

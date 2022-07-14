@@ -7,6 +7,7 @@ use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
+use crate::policy::Policy;
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
@@ -226,5 +227,9 @@ impl Validator for NullValidator {
 
     fn minimum_initial_balance(&self, _holder_value_msat: u64) -> u64 {
         0
+    }
+
+    fn policy(&self) -> Box<&dyn Policy> {
+        self.0.policy()
     }
 }

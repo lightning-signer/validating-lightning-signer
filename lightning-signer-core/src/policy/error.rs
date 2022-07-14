@@ -176,12 +176,12 @@ macro_rules! mismatch_err {
 #[allow(unused)]
 macro_rules! policy_err {
 	($obj:expr, $tag:tt, $($arg:tt)*) => (
-            return Err(policy_error(format!(
-                "{}: {}",
-                short_function!(),
-                format!($($arg)*)
-            )))
-        )
+        $obj.policy().policy_error($tag.into(), format!(
+            "{}: {}",
+            short_function!(),
+            format!($($arg)*)
+        ))?
+    )
 }
 
 #[cfg(test)]
