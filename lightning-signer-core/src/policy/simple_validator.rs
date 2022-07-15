@@ -113,6 +113,8 @@ impl Policy for SimplePolicy {
             Err(policy_error(msg))
         } else {
             warn!("policy failed: {} {}", tag, msg);
+            #[cfg(feature = "backtrace")]
+            warn!("BACKTRACE:\n{:?}", backtrace::Backtrace::new());
             Ok(())
         }
     }
