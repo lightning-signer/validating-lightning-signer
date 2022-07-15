@@ -7,20 +7,18 @@ use std::{cmp, process};
 
 use anyhow::{anyhow, bail};
 use backtrace::Backtrace;
-use clap::{App, Arg, ArgMatches};
-use log::{debug, error, info};
-use serde_json::json;
-use tonic::{transport::Server, Request, Response, Status};
-use url::Url;
-
 use bitcoin::consensus::{deserialize, encode};
 use bitcoin::hashes::Hash as BitcoinHash;
 use bitcoin::secp256k1::{ecdsa::Signature, PublicKey, SecretKey};
 use bitcoin::util::psbt::serialize::Deserialize;
 use bitcoin::{EcdsaSighashType, Network, OutPoint, Script};
-
+use clap::{App, Arg, ArgMatches};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
+use log::{debug, error, info};
+use serde_json::json;
+use tonic::{transport::Server, Request, Response, Status};
+use url::Url;
 
 use lightning_signer::bitcoin;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
@@ -39,19 +37,16 @@ use lightning_signer::util::log_utils::{parse_log_level_filter, LOG_LEVEL_FILTER
 use lightning_signer::util::status;
 use lightning_signer::util::status::invalid_argument;
 use lightning_signer::{channel, containing_function, debug_vals, short_function, vals_str};
+use lightning_signer_server::fslogger::FilesystemLogger;
+use lightning_signer_server::grpc::remotesigner;
+use lightning_signer_server::nodefront::SignerFront;
+use lightning_signer_server::persist::persist_json::KVJsonPersister;
+use lightning_signer_server::NETWORK_NAMES;
+use lightning_signer_server::SERVER_APP_NAME;
 use remotesigner::signer_server::{Signer, SignerServer};
+use remotesigner::version_server::Version;
 use remotesigner::*;
-
 use vls_frontend::Frontend;
-
-use crate::fslogger::FilesystemLogger;
-use crate::nodefront::SignerFront;
-use crate::persist::persist_json::KVJsonPersister;
-use crate::server::remotesigner::version_server::Version;
-use crate::NETWORK_NAMES;
-use crate::SERVER_APP_NAME;
-
-use super::remotesigner;
 
 macro_rules! log_req_enter_with_id {
     ($id: expr, $req: expr) => {
@@ -256,10 +251,6 @@ fn signature_from_proto(
     bitcoin_vec_to_signature(&proto_sig.data, sighash_type).map_err(|err| {
         invalid_grpc_argument(format!("trouble in bitcoin_vec_to_signature: {}", err))
     })
-}
-
-pub fn collect_output_witscripts(output_descs: &Vec<OutputDescriptor>) -> Vec<Vec<u8>> {
-    output_descs.iter().map(|odsc| odsc.witscript.clone()).collect()
 }
 
 #[tonic::async_trait]

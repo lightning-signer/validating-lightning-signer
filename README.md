@@ -10,8 +10,8 @@ The gRPC server is a reference implementation of a signer which listens for requ
 
 It can be started via:
 ```
-alias vlsd="cargo run --features bins --bin vlsd"
-alias vls-cli="cargo run --features bins --bin vls-cli --"
+alias vlsd="cargo run --bin vlsd"
+alias vls-cli="cargo run --bin vls-cli --"
 vlsd
 ```
 
@@ -25,7 +25,7 @@ vls-cli [ARGUMENTS]
 ```
 For example, to get help, run:
 ```
-cargo run --features bins --bin vls-cli -- help
+cargo run --bin vls-cli -- help
 ```
 
 Here is an example session:

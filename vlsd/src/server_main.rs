@@ -1,4 +1,4 @@
-use lightning_signer_server::server;
+mod server;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     server::driver::start()

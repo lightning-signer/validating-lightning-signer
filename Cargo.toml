@@ -11,6 +11,7 @@ members = [
     "vls-protocol-client",
     "vls-protocol-signer",
     "vls-proxy",
+    "vlsd",
 ]
 
 exclude = [

@@ -906,17 +906,12 @@ dependencies = [
  "anyhow",
  "async-trait",
  "backtrace",
- "bip39",
- "bitcoind-client",
- "clap",
- "ctrlc",
  "env_logger",
  "hex 0.3.2",
  "kv",
  "lightning-signer-core",
  "log",
  "prost",
- "rand 0.4.6",
  "serde",
  "serde_json",
  "serde_with",
@@ -926,10 +921,6 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-build",
- "tracing",
- "tracing-subscriber",
- "triggered",
- "url",
  "vls-frontend",
 ]
 
@@ -2304,6 +2295,39 @@ dependencies = [
  "vls-protocol",
  "vls-protocol-client",
  "vls-protocol-signer",
+]
+
+[[package]]
+name = "vlsd"
+version = "0.1.0-5"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "backtrace",
+ "bip39",
+ "bitcoind-client",
+ "clap",
+ "ctrlc",
+ "env_logger",
+ "hex 0.3.2",
+ "kv",
+ "lightning-signer-core",
+ "lightning-signer-server",
+ "log",
+ "prost",
+ "rand 0.4.6",
+ "serde",
+ "serde_json",
+ "test-log",
+ "time 0.2.27",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+ "url",
+ "vls-frontend",
 ]
 
 [[package]]

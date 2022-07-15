@@ -2,9 +2,9 @@ use tonic::{transport, Request};
 
 use remotesigner::signer_client::SignerClient;
 
-use crate::server::remotesigner;
-use crate::server::remotesigner::node_config::KeyDerivationStyle;
-use crate::server::remotesigner::{
+use lightning_signer_server::grpc::remotesigner;
+use remotesigner::node_config::KeyDerivationStyle;
+use remotesigner::{
     AddAllowlistRequest, Bip32Seed, ChainParams, ChannelNonce, GetPerCommitmentPointRequest,
     InitRequest, ListAllowlistRequest, ListChannelsRequest, ListNodesRequest, NewChannelRequest,
     NodeConfig, NodeId, PingRequest, RemoveAllowlistRequest,

@@ -1,11 +1,15 @@
 extern crate clap;
 
+#[macro_use]
+mod client;
+
+use client::driver;
+
 use std::io;
 
 use clap::{App, Arg, ArgMatches};
 
 use bip39::Mnemonic;
-use lightning_signer_server::client::driver;
 use lightning_signer_server::CLIENT_APP_NAME;
 use lightning_signer_server::NETWORK_NAMES;
 

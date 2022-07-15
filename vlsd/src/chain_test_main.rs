@@ -65,8 +65,7 @@ async fn run_test(network: Network, rpc: Url) -> anyhow::Result<()> {
         rpc.port().expect("rpc port"),
         rpc.username().to_owned(),
         rpc.password().to_owned().expect("rpc password").to_owned(),
-    )
-    .await?;
+    ).await;
     let info = client.get_blockchain_info().await;
     println!("{:?}", info);
     let start_height = info.latest_height as u32 - 100000;
