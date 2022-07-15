@@ -13,13 +13,11 @@ build = "build.rs"
 
 [features]
 default = ["log_pretty_print"]
-grpc = ["frontend", "tokio", "tonic", "prost", "serde", "serde_json", "clap", "url", "lightning-signer-core/grpc"]
+grpc = ["tokio", "tonic", "prost", "serde", "serde_json", "lightning-signer-core/grpc"]
 persist_kv_json = [ "kv", "persist" ]
 persist = [ "serde", "serde_json", "serde_with", "lightning-signer-core/serde" ]
 log_pretty_print = []
-chain_test = ["clap", "url", "bitcoind-client"]
 test_utils = ["lightning-signer-core/test_utils"]
-bins = ["bip39", "rand", "ctrlc", "grpc"]
 frontend = ["vls-frontend"]
 
 [lib]
@@ -32,11 +30,8 @@ log = { version="0.4.14", features = [ "std" ] }
 time = "0.2"
 lightning-signer-core = { path = "../lightning-signer-core", features = ["debug"] }
 vls-frontend = { path = "../vls-frontend", optional = true }
-bitcoind-client = { path = "../bitcoind-client", optional = true }
 backtrace = "0.3"
-bip39 = { version = "1.0.0", features = ["rand"], optional = true }
 hex = "0.3.2"
-rand = { version = "0.4", optional = true }
 kv = { version = "0.22.0", features = ["json-value"], optional = true }
 tonic = { version = "0.6", optional = true }
 prost = { version = "0.9", optional = true }
@@ -44,14 +39,7 @@ tokio = { version = "1.17", features = ["macros", "rt-multi-thread"], optional =
 serde = { version = "1.0.105", features = ["derive"], optional = true }
 serde_json = { version = "1.0.48", optional = true }
 serde_with = { version = "1.6.4", features = ["hex"], optional = true }
-clap = { version = "=3.0.0-beta.2", optional = true }
-ctrlc = { version = "3.1.9", features = ["termination"], optional = true }
-triggered = "0.1.1"
-tracing = { version = "0.1.32" }
-tracing-subscriber = { version = "0.3.9" }
 async-trait = "0.1"
-
-url = { version = "2.2", optional = true }
 
 # For logging in unit tests
 test-log = "0.2.8"
@@ -64,21 +52,6 @@ tempfile = "3.2.0"
 tonic-build = "0.6"
 
 [[bin]]
-name = "vls-cli"
-path = "src/client_main.rs"
-required-features = ["bins", "grpc"]
-
-[[bin]]
-name = "vlsd"
-path = "src/server_main.rs"
-required-features = ["bins", "grpc"]
-
-[[bin]]
 name = "persist_test"
 path = "src/persist_test_main.rs"
-required-features = ["bins", "persist_kv_json", "test_utils"]
-
-[[bin]]
-name = "chain_test"
-path = "src/chain_test_main.rs"
-required-features = ["bins", "chain_test"]
+required-features = ["persist_kv_json", "test_utils"]

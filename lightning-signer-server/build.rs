@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "SignHolderCommitmentTxRequest.payment_hashes",
             "#[serde(serialize_with = \"crate::util::as_hex_vec\")]",
         )
-        .out_dir("src/server")
-        .compile(&["src/server/remotesigner.proto"], &["src/server"])?;
+        .out_dir("src/grpc")
+        .compile(&["src/grpc/remotesigner.proto"], &["src/grpc"])?;
     Ok(())
 }

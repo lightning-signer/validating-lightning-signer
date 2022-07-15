@@ -17,8 +17,9 @@ use lightning_signer::wallet::Wallet;
 use vls_frontend::{ChainTrack, ChainTrackDirectory};
 
 /// Implements ChainTrackDirectory using calls to inplace MultiSigner
-pub(crate) struct SignerFront {
-    pub(crate) signer: Arc<MultiSigner>,
+pub struct SignerFront {
+    /// The signer
+    pub signer: Arc<MultiSigner>,
 }
 
 #[async_trait]

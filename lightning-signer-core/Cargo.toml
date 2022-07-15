@@ -57,7 +57,6 @@ hashbrown = "0.11" # match hashbrown dependency version via lightning
 itertools = { version = "0.10", default-features = false }
 
 [dev-dependencies]
-tempfile = "3.2.0"
 paste = "1.0"
 # For logging in unit tests
 test-log = "0.2.8"

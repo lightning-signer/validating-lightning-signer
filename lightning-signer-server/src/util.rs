@@ -1,9 +1,6 @@
-#[cfg(feature = "grpc")]
 use serde::ser::SerializeSeq;
-#[cfg(feature = "grpc")]
 use serde::Serializer;
 
-#[cfg(feature = "grpc")]
 pub fn as_hex<S>(buf: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -11,7 +8,8 @@ where
     serializer.serialize_str(&hex::encode(&buf))
 }
 
-#[cfg(feature = "grpc")]
+// used in build.rs
+#[allow(unused)]
 pub fn as_hex_vec<S>(vec: &Vec<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,

@@ -3,23 +3,17 @@
 #![allow(bare_trait_objects)]
 #![allow(ellipsis_inclusive_range_patterns)]
 
-extern crate hex;
-#[cfg(feature = "grpc")]
-extern crate tonic;
-
 use lightning_signer::lightning;
 
 pub mod fslogger;
-#[cfg(feature = "persist")]
-pub mod persist;
-pub mod util;
-#[macro_use]
 #[cfg(feature = "grpc")]
-pub mod client;
+pub mod grpc;
 #[cfg(feature = "frontend")]
 pub mod nodefront;
+#[cfg(feature = "persist")]
+pub mod persist;
 #[cfg(feature = "grpc")]
-pub mod server;
+mod util;
 
 pub const SERVER_APP_NAME: &str = "vlsd";
 pub const CLIENT_APP_NAME: &str = "vls-cli";

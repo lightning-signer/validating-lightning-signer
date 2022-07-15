@@ -3,7 +3,6 @@
 /coverage.txt
 
 # generated from protobuf
-/lightning-signer-server/src/server/remotesigner.rs
 /vls-proxy/src/grpc/hsmd.rs
 
 /target/
