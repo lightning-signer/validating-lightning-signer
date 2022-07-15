@@ -229,7 +229,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "url",
 ]
 
 [[package]]
@@ -894,7 +893,6 @@ dependencies = [
  "paste",
  "rand 0.4.6",
  "scopeguard",
- "tempfile",
  "test-log",
  "tonic",
 ]
