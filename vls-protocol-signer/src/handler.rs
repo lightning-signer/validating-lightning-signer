@@ -28,6 +28,7 @@ use lightning_signer::lightning::ln::chan_utils::{
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::{Node, NodeConfig, SpendType};
 use lightning_signer::persist::Persist;
+use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
 use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
@@ -125,7 +126,21 @@ impl RootHandler {
         });
 
         let nodes = persister.get_nodes();
-        let policy = make_simple_policy(network);
+        let mut policy = make_simple_policy(network);
+        #[cfg(feature = "std")]
+        {
+            use std::env;
+            let warn_only = env::var("VLS_PERMISSIVE")
+                .map(|s| s.parse().expect("VLS_PERMISSIVE parse"))
+                .unwrap_or(0);
+            if warn_only == 1 {
+                info!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");
+                policy.filter = PolicyFilter::new_permissive();
+            } else {
+                info!("VLS_ENFORCING: ALL POLICY ERRORS ARE ENFORCED");
+            }
+        }
+
         let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
         let node = if nodes.is_empty() {
             let node = Arc::new(Node::new(config, &seed, &persister, vec![], validator_factory));
