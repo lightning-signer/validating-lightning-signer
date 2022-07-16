@@ -606,7 +606,8 @@ impl Channel {
         )?;
 
         // Only advance the state if nothing goes wrong.
-        self.enforcement_state.set_next_counterparty_commit_num(
+        validator.set_next_counterparty_commit_num(
+            &mut self.enforcement_state,
             commitment_number + 1,
             remote_per_commitment_point.clone(),
             info2,
@@ -765,11 +766,16 @@ impl Channel {
 
     fn advance_holder_commitment_state(
         &mut self,
+        validator: Arc<dyn Validator>,
         commitment_number: u64,
         info2: CommitmentInfo2,
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
         // Advance the local commitment number state.
-        self.enforcement_state.set_next_holder_commit_num(commitment_number + 1, info2)?;
+        validator.set_next_holder_commit_num(
+            &mut self.enforcement_state,
+            commitment_number + 1,
+            info2,
+        )?;
 
         // These calls are guaranteed to pass the commitment_number
         // check because we just advanced it to the right spot above.
@@ -871,7 +877,7 @@ impl Channel {
         )?;
 
         let (next_holder_commitment_point, maybe_old_secret) =
-            self.advance_holder_commitment_state(commitment_number, info2)?;
+            self.advance_holder_commitment_state(validator.clone(), commitment_number, info2)?;
 
         state.apply_payments(
             &self.id0,
@@ -892,7 +898,9 @@ impl Channel {
         &mut self,
         commitment_number: u64,
     ) -> Result<(Signature, Vec<Signature>), Status> {
-        let info2 = self.enforcement_state.get_current_holder_commitment_info(commitment_number)?;
+        let validator = self.validator();
+        let info2 = validator
+            .get_current_holder_commitment_info(&mut self.enforcement_state, commitment_number)?;
 
         let htlcs =
             Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
@@ -1562,7 +1570,12 @@ impl Channel {
         )?;
 
         // Only advance the state if nothing goes wrong.
-        self.enforcement_state.set_next_counterparty_commit_num(commit_num + 1, point, info2)?;
+        validator.set_next_counterparty_commit_num(
+            &mut self.enforcement_state,
+            commit_num + 1,
+            point,
+            info2,
+        )?;
 
         state.apply_payments(
             &self.id0,
@@ -1749,7 +1762,7 @@ impl Channel {
         )?;
 
         let (next_holder_commitment_point, maybe_old_secret) =
-            self.advance_holder_commitment_state(commitment_number, info2)?;
+            self.advance_holder_commitment_state(validator.clone(), commitment_number, info2)?;
 
         state.apply_payments(
             &self.id0,
@@ -1776,12 +1789,13 @@ impl Channel {
     ) -> Result<(), Status> {
         // TODO - need to store the revealed secret.
 
-        self.validator().validate_counterparty_revocation(
+        let validator = self.validator();
+        validator.validate_counterparty_revocation(
             &self.enforcement_state,
             revoke_num,
             old_secret,
         )?;
-        self.enforcement_state.set_next_counterparty_revoke_num(revoke_num + 1)?;
+        validator.set_next_counterparty_revoke_num(&mut self.enforcement_state, revoke_num + 1)?;
 
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;

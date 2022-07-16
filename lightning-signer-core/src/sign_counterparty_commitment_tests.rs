@@ -5,11 +5,14 @@ mod tests {
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::PublicKey;
     use bitcoin::util::psbt::serialize::Serialize;
+    use bitcoin::Network;
     use lightning::chain::keysinterface::BaseSign;
     use lightning::ln::chan_utils::{
-        make_funding_redeemscript, BuiltCommitmentTransaction, TxCreationKeys,
+        make_funding_redeemscript, BuiltCommitmentTransaction,
+        DirectedChannelTransactionParameters, TxCreationKeys,
     };
     use lightning::ln::PaymentHash;
+    use std::sync::Arc;
     use test_log::test;
 
     use crate::channel::{Channel, ChannelSetup, CommitmentType, TypedSignature};
@@ -21,7 +24,17 @@ mod tests {
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
 
+    use crate::node::Node;
+    use crate::policy::filter::PolicyFilter;
+    use crate::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
     use paste::paste;
+
+    fn disable_policies(node: &Arc<Node>) {
+        let mut policy = make_simple_policy(Network::Testnet);
+        policy.filter = PolicyFilter::new_permissive();
+        *node.validator_factory.lock().unwrap() =
+            Arc::new(SimpleValidatorFactory::new_with_policy(policy));
+    }
 
     #[test]
     fn sign_counterparty_commitment_tx_static_test() {
@@ -316,20 +329,28 @@ mod tests {
         witscripts: &'a mut Vec<Vec<u8>>,
     }
 
-    fn sign_counterparty_commitment_tx_with_mutators<StateMutator, KeysMutator, TxMutator>(
+    fn sign_counterparty_commitment_tx_with_mutators<
+        StateMutator,
+        KeysMutator,
+        TxMutator,
+        NodeMutator,
+    >(
         is_phase2: bool,
         commitment_type: CommitmentType,
         statemut: StateMutator,
         keysmut: KeysMutator,
         txmut: TxMutator,
+        nodemut: NodeMutator,
     ) -> Result<(), Status>
     where
+        NodeMutator: Fn(&Arc<Node>),
         StateMutator: Fn(&mut EnforcementState),
         KeysMutator: Fn(&mut TxCreationKeys),
         TxMutator: Fn(&mut TxMutationState),
     {
         let (node, setup, channel_id, offered_htlcs, received_htlcs) =
             sign_commitment_tx_with_mutators_setup(commitment_type);
+        nodemut(&node);
 
         let remote_percommitment_point = make_test_pubkey(10);
 
@@ -447,6 +468,9 @@ mod tests {
             |_tms| {
                 // don't mutate the tx, should pass
             },
+            |_node| {
+                // don't mutate the node
+            },
         ));
     }
 
@@ -463,6 +487,9 @@ mod tests {
             },
             |_tms| {
                 // don't mutate the tx, should pass
+            },
+            |_node| {
+                // don't mutate the node
             },
         ));
     }
@@ -481,6 +508,9 @@ mod tests {
             |_tms| {
                 // don't mutate the tx, should pass
             },
+            |_node| {
+                // don't mutate the node
+            },
         ));
     }
 
@@ -497,6 +527,9 @@ mod tests {
             },
             |_tms| {
                 // don't mutate the tx, should pass
+            },
+            |_node| {
+                // don't mutate the node
             },
         ));
     }
@@ -522,7 +555,7 @@ mod tests {
                 fn [<$name _phase1_static>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
-                            false, CommitmentType::StaticRemoteKey, $sm, $km, $tm),
+                            false, CommitmentType::StaticRemoteKey, $sm, $km, $tm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE1_STATIC)
                     );
                 }
@@ -532,7 +565,7 @@ mod tests {
                 fn [<$name _phase1_anchors>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
-                            false, CommitmentType::Anchors, $sm, $km, $tm),
+                            false, CommitmentType::Anchors, $sm, $km, $tm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE1_ANCHORS)
                     );
                 }
@@ -547,7 +580,7 @@ mod tests {
                 fn [<$name _phase2_static>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
-                            true, CommitmentType::StaticRemoteKey, $sm, $km, $tm),
+                            true, CommitmentType::StaticRemoteKey, $sm, $km, $tm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE2_STATIC)
                     );
                 }
@@ -557,7 +590,7 @@ mod tests {
                 fn [<$name _phase2_anchors>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
-                            true, CommitmentType::Anchors, $sm, $km, $tm),
+                            true, CommitmentType::Anchors, $sm, $km, $tm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE2_ANCHORS)
                     );
                 }
@@ -575,6 +608,32 @@ mod tests {
     macro_rules! generate_failed_precondition_error_with_mutated_state {
         ($name: ident, $sm: expr, $errmsg: expr) => {
             generate_failed_precondition_error_variations!($name, $sm, |_| {}, |_| {}, $errmsg);
+            paste! {
+                #[test]
+                fn [<$name _phase2_static_warn>]() {
+                    assert_status_ok!(sign_counterparty_commitment_tx_with_mutators(
+                        true, // is_phase2
+                        CommitmentType::StaticRemoteKey,
+                        $sm,
+                        |_| {},
+                        |_| {},
+                        disable_policies,
+                    ));
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _phase1_static_warn>]() {
+                    assert_status_ok!(sign_counterparty_commitment_tx_with_mutators(
+                        false,
+                        CommitmentType::StaticRemoteKey,
+                        $sm,
+                        |_| {},
+                        |_| {},
+                        disable_policies,
+                    ));
+                }
+            }
         };
     }
 
@@ -751,24 +810,26 @@ mod tests {
     #[allow(dead_code)]
     struct RetryMutationState<'a> {
         cstate: &'a mut ChainState,
-        tx: &'a mut bitcoin::Transaction,
-        output_witscripts: &'a mut Vec<Vec<u8>>,
         remote_percommitment_point: &'a mut PublicKey,
         feerate_per_kw: &'a mut u32,
         offered_htlcs: &'a mut Vec<HTLCInfo2>,
         received_htlcs: &'a mut Vec<HTLCInfo2>,
     }
 
-    fn sign_counterparty_commitment_tx_retry_with_mutator<SignCommitmentMutator>(
+    fn sign_counterparty_commitment_tx_retry_with_mutator<SignCommitmentMutator, NodeMutator>(
         is_phase2: bool,
         commitment_type: CommitmentType,
         sign_comm_mut: SignCommitmentMutator,
+        nodemut: NodeMutator,
     ) -> Result<(), Status>
     where
+        NodeMutator: Fn(&Arc<Node>),
         SignCommitmentMutator: Fn(&mut RetryMutationState),
     {
         let (node, _setup, channel_id, offered_htlcs0, received_htlcs0) =
             sign_commitment_tx_with_mutators_setup(commitment_type);
+
+        nodemut(&node);
 
         node.with_ready_channel(&channel_id, |chan| {
             let mut offered_htlcs = offered_htlcs0.clone();
@@ -781,7 +842,6 @@ mod tests {
             let mut feerate_per_kw = 0;
             let to_broadcaster = 1_979_997;
             let to_countersignatory = 1_000_000;
-            let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
             chan.enforcement_state
                 .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
@@ -790,30 +850,17 @@ mod tests {
             let parameters = channel_parameters.as_counterparty_broadcastable();
             let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point)?;
 
-            let redeem_scripts = build_tx_scripts(
-                &keys,
-                to_countersignatory,
-                to_broadcaster,
-                &htlcs,
-                &parameters,
-                &chan.keys.pubkeys().funding_pubkey,
-                &chan.setup.counterparty_points.funding_pubkey,
-            )
-            .expect("scripts");
-            let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
-
-            let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
-                keys,
+            let (output_witscripts, tx) = create_tx(
+                chan,
+                &offered_htlcs,
+                &received_htlcs,
                 commit_num,
                 feerate_per_kw,
                 to_broadcaster,
                 to_countersignatory,
-                htlcs.clone(),
+                &parameters,
+                keys.clone(),
             );
-
-            // rebuild to get the scripts
-            let trusted_tx = commitment_tx.trust();
-            let mut tx = trusted_tx.built_transaction().clone();
 
             let mut cstate = make_test_chain_state();
 
@@ -844,13 +891,24 @@ mod tests {
             // Mutate the arguments to the commitment.
             sign_comm_mut(&mut RetryMutationState {
                 cstate: &mut cstate,
-                tx: &mut tx.transaction,
-                output_witscripts: &mut output_witscripts,
                 remote_percommitment_point: &mut remote_percommitment_point,
                 feerate_per_kw: &mut feerate_per_kw,
                 offered_htlcs: &mut offered_htlcs,
                 received_htlcs: &mut received_htlcs,
             });
+
+            let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point)?;
+            let (output_witscripts, tx) = create_tx(
+                chan,
+                &offered_htlcs,
+                &received_htlcs,
+                commit_num,
+                feerate_per_kw,
+                to_broadcaster,
+                to_countersignatory,
+                &parameters,
+                keys,
+            );
 
             // Sign it again (retry).
             let _sig = if !is_phase2 {
@@ -880,6 +938,45 @@ mod tests {
         })
     }
 
+    fn create_tx(
+        chan: &mut Channel,
+        offered_htlcs: &Vec<HTLCInfo2>,
+        received_htlcs: &Vec<HTLCInfo2>,
+        commit_num: u64,
+        feerate_per_kw: u32,
+        to_broadcaster: u64,
+        to_countersignatory: u64,
+        parameters: &DirectedChannelTransactionParameters,
+        keys: TxCreationKeys,
+    ) -> (Vec<Vec<u8>>, BuiltCommitmentTransaction) {
+        let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
+        let redeem_scripts = build_tx_scripts(
+            &keys,
+            to_countersignatory,
+            to_broadcaster,
+            &htlcs,
+            &parameters,
+            &chan.keys.pubkeys().funding_pubkey,
+            &chan.setup.counterparty_points.funding_pubkey,
+        )
+        .expect("scripts");
+        let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+
+        let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
+            keys,
+            commit_num,
+            feerate_per_kw,
+            to_broadcaster,
+            to_countersignatory,
+            htlcs.clone(),
+        );
+
+        // rebuild to get the scripts
+        let trusted_tx = commitment_tx.trust();
+        let tx = trusted_tx.built_transaction().clone();
+        (output_witscripts, tx)
+    }
+
     // policy-commitment-retry-same
     #[test]
     fn retry_same_phase1_static() {
@@ -888,7 +985,8 @@ mod tests {
             CommitmentType::StaticRemoteKey,
             |_cms| {
                 // If we don't mutate anything it should succeed.
-            }
+            },
+            |_node| {},
         ));
     }
 
@@ -900,7 +998,8 @@ mod tests {
             CommitmentType::StaticRemoteKey,
             |_cms| {
                 // If we don't mutate anything it should succeed.
-            }
+            },
+            |_node| {},
         ));
     }
 
@@ -912,7 +1011,8 @@ mod tests {
             CommitmentType::Anchors,
             |_cms| {
                 // If we don't mutate anything it should succeed.
-            }
+            },
+            |_node| {},
         ));
     }
 
@@ -924,7 +1024,8 @@ mod tests {
             CommitmentType::Anchors,
             |_cms| {
                 // If we don't mutate anything it should succeed.
-            }
+            },
+            |_node| {},
         ));
     }
 
@@ -935,7 +1036,7 @@ mod tests {
                 fn [<$name _phase1_static>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_retry_with_mutator(
-                            false, CommitmentType::StaticRemoteKey, $rm),
+                            false, CommitmentType::StaticRemoteKey, $rm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE1_STATIC)
                     );
                 }
@@ -945,7 +1046,7 @@ mod tests {
                 fn [<$name _phase2_static>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_retry_with_mutator(
-                            true, CommitmentType::StaticRemoteKey, $rm),
+                            true, CommitmentType::StaticRemoteKey, $rm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE2_STATIC)
                     );
                 }
@@ -955,7 +1056,7 @@ mod tests {
                 fn [<$name _phase1_anchors>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_retry_with_mutator(
-                            false, CommitmentType::Anchors, $rm),
+                            false, CommitmentType::Anchors, $rm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE1_ANCHORS)
                     );
                 }
@@ -965,9 +1066,23 @@ mod tests {
                 fn [<$name _phase2_anchors>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_retry_with_mutator(
-                            true, CommitmentType::Anchors, $rm),
+                            true, CommitmentType::Anchors, $rm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE2_ANCHORS)
                     );
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _phase2_static_warn>]() {
+                    assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(
+                            true, CommitmentType::Anchors, $rm, disable_policies));
+                }
+            }
+            paste! {
+                #[test]
+                fn [<$name _phase1_static_warn>]() {
+                    assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(
+                            false, CommitmentType::Anchors, $rm, disable_policies));
                 }
             }
         };
@@ -990,14 +1105,7 @@ mod tests {
         retry_with_removed_htlc,
         |cms| {
             // Remove the last received HTLC
-            let htlc = cms.received_htlcs.pop().unwrap();
-
-            // Credit the value to the broadcaster
-            cms.tx.output[3].value += htlc.value_sat;
-
-            // Remove the htlc from the tx and witscripts
-            cms.tx.output.remove(2);
-            cms.output_witscripts.remove(2);
+            cms.received_htlcs.pop().unwrap();
         },
         |_| "policy failure: validate_counterparty_commitment_tx: \
              retry of sign_counterparty_commitment 23 with changed info"

@@ -26,6 +26,7 @@ use lightning_signer::lightning;
 use lightning_signer::node::SpendType;
 use lightning_signer::node::{self};
 use lightning_signer::persist::{DummyPersister, Persist};
+use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::simple_validator::{
     make_simple_policy, SimplePolicy, SimpleValidatorFactory,
 };
@@ -1600,5 +1601,14 @@ fn policy(matches: &ArgMatches, network: Network) -> SimplePolicy {
     let mut policy = make_simple_policy(network);
     policy.require_invoices = matches.is_present("require_invoices");
     policy.enforce_balance = matches.is_present("enforce_balance");
+    use std::env;
+    let warn_only =
+        env::var("VLS_PERMISSIVE").map(|s| s.parse().expect("VLS_PERMISSIVE parse")).unwrap_or(0);
+    if warn_only == 1 {
+        info!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");
+        policy.filter = PolicyFilter::new_permissive();
+    } else {
+        info!("VLS_ENFORCING: ALL POLICY ERRORS ARE ENFORCED");
+    }
     policy
 }

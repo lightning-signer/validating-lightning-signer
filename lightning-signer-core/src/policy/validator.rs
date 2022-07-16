@@ -10,12 +10,13 @@ use lightning::ln::PaymentHash;
 use log::debug;
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
+use crate::policy::Policy;
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2, HTLCInfo2, PreimageMap};
 use crate::wallet::Wallet;
 
-use super::error::{policy_error, ValidationError};
+use super::error::ValidationError;
 
 /// A policy checker
 ///
@@ -200,6 +201,145 @@ pub trait Validator {
     /// the funding amount.
     /// The result is in satoshi.
     fn minimum_initial_balance(&self, holder_value_msat: u64) -> u64;
+
+    /// The associated policy
+    fn policy(&self) -> Box<&dyn Policy>;
+
+    /// Set next holder commitment number
+    fn set_next_holder_commit_num(
+        &self,
+        estate: &mut EnforcementState,
+        num: u64,
+        current_commitment_info: CommitmentInfo2,
+    ) -> Result<(), ValidationError> {
+        let current = estate.next_holder_commit_num;
+        if num != current && num != current + 1 {
+            policy_err!(self, "other", "invalid progression: {} to {}", current, num);
+        }
+        estate.set_next_holder_commit_num(num, current_commitment_info);
+        Ok(())
+    }
+
+    /// Get the current commitment info
+    fn get_current_holder_commitment_info(
+        &self,
+        estate: &mut EnforcementState,
+        commitment_number: u64,
+    ) -> Result<CommitmentInfo2, ValidationError> {
+        // Make sure they are asking for the correct commitment (in sync).
+        if commitment_number + 1 != estate.next_holder_commit_num {
+            policy_err!(
+                self,
+                "other",
+                "invalid next holder commitment number: {} != {}",
+                commitment_number + 1,
+                estate.next_holder_commit_num
+            );
+        }
+        Ok(estate.get_current_holder_commitment_info())
+    }
+
+    /// Set next counterparty commitment number
+    fn set_next_counterparty_commit_num(
+        &self,
+        estate: &mut EnforcementState,
+        num: u64,
+        current_point: PublicKey,
+        current_commitment_info: CommitmentInfo2,
+    ) -> Result<(), ValidationError> {
+        if num == 0 {
+            policy_err!(self, "other", "can't set next to 0");
+        }
+
+        // The initial commitment is special, it can advance even though next_revoke is 0.
+        let delta = if num == 1 { 1 } else { 2 };
+
+        // Ensure that next_commit is ok relative to next_revoke
+        if num < estate.next_counterparty_revoke_num + delta {
+            policy_err!(
+                self,
+                "other",
+                "{} too small relative to next_counterparty_revoke_num {}",
+                num,
+                estate.next_counterparty_revoke_num
+            );
+        }
+        if num > estate.next_counterparty_revoke_num + 2 {
+            policy_err!(
+                self,
+                "other",
+                "{} too large relative to next_counterparty_revoke_num {}",
+                num,
+                estate.next_counterparty_revoke_num
+            );
+        }
+
+        let current = estate.next_counterparty_commit_num;
+        if num == current {
+            // This is a retry.
+            assert!(
+                estate.current_counterparty_point.is_some(),
+                "retry {}: current_counterparty_point not set, this shouldn't be possible",
+                num
+            );
+            // policy-v2-commitment-retry-same
+            // FIXME - need to compare current_commitment_info with current_counterparty_commit_info
+            if current_point != estate.current_counterparty_point.unwrap() {
+                debug!(
+                    "current_point {} != prior {}",
+                    current_point,
+                    estate.current_counterparty_point.unwrap()
+                );
+                policy_err!(self, "other", "retry {}: point different than prior", num);
+            }
+        } else if num == current + 1 {
+        } else {
+            policy_err!(self, "other", "invalid progression: {} to {}", current, num);
+        }
+
+        estate.set_next_counterparty_commit_num(num, current_point, current_commitment_info);
+        Ok(())
+    }
+
+    /// Set next counterparty revoked commitment number
+    fn set_next_counterparty_revoke_num(
+        &self,
+        estate: &mut EnforcementState,
+        num: u64,
+    ) -> Result<(), ValidationError> {
+        if num == 0 {
+            policy_err!(self, "other", "can't set next to 0");
+        }
+
+        // Ensure that next_revoke is ok relative to next_commit.
+        if num + 2 < estate.next_counterparty_commit_num {
+            policy_err!(
+                self,
+                "other",
+                "{} too small relative to next_counterparty_commit_num {}",
+                num,
+                estate.next_counterparty_commit_num
+            );
+        }
+        if num + 1 > estate.next_counterparty_commit_num {
+            policy_err!(
+                self,
+                "other",
+                "{} too large relative to next_counterparty_commit_num {}",
+                num,
+                estate.next_counterparty_commit_num
+            );
+        }
+
+        let current = estate.next_counterparty_revoke_num;
+        if num != current && num != current + 1 {
+            policy_err!(self, "other", "invalid progression: {} to {}", current, num);
+        }
+
+        estate.set_next_counterparty_revoke_num(num);
+        debug!("next_counterparty_revoke_num {} -> {}", current, num);
+        Ok(())
+    }
 }
 
 /// Blockchain state used by the validator
@@ -314,38 +454,22 @@ impl EnforcementState {
     }
 
     /// Set next holder commitment number
+    /// Policy enforcement must be performed by the caller
     pub fn set_next_holder_commit_num(
         &mut self,
         num: u64,
         current_commitment_info: CommitmentInfo2,
-    ) -> Result<(), ValidationError> {
+    ) {
         let current = self.next_holder_commit_num;
-        if num != current && num != current + 1 {
-            policy_err!(self, "other", "invalid progression: {} to {}", current, num);
-        }
         // TODO - should we enforce policy-v2-commitment-retry-same here?
         debug!("next_holder_commit_num {} -> {}", current, num);
         self.next_holder_commit_num = num;
         self.current_holder_commit_info = Some(current_commitment_info);
-        Ok(())
     }
 
     /// Get the current commitment info
-    pub fn get_current_holder_commitment_info(
-        &self,
-        commitment_number: u64,
-    ) -> Result<CommitmentInfo2, ValidationError> {
-        // Make sure they are asking for the correct commitment (in sync).
-        if commitment_number + 1 != self.next_holder_commit_num {
-            policy_err!(
-                self,
-                "other",
-                "invalid next holder commitment number: {} != {}",
-                commitment_number + 1,
-                self.next_holder_commit_num
-            );
-        }
-        Ok(self.current_holder_commit_info.as_ref().unwrap().clone())
+    pub fn get_current_holder_commitment_info(&self) -> CommitmentInfo2 {
+        self.current_holder_commit_info.as_ref().unwrap().clone()
     }
 
     /// Set next counterparty commitment number
@@ -354,159 +478,65 @@ impl EnforcementState {
         num: u64,
         current_point: PublicKey,
         current_commitment_info: CommitmentInfo2,
-    ) -> Result<(), ValidationError> {
-        if num == 0 {
-            policy_err!(self, "other", "can't set next to 0");
-        }
-
-        // The initial commitment is special, it can advance even though next_revoke is 0.
-        let delta = if num == 1 { 1 } else { 2 };
-
-        // Ensure that next_commit is ok relative to next_revoke
-        if num < self.next_counterparty_revoke_num + delta {
-            policy_err!(
-                self,
-                "other",
-                "{} too small relative to next_counterparty_revoke_num {}",
-                num,
-                self.next_counterparty_revoke_num
-            );
-        }
-        if num > self.next_counterparty_revoke_num + 2 {
-            policy_err!(
-                self,
-                "other",
-                "{} too large relative to next_counterparty_revoke_num {}",
-                num,
-                self.next_counterparty_revoke_num
-            );
-        }
-
+    ) {
+        assert!(num > 0);
         let current = self.next_counterparty_commit_num;
-        if num == current {
-            // This is a retry.
-            assert!(
-                self.current_counterparty_point.is_some(),
-                "retry {}: current_counterparty_point not set, this shouldn't be possible",
-                num
-            );
-            // policy-v2-commitment-retry-same
-            // FIXME - need to compare current_commitment_info with current_counterparty_commit_info
-            if current_point != self.current_counterparty_point.unwrap() {
-                debug!(
-                    "current_point {} != prior {}",
-                    current_point,
-                    self.current_counterparty_point.unwrap()
-                );
-                policy_err!(self, "other", "retry {}: point different than prior", num);
-            }
-        } else if num == current + 1 {
+
+        if num == current + 1 {
+            // normal progression, move current to previous
             self.previous_counterparty_point = self.current_counterparty_point;
             self.previous_counterparty_commit_info = self.current_counterparty_commit_info.take();
+        } else if num > current + 1 || num < current {
+            // we jumped ahead or back, clear out previous info
+            self.previous_counterparty_point = None;
+            self.previous_counterparty_commit_info = None;
+        }
+
+        if num >= current + 1 {
+            // we progressed, set current
             self.current_counterparty_point = Some(current_point);
             self.current_counterparty_commit_info = Some(current_commitment_info);
-        } else {
-            policy_err!(self, "other", "invalid progression: {} to {}", current, num);
         }
 
         self.next_counterparty_commit_num = num;
         debug!("next_counterparty_commit_num {} -> {} current {}", current, num, current_point);
-        Ok(())
     }
 
-    /// Previous counterparty commitment point
-    pub fn get_previous_counterparty_point(&self, num: u64) -> Result<PublicKey, ValidationError> {
-        let point = if num + 1 == self.next_counterparty_commit_num {
-            &self.current_counterparty_point
+    /// Previous counterparty commitment point, or None if unknown
+    pub fn get_previous_counterparty_point(&self, num: u64) -> Option<PublicKey> {
+        if num + 1 == self.next_counterparty_commit_num {
+            self.current_counterparty_point
         } else if num + 2 == self.next_counterparty_commit_num {
-            &self.previous_counterparty_point
+            self.previous_counterparty_point
         } else {
-            policy_err!(
-                self,
-                "other",
-                "{} out of range, next is {}",
-                num,
-                self.next_counterparty_commit_num
-            );
+            None
         }
-        .unwrap_or_else(|| {
-            panic!(
-                "counterparty point for commit_num {} not set, \
-                 next_commitment_number is {}",
-                num, self.next_counterparty_commit_num
-            );
-        });
-        Ok(point)
     }
 
     /// Previous counterparty commitment info
-    pub fn get_previous_counterparty_commit_info(
-        &self,
-        num: u64,
-    ) -> Result<CommitmentInfo2, ValidationError> {
-        let commit_info = if num + 1 == self.next_counterparty_commit_num {
+    pub fn get_previous_counterparty_commit_info(&self, num: u64) -> Option<CommitmentInfo2> {
+        if num + 1 == self.next_counterparty_commit_num {
             self.current_counterparty_commit_info.clone()
         } else if num + 2 == self.next_counterparty_commit_num {
             self.previous_counterparty_commit_info.clone()
         } else {
-            policy_err!(
-                self,
-                "other",
-                "{} out of range, next is {}",
-                num,
-                self.next_counterparty_commit_num
-            );
+            None
         }
-        .unwrap_or_else(|| {
-            panic!(
-                "counterparty commit_info for commit_num {} not set, \
-                 next_commitment_number is {}",
-                num, self.next_counterparty_commit_num
-            );
-        });
-        Ok(commit_info)
     }
 
     /// Set next counterparty revoked commitment number
-    pub fn set_next_counterparty_revoke_num(&mut self, num: u64) -> Result<(), ValidationError> {
-        if num == 0 {
-            policy_err!(self, "other", "can't set next to 0");
-        }
-
-        // Ensure that next_revoke is ok relative to next_commit.
-        if num + 2 < self.next_counterparty_commit_num {
-            policy_err!(
-                self,
-                "other",
-                "{} too small relative to next_counterparty_commit_num {}",
-                num,
-                self.next_counterparty_commit_num
-            );
-        }
-        if num + 1 > self.next_counterparty_commit_num {
-            policy_err!(
-                self,
-                "other",
-                "{} too large relative to next_counterparty_commit_num {}",
-                num,
-                self.next_counterparty_commit_num
-            );
-        }
-
+    pub fn set_next_counterparty_revoke_num(&mut self, num: u64) {
+        assert_ne!(num, 0);
         let current = self.next_counterparty_revoke_num;
-        if num != current && num != current + 1 {
-            policy_err!(self, "other", "invalid progression: {} to {}", current, num);
-        }
 
         // Remove any revoked commitment state.
-        if num + 1 == self.next_counterparty_commit_num {
+        if num + 1 >= self.next_counterparty_commit_num {
             // We can't remove the previous_counterparty_point, needed for retries.
             self.previous_counterparty_commit_info = None;
         }
 
         self.next_counterparty_revoke_num = num;
         debug!("next_counterparty_revoke_num {} -> {}", current, num);
-        Ok(())
     }
 
     #[allow(missing_docs)]
@@ -711,138 +741,5 @@ fn min_opt(a_opt: Option<u64>, b_opt: Option<u64>) -> Option<u64> {
         }
     } else {
         b_opt
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use test_log::test;
-
-    use crate::util::key_utils::*;
-    use crate::util::test_utils::*;
-
-    use super::*;
-
-    #[test]
-    fn enforcement_state_previous_counterparty_point_test() {
-        let mut state = EnforcementState::new(0);
-
-        let point0 = make_test_pubkey(0x12);
-        let commit_info = make_test_commitment_info();
-
-        // you can never set next to 0
-        assert_policy_err!(
-            state.set_next_counterparty_commit_num(0, point0.clone(), commit_info.clone()),
-            "set_next_counterparty_commit_num: can\'t set next to 0"
-        );
-
-        // point for 0 is not set yet
-        assert_policy_err!(
-            state.get_previous_counterparty_point(0),
-            "get_previous_counterparty_point: 0 out of range, next is 0"
-        );
-
-        // can't look forward either
-        assert_policy_err!(
-            state.get_previous_counterparty_point(1),
-            "get_previous_counterparty_point: 1 out of range, next is 0"
-        );
-
-        // can't skip forward
-        assert_policy_err!(
-            state.set_next_counterparty_commit_num(2, point0.clone(), commit_info.clone()),
-            "set_next_counterparty_commit_num: invalid progression: 0 to 2"
-        );
-
-        // set point 0
-        assert!(state
-            .set_next_counterparty_commit_num(1, point0.clone(), commit_info.clone())
-            .is_ok());
-
-        // and now you can get it.
-        assert_eq!(state.get_previous_counterparty_point(0).unwrap(), point0.clone());
-
-        // you can set it again to the same thing (retry)
-        // policy-v2-commitment-retry-same
-        assert!(state
-            .set_next_counterparty_commit_num(1, point0.clone(), commit_info.clone())
-            .is_ok());
-        assert_eq!(state.next_counterparty_commit_num, 1);
-
-        // but setting it to something else is an error
-        // policy-v2-commitment-retry-same
-        let point1 = make_test_pubkey(0x16);
-        assert_policy_err!(
-            state.set_next_counterparty_commit_num(1, point1.clone(), commit_info.clone()),
-            "set_next_counterparty_commit_num: retry 1: point different than prior"
-        );
-        assert_eq!(state.next_counterparty_commit_num, 1);
-
-        // can't get commit_num 1 yet
-        assert_policy_err!(
-            state.get_previous_counterparty_point(1),
-            "get_previous_counterparty_point: 1 out of range, next is 1"
-        );
-
-        // can't skip forward
-        assert_policy_err!(
-            state.set_next_counterparty_commit_num(3, point1.clone(), commit_info.clone()),
-            "set_next_counterparty_commit_num: \
-             3 too large relative to next_counterparty_revoke_num 0"
-        );
-        assert_eq!(state.next_counterparty_commit_num, 1);
-
-        // set point 1
-        assert!(state
-            .set_next_counterparty_commit_num(2, point1.clone(), commit_info.clone())
-            .is_ok());
-        assert_eq!(state.next_counterparty_commit_num, 2);
-
-        // you can still get commit_num 0
-        assert_eq!(state.get_previous_counterparty_point(0).unwrap(), point0.clone());
-
-        // Now you can get commit_num 1
-        assert_eq!(state.get_previous_counterparty_point(1).unwrap(), point1.clone());
-
-        // can't look forward
-        assert_policy_err!(
-            state.get_previous_counterparty_point(2),
-            "get_previous_counterparty_point: 2 out of range, next is 2"
-        );
-
-        // can't skip forward
-        assert_policy_err!(
-            state.set_next_counterparty_commit_num(4, point1.clone(), commit_info.clone()),
-            "set_next_counterparty_commit_num: 4 too large \
-             relative to next_counterparty_revoke_num 0"
-        );
-        assert_eq!(state.next_counterparty_commit_num, 2);
-
-        assert!(state.set_next_counterparty_revoke_num(1).is_ok());
-
-        // set point 2
-        let point2 = make_test_pubkey(0x20);
-        assert!(state
-            .set_next_counterparty_commit_num(3, point2.clone(), commit_info.clone())
-            .is_ok());
-        assert_eq!(state.next_counterparty_commit_num, 3);
-
-        // You can't get commit_num 0 anymore
-        assert_policy_err!(
-            state.get_previous_counterparty_point(0),
-            "get_previous_counterparty_point: 0 out of range, next is 3"
-        );
-
-        // you can still get commit_num 1
-        assert_eq!(state.get_previous_counterparty_point(1).unwrap(), point1.clone());
-
-        // now you can get commit_num 2
-        assert_eq!(state.get_previous_counterparty_point(2).unwrap(), point2.clone());
-
-        // can't look forward
-        assert_policy_err!(
-            state.get_previous_counterparty_point(3),
-            "get_previous_counterparty_point: 3 out of range, next is 3"
-        );
     }
 }
