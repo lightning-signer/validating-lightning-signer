@@ -159,10 +159,24 @@ impl SimpleValidator {
         let policy = &self.policy;
 
         if delay < policy.min_delay as u32 {
-            policy_err!(self, "other", "{} too small: {} < {}", name, delay, policy.min_delay);
+            policy_err!(
+                self,
+                "policy-channel-holder-contest-delay-range",
+                "{} too small: {} < {}",
+                name,
+                delay,
+                policy.min_delay
+            );
         }
         if delay > policy.max_delay as u32 {
-            policy_err!(self, "other", "{} too large: {} > {}", name, delay, policy.max_delay);
+            policy_err!(
+                self,
+                "policy-channel-holder-contest-delay-range",
+                "{} too large: {} > {}",
+                name,
+                delay,
+                policy.max_delay
+            );
         }
 
         Ok(())
@@ -180,7 +194,7 @@ impl SimpleValidator {
             if expiry < current_height + policy.min_delay as u32 {
                 policy_err!(
                     self,
-                    "other",
+                    "policy-commitment-htlc-cltv-range",
                     "{} expiry too early: {} < {}",
                     name,
                     expiry,
@@ -190,7 +204,7 @@ impl SimpleValidator {
             if expiry > current_height + policy.max_delay as u32 {
                 policy_err!(
                     self,
-                    "other",
+                    "policy-commitment-htlc-cltv-range",
                     "{} expiry too late: {} > {}",
                     name,
                     expiry,
@@ -207,10 +221,22 @@ impl SimpleValidator {
             policy_error(format!("fee underflow: {} - {}", sum_inputs, sum_outputs))
         })?;
         if fee < self.policy.min_fee {
-            policy_err!(self, "other", "fee below minimum: {} < {}", fee, self.policy.min_fee);
+            policy_err!(
+                self,
+                "policy-onchain-fee-range",
+                "fee below minimum: {} < {}",
+                fee,
+                self.policy.min_fee
+            );
         }
         if fee > self.policy.max_fee {
-            policy_err!(self, "other", "fee above maximum: {} > {}", fee, self.policy.max_fee);
+            policy_err!(
+                self,
+                "policy-onchain-fee-range",
+                "fee above maximum: {} > {}",
+                fee,
+                self.policy.max_fee
+            );
         }
         Ok(())
     }
@@ -236,7 +262,7 @@ impl SimpleValidator {
             } else {
                 policy_err!(
                     self,
-                    "other",
+                    "policy-onchain-fee-range",
                     "non-beneficial value above maximum: {} > {}",
                     non_beneficial,
                     self.policy.max_fee
@@ -265,7 +291,7 @@ impl SimpleValidator {
     ) -> Result<(), ValidationError> {
         // policy-sweep-version
         if tx.version != 2 {
-            return transaction_format_err!("bad version: {}", tx.version);
+            transaction_format_err!(self, "policy-sweep-version", "bad version: {}", tx.version);
         }
 
         // LDK now provides multi-input txs, and we can't easily validate fees securely
@@ -288,7 +314,11 @@ impl SimpleValidator {
                     wallet_path,
                     script_debug(dest_script, wallet.network())
                 );
-                policy_err!(self, "other", "destination is not in wallet or allowlist");
+                policy_err!(
+                    self,
+                    "policy-sweep-destination-allowlisted",
+                    "destination is not in wallet or allowlist"
+                );
             }
         }
 
@@ -363,7 +393,11 @@ impl Validator for SimpleValidator {
                     holder_shutdown_key_path,
                     script_debug(holder_shutdown_script, wallet.network())
                 );
-                policy_err!(self, "other", "holder_shutdown_script is not in wallet or allowlist");
+                policy_err!(
+                    self,
+                    "policy-mutual-destination-allowlisted",
+                    "holder_shutdown_script is not in wallet or allowlist"
+                );
             }
         }
         *debug_on_return = false;
@@ -389,7 +423,7 @@ impl Validator for SimpleValidator {
 
         // policy-onchain-format-standard
         if tx.version != 2 {
-            policy_err!(self, "other", "invalid version: {}", tx.version);
+            policy_err!(self, "policy-onchain-format-standard", "invalid version: {}", tx.version);
         }
 
         let mut beneficial_sum = 0u64;
@@ -415,7 +449,12 @@ impl Validator for SimpleValidator {
                     policy_error(format!("output[{}]: wallet_can_spend error: {}", outndx, err))
                 })?;
                 if !spendable {
-                    policy_err!(self, "other", "wallet cannot spend output[{}]", outndx);
+                    policy_err!(
+                        self,
+                        "policy-sweep-destination-allowlisted",
+                        "wallet cannot spend output[{}]",
+                        outndx
+                    );
                 }
                 debug!("output {} ({}) is to our wallet", outndx, output.value);
                 beneficial_sum =
@@ -441,7 +480,7 @@ impl Validator for SimpleValidator {
                         if output.value != chan.setup.channel_value_sat {
                             policy_err!(
                                 self,
-                                "other",
+                                "policy-onchain-output-match-commitment",
                                 "funding output amount mismatch w/ channel: {} != {}",
                                 output.value,
                                 chan.setup.channel_value_sat
@@ -458,7 +497,7 @@ impl Validator for SimpleValidator {
                         if output.script_pubkey != script_pubkey {
                             policy_err!(
                                 self,
-                                "other",
+                                "policy-onchain-output-scriptpubkey",
                                 "funding script_pubkey mismatch w/ channel: {} != {}",
                                 output.script_pubkey,
                                 script_pubkey
@@ -467,7 +506,11 @@ impl Validator for SimpleValidator {
 
                         // policy-onchain-initial-commitment-countersigned
                         if chan.enforcement_state.next_holder_commit_num != 1 {
-                            policy_err!(self, "other", "initial holder commitment not validated",);
+                            policy_err!(
+                                self,
+                                "policy-onchain-initial-commitment-countersigned",
+                                "initial holder commitment not validated",
+                            );
                         }
 
                         let push_val_sat = chan.setup.push_value_msat / 1000;
@@ -527,7 +570,12 @@ impl Validator for SimpleValidator {
 
         // policy-commitment-version
         if tx.version != 2 {
-            policy_err!(self, "other", "bad commitment version: {}", tx.version);
+            policy_err!(
+                self,
+                "policy-commitment-version",
+                "bad commitment version: {}",
+                tx.version
+            );
         }
 
         let mut info = CommitmentInfo::new(is_counterparty);
@@ -592,7 +640,7 @@ impl Validator for SimpleValidator {
         if commit_num > estate.next_counterparty_revoke_num + 1 {
             policy_err!(
                 self,
-                "other",
+                "policy-commitment-previous-revoked",
                 "invalid attempt to sign counterparty commit_num {} \
                          with next_counterparty_revoke_num {}",
                 commit_num,
@@ -620,7 +668,7 @@ impl Validator for SimpleValidator {
                     if *commitment_point != prev {
                         policy_err!(
                             self,
-                            "other",
+                            "policy-commitment-retry-same",
                             "retry of sign_counterparty_commitment {} with changed point: \
                              prev {} != new {}",
                             commit_num,
@@ -636,7 +684,7 @@ impl Validator for SimpleValidator {
                 debug_vals!(*info2, prev_commit_info);
                 policy_err!(
                     self,
-                    "other",
+                    "policy-commitment-retry-same",
                     "retry of sign_counterparty_commitment {} with changed info",
                     commit_num,
                 );
@@ -697,7 +745,7 @@ impl Validator for SimpleValidator {
                 debug_vals!(*info2, holder_commit_info);
                 policy_err!(
                     self,
-                    "other",
+                    "policy-commitment-retry-same",
                     "retry holder commitment {} with changed info",
                     commit_num
                 );
@@ -711,7 +759,7 @@ impl Validator for SimpleValidator {
             debug_failed_vals!(estate, commit_num);
             policy_err!(
                 self,
-                "other",
+                "policy-commitment-holder-not-revoked",
                 "can't sign revoked commitment_number {}, \
                  next_holder_commit_num is {}",
                 commit_num,
@@ -724,7 +772,7 @@ impl Validator for SimpleValidator {
         // a new state.
         if commit_num == estate.next_holder_commit_num && estate.channel_closed {
             debug_failed_vals!(estate);
-            policy_err!(self, "other", "channel is closing");
+            policy_err!(self, "policy-commitment-spends-active-utxo", "channel is closing");
         }
 
         *debug_on_return = false;
@@ -944,7 +992,7 @@ impl Validator for SimpleValidator {
             if feerate_per_kw < self.policy.min_feerate_per_kw {
                 policy_err!(
                     self,
-                    "other",
+                    "policy-htlc-fee-range",
                     "feerate_per_kw of {} is smaller than the minimum of {}",
                     feerate_per_kw,
                     self.policy.min_feerate_per_kw
@@ -954,7 +1002,7 @@ impl Validator for SimpleValidator {
         if feerate_per_kw > self.policy.max_feerate_per_kw {
             policy_err!(
                 self,
-                "other",
+                "policy-htlc-fee-range",
                 "feerate_per_kw of {} is larger than the maximum of {}",
                 feerate_per_kw,
                 self.policy.max_feerate_per_kw
@@ -1140,7 +1188,8 @@ impl Validator for SimpleValidator {
         if *recomposed_tx != *tx {
             debug!("ORIGINAL_TX={:#?}", &tx);
             debug!("RECOMPOSED_TX={:#?}", &recomposed_tx);
-            policy_err!(self, "other", "recomposed tx mismatch");
+            // this actually covers a few policies, not just format
+            policy_err!(self, "policy-onchain-format-standard", "recomposed tx mismatch");
         }
 
         *debug_on_return = false; // don't debug when we succeed
@@ -1209,7 +1258,7 @@ impl Validator for SimpleValidator {
 
         // policy-mutual-no-pending-htlcs
         if !holder_info.htlcs_is_empty() || !counterparty_info.htlcs_is_empty() {
-            policy_err!(self, "other", "cannot close with pending htlcs");
+            policy_err!(self, "policy-mutual-no-pending-htlcs", "cannot close with pending htlcs");
         }
 
         // policy-mutual-fee-range
@@ -1231,7 +1280,7 @@ impl Validator for SimpleValidator {
             ) {
                 policy_err!(
                     self,
-                    "other",
+                    "policy-mutual-value-matches-commitment",
                     "to_counterparty_value {} \
                      is {} than counterparty_info.broadcaster_value_sat {}",
                     to_counterparty_value_sat,
@@ -1245,7 +1294,7 @@ impl Validator for SimpleValidator {
             ) {
                 policy_err!(
                     self,
-                    "other",
+                    "policy-mutual-value-matches-commitment",
                     "to_counterparty_value {} \
                      is {} than holder_info.countersigner_value_sat {}",
                     to_counterparty_value_sat,
@@ -1261,7 +1310,7 @@ impl Validator for SimpleValidator {
             {
                 policy_err!(
                     self,
-                    "other",
+                    "policy-mutual-value-matches-commitment",
                     "to_holder_value {} is {} than holder_info.broadcaster_value_sat {}",
                     to_holder_value_sat,
                     descr,
@@ -1274,7 +1323,7 @@ impl Validator for SimpleValidator {
             ) {
                 policy_err!(
                     self,
-                    "other",
+                    "policy-mutual-value-matches-commitment",
                     "to_holder_value {} is {} than counterparty_info.countersigner_value_sat {}",
                     to_holder_value_sat,
                     descr,
@@ -1290,7 +1339,11 @@ impl Validator for SimpleValidator {
                 .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
                 && !wallet.allowlist_contains(script)
             {
-                policy_err!(self, "other", "holder output not to wallet or in allowlist");
+                policy_err!(
+                    self,
+                    "policy-mutual-destination-allowlisted",
+                    "holder output not to wallet or in allowlist"
+                );
             }
         }
 
@@ -1465,7 +1518,7 @@ impl Validator for SimpleValidator {
         };
         // policy-routing-balanced
         if self.policy.require_invoices && incoming + max_to_invoice < outgoing {
-            policy_err!(self, "other", "incoming < outgoing");
+            policy_err!(self, "policy-routing-balanced", "incoming < outgoing");
         }
         Ok(())
     }
@@ -1505,7 +1558,7 @@ impl SimpleValidator {
         {
             policy_err!(
                 self,
-                "other",
+                "policy-commitment-outputs-trimmed",
                 "to_broadcaster_value_sat {} less than dust limit {}",
                 info.to_broadcaster_value_sat,
                 MIN_DUST_LIMIT_SATOSHIS
@@ -1516,7 +1569,7 @@ impl SimpleValidator {
         {
             policy_err!(
                 self,
-                "other",
+                "policy-commitment-outputs-trimmed",
                 "to_countersigner_value_sat {} less than dust limit {}",
                 info.to_countersigner_value_sat,
                 MIN_DUST_LIMIT_SATOSHIS
@@ -1552,7 +1605,7 @@ impl SimpleValidator {
             if htlc.value_sat < offered_htlc_dust_limit {
                 policy_err!(
                     self,
-                    "other",
+                    "policy-commitment-outputs-trimmed",
                     "offered htlc.value_sat {} less than dust limit {}",
                     htlc.value_sat,
                     offered_htlc_dust_limit
@@ -1582,7 +1635,7 @@ impl SimpleValidator {
             if htlc.value_sat < received_htlc_dust_limit {
                 policy_err!(
                     self,
-                    "other",
+                    "policy-commitment-outputs-trimmed",
                     "received htlc.value_sat {} less than dust limit {}",
                     htlc.value_sat,
                     received_htlc_dust_limit
@@ -1592,7 +1645,12 @@ impl SimpleValidator {
 
         // policy-commitment-htlc-inflight-limit
         if htlc_value_sat > policy.max_htlc_value_sat {
-            policy_err!(self, "other", "sum of HTLC values {} too large", htlc_value_sat);
+            policy_err!(
+                self,
+                "policy-commitment-htlc-inflight-limit",
+                "sum of HTLC values {} too large",
+                htlc_value_sat
+            );
         }
 
         // policy-commitment-fee-range
