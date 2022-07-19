@@ -153,28 +153,6 @@ macro_rules! transaction_format_err {
 }
 
 #[allow(unused)]
-macro_rules! script_format_err {
-	($($arg:tt)*) => (
-            return Err(script_format_error(format!(
-                "{}: {}",
-                short_function!(),
-                format!($($arg)*)
-            )))
-        )
-}
-
-#[allow(unused)]
-macro_rules! mismatch_err {
-	($($arg:tt)*) => (
-            return Err(mismatch_error(format!(
-                "{}: {}",
-                short_function!(),
-                format!($($arg)*)
-            )))
-        )
-}
-
-#[allow(unused)]
 macro_rules! policy_err {
 	($obj:expr, $tag:tt, $($arg:tt)*) => (
         $obj.policy().policy_error($tag.into(), format!(
