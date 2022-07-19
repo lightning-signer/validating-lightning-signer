@@ -393,7 +393,7 @@ impl Validator for SimpleValidator {
         if setup.channel_value_sat > self.policy.max_channel_size_sat {
             policy_err!(
                 self,
-                "policy-other",
+                "policy-funding-max",
                 "channel value {} too large",
                 setup.channel_value_sat
             );
@@ -503,7 +503,7 @@ impl Validator for SimpleValidator {
                         if !chan.setup.is_outbound {
                             policy_err!(
                                 self,
-                                "policy-other",
+                                "policy-funding-dual",
                                 "can't sign for inbound channel: dual-funding not supported yet",
                             );
                         }
@@ -780,7 +780,7 @@ impl Validator for SimpleValidator {
             debug_failed_vals!(state, revoke_num, commitment_secret);
             policy_err!(
                 self,
-                "policy-other",
+                "policy-commitment-previous-revoked",
                 "invalid counterparty revoke_num {} with next_counterparty_revoke_num {}",
                 revoke_num,
                 state.next_counterparty_revoke_num
@@ -806,7 +806,7 @@ impl Validator for SimpleValidator {
                     debug_failed_vals!(state, revoke_num, commitment_secret);
                     policy_err!(
                         self,
-                        "policy-other",
+                        "policy-commitment-previous-revoked",
                         "revocation commit point mismatch for commit_num {}: supplied {}, previous {}",
                         revoke_num,
                         supplied_commit_point,
@@ -1218,7 +1218,7 @@ impl Validator for SimpleValidator {
         if to_holder_value_sat > 0 && holder_script.is_none() {
             policy_err!(
                 self,
-                "policy-other",
+                "policy-mutual-destination-allowlisted",
                 "missing holder_script with {} to_holder_value_sat",
                 to_holder_value_sat
             );
@@ -1227,7 +1227,7 @@ impl Validator for SimpleValidator {
         if to_counterparty_value_sat > 0 && counterparty_script.is_none() {
             policy_err!(
                 self,
-                "policy-other",
+                "policy-mutual-destination-allowlisted",
                 "missing counterparty_script with {} to_counterparty_value_sat",
                 to_counterparty_value_sat
             );
@@ -1239,7 +1239,7 @@ impl Validator for SimpleValidator {
             if *holder_script != setup.holder_shutdown_script {
                 policy_err!(
                     self,
-                    "policy-other",
+                    "policy-mutual-destination-allowlisted",
                     "holder_script doesn't match upfront holder_shutdown_script"
                 );
             }
@@ -1672,7 +1672,11 @@ impl SimpleValidator {
         // Enforce additional requirements on initial commitments.
         if commit_num == 0 {
             if info.offered_htlcs.len() + info.received_htlcs.len() > 0 {
-                policy_err!(self, "policy-other", "initial commitment may not have HTLCS");
+                policy_err!(
+                    self,
+                    "policy-commitment-first-no-htlcs",
+                    "initial commitment may not have HTLCS"
+                );
             }
 
             // If we are the funder, the value to us of the initial

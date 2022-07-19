@@ -65,6 +65,8 @@ Before we sign a commitment transaction, the following controls are checked:
   be active on chain with enough depth <br>
   `policy-commitment-spends-active-utxo`
 
+* Initial - the initial commitment must have no HTLCs <br> `policy-commitment-first-no-htlcs`
+
 * HTLC in-flight value - the inflight value should not be too large <br>
   `policy-commitment-htlc-inflight-limit`
 
@@ -211,7 +213,7 @@ following controls are checked:
 Before we sign a cooperative closing transaction, the following
 controls are checked:
 
-* Destination - the destination must be whitelisted or in the layer-one
+* Destination - the destination must be allowlisted or in the layer-one
   wallet. If the destination is specified as an
   upfront_shutdown_script it will be checked both at the time the
   channel is opened and again at mutual close. If a destination has
@@ -250,8 +252,10 @@ or justice sweep transaction, the following controls are checked:
 # Optional Policy Controls
 ## Funding Transaction
 
+* Maximum - the amount funded in a channel must be under a certain amount <br> `policy-funding-max`
 * Velocity - the amount funded must be under a certain amount per unit time <br>
   `policy-velocity-funding`
+* Dual - dual funding can be optionally disable <br> `policy-funding-dual`
 
 ## Commitment Transaction
 
