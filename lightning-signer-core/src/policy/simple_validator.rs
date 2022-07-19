@@ -159,24 +159,12 @@ impl SimpleValidator {
         let policy = &self.policy;
 
         if delay < policy.min_delay as u32 {
-            policy_err!(
-                self,
-                "policy-channel-holder-contest-delay-range",
-                "{} too small: {} < {}",
-                name,
-                delay,
-                policy.min_delay
-            );
+            let tag = format!("policy-channel-{}-range", name);
+            policy_err!(self, tag, "{} too small: {} < {}", name, delay, policy.min_delay);
         }
         if delay > policy.max_delay as u32 {
-            policy_err!(
-                self,
-                "policy-channel-holder-contest-delay-range",
-                "{} too large: {} > {}",
-                name,
-                delay,
-                policy.max_delay
-            );
+            let tag = format!("policy-channel-{}-range", name);
+            policy_err!(self, tag, "{} too large: {} > {}", name, delay, policy.max_delay);
         }
 
         Ok(())
@@ -289,7 +277,6 @@ impl SimpleValidator {
         _amount_sat: u64,
         wallet_path: &Vec<u32>,
     ) -> Result<(), ValidationError> {
-        // policy-sweep-version
         if tx.version != 2 {
             transaction_format_err!(self, "policy-sweep-version", "bad version: {}", tx.version);
         }
@@ -301,7 +288,6 @@ impl SimpleValidator {
         // self.validate_fee(amount_sat, tx.output[0].value)
         //     .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        // policy-sweep-destination-allowlisted
         for out in tx.output.iter() {
             let dest_script = &out.script_pubkey;
             if !wallet
@@ -370,18 +356,17 @@ impl Validator for SimpleValidator {
         // policy-channel-counterparty-contest-delay-range
         // policy-commitment-to-self-delay-range relies on this value
         self.validate_delay(
-            "counterparty_selected_contest_delay",
+            "holder-contest-delay",
             setup.counterparty_selected_contest_delay as u32,
         )?;
 
         // policy-channel-holder-contest-delay-range
         // policy-commitment-to-self-delay-range relies on this value
         self.validate_delay(
-            "holder_selected_contest_delay",
+            "counterparty-contest-delay",
             setup.holder_selected_contest_delay as u32,
         )?;
 
-        // policy-mutual-destination-allowlisted
         if let Some(holder_shutdown_script) = &setup.holder_shutdown_script {
             if !wallet
                 .can_spend(holder_shutdown_key_path, &holder_shutdown_script)
@@ -406,7 +391,12 @@ impl Validator for SimpleValidator {
 
     fn validate_channel_value(&self, setup: &ChannelSetup) -> Result<(), ValidationError> {
         if setup.channel_value_sat > self.policy.max_channel_size_sat {
-            policy_err!(self, "other", "channel value {} too large", setup.channel_value_sat);
+            policy_err!(
+                self,
+                "policy-other",
+                "channel value {} too large",
+                setup.channel_value_sat
+            );
         }
         Ok(())
     }
@@ -421,7 +411,6 @@ impl Validator for SimpleValidator {
     ) -> Result<(), ValidationError> {
         let mut debug_on_return = scoped_debug_return!(tx, holder_inputs_sat, opaths);
 
-        // policy-onchain-format-standard
         if tx.version != 2 {
             policy_err!(self, "policy-onchain-format-standard", "invalid version: {}", tx.version);
         }
@@ -476,7 +465,6 @@ impl Validator for SimpleValidator {
                         );
                         debug_vals!(chan.setup, chan.enforcement_state);
 
-                        // policy-onchain-output-match-commitment
                         if output.value != chan.setup.channel_value_sat {
                             policy_err!(
                                 self,
@@ -487,7 +475,6 @@ impl Validator for SimpleValidator {
                             );
                         }
 
-                        // policy-onchain-output-scriptpubkey
                         let funding_redeemscript = make_funding_redeemscript(
                             &chan.keys.pubkeys().funding_pubkey,
                             &chan.keys.counterparty_pubkeys().funding_pubkey,
@@ -504,7 +491,6 @@ impl Validator for SimpleValidator {
                             );
                         }
 
-                        // policy-onchain-initial-commitment-countersigned
                         if chan.enforcement_state.next_holder_commit_num != 1 {
                             policy_err!(
                                 self,
@@ -517,7 +503,7 @@ impl Validator for SimpleValidator {
                         if !chan.setup.is_outbound {
                             policy_err!(
                                 self,
-                                "other",
+                                "policy-other",
                                 "can't sign for inbound channel: dual-funding not supported yet",
                             );
                         }
@@ -568,7 +554,6 @@ impl Validator for SimpleValidator {
             DebugVecVecU8(output_witscripts)
         );
 
-        // policy-commitment-version
         if tx.version != 2 {
             policy_err!(
                 self,
@@ -624,12 +609,14 @@ impl Validator for SimpleValidator {
         let mut debug_on_return =
             scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info2);
 
-        // policy-commitment-to-self-delay-range
         if info2.to_self_delay != setup.holder_selected_contest_delay {
-            return Err(policy_error("holder_selected_contest_delay mismatch".to_string()));
+            policy_err!(
+                self,
+                "policy-channel-contest-delay-range",
+                "holder_selected_contest_delay mismatch"
+            );
         }
 
-        // policy-commitment-previous-revoked
         // if next_counterparty_revoke_num is 20:
         // - commit_num 19 has been revoked
         // - commit_num 20 is current, previously signed, ok to resign
@@ -648,7 +635,6 @@ impl Validator for SimpleValidator {
             );
         }
 
-        // policy-commitment-retry-same
         // Is this a retry?
         if commit_num + 1 == estate.next_counterparty_commit_num {
             // The commit_point must be the same as previous
@@ -657,7 +643,7 @@ impl Validator for SimpleValidator {
                 None => {
                     policy_err!(
                         self,
-                        "other",
+                        "policy-commitment-retry-same",
                         "retry of sign_counterparty_commitment {} with no prev point: \
                              new {}",
                         commit_num,
@@ -730,12 +716,14 @@ impl Validator for SimpleValidator {
         let mut debug_on_return =
             scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info2);
 
-        // policy-commitment-to-self-delay-range
         if info2.to_self_delay != setup.counterparty_selected_contest_delay {
-            return Err(policy_error("counterparty_selected_contest_delay mismatch".to_string()));
+            policy_err!(
+                self,
+                "policy-channel-contest-delay-range",
+                "counterparty_selected_contest_delay mismatch"
+            );
         }
 
-        // policy-commitment-retry-same
         // Is this a retry?
         if commit_num + 1 == estate.next_holder_commit_num {
             // The CommitmentInfo2 must be the same as previously
@@ -752,7 +740,6 @@ impl Validator for SimpleValidator {
             }
         }
 
-        // policy-commitment-holder-not-revoked
         // This test overlaps the check in set_next_holder_commit_num but gives
         // better diagnostic.
         if commit_num + 2 <= estate.next_holder_commit_num {
@@ -767,7 +754,6 @@ impl Validator for SimpleValidator {
             );
         };
 
-        // policy-revoke-not-closed
         // It's ok to validate the current state when closed, but not ok to validate
         // a new state.
         if commit_num == estate.next_holder_commit_num && estate.channel_closed {
@@ -794,7 +780,7 @@ impl Validator for SimpleValidator {
             debug_failed_vals!(state, revoke_num, commitment_secret);
             policy_err!(
                 self,
-                "other",
+                "policy-other",
                 "invalid counterparty revoke_num {} with next_counterparty_revoke_num {}",
                 revoke_num,
                 state.next_counterparty_revoke_num
@@ -809,7 +795,7 @@ impl Validator for SimpleValidator {
                 debug_failed_vals!(state, revoke_num, commitment_secret);
                 policy_err!(
                     self,
-                    "other",
+                    "policy-commitment-previous-revoked",
                     "revocation commit point mismatch for commit_num {}: supplied {}, previous is None",
                     revoke_num,
                     supplied_commit_point
@@ -820,7 +806,7 @@ impl Validator for SimpleValidator {
                     debug_failed_vals!(state, revoke_num, commitment_secret);
                     policy_err!(
                         self,
-                        "other",
+                        "policy-other",
                         "revocation commit point mismatch for commit_num {}: supplied {}, previous {}",
                         revoke_num,
                         supplied_commit_point,
@@ -982,12 +968,10 @@ impl Validator for SimpleValidator {
         // Note that we can't check cltv_expiry for non-offered 2nd level
         // HTLC txs in phase 1, because they don't mention the cltv_expiry
         // there, only in the commitment tx output.
-        // policy-htlc-locktime
         if htlc.offered && htlc.cltv_expiry == 0 {
-            policy_err!(self, "other", "offered lock_time must be non-zero");
+            policy_err!(self, "policy-htlc-locktime", "offered lock_time must be non-zero");
         }
 
-        // policy-htlc-fee-range
         if !setup.option_anchors_zero_fee_htlc() {
             if feerate_per_kw < self.policy.min_feerate_per_kw {
                 policy_err!(
@@ -1050,17 +1034,22 @@ impl Validator for SimpleValidator {
         });
 
         if tx.output.len() > 2 {
-            return transaction_format_err!("invalid number of outputs: {}", tx.output.len(),);
+            transaction_format_err!(
+                self,
+                "policy-mutual-other",
+                "invalid number of outputs: {}",
+                tx.output.len(),
+            );
         }
 
         // The caller checked, this shouldn't happen
         assert_eq!(wallet_paths.len(), tx.output.len());
 
         if estate.current_holder_commit_info.is_none() {
-            policy_err!(self, "other", "current_holder_commit_info missing");
+            policy_err!(self, "policy-mutual-other", "current_holder_commit_info missing");
         }
         if estate.current_counterparty_commit_info.is_none() {
-            policy_err!(self, "other", "current_counterparty_commit_info missing");
+            policy_err!(self, "policy-mutual-other", "current_counterparty_commit_info missing");
         }
 
         // Establish which output belongs to the holder by trying all possibilities
@@ -1229,7 +1218,7 @@ impl Validator for SimpleValidator {
         if to_holder_value_sat > 0 && holder_script.is_none() {
             policy_err!(
                 self,
-                "other",
+                "policy-other",
                 "missing holder_script with {} to_holder_value_sat",
                 to_holder_value_sat
             );
@@ -1238,7 +1227,7 @@ impl Validator for SimpleValidator {
         if to_counterparty_value_sat > 0 && counterparty_script.is_none() {
             policy_err!(
                 self,
-                "other",
+                "policy-other",
                 "missing counterparty_script with {} to_counterparty_value_sat",
                 to_counterparty_value_sat
             );
@@ -1250,13 +1239,12 @@ impl Validator for SimpleValidator {
             if *holder_script != setup.holder_shutdown_script {
                 policy_err!(
                     self,
-                    "other",
+                    "policy-other",
                     "holder_script doesn't match upfront holder_shutdown_script"
                 );
             }
         }
 
-        // policy-mutual-no-pending-htlcs
         if !holder_info.htlcs_is_empty() || !counterparty_info.htlcs_is_empty() {
             policy_err!(self, "policy-mutual-no-pending-htlcs", "cannot close with pending htlcs");
         }
@@ -1268,7 +1256,6 @@ impl Validator for SimpleValidator {
         self.validate_fee(setup.channel_value_sat, sum_outputs)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        // policy-mutual-value-matches-commitment
         // To make this test independent of variable fees we compare the side that
         // isn't paying the fees.
         if setup.is_outbound {
@@ -1332,7 +1319,6 @@ impl Validator for SimpleValidator {
             }
         }
 
-        // policy-mutual-destination-allowlisted
         if let Some(script) = &holder_script {
             if !wallet
                 .can_spend(holder_wallet_path_hint, script)
@@ -1368,19 +1354,21 @@ impl Validator for SimpleValidator {
         self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        // policy-sweep-locktime
         if tx.lock_time > cstate.current_height {
-            return transaction_format_err!(
+            transaction_format_err!(
+                self,
+                "policy-sweep-locktime",
                 "bad locktime: {} > {}",
                 tx.lock_time,
                 cstate.current_height
             );
         }
 
-        // policy-sweep-sequence
         let seq = tx.input[0].sequence;
         if seq != setup.counterparty_selected_contest_delay as u32 {
-            return transaction_format_err!(
+            transaction_format_err!(
+                self,
+                "policy-sweep-sequence",
                 "bad sequence: {} != {}",
                 seq,
                 setup.counterparty_selected_contest_delay
@@ -1420,12 +1408,18 @@ impl Validator for SimpleValidator {
         {
             // It's a received htlc (counterparty perspective)
             if cltv_expiry < 0 || cltv_expiry > u32::MAX as i64 {
-                return transaction_format_err!("bad cltv_expiry: {}", cltv_expiry);
+                transaction_format_err!(
+                    self,
+                    "policy-sweep-other",
+                    "bad cltv_expiry: {}",
+                    cltv_expiry
+                );
             }
 
-            // policy-sweep-locktime
             if tx.lock_time > cltv_expiry as u32 {
-                return transaction_format_err!(
+                transaction_format_err!(
+                    self,
+                    "policy-sweep-locktime",
                     "bad locktime: {} > {}",
                     tx.lock_time,
                     cltv_expiry as u32
@@ -1440,9 +1434,10 @@ impl Validator for SimpleValidator {
         {
             // It's an offered htlc (counterparty perspective)
 
-            // policy-sweep-locktime
             if tx.lock_time > cstate.current_height {
-                return transaction_format_err!(
+                transaction_format_err!(
+                    self,
+                    "policy-sweep-locktime",
                     "bad locktime: {} > {}",
                     tx.lock_time,
                     cstate.current_height
@@ -1450,10 +1445,14 @@ impl Validator for SimpleValidator {
             }
         } else {
             // The redeemscript didn't parse as received or offered ...
-            return transaction_format_err!("bad redeemscript: {}", &redeemscript);
+            transaction_format_err!(
+                self,
+                "policy-sweep-other",
+                "bad redeemscript: {}",
+                &redeemscript
+            );
         };
 
-        // policy-sweep-sequence
         let seq = tx.input[0].sequence;
         let valid_seqs = if setup.option_anchors() {
             SimpleValidator::ANCHOR_SEQS.to_vec()
@@ -1461,7 +1460,13 @@ impl Validator for SimpleValidator {
             SimpleValidator::NON_ANCHOR_SEQS.to_vec()
         };
         if !valid_seqs.contains(&seq) {
-            return transaction_format_err!("bad sequence: {} not in {:?}", seq, valid_seqs,);
+            transaction_format_err!(
+                self,
+                "policy-sweep-sequence",
+                "bad sequence: {} not in {:?}",
+                seq,
+                valid_seqs,
+            );
         }
 
         *debug_on_return = false;
@@ -1485,20 +1490,26 @@ impl Validator for SimpleValidator {
         self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        // policy-sweep-locktime
         if tx.lock_time > cstate.current_height {
-            return transaction_format_err!(
+            transaction_format_err!(
+                self,
+                "policy-sweep-locktime",
                 "bad locktime: {} > {}",
                 tx.lock_time,
                 cstate.current_height
             );
         }
 
-        // policy-sweep-sequence
         let seq = tx.input[0].sequence;
         let valid_seqs = SimpleValidator::NON_ANCHOR_SEQS.to_vec();
         if !valid_seqs.contains(&seq) {
-            return transaction_format_err!("bad sequence: {} not in {:?}", seq, valid_seqs);
+            transaction_format_err!(
+                self,
+                "policy-sweep-sequence",
+                "bad sequence: {} not in {:?}",
+                seq,
+                valid_seqs
+            );
         }
 
         *debug_on_return = false;
@@ -1516,7 +1527,6 @@ impl Validator for SimpleValidator {
         } else {
             0
         };
-        // policy-routing-balanced
         if self.policy.require_invoices && incoming + max_to_invoice < outgoing {
             policy_err!(self, "policy-routing-balanced", "incoming < outgoing");
         }
@@ -1552,7 +1562,6 @@ impl SimpleValidator {
 
         let policy = &self.policy;
 
-        // policy-commitment-outputs-trimmed
         if info.to_broadcaster_value_sat > 0
             && info.to_broadcaster_value_sat < MIN_DUST_LIMIT_SATOSHIS
         {
@@ -1576,9 +1585,8 @@ impl SimpleValidator {
             );
         }
 
-        // policy-commitment-htlc-count-limit
         if info.offered_htlcs.len() + info.received_htlcs.len() > policy.max_htlcs {
-            return Err(policy_error("too many HTLCs".to_string()));
+            policy_err!(self, "policy-commitment-htlc-count-limit", "too many HTLCs");
         }
 
         let mut htlc_value_sat: u64 = 0;
@@ -1601,7 +1609,6 @@ impl SimpleValidator {
                 .checked_add(htlc.value_sat)
                 .ok_or_else(|| policy_error("offered HTLC value overflow".to_string()))?;
 
-            // policy-commitment-outputs-trimmed
             if htlc.value_sat < offered_htlc_dust_limit {
                 policy_err!(
                     self,
@@ -1631,7 +1638,6 @@ impl SimpleValidator {
                 .checked_add(htlc.value_sat)
                 .ok_or_else(|| policy_error("received HTLC value overflow".to_string()))?;
 
-            // policy-commitment-outputs-trimmed
             if htlc.value_sat < received_htlc_dust_limit {
                 policy_err!(
                     self,
@@ -1643,7 +1649,6 @@ impl SimpleValidator {
             }
         }
 
-        // policy-commitment-htlc-inflight-limit
         if htlc_value_sat > policy.max_htlc_value_sat {
             policy_err!(
                 self,
@@ -1653,7 +1658,6 @@ impl SimpleValidator {
             );
         }
 
-        // policy-commitment-fee-range
         let sum_outputs = info
             .to_broadcaster_value_sat
             .checked_add(info.to_countersigner_value_sat)
@@ -1668,10 +1672,9 @@ impl SimpleValidator {
         // Enforce additional requirements on initial commitments.
         if commit_num == 0 {
             if info.offered_htlcs.len() + info.received_htlcs.len() > 0 {
-                policy_err!(self, "other", "initial commitment may not have HTLCS");
+                policy_err!(self, "policy-other", "initial commitment may not have HTLCS");
             }
 
-            // policy-commitment-initial-funding-value
             // If we are the funder, the value to us of the initial
             // commitment transaction should be equal to our funding
             // value.
@@ -1684,7 +1687,7 @@ impl SimpleValidator {
                 if counterparty_value_sat > setup.push_value_msat / 1000 {
                     policy_err!(
                         self,
-                        "other",
+                        "policy-commitment-initial-funding-value",
                         "initial commitment may only send push_value_msat ({}) to fundee",
                         setup.push_value_msat
                     );
@@ -1900,7 +1903,7 @@ mod tests {
         setup.holder_selected_contest_delay = 4;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
-            "validate_delay: holder_selected_contest_delay too small: 4 < 5"
+            "validate_delay: counterparty-contest-delay too small: 4 < 5"
         );
     }
 
@@ -1916,7 +1919,7 @@ mod tests {
         setup.holder_selected_contest_delay = 1441;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
-            "validate_delay: holder_selected_contest_delay too large: 1441 > 1440"
+            "validate_delay: counterparty-contest-delay too large: 1441 > 1440"
         );
     }
 
@@ -1932,7 +1935,7 @@ mod tests {
         setup.counterparty_selected_contest_delay = 4;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
-            "validate_delay: counterparty_selected_contest_delay too small: 4 < 5"
+            "validate_delay: holder-contest-delay too small: 4 < 5"
         );
     }
 
@@ -1948,7 +1951,7 @@ mod tests {
         setup.counterparty_selected_contest_delay = 1441;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
-            "validate_delay: counterparty_selected_contest_delay too large: 1441 > 1440"
+            "validate_delay: holder-contest-delay too large: 1441 > 1440"
         );
     }
 
@@ -2088,7 +2091,7 @@ mod tests {
                 &cstate,
                 &info_bad,
             ),
-            "too many HTLCs"
+            "validate_commitment_tx: too many HTLCs"
         );
     }
 

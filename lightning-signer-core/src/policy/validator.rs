@@ -214,7 +214,7 @@ pub trait Validator {
     ) -> Result<(), ValidationError> {
         let current = estate.next_holder_commit_num;
         if num != current && num != current + 1 {
-            policy_err!(self, "other", "invalid progression: {} to {}", current, num);
+            policy_err!(self, "policy-other", "invalid progression: {} to {}", current, num);
         }
         estate.set_next_holder_commit_num(num, current_commitment_info);
         Ok(())
@@ -230,7 +230,7 @@ pub trait Validator {
         if commitment_number + 1 != estate.next_holder_commit_num {
             policy_err!(
                 self,
-                "other",
+                "policy-other",
                 "invalid next holder commitment number: {} != {}",
                 commitment_number + 1,
                 estate.next_holder_commit_num
@@ -248,7 +248,7 @@ pub trait Validator {
         current_commitment_info: CommitmentInfo2,
     ) -> Result<(), ValidationError> {
         if num == 0 {
-            policy_err!(self, "other", "can't set next to 0");
+            policy_err!(self, "policy-other", "can't set next to 0");
         }
 
         // The initial commitment is special, it can advance even though next_revoke is 0.
@@ -258,7 +258,7 @@ pub trait Validator {
         if num < estate.next_counterparty_revoke_num + delta {
             policy_err!(
                 self,
-                "other",
+                "policy-other",
                 "{} too small relative to next_counterparty_revoke_num {}",
                 num,
                 estate.next_counterparty_revoke_num
@@ -267,7 +267,7 @@ pub trait Validator {
         if num > estate.next_counterparty_revoke_num + 2 {
             policy_err!(
                 self,
-                "other",
+                "policy-other",
                 "{} too large relative to next_counterparty_revoke_num {}",
                 num,
                 estate.next_counterparty_revoke_num
@@ -282,7 +282,6 @@ pub trait Validator {
                 "retry {}: current_counterparty_point not set, this shouldn't be possible",
                 num
             );
-            // policy-v2-commitment-retry-same
             // FIXME - need to compare current_commitment_info with current_counterparty_commit_info
             if current_point != estate.current_counterparty_point.unwrap() {
                 debug!(
@@ -290,11 +289,16 @@ pub trait Validator {
                     current_point,
                     estate.current_counterparty_point.unwrap()
                 );
-                policy_err!(self, "other", "retry {}: point different than prior", num);
+                policy_err!(
+                    self,
+                    "policy-commitment-retry-same",
+                    "retry {}: point different than prior",
+                    num
+                );
             }
         } else if num == current + 1 {
         } else {
-            policy_err!(self, "other", "invalid progression: {} to {}", current, num);
+            policy_err!(self, "policy-other", "invalid progression: {} to {}", current, num);
         }
 
         estate.set_next_counterparty_commit_num(num, current_point, current_commitment_info);
@@ -308,14 +312,14 @@ pub trait Validator {
         num: u64,
     ) -> Result<(), ValidationError> {
         if num == 0 {
-            policy_err!(self, "other", "can't set next to 0");
+            policy_err!(self, "policy-other", "can't set next to 0");
         }
 
         // Ensure that next_revoke is ok relative to next_commit.
         if num + 2 < estate.next_counterparty_commit_num {
             policy_err!(
                 self,
-                "other",
+                "policy-other",
                 "{} too small relative to next_counterparty_commit_num {}",
                 num,
                 estate.next_counterparty_commit_num
@@ -324,7 +328,7 @@ pub trait Validator {
         if num + 1 > estate.next_counterparty_commit_num {
             policy_err!(
                 self,
-                "other",
+                "policy-other",
                 "{} too large relative to next_counterparty_commit_num {}",
                 num,
                 estate.next_counterparty_commit_num
@@ -333,7 +337,7 @@ pub trait Validator {
 
         let current = estate.next_counterparty_revoke_num;
         if num != current && num != current + 1 {
-            policy_err!(self, "other", "invalid progression: {} to {}", current, num);
+            policy_err!(self, "policy-other", "invalid progression: {} to {}", current, num);
         }
 
         estate.set_next_counterparty_revoke_num(num);

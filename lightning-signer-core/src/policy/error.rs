@@ -140,10 +140,11 @@ pub(crate) fn unbalanced_error(hashes: Vec<PaymentHash>) -> ValidationError {
     }
 }
 
+// Ignore obj and tag for now, no filtering allowed
 #[allow(unused)]
 macro_rules! transaction_format_err {
-	($($arg:tt)*) => (
-            Err(transaction_format_error(format!(
+	($obj:expr, $tag:tt, $($arg:tt)*) => (
+            return Err(transaction_format_error(format!(
                 "{}: {}",
                 short_function!(),
                 format!($($arg)*)
@@ -154,7 +155,7 @@ macro_rules! transaction_format_err {
 #[allow(unused)]
 macro_rules! script_format_err {
 	($($arg:tt)*) => (
-            Err(script_format_error(format!(
+            return Err(script_format_error(format!(
                 "{}: {}",
                 short_function!(),
                 format!($($arg)*)
@@ -165,7 +166,7 @@ macro_rules! script_format_err {
 #[allow(unused)]
 macro_rules! mismatch_err {
 	($($arg:tt)*) => (
-            Err(mismatch_error(format!(
+            return Err(mismatch_error(format!(
                 "{}: {}",
                 short_function!(),
                 format!($($arg)*)
