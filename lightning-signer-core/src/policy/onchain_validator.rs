@@ -87,8 +87,9 @@ impl Validator for OnchainValidator {
         tx: &Transaction,
         values_sat: &Vec<u64>,
         opaths: &Vec<Vec<u32>>,
+        weight: usize,
     ) -> Result<(), ValidationError> {
-        self.inner.validate_onchain_tx(wallet, channels, tx, values_sat, opaths)
+        self.inner.validate_onchain_tx(wallet, channels, tx, values_sat, opaths, weight)
     }
 
     fn decode_commitment_tx(

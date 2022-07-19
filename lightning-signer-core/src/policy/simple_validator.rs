@@ -26,7 +26,10 @@ use crate::util::debug_utils::{
     script_debug, DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugTxCreationKeys,
     DebugVecVecU8,
 };
-use crate::util::transaction_utils::{estimate_feerate_per_kw, MIN_DUST_LIMIT_SATOSHIS};
+use crate::util::transaction_utils::{
+    estimate_feerate_per_kw, expected_commitment_tx_weight, mutual_close_tx_weight,
+    MIN_DUST_LIMIT_SATOSHIS,
+};
 use crate::wallet::Wallet;
 
 extern crate scopeguard;
@@ -88,10 +91,6 @@ pub struct SimplePolicy {
     pub min_feerate_per_kw: u32,
     /// Maximum feerate
     pub max_feerate_per_kw: u32,
-    /// Minimum fee in satoshi
-    pub min_fee: u64,
-    /// Maximum fee in satoshi
-    pub max_fee: u64,
     /// Require invoices for payments, and disallow keysend
     // TODO secure keysend
     pub require_invoices: bool,
@@ -204,26 +203,33 @@ impl SimpleValidator {
         Ok(())
     }
 
-    fn validate_fee(&self, sum_inputs: u64, sum_outputs: u64) -> Result<(), ValidationError> {
+    fn validate_fee(
+        &self,
+        sum_inputs: u64,
+        sum_outputs: u64,
+        weight: usize,
+    ) -> Result<(), ValidationError> {
         let fee = sum_inputs.checked_sub(sum_outputs).ok_or_else(|| {
             policy_error(format!("fee underflow: {} - {}", sum_inputs, sum_outputs))
         })?;
-        if fee < self.policy.min_fee {
+        let feerate_perkw = estimate_feerate_per_kw(fee, weight as u64);
+        debug!("validate_fee fee:{} / weight:{} = feerate_perkw:{}", fee, weight, feerate_perkw);
+        if feerate_perkw < self.policy.min_feerate_per_kw {
             policy_err!(
                 self,
                 "policy-onchain-fee-range",
-                "fee below minimum: {} < {}",
-                fee,
-                self.policy.min_fee
+                "feerate below minimum: {} < {}",
+                feerate_perkw,
+                self.policy.min_feerate_per_kw
             );
         }
-        if fee > self.policy.max_fee {
+        if feerate_perkw > self.policy.max_feerate_per_kw {
             policy_err!(
                 self,
                 "policy-onchain-fee-range",
-                "fee above maximum: {} > {}",
-                fee,
-                self.policy.max_fee
+                "feerate above maximum: {} > {}",
+                feerate_perkw,
+                self.policy.max_feerate_per_kw
             );
         }
         Ok(())
@@ -233,6 +239,7 @@ impl SimpleValidator {
         &self,
         sum_our_inputs: u64,
         sum_our_outputs: u64,
+        weight: usize,
     ) -> Result<(), ValidationError> {
         let non_beneficial = sum_our_inputs.checked_sub(sum_our_outputs).ok_or_else(|| {
             policy_error(format!(
@@ -240,20 +247,22 @@ impl SimpleValidator {
                 sum_our_inputs, sum_our_outputs
             ))
         })?;
-        if non_beneficial > self.policy.max_fee {
+        let feerate_perkw = estimate_feerate_per_kw(non_beneficial, weight as u64);
+        if feerate_perkw > self.policy.max_feerate_per_kw {
             let dev_flags = self.policy.dev_flags.as_ref().unwrap_or(&DEFAULT_DEV_FLAGS);
             if dev_flags.disable_beneficial_balance_checks {
                 error!(
-                    "DEV IGNORE non-beneficial value above maximum: {} > {}",
-                    non_beneficial, self.policy.max_fee
+                    "DEV IGNORE \
+                     non-beneficial value considered as fees is above maximum feerate: {} > {}",
+                    feerate_perkw, self.policy.max_feerate_per_kw
                 );
             } else {
                 policy_err!(
                     self,
                     "policy-onchain-fee-range",
-                    "non-beneficial value above maximum: {} > {}",
-                    non_beneficial,
-                    self.policy.max_fee
+                    "non-beneficial value considered as fees is above maximum feerate: {} > {}",
+                    feerate_perkw,
+                    self.policy.max_feerate_per_kw
                 );
             }
         }
@@ -408,6 +417,7 @@ impl Validator for SimpleValidator {
         tx: &Transaction,
         holder_inputs_sat: &Vec<u64>,
         opaths: &Vec<Vec<u32>>,
+        weight_lower_bound: usize,
     ) -> Result<(), ValidationError> {
         let mut debug_on_return = scoped_debug_return!(tx, holder_inputs_sat, opaths);
 
@@ -531,7 +541,7 @@ impl Validator for SimpleValidator {
                 .checked_add(*val)
                 .ok_or_else(|| policy_error(format!("funding sum inputs overflow")))?;
         }
-        self.validate_beneficial_value(sum_inputs, beneficial_sum)
+        self.validate_beneficial_value(sum_inputs, beneficial_sum, weight_lower_bound)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         *debug_on_return = false;
@@ -1249,11 +1259,23 @@ impl Validator for SimpleValidator {
             policy_err!(self, "policy-mutual-no-pending-htlcs", "cannot close with pending htlcs");
         }
 
+        let weight = mutual_close_tx_weight(
+            &ClosingTransaction::new(
+                to_holder_value_sat,
+                to_counterparty_value_sat,
+                holder_script.clone().unwrap_or_else(|| Script::new()),
+                counterparty_script.clone().unwrap_or_else(|| Script::new()),
+                setup.funding_outpoint,
+            )
+            .trust()
+            .built_transaction(),
+        );
+
         // policy-mutual-fee-range
         let sum_outputs = to_holder_value_sat
             .checked_add(to_counterparty_value_sat)
             .ok_or_else(|| policy_error("consumed overflow".to_string()))?;
-        self.validate_fee(setup.channel_value_sat, sum_outputs)
+        self.validate_fee(setup.channel_value_sat, sum_outputs, weight)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // To make this test independent of variable fees we compare the side that
@@ -1658,13 +1680,18 @@ impl SimpleValidator {
             );
         }
 
+        let expected_weight = expected_commitment_tx_weight(
+            setup.option_anchors(),
+            info.offered_htlcs.len() + info.received_htlcs.len(),
+        );
+
         let sum_outputs = info
             .to_broadcaster_value_sat
             .checked_add(info.to_countersigner_value_sat)
             .ok_or_else(|| policy_error("channel value overflow".to_string()))?
             .checked_add(htlc_value_sat)
             .ok_or_else(|| policy_error("channel value overflow on HTLC".to_string()))?;
-        self.validate_fee(setup.channel_value_sat, sum_outputs)
+        self.validate_fee(setup.channel_value_sat, sum_outputs, expected_weight)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         let (_holder_value_sat, counterparty_value_sat) = info.value_to_parties();
@@ -1717,8 +1744,6 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             use_chain_state: false,
             min_feerate_per_kw: 253, // mainnet observed
             max_feerate_per_kw: 1000 * 1000,
-            min_fee: 100,
-            max_fee: 1000,
             require_invoices: false,
             enforce_balance: false,
             max_routing_fee_msat: 10000,
@@ -1735,10 +1760,8 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_htlcs: 1000,
             max_htlc_value_sat: 16_777_216, // lnd itest: multi-hop_htlc_error_propagation
             use_chain_state: false,
-            min_feerate_per_kw: 253,    // testnet/regtest observed
-            max_feerate_per_kw: 16_000, // c-lightning integration
-            min_fee: 100,
-            max_fee: 200_000, // c-lightning integration 124301
+            min_feerate_per_kw: 253, // testnet/regtest observed
+            max_feerate_per_kw: 100_000,
             require_invoices: false,
             enforce_balance: false,
             max_routing_fee_msat: 10000,
@@ -1770,8 +1793,6 @@ mod tests {
             use_chain_state: true,
             min_feerate_per_kw: 1000,
             max_feerate_per_kw: 1000 * 1000,
-            min_fee: 100,
-            max_fee: 10_000,
             require_invoices: false,
             enforce_balance: false,
             max_routing_fee_msat: 10000,

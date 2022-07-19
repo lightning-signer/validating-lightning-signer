@@ -66,6 +66,7 @@ impl Validator for NullValidator {
         _tx: &Transaction,
         _values_sat: &Vec<u64>,
         _opaths: &Vec<Vec<u32>>,
+        _weight: usize,
     ) -> Result<(), ValidationError> {
         Ok(())
     }

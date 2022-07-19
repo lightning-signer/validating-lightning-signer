@@ -145,7 +145,7 @@ mod tests {
                 &vec![opath.clone()],
             ),
             "policy failure: validate_onchain_tx: \
-             validate_beneficial_value: non-beneficial value above maximum: 281000 > 200000"
+             validate_beneficial_value: non-beneficial value considered as fees is above maximum feerate: 641554 > 100000"
         );
     }
 
@@ -574,6 +574,9 @@ mod tests {
 
         let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
         funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+
+        // weight_lower_bound from node debug is: 612 and 608
+        assert_eq!(tx.weight(), if is_p2sh { 613 } else { 609 });
     }
 
     #[test]
@@ -619,6 +622,9 @@ mod tests {
 
         let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
         funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+
+        // weight_lower_bound from node debug is 880
+        assert_eq!(tx.weight(), 880);
     }
 
     #[test]
@@ -814,7 +820,7 @@ mod tests {
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: validate_onchain_tx: \
-             validate_beneficial_value: non-beneficial value above maximum: 501000 > 200000"
+             validate_beneficial_value: non-beneficial value considered as fees is above maximum feerate: 682562 > 100000"
         );
     }
 
@@ -915,7 +921,7 @@ mod tests {
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: validate_onchain_tx: \
-             validate_beneficial_value: non-beneficial value above maximum: 3001000 > 200000"
+             validate_beneficial_value: non-beneficial value considered as fees is above maximum feerate: 4919673 > 100000"
         );
     }
 
@@ -984,7 +990,7 @@ mod tests {
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: validate_onchain_tx: \
-             validate_beneficial_value: non-beneficial value above maximum: 3001000 > 200000"
+             validate_beneficial_value: non-beneficial value considered as fees is above maximum feerate: 4919673 > 100000"
         );
     }
 
@@ -1056,7 +1062,7 @@ mod tests {
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
             "policy failure: validate_onchain_tx: validate_beneficial_value: \
-             non-beneficial value above maximum: 301000 > 200000"
+             non-beneficial value considered as fees is above maximum feerate: 493444 > 100000"
         );
     }
 }

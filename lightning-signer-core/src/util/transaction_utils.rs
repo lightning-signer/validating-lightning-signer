@@ -9,6 +9,26 @@ pub const MAX_VALUE_MSAT: u64 = 21_000_000_0000_0000_000;
 // FIXME - this is copied from `lightning::ln::channel, lobby to increase visibility.
 pub const MIN_DUST_LIMIT_SATOSHIS: u64 = 330;
 
+/// The expected weight of a commitment transaction
+pub(crate) fn expected_commitment_tx_weight(opt_anchors: bool, num_untrimmed_htlc: usize) -> usize {
+    /// FIXME - these are copied from `lightning::ln:channel, lobby to increase visibility.
+    const COMMITMENT_TX_BASE_WEIGHT: usize = 724;
+    const COMMITMENT_TX_BASE_ANCHOR_WEIGHT: usize = 1124;
+    const COMMITMENT_TX_WEIGHT_PER_HTLC: usize = 172;
+    let base_weight =
+        if opt_anchors { COMMITMENT_TX_BASE_ANCHOR_WEIGHT } else { COMMITMENT_TX_BASE_WEIGHT };
+    base_weight + num_untrimmed_htlc * COMMITMENT_TX_WEIGHT_PER_HTLC
+}
+
+/// The weight of a mutual close transaction.
+pub(crate) fn mutual_close_tx_weight(unsigned_tx: &Transaction) -> usize {
+    const EXPECTED_MUTUAL_CLOSE_WITNESS_WEIGHT: usize = //
+        2 + 1 + 4 + // witness-marker-and-flag witness-element-count 4-element-lengths
+        72 + 72 + // <signature_for_pubkey1> <signature_for_pubkey2>
+        1 + 1 + 33 + 1 + 33 + 1 + 1; // 2 <pubkey1> <pubkey2> 2 OP_CHECKMULTISIG
+    unsigned_tx.weight() + EXPECTED_MUTUAL_CLOSE_WITNESS_WEIGHT
+}
+
 /// Possibly adds a change output to the given transaction, always doing so if there are excess
 /// funds available beyond the requested feerate.
 /// Assumes at least one input will have a witness (ie spends a segwit output).
