@@ -98,6 +98,7 @@ pub trait Handler {
 }
 
 /// Protocol handler
+#[derive(Clone)]
 pub struct RootHandler {
     pub(crate) id: u64,
     pub node: Arc<Node>,
@@ -433,6 +434,22 @@ impl Handler for RootHandler {
             Message::Unknown(u) => {
                 unimplemented!("loop {}: unknown message type {}", self.id, u.message_type)
             }
+            Message::SignNodeAnnouncement(m) => {
+                let message = m.announcement[64 + 2..].to_vec();
+                let sig = self.node.sign_node_announcement(&message)?;
+
+                Ok(Box::new(msgs::SignNodeAnnouncementReply {
+                    node_signature: Signature(sig.serialize_compact()),
+                }))
+            }
+            Message::SignChannelUpdate(m) => {
+                // NOTE this is called without a dbid by gossipd, so it gets dispatched to the root handler
+                let message = m.update[2 + 64..].to_vec();
+                let sig = self.node.sign_channel_update(&message)?;
+                let mut update = m.update;
+                update[2..2 + 64].copy_from_slice(&sig.serialize_compact());
+                Ok(Box::new(msgs::SignChannelUpdateReply { update }))
+            }
             m => unimplemented!("loop {}: unimplemented message {:?}", self.id, m),
         }
     }
@@ -441,7 +458,6 @@ impl Handler for RootHandler {
         self.id
     }
 
-    // FIXME peer_id should be mandatory
     fn for_new_client(&self, client_id: u64, peer_id: PubKey, dbid: u64) -> ChannelHandler {
         let channel_id = Self::channel_id(&peer_id, dbid);
         ChannelHandler {
@@ -902,13 +918,6 @@ impl Handler for ChannelHandler {
                     },
                 }))
             }
-            Message::SignChannelUpdate(m) => {
-                let message = m.update[2 + 64..].to_vec();
-                let sig = self.node.sign_channel_update(&message)?;
-                let mut update = m.update;
-                update[2..2 + 64].copy_from_slice(&sig.serialize_compact());
-                Ok(Box::new(msgs::SignChannelUpdateReply { update }))
-            }
             Message::SignChannelAnnouncement(m) => {
                 let message = m.announcement[256 + 2..].to_vec();
                 let (node_sig, bitcoin_sig) =
@@ -918,16 +927,6 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::SignChannelAnnouncementReply {
                     node_signature: Signature(node_sig.serialize_compact()),
                     bitcoin_signature: Signature(bitcoin_sig.serialize_compact()),
-                }))
-            }
-            Message::SignNodeAnnouncement(m) => {
-                // This is called from gossipd, which is non-root and thus looks like channel ...
-                assert_eq!(self.dbid, 0);
-                let message = m.announcement[64 + 2..].to_vec();
-                let sig = self.node.sign_node_announcement(&message)?;
-
-                Ok(Box::new(msgs::SignNodeAnnouncementReply {
-                    node_signature: Signature(sig.serialize_compact()),
                 }))
             }
             Message::Unknown(u) => {
