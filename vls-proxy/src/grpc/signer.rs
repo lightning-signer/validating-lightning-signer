@@ -108,14 +108,18 @@ fn handle(request: SignerRequest, root_handler: &RootHandler) -> StdResult<Signe
         msg
     );
     let reply = if let Some(context) = request.context {
-        let peer = PubKey(
-            context
-                .peer_id
-                .try_into()
-                .map_err(|_| Error::SigningError(Status::invalid_argument("peer id")))?,
-        );
-        let handler = root_handler.for_new_client(context.dbid, peer, context.dbid);
-        handler.handle(msg)?
+        if context.dbid > 0 {
+            let peer = PubKey(
+                context
+                    .peer_id
+                    .try_into()
+                    .map_err(|_| Error::SigningError(Status::invalid_argument("peer id")))?,
+            );
+            let handler = root_handler.for_new_client(context.dbid, peer, context.dbid);
+            handler.handle(msg)?
+        } else {
+            root_handler.handle(msg)?
+        }
     } else {
         root_handler.handle(msg)?
     };

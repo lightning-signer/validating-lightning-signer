@@ -18,7 +18,7 @@ use client::{Client, UnixClient};
 use lightning_signer_server::nodefront::SingleFront;
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
 use util::{create_runtime, read_allowlist};
-use vls_protocol_signer::handler::{Handler, RootHandler};
+use vls_protocol_signer::handler::{ChannelHandler, Handler, RootHandler};
 
 mod test;
 use vls_proxy::util::{
@@ -26,18 +26,18 @@ use vls_proxy::util::{
 };
 use vls_proxy::*;
 
-fn signer_loop<C: 'static + Client, H: Handler>(client: C, handler: H) {
+fn root_signer_loop<C: 'static + Client>(client: C, handler: RootHandler) {
     let id = handler.client_id();
     let pid = std::process::id();
-    info!("loop {} {}: start", pid, id);
-    match do_signer_loop(client, handler) {
-        Ok(()) => info!("loop {} {}: done", pid, id),
+    info!("root loop {} {}: start", pid, id);
+    match do_root_signer_loop(client, handler) {
+        Ok(()) => info!("root loop {} {}: done", pid, id),
         Err(Error::Eof) => info!("loop {} {}: ending", pid, id),
-        Err(e) => error!("loop {} {}: error {:?}", pid, id, e),
+        Err(e) => error!("root loop {} {}: error {:?}", pid, id, e),
     }
 }
 
-fn do_signer_loop<C: 'static + Client, H: Handler>(mut client: C, handler: H) -> Result<()> {
+fn do_root_signer_loop<C: 'static + Client>(mut client: C, handler: RootHandler) -> Result<()> {
     loop {
         let msg = client.read()?;
         info!("loop {} {}: got {:x?}", std::process::id(), handler.client_id(), msg);
@@ -46,13 +46,19 @@ fn do_signer_loop<C: 'static + Client, H: Handler>(mut client: C, handler: H) ->
                 client.write(msgs::ClientHsmFdReply {}).unwrap();
                 let new_client = client.new_client();
                 info!(
-                    "new client {} {} -> {}",
+                    "new client {} client_id={} dbid={} -> {}",
                     std::process::id(),
                     handler.client_id(),
+                    m.dbid,
                     new_client.id()
                 );
-                let handler = handler.for_new_client(new_client.id(), m.peer_id, m.dbid);
-                thread::spawn(move || signer_loop(new_client, handler));
+                if m.dbid > 0 {
+                    let handler = handler.for_new_client(new_client.id(), m.peer_id, m.dbid);
+                    thread::spawn(move || channel_signer_loop(new_client, handler));
+                } else {
+                    let handler = handler.clone();
+                    thread::spawn(move || root_signer_loop(new_client, handler));
+                }
             }
             msg => {
                 let reply = handler.handle(msg).expect("handle");
@@ -61,6 +67,31 @@ fn do_signer_loop<C: 'static + Client, H: Handler>(mut client: C, handler: H) ->
                 info!("replied {} {}", std::process::id(), handler.client_id());
             }
         }
+    }
+}
+
+fn channel_signer_loop<C: 'static + Client>(client: C, handler: ChannelHandler) {
+    let id = handler.client_id();
+    let pid = std::process::id();
+    info!("chan loop {} {} {}: start", pid, id, handler.dbid);
+    match do_channel_signer_loop(client, handler) {
+        Ok(()) => info!("chan loop {} {}: done", pid, id),
+        Err(Error::Eof) => info!("chan loop {} {}: ending", pid, id),
+        Err(e) => error!("chan loop {} {}: error {:?}", pid, id, e),
+    }
+}
+
+fn do_channel_signer_loop<C: 'static + Client>(
+    mut client: C,
+    handler: ChannelHandler,
+) -> Result<()> {
+    loop {
+        let msg = client.read()?;
+        info!("chan loop {} {}: got {:x?}", std::process::id(), handler.client_id(), msg);
+        let reply = handler.handle(msg).expect("handle");
+        let v = reply.as_vec();
+        client.write_vec(v).unwrap();
+        info!("replied {} {}", std::process::id(), handler.client_id());
     }
 }
 
@@ -101,6 +132,6 @@ pub fn main() {
             frontend.start();
         });
 
-        signer_loop(client, handler);
+        root_signer_loop(client, handler);
     }
 }

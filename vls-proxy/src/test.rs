@@ -16,7 +16,7 @@ use vls_protocol_signer::vls_protocol::msgs;
 
 use crate::client::{Client, UnixClient};
 use crate::connection::UnixConnection;
-use crate::signer_loop;
+use crate::root_signer_loop;
 
 fn run_parent(fd: RawFd) {
     let mut client = UnixClient::new(UnixConnection::new(fd));
@@ -57,7 +57,7 @@ pub(crate) fn run_test() {
             let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
             let seed = Some([0; 32]);
             let handler = RootHandler::new(Network::Regtest, client.id(), seed, persister, vec![]);
-            signer_loop(client, handler)
+            root_signer_loop(client, handler)
         }
         Err(_) => {}
     }
