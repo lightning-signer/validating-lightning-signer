@@ -44,6 +44,7 @@ pub trait Validator {
     /// * `values_sat` - the amount in satoshi per input
     /// * `opaths` - derivation path for change, one per output,
     ///   empty for non-change or allowlisted outputs
+    /// * `weight_lower_bound` - lower bound of tx size, for feerate checking
     fn validate_onchain_tx(
         &self,
         wallet: &Wallet,
@@ -51,6 +52,7 @@ pub trait Validator {
         tx: &Transaction,
         values_sat: &Vec<u64>,
         opaths: &Vec<Vec<u32>>,
+        weight_lower_bound: usize,
     ) -> Result<(), ValidationError>;
 
     /// Phase 1 CommitmentInfo

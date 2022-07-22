@@ -12,6 +12,7 @@ mod tests {
     use crate::policy::validator::{ChainState, EnforcementState};
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
+    use crate::util::transaction_utils::expected_commitment_tx_weight;
 
     use paste::paste;
 
@@ -102,6 +103,9 @@ mod tests {
         cstate: &'a mut ChainState,
         estate: &'a mut EnforcementState,
         commit_num: &'a mut u64,
+        chan_ctx: &'a TestChannelContext,
+        num_htlcs: usize,
+        tx: &'a Transaction,
     }
 
     fn sign_holder_commitment_tx_with_mutators<SignInputMutator>(
@@ -224,6 +228,10 @@ mod tests {
                     cstate: &mut cstate,
                     estate: &mut chan.enforcement_state,
                     commit_num: &mut commit_tx_ctx.commit_num,
+                    chan_ctx: chan_ctx,
+                    num_htlcs: commit_tx_ctx.offered_htlcs.len()
+                        + commit_tx_ctx.received_htlcs.len(),
+                    tx: &tx.transaction,
                 });
 
                 let (sig, htlc_sigs) =
@@ -386,6 +394,29 @@ mod tests {
 
     generate_status_ok_retry_variations!(ok_after_mutual_close, |sms| {
         sms.estate.channel_closed = true;
+    });
+
+    generate_status_ok_variations!(check_expected_tx_weight, |sms| {
+        assert_eq!(
+            expected_commitment_tx_weight(sms.chan_ctx.setup.option_anchors(), sms.num_htlcs),
+            if sms.chan_ctx.setup.option_anchors() { 1640 } else { 1240 }
+        );
+        const WITNESS_WEIGHT: usize = //
+            2 + // witness-header
+            1 + // witness-element-count
+            1 + // nil-length
+            1 + 73 + // len sig_alice
+            1 + 73 + // len sig_bob
+            1 + 1 + 1 + 33 + 1 + 33 + 1 + 1; // len 2 <pubkey1> <pubkey2> 2 OP_CHECKMULTISIG
+
+        // The discrepency between estimated commitment weight for anchors and actual is the
+        // `count_tx_out` field which is estimated at 3 bytes, but is actually 1 byte for small
+        // numbers of outputs (htlcs).  This 2 byte difference is multiplied by 4 due to the segwit
+        // weight multipier.
+        assert_eq!(
+            sms.tx.weight() + WITNESS_WEIGHT,
+            if sms.chan_ctx.setup.option_anchors() { 1632 } else { 1240 }
+        );
     });
 
     #[allow(dead_code)]

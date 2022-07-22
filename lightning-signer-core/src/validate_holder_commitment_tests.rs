@@ -95,7 +95,7 @@ mod tests {
 
         let commit_num = 2;
         let feerate_per_kw = 1100;
-        let fees = 20_000;
+        let fees = 10_000;
         let to_broadcaster = 1_000_000;
         let to_countersignatory = channel_amount - to_broadcaster - fees;
 
@@ -134,7 +134,7 @@ mod tests {
         let received_htlcs = vec![];
 
         let feerate_per_kw = 1100;
-        let fees = 20_000;
+        let fees = 10_000;
         let to_broadcaster = 1_000_000;
         let to_countersignatory = channel_amount - to_broadcaster - fees;
 
@@ -190,7 +190,7 @@ mod tests {
 
         let commit_num = 1;
         let feerate_per_kw = 1100;
-        let fees = 20_000;
+        let fees = 10_000;
         let to_broadcaster = 1_000_000;
         let to_countersignatory = channel_amount - to_broadcaster - fees;
 

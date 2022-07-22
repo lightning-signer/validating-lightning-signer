@@ -20,6 +20,7 @@ mod tests {
     use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
+    use crate::util::transaction_utils::mutual_close_tx_weight;
 
     macro_rules! hex (($hex:expr) => (Vec::from_hex($hex).unwrap()));
     macro_rules! hex_script (($hex:expr) => (Script::from(hex!($hex))));
@@ -707,8 +708,7 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: \
-             to_counterparty_value 960000 is smaller than \
-             counterparty_info.broadcaster_value_sat 1000000"
+             validate_fee: feerate above maximum: 121663 > 100000"
         );
     }
 
@@ -734,7 +734,7 @@ mod tests {
                 }
             ),
             "policy failure: validate_mutual_close_tx: validate_fee: \
-             fee below minimum: 50 < 100"
+             feerate below minimum: 75 < 253"
         );
     }
 
@@ -1411,5 +1411,39 @@ mod tests {
             "policy failure: validate_mutual_close_tx: \
              to_holder_value 1985000 is smaller than holder_info.broadcaster_value_sat 2000000"
         );
+    }
+
+    #[test]
+    fn check_expected_weight() {
+        assert_status_ok!(sign_mutual_close_tx_phase2_with_mutators_outbound!(
+            |_chan,
+             to_holder,
+             to_counterparty,
+             holder_script,
+             counter_script,
+             outpoint,
+             _wallet_path,
+             _allowlist| {
+                // We aren't changing anything, but we have everything to make
+                // a close tx here.
+                let weight = mutual_close_tx_weight(
+                    &ClosingTransaction::new(
+                        *to_holder,
+                        *to_counterparty,
+                        holder_script.clone(),
+                        counter_script.clone(),
+                        *outpoint,
+                    )
+                    .trust()
+                    .built_transaction(),
+                );
+                // mainnet: d31a89acdedfe28b397a96c572714255df8441f696f3eca225bd7f8519ba76ff
+                assert_eq!(weight, 674);
+            },
+            |chan| {
+                // Channel should be marked closed
+                assert_eq!(chan.enforcement_state.channel_closed, true);
+            }
+        ));
     }
 }

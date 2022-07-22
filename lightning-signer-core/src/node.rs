@@ -1102,7 +1102,32 @@ impl Node {
             })
             .collect();
 
-        validator.validate_onchain_tx(self, channels.clone(), tx, values_sat, opaths)?;
+        // Compute a lower bound for the tx weight for feerate checking.
+        // TODO(dual-funding) - This estimate does not include witnesses for inputs we don't sign.
+        let mut weight_lower_bound = tx.weight();
+        for (idx, uck) in uniclosekeys.iter().enumerate() {
+            if spendtypes[idx] == SpendType::Invalid {
+                weight_lower_bound += 0;
+            } else {
+                let wit_len = match uck {
+                    // length-byte + witness-element
+                    Some((_key, stack)) => stack.iter().map(|v| 1 + v.len()).sum(),
+                    None => 33,
+                };
+                // witness-header + element-count + length + sig + len + redeemscript
+                weight_lower_bound += 2 + 1 + 1 + 72 + 1 + wit_len;
+            }
+        }
+        debug!("weight_lower_bound: {}", weight_lower_bound);
+
+        validator.validate_onchain_tx(
+            self,
+            channels.clone(),
+            tx,
+            values_sat,
+            opaths,
+            weight_lower_bound,
+        )?;
 
         let mut witvec: Vec<Vec<Vec<u8>>> = Vec::new();
         for (idx, uck) in uniclosekeys.into_iter().enumerate() {
