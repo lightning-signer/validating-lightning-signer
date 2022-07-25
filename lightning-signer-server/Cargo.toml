@@ -19,6 +19,7 @@ persist = [ "serde", "serde_json", "serde_with", "lightning-signer-core/serde" ]
 log_pretty_print = []
 test_utils = ["lightning-signer-core/test_utils"]
 frontend = ["vls-frontend"]
+secp-lowmemory = ["lightning-signer-core/secp-lowmemory"]
 
 [lib]
 name = "lightning_signer_server"
