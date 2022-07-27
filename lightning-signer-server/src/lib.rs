@@ -3,6 +3,8 @@
 #![allow(bare_trait_objects)]
 #![allow(ellipsis_inclusive_range_patterns)]
 
+pub use lightning_signer;
+
 use lightning_signer::lightning;
 
 pub mod fslogger;
