@@ -505,6 +505,7 @@ pub struct Node {
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<OrderedMap<ChannelId, Arc<Mutex<ChannelSlot>>>>,
     pub(crate) validator_factory: Mutex<Arc<dyn ValidatorFactory>>,
+    /// The node persister
     pub(crate) persister: Arc<dyn Persist>,
     allowlist: Mutex<UnorderedSet<Allowable>>,
     tracker: Mutex<ChainTracker<ChainMonitor>>,
@@ -639,6 +640,11 @@ impl Node {
             state,
             node_id,
         }
+    }
+
+    /// persister
+    pub fn get_persister(&self) -> Arc<dyn Persist> {
+        Arc::clone(&self.persister)
     }
 
     /// onion reply secret

@@ -411,24 +411,36 @@ impl Handler for RootHandler {
                 }))
             }
             Message::AddBlock(m) => {
-                self.node
-                    .get_tracker()
+                let mut tracker = self.node.get_tracker();
+                tracker
                     .add_block(
                         deserialize(m.header.0.as_slice()).expect("header"),
                         m.txs.iter().map(|tx| deserialize(tx.0.as_slice()).expect("tx")).collect(),
                         m.txs_proof.map(|prf| deserialize(prf.0.as_slice()).expect("txs_proof")),
                     )
                     .expect("add_block");
+                self.node
+                    .get_persister()
+                    .update_tracker(&self.node.get_id(), &tracker)
+                    .unwrap_or_else(|e| {
+                        panic!("{}: persist tracker failed: {:?}", self.node.log_prefix(), e)
+                    });
                 Ok(Box::new(msgs::AddBlockReply {}))
             }
             Message::RemoveBlock(m) => {
-                self.node
-                    .get_tracker()
+                let mut tracker = self.node.get_tracker();
+                tracker
                     .remove_block(
                         m.txs.iter().map(|tx| deserialize(tx.0.as_slice()).expect("tx")).collect(),
                         m.txs_proof.map(|prf| deserialize(prf.0.as_slice()).expect("txs_proof")),
                     )
-                    .expect("add_block");
+                    .expect("remove_block");
+                self.node
+                    .get_persister()
+                    .update_tracker(&self.node.get_id(), &tracker)
+                    .unwrap_or_else(|e| {
+                        panic!("{}: persist tracker failed: {:?}", self.node.log_prefix(), e)
+                    });
                 Ok(Box::new(msgs::RemoveBlockReply {}))
             }
             Message::Unknown(u) => {
