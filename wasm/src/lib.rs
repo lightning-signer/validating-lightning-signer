@@ -16,6 +16,7 @@ use lightning_signer::node::{Node, NodeConfig};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 use lightning_signer::signer::derive::KeyDerivationStyle;
+use lightning_signer::signer::StartingTimeFactory;
 use lightning_signer::util::key_utils::make_test_key;
 use lightning_signer::Arc;
 use lightning_signer::{bitcoin, lightning};
@@ -256,11 +257,15 @@ pub fn make_node() -> JSNode {
         NodeConfig { network: Network::Testnet, key_derivation_style: KeyDerivationStyle::Native };
     let mut seed = [0u8; 32];
     randomize_buffer(&mut seed);
+
+    let starting_time_factory = RandomStartingTimeFactory::new();
+
     // TODO remove in production :)
     debug!("SEED {}", seed.to_hex());
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
-    let node = Node::new(config, &seed, &persister, vec![], validator_factory);
+    let node =
+        Node::new(config, &seed, &persister, vec![], validator_factory, &starting_time_factory);
     JSNode { node: Arc::new(node) }
 }
 
@@ -279,14 +284,47 @@ fn randomize_buffer(seed: &mut [u8; 32]) {
     crypto.get_random_values_with_u8_array(seed).expect("random");
 }
 
-#[wasm_bindgen]
-pub fn set_log_level(level: String) {
-    log::set_max_level(LevelFilter::from_str(&level).expect("level name"));
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 fn randomize_buffer(_seed: &mut [u8; 32]) {
     // TODO
+}
+
+/// A starting time factory which uses random entropy
+struct RandomStartingTimeFactory {}
+
+#[cfg(target_arch = "wasm32")]
+impl StartingTimeFactory for RandomStartingTimeFactory {
+    // LDK: KeysManager: starting_time isn't strictly required to actually be a time, but it must
+    // absolutely, without a doubt, be unique to this instance
+    fn starting_time(&self) -> (u64, u32) {
+        use web_sys::{window, Crypto};
+        let window = window().expect("window");
+        let crypto: Crypto = window.crypto().expect("crypto");
+        let mut secs_bytes = [0u8; 8];
+        let mut nanos_bytes = [0u8; 4];
+        crypto.get_random_values_with_u8_array(&mut secs_bytes).expect("random");
+        crypto.get_random_values_with_u8_array(&mut nanos_bytes).expect("random");
+        (u64::from_le_bytes(secs_bytes), u32::from_le_bytes(nanos_bytes))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl StartingTimeFactory for RandomStartingTimeFactory {
+    fn starting_time(&self) -> (u64, u32) {
+        // TODO
+        (1, 1)
+    }
+}
+
+impl RandomStartingTimeFactory {
+    pub fn new() -> Box<dyn StartingTimeFactory> {
+        Box::new(RandomStartingTimeFactory {})
+    }
+}
+
+#[wasm_bindgen]
+pub fn set_log_level(level: String) {
+    log::set_max_level(LevelFilter::from_str(&level).expect("level name"));
 }
 
 #[wasm_bindgen]

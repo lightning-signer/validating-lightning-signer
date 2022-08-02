@@ -4,6 +4,7 @@ use std::sync::Arc;
 use lightning_signer::bitcoin::{secp256k1, Network};
 use lightning_signer::persist::DummyPersister;
 use lightning_signer::persist::Persist;
+use lightning_signer::signer::ClockStartingTimeFactory;
 use log::info;
 use nix::sys::socket::{socketpair, AddressFamily, SockFlag, SockType};
 use nix::unistd::{close, fork, ForkResult};
@@ -56,7 +57,15 @@ pub(crate) fn run_test() {
             let client = UnixClient::new(conn);
             let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
             let seed = Some([0; 32]);
-            let handler = RootHandler::new(Network::Regtest, client.id(), seed, persister, vec![]);
+            let starting_time_factory = ClockStartingTimeFactory::new();
+            let handler = RootHandler::new(
+                Network::Regtest,
+                client.id(),
+                seed,
+                persister,
+                vec![],
+                &starting_time_factory,
+            );
             root_signer_loop(client, handler)
         }
         Err(_) => {}

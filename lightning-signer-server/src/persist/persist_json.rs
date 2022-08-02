@@ -247,7 +247,13 @@ mod tests {
             persister.new_chain_tracker(&node_id, &node.get_tracker());
             persister.new_channel(&node_id, &stub).unwrap();
 
-            let nodes = Node::restore_nodes(Arc::clone(&persister), validator_factory.clone());
+            let starting_time_factory =
+                make_genesis_starting_time_factory(TEST_NODE_CONFIG.network);
+            let nodes = Node::restore_nodes(
+                Arc::clone(&persister),
+                validator_factory.clone(),
+                &starting_time_factory,
+            );
             let restored_node = nodes.get(&node_id).unwrap();
 
             {
@@ -273,7 +279,13 @@ mod tests {
                     .unwrap();
                 persister.update_channel(&node_id, &channel).unwrap();
 
-                let nodes = Node::restore_nodes(Arc::clone(&persister), validator_factory.clone());
+                let starting_time_factory =
+                    make_genesis_starting_time_factory(TEST_NODE_CONFIG.network);
+                let nodes = Node::restore_nodes(
+                    Arc::clone(&persister),
+                    validator_factory.clone(),
+                    &starting_time_factory,
+                );
                 let restored_node_arc = nodes.get(&node_id).unwrap();
                 let slot = restored_node_arc.get_channel(&stub.id0).unwrap();
                 assert!(node.channels().contains_key(&channel_id0));

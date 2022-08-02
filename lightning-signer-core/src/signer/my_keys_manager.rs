@@ -24,6 +24,7 @@ use lightning::ln::script::ShutdownScript;
 
 use super::derive::{self, KeyDerivationStyle};
 use crate::channel::ChannelId;
+use crate::signer::StartingTimeFactory;
 use crate::util::transaction_utils::MAX_VALUE_MSAT;
 use crate::util::{byte_utils, transaction_utils};
 use bitcoin::secp256k1::ecdsa::RecoverableSignature;
@@ -63,12 +64,14 @@ pub struct MyKeysManager {
 
 impl MyKeysManager {
     /// Construct
+    ///
+    /// NOTE - it's ok to reconstruct MyKeysManager with a different starting time when restoring
+    /// from persisted data.  It is not important to persist the starting_time entropy ...
     pub fn new(
         key_derivation_style: KeyDerivationStyle,
         seed: &[u8],
         network: Network,
-        starting_time_secs: u64,
-        starting_time_nanos: u32,
+        starting_time_factory: &Box<dyn StartingTimeFactory>,
     ) -> MyKeysManager {
         let secp_ctx = Secp256k1::new();
         let key_derive = derive::key_derive(key_derivation_style, network);
@@ -98,6 +101,7 @@ impl MyKeysManager {
             .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(5).unwrap())
             .expect("Your RNG is busted");
 
+        let (starting_time_secs, starting_time_nanos) = starting_time_factory.starting_time();
         let mut unique_start = Sha256::engine();
         unique_start.input(&byte_utils::be64_to_array(starting_time_secs));
         unique_start.input(&byte_utils::be32_to_array(starting_time_nanos));
@@ -537,16 +541,22 @@ mod tests {
     use bitcoin::Network::Testnet;
 
     use super::*;
+    use crate::util::test_utils::{
+        hex_decode, hex_encode, FixedStartingTimeFactory, TEST_CHANNEL_ID,
+    };
     use lightning::chain::keysinterface::{BaseSign, KeysManager};
-
-    use crate::util::test_utils::{hex_decode, hex_encode, TEST_CHANNEL_ID};
     use test_log::test;
 
     #[test]
     fn compare_ldk_keys_manager_test() -> Result<(), ()> {
         let seed = [0x11u8; 32];
         let ldk = KeysManager::new(&seed, 1, 1);
-        let my = MyKeysManager::new(KeyDerivationStyle::Ldk, &seed, Network::Testnet, 1, 1);
+        let my = MyKeysManager::new(
+            KeyDerivationStyle::Ldk,
+            &seed,
+            Network::Testnet,
+            &FixedStartingTimeFactory::new(1, 1),
+        );
         assert_eq!(
             ldk.get_node_secret(Recipient::Node).unwrap(),
             my.get_node_secret(Recipient::Node).unwrap()
@@ -575,8 +585,12 @@ mod tests {
 
     #[test]
     fn keys_test_native() -> Result<(), ()> {
-        let manager =
-            MyKeysManager::new(KeyDerivationStyle::Native, &[0u8; 32], Network::Testnet, 0, 0);
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Native,
+            &[0u8; 32],
+            Network::Testnet,
+            &FixedStartingTimeFactory::new(0, 0),
+        );
         assert_eq!(
             hex_encode(&manager.channel_seed_base),
             "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53"
@@ -612,8 +626,12 @@ mod tests {
 
     #[test]
     fn keys_test_lnd() -> Result<(), ()> {
-        let manager =
-            MyKeysManager::new(KeyDerivationStyle::Lnd, &[0u8; 32], Network::Testnet, 0, 0);
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Lnd,
+            &[0u8; 32],
+            Network::Testnet,
+            &FixedStartingTimeFactory::new(0, 0),
+        );
         assert_eq!(
             hex_encode(&manager.channel_seed_base),
             "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53"
@@ -646,8 +664,12 @@ mod tests {
 
     #[test]
     fn per_commit_test() -> Result<(), ()> {
-        let manager =
-            MyKeysManager::new(KeyDerivationStyle::Native, &[0u8; 32], Network::Testnet, 0, 0);
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Native,
+            &[0u8; 32],
+            Network::Testnet,
+            &FixedStartingTimeFactory::new(0, 0),
+        );
         let mut channel_id = [0u8; 32];
         channel_id[0] = 1u8;
         let keys = make_test_keys(manager);

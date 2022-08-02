@@ -9,6 +9,9 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use core::cell::RefCell;
+
+use cortex_m::interrupt::Mutex;
 use cortex_m_rt::entry;
 
 #[allow(unused_imports)]
@@ -18,6 +21,7 @@ use device::heap_bytes_used;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::Arc;
+use randomstartingtime::RandomStartingTimeFactory;
 use vls_protocol::model::PubKey;
 use vls_protocol::msgs::{self, read_serial_request_header, write_serial_response_header, Message};
 use vls_protocol::serde_bolt::WireString;
@@ -27,6 +31,7 @@ use vls_protocol_signer::vls_protocol;
 
 mod device;
 mod logger;
+mod randomstartingtime;
 #[cfg(feature = "sdio")]
 mod sdcard;
 mod timer;
@@ -39,7 +44,7 @@ fn main() -> ! {
     device::init_allocator();
 
     #[allow(unused)]
-    let (mut delay, timer1, timer2, mut serial, mut sdio, mut disp, mut _rng) =
+    let (mut delay, timer1, timer2, mut serial, mut sdio, mut disp, mut rng) =
         device::make_devices();
 
     logger::set_timer(timer1.clone());
@@ -61,6 +66,8 @@ fn main() -> ! {
     disp.clear_screen();
     disp.show_text("init");
 
+    let starting_time_factory = RandomStartingTimeFactory::new(Mutex::new(RefCell::new(rng)));
+
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
     let (sequence, dbid) = read_serial_request_header(&mut serial).expect("read init header");
     assert_eq!(dbid, 0);
@@ -71,7 +78,8 @@ fn main() -> ! {
     let allowlist = init.dev_allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
     let seed_opt = init.dev_seed.as_ref().map(|s| s.0);
     let network = Network::Regtest; // TODO - get from config/args/env somehow
-    let root_handler = RootHandler::new(network, 0, seed_opt, persister, allowlist);
+    let root_handler =
+        RootHandler::new(network, 0, seed_opt, persister, allowlist, &starting_time_factory);
     let init_reply = root_handler.handle(Message::HsmdInit2(init)).expect("handle init");
     write_serial_response_header(&mut serial, sequence).expect("write init header");
     msgs::write_vec(&mut serial, init_reply.as_vec()).expect("write init reply");
