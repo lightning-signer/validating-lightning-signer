@@ -18,6 +18,7 @@ use stm32f4xx_hal::{
     pac::{Interrupt, NVIC, TIM2, TIM5},
     prelude::*,
     rcc::{Clocks, Rcc},
+    rng::Rng,
     sdio::{ClockFreq, SdCard, Sdio},
     timer::{Counter, SysDelay},
     timer::{Event, FTimerMs, FTimerUs},
@@ -185,7 +186,7 @@ impl FreeTimer {
 }
 
 pub fn make_devices(
-) -> (SysDelay, FreeTimer, Counter<TIM2, 1000000>, SerialDriver, Sdio<SdCard>, Display) {
+) -> (SysDelay, FreeTimer, Counter<TIM2, 1000000>, SerialDriver, Sdio<SdCard>, Display, Rng) {
     let p = Peripherals::take().unwrap();
     let cp = CorePeripherals::take().unwrap();
     let rcc = p.RCC.constrain();
@@ -274,7 +275,10 @@ pub fn make_devices(
 
     let disp =
         Display { inner: make_display(p.FSMC, lcd_pins, lcd_reset, &mut delay, backlight_control) };
-    (delay, FreeTimer::new(timer1), timer2, serial, sdio, disp)
+
+    let rng = p.RNG.constrain(&clocks);
+
+    (delay, FreeTimer::new(timer1), timer2, serial, sdio, disp, rng)
 }
 
 // define what happens in an Out Of Memory (OOM) condition

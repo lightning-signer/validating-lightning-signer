@@ -39,7 +39,8 @@ fn main() -> ! {
     device::init_allocator();
 
     #[allow(unused)]
-    let (mut delay, timer1, timer2, mut serial, mut sdio, mut disp) = device::make_devices();
+    let (mut delay, timer1, timer2, mut serial, mut sdio, mut disp, mut _rng) =
+        device::make_devices();
 
     logger::set_timer(timer1.clone());
 

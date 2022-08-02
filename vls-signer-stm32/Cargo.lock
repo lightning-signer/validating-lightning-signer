@@ -818,6 +818,7 @@ dependencies = [
  "nb 1.0.0",
  "panic-probe",
  "profont",
+ "rand_core",
  "rtt-target",
  "st7789",
  "stm32f4",
