@@ -69,6 +69,10 @@ impl ValidatorFactory for SimpleValidatorFactory {
 
         Arc::new(validator)
     }
+
+    fn policy(&self, network: Network) -> Box<dyn Policy> {
+        Box::new(self.policy.clone().unwrap_or_else(|| make_simple_policy(network)))
+    }
 }
 
 /// A simple policy to configure a SimpleValidator

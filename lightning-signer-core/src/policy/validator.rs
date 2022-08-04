@@ -389,6 +389,9 @@ pub trait ValidatorFactory: Send + Sync {
         node_id: PublicKey,
         channel_id: Option<ChannelId>,
     ) -> Arc<dyn Validator>;
+
+    /// Get the policy
+    fn policy(&self, network: Network) -> Box<dyn Policy>;
 }
 
 /// Enforcement state for a channel

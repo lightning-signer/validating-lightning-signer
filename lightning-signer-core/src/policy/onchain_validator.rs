@@ -43,6 +43,10 @@ impl ValidatorFactory for OnchainValidatorFactory {
         };
         Arc::new(validator)
     }
+
+    fn policy(&self, network: Network) -> Box<dyn Policy> {
+        self.inner_factory.policy(network)
+    }
 }
 
 /// An on-chain validator, subsumes the policy checks of SimpleValidator
