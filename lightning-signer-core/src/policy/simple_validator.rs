@@ -124,6 +124,10 @@ impl Policy for SimplePolicy {
             Ok(())
         }
     }
+
+    fn global_velocity_control(&self) -> VelocityControlSpec {
+        self.global_velocity_control
+    }
 }
 
 /// Development flags included in SimplePolicy

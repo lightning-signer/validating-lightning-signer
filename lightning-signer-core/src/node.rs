@@ -46,6 +46,7 @@ use crate::persist::Persist;
 use crate::policy::error::{policy_error, unbalanced_error, ValidationError};
 use crate::policy::validator::{BalanceDelta, ValidatorFactory};
 use crate::policy::validator::{EnforcementState, Validator};
+use crate::policy::Policy;
 use crate::prelude::*;
 use crate::signer::derive::KeyDerivationStyle;
 use crate::signer::my_keys_manager::MyKeysManager;
@@ -54,6 +55,7 @@ use crate::sync::{Arc, Weak};
 use crate::tx::tx::PreimageMap;
 use crate::util::crypto_utils::signature_to_bitcoin_vec;
 use crate::util::status::{failed_precondition, internal_error, invalid_argument, Status};
+use crate::util::velocity::VelocityControl;
 use crate::wallet::Wallet;
 
 /// Node configuration parameters.
@@ -153,6 +155,8 @@ pub struct NodeState {
     pub excess_amount: u64,
     /// Prefix for emitted logs lines
     pub log_prefix: String,
+    /// Per node velocity control
+    pub velocity_control: VelocityControl,
 }
 
 impl PreimageMap for NodeState {
@@ -163,23 +167,25 @@ impl PreimageMap for NodeState {
 
 impl NodeState {
     /// Create a state
-    pub fn new() -> Self {
+    pub fn new(velocity_control: VelocityControl) -> Self {
         NodeState {
             invoices: Map::new(),
             issued_invoices: Map::new(),
             payments: Map::new(),
             excess_amount: 0,
             log_prefix: String::new(),
+            velocity_control,
         }
     }
 
-    fn with_log_prefix(self, log_prefix: String) -> Self {
+    fn with_log_prefix(self, velocity_control: VelocityControl, log_prefix: String) -> Self {
         NodeState {
             invoices: self.invoices,
             issued_invoices: self.issued_invoices,
             payments: self.payments,
             excess_amount: self.excess_amount,
             log_prefix,
+            velocity_control,
         }
     }
 
@@ -608,7 +614,9 @@ impl Node {
         validator_factory: Arc<dyn ValidatorFactory>,
         starting_time_factory: &Box<dyn StartingTimeFactory>,
     ) -> Node {
-        let state = NodeState::new();
+        let policy = validator_factory.policy(node_config.network);
+        let global_velocity_control = Self::make_velocity_control(policy);
+        let state = NodeState::new(global_velocity_control);
         Self::new_from_persistence(
             node_config,
             seed,
@@ -641,7 +649,11 @@ impl Node {
         let node_id = Self::id_from_key(&keys_manager.get_node_secret(Recipient::Node).unwrap());
         let log_prefix = &node_id.to_hex()[0..4];
 
-        let state = Mutex::new(state.with_log_prefix(log_prefix.to_string()));
+        let policy = validator_factory.policy(node_config.network);
+        let global_velocity_control = Self::make_velocity_control(policy);
+
+        let state =
+            Mutex::new(state.with_log_prefix(global_velocity_control, log_prefix.to_string()));
 
         Node {
             keys_manager,
@@ -911,8 +923,11 @@ impl Node {
             .collect::<Result<_, _>>()
             .expect("allowable parse error");
         let tracker = persister.get_tracker(node_id).expect("tracker");
+
         // FIXME persist node state
-        let state = NodeState::new();
+        let policy = validator_factory.policy(network);
+        let global_velocity_control = Self::make_velocity_control(policy);
+        let state = NodeState::new(global_velocity_control);
 
         let node = Arc::new(Node::new_from_persistence(
             config,
@@ -1595,6 +1610,11 @@ impl Node {
             is_fulfilled: false,
         };
         Ok((hash, invoice_state, invoice_hash))
+    }
+
+    fn make_velocity_control(policy: Box<dyn Policy>) -> VelocityControl {
+        let global_velocity_control_spec = policy.global_velocity_control();
+        VelocityControl::new(global_velocity_control_spec)
     }
 }
 

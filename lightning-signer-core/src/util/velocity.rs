@@ -47,46 +47,39 @@ impl VelocityControl {
     /// num_buckets: how many buckets to keep track of
     /// bucket_interval: each bucket represents this number of seconds
     /// limit: the total velocity limit when summing the buckets
-    pub fn new_with_intervals(
-        current_sec: u64,
-        limit: u64,
-        bucket_interval: u32,
-        num_buckets: usize,
-    ) -> Self {
+    pub fn new_with_intervals(limit: u64, bucket_interval: u32, num_buckets: usize) -> Self {
         assert!(bucket_interval > 0 && num_buckets > 0);
         let mut buckets = Vec::new();
         buckets.resize(num_buckets, 0);
-        VelocityControl { start_sec: current_sec, bucket_interval, buckets, limit }
+        VelocityControl { start_sec: 0, bucket_interval, buckets, limit }
     }
 
     /// Create an unlimited velocity control (i.e. no actual control)
-    pub fn new_unlimited() -> Self {
-        VelocityControl { start_sec: 0, bucket_interval: 0, buckets: Vec::new(), limit: 0 }
+    pub fn new_unlimited(bucket_interval: u32, num_buckets: usize) -> Self {
+        assert!(bucket_interval > 0 && num_buckets > 0);
+        let mut buckets = Vec::new();
+        buckets.resize(num_buckets, 0);
+        VelocityControl { start_sec: 0, bucket_interval, buckets, limit: u64::MAX }
     }
 
     /// Create a velocity control with the given interval type
-    pub fn new(current_sec: u64, spec: VelocityControlSpec) -> Self {
+    pub fn new(spec: VelocityControlSpec) -> Self {
         match spec.interval_type {
-            VelocityControlIntervalType::Hourly =>
-                Self::new_with_intervals(current_sec, spec.limit, 300, 12),
-            VelocityControlIntervalType::Daily =>
-                Self::new_with_intervals(current_sec, spec.limit, 3600, 24),
-            VelocityControlIntervalType::Unlimited => Self::new_unlimited(),
+            VelocityControlIntervalType::Hourly => Self::new_with_intervals(spec.limit, 300, 12),
+            VelocityControlIntervalType::Daily => Self::new_with_intervals(spec.limit, 3600, 24),
+            VelocityControlIntervalType::Unlimited => Self::new_unlimited(300, 12),
         }
     }
 
     /// Whether this instance is unlimited (no control)
     pub fn is_unlimited(&self) -> bool {
-        self.bucket_interval == 0
+        self.limit == u64::MAX
     }
 
     /// Update the velocity given the passage of time given by `current_sec`
     /// and the given velocity.  If the limit would be exceeded, the given velocity
     /// is not inserted and false is returned.
     pub fn insert(&mut self, current_sec: u64, velocity: u64) -> bool {
-        if self.is_unlimited() {
-            return true;
-        }
         let nshift = (current_sec - self.start_sec) / self.bucket_interval as u64;
         let len = self.buckets.len();
         let nshift = min(len, nshift as usize);
@@ -96,10 +89,10 @@ impl VelocityControl {
         }
         self.start_sec = current_sec - (current_sec % self.bucket_interval as u64);
         let current_velocity = self.velocity();
-        if current_velocity + velocity > self.limit {
+        if current_velocity.saturating_add(velocity) > self.limit {
             false
         } else {
-            self.buckets[0] += velocity;
+            self.buckets[0] = self.buckets[0].saturating_add(velocity);
             true
         }
     }
@@ -108,12 +101,9 @@ impl VelocityControl {
     ///
     /// If this is an unlimited control, zero is always returned.
     pub fn velocity(&self) -> u64 {
-        if self.is_unlimited() {
-            return 0;
-        }
         let mut sum = 0u64;
         for bucket in self.buckets.iter() {
-            sum = sum.checked_add(*bucket).unwrap()
+            sum = sum.saturating_add(*bucket)
         }
         sum
     }
@@ -125,13 +115,15 @@ mod tests {
 
     #[test]
     fn test_velocity() {
-        let mut c = VelocityControl::new_with_intervals(1000, 100, 10, 4);
+        let mut c = VelocityControl::new_with_intervals(100, 10, 4);
         assert_eq!(c.velocity(), 0);
         assert!(c.insert(1100, 90));
         assert_eq!(c.velocity(), 90);
         assert!(!c.insert(1101, 11));
         assert_eq!(c.velocity(), 90);
         assert!(c.insert(1101, 10));
+        assert_eq!(c.velocity(), 100);
+        assert!(!c.insert(1139, 90));
         assert_eq!(c.velocity(), 100);
         assert!(c.insert(1140, 90));
         assert_eq!(c.velocity(), 90);
@@ -141,5 +133,16 @@ mod tests {
         assert_eq!(c.velocity(), 85);
         assert!(c.insert(1190, 1));
         assert_eq!(c.velocity(), 81);
+    }
+
+    #[test]
+    fn test_unlimited() {
+        let mut c = VelocityControl::new_unlimited(10, 4);
+        assert!(c.insert(0, u64::MAX - 1));
+        assert_eq!(c.velocity(), u64::MAX - 1);
+        assert!(c.insert(0, 1));
+        assert_eq!(c.velocity(), u64::MAX);
+        assert!(c.insert(0, 1));
+        assert_eq!(c.velocity(), u64::MAX);
     }
 }

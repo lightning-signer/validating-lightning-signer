@@ -12,6 +12,7 @@ use crate::policy::Policy;
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
+use crate::util::velocity::VelocityControlSpec;
 use crate::wallet::Wallet;
 
 extern crate scopeguard;
@@ -63,6 +64,10 @@ pub struct OnchainPolicy {
 impl Policy for OnchainPolicy {
     fn policy_error(&self, _tag: String, msg: String) -> Result<(), ValidationError> {
         return Err(policy_error(msg));
+    }
+
+    fn global_velocity_control(&self) -> VelocityControlSpec {
+        VelocityControlSpec::UNLIMITED
     }
 }
 
