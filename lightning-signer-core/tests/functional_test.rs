@@ -39,7 +39,7 @@ use lightning_signer::signer::multi_signer::MultiSigner;
 use lightning_signer::util::functional_test_utils::{close_channel, confirm_transaction_at, connect_block, connect_blocks, create_announced_chan_between_nodes, create_chanmon_cfgs, create_network, create_node_chanmgrs, get_announce_close_broadcast_events, mine_transaction, send_payment, Node, NodeCfg, TestChanMonCfg, tip_for_node};
 use lightning_signer::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use lightning_signer::util::test_utils;
-use lightning_signer::util::test_utils::{TestChainMonitor, REGTEST_NODE_CONFIG, make_block};
+use lightning_signer::util::test_utils::{TestChainMonitor, REGTEST_NODE_CONFIG, make_block, make_genesis_starting_time_factory};
 use lightning_signer::channel::ChannelId;
 use lightning_signer::node::NodeConfig;
 use lightning_signer::persist::DummyPersister;
@@ -145,7 +145,10 @@ fn fake_network_with_signer_test() {
 
 fn new_signer() -> Arc<MultiSigner> {
     let validator_factory = Arc::new(OnchainValidatorFactory::new());
-    Arc::new(MultiSigner::new_with_validator(validator_factory))
+    let starting_time_factory = make_genesis_starting_time_factory(REGTEST_NODE_CONFIG.network);
+    Arc::new(MultiSigner::new_with_validator(
+        validator_factory, starting_time_factory,
+    ))
 }
 
 #[test]
@@ -155,7 +158,9 @@ fn invoice_test() {
     policy.require_invoices = true;
     policy.enforce_balance = true;
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
-    let validating_signer = Arc::new(MultiSigner::new_with_validator(validator_factory));
+    let starting_time_factory = make_genesis_starting_time_factory(REGTEST_NODE_CONFIG.network);
+    let validating_signer = Arc::new(MultiSigner::new_with_validator(
+        validator_factory, starting_time_factory));
 
     let chanmon_cfgs = create_chanmon_cfgs(3);
     let mut node_cfgs = Vec::new();

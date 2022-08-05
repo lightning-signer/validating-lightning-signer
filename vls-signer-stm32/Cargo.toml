@@ -17,6 +17,7 @@ st7789 = { version = "0.6.1", default-features = false, features = ["graphics", 
 rtt-target = { version = "0.3.1", features = ["cortex-m"] }
 profont = "0.6"
 panic-probe = { version = "0.2", features = ["print-rtt"] }
+rand_core = "0.6.0"
 log = "0.4"
 usb-device = "0.2.5"
 usbd-serial = "0.1.0"

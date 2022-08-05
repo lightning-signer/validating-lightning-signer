@@ -13,6 +13,7 @@ use crate::persist::{DummyPersister, Persist};
 use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::ValidatorFactory;
 use crate::prelude::*;
+use crate::signer::StartingTimeFactory;
 use crate::sync::Arc;
 use crate::util::status::{invalid_argument, Status};
 
@@ -25,29 +26,35 @@ pub struct MultiSigner {
     pub(crate) test_mode: bool,
     pub(crate) initial_allowlist: Vec<String>,
     validator_factory: Arc<dyn ValidatorFactory>,
+    starting_time_factory: Box<dyn StartingTimeFactory>,
 }
 
 impl MultiSigner {
     /// Construct with a null persister
-    pub fn new() -> MultiSigner {
+    pub fn new(starting_time_factory: Box<dyn StartingTimeFactory>) -> MultiSigner {
         let validator_factory = Arc::new(SimpleValidatorFactory::new());
         let signer = MultiSigner::new_with_persister(
             Arc::new(DummyPersister),
             true,
             vec![],
             validator_factory,
+            starting_time_factory,
         );
         info!("new MultiSigner");
         signer
     }
 
     /// Construct
-    pub fn new_with_validator(validator_factory: Arc<dyn ValidatorFactory>) -> MultiSigner {
+    pub fn new_with_validator(
+        validator_factory: Arc<dyn ValidatorFactory>,
+        starting_time_factory: Box<dyn StartingTimeFactory>,
+    ) -> MultiSigner {
         let signer = MultiSigner::new_with_persister(
             Arc::new(DummyPersister),
             true,
             vec![],
             validator_factory,
+            starting_time_factory,
         );
         info!("new MultiSigner");
         signer
@@ -59,14 +66,20 @@ impl MultiSigner {
         test_mode: bool,
         initial_allowlist: Vec<String>,
         validator_factory: Arc<dyn ValidatorFactory>,
+        starting_time_factory: Box<dyn StartingTimeFactory>,
     ) -> MultiSigner {
-        let nodes = Node::restore_nodes(Arc::clone(&persister), validator_factory.clone());
+        let nodes = Node::restore_nodes(
+            Arc::clone(&persister),
+            validator_factory.clone(),
+            &starting_time_factory,
+        );
         MultiSigner {
             nodes: Mutex::new(nodes),
             persister,
             test_mode,
             initial_allowlist,
             validator_factory,
+            starting_time_factory,
         }
     }
 
@@ -78,8 +91,14 @@ impl MultiSigner {
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);
 
-        let node =
-            Node::new(node_config, &seed, &self.persister, vec![], self.validator_factory.clone());
+        let node = Node::new(
+            node_config,
+            &seed,
+            &self.persister,
+            vec![],
+            self.validator_factory.clone(),
+            &self.starting_time_factory,
+        );
         let node_id = node.get_id();
         let mut nodes = self.nodes.lock().unwrap();
         node.add_allowlist(&self.initial_allowlist).expect("valid initialallowlist");
@@ -120,6 +139,7 @@ impl MultiSigner {
             vec![],
             tracker,
             validator_factory,
+            &self.starting_time_factory,
         );
         let node_id = node.get_id();
         let mut nodes = self.nodes.lock().unwrap();
@@ -136,8 +156,14 @@ impl MultiSigner {
         node_config: NodeConfig,
         seed: &[u8],
     ) -> Result<PublicKey, Status> {
-        let node =
-            Node::new(node_config, &seed, &self.persister, vec![], self.validator_factory.clone());
+        let node = Node::new(
+            node_config,
+            &seed,
+            &self.persister,
+            vec![],
+            self.validator_factory.clone(),
+            &self.starting_time_factory,
+        );
         let node_id = node.get_id();
         let mut nodes = self.nodes.lock().unwrap();
         if self.test_mode {
@@ -169,8 +195,14 @@ impl MultiSigner {
         node_config: NodeConfig,
         seed: &[u8],
     ) -> Result<PublicKey, Status> {
-        let node =
-            Node::new(node_config, &seed, &self.persister, vec![], self.validator_factory.clone());
+        let node = Node::new(
+            node_config,
+            &seed,
+            &self.persister,
+            vec![],
+            self.validator_factory.clone(),
+            &self.starting_time_factory,
+        );
         let node_id = node.get_id();
         let nodes = self.nodes.lock().unwrap();
         nodes.get(&node_id).ok_or_else(|| {
@@ -274,7 +306,7 @@ mod tests {
 
     #[test]
     fn warmstart_with_seed_test() {
-        let signer = MultiSigner::new();
+        let signer = MultiSigner::new(make_genesis_starting_time_factory(TEST_NODE_CONFIG.network));
         let mut seed = [0; 32];
         seed.copy_from_slice(hex_decode(TEST_SEED[1]).unwrap().as_slice());
 
@@ -297,7 +329,7 @@ mod tests {
     #[test]
     fn bad_node_lookup_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
-        let signer = MultiSigner::new();
+        let signer = MultiSigner::new(make_genesis_starting_time_factory(TEST_NODE_CONFIG.network));
         let node_id = pubkey_from_secret_hex(
             "0101010101010101010101010101010101010101010101010101010101010101",
             &secp_ctx,

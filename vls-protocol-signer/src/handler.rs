@@ -30,7 +30,7 @@ use lightning_signer::node::{Node, NodeConfig, SpendType};
 use lightning_signer::persist::Persist;
 use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
-use lightning_signer::signer::derive::KeyDerivationStyle;
+use lightning_signer::signer::{derive::KeyDerivationStyle, StartingTimeFactory};
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
@@ -111,6 +111,7 @@ impl RootHandler {
         seed_opt: Option<[u8; 32]>,
         persister: Arc<dyn Persist>,
         allowlist: Vec<String>,
+        starting_time_factory: &Box<dyn StartingTimeFactory>,
     ) -> Self {
         let config = NodeConfig { network, key_derivation_style: KeyDerivationStyle::Native };
 
@@ -144,7 +145,14 @@ impl RootHandler {
 
         let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
         let node = if nodes.is_empty() {
-            let node = Arc::new(Node::new(config, &seed, &persister, vec![], validator_factory));
+            let node = Arc::new(Node::new(
+                config,
+                &seed,
+                &persister,
+                vec![],
+                validator_factory,
+                &starting_time_factory,
+            ));
             info!("New node {}", node.get_id());
             node.add_allowlist(&allowlist).expect("allowlist");
             persister.new_node(&node.get_id(), &config, &seed);
@@ -154,7 +162,13 @@ impl RootHandler {
             assert_eq!(nodes.len(), 1);
             let (node_id, entry) = nodes.into_iter().next().unwrap();
             info!("Restore node {}", node_id);
-            Node::restore_node(&node_id, entry, persister, validator_factory)
+            Node::restore_node(
+                &node_id,
+                entry,
+                persister,
+                validator_factory,
+                &starting_time_factory,
+            )
         };
 
         Self { id, node }
@@ -411,24 +425,36 @@ impl Handler for RootHandler {
                 }))
             }
             Message::AddBlock(m) => {
-                self.node
-                    .get_tracker()
+                let mut tracker = self.node.get_tracker();
+                tracker
                     .add_block(
                         deserialize(m.header.0.as_slice()).expect("header"),
                         m.txs.iter().map(|tx| deserialize(tx.0.as_slice()).expect("tx")).collect(),
                         m.txs_proof.map(|prf| deserialize(prf.0.as_slice()).expect("txs_proof")),
                     )
                     .expect("add_block");
+                self.node
+                    .get_persister()
+                    .update_tracker(&self.node.get_id(), &tracker)
+                    .unwrap_or_else(|e| {
+                        panic!("{}: persist tracker failed: {:?}", self.node.log_prefix(), e)
+                    });
                 Ok(Box::new(msgs::AddBlockReply {}))
             }
             Message::RemoveBlock(m) => {
-                self.node
-                    .get_tracker()
+                let mut tracker = self.node.get_tracker();
+                tracker
                     .remove_block(
                         m.txs.iter().map(|tx| deserialize(tx.0.as_slice()).expect("tx")).collect(),
                         m.txs_proof.map(|prf| deserialize(prf.0.as_slice()).expect("txs_proof")),
                     )
-                    .expect("add_block");
+                    .expect("remove_block");
+                self.node
+                    .get_persister()
+                    .update_tracker(&self.node.get_id(), &tracker)
+                    .unwrap_or_else(|e| {
+                        panic!("{}: persist tracker failed: {:?}", self.node.log_prefix(), e)
+                    });
                 Ok(Box::new(msgs::RemoveBlockReply {}))
             }
             Message::Unknown(u) => {

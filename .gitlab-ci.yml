@@ -13,6 +13,7 @@ rust-latest:
 # match MSRV for (parts of) rust-lightning
 rust-1.45.2:
   stage: build
+  allow_failure: true
   image: rust:1.45.2
   script:
     - (cd lightning-signer-core && cargo build --features test_utils && cargo test --features test_utils )

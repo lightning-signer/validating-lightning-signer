@@ -47,6 +47,7 @@ use crate::policy::validator::{EnforcementState, Validator};
 use crate::prelude::*;
 use crate::signer::derive::KeyDerivationStyle;
 use crate::signer::my_keys_manager::MyKeysManager;
+use crate::signer::StartingTimeFactory;
 use crate::sync::{Arc, Weak};
 use crate::tx::tx::PreimageMap;
 use crate::util::crypto_utils::signature_to_bitcoin_vec;
@@ -473,21 +474,23 @@ impl Allowable {
 /// A signer for one Lightning node.
 ///
 /// ```rust
-/// use lightning_signer::node::{Node, NodeConfig};
-/// use lightning_signer::channel::{ChannelSlot, ChannelBase};
-/// use lightning_signer::persist::{DummyPersister, Persist};
-/// use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
-/// use lightning_signer::util::test_logger::TestLogger;
-/// use lightning_signer::node::SyncLogger;
-///
 /// use std::sync::Arc;
+///
+/// use lightning_signer::channel::{ChannelSlot, ChannelBase};
+/// use lightning_signer::node::{Node, NodeConfig, SyncLogger};
+/// use lightning_signer::persist::{DummyPersister, Persist};
 /// use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
+/// use lightning_signer::signer::ClockStartingTimeFactory;
+/// use lightning_signer::util::test_logger::TestLogger;
+/// use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
 ///
 /// let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
 /// let seed = [0; 32];
 /// let config = TEST_NODE_CONFIG;
 /// let validator_factory = Arc::new(SimpleValidatorFactory::new());
-/// let node = Arc::new(Node::new(config, &seed, &persister, vec![], validator_factory));
+/// let starting_time_factory = ClockStartingTimeFactory::new();
+/// let node = Arc::new(Node::new(config, &seed, &persister, vec![], validator_factory,
+///                               &starting_time_factory));
 /// let (channel_id, opt_stub) = node.new_channel(None, &node).expect("new channel");
 /// assert!(opt_stub.is_some());
 /// let channel_slot_mutex = node.get_channel(&channel_id).expect("get channel");
@@ -505,6 +508,7 @@ pub struct Node {
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<OrderedMap<ChannelId, Arc<Mutex<ChannelSlot>>>>,
     pub(crate) validator_factory: Mutex<Arc<dyn ValidatorFactory>>,
+    /// The node persister
     pub(crate) persister: Arc<dyn Persist>,
     allowlist: Mutex<UnorderedSet<Allowable>>,
     tracker: Mutex<ChainTracker<ChainMonitor>>,
@@ -570,6 +574,7 @@ impl Node {
         persister: &Arc<Persist>,
         allowlist: Vec<Allowable>,
         validator_factory: Arc<dyn ValidatorFactory>,
+        starting_time_factory: &Box<dyn StartingTimeFactory>,
     ) -> Node {
         info!("creating node on {}", node_config.network);
         let genesis = genesis_block(node_config.network);
@@ -578,7 +583,15 @@ impl Node {
         let tracker =
             ChainTracker::new(node_config.network, 0, genesis.header).expect("bad  chain tip");
 
-        Self::new_extended(node_config, seed, persister, allowlist, tracker, validator_factory)
+        Self::new_extended(
+            node_config,
+            seed,
+            persister,
+            allowlist,
+            tracker,
+            validator_factory,
+            starting_time_factory,
+        )
     }
 
     /// Create a node
@@ -591,6 +604,7 @@ impl Node {
         allowlist: Vec<Allowable>,
         tracker: ChainTracker<ChainMonitor>,
         validator_factory: Arc<dyn ValidatorFactory>,
+        starting_time_factory: &Box<dyn StartingTimeFactory>,
     ) -> Node {
         let state = NodeState::new();
         Self::new_from_persistence(
@@ -600,6 +614,7 @@ impl Node {
             allowlist,
             tracker,
             validator_factory,
+            starting_time_factory,
             state,
         )
     }
@@ -612,16 +627,14 @@ impl Node {
         allowlist: Vec<Allowable>,
         tracker: ChainTracker<ChainMonitor>,
         validator_factory: Arc<dyn ValidatorFactory>,
+        starting_time_factory: &Box<dyn StartingTimeFactory>,
         state: NodeState,
     ) -> Node {
-        let genesis = genesis_block(node_config.network);
-        let now = Duration::from_secs(genesis.header.time as u64);
         let keys_manager = MyKeysManager::new(
             node_config.key_derivation_style,
             seed,
             node_config.network,
-            now.as_secs(),
-            now.subsec_nanos(),
+            starting_time_factory,
         );
         let node_id = Self::id_from_key(&keys_manager.get_node_secret(Recipient::Node).unwrap());
         let log_prefix = &node_id.to_hex()[0..4];
@@ -639,6 +652,11 @@ impl Node {
             state,
             node_id,
         }
+    }
+
+    /// persister
+    pub fn get_persister(&self) -> Arc<dyn Persist> {
+        Arc::clone(&self.persister)
     }
 
     /// onion reply secret
@@ -875,6 +893,7 @@ impl Node {
         node_entry: NodeEntry,
         persister: Arc<dyn Persist>,
         validator_factory: Arc<dyn ValidatorFactory>,
+        starting_time_factory: &Box<dyn StartingTimeFactory>,
     ) -> Arc<Node> {
         let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
         let config = NodeConfig {
@@ -900,6 +919,7 @@ impl Node {
             allowlist,
             tracker,
             validator_factory,
+            starting_time_factory,
             state,
         ));
         assert_eq!(&node.get_id(), node_id);
@@ -925,6 +945,7 @@ impl Node {
     pub fn restore_nodes(
         persister: Arc<dyn Persist>,
         validator_factory: Arc<dyn ValidatorFactory>,
+        starting_time_factory: &Box<dyn StartingTimeFactory>,
     ) -> Map<PublicKey, Arc<Node>> {
         let mut nodes = Map::new();
         for (node_id, node_entry) in persister.get_nodes() {
@@ -933,6 +954,7 @@ impl Node {
                 node_entry,
                 Arc::clone(&persister),
                 validator_factory.clone(),
+                starting_time_factory,
             );
             nodes.insert(node_id, node);
         }

@@ -5,7 +5,7 @@
 #![feature(alloc_error_handler)]
 extern crate alloc;
 
-use alloc::format;
+use alloc::{format, vec};
 
 use cortex_m_rt::entry;
 
@@ -21,6 +21,8 @@ mod sdcard;
 mod timer;
 mod usbserial;
 
+use rand_core::RngCore;
+
 #[entry]
 fn main() -> ! {
     logger::init().expect("logger");
@@ -28,7 +30,8 @@ fn main() -> ! {
     device::init_allocator();
 
     #[allow(unused)]
-    let (mut delay, timer1, timer2, mut serial, mut sdio, mut disp) = device::make_devices();
+    let (mut delay, timer1, timer2, mut serial, mut sdio, mut disp, mut rng) =
+        device::make_devices();
 
     let mut counter = 0;
 
@@ -49,7 +52,7 @@ fn main() -> ! {
     loop {
         if counter % 100 == 0 || counter < 100 {
             disp.clear_screen();
-            disp.show_text(format!("{}", counter));
+            disp.show_texts(&vec![format!("{}", counter), format!("{}", rng.next_u32())]);
         }
         // Echo any usbserial characters
         let mut data = [0; 1024];

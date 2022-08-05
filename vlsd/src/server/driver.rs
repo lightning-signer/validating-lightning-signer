@@ -30,8 +30,9 @@ use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::simple_validator::{
     make_simple_policy, SimplePolicy, SimpleValidatorFactory,
 };
-use lightning_signer::signer::derive::KeyDerivationStyle;
-use lightning_signer::signer::multi_signer::MultiSigner;
+use lightning_signer::signer::{
+    derive::KeyDerivationStyle, multi_signer::MultiSigner, ClockStartingTimeFactory,
+};
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::crypto_utils::bitcoin_vec_to_signature;
 use lightning_signer::util::log_utils::{parse_log_level_filter, LOG_LEVEL_FILTER_NAMES};
@@ -1551,11 +1552,13 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     }
     let policy = policy(&matches, network);
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
+    let starting_time_factory = ClockStartingTimeFactory::new();
     let signer = Arc::new(MultiSigner::new_with_persister(
         persister,
         test_mode,
         initial_allowlist,
         validator_factory,
+        starting_time_factory,
     ));
 
     let rpc_s: String = matches.value_of_t("rpc").expect("rpc url string");

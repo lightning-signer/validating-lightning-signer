@@ -83,10 +83,13 @@ impl ChainTrack for NodeFront {
         txs: Vec<bitcoin::Transaction>,
         txs_proof: Option<PartialMerkleTree>,
     ) {
-        self.node
-            .get_tracker()
+        let mut tracker = self.node.get_tracker();
+        tracker
             .add_block(header, txs, txs_proof)
             .unwrap_or_else(|e| panic!("{}: add_block failed: {:?}", self.node.log_prefix(), e));
+        self.node.get_persister().update_tracker(&self.node.get_id(), &tracker).unwrap_or_else(
+            |e| panic!("{}: persist tracker failed: {:?}", self.node.log_prefix(), e),
+        );
     }
 
     async fn remove_block(
@@ -94,9 +97,12 @@ impl ChainTrack for NodeFront {
         txs: Vec<bitcoin::Transaction>,
         txs_proof: Option<PartialMerkleTree>,
     ) {
-        self.node
-            .get_tracker()
+        let mut tracker = self.node.get_tracker();
+        tracker
             .remove_block(txs, txs_proof)
             .unwrap_or_else(|e| panic!("{}: remove_block failed: {:?}", self.node.log_prefix(), e));
+        self.node.get_persister().update_tracker(&self.node.get_id(), &tracker).unwrap_or_else(
+            |e| panic!("{}: persist tracker failed: {:?}", self.node.log_prefix(), e),
+        );
     }
 }

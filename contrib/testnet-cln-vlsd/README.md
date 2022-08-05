@@ -9,7 +9,7 @@ Setup bitcoind service
     sudo /usr/sbin/useradd -g bitcoin -c "bitcoin" -m bitcoin
 
     sudo mkdir -p /home/bitcoin/.bitcoin
-    sudo cp bitcoind.conf /home/bitcoin/.bitcoin
+    sudo cp bitcoin.conf /home/bitcoin/.bitcoin
     sudo chown -R bitcoin:bitcoin  /home/bitcoin/.bitcoin
 
     sudo cp bitcoind-testnet.service /lib/systemd/system/

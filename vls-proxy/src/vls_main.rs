@@ -9,6 +9,7 @@ use url::Url;
 use connection::UnixConnection;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::persist::Persist;
+use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::Arc;
 use vls_frontend::Frontend;
 use vls_protocol::{msgs, msgs::Message, Error, Result};
@@ -114,12 +115,14 @@ pub fn main() {
         let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new("remote_hsmd_vls.kv"));
         let allowlist = read_allowlist();
         let network = Network::Regtest; // TODO - use config/args/env
+        let starting_time_factory = ClockStartingTimeFactory::new();
         let handler = RootHandler::new(
             network,
             client.id(),
             read_integration_test_seed(),
             persister,
             allowlist,
+            &starting_time_factory,
         );
 
         let frontend = Frontend::new(
