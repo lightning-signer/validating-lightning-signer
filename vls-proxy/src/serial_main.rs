@@ -12,6 +12,8 @@ use log::{error, info};
 
 use connection::{open_parent_fd, UnixConnection};
 
+use lightning_signer::bitcoin::Network;
+
 use vls_protocol_signer::vls_protocol::msgs::{self, Message};
 use vls_protocol_signer::vls_protocol::serde_bolt::WireString;
 
@@ -19,7 +21,7 @@ use embedded::{connect, SerialSignerPort, SignerLoop};
 use vls_frontend::Frontend;
 use vls_proxy::client::UnixClient;
 use vls_proxy::portfront::SignerPortFront;
-use vls_proxy::util::{bitcoind_rpc_url, create_runtime, setup_logging};
+use vls_proxy::util::{bitcoind_rpc_url, create_runtime, setup_logging, vls_network};
 use vls_proxy::*;
 
 mod embedded;
@@ -83,9 +85,10 @@ pub fn main() -> anyhow::Result<()> {
         let client = UnixClient::new(conn);
         let serial = Arc::new(Mutex::new(connect(serial_port)?));
 
+        let network = vls_network().parse::<Network>().expect("malformed vls network");
         let signer_port = SerialSignerPort::new(serial.clone());
         let frontend = Frontend::new(
-            Arc::new(SignerPortFront { signer_port: Box::new(signer_port) }),
+            Arc::new(SignerPortFront { signer_port: Box::new(signer_port), network }),
             Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
         );
 

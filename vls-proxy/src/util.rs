@@ -84,6 +84,10 @@ pub fn bitcoind_rpc_url() -> String {
     env::var("BITCOIND_RPC_URL").expect("env var BITCOIND_RPC_URL")
 }
 
+pub fn vls_network() -> String {
+    env::var("VLS_NETWORK").expect("env var VLS_NETWORK")
+}
+
 pub fn create_runtime(thread_name: &str) -> Runtime {
     let thrname = thread_name.to_string();
     std::thread::spawn(|| {

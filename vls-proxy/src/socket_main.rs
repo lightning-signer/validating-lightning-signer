@@ -20,9 +20,14 @@ use connection::{open_parent_fd, UnixConnection};
 use grpc::adapter::HsmdService;
 use grpc::incoming::TcpIncoming;
 use grpc::signer_loop::{GrpcSignerPort, SignerLoop};
+
+use lightning_signer::bitcoin::Network;
+
 use vls_frontend::Frontend;
 use vls_proxy::portfront::SignerPortFront;
-use vls_proxy::util::{add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, setup_logging};
+use vls_proxy::util::{
+    add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, setup_logging, vls_network,
+};
 use vls_proxy::*;
 
 pub mod grpc;
@@ -67,10 +72,11 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
 
     let incoming = TcpIncoming::new(addr, false, None).expect("listen incoming"); // new_from_std seems to be infallible
 
+    let network = vls_network().parse::<Network>().expect("malformed vls network");
     let sender = server.sender();
     let signer_port = GrpcSignerPort::new(sender.clone());
     let frontend = Frontend::new(
-        Arc::new(SignerPortFront { signer_port: Box::new(signer_port) }),
+        Arc::new(SignerPortFront { signer_port: Box::new(signer_port), network }),
         Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
     );
     frontend.start();

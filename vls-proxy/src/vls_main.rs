@@ -23,7 +23,8 @@ use vls_protocol_signer::handler::{ChannelHandler, Handler, RootHandler};
 
 mod test;
 use vls_proxy::util::{
-    add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, read_integration_test_seed, setup_logging,
+    add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, read_integration_test_seed,
+    setup_logging, vls_network,
 };
 use vls_proxy::*;
 
@@ -114,7 +115,7 @@ pub fn main() {
         let client = UnixClient::new(conn);
         let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new("remote_hsmd_vls.kv"));
         let allowlist = read_allowlist();
-        let network = Network::Regtest; // TODO - use config/args/env
+        let network = vls_network().parse::<Network>().expect("malformed vls network");
         let starting_time_factory = ClockStartingTimeFactory::new();
         let handler = RootHandler::new(
             network,
