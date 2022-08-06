@@ -70,6 +70,7 @@ subdaemon=hsmd:remote_hsmd_socket
 Create `~cln/.lightning/testnet-env` with:
 ```
 VLS_PORT=17701
+VLS_NETWORK=testnet
 BITCOIND_RPC_URL=http://rpcuser:6ffb57ab46aa726@localhost:18332
 GREENLIGHT_VERSION=v0.11.0.1-62-g92cc76a
 ```

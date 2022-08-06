@@ -23,6 +23,7 @@ use log::debug;
 /// Implements ChainTrackDirectory using RPC to remote MultiSigner
 pub struct SignerPortFront {
     pub signer_port: Box<dyn SignerPort>,
+    pub network: Network,
 }
 
 #[async_trait]
@@ -32,14 +33,17 @@ impl ChainTrackDirectory for SignerPortFront {
     }
 
     async fn trackers(&self) -> Vec<Arc<dyn ChainTrack>> {
-        vec![Arc::new(NodePortFront { signer_port: self.signer_port.clone() })
-            as Arc<dyn ChainTrack>]
+        vec![Arc::new(NodePortFront {
+            signer_port: self.signer_port.clone(),
+            network: self.network,
+        }) as Arc<dyn ChainTrack>]
     }
 }
 
 /// Implements ChainTrack using RPC to remote node
 pub(crate) struct NodePortFront {
     pub signer_port: Box<dyn SignerPort>,
+    pub network: Network,
 }
 
 #[async_trait]
@@ -49,7 +53,7 @@ impl ChainTrack for NodePortFront {
     }
 
     fn network(&self) -> Network {
-        Network::Regtest // FIXME - this needs plmubing!
+        self.network
     }
 
     async fn tip_info(&self) -> (u32, BlockHash) {
