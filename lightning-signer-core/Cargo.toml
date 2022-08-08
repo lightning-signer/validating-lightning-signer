@@ -15,7 +15,7 @@ rust-version = "1.45.2"
 default = ["std", "env_logger", "log_pretty_print"]
 
 no-std = ["lightning/no-std", "lightning-invoice/no-std", "bitcoin/no-std", "core2/alloc"]
-std = ["lightning/std", "lightning-invoice/std", "bitcoin/std", "bitcoin/rand", "bitcoin/bitcoinconsensus", "rand"]
+std = ["lightning/std", "lightning-invoice/std", "bitcoin/std", "bitcoin/rand", "rand"]
 serde = ["bitcoin/use-serde"]
 secp-lowmemory = ["bitcoin/secp-lowmemory"]
 
@@ -23,7 +23,7 @@ secp-lowmemory = ["bitcoin/secp-lowmemory"]
 grpc = ["tonic"]
 
 # Turn this feature on to run `cargo test`, which launches the functional tests
-test_utils = ["lightning/_test_utils", "lightning/unsafe_revoked_tx_signing"]
+test_utils = ["lightning/_test_utils", "lightning/unsafe_revoked_tx_signing", "bitcoin/bitcoinconsensus"]
 
 debug = ["backtrace"]
 
