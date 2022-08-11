@@ -1,5 +1,7 @@
 /// Byte to integer conversion
 pub mod byte_utils;
+/// Clock provider
+pub mod clock;
 /// Cryptographic utilities
 pub mod crypto_utils;
 /// Logging macros

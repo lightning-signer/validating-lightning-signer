@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use std::cmp::min;
+use core::cmp::min;
 
 /// Limit velocity per unit time.
 ///
