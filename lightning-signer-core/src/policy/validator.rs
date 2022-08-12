@@ -9,7 +9,7 @@ use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCr
 use lightning::ln::PaymentHash;
 use log::debug;
 
-use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
+use crate::channel::{ChannelBalance, ChannelId, ChannelSetup, ChannelSlot};
 use crate::policy::Policy;
 use crate::prelude::*;
 use crate::sync::Arc;
@@ -744,6 +744,53 @@ impl EnforcementState {
         );
 
         BalanceDelta(cur_bal, new_bal)
+    }
+
+    /// Return channel balances
+    pub fn balance<T: PreimageMap>(
+        &self,
+        preimage_map: &T,
+        channel_setup: &ChannelSetup,
+    ) -> ChannelBalance {
+        // If either of commitments is missing, return 0.
+        if self.current_holder_commit_info.is_none()
+            || self.current_counterparty_commit_info.is_none()
+        {
+            return ChannelBalance::zero();
+        }
+
+        // Our balance in the holder commitment tx
+        let cur_holder_bal = self.current_holder_commit_info.as_ref().unwrap().claimable_balance(
+            preimage_map,
+            channel_setup.is_outbound,
+            channel_setup.channel_value_sat,
+        );
+        // Our balance in the counterparty commitment tx
+        let cur_cp_bal = self.current_counterparty_commit_info.as_ref().unwrap().claimable_balance(
+            preimage_map,
+            channel_setup.is_outbound,
+            channel_setup.channel_value_sat,
+        );
+        // Our overall balance is the lower of the two.  Use the htlc values from the same.
+        // TODO - might be more correct to check the HTLC value for each payment hash, and do
+        // Math.min on each one, then sum that.  If an htlc exists in one commitment but not the
+        // other if we offered, then it would be -value, if we are receiving, it would be
+        // 0. i.e. Math.min(0, value)
+        let (cur_bal, received_htlc, offered_htlc) = if cur_holder_bal < cur_cp_bal {
+            let (received_htlc, offered_htlc) =
+                self.current_holder_commit_info.as_ref().unwrap().htlc_balance();
+            (cur_holder_bal, received_htlc, offered_htlc)
+        } else {
+            let (received_htlc, offered_htlc) =
+                self.current_counterparty_commit_info.as_ref().unwrap().htlc_balance();
+            (cur_cp_bal, received_htlc, offered_htlc)
+        };
+
+        let (claimable, sweeping) = if self.channel_closed { (0, cur_bal) } else { (cur_bal, 0) };
+
+        let balance = ChannelBalance { claimable, received_htlc, offered_htlc, sweeping };
+        debug!("balance: {:?}", balance);
+        balance
     }
 }
 

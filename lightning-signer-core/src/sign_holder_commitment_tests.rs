@@ -8,7 +8,10 @@ mod tests {
 
     use test_log::test;
 
-    use crate::channel::{Channel, ChannelBase, ChannelSetup, CommitmentType, TypedSignature};
+    use crate::channel::{
+        Channel, ChannelBalance, ChannelBase, ChannelSetup, CommitmentType, TypedSignature,
+    };
+    use crate::node::NodeMonitor;
     use crate::policy::validator::{ChainState, EnforcementState};
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
@@ -278,6 +281,9 @@ mod tests {
                     per_commitment_point,
                 ))
             })?;
+
+        // no counterparty commitment, balance is "opening"
+        assert_eq!(node_ctx.node.channel_balance(), ChannelBalance::new(0, 0, 0, 0));
 
         assert_eq!(
             tx.txid().to_hex(),

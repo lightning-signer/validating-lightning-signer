@@ -13,8 +13,10 @@ mod tests {
 
     use test_log::test;
 
-    use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, TypedSignature};
-    use crate::node::Node;
+    use crate::channel::{
+        Channel, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, TypedSignature,
+    };
+    use crate::node::{Node, NodeMonitor};
     use crate::sync::Arc;
     use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
     use crate::util::key_utils::*;
@@ -143,6 +145,8 @@ mod tests {
             holder_wallet_path_hint,
             counterparty_points,
         ) = setup_mutual_close_tx(outbound)?;
+
+        assert_eq!(node.channel_balance(), ChannelBalance::new(2_000_000, 0, 0, 0));
 
         let (tx, sig) = node.with_ready_channel(&channel_id, |chan| {
             let mut holder_value_sat = to_holder_value_sat;

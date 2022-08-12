@@ -15,7 +15,8 @@ mod tests {
     use std::sync::Arc;
     use test_log::test;
 
-    use crate::channel::{Channel, ChannelSetup, CommitmentType, TypedSignature};
+    use crate::channel::{Channel, ChannelBalance, ChannelSetup, CommitmentType, TypedSignature};
+    use crate::node::NodeMonitor;
     use crate::policy::validator::{ChainState, EnforcementState};
     use crate::tx::script::get_to_countersignatory_with_anchors_redeemscript;
     use crate::tx::tx::HTLCInfo2;
@@ -28,6 +29,9 @@ mod tests {
     use crate::policy::filter::PolicyFilter;
     use crate::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
     use paste::paste;
+
+    #[allow(unused_imports)]
+    use log::debug;
 
     fn disable_policies(node: &Arc<Node>) {
         let mut policy = make_simple_policy(Network::Testnet);
@@ -435,8 +439,12 @@ mod tests {
                 )?
                 .0
             };
+
             Ok((sig, tx.transaction.clone()))
         })?;
+
+        // no holder commitment, balance is "opening"
+        assert_eq!(node.channel_balance(), ChannelBalance::new(0, 0, 0, 0));
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
         let channel_funding_redeemscript =

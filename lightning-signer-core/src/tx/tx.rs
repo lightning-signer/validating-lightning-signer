@@ -397,6 +397,24 @@ impl CommitmentInfo2 {
         }
         balance
     }
+
+    /// Return the total received and offered htlc balances
+    pub fn htlc_balance(&self) -> (u64, u64) {
+        let mut sum_received: u64 = 0;
+        let mut sum_offered: u64 = 0;
+        let (offered, received) = if self.is_counterparty_broadcaster {
+            (&self.received_htlcs, &self.offered_htlcs)
+        } else {
+            (&self.offered_htlcs, &self.received_htlcs)
+        };
+        for o in offered {
+            sum_offered = sum_offered.checked_add(o.value_sat).expect("overflow");
+        }
+        for r in received {
+            sum_received = sum_received.checked_add(r.value_sat).expect("overflow");
+        }
+        (sum_received, sum_offered)
+    }
 }
 
 #[allow(dead_code)]

@@ -1347,6 +1347,52 @@ impl Channel {
 
         // self.monitor.add_funding(tx, vout);
     }
+
+    /// Return channel balances
+    pub fn balance(&self) -> ChannelBalance {
+        let node = self.get_node();
+        let state = node.get_state();
+        self.enforcement_state.balance(&*state, &self.setup)
+    }
+}
+
+/// Balances associated with a channel
+/// See: https://gitlab.com/lightning-signer/docs/-/wikis/Proposed-L1-and-Channel-Balance-Reconciliation
+#[derive(Debug, PartialEq)]
+pub struct ChannelBalance {
+    /// Claimable balance on open channel
+    pub claimable: u64,
+    /// Sum of htlcs offered to us
+    pub received_htlc: u64,
+    /// Sum of htlcs we offered
+    pub offered_htlc: u64,
+    /// Sweeping to wallet
+    pub sweeping: u64,
+}
+
+impl ChannelBalance {
+    /// Create a ChannelBalance with specific values
+    pub fn new(
+        claimable: u64,
+        received_htlc: u64,
+        offered_htlc: u64,
+        sweeping: u64,
+    ) -> ChannelBalance {
+        ChannelBalance { claimable, received_htlc, offered_htlc, sweeping }
+    }
+
+    /// Create a ChannelBalance with zero values
+    pub fn zero() -> ChannelBalance {
+        ChannelBalance { claimable: 0, received_htlc: 0, offered_htlc: 0, sweeping: 0 }
+    }
+
+    /// Sum channel balances
+    pub fn accumulate(&mut self, other: &ChannelBalance) {
+        self.claimable += other.claimable;
+        self.received_htlc += other.received_htlc;
+        self.offered_htlc += other.offered_htlc;
+        self.sweeping += other.sweeping;
+    }
 }
 
 // Phase 1
