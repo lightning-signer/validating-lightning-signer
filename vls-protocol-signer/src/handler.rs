@@ -20,13 +20,13 @@ use lightning_signer::bitcoin::util::bip32::{ChildNumber, KeySource};
 use lightning_signer::bitcoin::util::psbt::PartiallySignedTransaction;
 use lightning_signer::bitcoin::{OutPoint, Transaction, Witness};
 use lightning_signer::channel::{
-    ChannelBase, ChannelId, ChannelSetup, CommitmentType, TypedSignature,
+    ChannelBalance, ChannelBase, ChannelId, ChannelSetup, CommitmentType, TypedSignature,
 };
 use lightning_signer::lightning::ln::chan_utils::{
     derive_public_revocation_key, ChannelPublicKeys,
 };
 use lightning_signer::lightning::ln::PaymentHash;
-use lightning_signer::node::{Node, NodeConfig, SpendType};
+use lightning_signer::node::{Node, NodeConfig, NodeMonitor, SpendType};
 use lightning_signer::persist::Persist;
 use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
@@ -180,6 +180,14 @@ impl RootHandler {
         nonce[33..].copy_from_slice(&dbid.to_le_bytes());
         let channel_id = ChannelId::new(&nonce);
         channel_id
+    }
+
+    pub fn channel_balance(&self) -> ChannelBalance {
+        self.node.channel_balance()
+    }
+
+    pub fn get_chain_height(&self) -> u32 {
+        self.node.get_chain_height()
     }
 }
 

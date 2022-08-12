@@ -37,7 +37,9 @@ use lightning_invoice::{Invoice, RawDataPart, RawHrp, RawInvoice, SignedRawInvoi
 use log::{debug, info, trace, warn};
 
 use crate::chain::tracker::ChainTracker;
-use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub};
+use crate::channel::{
+    Channel, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub,
+};
 use crate::monitor::ChainMonitor;
 use crate::persist::model::NodeEntry;
 use crate::persist::Persist;
@@ -1520,6 +1522,11 @@ impl Node {
         self.tracker.lock().unwrap()
     }
 
+    ///Height of chain
+    pub fn get_chain_height(&self) -> u32 {
+        self.tracker.lock().unwrap().height()
+    }
+
     // Process payment preimages for offered HTLCs.
     // Any invoice with a payment hash that matches a preimage is marked
     // as paid, so that the offered HTLC can be removed and our balance
@@ -1588,6 +1595,32 @@ impl Node {
             is_fulfilled: false,
         };
         Ok((hash, invoice_state, invoice_hash))
+    }
+}
+
+/// Trait to monitor read-only features of Node
+pub trait NodeMonitor {
+    ///Get the balance
+    fn channel_balance(&self) -> ChannelBalance;
+}
+
+impl NodeMonitor for Node {
+    // TODO - lock while we sum so channels can't change until we are done
+    fn channel_balance(&self) -> ChannelBalance {
+        let mut sum = ChannelBalance::zero();
+        let channels_lock = self.channels.lock().unwrap();
+        for (_, slot_arc) in channels_lock.iter() {
+            let slot = slot_arc.lock().unwrap();
+            match &*slot {
+                ChannelSlot::Ready(chan) => {
+                    sum.accumulate(&chan.balance());
+                }
+                ChannelSlot::Stub(_stub) => {
+                    // ignore stubs ...
+                }
+            }
+        }
+        sum
     }
 }
 
@@ -1846,15 +1879,13 @@ mod tests {
 
         {
             let mut state = node.state.lock().unwrap();
-            assert!(state
-                .validate_and_apply_payments(
-                    &channel_id,
-                    &Map::new(),
-                    &vec![(hash, 110)].into_iter().collect(),
-                    &Default::default(),
-                    invoice_validator.clone()
-                )
-                .is_ok());
+            assert_status_ok!(state.validate_and_apply_payments(
+                &channel_id,
+                &Map::new(),
+                &vec![(hash, 110)].into_iter().collect(),
+                &Default::default(),
+                invoice_validator.clone()
+            ));
         }
         node.with_ready_channel(&channel_id, |chan| {
             chan.htlcs_fulfilled(vec![preimage]);
@@ -1868,6 +1899,7 @@ mod tests {
         let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+
         let preimage = PaymentPreimage([0; 32]);
         let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
 

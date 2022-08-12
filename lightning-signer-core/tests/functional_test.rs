@@ -40,8 +40,8 @@ use lightning_signer::util::functional_test_utils::{close_channel, confirm_trans
 use lightning_signer::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use lightning_signer::util::test_utils;
 use lightning_signer::util::test_utils::{TestChainMonitor, REGTEST_NODE_CONFIG, make_block, make_genesis_starting_time_factory};
-use lightning_signer::channel::ChannelId;
-use lightning_signer::node::NodeConfig;
+use lightning_signer::channel::{ChannelId, ChannelBalance};
+use lightning_signer::node::{NodeConfig, NodeMonitor};
 use lightning_signer::persist::DummyPersister;
 use lightning_signer::policy::onchain_validator::OnchainValidatorFactory;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimplePolicy, SimpleValidatorFactory};
@@ -59,6 +59,8 @@ use self::lightning_signer::util::functional_test_utils::{
 };
 
 use test_log::test;
+
+use log::debug;
 
 const ANTI_REORG_DELAY: u32 = 6;
 
@@ -113,6 +115,15 @@ fn create_node_cfg<'a>(signer: &Arc<MultiSigner>, chanmon_cfgs: &'a Vec<TestChan
         node_seed: seed,
     };
     cfg
+}
+
+// Sum of all claimable channel balances for the node
+fn channel_balance(node: &Node) -> ChannelBalance {
+    node
+        .keys_manager
+        .signer
+        .get_node(&node.keys_manager.node_id)
+        .unwrap().channel_balance()
 }
 
 #[test]
@@ -190,6 +201,10 @@ fn invoice_test() {
     assert_eq!(signer_node1.get_state().excess_amount, 0);
     assert_eq!(signer_node2.get_state().excess_amount, 0);
 
+    assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(100_000, 0, 0, 0));
+    assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(100_000, 0, 0, 0));
+    assert_eq!(channel_balance(&nodes[2]), ChannelBalance::new(0, 0, 0, 0));
+
     // Send 0 -> 1 -> 2
     send_payment(
         &nodes[0],
@@ -205,6 +220,10 @@ fn invoice_test() {
     // Gained routing fee
     assert_eq!(signer_node1.get_state().excess_amount, 1);
     assert_eq!(signer_node2.get_state().excess_amount, 0);
+
+    assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(92_999, 0, 0, 0));
+    assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(100_001, 0, 0, 0));
+    assert_eq!(channel_balance(&nodes[2]), ChannelBalance::new(7_000, 0, 0, 0));
 }
 
 // Get the holder policy balance, as well as the actual balance in the holder and counterparty txs
@@ -386,18 +405,31 @@ fn claim_htlc_outputs_single_tx() {
 
     let chan_1 = create_announced_chan_between_nodes(&nodes, 0, 1, InitFeatures::known(), InitFeatures::known());
 
+    assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(100_000, 0, 0, 0));
+    assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(0, 0, 0, 0));
+
     // Rebalance the network to generate htlc in the two directions
     send_payment(&nodes[0], &vec!(&nodes[1])[..], 8000000);
+
+    assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(92000, 0, 0, 0));
+    assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(8000, 0, 0, 0));
+
     // node[0] is gonna to revoke an old state thus node[1] should be able to claim both offered/received HTLC outputs on top of commitment tx, but this
     // time as two different claim transactions as we're gonna to timeout htlc with given a high current height
     let payment_preimage_1 = route_payment(&nodes[0], &vec!(&nodes[1])[..], 3000000).0;
     let (_payment_preimage_2, payment_hash_2, _payment_secret_2) = route_payment(&nodes[1], &vec!(&nodes[0])[..], 3000000);
+
+    assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(92000, 3_000, 3_000, 0));
+    assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(8000, 3_000, 3_000, 0));
 
     // Get the will-be-revoked local txn from node[0]
     let revoked_local_txn = get_local_commitment_txn!(nodes[0], chan_1.2);
 
     //Revoke the old state
     claim_payment(&nodes[0], &vec!(&nodes[1])[..], payment_preimage_1);
+
+    assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(89000, 3_000, 0, 0));
+    assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(11000, 0, 3_000, 0));
 
     {
         // NOTE we need a higher confirmation height than the LDK functional tests, because
@@ -413,6 +445,9 @@ fn claim_htlc_outputs_single_tx() {
             Event::ChannelClosed { reason: ClosureReason::CommitmentTxConfirmed, .. } => {}
             _ => panic!("Unexpected event"),
         }
+
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(0, 3_000, 0, 89000));
+        assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(0, 0, 3_000, 11000));
 
         connect_blocks(&nodes[1], ANTI_REORG_DELAY - 1);
         expect_payment_failed!(nodes[1], payment_hash_2, true);
@@ -456,6 +491,8 @@ fn claim_htlc_outputs_single_tx() {
 }
 
 fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain_before_fulfill: bool) {
+    debug!("broadcast_alice: {}, go_onchain_before_fulfill: {}",
+           broadcast_alice, go_onchain_before_fulfill);
     // If we route an HTLC, then learn the HTLC's preimage after the upstream channel has been
     // force-closed, we must claim that HTLC on-chain. (Given an HTLC forwarded from Alice --> Bob -->
     // Carol, Alice would be the upstream node, and Carol the downstream.)
@@ -476,13 +513,25 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
     let node_chanmgrs = create_node_chanmgrs(3, &node_cfgs, &[None, None, None]);
     let nodes = create_network(3, &node_cfgs, &node_chanmgrs);
 
+    assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(0, 0, 0, 0));
+    assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(0, 0, 0, 0));
+    assert_eq!(channel_balance(&nodes[2]), ChannelBalance::new(0, 0, 0, 0));
+
     // Create some initial channels
     let chan_ab = create_announced_chan_between_nodes_with_value(&nodes, 0, 1, 100000, 10001, InitFeatures::known(), InitFeatures::known());
     create_announced_chan_between_nodes_with_value(&nodes, 1, 2, 100000, 10001, InitFeatures::known(), InitFeatures::known());
 
+    assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(100_000, 0, 0, 0));
+    assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(100_000, 0, 0, 0));
+    assert_eq!(channel_balance(&nodes[2]), ChannelBalance::new(0, 0, 0, 0));
+
     // Steps (1) and (2):
     // Send an HTLC Alice --> Bob --> Carol, but Carol doesn't settle the HTLC back.
     let (payment_preimage, payment_hash, _payment_secret) = route_payment(&nodes[0], &vec!(&nodes[1], &nodes[2]), 3_000_000);
+
+    assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(100_000, 0, 3_001, 0));
+    assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(100_000, 3_001, 3_000, 0));
+    assert_eq!(channel_balance(&nodes[2]), ChannelBalance::new(0, 3_000, 0, 0));
 
     // Check that Alice's commitment transaction now contains an output for this HTLC.
     let alice_txn = get_local_commitment_txn!(nodes[0], chan_ab.2);
@@ -520,6 +569,14 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
         check_spends!(bob_txn[0], chan_ab.3);
     }
 
+    if broadcast_alice {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(0, 0, 3_001, 100_000));
+    } else {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(100_000, 0, 3_001, 0));
+    }
+    assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(100_000, 3_001, 3_000, 0));
+    assert_eq!(channel_balance(&nodes[2]), ChannelBalance::new(0, 3_000, 0, 0));
+
     // Step (5):
     // Carol then claims the funds and sends an update_fulfill message to Bob, and they go through the
     // process of removing the HTLC from their commitment transactions.
@@ -532,6 +589,14 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
     assert!(carol_updates.update_fail_malformed_htlcs.is_empty());
     assert!(carol_updates.update_fee.is_none());
     assert_eq!(carol_updates.update_fulfill_htlcs.len(), 1);
+
+    if broadcast_alice {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(0, 0, 3_001, 100_000));
+    } else {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(100_000, 0, 3_001, 0));
+    }
+    assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(100_000, 3_001, 3_000, 0));
+    assert_eq!(channel_balance(&nodes[2]), ChannelBalance::new(0, 3_000, 0, 0));
 
     nodes[1].node.handle_update_fulfill_htlc(&nodes[2].node.get_our_node_id(), &carol_updates.update_fulfill_htlcs[0]);
     expect_payment_forwarded!(nodes[1], if go_onchain_before_fulfill || force_closing_node == 1 { None } else { Some(1000) }, false);
@@ -551,6 +616,18 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
     // Carol<->Bob's updated commitment transaction info.
     check_added_monitors!(nodes[1], 2);
 
+    if broadcast_alice {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(0, 0, 3_001, 100_000));
+    } else {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(100_000, 0, 3_001, 0));
+    }
+    if go_onchain_before_fulfill || !broadcast_alice {
+        assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(96_990, 3_001, 0, 3_001));
+    } else {
+        assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(99_991, 3_001, 0, 0));
+    }
+    assert_eq!(channel_balance(&nodes[2]), ChannelBalance::new(0, 3_000, 0, 0));
+
     let events = nodes[1].node.get_and_clear_pending_msg_events();
     assert_eq!(events.len(), 2);
     let bob_revocation = match events[0] {
@@ -568,10 +645,34 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
         _ => panic!("Unexpected event"),
     };
 
+    if broadcast_alice {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(0, 0, 3_001, 100_000));
+    } else {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(100_000, 0, 3_001, 0));
+    }
+    if go_onchain_before_fulfill || !broadcast_alice {
+        assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(96_990, 3_001, 0, 3_001));
+    } else {
+        assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(99_991, 3_001, 0, 0));
+    }
+    assert_eq!(channel_balance(&nodes[2]), ChannelBalance::new(0, 3_000, 0, 0));
+
     nodes[2].node.handle_revoke_and_ack(&nodes[1].node.get_our_node_id(), &bob_revocation);
     check_added_monitors!(nodes[2], 1);
     nodes[2].node.handle_commitment_signed(&nodes[1].node.get_our_node_id(), &bob_updates.commitment_signed);
     check_added_monitors!(nodes[2], 1);
+
+    if broadcast_alice {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(0, 0, 3_001, 100_000));
+    } else {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(100_000, 0, 3_001, 0));
+    }
+    if go_onchain_before_fulfill || !broadcast_alice {
+        assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(96_990, 3_001, 0, 3_001));
+    } else {
+        assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(99_991, 3_001, 0, 0));
+    }
+    assert_eq!(channel_balance(&nodes[2]), ChannelBalance::new(3_010, 0, 0, 0));
 
     let events = nodes[2].node.get_and_clear_pending_msg_events();
     assert_eq!(events.len(), 1);
@@ -584,6 +685,18 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
     };
     nodes[1].node.handle_revoke_and_ack(&nodes[2].node.get_our_node_id(), &carol_revocation);
     check_added_monitors!(nodes[1], 1);
+
+    if broadcast_alice {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(0, 0, 3_001, 100_000));
+    } else {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(100_000, 0, 3_001, 0));
+    }
+    if go_onchain_before_fulfill || !broadcast_alice {
+        assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(96_990, 3_001, 0, 3_001));
+    } else {
+        assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(99_991, 3_001, 0, 0));
+    }
+    assert_eq!(channel_balance(&nodes[2]), ChannelBalance::new(3_010, 0, 0, 0));
 
     // If this test requires the force-closed channel to not be on-chain until after the fulfill,
     // here's where we put said channel's commitment tx on-chain.
@@ -613,6 +726,14 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
         }
     }
 
+    if broadcast_alice {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(0, 0, 3_001, 100_000));
+    } else {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(100_000, 0, 3_001, 0));
+    }
+    assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(96_990, 3_001, 0, 3_001));
+    assert_eq!(channel_balance(&nodes[2]), ChannelBalance::new(3_010, 0, 0, 0));
+
     // Step (6):
     // Finally, check that Bob broadcasted a preimage-claiming transaction for the HTLC output on the
     // broadcasted commitment transaction.
@@ -641,6 +762,14 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
             // assert_eq!(bob_txn[1].input[0].witness.last().unwrap().len(), script_weight);
         }
     }
+
+    if broadcast_alice {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(0, 0, 3_001, 100_000));
+    } else {
+        assert_eq!(channel_balance(&nodes[0]), ChannelBalance::new(100_000, 0, 3_001, 0));
+    }
+    assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(96_990, 3_001, 0, 3_001));
+    assert_eq!(channel_balance(&nodes[2]), ChannelBalance::new(3_010, 0, 0, 0));
 }
 
 #[test]

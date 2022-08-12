@@ -105,7 +105,19 @@ fn main() -> ! {
         disp.clear_screen();
         let mut message_d = format!("{:?}", message);
         message_d.truncate(20);
-        disp.show_texts(&[format!("req # {}", sequence), message_d.clone()]);
+        let balance = root_handler.channel_balance();
+        disp.show_texts(&[
+            format!("req # {}", sequence),
+            message_d.clone(),
+            format!("{:>+11}", balance.received_htlc),
+            format!("{:>11}", balance.claimable),
+            if balance.offered_htlc > 0 {
+                format!("{:>+11}", 0 - balance.offered_htlc as i64)
+            } else {
+                format!("         -0")
+            },
+            format!("The height is {}", root_handler.get_chain_height()),
+        ]);
         let start = timer1.now();
         let reply = if dbid > 0 {
             let handler = root_handler.for_new_client(0, dummy_peer.clone(), dbid);
