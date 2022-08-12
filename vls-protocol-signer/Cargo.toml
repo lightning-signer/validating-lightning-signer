@@ -6,6 +6,7 @@ edition = "2018"
 
 [features]
 default = ["std"]
+no-std = ["lightning-signer-core/no-std"]
 std = ["vls-protocol/std", "lightning-signer-core/std"]
 secp-lowmemory = ["lightning-signer-core/secp-lowmemory"]
 
@@ -18,4 +19,3 @@ bit-vec = { version = "0.6", default_features = false }
 [dependencies.lightning-signer-core]
 path = "../lightning-signer-core"
 default_features = false
-features = ["no-std"]

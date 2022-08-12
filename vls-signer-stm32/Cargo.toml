@@ -22,7 +22,7 @@ log = "0.4"
 usb-device = "0.2.5"
 usbd-serial = "0.1.0"
 fugit = "0.3"
-vls-protocol-signer = { path = "../vls-protocol-signer", default-features = false, features = ["secp-lowmemory"] }
+vls-protocol-signer = { path = "../vls-protocol-signer", default-features = false, features = ["no-std", "secp-lowmemory"] }
 
 [dependencies.fatfs]
 git = "https://github.com/rafalh/rust-fatfs.git"
