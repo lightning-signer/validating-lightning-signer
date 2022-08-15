@@ -527,6 +527,7 @@ pub struct Node {
     // This is Mutex because we want to be able to replace it on the fly
     pub(crate) validator_factory: Mutex<Arc<dyn ValidatorFactory>>,
     pub(crate) persister: Arc<dyn Persist>,
+    pub(crate) clock: Arc<dyn Clock>,
     allowlist: Mutex<UnorderedSet<Allowable>>,
     tracker: Mutex<ChainTracker<ChainMonitor>>,
     pub(crate) state: Mutex<NodeState>,
@@ -649,6 +650,7 @@ impl Node {
         let log_prefix = &node_id.to_hex()[0..4];
 
         let persister = services.persister;
+        let clock = services.clock;
         let validator_factory = services.validator_factory;
         let policy = validator_factory.policy(node_config.network);
         let global_velocity_control = Self::make_velocity_control(policy);
@@ -662,6 +664,7 @@ impl Node {
             channels: Mutex::new(OrderedMap::new()),
             validator_factory: Mutex::new(validator_factory),
             persister,
+            clock,
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
             tracker: Mutex::new(tracker),
             state,
@@ -1565,10 +1568,14 @@ impl Node {
             return if invoice_state.invoice_hash == invoice_hash {
                 Ok(())
             } else {
-                Err(failed_precondition(
-                    "already have a different invoice for same secret".to_string(),
-                ))
+                Err(failed_precondition("already have a different invoice for same secret"))
             };
+        }
+        if !state.velocity_control.insert(self.clock.now().as_secs(), invoice_state.amount_msat) {
+            return Err(failed_precondition(format!(
+                "velocity would be exceeded - currently {}",
+                state.velocity_control.velocity()
+            )));
         }
         state.invoices.insert(hash, invoice_state);
         state.payments.insert(hash, RoutedPayment::new());
