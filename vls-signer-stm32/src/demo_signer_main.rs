@@ -10,6 +10,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use core::cell::RefCell;
+use core::time::Duration;
 
 use cortex_m::interrupt::Mutex;
 use cortex_m_rt::entry;
@@ -30,6 +31,7 @@ use vls_protocol::serde_bolt::WireString;
 use vls_protocol_signer::handler::{Handler, RootHandler};
 use vls_protocol_signer::lightning_signer;
 use vls_protocol_signer::vls_protocol;
+use crate::lightning_signer::util::clock::ManualClock;
 
 mod device;
 mod logger;
@@ -72,11 +74,13 @@ fn main() -> ! {
 
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
+    let clock = Arc::new(ManualClock::new(Duration::ZERO));
 
     let services = NodeServices {
         validator_factory,
         starting_time_factory,
-        persister
+        persister,
+        clock,
     };
 
     let (sequence, dbid) = read_serial_request_header(&mut serial).expect("read init header");

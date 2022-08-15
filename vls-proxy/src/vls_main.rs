@@ -17,6 +17,7 @@ use vls_protocol_signer::vls_protocol;
 
 use client::{Client, UnixClient};
 use lightning_signer::node::NodeServices;
+use lightning_signer::util::clock::StandardClock;
 use lightning_signer_server::nodefront::SingleFront;
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
 use util::{create_runtime, read_allowlist};
@@ -119,8 +120,9 @@ pub fn main() {
         let network = vls_network().parse::<Network>().expect("malformed vls network");
         let starting_time_factory = ClockStartingTimeFactory::new();
         let validator_factory = make_validator_factory(network);
+        let clock = Arc::new(StandardClock());
 
-        let services = NodeServices { validator_factory, starting_time_factory, persister };
+        let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
 
         let handler = RootHandler::new(
             network,

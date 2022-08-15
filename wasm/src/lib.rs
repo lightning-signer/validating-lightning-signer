@@ -2,6 +2,7 @@
 extern crate log;
 
 use std::str::FromStr;
+use std::time::Duration;
 
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{ecdsa::Signature as BitcoinSignature, PublicKey};
@@ -20,6 +21,7 @@ use lightning_signer::signer::StartingTimeFactory;
 use lightning_signer::util::key_utils::make_test_key;
 use lightning_signer::Arc;
 use lightning_signer::{bitcoin, lightning};
+use lightning_signer::util::clock::ManualClock;
 
 use crate::console_log::setup_log;
 use crate::utils::set_panic_hook;
@@ -264,10 +266,12 @@ pub fn make_node() -> JSNode {
     debug!("SEED {}", seed.to_hex());
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
+    let clock = Arc::new(ManualClock::new(Duration::ZERO));
     let services = NodeServices {
         validator_factory,
         starting_time_factory,
-        persister
+        persister,
+        clock,
     };
     let node =
         Node::new(config, &seed, vec![], services);

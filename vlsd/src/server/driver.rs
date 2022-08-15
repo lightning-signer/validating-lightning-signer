@@ -34,6 +34,7 @@ use lightning_signer::signer::{
     derive::KeyDerivationStyle, multi_signer::MultiSigner, ClockStartingTimeFactory,
 };
 use lightning_signer::tx::tx::HTLCInfo2;
+use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::crypto_utils::bitcoin_vec_to_signature;
 use lightning_signer::util::log_utils::{parse_log_level_filter, LOG_LEVEL_FILTER_NAMES};
 use lightning_signer::util::status;
@@ -1553,7 +1554,8 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let policy = policy(&matches, network);
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
     let starting_time_factory = ClockStartingTimeFactory::new();
-    let services = NodeServices { validator_factory, starting_time_factory, persister };
+    let clock = Arc::new(StandardClock());
+    let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
     let signer = Arc::new(MultiSigner::new_with_test_mode(test_mode, initial_allowlist, services));
 
     let rpc_s: String = matches.value_of_t("rpc").expect("rpc url string");

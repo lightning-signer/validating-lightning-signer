@@ -54,6 +54,7 @@ use crate::signer::my_keys_manager::MyKeysManager;
 use crate::signer::StartingTimeFactory;
 use crate::sync::{Arc, Weak};
 use crate::tx::tx::PreimageMap;
+use crate::util::clock::Clock;
 use crate::util::crypto_utils::signature_to_bitcoin_vec;
 use crate::util::status::{failed_precondition, internal_error, invalid_argument, Status};
 use crate::util::velocity::VelocityControl;
@@ -490,6 +491,7 @@ impl Allowable {
 /// use lightning_signer::persist::{DummyPersister, Persist};
 /// use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 /// use lightning_signer::signer::ClockStartingTimeFactory;
+/// use lightning_signer::util::clock::StandardClock;
 /// use lightning_signer::util::test_logger::TestLogger;
 /// use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
 ///
@@ -498,10 +500,12 @@ impl Allowable {
 /// let config = TEST_NODE_CONFIG;
 /// let validator_factory = Arc::new(SimpleValidatorFactory::new());
 /// let starting_time_factory = ClockStartingTimeFactory::new();
+/// let clock = Arc::new(StandardClock());
 /// let services = NodeServices {
 ///     validator_factory,
 ///     starting_time_factory,
 ///     persister,
+///     clock,
 /// };
 /// let node = Arc::new(Node::new(config, &seed, vec![], services));
 /// let (channel_id, opt_stub) = node.new_channel(None, &node).expect("new channel");
@@ -538,6 +542,8 @@ pub struct NodeServices {
     pub starting_time_factory: Arc<dyn StartingTimeFactory>,
     /// The persister
     pub persister: Arc<dyn Persist>,
+    /// Clock source
+    pub clock: Arc<dyn Clock>,
 }
 
 impl Wallet for Node {

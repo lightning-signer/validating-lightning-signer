@@ -61,6 +61,7 @@ use self::lightning_signer::util::functional_test_utils::{
 use test_log::test;
 
 use log::debug;
+use lightning_signer::util::clock::StandardClock;
 
 const ANTI_REORG_DELAY: u32 = 6;
 
@@ -157,10 +158,13 @@ fn fake_network_with_signer_test() {
 fn new_signer() -> Arc<MultiSigner> {
     let validator_factory = Arc::new(OnchainValidatorFactory::new());
     let starting_time_factory = make_genesis_starting_time_factory(REGTEST_NODE_CONFIG.network);
+    let clock = Arc::new(StandardClock());
+    let persister = Arc::new(DummyPersister {});
     let services = NodeServices {
         validator_factory,
         starting_time_factory,
-        persister: Arc::new(DummyPersister {})
+        persister,
+        clock,
     };
     Arc::new(MultiSigner::new_with_test_mode(true, vec![], services))
 }
@@ -173,10 +177,13 @@ fn invoice_test() {
     policy.enforce_balance = true;
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
     let starting_time_factory = make_genesis_starting_time_factory(REGTEST_NODE_CONFIG.network);
+    let clock = Arc::new(StandardClock());
+    let persister = Arc::new(DummyPersister {});
     let services = NodeServices {
         validator_factory,
         starting_time_factory,
-        persister: Arc::new(DummyPersister {})
+        persister,
+        clock
     };
     let validating_signer = Arc::new(MultiSigner::new(services));
 

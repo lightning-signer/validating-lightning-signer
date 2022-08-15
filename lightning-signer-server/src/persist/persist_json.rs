@@ -215,6 +215,7 @@ mod tests {
     use lightning_signer::channel::ChannelSlot;
     use lightning_signer::node::{Node, NodeServices};
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
+    use lightning_signer::util::clock::StandardClock;
     use lightning_signer::util::test_utils::*;
 
     use crate::persist::ser_util::VecWriter;
@@ -236,6 +237,7 @@ mod tests {
         let channel_id0 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
         let validator_factory = Arc::new(SimpleValidatorFactory::new());
         let starting_time_factory = make_genesis_starting_time_factory(TEST_NODE_CONFIG.network);
+        let clock = Arc::new(StandardClock());
 
         let (node_id, node_arc, stub, seed) = make_node_and_channel(channel_id0.clone());
 
@@ -252,6 +254,7 @@ mod tests {
                 validator_factory,
                 starting_time_factory,
                 persister: persister.clone(),
+                clock,
             };
 
             let nodes = Node::restore_nodes(services.clone());
