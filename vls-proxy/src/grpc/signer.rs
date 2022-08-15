@@ -1,7 +1,8 @@
 use super::hsmd::{self, PingRequest, SignerRequest, SignerResponse};
-use crate::util::{read_allowlist, read_integration_test_seed};
+use crate::util::{make_validator_factory, read_allowlist, read_integration_test_seed};
 use http::Uri;
 use lightning_signer::bitcoin::Network;
+use lightning_signer::node::NodeServices;
 use lightning_signer::persist::Persist;
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::status::Status;
@@ -54,14 +55,10 @@ async fn connect(datadir: &str, uri: Uri, network: Network) {
     let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new(&data_path));
     let allowlist = read_allowlist();
     let starting_time_factory = ClockStartingTimeFactory::new();
-    let root_handler = RootHandler::new(
-        network,
-        0,
-        read_integration_test_seed(),
-        persister,
-        allowlist.clone(),
-        &starting_time_factory,
-    );
+    let validator_factory = make_validator_factory(network);
+    let services = NodeServices { validator_factory, starting_time_factory, persister };
+    let root_handler =
+        RootHandler::new(network, 0, read_integration_test_seed(), allowlist.clone(), services);
 
     // NOTE - For this signer mode it is easier to use the ALLOWLIST file to maintain the
     // allowlist. Replace existing entries w/ the current ALLOWLIST file contents.

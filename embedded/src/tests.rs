@@ -18,7 +18,7 @@ use lightning_signer::lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecre
 use lightning_signer::lightning_invoice::{
     Currency, InvoiceBuilder, RawDataPart, RawHrp, RawInvoice, SignedRawInvoice,
 };
-use lightning_signer::node::{Node, NodeConfig, SpendType};
+use lightning_signer::node::{Node, NodeConfig, NodeServices, SpendType};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
 use lightning_signer::signer::derive::KeyDerivationStyle;
@@ -49,7 +49,6 @@ macro_rules! myprintln {
     }};
 }
 
-use alloc::boxed::Box;
 use lightning_signer::signer::StartingTimeFactory;
 
 pub struct FixedStartingTimeFactory {
@@ -65,8 +64,8 @@ impl StartingTimeFactory for FixedStartingTimeFactory {
 
 impl FixedStartingTimeFactory {
     /// Make a starting time factory which uses fixed values for testing
-    pub fn new(starting_time_secs: u64, starting_time_nanos: u32) -> Box<dyn StartingTimeFactory> {
-        Box::new(FixedStartingTimeFactory { starting_time_secs, starting_time_nanos })
+    pub fn new(starting_time_secs: u64, starting_time_nanos: u32) -> Arc<dyn StartingTimeFactory> {
+        Arc::new(FixedStartingTimeFactory { starting_time_secs, starting_time_nanos })
     }
 }
 
@@ -155,25 +154,21 @@ pub fn test_lightning_signer(postscript: fn()) {
     let mut policy = make_simple_policy(Network::Testnet);
     policy.require_invoices = true;
     policy.enforce_balance = true;
-    let factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
+    let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
     let starting_time_factory = FixedStartingTimeFactory::new(1, 1);
-    let node = Arc::new(Node::new(
-        config,
-        &seed,
-        &persister,
-        Vec::new(),
-        factory.clone(),
-        &starting_time_factory,
-    ));
+    let services = NodeServices {
+        validator_factory: validator_factory.clone(),
+        starting_time_factory,
+        persister: persister.clone(),
+    };
+    let node = Arc::new(Node::new(config, &seed, Vec::new(), services.clone()));
     let starting_time_factory2 = FixedStartingTimeFactory::new(2, 2);
-    let node1 = Arc::new(Node::new(
-        config,
-        &seed1,
-        &persister,
-        Vec::new(),
-        factory,
-        &starting_time_factory2,
-    ));
+    let services2 = NodeServices {
+        validator_factory,
+        starting_time_factory: starting_time_factory2,
+        persister,
+    };
+    let node1 = Arc::new(Node::new(config, &seed1, Vec::new(), services2));
 
     assert_eq!(node.ecdh(&node1.get_id()), node1.ecdh(&node.get_id()));
 

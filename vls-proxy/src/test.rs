@@ -2,6 +2,7 @@ use std::os::unix::io::RawFd;
 use std::sync::Arc;
 
 use lightning_signer::bitcoin::{secp256k1, Network};
+use lightning_signer::node::NodeServices;
 use lightning_signer::persist::DummyPersister;
 use lightning_signer::persist::Persist;
 use lightning_signer::signer::ClockStartingTimeFactory;
@@ -14,6 +15,7 @@ use secp256k1::Secp256k1;
 use vls_protocol_signer::handler::RootHandler;
 use vls_protocol_signer::vls_protocol::model::PubKey;
 use vls_protocol_signer::vls_protocol::msgs;
+use vls_proxy::util::make_validator_factory;
 
 use crate::client::{Client, UnixClient};
 use crate::connection::UnixConnection;
@@ -52,20 +54,17 @@ pub(crate) fn run_test() {
             run_parent(fd4)
         }
         Ok(ForkResult::Child) => {
+            let network = Network::Regtest;
+
             close(fd4).unwrap();
             let conn = UnixConnection::new(fd3);
             let client = UnixClient::new(conn);
             let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
             let seed = Some([0; 32]);
             let starting_time_factory = ClockStartingTimeFactory::new();
-            let handler = RootHandler::new(
-                Network::Regtest,
-                client.id(),
-                seed,
-                persister,
-                vec![],
-                &starting_time_factory,
-            );
+            let validator_factory = make_validator_factory(network);
+            let services = NodeServices { validator_factory, starting_time_factory, persister };
+            let handler = RootHandler::new(network, client.id(), seed, vec![], services);
             root_signer_loop(client, handler)
         }
         Err(_) => {}

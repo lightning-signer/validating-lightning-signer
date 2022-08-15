@@ -16,6 +16,7 @@ use vls_protocol::{msgs, msgs::Message, Error, Result};
 use vls_protocol_signer::vls_protocol;
 
 use client::{Client, UnixClient};
+use lightning_signer::node::NodeServices;
 use lightning_signer_server::nodefront::SingleFront;
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
 use util::{create_runtime, read_allowlist};
@@ -23,8 +24,8 @@ use vls_protocol_signer::handler::{ChannelHandler, Handler, RootHandler};
 
 mod test;
 use vls_proxy::util::{
-    add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, read_integration_test_seed,
-    setup_logging, vls_network,
+    add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, make_validator_factory,
+    read_integration_test_seed, setup_logging, vls_network,
 };
 use vls_proxy::*;
 
@@ -117,13 +118,16 @@ pub fn main() {
         let allowlist = read_allowlist();
         let network = vls_network().parse::<Network>().expect("malformed vls network");
         let starting_time_factory = ClockStartingTimeFactory::new();
+        let validator_factory = make_validator_factory(network);
+
+        let services = NodeServices { validator_factory, starting_time_factory, persister };
+
         let handler = RootHandler::new(
             network,
             client.id(),
             read_integration_test_seed(),
-            persister,
             allowlist,
-            &starting_time_factory,
+            services,
         );
 
         let frontend = Frontend::new(

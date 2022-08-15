@@ -23,8 +23,8 @@ use url::Url;
 use lightning_signer::bitcoin;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::lightning;
-use lightning_signer::node::SpendType;
 use lightning_signer::node::{self};
+use lightning_signer::node::{NodeServices, SpendType};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::simple_validator::{
@@ -1553,13 +1553,8 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let policy = policy(&matches, network);
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
     let starting_time_factory = ClockStartingTimeFactory::new();
-    let signer = Arc::new(MultiSigner::new_with_persister(
-        persister,
-        test_mode,
-        initial_allowlist,
-        validator_factory,
-        starting_time_factory,
-    ));
+    let services = NodeServices { validator_factory, starting_time_factory, persister };
+    let signer = Arc::new(MultiSigner::new_with_test_mode(test_mode, initial_allowlist, services));
 
     let rpc_s: String = matches.value_of_t("rpc").expect("rpc url string");
     let rpc_url = Url::parse(&rpc_s).expect("malformed rpc url");

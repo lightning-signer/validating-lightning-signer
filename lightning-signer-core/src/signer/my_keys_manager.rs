@@ -71,7 +71,7 @@ impl MyKeysManager {
         key_derivation_style: KeyDerivationStyle,
         seed: &[u8],
         network: Network,
-        starting_time_factory: &Box<dyn StartingTimeFactory>,
+        starting_time_factory: &dyn StartingTimeFactory,
     ) -> MyKeysManager {
         let secp_ctx = Secp256k1::new();
         let key_derive = derive::key_derive(key_derivation_style, network);
@@ -539,6 +539,7 @@ impl KeysInterface for MyKeysManager {
 mod tests {
     use crate::util::INITIAL_COMMITMENT_NUMBER;
     use bitcoin::Network::Testnet;
+    use core::borrow::Borrow;
 
     use super::*;
     use crate::util::test_utils::{
@@ -555,7 +556,7 @@ mod tests {
             KeyDerivationStyle::Ldk,
             &seed,
             Network::Testnet,
-            &FixedStartingTimeFactory::new(1, 1),
+            FixedStartingTimeFactory::new(1, 1).borrow(),
         );
         assert_eq!(
             ldk.get_node_secret(Recipient::Node).unwrap(),
@@ -589,7 +590,7 @@ mod tests {
             KeyDerivationStyle::Native,
             &[0u8; 32],
             Network::Testnet,
-            &FixedStartingTimeFactory::new(0, 0),
+            FixedStartingTimeFactory::new(0, 0).borrow(),
         );
         assert_eq!(
             hex_encode(&manager.channel_seed_base),
@@ -630,7 +631,7 @@ mod tests {
             KeyDerivationStyle::Lnd,
             &[0u8; 32],
             Network::Testnet,
-            &FixedStartingTimeFactory::new(0, 0),
+            FixedStartingTimeFactory::new(0, 0).borrow(),
         );
         assert_eq!(
             hex_encode(&manager.channel_seed_base),
@@ -668,7 +669,7 @@ mod tests {
             KeyDerivationStyle::Native,
             &[0u8; 32],
             Network::Testnet,
-            &FixedStartingTimeFactory::new(0, 0),
+            FixedStartingTimeFactory::new(0, 0).borrow(),
         );
         let mut channel_id = [0u8; 32];
         channel_id[0] = 1u8;

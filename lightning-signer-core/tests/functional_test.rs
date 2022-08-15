@@ -41,7 +41,7 @@ use lightning_signer::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeys
 use lightning_signer::util::test_utils;
 use lightning_signer::util::test_utils::{TestChainMonitor, REGTEST_NODE_CONFIG, make_block, make_genesis_starting_time_factory};
 use lightning_signer::channel::{ChannelId, ChannelBalance};
-use lightning_signer::node::{NodeConfig, NodeMonitor};
+use lightning_signer::node::{NodeConfig, NodeMonitor, NodeServices};
 use lightning_signer::persist::DummyPersister;
 use lightning_signer::policy::onchain_validator::OnchainValidatorFactory;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimplePolicy, SimpleValidatorFactory};
@@ -89,7 +89,7 @@ fn create_node_cfg<'a>(signer: &Arc<MultiSigner>, chanmon_cfgs: &'a Vec<TestChan
     let chain_tracker: ChainTracker<ChainMonitor> =
         ChainTracker::new(network, 0, tip).unwrap();
 
-    let node_id = signer.new_node_with_seed(config, chain_tracker, signer.validator_factory(), seed.clone());
+    let node_id = signer.new_node_with_seed(config, chain_tracker, signer.node_services(), seed.clone());
 
     let keys_manager = LoopbackSignerKeysInterface {
         node_id,
@@ -157,9 +157,12 @@ fn fake_network_with_signer_test() {
 fn new_signer() -> Arc<MultiSigner> {
     let validator_factory = Arc::new(OnchainValidatorFactory::new());
     let starting_time_factory = make_genesis_starting_time_factory(REGTEST_NODE_CONFIG.network);
-    Arc::new(MultiSigner::new_with_validator(
-        validator_factory, starting_time_factory,
-    ))
+    let services = NodeServices {
+        validator_factory,
+        starting_time_factory,
+        persister: Arc::new(DummyPersister {})
+    };
+    Arc::new(MultiSigner::new_with_test_mode(true, vec![], services))
 }
 
 #[test]
@@ -170,8 +173,12 @@ fn invoice_test() {
     policy.enforce_balance = true;
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
     let starting_time_factory = make_genesis_starting_time_factory(REGTEST_NODE_CONFIG.network);
-    let validating_signer = Arc::new(MultiSigner::new_with_validator(
-        validator_factory, starting_time_factory));
+    let services = NodeServices {
+        validator_factory,
+        starting_time_factory,
+        persister: Arc::new(DummyPersister {})
+    };
+    let validating_signer = Arc::new(MultiSigner::new(services));
 
     let chanmon_cfgs = create_chanmon_cfgs(3);
     let mut node_cfgs = Vec::new();
