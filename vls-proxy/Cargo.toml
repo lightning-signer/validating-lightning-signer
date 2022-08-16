@@ -12,7 +12,7 @@ grpc = ["tokio", "tokio-stream", "tonic", "prost", "async-stream", "url"]
 main = ["clap", "clap_derive", "ctrlc", "fern"]
 
 [dependencies]
-lightning-signer-core = { path = "../lightning-signer-core" }
+lightning-signer-core = { path = "../lightning-signer-core", features = ["debug", "use_backtrace"] }
 vls-protocol-signer = { path = "../vls-protocol-signer" }
 vls-protocol-client = { path = "../vls-protocol-client" }
 vls-protocol = { path = "../vls-protocol" }

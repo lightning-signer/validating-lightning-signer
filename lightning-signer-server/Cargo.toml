@@ -55,4 +55,4 @@ tonic-build = "0.6"
 [[bin]]
 name = "persist_test"
 path = "src/persist_test_main.rs"
-required-features = ["persist_kv_json", "test_utils"]
+required-features = ["persist_kv_json", "test_utils", "lightning-signer-core/use_backtrace"]

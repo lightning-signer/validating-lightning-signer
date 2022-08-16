@@ -23,9 +23,9 @@ secp-lowmemory = ["bitcoin/secp-lowmemory"]
 grpc = ["tonic"]
 
 # Turn this feature on to run `cargo test`, which launches the functional tests
-test_utils = ["lightning/_test_utils", "lightning/unsafe_revoked_tx_signing", "bitcoin/bitcoinconsensus"]
+test_utils = ["use_backtrace", "lightning/_test_utils", "lightning/unsafe_revoked_tx_signing", "bitcoin/bitcoinconsensus"]
 
-debug = ["use_backtrace"]
+debug = []
 
 use_backtrace = ["backtrace"]
 
@@ -86,8 +86,9 @@ default-features = false
 [[bin]]
 name = "example_main"
 path = "src/example_main.rs"
+required-features = ["use_backtrace"]
 
 [[test]]
 name = "functional_test"
 path = "tests/functional_test.rs"
-required-features = ["test_utils"]
+required-features = ["test_utils", "use_backtrace"]

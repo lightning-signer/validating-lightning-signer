@@ -20,7 +20,7 @@ frontend = ["vls-frontend"]
 anyhow = "1.0"
 log = { version="0.4.14", features = [ "std" ] }
 time = "0.2"
-lightning-signer-core = { path = "../lightning-signer-core", features = ["debug", "grpc"] }
+lightning-signer-core = { path = "../lightning-signer-core", features = ["debug", "grpc", "use_backtrace"] }
 lightning-signer-server = { path = "../lightning-signer-server", features = ["persist", "grpc", "persist_kv_json", "frontend"] }
 vls-frontend = { path = "../vls-frontend", optional = true }
 bitcoind-client = { path = "../bitcoind-client" }
