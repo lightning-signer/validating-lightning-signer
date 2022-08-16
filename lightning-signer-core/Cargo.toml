@@ -25,7 +25,9 @@ grpc = ["tonic"]
 # Turn this feature on to run `cargo test`, which launches the functional tests
 test_utils = ["lightning/_test_utils", "lightning/unsafe_revoked_tx_signing", "bitcoin/bitcoinconsensus"]
 
-debug = ["backtrace"]
+debug = ["use_backtrace"]
+
+use_backtrace = ["backtrace"]
 
 log_pretty_print = []
 
