@@ -42,8 +42,8 @@ use super::key_utils::{
 use crate::channel::{
     Channel, ChannelBase, ChannelId, ChannelSetup, ChannelStub, CommitmentType, TypedSignature,
 };
-use crate::node::SpendType;
 use crate::node::{Node, NodeConfig};
+use crate::node::{NodeServices, SpendType};
 use crate::persist::{DummyPersister, Persist};
 use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::ChainState;
@@ -55,6 +55,7 @@ use crate::tx::script::{
     ANCHOR_OUTPUT_VALUE_SATOSHI,
 };
 use crate::tx::tx::{sort_outputs, CommitmentInfo2, HTLCInfo2};
+use crate::util::clock::StandardClock;
 use crate::util::crypto_utils::{
     derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, payload_for_p2wsh,
 };
@@ -317,13 +318,13 @@ impl StartingTimeFactory for FixedStartingTimeFactory {
 
 impl FixedStartingTimeFactory {
     /// Make a starting time factory which uses fixed values for testing
-    pub fn new(starting_time_secs: u64, starting_time_nanos: u32) -> Box<dyn StartingTimeFactory> {
-        Box::new(FixedStartingTimeFactory { starting_time_secs, starting_time_nanos })
+    pub fn new(starting_time_secs: u64, starting_time_nanos: u32) -> Arc<dyn StartingTimeFactory> {
+        Arc::new(FixedStartingTimeFactory { starting_time_secs, starting_time_nanos })
     }
 }
 
 /// Make a starting time factory which uses the genesis block timestamp
-pub fn make_genesis_starting_time_factory(network: Network) -> Box<dyn StartingTimeFactory> {
+pub fn make_genesis_starting_time_factory(network: Network) -> Arc<dyn StartingTimeFactory> {
     let genesis = genesis_block(network);
     let now = Duration::from_secs(genesis.header.time as u64);
     FixedStartingTimeFactory::new(now.as_secs(), now.subsec_nanos())
@@ -333,12 +334,13 @@ pub fn init_node(node_config: NodeConfig, seedstr: &str) -> Arc<Node> {
     let mut seed = [0; 32];
     seed.copy_from_slice(Vec::from_hex(seedstr).unwrap().as_slice());
 
-    let persister = &(Arc::new(DummyPersister) as Arc<Persist>);
+    let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
     let starting_time_factory = make_genesis_starting_time_factory(node_config.network);
+    let clock = Arc::new(StandardClock());
+    let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
 
-    let node =
-        Node::new(node_config, &seed, persister, vec![], validator_factory, &starting_time_factory);
+    let node = Node::new(node_config, &seed, vec![], services);
     Arc::new(node)
 }
 
@@ -1627,15 +1629,11 @@ pub(crate) fn make_node() -> (PublicKey, Arc<Node>, [u8; 32]) {
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
     let starting_time_factory = make_genesis_starting_time_factory(TEST_NODE_CONFIG.network);
+    let clock = Arc::new(StandardClock());
 
-    let node = Arc::new(Node::new(
-        TEST_NODE_CONFIG,
-        &seed,
-        &persister,
-        vec![],
-        validator_factory,
-        &starting_time_factory,
-    ));
+    let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
+
+    let node = Arc::new(Node::new(TEST_NODE_CONFIG, &seed, vec![], services));
     let node_id = node.get_id();
     (node_id, node, seed)
 }

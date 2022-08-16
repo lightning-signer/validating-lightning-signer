@@ -1,4 +1,4 @@
-use alloc::boxed::Box;
+use alloc::sync::Arc;
 use core::cell::RefCell;
 use rand_core::RngCore;
 
@@ -24,7 +24,7 @@ impl StartingTimeFactory for RandomStartingTimeFactory {
 }
 
 impl RandomStartingTimeFactory {
-    pub(crate) fn new(rng: Mutex<RefCell<Rng>>) -> Box<dyn StartingTimeFactory> {
-        Box::new(RandomStartingTimeFactory { rng })
+    pub(crate) fn new(rng: Mutex<RefCell<Rng>>) -> Arc<dyn StartingTimeFactory> {
+        Arc::new(RandomStartingTimeFactory { rng })
     }
 }

@@ -1,19 +1,15 @@
 use bitcoin;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::OutPoint;
-use log::info;
 #[cfg(feature = "std")]
 use rand::{OsRng, Rng};
 
 use crate::chain::tracker::ChainTracker;
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSlot};
 use crate::monitor::ChainMonitor;
-use crate::node::{Node, NodeConfig};
-use crate::persist::{DummyPersister, Persist};
-use crate::policy::simple_validator::SimpleValidatorFactory;
-use crate::policy::validator::ValidatorFactory;
+use crate::node::{Node, NodeConfig, NodeServices};
+use crate::persist::Persist;
 use crate::prelude::*;
-use crate::signer::StartingTimeFactory;
 use crate::sync::Arc;
 use crate::util::status::{invalid_argument, Status};
 
@@ -25,61 +21,35 @@ pub struct MultiSigner {
     pub(crate) persister: Arc<dyn Persist>,
     pub(crate) test_mode: bool,
     pub(crate) initial_allowlist: Vec<String>,
-    validator_factory: Arc<dyn ValidatorFactory>,
-    starting_time_factory: Box<dyn StartingTimeFactory>,
+    services: NodeServices,
 }
 
 impl MultiSigner {
-    /// Construct with a null persister
-    pub fn new(starting_time_factory: Box<dyn StartingTimeFactory>) -> MultiSigner {
-        let validator_factory = Arc::new(SimpleValidatorFactory::new());
-        let signer = MultiSigner::new_with_persister(
-            Arc::new(DummyPersister),
-            true,
-            vec![],
-            validator_factory,
-            starting_time_factory,
-        );
-        info!("new MultiSigner");
-        signer
-    }
-
     /// Construct
-    pub fn new_with_validator(
-        validator_factory: Arc<dyn ValidatorFactory>,
-        starting_time_factory: Box<dyn StartingTimeFactory>,
-    ) -> MultiSigner {
-        let signer = MultiSigner::new_with_persister(
-            Arc::new(DummyPersister),
-            true,
-            vec![],
-            validator_factory,
-            starting_time_factory,
-        );
-        info!("new MultiSigner");
-        signer
-    }
-
-    /// Construct
-    pub fn new_with_persister(
-        persister: Arc<dyn Persist>,
+    pub fn new_with_test_mode(
         test_mode: bool,
         initial_allowlist: Vec<String>,
-        validator_factory: Arc<dyn ValidatorFactory>,
-        starting_time_factory: Box<dyn StartingTimeFactory>,
+        services: NodeServices,
     ) -> MultiSigner {
-        let nodes = Node::restore_nodes(
-            Arc::clone(&persister),
-            validator_factory.clone(),
-            &starting_time_factory,
-        );
+        let nodes = Node::restore_nodes(services.clone());
         MultiSigner {
             nodes: Mutex::new(nodes),
-            persister,
+            persister: services.persister.clone(),
             test_mode,
             initial_allowlist,
-            validator_factory,
-            starting_time_factory,
+            services,
+        }
+    }
+
+    /// Construct
+    pub fn new(services: NodeServices) -> MultiSigner {
+        let nodes = Node::restore_nodes(services.clone());
+        MultiSigner {
+            nodes: Mutex::new(nodes),
+            persister: services.persister.clone(),
+            test_mode: false,
+            initial_allowlist: vec![],
+            services,
         }
     }
 
@@ -91,14 +61,7 @@ impl MultiSigner {
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);
 
-        let node = Node::new(
-            node_config,
-            &seed,
-            &self.persister,
-            vec![],
-            self.validator_factory.clone(),
-            &self.starting_time_factory,
-        );
+        let node = Node::new(node_config, &seed, vec![], self.services.clone());
         let node_id = node.get_id();
         let mut nodes = self.nodes.lock().unwrap();
         node.add_allowlist(&self.initial_allowlist).expect("valid initialallowlist");
@@ -114,14 +77,14 @@ impl MultiSigner {
         &self,
         node_config: NodeConfig,
         tracker: ChainTracker<ChainMonitor>,
-        validator_factory: Arc<dyn ValidatorFactory>,
+        services: NodeServices,
     ) -> PublicKey {
         let mut rng = OsRng::new().unwrap();
 
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);
 
-        self.new_node_with_seed(node_config, tracker, validator_factory, seed)
+        self.new_node_with_seed(node_config, tracker, services, seed)
     }
 
     /// New node with externally supplied cryptographic seed
@@ -129,18 +92,10 @@ impl MultiSigner {
         &self,
         node_config: NodeConfig,
         tracker: ChainTracker<ChainMonitor>,
-        validator_factory: Arc<dyn ValidatorFactory>,
+        services: NodeServices,
         seed: [u8; 32],
     ) -> PublicKey {
-        let node = Node::new_extended(
-            node_config,
-            &seed,
-            &self.persister,
-            vec![],
-            tracker,
-            validator_factory,
-            &self.starting_time_factory,
-        );
+        let node = Node::new_extended(node_config, &seed, vec![], tracker, services);
         let node_id = node.get_id();
         let mut nodes = self.nodes.lock().unwrap();
         node.add_allowlist(&self.initial_allowlist).expect("valid initialallowlist");
@@ -156,14 +111,7 @@ impl MultiSigner {
         node_config: NodeConfig,
         seed: &[u8],
     ) -> Result<PublicKey, Status> {
-        let node = Node::new(
-            node_config,
-            &seed,
-            &self.persister,
-            vec![],
-            self.validator_factory.clone(),
-            &self.starting_time_factory,
-        );
+        let node = Node::new(node_config, &seed, vec![], self.services.clone());
         let node_id = node.get_id();
         let mut nodes = self.nodes.lock().unwrap();
         if self.test_mode {
@@ -195,14 +143,7 @@ impl MultiSigner {
         node_config: NodeConfig,
         seed: &[u8],
     ) -> Result<PublicKey, Status> {
-        let node = Node::new(
-            node_config,
-            &seed,
-            &self.persister,
-            vec![],
-            self.validator_factory.clone(),
-            &self.starting_time_factory,
-        );
+        let node = Node::new(node_config, &seed, vec![], self.services.clone());
         let node_id = node.get_id();
         let nodes = self.nodes.lock().unwrap();
         nodes.get(&node_id).ok_or_else(|| {
@@ -289,14 +230,17 @@ impl MultiSigner {
             .expect("channel was in storage but not in memory");
     }
 
-    /// Get the configured validator factory
-    pub fn validator_factory(&self) -> Arc<dyn ValidatorFactory> {
-        self.validator_factory.clone()
+    /// Get the node services
+    pub fn node_services(&self) -> NodeServices {
+        self.services.clone()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::persist::DummyPersister;
+    use crate::policy::simple_validator::SimpleValidatorFactory;
+    use crate::util::clock::StandardClock;
     use crate::util::status::Code;
     use crate::util::test_utils::hex_decode;
     use crate::util::test_utils::*;
@@ -304,9 +248,17 @@ mod tests {
 
     use super::*;
 
+    fn make_test_services() -> NodeServices {
+        let validator_factory = Arc::new(SimpleValidatorFactory::new());
+        let persister = Arc::new(DummyPersister {});
+        let clock = Arc::new(StandardClock());
+        let starting_time_factory = make_genesis_starting_time_factory(TEST_NODE_CONFIG.network);
+        NodeServices { validator_factory, starting_time_factory, persister, clock }
+    }
+
     #[test]
     fn warmstart_with_seed_test() {
-        let signer = MultiSigner::new(make_genesis_starting_time_factory(TEST_NODE_CONFIG.network));
+        let signer = MultiSigner::new(make_test_services());
         let mut seed = [0; 32];
         seed.copy_from_slice(hex_decode(TEST_SEED[1]).unwrap().as_slice());
 
@@ -329,7 +281,7 @@ mod tests {
     #[test]
     fn bad_node_lookup_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
-        let signer = MultiSigner::new(make_genesis_starting_time_factory(TEST_NODE_CONFIG.network));
+        let signer = MultiSigner::new(make_test_services());
         let node_id = pubkey_from_secret_hex(
             "0101010101010101010101010101010101010101010101010101010101010101",
             &secp_ctx,

@@ -40,6 +40,11 @@ impl ValidatorFactory for NullValidatorFactory {
     ) -> Arc<dyn Validator> {
         Arc::new(null_validator())
     }
+
+    fn policy(&self, network: Network) -> Box<dyn Policy> {
+        let factory = SimpleValidatorFactory::new();
+        factory.policy(network)
+    }
 }
 
 /// A null validator

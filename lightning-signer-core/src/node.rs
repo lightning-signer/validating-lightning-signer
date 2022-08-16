@@ -1,3 +1,4 @@
+use core::borrow::Borrow;
 use core::convert::TryFrom;
 use core::convert::TryInto;
 use core::fmt::{self, Debug, Formatter};
@@ -46,14 +47,17 @@ use crate::persist::Persist;
 use crate::policy::error::{policy_error, unbalanced_error, ValidationError};
 use crate::policy::validator::{BalanceDelta, ValidatorFactory};
 use crate::policy::validator::{EnforcementState, Validator};
+use crate::policy::Policy;
 use crate::prelude::*;
 use crate::signer::derive::KeyDerivationStyle;
 use crate::signer::my_keys_manager::MyKeysManager;
 use crate::signer::StartingTimeFactory;
 use crate::sync::{Arc, Weak};
 use crate::tx::tx::PreimageMap;
+use crate::util::clock::Clock;
 use crate::util::crypto_utils::signature_to_bitcoin_vec;
 use crate::util::status::{failed_precondition, internal_error, invalid_argument, Status};
+use crate::util::velocity::VelocityControl;
 use crate::wallet::Wallet;
 
 /// Node configuration parameters.
@@ -153,6 +157,8 @@ pub struct NodeState {
     pub excess_amount: u64,
     /// Prefix for emitted logs lines
     pub log_prefix: String,
+    /// Per node velocity control
+    pub velocity_control: VelocityControl,
 }
 
 impl PreimageMap for NodeState {
@@ -163,23 +169,25 @@ impl PreimageMap for NodeState {
 
 impl NodeState {
     /// Create a state
-    pub fn new() -> Self {
+    pub fn new(velocity_control: VelocityControl) -> Self {
         NodeState {
             invoices: Map::new(),
             issued_invoices: Map::new(),
             payments: Map::new(),
             excess_amount: 0,
             log_prefix: String::new(),
+            velocity_control,
         }
     }
 
-    fn with_log_prefix(self, log_prefix: String) -> Self {
+    fn with_log_prefix(self, velocity_control: VelocityControl, log_prefix: String) -> Self {
         NodeState {
             invoices: self.invoices,
             issued_invoices: self.issued_invoices,
             payments: self.payments,
             excess_amount: self.excess_amount,
             log_prefix,
+            velocity_control,
         }
     }
 
@@ -479,10 +487,11 @@ impl Allowable {
 /// use std::sync::Arc;
 ///
 /// use lightning_signer::channel::{ChannelSlot, ChannelBase};
-/// use lightning_signer::node::{Node, NodeConfig, SyncLogger};
+/// use lightning_signer::node::{Node, NodeConfig, NodeServices, SyncLogger};
 /// use lightning_signer::persist::{DummyPersister, Persist};
 /// use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 /// use lightning_signer::signer::ClockStartingTimeFactory;
+/// use lightning_signer::util::clock::StandardClock;
 /// use lightning_signer::util::test_logger::TestLogger;
 /// use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
 ///
@@ -491,8 +500,14 @@ impl Allowable {
 /// let config = TEST_NODE_CONFIG;
 /// let validator_factory = Arc::new(SimpleValidatorFactory::new());
 /// let starting_time_factory = ClockStartingTimeFactory::new();
-/// let node = Arc::new(Node::new(config, &seed, &persister, vec![], validator_factory,
-///                               &starting_time_factory));
+/// let clock = Arc::new(StandardClock());
+/// let services = NodeServices {
+///     validator_factory,
+///     starting_time_factory,
+///     persister,
+///     clock,
+/// };
+/// let node = Arc::new(Node::new(config, &seed, vec![], services));
 /// let (channel_id, opt_stub) = node.new_channel(None, &node).expect("new channel");
 /// assert!(opt_stub.is_some());
 /// let channel_slot_mutex = node.get_channel(&channel_id).expect("get channel");
@@ -509,13 +524,27 @@ pub struct Node {
     pub(crate) node_config: NodeConfig,
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<OrderedMap<ChannelId, Arc<Mutex<ChannelSlot>>>>,
+    // This is Mutex because we want to be able to replace it on the fly
     pub(crate) validator_factory: Mutex<Arc<dyn ValidatorFactory>>,
-    /// The node persister
     pub(crate) persister: Arc<dyn Persist>,
+    pub(crate) clock: Arc<dyn Clock>,
     allowlist: Mutex<UnorderedSet<Allowable>>,
     tracker: Mutex<ChainTracker<ChainMonitor>>,
     pub(crate) state: Mutex<NodeState>,
     node_id: PublicKey,
+}
+
+/// Various services the Node uses
+#[derive(Clone)]
+pub struct NodeServices {
+    /// The validator factory
+    pub validator_factory: Arc<dyn ValidatorFactory>,
+    /// The starting time factory
+    pub starting_time_factory: Arc<dyn StartingTimeFactory>,
+    /// The persister
+    pub persister: Arc<dyn Persist>,
+    /// Clock source
+    pub clock: Arc<dyn Clock>,
 }
 
 impl Wallet for Node {
@@ -573,10 +602,8 @@ impl Node {
     pub fn new(
         node_config: NodeConfig,
         seed: &[u8],
-        persister: &Arc<Persist>,
         allowlist: Vec<Allowable>,
-        validator_factory: Arc<dyn ValidatorFactory>,
-        starting_time_factory: &Box<dyn StartingTimeFactory>,
+        services: NodeServices,
     ) -> Node {
         info!("creating node on {}", node_config.network);
         let genesis = genesis_block(node_config.network);
@@ -585,15 +612,7 @@ impl Node {
         let tracker =
             ChainTracker::new(node_config.network, 0, genesis.header).expect("bad  chain tip");
 
-        Self::new_extended(
-            node_config,
-            seed,
-            persister,
-            allowlist,
-            tracker,
-            validator_factory,
-            starting_time_factory,
-        )
+        Self::new_extended(node_config, seed, allowlist, tracker, services)
     }
 
     /// Create a node
@@ -602,53 +621,50 @@ impl Node {
     pub fn new_extended(
         node_config: NodeConfig,
         seed: &[u8],
-        persister: &Arc<dyn Persist>,
         allowlist: Vec<Allowable>,
         tracker: ChainTracker<ChainMonitor>,
-        validator_factory: Arc<dyn ValidatorFactory>,
-        starting_time_factory: &Box<dyn StartingTimeFactory>,
+        services: NodeServices,
     ) -> Node {
-        let state = NodeState::new();
-        Self::new_from_persistence(
-            node_config,
-            seed,
-            persister,
-            allowlist,
-            tracker,
-            validator_factory,
-            starting_time_factory,
-            state,
-        )
+        let policy = services.validator_factory.policy(node_config.network);
+        let global_velocity_control = Self::make_velocity_control(policy);
+        let state = NodeState::new(global_velocity_control);
+        Self::new_from_persistence(node_config, seed, allowlist, tracker, services, state)
     }
 
     /// Restore a node.
     pub fn new_from_persistence(
         node_config: NodeConfig,
         seed: &[u8],
-        persister: &Arc<Persist>,
         allowlist: Vec<Allowable>,
         tracker: ChainTracker<ChainMonitor>,
-        validator_factory: Arc<dyn ValidatorFactory>,
-        starting_time_factory: &Box<dyn StartingTimeFactory>,
+        services: NodeServices,
         state: NodeState,
     ) -> Node {
         let keys_manager = MyKeysManager::new(
             node_config.key_derivation_style,
             seed,
             node_config.network,
-            starting_time_factory,
+            services.starting_time_factory.borrow(),
         );
         let node_id = Self::id_from_key(&keys_manager.get_node_secret(Recipient::Node).unwrap());
         let log_prefix = &node_id.to_hex()[0..4];
 
-        let state = Mutex::new(state.with_log_prefix(log_prefix.to_string()));
+        let persister = services.persister;
+        let clock = services.clock;
+        let validator_factory = services.validator_factory;
+        let policy = validator_factory.policy(node_config.network);
+        let global_velocity_control = Self::make_velocity_control(policy);
+
+        let state =
+            Mutex::new(state.with_log_prefix(global_velocity_control, log_prefix.to_string()));
 
         Node {
             keys_manager,
             node_config,
             channels: Mutex::new(OrderedMap::new()),
             validator_factory: Mutex::new(validator_factory),
-            persister: Arc::clone(persister),
+            persister,
+            clock,
             allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
             tracker: Mutex::new(tracker),
             state,
@@ -894,8 +910,7 @@ impl Node {
         node_id: &PublicKey,
         node_entry: NodeEntry,
         persister: Arc<dyn Persist>,
-        validator_factory: Arc<dyn ValidatorFactory>,
-        starting_time_factory: &Box<dyn StartingTimeFactory>,
+        services: NodeServices,
     ) -> Arc<Node> {
         let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
         let config = NodeConfig {
@@ -911,17 +926,18 @@ impl Node {
             .collect::<Result<_, _>>()
             .expect("allowable parse error");
         let tracker = persister.get_tracker(node_id).expect("tracker");
+
         // FIXME persist node state
-        let state = NodeState::new();
+        let policy = services.validator_factory.policy(network);
+        let global_velocity_control = Self::make_velocity_control(policy);
+        let state = NodeState::new(global_velocity_control);
 
         let node = Arc::new(Node::new_from_persistence(
             config,
             node_entry.seed.as_slice().try_into().expect("seed wrong length"),
-            &persister,
             allowlist,
             tracker,
-            validator_factory,
-            starting_time_factory,
+            services,
             state,
         ));
         assert_eq!(&node.get_id(), node_id);
@@ -944,20 +960,12 @@ impl Node {
     /// Restore all nodes from `persister`.
     ///
     /// The channels of each node are also restored.
-    pub fn restore_nodes(
-        persister: Arc<dyn Persist>,
-        validator_factory: Arc<dyn ValidatorFactory>,
-        starting_time_factory: &Box<dyn StartingTimeFactory>,
-    ) -> Map<PublicKey, Arc<Node>> {
+    pub fn restore_nodes(services: NodeServices) -> Map<PublicKey, Arc<Node>> {
         let mut nodes = Map::new();
+        let persister = services.persister.clone();
         for (node_id, node_entry) in persister.get_nodes() {
-            let node = Node::restore_node(
-                &node_id,
-                node_entry,
-                Arc::clone(&persister),
-                validator_factory.clone(),
-                starting_time_factory,
-            );
+            let node =
+                Node::restore_node(&node_id, node_entry, Arc::clone(&persister), services.clone());
             nodes.insert(node_id, node);
         }
         nodes
@@ -1560,10 +1568,14 @@ impl Node {
             return if invoice_state.invoice_hash == invoice_hash {
                 Ok(())
             } else {
-                Err(failed_precondition(
-                    "already have a different invoice for same secret".to_string(),
-                ))
+                Err(failed_precondition("already have a different invoice for same secret"))
             };
+        }
+        if !state.velocity_control.insert(self.clock.now().as_secs(), invoice_state.amount_msat) {
+            return Err(failed_precondition(format!(
+                "velocity would be exceeded - currently {}",
+                state.velocity_control.velocity()
+            )));
         }
         state.invoices.insert(hash, invoice_state);
         state.payments.insert(hash, RoutedPayment::new());
@@ -1595,6 +1607,11 @@ impl Node {
             is_fulfilled: false,
         };
         Ok((hash, invoice_state, invoice_hash))
+    }
+
+    fn make_velocity_control(policy: Box<dyn Policy>) -> VelocityControl {
+        let global_velocity_control_spec = policy.global_velocity_control();
+        VelocityControl::new(global_velocity_control_spec)
     }
 }
 

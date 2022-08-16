@@ -1,10 +1,15 @@
 #[cfg(feature = "main")]
 use clap::{App, Arg, ArgMatches};
+use log::info;
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::{env, fs};
 
+use lightning_signer::bitcoin::Network;
+use lightning_signer::policy::filter::PolicyFilter;
+use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
+use lightning_signer::Arc;
 use tokio::runtime::{self, Runtime};
 
 pub fn read_allowlist() -> Vec<String> {
@@ -100,4 +105,20 @@ pub fn create_runtime(thread_name: &str) -> Runtime {
     .join()
     .expect("runtime join")
     .expect("runtime")
+}
+
+/// Make a standard validation factory, allowing VLS_PERMISSIVE env var to override
+pub fn make_validator_factory(network: Network) -> Arc<SimpleValidatorFactory> {
+    let mut policy = make_simple_policy(network);
+
+    let warn_only =
+        env::var("VLS_PERMISSIVE").map(|s| s.parse().expect("VLS_PERMISSIVE parse")).unwrap_or(0);
+    if warn_only == 1 {
+        info!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");
+        policy.filter = PolicyFilter::new_permissive();
+    } else {
+        info!("VLS_ENFORCING: ALL POLICY ERRORS ARE ENFORCED");
+    }
+
+    Arc::new(SimpleValidatorFactory::new_with_policy(policy))
 }

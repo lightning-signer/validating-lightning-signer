@@ -26,11 +26,8 @@ use lightning_signer::lightning::ln::chan_utils::{
     derive_public_revocation_key, ChannelPublicKeys,
 };
 use lightning_signer::lightning::ln::PaymentHash;
-use lightning_signer::node::{Node, NodeConfig, NodeMonitor, SpendType};
-use lightning_signer::persist::Persist;
-use lightning_signer::policy::filter::PolicyFilter;
-use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
-use lightning_signer::signer::{derive::KeyDerivationStyle, StartingTimeFactory};
+use lightning_signer::node::{Node, NodeConfig, NodeMonitor, NodeServices, SpendType};
+use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
@@ -109,9 +106,8 @@ impl RootHandler {
         network: Network,
         id: u64,
         seed_opt: Option<[u8; 32]>,
-        persister: Arc<dyn Persist>,
         allowlist: Vec<String>,
-        starting_time_factory: &Box<dyn StartingTimeFactory>,
+        services: NodeServices,
     ) -> Self {
         let config = NodeConfig { network, key_derivation_style: KeyDerivationStyle::Native };
 
@@ -127,32 +123,10 @@ impl RootHandler {
             todo!("no RNG available in no_std environments yet");
         });
 
+        let persister = services.persister.clone();
         let nodes = persister.get_nodes();
-        let mut policy = make_simple_policy(network);
-        #[cfg(feature = "std")]
-        {
-            use std::env;
-            let warn_only = env::var("VLS_PERMISSIVE")
-                .map(|s| s.parse().expect("VLS_PERMISSIVE parse"))
-                .unwrap_or(0);
-            if warn_only == 1 {
-                info!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");
-                policy.filter = PolicyFilter::new_permissive();
-            } else {
-                info!("VLS_ENFORCING: ALL POLICY ERRORS ARE ENFORCED");
-            }
-        }
-
-        let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
         let node = if nodes.is_empty() {
-            let node = Arc::new(Node::new(
-                config,
-                &seed,
-                &persister,
-                vec![],
-                validator_factory,
-                &starting_time_factory,
-            ));
+            let node = Arc::new(Node::new(config, &seed, vec![], services));
             info!("New node {}", node.get_id());
             node.add_allowlist(&allowlist).expect("allowlist");
             persister.new_node(&node.get_id(), &config, &seed);
@@ -162,13 +136,7 @@ impl RootHandler {
             assert_eq!(nodes.len(), 1);
             let (node_id, entry) = nodes.into_iter().next().unwrap();
             info!("Restore node {}", node_id);
-            Node::restore_node(
-                &node_id,
-                entry,
-                persister,
-                validator_factory,
-                &starting_time_factory,
-            )
+            Node::restore_node(&node_id, entry, persister, services)
         };
 
         Self { id, node }

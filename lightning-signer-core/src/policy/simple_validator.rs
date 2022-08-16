@@ -30,6 +30,7 @@ use crate::util::transaction_utils::{
     estimate_feerate_per_kw, expected_commitment_tx_weight, mutual_close_tx_weight,
     MIN_DUST_LIMIT_SATOSHIS,
 };
+use crate::util::velocity::VelocityControlSpec;
 use crate::wallet::Wallet;
 
 extern crate scopeguard;
@@ -68,6 +69,10 @@ impl ValidatorFactory for SimpleValidatorFactory {
 
         Arc::new(validator)
     }
+
+    fn policy(&self, network: Network) -> Box<dyn Policy> {
+        Box::new(self.policy.clone().unwrap_or_else(|| make_simple_policy(network)))
+    }
 }
 
 /// A simple policy to configure a SimpleValidator
@@ -104,6 +109,8 @@ pub struct SimplePolicy {
     pub dev_flags: Option<PolicyDevFlags>,
     /// Policy filter
     pub filter: PolicyFilter,
+    /// Global velocity control specification
+    pub global_velocity_control: VelocityControlSpec,
 }
 
 impl Policy for SimplePolicy {
@@ -116,6 +123,10 @@ impl Policy for SimplePolicy {
             warn!("BACKTRACE:\n{:?}", backtrace::Backtrace::new());
             Ok(())
         }
+    }
+
+    fn global_velocity_control(&self) -> VelocityControlSpec {
+        self.global_velocity_control
     }
 }
 
@@ -1749,6 +1760,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_routing_fee_msat: 10000,
             dev_flags: None,
             filter: PolicyFilter::default(),
+            global_velocity_control: VelocityControlSpec::UNLIMITED,
         }
     } else {
         SimplePolicy {
@@ -1767,6 +1779,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_routing_fee_msat: 10000,
             dev_flags: None,
             filter: PolicyFilter::default(),
+            global_velocity_control: VelocityControlSpec::UNLIMITED,
         }
     }
 }
@@ -1798,6 +1811,7 @@ mod tests {
             max_routing_fee_msat: 10000,
             dev_flags: None,
             filter: PolicyFilter::default(),
+            global_velocity_control: VelocityControlSpec::UNLIMITED,
         };
 
         SimpleValidator {

@@ -6,6 +6,9 @@ pub mod multi_signer;
 /// Derivation styles
 pub mod derive;
 
+#[cfg(feature = "std")]
+use alloc::sync::Arc;
+
 /// A factory for entropy generation (often using the precise real time)
 pub trait StartingTimeFactory: Send + Sync {
     /// Generate unique entropy
@@ -33,7 +36,7 @@ impl StartingTimeFactory for ClockStartingTimeFactory {
 #[cfg(feature = "std")]
 impl ClockStartingTimeFactory {
     /// Create a ClockStartingTimeFactory
-    pub fn new() -> Box<dyn StartingTimeFactory> {
-        Box::new(ClockStartingTimeFactory {})
+    pub fn new() -> Arc<dyn StartingTimeFactory> {
+        Arc::new(ClockStartingTimeFactory {})
     }
 }

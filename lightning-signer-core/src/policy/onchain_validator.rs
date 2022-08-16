@@ -12,6 +12,7 @@ use crate::policy::Policy;
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
+use crate::util::velocity::VelocityControlSpec;
 use crate::wallet::Wallet;
 
 extern crate scopeguard;
@@ -43,6 +44,10 @@ impl ValidatorFactory for OnchainValidatorFactory {
         };
         Arc::new(validator)
     }
+
+    fn policy(&self, network: Network) -> Box<dyn Policy> {
+        self.inner_factory.policy(network)
+    }
 }
 
 /// An on-chain validator, subsumes the policy checks of SimpleValidator
@@ -59,6 +64,10 @@ pub struct OnchainPolicy {
 impl Policy for OnchainPolicy {
     fn policy_error(&self, _tag: String, msg: String) -> Result<(), ValidationError> {
         return Err(policy_error(msg));
+    }
+
+    fn global_velocity_control(&self) -> VelocityControlSpec {
+        VelocityControlSpec::UNLIMITED
     }
 }
 

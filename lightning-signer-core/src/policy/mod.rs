@@ -14,10 +14,13 @@ pub mod simple_validator;
 pub mod validator;
 
 use crate::prelude::*;
+use crate::util::velocity::VelocityControlSpec;
 
 /// An enforcement policy
 pub trait Policy {
     /// A policy error has occured.
     /// Policy errors can be converted to warnings by returning `Ok(())`
     fn policy_error(&self, _tag: String, msg: String) -> Result<(), error::ValidationError>;
+    /// Velocity control to apply to the entire node
+    fn global_velocity_control(&self) -> VelocityControlSpec;
 }
