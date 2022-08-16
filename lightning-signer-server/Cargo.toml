@@ -12,14 +12,16 @@ rust-version = "1.58.0"
 build = "build.rs"
 
 [features]
-default = ["log_pretty_print"]
+default = ["debug"]
 grpc = ["tokio", "tonic", "prost", "serde", "serde_json", "lightning-signer-core/grpc"]
 persist_kv_json = [ "kv", "persist" ]
 persist = [ "serde", "serde_json", "serde_with", "lightning-signer-core/serde" ]
-log_pretty_print = []
 test_utils = ["lightning-signer-core/test_utils"]
 frontend = ["vls-frontend"]
 secp-lowmemory = ["lightning-signer-core/secp-lowmemory"]
+use_backtrace = ["lightning-signer-core/use_backtrace"]
+debug = ["log_pretty_print", "lightning-signer-core/debug"]
+log_pretty_print = []
 
 [lib]
 name = "lightning_signer_server"
@@ -29,7 +31,7 @@ path = "src/lib.rs"
 anyhow = "1.0"
 log = { version="0.4.14", features = [ "std" ] }
 time = "0.2"
-lightning-signer-core = { path = "../lightning-signer-core", features = ["debug"] }
+lightning-signer-core = { path = "../lightning-signer-core" }
 vls-frontend = { path = "../vls-frontend", optional = true }
 hex = "0.3.2"
 kv = { version = "0.22.0", features = ["json-value"], optional = true }
@@ -54,4 +56,4 @@ tonic-build = "0.6"
 [[bin]]
 name = "persist_test"
 path = "src/persist_test_main.rs"
-required-features = ["persist_kv_json", "test_utils", "lightning-signer-core/use_backtrace"]
+required-features = ["persist_kv_json", "test_utils"]

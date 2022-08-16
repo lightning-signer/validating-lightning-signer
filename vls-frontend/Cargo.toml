@@ -11,9 +11,10 @@ readme = "../README.md"
 rust-version = "1.45.2"
 
 [features]
-default = ["log_pretty_print"]
-log_pretty_print = []
+default = ["debug"]
 test_utils = ["lightning-signer-core/test_utils"]
+debug = ["log_pretty_print"]
+log_pretty_print = []
 
 [lib]
 name = "vls_frontend"
