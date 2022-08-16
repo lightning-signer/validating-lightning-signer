@@ -31,7 +31,6 @@ log = { version="0.4.14", features = [ "std" ] }
 time = "0.2"
 lightning-signer-core = { path = "../lightning-signer-core", features = ["debug"] }
 vls-frontend = { path = "../vls-frontend", optional = true }
-backtrace = "0.3"
 hex = "0.3.2"
 kv = { version = "0.22.0", features = ["json-value"], optional = true }
 tonic = { version = "0.6", optional = true }
