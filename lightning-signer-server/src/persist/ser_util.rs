@@ -3,8 +3,10 @@
 //! Structs ending with `Entry` are local types that require a manual
 //! transformation from the remote type - implemented via `From` / `Into`.
 
+use core::time::Duration;
 use std::borrow::Cow;
 use std::collections::BTreeSet as Set;
+use std::fmt::Formatter;
 
 use crate::lightning;
 use bitcoin::hashes::Hash;
@@ -14,6 +16,8 @@ use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
 use lightning::util::ser::Writer;
 use lightning_signer::chain::tracker::ListenSlot;
+use serde::de::SeqAccess;
+use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::serde_as;
 use serde_with::{DeserializeAs, SerializeAs};
@@ -21,6 +25,7 @@ use serde_with::{DeserializeAs, SerializeAs};
 use lightning_signer::bitcoin;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::monitor::State as ChainMonitorState;
+use lightning_signer::node::InvoiceState;
 use lightning_signer::policy::validator::EnforcementState;
 use lightning_signer::tx::tx::{CommitmentInfo2, HTLCInfo2};
 
@@ -480,6 +485,85 @@ impl<'de> DeserializeAs<'de, ChainMonitorState> for ChainMonitorStateDef {
         D: Deserializer<'de>,
     {
         ChainMonitorStateHelper::deserialize(deserializer).map(|h| h.0)
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct DurationHandler;
+
+impl SerializeAs<Duration> for DurationHandler {
+    fn serialize_as<S>(value: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(2))?;
+        seq.serialize_element(&value.as_secs())?;
+        seq.serialize_element(&value.subsec_nanos())?;
+        seq.end()
+    }
+}
+
+struct DurationVisitor;
+
+impl<'de> serde::de::Visitor<'de> for DurationVisitor {
+    type Value = Duration;
+
+    fn expecting(&self, fmt: &mut Formatter) -> std::fmt::Result {
+        fmt.write_str("tuple")
+    }
+
+    fn visit_seq<V>(self, mut seq: V) -> Result<Duration, V::Error>
+    where
+        V: SeqAccess<'de>,
+    {
+        let secs = seq.next_element()?.ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+        let nanos =
+            seq.next_element()?.ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+        Ok(Duration::new(secs, nanos))
+    }
+}
+
+impl<'de> DeserializeAs<'de, Duration> for DurationHandler {
+    fn deserialize_as<D>(deserializer: D) -> Result<Duration, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(DurationVisitor)
+    }
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(remote = "InvoiceState")]
+pub struct InvoiceStateDef {
+    pub invoice_hash: [u8; 32],
+    pub amount_msat: u64,
+    pub payee: PublicKey,
+    #[serde_as(as = "DurationHandler")]
+    pub duration_since_epoch: Duration,
+    #[serde_as(as = "DurationHandler")]
+    pub expiry_duration: Duration,
+    pub is_fulfilled: bool,
+}
+
+#[derive(Deserialize)]
+struct InvoiceStateHelper(#[serde(with = "InvoiceStateDef")] InvoiceState);
+
+impl SerializeAs<InvoiceState> for InvoiceStateDef {
+    fn serialize_as<S>(value: &InvoiceState, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        InvoiceStateDef::serialize(value, serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, InvoiceState> for InvoiceStateDef {
+    fn deserialize_as<D>(deserializer: D) -> Result<InvoiceState, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        InvoiceStateHelper::deserialize(deserializer).map(|h| h.0)
     }
 }
 

@@ -58,8 +58,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
     ) {
         let key = node_id.serialize().to_vec();
         assert!(!self.node_bucket.contains(key.clone()).unwrap());
-        let state_entry =
-            NodeStateEntry { velocity_control: state.velocity_control.clone().into() };
+        let state_entry = state.into();
         self.node_state_bucket.set(key.clone(), Json(state_entry)).expect("insert node state");
         self.node_state_bucket.flush().expect("flush state");
         let entry = NodeEntry {
@@ -73,8 +72,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
 
     fn update_node(&self, node_id: &PublicKey, state: &CoreNodeState) -> Result<(), ()> {
         let key = node_id.serialize().to_vec();
-        let state_entry =
-            NodeStateEntry { velocity_control: state.velocity_control.clone().into() };
+        let state_entry = state.into();
         self.node_state_bucket.set(key, Json(state_entry)).expect("insert node state");
         self.node_state_bucket.flush().expect("flush state");
         Ok(())
@@ -172,7 +170,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
     ) -> Result<CoreChannelEntry, ()> {
         let id = NodeChannelId::new(node_id, channel_id);
         let value = self.channel_bucket.get(id).unwrap().ok_or_else(|| ())?;
-        let entry = CoreChannelEntry::from(value.0);
+        let entry = value.0.into();
         Ok(entry)
     }
 
@@ -181,7 +179,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
         for item_res in self.channel_bucket.iter_prefix(NodeChannelId::new_prefix(node_id)) {
             let item = item_res.unwrap();
             let value: Json<ChannelEntry> = item.value().unwrap();
-            let entry = CoreChannelEntry::from(value.0);
+            let entry = value.0.into();
             let key: NodeChannelId = item.key().unwrap();
             res.push((key.channel_id(), entry));
         }

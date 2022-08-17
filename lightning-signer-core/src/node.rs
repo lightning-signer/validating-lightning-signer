@@ -71,6 +71,7 @@ pub struct NodeConfig {
 }
 
 /// Invoice payment details and payment state
+#[derive(Clone)]
 pub struct InvoiceState {
     /// The hash of the invoice, as a unique ID
     pub invoice_hash: [u8; 32],
