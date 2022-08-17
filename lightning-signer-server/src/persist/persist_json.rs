@@ -6,7 +6,7 @@ use lightning_signer::chain::tracker::ChainTracker;
 
 use lightning_signer::channel::{Channel, ChannelId, ChannelStub};
 use lightning_signer::monitor::ChainMonitor;
-use lightning_signer::node::NodeConfig;
+use lightning_signer::node::{NodeConfig, NodeState as CoreNodeState};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
@@ -14,13 +14,14 @@ use lightning_signer::persist::Persist;
 use lightning_signer::policy::validator::EnforcementState;
 use log::error;
 
-use crate::persist::model::ChainTrackerEntry;
 use crate::persist::model::NodeChannelId;
 use crate::persist::model::{AllowlistItemEntry, ChannelEntry, NodeEntry};
+use crate::persist::model::{ChainTrackerEntry, NodeStateEntry};
 
 /// A persister that uses the kv crate and JSON serialization for values.
 pub struct KVJsonPersister<'a> {
     pub node_bucket: Bucket<'a, Vec<u8>, Json<NodeEntry>>,
+    pub node_state_bucket: Bucket<'a, Vec<u8>, Json<NodeStateEntry>>,
     pub channel_bucket: Bucket<'a, NodeChannelId, Json<ChannelEntry>>,
     pub allowlist_bucket: Bucket<'a, Vec<u8>, Json<AllowlistItemEntry>>,
     pub chain_tracker_bucket: Bucket<'a, Vec<u8>, Json<ChainTrackerEntry>>,
@@ -31,18 +32,36 @@ impl KVJsonPersister<'_> {
         let cfg = Config::new(path);
         let store = Store::new(cfg).expect("create store");
         let node_bucket = store.bucket(Some("nodes")).expect("create node bucket");
+        let node_state_bucket =
+            store.bucket(Some("node_states")).expect("create node state bucket");
         let channel_bucket = store.bucket(Some("channels")).expect("create channel bucket");
         let allowlist_bucket = store.bucket(Some("allowlists")).expect("create allowlist bucket");
         let chain_tracker_bucket =
             store.bucket(Some("chain_tracker")).expect("create chain tracker bucket");
-        Self { node_bucket, channel_bucket, allowlist_bucket, chain_tracker_bucket }
+        Self {
+            node_bucket,
+            node_state_bucket,
+            channel_bucket,
+            allowlist_bucket,
+            chain_tracker_bucket,
+        }
     }
 }
 
 impl<'a> Persist for KVJsonPersister<'a> {
-    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8]) {
+    fn new_node(
+        &self,
+        node_id: &PublicKey,
+        config: &NodeConfig,
+        state: &CoreNodeState,
+        seed: &[u8],
+    ) {
         let key = node_id.serialize().to_vec();
         assert!(!self.node_bucket.contains(key.clone()).unwrap());
+        let state_entry =
+            NodeStateEntry { velocity_control: state.velocity_control.clone().into() };
+        self.node_state_bucket.set(key.clone(), Json(state_entry)).expect("insert node state");
+        self.node_state_bucket.flush().expect("flush state");
         let entry = NodeEntry {
             seed: seed.to_vec(),
             key_derivation_style: config.key_derivation_style as u8,
@@ -50,6 +69,15 @@ impl<'a> Persist for KVJsonPersister<'a> {
         };
         self.node_bucket.set(key, Json(entry)).expect("insert node");
         self.node_bucket.flush().expect("flush");
+    }
+
+    fn update_node(&self, node_id: &PublicKey, state: &CoreNodeState) -> Result<(), ()> {
+        let key = node_id.serialize().to_vec();
+        let state_entry =
+            NodeStateEntry { velocity_control: state.velocity_control.clone().into() };
+        self.node_state_bucket.set(key, Json(state_entry)).expect("insert node state");
+        self.node_state_bucket.flush().expect("flush state");
+        Ok(())
     }
 
     fn delete_node(&self, node_id: &PublicKey) {
@@ -188,8 +216,27 @@ impl<'a> Persist for KVJsonPersister<'a> {
         let mut res = Vec::new();
         for item_res in self.node_bucket.iter() {
             let item = item_res.unwrap();
-            let value: Json<NodeEntry> = item.value().unwrap();
-            let entry = CoreNodeEntry::from(value.0);
+            let key: Vec<u8> = item.key().unwrap();
+            let e_j: Json<NodeEntry> = item.value().unwrap();
+            let e = e_j.0;
+            let state_e_j: Json<NodeStateEntry> = self.node_state_bucket.get(key).unwrap().unwrap();
+            let state_e = state_e_j.0;
+
+            let state = CoreNodeState {
+                invoices: Default::default(),
+                issued_invoices: Default::default(),
+                payments: Default::default(),
+                excess_amount: 0,
+                log_prefix: "".to_string(),
+                velocity_control: state_e.velocity_control.into(),
+            };
+            let entry = CoreNodeEntry {
+                seed: e.seed,
+                key_derivation_style: e.key_derivation_style,
+                network: e.network,
+                state,
+            };
+
             let key: Vec<u8> = item.key().unwrap();
             res.push((PublicKey::from_slice(key.as_slice()).unwrap(), entry));
         }
@@ -246,7 +293,7 @@ mod tests {
         let (temp_dir, path) = {
             let (persister, temp_dir, path) = make_temp_persister();
             let persister: Arc<dyn Persist> = Arc::new(persister);
-            persister.new_node(&node_id, &TEST_NODE_CONFIG, &seed);
+            persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &seed);
             persister.new_chain_tracker(&node_id, &node.get_tracker());
             persister.new_channel(&node_id, &stub).unwrap();
 

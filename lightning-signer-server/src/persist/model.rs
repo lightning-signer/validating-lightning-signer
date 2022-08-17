@@ -18,15 +18,49 @@ use lightning_signer::channel::ChannelId;
 use lightning_signer::channel::ChannelSetup;
 use lightning_signer::monitor::ChainMonitor;
 use lightning_signer::monitor::State as ChainMonitorState;
-use lightning_signer::persist::model::{
-    ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
-};
+use lightning_signer::persist::model::ChannelEntry as CoreChannelEntry;
 use lightning_signer::policy::validator::EnforcementState;
+use lightning_signer::util::velocity::VelocityControl as CoreVelocityControl;
 
 use super::ser_util::{
     ChainMonitorStateDef, ChannelIdHandler, ChannelSetupDef, EnforcementStateDef, ListenSlotDef,
     OutPointDef,
 };
+
+#[derive(Serialize, Deserialize)]
+pub struct VelocityControl {
+    pub start_sec: u64,
+    pub bucket_interval: u32,
+    pub buckets: Vec<u64>,
+    pub limit: u64,
+}
+
+impl From<VelocityControl> for CoreVelocityControl {
+    fn from(v: VelocityControl) -> Self {
+        CoreVelocityControl {
+            start_sec: v.start_sec,
+            bucket_interval: v.bucket_interval,
+            buckets: v.buckets,
+            limit: v.limit,
+        }
+    }
+}
+
+impl From<CoreVelocityControl> for VelocityControl {
+    fn from(v: CoreVelocityControl) -> Self {
+        VelocityControl {
+            start_sec: v.start_sec,
+            bucket_interval: v.bucket_interval,
+            buckets: v.buckets,
+            limit: v.limit,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct NodeStateEntry {
+    pub velocity_control: VelocityControl,
+}
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
@@ -35,16 +69,6 @@ pub struct NodeEntry {
     pub seed: Vec<u8>,
     pub key_derivation_style: u8,
     pub network: String,
-}
-
-impl From<NodeEntry> for CoreNodeEntry {
-    fn from(e: NodeEntry) -> Self {
-        CoreNodeEntry {
-            seed: e.seed,
-            key_derivation_style: e.key_derivation_style,
-            network: e.network,
-        }
-    }
 }
 
 #[serde_as]

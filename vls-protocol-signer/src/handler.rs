@@ -129,7 +129,7 @@ impl RootHandler {
             let node = Arc::new(Node::new(config, &seed, vec![], services));
             info!("New node {}", node.get_id());
             node.add_allowlist(&allowlist).expect("allowlist");
-            persister.new_node(&node.get_id(), &config, &seed);
+            persister.new_node(&node.get_id(), &config, &*node.get_state(), &seed);
             persister.new_chain_tracker(&node.get_id(), &node.get_tracker());
             node
         } else {

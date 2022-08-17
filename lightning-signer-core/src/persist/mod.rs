@@ -3,7 +3,7 @@ use bitcoin::secp256k1::PublicKey;
 
 use crate::channel::{Channel, ChannelId, ChannelStub};
 use crate::monitor::ChainMonitor;
-use crate::node::NodeConfig;
+use crate::node::{NodeConfig, NodeState};
 use crate::prelude::*;
 
 /// Models for persistence
@@ -15,9 +15,12 @@ pub mod model;
 /// The persister should durably persist before returning, for safety.
 pub trait Persist: Sync + Send {
     /// Create a new node
-    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8]);
+    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &NodeState, seed: &[u8]);
+    /// Update node enforcement state
+    fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), ()>;
     /// Delete a node and all of its channels.  Used in test mode.
     fn delete_node(&self, node_id: &PublicKey);
+
     /// Will error if exists
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()>;
 
@@ -60,7 +63,11 @@ pub struct DummyPersister;
 
 #[allow(unused_variables)]
 impl Persist for DummyPersister {
-    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, seed: &[u8]) {}
+    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &NodeState, seed: &[u8]) {}
+
+    fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), ()> {
+        Ok(())
+    }
 
     fn delete_node(&self, node_id: &PublicKey) {}
 
