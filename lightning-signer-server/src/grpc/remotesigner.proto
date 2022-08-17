@@ -207,6 +207,10 @@ service Signer {
   // BOLT #?? - Sign Message
   rpc SignMessage (SignMessageRequest)
     returns (RecoverableNodeSignatureReply);
+
+  // BOLT #?? - Derive Secret
+  rpc DeriveSecret (DeriveSecretRequest)
+    returns (DeriveSecretReply);
 }
 
 service Version {
@@ -653,6 +657,17 @@ message ECDHRequest {
 
 message ECDHReply {
   Secret shared_secret = 1; // 32 bytes
+}
+
+// Derive pseudorandom secret from a derived key
+message DeriveSecretRequest {
+  NodeId node_id = 1;
+
+  bytes info = 2;
+}
+
+message DeriveSecretReply {
+  Secret secret = 1; // 32 bytes
 }
 
 // Sign an invoice with the node secret key

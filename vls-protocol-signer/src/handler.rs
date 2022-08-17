@@ -43,7 +43,7 @@ use vls_protocol::model::{
     Basepoints, BitcoinSignature, BlockHash, ExtKey, Htlc, OutPoint as ModelOutPoint, PubKey,
     PubKey32, RecoverableSignature, Secret, Signature, TxId,
 };
-use vls_protocol::msgs::{SerBolt, SignBolt12Reply};
+use vls_protocol::msgs::{DeriveSecretReply, SerBolt, SignBolt12Reply};
 use vls_protocol::serde_bolt::{LargeBytes, WireString};
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 
@@ -179,6 +179,12 @@ impl Handler for RootHandler {
                     tweak,
                 )?;
                 Ok(Box::new(SignBolt12Reply { signature: Signature(sig.as_ref().clone()) }))
+            }
+            Message::DeriveSecret(m) => {
+                let secret = self.node.derive_secret(&m.info);
+                Ok(Box::new(DeriveSecretReply {
+                    secret: Secret(secret[..].try_into().expect("secret")),
+                }))
             }
             Message::SignMessage(m) => {
                 let sig = self.node.sign_message(&m.message)?;

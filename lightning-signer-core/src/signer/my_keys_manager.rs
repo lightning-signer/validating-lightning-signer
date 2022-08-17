@@ -207,6 +207,14 @@ impl MyKeysManager {
         Ok(self.secp_ctx.sign_schnorr_no_aux_rand(&msg, &kp))
     }
 
+    /// Derive pseudorandom secret from a derived key
+    pub fn derive_secret(&self, info: &[u8]) -> SecretKey {
+        // The derived_secrets_base could be precomputed at node startup time.
+        let derived_secrets_base = hkdf_sha256(&self.seed, "derived secrets".as_bytes(), &[]);
+        let derived_secret = hkdf_sha256(&derived_secrets_base, info, &[]);
+        SecretKey::from_slice(&derived_secret).expect("SecretKey")
+    }
+
     /// Get the layer-1 xpub
     pub fn get_account_extended_key(&self) -> &ExtendedPrivKey {
         &self.account_extended_key

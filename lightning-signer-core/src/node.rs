@@ -700,6 +700,11 @@ impl Node {
             .map_err(|_| internal_error("signature operation failed"))
     }
 
+    /// derive secret
+    pub fn derive_secret(&self, info: &[u8]) -> SecretKey {
+        self.keys_manager.derive_secret(info)
+    }
+
     /// Set the node's validator factory
     pub fn set_validator_factory(&self, validator_factory: Arc<dyn ValidatorFactory>) {
         let mut vfac = self.validator_factory.lock().unwrap();

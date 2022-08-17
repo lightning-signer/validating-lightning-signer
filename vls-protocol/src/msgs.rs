@@ -190,6 +190,20 @@ pub struct SignBolt12Reply {
     pub signature: Signature,
 }
 
+/// DeriveSecret
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(27)]
+pub struct DeriveSecret {
+    pub info: Vec<u8>,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(127)]
+pub struct DeriveSecretReply {
+    pub secret: Secret,
+}
+
 /// Sign channel update
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(3)]
@@ -626,6 +640,8 @@ pub enum Message {
     CheckFutureSecretReply(CheckFutureSecretReply),
     SignBolt12(SignBolt12),
     SignBolt12Reply(SignBolt12Reply),
+    DeriveSecret(DeriveSecret),
+    DeriveSecretReply(DeriveSecretReply),
     SignMessage(SignMessage),
     SignMessageReply(SignMessageReply),
     SignChannelUpdate(SignChannelUpdate),

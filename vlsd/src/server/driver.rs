@@ -1226,6 +1226,22 @@ impl Signer for SignServer {
         Ok(Response::new(reply))
     }
 
+    async fn derive_secret(
+        &self,
+        request: Request<DeriveSecretRequest>,
+    ) -> Result<Response<DeriveSecretReply>, Status> {
+        let req = request.into_inner();
+        let node_id = self.node_id(req.node_id.clone())?;
+        log_req_enter!(&node_id, &req);
+
+        let node = self.signer.get_node(&node_id)?;
+        let secret = node.derive_secret(&req.info);
+        let reply = DeriveSecretReply { secret: Some(secret.into()) };
+
+        log_req_reply!(&node_id, &reply);
+        Ok(Response::new(reply))
+    }
+
     async fn sign_counterparty_commitment_tx_phase2(
         &self,
         request: Request<SignCounterpartyCommitmentTxPhase2Request>,

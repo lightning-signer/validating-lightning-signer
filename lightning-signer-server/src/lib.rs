@@ -19,4 +19,4 @@ mod util;
 
 pub const SERVER_APP_NAME: &str = "vlsd";
 pub const CLIENT_APP_NAME: &str = "vls-cli";
-pub const NETWORK_NAMES: [&str; 3] = ["testnet", "regtest", "signet"];
+pub const NETWORK_NAMES: [&str; 4] = ["testnet", "regtest", "signet", "bitcoin"];
