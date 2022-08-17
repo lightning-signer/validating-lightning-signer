@@ -903,7 +903,6 @@ version = "0.1.0-5"
 dependencies = [
  "anyhow",
  "async-trait",
- "backtrace",
  "env_logger",
  "hex 0.3.2",
  "kv",

@@ -11,16 +11,17 @@ readme = "../README.md"
 rust-version = "1.58.0"
 
 [features]
-default = ["log_pretty_print", "frontend"]
-log_pretty_print = []
+default = ["debug", "frontend"]
 test_utils = ["lightning-signer-core/test_utils"]
 frontend = ["vls-frontend"]
+debug = ["log_pretty_print"]
+log_pretty_print = []
 
 [dependencies]
 anyhow = "1.0"
 log = { version="0.4.14", features = [ "std" ] }
 time = "0.2"
-lightning-signer-core = { path = "../lightning-signer-core", features = ["debug", "grpc"] }
+lightning-signer-core = { path = "../lightning-signer-core", features = ["debug", "grpc", "use_backtrace"] }
 lightning-signer-server = { path = "../lightning-signer-server", features = ["persist", "grpc", "persist_kv_json", "frontend"] }
 vls-frontend = { path = "../vls-frontend", optional = true }
 bitcoind-client = { path = "../bitcoind-client" }

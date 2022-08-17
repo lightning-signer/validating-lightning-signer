@@ -7,12 +7,13 @@ build = "build.rs"
 
 [features]
 
-default = ["grpc", "main"]
+default = ["grpc", "main", "debug"]
 grpc = ["tokio", "tokio-stream", "tonic", "prost", "async-stream", "url"]
 main = ["clap", "clap_derive", "ctrlc", "fern"]
+debug = ["lightning-signer-core/debug"]
 
 [dependencies]
-lightning-signer-core = { path = "../lightning-signer-core" }
+lightning-signer-core = { path = "../lightning-signer-core", features = ["use_backtrace"] }
 vls-protocol-signer = { path = "../vls-protocol-signer" }
 vls-protocol-client = { path = "../vls-protocol-client" }
 vls-protocol = { path = "../vls-protocol" }
@@ -42,7 +43,7 @@ url = { version = "2.2", optional = true }
 [dependencies.lightning-signer-server]
 path = "../lightning-signer-server"
 default_features = false
-features = ["frontend", "persist_kv_json"]
+features = ["frontend", "persist_kv_json", "debug"]
 
 [build-dependencies]
 tonic-build = "0.6.2"

@@ -18,10 +18,11 @@ use cortex_m_rt::entry;
 #[allow(unused_imports)]
 use log::{debug, info, trace};
 
+use crate::lightning_signer::util::clock::ManualClock;
 use device::heap_bytes_used;
 use lightning_signer::bitcoin::Network;
-use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::node::NodeServices;
+use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 use lightning_signer::Arc;
 use random_starting_time::RandomStartingTimeFactory;
@@ -31,7 +32,6 @@ use vls_protocol::serde_bolt::WireString;
 use vls_protocol_signer::handler::{Handler, RootHandler};
 use vls_protocol_signer::lightning_signer;
 use vls_protocol_signer::vls_protocol;
-use crate::lightning_signer::util::clock::ManualClock;
 
 mod device;
 mod logger;
@@ -76,12 +76,7 @@ fn main() -> ! {
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
     let clock = Arc::new(ManualClock::new(Duration::ZERO));
 
-    let services = NodeServices {
-        validator_factory,
-        starting_time_factory,
-        persister,
-        clock,
-    };
+    let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
 
     let (sequence, dbid) = read_serial_request_header(&mut serial).expect("read init header");
     assert_eq!(dbid, 0);
@@ -92,8 +87,7 @@ fn main() -> ! {
     let allowlist = init.dev_allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
     let seed_opt = init.dev_seed.as_ref().map(|s| s.0);
     let network = Network::Regtest; // TODO - get from config/args/env somehow
-    let root_handler =
-        RootHandler::new(network, 0, seed_opt, allowlist, services);
+    let root_handler = RootHandler::new(network, 0, seed_opt, allowlist, services);
     let init_reply = root_handler.handle(Message::HsmdInit2(init)).expect("handle init");
     write_serial_response_header(&mut serial, sequence).expect("write init header");
     msgs::write_vec(&mut serial, init_reply.as_vec()).expect("write init reply");

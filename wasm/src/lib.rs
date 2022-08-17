@@ -18,10 +18,10 @@ use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::signer::StartingTimeFactory;
+use lightning_signer::util::clock::ManualClock;
 use lightning_signer::util::key_utils::make_test_key;
 use lightning_signer::Arc;
 use lightning_signer::{bitcoin, lightning};
-use lightning_signer::util::clock::ManualClock;
 
 use crate::console_log::setup_log;
 use crate::utils::set_panic_hook;
@@ -267,14 +267,8 @@ pub fn make_node() -> JSNode {
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
     let clock = Arc::new(ManualClock::new(Duration::ZERO));
-    let services = NodeServices {
-        validator_factory,
-        starting_time_factory,
-        persister,
-        clock,
-    };
-    let node =
-        Node::new(config, &seed, vec![], services);
+    let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
+    let node = Node::new(config, &seed, vec![], services);
     JSNode { node: Arc::new(node) }
 }
 

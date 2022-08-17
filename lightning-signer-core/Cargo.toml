@@ -12,7 +12,7 @@ rust-version = "1.45.2"
 
 [features]
 
-default = ["std", "env_logger", "log_pretty_print"]
+default = ["std", "env_logger", "debug"]
 
 no-std = ["lightning/no-std", "lightning-invoice/no-std", "bitcoin/no-std", "core2/alloc"]
 std = ["lightning/std", "lightning-invoice/std", "bitcoin/std", "bitcoin/rand", "rand"]
@@ -23,9 +23,11 @@ secp-lowmemory = ["bitcoin/secp-lowmemory"]
 grpc = ["tonic"]
 
 # Turn this feature on to run `cargo test`, which launches the functional tests
-test_utils = ["lightning/_test_utils", "lightning/unsafe_revoked_tx_signing", "bitcoin/bitcoinconsensus"]
+test_utils = ["use_backtrace", "lightning/_test_utils", "lightning/unsafe_revoked_tx_signing", "bitcoin/bitcoinconsensus"]
 
-debug = ["backtrace"]
+debug = ["log_pretty_print", "debug_enforcement_state"]
+
+use_backtrace = ["backtrace"]
 
 log_pretty_print = []
 
@@ -84,8 +86,9 @@ default-features = false
 [[bin]]
 name = "example_main"
 path = "src/example_main.rs"
+required-features = ["use_backtrace"]
 
 [[test]]
 name = "functional_test"
 path = "tests/functional_test.rs"
-required-features = ["test_utils"]
+required-features = ["test_utils", "use_backtrace"]

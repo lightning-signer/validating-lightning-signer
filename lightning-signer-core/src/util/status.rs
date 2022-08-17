@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use core::fmt;
 
-#[cfg(feature = "backtrace")]
+#[cfg(feature = "use_backtrace")]
 use backtrace::Backtrace;
 use log::error;
 
@@ -103,7 +103,7 @@ impl From<Status> for tonic::Status {
 pub fn invalid_argument(msg: impl Into<String>) -> Status {
     let s = msg.into();
     error!("INVALID ARGUMENT: {}", &s);
-    #[cfg(feature = "backtrace")]
+    #[cfg(feature = "use_backtrace")]
     error!("BACKTRACE:\n{:?}", Backtrace::new());
     Status::invalid_argument(s)
 }
@@ -111,7 +111,7 @@ pub fn invalid_argument(msg: impl Into<String>) -> Status {
 pub(crate) fn internal_error(msg: impl Into<String>) -> Status {
     let s = msg.into();
     error!("INTERNAL ERROR: {}", &s);
-    #[cfg(feature = "backtrace")]
+    #[cfg(feature = "use_backtrace")]
     error!("BACKTRACE:\n{:?}", Backtrace::new());
     Status::internal(s)
 }
@@ -128,7 +128,7 @@ impl From<ValidationError> for Status {
     fn from(ve: ValidationError) -> Self {
         let s: String = ve.clone().into();
         error!("FAILED PRECONDITION: {}", &s);
-        #[cfg(feature = "backtrace")]
+        #[cfg(feature = "use_backtrace")]
         error!("BACKTRACE:\n{:?}", &ve.resolved_backtrace());
         Status::failed_precondition(s)
     }
