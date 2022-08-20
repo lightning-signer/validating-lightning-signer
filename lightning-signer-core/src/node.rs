@@ -606,14 +606,17 @@ impl Node {
         allowlist: Vec<Allowable>,
         services: NodeServices,
     ) -> Node {
+        let tracker = Self::make_tracker(node_config);
+
+        Self::new_extended(node_config, seed, allowlist, tracker, services)
+    }
+
+    pub(crate) fn make_tracker(node_config: NodeConfig) -> ChainTracker<ChainMonitor> {
         info!("creating node on {}", node_config.network);
         let genesis = genesis_block(node_config.network);
 
         // TODO supply current tip
-        let tracker =
-            ChainTracker::new(node_config.network, 0, genesis.header).expect("bad  chain tip");
-
-        Self::new_extended(node_config, seed, allowlist, tracker, services)
+        ChainTracker::new(node_config.network, 0, genesis.header).expect("bad  chain tip")
     }
 
     /// Create a node

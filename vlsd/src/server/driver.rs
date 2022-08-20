@@ -351,10 +351,10 @@ impl Signer for SignServer {
             .map_err(|e| invalid_grpc_argument(e.to_string()))?;
 
         let node_id = if hsm_secret.len() == 0 {
-            self.signer.new_node(node_config)
+            self.signer.new_node(node_config)?
         } else {
             if req.coldstart {
-                self.signer.new_node_from_seed(node_config, hsm_secret)?
+                self.signer.new_node_with_seed(node_config, hsm_secret)?
             } else {
                 self.signer.warmstart_with_seed(node_config, hsm_secret)?
             }

@@ -1,10 +1,10 @@
+use crate::chain::tracker::ChainTracker;
 use bitcoin;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::OutPoint;
 #[cfg(feature = "std")]
 use rand::{OsRng, Rng};
 
-use crate::chain::tracker::ChainTracker;
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSlot};
 use crate::monitor::ChainMonitor;
 use crate::node::{Node, NodeConfig, NodeServices};
@@ -55,63 +55,32 @@ impl MultiSigner {
 
     /// Create a node with a random seed
     #[cfg(feature = "std")]
-    pub fn new_node(&self, node_config: NodeConfig) -> PublicKey {
+    pub fn new_node(&self, node_config: NodeConfig) -> Result<PublicKey, Status> {
         let mut rng = OsRng::new().unwrap();
 
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);
-
-        let node = Node::new(node_config, &seed, vec![], self.services.clone());
-        let node_id = node.get_id();
-        let mut nodes = self.nodes.lock().unwrap();
-        node.add_allowlist(&self.initial_allowlist).expect("valid initialallowlist");
-        self.persister.new_node(&node_id, &node_config, &*node.get_state(), &seed);
-        self.persister.new_chain_tracker(&node_id, &node.get_tracker());
-        nodes.insert(node_id, Arc::new(node));
-        node_id
-    }
-
-    /// Create a node with a random seed, given extended initialization parameters
-    #[cfg(feature = "std")]
-    pub fn new_node_extended(
-        &self,
-        node_config: NodeConfig,
-        tracker: ChainTracker<ChainMonitor>,
-        services: NodeServices,
-    ) -> PublicKey {
-        let mut rng = OsRng::new().unwrap();
-
-        let mut seed = [0; 32];
-        rng.fill_bytes(&mut seed);
-
-        self.new_node_with_seed(node_config, tracker, services, seed)
+        self.new_node_with_seed(node_config, &seed)
     }
 
     /// New node with externally supplied cryptographic seed
     pub fn new_node_with_seed(
         &self,
         node_config: NodeConfig,
-        tracker: ChainTracker<ChainMonitor>,
-        services: NodeServices,
-        seed: [u8; 32],
-    ) -> PublicKey {
-        let node = Node::new_extended(node_config, &seed, vec![], tracker, services);
-        let node_id = node.get_id();
-        let mut nodes = self.nodes.lock().unwrap();
-        node.add_allowlist(&self.initial_allowlist).expect("valid initialallowlist");
-        self.persister.new_node(&node_id, &node_config, &*node.get_state(), &seed);
-        self.persister.new_chain_tracker(&node_id, &node.get_tracker());
-        nodes.insert(node_id, Arc::new(node));
-        node_id
+        seed: &[u8],
+    ) -> Result<PublicKey, Status> {
+        let tracker = Node::make_tracker(node_config.clone());
+        self.new_node_with_seed_and_tracker(node_config, seed, tracker)
     }
 
-    /// Create a node with a specific seed
-    pub fn new_node_from_seed(
+    /// New node with externally supplied cryptographic seed and chain tracker
+    pub fn new_node_with_seed_and_tracker(
         &self,
         node_config: NodeConfig,
         seed: &[u8],
+        tracker: ChainTracker<ChainMonitor>,
     ) -> Result<PublicKey, Status> {
-        let node = Node::new(node_config, &seed, vec![], self.services.clone());
+        let node = Node::new_extended(node_config, &seed, vec![], tracker, self.services.clone());
         let node_id = node.get_id();
         let mut nodes = self.nodes.lock().unwrap();
         if self.test_mode {
@@ -125,7 +94,7 @@ impl MultiSigner {
             }
         }
         node.add_allowlist(&self.initial_allowlist).expect("valid initialallowlist");
-        self.persister.new_node(&node_id, &node_config, &*node.get_state(), seed);
+        self.persister.new_node(&node_id, &node_config, &*node.get_state(), &seed);
         self.persister.new_chain_tracker(&node_id, &node.get_tracker());
         nodes.insert(node_id, Arc::new(node));
         Ok(node_id)
@@ -270,7 +239,7 @@ mod tests {
         assert_eq!(err.message(), "warmstart failed: no such node: 022d223620a359a47ff7f7ac447c85c46c923da53389221a0054c11c1e3ca31d59");
 
         // Then a "coldstart" from seed should succeed.
-        let node_id = signer.new_node_from_seed(TEST_NODE_CONFIG, &seed).unwrap();
+        let node_id = signer.new_node_with_seed(TEST_NODE_CONFIG, &seed).unwrap();
 
         // Now a warmstart will work, should get the same node_id.
         let result = signer.warmstart_with_seed(TEST_NODE_CONFIG, &seed);

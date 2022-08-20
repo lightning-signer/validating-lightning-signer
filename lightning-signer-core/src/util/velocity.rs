@@ -9,11 +9,11 @@ use core::cmp::min;
 pub struct VelocityControl {
     /// start second for the current velocity epoch
     pub start_sec: u64,
-    /// If this is zero, then the control is disabled
+    /// the number of seconds represented by a bucket
     pub bucket_interval: u32,
-    /// each bucket entry is the total velocity detected in that interval
+    /// each bucket entry is the total velocity detected in that interval, in satoshi
     pub buckets: Vec<u64>,
-    /// the limit
+    /// the limit, or MAX if the control is disabled
     pub limit: u64,
 }
 

@@ -66,6 +66,7 @@ pub struct NodeStateEntry {
     #[serde_as(as = "Vec<(Hex, InvoiceStateDef)>")]
     pub issued_invoices: Vec<(Vec<u8>, InvoiceState)>,
     pub velocity_control: VelocityControl,
+    // TODO(devrandom): add routing control fields, once they stabilize
 }
 
 impl From<&NodeState> for NodeStateEntry {
