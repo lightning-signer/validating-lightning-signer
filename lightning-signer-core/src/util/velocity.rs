@@ -5,14 +5,16 @@ use core::cmp::min;
 ///
 /// We track velocity in intervals instead of tracking each send, to keep
 /// storage requirements constant.
+#[derive(Clone)]
 pub struct VelocityControl {
-    // start second for the current velocity epoch
-    start_sec: u64,
-    // If this is zero, then the control is disabled
-    bucket_interval: u32,
-    // each bucket entry is the total velocity detected in that interval
-    buckets: Vec<u64>,
-    limit: u64,
+    /// start second for the current velocity epoch
+    pub start_sec: u64,
+    /// the number of seconds represented by a bucket
+    pub bucket_interval: u32,
+    /// each bucket entry is the total velocity detected in that interval, in satoshi
+    pub buckets: Vec<u64>,
+    /// the limit, or MAX if the control is disabled
+    pub limit: u64,
 }
 
 /// The total interval in which to track velocity

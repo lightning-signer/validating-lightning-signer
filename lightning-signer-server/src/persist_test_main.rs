@@ -1,9 +1,14 @@
 use kv::Json;
+use std::time::Duration;
 
 use lightning_signer::channel::ChannelId;
+use lightning_signer::lightning::ln::PaymentHash;
+use lightning_signer::node::InvoiceState;
 use lightning_signer::persist::Persist;
 use lightning_signer::util::test_utils::{self, hex_decode, TEST_CHANNEL_ID, TEST_NODE_CONFIG};
-use lightning_signer_server::persist::model::{ChannelEntry, NodeChannelId, NodeEntry};
+use lightning_signer_server::persist::model::{
+    ChannelEntry, NodeChannelId, NodeEntry, NodeStateEntry,
+};
 use lightning_signer_server::persist::persist_json::KVJsonPersister;
 
 pub fn main() {
@@ -14,8 +19,17 @@ pub fn main() {
 
     let (node_id, node_arc, stub, _seed) = test_utils::make_node_and_channel(channel_id.clone());
     let node = &*node_arc;
+    let invoice_state = InvoiceState {
+        invoice_hash: [2; 32],
+        amount_msat: 0,
+        payee: test_utils::make_dummy_pubkey(0x23),
+        duration_since_epoch: Duration::new(1, 2),
+        expiry_duration: Duration::new(2, 3),
+        is_fulfilled: false,
+    };
+    node.get_state().invoices.insert(PaymentHash([1; 32]), invoice_state);
 
-    persister.new_node(&node_id, &TEST_NODE_CONFIG, &[3u8; 32]);
+    persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &[3u8; 32]);
 
     persister.new_channel(&node_id, &stub).unwrap();
 
@@ -35,6 +49,14 @@ pub fn main() {
     for item in persister.node_bucket.iter() {
         let item = item.expect("item");
         let entry_json: Json<NodeEntry> = item.value().unwrap();
+        let id: Vec<u8> = item.key().unwrap();
+        println!("{}: {}", hex::encode(id), entry_json);
+    }
+
+    println!("Node states:");
+    for item in persister.node_state_bucket.iter() {
+        let item = item.expect("item");
+        let entry_json: Json<NodeStateEntry> = item.value().unwrap();
         let id: Vec<u8> = item.key().unwrap();
         println!("{}: {}", hex::encode(id), entry_json);
     }

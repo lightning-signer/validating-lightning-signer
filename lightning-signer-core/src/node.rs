@@ -71,6 +71,7 @@ pub struct NodeConfig {
 }
 
 /// Invoice payment details and payment state
+#[derive(Clone)]
 pub struct InvoiceState {
     /// The hash of the invoice, as a unique ID
     pub invoice_hash: [u8; 32],
@@ -605,14 +606,17 @@ impl Node {
         allowlist: Vec<Allowable>,
         services: NodeServices,
     ) -> Node {
+        let tracker = Self::make_tracker(node_config);
+
+        Self::new_extended(node_config, seed, allowlist, tracker, services)
+    }
+
+    pub(crate) fn make_tracker(node_config: NodeConfig) -> ChainTracker<ChainMonitor> {
         info!("creating node on {}", node_config.network);
         let genesis = genesis_block(node_config.network);
 
         // TODO supply current tip
-        let tracker =
-            ChainTracker::new(node_config.network, 0, genesis.header).expect("bad  chain tip");
-
-        Self::new_extended(node_config, seed, allowlist, tracker, services)
+        ChainTracker::new(node_config.network, 0, genesis.header).expect("bad  chain tip")
     }
 
     /// Create a node
@@ -1380,7 +1384,7 @@ impl Node {
             invoice_state.amount_msat
         );
 
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.get_state();
         if let Some(invoice_state) = state.issued_invoices.get(&hash) {
             return if invoice_state.invoice_hash == invoice_hash {
                 Ok(sig)
@@ -1550,7 +1554,7 @@ impl Node {
         preimages: Vec<PaymentPreimage>,
         validator: Arc<dyn Validator>,
     ) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.get_state();
         for preimage in preimages.into_iter() {
             state.htlc_fulfilled(channel_id, preimage, Arc::clone(&validator));
         }
@@ -1568,7 +1572,7 @@ impl Node {
             hash.0.to_hex(),
             invoice_state.amount_msat
         );
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.get_state();
         if let Some(invoice_state) = state.invoices.get(&hash) {
             return if invoice_state.invoice_hash == invoice_hash {
                 Ok(())
@@ -1578,12 +1582,16 @@ impl Node {
         }
         if !state.velocity_control.insert(self.clock.now().as_secs(), invoice_state.amount_msat) {
             return Err(failed_precondition(format!(
-                "velocity would be exceeded - currently {}",
-                state.velocity_control.velocity()
+                "global velocity would be exceeded - += {} = {} > {}",
+                invoice_state.amount_msat,
+                state.velocity_control.velocity(),
+                state.velocity_control.limit
             )));
         }
         state.invoices.insert(hash, invoice_state);
         state.payments.insert(hash, RoutedPayment::new());
+        self.persister.update_node(&self.get_id(), &*state).expect("node persistence failure");
+
         Ok(())
     }
 
@@ -1791,7 +1799,7 @@ mod tests {
         node.add_invoice(invoice2.clone())
             .expect_err("add a different invoice with same payment hash");
 
-        let mut state = node.state.lock().unwrap();
+        let mut state = node.get_state();
         let hash1 = PaymentHash([1; 32]);
         let channel_id2 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
 
@@ -1900,7 +1908,7 @@ mod tests {
         node.set_validator_factory(Arc::new(factory));
 
         {
-            let mut state = node.state.lock().unwrap();
+            let mut state = node.get_state();
             assert_status_ok!(state.validate_and_apply_payments(
                 &channel_id,
                 &Map::new(),
@@ -1937,7 +1945,7 @@ mod tests {
         node.set_validator_factory(Arc::new(factory));
 
         {
-            let mut state = node.state.lock().unwrap();
+            let mut state = node.get_state();
             assert_eq!(
                 state.validate_and_apply_payments(
                     &channel_id,
@@ -1964,7 +1972,7 @@ mod tests {
         node.set_validator_factory(Arc::new(factory));
 
         {
-            let mut state = node.state.lock().unwrap();
+            let mut state = node.get_state();
             assert_eq!(
                 state.validate_and_apply_payments(
                     &channel_id,
@@ -2028,7 +2036,7 @@ mod tests {
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
 
         {
-            let mut state = node.state.lock().unwrap();
+            let mut state = node.get_state();
             // Underpaid
             state
                 .validate_and_apply_payments(

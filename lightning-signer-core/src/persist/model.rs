@@ -1,5 +1,6 @@
 use crate::channel::ChannelId;
 use crate::channel::ChannelSetup;
+use crate::node::NodeState;
 use crate::policy::validator::EnforcementState;
 use crate::prelude::*;
 
@@ -9,6 +10,7 @@ pub struct NodeEntry {
     pub seed: Vec<u8>,
     pub key_derivation_style: u8,
     pub network: String,
+    pub state: NodeState,
 }
 
 /// A persistence layer entry for a channel

@@ -18,15 +18,67 @@ use lightning_signer::channel::ChannelId;
 use lightning_signer::channel::ChannelSetup;
 use lightning_signer::monitor::ChainMonitor;
 use lightning_signer::monitor::State as ChainMonitorState;
-use lightning_signer::persist::model::{
-    ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
-};
+use lightning_signer::node::{InvoiceState, NodeState};
+use lightning_signer::persist::model::ChannelEntry as CoreChannelEntry;
 use lightning_signer::policy::validator::EnforcementState;
+use lightning_signer::util::velocity::VelocityControl as CoreVelocityControl;
 
 use super::ser_util::{
-    ChainMonitorStateDef, ChannelIdHandler, ChannelSetupDef, EnforcementStateDef, ListenSlotDef,
-    OutPointDef,
+    ChainMonitorStateDef, ChannelIdHandler, ChannelSetupDef, EnforcementStateDef, InvoiceStateDef,
+    ListenSlotDef, OutPointDef,
 };
+
+#[derive(Serialize, Deserialize)]
+pub struct VelocityControl {
+    pub start_sec: u64,
+    pub bucket_interval: u32,
+    pub buckets: Vec<u64>,
+    pub limit: u64,
+}
+
+impl From<VelocityControl> for CoreVelocityControl {
+    fn from(v: VelocityControl) -> Self {
+        CoreVelocityControl {
+            start_sec: v.start_sec,
+            bucket_interval: v.bucket_interval,
+            buckets: v.buckets,
+            limit: v.limit,
+        }
+    }
+}
+
+impl From<CoreVelocityControl> for VelocityControl {
+    fn from(v: CoreVelocityControl) -> Self {
+        VelocityControl {
+            start_sec: v.start_sec,
+            bucket_interval: v.bucket_interval,
+            buckets: v.buckets,
+            limit: v.limit,
+        }
+    }
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+pub struct NodeStateEntry {
+    #[serde_as(as = "Vec<(Hex, InvoiceStateDef)>")]
+    pub invoices: Vec<(Vec<u8>, InvoiceState)>,
+    #[serde_as(as = "Vec<(Hex, InvoiceStateDef)>")]
+    pub issued_invoices: Vec<(Vec<u8>, InvoiceState)>,
+    pub velocity_control: VelocityControl,
+    // TODO(devrandom): add routing control fields, once they stabilize
+}
+
+impl From<&NodeState> for NodeStateEntry {
+    fn from(state: &NodeState) -> Self {
+        // TODO(devrandom) reduce cloning
+        let invoices = state.invoices.iter().map(|(a, b)| (a.0.to_vec(), b.clone())).collect();
+        let issued_invoices =
+            state.issued_invoices.iter().map(|(a, b)| (a.0.to_vec(), b.clone())).collect();
+        let velocity_control = state.velocity_control.clone().into();
+        NodeStateEntry { invoices, issued_invoices, velocity_control }
+    }
+}
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
@@ -35,16 +87,6 @@ pub struct NodeEntry {
     pub seed: Vec<u8>,
     pub key_derivation_style: u8,
     pub network: String,
-}
-
-impl From<NodeEntry> for CoreNodeEntry {
-    fn from(e: NodeEntry) -> Self {
-        CoreNodeEntry {
-            seed: e.seed,
-            key_derivation_style: e.key_derivation_style,
-            network: e.network,
-        }
-    }
 }
 
 #[serde_as]
