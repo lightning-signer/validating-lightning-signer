@@ -27,14 +27,14 @@ vls-frontend = { path = "../vls-frontend", optional = true }
 bitcoind-client = { path = "../bitcoind-client" }
 backtrace = "0.3"
 bip39 = { version = "1.0.0", features = ["rand"] }
-hex = "0.3.2"
+hex = "0.4"
 rand = { version = "0.4" }
-kv = { version = "0.22.0", features = ["json-value"] }
+kv = { version = "0.23", features = ["json-value"] }
 tonic = { version = "0.6" }
 prost = { version = "0.9" }
 tokio = { version = "1.17", features = ["macros", "rt-multi-thread"] }
-serde = { version = "1.0.105", features = ["derive"] }
-serde_json = { version = "1.0.48" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
 clap = { version = "=3.0.0-beta.2" }
 ctrlc = { version = "3.1.9", features = ["termination"] }
 triggered = "0.1.1"

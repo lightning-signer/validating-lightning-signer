@@ -18,9 +18,9 @@ kv-json = ["kv"]
 lightning-signer-core = { path = "../lightning-signer-core", default-features = false, features = ["serde"] }
 serde = { version = "1.0", features = ["derive"], default-features = false }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
-serde_with = { version = "2.0", features = ["hex"] }
+serde_with = { version = "1.14", features = ["hex"] }
 hex = { version = "0.4", default-features = false }
-kv = { version = "0.22", features = ["json-value"], optional = true }
+kv = { version = "0.23", features = ["json-value"], optional = true }
 log = { version = "0.4", default-features = false }
 
 [dev-dependencies]
