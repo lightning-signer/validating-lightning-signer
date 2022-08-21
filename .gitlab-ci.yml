@@ -6,9 +6,11 @@ rust-latest:
   image: rust:latest
   script:
     - rustup component add rustfmt
-    - cargo build # make sure it builds with test_utils
+    - cargo build # make sure it builds without test_utils
     - cargo build --features test_utils
     - cargo test --features test_utils
+    # ensure vls-persist build with no-std
+    - cargo build -p vls-persist --no-default-features --features no-std
 
 # match MSRV for (parts of) rust-lightning
 rust-1.45.2:
