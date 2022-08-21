@@ -14,9 +14,9 @@ use lightning_signer::persist::Persist;
 use lightning_signer::policy::validator::EnforcementState;
 use log::error;
 
-use crate::persist::model::NodeChannelId;
-use crate::persist::model::{AllowlistItemEntry, ChannelEntry, NodeEntry};
-use crate::persist::model::{ChainTrackerEntry, NodeStateEntry};
+use super::model::NodeChannelId;
+use super::model::{AllowlistItemEntry, ChannelEntry, NodeEntry};
+use super::model::{ChainTrackerEntry, NodeStateEntry};
 
 /// A persister that uses the kv crate and JSON serialization for values.
 pub struct KVJsonPersister<'a> {
@@ -251,9 +251,9 @@ impl<'a> Persist for KVJsonPersister<'a> {
 mod tests {
     use std::sync::Arc;
 
-    use crate::lightning;
     use lightning::chain::keysinterface::InMemorySigner;
     use lightning::util::ser::Writeable;
+    use lightning_signer::lightning;
     use tempfile::TempDir;
     use test_log::test;
 
@@ -263,7 +263,7 @@ mod tests {
     use lightning_signer::util::clock::StandardClock;
     use lightning_signer::util::test_utils::*;
 
-    use crate::persist::ser_util::VecWriter;
+    use crate::ser_util::VecWriter;
 
     use super::*;
 

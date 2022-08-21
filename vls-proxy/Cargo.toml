@@ -43,7 +43,7 @@ url = { version = "2.2", optional = true }
 [dependencies.lightning-signer-server]
 path = "../lightning-signer-server"
 default_features = false
-features = ["frontend", "persist_kv_json", "debug"]
+features = ["frontend", "persist-kv-json", "debug"]
 
 [build-dependencies]
 tonic-build = "0.6.2"

@@ -13,9 +13,9 @@ build = "build.rs"
 
 [features]
 default = ["debug"]
-grpc = ["tokio", "tonic", "prost", "serde", "serde_json", "lightning-signer-core/grpc"]
-persist_kv_json = [ "kv", "persist" ]
-persist = [ "serde", "serde_json", "serde_with", "lightning-signer-core/serde" ]
+grpc = ["tokio", "tonic", "prost", "serde", "lightning-signer-core/grpc"]
+persist-kv-json = [ "vls-persist/kv-json" ]
+persist = [ "vls-persist" ]
 test_utils = ["lightning-signer-core/test_utils"]
 frontend = ["vls-frontend"]
 secp-lowmemory = ["lightning-signer-core/secp-lowmemory"]
@@ -32,28 +32,14 @@ anyhow = "1.0"
 log = { version="0.4.14", features = [ "std" ] }
 time = "0.2"
 lightning-signer-core = { path = "../lightning-signer-core" }
+vls-persist = { path = "../vls-persist", optional = true }
 vls-frontend = { path = "../vls-frontend", optional = true }
-hex = "0.3.2"
-kv = { version = "0.22.0", features = ["json-value"], optional = true }
+hex = "0.4"
 tonic = { version = "0.6", optional = true }
 prost = { version = "0.9", optional = true }
 tokio = { version = "1.17", features = ["macros", "rt-multi-thread"], optional = true }
 serde = { version = "1.0.105", features = ["derive"], optional = true }
-serde_json = { version = "1.0.48", optional = true }
-serde_with = { version = "1.6.4", features = ["hex"], optional = true }
 async-trait = "0.1"
-
-# For logging in unit tests
-test-log = "0.2.8"
-env_logger = "0.9.0"
-
-[dev-dependencies]
-tempfile = "3.2.0"
 
 [build-dependencies]
 tonic-build = "0.6"
-
-[[bin]]
-name = "persist_test"
-path = "src/persist_test_main.rs"
-required-features = ["persist_kv_json", "test_utils"]

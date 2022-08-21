@@ -8,7 +8,6 @@ use std::borrow::Cow;
 use std::collections::BTreeSet as Set;
 use std::fmt::Formatter;
 
-use crate::lightning;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{OutPoint, Script, Txid};
@@ -16,6 +15,7 @@ use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
 use lightning::util::ser::Writer;
 use lightning_signer::chain::tracker::ListenSlot;
+use lightning_signer::lightning;
 use serde::de::SeqAccess;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -570,7 +570,7 @@ impl<'de> DeserializeAs<'de, InvoiceState> for InvoiceStateDef {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::persist::model::ChainTrackerEntry;
+    use crate::model::ChainTrackerEntry;
     use bitcoin::blockdata::constants::genesis_block;
     use bitcoin::Network;
     use lightning_signer::chain::tracker::{ChainTracker, Error};
