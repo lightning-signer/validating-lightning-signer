@@ -12,7 +12,7 @@ use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::{Hash, HashEngine};
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::address::Payload;
-use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut, Witness};
+use bitcoin::{OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Witness};
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
@@ -72,11 +72,12 @@ pub(crate) fn build_commitment_tx(
 ) -> (Transaction, Vec<Script>, Vec<HTLCOutputInCommitment>) {
     let txins = {
         let mut ins: Vec<TxIn> = Vec::new();
+        let sequence =
+            ((0x80 as u32) << 8 * 3) | ((obscured_commitment_transaction_number >> 3 * 8) as u32);
         ins.push(TxIn {
             previous_output: outpoint,
             script_sig: Script::new(),
-            sequence: ((0x80 as u32) << 8 * 3)
-                | ((obscured_commitment_transaction_number >> 3 * 8) as u32),
+            sequence: Sequence(sequence),
             witness: Witness::default(),
         });
         ins
@@ -181,17 +182,10 @@ pub(crate) fn build_commitment_tx(
         }
     }
 
-    (
-        Transaction {
-            version: 2,
-            lock_time: ((0x20 as u32) << 8 * 3)
-                | ((obscured_commitment_transaction_number & 0xffffffu64) as u32),
-            input: txins,
-            output: outputs,
-        },
-        scripts,
-        htlcs,
-    )
+    let lock_time = PackedLockTime(
+        ((0x20 as u32) << 8 * 3) | ((obscured_commitment_transaction_number & 0xffffffu64) as u32),
+    );
+    (Transaction { version: 2, lock_time, input: txins, output: outputs }, scripts, htlcs)
 }
 
 pub(crate) fn sort_outputs<T, C: Fn(&T, &T) -> cmp::Ordering>(
@@ -830,7 +824,7 @@ impl CommitmentInfo {
                     "more than one to_countersigner output".to_string(),
                 ));
             }
-            self.to_countersigner_address = Payload::from_script(&out.script_pubkey);
+            self.to_countersigner_address = Payload::from_script(&out.script_pubkey).ok();
             self.to_countersigner_value_sat = out.value;
         } else if out.script_pubkey.is_v0_p2wsh() {
             if script_bytes.is_empty() {

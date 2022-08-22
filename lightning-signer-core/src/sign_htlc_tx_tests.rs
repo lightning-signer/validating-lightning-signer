@@ -3,6 +3,7 @@ mod tests {
     use bitcoin::hashes::hex::ToHex;
     use bitcoin::hashes::Hash;
     use bitcoin::{self, Transaction};
+    use bitcoin::{PackedLockTime, Sequence};
     use lightning::ln::chan_utils::{
         build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
         ChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
@@ -732,7 +733,7 @@ mod tests {
         bad_locktime,
         |tms| {
             // offered must have non-zero, received must have zero
-            tms.tx.lock_time = if tms.is_offered { 0 } else { 42 };
+            tms.tx.lock_time = PackedLockTime(if tms.is_offered { 0 } else { 42 });
         },
         |ectx: ErrMsgContext| {
             if ectx.is_offered {
@@ -746,7 +747,7 @@ mod tests {
     // policy-htlc-sequence
     generate_failed_precondition_error_with_mutated_tx!(
         bad_sequence,
-        |tms| tms.tx.input[0].sequence = 42, // sequence must be per BOLT#3
+        |tms| tms.tx.input[0].sequence = Sequence(42), // sequence must be per BOLT#3
         |_| "policy failure: sighash mismatch"
     );
 

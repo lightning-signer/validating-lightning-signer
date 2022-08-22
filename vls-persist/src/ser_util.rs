@@ -576,7 +576,7 @@ mod tests {
     use bitcoin::blockdata::constants::genesis_block;
     use bitcoin::Network;
     use core::iter::FromIterator;
-    use core::iter::FromIterator;
+    use lightning_signer::bitcoin::TxMerkleNode;
     use lightning_signer::chain::tracker::{ChainTracker, Error};
     use lightning_signer::monitor::ChainMonitor;
     use lightning_signer::util::test_utils::*;
@@ -590,7 +590,7 @@ mod tests {
         let genesis = genesis_block(Network::Regtest);
         let mut tracker = ChainTracker::new(Network::Regtest, 0, genesis.header)?;
         tracker.add_listener(monitor.clone(), OrderedSet::new());
-        let header = make_header(tracker.tip(), Default::default());
+        let header = make_header(tracker.tip(), TxMerkleNode::all_zeros());
         tracker.add_block(header, vec![], None)?;
         tracker.add_listener_watches(
             monitor,
@@ -599,7 +599,6 @@ mod tests {
 
         let entry = ChainTrackerEntry::from(&tracker);
         let json = serde_json::to_string(&entry).expect("json");
-        println!("{}", json);
         let entry_de: ChainTrackerEntry = serde_json::from_str(&json).expect("de json");
         let _tracker_de: ChainTracker<ChainMonitor> = entry_de.into();
         Ok(())

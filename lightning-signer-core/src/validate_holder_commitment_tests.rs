@@ -714,7 +714,7 @@ mod tests {
             // Channel state should not advance.
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
         },
-        |_| "policy failure: commit sig verify failed: secp: signature failed verification"
+        |_| "policy failure: commit sig verify failed: signature failed verification"
     );
 
     generate_failed_precondition_error_with_mutated_validation_input!(
@@ -727,7 +727,7 @@ mod tests {
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
         },
         |_| "policy failure: \
-             commit sig verify failed for htlc 0: secp: signature failed verification"
+             commit sig verify failed for htlc 0: signature failed verification"
     );
 
     generate_failed_precondition_error_with_mutated_validation_input!(

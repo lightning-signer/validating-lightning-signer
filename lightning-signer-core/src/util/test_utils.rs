@@ -18,7 +18,7 @@ use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::util::sighash::SighashCache;
 use bitcoin::{
     Address, Block, BlockHash, BlockHeader, EcdsaSighashType, OutPoint as BitcoinOutPoint,
-    Transaction, TxIn, TxMerkleNode, TxOut, Witness,
+    PackedLockTime, Sequence, Transaction, TxIn, TxMerkleNode, TxOut, Witness,
 };
 use chain::chaininterface;
 use lightning::chain;
@@ -33,7 +33,7 @@ use lightning::ln::chan_utils::{
     ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters,
     DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
-use lightning::ln::PaymentHash;
+use lightning::ln::{chan_utils, PaymentHash};
 use lightning::util::test_utils;
 
 use super::key_utils::{
@@ -56,9 +56,7 @@ use crate::tx::script::{
 };
 use crate::tx::tx::{sort_outputs, CommitmentInfo2, HTLCInfo2};
 use crate::util::clock::StandardClock;
-use crate::util::crypto_utils::{
-    derive_public_key, derive_revocation_pubkey, payload_for_p2wpkh, payload_for_p2wsh,
-};
+use crate::util::crypto_utils::{derive_public_key, payload_for_p2wpkh, payload_for_p2wsh};
 use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
 use crate::wallet::Wallet;
@@ -238,8 +236,10 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
         update_res
     }
 
-    fn release_pending_monitor_events(&self) -> Vec<(OutPoint, Vec<MonitorEvent>)> {
-        return self.chain_monitor.release_pending_monitor_events();
+    fn release_pending_monitor_events(
+        &self,
+    ) -> Vec<(OutPoint, Vec<MonitorEvent>, Option<PublicKey>)> {
+        self.chain_monitor.release_pending_monitor_events()
     }
 }
 
@@ -298,7 +298,7 @@ pub fn make_test_channel_keys() -> InMemorySigner {
             pubkeys: make_test_counterparty_points(),
             selected_contest_delay: 5,
         }),
-        funding_outpoint: Some(OutPoint { txid: Default::default(), index: 0 }),
+        funding_outpoint: Some(OutPoint { txid: Txid::all_zeros(), index: 0 }),
         opt_anchors: None,
     });
     inmemkeys
@@ -352,11 +352,11 @@ pub fn init_node_and_channel(
     let node = init_node(node_config, seedstr);
     {
         let mut tracker = node.get_tracker();
-        let header = make_testnet_header(tracker.tip(), Default::default());
+        let header = make_testnet_header(tracker.tip(), TxMerkleNode::all_zeros());
         tracker.add_block(header, vec![], None).unwrap();
-        let header = make_testnet_header(tracker.tip(), Default::default());
+        let header = make_testnet_header(tracker.tip(), TxMerkleNode::all_zeros());
         tracker.add_block(header, vec![], None).unwrap();
-        let header = make_testnet_header(tracker.tip(), Default::default());
+        let header = make_testnet_header(tracker.tip(), TxMerkleNode::all_zeros());
         tracker.add_block(header, vec![], None).unwrap();
     }
     let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
@@ -386,9 +386,9 @@ pub fn make_test_funding_wallet_addr(
 
 pub fn make_test_funding_wallet_input() -> TxIn {
     TxIn {
-        previous_output: bitcoin::OutPoint { txid: Default::default(), vout: 0 },
+        previous_output: bitcoin::OutPoint { txid: Txid::all_zeros(), vout: 0 },
         script_sig: Script::new(),
-        sequence: 0,
+        sequence: Sequence::ZERO,
         witness: Witness::default(),
     }
 }
@@ -430,11 +430,8 @@ pub fn make_test_funding_channel_outpoint(
     .expect("TxOut")
 }
 
-pub fn make_test_funding_tx_with_ins_outs(
-    inputs: Vec<TxIn>,
-    outputs: Vec<TxOut>,
-) -> bitcoin::Transaction {
-    bitcoin::Transaction { version: 2, lock_time: 0, input: inputs, output: outputs }
+pub fn make_test_funding_tx_with_ins_outs(inputs: Vec<TxIn>, outputs: Vec<TxOut>) -> Transaction {
+    Transaction { version: 2, lock_time: PackedLockTime::ZERO, input: inputs, output: outputs }
 }
 
 pub fn make_test_wallet_dest(
@@ -546,7 +543,7 @@ pub fn make_test_counterparty_keys(
                     pubkeys: stub.get_channel_basepoints(),
                     selected_contest_delay: 6,
                 }),
-                funding_outpoint: Some(OutPoint { txid: Default::default(), index: 0 }),
+                funding_outpoint: Some(OutPoint { txid: Txid::all_zeros(), index: 0 }),
                 opt_anchors: None,
             });
             Ok(cpkeys)
@@ -1151,14 +1148,14 @@ pub fn make_test_funding_tx_with_p2shwpkh_change(
 
 pub fn make_test_commitment_tx() -> bitcoin::Transaction {
     let input = TxIn {
-        previous_output: BitcoinOutPoint { txid: Default::default(), vout: 0 },
+        previous_output: BitcoinOutPoint { txid: Txid::all_zeros(), vout: 0 },
         script_sig: Script::new(),
-        sequence: 0,
+        sequence: Sequence::ZERO,
         witness: Witness::default(),
     };
     bitcoin::Transaction {
         version: 2,
-        lock_time: 0,
+        lock_time: PackedLockTime::ZERO,
         input: vec![input],
         output: vec![TxOut {
             script_pubkey: payload_for_p2wpkh(&make_test_bitcoin_pubkey(1).inner).script_pubkey(),
@@ -1347,7 +1344,7 @@ pub fn get_channel_revocation_pubkey(
 ) -> PublicKey {
     let res: Result<PublicKey, Status> = node.with_ready_channel(&channel_id, |chan| {
         let secp_ctx = &chan.secp_ctx;
-        let pubkey = derive_revocation_pubkey(
+        let pubkey = chan_utils::derive_public_revocation_key(
             secp_ctx,
             revocation_point, // matches revocation_secret
             &chan.keys.pubkeys().revocation_basepoint,
@@ -1545,20 +1542,25 @@ pub fn hex_encode(o: &[u8]) -> String {
 }
 
 pub fn make_tx(inputs: Vec<TxIn>) -> Transaction {
-    Transaction { version: 0, lock_time: 0, input: inputs, output: vec![Default::default()] }
+    Transaction {
+        version: 0,
+        lock_time: PackedLockTime::ZERO,
+        input: inputs,
+        output: vec![Default::default()],
+    }
 }
 
 pub fn make_txin(vout: u32) -> TxIn {
     TxIn {
         previous_output: make_outpoint(vout),
         script_sig: Default::default(),
-        sequence: 0,
+        sequence: Sequence::ZERO,
         witness: Witness::default(),
     }
 }
 
 pub fn make_outpoint(vout: u32) -> BitcoinOutPoint {
-    BitcoinOutPoint { txid: Default::default(), vout }
+    BitcoinOutPoint { txid: Txid::all_zeros(), vout }
 }
 
 pub fn make_header(tip: BlockHeader, merkle_root: TxMerkleNode) -> BlockHeader {

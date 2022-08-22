@@ -66,7 +66,7 @@ pub fn maybe_add_change_output(
     // When calculating weight, add two for the flag bytes
     let change_value: i64 = (input_value - output_value) as i64
         - weight_with_change * feerate_sat_per_1000_weight as i64 / 1000;
-    if change_value >= dust_value.as_sat() as i64 {
+    if change_value >= dust_value.to_sat() as i64 {
         change_output.value = change_value as u64;
         tx.output.push(change_output);
     } else if (input_value - output_value) as i64

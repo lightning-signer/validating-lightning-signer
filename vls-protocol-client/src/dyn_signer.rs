@@ -23,7 +23,7 @@ use lightning_signer::bitcoin;
 use lightning_signer::lightning;
 use lightning_signer::lightning::chain::keysinterface::SpendableOutputDescriptor;
 use secp256k1::ecdsa::RecoverableSignature;
-use secp256k1::{ecdsa::Signature, PublicKey, Secp256k1, SecretKey};
+use secp256k1::{ecdh::SharedSecret, ecdsa::Signature, PublicKey, Scalar, Secp256k1, SecretKey};
 
 use crate::bitcoin::Address;
 use lightning_signer::util::loopback::LoopbackChannelSigner;
@@ -204,6 +204,8 @@ impl KeysInterface for DynKeysInterface {
     delegate! {
         to self.inner {
             fn get_node_secret(&self, recipient: Recipient) -> Result<SecretKey, ()>;
+
+            fn ecdh(&self, recipient: Recipient, other_key: &PublicKey, tweak: Option<&Scalar>) -> Result<SharedSecret, ()>;
 
             fn get_destination_script(&self) -> Script;
 

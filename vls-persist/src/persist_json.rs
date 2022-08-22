@@ -12,6 +12,7 @@ use lightning_signer::persist::model::{
 };
 use lightning_signer::persist::Persist;
 use lightning_signer::policy::validator::EnforcementState;
+use lightning_signer::prelude::*;
 use log::error;
 
 use super::model::NodeChannelId;
@@ -253,7 +254,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use alloc::sync::Arc;
 
     use lightning::chain::keysinterface::InMemorySigner;
     use lightning::util::ser::Writeable;

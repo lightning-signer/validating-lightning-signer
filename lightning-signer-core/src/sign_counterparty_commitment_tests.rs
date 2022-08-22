@@ -6,6 +6,7 @@ mod tests {
     use bitcoin::secp256k1::PublicKey;
     use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::Network;
+    use bitcoin::{PackedLockTime, Sequence};
     use lightning::chain::keysinterface::BaseSign;
     use lightning::ln::chan_utils::{
         make_funding_redeemscript, BuiltCommitmentTransaction,
@@ -692,7 +693,7 @@ mod tests {
     generate_failed_precondition_error_phase1_with_mutated_tx!(
         bad_locktime,
         |tms| {
-            tms.tx.transaction.lock_time = 42;
+            tms.tx.transaction.lock_time = PackedLockTime(42);
         },
         |_| "policy failure: recomposed tx mismatch"
     );
@@ -701,7 +702,7 @@ mod tests {
     generate_failed_precondition_error_phase1_with_mutated_tx!(
         bad_sequence,
         |tms| {
-            tms.tx.transaction.input[0].sequence = 42;
+            tms.tx.transaction.input[0].sequence = Sequence(42);
         },
         |_| "policy failure: recomposed tx mismatch"
     );

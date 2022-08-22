@@ -4,8 +4,9 @@ use core::convert::TryInto;
 use bitcoin::bech32::u5;
 use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::Hash;
+use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
-use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey};
 use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::{Script, Transaction, TxOut};
 use lightning::chain::keysinterface::{
@@ -29,7 +30,7 @@ use crate::node::Node;
 use crate::prelude::*;
 use crate::signer::multi_signer::MultiSigner;
 use crate::tx::tx::HTLCInfo2;
-use crate::util::crypto_utils::{derive_public_key, derive_revocation_pubkey};
+use crate::util::crypto_utils::derive_public_key;
 use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::Arc;
@@ -540,6 +541,19 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         }
     }
 
+    fn ecdh(
+        &self,
+        recipient: Recipient,
+        other_key: &PublicKey,
+        tweak: Option<&Scalar>,
+    ) -> Result<SharedSecret, ()> {
+        let mut node_secret = self.get_node_secret(recipient)?;
+        if let Some(tweak) = tweak {
+            node_secret = node_secret.mul_tweak(tweak).map_err(|_| ())?;
+        }
+        Ok(SharedSecret::new(other_key, &node_secret))
+    }
+
     fn get_destination_script(&self) -> Script {
         let secp_ctx = Secp256k1::signing_only();
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
@@ -605,9 +619,12 @@ fn get_delayed_payment_keys(
     a_pubkeys: &ChannelPublicKeys,
     b_pubkeys: &ChannelPublicKeys,
 ) -> Result<(PublicKey, PublicKey), ()> {
-    let revocation_key =
-        derive_revocation_pubkey(secp_ctx, &per_commitment_point, &b_pubkeys.revocation_basepoint)
-            .map_err(|_| ())?;
+    let revocation_key = chan_utils::derive_public_revocation_key(
+        secp_ctx,
+        &per_commitment_point,
+        &b_pubkeys.revocation_basepoint,
+    )
+    .map_err(|_| ())?;
     let delayed_payment_key =
         derive_public_key(secp_ctx, &per_commitment_point, &a_pubkeys.delayed_payment_basepoint)
             .map_err(|_| ())?;

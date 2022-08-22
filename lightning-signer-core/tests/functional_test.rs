@@ -3,6 +3,7 @@
 extern crate lightning_signer;
 
 use core::time::Duration;
+use core::default::Default;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -297,21 +298,23 @@ fn create_default_chan(nodes: &Vec<Node>, a: usize, b: usize) {
 // for peering nodes.
 fn _alt_config() -> UserConfig {
     let mut cfg1 = UserConfig {
-        own_channel_config: ChannelHandshakeConfig {
+        channel_handshake_config: ChannelHandshakeConfig {
             minimum_depth: 6,
             our_to_self_delay: 145,
             our_htlc_minimum_msat: 1000,
             max_inbound_htlc_value_in_flight_percent_of_channel: 100,
-            negotiate_scid_privacy: false
+            negotiate_scid_privacy: false,
+            announced_channel: true,
+            commit_upfront_shutdown_pubkey: false,
+            their_channel_reserve_proportional_millionths: 0
         },
-        peer_channel_config_limits: Default::default(),
-        channel_options: Default::default(),
+        channel_handshake_limits: Default::default(),
+        channel_config: Default::default(),
         accept_forwards_to_priv_channels: true,
         accept_inbound_channels: true,
         manually_accept_inbound_channels: false
     };
-    cfg1.channel_options.announced_channel = true;
-    cfg1.peer_channel_config_limits
+    cfg1.channel_handshake_limits
         .force_announced_channel_preference = false;
     cfg1
 }
@@ -338,7 +341,7 @@ fn channel_force_close_test() {
 
     // Close channel forcefully
     let cp_id = nodes[1].node.get_our_node_id();
-    let _ = nodes[0].node.force_close_channel(&chan.2, &cp_id);
+    let _ = nodes[0].node.force_close_broadcasting_latest_txn(&chan.2, &cp_id);
 
     check_closed_broadcast!(nodes[0], true);
 
@@ -455,7 +458,7 @@ fn claim_htlc_outputs_single_tx() {
         check_closed_event!(nodes[1], 1, ClosureReason::CommitmentTxConfirmed);
         let events = nodes[0].node.get_and_clear_pending_events();
         expect_pending_htlcs_forwardable_from_events!(nodes[0], events[0..1], true);
-        match events[1] {
+        match events.last().unwrap() {
             Event::ChannelClosed { reason: ClosureReason::CommitmentTxConfirmed, .. } => {}
             _ => panic!("Unexpected event"),
         }
@@ -464,10 +467,16 @@ fn claim_htlc_outputs_single_tx() {
         assert_eq!(channel_balance(&nodes[1]), ChannelBalance::new(0, 0, 3_000, 11000));
 
         connect_blocks(&nodes[1], ANTI_REORG_DELAY - 1);
+
+        let node_txn = nodes[1].tx_broadcaster.txn_broadcasted.lock().unwrap().split_off(0);
+        assert_eq!(node_txn.len(), 9);
+
+        mine_transaction(&nodes[1], &node_txn[2]);
+        mine_transaction(&nodes[1], &node_txn[3]);
+        mine_transaction(&nodes[1], &node_txn[4]);
+        connect_blocks(&nodes[1], ANTI_REORG_DELAY - 1);
         expect_payment_failed!(nodes[1], payment_hash_2, true);
 
-        let node_txn = nodes[1].tx_broadcaster.txn_broadcasted.lock().unwrap();
-        assert_eq!(node_txn.len(), 9);
         // ChannelMonitor: justice tx revoked offered htlc, justice tx revoked received htlc, justice tx revoked to_local (3)
         // ChannelManager: local commmitment + local HTLC-timeout (2)
         // ChannelMonitor: bumped justice tx, after one increase, bumps on HTLC aren't generated not being substantial anymore, bump on revoked to_local isn't generated due to more room for expiration (2)
@@ -561,7 +570,7 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
     let mut force_closing_node = 0; // Alice force-closes
     if !broadcast_alice { force_closing_node = 1; } // Bob force-closes
     let cp_id = nodes[1 - force_closing_node].node.node_id();
-    nodes[force_closing_node].node.force_close_channel(&chan_ab.2, &cp_id).unwrap();
+    nodes[force_closing_node].node.force_close_broadcasting_latest_txn(&chan_ab.2, &cp_id).unwrap();
     check_closed_broadcast!(nodes[force_closing_node], true);
     check_added_monitors!(nodes[force_closing_node], 1);
     check_closed_event!(nodes[force_closing_node], 1, ClosureReason::HolderForceClosed);

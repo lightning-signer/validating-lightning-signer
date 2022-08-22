@@ -29,9 +29,7 @@ use crate::tx::tx::{
     build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
     HTLCInfo2,
 };
-use crate::util::crypto_utils::{
-    derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
-};
+use crate::util::crypto_utils::derive_public_key;
 use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugVecVecU8};
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::INITIAL_COMMITMENT_NUMBER;
@@ -1299,7 +1297,7 @@ impl Channel {
         )
         .map_err(|_| Status::internal("failed to sighash"))?;
 
-        let privkey = derive_private_revocation_key(
+        let privkey = chan_utils::derive_private_revocation_key(
             &self.secp_ctx,
             revocation_secret,
             &self.keys.revocation_base_key,
@@ -1419,7 +1417,7 @@ impl Channel {
         })?;
         let counterparty_payment_pubkey =
             self.derive_counterparty_payment_pubkey(remote_per_commitment_point)?;
-        let revocation_pubkey = derive_revocation_pubkey(
+        let revocation_pubkey = chan_utils::derive_public_revocation_key(
             secp_ctx,
             &remote_per_commitment_point,
             &holder_points.revocation_basepoint,
@@ -1475,7 +1473,7 @@ impl Channel {
             })?
         };
 
-        let revocation_pubkey = derive_revocation_pubkey(
+        let revocation_pubkey = chan_utils::derive_public_revocation_key(
             secp_ctx,
             &per_commitment_point,
             &counterparty_points.revocation_basepoint,

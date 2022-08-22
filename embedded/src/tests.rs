@@ -10,11 +10,12 @@ use bitcoin::{Address, Network, OutPoint, PrivateKey, Txid, Witness};
 #[cfg(feature = "device")]
 use cortex_m_semihosting::hprintln;
 use lightning_signer::bitcoin;
-use lightning_signer::bitcoin::bech32::{u5, FromBase32, ToBase32};
-use lightning_signer::bitcoin::{Script, TxIn, TxOut};
+use bitcoin::bech32::{u5, FromBase32, ToBase32};
+use bitcoin::{PackedLockTime, Script, Sequence, TxIn, TxOut};
 use lightning_signer::channel::{Channel, ChannelBase, ChannelSetup, CommitmentType};
-use lightning_signer::lightning::ln::chan_utils::ChannelPublicKeys;
-use lightning_signer::lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
+use lightning_signer::lightning;
+use lightning::ln::chan_utils::ChannelPublicKeys;
+use lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
 use lightning_signer::lightning_invoice::{
     Currency, InvoiceBuilder, RawDataPart, RawHrp, RawInvoice, SignedRawInvoice,
 };
@@ -94,7 +95,12 @@ pub fn make_test_funding_tx_with_ins_outs(
     inputs: Vec<TxIn>,
     outputs: Vec<TxOut>,
 ) -> bitcoin::Transaction {
-    bitcoin::Transaction { version: 2, lock_time: 0, input: inputs, output: outputs }
+    bitcoin::Transaction {
+        version: 2,
+        lock_time: PackedLockTime::ZERO,
+        input: inputs,
+        output: outputs,
+    }
 }
 
 pub fn make_test_channel_setup(
@@ -254,16 +260,16 @@ fn sign_funding(node: &Arc<Node>) {
     let values_sat = vec![ival0, ival1];
 
     let input1 = TxIn {
-        previous_output: OutPoint { txid: Default::default(), vout: 0 },
+        previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 },
         script_sig: Script::new(),
-        sequence: 0,
+        sequence: Sequence::ZERO,
         witness: Witness::default(),
     };
 
     let input2 = TxIn {
-        previous_output: OutPoint { txid: Default::default(), vout: 1 },
+        previous_output: OutPoint { txid: Txid::all_zeros(), vout: 1 },
         script_sig: Script::new(),
-        sequence: 0,
+        sequence: Sequence::ZERO,
         witness: Witness::default(),
     };
     let (opath, tx) = make_test_funding_tx(&node, vec![input1, input2], chanamt);

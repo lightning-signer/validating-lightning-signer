@@ -16,7 +16,7 @@ default = ["std", "env_logger", "debug"]
 
 no-std = ["lightning/no-std", "lightning-invoice/no-std", "bitcoin/no-std", "core2/alloc"]
 std = ["lightning/std", "lightning-invoice/std", "bitcoin/std", "bitcoin/rand", "rand"]
-serde = ["bitcoin/use-serde"]
+serde = ["bitcoin/serde"]
 secp-lowmemory = ["bitcoin/secp-lowmemory"]
 
 # if you use tonic, this is convenient for auto-conversion of MySigner Status to tonic::Status
@@ -65,22 +65,22 @@ test-log = "0.2.8"
 
 # TODO point this and lightning-invoice at next release
 [dependencies.lightning]
-#git = "https://github.com/lightningdevkit/rust-lightning.git"
-#rev = "08ab6581f1c6254a7765340c5c7a553db58d3a89"
+git = "https://github.com/lightningdevkit/rust-lightning.git"
+rev = "ea5b62fff69847941434fb51562e302eb4e7ff4b"
 #path = "../../rust-lightning/lightning"
-version = "0.0.108"
+#version = "0.0.110"
 default-features = false
 features = ["grind_signatures"]
 
 [dependencies.lightning-invoice]
+git = "https://github.com/lightningdevkit/rust-lightning.git"
+rev = "ea5b62fff69847941434fb51562e302eb4e7ff4b"
 #path = "../../rust-lightning/lightning-invoice"
-#git = "https://github.com/lightningdevkit/rust-lightning.git"
-#rev = "08ab6581f1c6254a7765340c5c7a553db58d3a89"
-version = "0.16.0"
+#version = "0.18.0"
 default-features = false
 
 [dependencies.bitcoin]
-version = "0.28.1"
+version = "0.29"
 default-features = false
 
 [[bin]]

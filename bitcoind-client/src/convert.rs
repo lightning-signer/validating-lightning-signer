@@ -2,10 +2,12 @@ use std::convert::{TryFrom, TryInto};
 
 use bitcoin::consensus::encode;
 use bitcoin::hashes::hex::{FromHex, ToHex};
+use bitcoin::hashes::Hash;
 use bitcoin::util::uint::Uint256;
 use bitcoin::{Block, BlockHash, BlockHeader, TxMerkleNode};
-use lightning_signer::bitcoin;
 use serde::Deserialize;
+
+use lightning_signer::bitcoin;
 
 use crate::bitcoind_client::BlockHeaderData;
 
@@ -113,7 +115,7 @@ impl TryInto<BlockHeaderData> for JsonResponse {
 
         // Add an empty previousblockhash for the genesis block.
         if let None = header.get("previousblockhash") {
-            let hash: BlockHash = Default::default();
+            let hash: BlockHash = BlockHash::all_zeros();
             header
                 .as_object_mut()
                 .unwrap()

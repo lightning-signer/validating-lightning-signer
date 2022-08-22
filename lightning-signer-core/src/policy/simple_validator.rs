@@ -883,7 +883,7 @@ impl Validator for SimpleValidator {
         };
 
         // Extract some parameters from the submitted transaction.
-        let cltv_expiry = if offered { tx.lock_time } else { 0 };
+        let cltv_expiry = if offered { tx.lock_time.0 } else { 0 };
         let transaction_output_index = tx.input[0].previous_output.vout;
         let commitment_txid = tx.input[0].previous_output.txid;
         let total_fee = htlc_amount_sat - tx.output[0].value;
@@ -1387,7 +1387,7 @@ impl Validator for SimpleValidator {
         self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        if tx.lock_time > cstate.current_height {
+        if tx.lock_time.0 > cstate.current_height {
             transaction_format_err!(
                 self,
                 "policy-sweep-locktime",
@@ -1397,7 +1397,7 @@ impl Validator for SimpleValidator {
             );
         }
 
-        let seq = tx.input[0].sequence;
+        let seq = tx.input[0].sequence.0;
         if seq != setup.counterparty_selected_contest_delay as u32 {
             transaction_format_err!(
                 self,
@@ -1449,7 +1449,7 @@ impl Validator for SimpleValidator {
                 );
             }
 
-            if tx.lock_time > cltv_expiry as u32 {
+            if tx.lock_time.0 > cltv_expiry as u32 {
                 transaction_format_err!(
                     self,
                     "policy-sweep-locktime",
@@ -1467,7 +1467,7 @@ impl Validator for SimpleValidator {
         {
             // It's an offered htlc (counterparty perspective)
 
-            if tx.lock_time > cstate.current_height {
+            if tx.lock_time.0 > cstate.current_height {
                 transaction_format_err!(
                     self,
                     "policy-sweep-locktime",
@@ -1486,7 +1486,7 @@ impl Validator for SimpleValidator {
             );
         };
 
-        let seq = tx.input[0].sequence;
+        let seq = tx.input[0].sequence.0;
         let valid_seqs = if setup.option_anchors() {
             SimpleValidator::ANCHOR_SEQS.to_vec()
         } else {
@@ -1523,7 +1523,7 @@ impl Validator for SimpleValidator {
         self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        if tx.lock_time > cstate.current_height {
+        if tx.lock_time.0 > cstate.current_height {
             transaction_format_err!(
                 self,
                 "policy-sweep-locktime",
@@ -1533,7 +1533,7 @@ impl Validator for SimpleValidator {
             );
         }
 
-        let seq = tx.input[0].sequence;
+        let seq = tx.input[0].sequence.0;
         let valid_seqs = SimpleValidator::NON_ANCHOR_SEQS.to_vec();
         if !valid_seqs.contains(&seq) {
             transaction_format_err!(

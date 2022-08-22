@@ -16,7 +16,7 @@ test_utils = ["lightning-signer-core/test_utils"]
 kv-json = ["kv"]
 
 [dependencies]
-lightning-signer-core = { path = "../lightning-signer-core", default-features = false}
+lightning-signer-core = { path = "../lightning-signer-core", default-features = false, features = ["serde"]}
 serde = { version = "1.0", features = ["derive", "alloc"], default-features = false }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 serde_with = { version = "2.0", default-features = false, features = ["hex", "macros"] }

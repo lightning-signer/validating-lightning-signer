@@ -262,19 +262,20 @@ mod tests {
 
     use bitcoin::{Block, BlockHeader, OutPoint, TxIn, TxMerkleNode, TxOut};
 
-    use crate::bitcoin::Witness;
+    use crate::bitcoin::hashes::Hash;
+    use crate::bitcoin::{PackedLockTime, Sequence, Witness};
     use test_log::test;
 
     fn make_tx(previous_outputs: Vec<OutPoint>, outputs: Vec<TxOut>) -> Transaction {
         Transaction {
             version: 2,
-            lock_time: 0,
+            lock_time: PackedLockTime::ZERO,
             input: previous_outputs
                 .iter()
                 .map(|previous_output| TxIn {
                     previous_output: *previous_output,
                     script_sig: Default::default(),
-                    sequence: 0,
+                    sequence: Sequence::ZERO,
                     witness: Witness::default(),
                 })
                 .collect(),
@@ -285,7 +286,7 @@ mod tests {
     fn make_blockheader() -> BlockHeader {
         BlockHeader {
             version: 0,
-            prev_blockhash: Default::default(),
+            prev_blockhash: BlockHash::all_zeros(),
             merkle_root: TxMerkleNode::from_str(
                 "0377d5ba2c6e0f7aeaebb3caa6cd05b8b9b8ba60d0554e53b7a327ffdaa7433a",
             )
