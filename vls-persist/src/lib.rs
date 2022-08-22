@@ -1,3 +1,6 @@
+#![no_std]
+extern crate alloc;
+
 pub mod model;
 pub mod ser_util;
 pub mod util;

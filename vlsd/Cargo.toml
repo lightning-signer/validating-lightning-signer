@@ -8,7 +8,7 @@ description = "vlsd and vls-cli binaries."
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 readme = "../README.md"
-rust-version = "1.58.0"
+rust-version = "1.60.0"
 
 [features]
 default = ["debug", "frontend"]

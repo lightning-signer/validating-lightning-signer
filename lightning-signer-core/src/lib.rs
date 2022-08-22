@@ -79,8 +79,10 @@ mod io_extras {
 
 #[cfg(feature = "std")]
 mod io_extras {
-    pub use std::io::{sink, Error, Read};
+    pub use std::io::{self, sink, Error, Read};
 }
+
+pub use io_extras::io;
 
 pub use alloc::collections::BTreeSet as OrderedSet;
 pub use alloc::rc::Rc;
@@ -89,7 +91,8 @@ pub use alloc::sync::{Arc, Weak};
 #[cfg(not(feature = "std"))]
 mod nostd;
 
-pub(crate) mod prelude {
+/// std / no_std compat
+pub mod prelude {
     pub use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
     // TODO clean up naming

@@ -12,18 +12,9 @@ rust-latest:
     # ensure vls-persist build with no-std
     - cargo build -p vls-persist --no-default-features --features no-std
 
-# match MSRV for (parts of) rust-lightning
-rust-1.45.2:
+rust-1.60.0:
   stage: build
-  allow_failure: true
-  image: rust:1.45.2
-  script:
-    - (cd lightning-signer-core && cargo build --features test_utils && cargo test --features test_utils )
-
-# rust version in Debian bullseye
-rust-1.58.0:
-  stage: build
-  image: rust:1.58.0
+  image: rust:1.60.0
   script:
     - rustup component add rustfmt
     - cargo build # make sure it builds with test_utils

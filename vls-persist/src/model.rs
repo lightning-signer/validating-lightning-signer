@@ -1,7 +1,8 @@
-use std::collections::BTreeMap as OrderedMap;
-use std::fmt;
-use std::fmt::{Display, Formatter};
-use std::iter::FromIterator;
+use lightning_signer::prelude::*;
+
+use core::fmt;
+use core::fmt::{Display, Formatter};
+use core::iter::FromIterator;
 
 use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::secp256k1::PublicKey;

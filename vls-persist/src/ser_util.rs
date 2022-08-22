@@ -3,10 +3,12 @@
 //! Structs ending with `Entry` are local types that require a manual
 //! transformation from the remote type - implemented via `From` / `Into`.
 
+use lightning_signer::prelude::*;
+
+use alloc::borrow::Cow;
+use core::fmt;
+use core::fmt::Formatter;
 use core::time::Duration;
-use std::borrow::Cow;
-use std::collections::BTreeSet as Set;
-use std::fmt::Formatter;
 
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
@@ -15,7 +17,7 @@ use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
 use lightning::util::ser::Writer;
 use lightning_signer::chain::tracker::ListenSlot;
-use lightning_signer::lightning;
+use lightning_signer::{io, lightning};
 use serde::de::SeqAccess;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -115,7 +117,7 @@ impl<'de> DeserializeAs<'de, ChannelPublicKeys> for ChannelPublicKeysDef {
 
 pub struct VecWriter(pub Vec<u8>);
 impl Writer for VecWriter {
-    fn write_all(&mut self, buf: &[u8]) -> Result<(), ::std::io::Error> {
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), io::Error> {
         self.0.extend_from_slice(buf);
         Ok(())
     }
@@ -422,12 +424,12 @@ impl<'de> DeserializeAs<'de, EnforcementState> for EnforcementStateDef {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(remote = "ListenSlot")]
 pub struct ListenSlotDef {
-    #[serde_as(as = "Set<TxidDef>")]
-    pub txid_watches: Set<Txid>,
-    #[serde_as(as = "Set<OutPointDef>")]
-    watches: Set<OutPoint>,
-    #[serde_as(as = "Set<OutPointDef>")]
-    seen: Set<OutPoint>,
+    #[serde_as(as = "OrderedSet<TxidDef>")]
+    pub txid_watches: OrderedSet<Txid>,
+    #[serde_as(as = "OrderedSet<OutPointDef>")]
+    watches: OrderedSet<OutPoint>,
+    #[serde_as(as = "OrderedSet<OutPointDef>")]
+    seen: OrderedSet<OutPoint>,
 }
 
 #[derive(Deserialize)]
@@ -458,7 +460,7 @@ pub struct ChainMonitorStateDef {
     height: u32,
     funding_txids: Vec<Txid>,
     funding_vouts: Vec<u32>,
-    funding_inputs: Set<OutPoint>,
+    funding_inputs: OrderedSet<OutPoint>,
     funding_height: Option<u32>,
     funding_outpoint: Option<OutPoint>,
     funding_double_spent_height: Option<u32>,
@@ -508,7 +510,7 @@ struct DurationVisitor;
 impl<'de> serde::de::Visitor<'de> for DurationVisitor {
     type Value = Duration;
 
-    fn expecting(&self, fmt: &mut Formatter) -> std::fmt::Result {
+    fn expecting(&self, fmt: &mut Formatter) -> fmt::Result {
         fmt.write_str("tuple")
     }
 
@@ -573,10 +575,11 @@ mod tests {
     use crate::model::ChainTrackerEntry;
     use bitcoin::blockdata::constants::genesis_block;
     use bitcoin::Network;
+    use core::iter::FromIterator;
+    use core::iter::FromIterator;
     use lightning_signer::chain::tracker::{ChainTracker, Error};
     use lightning_signer::monitor::ChainMonitor;
     use lightning_signer::util::test_utils::*;
-    use std::iter::FromIterator;
 
     #[test]
     fn test_chain_tracker() -> Result<(), Error> {
@@ -586,10 +589,13 @@ mod tests {
         monitor.add_funding(&tx, 0);
         let genesis = genesis_block(Network::Regtest);
         let mut tracker = ChainTracker::new(Network::Regtest, 0, genesis.header)?;
-        tracker.add_listener(monitor.clone(), Set::new());
+        tracker.add_listener(monitor.clone(), OrderedSet::new());
         let header = make_header(tracker.tip(), Default::default());
         tracker.add_block(header, vec![], None)?;
-        tracker.add_listener_watches(monitor, Set::from_iter(vec![make_txin(1).previous_output]));
+        tracker.add_listener_watches(
+            monitor,
+            OrderedSet::from_iter(vec![make_txin(1).previous_output]),
+        );
 
         let entry = ChainTrackerEntry::from(&tracker);
         let json = serde_json::to_string(&entry).expect("json");
