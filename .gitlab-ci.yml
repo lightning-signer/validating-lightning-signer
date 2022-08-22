@@ -23,7 +23,7 @@ rust-1.60.0:
 
 embedded:
   stage: build
-  image: devrandom01/rust-qemu:nightly
+  image: devrandom01/rust-qemu:nightly-1-63-2022-05-16
   variables:
     RUSTFLAGS: "-C link-arg=-Tlink.x"
     CARGO_TARGET_THUMBV7M_NONE_EABI_RUNNER: "qemu-system-arm -cpu cortex-m3 -machine mps2-an385 -nographic -semihosting-config enable=on,target=native -kernel"
@@ -32,7 +32,7 @@ embedded:
 
 wasm:
   stage: build
-  image: devrandom01/rust-qemu:nightly
+  image: devrandom01/rust-qemu:nightly-1-63-2022-05-16
   script:
     - cd wasm
     - wasm-pack test --firefox --headless
