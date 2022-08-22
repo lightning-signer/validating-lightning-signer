@@ -28,7 +28,6 @@ bitcoind-client = { path = "../bitcoind-client" }
 backtrace = "0.3"
 bip39 = { version = "1.0.0", features = ["rand"] }
 hex = "0.4"
-rand = { version = "0.4" }
 kv = { version = "0.23", features = ["json-value"] }
 tonic = { version = "0.6" }
 prost = { version = "0.9" }

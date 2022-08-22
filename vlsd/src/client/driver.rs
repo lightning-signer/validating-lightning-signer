@@ -11,7 +11,8 @@ use remotesigner::{
 };
 
 use bip39::{Language, Mnemonic};
-use rand::{OsRng, Rng};
+use lightning_signer::bitcoin::secp256k1::rand;
+use rand::{rngs::OsRng, RngCore};
 
 pub async fn connect(
     uri: &str,
@@ -141,7 +142,7 @@ pub async fn new_channel(
     if let Some(nonce_hex) = nonce_hex {
         channel_nonce.copy_from_slice(hex::decode(nonce_hex).unwrap().as_slice());
     } else {
-        let mut rng = OsRng::new().unwrap();
+        let mut rng = OsRng;
         rng.fill_bytes(&mut channel_nonce);
     }
 

@@ -884,7 +884,6 @@ dependencies = [
  "lightning-invoice",
  "log",
  "paste",
- "rand 0.4.6",
  "scopeguard",
  "test-log",
  "tonic",
@@ -1295,19 +1294,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbe448f377a7d6961e30f5955f9b8d106c3f5e449d493ee1b125c1d43c2b5179"
 dependencies = [
  "proc-macro2",
-]
-
-[[package]]
-name = "rand"
-version = "0.4.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "552840b97013b1a26992c11eac34bdd778e464601a4c2054b5f0bff7c6761293"
-dependencies = [
- "fuchsia-cprng",
- "libc",
- "rand_core 0.3.1",
- "rdrand",
- "winapi",
 ]
 
 [[package]]
@@ -2333,7 +2319,6 @@ dependencies = [
  "lightning-signer-server",
  "log",
  "prost",
- "rand 0.4.6",
  "serde",
  "serde_json",
  "test-log",
