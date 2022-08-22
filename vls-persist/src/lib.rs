@@ -6,4 +6,4 @@ pub mod ser_util;
 pub mod util;
 
 #[cfg(feature = "kv-json")]
-pub mod persist_json;
+pub mod kv_json;

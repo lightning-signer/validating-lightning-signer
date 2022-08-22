@@ -753,7 +753,6 @@ dependencies = [
  "lightning-signer-core",
  "log",
  "serde",
- "serde_json",
  "serde_with",
 ]
 

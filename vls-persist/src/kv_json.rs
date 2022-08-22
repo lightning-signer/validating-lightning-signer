@@ -1,4 +1,4 @@
-use kv::{Bucket, Config, Json, Store, TransactionError};
+use kv::{Bucket, Config, Json, Key, Raw, Store, TransactionError};
 
 use bitcoin::secp256k1::PublicKey;
 use lightning_signer::bitcoin;
@@ -18,6 +18,12 @@ use log::error;
 use super::model::NodeChannelId;
 use super::model::{AllowlistItemEntry, ChannelEntry, NodeEntry};
 use super::model::{ChainTrackerEntry, NodeStateEntry};
+
+impl<'a> Key<'a> for NodeChannelId {
+    fn from_raw_key(r: &'a Raw) -> Result<Self, kv::Error> {
+        Ok(NodeChannelId(r.to_vec()))
+    }
+}
 
 /// A persister that uses the kv crate and JSON serialization for values.
 pub struct KVJsonPersister<'a> {

@@ -18,7 +18,6 @@ kv-json = ["kv"]
 [dependencies]
 lightning-signer-core = { path = "../lightning-signer-core", default-features = false, features = ["serde"]}
 serde = { version = "1.0", features = ["derive", "alloc"], default-features = false }
-serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 serde_with = { version = "2.0", default-features = false, features = ["hex", "macros"] }
 hex = { version = "0.4", default-features = false }
 kv = { version = "0.23", features = ["json-value"], optional = true }
@@ -28,6 +27,7 @@ log = { version = "0.4", default-features = false }
 tempfile = "3.2"
 test-log = "0.2"
 env_logger = "0.9"
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 
 [[bin]]
 name = "persist_test"
