@@ -1,16 +1,17 @@
 #[cfg(test)]
 mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-    use bitcoin::{self, OutPoint, Script, Transaction, TxIn, TxOut, Txid, Witness};
+    use bitcoin::{
+        self, OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
+    };
+    use lightning::ln::chan_utils;
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
     use test_log::test;
 
     use crate::channel::{Channel, ChannelBase, CommitmentType, TypedSignature};
     use crate::node::SpendType::{P2shP2wpkh, P2wpkh};
     use crate::policy::validator::ChainState;
-    use crate::util::crypto_utils::{
-        derive_private_revocation_key, derive_public_key, derive_revocation_pubkey,
-    };
+    use crate::util::crypto_utils::derive_public_key;
     use crate::util::key_utils::{make_test_key, make_test_pubkey};
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
@@ -23,11 +24,11 @@ mod tests {
     ) -> Transaction {
         Transaction {
             version: 2,
-            lock_time: 0,
+            lock_time: PackedLockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid, vout },
                 script_sig: Script::new(),
-                sequence: 0x_ffff_ffff_u32,
+                sequence: Sequence::MAX,
                 witness: Witness::default(),
             }],
             output: vec![TxOut { script_pubkey: script_pubkey, value: amount_sat }],
@@ -95,14 +96,14 @@ mod tests {
 
                 let (revocation_base_point, revocation_base_secret) = make_test_key(42);
 
-                let revocation_pubkey = derive_revocation_pubkey(
+                let revocation_pubkey = chan_utils::derive_public_revocation_key(
                     &secp_ctx,
                     &per_commitment_point,
                     &revocation_base_point,
                 )
                 .expect("revocation_pubkey");
 
-                let mut revocation_secret = derive_private_revocation_key(
+                let mut revocation_secret = chan_utils::derive_private_revocation_key(
                     &secp_ctx,
                     &per_commitment_secret,
                     &revocation_base_secret,
@@ -273,7 +274,7 @@ mod tests {
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.lock_time = 1_000_000;
+                    tx.lock_time = PackedLockTime(1_000_000);
                 },
             ),
             "transaction format: validate_justice_sweep: bad locktime: 1000000 > 3"
@@ -286,7 +287,7 @@ mod tests {
         assert_status_ok!(sign_justice_sweep_with_mutators(
             |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
             |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                tx.input[0].sequence = 0x_ffff_fffd_u32;
+                tx.input[0].sequence = Sequence::ENABLE_RBF_NO_LOCKTIME;
             },
         ));
     }
@@ -298,7 +299,7 @@ mod tests {
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.input[0].sequence = 42;
+                    tx.input[0].sequence = Sequence(42);
                 },
             ),
             "transaction format: validate_justice_sweep: \

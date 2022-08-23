@@ -1,9 +1,9 @@
 use crate::chain::tracker::ChainTracker;
 use bitcoin;
+#[cfg(feature = "std")]
+use bitcoin::secp256k1::rand::{rngs::OsRng, RngCore};
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::OutPoint;
-#[cfg(feature = "std")]
-use rand::{OsRng, Rng};
 
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSlot};
 use crate::monitor::ChainMonitor;
@@ -56,7 +56,7 @@ impl MultiSigner {
     /// Create a node with a random seed
     #[cfg(feature = "std")]
     pub fn new_node(&self, node_config: NodeConfig) -> Result<PublicKey, Status> {
-        let mut rng = OsRng::new().unwrap();
+        let mut rng = OsRng;
 
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);

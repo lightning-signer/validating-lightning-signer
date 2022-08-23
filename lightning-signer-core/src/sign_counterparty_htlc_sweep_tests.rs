@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1};
-    use bitcoin::{self, OutPoint, Script, Transaction, TxIn, TxOut, Txid, Witness};
+    use bitcoin::{
+        self, OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
+    };
     use lightning::ln::chan_utils::get_htlc_redeemscript;
     use test_log::test;
 
@@ -28,11 +30,11 @@ mod tests {
     ) -> Transaction {
         Transaction {
             version: 2,
-            lock_time: 0,
+            lock_time: PackedLockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid, vout },
                 script_sig: Script::new(),
-                sequence: if is_anchors { 1 } else { 0 },
+                sequence: Sequence(if is_anchors { 1 } else { 0 }),
                 witness: Witness::default(),
             }],
             output: vec![TxOut { script_pubkey: script_pubkey, value: amount_sat }],
@@ -49,11 +51,11 @@ mod tests {
     ) -> Transaction {
         Transaction {
             version: 2,
-            lock_time,
+            lock_time: PackedLockTime(lock_time),
             input: vec![TxIn {
                 previous_output: OutPoint { txid, vout },
                 script_sig: Script::new(),
-                sequence: if is_anchors { 1 } else { 0 },
+                sequence: Sequence(if is_anchors { 1 } else { 0 }),
                 witness: Witness::default(),
             }],
             output: vec![TxOut { script_pubkey: script_pubkey, value: amount_sat }],
@@ -280,7 +282,7 @@ mod tests {
                 OfferedHTLC,
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.lock_time = 1_000_000;
+                    tx.lock_time = PackedLockTime(1_000_000);
                 },
             ),
             "transaction format: validate_counterparty_htlc_sweep: \
@@ -296,7 +298,7 @@ mod tests {
                 ReceivedHTLC,
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.input[0].sequence = 42;
+                    tx.input[0].sequence = Sequence(42);
                 },
             ),
             "transaction format: validate_counterparty_htlc_sweep: \
@@ -311,7 +313,7 @@ mod tests {
             ReceivedHTLC,
             |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
             |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                tx.input[0].sequence = 0;
+                tx.input[0].sequence = Sequence::ZERO;
             },
         ));
     }
@@ -323,7 +325,7 @@ mod tests {
             ReceivedHTLC,
             |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
             |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                tx.input[0].sequence = 0xffff_ffff_u32;
+                tx.input[0].sequence = Sequence::MAX;
             },
         ));
     }
@@ -335,7 +337,7 @@ mod tests {
             ReceivedHTLC,
             |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
             |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                tx.input[0].sequence = 0xffff_fffd_u32;
+                tx.input[0].sequence = Sequence::ENABLE_RBF_NO_LOCKTIME;
             },
         ));
     }
@@ -348,7 +350,7 @@ mod tests {
                 ReceivedHTLC,
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.input[0].sequence = 0xffff_fffe_u32;
+                    tx.input[0].sequence = Sequence(u32::MAX - 1);
                 },
             ),
             "transaction format: validate_counterparty_htlc_sweep: \

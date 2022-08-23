@@ -1,13 +1,12 @@
-use std::collections::BTreeMap as OrderedMap;
-use std::fmt;
-use std::fmt::{Display, Formatter};
-use std::iter::FromIterator;
+use lightning_signer::prelude::*;
+
+use core::fmt;
+use core::fmt::{Display, Formatter};
+use core::iter::FromIterator;
 
 use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{Network, OutPoint};
-#[cfg(feature = "persist_kv_json")]
-use kv::{Key, Raw};
 use lightning_signer::chain::tracker::{ChainTracker, ListenSlot};
 use serde::{Deserialize, Serialize};
 use serde_with::hex::Hex;
@@ -121,7 +120,7 @@ pub struct AllowlistItemEntry {
 
 /// Fully qualified channel ID
 #[derive(Clone)]
-pub struct NodeChannelId(Vec<u8>);
+pub struct NodeChannelId(pub Vec<u8>);
 
 impl NodeChannelId {
     pub fn new(node_id: &PublicKey, channel_id: &ChannelId) -> Self {
@@ -160,13 +159,6 @@ impl Display for NodeChannelId {
 impl AsRef<[u8]> for NodeChannelId {
     fn as_ref(&self) -> &[u8] {
         &self.0.as_slice()
-    }
-}
-
-#[cfg(feature = "persist_kv_json")]
-impl<'a> Key<'a> for NodeChannelId {
-    fn from_raw_key(r: &'a Raw) -> Result<Self, kv::Error> {
-        Ok(NodeChannelId(r.to_vec()))
     }
 }
 

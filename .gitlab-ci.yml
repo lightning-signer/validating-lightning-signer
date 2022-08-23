@@ -6,22 +6,15 @@ rust-latest:
   image: rust:latest
   script:
     - rustup component add rustfmt
-    - cargo build # make sure it builds with test_utils
+    - cargo build # make sure it builds without test_utils
     - cargo build --features test_utils
     - cargo test --features test_utils
+    # ensure vls-persist build with no-std
+    - cargo build -p vls-persist --no-default-features --features no-std
 
-# match MSRV for (parts of) rust-lightning
-rust-1.45.2:
+rust-1.60.0:
   stage: build
-  allow_failure: true
-  image: rust:1.45.2
-  script:
-    - (cd lightning-signer-core && cargo build --features test_utils && cargo test --features test_utils )
-
-# rust version in Debian bullseye
-rust-1.58.0:
-  stage: build
-  image: rust:1.58.0
+  image: rust:1.60.0
   script:
     - rustup component add rustfmt
     - cargo build # make sure it builds with test_utils
@@ -30,7 +23,7 @@ rust-1.58.0:
 
 embedded:
   stage: build
-  image: devrandom01/rust-qemu:nightly
+  image: devrandom01/rust-qemu:nightly-1-63-2022-05-16
   variables:
     RUSTFLAGS: "-C link-arg=-Tlink.x"
     CARGO_TARGET_THUMBV7M_NONE_EABI_RUNNER: "qemu-system-arm -cpu cortex-m3 -machine mps2-an385 -nographic -semihosting-config enable=on,target=native -kernel"
@@ -39,7 +32,7 @@ embedded:
 
 wasm:
   stage: build
-  image: devrandom01/rust-qemu:nightly
+  image: devrandom01/rust-qemu:nightly-1-63-2022-05-16
   script:
     - cd wasm
     - wasm-pack test --firefox --headless

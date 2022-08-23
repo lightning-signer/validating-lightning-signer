@@ -7,7 +7,7 @@ use lightning_signer::persist::Persist;
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::status::Status;
-use lightning_signer_server::persist::persist_json::KVJsonPersister;
+use lightning_signer_server::persist::kv_json::KVJsonPersister;
 use log::{error, info};
 use std::convert::TryInto;
 use std::net::{Ipv4Addr, SocketAddrV4};

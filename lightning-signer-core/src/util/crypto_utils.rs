@@ -54,66 +54,6 @@ pub(crate) fn derive_public_key<T: secp256k1::Signing>(
     base_point.combine(&hashkey)
 }
 
-// FIXME - copied from chan_utils.derive_public_revocation_key, lobby to increase visibility.
-pub(crate) fn derive_revocation_pubkey<T: secp256k1::Verification>(
-    secp_ctx: &Secp256k1<T>,
-    per_commitment_point: &PublicKey,
-    revocation_base_point: &PublicKey,
-) -> Result<PublicKey, secp256k1::Error> {
-    let rev_append_commit_hash_key = {
-        let mut sha = BitcoinSha256::engine();
-        sha.input(&revocation_base_point.serialize());
-        sha.input(&per_commitment_point.serialize());
-
-        BitcoinSha256::from_engine(sha).into_inner()
-    };
-    let commit_append_rev_hash_key = {
-        let mut sha = BitcoinSha256::engine();
-        sha.input(&per_commitment_point.serialize());
-        sha.input(&revocation_base_point.serialize());
-
-        BitcoinSha256::from_engine(sha).into_inner()
-    };
-
-    let mut part_a = revocation_base_point.clone();
-    part_a.mul_assign(&secp_ctx, &rev_append_commit_hash_key)?;
-    let mut part_b = per_commitment_point.clone();
-    part_b.mul_assign(&secp_ctx, &commit_append_rev_hash_key)?;
-    part_a.combine(&part_b)
-}
-
-// FIXME - copied from chan_utils, lobby to increase visibility.
-pub(crate) fn derive_private_revocation_key<T: secp256k1::Signing>(
-    secp_ctx: &Secp256k1<T>,
-    per_commitment_secret: &SecretKey,
-    revocation_base_secret: &SecretKey,
-) -> Result<SecretKey, secp256k1::Error> {
-    let revocation_base_point = PublicKey::from_secret_key(&secp_ctx, &revocation_base_secret);
-    let per_commitment_point = PublicKey::from_secret_key(&secp_ctx, &per_commitment_secret);
-
-    let rev_append_commit_hash_key = {
-        let mut sha = BitcoinSha256::engine();
-        sha.input(&revocation_base_point.serialize());
-        sha.input(&per_commitment_point.serialize());
-
-        BitcoinSha256::from_engine(sha).into_inner()
-    };
-    let commit_append_rev_hash_key = {
-        let mut sha = BitcoinSha256::engine();
-        sha.input(&per_commitment_point.serialize());
-        sha.input(&revocation_base_point.serialize());
-
-        BitcoinSha256::from_engine(sha).into_inner()
-    };
-
-    let mut part_a = revocation_base_secret.clone();
-    part_a.mul_assign(&rev_append_commit_hash_key)?;
-    let mut part_b = per_commitment_secret.clone();
-    part_b.mul_assign(&commit_append_rev_hash_key)?;
-    part_a.add_assign(&part_b[..])?;
-    Ok(part_a)
-}
-
 pub(crate) fn payload_for_p2wpkh(key: &PublicKey) -> Payload {
     let mut hash_engine = BitcoinHash160::engine();
     hash_engine.input(&key.serialize());
@@ -160,9 +100,6 @@ pub fn bitcoin_vec_to_signature(
 mod tests {
     use super::*;
     use bitcoin::hashes::hex::ToHex;
-    use bitcoin::secp256k1::Message;
-    use bitcoin::secp256k1::XOnlyPublicKey;
-    use bitcoin::util::key::KeyPair;
 
     #[test]
     fn test_hkdf() {
@@ -178,24 +115,5 @@ mod tests {
             output.to_vec().to_hex(),
             "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0"
         );
-    }
-
-    #[test]
-    fn test_xonly() {
-        let secp = Secp256k1::new();
-        let seckey = SecretKey::from_slice(&[42; 32]).unwrap();
-        let pubkey = PublicKey::from_secret_key(&secp, &seckey);
-        let keypair = KeyPair::from_secret_key(&secp, seckey.clone());
-        let mut xkey = XOnlyPublicKey::from_keypair(&keypair);
-        println!("{}", pubkey);
-        println!("{}", xkey);
-        println!("{}", xkey.serialize().to_hex());
-
-        let tweak = [33u8; 32];
-        xkey.tweak_add_assign(&secp, &tweak).expect("tweak");
-        println!("{}", xkey);
-
-        let msg = Message::from_slice(&[11; 32]).unwrap();
-        let _sig = secp.sign_schnorr_no_aux_rand(&msg, &keypair);
     }
 }

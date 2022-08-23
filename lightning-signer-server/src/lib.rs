@@ -4,16 +4,13 @@
 #![allow(ellipsis_inclusive_range_patterns)]
 
 pub use lightning_signer;
-
-use lightning_signer::lightning;
+pub use vls_persist as persist;
 
 pub mod fslogger;
 #[cfg(feature = "grpc")]
 pub mod grpc;
 #[cfg(feature = "frontend")]
 pub mod nodefront;
-#[cfg(feature = "persist")]
-pub mod persist;
 #[cfg(feature = "grpc")]
 mod util;
 

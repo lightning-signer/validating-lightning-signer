@@ -10,10 +10,13 @@ use bitcoin::hashes::hash160::Hash as Hash160;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::sha256::HashEngine as Sha256State;
 use bitcoin::hashes::{Hash, HashEngine};
-use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Signing};
+use bitcoin::secp256k1::ecdh::SharedSecret;
+use bitcoin::secp256k1::{All, Message, PublicKey, Scalar, Secp256k1, SecretKey, Signing};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::util::key::KeyPair;
-use bitcoin::{secp256k1, EcdsaSighashType, Transaction, TxIn, TxOut, Witness};
+use bitcoin::{
+    secp256k1, EcdsaSighashType, PackedLockTime, Sequence, Transaction, TxIn, TxOut, Witness,
+};
 use bitcoin::{Network, Script};
 use lightning::chain::keysinterface::{
     DelayedPaymentOutputDescriptor, InMemorySigner, KeyMaterial, KeysInterface, Recipient,
@@ -130,7 +133,7 @@ impl MyKeysManager {
             .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(9735).unwrap())
             .expect("Your RNG is busted")
             .private_key;
-        let bolt12_keypair = KeyPair::from_secret_key(&secp_ctx, bolt12_child);
+        let bolt12_keypair = KeyPair::from_secret_key(&secp_ctx, &bolt12_child);
         let mut res = MyKeysManager {
             secp_ctx,
             seed: seed.to_vec(),
@@ -166,7 +169,7 @@ impl MyKeysManager {
 
     /// BOLT 12 x-only pubkey
     pub fn get_bolt12_pubkey(&self) -> XOnlyPublicKey {
-        XOnlyPublicKey::from_keypair(&self.bolt12_keypair)
+        XOnlyPublicKey::from_keypair(&self.bolt12_keypair).0
     }
 
     /// BOLT 12 sign
@@ -192,16 +195,14 @@ impl MyKeysManager {
 
         let kp = if let Some(publictweak) = publictweak_opt {
             // Compute the tweaked key
-            let xpub_ser = XOnlyPublicKey::from_keypair(&self.bolt12_keypair).serialize();
+            let xpub_ser = XOnlyPublicKey::from_keypair(&self.bolt12_keypair).0.serialize();
             let mut sha = Sha256::engine();
             sha.input(&xpub_ser);
             sha.input(publictweak);
-            let tweak = Sha256::from_engine(sha).into_inner();
-            let mut kp = self.bolt12_keypair;
-            kp.tweak_add_assign(&self.secp_ctx, &tweak).map_err(|_| ())?;
-            kp
+            let tweak = Scalar::from_be_bytes(Sha256::from_engine(sha).into_inner()).unwrap();
+            self.bolt12_keypair.add_xonly_tweak(&self.secp_ctx, &tweak).map_err(|_| ())?
         } else {
-            KeyPair::from_secret_key(&self.secp_ctx, self.node_secret)
+            KeyPair::from_secret_key(&self.secp_ctx, &self.node_secret)
         };
         let msg = Message::from_slice(&sig_hash).unwrap();
         Ok(self.secp_ctx.sign_schnorr_no_aux_rand(&msg, &kp))
@@ -335,7 +336,7 @@ impl MyKeysManager {
                     input.push(TxIn {
                         previous_output: descriptor.outpoint.into_bitcoin_outpoint(),
                         script_sig: Script::new(),
-                        sequence: 0,
+                        sequence: Sequence::ZERO,
                         witness: Witness::default(),
                     });
                     witness_weight += StaticPaymentOutputDescriptor::MAX_WITNESS_LENGTH;
@@ -348,7 +349,7 @@ impl MyKeysManager {
                     input.push(TxIn {
                         previous_output: descriptor.outpoint.into_bitcoin_outpoint(),
                         script_sig: Script::new(),
-                        sequence: descriptor.to_self_delay as u32,
+                        sequence: Sequence(descriptor.to_self_delay as u32),
                         witness: Witness::default(),
                     });
                     witness_weight += DelayedPaymentOutputDescriptor::MAX_WITNESS_LENGTH;
@@ -361,7 +362,7 @@ impl MyKeysManager {
                     input.push(TxIn {
                         previous_output: outpoint.into_bitcoin_outpoint(),
                         script_sig: Script::new(),
-                        sequence: 0,
+                        sequence: Sequence::ZERO,
                         witness: Witness::default(),
                     });
                     witness_weight += 1 + 73 + 34;
@@ -375,7 +376,8 @@ impl MyKeysManager {
                 return Err(());
             }
         }
-        let mut spend_tx = Transaction { version: 2, lock_time: 0, input, output: outputs };
+        let mut spend_tx =
+            Transaction { version: 2, lock_time: PackedLockTime::ZERO, input, output: outputs };
         transaction_utils::maybe_add_change_output(
             &mut spend_tx,
             input_value,
@@ -488,6 +490,19 @@ impl KeysInterface for MyKeysManager {
             Recipient::Node => Ok(self.node_secret.clone()),
             Recipient::PhantomNode => Err(()),
         }
+    }
+
+    fn ecdh(
+        &self,
+        recipient: Recipient,
+        other_key: &PublicKey,
+        tweak: Option<&Scalar>,
+    ) -> Result<SharedSecret, ()> {
+        let mut node_secret = self.get_node_secret(recipient)?;
+        if let Some(tweak) = tweak {
+            node_secret = node_secret.mul_tweak(tweak).map_err(|_| ())?;
+        }
+        Ok(SharedSecret::new(other_key, &node_secret))
     }
 
     fn get_destination_script(&self) -> Script {

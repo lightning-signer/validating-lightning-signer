@@ -444,10 +444,10 @@ impl ToStringForNetwork for Allowable {
     fn to_string(&self, network: Network) -> String {
         match self {
             Allowable::Script(script) => {
-                let addr_opt = Address::from_script(&script, network);
-                addr_opt
+                let addr_res = Address::from_script(&script, network);
+                addr_res
                     .map(|a| format!("address:{}", a.to_string()))
-                    .unwrap_or_else(|| format!("invalid_script:{}", script.to_hex()))
+                    .unwrap_or_else(|_| format!("invalid_script:{}", script.to_hex()))
             }
             Allowable::Payee(pubkey) => format!("payee:{}", pubkey.to_hex()),
         }

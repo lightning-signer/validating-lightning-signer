@@ -8,7 +8,7 @@ description = "vlsd and vls-cli binaries."
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 readme = "../README.md"
-rust-version = "1.58.0"
+rust-version = "1.60.0"
 
 [features]
 default = ["debug", "frontend"]
@@ -22,19 +22,18 @@ anyhow = "1.0"
 log = { version="0.4.14", features = [ "std" ] }
 time = "0.2"
 lightning-signer-core = { path = "../lightning-signer-core", features = ["debug", "grpc", "use_backtrace"] }
-lightning-signer-server = { path = "../lightning-signer-server", features = ["persist", "grpc", "persist_kv_json", "frontend"] }
+lightning-signer-server = { path = "../lightning-signer-server", features = ["persist", "grpc", "persist-kv-json", "frontend"] }
 vls-frontend = { path = "../vls-frontend", optional = true }
 bitcoind-client = { path = "../bitcoind-client" }
 backtrace = "0.3"
 bip39 = { version = "1.0.0", features = ["rand"] }
-hex = "0.3.2"
-rand = { version = "0.4" }
-kv = { version = "0.22.0", features = ["json-value"] }
+hex = "0.4"
+kv = { version = "0.23", features = ["json-value"] }
 tonic = { version = "0.6" }
 prost = { version = "0.9" }
 tokio = { version = "1.17", features = ["macros", "rt-multi-thread"] }
-serde = { version = "1.0.105", features = ["derive"] }
-serde_json = { version = "1.0.48" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
 clap = { version = "=3.0.0-beta.2" }
 ctrlc = { version = "3.1.9", features = ["termination"] }
 triggered = "0.1.1"

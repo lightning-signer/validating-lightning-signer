@@ -19,7 +19,7 @@ use client::{Client, UnixClient};
 use lightning_signer::node::NodeServices;
 use lightning_signer::util::clock::StandardClock;
 use lightning_signer_server::nodefront::SingleFront;
-use lightning_signer_server::persist::persist_json::KVJsonPersister;
+use lightning_signer_server::persist::kv_json::KVJsonPersister;
 use util::{create_runtime, read_allowlist};
 use vls_protocol_signer::handler::{ChannelHandler, Handler, RootHandler};
 

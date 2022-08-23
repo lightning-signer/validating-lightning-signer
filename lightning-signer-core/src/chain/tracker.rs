@@ -358,7 +358,8 @@ pub fn max_target(network: Network) -> Uint256 {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::Witness;
+    use bitcoin::hashes::Hash;
+    use bitcoin::{PackedLockTime, Sequence, TxMerkleNode, Witness};
     use core::iter::FromIterator;
 
     use crate::bitcoin::blockdata::constants::genesis_block;
@@ -377,7 +378,7 @@ mod tests {
         let mut tracker = make_tracker()?;
         assert_eq!(tracker.height(), 0);
         assert_eq!(tracker.add_block(tracker.tip(), vec![], None).err(), Some(Error::InvalidChain));
-        let header = make_header(tracker.tip(), Default::default());
+        let header = make_header(tracker.tip(), TxMerkleNode::all_zeros());
         tracker.add_block(header, vec![], None)?;
         assert_eq!(tracker.height(), 1);
 
@@ -385,7 +386,7 @@ mod tests {
         let bad_bits = header.bits - 1;
         // println!("{:x} {} {}", header.bits, BlockHeader::u256_from_compact_target(header.bits), BlockHeader::u256_from_compact_target(bad_bits));
         let header_bad_bits =
-            mine_header_with_bits(tracker.tip.block_hash(), Default::default(), bad_bits);
+            mine_header_with_bits(tracker.tip.block_hash(), TxMerkleNode::all_zeros(), bad_bits);
         assert_eq!(
             tracker.add_block(header_bad_bits, vec![], None).err(),
             Some(Error::InvalidChain)
@@ -456,7 +457,7 @@ mod tests {
     fn test_listeners() -> Result<(), Error> {
         let mut tracker = make_tracker()?;
 
-        let header = make_header(tracker.tip(), Default::default());
+        let header = make_header(tracker.tip(), TxMerkleNode::all_zeros());
         tracker.add_block(header, vec![], None)?;
 
         let tx = make_tx(vec![make_txin(1)]);
@@ -484,7 +485,7 @@ mod tests {
         let tx2 = make_tx(vec![TxIn {
             previous_output: second_watch,
             script_sig: Default::default(),
-            sequence: 0,
+            sequence: Sequence::ZERO,
             witness: Witness::default(),
         }]);
 
@@ -535,7 +536,7 @@ mod tests {
         let mut tracker = make_tracker()?;
         let txs = [Transaction {
             version: 0,
-            lock_time: 0,
+            lock_time: PackedLockTime::ZERO,
             input: vec![Default::default()],
             output: vec![Default::default()],
         }];
@@ -553,7 +554,7 @@ mod tests {
         );
 
         // try with a wrong root
-        let bad_header = make_header(tracker.tip(), Default::default());
+        let bad_header = make_header(tracker.tip(), TxMerkleNode::all_zeros());
         assert_eq!(
             tracker.add_block(bad_header, txs.to_vec(), Some(proof.clone())).err(),
             Some(Error::InvalidSpvProof)
@@ -562,7 +563,7 @@ mod tests {
         // try with a wrong txid
         let bad_tx = Transaction {
             version: 1,
-            lock_time: 0,
+            lock_time: PackedLockTime::ZERO,
             input: vec![Default::default()],
             output: vec![Default::default()],
         };
@@ -582,7 +583,7 @@ mod tests {
     fn test_retarget() -> Result<(), Error> {
         let mut tracker = make_tracker()?;
         for _ in 1..DIFFCHANGE_INTERVAL {
-            let header = make_header(tracker.tip(), Default::default());
+            let header = make_header(tracker.tip(), TxMerkleNode::all_zeros());
             tracker.add_block(header, vec![], None)?;
         }
         assert_eq!(tracker.height, DIFFCHANGE_INTERVAL - 1);
@@ -590,17 +591,20 @@ mod tests {
 
         // Decrease difficulty by 2 fails because of chain max
         let bits = BlockHeader::compact_target_from_u256(&(target << 1));
-        let header = mine_header_with_bits(tracker.tip().block_hash(), Default::default(), bits);
+        let header =
+            mine_header_with_bits(tracker.tip().block_hash(), TxMerkleNode::all_zeros(), bits);
         assert_eq!(tracker.add_block(header, vec![], None).err(), Some(Error::InvalidBlock));
 
         // Increase difficulty by 8 fails because of max retarget
         let bits = BlockHeader::compact_target_from_u256(&(target >> 3));
-        let header = mine_header_with_bits(tracker.tip().block_hash(), Default::default(), bits);
+        let header =
+            mine_header_with_bits(tracker.tip().block_hash(), TxMerkleNode::all_zeros(), bits);
         assert_eq!(tracker.add_block(header, vec![], None).err(), Some(Error::InvalidChain));
 
         // Increase difficulty by 2
         let bits = BlockHeader::compact_target_from_u256(&(target >> 1));
-        let header = mine_header_with_bits(tracker.tip().block_hash(), Default::default(), bits);
+        let header =
+            mine_header_with_bits(tracker.tip().block_hash(), TxMerkleNode::all_zeros(), bits);
         tracker.add_block(header, vec![], None)?;
         Ok(())
     }

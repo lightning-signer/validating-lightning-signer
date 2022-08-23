@@ -6,10 +6,8 @@ use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::InvoiceState;
 use lightning_signer::persist::Persist;
 use lightning_signer::util::test_utils::{self, hex_decode, TEST_CHANNEL_ID, TEST_NODE_CONFIG};
-use lightning_signer_server::persist::model::{
-    ChannelEntry, NodeChannelId, NodeEntry, NodeStateEntry,
-};
-use lightning_signer_server::persist::persist_json::KVJsonPersister;
+use vls_persist::kv_json::KVJsonPersister;
+use vls_persist::model::{ChannelEntry, NodeChannelId, NodeEntry, NodeStateEntry};
 
 pub fn main() {
     let persister = KVJsonPersister::new("/tmp/signer.kv");

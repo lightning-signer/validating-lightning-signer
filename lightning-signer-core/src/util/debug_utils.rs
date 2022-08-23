@@ -180,8 +180,8 @@ pub fn script_debug(script: &Script, network: Network) -> String {
         script.to_hex(),
         network,
         match Address::from_script(script, network) {
-            Some(addr) => addr.to_string(),
-            None => "<bad-address>".to_string(),
+            Ok(addr) => addr.to_string(),
+            Err(_) => "<bad-address>".to_string(),
         },
     )
 }

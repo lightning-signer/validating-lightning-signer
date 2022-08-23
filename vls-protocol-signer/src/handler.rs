@@ -115,7 +115,7 @@ impl RootHandler {
             #[cfg(feature = "std")]
             {
                 let mut seed = [0; 32];
-                let mut rng = OsRng::new().unwrap();
+                let mut rng = OsRng;
                 rng.fill_bytes(&mut seed);
                 seed
             }
@@ -247,8 +247,9 @@ impl Handler for RootHandler {
                 Ok(Box::new(msgs::GetChannelBasepointsReply { basepoints, funding }))
             }
             Message::SignWithdrawal(m) => {
-                let mut psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())
-                    .expect("psbt");
+                let mut psbt =
+                    PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
+                        .expect("psbt");
                 let mut tx = psbt.clone().extract_tx();
                 let ipaths = m.utxos.iter().map(|u| vec![u.keyindex]).collect();
                 let values_sat = m.utxos.iter().map(|u| u.amount).collect();
@@ -355,9 +356,10 @@ impl Handler for RootHandler {
                 // WORKAROUND - sometimes c-lightning calls handle_sign_commitment_tx
                 // with mutual close transactions.  We can tell the difference because
                 // the locktime field will be set to 0 for a mutual close.
-                let sig = if tx.lock_time == 0 {
+                let sig = if tx.lock_time.0 == 0 {
                     let psbt =
-                        PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice()).unwrap();
+                        PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
+                            .unwrap();
                     let opaths = extract_psbt_output_paths(&psbt);
                     self.node.with_ready_channel(&channel_id, |chan| {
                         chan.sign_mutual_close_tx(&tx, &opaths)
@@ -602,7 +604,7 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::ReadyChannelReply {}))
             }
             Message::SignRemoteHtlcTx(m) => {
-                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())
+                let psbt = PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
                     .expect("psbt");
                 let mut tx_bytes = m.tx.0.clone();
                 let remote_per_commitment_point =
@@ -633,7 +635,7 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::SignTxReply { signature: typed_to_bitcoin_sig(sig) }))
             }
             Message::SignRemoteCommitmentTx(m) => {
-                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())
+                let psbt = PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
                     .expect("psbt");
                 let witscripts = extract_psbt_witscripts(&psbt);
                 let mut tx_bytes = m.tx.0.clone();
@@ -681,7 +683,7 @@ impl Handler for ChannelHandler {
                 }))
             }
             Message::SignDelayedPaymentToUs(m) => {
-                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())
+                let psbt = PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
                     .expect("psbt");
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
@@ -712,7 +714,7 @@ impl Handler for ChannelHandler {
                 }))
             }
             Message::SignRemoteHtlcToUs(m) => {
-                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())
+                let psbt = PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
                     .expect("psbt");
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
@@ -744,7 +746,7 @@ impl Handler for ChannelHandler {
                 }))
             }
             Message::SignLocalHtlcTx(m) => {
-                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())
+                let psbt = PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
                     .expect("psbt");
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
@@ -776,7 +778,7 @@ impl Handler for ChannelHandler {
                 }))
             }
             Message::SignMutualCloseTx(m) => {
-                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())
+                let psbt = PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
                     .expect("psbt");
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
@@ -799,7 +801,7 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::SignTxReply { signature: to_bitcoin_sig(sig) }))
             }
             Message::ValidateCommitmentTx(m) => {
-                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())
+                let psbt = PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
                     .expect("psbt");
                 let witscripts = extract_psbt_witscripts(&psbt);
                 let mut tx_bytes = m.tx.0.clone();
@@ -895,7 +897,7 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::ValidateRevocationReply {}))
             }
             Message::SignPenaltyToUs(m) => {
-                let psbt = PartiallySignedTransaction::consensus_decode(m.psbt.0.as_slice())
+                let psbt = PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
                     .expect("psbt");
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");

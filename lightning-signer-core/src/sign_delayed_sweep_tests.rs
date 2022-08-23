@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin::{self, OutPoint, Script, Transaction, TxIn, TxOut, Txid, Witness};
+    use bitcoin::{
+        self, OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
+    };
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
     use test_log::test;
 
@@ -19,11 +21,11 @@ mod tests {
     ) -> Transaction {
         Transaction {
             version: 2,
-            lock_time: 0,
+            lock_time: PackedLockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid, vout },
                 script_sig: Script::new(),
-                sequence: contest_delay as u32,
+                sequence: Sequence(contest_delay as u32),
                 witness: Witness::default(),
             }],
             output: vec![TxOut { script_pubkey: script_pubkey, value: amount_sat }],
@@ -249,7 +251,7 @@ mod tests {
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.lock_time = 1_000_000;
+                    tx.lock_time = PackedLockTime(1_000_000);
                 },
             ),
             "transaction format: validate_delayed_sweep: bad locktime: 1000000 > 3"
@@ -263,7 +265,7 @@ mod tests {
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.input[0].sequence = 42;
+                    tx.input[0].sequence = Sequence(42);
                 },
             ),
             "transaction format: validate_delayed_sweep: bad sequence: 42 != 7"

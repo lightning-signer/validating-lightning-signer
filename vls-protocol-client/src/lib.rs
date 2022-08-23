@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use bit_vec::BitVec;
 use bitcoin::hashes::Hash;
-use bitcoin::secp256k1::{ecdsa::Signature, All, PublicKey, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{
+    ecdh::SharedSecret, ecdsa::Signature, All, PublicKey, Scalar, Secp256k1, SecretKey,
+};
 use bitcoin::Transaction;
 use lightning::chain::keysinterface::KeysInterface;
 use lightning::chain::keysinterface::{BaseSign, Sign};
@@ -425,7 +427,7 @@ pub struct KeysManagerClient {
 impl KeysManagerClient {
     /// Create a new VLS client with the given transport
     pub fn new(transport: Arc<dyn Transport>, network: String) -> Self {
-        let mut rng = OsRng::new().unwrap();
+        let mut rng = OsRng;
         let mut key_material_bytes = [0; 32];
         rng.fill_bytes(&mut key_material_bytes);
 
@@ -536,6 +538,19 @@ impl KeysInterface for KeysManagerClient {
         Ok(self.node_secret)
     }
 
+    fn ecdh(
+        &self,
+        recipient: Recipient,
+        other_key: &PublicKey,
+        tweak: Option<&Scalar>,
+    ) -> Result<SharedSecret, ()> {
+        let mut node_secret = self.get_node_secret(recipient)?;
+        if let Some(tweak) = tweak {
+            node_secret = node_secret.mul_tweak(tweak).map_err(|_| ())?;
+        }
+        Ok(SharedSecret::new(other_key, &node_secret))
+    }
+
     fn get_destination_script(&self) -> Script {
         let secp_ctx = Secp256k1::new();
         let wallet_path = dest_wallet_path();
@@ -572,7 +587,7 @@ impl KeysInterface for KeysManagerClient {
     }
 
     fn get_secure_random_bytes(&self) -> [u8; 32] {
-        let mut rng = OsRng::new().unwrap();
+        let mut rng = OsRng;
         let mut bytes = [0; 32];
         rng.fill_bytes(&mut bytes);
         bytes

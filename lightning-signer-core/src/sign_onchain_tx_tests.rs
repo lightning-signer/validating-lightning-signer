@@ -6,7 +6,9 @@ mod tests {
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use bitcoin::util::psbt::serialize::Serialize;
-    use bitcoin::{self, Address, Network, OutPoint, Script, Transaction, TxIn, TxOut, Witness};
+    use bitcoin::{
+        self, Address, Network, OutPoint, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
+    };
 
     use test_log::test;
 
@@ -29,16 +31,16 @@ mod tests {
         let values_sat = vec![ival0, ival1];
 
         let input1 = TxIn {
-            previous_output: OutPoint { txid: Default::default(), vout: 0 },
+            previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 },
             script_sig: Script::new(),
-            sequence: 0,
+            sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
 
         let input2 = TxIn {
-            previous_output: OutPoint { txid: Default::default(), vout: 1 },
+            previous_output: OutPoint { txid: Txid::all_zeros(), vout: 1 },
             script_sig: Script::new(),
-            sequence: 0,
+            sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
         let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1, input2], chanamt);
@@ -82,7 +84,7 @@ mod tests {
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
             script_sig: Script::new(),
-            sequence: 0,
+            sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
 
@@ -127,7 +129,7 @@ mod tests {
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
             script_sig: Script::new(),
-            sequence: 0,
+            sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
 
@@ -162,7 +164,7 @@ mod tests {
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
             script_sig: Script::new(),
-            sequence: 0,
+            sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
 
@@ -212,7 +214,7 @@ mod tests {
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
             script_sig: Script::new(),
-            sequence: 0,
+            sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
 
@@ -255,7 +257,7 @@ mod tests {
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
             script_sig: Script::new(),
-            sequence: 0,
+            sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
 
@@ -317,19 +319,19 @@ mod tests {
             TxIn {
                 previous_output: OutPoint { txid: txids[0], vout: 0 },
                 script_sig: Script::new(),
-                sequence: 0,
+                sequence: Sequence::ZERO,
                 witness: Witness::default(),
             },
             TxIn {
                 previous_output: OutPoint { txid: txids[1], vout: 0 },
                 script_sig: Script::new(),
-                sequence: 0,
+                sequence: Sequence::ZERO,
                 witness: Witness::default(),
             },
             TxIn {
                 previous_output: OutPoint { txid: txids[2], vout: 0 },
                 script_sig: Script::new(),
-                sequence: 0,
+                sequence: Sequence::ZERO,
                 witness: Witness::default(),
             },
         ];

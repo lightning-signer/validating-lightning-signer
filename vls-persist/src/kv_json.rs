@@ -1,4 +1,4 @@
-use kv::{Bucket, Config, Json, Store, TransactionError};
+use kv::{Bucket, Config, Json, Key, Raw, Store, TransactionError};
 
 use bitcoin::secp256k1::PublicKey;
 use lightning_signer::bitcoin;
@@ -12,11 +12,18 @@ use lightning_signer::persist::model::{
 };
 use lightning_signer::persist::Persist;
 use lightning_signer::policy::validator::EnforcementState;
+use lightning_signer::prelude::*;
 use log::error;
 
-use crate::persist::model::NodeChannelId;
-use crate::persist::model::{AllowlistItemEntry, ChannelEntry, NodeEntry};
-use crate::persist::model::{ChainTrackerEntry, NodeStateEntry};
+use super::model::NodeChannelId;
+use super::model::{AllowlistItemEntry, ChannelEntry, NodeEntry};
+use super::model::{ChainTrackerEntry, NodeStateEntry};
+
+impl<'a> Key<'a> for NodeChannelId {
+    fn from_raw_key(r: &'a Raw) -> Result<Self, kv::Error> {
+        Ok(NodeChannelId(r.to_vec()))
+    }
+}
 
 /// A persister that uses the kv crate and JSON serialization for values.
 pub struct KVJsonPersister<'a> {
@@ -57,35 +64,37 @@ impl<'a> Persist for KVJsonPersister<'a> {
         seed: &[u8],
     ) {
         let key = node_id.serialize().to_vec();
-        assert!(!self.node_bucket.contains(key.clone()).unwrap());
+        assert!(!self.node_bucket.contains(&key).unwrap());
         let state_entry = state.into();
-        self.node_state_bucket.set(key.clone(), Json(state_entry)).expect("insert node state");
+        self.node_state_bucket.set(&key, &Json(state_entry)).expect("insert node state");
         self.node_state_bucket.flush().expect("flush state");
         let entry = NodeEntry {
             seed: seed.to_vec(),
             key_derivation_style: config.key_derivation_style as u8,
             network: config.network.to_string(),
         };
-        self.node_bucket.set(key, Json(entry)).expect("insert node");
+        self.node_bucket.set(&key, &Json(entry)).expect("insert node");
         self.node_bucket.flush().expect("flush");
     }
 
     fn update_node(&self, node_id: &PublicKey, state: &CoreNodeState) -> Result<(), ()> {
         let key = node_id.serialize().to_vec();
         let state_entry = state.into();
-        self.node_state_bucket.set(key, Json(state_entry)).expect("insert node state");
+        self.node_state_bucket.set(&key, &Json(state_entry)).expect("insert node state");
         self.node_state_bucket.flush().expect("flush state");
         Ok(())
     }
 
     fn delete_node(&self, node_id: &PublicKey) {
-        for item_res in self.channel_bucket.iter_prefix(NodeChannelId::new_prefix(node_id)) {
+        for item_res in
+            self.channel_bucket.iter_prefix(&NodeChannelId::new_prefix(node_id)).unwrap()
+        {
             let id: NodeChannelId = item_res.unwrap().key().unwrap();
-            self.channel_bucket.remove(id).unwrap();
+            self.channel_bucket.remove(&id).unwrap();
         }
         let key = node_id.serialize().to_vec();
-        self.node_bucket.remove(key.clone()).unwrap();
-        self.chain_tracker_bucket.remove(key).unwrap();
+        self.node_bucket.remove(&key).unwrap();
+        self.chain_tracker_bucket.remove(&key).unwrap();
     }
 
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()> {
@@ -100,12 +109,12 @@ impl<'a> Persist for KVJsonPersister<'a> {
                     id: None,
                     enforcement_state: EnforcementState::new(0),
                 };
-                if txn.get(id.clone()).unwrap().is_some() {
+                if txn.get(&id).unwrap().is_some() {
                     return Err(TransactionError::Abort(kv::Error::Message(
                         "already exists".to_string(),
                     )));
                 }
-                txn.set(id, Json(entry)).expect("insert channel");
+                txn.set(&id, &Json(entry)).expect("insert channel");
                 Ok(())
             })
             .expect("new transaction");
@@ -115,8 +124,8 @@ impl<'a> Persist for KVJsonPersister<'a> {
 
     fn new_chain_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) {
         let key = node_id.serialize().to_vec();
-        assert!(!self.chain_tracker_bucket.contains(key.clone()).unwrap());
-        self.chain_tracker_bucket.set(key, Json(tracker.into())).expect("insert chain tracker");
+        assert!(!self.chain_tracker_bucket.contains(&key).unwrap());
+        self.chain_tracker_bucket.set(&key, &Json(tracker.into())).expect("insert chain tracker");
         self.chain_tracker_bucket.flush().expect("flush");
     }
 
@@ -126,14 +135,14 @@ impl<'a> Persist for KVJsonPersister<'a> {
         tracker: &ChainTracker<ChainMonitor>,
     ) -> Result<(), ()> {
         let key = node_id.serialize().to_vec();
-        self.chain_tracker_bucket.set(key, Json(tracker.into())).expect("update chain tracker");
+        self.chain_tracker_bucket.set(&key, &Json(tracker.into())).expect("update chain tracker");
         self.chain_tracker_bucket.flush().expect("flush");
         Ok(())
     }
 
     fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, ()> {
         let key = node_id.serialize().to_vec();
-        let value = self.chain_tracker_bucket.get(key).unwrap().ok_or_else(|| ())?;
+        let value = self.chain_tracker_bucket.get(&key).unwrap().ok_or_else(|| ())?;
         Ok(value.0.into())
     }
 
@@ -149,13 +158,12 @@ impl<'a> Persist for KVJsonPersister<'a> {
                     id: channel.id.clone(),
                     enforcement_state: channel.enforcement_state.clone(),
                 };
-                if txn.get(node_channel_id.clone()).unwrap().is_none() {
+                if txn.get(&node_channel_id).unwrap().is_none() {
                     return Err(TransactionError::Abort(kv::Error::Message(
                         "not found".to_string(),
                     )));
                 }
-                let json = Json(entry);
-                txn.set(node_channel_id, json).expect("update channel");
+                txn.set(&node_channel_id, &Json(entry)).expect("update channel");
                 Ok(())
             })
             .expect("update transaction");
@@ -169,14 +177,16 @@ impl<'a> Persist for KVJsonPersister<'a> {
         channel_id: &ChannelId,
     ) -> Result<CoreChannelEntry, ()> {
         let id = NodeChannelId::new(node_id, channel_id);
-        let value = self.channel_bucket.get(id).unwrap().ok_or_else(|| ())?;
+        let value = self.channel_bucket.get(&id).unwrap().ok_or_else(|| ())?;
         let entry = value.0.into();
         Ok(entry)
     }
 
     fn get_node_channels(&self, node_id: &PublicKey) -> Vec<(ChannelId, CoreChannelEntry)> {
         let mut res = Vec::new();
-        for item_res in self.channel_bucket.iter_prefix(NodeChannelId::new_prefix(node_id)) {
+        for item_res in
+            self.channel_bucket.iter_prefix(&NodeChannelId::new_prefix(node_id)).unwrap()
+        {
             let item = item_res.unwrap();
             let value: Json<ChannelEntry> = item.value().unwrap();
             let entry = value.0.into();
@@ -189,7 +199,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
     fn update_node_allowlist(&self, node_id: &PublicKey, allowlist: Vec<String>) -> Result<(), ()> {
         let key = node_id.serialize().to_vec();
         let entry = AllowlistItemEntry { allowlist };
-        self.allowlist_bucket.set(key, Json(entry)).expect("update transaction");
+        self.allowlist_bucket.set(&key, &Json(entry)).expect("update transaction");
         self.allowlist_bucket.flush().expect("flush");
 
         Ok(())
@@ -197,7 +207,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
 
     fn get_node_allowlist(&self, node_id: &PublicKey) -> Vec<String> {
         let key = node_id.serialize().to_vec();
-        let entry = self.allowlist_bucket.get(key);
+        let entry = self.allowlist_bucket.get(&key);
         if entry.is_err() {
             // TODO make this fatal
             error!("allowlist entry error {:?}", entry.err());
@@ -217,7 +227,8 @@ impl<'a> Persist for KVJsonPersister<'a> {
             let key: Vec<u8> = item.key().unwrap();
             let e_j: Json<NodeEntry> = item.value().unwrap();
             let e = e_j.0;
-            let state_e_j: Json<NodeStateEntry> = self.node_state_bucket.get(key).unwrap().unwrap();
+            let state_e_j: Json<NodeStateEntry> =
+                self.node_state_bucket.get(&key).unwrap().unwrap();
             let state_e = state_e_j.0;
 
             let state = CoreNodeState {
@@ -249,11 +260,11 @@ impl<'a> Persist for KVJsonPersister<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use alloc::sync::Arc;
 
-    use crate::lightning;
     use lightning::chain::keysinterface::InMemorySigner;
     use lightning::util::ser::Writeable;
+    use lightning_signer::lightning;
     use tempfile::TempDir;
     use test_log::test;
 
@@ -263,7 +274,7 @@ mod tests {
     use lightning_signer::util::clock::StandardClock;
     use lightning_signer::util::test_utils::*;
 
-    use crate::persist::ser_util::VecWriter;
+    use crate::ser_util::VecWriter;
 
     use super::*;
 

@@ -7,7 +7,7 @@ use crate::Rc;
 use crate::sync::Mutex;
 
 use bitcoin;
-use bitcoin::{Block, Network, Transaction, TxOut};
+use bitcoin::{Block, Network, PackedLockTime, Transaction, TxOut};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::hash_types::BlockHash;
@@ -68,7 +68,7 @@ pub fn confirm_transaction_at<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, tx: &T
     }
     let mut txs = Vec::new();
     for i in 0..*node.network_chan_count.borrow() { // Make sure we don't end up with channels at the same short id by offsetting by chan_count
-        txs.push(Transaction { version: 0, lock_time: i, input: Vec::new(), output: Vec::new() });
+        txs.push(Transaction { version: 0, lock_time: PackedLockTime(i), input: Vec::new(), output: Vec::new() });
     }
     txs.push(tx.clone());
     let block = make_block(tip_for_node(node), txs);
@@ -90,7 +90,7 @@ pub fn connect_blocks<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, depth: u32) ->
 
     let coinbase = Transaction {
         version: 0,
-        lock_time: depth,
+        lock_time: PackedLockTime(depth),
         input: vec![],
         output: vec![]
     };
@@ -99,7 +99,7 @@ pub fn connect_blocks<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, depth: u32) ->
     for d in 0..depth - 1 {
         let coinbase = Transaction {
             version: 0,
-            lock_time: d,
+            lock_time: PackedLockTime(d),
             input: vec![],
             output: vec![]
         };
@@ -396,7 +396,7 @@ pub fn create_funding_transaction<'a, 'b, 'c>(node: &Node<'a, 'b, 'c>, expected_
             assert_eq!(*channel_value_satoshis, expected_chan_value);
             assert_eq!(user_channel_id, expected_user_chan_id);
 
-            let tx = Transaction { version: chan_id as i32, lock_time: 0, input: Vec::new(), output: vec![TxOut {
+            let tx = Transaction { version: chan_id as i32, lock_time: PackedLockTime::ZERO, input: Vec::new(), output: vec![TxOut {
                 value: *channel_value_satoshis, script_pubkey: output_script.clone(),
             }]};
             let funding_outpoint = OutPoint { txid: tx.txid(), index: 0 };
@@ -868,7 +868,7 @@ macro_rules! get_route {
 		let keys_manager = lightning::util::test_utils::TestKeysInterface::new(&[0u8; 32], bitcoin::network::constants::Network::Testnet);
 		let random_seed_bytes = keys_manager.get_secure_random_bytes();
 		lightning::routing::router::find_route(
-			&$send_node.node.get_our_node_id(), &params, &$send_node.network_graph.read_only(),
+			&$send_node.node.get_our_node_id(), &params, &$send_node.network_graph,
 			Some(&$send_node.node.list_usable_channels().iter().collect::<Vec<_>>()),
 			Arc::clone(&$send_node.logger), &scorer, &random_seed_bytes
 		)

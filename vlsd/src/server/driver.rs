@@ -43,7 +43,7 @@ use lightning_signer::{channel, containing_function, debug_vals, short_function,
 use lightning_signer_server::fslogger::FilesystemLogger;
 use lightning_signer_server::grpc::remotesigner;
 use lightning_signer_server::nodefront::SignerFront;
-use lightning_signer_server::persist::persist_json::KVJsonPersister;
+use lightning_signer_server::persist::kv_json::KVJsonPersister;
 use lightning_signer_server::NETWORK_NAMES;
 use lightning_signer_server::SERVER_APP_NAME;
 use remotesigner::signer_server::{Signer, SignerServer};
