@@ -18,41 +18,50 @@ use lightning_signer::persist::Persist;
 use crate::model::{NodeEntry, NodeStateEntry};
 
 struct State {
-    store: BTreeMap<String, Vec<u8>>,
+    // value is (revision, value)
+    store: BTreeMap<String, (u64, Vec<u8>)>,
     dirty: BTreeSet<String>,
 }
 
 impl State {
-    fn new(store: BTreeMap<String, Vec<u8>>) -> Self {
+    fn new(store: BTreeMap<String, (u64, Vec<u8>)>) -> Self {
         Self { store, dirty: Default::default() }
     }
 
     fn insert(&mut self, prefix: impl Into<String>, key: Vec<u8>, value: Vec<u8>) {
         let full_key = Self::make_key(prefix, key);
-        self.store.insert(full_key.clone(), value);
+        let revision =
+            if self.dirty.contains(&full_key) {
+                // if already dirty, do not increment revision
+                self.store.get(&full_key).expect("dirty key must exist").0
+            } else {
+                // if not dirty, increment revision
+                self.store.get(&full_key).map(|(r, _)| r + 1).unwrap_or(0)
+            };
+        self.store.insert(full_key.clone(), (revision, value));
         self.dirty.insert(full_key);
     }
 
     fn get(&self, prefix: impl Into<String>, key: Vec<u8>) -> Option<&Vec<u8>> {
         let full_key = Self::make_key(prefix, key);
-        self.store.get(&full_key)
+        self.store.get(&full_key).map(|(_, v)| v)
     }
 
     fn remove(&mut self, prefix: impl Into<String>, key: Vec<u8>) {
         let full_key = Self::make_key(prefix, key);
-        self.store.remove(&full_key);
+        let revision = self.store.get(&full_key).map(|(r, _)| r + 1).unwrap_or(0);
+        self.store.insert(full_key.clone(), (revision, Vec::new()));
         self.dirty.insert(full_key);
     }
 
     fn make_key(prefix: impl Into<String>, key: Vec<u8>) -> String {
-        let full_key = format!("{}/{}", prefix.into(), hex::encode(key));
-        full_key
+        format!("{}/{}", prefix.into(), hex::encode(key))
     }
 
-    fn get_dirty(&self) -> Vec<(String, Option<Vec<u8>>)> {
+    fn get_dirty(&self) -> Vec<(String, (u64, Vec<u8>))> {
         let mut res = Vec::new();
         for key in self.dirty.iter() {
-            res.push((key.clone(), self.store.get(key).cloned()));
+            res.push((key.clone(), self.store.get(key).cloned().unwrap()));
         }
         res
     }
@@ -63,7 +72,10 @@ thread_local!(static MEMOS: RefCell<Option<State>>  = RefCell::new(None));
 /// A thread-local in-memory persister
 ///
 /// Use [`enter()`] to enter a new context with an initial state.
-/// Use [`exit()`] to exit the context and return modified entries.
+/// Use [`Context.exit()`] to exit the context and return modified entries.
+///
+/// State is not shared between contexts. It is the responsibility of the caller
+/// to handle concurrency in storage updates.
 ///
 /// It is the responsibility of the caller to actually persist the returned
 /// entries in some external storage, such as a cloud service.
@@ -77,8 +89,11 @@ const NODE_STATE_PREFIX: &str = "node/state";
 impl ThreadMemoPersister {
     /// Enter a persistence context
     ///
-    /// Entering while already in a context will panic
-    pub fn enter(&self, state: BTreeMap<String, Vec<u8>>) -> Context {
+    /// Entering while the thread is already in a context will panic
+    ///
+    /// Returns a [`Context`] object, which can be used to retrieve the
+    /// modified entries and exit the context.
+    pub fn enter(&self, state: BTreeMap<String, (u64, Vec<u8>)>) -> Context {
         MEMOS.with(|m| {
             if m.borrow().is_some() {
                 panic!("already entered a persist context");
@@ -103,14 +118,14 @@ impl ThreadMemoPersister {
 pub struct Context {}
 
 impl Context {
-    pub fn exit(self) -> Vec<(String, Option<Vec<u8>>)> {
+    pub fn exit(self) -> Vec<(String, (u64, Vec<u8>))> {
         // note that do_exit will be called from the destructor, which is called
         // right after the function returns, so don't clear the context here
         MEMOS
             .with(|m| m.borrow().as_ref().expect("persist context was already cleared").get_dirty())
     }
 
-    fn do_exit(&self) -> Vec<(String, Option<Vec<u8>>)> {
+    fn do_exit(&self) -> Vec<(String, (u64, Vec<u8>))> {
         MEMOS.with(|m| {
             let mut m = m.borrow_mut();
             let dirty = m.as_ref().expect("did not enter a persist context").get_dirty();
@@ -207,7 +222,8 @@ impl Persist for ThreadMemoPersister {
             state
                 .store
                 .range(NODE_ENTRY_PREFIX_FIRST.to_string()..NODE_ENTRY_PREFIX_LAST.to_string())
-                .for_each(|(key, value)| {
+                .filter(|(_k, (_r, value))| !value.is_empty())
+                .for_each(|(key, (_r, value))| {
                     let key = hex::decode(key.split('/').last().unwrap()).unwrap();
                     let node_id = PublicKey::from_slice(&key).unwrap();
                     let entry: NodeEntry = serde_json::from_slice(value).unwrap();
@@ -240,6 +256,7 @@ impl Persist for ThreadMemoPersister {
 
 #[cfg(test)]
 mod tests {
+    use std::iter::FromIterator;
     use lightning_signer::util::test_utils::{
         hex_decode, make_node_and_channel, TEST_CHANNEL_ID, TEST_NODE_CONFIG,
     };
@@ -269,8 +286,33 @@ mod tests {
             dirty[1].0,
             "node/state/022d223620a359a47ff7f7ac447c85c46c923da53389221a0054c11c1e3ca31d59"
         );
+        assert_eq!(dirty[0].1.0, 0);
 
         persister.enter(Default::default());
+    }
+
+    #[test]
+    fn test_update_node() {
+        let persister = ThreadMemoPersister {};
+        let channel_id0 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
+        let (node_id, node_arc, _stub, seed) = make_node_and_channel(channel_id0.clone());
+
+        let node = &*node_arc;
+
+        let persist_ctx = persister.enter(BTreeMap::new());
+        persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &seed);
+        persister.update_node(&node_id, &*node.get_state()).unwrap();
+        let dirty = persist_ctx.exit();
+        // updating the same record twice in one transaction should not increment the revision
+        assert_eq!(dirty.len(), 2);
+        assert_eq!(dirty[0].1.0, 0);
+        assert_eq!(dirty[1].1.0, 0);
+        let store = BTreeMap::from_iter(dirty.into_iter());
+        let persist_ctx = persister.enter(store);
+        persister.update_node(&node_id, &*node.get_state()).unwrap();
+        let dirty = persist_ctx.exit();
+        assert_eq!(dirty.len(), 1);
+        assert_eq!(dirty[0].1.0, 1);
     }
 
     #[test]
