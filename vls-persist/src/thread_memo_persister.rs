@@ -30,14 +30,13 @@ impl State {
 
     fn insert(&mut self, prefix: impl Into<String>, key: Vec<u8>, value: Vec<u8>) {
         let full_key = Self::make_key(prefix, key);
-        let revision =
-            if self.dirty.contains(&full_key) {
-                // if already dirty, do not increment revision
-                self.store.get(&full_key).expect("dirty key must exist").0
-            } else {
-                // if not dirty, increment revision
-                self.store.get(&full_key).map(|(r, _)| r + 1).unwrap_or(0)
-            };
+        let revision = if self.dirty.contains(&full_key) {
+            // if already dirty, do not increment revision
+            self.store.get(&full_key).expect("dirty key must exist").0
+        } else {
+            // if not dirty, increment revision
+            self.store.get(&full_key).map(|(r, _)| r + 1).unwrap_or(0)
+        };
         self.store.insert(full_key.clone(), (revision, value));
         self.dirty.insert(full_key);
     }
@@ -119,16 +118,9 @@ pub struct Context {}
 
 impl Context {
     pub fn exit(self) -> Vec<(String, (u64, Vec<u8>))> {
-        // note that do_exit will be called from the destructor, which is called
-        // right after the function returns, so don't clear the context here
-        MEMOS
-            .with(|m| m.borrow().as_ref().expect("persist context was already cleared").get_dirty())
-    }
-
-    fn do_exit(&self) -> Vec<(String, (u64, Vec<u8>))> {
         MEMOS.with(|m| {
             let mut m = m.borrow_mut();
-            let dirty = m.as_ref().expect("did not enter a persist context").get_dirty();
+            let dirty = m.as_ref().expect("persist context was already cleared").get_dirty();
             *m = None;
             dirty
         })
@@ -137,7 +129,16 @@ impl Context {
 
 impl Drop for Context {
     fn drop(&mut self) {
-        self.do_exit();
+        MEMOS.with(|m| {
+            let mut m = m.borrow_mut();
+            if m.is_some() {
+                *m = None;
+                if !std::thread::panicking() {
+                    // only panic if not already panicking
+                    panic!("must call exit() and handle the returned entries");
+                }
+            }
+        })
     }
 }
 
@@ -256,10 +257,10 @@ impl Persist for ThreadMemoPersister {
 
 #[cfg(test)]
 mod tests {
-    use std::iter::FromIterator;
     use lightning_signer::util::test_utils::{
         hex_decode, make_node_and_channel, TEST_CHANNEL_ID, TEST_NODE_CONFIG,
     };
+    use std::iter::FromIterator;
     use std::panic::catch_unwind;
 
     use super::*;
@@ -286,9 +287,9 @@ mod tests {
             dirty[1].0,
             "node/state/022d223620a359a47ff7f7ac447c85c46c923da53389221a0054c11c1e3ca31d59"
         );
-        assert_eq!(dirty[0].1.0, 0);
+        assert_eq!(dirty[0].1 .0, 0);
 
-        persister.enter(Default::default());
+        persister.enter(Default::default()).exit();
     }
 
     #[test]
@@ -305,14 +306,14 @@ mod tests {
         let dirty = persist_ctx.exit();
         // updating the same record twice in one transaction should not increment the revision
         assert_eq!(dirty.len(), 2);
-        assert_eq!(dirty[0].1.0, 0);
-        assert_eq!(dirty[1].1.0, 0);
+        assert_eq!(dirty[0].1 .0, 0);
+        assert_eq!(dirty[1].1 .0, 0);
         let store = BTreeMap::from_iter(dirty.into_iter());
         let persist_ctx = persister.enter(store);
         persister.update_node(&node_id, &*node.get_state()).unwrap();
         let dirty = persist_ctx.exit();
         assert_eq!(dirty.len(), 1);
-        assert_eq!(dirty[0].1.0, 1);
+        assert_eq!(dirty[0].1 .0, 1);
     }
 
     #[test]
@@ -323,26 +324,49 @@ mod tests {
 
         let node = &*node_arc;
 
-        let _persist_ctx = persister.enter(BTreeMap::new());
+        let ctx = persister.enter(BTreeMap::new());
         persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &seed);
         let nodes = persister.get_nodes();
         assert_eq!(nodes.len(), 1);
         persister.delete_node(&node_id);
         let nodes = persister.get_nodes();
         assert_eq!(nodes.len(), 0);
+        ctx.exit();
     }
 
     #[test]
-    fn test_panic_clears_context() {
+    fn test_panic_before_drop() {
+        // this tests that the drop impl does not panic if already panicking
         let persister = ThreadMemoPersister {};
-        catch_unwind(|| {
+
+        let err = catch_unwind(|| {
             let _ctx = persister.enter(Default::default());
-            panic!();
+            panic!("test");
         })
-        .expect_err("should have panicked");
+        .expect_err("should have panicked")
+        .downcast::<&str>()
+        .expect("should have panicked with an &str");
+        assert_eq!(*err, "test");
 
         // entering another context should not panic because context was dropped
-        persister.enter(Default::default());
+        persister.enter(Default::default()).exit();
+    }
+
+    #[test]
+    fn test_no_exit() {
+        // this tests that the drop impl panics if exit was not called
+        let persister = ThreadMemoPersister {};
+
+        let err = catch_unwind(|| {
+            let _ctx = persister.enter(Default::default());
+        })
+        .expect_err("should have panicked")
+        .downcast::<&str>()
+        .expect("should have panicked with an &str");
+        assert_eq!(*err, "must call exit() and handle the returned entries");
+
+        // entering another context should not panic because context was dropped
+        persister.enter(Default::default()).exit();
     }
 
     #[test]
@@ -353,12 +377,15 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_bad_enter() {
         let persister = ThreadMemoPersister {};
         // keep context on stack
-        let _ctx = persister.enter(Default::default());
-        // entering another context should panic
-        persister.enter(Default::default());
+        let ctx = persister.enter(Default::default());
+        catch_unwind(|| {
+            // try to enter another context
+            persister.enter(Default::default());
+        })
+        .expect_err("should have panicked");
+        ctx.exit();
     }
 }
