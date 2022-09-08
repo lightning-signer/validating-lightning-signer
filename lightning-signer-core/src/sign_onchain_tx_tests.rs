@@ -787,7 +787,7 @@ mod tests {
     }
 
     // policy-onchain-output-match-commitment
-    // policy-onchain-change-to-wallet
+    // policy-onchain-no-unknown-outputs
     #[test]
     fn sign_funding_tx_with_unknown_output() {
         let is_p2sh = false;
@@ -821,8 +821,7 @@ mod tests {
         // Because the channel isn't found the output is considered non-beneficial.
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: validate_onchain_tx: \
-             validate_beneficial_value: non-beneficial value considered as fees is above maximum feerate: 682562 > 100000"
+            "policy failure: validate_onchain_tx: output[1] is an unknown destination"
         );
     }
 
@@ -922,8 +921,7 @@ mod tests {
         // non-beneficial.
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: validate_onchain_tx: \
-             validate_beneficial_value: non-beneficial value considered as fees is above maximum feerate: 4919673 > 100000"
+            "policy failure: validate_onchain_tx: output[1] is an unknown destination"
         );
     }
 
@@ -991,8 +989,7 @@ mod tests {
         // non-beneficial.
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: validate_onchain_tx: \
-             validate_beneficial_value: non-beneficial value considered as fees is above maximum feerate: 4919673 > 100000"
+            "policy failure: validate_onchain_tx: output[1] is an unknown destination"
         );
     }
 
@@ -1060,11 +1057,10 @@ mod tests {
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
             .expect("valid holder commitment");
 
-        // The push is not considered beneficial value and the fee check fails.
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: validate_onchain_tx: validate_beneficial_value: \
-             non-beneficial value considered as fees is above maximum feerate: 493444 > 100000"
+            "policy failure: validate_onchain_tx: \
+             channel push not allowed: dual-funding not supported yet"
         );
     }
 }

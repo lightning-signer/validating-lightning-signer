@@ -20,18 +20,22 @@ Some controls will change with the evolution of the Lightning protocol - e.g.
 
 ## Onchain Transactions (funding tx, simple sweeps)
 
-* Output - for a funding transaction, the funding output must have the
+* Funding Output - for a funding transaction, the funding output must have the
   right scriptPubKey and be spendable by the previously signed initial
   commitment transaction (multi-output TBD) <br>
   `policy-onchain-output-scriptpubkey`,
   `policy-onchain-output-match-commitment`,
   `policy-onchain-initial-commitment-countersigned`
-
-* Change - any change outputs must be controlled by the layer-one wallet <br>
-  `policy-onchain-change-to-wallet`
   
-* Change - the change output derivation path must be reasonable <br>
-  `policy-onchain-change-path-predictable`
+* Beneficial value - all outputs must be to the layer-one wallet, an allowlisted destination,
+  or fund a channel.  Funding an inbound channel does not provide beneficial value to the
+  local node since initially all of the channel funds are claimable by the counterparty. <br>
+  `policy-onchain-no-unknown-outputs`,
+  `policy-onchain-no-channel-push`,
+  `policy-onchain-no-fund-inbound`,
+
+* Change - the output derivation path for a wallet address must be reasonable <br>
+  `policy-onchain-wallet-path-predictable`
 
 * Fee - the fee must be reasonable <br>
   `policy-onchain-fee-range`
@@ -252,10 +256,11 @@ or justice sweep transaction, the following controls are checked:
 # Optional Policy Controls
 ## Funding Transaction
 
-* Maximum - the amount funded in a channel must be under a certain amount <br> `policy-funding-max`
+* Maximum - the amount funded in a channel must be under a certain amount <br>
+  `policy-funding-max`
+
 * Velocity - the amount funded must be under a certain amount per unit time <br>
   `policy-velocity-funding`
-* Dual - dual funding can be optionally disable <br> `policy-funding-dual`
 
 ## Commitment Transaction
 
