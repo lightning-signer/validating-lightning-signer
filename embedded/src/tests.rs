@@ -3,19 +3,19 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::time::Duration;
 
+use bitcoin::bech32::{u5, FromBase32, ToBase32};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Network, OutPoint, PrivateKey, Txid, Witness};
+use bitcoin::{PackedLockTime, Script, Sequence, TxIn, TxOut};
 #[cfg(feature = "device")]
 use cortex_m_semihosting::hprintln;
-use lightning_signer::bitcoin;
-use bitcoin::bech32::{u5, FromBase32, ToBase32};
-use bitcoin::{PackedLockTime, Script, Sequence, TxIn, TxOut};
-use lightning_signer::channel::{Channel, ChannelBase, ChannelSetup, CommitmentType};
-use lightning_signer::lightning;
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
+use lightning_signer::bitcoin;
+use lightning_signer::channel::{Channel, ChannelBase, ChannelSetup, CommitmentType};
+use lightning_signer::lightning;
 use lightning_signer::lightning_invoice::{
     Currency, InvoiceBuilder, RawDataPart, RawHrp, RawInvoice, SignedRawInvoice,
 };
