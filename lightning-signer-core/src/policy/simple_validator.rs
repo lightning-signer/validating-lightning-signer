@@ -332,7 +332,7 @@ impl SimpleValidator {
     }
 }
 
-// TODO - policy-onchain-change-path-predictable
+// TODO - policy-onchain-wallet-path-predictable
 
 // TODO - policy-commitment-spends-active-utxo
 // TODO - policy-commitment-htlc-routing-balance
@@ -519,13 +519,19 @@ impl Validator for SimpleValidator {
                                 "initial holder commitment not validated",
                             );
                         }
-
-                        let push_val_sat = chan.setup.push_value_msat / 1000;
                         if !chan.setup.is_outbound {
                             policy_err!(
                                 self,
-                                "policy-funding-dual",
+                                "policy-onchain-no-fund-inbound",
                                 "can't sign for inbound channel: dual-funding not supported yet",
+                            );
+                        }
+                        let push_val_sat = chan.setup.push_value_msat / 1000;
+                        if push_val_sat > 0 {
+                            policy_err!(
+                                self,
+                                "policy-onchain-no-channel-push",
+                                "channel push not allowed: dual-funding not supported yet",
                             );
                         }
                         let our_value = chan
@@ -541,10 +547,17 @@ impl Validator for SimpleValidator {
                 };
             } else {
                 debug!("output {} ({}) is unknown", outndx, output.value);
+                policy_err!(
+                    self,
+                    "policy-onchain-no-unknown-outputs",
+                    "output[{}] is an unknown destination",
+                    outndx,
+                );
             }
         }
 
-        // policy-onchain-beneficial-value
+        // NOTE - w/o dual funding everything is checked above, should not fail past here
+
         // policy-onchain-fee-range
         let mut sum_inputs: u64 = 0;
         for val in holder_inputs_sat {
