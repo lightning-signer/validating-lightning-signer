@@ -918,10 +918,23 @@ dependencies = [
 name = "lightning-storage-server"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "clap",
+ "clap_derive",
+ "ctrlc",
+ "fern",
+ "hex",
+ "log",
+ "prost",
  "serde",
  "serde_cbor",
  "sled",
  "tempfile",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "triggered",
+ "url",
 ]
 
 [[package]]

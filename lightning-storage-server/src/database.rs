@@ -70,15 +70,14 @@ impl Database {
     }
 
     /// Get all keys matching a prefix from the database
-    pub fn get_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Value)>, Error> {
+    pub fn get_prefix(&self, prefix: String) -> Result<Vec<(String, Value)>, Error> {
         let mut res = Vec::new();
-        for item in self.db.range(prefix..) {
+        let prefix_bytes = prefix.as_bytes();
+        for item in self.db.scan_prefix(prefix_bytes) {
             let (key, value) = item?;
-            if !key.starts_with(prefix) {
-                break;
-            }
             let value: Value = serde_cbor::from_reader(&value[..]).unwrap();
-            res.push((key.to_vec(), value));
+            let key_s = String::from_utf8(key.to_vec()).expect("keys must be utf-8");
+            res.push((key_s, value));
         }
         Ok(res)
     }

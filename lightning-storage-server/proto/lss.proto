@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package lss;
+
+service LightningStorage {
+    // Trivial call to test connectivity
+  rpc Ping(PingRequest) returns (PingReply);
+  rpc Put(PutRequest) returns (PutReply);
+  rpc Get(GetRequest) returns (GetReply);
+}
+
+message PingRequest {
+  string message = 1;
+}
+
+message PingReply {
+  string message = 1;
+}
+
+message PutRequest {
+  repeated KeyValue kvs = 1;
+}
+
+message PutReply {
+  bool success = 1;
+  // Any detected version conflicts.  the version here will be the *expected next version* rather than
+  // the current version.  If the version is 0, then the key did not exist, and a put of a version other than zero
+  // was attempted.
+  repeated KeyValue conflicts = 10;
+}
+
+message KeyValue {
+  string key = 1;
+  bytes signature = 2;
+  uint64 version = 3;
+  bytes value = 4;
+}
+
+message GetRequest {
+  string key_prefix = 1;
+}
+
+message GetReply {
+  repeated KeyValue kvs = 1;
+}

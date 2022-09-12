@@ -25,7 +25,7 @@ fn test_database() {
         ("x2b".to_string(), make_value(20)),
     ])
     .unwrap();
-    let values = db.get_prefix(b"x1").unwrap();
+    let values = db.get_prefix("x1".to_string()).unwrap();
     assert_eq!(values.len(), 2);
     assert_eq!(values[0].1.value, vec![10]);
     assert_eq!(values[1].1.value, vec![11]);

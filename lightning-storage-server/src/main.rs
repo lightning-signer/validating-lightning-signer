@@ -22,7 +22,7 @@ fn main() {
         ("x2b".to_string(), make_value(20)),
     ])
     .unwrap();
-    let values = db.get_prefix(b"x1").unwrap();
+    let values = db.get_prefix("x1".to_string()).unwrap();
     assert_eq!(values.len(), 2);
 }
 
