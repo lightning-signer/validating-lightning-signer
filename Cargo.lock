@@ -635,6 +635,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "half"
+version = "1.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
+
+[[package]]
 name = "hashbrown"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -906,6 +912,16 @@ dependencies = [
  "tonic-build",
  "vls-frontend",
  "vls-persist",
+]
+
+[[package]]
+name = "lightning-storage-server"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_cbor",
+ "sled",
+ "tempfile",
 ]
 
 [[package]]
@@ -1556,6 +1572,16 @@ checksum = "704720009634ab092146c0b01eb578ae8b9d88eef028398752965fd766eb38bd"
 dependencies = [
  "serde",
  "serde_derive",
+]
+
+[[package]]
+name = "serde_cbor"
+version = "0.11.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bef2ebfde456fb76bbcf9f59315333decc4fda0b2b44b420243c11e0f5ec1f5"
+dependencies = [
+ "half",
+ "serde",
 ]
 
 [[package]]
