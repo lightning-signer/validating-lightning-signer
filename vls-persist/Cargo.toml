@@ -9,11 +9,12 @@ name = "vls_persist"
 path = "src/lib.rs"
 
 [features]
-default = ["std"]
+default = ["std", "memo"]
 std = ["lightning-signer-core/std", "log/std"]
 no-std = ["lightning-signer-core/no-std"]
 test_utils = ["lightning-signer-core/test_utils"]
 kv-json = ["kv"]
+memo = ["serde_json"]
 
 [dependencies]
 lightning-signer-core = { path = "../lightning-signer-core", default-features = false, features = ["serde"]}
@@ -22,6 +23,7 @@ serde_with = { version = "2.0", default-features = false, features = ["hex", "ma
 hex = { version = "0.4", default-features = false }
 kv = { version = "0.23", features = ["json-value"], optional = true }
 log = { version = "0.4", default-features = false }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"], optional = true }
 
 [dev-dependencies]
 tempfile = "3.2"
