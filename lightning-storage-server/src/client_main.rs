@@ -1,10 +1,14 @@
 use lightning_storage_server::client;
+use std::fs;
 
 use client::driver;
 
 use clap::{App, Arg, ArgMatches};
-use lightning_storage_server::util::{init_secret_key, read_public_key, read_secret_key};
-use secp256k1::SecretKey;
+use lightning_storage_server::client::auth::Auth;
+use lightning_storage_server::util::{
+    init_secret_key, read_public_key, read_secret_key, state_file_path,
+};
+use secp256k1::{PublicKey, SecretKey};
 
 const CLIENT_APP_NAME: &str = "lss-cli";
 
@@ -19,20 +23,40 @@ fn secret_key() -> Result<SecretKey, Box<dyn std::error::Error>> {
     read_secret_key("client-key")
 }
 
-fn public_key() -> Result<secp256k1::PublicKey, Box<dyn std::error::Error>> {
+fn public_key() -> Result<PublicKey, Box<dyn std::error::Error>> {
     read_public_key("client-key")
 }
 
-fn init_subcommand(_rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    init_secret_key("client-key")
+fn server_public_key() -> Result<PublicKey, Box<dyn std::error::Error>> {
+    let server_pubkey_file = state_file_path("server-pubkey")?;
+    let server_pubkey_hex = fs::read_to_string(server_pubkey_file)?;
+    Ok(PublicKey::from_slice(&hex::decode(server_pubkey_hex)?)?)
 }
 
-fn status_subcommand(_rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn init_subcommand(rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    init_secret_key("client-key")?;
+    let mut client = driver::connect(rpc_url).await?;
+    let init = driver::info(&mut client).await?;
+    let server_pubkey_file = state_file_path("server-pubkey")?;
+    fs::write(server_pubkey_file, hex::encode(&init.serialize()))?;
+    Ok(())
+}
+
+fn info_subcommand(_rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     match public_key() {
         Ok(pk) => println!("public key: {}", hex::encode(pk.serialize())),
         Err(_) => println!("not initialized"),
     }
+    match server_public_key() {
+        Ok(pk) => println!("server public key: {}", hex::encode(pk.serialize())),
+        Err(_) => println!("server public key not initialized"),
+    }
     Ok(())
+}
+
+fn make_auth() -> Result<Auth, Box<dyn std::error::Error>> {
+    Ok(Auth::new_for_client(secret_key()?, server_public_key()?))
 }
 
 #[tokio::main]
@@ -43,7 +67,7 @@ async fn get_subcommand(
     println!("Connect to {}", rpc_url);
     let mut client = driver::connect(rpc_url).await?;
     let prefix = matches.value_of_t("prefix")?;
-    driver::get(&mut client, public_key()?, prefix).await
+    driver::get(&mut client, make_auth()?, prefix).await
 }
 
 #[tokio::main]
@@ -57,7 +81,7 @@ async fn put_subcommand(
     let version = matches.value_of_t("version")?;
     let value_hex: String = matches.value_of_t("value")?;
     let value = hex::decode(value_hex).unwrap();
-    driver::put(&mut client, public_key()?, key, version, value).await
+    driver::put(&mut client, make_auth()?, key, version, value).await
 }
 
 fn parse_rpc_url(matches: &ArgMatches) -> String {
@@ -115,7 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .subcommand(App::new("ping"))
         .subcommand(App::new("init"))
-        .subcommand(App::new("status"))
+        .subcommand(App::new("info"))
         .subcommand(make_get_subapp())
         .subcommand(make_put_subapp());
     let matches = app.clone().get_matches();
@@ -126,7 +150,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match matches.subcommand() {
         Some(("ping", _)) => ping_subcommand(rpc)?,
         Some(("init", _)) => init_subcommand(rpc)?,
-        Some(("status", _)) => status_subcommand(rpc)?,
+        Some(("info", _)) => info_subcommand(rpc)?,
         Some(("get", submatches)) => get_subcommand(rpc, submatches)?,
         Some(("put", submatches)) => put_subcommand(rpc, submatches)?,
         Some((name, _)) => panic!("unimplemented command {}", name),

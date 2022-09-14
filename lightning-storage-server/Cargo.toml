@@ -25,6 +25,7 @@ url = "2.2"
 hex = "0.4"
 dirs = "4"
 secp256k1 = { version = "0.24", features = ["rand"] }
+bitcoin_hashes = "0.11"
 
 [build-dependencies]
 tonic-build = "0.6"

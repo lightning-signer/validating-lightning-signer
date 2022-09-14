@@ -1,8 +1,9 @@
+use crate::client::auth::Auth;
 use secp256k1::PublicKey;
 use tonic::{transport, Request};
 
 use crate::client::LightningStorageClient;
-use crate::proto::{GetRequest, KeyValue, PingRequest, PutRequest};
+use crate::proto::{self, GetRequest, InfoRequest, KeyValue, PingRequest, PutRequest};
 
 pub async fn connect(
     uri: &str,
@@ -22,13 +23,25 @@ pub async fn ping(
     Ok(())
 }
 
+pub fn make_auth_proto(auth: &Auth) -> Option<proto::Auth> {
+    Some(proto::Auth { client_id: auth.client_id.serialize().to_vec(), token: auth.auth_token() })
+}
+
+pub async fn info(
+    client: &mut LightningStorageClient<transport::Channel>,
+) -> Result<PublicKey, Box<dyn std::error::Error>> {
+    let info_request = Request::new(InfoRequest {});
+
+    let response = client.info(info_request).await?;
+    PublicKey::from_slice(&response.into_inner().server_id).map_err(|_| "invalid server id".into())
+}
+
 pub async fn get(
     client: &mut LightningStorageClient<transport::Channel>,
-    client_id: PublicKey,
+    auth: Auth,
     key_prefix: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let get_request =
-        Request::new(GetRequest { client_id: client_id.serialize().to_vec(), key_prefix });
+    let get_request = Request::new(GetRequest { auth: make_auth_proto(&auth), key_prefix });
 
     let response = client.get(get_request).await?;
     for kv in response.into_inner().kvs {
@@ -40,7 +53,7 @@ pub async fn get(
 
 pub async fn put(
     client: &mut LightningStorageClient<transport::Channel>,
-    client_id: PublicKey,
+    auth: Auth,
     key: String,
     version: u64,
     value: Vec<u8>,
@@ -48,8 +61,7 @@ pub async fn put(
     let signature = vec![0; 64];
     let kv = KeyValue { key, signature, version, value };
 
-    let put_request =
-        Request::new(PutRequest { client_id: client_id.serialize().to_vec(), kvs: vec![kv] });
+    let put_request = Request::new(PutRequest { auth: make_auth_proto(&auth), kvs: vec![kv] });
 
     let response = client.put(put_request).await?;
     for kv in response.into_inner().conflicts {

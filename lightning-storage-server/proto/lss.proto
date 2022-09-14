@@ -5,6 +5,8 @@ package lss;
 service LightningStorage {
   // Trivial call to test connectivity
   rpc Ping(PingRequest) returns (PingReply);
+  // Info
+  rpc Info(InfoRequest) returns (InfoReply);
   // Put a collection of key-value pairs
   rpc Put(PutRequest) returns (PutReply);
   // Get a range of key-value pairs
@@ -19,8 +21,24 @@ message PingReply {
   string message = 1;
 }
 
-message PutRequest {
+message InfoRequest {
+}
+
+message InfoReply {
+  string version = 1;
+  // Server public key, used for shared secret derivation
+  bytes server_id = 2;
+}
+
+message Auth {
+  // Client public key, used for shared secret derivation
   bytes client_id = 1;
+  // SHA256 of the shared secret
+  bytes token = 2;
+}
+
+message PutRequest {
+  Auth auth = 1;
   repeated KeyValue kvs = 2;
 }
 
@@ -40,7 +58,7 @@ message KeyValue {
 }
 
 message GetRequest {
-  bytes client_id = 1;
+  Auth auth = 1;
   string key_prefix = 2;
 }
 

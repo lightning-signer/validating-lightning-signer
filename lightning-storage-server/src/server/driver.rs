@@ -5,6 +5,7 @@ use log::{info, warn};
 
 use crate::server::LightningStorageServer;
 use crate::server::StorageServer;
+use crate::util::{init_secret_key, read_public_key, read_secret_key};
 use crate::Database;
 
 pub const SERVER_APP_NAME: &str = "lssd";
@@ -51,8 +52,14 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let datadir_opt = matches.value_of("datadir").unwrap();
     let mut datadir = home_dir;
     datadir.push(datadir_opt);
+
+    // ignore failure - we may be already initialized
+    let _ = init_secret_key("server_key");
+    let secret_key = read_secret_key("server_key")?;
+    let public_key = read_public_key("server_key")?;
+
     let database = Database::new(datadir.clone()).unwrap();
-    let server = StorageServer { database };
+    let server = StorageServer { database, public_key, secret_key };
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
 
     ctrlc::set_handler(move || {

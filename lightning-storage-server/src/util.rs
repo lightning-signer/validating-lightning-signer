@@ -1,3 +1,4 @@
+use log::info;
 use secp256k1::{rand, SecretKey};
 use std::fs;
 use std::path::PathBuf;
@@ -19,10 +20,12 @@ pub fn state_file_path(name: &str) -> Result<PathBuf, Box<dyn std::error::Error>
 pub fn init_secret_key(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let id_file = state_file_path(path)?;
     if id_file.exists() {
-        return Err("already initialized".into());
+        info!("{} already exists", id_file.display());
+        return Ok(());
     }
     let priv_key = SecretKey::new(&mut rand::thread_rng());
     fs::write(id_file, hex::encode(&priv_key[..]))?;
+    info!("Initialized secret key in {}", path);
     Ok(())
 }
 

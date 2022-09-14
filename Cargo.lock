@@ -938,6 +938,7 @@ dependencies = [
 name = "lightning-storage-server"
 version = "0.1.0"
 dependencies = [
+ "bitcoin_hashes 0.11.0",
  "chrono",
  "clap",
  "clap_derive",
