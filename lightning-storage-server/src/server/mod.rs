@@ -54,10 +54,11 @@ impl LightningStorage for StorageServer {
 
     async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetReply>, Status> {
         let request = request.into_inner();
+        let client_id = request.client_id;
         let key_prefix = request.key_prefix;
         let kvs = self
             .database
-            .get_prefix(key_prefix)
+            .get_with_prefix(&client_id, key_prefix)
             .map_err(into_status)?
             .into_iter()
             .map(|kv| kv.into())
@@ -69,7 +70,8 @@ impl LightningStorage for StorageServer {
     async fn put(&self, request: Request<PutRequest>) -> Result<Response<PutReply>, Status> {
         let request = request.into_inner();
         let kvs = request.kvs.into_iter().map(|kv| kv.into()).collect();
-        let response = match self.database.put(kvs) {
+        let client_id = request.client_id;
+        let response = match self.database.put(&client_id, kvs) {
             Ok(()) => PutReply { success: true, conflicts: vec![] },
             Err(Error::Sled(_)) => {
                 return Err(Status::internal("database error"));

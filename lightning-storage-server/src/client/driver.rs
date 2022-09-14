@@ -1,3 +1,4 @@
+use secp256k1::PublicKey;
 use tonic::{transport, Request};
 
 use crate::client::LightningStorageClient;
@@ -23,9 +24,11 @@ pub async fn ping(
 
 pub async fn get(
     client: &mut LightningStorageClient<transport::Channel>,
+    client_id: PublicKey,
     key_prefix: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let get_request = Request::new(GetRequest { key_prefix });
+    let get_request =
+        Request::new(GetRequest { client_id: client_id.serialize().to_vec(), key_prefix });
 
     let response = client.get(get_request).await?;
     for kv in response.into_inner().kvs {
@@ -37,13 +40,16 @@ pub async fn get(
 
 pub async fn put(
     client: &mut LightningStorageClient<transport::Channel>,
+    client_id: PublicKey,
     key: String,
     version: u64,
     value: Vec<u8>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let signature = vec![0; 64];
     let kv = KeyValue { key, signature, version, value };
-    let put_request = Request::new(PutRequest { kvs: vec![kv] });
+
+    let put_request =
+        Request::new(PutRequest { client_id: client_id.serialize().to_vec(), kvs: vec![kv] });
 
     let response = client.put(put_request).await?;
     for kv in response.into_inner().conflicts {

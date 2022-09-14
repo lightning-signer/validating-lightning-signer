@@ -47,8 +47,11 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let addr =
         format!("{}:{}", matches.value_of("interface").unwrap(), matches.value_of("port").unwrap())
             .parse()?;
-    let datadir = matches.value_of("datadir").unwrap();
-    let database = Database::new(datadir).unwrap();
+    let home_dir = dirs::home_dir().ok_or("home directory not found")?;
+    let datadir_opt = matches.value_of("datadir").unwrap();
+    let mut datadir = home_dir;
+    datadir.push(datadir_opt);
+    let database = Database::new(datadir.clone()).unwrap();
     let server = StorageServer { database };
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
 
@@ -61,7 +64,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let service = tonic::transport::Server::builder()
         .add_service(LightningStorageServer::new(server))
         .serve_with_shutdown(addr, shutdown_signal);
-    info!("{} {} ready on {} datadir {}", SERVER_APP_NAME, process::id(), addr, datadir);
+    info!("{} {} ready on {} datadir {}", SERVER_APP_NAME, process::id(), addr, datadir.display());
     service.await?;
     info!("{} {} finished", SERVER_APP_NAME, process::id());
     Ok(())

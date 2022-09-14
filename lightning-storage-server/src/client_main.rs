@@ -3,12 +3,36 @@ use lightning_storage_server::client;
 use client::driver;
 
 use clap::{App, Arg, ArgMatches};
+use lightning_storage_server::util::{init_secret_key, read_public_key, read_secret_key};
+use secp256k1::SecretKey;
+
+const CLIENT_APP_NAME: &str = "lss-cli";
 
 #[tokio::main]
 async fn ping_subcommand(rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("Connect to {}", rpc_url);
     let mut client = driver::connect(rpc_url).await?;
     driver::ping(&mut client).await
+}
+
+fn secret_key() -> Result<SecretKey, Box<dyn std::error::Error>> {
+    read_secret_key("client-key")
+}
+
+fn public_key() -> Result<secp256k1::PublicKey, Box<dyn std::error::Error>> {
+    read_public_key("client-key")
+}
+
+fn init_subcommand(_rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    init_secret_key("client-key")
+}
+
+fn status_subcommand(_rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    match public_key() {
+        Ok(pk) => println!("public key: {}", hex::encode(pk.serialize())),
+        Err(_) => println!("not initialized"),
+    }
+    Ok(())
 }
 
 #[tokio::main]
@@ -19,7 +43,7 @@ async fn get_subcommand(
     println!("Connect to {}", rpc_url);
     let mut client = driver::connect(rpc_url).await?;
     let prefix = matches.value_of_t("prefix")?;
-    driver::get(&mut client, prefix).await
+    driver::get(&mut client, public_key()?, prefix).await
 }
 
 #[tokio::main]
@@ -33,7 +57,7 @@ async fn put_subcommand(
     let version = matches.value_of_t("version")?;
     let value_hex: String = matches.value_of_t("value")?;
     let value = hex::decode(value_hex).unwrap();
-    driver::put(&mut client, key, version, value).await
+    driver::put(&mut client, public_key()?, key, version, value).await
 }
 
 fn parse_rpc_url(matches: &ArgMatches) -> String {
@@ -53,8 +77,6 @@ fn parse_rpc_url(matches: &ArgMatches) -> String {
     };
     rpc_url
 }
-
-const CLIENT_APP_NAME: &str = "lss-cli";
 
 fn make_get_subapp() -> App<'static> {
     App::new("get")
@@ -92,6 +114,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }),
         )
         .subcommand(App::new("ping"))
+        .subcommand(App::new("init"))
+        .subcommand(App::new("status"))
         .subcommand(make_get_subapp())
         .subcommand(make_put_subapp());
     let matches = app.clone().get_matches();
@@ -101,6 +125,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match matches.subcommand() {
         Some(("ping", _)) => ping_subcommand(rpc)?,
+        Some(("init", _)) => init_subcommand(rpc)?,
+        Some(("status", _)) => status_subcommand(rpc)?,
         Some(("get", submatches)) => get_subcommand(rpc, submatches)?,
         Some(("put", submatches)) => put_subcommand(rpc, submatches)?,
         Some((name, _)) => panic!("unimplemented command {}", name),

@@ -16,13 +16,17 @@ fn make_value(v: u8) -> Value {
 fn main() {
     let dir = "/tmp/x";
     let db = Database::new(dir).unwrap();
-    db.put(vec![
-        ("x1a".to_string(), make_value(10)),
-        ("x1b".to_string(), make_value(11)),
-        ("x2b".to_string(), make_value(20)),
-    ])
+    let client_id = vec![1];
+    db.put(
+        &client_id,
+        vec![
+            ("x1a".to_string(), make_value(10)),
+            ("x1b".to_string(), make_value(11)),
+            ("x2b".to_string(), make_value(20)),
+        ],
+    )
     .unwrap();
-    let values = db.get_prefix("x1".to_string()).unwrap();
+    let values = db.get_with_prefix(&client_id, "x1".to_string()).unwrap();
     assert_eq!(values.len(), 2);
 }
 

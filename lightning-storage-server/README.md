@@ -1,6 +1,8 @@
 # Try it
 
 ```sh
+cargo run --bin lss-cli init
+
 cargo run --bin lssd
 
 cargo run --bin lss-cli put xx1 0 11

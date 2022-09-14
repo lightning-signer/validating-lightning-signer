@@ -3,9 +3,11 @@ syntax = "proto3";
 package lss;
 
 service LightningStorage {
-    // Trivial call to test connectivity
+  // Trivial call to test connectivity
   rpc Ping(PingRequest) returns (PingReply);
+  // Put a collection of key-value pairs
   rpc Put(PutRequest) returns (PutReply);
+  // Get a range of key-value pairs
   rpc Get(GetRequest) returns (GetReply);
 }
 
@@ -18,7 +20,8 @@ message PingReply {
 }
 
 message PutRequest {
-  repeated KeyValue kvs = 1;
+  bytes client_id = 1;
+  repeated KeyValue kvs = 2;
 }
 
 message PutReply {
@@ -37,7 +40,8 @@ message KeyValue {
 }
 
 message GetRequest {
-  string key_prefix = 1;
+  bytes client_id = 1;
+  string key_prefix = 2;
 }
 
 message GetReply {
