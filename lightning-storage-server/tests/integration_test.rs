@@ -11,7 +11,7 @@ fn test_sled() {
 }
 
 fn make_value(v: u8) -> Value {
-    Value { signature: vec![1, 2, 3], version: 0, value: vec![v] }
+    Value { version: 0, value: vec![v] }
 }
 
 #[test]

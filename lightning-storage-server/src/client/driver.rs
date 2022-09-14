@@ -58,8 +58,7 @@ pub async fn put(
     version: u64,
     value: Vec<u8>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let signature = vec![0; 64];
-    let kv = KeyValue { key, signature, version, value };
+    let kv = KeyValue { key, version, value };
 
     let put_request = Request::new(PutRequest { auth: make_auth_proto(&auth), kvs: vec![kv] });
 

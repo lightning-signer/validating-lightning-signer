@@ -52,9 +52,8 @@ message PutReply {
 
 message KeyValue {
   string key = 1;
-  bytes signature = 2;
-  uint64 version = 3;
-  bytes value = 4;
+  uint64 version = 2;
+  bytes value = 3;
 }
 
 message GetRequest {

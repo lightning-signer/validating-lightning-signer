@@ -18,7 +18,7 @@ pub struct StorageServer {
 
 impl Into<(String, Value)> for proto::KeyValue {
     fn into(self) -> (String, Value) {
-        (self.key, Value { signature: self.signature, version: self.version, value: self.value })
+        (self.key, Value { version: self.version, value: self.value })
     }
 }
 
@@ -28,7 +28,6 @@ impl Into<proto::KeyValue> for (String, Option<Value>) {
         let (key, v) = self;
         proto::KeyValue {
             key,
-            signature: v.as_ref().map(|v| v.signature.clone()).unwrap_or_default(),
             version: v.as_ref().map(|v| v.version + 1).unwrap_or_default(),
             value: v.as_ref().map(|v| v.value.clone()).unwrap_or_default(),
         }
@@ -39,7 +38,7 @@ impl Into<proto::KeyValue> for (String, Option<Value>) {
 impl Into<proto::KeyValue> for (String, Value) {
     fn into(self) -> proto::KeyValue {
         let (key, v) = self;
-        proto::KeyValue { key, signature: v.signature, version: v.version, value: v.value }
+        proto::KeyValue { key, version: v.version, value: v.value }
     }
 }
 
