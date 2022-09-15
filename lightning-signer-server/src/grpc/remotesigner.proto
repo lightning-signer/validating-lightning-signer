@@ -211,6 +211,10 @@ service Signer {
   // BOLT #?? - Derive Secret
   rpc DeriveSecret (DeriveSecretRequest)
     returns (DeriveSecretReply);
+
+  // Submit invoice for approval, allowing subsequent payment
+  rpc PreapproveInvoice (PreapproveInvoiceRequest)
+    returns (PreapproveInvoiceReply);
 }
 
 service Version {
@@ -668,6 +672,16 @@ message DeriveSecretRequest {
 
 message DeriveSecretReply {
   Secret secret = 1; // 32 bytes
+}
+
+// Submit invoice for approval, allowing subsequent payment
+message PreapproveInvoiceRequest {
+  NodeId node_id = 1;
+
+  string invstring = 2;
+}
+
+message PreapproveInvoiceReply {
 }
 
 // Sign an invoice with the node secret key

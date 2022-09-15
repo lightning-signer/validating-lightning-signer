@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
+use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 use bit_vec::BitVec;
@@ -26,6 +27,7 @@ use lightning_signer::lightning::ln::chan_utils::{
     derive_public_revocation_key, ChannelPublicKeys,
 };
 use lightning_signer::lightning::ln::PaymentHash;
+use lightning_signer::lightning_invoice::SignedRawInvoice;
 use lightning_signer::node::{Node, NodeConfig, NodeMonitor, NodeServices, SpendType};
 use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
@@ -43,7 +45,7 @@ use vls_protocol::model::{
     Basepoints, BitcoinSignature, BlockHash, ExtKey, Htlc, OutPoint as ModelOutPoint, PubKey,
     PubKey32, RecoverableSignature, Secret, Signature, TxId,
 };
-use vls_protocol::msgs::{DeriveSecretReply, SerBolt, SignBolt12Reply};
+use vls_protocol::msgs::{DeriveSecretReply, PreapproveInvoiceReply, SerBolt, SignBolt12Reply};
 use vls_protocol::serde_bolt::{LargeBytes, WireString};
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 
@@ -179,6 +181,15 @@ impl Handler for RootHandler {
                     tweak,
                 )?;
                 Ok(Box::new(SignBolt12Reply { signature: Signature(sig.as_ref().clone()) }))
+            }
+            Message::PreapproveInvoice(m) => {
+                let invstr = String::from_utf8(m.invstring.0)
+                    .map_err(|e| Status::invalid_argument(e.to_string()))?;
+                let signed = invstr
+                    .parse::<SignedRawInvoice>()
+                    .map_err(|e| Status::invalid_argument(e.to_string()))?;
+                self.node.add_invoice(signed)?;
+                Ok(Box::new(PreapproveInvoiceReply {}))
             }
             Message::DeriveSecret(m) => {
                 let secret = self.node.derive_secret(&m.info);
