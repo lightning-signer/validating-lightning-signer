@@ -15,8 +15,7 @@ const CLIENT_APP_NAME: &str = "lss-cli";
 
 #[tokio::main]
 async fn ping_subcommand(rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = driver::connect(rpc_url).await?;
-    let result = driver::ping(&mut client, "hello").await?;
+    let result = driver::Client::ping(rpc_url, "hello").await?;
     println!("ping result: {}", result);
     Ok(())
 }
@@ -38,10 +37,9 @@ fn server_public_key() -> Result<PublicKey, Box<dyn std::error::Error>> {
 #[tokio::main]
 async fn init_subcommand(rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     init_secret_key("client-key")?;
-    let mut client = driver::connect(rpc_url).await?;
-    let init = driver::info(&mut client).await?;
+    let server_key = driver::Client::init(rpc_url).await?;
     let server_pubkey_file = state_file_path("server-pubkey")?;
-    fs::write(server_pubkey_file, hex::encode(&init.serialize()))?;
+    fs::write(server_pubkey_file, hex::encode(&server_key.serialize()))?;
     Ok(())
 }
 
@@ -70,11 +68,10 @@ async fn get_subcommand(
     rpc_url: &str,
     matches: &ArgMatches,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Connect to {}", rpc_url);
-    let mut client = driver::connect(rpc_url).await?;
     let prefix = matches.value_of_t("prefix")?;
     let (auth, hmac_secret) = make_auth()?;
-    let res = driver::get(&mut client, auth, &hmac_secret, prefix).await?;
+    let mut client = driver::Client::new(rpc_url, auth).await?;
+    let res = client.get(&hmac_secret, prefix).await?;
     for (key, value) in res {
         println!("key: {}, version: {} value: {}", key, value.version, hex::encode(value.value));
     }
@@ -86,14 +83,14 @@ async fn put_subcommand(
     rpc_url: &str,
     matches: &ArgMatches,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Connect to {}", rpc_url);
-    let mut client = driver::connect(rpc_url).await?;
     let key = matches.value_of_t("key")?;
     let version = matches.value_of_t("version")?;
     let value_hex: String = matches.value_of_t("value")?;
     let value = hex::decode(value_hex).unwrap();
     let (auth, hmac_secret) = make_auth()?;
-    match driver::put(&mut client, auth, &hmac_secret, key, version, value).await {
+    let mut client = driver::Client::new(rpc_url, auth).await?;
+
+    match client.put(&hmac_secret, key, version, value).await {
         Ok(()) => Ok(()),
         Err(ClientError::PutConflict(conflicts)) => {
             for (key, value) in conflicts {

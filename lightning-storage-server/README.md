@@ -1,12 +1,25 @@
 # Motivation
 
-The Lightning Storage Service provides a way for Lightning nodes and signers ("clients") to store state in the cloud in a secure way.  By storing redundant copies, the client can ensure that the state was not rolled back.
+The Lightning Storage Service provides a way for Lightning nodes and signers ("clients") to store state in the cloud securely.  By storing redundant copies, the client can ensure that the state was not rolled back.
 
 Future work will include a way to atomically commit across multiple LSS providers.
 
+# Security Model - Signer
+
+These are the assumptions for the security model in case of a signer, such as VLS:
+
+- the node does not collude with the storage provider
+- if more than one storage provider is used, they do not collude with each other
+
+# Security Model - Node
+
+These are the assumptions for the security model in case of a node, such as one written using LDK:
+
+- if more than one storage provider is used, they do not collude with each other
+
 # Design
 
-The server stores versioned key-value pairs in an atomic way.  The versions must be strictly monotonic without gaps.  Any violation of the versioning rule will result in an aborted transaction and the conflicting values in the database will be returned.
+The server stores versioned key-value pairs in an atomic transaction.  The versions must be strictly monotonic without gaps.  Any violation of the versioning rule will result in an aborted transaction and the conflicting values in the database will be returned.
 
 The client authenticates itself to the server using a secret/public keypair and a shared secret derived from that and the server keypair.  Each client has a separate storage key namespace.
 
@@ -17,10 +30,6 @@ The client internally appends an HMAC that covers:
 - the key
 - the version, as 8 bytes big endian
 - the value
-
-# TODO
-
-- HMAC
 
 # Try it
 
