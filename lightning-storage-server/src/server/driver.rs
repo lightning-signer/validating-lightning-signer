@@ -1,11 +1,11 @@
-use std::{env, process};
+use std::process;
 
 use clap::{App, Arg};
 use log::{info, warn};
 
 use crate::server::LightningStorageServer;
 use crate::server::StorageServer;
-use crate::util::{init_secret_key, read_public_key, read_secret_key};
+use crate::util::{init_secret_key, read_public_key, read_secret_key, setup_logging};
 use crate::Database;
 
 pub const SERVER_APP_NAME: &str = "lssd";
@@ -75,31 +75,4 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     service.await?;
     info!("{} {} finished", SERVER_APP_NAME, process::id());
     Ok(())
-}
-
-fn setup_logging(who: &str, level_arg: &str) {
-    use fern::colors::{Color, ColoredLevelConfig};
-    use std::str::FromStr;
-
-    let colors = ColoredLevelConfig::new().info(Color::Green).error(Color::Red).warn(Color::Yellow);
-    let level = env::var("RUST_LOG").unwrap_or(level_arg.to_string());
-    let who = who.to_string();
-    fern::Dispatch::new()
-        .format(move |out, message, record| {
-            out.finish(format_args!(
-                "[{} {}/{} {}] {}",
-                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
-                who,
-                record.target(),
-                colors.color(record.level()),
-                message
-            ))
-        })
-        .level(log::LevelFilter::from_str(&level).expect("level"))
-        .level_for("h2", log::LevelFilter::Info)
-        .level_for("sled", log::LevelFilter::Info)
-        .chain(std::io::stdout())
-        // .chain(fern::log_file("/tmp/output.log")?)
-        .apply()
-        .expect("log config");
 }

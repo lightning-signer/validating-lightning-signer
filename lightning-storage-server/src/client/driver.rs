@@ -3,7 +3,8 @@ use secp256k1::PublicKey;
 use tonic::{transport, Request};
 
 use crate::client::LightningStorageClient;
-use crate::proto::{self, GetRequest, InfoRequest, KeyValue, PingRequest, PutRequest};
+use crate::proto::{self, GetRequest, InfoRequest, PingRequest, PutRequest};
+use crate::util::{append_hmac_to_value, remove_and_check_hmac};
 
 pub async fn connect(
     uri: &str,
@@ -39,13 +40,17 @@ pub async fn info(
 pub async fn get(
     client: &mut LightningStorageClient<transport::Channel>,
     auth: Auth,
+    hmac_secret: &[u8],
     key_prefix: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let get_request = Request::new(GetRequest { auth: make_auth_proto(&auth), key_prefix });
 
     let response = client.get(get_request).await?;
     for kv in response.into_inner().kvs {
-        println!("key: {}, version: {} value: {}", kv.key, kv.version, hex::encode(kv.value));
+        let key = kv.key;
+        let value = remove_and_check_hmac(kv.value, &key, kv.version, &hmac_secret)
+            .map_err(|()| format!("hmac failure for key {}", key.clone()))?;
+        println!("key: {}, version: {} value: {}", key, kv.version, hex::encode(value));
     }
 
     Ok(())
@@ -54,11 +59,13 @@ pub async fn get(
 pub async fn put(
     client: &mut LightningStorageClient<transport::Channel>,
     auth: Auth,
+    hmac_secret: &[u8],
     key: String,
     version: u64,
-    value: Vec<u8>,
+    bare_value: Vec<u8>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let kv = KeyValue { key, version, value };
+    let value = append_hmac_to_value(bare_value, &key, version, &hmac_secret);
+    let kv = proto::KeyValue { key, version, value };
 
     let put_request = Request::new(PutRequest { auth: make_auth_proto(&auth), kvs: vec![kv] });
 

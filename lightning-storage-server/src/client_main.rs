@@ -1,14 +1,14 @@
-use lightning_storage_server::client;
-use std::fs;
-
-use client::driver;
-
+use bitcoin_hashes::sha256::Hash as Sha256Hash;
+use bitcoin_hashes::Hash;
 use clap::{App, Arg, ArgMatches};
+use client::driver;
+use lightning_storage_server::client;
 use lightning_storage_server::client::auth::Auth;
 use lightning_storage_server::util::{
-    init_secret_key, read_public_key, read_secret_key, state_file_path,
+    init_secret_key, read_public_key, read_secret_key, setup_logging, state_file_path,
 };
 use secp256k1::{PublicKey, SecretKey};
+use std::fs;
 
 const CLIENT_APP_NAME: &str = "lss-cli";
 
@@ -55,8 +55,12 @@ fn info_subcommand(_rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn make_auth() -> Result<Auth, Box<dyn std::error::Error>> {
-    Ok(Auth::new_for_client(secret_key()?, server_public_key()?))
+// Auth and hmac secret
+fn make_auth() -> Result<(Auth, Vec<u8>), Box<dyn std::error::Error>> {
+    let secret_key = secret_key()?;
+    let hmac_secret = Sha256Hash::hash(&secret_key[..]).into_inner();
+    let auth = Auth::new_for_client(secret_key, server_public_key()?);
+    Ok((auth, hmac_secret.to_vec()))
 }
 
 #[tokio::main]
@@ -67,7 +71,8 @@ async fn get_subcommand(
     println!("Connect to {}", rpc_url);
     let mut client = driver::connect(rpc_url).await?;
     let prefix = matches.value_of_t("prefix")?;
-    driver::get(&mut client, make_auth()?, prefix).await
+    let (auth, hmac_secret) = make_auth()?;
+    driver::get(&mut client, auth, &hmac_secret, prefix).await
 }
 
 #[tokio::main]
@@ -81,7 +86,8 @@ async fn put_subcommand(
     let version = matches.value_of_t("version")?;
     let value_hex: String = matches.value_of_t("value")?;
     let value = hex::decode(value_hex).unwrap();
-    driver::put(&mut client, make_auth()?, key, version, value).await
+    let (auth, hmac_secret) = make_auth()?;
+    driver::put(&mut client, auth, &hmac_secret, key, version, value).await
 }
 
 fn parse_rpc_url(matches: &ArgMatches) -> String {
@@ -143,6 +149,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .subcommand(make_get_subapp())
         .subcommand(make_put_subapp());
     let matches = app.clone().get_matches();
+
+    setup_logging("lss-cli", "info");
 
     let rpc_url = parse_rpc_url(&matches);
     let rpc = rpc_url.as_str();
