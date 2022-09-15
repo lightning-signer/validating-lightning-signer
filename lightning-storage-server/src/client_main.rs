@@ -4,6 +4,7 @@ use clap::{App, Arg, ArgMatches};
 use client::driver;
 use lightning_storage_server::client;
 use lightning_storage_server::client::auth::Auth;
+use lightning_storage_server::client::driver::ClientError;
 use lightning_storage_server::util::{
     init_secret_key, read_public_key, read_secret_key, setup_logging, state_file_path,
 };
@@ -14,9 +15,10 @@ const CLIENT_APP_NAME: &str = "lss-cli";
 
 #[tokio::main]
 async fn ping_subcommand(rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Connect to {}", rpc_url);
     let mut client = driver::connect(rpc_url).await?;
-    driver::ping(&mut client).await
+    let result = driver::ping(&mut client, "hello").await?;
+    println!("ping result: {}", result);
+    Ok(())
 }
 
 fn secret_key() -> Result<SecretKey, Box<dyn std::error::Error>> {
@@ -72,7 +74,11 @@ async fn get_subcommand(
     let mut client = driver::connect(rpc_url).await?;
     let prefix = matches.value_of_t("prefix")?;
     let (auth, hmac_secret) = make_auth()?;
-    driver::get(&mut client, auth, &hmac_secret, prefix).await
+    let res = driver::get(&mut client, auth, &hmac_secret, prefix).await?;
+    for (key, value) in res {
+        println!("key: {}, version: {} value: {}", key, value.version, hex::encode(value.value));
+    }
+    Ok(())
 }
 
 #[tokio::main]
@@ -87,7 +93,21 @@ async fn put_subcommand(
     let value_hex: String = matches.value_of_t("value")?;
     let value = hex::decode(value_hex).unwrap();
     let (auth, hmac_secret) = make_auth()?;
-    driver::put(&mut client, auth, &hmac_secret, key, version, value).await
+    match driver::put(&mut client, auth, &hmac_secret, key, version, value).await {
+        Ok(()) => Ok(()),
+        Err(ClientError::PutConflict(conflicts)) => {
+            for (key, value) in conflicts {
+                println!(
+                    "conflict key: {}, version: {} value: {}",
+                    key,
+                    value.version,
+                    hex::encode(value.value)
+                );
+            }
+            Err("put conflict".into())
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 fn parse_rpc_url(matches: &ArgMatches) -> String {

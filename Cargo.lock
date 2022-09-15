@@ -953,6 +953,7 @@ dependencies = [
  "serde_cbor",
  "sled",
  "tempfile",
+ "thiserror",
  "tokio",
  "tonic",
  "tonic-build",

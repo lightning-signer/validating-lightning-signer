@@ -1,27 +1,40 @@
 use crate::client::auth::Auth;
-use secp256k1::PublicKey;
-use tonic::{transport, Request};
-
 use crate::client::LightningStorageClient;
 use crate::proto::{self, GetRequest, InfoRequest, PingRequest, PutRequest};
 use crate::util::{append_hmac_to_value, remove_and_check_hmac};
+use crate::Value;
+use secp256k1::PublicKey;
+use thiserror::Error;
+use tonic::{transport, Request};
 
-pub async fn connect(
-    uri: &str,
-) -> Result<LightningStorageClient<transport::Channel>, Box<dyn std::error::Error>> {
+#[derive(Debug, Error)]
+pub enum ClientError {
+    #[error("transport error")]
+    Connect(#[from] transport::Error),
+    #[error("API error")]
+    Tonic(#[from] tonic::Status),
+    #[error("invalid response from server")]
+    InvalidResponse,
+    /// integrity error, with string
+    #[error("invalid HMAC for key {0} version {1}")]
+    InvalidHmac(String, u64),
+    #[error("Put had conflicts")]
+    PutConflict(Vec<(String, Value)>),
+}
+
+pub async fn connect(uri: &str) -> Result<LightningStorageClient<transport::Channel>, ClientError> {
     let uri_clone = String::from(uri);
     Ok(LightningStorageClient::connect(uri_clone).await?)
 }
 
 pub async fn ping(
     client: &mut LightningStorageClient<transport::Channel>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let ping_request = Request::new(PingRequest { message: "hello".into() });
+    message: &str,
+) -> Result<String, ClientError> {
+    let ping_request = Request::new(PingRequest { message: message.into() });
 
     let response = client.ping(ping_request).await?;
-
-    println!("ping response={:?}", response);
-    Ok(())
+    Ok(response.into_inner().message)
 }
 
 pub fn make_auth_proto(auth: &Auth) -> Option<proto::Auth> {
@@ -30,11 +43,12 @@ pub fn make_auth_proto(auth: &Auth) -> Option<proto::Auth> {
 
 pub async fn info(
     client: &mut LightningStorageClient<transport::Channel>,
-) -> Result<PublicKey, Box<dyn std::error::Error>> {
+) -> Result<PublicKey, ClientError> {
     let info_request = Request::new(InfoRequest {});
 
     let response = client.info(info_request).await?;
-    PublicKey::from_slice(&response.into_inner().server_id).map_err(|_| "invalid server id".into())
+    PublicKey::from_slice(&response.into_inner().server_id)
+        .map_err(|_| ClientError::InvalidResponse)
 }
 
 pub async fn get(
@@ -42,18 +56,12 @@ pub async fn get(
     auth: Auth,
     hmac_secret: &[u8],
     key_prefix: String,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<Vec<(String, Value)>, ClientError> {
     let get_request = Request::new(GetRequest { auth: make_auth_proto(&auth), key_prefix });
 
     let response = client.get(get_request).await?;
-    for kv in response.into_inner().kvs {
-        let key = kv.key;
-        let value = remove_and_check_hmac(kv.value, &key, kv.version, &hmac_secret)
-            .map_err(|()| format!("hmac failure for key {}", key.clone()))?;
-        println!("key: {}, version: {} value: {}", key, kv.version, hex::encode(value));
-    }
-
-    Ok(())
+    let res = response.into_inner();
+    kvs_from_proto(&hmac_secret, res.kvs)
 }
 
 pub async fn put(
@@ -63,21 +71,34 @@ pub async fn put(
     key: String,
     version: u64,
     bare_value: Vec<u8>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), ClientError> {
     let value = append_hmac_to_value(bare_value, &key, version, &hmac_secret);
     let kv = proto::KeyValue { key, version, value };
 
     let put_request = Request::new(PutRequest { auth: make_auth_proto(&auth), kvs: vec![kv] });
 
     let response = client.put(put_request).await?;
-    for kv in response.into_inner().conflicts {
-        println!(
-            "conflict key: {}, version: {} value: {}",
-            kv.key,
-            kv.version,
-            hex::encode(kv.value)
-        );
+    let res = response.into_inner();
+    if res.success {
+        Ok(())
+    } else {
+        let conflicts = kvs_from_proto(&hmac_secret, res.conflicts)?;
+        Err(ClientError::PutConflict(conflicts))
     }
+}
 
-    Ok(())
+fn kvs_from_proto(
+    hmac_secret: &&[u8],
+    conflicts_proto: Vec<proto::KeyValue>,
+) -> Result<Vec<(String, Value)>, ClientError> {
+    conflicts_proto
+        .into_iter()
+        .map(|kv| {
+            let key = kv.key;
+            let version = kv.version;
+            let value = remove_and_check_hmac(kv.value, &key, version, &hmac_secret)
+                .map_err(|()| ClientError::InvalidHmac(key.clone(), version))?;
+            Ok((key, Value { version, value }))
+        })
+        .collect::<Result<Vec<_>, ClientError>>()
 }

@@ -34,7 +34,7 @@ impl Into<proto::KeyValue> for (String, Option<Value>) {
     }
 }
 
-// convert a conflict to proto
+// convert get result to proto
 impl Into<proto::KeyValue> for (String, Value) {
     fn into(self) -> proto::KeyValue {
         let (key, v) = self;
@@ -60,6 +60,7 @@ impl StorageServer {
         Ok(())
     }
 }
+
 #[tonic::async_trait]
 impl LightningStorage for StorageServer {
     async fn ping(&self, request: Request<PingRequest>) -> Result<Response<PingReply>, Status> {

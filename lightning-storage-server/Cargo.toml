@@ -26,6 +26,7 @@ hex = "0.4"
 dirs = "4"
 secp256k1 = { version = "0.24", features = ["rand"] }
 bitcoin_hashes = "0.11"
+thiserror = "1.0"
 
 [build-dependencies]
 tonic-build = "0.6"

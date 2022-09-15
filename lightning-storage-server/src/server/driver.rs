@@ -14,9 +14,7 @@ pub const SERVER_APP_NAME: &str = "lssd";
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     println!("{} {} starting", SERVER_APP_NAME, process::id());
     let app = App::new(SERVER_APP_NAME)
-        .about(
-            "Validating Lightning Signer with a gRPC interface.  Persists to .lightning-signer .",
-        )
+        .about("Lightning Storage Server with a gRPC interface.  Persists to ~/.lss .")
         .arg(
             Arg::new("interface")
                 .about("the interface to listen on (ip v4 or v6)")
