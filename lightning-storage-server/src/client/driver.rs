@@ -1,8 +1,10 @@
 use crate::client::auth::Auth;
 use crate::client::LightningStorageClient;
 use crate::proto::{self, GetRequest, InfoRequest, PingRequest, PutRequest};
-use crate::util::{append_hmac_to_value, remove_and_check_hmac};
+use crate::util::{add_to_hmac, append_hmac_to_value, remove_and_check_hmac};
 use crate::Value;
+use bitcoin_hashes::sha256::Hash as Sha256Hash;
+use bitcoin_hashes::{Hash, Hmac, HmacEngine};
 use secp256k1::PublicKey;
 use thiserror::Error;
 use tonic::{transport, Request};
@@ -15,9 +17,12 @@ pub enum ClientError {
     Tonic(#[from] tonic::Status),
     #[error("invalid response from server")]
     InvalidResponse,
-    /// integrity error, with string
+    /// client HMAC integrity error, with string
     #[error("invalid HMAC for key {0} version {1}")]
     InvalidHmac(String, u64),
+    /// server HMAC integrity error, with string
+    #[error("invalid server HMAC")]
+    InvalidServerHmac(),
     #[error("Put had conflicts")]
     PutConflict(Vec<(String, Value)>),
 }
@@ -64,20 +69,32 @@ impl Client {
 
     pub async fn put(
         &mut self,
+        auth: Auth,
         hmac_secret: &[u8],
         key: String,
         version: u64,
         bare_value: Vec<u8>,
     ) -> Result<(), ClientError> {
         let value = append_hmac_to_value(bare_value, &key, version, &hmac_secret);
-        let kv = proto::KeyValue { key, version, value };
 
-        let put_request = Request::new(PutRequest { auth: self.make_auth_proto(), kvs: vec![kv] });
+        let secret = auth.shared_secret;
+        let mut hmac_engine = HmacEngine::<Sha256Hash>::new(&secret);
+        add_to_hmac(&key, &version, &value, &mut hmac_engine);
+        let hmac = Hmac::from_engine(hmac_engine).into_inner().to_vec();
+
+        let kv = proto::KeyValue { key, version, value };
+        // TODO multiple kvs
+        let kvs = vec![kv];
+        let put_request = Request::new(PutRequest { auth: self.make_auth_proto(), kvs });
 
         let response = self.client.put(put_request).await?;
         let res = response.into_inner();
         if res.success {
-            Ok(())
+            if res.hmac == hmac {
+                Ok(())
+            } else {
+                Err(ClientError::InvalidServerHmac())
+            }
         } else {
             let conflicts = kvs_from_proto(&hmac_secret, res.conflicts)?;
             Err(ClientError::PutConflict(conflicts))

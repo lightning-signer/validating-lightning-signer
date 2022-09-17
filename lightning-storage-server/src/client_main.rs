@@ -88,9 +88,9 @@ async fn put_subcommand(
     let value_hex: String = matches.value_of_t("value")?;
     let value = hex::decode(value_hex).unwrap();
     let (auth, hmac_secret) = make_auth()?;
-    let mut client = driver::Client::new(rpc_url, auth).await?;
+    let mut client = driver::Client::new(rpc_url, auth.clone()).await?;
 
-    match client.put(&hmac_secret, key, version, value).await {
+    match client.put(auth, &hmac_secret, key, version, value).await {
         Ok(()) => Ok(()),
         Err(ClientError::PutConflict(conflicts)) => {
             for (key, value) in conflicts {

@@ -3,6 +3,7 @@ use bitcoin_hashes::Hash;
 use secp256k1::ecdh::SharedSecret;
 use secp256k1::{PublicKey, SecretKey};
 
+#[derive(Clone)]
 pub struct Auth {
     /// Client pubkey
     pub client_id: PublicKey,

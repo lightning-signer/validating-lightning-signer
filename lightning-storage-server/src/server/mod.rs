@@ -6,7 +6,10 @@ use crate::proto::{
     self, GetReply, GetRequest, InfoReply, InfoRequest, PingReply, PingRequest, PutReply,
     PutRequest,
 };
+use crate::util::add_to_hmac;
 use crate::{Database, Error, Value};
+use bitcoin_hashes::sha256::Hash as Sha256Hash;
+use bitcoin_hashes::{Hash, Hmac, HmacEngine};
 use secp256k1::{PublicKey, SecretKey};
 use tonic::{Request, Response, Status};
 
@@ -50,14 +53,14 @@ fn into_status(s: Error) -> Status {
 }
 
 impl StorageServer {
-    fn check_auth(&self, auth_proto: &proto::Auth) -> Result<(), Status> {
+    fn check_auth(&self, auth_proto: &proto::Auth) -> Result<Auth, Status> {
         let client_id = PublicKey::from_slice(&auth_proto.client_id)
             .map_err(|_| Status::unauthenticated("invalid client id"))?;
         let auth = Auth::new_for_server(self.secret_key.clone(), client_id);
         if auth_proto.token != auth.auth_token() {
             return Err(Status::invalid_argument("invalid auth token"));
         }
-        Ok(())
+        Ok(auth)
     }
 }
 
@@ -100,17 +103,26 @@ impl LightningStorage for StorageServer {
     async fn put(&self, request: Request<PutRequest>) -> Result<Response<PutReply>, Status> {
         let request = request.into_inner();
         let kvs = request.kvs.into_iter().map(|kv| kv.into()).collect();
-        let auth = request.auth.ok_or_else(|| Status::invalid_argument("missing auth"))?;
-        self.check_auth(&auth)?;
-        let client_id = auth.client_id;
-        let response = match self.database.put(&client_id, kvs) {
-            Ok(()) => PutReply { success: true, conflicts: vec![] },
+        let auth_proto = request.auth.ok_or_else(|| Status::invalid_argument("missing auth"))?;
+        let auth = self.check_auth(&auth_proto)?;
+        let client_id = auth_proto.client_id;
+        let response = match self.database.put(&client_id, &kvs) {
+            Ok(()) => {
+                let secret = auth.shared_secret;
+                let mut hmac_engine = HmacEngine::<Sha256Hash>::new(&secret);
+                for (key, value) in kvs {
+                    add_to_hmac(&key, &value.version, &value.value, &mut hmac_engine);
+                }
+                let hmac = Hmac::from_engine(hmac_engine).into_inner().to_vec();
+
+                PutReply { success: true, hmac, conflicts: vec![] }
+            }
             Err(Error::Sled(_)) => {
                 return Err(Status::internal("database error"));
             }
             Err(Error::Conflict(conflicts)) => {
                 let conflicts = conflicts.into_iter().map(|kv| kv.into()).collect();
-                PutReply { success: false, conflicts }
+                PutReply { success: false, hmac: Default::default(), conflicts }
             }
         };
         Ok(Response::new(response))

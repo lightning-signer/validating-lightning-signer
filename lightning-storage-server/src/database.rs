@@ -42,7 +42,7 @@ impl Database {
     ///
     /// If any of the value versions are not the next version, the entire
     /// transaction is aborted and the error includes the existing values.
-    pub fn put(&self, client_id: &[u8], kvs: Vec<(String, Value)>) -> Result<(), Error> {
+    pub fn put(&self, client_id: &[u8], kvs: &Vec<(String, Value)>) -> Result<(), Error> {
         let client_id_prefix = hex::encode(client_id);
         self.db.transaction(|tx| {
             let mut conflicts = Vec::new();

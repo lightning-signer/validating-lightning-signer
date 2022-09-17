@@ -19,7 +19,7 @@ fn main() {
     let client_id = vec![1];
     db.put(
         &client_id,
-        vec![
+        &vec![
             ("x1a".to_string(), make_value(10)),
             ("x1b".to_string(), make_value(11)),
             ("x2b".to_string(), make_value(20)),

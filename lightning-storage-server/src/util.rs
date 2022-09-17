@@ -44,7 +44,7 @@ pub fn read_public_key(path: &str) -> Result<secp256k1::PublicKey, Box<dyn std::
 }
 
 pub fn append_hmac_to_value(mut value: Vec<u8>, key: &str, version: u64, secret: &[u8]) -> Vec<u8> {
-    let hmac = do_hmac(&value, key, &version, secret);
+    let hmac = compute_hmac(key, &version, secret, &value);
     value.append(&mut hmac.to_vec());
     value
 }
@@ -60,7 +60,7 @@ pub fn remove_and_check_hmac(
         return Err(());
     }
     let expected_hmac = value.split_off(value.len() - 32);
-    let hmac = do_hmac(&value, key, &version, secret);
+    let hmac = compute_hmac(key, &version, secret, &value);
     if hmac == expected_hmac.as_slice() {
         Ok(value)
     } else {
@@ -68,12 +68,17 @@ pub fn remove_and_check_hmac(
     }
 }
 
-fn do_hmac(value: &[u8], key: &str, version: &u64, secret: &[u8]) -> [u8; 32] {
+fn compute_hmac(key: &str, version: &u64, secret: &[u8], value: &[u8]) -> [u8; 32] {
     let mut hmac = HmacEngine::<Sha256Hash>::new(secret);
+    add_to_hmac(key, version, value, &mut hmac);
+    Hmac::from_engine(hmac).into_inner()
+}
+
+/// Add key, version (8 bytes big endian) and value to HMAC
+pub fn add_to_hmac(key: &str, version: &u64, value: &[u8], hmac: &mut HmacEngine<Sha256Hash>) {
     hmac.input(key.as_bytes());
     hmac.input(&version.to_be_bytes());
     hmac.input(&value);
-    Hmac::from_engine(hmac).into_inner()
 }
 
 pub fn setup_logging(who: &str, level_arg: &str) {
@@ -101,6 +106,17 @@ pub fn setup_logging(who: &str, level_arg: &str) {
         // .chain(fern::log_file("/tmp/output.log")?)
         .apply()
         .expect("log config");
+}
+
+/// Compute a server HMAC - which proves the server was reached and no malicious replay occurred
+pub fn compute_server_hmac(secret: &[u8], nonce: &[u8], kvs: &[(String, Value)]) -> Vec<u8> {
+    let mut hmac_engine = HmacEngine::<Sha256Hash>::new(&secret);
+    hmac_engine.input(secret);
+    hmac_engine.input(nonce);
+    for (key, value) in kvs {
+        add_to_hmac(&key, &value.version, &value.value, &mut hmac_engine);
+    }
+    Hmac::from_engine(hmac_engine).into_inner().to_vec()
 }
 
 #[cfg(test)]
