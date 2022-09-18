@@ -10,6 +10,9 @@ These are the assumptions for the security model in case of a signer, such as VL
 
 - the node does not collude with the storage provider
 - if more than one storage provider is used, they do not collude with each other
+- there may be a MITM between the signer and the storage provider
+
+The last assumption derives from the fact that the signer may be in a secure enclave, and not directly connect to the storage provider.
 
 # Security Model - Node
 
@@ -31,21 +34,25 @@ The client internally appends an HMAC that covers:
 - the version, as 8 bytes big endian
 - the value
 
+The server returns an HMAC using a shared secret that covers the stored items (`put`) or retrieved items (`get`).  A nonce is also covered in the case of a `get`.  This can be used to prove to a signer in a secure enclave that there was no replay attack by a MITM, and that the server was actually reached for the operation.
+
 # Try it
 
 ```sh
 cargo run --bin lssd
 
-cargo run --bin lss-cli init
+alias lss-cli="cargo run --bin lss-cli --"
 
-cargo run --bin lss-cli put xx1 0 11
+lss-cli init
+
+lss-cli put xx1 0 11
 # will conflict
-cargo run --bin lss-cli put xx1 0 11
+lss-cli put xx1 0 11
 
-cargo run --bin lss-cli put xy1 0 11
-cargo run --bin lss-cli put xy2 0 22
+lss-cli put xy1 0 11
+lss-cli put xy2 0 22
 
-cargo run --bin lss-cli get xx
-cargo run --bin lss-cli get xy
-cargo run --bin lss-cli get xy1
+lss-cli get xx
+lss-cli get xy
+lss-cli get xy1
 ```

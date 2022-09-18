@@ -44,12 +44,11 @@ message PutRequest {
 
 message PutReply {
   bool success = 1;
-  // Server HMAC of key, version (big endian 8 bytes) and value with ECDH(server key, client key).
+  // Server HMAC of (key, version (big endian 8 bytes), value) with ECDH(server key, client key).
   // This is a confirmation by the server that the data was persisted.
   bytes hmac = 2;
-  // Any detected version conflicts.  the version here will be the *expected next version* rather than
-  // the current version.  If the version is 0, then the key did not exist, and a put of a version other than zero
-  // was attempted.
+  // Any detected version conflicts.
+  // If the key does not exist, the version is u64::MAX.
   repeated KeyValue conflicts = 10;
 }
 
@@ -62,8 +61,13 @@ message KeyValue {
 message GetRequest {
   Auth auth = 1;
   string key_prefix = 2;
+  // A nonce to be used for the reply HMAC, to prevent replay
+  bytes nonce = 3;
 }
 
 message GetReply {
   repeated KeyValue kvs = 1;
+  // Server HMAC of (key, version (big endian 8 bytes), value) and nonce with ECDH(server key, client key).
+  // This is a confirmation by the server that the latest version was returned.
+  bytes hmac = 2;
 }

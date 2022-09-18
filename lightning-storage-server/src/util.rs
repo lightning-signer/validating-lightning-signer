@@ -1,3 +1,4 @@
+use crate::Value;
 use bitcoin_hashes::sha256::Hash as Sha256Hash;
 use bitcoin_hashes::{Hash, HashEngine, Hmac, HmacEngine};
 use log::{error, info};
@@ -81,6 +82,17 @@ pub fn add_to_hmac(key: &str, version: &u64, value: &[u8], hmac: &mut HmacEngine
     hmac.input(&value);
 }
 
+/// Compute a server HMAC - which proves the server was reached and no malicious replay occurred
+pub fn compute_server_hmac(secret: &[u8], nonce: &[u8], kvs: &[(String, Value)]) -> Vec<u8> {
+    let mut hmac_engine = HmacEngine::<Sha256Hash>::new(&secret);
+    hmac_engine.input(secret);
+    hmac_engine.input(nonce);
+    for (key, value) in kvs {
+        add_to_hmac(&key, &value.version, &value.value, &mut hmac_engine);
+    }
+    Hmac::from_engine(hmac_engine).into_inner().to_vec()
+}
+
 pub fn setup_logging(who: &str, level_arg: &str) {
     use fern::colors::{Color, ColoredLevelConfig};
     use std::str::FromStr;
@@ -106,17 +118,6 @@ pub fn setup_logging(who: &str, level_arg: &str) {
         // .chain(fern::log_file("/tmp/output.log")?)
         .apply()
         .expect("log config");
-}
-
-/// Compute a server HMAC - which proves the server was reached and no malicious replay occurred
-pub fn compute_server_hmac(secret: &[u8], nonce: &[u8], kvs: &[(String, Value)]) -> Vec<u8> {
-    let mut hmac_engine = HmacEngine::<Sha256Hash>::new(&secret);
-    hmac_engine.input(secret);
-    hmac_engine.input(nonce);
-    for (key, value) in kvs {
-        add_to_hmac(&key, &value.version, &value.value, &mut hmac_engine);
-    }
-    Hmac::from_engine(hmac_engine).into_inner().to_vec()
 }
 
 #[cfg(test)]

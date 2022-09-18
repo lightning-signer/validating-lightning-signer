@@ -1,10 +1,10 @@
 use crate::client::auth::Auth;
 use crate::client::LightningStorageClient;
 use crate::proto::{self, GetRequest, InfoRequest, PingRequest, PutRequest};
-use crate::util::{add_to_hmac, append_hmac_to_value, remove_and_check_hmac};
+use crate::util::{append_hmac_to_value, compute_server_hmac, remove_and_check_hmac};
 use crate::Value;
-use bitcoin_hashes::sha256::Hash as Sha256Hash;
-use bitcoin_hashes::{Hash, Hmac, HmacEngine};
+use secp256k1::rand::rngs::OsRng;
+use secp256k1::rand::RngCore;
 use secp256k1::PublicKey;
 use thiserror::Error;
 use tonic::{transport, Request};
@@ -57,14 +57,31 @@ impl Client {
 
     pub async fn get(
         &mut self,
+        auth: Auth,
         hmac_secret: &[u8],
         key_prefix: String,
     ) -> Result<Vec<(String, Value)>, ClientError> {
-        let get_request = Request::new(GetRequest { auth: self.make_auth_proto(), key_prefix });
+        let mut nonce = Vec::with_capacity(32);
+        nonce.resize(32, 0);
+        let mut rng = OsRng;
+        rng.fill_bytes(&mut nonce);
+        let get_request = Request::new(GetRequest {
+            auth: self.make_auth_proto(),
+            key_prefix,
+            nonce: nonce.clone(),
+        });
 
         let response = self.client.get(get_request).await?;
         let res = response.into_inner();
-        kvs_from_proto(&hmac_secret, res.kvs)
+        let mut kvs = kvs_from_proto(res.kvs);
+        let hmac = compute_server_hmac(&auth.shared_secret, &nonce, &kvs);
+
+        if res.hmac == hmac {
+            remove_and_check_hmacs(&hmac_secret, &mut kvs)?;
+            Ok(kvs)
+        } else {
+            Err(ClientError::InvalidServerHmac())
+        }
     }
 
     pub async fn put(
@@ -77,10 +94,11 @@ impl Client {
     ) -> Result<(), ClientError> {
         let value = append_hmac_to_value(bare_value, &key, version, &hmac_secret);
 
-        let secret = auth.shared_secret;
-        let mut hmac_engine = HmacEngine::<Sha256Hash>::new(&secret);
-        add_to_hmac(&key, &version, &value, &mut hmac_engine);
-        let hmac = Hmac::from_engine(hmac_engine).into_inner().to_vec();
+        let hmac = compute_server_hmac(
+            &auth.shared_secret,
+            &[],
+            &vec![(key.clone(), Value { version, value: value.clone() })],
+        );
 
         let kv = proto::KeyValue { key, version, value };
         // TODO multiple kvs
@@ -96,7 +114,8 @@ impl Client {
                 Err(ClientError::InvalidServerHmac())
             }
         } else {
-            let conflicts = kvs_from_proto(&hmac_secret, res.conflicts)?;
+            let mut conflicts = kvs_from_proto(res.conflicts);
+            remove_and_check_hmacs(&hmac_secret, &mut conflicts)?;
             Err(ClientError::PutConflict(conflicts))
         }
     }
@@ -114,18 +133,22 @@ async fn connect(uri: &str) -> Result<LightningStorageClient<transport::Channel>
     Ok(LightningStorageClient::connect(uri_clone).await?)
 }
 
-fn kvs_from_proto(
-    hmac_secret: &&[u8],
-    conflicts_proto: Vec<proto::KeyValue>,
-) -> Result<Vec<(String, Value)>, ClientError> {
+fn kvs_from_proto(conflicts_proto: Vec<proto::KeyValue>) -> Vec<(String, Value)> {
     conflicts_proto
         .into_iter()
-        .map(|kv| {
-            let key = kv.key;
-            let version = kv.version;
-            let value = remove_and_check_hmac(kv.value, &key, version, &hmac_secret)
-                .map_err(|()| ClientError::InvalidHmac(key.clone(), version))?;
-            Ok((key, Value { version, value }))
-        })
-        .collect::<Result<Vec<_>, ClientError>>()
+        .map(|kv| (kv.key, Value { version: kv.version, value: kv.value }))
+        .collect()
+}
+
+fn remove_and_check_hmacs(
+    hmac_secret: &[u8],
+    kvs: &mut Vec<(String, Value)>,
+) -> Result<(), ClientError> {
+    for (key, value) in kvs.iter_mut() {
+        let value_without_hmac =
+            remove_and_check_hmac(value.value.clone(), &key, value.version, &hmac_secret)
+                .map_err(|()| ClientError::InvalidHmac(key.clone(), value.version))?;
+        value.value = value_without_hmac;
+    }
+    Ok(())
 }

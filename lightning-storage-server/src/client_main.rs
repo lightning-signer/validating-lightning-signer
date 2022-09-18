@@ -70,8 +70,8 @@ async fn get_subcommand(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let prefix = matches.value_of_t("prefix")?;
     let (auth, hmac_secret) = make_auth()?;
-    let mut client = driver::Client::new(rpc_url, auth).await?;
-    let res = client.get(&hmac_secret, prefix).await?;
+    let mut client = driver::Client::new(rpc_url, auth.clone()).await?;
+    let res = client.get(auth, &hmac_secret, prefix).await?;
     for (key, value) in res {
         println!("key: {}, version: {} value: {}", key, value.version, hex::encode(value.value));
     }

@@ -6,10 +6,8 @@ use crate::proto::{
     self, GetReply, GetRequest, InfoReply, InfoRequest, PingReply, PingRequest, PutReply,
     PutRequest,
 };
-use crate::util::add_to_hmac;
+use crate::util::compute_server_hmac;
 use crate::{Database, Error, Value};
-use bitcoin_hashes::sha256::Hash as Sha256Hash;
-use bitcoin_hashes::{Hash, Hmac, HmacEngine};
 use secp256k1::{PublicKey, SecretKey};
 use tonic::{Request, Response, Status};
 
@@ -29,11 +27,9 @@ impl Into<(String, Value)> for proto::KeyValue {
 impl Into<proto::KeyValue> for (String, Option<Value>) {
     fn into(self) -> proto::KeyValue {
         let (key, v) = self;
-        proto::KeyValue {
-            key,
-            version: v.as_ref().map(|v| v.version + 1).unwrap_or_default(),
-            value: v.as_ref().map(|v| v.value.clone()).unwrap_or_default(),
-        }
+        let version = v.as_ref().map(|v| v.version).unwrap_or(u64::MAX);
+        let value = v.as_ref().map(|v| v.value.clone()).unwrap_or_default();
+        proto::KeyValue { key, version, value }
     }
 }
 
@@ -85,18 +81,15 @@ impl LightningStorage for StorageServer {
 
     async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetReply>, Status> {
         let request = request.into_inner();
-        let auth = request.auth.ok_or_else(|| Status::invalid_argument("missing auth"))?;
-        self.check_auth(&auth)?;
-        let client_id = auth.client_id;
+        let auth_proto = request.auth.ok_or_else(|| Status::invalid_argument("missing auth"))?;
+        let auth = self.check_auth(&auth_proto)?;
+        let client_id = auth_proto.client_id;
         let key_prefix = request.key_prefix;
-        let kvs = self
-            .database
-            .get_with_prefix(&client_id, key_prefix)
-            .map_err(into_status)?
-            .into_iter()
-            .map(|kv| kv.into())
-            .collect();
-        let response = GetReply { kvs };
+        let kvs = self.database.get_with_prefix(&client_id, key_prefix).map_err(into_status)?;
+        let hmac = compute_server_hmac(&auth.shared_secret, &request.nonce, &kvs);
+        let kvs_proto = kvs.into_iter().map(|kv| kv.into()).collect();
+
+        let response = GetReply { kvs: kvs_proto, hmac };
         Ok(Response::new(response))
     }
 
@@ -108,12 +101,7 @@ impl LightningStorage for StorageServer {
         let client_id = auth_proto.client_id;
         let response = match self.database.put(&client_id, &kvs) {
             Ok(()) => {
-                let secret = auth.shared_secret;
-                let mut hmac_engine = HmacEngine::<Sha256Hash>::new(&secret);
-                for (key, value) in kvs {
-                    add_to_hmac(&key, &value.version, &value.value, &mut hmac_engine);
-                }
-                let hmac = Hmac::from_engine(hmac_engine).into_inner().to_vec();
+                let hmac = compute_server_hmac(&auth.shared_secret, &[], &kvs);
 
                 PutReply { success: true, hmac, conflicts: vec![] }
             }
