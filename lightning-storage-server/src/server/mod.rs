@@ -6,7 +6,7 @@ use crate::proto::{
     self, GetReply, GetRequest, InfoReply, InfoRequest, PingReply, PingRequest, PutReply,
     PutRequest,
 };
-use crate::util::compute_server_hmac;
+use crate::util::compute_shared_hmac;
 use crate::{Database, Error, Value};
 use secp256k1::{PublicKey, SecretKey};
 use tonic::{Request, Response, Status};
@@ -86,7 +86,7 @@ impl LightningStorage for StorageServer {
         let client_id = auth_proto.client_id;
         let key_prefix = request.key_prefix;
         let kvs = self.database.get_with_prefix(&client_id, key_prefix).map_err(into_status)?;
-        let hmac = compute_server_hmac(&auth.shared_secret, &request.nonce, &kvs);
+        let hmac = compute_shared_hmac(&auth.shared_secret, &request.nonce, &kvs);
         let kvs_proto = kvs.into_iter().map(|kv| kv.into()).collect();
 
         let response = GetReply { kvs: kvs_proto, hmac };
@@ -95,13 +95,19 @@ impl LightningStorage for StorageServer {
 
     async fn put(&self, request: Request<PutRequest>) -> Result<Response<PutReply>, Status> {
         let request = request.into_inner();
-        let kvs = request.kvs.into_iter().map(|kv| kv.into()).collect();
+        let kvs = request.kvs.into_iter().map(|kv| kv.into()).collect::<Vec<_>>();
         let auth_proto = request.auth.ok_or_else(|| Status::invalid_argument("missing auth"))?;
         let auth = self.check_auth(&auth_proto)?;
+        let client_hmac = compute_shared_hmac(&auth.shared_secret, &[0x01], &kvs);
+
+        if client_hmac != request.hmac {
+            return Err(Status::invalid_argument("invalid client HMAC"));
+        }
+
         let client_id = auth_proto.client_id;
         let response = match self.database.put(&client_id, &kvs) {
             Ok(()) => {
-                let hmac = compute_server_hmac(&auth.shared_secret, &[], &kvs);
+                let hmac = compute_shared_hmac(&auth.shared_secret, &[0x02], &kvs);
 
                 PutReply { success: true, hmac, conflicts: vec![] }
             }

@@ -1,7 +1,7 @@
 use crate::client::auth::Auth;
 use crate::client::LightningStorageClient;
 use crate::proto::{self, GetRequest, InfoRequest, PingRequest, PutRequest};
-use crate::util::{append_hmac_to_value, compute_server_hmac, remove_and_check_hmac};
+use crate::util::{append_hmac_to_value, compute_shared_hmac, remove_and_check_hmac};
 use crate::Value;
 use secp256k1::rand::rngs::OsRng;
 use secp256k1::rand::RngCore;
@@ -74,7 +74,7 @@ impl Client {
         let response = self.client.get(get_request).await?;
         let res = response.into_inner();
         let mut kvs = kvs_from_proto(res.kvs);
-        let hmac = compute_server_hmac(&auth.shared_secret, &nonce, &kvs);
+        let hmac = compute_shared_hmac(&auth.shared_secret, &nonce, &kvs);
 
         if res.hmac == hmac {
             remove_and_check_hmacs(&hmac_secret, &mut kvs)?;
@@ -94,21 +94,28 @@ impl Client {
     ) -> Result<(), ClientError> {
         let value = append_hmac_to_value(bare_value, &key, version, &hmac_secret);
 
-        let hmac = compute_server_hmac(
+        let client_hmac = compute_shared_hmac(
             &auth.shared_secret,
-            &[],
+            &[0x01],
+            &vec![(key.clone(), Value { version, value: value.clone() })],
+        );
+
+        let server_hmac = compute_shared_hmac(
+            &auth.shared_secret,
+            &[0x02],
             &vec![(key.clone(), Value { version, value: value.clone() })],
         );
 
         let kv = proto::KeyValue { key, version, value };
         // TODO multiple kvs
         let kvs = vec![kv];
-        let put_request = Request::new(PutRequest { auth: self.make_auth_proto(), kvs });
+        let put_request =
+            Request::new(PutRequest { auth: self.make_auth_proto(), kvs, hmac: client_hmac });
 
         let response = self.client.put(put_request).await?;
         let res = response.into_inner();
         if res.success {
-            if res.hmac == hmac {
+            if res.hmac == server_hmac {
                 Ok(())
             } else {
                 Err(ClientError::InvalidServerHmac())

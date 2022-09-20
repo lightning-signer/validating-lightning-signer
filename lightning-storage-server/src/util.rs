@@ -82,8 +82,9 @@ pub fn add_to_hmac(key: &str, version: &u64, value: &[u8], hmac: &mut HmacEngine
     hmac.input(&value);
 }
 
-/// Compute a server HMAC - which proves the server was reached and no malicious replay occurred
-pub fn compute_server_hmac(secret: &[u8], nonce: &[u8], kvs: &[(String, Value)]) -> Vec<u8> {
+/// Compute a client/server HMAC - which proves the client or server initiated this
+/// call and no replay occurred.
+pub fn compute_shared_hmac(secret: &[u8], nonce: &[u8], kvs: &[(String, Value)]) -> Vec<u8> {
     let mut hmac_engine = HmacEngine::<Sha256Hash>::new(&secret);
     hmac_engine.input(secret);
     hmac_engine.input(nonce);

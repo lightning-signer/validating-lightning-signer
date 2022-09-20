@@ -40,11 +40,14 @@ message Auth {
 message PutRequest {
   Auth auth = 1;
   repeated KeyValue kvs = 2;
+  // Client HMAC of (0x01, key, version (big endian 8 bytes), value) with ECDH(server key, client key).
+  // This protects against an MITM replaying a request with a different version/value.
+  bytes hmac = 3;
 }
 
 message PutReply {
   bool success = 1;
-  // Server HMAC of (key, version (big endian 8 bytes), value) with ECDH(server key, client key).
+  // Server HMAC of (0x02, key, version (big endian 8 bytes), value) with ECDH(server key, client key).
   // This is a confirmation by the server that the data was persisted.
   bytes hmac = 2;
   // Any detected version conflicts.
