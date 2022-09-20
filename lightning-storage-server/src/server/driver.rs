@@ -3,10 +3,10 @@ use std::process;
 use clap::{App, Arg};
 use log::{info, warn};
 
+use crate::database::sled::SledDatabase;
 use crate::server::LightningStorageServer;
 use crate::server::StorageServer;
 use crate::util::{init_secret_key, read_public_key, read_secret_key, setup_logging};
-use crate::Database;
 
 pub const SERVER_APP_NAME: &str = "lssd";
 
@@ -56,7 +56,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let secret_key = read_secret_key("server_key")?;
     let public_key = read_public_key("server_key")?;
 
-    let database = Database::new(datadir.clone()).unwrap();
+    let database = Box::new(SledDatabase::new(datadir.clone()).unwrap());
     let server = StorageServer { database, public_key, secret_key };
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
 

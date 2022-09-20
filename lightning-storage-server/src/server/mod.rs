@@ -12,7 +12,7 @@ use secp256k1::{PublicKey, SecretKey};
 use tonic::{Request, Response, Status};
 
 pub struct StorageServer {
-    database: Database,
+    database: Box<dyn Database>,
     public_key: PublicKey,
     secret_key: SecretKey,
 }
