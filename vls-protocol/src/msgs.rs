@@ -190,6 +190,18 @@ pub struct SignBolt12Reply {
     pub signature: Signature,
 }
 
+/// PreapproveInvoice {
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(38)]
+pub struct PreapproveInvoice {
+    pub invstring: WireString,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(138)]
+pub struct PreapproveInvoiceReply {}
+
 /// DeriveSecret
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(27)]
@@ -640,6 +652,8 @@ pub enum Message {
     CheckFutureSecretReply(CheckFutureSecretReply),
     SignBolt12(SignBolt12),
     SignBolt12Reply(SignBolt12Reply),
+    PreapproveInvoice(PreapproveInvoice),
+    PreapproveInvoiceReply(PreapproveInvoiceReply),
     DeriveSecret(DeriveSecret),
     DeriveSecretReply(DeriveSecretReply),
     SignMessage(SignMessage),

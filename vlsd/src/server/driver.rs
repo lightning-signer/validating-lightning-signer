@@ -23,6 +23,7 @@ use url::Url;
 use lightning_signer::bitcoin;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::lightning;
+use lightning_signer::lightning_invoice::SignedRawInvoice;
 use lightning_signer::node::{self};
 use lightning_signer::node::{NodeServices, SpendType};
 use lightning_signer::persist::{DummyPersister, Persist};
@@ -1349,6 +1350,26 @@ impl Signer for SignServer {
             htlc_signatures: htlc_bitcoin_sigs,
         };
         log_req_reply!(&node_id, &channel_id, &reply);
+        Ok(Response::new(reply))
+    }
+
+    async fn preapprove_invoice(
+        &self,
+        request: Request<PreapproveInvoiceRequest>,
+    ) -> Result<Response<PreapproveInvoiceReply>, Status> {
+        let req = request.into_inner();
+        let node_id = self.node_id(req.node_id.clone())?;
+        log_req_enter!(&node_id, &req);
+
+        let signed = req
+            .invstring
+            .parse::<SignedRawInvoice>()
+            .map_err(|e| invalid_grpc_argument(e.to_string()))?;
+        let node = self.signer.get_node(&node_id)?;
+        node.add_invoice(signed)?;
+
+        let reply = PreapproveInvoiceReply {};
+        log_req_reply!(&node_id, &reply);
         Ok(Response::new(reply))
     }
 
