@@ -1,3 +1,5 @@
+//! Test of concurrent access to a sled database
+
 use lightning_storage_server::{Database, Value};
 
 use sled::transaction::TransactionResult;
@@ -15,6 +17,7 @@ fn make_value(v: u8) -> Value {
 
 fn main() {
     let dir = "/tmp/x";
+    println!("using {}", dir);
     let db = Database::new(dir).unwrap();
     let client_id = vec![1];
     db.put(
