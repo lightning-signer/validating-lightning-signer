@@ -56,7 +56,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let secret_key = read_secret_key("server_key")?;
     let public_key = read_public_key("server_key")?;
 
-    let database = Box::new(SledDatabase::new(datadir.clone()).unwrap());
+    let database = Box::new(SledDatabase::new(datadir.clone()).await.unwrap());
     let server = StorageServer { database, public_key, secret_key };
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
 

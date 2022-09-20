@@ -1,13 +1,8 @@
 use super::Error;
 use crate::model::Value;
+use async_trait::async_trait;
 use sled::transaction::{abort, TransactionError};
 use std::path::Path;
-
-impl From<sled::Error> for Error {
-    fn from(e: sled::Error) -> Self {
-        Error::Sled(e)
-    }
-}
 
 impl From<TransactionError<Error>> for Error {
     fn from(e: TransactionError<Error>) -> Self {
@@ -25,14 +20,15 @@ pub struct SledDatabase {
 
 impl SledDatabase {
     /// Open a database at the given path.
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<SledDatabase, sled::Error> {
+    pub async fn new<P: AsRef<Path>>(path: P) -> Result<Self, sled::Error> {
         let db = sled::open(path.as_ref())?;
-        Ok(SledDatabase { db })
+        Ok(Self { db })
     }
 }
 
+#[async_trait]
 impl super::Database for SledDatabase {
-    fn put(&self, client_id: &[u8], kvs: &Vec<(String, Value)>) -> Result<(), Error> {
+    async fn put(&self, client_id: &[u8], kvs: &Vec<(String, Value)>) -> Result<(), Error> {
         let client_id_prefix = hex::encode(client_id);
         self.db.transaction(|tx| {
             let mut conflicts = Vec::new();
@@ -64,7 +60,7 @@ impl super::Database for SledDatabase {
     }
 
     /// Get all keys matching a prefix from the database
-    fn get_with_prefix(
+    async fn get_with_prefix(
         &self,
         client_id: &[u8],
         key_prefix: String,
