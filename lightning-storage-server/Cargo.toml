@@ -1,0 +1,43 @@
+[package]
+name = "lightning-storage-server"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+name = "lightning_storage_server"
+path = "src/lib.rs"
+
+[dependencies]
+sled = "0.34"
+serde = { version = "1.0", features = ["derive"] }
+serde_cbor = "0.11"
+tokio = { version = "1.17", features = ["macros", "rt-multi-thread"] }
+tonic = "0.6"
+prost = "0.9"
+triggered = "0.1"
+ctrlc = "3"
+log = "0.4"
+clap = "=3.0.0-beta.2"
+clap_derive = "=3.0.0-beta.5"
+fern = { version = "0.6", features = ["colored"] }
+chrono = "0.4"
+url = "2.2"
+hex = "0.4"
+dirs = "4"
+secp256k1 = { version = "0.24", features = ["rand"] }
+bitcoin_hashes = "0.11"
+thiserror = "1.0"
+
+[build-dependencies]
+tonic-build = "0.6"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "lssd"
+path = "src/server_main.rs"
+
+[[bin]]
+name = "lss-cli"
+path = "src/client_main.rs"
