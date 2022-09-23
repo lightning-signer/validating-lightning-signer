@@ -16,6 +16,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
+use vls_protocol_signer::approver::PositiveApprover;
 use vls_protocol_signer::handler::{Error, Handler, RootHandler};
 use vls_protocol_signer::vls_protocol::model::PubKey;
 use vls_protocol_signer::vls_protocol::msgs;
@@ -59,8 +60,15 @@ async fn connect(datadir: &str, uri: Uri, network: Network) {
     let validator_factory = make_validator_factory(network);
     let clock = Arc::new(StandardClock());
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
-    let root_handler =
-        RootHandler::new(network, 0, read_integration_test_seed(), allowlist.clone(), services);
+    let approver = Arc::new(PositiveApprover());
+    let root_handler = RootHandler::new(
+        network,
+        0,
+        read_integration_test_seed(),
+        allowlist.clone(),
+        services,
+        approver,
+    );
 
     // NOTE - For this signer mode it is easier to use the ALLOWLIST file to maintain the
     // allowlist. Replace existing entries w/ the current ALLOWLIST file contents.

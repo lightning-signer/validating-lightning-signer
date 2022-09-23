@@ -31,6 +31,9 @@ use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::simple_validator::{
     make_simple_policy, SimplePolicy, SimpleValidatorFactory,
 };
+
+use vls_protocol_signer::approver::{Approver, PositiveApprover};
+
 use lightning_signer::signer::{
     derive::KeyDerivationStyle, multi_signer::MultiSigner, ClockStartingTimeFactory,
 };
@@ -118,6 +121,7 @@ struct SignServer {
     pub signer: Arc<MultiSigner>,
     pub network: Network,
     pub frontend: Frontend,
+    approver: Arc<dyn Approver>,
 }
 
 pub(super) fn invalid_grpc_argument(msg: impl Into<String>) -> Status {
@@ -1366,7 +1370,7 @@ impl Signer for SignServer {
             .parse::<SignedRawInvoice>()
             .map_err(|e| invalid_grpc_argument(e.to_string()))?;
         let node = self.signer.get_node(&node_id)?;
-        node.add_invoice(signed)?;
+        self.approver.handle_proposed_invoice(&node, signed)?;
 
         let reply = PreapproveInvoiceReply {};
         log_req_reply!(&node_id, &reply);
@@ -1600,8 +1604,8 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
 
     let frontend = Frontend::new(Arc::new(SignerFront { signer: Arc::clone(&signer) }), rpc_url);
     frontend.start();
-
-    let server = SignServer { signer, network, frontend };
+    let approver = Arc::new(PositiveApprover());
+    let server = SignServer { signer, network, frontend, approver };
 
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
     ctrlc::set_handler(move || {

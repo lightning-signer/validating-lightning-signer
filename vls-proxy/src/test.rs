@@ -13,6 +13,7 @@ use nix::unistd::{close, fork, ForkResult};
 use secp256k1::rand::rngs::OsRng;
 use secp256k1::Secp256k1;
 
+use vls_protocol_signer::approver::PositiveApprover;
 use vls_protocol_signer::handler::RootHandler;
 use vls_protocol_signer::vls_protocol::model::PubKey;
 use vls_protocol_signer::vls_protocol::msgs;
@@ -67,7 +68,8 @@ pub(crate) fn run_test() {
             let clock = Arc::new(StandardClock());
             let services =
                 NodeServices { validator_factory, starting_time_factory, persister, clock };
-            let handler = RootHandler::new(network, client.id(), seed, vec![], services);
+            let approver = Arc::new(PositiveApprover());
+            let handler = RootHandler::new(network, client.id(), seed, vec![], services, approver);
             root_signer_loop(client, handler)
         }
         Err(_) => {}

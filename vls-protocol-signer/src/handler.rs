@@ -49,6 +49,8 @@ use vls_protocol::msgs::{DeriveSecretReply, PreapproveInvoiceReply, SerBolt, Sig
 use vls_protocol::serde_bolt::{LargeBytes, WireString};
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 
+use crate::approver::Approver;
+
 /// Error
 #[derive(Debug)]
 pub enum Error {
@@ -101,6 +103,7 @@ pub trait Handler {
 pub struct RootHandler {
     pub(crate) id: u64,
     pub node: Arc<Node>,
+    approver: Arc<dyn Approver>,
 }
 
 impl RootHandler {
@@ -110,6 +113,7 @@ impl RootHandler {
         seed_opt: Option<[u8; 32]>,
         allowlist: Vec<String>,
         services: NodeServices,
+        approver: Arc<dyn Approver>,
     ) -> Self {
         let config = NodeConfig { network, key_derivation_style: KeyDerivationStyle::Native };
 
@@ -141,7 +145,7 @@ impl RootHandler {
             Node::restore_node(&node_id, entry, persister, services)
         };
 
-        Self { id, node }
+        Self { id, node, approver }
     }
 
     fn channel_id(node_id: &PubKey, dbid: u64) -> ChannelId {
@@ -188,7 +192,7 @@ impl Handler for RootHandler {
                 let signed = invstr
                     .parse::<SignedRawInvoice>()
                     .map_err(|e| Status::invalid_argument(e.to_string()))?;
-                self.node.add_invoice(signed)?;
+                self.approver.handle_proposed_invoice(&self.node, signed)?;
                 Ok(Box::new(PreapproveInvoiceReply {}))
             }
             Message::DeriveSecret(m) => {
