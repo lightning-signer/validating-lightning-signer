@@ -10,9 +10,14 @@ use tokio_postgres::{IsolationLevel, NoTls};
 
 pub async fn new_and_clear() -> Result<Arc<dyn Database>, Error> {
     let mut cfg = deadpool_postgres::Config::new();
-    cfg.host = Some("/var/run/postgresql".to_string());
-    cfg.dbname = Some("dev".to_string());
-    cfg.user = Some("dev".to_string());
+    let host = std::env::var("PG_HOST").ok().unwrap_or("/var/run/postgresql".to_string());
+    let user = std::env::var("PG_USER").ok().unwrap_or("dev".to_string());
+    let pass = std::env::var("PG_PASS").ok();
+    let db = std::env::var("PG_DB").ok().unwrap_or("dev".to_string());
+    cfg.host = Some(host);
+    cfg.dbname = Some(db);
+    cfg.user = Some(user);
+    cfg.password = pass;
     cfg.manager =
         Some(deadpool_postgres::ManagerConfig { recycling_method: RecyclingMethod::Fast });
     let pool = cfg.create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls).unwrap();
