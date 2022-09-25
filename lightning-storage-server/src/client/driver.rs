@@ -19,7 +19,7 @@ pub enum ClientError {
     InvalidResponse,
     /// client HMAC integrity error, with string
     #[error("invalid HMAC for key {0} version {1}")]
-    InvalidHmac(String, u64),
+    InvalidHmac(String, i64),
     /// server HMAC integrity error, with string
     #[error("invalid server HMAC")]
     InvalidServerHmac(),
@@ -89,7 +89,7 @@ impl Client {
         auth: Auth,
         hmac_secret: &[u8],
         key: String,
-        version: u64,
+        version: i64,
         bare_value: Vec<u8>,
     ) -> Result<(), ClientError> {
         let value = append_hmac_to_value(bare_value, &key, version, &hmac_secret);
