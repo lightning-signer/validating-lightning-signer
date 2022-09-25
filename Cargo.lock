@@ -447,26 +447,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dirs"
-version = "4.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca3aa72a6f96ea37bbc5aa912f6788242832f75369bdfdadcb0e38423f100059"
-dependencies = [
- "dirs-sys",
-]
-
-[[package]]
-name = "dirs-sys"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b1d1d91c932ef41c0f2663aa8b0ca0342d444d842c06914aa0a7e352d0bada6"
-dependencies = [
- "libc",
- "redox_users",
- "winapi",
-]
-
-[[package]]
 name = "discard"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -653,12 +633,6 @@ dependencies = [
  "tokio-util 0.7.1",
  "tracing",
 ]
-
-[[package]]
-name = "half"
-version = "1.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
 name = "hashbrown"
@@ -932,33 +906,6 @@ dependencies = [
  "tonic-build",
  "vls-frontend",
  "vls-persist",
-]
-
-[[package]]
-name = "lightning-storage-server"
-version = "0.1.0"
-dependencies = [
- "bitcoin_hashes 0.11.0",
- "chrono",
- "clap",
- "clap_derive",
- "ctrlc",
- "dirs",
- "fern",
- "hex",
- "log",
- "prost",
- "secp256k1",
- "serde",
- "serde_cbor",
- "sled",
- "tempfile",
- "thiserror",
- "tokio",
- "tonic",
- "tonic-build",
- "triggered",
- "url",
 ]
 
 [[package]]
@@ -1504,17 +1451,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "redox_users"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b033d837a7cf162d7993aded9304e30a83213c648b6e389db233191f891e5c2b"
-dependencies = [
- "getrandom",
- "redox_syscall",
- "thiserror",
-]
-
-[[package]]
 name = "regex"
 version = "1.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1620,16 +1556,6 @@ checksum = "704720009634ab092146c0b01eb578ae8b9d88eef028398752965fd766eb38bd"
 dependencies = [
  "serde",
  "serde_derive",
-]
-
-[[package]]
-name = "serde_cbor"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bef2ebfde456fb76bbcf9f59315333decc4fda0b2b44b420243c11e0f5ec1f5"
-dependencies = [
- "half",
- "serde",
 ]
 
 [[package]]
