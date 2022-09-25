@@ -2,7 +2,7 @@
 
 Please see the
 [VLS Project Overview](https://gitlab.com/lightning-signer/docs/-/blob/master/README.md)
-for more information.
+for more information.  Our [web site](https://vls.tech/).
 
 # Starting the gRPC server
 
