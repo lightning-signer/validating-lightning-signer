@@ -21,8 +21,7 @@ use lightning_signer::util::clock::StandardClock;
 use lightning_signer_server::nodefront::SingleFront;
 use lightning_signer_server::persist::kv_json::KVJsonPersister;
 use util::{create_runtime, read_allowlist};
-use vls_protocol_signer::approver::PositiveApprover;
-use vls_protocol_signer::handler::{ChannelHandler, Handler, RootHandler};
+use vls_protocol_signer::handler::{ChannelHandler, Handler, RootHandler, RootHandlerBuilder};
 
 mod test;
 use vls_proxy::util::{
@@ -123,15 +122,10 @@ pub fn main() {
         let validator_factory = make_validator_factory(network);
         let clock = Arc::new(StandardClock());
         let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
-        let approver = Arc::new(PositiveApprover());
-        let handler = RootHandler::new(
-            network,
-            client.id(),
-            read_integration_test_seed(),
-            allowlist,
-            services,
-            approver,
-        );
+        let handler = RootHandlerBuilder::new(network, client.id(), services)
+            .seed_opt(read_integration_test_seed())
+            .allowlist(allowlist)
+            .build();
 
         let frontend = Frontend::new(
             Arc::new(SingleFront { node: Arc::clone(&handler.node) }),

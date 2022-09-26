@@ -30,7 +30,7 @@ use vls_protocol::model::PubKey;
 use vls_protocol::msgs::{self, read_serial_request_header, write_serial_response_header, Message};
 use vls_protocol::serde_bolt::WireString;
 use vls_protocol_signer::approver::PositiveApprover;
-use vls_protocol_signer::handler::{Handler, RootHandler};
+use vls_protocol_signer::handler::{Handler, RootHandlerBuilder};
 use vls_protocol_signer::lightning_signer;
 use vls_protocol_signer::vls_protocol;
 
@@ -88,8 +88,12 @@ fn main() -> ! {
     let allowlist = init.dev_allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
     let seed_opt = init.dev_seed.as_ref().map(|s| s.0);
     let network = Network::Regtest; // TODO - get from config/args/env somehow
-    let approver = Arc::new(PositiveApprover());
-    let root_handler = RootHandler::new(network, 0, seed_opt, allowlist, services, approver);
+    let approver = Arc::new(PositiveApprover()); // TODO - switch to invoice GUI
+    let root_handler = RootHandlerBuilder::new(network, 0, services)
+        .seed_opt(seed_opt)
+        .allowlist(allowlist)
+        .approver(approver)
+        .build();
     let init_reply = root_handler.handle(Message::HsmdInit2(init)).expect("handle init");
     write_serial_response_header(&mut serial, sequence).expect("write init header");
     msgs::write_vec(&mut serial, init_reply.as_vec()).expect("write init reply");
