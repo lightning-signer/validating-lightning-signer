@@ -51,13 +51,13 @@ message PutReply {
   // This is a confirmation by the server that the data was persisted.
   bytes hmac = 2;
   // Any detected version conflicts.
-  // If the key does not exist, the version is u64::MAX.
+  // If the key does not exist, the version is i64::MAX.
   repeated KeyValue conflicts = 10;
 }
 
 message KeyValue {
   string key = 1;
-  uint64 version = 2;
+  int64 version = 2;
   bytes value = 3;
 }
 

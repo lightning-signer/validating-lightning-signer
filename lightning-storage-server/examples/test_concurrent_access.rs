@@ -1,7 +1,7 @@
 //! Test of concurrent access to a sled database
 
+use lightning_storage_server::database::sled::SledDatabase;
 use lightning_storage_server::{Database, Value};
-
 use sled::transaction::TransactionResult;
 use sled::Db;
 use std::thread;
@@ -15,10 +15,11 @@ fn make_value(v: u8) -> Value {
     Value { version: 0, value: vec![v] }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let dir = "/tmp/x";
     println!("using {}", dir);
-    let db = Database::new(dir).unwrap();
+    let db = SledDatabase::new(dir).await.unwrap();
     let client_id = vec![1];
     db.put(
         &client_id,
@@ -28,8 +29,9 @@ fn main() {
             ("x2b".to_string(), make_value(20)),
         ],
     )
+    .await
     .unwrap();
-    let values = db.get_with_prefix(&client_id, "x1".to_string()).unwrap();
+    let values = db.get_with_prefix(&client_id, "x1".to_string()).await.unwrap();
     assert_eq!(values.len(), 2);
 }
 

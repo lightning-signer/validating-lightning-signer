@@ -1,5 +1,5 @@
 pub mod client;
-mod database;
+pub mod database;
 mod model;
 pub mod server;
 mod proto {

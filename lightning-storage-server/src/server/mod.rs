@@ -12,7 +12,7 @@ use secp256k1::{PublicKey, SecretKey};
 use tonic::{Request, Response, Status};
 
 pub struct StorageServer {
-    database: Database,
+    database: Box<dyn Database>,
     public_key: PublicKey,
     secret_key: SecretKey,
 }
@@ -27,7 +27,7 @@ impl Into<(String, Value)> for proto::KeyValue {
 impl Into<proto::KeyValue> for (String, Option<Value>) {
     fn into(self) -> proto::KeyValue {
         let (key, v) = self;
-        let version = v.as_ref().map(|v| v.version).unwrap_or(u64::MAX);
+        let version = v.as_ref().map(|v| v.version).unwrap_or(i64::MAX);
         let value = v.as_ref().map(|v| v.value.clone()).unwrap_or_default();
         proto::KeyValue { key, version, value }
     }
@@ -43,8 +43,11 @@ impl Into<proto::KeyValue> for (String, Value) {
 
 fn into_status(s: Error) -> Status {
     match s {
-        Error::Sled(_) => Status::internal("database error"),
         Error::Conflict(_) => unimplemented!("unexpected conflict error"),
+        e => {
+            log::error!("database error: {:?}", e);
+            Status::internal("unexpected error")
+        }
     }
 }
 
@@ -85,7 +88,8 @@ impl LightningStorage for StorageServer {
         let auth = self.check_auth(&auth_proto)?;
         let client_id = auth_proto.client_id;
         let key_prefix = request.key_prefix;
-        let kvs = self.database.get_with_prefix(&client_id, key_prefix).map_err(into_status)?;
+        let kvs =
+            self.database.get_with_prefix(&client_id, key_prefix).await.map_err(into_status)?;
         let hmac = compute_shared_hmac(&auth.shared_secret, &request.nonce, &kvs);
         let kvs_proto = kvs.into_iter().map(|kv| kv.into()).collect();
 
@@ -105,18 +109,19 @@ impl LightningStorage for StorageServer {
         }
 
         let client_id = auth_proto.client_id;
-        let response = match self.database.put(&client_id, &kvs) {
+        let response = match self.database.put(&client_id, &kvs).await {
             Ok(()) => {
                 let hmac = compute_shared_hmac(&auth.shared_secret, &[0x02], &kvs);
 
                 PutReply { success: true, hmac, conflicts: vec![] }
             }
-            Err(Error::Sled(_)) => {
-                return Err(Status::internal("database error"));
-            }
             Err(Error::Conflict(conflicts)) => {
                 let conflicts = conflicts.into_iter().map(|kv| kv.into()).collect();
                 PutReply { success: false, hmac: Default::default(), conflicts }
+            }
+            Err(e) => {
+                log::error!("database error: {:?}", e);
+                return Err(Status::internal("unexpected error"));
             }
         };
         Ok(Response::new(response))

@@ -44,7 +44,7 @@ pub fn read_public_key(path: &str) -> Result<secp256k1::PublicKey, Box<dyn std::
     Ok(secp256k1::PublicKey::from_secret_key(&secp, &secret_key))
 }
 
-pub fn append_hmac_to_value(mut value: Vec<u8>, key: &str, version: u64, secret: &[u8]) -> Vec<u8> {
+pub fn append_hmac_to_value(mut value: Vec<u8>, key: &str, version: i64, secret: &[u8]) -> Vec<u8> {
     let hmac = compute_hmac(key, &version, secret, &value);
     value.append(&mut hmac.to_vec());
     value
@@ -53,7 +53,7 @@ pub fn append_hmac_to_value(mut value: Vec<u8>, key: &str, version: u64, secret:
 pub fn remove_and_check_hmac(
     mut value: Vec<u8>,
     key: &str,
-    version: u64,
+    version: i64,
     secret: &[u8],
 ) -> Result<Vec<u8>, ()> {
     if value.len() < 32 {
@@ -69,14 +69,14 @@ pub fn remove_and_check_hmac(
     }
 }
 
-fn compute_hmac(key: &str, version: &u64, secret: &[u8], value: &[u8]) -> [u8; 32] {
+fn compute_hmac(key: &str, version: &i64, secret: &[u8], value: &[u8]) -> [u8; 32] {
     let mut hmac = HmacEngine::<Sha256Hash>::new(secret);
     add_to_hmac(key, version, value, &mut hmac);
     Hmac::from_engine(hmac).into_inner()
 }
 
 /// Add key, version (8 bytes big endian) and value to HMAC
-pub fn add_to_hmac(key: &str, version: &u64, value: &[u8], hmac: &mut HmacEngine<Sha256Hash>) {
+pub fn add_to_hmac(key: &str, version: &i64, value: &[u8], hmac: &mut HmacEngine<Sha256Hash>) {
     hmac.input(key.as_bytes());
     hmac.input(&version.to_be_bytes());
     hmac.input(&value);
