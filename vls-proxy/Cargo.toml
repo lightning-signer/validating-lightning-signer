@@ -55,23 +55,27 @@ path = "src/lib.rs"
 
 [[bin]]
 # A single-binary drop-in replacement for hsmd with an in-process VLS
+# AKA cln:inplace
 name = "remote_hsmd_vls"
 path = "src/vls_main.rs"
 
 [[bin]]
 # A drop-in replacement for hsmd, communicating to an embedded VLS over a serial port
+# AKA cln:serial
 name = "remote_hsmd_serial"
 path = "src/serial_main.rs"
 required-features = ["main"]
 
 [[bin]]
 # A single-binary two-process (forking) replacement for hsmd, communicating over a gRPC connection
+# AKA cln:socket
 name = "remote_hsmd_socket_test"
 path = "src/socket_test_main.rs"
 required-features = ["grpc", "main"]
 
 [[bin]]
 # A replacement for hsmd, listening to vlsd2 over a gRPC protocol
+# AKA cln:socket
 name = "remote_hsmd_socket"
 path = "src/socket_main.rs"
 required-features = ["grpc", "main"]
