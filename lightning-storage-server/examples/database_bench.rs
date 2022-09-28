@@ -35,7 +35,8 @@ async fn main() {
     println!("{}ms 99% percentile", percentile(&times, 0.99));
     println!(
         "{} items inserted/updated per second",
-        ROUNDS as u64 * (CONCURRENT_TASKS as u64 - 1) * ITEMS_PER_TX as u64 * 1000 / elapsed_ms as u64
+        ROUNDS as u64 * (CONCURRENT_TASKS as u64 - 1) * ITEMS_PER_TX as u64 * 1000
+            / elapsed_ms as u64
     );
 }
 

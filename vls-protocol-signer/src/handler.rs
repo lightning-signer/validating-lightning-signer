@@ -49,6 +49,8 @@ use vls_protocol::msgs::{DeriveSecretReply, PreapproveInvoiceReply, SerBolt, Sig
 use vls_protocol::serde_bolt::{LargeBytes, WireString};
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 
+use crate::approver::{Approver, PositiveApprover};
+
 /// Error
 #[derive(Debug)]
 pub enum Error {
@@ -101,19 +103,56 @@ pub trait Handler {
 pub struct RootHandler {
     pub(crate) id: u64,
     pub node: Arc<Node>,
+    approver: Arc<dyn Approver>,
 }
 
-impl RootHandler {
-    pub fn new(
-        network: Network,
-        id: u64,
-        seed_opt: Option<[u8; 32]>,
-        allowlist: Vec<String>,
-        services: NodeServices,
-    ) -> Self {
-        let config = NodeConfig { network, key_derivation_style: KeyDerivationStyle::Native };
+/// Builder for RootHandler
+pub struct RootHandlerBuilder {
+    network: Network,
+    id: u64,
+    seed_opt: Option<[u8; 32]>,
+    allowlist: Vec<String>,
+    services: NodeServices,
+    approver: Arc<dyn Approver>,
+}
 
-        let seed = seed_opt.unwrap_or_else(|| {
+impl RootHandlerBuilder {
+    /// Create a RootHandlerBuilder
+    pub fn new(network: Network, id: u64, services: NodeServices) -> RootHandlerBuilder {
+        RootHandlerBuilder {
+            network,
+            id,
+            seed_opt: None,
+            allowlist: vec![],
+            services,
+            approver: Arc::new(PositiveApprover()),
+        }
+    }
+
+    /// Set the seed option
+    pub fn seed_opt(mut self, seed_opt: Option<[u8; 32]>) -> Self {
+        self.seed_opt = seed_opt;
+        self
+    }
+
+    /// Set the initial allowlist (only used if node is new)
+    pub fn allowlist(mut self, allowlist: Vec<String>) -> Self {
+        self.allowlist = allowlist;
+        self
+    }
+
+    /// Set the approver
+    pub fn approver(mut self, approver: Arc<dyn Approver>) -> Self {
+        self.approver = approver;
+        self
+    }
+
+    /// Build the root handler
+    pub fn build(self) -> RootHandler {
+        let config =
+            NodeConfig { network: self.network, key_derivation_style: KeyDerivationStyle::Native };
+
+        let seed = self.seed_opt.unwrap_or_else(|| {
             #[cfg(feature = "std")]
             {
                 let mut seed = [0; 32];
@@ -125,12 +164,12 @@ impl RootHandler {
             todo!("no RNG available in no_std environments yet");
         });
 
-        let persister = services.persister.clone();
+        let persister = self.services.persister.clone();
         let nodes = persister.get_nodes();
         let node = if nodes.is_empty() {
-            let node = Arc::new(Node::new(config, &seed, vec![], services));
+            let node = Arc::new(Node::new(config, &seed, vec![], self.services));
             info!("New node {}", node.get_id());
-            node.add_allowlist(&allowlist).expect("allowlist");
+            node.add_allowlist(&self.allowlist).expect("allowlist");
             persister.new_node(&node.get_id(), &config, &*node.get_state(), &seed);
             persister.new_chain_tracker(&node.get_id(), &node.get_tracker());
             node
@@ -138,12 +177,14 @@ impl RootHandler {
             assert_eq!(nodes.len(), 1);
             let (node_id, entry) = nodes.into_iter().next().unwrap();
             info!("Restore node {}", node_id);
-            Node::restore_node(&node_id, entry, persister, services)
+            Node::restore_node(&node_id, entry, persister, self.services)
         };
 
-        Self { id, node }
+        RootHandler { id: self.id, node, approver: self.approver }
     }
+}
 
+impl RootHandler {
     fn channel_id(node_id: &PubKey, dbid: u64) -> ChannelId {
         let mut nonce = [0u8; 33 + 8];
         nonce[0..33].copy_from_slice(&node_id.0);
@@ -188,7 +229,7 @@ impl Handler for RootHandler {
                 let signed = invstr
                     .parse::<SignedRawInvoice>()
                     .map_err(|e| Status::invalid_argument(e.to_string()))?;
-                self.node.add_invoice(signed)?;
+                self.approver.handle_proposed_invoice(&self.node, signed)?;
                 Ok(Box::new(PreapproveInvoiceReply {}))
             }
             Message::DeriveSecret(m) => {

@@ -1595,8 +1595,26 @@ impl Node {
         Ok(())
     }
 
-    // Validate the invoice and create a tracking state for it
-    fn invoice_state_from_invoice(
+    /// Check to see if an invoice has already been added
+    pub fn has_invoice(&self, hash: &PaymentHash, invoice_hash: &[u8; 32]) -> Result<bool, Status> {
+        let state = self.get_state();
+        let retval = if let Some(invoice_state) = state.invoices.get(&hash) {
+            if invoice_state.invoice_hash == *invoice_hash {
+                Ok(true)
+            } else {
+                Err(failed_precondition("already have a different invoice for same secret"))
+            }
+        } else {
+            Ok(false) // not found
+        };
+        debug!("{} has_invoice {} {:?}", self.log_prefix(), hash.0.to_hex(), retval,);
+        retval
+    }
+
+    /// Validate the invoice and create a tracking state for it.
+    ///
+    /// Returns the payment hash, invoice state, and the hash of the raw invoice that was signed.
+    pub fn invoice_state_from_invoice(
         raw_invoice: SignedRawInvoice,
     ) -> Result<(PaymentHash, InvoiceState, [u8; 32]), Status> {
         let invoice_hash = raw_invoice.hash().clone();

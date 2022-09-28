@@ -2331,6 +2331,7 @@ dependencies = [
  "triggered",
  "url",
  "vls-frontend",
+ "vls-protocol-signer",
 ]
 
 [[package]]
