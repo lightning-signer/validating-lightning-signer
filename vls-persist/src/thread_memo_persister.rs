@@ -98,9 +98,8 @@ impl State {
 
     fn remove(&mut self, prefix: impl Into<String>, key: &[u8]) {
         let full_key = Self::make_key(prefix, key);
-        let store = self.store.lock().unwrap();
-        let revision = store.get(&full_key).map(|(r, _)| r + 1).unwrap_or(0);
         let mut store = self.store.lock().unwrap();
+        let revision = store.get(&full_key).map(|(r, _)| r + 1).unwrap_or(0);
         store.insert(full_key.clone(), (revision, Vec::new()));
         self.dirty.insert(full_key);
     }
@@ -389,7 +388,8 @@ mod tests {
 
         let node = &*node_arc;
 
-        let persist_ctx = persister.enter(BTreeMap::new());
+        let state = Arc::new(Mutex::new(BTreeMap::new()));
+        let persist_ctx = persister.enter(state);
         persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &seed);
         let nodes = persister.get_nodes();
         assert_eq!(nodes.len(), 1);
@@ -416,7 +416,8 @@ mod tests {
 
         let node = &*node_arc;
 
-        let persist_ctx = persister.enter(BTreeMap::new());
+        let state = Arc::new(Mutex::new(BTreeMap::new()));
+        let persist_ctx = persister.enter(state);
         persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &seed);
         persister.update_node(&node_id, &*node.get_state()).unwrap();
         let dirty = persist_ctx.exit();
@@ -424,7 +425,7 @@ mod tests {
         assert_eq!(dirty.len(), 2);
         assert_eq!(dirty[0].1 .0, 0);
         assert_eq!(dirty[1].1 .0, 0);
-        let store = BTreeMap::from_iter(dirty.into_iter());
+        let store = Arc::new(Mutex::new(BTreeMap::from_iter(dirty.into_iter())));
         let persist_ctx = persister.enter(store);
         persister.update_node(&node_id, &*node.get_state()).unwrap();
         let dirty = persist_ctx.exit();
@@ -440,7 +441,8 @@ mod tests {
 
         let node = &*node_arc;
 
-        let ctx = persister.enter(BTreeMap::new());
+        let state = Arc::new(Mutex::new(BTreeMap::new()));
+        let ctx = persister.enter(state);
         persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &seed);
         let nodes = persister.get_nodes();
         assert_eq!(nodes.len(), 1);

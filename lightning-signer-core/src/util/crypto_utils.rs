@@ -28,7 +28,8 @@ fn hkdf_extract_expand(salt: &[u8], secret: &[u8], info: &[u8], output: &mut [u8
     }
 }
 
-pub(crate) fn hkdf_sha256(secret: &[u8], info: &[u8], salt: &[u8]) -> [u8; 32] {
+/// derive a secret from another secret using HKDF-SHA256
+pub fn hkdf_sha256(secret: &[u8], info: &[u8], salt: &[u8]) -> [u8; 32] {
     let mut result = [0u8; 32];
     hkdf_extract_expand(salt, secret, info, &mut result);
     result

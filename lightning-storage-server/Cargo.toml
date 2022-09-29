@@ -9,7 +9,7 @@ path = "src/lib.rs"
 
 [features]
 default = ["postgres"]
-postgres = ["tokio-postgres"]
+postgres = ["tokio-postgres", "deadpool-postgres"]
 test_postgres = []
 
 [dependencies]
@@ -36,7 +36,7 @@ anyhow = "1.0"
 async-trait = "0.1"
 tokio-postgres = { version = "0.7", optional = true }
 futures = "0.3"
-deadpool-postgres = "0.10"
+deadpool-postgres = { version = "0.10", optional = true }
 
 [build-dependencies]
 tonic-build = "0.6"

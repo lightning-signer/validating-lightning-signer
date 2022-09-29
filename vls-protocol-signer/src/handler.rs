@@ -147,22 +147,18 @@ impl RootHandlerBuilder {
         self
     }
 
+    pub fn get_seed(mut self) -> (Self, [u8; 32]) {
+        let seed = self.compute_seed();
+        self.seed_opt = Some(seed.clone());
+        (self, seed)
+    }
+
     /// Build the root handler
     pub fn build(self) -> RootHandler {
         let config =
             NodeConfig { network: self.network, key_derivation_style: KeyDerivationStyle::Native };
 
-        let seed = self.seed_opt.unwrap_or_else(|| {
-            #[cfg(feature = "std")]
-            {
-                let mut seed = [0; 32];
-                let mut rng = OsRng;
-                rng.fill_bytes(&mut seed);
-                seed
-            }
-            #[cfg(not(feature = "std"))]
-            todo!("no RNG available in no_std environments yet");
-        });
+        let seed = self.compute_seed();
 
         let persister = self.services.persister.clone();
         let nodes = persister.get_nodes();
@@ -181,6 +177,20 @@ impl RootHandlerBuilder {
         };
 
         RootHandler { id: self.id, node, approver: self.approver }
+    }
+
+    fn compute_seed(&self) -> [u8; 32] {
+        self.seed_opt.unwrap_or_else(|| {
+            #[cfg(feature = "std")]
+            {
+                let mut seed = [0; 32];
+                let mut rng = OsRng;
+                rng.fill_bytes(&mut seed);
+                seed
+            }
+            #[cfg(not(feature = "std"))]
+            todo!("no RNG available in no_std environments yet");
+        })
     }
 }
 

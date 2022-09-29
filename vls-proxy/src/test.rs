@@ -20,7 +20,6 @@ use vls_proxy::util::make_validator_factory;
 
 use crate::client::{Client, UnixClient};
 use crate::connection::UnixConnection;
-use crate::root_signer_loop;
 
 fn run_parent(fd: RawFd) {
     let mut client = UnixClient::new(UnixConnection::new(fd));
@@ -65,11 +64,12 @@ pub(crate) fn run_test() {
             let starting_time_factory = ClockStartingTimeFactory::new();
             let validator_factory = make_validator_factory(network);
             let clock = Arc::new(StandardClock());
+            let looper = crate::Looper { cloud: None };
             let services =
                 NodeServices { validator_factory, starting_time_factory, persister, clock };
             let handler =
                 RootHandlerBuilder::new(network, client.id(), services).seed_opt(seed).build();
-            root_signer_loop(client, handler)
+            //looper.root_signer_loop(client, handler)
         }
         Err(_) => {}
     }
