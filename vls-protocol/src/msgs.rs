@@ -1,6 +1,7 @@
 #![allow(missing_docs)]
 
 use alloc::vec::Vec;
+use as_any::AsAny;
 use core::fmt::Debug;
 
 use crate::error::{Error, Result};
@@ -17,7 +18,7 @@ use log::error;
 const MAX_MESSAGE_SIZE: u32 = 65536;
 
 /// Serialize a message with a type prefix, in BOLT style
-pub trait SerBolt: Debug {
+pub trait SerBolt: Debug + AsAny {
     fn as_vec(&self) -> Vec<u8>;
 }
 

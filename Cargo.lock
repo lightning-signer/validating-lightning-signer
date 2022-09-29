@@ -59,6 +59,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4361135be9122e0870de935d7c439aef945b9f9ddd4199a553b5270b49c82a27"
 
 [[package]]
+name = "as-any"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c3419eecc9f5967e6f0f29a0c3fefe22bda6ea34b15798f3c452cb81f2c3fa7"
+
+[[package]]
 name = "async-stream"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2234,6 +2240,7 @@ dependencies = [
 name = "vls-protocol"
 version = "0.1.0"
 dependencies = [
+ "as-any",
  "bolt-derive",
  "hex",
  "log",
@@ -2273,6 +2280,7 @@ name = "vls-proxy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "as-any",
  "async-stream",
  "async-trait",
  "chrono",

@@ -39,6 +39,7 @@ async-stream = { version = "0.3", optional = true }
 anyhow = "1.0"
 async-trait = "0.1"
 url = { version = "2.2", optional = true }
+as-any = "0.3"
 
 [dependencies.lightning-signer-server]
 path = "../lightning-signer-server"
