@@ -25,10 +25,12 @@ use lightning_signer_server::persist::kv_json::KVJsonPersister;
 use lightning_signer_server::persist::thread_memo_persister::{Context, ThreadMemoPersister};
 use lightning_storage_server::client::auth::Auth;
 use lightning_storage_server::client::driver::Client as LssClient;
+use lightning_storage_server::Value;
+use thiserror::Error;
 use util::{create_runtime, read_allowlist};
 use vls_frontend::Frontend;
 use vls_protocol::msgs::SerBolt;
-use vls_protocol::{msgs, msgs::Message, Error, Result};
+use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 use vls_protocol_signer::handler::{ChannelHandler, Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::vls_protocol;
 
@@ -59,18 +61,33 @@ impl Cloud {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("protocol error")]
+    Protocol(#[from] ProtocolError),
+    #[error("LSS error")]
+    Client(#[from] lightning_storage_server::client::driver::ClientError),
+}
+
+pub type Result<T> = core::result::Result<T, Error>;
+
 #[derive(Clone)]
 pub struct Looper {
     pub cloud: Option<Arc<Cloud>>,
 }
 
 impl Looper {
-    async fn store(&self, context: Context) {
+    async fn store(&self, context: Context) -> Result<()> {
         if let Some(cloud) = &self.cloud {
             let mut client = cloud.lss_client.lock().unwrap();
-            let muts = context.exit();
-            // TODO store in client
+            let muts = context
+                .exit()
+                .into_iter()
+                .map(|(key, (version, value))| (key, Value { version: version as i64, value }))
+                .collect();
+            client.put(cloud.auth.clone(), &cloud.hmac_secret, muts).await?;
         }
+        Ok(())
     }
     async fn root_signer_loop(&self, client: UnixClient, handler: RootHandler) {
         let id = handler.client_id();
@@ -78,7 +95,7 @@ impl Looper {
         info!("root loop {} {}: start", pid, id);
         match self.do_root_signer_loop(client, handler).await {
             Ok(()) => info!("root loop {} {}: done", pid, id),
-            Err(Error::Eof) => info!("loop {} {}: ending", pid, id),
+            Err(Error::Protocol(ProtocolError::Eof)) => info!("loop {} {}: ending", pid, id),
             Err(e) => error!("root loop {} {}: error {:?}", pid, id, e),
         }
     }
@@ -131,7 +148,7 @@ impl Looper {
         info!("root loop 2 {} {}: start", pid, id);
         match self.do_root_signer_loop2(client, handler).await {
             Ok(()) => info!("root loop 2 {} {}: done", pid, id),
-            Err(Error::Eof) => info!("root loop 2 {} {}: ending", pid, id),
+            Err(Error::Protocol(ProtocolError::Eof)) => info!("root loop 2 {} {}: ending", pid, id),
             Err(e) => error!("root loop 2 {} {}: error {:?}", pid, id, e),
         }
     }
@@ -164,7 +181,7 @@ impl Looper {
         info!("chan loop {} {} {}: start", pid, id, handler.dbid);
         match self.do_channel_signer_loop(client, handler) {
             Ok(()) => info!("chan loop {} {}: done", pid, id),
-            Err(Error::Eof) => info!("chan loop {} {}: ending", pid, id),
+            Err(Error::Protocol(ProtocolError::Eof)) => info!("chan loop {} {}: ending", pid, id),
             Err(e) => error!("chan loop {} {}: error {:?}", pid, id, e),
         }
     }
@@ -235,7 +252,7 @@ pub async fn main() {
             let state = cloud.state.clone();
             let context = cloud.persister.enter(state);
             let handler = handler_builder.build();
-            looper.store(context);
+            looper.store(context).await.expect("store during build");
             handler
         } else {
             handler_builder.build()

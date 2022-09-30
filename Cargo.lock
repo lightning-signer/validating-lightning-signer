@@ -2402,6 +2402,7 @@ dependencies = [
  "nix 0.22.3",
  "prost",
  "serde",
+ "thiserror",
  "tokio",
  "tokio-stream",
  "tonic",
