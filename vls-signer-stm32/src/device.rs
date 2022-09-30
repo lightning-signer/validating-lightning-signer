@@ -33,7 +33,8 @@ use stm32f4xx_hal::{
     timer::{Event, FTimerMs, FTimerUs},
 };
 
-use ft6x06::Ft6X06;
+#[allow(unused_imports)]
+use ft6x06::{long_hard_reset, Ft6X06};
 
 use profont::{PROFONT_18_POINT, PROFONT_24_POINT};
 
@@ -397,6 +398,8 @@ pub fn make_devices<'a>() -> (
 
     #[cfg(feature = "stm32f412")]
     let lcd_reset = gpiod.pd11.into_push_pull_output().speed(Speed::VeryHigh);
+    #[cfg(feature = "stm32f412")]
+    let mut ts_reset = gpiof.pf12.into_push_pull_output().speed(Speed::VeryHigh);
     #[cfg(feature = "stm32f413")]
     let mut lcd_reset = gpiob.pb13.into_push_pull_output().speed(Speed::VeryHigh);
 
@@ -413,6 +416,8 @@ pub fn make_devices<'a>() -> (
     //
     // Perform a longer reset here first.
     //
+    #[cfg(feature = "stm32f412")]
+    long_hard_reset(&mut ts_reset, &mut delay).expect("long hard reset");
     #[cfg(feature = "stm32f413")]
     long_hard_reset(&mut lcd_reset, &mut delay).expect("long hard reset");
 
