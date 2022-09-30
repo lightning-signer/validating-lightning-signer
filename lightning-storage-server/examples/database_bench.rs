@@ -11,7 +11,7 @@ const ROUNDS: u32 = 128;
 
 #[tokio::main]
 async fn main() {
-    let db = postgres::new_and_clear().await.unwrap();
+    let db = Arc::new(postgres::new_and_clear().await.unwrap());
     let start = Instant::now();
     let mut times = Vec::new();
     for o in 0..ROUNDS {
