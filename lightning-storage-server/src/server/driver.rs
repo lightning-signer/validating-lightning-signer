@@ -24,12 +24,22 @@ fn configure_tls(
     key_file.push(matches.value_of("grpc-tls-key").unwrap());
     let key = std::fs::read(key_file).map_err(|_| "could not read key file")?;
 
-    let mut cert_file = home_dir;
+    let mut cert_file = datadir.clone();
     cert_file.push(matches.value_of("grpc-tls-certificate").unwrap());
     let cert = std::fs::read(cert_file).map_err(|_| "could not read certificate file")?;
 
     let identity = Identity::from_pem(cert, key);
     let tls_config = ServerTlsConfig::new().identity(identity);
+
+    let tls_config = match matches.value_of("grpc-tls-authority") {
+        None => tls_config,
+        Some(p) => {
+            let mut ca_file = datadir.clone();
+            ca_file.push(p);
+            let ca = std::fs::read(ca_file).map_err(|_| "could not read key file")?;
+            tls_config.client_ca_root(tonic::transport::Certificate::from_pem(ca))
+        }
+    };
 
     Ok(server.tls_config(tls_config)?)
 }
@@ -69,6 +79,13 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .about("Server identity key")
                 .takes_value(true)
                 .requires("grpc-tls-certificate"),
+        )
+        .arg(
+            Arg::new("grpc-tls-authority")
+                .long("grpc-tls-authority")
+                .about("Certificate authority to verify client certificates (requires TLS to be configured with --grpc-tls-key and --grpc-tls-certificate)")
+                .takes_value(true)
+                .requires_all(&["grpc-tls-certificate", "grpc-tls-key"]),
         )
         .arg(
             Arg::new("datadir")
