@@ -3,13 +3,19 @@ use crate::Value;
 use async_trait::async_trait;
 use deadpool_postgres::RecyclingMethod;
 use futures::TryFutureExt;
-use std::sync::Arc;
 use tokio_postgres::types::{ToSql, Type};
 pub use tokio_postgres::Error as PgError;
 use tokio_postgres::{IsolationLevel, NoTls};
 
-pub async fn new_and_clear() -> Result<Arc<dyn Database>, Error> {
-    let mut cfg = deadpool_postgres::Config::new();
+pub async fn new_and_clear() -> Result<PostgresDatabase, Error> {
+    let db = new().await?;
+    let client = db.pool.get().await.unwrap();
+    client.batch_execute("TRUNCATE data").await?;
+    Ok(db)
+}
+
+pub async fn new() -> Result<PostgresDatabase, Error> {
+   let mut cfg = deadpool_postgres::Config::new();
     let host = std::env::var("PG_HOST").ok().unwrap_or("/var/run/postgresql".to_string());
     let user = std::env::var("PG_USER").ok().unwrap_or("dev".to_string());
     let pass = std::env::var("PG_PASS").ok();
@@ -25,9 +31,8 @@ pub async fn new_and_clear() -> Result<Arc<dyn Database>, Error> {
     {
         let client = pool.get().await.unwrap();
         migrate_database(&client).await?;
-        client.batch_execute("TRUNCATE data").await?;
     }
-    Ok(Arc::new(PostgresDatabase { pool }))
+    Ok(PostgresDatabase { pool })
 }
 
 async fn migrate_database(client: &tokio_postgres::Client) -> Result<(), Error> {
@@ -38,7 +43,7 @@ async fn migrate_database(client: &tokio_postgres::Client) -> Result<(), Error> 
     Ok(())
 }
 
-struct PostgresDatabase {
+pub struct PostgresDatabase {
     pool: deadpool_postgres::Pool,
 }
 

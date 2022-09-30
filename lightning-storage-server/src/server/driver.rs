@@ -3,6 +3,7 @@ use std::process;
 use clap::{App, Arg};
 use log::{info, warn};
 
+use crate::database::postgres;
 use crate::database::sled::SledDatabase;
 use crate::server::LightningStorageServer;
 use crate::server::StorageServer;
@@ -14,7 +15,7 @@ pub const SERVER_APP_NAME: &str = "lssd";
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     println!("{} {} starting", SERVER_APP_NAME, process::id());
     let app = App::new(SERVER_APP_NAME)
-        .about("Lightning Storage Server with a gRPC interface.  Persists to ~/.lss .")
+        .about("Lightning Storage Server with a gRPC interface.")
         .arg(
             Arg::new("interface")
                 .about("the interface to listen on (ip v4 or v6)")
@@ -38,6 +39,14 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .long("datadir")
                 .takes_value(true)
                 .default_value(".lss"),
+        )
+        .arg(
+            Arg::new("database")
+                .long("database")
+                .about("specify DB backend")
+                .takes_value(true)
+                .default_value("sled")
+                .possible_values(&["sled", "postgres"]),
         );
     let matches = app.get_matches();
 
@@ -56,7 +65,12 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let secret_key = read_secret_key("server_key")?;
     let public_key = read_public_key("server_key")?;
 
-    let database = Box::new(SledDatabase::new(datadir.clone()).await.unwrap());
+    let database: Box<dyn crate::database::Database> = match matches.value_of("database") {
+        Some("postgres") => Box::new(postgres::new().await.unwrap()),
+        None | Some("sled") => Box::new(SledDatabase::new(datadir.clone()).await.unwrap()),
+        Some(v) => Err(format!("unsupported option for --database: {}", v))?,
+    };
+
     let server = StorageServer { database, public_key, secret_key };
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
 
