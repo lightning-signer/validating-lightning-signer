@@ -18,7 +18,7 @@ use log::error;
 const MAX_MESSAGE_SIZE: u32 = 65536;
 
 /// Serialize a message with a type prefix, in BOLT style
-pub trait SerBolt: Debug + AsAny {
+pub trait SerBolt: Debug + AsAny + Send {
     fn as_vec(&self) -> Vec<u8>;
 }
 

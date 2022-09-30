@@ -1,8 +1,8 @@
 //! A single-binary hsmd drop-in replacement for CLN, using the VLS library
 
 use std::collections::BTreeMap;
+use std::env;
 use std::sync::Mutex;
-use std::{env, thread};
 
 use clap::{App, AppSettings, Arg};
 use log::{error, info};
@@ -27,9 +27,10 @@ use lightning_storage_server::client::auth::Auth;
 use lightning_storage_server::client::driver::Client as LssClient;
 use lightning_storage_server::Value;
 use thiserror::Error;
-use util::{create_runtime, read_allowlist};
+use tokio::sync::{Mutex as AsyncMutex, MutexGuard};
+use tokio::task::block_in_place;
+use util::read_allowlist;
 use vls_frontend::Frontend;
-use vls_protocol::msgs::SerBolt;
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 use vls_protocol_signer::handler::{ChannelHandler, Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::vls_protocol;
@@ -44,7 +45,7 @@ use vls_proxy::*;
 /// WARNING: this does not ensure atomicity if mutated from different threads
 pub struct Cloud {
     persister: ThreadMemoPersister,
-    lss_client: Mutex<LssClient>,
+    lss_client: AsyncMutex<LssClient>,
     state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
     auth: Auth,
     hmac_secret: [u8; 32],
@@ -52,8 +53,9 @@ pub struct Cloud {
 
 impl Cloud {
     async fn init_state(&self) {
-        let mut client = self.lss_client.lock().unwrap();
-        let state = client.get(self.auth.clone(), &self.hmac_secret, "".to_string()).await.unwrap();
+        let mut lss_client = self.lss_client.lock().await;
+        let state =
+            lss_client.get(self.auth.clone(), &self.hmac_secret, "".to_string()).await.unwrap();
         let mut local = self.state.lock().unwrap();
         for (key, value) in state.into_iter() {
             local.insert(key, (value.version as u64, value.value));
@@ -79,16 +81,28 @@ pub struct Looper {
 impl Looper {
     async fn store(&self, context: Context) -> Result<()> {
         if let Some(cloud) = &self.cloud {
-            let mut client = cloud.lss_client.lock().unwrap();
-            let muts = context
-                .exit()
-                .into_iter()
-                .map(|(key, (version, value))| (key, Value { version: version as i64, value }))
-                .collect();
-            client.put(cloud.auth.clone(), &cloud.hmac_secret, muts).await?;
+            let lss_client = cloud.lss_client.lock().await;
+            Self::store_with_client(context, cloud, lss_client).await?;
         }
         Ok(())
     }
+
+    async fn store_with_client(
+        context: Context,
+        cloud: &Arc<Cloud>,
+        mut client: MutexGuard<'_, LssClient>,
+    ) -> Result<()> {
+        let muts = context.exit();
+        if !muts.is_empty() {
+            let kvs = muts
+                .into_iter()
+                .map(|(key, (version, value))| (key, Value { version: version as i64, value }))
+                .collect();
+            client.put(cloud.auth.clone(), &cloud.hmac_secret, kvs).await?;
+        }
+        Ok(())
+    }
+
     async fn root_signer_loop(&self, client: UnixClient, handler: RootHandler) {
         let id = handler.client_id();
         let pid = std::process::id();
@@ -106,11 +120,11 @@ impl Looper {
         handler: RootHandler,
     ) -> Result<()> {
         loop {
-            let msg = tokio::task::block_in_place(|| client.read())?;
+            let msg = block_in_place(|| client.read())?;
             info!("loop {} {}: got {:x?}", std::process::id(), handler.client_id(), msg);
             match msg {
                 Message::ClientHsmFd(m) => {
-                    client.write(msgs::ClientHsmFdReply {}).unwrap();
+                    block_in_place(|| client.write(msgs::ClientHsmFdReply {}))?;
                     let new_client = client.new_client();
                     info!(
                         "new client {} client_id={} dbid={} -> {}",
@@ -122,7 +136,9 @@ impl Looper {
                     if m.dbid > 0 {
                         let handler = handler.for_new_client(new_client.id(), m.peer_id, m.dbid);
                         let looper1 = self.clone();
-                        thread::spawn(move || looper1.channel_signer_loop(new_client, handler));
+                        tokio::task::spawn(async move {
+                            looper1.channel_signer_loop(new_client, handler).await
+                        });
                     } else {
                         let handler = handler.clone();
                         let looper1 = self.clone();
@@ -132,9 +148,7 @@ impl Looper {
                     }
                 }
                 msg => {
-                    let reply = handler.handle(msg).expect("handle");
-                    let v = reply.as_vec();
-                    client.write_vec(v).unwrap();
+                    self.do_handle(&handler, &mut client, msg).await?;
                     info!("replied {} {}", std::process::id(), handler.client_id());
                 }
             }
@@ -159,64 +173,74 @@ impl Looper {
         handler: RootHandler,
     ) -> Result<()> {
         loop {
-            let msg = tokio::task::block_in_place(|| client.read())?;
+            let msg = block_in_place(|| client.read())?;
             info!("loop {} {}: got {:x?}", std::process::id(), handler.client_id(), msg);
             match msg {
-                Message::ClientHsmFd(m) => {
+                Message::ClientHsmFd(_) => {
                     unimplemented!("unexpected ClientHsmFd on secondary root loop");
                 }
                 msg => {
-                    let reply = handler.handle(msg).expect("handle");
-                    let v = reply.as_vec();
-                    client.write_vec(v).unwrap();
+                    self.do_handle(&handler, &mut client, msg).await?;
                     info!("replied {} {}", std::process::id(), handler.client_id());
                 }
             }
         }
     }
 
-    fn channel_signer_loop(&self, client: UnixClient, handler: ChannelHandler) {
+    async fn channel_signer_loop(&self, client: UnixClient, handler: ChannelHandler) {
         let id = handler.client_id();
         let pid = std::process::id();
         info!("chan loop {} {} {}: start", pid, id, handler.dbid);
-        match self.do_channel_signer_loop(client, handler) {
+        match self.do_channel_signer_loop(client, handler).await {
             Ok(()) => info!("chan loop {} {}: done", pid, id),
             Err(Error::Protocol(ProtocolError::Eof)) => info!("chan loop {} {}: ending", pid, id),
             Err(e) => error!("chan loop {} {}: error {:?}", pid, id, e),
         }
     }
 
-    fn do_channel_signer_loop(
+    async fn do_channel_signer_loop(
         &self,
         mut client: UnixClient,
         handler: ChannelHandler,
     ) -> Result<()> {
         loop {
-            let msg = client.read()?;
+            let msg = block_in_place(|| client.read())?;
             info!("chan loop {} {}: got {:x?}", std::process::id(), handler.client_id(), msg);
-            let reply = self.do_handle(&handler, msg);
-            let v = reply.as_vec();
-            client.write_vec(v).unwrap();
+            self.do_handle(&handler, &mut client, msg).await?;
             info!("replied {} {}", std::process::id(), handler.client_id());
         }
     }
 
-    fn do_handle(&self, handler: &ChannelHandler, msg: Message) -> Box<dyn SerBolt> {
-        if let Some(cloud) = self.cloud.as_ref() {
+    async fn do_handle<H: Handler>(
+        &self,
+        handler: &H,
+        client: &mut UnixClient,
+        msg: Message,
+    ) -> Result<()> {
+        let reply = if let Some(cloud) = self.cloud.as_ref() {
+            // Note: we lock early because we actually need a global lock right now,
+            // since cloud.state is not atomic.  In particular, if one request
+            // advances a version of a key, another request might advance the same
+            // version again, but may write to the cloud before the first.
+            // TODO(devrandom) evaluate atomicity
+            let lss_client = cloud.lss_client.lock().await;
             let context = cloud.persister.enter(cloud.state.clone());
             let reply = handler.handle(msg).expect("handle");
-            let kvs = context.exit();
-            // TODO persist kvs to cloud
+            Self::store_with_client(context, cloud, lss_client).await?;
             reply
         } else {
             handler.handle(msg).expect("handle")
-        }
+        };
+
+        let v = reply.as_vec();
+        block_in_place(|| client.write_vec(v))?;
+
+        Ok(())
     }
 }
 
-#[tokio::main]
-pub async fn main() {
-    setup_logging("hsmd  ", "info");
+// Note: this can't be async, or fds > 2 will be allocated
+pub fn main() {
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
         .about("Greenlight lightning-signer")
@@ -229,47 +253,51 @@ pub async fn main() {
     if matches.is_present("test") {
         test::run_test();
     } else {
-        let conn = UnixConnection::new(3);
-        let client = UnixClient::new(conn);
-        let allowlist = read_allowlist();
-        let network = vls_network().parse::<Network>().expect("malformed vls network");
-        let starting_time_factory = ClockStartingTimeFactory::new();
-        let validator_factory = make_validator_factory(network);
-        let clock = Arc::new(StandardClock());
-        let test_seed = read_integration_test_seed();
-        let persister = make_persister();
-        let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
-        let handler_builder = RootHandlerBuilder::new(network, client.id(), services)
-            .seed_opt(test_seed)
-            .allowlist(allowlist);
-
-        let (handler_builder, seed) = handler_builder.get_seed();
-
-        let looper = make_looper(&seed).await;
-
-        let handler = if let Some(cloud) = looper.cloud.as_ref() {
-            cloud.init_state().await;
-            let state = cloud.state.clone();
-            let context = cloud.persister.enter(state);
-            let handler = handler_builder.build();
-            looper.store(context).await.expect("store during build");
-            handler
-        } else {
-            handler_builder.build()
-        };
-
-        let frontend = Frontend::new(
-            Arc::new(SingleFront { node: Arc::clone(&handler.node) }),
-            Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
-        );
-
-        let runtime = create_runtime("inplace-frontend");
-        runtime.spawn(async move {
-            frontend.start();
-        });
-
-        looper.root_signer_loop(client, handler).await;
+        start();
     }
+}
+
+// small number of threads to ease debugging
+#[tokio::main(worker_threads = 2)]
+async fn start() {
+    setup_logging("hsmd  ", "info");
+    let conn = UnixConnection::new(3);
+    let client = UnixClient::new(conn);
+    let allowlist = read_allowlist();
+    let network = vls_network().parse::<Network>().expect("malformed vls network");
+    let starting_time_factory = ClockStartingTimeFactory::new();
+    let validator_factory = make_validator_factory(network);
+    let clock = Arc::new(StandardClock());
+    let test_seed = read_integration_test_seed();
+    let persister = make_persister();
+    let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
+    let handler_builder = RootHandlerBuilder::new(network, client.id(), services)
+        .seed_opt(test_seed)
+        .allowlist(allowlist);
+
+    let (handler_builder, seed) = handler_builder.get_seed();
+
+    let looper = make_looper(&seed).await;
+
+    let handler = if let Some(cloud) = looper.cloud.as_ref() {
+        cloud.init_state().await;
+        let state = cloud.state.clone();
+        let context = cloud.persister.enter(state);
+        let handler = handler_builder.build();
+        looper.store(context).await.expect("store during build");
+        handler
+    } else {
+        handler_builder.build()
+    };
+
+    let frontend = Frontend::new(
+        Arc::new(SingleFront { node: Arc::clone(&handler.node) }),
+        Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
+    );
+
+    tokio::task::spawn(async move { block_in_place(|| frontend.start()) });
+
+    looper.root_signer_loop(client, handler).await;
 }
 
 fn make_persister() -> Arc<dyn Persist> {
@@ -290,8 +318,9 @@ async fn make_looper(seed: &[u8; 32]) -> Looper {
         info!("connected to LSS provider {}", server_id);
 
         let auth = Auth::new_for_client(client_key, server_id);
-        let lss_client =
-            Mutex::new(LssClient::new(&uri, auth.clone()).await.expect("failed to connect to LSS"));
+        let lss_client = AsyncMutex::new(
+            LssClient::new(&uri, auth.clone()).await.expect("failed to connect to LSS"),
+        );
         let state = Arc::new(Mutex::new(Default::default()));
         let cloud =
             Cloud { persister: ThreadMemoPersister {}, lss_client, state, auth, hmac_secret };
