@@ -2,7 +2,7 @@ use bitcoin_hashes::sha256::Hash as Sha256Hash;
 use bitcoin_hashes::Hash;
 use clap::{App, Arg, ArgMatches};
 use client::driver;
-use lightning_storage_server::client;
+use lightning_storage_server::{client, Value};
 use lightning_storage_server::client::auth::Auth;
 use lightning_storage_server::client::driver::ClientError;
 use lightning_storage_server::util::{
@@ -90,7 +90,7 @@ async fn put_subcommand(
     let (auth, hmac_secret) = make_auth()?;
     let mut client = driver::Client::new(rpc_url, auth.clone()).await?;
 
-    match client.put(auth, &hmac_secret, key, version, value).await {
+    match client.put(auth, &hmac_secret, vec![(key, Value { version, value })]).await {
         Ok(()) => Ok(()),
         Err(ClientError::PutConflict(conflicts)) => {
             for (key, value) in conflicts {

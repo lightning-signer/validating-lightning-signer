@@ -84,33 +84,39 @@ impl Client {
         }
     }
 
+    /// values do not include HMAC
     pub async fn put(
         &mut self,
         auth: Auth,
         hmac_secret: &[u8],
-        key: String,
-        version: i64,
-        bare_value: Vec<u8>,
+        mut kvs: Vec<(String, Value)>,
     ) -> Result<(), ClientError> {
-        let value = append_hmac_to_value(bare_value, &key, version, &hmac_secret);
+        for (key, value) in kvs.iter_mut() {
+            append_hmac_to_value(&mut value.value, &key, value.version, &hmac_secret);
+        }
 
         let client_hmac = compute_shared_hmac(
             &auth.shared_secret,
             &[0x01],
-            &vec![(key.clone(), Value { version, value: value.clone() })],
+            &kvs,
         );
 
         let server_hmac = compute_shared_hmac(
             &auth.shared_secret,
             &[0x02],
-            &vec![(key.clone(), Value { version, value: value.clone() })],
+            &kvs,
         );
 
-        let kv = proto::KeyValue { key, version, value };
-        // TODO multiple kvs
-        let kvs = vec![kv];
+        let kvs_proto = kvs.into_iter().map(|(k, v)| {
+            proto::KeyValue {
+                key: k.clone(),
+                value: v.value.clone(),
+                version: v.version,
+            }
+        }).collect();
+
         let put_request =
-            Request::new(PutRequest { auth: self.make_auth_proto(), kvs, hmac: client_hmac });
+            Request::new(PutRequest { auth: self.make_auth_proto(), kvs: kvs_proto, hmac: client_hmac });
 
         let response = self.client.put(put_request).await?;
         let res = response.into_inner();
@@ -152,10 +158,8 @@ fn remove_and_check_hmacs(
     kvs: &mut Vec<(String, Value)>,
 ) -> Result<(), ClientError> {
     for (key, value) in kvs.iter_mut() {
-        let value_without_hmac =
-            remove_and_check_hmac(value.value.clone(), &key, value.version, &hmac_secret)
-                .map_err(|()| ClientError::InvalidHmac(key.clone(), value.version))?;
-        value.value = value_without_hmac;
+        remove_and_check_hmac(&mut value.value, &key, value.version, &hmac_secret)
+            .map_err(|()| ClientError::InvalidHmac(key.clone(), value.version))?;
     }
     Ok(())
 }

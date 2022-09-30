@@ -44,18 +44,17 @@ pub fn read_public_key(path: &str) -> Result<secp256k1::PublicKey, Box<dyn std::
     Ok(secp256k1::PublicKey::from_secret_key(&secp, &secret_key))
 }
 
-pub fn append_hmac_to_value(mut value: Vec<u8>, key: &str, version: i64, secret: &[u8]) -> Vec<u8> {
+pub fn append_hmac_to_value(value: &mut Vec<u8>, key: &str, version: i64, secret: &[u8]) {
     let hmac = compute_hmac(key, &version, secret, &value);
     value.append(&mut hmac.to_vec());
-    value
 }
 
 pub fn remove_and_check_hmac(
-    mut value: Vec<u8>,
+    value: &mut Vec<u8>,
     key: &str,
     version: i64,
     secret: &[u8],
-) -> Result<Vec<u8>, ()> {
+) -> Result<(), ()> {
     if value.len() < 32 {
         error!("value too short to have an HMAC");
         return Err(());
@@ -63,7 +62,7 @@ pub fn remove_and_check_hmac(
     let expected_hmac = value.split_off(value.len() - 32);
     let hmac = compute_hmac(key, &version, secret, &value);
     if hmac == expected_hmac.as_slice() {
-        Ok(value)
+        Ok(())
     } else {
         Err(())
     }
@@ -129,19 +128,22 @@ mod tests {
     fn test_hmac() {
         let key = [11u8; 32];
         let orig_value = vec![1u8, 2, 3];
-        let value_with_hmac = append_hmac_to_value(orig_value.clone(), "x", 123, &key);
-        let value =
-            remove_and_check_hmac(value_with_hmac, "x", 123, &key).expect("hmac check failed");
+        let mut value = orig_value.clone();
+        append_hmac_to_value(&mut value, "x", 123, &key);
+        remove_and_check_hmac(&mut value, "x", 123, &key).expect("hmac check failed");
         assert_eq!(value, orig_value);
 
-        let mut value = append_hmac_to_value(orig_value.clone(), "x", 123, &key);
+        let mut value = orig_value.clone();
+        append_hmac_to_value(&mut value, "x", 123, &key);
         value[0] = 0;
-        remove_and_check_hmac(value, "x", 123, &key).expect_err("hmac check should fail");
+        remove_and_check_hmac(&mut value, "x", 123, &key).expect_err("hmac check should fail");
 
-        let value = append_hmac_to_value(orig_value.clone(), "x", 123, &key);
-        remove_and_check_hmac(value, "x", 122, &key).expect_err("hmac check should fail");
+        let mut value = orig_value.clone();
+        append_hmac_to_value(&mut value, "x", 123, &key);
+        remove_and_check_hmac(&mut value, "x", 122, &key).expect_err("hmac check should fail");
 
-        let value = append_hmac_to_value(orig_value.clone(), "x", 123, &key);
-        remove_and_check_hmac(value, "x1", 123, &key).expect_err("hmac check should fail");
+        let mut value = orig_value.clone();
+        append_hmac_to_value(&mut value, "x", 123, &key);
+        remove_and_check_hmac(&mut value, "x1", 123, &key).expect_err("hmac check should fail");
     }
 }
