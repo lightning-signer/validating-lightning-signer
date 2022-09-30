@@ -8,7 +8,14 @@ pub use tokio_postgres::Error as PgError;
 use tokio_postgres::{IsolationLevel, NoTls};
 
 pub async fn new_and_clear() -> Result<PostgresDatabase, Error> {
-    let mut cfg = deadpool_postgres::Config::new();
+    let db = new().await?;
+    let client = db.pool.get().await.unwrap();
+    client.batch_execute("TRUNCATE data").await?;
+    Ok(db)
+}
+
+pub async fn new() -> Result<PostgresDatabase, Error> {
+   let mut cfg = deadpool_postgres::Config::new();
     let host = std::env::var("PG_HOST").ok().unwrap_or("/var/run/postgresql".to_string());
     let user = std::env::var("PG_USER").ok().unwrap_or("dev".to_string());
     let pass = std::env::var("PG_PASS").ok();
@@ -24,7 +31,6 @@ pub async fn new_and_clear() -> Result<PostgresDatabase, Error> {
     {
         let client = pool.get().await.unwrap();
         migrate_database(&client).await?;
-        client.batch_execute("TRUNCATE data").await?;
     }
     Ok(PostgresDatabase { pool })
 }
