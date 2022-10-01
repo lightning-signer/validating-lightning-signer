@@ -114,6 +114,8 @@ pub fn setup_logging(who: &str, level_arg: &str) {
         .level(log::LevelFilter::from_str(&level).expect("level"))
         .level_for("h2", log::LevelFilter::Info)
         .level_for("sled", log::LevelFilter::Info)
+        .level_for("tower", log::LevelFilter::Info)
+        .level_for("hyper", log::LevelFilter::Info)
         .chain(std::io::stdout())
         // .chain(fern::log_file("/tmp/output.log")?)
         .apply()
