@@ -111,7 +111,7 @@ impl Database for PostgresDatabase {
         let client = self.pool.get().await.unwrap();
         client
             .query(
-                "SELECT key, version, value FROM data WHERE client = $1 AND key LIKE $2",
+                "SELECT key, version, value FROM data WHERE client = $1 AND key LIKE $2 ORDER BY key",
                 &[&client_id, &format!("{}%", key_prefix)],
             )
             .await?

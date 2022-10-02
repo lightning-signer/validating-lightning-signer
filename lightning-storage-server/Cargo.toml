@@ -37,6 +37,7 @@ async-trait = "0.1"
 tokio-postgres = { version = "0.7", optional = true }
 futures = "0.3"
 deadpool-postgres = { version = "0.10", optional = true }
+itertools = "0.10"
 
 [build-dependencies]
 tonic-build = "0.6"

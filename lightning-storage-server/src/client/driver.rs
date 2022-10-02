@@ -99,6 +99,7 @@ impl Client {
         mut kvs: Vec<(String, Value)>,
     ) -> Result<(), ClientError> {
         debug!("put request {:?}", kvs);
+        kvs.sort_by_key(|(k, _)| k.clone());
         for (key, value) in kvs.iter_mut() {
             append_hmac_to_value(&mut value.value, &key, value.version, &hmac_secret);
         }

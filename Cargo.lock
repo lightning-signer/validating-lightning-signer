@@ -983,6 +983,7 @@ dependencies = [
  "fern",
  "futures",
  "hex",
+ "itertools",
  "log",
  "prost",
  "secp256k1",

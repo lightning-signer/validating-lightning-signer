@@ -10,6 +10,7 @@ use crate::util::compute_shared_hmac;
 use crate::{Database, Error, Value};
 use secp256k1::{PublicKey, SecretKey};
 use tonic::{Request, Response, Status};
+use itertools::Itertools;
 
 pub struct StorageServer {
     database: Box<dyn Database>,
@@ -99,7 +100,14 @@ impl LightningStorage for StorageServer {
 
     async fn put(&self, request: Request<PutRequest>) -> Result<Response<PutReply>, Status> {
         let request = request.into_inner();
-        let kvs = request.kvs.into_iter().map(|kv| kv.into()).collect::<Vec<_>>();
+        let kvs: Vec<_> = request.kvs.into_iter().map(|kv| kv.into()).collect::<Vec<_>>();
+
+        for ((k1, _), (k2, _)) in kvs.iter().tuple_windows() {
+            if k1 > k2 {
+                return Err(Status::invalid_argument("keys are not sorted"));
+            }
+        }
+
         let auth_proto = request.auth.ok_or_else(|| Status::invalid_argument("missing auth"))?;
         let auth = self.check_auth(&auth_proto)?;
         let client_hmac = compute_shared_hmac(&auth.shared_secret, &[0x01], &kvs);
