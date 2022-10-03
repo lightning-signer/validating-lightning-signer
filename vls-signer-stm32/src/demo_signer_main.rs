@@ -125,9 +125,21 @@ fn main() -> ! {
             _ => {}
         };
 
-        disp.clear_screen();
         let mut message_d = format!("{:?}", message);
         message_d.truncate(20);
+
+        let start = timer1.now();
+        let reply = if dbid > 0 {
+            let handler = root_handler.for_new_client(0, dummy_peer.clone(), dbid);
+            handler.handle(message).expect("handle")
+        } else {
+            root_handler.handle(message).expect("handle")
+        };
+        let end = timer1.now();
+        let duration = end.checked_duration_since(start).map(|d| d.to_millis()).unwrap_or(0);
+        info!("handled {} in {} ms", message_d.clone(), duration);
+
+        disp.clear_screen();
         let balance = root_handler.channel_balance();
         disp.show_texts(&[
             format!("req # {}", sequence),
@@ -141,16 +153,7 @@ fn main() -> ! {
             },
             format!("The height is {}", root_handler.get_chain_height()),
         ]);
-        let start = timer1.now();
-        let reply = if dbid > 0 {
-            let handler = root_handler.for_new_client(0, dummy_peer.clone(), dbid);
-            handler.handle(message).expect("handle")
-        } else {
-            root_handler.handle(message).expect("handle")
-        };
-        let end = timer1.now();
-        let duration = end.checked_duration_since(start).map(|d| d.to_millis()).unwrap_or(0);
-        info!("handled {} in {} ms", message_d, duration);
+
         write_serial_response_header(&mut serial, sequence).expect("write reply header");
         msgs::write_vec(&mut serial, reply.as_vec()).expect("write reply");
     }
