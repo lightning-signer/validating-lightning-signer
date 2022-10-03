@@ -40,6 +40,7 @@ mod random_starting_time;
 #[cfg(feature = "sdio")]
 mod sdcard;
 mod timer;
+mod tracks;
 mod usbserial;
 
 #[entry]
@@ -109,9 +110,13 @@ fn main() -> ! {
 
     info!("used {} bytes", heap_bytes_used());
 
+    let mut tracks = tracks::Tracks::new();
+    let mut numreq = 0_u64;
+
     // HACK - use a dummy peer_id until it is plumbed
     let dummy_peer = PubKey([0; 33]);
     loop {
+        numreq += 1;
         let (sequence, dbid) =
             read_serial_request_header(&mut serial).expect("read request header");
         let mut message = msgs::read(&mut serial).expect("message read failed");
@@ -124,6 +129,8 @@ fn main() -> ! {
             Message::SignCommitmentTx(ref mut m) => m.peer_id = dummy_peer.clone(),
             _ => {}
         };
+
+        let top_tracks = tracks.add_message(dbid, numreq, &message, 3);
 
         let mut message_d = format!("{:?}", message);
         message_d.truncate(20);
@@ -143,7 +150,6 @@ fn main() -> ! {
         let balance = root_handler.channel_balance();
         disp.show_texts(&[
             format!("req # {}", sequence),
-            message_d.clone(),
             format!("{:>+11}", balance.received_htlc),
             format!("{:>11}", balance.claimable),
             if balance.offered_htlc > 0 {
@@ -152,6 +158,9 @@ fn main() -> ! {
                 format!("         -0")
             },
             format!("The height is {}", root_handler.get_chain_height()),
+            top_tracks[0].clone(),
+            top_tracks[1].clone(),
+            top_tracks[2].clone(),
         ]);
 
         write_serial_response_header(&mut serial, sequence).expect("write reply header");
