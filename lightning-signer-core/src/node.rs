@@ -1,6 +1,5 @@
 use core::borrow::Borrow;
 use core::convert::TryFrom;
-use core::convert::TryInto;
 use core::fmt::{self, Debug, Formatter};
 use core::iter::FromIterator;
 use core::str::FromStr;
@@ -918,6 +917,7 @@ impl Node {
     pub fn restore_node(
         node_id: &PublicKey,
         node_entry: NodeEntry,
+        seed: Option<Vec<u8>>,
         persister: Arc<dyn Persist>,
         services: NodeServices,
     ) -> Arc<Node> {
@@ -941,13 +941,16 @@ impl Node {
         let global_velocity_control = Self::make_velocity_control(policy);
         let state = NodeState::new(global_velocity_control);
 
+        let seed = seed.unwrap_or_else(|| {
+            assert!(
+                !node_entry.seed.is_empty(),
+                "no supplied seed and no seed available for node from persistence"
+            );
+            node_entry.seed
+        });
+
         let node = Arc::new(Node::new_from_persistence(
-            config,
-            node_entry.seed.as_slice().try_into().expect("seed wrong length"),
-            allowlist,
-            tracker,
-            services,
-            state,
+            config, &seed, allowlist, tracker, services, state,
         ));
         assert_eq!(&node.get_id(), node_id);
         info!("Restore node {} on {}", node_id, config.network);
@@ -973,8 +976,13 @@ impl Node {
         let mut nodes = Map::new();
         let persister = services.persister.clone();
         for (node_id, node_entry) in persister.get_nodes() {
-            let node =
-                Node::restore_node(&node_id, node_entry, Arc::clone(&persister), services.clone());
+            let node = Node::restore_node(
+                &node_id,
+                node_entry,
+                None,
+                Arc::clone(&persister),
+                services.clone(),
+            );
             nodes.insert(node_id, node);
         }
         nodes

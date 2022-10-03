@@ -107,6 +107,10 @@ pub struct RootHandler {
 }
 
 /// Builder for RootHandler
+///
+/// WARNING: if you don't specify a seed, and you persist to LSS, you must get the seed
+/// from the builder and persist it yourself.  LSS does not persist the seed.
+/// If you don't persist, you will lose your keys.
 pub struct RootHandlerBuilder {
     network: Network,
     id: u64,
@@ -147,6 +151,8 @@ impl RootHandlerBuilder {
         self
     }
 
+    /// Get the seed.  If the seed wasn't set, this will generate a new one,
+    /// in which case you must persist it yourself.
     pub fn get_seed(mut self) -> (Self, [u8; 32]) {
         let seed = self.compute_seed();
         self.seed_opt = Some(seed.clone());
@@ -158,14 +164,18 @@ impl RootHandlerBuilder {
         let config =
             NodeConfig { network: self.network, key_derivation_style: KeyDerivationStyle::Native };
 
-        let seed = self.compute_seed();
-
         let persister = self.services.persister.clone();
         let nodes = persister.get_nodes();
         let node = if nodes.is_empty() {
+            let seed = self
+                .seed_opt
+                .expect("must specify a seed or call get_seed() and persist the seed yourself");
+
             let node = Arc::new(Node::new(config, &seed, vec![], self.services));
             info!("New node {}", node.get_id());
             node.add_allowlist(&self.allowlist).expect("allowlist");
+            // NOTE: if we persist to LSS, we don't actually persist the seed here,
+            // and the caller must provide the seed each time we restore from persistence
             persister.new_node(&node.get_id(), &config, &*node.get_state(), &seed);
             persister.new_chain_tracker(&node.get_id(), &node.get_tracker());
             node
@@ -173,7 +183,9 @@ impl RootHandlerBuilder {
             assert_eq!(nodes.len(), 1);
             let (node_id, entry) = nodes.into_iter().next().unwrap();
             info!("Restore node {}", node_id);
-            Node::restore_node(&node_id, entry, persister, self.services)
+            let seed_opt = self.seed_opt.map(|s| s.to_vec());
+            // always use our seed if provided
+            Node::restore_node(&node_id, entry, seed_opt, persister, self.services)
         };
 
         RootHandler { id: self.id, node, approver: self.approver }
