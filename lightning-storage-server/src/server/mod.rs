@@ -9,6 +9,7 @@ use crate::proto::{
 use crate::util::compute_shared_hmac;
 use crate::{Database, Error, Value};
 use itertools::Itertools;
+use log::{debug, error};
 use secp256k1::{PublicKey, SecretKey};
 use tonic::{Request, Response, Status};
 
@@ -46,7 +47,7 @@ fn into_status(s: Error) -> Status {
     match s {
         Error::Conflict(_) => unimplemented!("unexpected conflict error"),
         e => {
-            log::error!("database error: {:?}", e);
+            error!("database error: {:?}", e);
             Status::internal("unexpected error")
         }
     }
@@ -89,8 +90,10 @@ impl LightningStorage for StorageServer {
         let auth = self.check_auth(&auth_proto)?;
         let client_id = auth_proto.client_id;
         let key_prefix = request.key_prefix;
+        debug!("get request({}) {}", hex::encode(&client_id), key_prefix);
         let kvs =
             self.database.get_with_prefix(&client_id, key_prefix).await.map_err(into_status)?;
+        debug!("get result {:?}", kvs);
         let hmac = compute_shared_hmac(&auth.shared_secret, &request.nonce, &kvs);
         let kvs_proto = kvs.into_iter().map(|kv| kv.into()).collect();
 
@@ -102,13 +105,17 @@ impl LightningStorage for StorageServer {
         let request = request.into_inner();
         let kvs: Vec<_> = request.kvs.into_iter().map(|kv| kv.into()).collect::<Vec<_>>();
 
+        let auth_proto = request.auth.ok_or_else(|| Status::invalid_argument("missing auth"))?;
+        let client_id = &auth_proto.client_id;
+
+        debug!("put request({}) {:?}", hex::encode(client_id), kvs);
+
         for ((k1, _), (k2, _)) in kvs.iter().tuple_windows() {
             if k1 > k2 {
                 return Err(Status::invalid_argument("keys are not sorted"));
             }
         }
 
-        let auth_proto = request.auth.ok_or_else(|| Status::invalid_argument("missing auth"))?;
         let auth = self.check_auth(&auth_proto)?;
         let client_hmac = compute_shared_hmac(&auth.shared_secret, &[0x01], &kvs);
 
@@ -116,19 +123,20 @@ impl LightningStorage for StorageServer {
             return Err(Status::invalid_argument("invalid client HMAC"));
         }
 
-        let client_id = auth_proto.client_id;
         let response = match self.database.put(&client_id, &kvs).await {
             Ok(()) => {
+                debug!("put result ok");
                 let hmac = compute_shared_hmac(&auth.shared_secret, &[0x02], &kvs);
 
                 PutReply { success: true, hmac, conflicts: vec![] }
             }
             Err(Error::Conflict(conflicts)) => {
+                debug!("put result conflict {:?}", conflicts);
                 let conflicts = conflicts.into_iter().map(|kv| kv.into()).collect();
                 PutReply { success: false, hmac: Default::default(), conflicts }
             }
             Err(e) => {
-                log::error!("database error: {:?}", e);
+                error!("database error: {:?}", e);
                 return Err(Status::internal("unexpected error"));
             }
         };
