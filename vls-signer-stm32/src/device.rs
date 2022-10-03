@@ -94,9 +94,9 @@ pub const SCREEN_WIDTH: u16 = 240;
 pub const SCREEN_HEIGHT: u16 = 240;
 pub const FONT_HEIGHT: u16 = 24;
 #[cfg(feature = "stm32f412")]
-pub const VCENTER_PIX: u16 = (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
+pub const VCENTER_PIX: u16 = 34 + (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
 #[cfg(feature = "stm32f413")] // FIXME - why is this needed?  bug w/ PortraitSwapped?
-pub const VCENTER_PIX: u16 = 80 + (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
+pub const VCENTER_PIX: u16 = 112 + (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
 pub const HINSET_PIX: u16 = 100;
 
 #[global_allocator]

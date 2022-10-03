@@ -62,7 +62,17 @@ fn main() -> ! {
     loop {
         if counter % TS_CHECK_PERIOD != 0 {
             disp.clear_screen();
-            disp.show_texts(&vec![format!("{}", counter), format!("{}", rng.next_u32())]);
+            disp.show_texts(&vec![
+                format!("{}", counter),
+                format!("{}", rng.next_u32()),
+                // format!("1234567890123456789"),
+                // format!("4  4567890123456789"),
+                // format!("5  4567890123456789"),
+                // format!("6  4567890123456789"),
+                // format!("7  4567890123456789"),
+                // format!("8  4567890123456789"),
+                // format!("9  4567890123456789"),
+            ]);
         } else {
             disp.clear_screen();
             disp.show_choice();
