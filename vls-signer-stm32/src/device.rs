@@ -14,7 +14,7 @@ use embedded_graphics::{
     text::Text,
 };
 use embedded_hal::digital::v2::OutputPin;
-use log::info;
+use log::*;
 use panic_probe as _;
 use rtt_target::{self, rprintln};
 use st7789::{Orientation, ST7789};
@@ -191,7 +191,7 @@ impl Display {
 
         let mut y = VCENTER_PIX as i32 - texts.len() as i32 * (FONT_HEIGHT as i32 + 2) / 2;
         for text in texts {
-            info!("show {} {}.", text.to_string(), y);
+            debug!("show {} {}.", text.to_string(), y);
             Text::new(&text.to_string(), Point::new(10, y), text_style)
                 .draw(&mut self.inner)
                 .unwrap();
