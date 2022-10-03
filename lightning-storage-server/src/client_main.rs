@@ -2,12 +2,12 @@ use bitcoin_hashes::sha256::Hash as Sha256Hash;
 use bitcoin_hashes::Hash;
 use clap::{App, Arg, ArgMatches};
 use client::driver;
-use lightning_storage_server::{client, Value};
 use lightning_storage_server::client::auth::Auth;
 use lightning_storage_server::client::driver::ClientError;
 use lightning_storage_server::util::{
     init_secret_key, read_public_key, read_secret_key, setup_logging, state_file_path,
 };
+use lightning_storage_server::{client, Value};
 use secp256k1::{PublicKey, SecretKey};
 use std::fs;
 

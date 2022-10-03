@@ -8,9 +8,9 @@ use crate::proto::{
 };
 use crate::util::compute_shared_hmac;
 use crate::{Database, Error, Value};
+use itertools::Itertools;
 use secp256k1::{PublicKey, SecretKey};
 use tonic::{Request, Response, Status};
-use itertools::Itertools;
 
 pub struct StorageServer {
     database: Box<dyn Database>,

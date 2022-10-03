@@ -1,5 +1,5 @@
-use std::fmt::{Debug, Formatter};
 use serde::{Deserialize, Serialize};
+use std::fmt::{Debug, Formatter};
 
 #[derive(Serialize, Deserialize)]
 pub struct Value {
@@ -18,7 +18,10 @@ impl Debug for Value {
         f.debug_struct("Value")
             .field("version", &self.version)
             // try to emit the value as a string, but if that fails, print the hex bytes
-            .field("value", &String::from_utf8(self.value.clone()).unwrap_or_else(|_| hex::encode(&self.value)))
+            .field(
+                "value",
+                &String::from_utf8(self.value.clone()).unwrap_or_else(|_| hex::encode(&self.value)),
+            )
             .finish()
     }
 }

@@ -1,9 +1,9 @@
-use log::{debug, error};
 use crate::client::auth::Auth;
 use crate::client::LightningStorageClient;
 use crate::proto::{self, GetRequest, InfoRequest, PingRequest, PutRequest};
 use crate::util::{append_hmac_to_value, compute_shared_hmac, remove_and_check_hmac};
 use crate::Value;
+use log::{debug, error};
 use secp256k1::rand::rngs::OsRng;
 use secp256k1::rand::RngCore;
 use secp256k1::PublicKey;
@@ -41,8 +41,7 @@ impl Client {
 
         let response = client.info(info_request).await?.into_inner();
         debug!("info result {:?}", response);
-        PublicKey::from_slice(&response.server_id)
-            .map_err(|_| ClientError::InvalidResponse)
+        PublicKey::from_slice(&response.server_id).map_err(|_| ClientError::InvalidResponse)
     }
 
     pub async fn new(uri: &str, auth: Auth) -> Result<Self, ClientError> {
@@ -104,28 +103,24 @@ impl Client {
             append_hmac_to_value(&mut value.value, &key, value.version, &hmac_secret);
         }
 
-        let client_hmac = compute_shared_hmac(
-            &auth.shared_secret,
-            &[0x01],
-            &kvs,
-        );
+        let client_hmac = compute_shared_hmac(&auth.shared_secret, &[0x01], &kvs);
 
-        let server_hmac = compute_shared_hmac(
-            &auth.shared_secret,
-            &[0x02],
-            &kvs,
-        );
+        let server_hmac = compute_shared_hmac(&auth.shared_secret, &[0x02], &kvs);
 
-        let kvs_proto = kvs.into_iter().map(|(k, v)| {
-            proto::KeyValue {
+        let kvs_proto = kvs
+            .into_iter()
+            .map(|(k, v)| proto::KeyValue {
                 key: k.clone(),
                 value: v.value.clone(),
                 version: v.version,
-            }
-        }).collect();
+            })
+            .collect();
 
-        let put_request =
-            Request::new(PutRequest { auth: self.make_auth_proto(), kvs: kvs_proto, hmac: client_hmac });
+        let put_request = Request::new(PutRequest {
+            auth: self.make_auth_proto(),
+            kvs: kvs_proto,
+            hmac: client_hmac,
+        });
 
         let response = self.client.put(put_request).await?.into_inner();
         debug!("put result {:?}", response);
