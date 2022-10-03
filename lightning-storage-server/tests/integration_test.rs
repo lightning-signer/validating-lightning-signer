@@ -1,4 +1,4 @@
-#[cfg(feature = "test_postgres")]
+#[cfg(feature = "test-postgres")]
 use lightning_storage_server::database::postgres;
 use lightning_storage_server::database::sled::SledDatabase;
 use lightning_storage_server::{Database, Error, Value};
@@ -27,11 +27,11 @@ async fn test_sled_database() {
     dir.close().unwrap();
 }
 
-#[cfg(feature = "test_postgres")]
+#[cfg(feature = "test-postgres")]
 #[tokio::test]
 async fn test_postgres_database() {
     let db = postgres::new_and_clear().await.unwrap();
-    do_basic_with_db(db).await;
+    do_basic_with_db(Arc::new(db)).await;
 }
 
 async fn do_basic_with_db(db: Arc<dyn Database>) {

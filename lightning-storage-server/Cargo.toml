@@ -10,7 +10,8 @@ path = "src/lib.rs"
 [features]
 default = ["postgres"]
 postgres = ["tokio-postgres", "deadpool-postgres"]
-test_postgres = []
+test-postgres = []
+dangerous-flags = []
 
 [dependencies]
 sled = "0.34"

@@ -24,6 +24,13 @@ impl SledDatabase {
         let db = sled::open(path.as_ref())?;
         Ok(Self { db })
     }
+
+    /// Open a database at the given path and clear it.
+    pub async fn new_and_clear<P: AsRef<Path>>(path: P) -> Result<Self, sled::Error> {
+        let db = sled::open(path.as_ref())?;
+        db.clear()?;
+        Ok(Self { db })
+    }
 }
 
 #[async_trait]
