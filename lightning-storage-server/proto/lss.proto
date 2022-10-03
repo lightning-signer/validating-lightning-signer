@@ -51,7 +51,7 @@ message PutReply {
   // This is a confirmation by the server that the data was persisted.
   bytes hmac = 2;
   // Any detected version conflicts.
-  // If the key does not exist, the version is i64::MAX.
+  // If the key does not exist, the version is -1.
   repeated KeyValue conflicts = 10;
 }
 

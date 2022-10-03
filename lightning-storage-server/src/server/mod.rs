@@ -29,7 +29,7 @@ impl Into<(String, Value)> for proto::KeyValue {
 impl Into<proto::KeyValue> for (String, Option<Value>) {
     fn into(self) -> proto::KeyValue {
         let (key, v) = self;
-        let version = v.as_ref().map(|v| v.version).unwrap_or(i64::MAX);
+        let version = v.as_ref().map(|v| v.version).unwrap_or(-1);
         let value = v.as_ref().map(|v| v.value.clone()).unwrap_or_default();
         proto::KeyValue { key, version, value }
     }
