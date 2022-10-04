@@ -100,12 +100,12 @@ fn main() -> ! {
     let seed_opt = init.dev_seed.as_ref().map(|s| s.0);
     let network = Network::Regtest; // TODO - get from config/args/env somehow
     let approver = Arc::new(PositiveApprover()); // TODO - switch to invoice GUI
-    let root_handler = RootHandlerBuilder::new(network, 0, services)
+    let (root_handler, _muts) = RootHandlerBuilder::new(network, 0, services)
         .seed_opt(seed_opt)
         .allowlist(allowlist)
         .approver(approver)
         .build();
-    let init_reply = root_handler.handle(Message::HsmdInit2(init)).expect("handle init");
+    let (init_reply, _muts) = root_handler.handle(Message::HsmdInit2(init)).expect("handle init");
     write_serial_response_header(&mut serial, sequence).expect("write init header");
     msgs::write_vec(&mut serial, init_reply.as_vec()).expect("write init reply");
 
@@ -142,9 +142,9 @@ fn main() -> ! {
         let start = timer1.now();
         let reply = if dbid > 0 {
             let handler = root_handler.for_new_client(0, dummy_peer.clone(), dbid);
-            handler.handle(message).expect("handle")
+            handler.handle(message).expect("handle").0
         } else {
-            root_handler.handle(message).expect("handle")
+            root_handler.handle(message).expect("handle").0
         };
         let end = timer1.now();
         let duration = end.checked_duration_since(start).map(|d| d.to_millis()).unwrap_or(0);

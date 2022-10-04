@@ -15,7 +15,7 @@ use lightning_signer::bitcoin::hashes::Hash;
 use lightning_signer::bitcoin::secp256k1::SecretKey;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::node::NodeServices;
-use lightning_signer::persist::{Context, Persist};
+use lightning_signer::persist::{Mutations, Persist};
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::crypto_utils::hkdf_sha256;
@@ -44,7 +44,6 @@ use vls_proxy::*;
 
 /// WARNING: this does not ensure atomicity if mutated from different threads
 pub struct Cloud {
-    persister: ThreadMemoPersister,
     lss_client: AsyncMutex<LssClient>,
     state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
     auth: Auth,
@@ -79,18 +78,16 @@ pub struct Looper {
 }
 
 impl Looper {
-    async fn store(&self, context: Box<dyn Context>) -> Result<()> {
+    async fn store(&self, muts: Mutations) -> Result<()> {
         if let Some(cloud) = &self.cloud {
             let lss_client = cloud.lss_client.lock().await;
-            let muts = context.exit();
-            drop(context);
             Self::store_with_client(muts, cloud, lss_client).await?;
         }
         Ok(())
     }
 
     async fn store_with_client(
-        muts: Vec<(String, (u64, Vec<u8>))>,
+        muts: Mutations,
         cloud: &Arc<Cloud>,
         mut client: MutexGuard<'_, LssClient>,
     ) -> Result<()> {
@@ -225,18 +222,16 @@ impl Looper {
             // version again, but may write to the cloud before the first.
             // TODO(devrandom) evaluate atomicity
             let lss_client = cloud.lss_client.lock().await;
-            let context = cloud.persister.enter(cloud.state.clone());
-            let reply = handler.handle(msg).expect("handle");
-            let muts = context.exit();
-            drop(context);
+            let (reply, muts) = handler.handle(msg).expect("handle");
             Self::store_with_client(muts, cloud, lss_client).await?;
             reply
         } else {
-            handler.handle(msg).expect("handle")
+            let (reply, muts) = handler.handle(msg).expect("handle");
+            assert!(muts.is_empty(), "got memorized mutations, but not persisting to cloud");
+            reply
         };
 
-        let v = reply.as_vec();
-        block_in_place(|| client.write_vec(v))?;
+        block_in_place(|| client.write_vec(reply.as_vec()))?;
 
         Ok(())
     }
@@ -284,13 +279,14 @@ async fn start() {
 
     let handler = if let Some(cloud) = looper.cloud.as_ref() {
         cloud.init_state().await;
-        let state = cloud.state.clone();
-        let context = cloud.persister.enter(state);
-        let handler = handler_builder.build();
-        looper.store(context).await.expect("store during build");
+        let handler_builder = handler_builder.lss_state(cloud.state.clone());
+        let (handler, muts) = handler_builder.build();
+        looper.store(muts).await.expect("store during build");
         handler
     } else {
-        handler_builder.build()
+        let (handler, muts) = handler_builder.build();
+        assert!(muts.is_empty(), "got memorized mutations, but not persisting to cloud");
+        handler
     };
 
     let frontend = Frontend::new(
@@ -325,8 +321,7 @@ async fn make_looper(seed: &[u8; 32]) -> Looper {
             LssClient::new(&uri, auth.clone()).await.expect("failed to connect to LSS"),
         );
         let state = Arc::new(Mutex::new(Default::default()));
-        let cloud =
-            Cloud { persister: ThreadMemoPersister {}, lss_client, state, auth, hmac_secret };
+        let cloud = Cloud { lss_client, state, auth, hmac_secret };
         Some(Arc::new(cloud))
     } else {
         None

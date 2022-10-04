@@ -59,7 +59,7 @@ async fn connect(datadir: &str, uri: Uri, network: Network) {
     let validator_factory = make_validator_factory(network);
     let clock = Arc::new(StandardClock());
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
-    let root_handler = RootHandlerBuilder::new(network, 0, services)
+    let (root_handler, _muts) = RootHandlerBuilder::new(network, 0, services)
         .seed_opt(read_integration_test_seed())
         .allowlist(allowlist.clone())
         .build();
@@ -133,6 +133,11 @@ fn handle(request: SignerRequest, root_handler: &RootHandler) -> StdResult<Signe
         root_handler.handle(msg)?
     };
     info!("signer sending reply {} - {:?}", request.request_id, reply);
-    let ser_res = reply.as_vec();
-    Ok(SignerResponse { request_id: request.request_id, message: ser_res, error: String::new() })
+    // TODO handle memorized mutations
+    let (res, _muts) = reply;
+    Ok(SignerResponse {
+        request_id: request.request_id,
+        message: res.as_vec(),
+        error: String::new(),
+    })
 }

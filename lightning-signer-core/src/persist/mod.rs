@@ -10,16 +10,19 @@ use crate::prelude::*;
 /// Models for persistence
 pub mod model;
 
+/// A list of mutations memorized by a memorizing persister
+pub type Mutations = Vec<(String, (u64, Vec<u8>))>;
+
 /// Storage context, for memorizing implementations
 pub trait Context: Send {
     /// Exit the context, returning values that were modified
-    fn exit(&self) -> Vec<(String, (u64, Vec<u8>))>;
+    fn exit(&self) -> Mutations;
 }
 
 struct DummyContext;
 
 impl Context for DummyContext {
-    fn exit(&self) -> Vec<(String, (u64, Vec<u8>))> {
+    fn exit(&self) -> Mutations {
         vec![]
     }
 }

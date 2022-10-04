@@ -14,7 +14,7 @@ use lightning_signer::node::{NodeConfig, NodeState};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
-use lightning_signer::persist::{Context, Persist};
+use lightning_signer::persist::{Context, Mutations, Persist};
 use lightning_signer::policy::validator::EnforcementState;
 
 use crate::model::*;
@@ -112,7 +112,7 @@ impl State {
         format!("{}/{}/{}", prefix.into(), hex::encode(key1), hex::encode(key2))
     }
 
-    fn get_dirty(&self) -> Vec<(String, (u64, Vec<u8>))> {
+    fn get_dirty(&self) -> Mutations {
         let store = self.store.lock().unwrap();
         let mut res = Vec::new();
         for key in self.dirty.iter() {
@@ -158,7 +158,7 @@ impl ThreadMemoPersister {
 pub struct StdContext {}
 
 impl Context for StdContext {
-    fn exit(&self) -> Vec<(String, (u64, Vec<u8>))> {
+    fn exit(&self) -> Mutations {
         MEMOS.with(|m| {
             let mut m = m.borrow_mut();
             let dirty = m.as_ref().expect("persist context was already cleared").get_dirty();

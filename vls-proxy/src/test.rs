@@ -51,7 +51,8 @@ async fn do_child(conn: UnixConnection) {
     let clock = Arc::new(StandardClock());
     let looper = crate::Looper { cloud: None };
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
-    let handler = RootHandlerBuilder::new(network, client.id(), services).seed_opt(seed).build();
+    let (handler, _muts) =
+        RootHandlerBuilder::new(network, client.id(), services).seed_opt(seed).build();
     looper.root_signer_loop(client, handler).await
 }
 
