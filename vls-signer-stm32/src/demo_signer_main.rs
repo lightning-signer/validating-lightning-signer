@@ -44,13 +44,22 @@ mod usbserial;
 
 #[entry]
 fn main() -> ! {
-    logger::init().expect("logger");
+    logger::init("demo_signer").expect("logger");
 
     device::init_allocator();
 
     #[allow(unused)]
-    let (mut delay, timer1, timer2, mut serial, mut sdio, mut disp, mut rng) =
-        device::make_devices();
+    let (
+        mut delay,
+        timer1,
+        timer2,
+        mut serial,
+        mut sdio,
+        mut disp,
+        mut rng,
+        mut touchscreen,
+        mut i2c,
+    ) = device::make_devices();
 
     logger::set_timer(timer1.clone());
 

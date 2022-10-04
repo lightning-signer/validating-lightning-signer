@@ -1660,9 +1660,7 @@ impl NodeMonitor for Node {
         for (_, slot_arc) in channels_lock.iter() {
             let slot = slot_arc.lock().unwrap();
             match &*slot {
-                ChannelSlot::Ready(chan) => {
-                    sum.accumulate(&chan.balance());
-                }
+                ChannelSlot::Ready(chan) => sum.accumulate(&chan.balance()),
                 ChannelSlot::Stub(_stub) => {
                     // ignore stubs ...
                 }

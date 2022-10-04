@@ -1,9 +1,18 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
 use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc_cortex_m::CortexMHeap;
 use core::convert::Infallible;
 use cortex_m::interrupt::{free, Mutex};
 use cortex_m::peripheral::SYST;
+use embedded_graphics::{
+    mono_font::MonoTextStyleBuilder,
+    pixelcolor::Rgb565,
+    prelude::*,
+    primitives::{PrimitiveStyleBuilder, Rectangle},
+    text::Text,
+};
 use embedded_hal::digital::v2::OutputPin;
 use log::info;
 use panic_probe as _;
@@ -24,9 +33,7 @@ use stm32f4xx_hal::{
     timer::{Event, FTimerMs, FTimerUs},
 };
 
-use embedded_graphics::{
-    mono_font::MonoTextStyleBuilder, pixelcolor::Rgb565, prelude::*, text::Text,
-};
+use ft6x06::Ft6X06;
 
 use profont::{PROFONT_18_POINT, PROFONT_24_POINT};
 
@@ -38,24 +45,46 @@ const TEXT_COLOR: Rgb565 = Rgb565::new(255, 255, 255);
 mod device_specific {
     use stm32f4xx_hal::{
         fsmc_lcd::SubBank1,
-        gpio::{Output, Pin},
+        gpio::{Alternate, OpenDrain, Output, Pin},
     };
 
     pub type LcdSubBank = SubBank1;
     pub type LcdResetPin = Pin<'D', 11_u8, Output>;
     pub use stm32f4::stm32f412::FSMC;
+
+    pub use stm32f4xx_hal::i2c::I2c;
+    use stm32f4xx_hal::pac::I2C1;
+
+    pub type Scl = Pin<'B', 6_u8, Alternate<4_u8, OpenDrain>>;
+    pub type Sda = Pin<'B', 7_u8, Alternate<4_u8, OpenDrain>>;
+    pub type I2C = I2c<I2C1, (Scl, Sda)>;
+
+    pub const CHOICE_BUTTON_POSITIONS: [i32; 4] = [20, 80, 140, 80];
+    pub const CHOICE_TEXT_POSITIONS: [i32; 6] = [40, 120, 170, 120, 80, 60];
+    pub const CHOICE_TOUCH_POSITIONS: [u16; 6] = [80, 160, 10, 100, 140, 230];
 }
 
 #[cfg(feature = "stm32f413")]
 mod device_specific {
     use stm32f4xx_hal::{
         fsmc_lcd::SubBank3,
-        gpio::{Output, Pin},
+        gpio::{Alternate, OpenDrain, Output, Pin},
     };
 
+    pub use ft6x06::long_hard_reset;
     pub type LcdSubBank = SubBank3;
     pub type LcdResetPin = Pin<'B', 13_u8, Output>;
     pub use stm32f4::stm32f413::FSMC;
+    pub use stm32f4xx_hal::fmpi2c::FMPI2c;
+    pub use stm32f4xx_hal::pac::FMPI2C1;
+
+    pub type Scl = Pin<'C', 6_u8, Alternate<4_u8, OpenDrain>>;
+    pub type Sda = Pin<'C', 7_u8, Alternate<4_u8, OpenDrain>>;
+    pub type I2C = FMPI2c<FMPI2C1, (Scl, Sda)>;
+
+    pub const CHOICE_BUTTON_POSITIONS: [i32; 4] = [30, 160, 140, 160];
+    pub const CHOICE_TEXT_POSITIONS: [i32; 6] = [60, 200, 170, 200, 80, 140];
+    pub const CHOICE_TOUCH_POSITIONS: [u16; 6] = [80, 160, 120, 200, 10, 90];
 }
 
 use device_specific::*;
@@ -168,6 +197,86 @@ impl Display {
             y += FONT_HEIGHT as i32 + 2;
         }
     }
+
+    pub fn show_choice(&mut self) {
+        let style = PrimitiveStyleBuilder::new()
+            .stroke_color(Rgb565::RED)
+            .stroke_width(3)
+            .fill_color(Rgb565::BLACK)
+            .build();
+
+        Rectangle::new(
+            Point::new(CHOICE_BUTTON_POSITIONS[0], CHOICE_BUTTON_POSITIONS[1]),
+            Size::new(80, 80),
+        )
+        .into_styled(style)
+        .draw(&mut self.inner)
+        .unwrap();
+
+        Rectangle::new(
+            Point::new(CHOICE_BUTTON_POSITIONS[2], CHOICE_BUTTON_POSITIONS[1]),
+            Size::new(80, 80),
+        )
+        .into_styled(style)
+        .draw(&mut self.inner)
+        .unwrap();
+
+        let text_style =
+            MonoTextStyleBuilder::new().font(&PROFONT_18_POINT).text_color(TEXT_COLOR).build();
+
+        Text::new(
+            "Yes",
+            Point::new(CHOICE_TEXT_POSITIONS[0], CHOICE_TEXT_POSITIONS[1]),
+            text_style,
+        )
+        .draw(&mut self.inner)
+        .unwrap();
+        Text::new("No", Point::new(CHOICE_TEXT_POSITIONS[2], CHOICE_TEXT_POSITIONS[3]), text_style)
+            .draw(&mut self.inner)
+            .unwrap();
+        Text::new(
+            "Choose ?",
+            Point::new(CHOICE_TEXT_POSITIONS[4], CHOICE_TEXT_POSITIONS[5]),
+            text_style,
+        )
+        .draw(&mut self.inner)
+        .unwrap();
+    }
+
+    pub fn check_choice(&mut self, touch: &mut Ft6X06<I2C>, i2c: &mut I2C) -> Result<&str, &str> {
+        loop {
+            let t = touch.detect_touch(i2c);
+            let mut num: u8 = 0;
+            match t {
+                Err(e) => rprintln!("Error {} from fetching number of touches", e),
+                Ok(n) => {
+                    num = n;
+                }
+            }
+
+            if num > 0 {
+                let t = touch.get_touch(i2c, 1);
+
+                match t {
+                    Err(_e) => rprintln!("Error fetching touch data"),
+                    Ok(n) =>
+                        if n.x > CHOICE_TOUCH_POSITIONS[0] && n.x < CHOICE_TOUCH_POSITIONS[1] {
+                            if n.y > CHOICE_TOUCH_POSITIONS[2] && n.y < CHOICE_TOUCH_POSITIONS[3] {
+                                return Ok("You pressed Yes");
+                            } else if n.y > CHOICE_TOUCH_POSITIONS[4]
+                                && n.y < CHOICE_TOUCH_POSITIONS[5]
+                            {
+                                return Ok("You pressed No");
+                            } else {
+                                return Err("Press a key");
+                            }
+                        } else {
+                            return Err("Press a key");
+                        },
+                }
+            }
+        }
+    }
 }
 
 /// A timer that can be cloned
@@ -185,8 +294,32 @@ impl FreeTimer {
     }
 }
 
-pub fn make_devices(
-) -> (SysDelay, FreeTimer, Counter<TIM2, 1000000>, SerialDriver, Sdio<SdCard>, Display, Rng) {
+pub fn make_touchscreen(i2c: &mut I2C, addr: u8, delay: &mut SysDelay) -> Ft6X06<I2C> {
+    let mut touchscreen = ft6x06::Ft6X06::new(i2c, addr).unwrap();
+    info!("starting ts_calibration");
+    let tsc = touchscreen.ts_calibration(i2c, delay);
+    match tsc {
+        Err(e) => info!("Error {} from ts_calibration", e),
+        Ok(u) => info!("ts_calibration returned {}", u),
+    }
+    touchscreen
+}
+
+pub struct TouchDriver {
+    pub inner: Ft6X06<I2C>,
+}
+
+pub fn make_devices<'a>() -> (
+    SysDelay,
+    FreeTimer,
+    Counter<TIM2, 1000000>,
+    SerialDriver,
+    Sdio<SdCard>,
+    Display,
+    Rng,
+    TouchDriver,
+    I2C,
+) {
     let p = Peripherals::take().unwrap();
     let cp = CorePeripherals::take().unwrap();
     let rcc = p.RCC.constrain();
@@ -194,7 +327,6 @@ pub fn make_devices(
     let (clocks, mut delay) = make_clocks(rcc, cp.SYST);
 
     let gpioa = p.GPIOA.split();
-    #[cfg(feature = "stm32f413")]
     let gpiob = p.GPIOB.split();
     let gpioc = p.GPIOC.split();
     let gpiod = p.GPIOD.split();
@@ -266,19 +398,57 @@ pub fn make_devices(
     #[cfg(feature = "stm32f412")]
     let lcd_reset = gpiod.pd11.into_push_pull_output().speed(Speed::VeryHigh);
     #[cfg(feature = "stm32f413")]
-    let lcd_reset = gpiob.pb13.into_push_pull_output().speed(Speed::VeryHigh);
+    let mut lcd_reset = gpiob.pb13.into_push_pull_output().speed(Speed::VeryHigh);
 
     #[cfg(feature = "stm32f412")]
     let backlight_control = gpiof.pf5.into_push_pull_output();
     #[cfg(feature = "stm32f413")]
     let backlight_control = gpioe.pe5.into_push_pull_output();
 
+    // Workaround on STM32F413:
+    // - On the STM32F413 the touchscreen shares the reset GPIO pin w/ the LCD.
+    // - The ST7789 driver uses a fast (10uS) reset.
+    // - The touchscreen controller needs 5mS:
+    //   https://www.displayfuture.com/Display/datasheet/controller/FT6206.pdf
+    //
+    // Perform a longer reset here first.
+    //
+    #[cfg(feature = "stm32f413")]
+    long_hard_reset(&mut lcd_reset, &mut delay).expect("long hard reset");
+
     let disp =
         Display { inner: make_display(p.FSMC, lcd_pins, lcd_reset, &mut delay, backlight_control) };
 
     let rng = p.RNG.constrain(&clocks);
 
-    (delay, FreeTimer::new(timer1), timer2, serial, sdio, disp, rng)
+    #[cfg(feature = "stm32f412")]
+    let mut i2c = {
+        I2c::new(
+            p.I2C1,
+            (
+                gpiob.pb6.into_alternate().set_open_drain(),
+                gpiob.pb7.into_alternate().set_open_drain(),
+            ),
+            400.kHz(),
+            &clocks,
+        )
+    };
+
+    #[cfg(feature = "stm32f413")]
+    let mut i2c = {
+        FMPI2c::new(
+            p.FMPI2C1,
+            (
+                gpioc.pc6.into_alternate().set_open_drain(),
+                gpioc.pc7.into_alternate().set_open_drain(),
+            ),
+            10.kHz(),
+        )
+    };
+
+    let touch = TouchDriver { inner: make_touchscreen(&mut i2c, 0x38, &mut delay) };
+
+    (delay, FreeTimer::new(timer1), timer2, serial, sdio, disp, rng, touch, i2c)
 }
 
 // define what happens in an Out Of Memory (OOM) condition
