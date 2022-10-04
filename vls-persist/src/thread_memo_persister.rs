@@ -14,7 +14,7 @@ use lightning_signer::node::{NodeConfig, NodeState};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
-use lightning_signer::persist::Persist;
+use lightning_signer::persist::{Context, Persist};
 use lightning_signer::policy::validator::EnforcementState;
 
 use crate::model::*;
@@ -143,22 +143,6 @@ const ALLOWLIST_PREFIX: &str = "node/allowlist";
 const CHANNEL_PREFIX: &str = "channel";
 
 impl ThreadMemoPersister {
-    /// Enter a persistence context
-    ///
-    /// Entering while the thread is already in a context will panic
-    ///
-    /// Returns a [`Context`] object, which can be used to retrieve the
-    /// modified entries and exit the context.
-    pub fn enter(&self, state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>) -> Context {
-        MEMOS.with(|m| {
-            if m.borrow().is_some() {
-                panic!("already entered a persist context");
-            }
-            *m.borrow_mut() = Some(State::new(state));
-        });
-        Context {}
-    }
-
     fn with_state<R>(&self, f: impl FnOnce(&mut State) -> R) -> R {
         MEMOS.with(|memos| {
             let mut memo = memos.borrow_mut();
@@ -171,10 +155,10 @@ impl ThreadMemoPersister {
 /// A persistence context
 ///
 /// The context is exited when dropped or [`exit()`] is called.
-pub struct Context {}
+pub struct StdContext {}
 
-impl Context {
-    pub fn exit(self) -> Vec<(String, (u64, Vec<u8>))> {
+impl Context for StdContext {
+    fn exit(&self) -> Vec<(String, (u64, Vec<u8>))> {
         MEMOS.with(|m| {
             let mut m = m.borrow_mut();
             let dirty = m.as_ref().expect("persist context was already cleared").get_dirty();
@@ -184,7 +168,7 @@ impl Context {
     }
 }
 
-impl Drop for Context {
+impl Drop for StdContext {
     fn drop(&mut self) {
         MEMOS.with(|m| {
             let mut m = m.borrow_mut();
@@ -201,6 +185,16 @@ impl Drop for Context {
 
 #[allow(unused_variables)]
 impl Persist for ThreadMemoPersister {
+    fn enter(&self, state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>) -> Box<dyn Context> {
+        MEMOS.with(|m| {
+            if m.borrow().is_some() {
+                panic!("already entered a persist context");
+            }
+            *m.borrow_mut() = Some(State::new(state));
+        });
+        Box::new(StdContext {})
+    }
+
     fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &NodeState, _seed: &[u8]) {
         self.update_node(node_id, state).unwrap();
         let key = &node_id.serialize();

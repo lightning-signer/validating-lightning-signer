@@ -15,14 +15,14 @@ use lightning_signer::bitcoin::hashes::Hash;
 use lightning_signer::bitcoin::secp256k1::SecretKey;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::node::NodeServices;
-use lightning_signer::persist::Persist;
+use lightning_signer::persist::{Context, Persist};
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::crypto_utils::hkdf_sha256;
 use lightning_signer::Arc;
 use lightning_signer_server::nodefront::SingleFront;
 use lightning_signer_server::persist::kv_json::KVJsonPersister;
-use lightning_signer_server::persist::thread_memo_persister::{Context, ThreadMemoPersister};
+use lightning_signer_server::persist::thread_memo_persister::ThreadMemoPersister;
 use lightning_storage_server::client::auth::Auth;
 use lightning_storage_server::client::driver::Client as LssClient;
 use lightning_storage_server::Value;
@@ -79,20 +79,21 @@ pub struct Looper {
 }
 
 impl Looper {
-    async fn store(&self, context: Context) -> Result<()> {
+    async fn store(&self, context: Box<dyn Context>) -> Result<()> {
         if let Some(cloud) = &self.cloud {
             let lss_client = cloud.lss_client.lock().await;
-            Self::store_with_client(context, cloud, lss_client).await?;
+            let muts = context.exit();
+            drop(context);
+            Self::store_with_client(muts, cloud, lss_client).await?;
         }
         Ok(())
     }
 
     async fn store_with_client(
-        context: Context,
+        muts: Vec<(String, (u64, Vec<u8>))>,
         cloud: &Arc<Cloud>,
         mut client: MutexGuard<'_, LssClient>,
     ) -> Result<()> {
-        let muts = context.exit();
         if !muts.is_empty() {
             let kvs = muts
                 .into_iter()
@@ -226,7 +227,9 @@ impl Looper {
             let lss_client = cloud.lss_client.lock().await;
             let context = cloud.persister.enter(cloud.state.clone());
             let reply = handler.handle(msg).expect("handle");
-            Self::store_with_client(context, cloud, lss_client).await?;
+            let muts = context.exit();
+            drop(context);
+            Self::store_with_client(muts, cloud, lss_client).await?;
             reply
         } else {
             handler.handle(msg).expect("handle")

@@ -1,4 +1,5 @@
 use crate::chain::tracker::ChainTracker;
+use alloc::sync::Arc;
 use bitcoin::secp256k1::PublicKey;
 
 use crate::channel::{Channel, ChannelId, ChannelStub};
@@ -9,11 +10,48 @@ use crate::prelude::*;
 /// Models for persistence
 pub mod model;
 
+/// Storage context, for memorizing implementations
+pub trait Context: Send {
+    /// Exit the context, returning values that were modified
+    fn exit(&self) -> Vec<(String, (u64, Vec<u8>))>;
+}
+
+struct DummyContext;
+
+impl Context for DummyContext {
+    fn exit(&self) -> Vec<(String, (u64, Vec<u8>))> {
+        vec![]
+    }
+}
+
 /// Persister of nodes and channels
 ///
 /// A Node will call the relevant methods here as needed.
-/// The persister should durably persist before returning, for safety.
+///
+/// There are two types of persisters:
+///
+/// - Memorizing persisters, which only store the mutations in memory, for later
+/// retrieval and storage by the caller.  This is used in embedded environments
+/// to return the mutations to the host system.
+///
+/// - Real persisters, which store the mutations directly, for example to disk.
+/// This is used in non-embedded environments. This kind of persister should
+/// persist durably before returning, for safety.
+///
 pub trait Persist: Sync + Send {
+    /// Enter a persistence context
+    ///
+    /// Entering while the thread is already in a context will panic
+    ///
+    /// Returns a [`Context`] object, which can be used to retrieve the
+    /// modified entries and exit the context.
+    ///
+    /// If this is not a memorizing context, the returned object will always
+    /// have an empty list of modified entries.
+    fn enter(&self, _state: Arc<Mutex<OrderedMap<String, (u64, Vec<u8>)>>>) -> Box<dyn Context> {
+        Box::new(DummyContext)
+    }
+
     /// Create a new node
     fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &NodeState, seed: &[u8]);
     /// Update node enforcement state
