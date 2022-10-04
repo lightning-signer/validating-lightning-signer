@@ -15,7 +15,7 @@ pub async fn new_and_clear() -> Result<PostgresDatabase, Error> {
 }
 
 pub async fn new() -> Result<PostgresDatabase, Error> {
-   let mut cfg = deadpool_postgres::Config::new();
+    let mut cfg = deadpool_postgres::Config::new();
     let host = std::env::var("PG_HOST").ok().unwrap_or("/var/run/postgresql".to_string());
     let user = std::env::var("PG_USER").ok().unwrap_or("dev".to_string());
     let pass = std::env::var("PG_PASS").ok();

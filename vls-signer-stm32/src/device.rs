@@ -14,7 +14,7 @@ use embedded_graphics::{
     text::Text,
 };
 use embedded_hal::digital::v2::OutputPin;
-use log::info;
+use log::*;
 use panic_probe as _;
 use rtt_target::{self, rprintln};
 use st7789::{Orientation, ST7789};
@@ -33,7 +33,8 @@ use stm32f4xx_hal::{
     timer::{Event, FTimerMs, FTimerUs},
 };
 
-use ft6x06::Ft6X06;
+#[allow(unused_imports)]
+use ft6x06::{long_hard_reset, Ft6X06};
 
 use profont::{PROFONT_18_POINT, PROFONT_24_POINT};
 
@@ -93,9 +94,9 @@ pub const SCREEN_WIDTH: u16 = 240;
 pub const SCREEN_HEIGHT: u16 = 240;
 pub const FONT_HEIGHT: u16 = 24;
 #[cfg(feature = "stm32f412")]
-pub const VCENTER_PIX: u16 = (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
+pub const VCENTER_PIX: u16 = 34 + (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
 #[cfg(feature = "stm32f413")] // FIXME - why is this needed?  bug w/ PortraitSwapped?
-pub const VCENTER_PIX: u16 = 80 + (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
+pub const VCENTER_PIX: u16 = 112 + (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
 pub const HINSET_PIX: u16 = 100;
 
 #[global_allocator]
@@ -190,7 +191,7 @@ impl Display {
 
         let mut y = VCENTER_PIX as i32 - texts.len() as i32 * (FONT_HEIGHT as i32 + 2) / 2;
         for text in texts {
-            info!("show {} {}.", text.to_string(), y);
+            debug!("show {} {}.", text.to_string(), y);
             Text::new(&text.to_string(), Point::new(10, y), text_style)
                 .draw(&mut self.inner)
                 .unwrap();
@@ -397,6 +398,8 @@ pub fn make_devices<'a>() -> (
 
     #[cfg(feature = "stm32f412")]
     let lcd_reset = gpiod.pd11.into_push_pull_output().speed(Speed::VeryHigh);
+    #[cfg(feature = "stm32f412")]
+    let mut ts_reset = gpiof.pf12.into_push_pull_output().speed(Speed::VeryHigh);
     #[cfg(feature = "stm32f413")]
     let mut lcd_reset = gpiob.pb13.into_push_pull_output().speed(Speed::VeryHigh);
 
@@ -413,6 +416,8 @@ pub fn make_devices<'a>() -> (
     //
     // Perform a longer reset here first.
     //
+    #[cfg(feature = "stm32f412")]
+    long_hard_reset(&mut ts_reset, &mut delay).expect("long hard reset");
     #[cfg(feature = "stm32f413")]
     long_hard_reset(&mut lcd_reset, &mut delay).expect("long hard reset");
 

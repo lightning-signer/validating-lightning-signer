@@ -43,8 +43,6 @@ fn main() -> ! {
         mut i2c,
     ) = device::make_devices();
 
-    let mut counter = 0;
-
     #[cfg(feature = "sdio")]
     {
         sdcard::init_sdio(&mut sdio, &mut delay);
@@ -59,12 +57,23 @@ fn main() -> ! {
 
     timer::start_tim2_interrupt(timer2);
 
+    let mut counter = 1; // so we don't start with a check
+    const TS_CHECK_PERIOD: usize = 50;
     loop {
-        if counter % 50 == 0 || counter < 100 {
+        if counter % TS_CHECK_PERIOD != 0 {
             disp.clear_screen();
-            disp.show_texts(&vec![format!("{}", counter), format!("{}", rng.next_u32())]);
-        }
-        if counter % 50 == 0 && counter > 0 {
+            disp.show_texts(&vec![
+                format!("{}", counter),
+                format!("{}", rng.next_u32()),
+                // format!("1234567890123456789"),
+                // format!("4  4567890123456789"),
+                // format!("5  4567890123456789"),
+                // format!("6  4567890123456789"),
+                // format!("7  4567890123456789"),
+                // format!("8  4567890123456789"),
+                // format!("9  4567890123456789"),
+            ]);
+        } else {
             disp.clear_screen();
             disp.show_choice();
             loop {
