@@ -3,6 +3,7 @@
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
+
 extern crate alloc;
 
 use alloc::{format, vec};
@@ -25,13 +26,22 @@ use rand_core::RngCore;
 
 #[entry]
 fn main() -> ! {
-    logger::init().expect("logger");
+    logger::init("test").expect("logger");
 
     device::init_allocator();
 
     #[allow(unused)]
-    let (mut delay, timer1, timer2, mut serial, mut sdio, mut disp, mut rng) =
-        device::make_devices();
+    let (
+        mut delay,
+        timer1,
+        timer2,
+        mut serial,
+        mut sdio,
+        mut disp,
+        mut rng,
+        mut touchscreen,
+        mut i2c,
+    ) = device::make_devices();
 
     let mut counter = 0;
 
@@ -50,10 +60,30 @@ fn main() -> ! {
     timer::start_tim2_interrupt(timer2);
 
     loop {
-        if counter % 100 == 0 || counter < 100 {
+        if counter % 50 == 0 || counter < 100 {
             disp.clear_screen();
             disp.show_texts(&vec![format!("{}", counter), format!("{}", rng.next_u32())]);
         }
+        if counter % 50 == 0 && counter > 0 {
+            disp.clear_screen();
+            disp.show_choice();
+            loop {
+                let ans = disp.check_choice(&mut touchscreen.inner, &mut i2c);
+                match ans {
+                    Err(e) => {
+                        info!("Err: {}. Try again.", e);
+                        continue;
+                    }
+                    Ok(n) => {
+                        info!("{}", n);
+                        break;
+                    }
+                }
+            }
+            disp.clear_screen();
+            disp.show_texts(&vec![format!("{}", counter), format!("{}", rng.next_u32())]);
+        }
+
         // Echo any usbserial characters
         let mut data = [0; 1024];
         let n = serial.do_read(&mut data);

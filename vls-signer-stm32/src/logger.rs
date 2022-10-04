@@ -37,15 +37,16 @@ use log::{LevelFilter, SetLoggerError};
 
 static LOGGER: SimpleLogger = SimpleLogger { timer: RefCell::new(None) };
 
-pub fn init() -> Result<(), SetLoggerError> {
+pub fn init(progname: &str) -> Result<(), SetLoggerError> {
     rtt_init_print!(BlockIfFull);
-    rprintln!("demo_signer starting");
+    rprintln!("{} starting", progname);
     log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))?;
     trace!("logger started");
     info!("logger started");
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn set_timer(timer: FreeTimer) {
     *LOGGER.timer.borrow_mut() = Some(timer);
 }
