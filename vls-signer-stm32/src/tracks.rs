@@ -50,7 +50,7 @@ impl Tracks {
                 track.latest = seq;
                 track.append(track_char(msg));
             } else {
-                track.append(' ');
+                track.append('-');
             }
         }
 
