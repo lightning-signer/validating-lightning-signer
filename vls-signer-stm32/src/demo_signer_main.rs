@@ -156,13 +156,17 @@ fn main() -> ! {
         disp.clear_screen();
         let balance = root_handler.channel_balance();
         disp.show_texts(&[
-            format!("#{:<5}h:{:<6} {:>3}K", sequence, root_handler.get_chain_height(), kb),
-            format!("{:>+19}", balance.received_htlc),
-            format!("{:>19}", balance.claimable),
+            format!("#:{:>3} h:{:>6} {:>3}K", sequence, root_handler.get_chain_height(), kb),
+            format!("r:{:>3} {:>+13}", balance.received_htlc_count, balance.received_htlc),
+            format!("c:{:>3} {:>13}", balance.channel_count, balance.claimable),
             if balance.offered_htlc > 0 {
-                format!("{:>+19}", 0 - balance.offered_htlc as i64)
+                format!(
+                    "o:{:>3} {:>+13}",
+                    balance.offered_htlc_count,
+                    0 - balance.offered_htlc as i64
+                )
             } else {
-                format!("{:>19}", "-0")
+                format!("o:{:>3} {:>13}", balance.offered_htlc_count, "-0")
             },
             top_tracks[0].clone(),
             top_tracks[1].clone(),
