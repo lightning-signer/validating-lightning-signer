@@ -779,19 +779,28 @@ impl EnforcementState {
         // Math.min on each one, then sum that.  If an htlc exists in one commitment but not the
         // other if we offered, then it would be -value, if we are receiving, it would be
         // 0. i.e. Math.min(0, value)
-        let (cur_bal, received_htlc, offered_htlc) = if cur_holder_bal < cur_cp_bal {
-            let (received_htlc, offered_htlc) =
-                self.current_holder_commit_info.as_ref().unwrap().htlc_balance();
-            (cur_holder_bal, received_htlc, offered_htlc)
-        } else {
-            let (received_htlc, offered_htlc) =
-                self.current_counterparty_commit_info.as_ref().unwrap().htlc_balance();
-            (cur_cp_bal, received_htlc, offered_htlc)
-        };
+        let (cur_bal, received_htlc, offered_htlc, received_htlc_count, offered_htlc_count) =
+            if cur_holder_bal < cur_cp_bal {
+                let (received_htlc, offered_htlc, received_count, offered_count) =
+                    self.current_holder_commit_info.as_ref().unwrap().htlc_balance();
+                (cur_holder_bal, received_htlc, offered_htlc, received_count, offered_count)
+            } else {
+                let (received_htlc, offered_htlc, received_count, offered_count) =
+                    self.current_counterparty_commit_info.as_ref().unwrap().htlc_balance();
+                (cur_cp_bal, received_htlc, offered_htlc, received_count, offered_count)
+            };
 
         let (claimable, sweeping) = if self.channel_closed { (0, cur_bal) } else { (cur_bal, 0) };
 
-        let balance = ChannelBalance { claimable, received_htlc, offered_htlc, sweeping };
+        let balance = ChannelBalance {
+            claimable,
+            received_htlc,
+            offered_htlc,
+            sweeping,
+            channel_count: 1,
+            received_htlc_count,
+            offered_htlc_count,
+        };
         debug!("balance: {:?}", balance);
         balance
     }

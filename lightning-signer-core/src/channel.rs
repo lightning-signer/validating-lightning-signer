@@ -1366,6 +1366,12 @@ pub struct ChannelBalance {
     pub offered_htlc: u64,
     /// Sweeping to wallet
     pub sweeping: u64,
+    /// Current number of channels
+    pub channel_count: u32,
+    /// Current number of received htlcs
+    pub received_htlc_count: u32,
+    /// Current number of offered htlcs
+    pub offered_htlc_count: u32,
 }
 
 impl ChannelBalance {
@@ -1375,13 +1381,32 @@ impl ChannelBalance {
         received_htlc: u64,
         offered_htlc: u64,
         sweeping: u64,
+        channel_count: u32,
+        received_htlc_count: u32,
+        offered_htlc_count: u32,
     ) -> ChannelBalance {
-        ChannelBalance { claimable, received_htlc, offered_htlc, sweeping }
+        ChannelBalance {
+            claimable,
+            received_htlc,
+            offered_htlc,
+            sweeping,
+            channel_count,
+            received_htlc_count,
+            offered_htlc_count,
+        }
     }
 
     /// Create a ChannelBalance with zero values
     pub fn zero() -> ChannelBalance {
-        ChannelBalance { claimable: 0, received_htlc: 0, offered_htlc: 0, sweeping: 0 }
+        ChannelBalance {
+            claimable: 0,
+            received_htlc: 0,
+            offered_htlc: 0,
+            sweeping: 0,
+            channel_count: 0,
+            received_htlc_count: 0,
+            offered_htlc_count: 0,
+        }
     }
 
     /// Sum channel balances
@@ -1390,6 +1415,9 @@ impl ChannelBalance {
         self.received_htlc += other.received_htlc;
         self.offered_htlc += other.offered_htlc;
         self.sweeping += other.sweeping;
+        self.channel_count += other.channel_count;
+        self.received_htlc_count += other.received_htlc_count;
+        self.offered_htlc_count += other.offered_htlc_count;
     }
 }
 
