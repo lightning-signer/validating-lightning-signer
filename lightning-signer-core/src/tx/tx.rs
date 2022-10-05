@@ -393,7 +393,7 @@ impl CommitmentInfo2 {
     }
 
     /// Return the total received and offered htlc balances
-    pub fn htlc_balance(&self) -> (u64, u64) {
+    pub fn htlc_balance(&self) -> (u64, u64, u32, u32) {
         let mut sum_received: u64 = 0;
         let mut sum_offered: u64 = 0;
         let (offered, received) = if self.is_counterparty_broadcaster {
@@ -407,7 +407,7 @@ impl CommitmentInfo2 {
         for r in received {
             sum_received = sum_received.checked_add(r.value_sat).expect("overflow");
         }
-        (sum_received, sum_offered)
+        (sum_received, sum_offered, received.len() as u32, offered.len() as u32)
     }
 }
 

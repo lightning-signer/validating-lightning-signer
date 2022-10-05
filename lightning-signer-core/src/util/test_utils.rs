@@ -40,7 +40,8 @@ use super::key_utils::{
     make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
 };
 use crate::channel::{
-    Channel, ChannelBase, ChannelId, ChannelSetup, ChannelStub, CommitmentType, TypedSignature,
+    Channel, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, ChannelStub, CommitmentType,
+    TypedSignature,
 };
 use crate::node::{Node, NodeConfig};
 use crate::node::{NodeServices, SpendType};
@@ -1666,4 +1667,53 @@ pub fn make_dummy_pubkey(x: u8) -> PublicKey {
     let seckey = SecretKey::from_slice(&[x; 32]).unwrap();
     let dummy_pubkey = PublicKey::from_secret_key(&secp_ctx, &seckey);
     dummy_pubkey
+}
+
+pub struct ChannelBalanceBuilder {
+    inner: ChannelBalance,
+}
+
+impl ChannelBalanceBuilder {
+    pub fn new() -> ChannelBalanceBuilder {
+        ChannelBalanceBuilder { inner: ChannelBalance::new(0, 0, 0, 0, 0, 0, 0) }
+    }
+
+    pub fn claimable(mut self, claimable: u64) -> Self {
+        self.inner.claimable = claimable;
+        self
+    }
+
+    pub fn received_htlc(mut self, received_htlc: u64) -> Self {
+        self.inner.received_htlc = received_htlc;
+        self
+    }
+
+    pub fn offered_htlc(mut self, offered_htlc: u64) -> Self {
+        self.inner.offered_htlc = offered_htlc;
+        self
+    }
+
+    pub fn sweeping(mut self, sweeping: u64) -> Self {
+        self.inner.sweeping = sweeping;
+        self
+    }
+
+    pub fn channel_count(mut self, channel_count: u32) -> Self {
+        self.inner.channel_count = channel_count;
+        self
+    }
+
+    pub fn received_htlc_count(mut self, received_htlc_count: u32) -> Self {
+        self.inner.received_htlc_count = received_htlc_count;
+        self
+    }
+
+    pub fn offered_htlc_count(mut self, offered_htlc_count: u32) -> Self {
+        self.inner.offered_htlc_count = offered_htlc_count;
+        self
+    }
+
+    pub fn build(self) -> ChannelBalance {
+        self.inner
+    }
 }

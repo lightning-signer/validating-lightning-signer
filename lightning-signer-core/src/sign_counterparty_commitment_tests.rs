@@ -16,7 +16,7 @@ mod tests {
     use std::sync::Arc;
     use test_log::test;
 
-    use crate::channel::{Channel, ChannelBalance, ChannelSetup, CommitmentType, TypedSignature};
+    use crate::channel::{Channel, ChannelSetup, CommitmentType, TypedSignature};
     use crate::node::NodeMonitor;
     use crate::policy::validator::{ChainState, EnforcementState};
     use crate::tx::script::get_to_countersignatory_with_anchors_redeemscript;
@@ -444,8 +444,8 @@ mod tests {
             Ok((sig, tx.transaction.clone()))
         })?;
 
-        // no holder commitment, balance is "opening"
-        assert_eq!(node.channel_balance(), ChannelBalance::new(0, 0, 0, 0));
+        // no holder commitment, balance is "opening", no channel count because ony stub
+        assert_eq!(node.channel_balance(), ChannelBalanceBuilder::new().channel_count(0).build());
 
         let funding_pubkey = get_channel_funding_pubkey(&node, &channel_id);
         let channel_funding_redeemscript =

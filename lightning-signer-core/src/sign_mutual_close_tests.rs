@@ -13,9 +13,7 @@ mod tests {
 
     use test_log::test;
 
-    use crate::channel::{
-        Channel, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, TypedSignature,
-    };
+    use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, TypedSignature};
     use crate::node::{Node, NodeMonitor};
     use crate::sync::Arc;
     use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
@@ -146,7 +144,10 @@ mod tests {
             counterparty_points,
         ) = setup_mutual_close_tx(outbound)?;
 
-        assert_eq!(node.channel_balance(), ChannelBalance::new(2_000_000, 0, 0, 0));
+        assert_eq!(
+            node.channel_balance(),
+            ChannelBalanceBuilder::new().claimable(2_000_000).channel_count(1).build()
+        );
 
         let (tx, sig) = node.with_ready_channel(&channel_id, |chan| {
             let mut holder_value_sat = to_holder_value_sat;

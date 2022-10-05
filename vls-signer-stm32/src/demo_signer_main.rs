@@ -10,6 +10,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use core::cell::RefCell;
+use core::cmp::max;
 use core::time::Duration;
 
 use cortex_m::interrupt::Mutex;
@@ -40,6 +41,7 @@ mod random_starting_time;
 #[cfg(feature = "sdio")]
 mod sdcard;
 mod timer;
+mod tracks;
 mod usbserial;
 
 #[entry]
@@ -109,9 +111,15 @@ fn main() -> ! {
 
     info!("used {} bytes", heap_bytes_used());
 
+    let mut tracks = tracks::Tracks::new();
+    let mut numreq = 0_u64;
+
+    let mut maxkb = heap_bytes_used() / 1024;
+
     // HACK - use a dummy peer_id until it is plumbed
     let dummy_peer = PubKey([0; 33]);
     loop {
+        numreq += 1;
         let (sequence, dbid) =
             read_serial_request_header(&mut serial).expect("read request header");
         let mut message = msgs::read(&mut serial).expect("message read failed");
@@ -124,6 +132,9 @@ fn main() -> ! {
             Message::SignCommitmentTx(ref mut m) => m.peer_id = dummy_peer.clone(),
             _ => {}
         };
+
+        const NUM_TRACKS: usize = 5;
+        let top_tracks = tracks.add_message(dbid, numreq, &message, NUM_TRACKS);
 
         let mut message_d = format!("{:?}", message);
         message_d.truncate(20);
@@ -139,19 +150,29 @@ fn main() -> ! {
         let duration = end.checked_duration_since(start).map(|d| d.to_millis()).unwrap_or(0);
         info!("handled {} in {} ms", message_d.clone(), duration);
 
+        let kb = heap_bytes_used() / 1024;
+        maxkb = max(kb, maxkb);
+
         disp.clear_screen();
         let balance = root_handler.channel_balance();
         disp.show_texts(&[
-            format!("req # {}", sequence),
-            message_d.clone(),
-            format!("{:>+11}", balance.received_htlc),
-            format!("{:>11}", balance.claimable),
+            format!("#:{:>3} h:{:>6} {:>3}K", sequence, root_handler.get_chain_height(), kb),
+            format!("r:{:>3} {:>+13}", balance.received_htlc_count, balance.received_htlc),
+            format!("c:{:>3} {:>13}", balance.channel_count, balance.claimable),
             if balance.offered_htlc > 0 {
-                format!("{:>+11}", 0 - balance.offered_htlc as i64)
+                format!(
+                    "o:{:>3} {:>+13}",
+                    balance.offered_htlc_count,
+                    0 - balance.offered_htlc as i64
+                )
             } else {
-                format!("         -0")
+                format!("o:{:>3} {:>13}", balance.offered_htlc_count, "-0")
             },
-            format!("The height is {}", root_handler.get_chain_height()),
+            top_tracks[0].clone(),
+            top_tracks[1].clone(),
+            top_tracks[2].clone(),
+            top_tracks[3].clone(),
+            top_tracks[4].clone(),
         ]);
 
         write_serial_response_header(&mut serial, sequence).expect("write reply header");
