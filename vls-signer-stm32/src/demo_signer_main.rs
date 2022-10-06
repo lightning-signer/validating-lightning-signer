@@ -177,6 +177,7 @@ fn main() -> ! {
             } else {
                 format!("o:{:>3} {:>13}", balance.offered_htlc_count, "-0")
             },
+            format!(""),
             top_tracks[0].clone(),
             top_tracks[1].clone(),
             top_tracks[2].clone(),
