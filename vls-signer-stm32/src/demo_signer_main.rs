@@ -6,7 +6,7 @@
 extern crate alloc;
 
 use alloc::format;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use core::cell::RefCell;
@@ -47,6 +47,7 @@ mod usbserial;
 #[entry]
 fn main() -> ! {
     logger::init("demo_signer").expect("logger");
+    info!("{}", env!("GIT_DESC"));
 
     device::init_allocator();
 
@@ -79,8 +80,17 @@ fn main() -> ! {
 
     timer::start_tim2_interrupt(timer2);
 
+    let mut intro = Vec::new();
+    intro.push(format!("{: ^19}", "VLS"));
+    intro.push("".to_string());
+    for verpart in env!("GIT_DESC").split("-g") {
+        intro.push(format!("{: ^19}", verpart));
+    }
+    intro.push("".to_string());
+    intro.push("".to_string());
+    intro.push(format!("{: ^19}", "waiting for node"));
     disp.clear_screen();
-    disp.show_text("init");
+    disp.show_texts(&intro);
 
     let starting_time_factory = RandomStartingTimeFactory::new(Mutex::new(RefCell::new(rng)));
 

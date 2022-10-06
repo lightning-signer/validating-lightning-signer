@@ -3,6 +3,7 @@ name = "vls-signer-stm32"
 version = "0.1.0"
 authors = ["Ken Sedgwick <ken@bonsai.com>", "Devrandom <c1.devrandom@niftybox.net>"]
 edition = "2018"
+build = "build.rs"
 
 [dependencies]
 embedded-hal = "0.2"
