@@ -38,7 +38,7 @@ use vls_protocol_signer::vls_protocol;
 mod test;
 use vls_proxy::util::{
     add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, make_validator_factory,
-    read_integration_test_seed, setup_logging, vls_network,
+    read_integration_test_seed, setup_logging, vls_network, write_integration_test_seed,
 };
 use vls_proxy::*;
 
@@ -274,6 +274,9 @@ async fn start() {
         .allowlist(allowlist);
 
     let (handler_builder, seed) = handler_builder.get_seed();
+    if test_seed.is_none() {
+        write_integration_test_seed(&seed);
+    }
 
     let looper = make_looper(&seed).await;
 
