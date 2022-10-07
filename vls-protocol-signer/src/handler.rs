@@ -37,8 +37,6 @@ use lightning_signer::util::status;
 use lightning_signer::Arc;
 #[allow(unused_imports)]
 use log::info;
-#[cfg(feature = "std")]
-use secp256k1::rand::{rngs::OsRng, RngCore};
 use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
 use lightning_signer::util::status::Status;
@@ -125,7 +123,7 @@ pub struct RootHandler {
 pub struct RootHandlerBuilder {
     network: Network,
     id: u64,
-    seed_opt: Option<[u8; 32]>,
+    seed: [u8; 32],
     allowlist: Vec<String>,
     services: NodeServices,
     approver: Arc<dyn Approver>,
@@ -134,22 +132,21 @@ pub struct RootHandlerBuilder {
 
 impl RootHandlerBuilder {
     /// Create a RootHandlerBuilder
-    pub fn new(network: Network, id: u64, services: NodeServices) -> RootHandlerBuilder {
+    pub fn new(
+        network: Network,
+        id: u64,
+        services: NodeServices,
+        seed: [u8; 32],
+    ) -> RootHandlerBuilder {
         RootHandlerBuilder {
             network,
             id,
-            seed_opt: None,
+            seed,
             allowlist: vec![],
             services,
             approver: Arc::new(PositiveApprover()),
             lss_state: Arc::new(Mutex::new(BTreeMap::new())),
         }
-    }
-
-    /// Set the seed option
-    pub fn seed_opt(mut self, seed_opt: Option<[u8; 32]>) -> Self {
-        self.seed_opt = seed_opt;
-        self
     }
 
     /// Set the initial allowlist (only used if node is new)
@@ -170,14 +167,6 @@ impl RootHandlerBuilder {
         self
     }
 
-    /// Get the seed.  If the seed wasn't set, this will generate a new one,
-    /// in which case you must persist it yourself.
-    pub fn get_seed(mut self) -> (Self, [u8; 32]) {
-        let seed = self.compute_seed();
-        self.seed_opt = Some(seed.clone());
-        (self, seed)
-    }
-
     /// Build the root handler.
     ///
     /// Returns the handler and any mutations that need to be stored
@@ -196,42 +185,22 @@ impl RootHandlerBuilder {
         let persister = self.services.persister.clone();
         let nodes = persister.get_nodes();
         let node = if nodes.is_empty() {
-            let seed = self
-                .seed_opt
-                .expect("must specify a seed or call get_seed() and persist the seed yourself");
-
-            let node = Arc::new(Node::new(config, &seed, vec![], self.services));
+            let node = Arc::new(Node::new(config, &self.seed, vec![], self.services));
             info!("New node {}", node.get_id());
             node.add_allowlist(&self.allowlist).expect("allowlist");
             // NOTE: if we persist to LSS, we don't actually persist the seed here,
             // and the caller must provide the seed each time we restore from persistence
-            persister.new_node(&node.get_id(), &config, &*node.get_state(), &seed);
+            persister.new_node(&node.get_id(), &config, &*node.get_state(), &self.seed);
             persister.new_chain_tracker(&node.get_id(), &node.get_tracker());
             node
         } else {
             assert_eq!(nodes.len(), 1);
             let (node_id, entry) = nodes.into_iter().next().unwrap();
             info!("Restore node {}", node_id);
-            let seed_opt = self.seed_opt.map(|s| s.to_vec());
-            // always use our seed if provided
-            Node::restore_node(&node_id, entry, seed_opt, persister, self.services)
+            Node::restore_node(&node_id, entry, Some(self.seed.to_vec()), persister, self.services)
         };
 
         RootHandler { id: self.id, node, approver: self.approver, lss_state: self.lss_state }
-    }
-
-    fn compute_seed(&self) -> [u8; 32] {
-        self.seed_opt.unwrap_or_else(|| {
-            #[cfg(feature = "std")]
-            {
-                let mut seed = [0; 32];
-                let mut rng = OsRng;
-                rng.fill_bytes(&mut seed);
-                seed
-            }
-            #[cfg(not(feature = "std"))]
-            todo!("no RNG available in no_std environments yet");
-        })
     }
 }
 

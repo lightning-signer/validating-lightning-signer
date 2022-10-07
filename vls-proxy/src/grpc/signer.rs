@@ -8,6 +8,7 @@ use lightning_signer::node::NodeServices;
 use lightning_signer::persist::Persist;
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
+use lightning_signer::util::crypto_utils::maybe_generate_seed;
 use lightning_signer::util::status::Status;
 use lightning_signer_server::persist::kv_json::KVJsonPersister;
 use log::{error, info};
@@ -56,16 +57,16 @@ async fn connect(datadir: &str, uri: Uri, network: Network) {
     let (sender, receiver) = mpsc::channel(1);
     let response_stream = ReceiverStream::new(receiver);
     let test_seed = read_integration_test_seed();
+    let seed = maybe_generate_seed(test_seed);
     let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new(&data_path));
     let allowlist = read_allowlist();
     let starting_time_factory = ClockStartingTimeFactory::new();
     let validator_factory = make_validator_factory(network);
     let clock = Arc::new(StandardClock());
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
-    let handler_builder = RootHandlerBuilder::new(network, 0, services)
-        .seed_opt(test_seed)
-        .allowlist(allowlist.clone());
-    let (handler_builder, seed) = handler_builder.get_seed();
+    let handler_builder =
+        RootHandlerBuilder::new(network, 0, services, seed).allowlist(allowlist.clone());
+    // if no seed was provided by the integration test framework, persist the seed that we generated
     if test_seed.is_none() {
         write_integration_test_seed(&seed);
     }

@@ -45,14 +45,13 @@ async fn do_child(conn: UnixConnection) {
 
     let client = UnixClient::new(conn);
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
-    let seed = Some([0; 32]);
+    let seed = [0; 32];
     let starting_time_factory = ClockStartingTimeFactory::new();
     let validator_factory = make_validator_factory(network);
     let clock = Arc::new(StandardClock());
     let looper = crate::Looper { cloud: None };
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
-    let (handler, _muts) =
-        RootHandlerBuilder::new(network, client.id(), services).seed_opt(seed).build();
+    let (handler, _muts) = RootHandlerBuilder::new(network, client.id(), services, seed).build();
     looper.root_signer_loop(client, handler).await
 }
 

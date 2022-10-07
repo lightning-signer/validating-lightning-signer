@@ -97,11 +97,10 @@ fn main() -> ! {
         msgs::read_message(&mut serial).expect("failed to read init message");
     info!("init {:?}", init);
     let allowlist = init.dev_allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
-    let seed_opt = init.dev_seed.as_ref().map(|s| s.0);
+    let seed = init.dev_seed.as_ref().map(|s| s.0).expect("no seed");
     let network = Network::Regtest; // TODO - get from config/args/env somehow
     let approver = Arc::new(PositiveApprover()); // TODO - switch to invoice GUI
-    let (root_handler, _muts) = RootHandlerBuilder::new(network, 0, services)
-        .seed_opt(seed_opt)
+    let (root_handler, _muts) = RootHandlerBuilder::new(network, 0, services, seed)
         .allowlist(allowlist)
         .approver(approver)
         .build();

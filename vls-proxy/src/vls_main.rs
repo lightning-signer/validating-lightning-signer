@@ -18,7 +18,7 @@ use lightning_signer::node::NodeServices;
 use lightning_signer::persist::{Mutations, Persist};
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
-use lightning_signer::util::crypto_utils::hkdf_sha256;
+use lightning_signer::util::crypto_utils::{hkdf_sha256, maybe_generate_seed};
 use lightning_signer::Arc;
 use lightning_signer_server::nodefront::SingleFront;
 use lightning_signer_server::persist::kv_json::KVJsonPersister;
@@ -267,13 +267,13 @@ async fn start() {
     let validator_factory = make_validator_factory(network);
     let clock = Arc::new(StandardClock());
     let test_seed = read_integration_test_seed();
+    let seed = maybe_generate_seed(test_seed);
     let persister = make_persister();
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
-    let handler_builder = RootHandlerBuilder::new(network, client.id(), services)
-        .seed_opt(test_seed)
-        .allowlist(allowlist);
+    let handler_builder =
+        RootHandlerBuilder::new(network, client.id(), services, seed).allowlist(allowlist);
 
-    let (handler_builder, seed) = handler_builder.get_seed();
+    // if no seed was provided by the integration test framework, persist the one we generated
     if test_seed.is_none() {
         write_integration_test_seed(&seed);
     }

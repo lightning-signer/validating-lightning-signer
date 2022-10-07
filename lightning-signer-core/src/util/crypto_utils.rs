@@ -97,6 +97,25 @@ pub fn bitcoin_vec_to_signature(
     Ok(Signature::from_der(&sv[..])?)
 }
 
+/// Use the provided seed, or generate a random one
+pub fn maybe_generate_seed(seed_opt: Option<[u8; 32]>) -> [u8; 32] {
+    seed_opt.unwrap_or_else(generate_seed)
+}
+
+/// Generate a seed
+pub fn generate_seed() -> [u8; 32] {
+    #[cfg(feature = "std")]
+    {
+        use secp256k1::rand::RngCore;
+        let mut seed = [0; 32];
+        let mut rng = secp256k1::rand::rngs::OsRng;
+        rng.fill_bytes(&mut seed);
+        seed
+    }
+    #[cfg(not(feature = "std"))]
+    todo!("no RNG available in no_std environments yet");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
