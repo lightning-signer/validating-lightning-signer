@@ -1,6 +1,7 @@
 #![allow(missing_docs)]
 
 use alloc::vec::Vec;
+use as_any::AsAny;
 use core::fmt::Debug;
 
 use crate::error::{Error, Result};
@@ -17,7 +18,7 @@ use log::error;
 const MAX_MESSAGE_SIZE: u32 = 65536;
 
 /// Serialize a message with a type prefix, in BOLT style
-pub trait SerBolt: Debug {
+pub trait SerBolt: Debug + AsAny + Send {
     fn as_vec(&self) -> Vec<u8>;
 }
 
@@ -620,6 +621,29 @@ pub struct RemoveBlock {
 #[message_id(2106)]
 pub struct RemoveBlockReply {}
 
+/// Store key-value pairs to persistent storage - potentially in the cloud.
+/// This message may be sent by the *signer* in response to a normal API message,
+/// before the actual API response.  The front end should reply with [`PersistReply`]
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2107)]
+pub struct Persist {
+    /// Authentication token from client (signer) to storage service
+    pub auth: Vec<u8>,
+    pub kvs: Vec<(Vec<u8>, u64, LargeBytes)>,
+    /// HMAC by client to authenticate the message
+    pub hmac: Vec<u8>,
+}
+
+/// Result of a [`Persist`].
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2007)]
+pub struct PersistReply {
+    pub success: bool,
+    /// HMAC by storage service to authenticate the message
+    pub hmac: Vec<u8>,
+    pub conflicts: Vec<(Vec<u8>, u64, LargeBytes)>,
+}
+
 /// An unknown message
 #[derive(Debug, Serialize)]
 pub struct Unknown {
@@ -703,6 +727,8 @@ pub enum Message {
     AddBlockReply(AddBlockReply),
     RemoveBlock(RemoveBlock),
     RemoveBlockReply(RemoveBlockReply),
+    Persist(Persist),
+    PersistReply(PersistReply),
     Unknown(Unknown),
 }
 
@@ -892,6 +918,33 @@ mod tests {
         if let Message::SignChannelAnnouncementReply(dmsg) = dmsg {
             assert_eq!(dmsg.node_signature.0, msg.node_signature.0);
             assert_eq!(dmsg.bitcoin_signature.0, msg.bitcoin_signature.0);
+        } else {
+            panic!("bad deser type")
+        }
+    }
+
+    // Test the persist message, since it has more more nesting than others
+    #[test]
+    fn persist_test() {
+        let key = b"foo".to_vec();
+        let value = b"bar".to_vec();
+        let version = 0x123456789;
+        let msg = Persist {
+            auth: vec![0x11, 0x22],
+            kvs: vec![(key.clone(), version, LargeBytes(value.clone()))],
+            hmac: vec![0x33, 0x44],
+        };
+
+        let ser = msg.as_vec();
+        let dmsg = from_vec(ser).unwrap();
+        if let Message::Persist(dmsg) = dmsg {
+            assert_eq!(dmsg.auth, msg.auth);
+            for (k, ver, v) in dmsg.kvs.into_iter() {
+                assert_eq!(k, key);
+                assert_eq!(ver, version);
+                assert_eq!(v.0, value);
+            }
+            assert_eq!(dmsg.hmac, msg.hmac);
         } else {
             panic!("bad deser type")
         }

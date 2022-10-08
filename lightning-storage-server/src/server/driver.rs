@@ -1,8 +1,9 @@
 use std::process;
 
 use clap::{App, Arg};
-use log::{info, warn};
+use log::{error, info, warn};
 
+#[cfg(feature = "postgres")]
 use crate::database::postgres;
 use crate::database::sled::SledDatabase;
 use crate::server::LightningStorageServer;
@@ -11,6 +12,10 @@ use crate::util::{init_secret_key, read_public_key, read_secret_key, setup_loggi
 use tonic::transport::{server::ServerTlsConfig, Identity};
 
 pub const SERVER_APP_NAME: &str = "lssd";
+#[cfg(feature = "postgres")]
+const DATABASES: [&str; 2] = ["sled", "postgres"];
+#[cfg(not(feature = "postgres"))]
+const DATABASES: [&str; 1] = ["sled"];
 
 fn configure_tls(
     server: tonic::transport::Server,
@@ -89,6 +94,13 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .requires_all(&["grpc-tls-certificate", "grpc-tls-key"]),
         )
         .arg(
+            Arg::new("cleardb")
+                .about("clear the database on startup")
+                .short('c')
+                .long("cleardb")
+                .takes_value(false),
+        )
+        .arg(
             Arg::new("datadir")
                 .about("data directory")
                 .long("datadir")
@@ -101,7 +113,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .about("specify DB backend")
                 .takes_value(true)
                 .default_value("sled")
-                .possible_values(&["sled", "postgres"]),
+                .possible_values(&DATABASES),
         );
     let matches = app.get_matches();
 
@@ -120,9 +132,28 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let secret_key = read_secret_key("server_key")?;
     let public_key = read_public_key("server_key")?;
 
+    let clear_db = matches.is_present("cleardb");
+
+    #[cfg(not(feature = "dangerous_flags"))]
+    if clear_db {
+        error!("--cleardb is a dangerous flag and is only available with the dangerous-flags compilation feature");
+        return Err("flag not available".into());
+    }
+
     let database: Box<dyn crate::database::Database> = match matches.value_of("database") {
-        Some("postgres") => Box::new(postgres::new().await.unwrap()),
-        None | Some("sled") => Box::new(SledDatabase::new(datadir.clone()).await.unwrap()),
+        #[cfg(feature = "postgres")]
+        Some("postgres") => Box::new(
+            if clear_db { postgres::new_and_clear().await } else { postgres::new().await }.unwrap(),
+        ),
+        Some("sled") => Box::new(
+            if clear_db {
+                SledDatabase::new_and_clear(datadir.clone()).await
+            } else {
+                SledDatabase::new(datadir.clone()).await
+            }
+            .unwrap(),
+        ),
+        None => panic!("database not specified, even though there is a default value"),
         Some(v) => Err(format!("unsupported option for --database: {}", v))?,
     };
 

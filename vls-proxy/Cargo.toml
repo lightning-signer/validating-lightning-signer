@@ -18,6 +18,7 @@ vls-protocol-signer = { path = "../vls-protocol-signer" }
 vls-protocol-client = { path = "../vls-protocol-client" }
 vls-protocol = { path = "../vls-protocol" }
 vls-frontend = { path = "../vls-frontend" }
+lightning-storage-server = { path = "../lightning-storage-server", default-features = false }
 nix = "0.22"
 serde = "1.0"
 log = "0.4"
@@ -37,8 +38,10 @@ ctrlc = { version = "3.1", features = ["termination"], optional = true }
 triggered = "0.1"
 async-stream = { version = "0.3", optional = true }
 anyhow = "1.0"
+thiserror = "1.0"
 async-trait = "0.1"
 url = { version = "2.2", optional = true }
+as-any = "0.3"
 
 [dependencies.lightning-signer-server]
 path = "../lightning-signer-server"
@@ -54,23 +57,27 @@ path = "src/lib.rs"
 
 [[bin]]
 # A single-binary drop-in replacement for hsmd with an in-process VLS
+# AKA cln:inplace
 name = "remote_hsmd_vls"
 path = "src/vls_main.rs"
 
 [[bin]]
 # A drop-in replacement for hsmd, communicating to an embedded VLS over a serial port
+# AKA cln:serial
 name = "remote_hsmd_serial"
 path = "src/serial_main.rs"
 required-features = ["main"]
 
 [[bin]]
 # A single-binary two-process (forking) replacement for hsmd, communicating over a gRPC connection
+# AKA cln:socket
 name = "remote_hsmd_socket_test"
 path = "src/socket_test_main.rs"
 required-features = ["grpc", "main"]
 
 [[bin]]
 # A replacement for hsmd, listening to vlsd2 over a gRPC protocol
+# AKA cln:socket
 name = "remote_hsmd_socket"
 path = "src/socket_main.rs"
 required-features = ["grpc", "main"]

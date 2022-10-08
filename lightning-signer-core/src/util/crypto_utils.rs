@@ -28,7 +28,8 @@ fn hkdf_extract_expand(salt: &[u8], secret: &[u8], info: &[u8], output: &mut [u8
     }
 }
 
-pub(crate) fn hkdf_sha256(secret: &[u8], info: &[u8], salt: &[u8]) -> [u8; 32] {
+/// derive a secret from another secret using HKDF-SHA256
+pub fn hkdf_sha256(secret: &[u8], info: &[u8], salt: &[u8]) -> [u8; 32] {
     let mut result = [0u8; 32];
     hkdf_extract_expand(salt, secret, info, &mut result);
     result
@@ -94,6 +95,25 @@ pub fn bitcoin_vec_to_signature(
         return Err(bitcoin::secp256k1::Error::InvalidSignature);
     }
     Ok(Signature::from_der(&sv[..])?)
+}
+
+/// Use the provided seed, or generate a random one
+pub fn maybe_generate_seed(seed_opt: Option<[u8; 32]>) -> [u8; 32] {
+    seed_opt.unwrap_or_else(generate_seed)
+}
+
+/// Generate a seed
+pub fn generate_seed() -> [u8; 32] {
+    #[cfg(feature = "std")]
+    {
+        use secp256k1::rand::RngCore;
+        let mut seed = [0; 32];
+        let mut rng = secp256k1::rand::rngs::OsRng;
+        rng.fill_bytes(&mut seed);
+        seed
+    }
+    #[cfg(not(feature = "std"))]
+    todo!("no RNG available in no_std environments yet");
 }
 
 #[cfg(test)]

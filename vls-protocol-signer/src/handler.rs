@@ -29,14 +29,14 @@ use lightning_signer::lightning::ln::chan_utils::{
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::lightning_invoice::SignedRawInvoice;
 use lightning_signer::node::{Node, NodeConfig, NodeMonitor, NodeServices, SpendType};
+use lightning_signer::persist::Mutations;
+use lightning_signer::prelude::Mutex;
 use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
 #[allow(unused_imports)]
 use log::info;
-#[cfg(feature = "std")]
-use secp256k1::rand::{rngs::OsRng, RngCore};
 use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
 use lightning_signer::util::status::Status;
@@ -93,9 +93,17 @@ fn to_script(bytes: &Vec<u8>) -> Option<Script> {
 pub type Result<T> = core::result::Result<T, Error>;
 
 pub trait Handler {
-    fn handle(&self, msg: Message) -> Result<Box<dyn SerBolt>>;
+    fn handle(&self, msg: Message) -> Result<(Box<dyn SerBolt>, Mutations)> {
+        let context = self.node().get_persister().enter(self.lss_state().clone());
+        let reply = self.do_handle(msg)?;
+        let muts = context.exit();
+        Ok((reply, muts))
+    }
+    fn do_handle(&self, msg: Message) -> Result<Box<dyn SerBolt>>;
     fn client_id(&self) -> u64;
     fn for_new_client(&self, client_id: u64, peer_id: PubKey, dbid: u64) -> ChannelHandler;
+    fn node(&self) -> &Node;
+    fn lss_state(&self) -> Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>;
 }
 
 /// Protocol handler
@@ -104,35 +112,41 @@ pub struct RootHandler {
     pub(crate) id: u64,
     pub node: Arc<Node>,
     approver: Arc<dyn Approver>,
+    lss_state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
 }
 
 /// Builder for RootHandler
+///
+/// WARNING: if you don't specify a seed, and you persist to LSS, you must get the seed
+/// from the builder and persist it yourself.  LSS does not persist the seed.
+/// If you don't persist, you will lose your keys.
 pub struct RootHandlerBuilder {
     network: Network,
     id: u64,
-    seed_opt: Option<[u8; 32]>,
+    seed: [u8; 32],
     allowlist: Vec<String>,
     services: NodeServices,
     approver: Arc<dyn Approver>,
+    lss_state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
 }
 
 impl RootHandlerBuilder {
     /// Create a RootHandlerBuilder
-    pub fn new(network: Network, id: u64, services: NodeServices) -> RootHandlerBuilder {
+    pub fn new(
+        network: Network,
+        id: u64,
+        services: NodeServices,
+        seed: [u8; 32],
+    ) -> RootHandlerBuilder {
         RootHandlerBuilder {
             network,
             id,
-            seed_opt: None,
+            seed,
             allowlist: vec![],
             services,
             approver: Arc::new(PositiveApprover()),
+            lss_state: Arc::new(Mutex::new(BTreeMap::new())),
         }
-    }
-
-    /// Set the seed option
-    pub fn seed_opt(mut self, seed_opt: Option<[u8; 32]>) -> Self {
-        self.seed_opt = seed_opt;
-        self
     }
 
     /// Set the initial allowlist (only used if node is new)
@@ -147,40 +161,46 @@ impl RootHandlerBuilder {
         self
     }
 
-    /// Build the root handler
-    pub fn build(self) -> RootHandler {
+    /// Set the LSS state
+    pub fn lss_state(mut self, lss_state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>) -> Self {
+        self.lss_state = lss_state;
+        self
+    }
+
+    /// Build the root handler.
+    ///
+    /// Returns the handler and any mutations that need to be stored
+    pub fn build(self) -> (RootHandler, Mutations) {
+        let persister = self.services.persister.clone();
+        let context = persister.enter(self.lss_state.clone());
+        let handler = self.do_build();
+        let muts = context.exit();
+        (handler, muts)
+    }
+
+    fn do_build(self) -> RootHandler {
         let config =
             NodeConfig { network: self.network, key_derivation_style: KeyDerivationStyle::Native };
-
-        let seed = self.seed_opt.unwrap_or_else(|| {
-            #[cfg(feature = "std")]
-            {
-                let mut seed = [0; 32];
-                let mut rng = OsRng;
-                rng.fill_bytes(&mut seed);
-                seed
-            }
-            #[cfg(not(feature = "std"))]
-            todo!("no RNG available in no_std environments yet");
-        });
 
         let persister = self.services.persister.clone();
         let nodes = persister.get_nodes();
         let node = if nodes.is_empty() {
-            let node = Arc::new(Node::new(config, &seed, vec![], self.services));
+            let node = Arc::new(Node::new(config, &self.seed, vec![], self.services));
             info!("New node {}", node.get_id());
             node.add_allowlist(&self.allowlist).expect("allowlist");
-            persister.new_node(&node.get_id(), &config, &*node.get_state(), &seed);
+            // NOTE: if we persist to LSS, we don't actually persist the seed here,
+            // and the caller must provide the seed each time we restore from persistence
+            persister.new_node(&node.get_id(), &config, &*node.get_state(), &self.seed);
             persister.new_chain_tracker(&node.get_id(), &node.get_tracker());
             node
         } else {
             assert_eq!(nodes.len(), 1);
             let (node_id, entry) = nodes.into_iter().next().unwrap();
             info!("Restore node {}", node_id);
-            Node::restore_node(&node_id, entry, persister, self.services)
+            Node::restore_node(&node_id, entry, Some(self.seed.to_vec()), persister, self.services)
         };
 
-        RootHandler { id: self.id, node, approver: self.approver }
+        RootHandler { id: self.id, node, approver: self.approver, lss_state: self.lss_state }
     }
 }
 
@@ -203,7 +223,7 @@ impl RootHandler {
 }
 
 impl Handler for RootHandler {
-    fn handle(&self, msg: Message) -> Result<Box<dyn SerBolt>> {
+    fn do_handle(&self, msg: Message) -> Result<Box<dyn SerBolt>> {
         match msg {
             Message::Ping(p) => {
                 info!("got ping with {} {}", p.id, String::from_utf8(p.message.0).unwrap());
@@ -528,7 +548,16 @@ impl Handler for RootHandler {
             peer_id: peer_id.0,
             dbid,
             channel_id,
+            lss_state: self.lss_state.clone(),
         }
+    }
+
+    fn node(&self) -> &Node {
+        &self.node
+    }
+
+    fn lss_state(&self) -> Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>> {
+        self.lss_state.clone()
     }
 }
 
@@ -555,12 +584,11 @@ pub struct ChannelHandler {
     pub peer_id: [u8; 33],
     pub dbid: u64,
     pub channel_id: ChannelId,
+    pub lss_state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
 }
 
-impl ChannelHandler {}
-
 impl Handler for ChannelHandler {
-    fn handle(&self, msg: Message) -> Result<Box<dyn SerBolt>> {
+    fn do_handle(&self, msg: Message) -> Result<Box<dyn SerBolt>> {
         match msg {
             Message::Memleak(_m) => Ok(Box::new(msgs::MemleakReply { result: false })),
             Message::CheckFutureSecret(m) => {
@@ -1004,6 +1032,14 @@ impl Handler for ChannelHandler {
 
     fn for_new_client(&self, _client_id: u64, _peer_id: PubKey, _dbid: u64) -> ChannelHandler {
         unimplemented!("cannot create a sub-handler from a channel handler");
+    }
+
+    fn node(&self) -> &Node {
+        &self.node
+    }
+
+    fn lss_state(&self) -> Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>> {
+        self.lss_state.clone()
     }
 }
 

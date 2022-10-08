@@ -2,8 +2,9 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::cell::RefCell;
+use std::sync::{Arc, Mutex};
 
-use serde_json::to_vec;
+use serde_json::{from_slice, to_vec};
 
 use lightning_signer::bitcoin::secp256k1::PublicKey;
 use lightning_signer::chain::tracker::ChainTracker;
@@ -13,54 +14,109 @@ use lightning_signer::node::{NodeConfig, NodeState};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
-use lightning_signer::persist::Persist;
+use lightning_signer::persist::{Context, Mutations, Persist};
+use lightning_signer::policy::validator::EnforcementState;
 
-use crate::model::{NodeEntry, NodeStateEntry};
+use crate::model::*;
 
 struct State {
     // value is (revision, value)
-    store: BTreeMap<String, (u64, Vec<u8>)>,
+    store: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
     dirty: BTreeSet<String>,
 }
 
 impl State {
-    fn new(store: BTreeMap<String, (u64, Vec<u8>)>) -> Self {
+    fn new(store: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>) -> Self {
         Self { store, dirty: Default::default() }
     }
 
-    fn insert(&mut self, prefix: impl Into<String>, key: Vec<u8>, value: Vec<u8>) {
+    fn insert(&mut self, prefix: impl Into<String>, key: &[u8], value: Vec<u8>) {
         let full_key = Self::make_key(prefix, key);
+        self.do_insert(value, full_key);
+    }
+
+    // use for nested items (e.g. node -> channel)
+    fn insert2(&mut self, prefix: impl Into<String>, key1: &[u8], key2: &[u8], value: Vec<u8>) {
+        let full_key = Self::make_key2(prefix, key1, key2);
+        self.do_insert(value, full_key);
+    }
+
+    fn do_insert(&mut self, value: Vec<u8>, full_key: String) {
+        let mut store = self.store.lock().unwrap();
         let revision = if self.dirty.contains(&full_key) {
             // if already dirty, do not increment revision
-            self.store.get(&full_key).expect("dirty key must exist").0
+            store.get(&full_key).expect("dirty key must exist").0
         } else {
             // if not dirty, increment revision
-            self.store.get(&full_key).map(|(r, _)| r + 1).unwrap_or(0)
+            store.get(&full_key).map(|(r, _)| r + 1).unwrap_or(0)
         };
-        self.store.insert(full_key.clone(), (revision, value));
+        store.insert(full_key.clone(), (revision, value));
         self.dirty.insert(full_key);
     }
 
-    fn get(&self, prefix: impl Into<String>, key: Vec<u8>) -> Option<&Vec<u8>> {
+    fn get(&self, prefix: impl Into<String>, key: &[u8]) -> Option<Vec<u8>> {
         let full_key = Self::make_key(prefix, key);
-        self.store.get(&full_key).map(|(_, v)| v)
+        let store = self.store.lock().unwrap();
+        store.get(&full_key).map(|(_, v)| v.clone())
     }
 
-    fn remove(&mut self, prefix: impl Into<String>, key: Vec<u8>) {
+    fn get2(&self, prefix: impl Into<String>, key1: &[u8], key2: &[u8]) -> Option<Vec<u8>> {
+        let full_key = Self::make_key2(prefix, key1, key2);
+        let store = self.store.lock().unwrap();
+        store.get(&full_key).map(|(_, v)| v.clone())
+    }
+
+    fn get_prefix(&self, prefix: impl Into<String>) -> Vec<(Vec<u8>, (u64, Vec<u8>))> {
+        let prefix2 = Self::make_key(prefix, &[]);
+        let store = self.store.lock().unwrap();
+        store
+            .range(prefix2.clone()..)
+            .take_while(|(k, _)| k.starts_with(&prefix2))
+            .map(|(k, (r, v))| {
+                let key = hex::decode(&k[prefix2.len()..]).expect("key must be hex");
+                (key, (*r, v.clone()))
+            })
+            .collect()
+    }
+
+    fn get_prefix2(
+        &self,
+        prefix: impl Into<String>,
+        key1: &[u8],
+    ) -> Vec<(Vec<u8>, (u64, Vec<u8>))> {
+        let prefix2 = Self::make_key2(prefix, key1, &[]);
+        let store = self.store.lock().unwrap();
+        store
+            .range(prefix2.clone()..)
+            .take_while(|(k, _)| k.starts_with(&prefix2))
+            .map(|(k, (r, v))| {
+                let key = hex::decode(&k[prefix2.len()..]).expect("key must be hex");
+                (key, (*r, v.clone()))
+            })
+            .collect()
+    }
+
+    fn remove(&mut self, prefix: impl Into<String>, key: &[u8]) {
         let full_key = Self::make_key(prefix, key);
-        let revision = self.store.get(&full_key).map(|(r, _)| r + 1).unwrap_or(0);
-        self.store.insert(full_key.clone(), (revision, Vec::new()));
+        let mut store = self.store.lock().unwrap();
+        let revision = store.get(&full_key).map(|(r, _)| r + 1).unwrap_or(0);
+        store.insert(full_key.clone(), (revision, Vec::new()));
         self.dirty.insert(full_key);
     }
 
-    fn make_key(prefix: impl Into<String>, key: Vec<u8>) -> String {
+    fn make_key(prefix: impl Into<String>, key: &[u8]) -> String {
         format!("{}/{}", prefix.into(), hex::encode(key))
     }
 
-    fn get_dirty(&self) -> Vec<(String, (u64, Vec<u8>))> {
+    fn make_key2(prefix: impl Into<String>, key1: &[u8], key2: &[u8]) -> String {
+        format!("{}/{}/{}", prefix.into(), hex::encode(key1), hex::encode(key2))
+    }
+
+    fn get_dirty(&self) -> Mutations {
+        let store = self.store.lock().unwrap();
         let mut res = Vec::new();
         for key in self.dirty.iter() {
-            res.push((key.clone(), self.store.get(key).cloned().unwrap()));
+            res.push((key.clone(), store.get(key).cloned().unwrap()));
         }
         res
     }
@@ -81,27 +137,12 @@ thread_local!(static MEMOS: RefCell<Option<State>>  = RefCell::new(None));
 pub struct ThreadMemoPersister {}
 
 const NODE_ENTRY_PREFIX: &str = "node/entry";
-const NODE_ENTRY_PREFIX_FIRST: &str = "node/entry/0";
-const NODE_ENTRY_PREFIX_LAST: &str = "node/entry/g";
 const NODE_STATE_PREFIX: &str = "node/state";
+const NODE_TRACKER_PREFIX: &str = "node/tracker";
+const ALLOWLIST_PREFIX: &str = "node/allowlist";
+const CHANNEL_PREFIX: &str = "channel";
 
 impl ThreadMemoPersister {
-    /// Enter a persistence context
-    ///
-    /// Entering while the thread is already in a context will panic
-    ///
-    /// Returns a [`Context`] object, which can be used to retrieve the
-    /// modified entries and exit the context.
-    pub fn enter(&self, state: BTreeMap<String, (u64, Vec<u8>)>) -> Context {
-        MEMOS.with(|m| {
-            if m.borrow().is_some() {
-                panic!("already entered a persist context");
-            }
-            *m.borrow_mut() = Some(State::new(state));
-        });
-        Context {}
-    }
-
     fn with_state<R>(&self, f: impl FnOnce(&mut State) -> R) -> R {
         MEMOS.with(|memos| {
             let mut memo = memos.borrow_mut();
@@ -114,10 +155,10 @@ impl ThreadMemoPersister {
 /// A persistence context
 ///
 /// The context is exited when dropped or [`exit()`] is called.
-pub struct Context {}
+pub struct StdContext {}
 
-impl Context {
-    pub fn exit(self) -> Vec<(String, (u64, Vec<u8>))> {
+impl Context for StdContext {
+    fn exit(&self) -> Mutations {
         MEMOS.with(|m| {
             let mut m = m.borrow_mut();
             let dirty = m.as_ref().expect("persist context was already cleared").get_dirty();
@@ -127,7 +168,7 @@ impl Context {
     }
 }
 
-impl Drop for Context {
+impl Drop for StdContext {
     fn drop(&mut self) {
         MEMOS.with(|m| {
             let mut m = m.borrow_mut();
@@ -144,9 +185,19 @@ impl Drop for Context {
 
 #[allow(unused_variables)]
 impl Persist for ThreadMemoPersister {
+    fn enter(&self, state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>) -> Box<dyn Context> {
+        MEMOS.with(|m| {
+            if m.borrow().is_some() {
+                panic!("already entered a persist context");
+            }
+            *m.borrow_mut() = Some(State::new(state));
+        });
+        Box::new(StdContext {})
+    }
+
     fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &NodeState, _seed: &[u8]) {
         self.update_node(node_id, state).unwrap();
-        let key = node_id.serialize().to_vec();
+        let key = &node_id.serialize();
         // Note: we don't save the seed on external storage, for security reasons
         let entry = NodeEntry {
             seed: Vec::new(),
@@ -158,7 +209,7 @@ impl Persist for ThreadMemoPersister {
     }
 
     fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), ()> {
-        let key = node_id.serialize().to_vec();
+        let key = &node_id.serialize();
         let state_entry: NodeStateEntry = state.into();
         let state_value = to_vec(&state_entry).unwrap();
         self.with_state(|state| state.insert(NODE_STATE_PREFIX, key, state_value));
@@ -166,19 +217,34 @@ impl Persist for ThreadMemoPersister {
     }
 
     fn delete_node(&self, node_id: &PublicKey) {
-        let key = node_id.serialize().to_vec();
+        let key = &node_id.serialize();
         self.with_state(|state| {
-            state.remove(NODE_ENTRY_PREFIX, key.clone());
+            state.remove(NODE_ENTRY_PREFIX, key);
             state.remove(NODE_STATE_PREFIX, key);
         });
     }
 
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()> {
-        todo!()
+        let channel_value_satoshis = 0; // TODO not known yet
+
+        let node_key = &node_id.serialize();
+        let channel_key = stub.id0.as_slice();
+        let entry = ChannelEntry {
+            channel_value_satoshis,
+            channel_setup: None,
+            id: None,
+            enforcement_state: EnforcementState::new(0),
+        };
+        let value = to_vec(&entry).unwrap();
+        self.with_state(|state| state.insert2(CHANNEL_PREFIX, node_key, channel_key, value));
+        Ok(())
     }
 
     fn new_chain_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) {
-        todo!()
+        let key = &node_id.serialize();
+        let model: ChainTrackerEntry = tracker.into();
+        let value = to_vec(&model).unwrap();
+        self.with_state(|state| state.insert(NODE_TRACKER_PREFIX, key, value));
     }
 
     fn update_tracker(
@@ -186,15 +252,33 @@ impl Persist for ThreadMemoPersister {
         node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,
     ) -> Result<(), ()> {
-        todo!()
+        let key = &node_id.serialize();
+        let model: ChainTrackerEntry = tracker.into();
+        let value = to_vec(&model).unwrap();
+        self.with_state(|state| state.insert(NODE_TRACKER_PREFIX, key, value));
+        Ok(())
     }
 
     fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, ()> {
-        todo!()
+        let key = &node_id.serialize();
+        let value = self.with_state(|state| state.get(NODE_TRACKER_PREFIX, key)).unwrap();
+        let model: ChainTrackerEntry = from_slice(&value).unwrap();
+        Ok(model.into())
     }
 
     fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), ()> {
-        todo!()
+        let channel_value_satoshis = channel.setup.channel_value_sat;
+        let node_key = &node_id.serialize();
+        let channel_key = channel.id0.as_slice();
+        let entry = ChannelEntry {
+            channel_value_satoshis,
+            channel_setup: Some(channel.setup.clone()),
+            id: channel.id.clone(),
+            enforcement_state: channel.enforcement_state.clone(),
+        };
+        let value = to_vec(&entry).unwrap();
+        self.with_state(|state| state.insert2(CHANNEL_PREFIX, node_key, channel_key, value));
+        Ok(())
     }
 
     fn get_channel(
@@ -202,34 +286,59 @@ impl Persist for ThreadMemoPersister {
         node_id: &PublicKey,
         channel_id: &ChannelId,
     ) -> Result<CoreChannelEntry, ()> {
-        todo!()
+        let node_id = &node_id.serialize();
+        let channel_key = channel_id.as_slice();
+        let entry = self.with_state(|state| {
+            let value = state.get2(NODE_ENTRY_PREFIX, node_id, channel_key).unwrap();
+            let entry: ChannelEntry = from_slice(&value).unwrap();
+            entry
+        });
+        Ok(entry.into())
     }
 
     fn get_node_channels(&self, node_id: &PublicKey) -> Vec<(ChannelId, CoreChannelEntry)> {
-        todo!()
+        let node_id = &node_id.serialize();
+        let mut res = Vec::new();
+        self.with_state(|state| {
+            for (key, (_version, value)) in state.get_prefix2(CHANNEL_PREFIX, node_id) {
+                let entry: ChannelEntry = from_slice(&value).unwrap();
+                let channel_id = ChannelId::new(&key);
+                res.push((channel_id, entry.into()));
+            }
+        });
+        res
     }
 
     fn update_node_allowlist(&self, node_id: &PublicKey, allowlist: Vec<String>) -> Result<(), ()> {
-        todo!()
+        let key = &node_id.serialize();
+        let entry = AllowlistItemEntry { allowlist };
+        let value = to_vec(&entry).unwrap();
+        self.with_state(|state| state.insert(ALLOWLIST_PREFIX, key, value));
+        Ok(())
     }
 
     fn get_node_allowlist(&self, node_id: &PublicKey) -> Vec<String> {
-        todo!()
+        let key = &node_id.serialize();
+        let entry = self.with_state(|state| {
+            let value = state.get(ALLOWLIST_PREFIX, key).unwrap();
+            let entry: AllowlistItemEntry = from_slice(&value).unwrap();
+            entry
+        });
+        entry.allowlist
     }
 
     fn get_nodes(&self) -> Vec<(PublicKey, CoreNodeEntry)> {
         let mut res = Vec::new();
         self.with_state(|state| {
             state
-                .store
-                .range(NODE_ENTRY_PREFIX_FIRST.to_string()..NODE_ENTRY_PREFIX_LAST.to_string())
+                .get_prefix(NODE_ENTRY_PREFIX)
+                .into_iter()
                 .filter(|(_k, (_r, value))| !value.is_empty())
                 .for_each(|(key, (_r, value))| {
-                    let key = hex::decode(key.split('/').last().unwrap()).unwrap();
                     let node_id = PublicKey::from_slice(&key).unwrap();
-                    let entry: NodeEntry = serde_json::from_slice(value).unwrap();
-                    let state_value = state.get(NODE_STATE_PREFIX, key).unwrap();
-                    let state_entry: NodeStateEntry = serde_json::from_slice(state_value).unwrap();
+                    let entry: NodeEntry = from_slice(&value).unwrap();
+                    let state_value = state.get(NODE_STATE_PREFIX, &key).unwrap();
+                    let state_entry: NodeStateEntry = from_slice(&state_value).unwrap();
                     let node_state = NodeState {
                         invoices: Default::default(),
                         issued_invoices: Default::default(),
@@ -273,7 +382,8 @@ mod tests {
 
         let node = &*node_arc;
 
-        let persist_ctx = persister.enter(BTreeMap::new());
+        let state = Arc::new(Mutex::new(BTreeMap::new()));
+        let persist_ctx = persister.enter(state);
         persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &seed);
         let nodes = persister.get_nodes();
         assert_eq!(nodes.len(), 1);
@@ -300,7 +410,8 @@ mod tests {
 
         let node = &*node_arc;
 
-        let persist_ctx = persister.enter(BTreeMap::new());
+        let state = Arc::new(Mutex::new(BTreeMap::new()));
+        let persist_ctx = persister.enter(state);
         persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &seed);
         persister.update_node(&node_id, &*node.get_state()).unwrap();
         let dirty = persist_ctx.exit();
@@ -308,7 +419,7 @@ mod tests {
         assert_eq!(dirty.len(), 2);
         assert_eq!(dirty[0].1 .0, 0);
         assert_eq!(dirty[1].1 .0, 0);
-        let store = BTreeMap::from_iter(dirty.into_iter());
+        let store = Arc::new(Mutex::new(BTreeMap::from_iter(dirty.into_iter())));
         let persist_ctx = persister.enter(store);
         persister.update_node(&node_id, &*node.get_state()).unwrap();
         let dirty = persist_ctx.exit();
@@ -324,7 +435,8 @@ mod tests {
 
         let node = &*node_arc;
 
-        let ctx = persister.enter(BTreeMap::new());
+        let state = Arc::new(Mutex::new(BTreeMap::new()));
+        let ctx = persister.enter(state);
         persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &seed);
         let nodes = persister.get_nodes();
         assert_eq!(nodes.len(), 1);

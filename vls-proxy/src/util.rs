@@ -32,6 +32,10 @@ pub fn read_integration_test_seed() -> Option<[u8; 32]> {
     }
 }
 
+pub fn write_integration_test_seed(seed: &[u8; 32]) {
+    fs::write("hsm_secret", seed).expect("trouble writing hsm_secret");
+}
+
 #[cfg(feature = "main")]
 pub fn setup_logging(who: &str, level_arg: &str) {
     use fern::colors::{Color, ColoredLevelConfig};
