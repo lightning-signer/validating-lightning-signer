@@ -8,7 +8,7 @@ use bitcoin::OutPoint;
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSlot};
 use crate::monitor::ChainMonitor;
 use crate::node::{Node, NodeConfig, NodeServices};
-use crate::persist::Persist;
+use crate::persist::{Persist, SeedPersist};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::util::status::{invalid_argument, Status};
@@ -31,9 +31,11 @@ impl MultiSigner {
         initial_allowlist: Vec<String>,
         services: NodeServices,
     ) -> MultiSigner {
-        let nodes = Node::restore_nodes(services.clone());
+        if !services.persister.get_nodes().is_empty() {
+            panic!("Cannot create new MultiSigner with existing nodes - use MultiSigner::restore instead");
+        }
         MultiSigner {
-            nodes: Mutex::new(nodes),
+            nodes: Mutex::new(Default::default()),
             persister: services.persister.clone(),
             test_mode,
             initial_allowlist,
@@ -42,8 +44,24 @@ impl MultiSigner {
     }
 
     /// Construct
+    ///
+    /// Will panic if there are nodes already persisted.
     pub fn new(services: NodeServices) -> MultiSigner {
-        let nodes = Node::restore_nodes(services.clone());
+        if !services.persister.get_nodes().is_empty() {
+            panic!("Cannot create new MultiSigner with existing nodes - use MultiSigner::restore instead");
+        }
+        MultiSigner {
+            nodes: Mutex::new(Default::default()),
+            persister: services.persister.clone(),
+            test_mode: false,
+            initial_allowlist: vec![],
+            services,
+        }
+    }
+
+    /// Construct and restore nodes from the persister.
+    pub fn restore(services: NodeServices, seed_persister: Arc<dyn SeedPersist>) -> MultiSigner {
+        let nodes = Node::restore_nodes(services.clone(), seed_persister);
         MultiSigner {
             nodes: Mutex::new(nodes),
             persister: services.persister.clone(),
@@ -94,7 +112,7 @@ impl MultiSigner {
             }
         }
         node.add_allowlist(&self.initial_allowlist).expect("valid initialallowlist");
-        self.persister.new_node(&node_id, &node_config, &*node.get_state(), &seed);
+        self.persister.new_node(&node_id, &node_config, &*node.get_state());
         self.persister.new_chain_tracker(&node_id, &node.get_tracker());
         nodes.insert(node_id, Arc::new(node));
         Ok(node_id)

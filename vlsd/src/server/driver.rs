@@ -1597,6 +1597,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let starting_time_factory = ClockStartingTimeFactory::new();
     let clock = Arc::new(StandardClock());
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
+    // FIXME - call restore instead of new
     let signer = Arc::new(MultiSigner::new_with_test_mode(test_mode, initial_allowlist, services));
 
     let rpc_s: String = matches.value_of_t("rpc").expect("rpc url string");

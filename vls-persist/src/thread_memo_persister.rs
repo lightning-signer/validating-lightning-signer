@@ -195,12 +195,10 @@ impl Persist for ThreadMemoPersister {
         Box::new(StdContext {})
     }
 
-    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &NodeState, _seed: &[u8]) {
+    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &NodeState) {
         self.update_node(node_id, state).unwrap();
         let key = &node_id.serialize();
-        // Note: we don't save the seed on external storage, for security reasons
         let entry = NodeEntry {
-            seed: Vec::new(),
             key_derivation_style: config.key_derivation_style as u8,
             network: config.network.to_string(),
         };
@@ -348,7 +346,6 @@ impl Persist for ThreadMemoPersister {
                         velocity_control: state_entry.velocity_control.into(),
                     };
                     let node_entry = CoreNodeEntry {
-                        seed: entry.seed,
                         key_derivation_style: entry.key_derivation_style as u8,
                         network: entry.network,
                         state: node_state,
@@ -378,13 +375,13 @@ mod tests {
     fn test_node() {
         let persister = ThreadMemoPersister {};
         let channel_id0 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
-        let (node_id, node_arc, _stub, seed) = make_node_and_channel(channel_id0.clone());
+        let (node_id, node_arc, _stub, _seed) = make_node_and_channel(channel_id0.clone());
 
         let node = &*node_arc;
 
         let state = Arc::new(Mutex::new(BTreeMap::new()));
         let persist_ctx = persister.enter(state);
-        persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &seed);
+        persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state());
         let nodes = persister.get_nodes();
         assert_eq!(nodes.len(), 1);
         let dirty = persist_ctx.exit();
@@ -406,13 +403,13 @@ mod tests {
     fn test_update_node() {
         let persister = ThreadMemoPersister {};
         let channel_id0 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
-        let (node_id, node_arc, _stub, seed) = make_node_and_channel(channel_id0.clone());
+        let (node_id, node_arc, _stub, _seed) = make_node_and_channel(channel_id0.clone());
 
         let node = &*node_arc;
 
         let state = Arc::new(Mutex::new(BTreeMap::new()));
         let persist_ctx = persister.enter(state);
-        persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &seed);
+        persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state());
         persister.update_node(&node_id, &*node.get_state()).unwrap();
         let dirty = persist_ctx.exit();
         // updating the same record twice in one transaction should not increment the revision
@@ -431,13 +428,13 @@ mod tests {
     fn test_delete_node() {
         let persister = ThreadMemoPersister {};
         let channel_id0 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
-        let (node_id, node_arc, _stub, seed) = make_node_and_channel(channel_id0.clone());
+        let (node_id, node_arc, _stub, _seed) = make_node_and_channel(channel_id0.clone());
 
         let node = &*node_arc;
 
         let state = Arc::new(Mutex::new(BTreeMap::new()));
         let ctx = persister.enter(state);
-        persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &seed);
+        persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state());
         let nodes = persister.get_nodes();
         assert_eq!(nodes.len(), 1);
         persister.delete_node(&node_id);

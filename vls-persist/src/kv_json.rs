@@ -56,20 +56,13 @@ impl KVJsonPersister<'_> {
 }
 
 impl<'a> Persist for KVJsonPersister<'a> {
-    fn new_node(
-        &self,
-        node_id: &PublicKey,
-        config: &NodeConfig,
-        state: &CoreNodeState,
-        seed: &[u8],
-    ) {
+    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &CoreNodeState) {
         let key = node_id.serialize().to_vec();
         assert!(!self.node_bucket.contains(&key).unwrap());
         let state_entry = state.into();
         self.node_state_bucket.set(&key, &Json(state_entry)).expect("insert node state");
         self.node_state_bucket.flush().expect("flush state");
         let entry = NodeEntry {
-            seed: seed.to_vec(),
             key_derivation_style: config.key_derivation_style as u8,
             network: config.network.to_string(),
         };
@@ -240,7 +233,6 @@ impl<'a> Persist for KVJsonPersister<'a> {
                 velocity_control: state_e.velocity_control.into(),
             };
             let entry = CoreNodeEntry {
-                seed: e.seed,
                 key_derivation_style: e.key_derivation_style,
                 network: e.network,
                 state,
@@ -270,6 +262,7 @@ mod tests {
 
     use lightning_signer::channel::ChannelSlot;
     use lightning_signer::node::{Node, NodeServices};
+    use lightning_signer::persist::MemorySeedPersister;
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
     use lightning_signer::util::clock::StandardClock;
     use lightning_signer::util::test_utils::*;
@@ -298,11 +291,12 @@ mod tests {
         let (node_id, node_arc, stub, seed) = make_node_and_channel(channel_id0.clone());
 
         let node = &*node_arc;
+        let seed_persister = Arc::new(MemorySeedPersister::new(seed.to_vec()));
 
         let (temp_dir, path) = {
             let (persister, temp_dir, path) = make_temp_persister();
             let persister: Arc<dyn Persist> = Arc::new(persister);
-            persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &seed);
+            persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state());
             persister.new_chain_tracker(&node_id, &node.get_tracker());
             persister.new_channel(&node_id, &stub).unwrap();
 
@@ -313,7 +307,7 @@ mod tests {
                 clock,
             };
 
-            let nodes = Node::restore_nodes(services.clone());
+            let nodes = Node::restore_nodes(services.clone(), seed_persister.clone());
             let restored_node = nodes.get(&node_id).unwrap();
 
             {
@@ -339,7 +333,7 @@ mod tests {
                     .unwrap();
                 persister.update_channel(&node_id, &channel).unwrap();
 
-                let nodes = Node::restore_nodes(services.clone());
+                let nodes = Node::restore_nodes(services.clone(), seed_persister);
                 let restored_node_arc = nodes.get(&node_id).unwrap();
                 let slot = restored_node_arc.get_channel(&stub.id0).unwrap();
                 assert!(node.channels().contains_key(&channel_id0));

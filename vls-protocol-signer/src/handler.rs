@@ -190,14 +190,14 @@ impl RootHandlerBuilder {
             node.add_allowlist(&self.allowlist).expect("allowlist");
             // NOTE: if we persist to LSS, we don't actually persist the seed here,
             // and the caller must provide the seed each time we restore from persistence
-            persister.new_node(&node.get_id(), &config, &*node.get_state(), &self.seed);
+            persister.new_node(&node.get_id(), &config, &*node.get_state());
             persister.new_chain_tracker(&node.get_id(), &node.get_tracker());
             node
         } else {
             assert_eq!(nodes.len(), 1);
             let (node_id, entry) = nodes.into_iter().next().unwrap();
             info!("Restore node {}", node_id);
-            Node::restore_node(&node_id, entry, Some(self.seed.to_vec()), persister, self.services)
+            Node::restore_node(&node_id, entry, &self.seed, self.services)
         };
 
         RootHandler { id: self.id, node, approver: self.approver, lss_state: self.lss_state }

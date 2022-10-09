@@ -27,7 +27,7 @@ pub fn main() {
     };
     node.get_state().invoices.insert(PaymentHash([1; 32]), invoice_state);
 
-    persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state(), &[3u8; 32]);
+    persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state());
 
     persister.new_channel(&node_id, &stub).unwrap();
 
