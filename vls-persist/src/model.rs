@@ -82,8 +82,6 @@ impl From<&NodeState> for NodeStateEntry {
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub struct NodeEntry {
-    #[serde_as(as = "Hex")]
-    pub seed: Vec<u8>,
     pub key_derivation_style: u8,
     pub network: String,
 }
