@@ -201,3 +201,49 @@ impl SeedPersist for MemorySeedPersister {
         Some(self.seed.clone())
     }
 }
+
+#[cfg(feature = "std")]
+/// File system persisters
+pub mod fs {
+    use crate::persist::SeedPersist;
+    use bitcoin::hashes::hex::{FromHex, ToHex};
+    use bitcoin::secp256k1::PublicKey;
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// A file system directory seed persister
+    ///
+    /// Stores seed in a file named `<node_id_hex>.seed` in the directory
+    pub struct FileSeedPersister {
+        path: PathBuf,
+    }
+
+    impl FileSeedPersister {
+        /// Create
+        pub fn new<P: Into<PathBuf>>(path: P) -> Self {
+            Self { path: path.into() }
+        }
+    }
+
+    impl SeedPersist for FileSeedPersister {
+        fn put(&self, node_id: &PublicKey, seed: &[u8]) {
+            let mut path = self.path.clone();
+            path.push(format!("{}.seed", node_id));
+            write_seed(path, seed);
+        }
+
+        fn get(&self, node_id: &PublicKey) -> Option<Vec<u8>> {
+            let mut path = self.path.clone();
+            path.push(format!("{}.seed", node_id));
+            read_seed(path)
+        }
+    }
+
+    fn write_seed(path: PathBuf, seed: &[u8]) {
+        fs::write(path, seed.to_hex()).unwrap();
+    }
+
+    fn read_seed(path: PathBuf) -> Option<Vec<u8>> {
+        fs::read_to_string(path).ok().map(|s| Vec::from_hex(&s).expect("bad hex seed"))
+    }
+}

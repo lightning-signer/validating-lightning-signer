@@ -43,6 +43,23 @@ impl MultiSigner {
         }
     }
 
+    /// Construct and restore nodes from the persister.
+    pub fn restore_with_test_mode(
+        test_mode: bool,
+        initial_allowlist: Vec<String>,
+        services: NodeServices,
+        seed_persister: Arc<dyn SeedPersist>,
+    ) -> MultiSigner {
+        let nodes = Node::restore_nodes(services.clone(), seed_persister);
+        MultiSigner {
+            nodes: Mutex::new(nodes),
+            persister: services.persister.clone(),
+            test_mode,
+            initial_allowlist,
+            services,
+        }
+    }
+
     /// Construct
     ///
     /// Will panic if there are nodes already persisted.
@@ -73,12 +90,12 @@ impl MultiSigner {
 
     /// Create a node with a random seed
     #[cfg(feature = "std")]
-    pub fn new_node(&self, node_config: NodeConfig) -> Result<PublicKey, Status> {
+    pub fn new_node(&self, node_config: NodeConfig) -> Result<(PublicKey, [u8; 32]), Status> {
         let mut rng = OsRng;
 
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);
-        self.new_node_with_seed(node_config, &seed)
+        self.new_node_with_seed(node_config, &seed).map(|id| (id, seed))
     }
 
     /// New node with externally supplied cryptographic seed
