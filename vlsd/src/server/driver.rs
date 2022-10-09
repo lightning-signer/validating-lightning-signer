@@ -8,6 +8,7 @@ use std::{cmp, process};
 use anyhow::{anyhow, bail};
 use backtrace::Backtrace;
 use bitcoin::consensus::{deserialize, encode};
+use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::Hash as BitcoinHash;
 use bitcoin::secp256k1::{ecdsa::Signature, PublicKey, SecretKey};
 use bitcoin::util::psbt::serialize::Deserialize;
@@ -26,7 +27,7 @@ use lightning_signer::lightning;
 use lightning_signer::lightning_invoice::SignedRawInvoice;
 use lightning_signer::node::{self};
 use lightning_signer::node::{NodeServices, SpendType};
-use lightning_signer::persist::{DummyPersister, Persist};
+use lightning_signer::persist::{fs::FileSeedPersister, DummyPersister, Persist, SeedPersist};
 use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::simple_validator::{
     make_simple_policy, SimplePolicy, SimpleValidatorFactory,
@@ -122,6 +123,7 @@ struct SignServer {
     pub network: Network,
     pub frontend: Frontend,
     approver: Arc<dyn Approver>,
+    seed_persister: Arc<dyn SeedPersist>,
 }
 
 pub(super) fn invalid_grpc_argument(msg: impl Into<String>) -> Status {
@@ -355,15 +357,18 @@ impl Signer for SignServer {
         let node_config = convert_node_config(self.network, proto_chainparams, proto_node_config)
             .map_err(|e| invalid_grpc_argument(e.to_string()))?;
 
-        let node_id = if hsm_secret.len() == 0 {
-            self.signer.new_node(node_config)?
+        let (node_id, seed) = if hsm_secret.len() == 0 {
+            let (node_id, seed) = self.signer.new_node(node_config)?;
+            (node_id, seed.to_vec())
         } else {
             if req.coldstart {
-                self.signer.new_node_with_seed(node_config, hsm_secret)?
+                (self.signer.new_node_with_seed(node_config, hsm_secret)?, hsm_secret.to_vec())
             } else {
-                self.signer.warmstart_with_seed(node_config, hsm_secret)?
+                (self.signer.warmstart_with_seed(node_config, hsm_secret)?, hsm_secret.to_vec())
             }
         };
+
+        self.seed_persister.put(&node_id.serialize().to_hex(), &seed);
 
         self.frontend.start_follower(self.frontend.signer.tracker(&node_id)).await;
 
@@ -1597,8 +1602,13 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let starting_time_factory = ClockStartingTimeFactory::new();
     let clock = Arc::new(StandardClock());
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
-    // FIXME - call restore instead of new
-    let signer = Arc::new(MultiSigner::new_with_test_mode(test_mode, initial_allowlist, services));
+    let seed_persister = Arc::new(FileSeedPersister::new(data_path));
+    let signer = Arc::new(MultiSigner::restore_with_test_mode(
+        test_mode,
+        initial_allowlist,
+        services,
+        seed_persister.clone(),
+    ));
 
     let rpc_s: String = matches.value_of_t("rpc").expect("rpc url string");
     let rpc_url = Url::parse(&rpc_s).expect("malformed rpc url");
@@ -1606,7 +1616,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let frontend = Frontend::new(Arc::new(SignerFront { signer: Arc::clone(&signer) }), rpc_url);
     frontend.start();
     let approver = Arc::new(PositiveApprover());
-    let server = SignServer { signer, network, frontend, approver };
+    let server = SignServer { signer, network, frontend, approver, seed_persister };
 
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
     ctrlc::set_handler(move || {
