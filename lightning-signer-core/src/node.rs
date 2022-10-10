@@ -508,6 +508,7 @@ impl Allowable {
 ///     clock,
 /// };
 /// let node = Arc::new(Node::new(config, &seed, vec![], services));
+/// // TODO: persist the seed
 /// let (channel_id, opt_stub) = node.new_channel(None, &node).expect("new channel");
 /// assert!(opt_stub.is_some());
 /// let channel_slot_mutex = node.get_channel(&channel_id).expect("get channel");
@@ -969,12 +970,17 @@ impl Node {
     ) -> Map<PublicKey, Arc<Node>> {
         let mut nodes = Map::new();
         let persister = services.persister.clone();
+        let mut seeds = OrderedSet::from_iter(seed_persister.list().into_iter());
         for (node_id, node_entry) in persister.get_nodes() {
             let seed = seed_persister
                 .get(&node_id.serialize().to_hex())
                 .expect(format!("no seed for node {:?}", node_id).as_str());
             let node = Node::restore_node(&node_id, node_entry, &seed, services.clone());
             nodes.insert(node_id, node);
+            seeds.remove(&node_id.serialize().to_hex());
+        }
+        if !seeds.is_empty() {
+            warn!("some seeds had no persisted node state: {:?}", seeds);
         }
         nodes
     }

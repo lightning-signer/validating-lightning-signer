@@ -9,6 +9,7 @@ use std::{env, fs};
 use lightning_signer::bitcoin::Network;
 use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
+use lightning_signer::util::crypto_utils::generate_seed;
 use lightning_signer::Arc;
 use tokio::runtime::{self, Runtime};
 
@@ -32,8 +33,20 @@ pub fn read_integration_test_seed() -> Option<[u8; 32]> {
     }
 }
 
-pub fn write_integration_test_seed(seed: &[u8; 32]) {
+fn write_integration_test_seed(seed: &[u8; 32]) {
     fs::write("hsm_secret", seed).expect("trouble writing hsm_secret");
+}
+
+/// Read integration test seed, and generate/persist it if it's missing
+pub fn integration_test_seed_or_generate() -> [u8; 32] {
+    match read_integration_test_seed() {
+        None => {
+            let seed = generate_seed();
+            write_integration_test_seed(&seed);
+            seed
+        }
+        Some(seed) => seed,
+    }
 }
 
 #[cfg(feature = "main")]

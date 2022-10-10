@@ -18,7 +18,7 @@ use lightning_signer::node::NodeServices;
 use lightning_signer::persist::{Mutations, Persist};
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
-use lightning_signer::util::crypto_utils::{hkdf_sha256, maybe_generate_seed};
+use lightning_signer::util::crypto_utils::hkdf_sha256;
 use lightning_signer::Arc;
 use lightning_signer_server::nodefront::SingleFront;
 use lightning_signer_server::persist::kv_json::KVJsonPersister;
@@ -37,8 +37,8 @@ use vls_protocol_signer::vls_protocol;
 
 mod test;
 use vls_proxy::util::{
-    add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, make_validator_factory,
-    read_integration_test_seed, setup_logging, vls_network, write_integration_test_seed,
+    add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, integration_test_seed_or_generate,
+    make_validator_factory, setup_logging, vls_network,
 };
 use vls_proxy::*;
 
@@ -266,17 +266,11 @@ async fn start() {
     let starting_time_factory = ClockStartingTimeFactory::new();
     let validator_factory = make_validator_factory(network);
     let clock = Arc::new(StandardClock());
-    let test_seed = read_integration_test_seed();
-    let seed = maybe_generate_seed(test_seed);
+    let seed = integration_test_seed_or_generate();
     let persister = make_persister();
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
     let handler_builder =
         RootHandlerBuilder::new(network, client.id(), services, seed).allowlist(allowlist);
-
-    // if no seed was provided by the integration test framework, persist the one we generated
-    if test_seed.is_none() {
-        write_integration_test_seed(&seed);
-    }
 
     let looper = make_looper(&seed).await;
 

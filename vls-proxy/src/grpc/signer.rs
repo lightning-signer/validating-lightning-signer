@@ -1,14 +1,12 @@
 use super::hsmd::{self, PingRequest, SignerRequest, SignerResponse};
-use crate::util::{
-    make_validator_factory, read_allowlist, read_integration_test_seed, write_integration_test_seed,
-};
+use crate::util::integration_test_seed_or_generate;
+use crate::util::{make_validator_factory, read_allowlist};
 use http::Uri;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::node::NodeServices;
 use lightning_signer::persist::Persist;
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
-use lightning_signer::util::crypto_utils::maybe_generate_seed;
 use lightning_signer::util::status::Status;
 use lightning_signer_server::persist::kv_json::KVJsonPersister;
 use log::{error, info};
@@ -56,8 +54,7 @@ async fn connect(datadir: &str, uri: Uri, network: Network) {
     info!("ping result {}", reply.message);
     let (sender, receiver) = mpsc::channel(1);
     let response_stream = ReceiverStream::new(receiver);
-    let test_seed = read_integration_test_seed();
-    let seed = maybe_generate_seed(test_seed);
+    let seed = integration_test_seed_or_generate();
     let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new(&data_path));
     let allowlist = read_allowlist();
     let starting_time_factory = ClockStartingTimeFactory::new();
@@ -66,10 +63,6 @@ async fn connect(datadir: &str, uri: Uri, network: Network) {
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
     let handler_builder =
         RootHandlerBuilder::new(network, 0, services, seed).allowlist(allowlist.clone());
-    // if no seed was provided by the integration test framework, persist the seed that we generated
-    if test_seed.is_none() {
-        write_integration_test_seed(&seed);
-    }
     let (root_handler, _muts) = handler_builder.build();
 
     // NOTE - For this signer mode it is easier to use the ALLOWLIST file to maintain the

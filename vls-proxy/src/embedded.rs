@@ -97,6 +97,7 @@ pub fn connect(serial_port: String) -> anyhow::Result<SerialWrap> {
     let mut serial = SerialWrap::new(file);
     let allowlist =
         read_allowlist().into_iter().map(|s| WireString(s.as_bytes().to_vec())).collect::<Vec<_>>();
+    // FIXME fixed seed
     let seed = read_integration_test_seed().map(|s| Secret(s)).or(Some(Secret([1; 32])));
     // FIXME remove this
     info!("allowlist {:?} seed {:?}", allowlist, seed);
