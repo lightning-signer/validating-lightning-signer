@@ -508,6 +508,7 @@ impl Allowable {
 ///     clock,
 /// };
 /// let node = Arc::new(Node::new(config, &seed, vec![], services));
+/// // TODO: persist the seed
 /// let (channel_id, opt_stub) = node.new_channel(None, &node).expect("new channel");
 /// assert!(opt_stub.is_some());
 /// let channel_slot_mutex = node.get_channel(&channel_id).expect("get channel");
