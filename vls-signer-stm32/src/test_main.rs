@@ -27,6 +27,10 @@ use rand_core::RngCore;
 #[entry]
 fn main() -> ! {
     logger::init("test").expect("logger");
+    info!("{}", env!("GIT_DESC"));
+    for part in env!("GIT_DESC").split("-g") {
+        info!("{}", part);
+    }
 
     device::init_allocator();
 
