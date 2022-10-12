@@ -38,7 +38,6 @@ use vls_protocol_signer::vls_protocol;
 mod device;
 mod logger;
 mod random_starting_time;
-#[cfg(feature = "sdio")]
 mod sdcard;
 mod timer;
 mod tracks;
@@ -64,23 +63,21 @@ fn main() -> ! {
         mut i2c,
         _button,
     ) = device::make_devices();
-
     logger::set_timer(timer1.clone());
+    timer::start_tim2_interrupt(timer2);
 
-    #[cfg(feature = "sdio")]
-    {
-        sdcard::init_sdio(&mut sdio, &mut delay);
-
+    // Probe the sdcard
+    disp.clear_screen();
+    disp.show_texts(&[format!("probing sdcard ...")]);
+    let has_sdcard = sdcard::init_sdio(&mut sdio, &mut delay);
+    if has_sdcard {
         let mut block = [0u8; 512];
-
         let res = sdio.read_block(0, &mut block);
         info!("sdcard read result {:?}", res);
-
         sdcard::test(sdio);
     }
 
-    timer::start_tim2_interrupt(timer2);
-
+    // Display the intro screen
     let mut intro = Vec::new();
     intro.push(format!("{: ^19}", "VLS"));
     intro.push("".to_string());

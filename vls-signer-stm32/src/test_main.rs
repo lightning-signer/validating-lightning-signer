@@ -17,7 +17,6 @@ use log::{debug, info, trace};
 
 mod device;
 mod logger;
-#[cfg(feature = "sdio")]
 mod sdcard;
 mod timer;
 mod usbserial;
@@ -48,15 +47,10 @@ fn main() -> ! {
         button,
     ) = device::make_devices();
 
-    #[cfg(feature = "sdio")]
-    {
-        sdcard::init_sdio(&mut sdio, &mut delay);
-
+    if sdcard::init_sdio(&mut sdio, &mut delay) {
         let mut block = [0u8; 512];
-
         let res = sdio.read_block(0, &mut block);
         info!("sdcard read result {:?}", res);
-
         sdcard::test(sdio);
     }
 

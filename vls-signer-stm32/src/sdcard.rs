@@ -230,19 +230,27 @@ pub fn copy_file<TP: TimeProvider, OCC>(
     Ok(())
 }
 
-pub fn init_sdio(sdio: &mut Sdio<SdCard>, delay: &mut SysDelay) {
+// Initialize the SD Card, returns true if present
+pub fn init_sdio(sdio: &mut Sdio<SdCard>, delay: &mut SysDelay) -> bool {
     info!("detecting sdcard");
+    let mut retries = 2;
     loop {
         match sdio.init(ClockFreq::F24Mhz) {
             Ok(_) => break,
             Err(e) => info!("waiting for sdio - {:?}", e),
         }
 
+        if retries == 0 {
+            info!("sdcard not found");
+            return false;
+        }
+        retries -= 1;
         delay.delay_ms(1000u32);
     }
 
     let nblocks = sdio.card().map(|c| c.block_count());
     info!("sdcard detected: nbr of blocks: {:?}", nblocks);
+    true
 }
 
 // Effectively does:
