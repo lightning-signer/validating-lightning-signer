@@ -45,6 +45,7 @@ fn main() -> ! {
         mut rng,
         mut touchscreen,
         mut i2c,
+        button,
     ) = device::make_devices();
 
     #[cfg(feature = "sdio")]
@@ -69,6 +70,7 @@ fn main() -> ! {
             disp.show_texts(&vec![
                 format!("{}", counter),
                 format!("{}", rng.next_u32()),
+                format!("{}", button.is_high()),
                 // format!("1234567890123456789"),
                 // format!("4  4567890123456789"),
                 // format!("5  4567890123456789"),

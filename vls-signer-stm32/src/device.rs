@@ -21,7 +21,7 @@ use st7789::{Orientation, ST7789};
 #[allow(unused_imports)]
 use stm32f4xx_hal::{
     fsmc_lcd::{self, ChipSelect1, ChipSelect3, FsmcLcd, Lcd, LcdPins, SubBank, Timing},
-    gpio::Speed,
+    gpio::{Input, Speed, PA0},
     otg_fs::{UsbBus, USB},
     pac::{CorePeripherals, Peripherals},
     pac::{Interrupt, NVIC, TIM2, TIM5},
@@ -320,6 +320,7 @@ pub fn make_devices<'a>() -> (
     Rng,
     TouchDriver,
     I2C,
+    PA0<Input>,
 ) {
     let p = Peripherals::take().unwrap();
     let cp = CorePeripherals::take().unwrap();
@@ -453,7 +454,9 @@ pub fn make_devices<'a>() -> (
 
     let touch = TouchDriver { inner: make_touchscreen(&mut i2c, 0x38, &mut delay) };
 
-    (delay, FreeTimer::new(timer1), timer2, serial, sdio, disp, rng, touch, i2c)
+    let button = gpioa.pa0.into_pull_down_input();
+
+    (delay, FreeTimer::new(timer1), timer2, serial, sdio, disp, rng, touch, i2c, button)
 }
 
 // define what happens in an Out Of Memory (OOM) condition

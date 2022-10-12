@@ -62,6 +62,7 @@ fn main() -> ! {
         mut rng,
         mut touchscreen,
         mut i2c,
+        _button,
     ) = device::make_devices();
 
     logger::set_timer(timer1.clone());
