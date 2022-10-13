@@ -310,18 +310,20 @@ pub struct TouchDriver {
     pub inner: Ft6X06<I2C>,
 }
 
-pub fn make_devices<'a>() -> (
-    SysDelay,
-    FreeTimer,
-    Counter<TIM2, 1000000>,
-    SerialDriver,
-    Sdio<SdCard>,
-    Display,
-    Rng,
-    TouchDriver,
-    I2C,
-    PA0<Input>,
-) {
+pub struct DeviceContext {
+    pub delay: SysDelay,
+    pub timer1: FreeTimer,
+    pub timer2: Counter<TIM2, 1000000>,
+    pub serial: SerialDriver,
+    pub sdio: Sdio<SdCard>,
+    pub disp: Display,
+    pub rng: Rng,
+    pub touchscreen: TouchDriver,
+    pub i2c: I2C,
+    pub button: PA0<Input>,
+}
+
+pub fn make_devices<'a>() -> DeviceContext {
     let p = Peripherals::take().unwrap();
     let cp = CorePeripherals::take().unwrap();
     let rcc = p.RCC.constrain();
@@ -452,11 +454,22 @@ pub fn make_devices<'a>() -> (
         )
     };
 
-    let touch = TouchDriver { inner: make_touchscreen(&mut i2c, 0x38, &mut delay) };
+    let touchscreen = TouchDriver { inner: make_touchscreen(&mut i2c, 0x38, &mut delay) };
 
     let button = gpioa.pa0.into_pull_down_input();
 
-    (delay, FreeTimer::new(timer1), timer2, serial, sdio, disp, rng, touch, i2c, button)
+    DeviceContext {
+        delay,
+        timer1: FreeTimer::new(timer1),
+        timer2,
+        serial,
+        sdio,
+        disp,
+        rng,
+        touchscreen,
+        i2c,
+        button,
+    }
 }
 
 // define what happens in an Out Of Memory (OOM) condition

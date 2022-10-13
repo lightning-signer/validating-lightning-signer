@@ -51,30 +51,19 @@ fn main() -> ! {
     device::init_allocator();
 
     #[allow(unused)]
-    let (
-        mut delay,
-        timer1,
-        timer2,
-        mut serial,
-        mut sdio,
-        mut disp,
-        mut rng,
-        mut touchscreen,
-        mut i2c,
-        _button,
-    ) = device::make_devices();
-    logger::set_timer(timer1.clone());
-    timer::start_tim2_interrupt(timer2);
+    let mut devctx = device::make_devices();
+    logger::set_timer(devctx.timer1.clone());
+    timer::start_tim2_interrupt(devctx.timer2);
 
     // Probe the sdcard
-    disp.clear_screen();
-    disp.show_texts(&[format!("probing sdcard ...")]);
-    let has_sdcard = sdcard::init_sdio(&mut sdio, &mut delay);
+    devctx.disp.clear_screen();
+    devctx.disp.show_texts(&[format!("probing sdcard ...")]);
+    let has_sdcard = sdcard::init_sdio(&mut devctx.sdio, &mut devctx.delay);
     if has_sdcard {
         let mut block = [0u8; 512];
-        let res = sdio.read_block(0, &mut block);
+        let res = devctx.sdio.read_block(0, &mut block);
         info!("sdcard read result {:?}", res);
-        sdcard::test(sdio);
+        sdcard::test(devctx.sdio);
     }
 
     // Display the intro screen
@@ -87,10 +76,11 @@ fn main() -> ! {
     intro.push("".to_string());
     intro.push("".to_string());
     intro.push(format!("{: ^19}", "waiting for node"));
-    disp.clear_screen();
-    disp.show_texts(&intro);
+    devctx.disp.clear_screen();
+    devctx.disp.show_texts(&intro);
 
-    let starting_time_factory = RandomStartingTimeFactory::new(Mutex::new(RefCell::new(rng)));
+    let starting_time_factory =
+        RandomStartingTimeFactory::new(Mutex::new(RefCell::new(devctx.rng)));
 
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
@@ -98,11 +88,12 @@ fn main() -> ! {
 
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
 
-    let (sequence, dbid) = read_serial_request_header(&mut serial).expect("read init header");
+    let (sequence, dbid) =
+        read_serial_request_header(&mut devctx.serial).expect("read init header");
     assert_eq!(dbid, 0);
     assert_eq!(sequence, 0);
     let init: msgs::HsmdInit2 =
-        msgs::read_message(&mut serial).expect("failed to read init message");
+        msgs::read_message(&mut devctx.serial).expect("failed to read init message");
     info!("init {:?}", init);
     let allowlist = init.dev_allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
     let seed = init.dev_seed.as_ref().map(|s| s.0).expect("no seed");
@@ -113,8 +104,8 @@ fn main() -> ! {
         .approver(approver)
         .build();
     let (init_reply, _muts) = root_handler.handle(Message::HsmdInit2(init)).expect("handle init");
-    write_serial_response_header(&mut serial, sequence).expect("write init header");
-    msgs::write_vec(&mut serial, init_reply.as_vec()).expect("write init reply");
+    write_serial_response_header(&mut devctx.serial, sequence).expect("write init header");
+    msgs::write_vec(&mut devctx.serial, init_reply.as_vec()).expect("write init reply");
 
     info!("used {} bytes", heap_bytes_used());
 
@@ -128,8 +119,8 @@ fn main() -> ! {
     loop {
         numreq += 1;
         let (sequence, dbid) =
-            read_serial_request_header(&mut serial).expect("read request header");
-        let mut message = msgs::read(&mut serial).expect("message read failed");
+            read_serial_request_header(&mut devctx.serial).expect("read request header");
+        let mut message = msgs::read(&mut devctx.serial).expect("message read failed");
 
         // Override the peerid when it is passed in certain messages
         match message {
@@ -146,23 +137,23 @@ fn main() -> ! {
         let mut message_d = format!("{:?}", message);
         message_d.truncate(20);
 
-        let start = timer1.now();
+        let start = devctx.timer1.now();
         let reply = if dbid > 0 {
             let handler = root_handler.for_new_client(0, dummy_peer.clone(), dbid);
             handler.handle(message).expect("handle").0
         } else {
             root_handler.handle(message).expect("handle").0
         };
-        let end = timer1.now();
+        let end = devctx.timer1.now();
         let duration = end.checked_duration_since(start).map(|d| d.to_millis()).unwrap_or(0);
         info!("handled {} in {} ms", message_d.clone(), duration);
 
         let kb = heap_bytes_used() / 1024;
         maxkb = max(kb, maxkb);
 
-        disp.clear_screen();
+        devctx.disp.clear_screen();
         let balance = root_handler.channel_balance();
-        disp.show_texts(&[
+        devctx.disp.show_texts(&[
             format!("#:{:>3} h:{:>6} {:>3}K", sequence, root_handler.get_chain_height(), kb),
             format!("r:{:>3} {:>+13}", balance.received_htlc_count, balance.received_htlc),
             format!("c:{:>3} {:>13}", balance.channel_count, balance.claimable),
@@ -183,8 +174,8 @@ fn main() -> ! {
             top_tracks[4].clone(),
         ]);
 
-        write_serial_response_header(&mut serial, sequence).expect("write reply header");
-        msgs::write_vec(&mut serial, reply.as_vec()).expect("write reply");
+        write_serial_response_header(&mut devctx.serial, sequence).expect("write reply header");
+        msgs::write_vec(&mut devctx.serial, reply.as_vec()).expect("write reply");
     }
 }
 
