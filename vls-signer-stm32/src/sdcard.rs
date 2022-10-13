@@ -153,8 +153,13 @@ impl Seek for Card {
     }
 }
 
-type FS = FileSystem<Card, DefaultTimeProvider, LossyOemCpConverter>;
+#[allow(unused)]
+pub type FS = FileSystem<Card, DefaultTimeProvider, LossyOemCpConverter>;
 
+#[allow(unused)]
+pub type DIR<'a> = Dir<'a, Card, DefaultTimeProvider, LossyOemCpConverter>;
+
+#[allow(unused)]
 pub fn open(sdio: Sdio<SdCard>) -> Result<FS, fatfs::Error<()>> {
     let blocks = sdio.card().map(|c| c.block_count()).unwrap();
     let mut card = Card {
@@ -176,6 +181,7 @@ pub fn open(sdio: Sdio<SdCard>) -> Result<FS, fatfs::Error<()>> {
     Ok(fs)
 }
 
+#[allow(unused)]
 pub fn copy_dir<TP: TimeProvider, OCC: OemCpConverter>(
     from_dir: Dir<Card, TP, OCC>,
     to_dir: Dir<Card, TP, OCC>,
@@ -198,6 +204,7 @@ pub fn copy_dir<TP: TimeProvider, OCC: OemCpConverter>(
     Ok(())
 }
 
+#[allow(unused)]
 fn rmdir<TP: TimeProvider, OCC: OemCpConverter>(
     dir: Dir<Card, TP, OCC>,
 ) -> Result<(), fatfs::Error<()>> {
@@ -215,6 +222,7 @@ fn rmdir<TP: TimeProvider, OCC: OemCpConverter>(
     Ok(())
 }
 
+#[allow(unused)]
 pub fn copy_file<TP: TimeProvider, OCC>(
     mut from: File<Card, TP, OCC>,
     mut to: File<Card, TP, OCC>,
@@ -259,6 +267,7 @@ pub fn init_sdio(sdio: &mut Sdio<SdCard>, delay: &mut SysDelay) -> bool {
 // cp -r /a /b
 // ls /
 // cat /readme*
+#[allow(unused)]
 pub fn test(sdio: Sdio<SdCard>) {
     let fs = open(sdio).unwrap();
     let root_dir = fs.root_dir();

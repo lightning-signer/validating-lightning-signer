@@ -18,10 +18,14 @@ use log::{debug, info, trace};
 mod device;
 mod logger;
 mod sdcard;
+mod setup;
 mod timer;
 mod usbserial;
 
 use rand_core::RngCore;
+
+use device::DeviceContext;
+use setup::{get_run_context, setup_mode, RunContext};
 
 #[entry]
 fn main() -> ! {
@@ -33,17 +37,22 @@ fn main() -> ! {
 
     device::init_allocator();
 
-    #[allow(unused)]
     let mut devctx = device::make_devices();
 
-    if sdcard::init_sdio(&mut devctx.sdio, &mut devctx.delay) {
-        let mut block = [0u8; 512];
-        let res = devctx.sdio.read_block(0, &mut block);
-        info!("sdcard read result {:?}", res);
-        sdcard::test(devctx.sdio);
-    }
+    let runctx = if devctx.button.is_high() { setup_mode(devctx) } else { get_run_context(devctx) };
+    match runctx {
+        RunContext::Testing(testctx) => {
+            info!("RunContext::Testing {:#?}", testctx);
+            devctx = testctx.cmn.devctx;
+        }
+        RunContext::Normal(normctx) => {
+            info!("RunContext::Normal {:#?}", normctx);
+            devctx = normctx.cmn.devctx;
+        }
+    };
 
-    timer::start_tim2_interrupt(devctx.timer2);
+    timer::start_tim2_interrupt(devctx.timer2.take().unwrap());
+    let mut rng = devctx.rng.take().unwrap();
 
     let mut counter = 1; // so we don't start with a check
     const TS_CHECK_PERIOD: usize = 50;
@@ -52,7 +61,7 @@ fn main() -> ! {
             devctx.disp.clear_screen();
             devctx.disp.show_texts(&vec![
                 format!("{}", counter),
-                format!("{}", devctx.rng.next_u32()),
+                format!("{}", rng.next_u32()),
                 format!("{}", devctx.button.is_high()),
                 // format!("1234567890123456789"),
                 // format!("4  4567890123456789"),
@@ -79,9 +88,7 @@ fn main() -> ! {
                 }
             }
             devctx.disp.clear_screen();
-            devctx
-                .disp
-                .show_texts(&vec![format!("{}", counter), format!("{}", devctx.rng.next_u32())]);
+            devctx.disp.show_texts(&vec![format!("{}", counter), format!("{}", rng.next_u32())]);
         }
 
         // Echo any usbserial characters

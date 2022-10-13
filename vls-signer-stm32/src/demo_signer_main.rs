@@ -19,29 +19,32 @@ use cortex_m_rt::entry;
 #[allow(unused_imports)]
 use log::{debug, info, trace};
 
-use crate::lightning_signer::util::clock::ManualClock;
-use device::heap_bytes_used;
-use lightning_signer::bitcoin::Network;
+use device::{heap_bytes_used, DeviceContext};
 use lightning_signer::node::NodeServices;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
+use lightning_signer::util::clock::ManualClock;
 use lightning_signer::Arc;
 use random_starting_time::RandomStartingTimeFactory;
 use vls_protocol::model::PubKey;
 use vls_protocol::msgs::{self, read_serial_request_header, write_serial_response_header, Message};
 use vls_protocol::serde_bolt::WireString;
 use vls_protocol_signer::approver::PositiveApprover;
-use vls_protocol_signer::handler::{Handler, RootHandlerBuilder};
+use vls_protocol_signer::handler::{Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::lightning_signer;
+use vls_protocol_signer::lightning_signer::bitcoin::Network;
 use vls_protocol_signer::vls_protocol;
 
 mod device;
 mod logger;
 mod random_starting_time;
 mod sdcard;
+mod setup;
 mod timer;
 mod tracks;
 mod usbserial;
+
+use setup::{get_run_context, setup_mode, NormalContext, RunContext, TestingContext};
 
 #[entry]
 fn main() -> ! {
@@ -49,23 +52,19 @@ fn main() -> ! {
     info!("{}", env!("GIT_DESC"));
 
     device::init_allocator();
-
-    #[allow(unused)]
     let mut devctx = device::make_devices();
+
     logger::set_timer(devctx.timer1.clone());
-    timer::start_tim2_interrupt(devctx.timer2);
+    timer::start_tim2_interrupt(devctx.timer2.take().unwrap());
 
-    // Probe the sdcard
-    devctx.disp.clear_screen();
-    devctx.disp.show_texts(&[format!("probing sdcard ...")]);
-    let has_sdcard = sdcard::init_sdio(&mut devctx.sdio, &mut devctx.delay);
-    if has_sdcard {
-        let mut block = [0u8; 512];
-        let res = devctx.sdio.read_block(0, &mut block);
-        info!("sdcard read result {:?}", res);
-        sdcard::test(devctx.sdio);
+    let runctx = if devctx.button.is_high() { setup_mode(devctx) } else { get_run_context(devctx) };
+    match runctx {
+        RunContext::Testing(testctx) => start_test_mode(testctx),
+        RunContext::Normal(normctx) => start_normal_mode(normctx),
     }
+}
 
+fn display_intro(devctx: &mut DeviceContext, network: Network, path: &str) {
     // Display the intro screen
     let mut intro = Vec::new();
     intro.push(format!("{: ^19}", "VLS"));
@@ -74,48 +73,69 @@ fn main() -> ! {
         intro.push(format!("{: ^19}", verpart));
     }
     intro.push("".to_string());
-    intro.push("".to_string());
     intro.push(format!("{: ^19}", "waiting for node"));
+    intro.push(format!(" {: >7}:{: <9}", network.to_string(), path[..9].to_string()));
     devctx.disp.clear_screen();
     devctx.disp.show_texts(&intro);
+}
 
-    let starting_time_factory =
-        RandomStartingTimeFactory::new(Mutex::new(RefCell::new(devctx.rng)));
+// Start the signer in normal mode, use the persisted seed
+fn start_normal_mode(mut runctx: NormalContext) -> ! {
+    info!("start_normal_mode {:#?}", runctx);
+    display_intro(
+        &mut runctx.cmn.devctx,
+        runctx.cmn.network,
+        &runctx.cmn.setupfs.unwrap().borrow().runpath().as_str(),
+    );
+    loop {} // TODO - implement
+}
 
-    let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
-    let validator_factory = Arc::new(SimpleValidatorFactory::new());
-    let clock = Arc::new(ManualClock::new(Duration::ZERO));
+// Start the signer in test mode, use the seed from the initial HsmdInit2 message.
+fn start_test_mode(mut runctx: TestingContext) -> ! {
+    info!("start_test_mode {:#?}", runctx);
+    display_intro(&mut runctx.cmn.devctx, runctx.cmn.network, "test-mode");
 
-    let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
-
+    // Receive the HsmdInit2 message to learn the dev_seed (and allowlist)
     let (sequence, dbid) =
-        read_serial_request_header(&mut devctx.serial).expect("read init header");
+        read_serial_request_header(&mut runctx.cmn.devctx.serial).expect("read init header");
     assert_eq!(dbid, 0);
     assert_eq!(sequence, 0);
     let init: msgs::HsmdInit2 =
-        msgs::read_message(&mut devctx.serial).expect("failed to read init message");
+        msgs::read_message(&mut runctx.cmn.devctx.serial).expect("failed to read init message");
     info!("init {:?}", init);
+
+    // Create the test-mode handler
+    let validator_factory = Arc::new(SimpleValidatorFactory::new());
+    let starting_time_factory = RandomStartingTimeFactory::new(Mutex::new(RefCell::new(
+        runctx.cmn.devctx.rng.take().unwrap(),
+    )));
+    let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
+    let clock = Arc::new(ManualClock::new(Duration::ZERO));
+    let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
     let allowlist = init.dev_allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
     let seed = init.dev_seed.as_ref().map(|s| s.0).expect("no seed");
-    let network = Network::Regtest; // TODO - get from config/args/env somehow
     let approver = Arc::new(PositiveApprover()); // TODO - switch to invoice GUI
-    let (root_handler, _muts) = RootHandlerBuilder::new(network, 0, services, seed)
+    let (root_handler, _muts) = RootHandlerBuilder::new(runctx.cmn.network, 0, services, seed)
         .allowlist(allowlist)
         .approver(approver)
         .build();
     let (init_reply, _muts) = root_handler.handle(Message::HsmdInit2(init)).expect("handle init");
-    write_serial_response_header(&mut devctx.serial, sequence).expect("write init header");
-    msgs::write_vec(&mut devctx.serial, init_reply.as_vec()).expect("write init reply");
+    write_serial_response_header(&mut runctx.cmn.devctx.serial, sequence)
+        .expect("write init header");
+    msgs::write_vec(&mut runctx.cmn.devctx.serial, init_reply.as_vec()).expect("write init reply");
 
     info!("used {} bytes", heap_bytes_used());
 
-    let mut tracks = tracks::Tracks::new();
-    let mut numreq = 0_u64;
+    handle_requests(runctx.cmn.devctx, root_handler);
+}
 
-    let mut maxkb = heap_bytes_used() / 1024;
-
+fn handle_requests(mut devctx: DeviceContext, root_handler: RootHandler) -> ! {
     // HACK - use a dummy peer_id until it is plumbed
     let dummy_peer = PubKey([0; 33]);
+
+    let mut tracks = tracks::Tracks::new();
+    let mut numreq = 0_u64;
+    let mut maxkb = heap_bytes_used() / 1024;
     loop {
         numreq += 1;
         let (sequence, dbid) =

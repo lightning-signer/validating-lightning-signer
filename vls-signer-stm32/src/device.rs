@@ -98,6 +98,8 @@ pub const VCENTER_PIX: u16 = 30 + (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
 #[cfg(feature = "stm32f413")] // FIXME - why is this needed?  bug w/ PortraitSwapped?
 pub const VCENTER_PIX: u16 = 110 + (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
 pub const HINSET_PIX: u16 = 100;
+const NCOLS: u16 = 19;
+const NROWS: u16 = 10;
 
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
@@ -278,6 +280,34 @@ impl Display {
             }
         }
     }
+
+    pub fn wait_for_touch(&mut self, touch: &mut Ft6X06<I2C>, i2c: &mut I2C) -> (u16, u16) {
+        loop {
+            match touch.detect_touch(i2c) {
+                Err(err) => rprintln!("wait_for_touch: detect_touch failed: {}", err),
+                Ok(n) =>
+                    if n != 0u8 {
+                        break;
+                    },
+            }
+        }
+        let p = touch.get_touch(i2c, 1).expect("get_touch");
+        // info!("x: {}, y: {}", p.x, p.y);
+
+        #[cfg(feature = "stm32f412")]
+        let (row, col) = (
+            NROWS - (p.x as f64 * NROWS as f64 / SCREEN_HEIGHT as f64) as u16 - 1,
+            (p.y as f64 * NCOLS as f64 / SCREEN_WIDTH as f64) as u16,
+        );
+
+        #[cfg(feature = "stm32f413")]
+        let (row, col) = (
+            (p.x as f64 * NROWS as f64 / SCREEN_HEIGHT as f64) as u16,
+            NCOLS - (p.y as f64 * NCOLS as f64 / SCREEN_WIDTH as f64) as u16 - 1,
+        );
+
+        (row, col)
+    }
 }
 
 /// A timer that can be cloned
@@ -313,11 +343,11 @@ pub struct TouchDriver {
 pub struct DeviceContext {
     pub delay: SysDelay,
     pub timer1: FreeTimer,
-    pub timer2: Counter<TIM2, 1000000>,
+    pub timer2: Option<Counter<TIM2, 1000000>>,
     pub serial: SerialDriver,
-    pub sdio: Sdio<SdCard>,
+    pub sdio: Option<Sdio<SdCard>>,
     pub disp: Display,
-    pub rng: Rng,
+    pub rng: Option<Rng>,
     pub touchscreen: TouchDriver,
     pub i2c: I2C,
     pub button: PA0<Input>,
@@ -461,11 +491,11 @@ pub fn make_devices<'a>() -> DeviceContext {
     DeviceContext {
         delay,
         timer1: FreeTimer::new(timer1),
-        timer2,
+        timer2: Some(timer2),
         serial,
-        sdio,
+        sdio: Some(sdio),
         disp,
-        rng,
+        rng: Some(rng),
         touchscreen,
         i2c,
         button,
