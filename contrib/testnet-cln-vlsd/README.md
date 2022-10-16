@@ -44,7 +44,7 @@ Make vls user/group:
     sudo touch /home/vls/ALLOWLIST
     sudo chown vls:vls /home/vls/ALLOWLIST
 
-    sudo cp vls-testnet.service /lib/systemd/system/
+    sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/testnet-cln-vlsd/vls-testnet.service /lib/systemd/system/
     sudo systemctl daemon-reload
     sudo systemctl enable vls-testnet
     sudo systemctl start vls-testnet
@@ -67,7 +67,8 @@ bitcoin-rpcport=18332
 subdaemon=hsmd:remote_hsmd_socket
 ```
 
-Create `~cln/.lightning/testnet-env` with:
+Create `~cln/.lightning/testnet-env` with (adjust bitcoind url for your
+bitcoind installation):
 ```
 VLS_PORT=17701
 VLS_NETWORK=testnet
@@ -84,7 +85,7 @@ Update `~cln/.lightning/testnet-env` to CLN version:
 
 Setup the service config:
 
-    sudo cp cln-testnet.service /lib/systemd/system/
+    sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/testnet-cln-vlsd/cln-testnet.service /lib/systemd/system/
     sudo systemctl daemon-reload
     sudo systemctl enable cln-testnet
     sudo systemctl start cln-testnet
