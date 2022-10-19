@@ -15,12 +15,11 @@ sudo mkfs.vfat -F32 /dev/sdX
 
 #### Hardware Test
 
-Connect the `ST_LINK` port to host computer using USB cable.  Omit the
-`sdio` feature if you don't have an SDcard inserted.
+Connect the `ST_LINK` port to host computer using USB cable.
 
 ```
-cargo run --features stm32f412,sdio --release --bin test
-cargo run --features stm32f413,sdio --release --bin test
+cargo run --features stm32f412 --release --bin test
+cargo run --features stm32f413 --release --bin test
 ```
 
 Note that compiling with `--release` greatly reduces flash size, and therefore flashing time.
@@ -43,11 +42,10 @@ Device will echo typed characters ...
 
 2. From a terminal shell in this directory run the `demo_signer`:
    - Set the `--features` flag to the specific board model you are using.
-   - Omit the `sdio` feature if you don't have a formatted SDcard inserted.
 
 For example, using the STM32F413:
 ```
-cargo run --features stm32f413,sdio --release --bin demo_signer
+cargo run --features stm32f413 --release --bin demo_signer
 ```
 Wait for the demo_signer to finish loading and start executing, it will display
 "init" when it is ready.

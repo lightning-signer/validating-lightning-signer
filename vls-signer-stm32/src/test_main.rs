@@ -17,12 +17,15 @@ use log::{debug, info, trace};
 
 mod device;
 mod logger;
-#[cfg(feature = "sdio")]
 mod sdcard;
+mod setup;
 mod timer;
 mod usbserial;
 
 use rand_core::RngCore;
+
+use device::DeviceContext;
+use setup::{get_run_context, setup_mode, RunContext};
 
 #[entry]
 fn main() -> ! {
@@ -34,41 +37,32 @@ fn main() -> ! {
 
     device::init_allocator();
 
-    #[allow(unused)]
-    let (
-        mut delay,
-        timer1,
-        timer2,
-        mut serial,
-        mut sdio,
-        mut disp,
-        mut rng,
-        mut touchscreen,
-        mut i2c,
-    ) = device::make_devices();
+    let mut devctx = device::make_devices();
 
-    #[cfg(feature = "sdio")]
-    {
-        sdcard::init_sdio(&mut sdio, &mut delay);
+    let runctx = if devctx.button.is_high() { setup_mode(devctx) } else { get_run_context(devctx) };
+    match runctx {
+        RunContext::Testing(testctx) => {
+            info!("RunContext::Testing {:#?}", testctx);
+            devctx = testctx.cmn.devctx;
+        }
+        RunContext::Normal(normctx) => {
+            info!("RunContext::Normal {:#?}", normctx);
+            devctx = normctx.cmn.devctx;
+        }
+    };
 
-        let mut block = [0u8; 512];
-
-        let res = sdio.read_block(0, &mut block);
-        info!("sdcard read result {:?}", res);
-
-        sdcard::test(sdio);
-    }
-
-    timer::start_tim2_interrupt(timer2);
+    timer::start_tim2_interrupt(devctx.timer2.take().unwrap());
+    let mut rng = devctx.rng.take().unwrap();
 
     let mut counter = 1; // so we don't start with a check
     const TS_CHECK_PERIOD: usize = 50;
     loop {
         if counter % TS_CHECK_PERIOD != 0 {
-            disp.clear_screen();
-            disp.show_texts(&vec![
+            devctx.disp.clear_screen();
+            devctx.disp.show_texts(&vec![
                 format!("{}", counter),
                 format!("{}", rng.next_u32()),
+                format!("{}", devctx.button.is_high()),
                 // format!("1234567890123456789"),
                 // format!("4  4567890123456789"),
                 // format!("5  4567890123456789"),
@@ -78,10 +72,10 @@ fn main() -> ! {
                 // format!("9  4567890123456789"),
             ]);
         } else {
-            disp.clear_screen();
-            disp.show_choice();
+            devctx.disp.clear_screen();
+            devctx.disp.show_choice();
             loop {
-                let ans = disp.check_choice(&mut touchscreen.inner, &mut i2c);
+                let ans = devctx.disp.check_choice(&mut devctx.touchscreen.inner, &mut devctx.i2c);
                 match ans {
                     Err(e) => {
                         info!("Err: {}. Try again.", e);
@@ -93,16 +87,16 @@ fn main() -> ! {
                     }
                 }
             }
-            disp.clear_screen();
-            disp.show_texts(&vec![format!("{}", counter), format!("{}", rng.next_u32())]);
+            devctx.disp.clear_screen();
+            devctx.disp.show_texts(&vec![format!("{}", counter), format!("{}", rng.next_u32())]);
         }
 
         // Echo any usbserial characters
         let mut data = [0; 1024];
-        let n = serial.do_read(&mut data);
-        serial.do_write(&data[0..n]);
+        let n = devctx.serial.do_read(&mut data);
+        devctx.serial.do_write(&data[0..n]);
 
-        delay.delay_ms(100u16);
+        devctx.delay.delay_ms(100u16);
         counter += 1;
     }
 }

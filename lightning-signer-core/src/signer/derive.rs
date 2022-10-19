@@ -305,6 +305,29 @@ impl TryFrom<u8> for KeyDerivationStyle {
     }
 }
 
+impl core::fmt::Display for KeyDerivationStyle {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.pad(match *self {
+            KeyDerivationStyle::Native => "native",
+            KeyDerivationStyle::Ldk => "ldk",
+            KeyDerivationStyle::Lnd => "lnd",
+        })
+    }
+}
+
+impl core::str::FromStr for KeyDerivationStyle {
+    type Err = ();
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "native" => Ok(KeyDerivationStyle::Native),
+            "ldk" => Ok(KeyDerivationStyle::Ldk),
+            "lnd" => Ok(KeyDerivationStyle::Lnd),
+            _ => Err(()),
+        }
+    }
+}
+
 impl KeyDerivationStyle {
     pub(crate) fn get_key_path_len(&self) -> usize {
         match self {

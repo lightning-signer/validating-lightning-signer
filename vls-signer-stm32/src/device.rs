@@ -21,7 +21,7 @@ use st7789::{Orientation, ST7789};
 #[allow(unused_imports)]
 use stm32f4xx_hal::{
     fsmc_lcd::{self, ChipSelect1, ChipSelect3, FsmcLcd, Lcd, LcdPins, SubBank, Timing},
-    gpio::Speed,
+    gpio::{Input, Speed, PA0},
     otg_fs::{UsbBus, USB},
     pac::{CorePeripherals, Peripherals},
     pac::{Interrupt, NVIC, TIM2, TIM5},
@@ -92,12 +92,14 @@ use device_specific::*;
 
 pub const SCREEN_WIDTH: u16 = 240;
 pub const SCREEN_HEIGHT: u16 = 240;
-pub const FONT_HEIGHT: u16 = 24;
+pub const FONT_HEIGHT: u16 = 21;
 #[cfg(feature = "stm32f412")]
-pub const VCENTER_PIX: u16 = 34 + (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
+pub const VCENTER_PIX: u16 = 30 + (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
 #[cfg(feature = "stm32f413")] // FIXME - why is this needed?  bug w/ PortraitSwapped?
-pub const VCENTER_PIX: u16 = 112 + (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
+pub const VCENTER_PIX: u16 = 110 + (SCREEN_HEIGHT - FONT_HEIGHT) / 2;
 pub const HINSET_PIX: u16 = 100;
+const NCOLS: u16 = 19;
+const NROWS: u16 = 10;
 
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
@@ -278,6 +280,34 @@ impl Display {
             }
         }
     }
+
+    pub fn wait_for_touch(&mut self, touch: &mut Ft6X06<I2C>, i2c: &mut I2C) -> (u16, u16) {
+        loop {
+            match touch.detect_touch(i2c) {
+                Err(err) => rprintln!("wait_for_touch: detect_touch failed: {}", err),
+                Ok(n) =>
+                    if n != 0u8 {
+                        break;
+                    },
+            }
+        }
+        let p = touch.get_touch(i2c, 1).expect("get_touch");
+        // info!("x: {}, y: {}", p.x, p.y);
+
+        #[cfg(feature = "stm32f412")]
+        let (row, col) = (
+            NROWS - (p.x as f64 * NROWS as f64 / SCREEN_HEIGHT as f64) as u16 - 1,
+            (p.y as f64 * NCOLS as f64 / SCREEN_WIDTH as f64) as u16,
+        );
+
+        #[cfg(feature = "stm32f413")]
+        let (row, col) = (
+            (p.x as f64 * NROWS as f64 / SCREEN_HEIGHT as f64) as u16,
+            NCOLS - (p.y as f64 * NCOLS as f64 / SCREEN_WIDTH as f64) as u16 - 1,
+        );
+
+        (row, col)
+    }
 }
 
 /// A timer that can be cloned
@@ -310,17 +340,20 @@ pub struct TouchDriver {
     pub inner: Ft6X06<I2C>,
 }
 
-pub fn make_devices<'a>() -> (
-    SysDelay,
-    FreeTimer,
-    Counter<TIM2, 1000000>,
-    SerialDriver,
-    Sdio<SdCard>,
-    Display,
-    Rng,
-    TouchDriver,
-    I2C,
-) {
+pub struct DeviceContext {
+    pub delay: SysDelay,
+    pub timer1: FreeTimer,
+    pub timer2: Option<Counter<TIM2, 1000000>>,
+    pub serial: SerialDriver,
+    pub sdio: Option<Sdio<SdCard>>,
+    pub disp: Display,
+    pub rng: Option<Rng>,
+    pub touchscreen: TouchDriver,
+    pub i2c: I2C,
+    pub button: PA0<Input>,
+}
+
+pub fn make_devices<'a>() -> DeviceContext {
     let p = Peripherals::take().unwrap();
     let cp = CorePeripherals::take().unwrap();
     let rcc = p.RCC.constrain();
@@ -451,9 +484,22 @@ pub fn make_devices<'a>() -> (
         )
     };
 
-    let touch = TouchDriver { inner: make_touchscreen(&mut i2c, 0x38, &mut delay) };
+    let touchscreen = TouchDriver { inner: make_touchscreen(&mut i2c, 0x38, &mut delay) };
 
-    (delay, FreeTimer::new(timer1), timer2, serial, sdio, disp, rng, touch, i2c)
+    let button = gpioa.pa0.into_pull_down_input();
+
+    DeviceContext {
+        delay,
+        timer1: FreeTimer::new(timer1),
+        timer2: Some(timer2),
+        serial,
+        sdio: Some(sdio),
+        disp,
+        rng: Some(rng),
+        touchscreen,
+        i2c,
+        button,
+    }
 }
 
 // define what happens in an Out Of Memory (OOM) condition
