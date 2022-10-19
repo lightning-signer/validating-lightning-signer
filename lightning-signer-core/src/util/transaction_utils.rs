@@ -22,6 +22,10 @@ pub(crate) fn expected_commitment_tx_weight(opt_anchors: bool, num_untrimmed_htl
 
 /// The weight of a mutual close transaction.
 pub(crate) fn mutual_close_tx_weight(unsigned_tx: &Transaction) -> usize {
+    // NOTE related to issue 165 - we use 72 here because we might as well assume low-S
+    // for the signature, and some node implementations use that.
+    // However, nodes may use 73 to be consistent with BOLT-3.
+    // That's OK because we will be more lenient on the fee.
     const EXPECTED_MUTUAL_CLOSE_WITNESS_WEIGHT: usize = //
         2 + 1 + 4 + // witness-marker-and-flag witness-element-count 4-element-lengths
         72 + 72 + // <signature_for_pubkey1> <signature_for_pubkey2>
@@ -142,7 +146,8 @@ mod tests {
         )*4 +                                         // * 4 for non-witness parts
             ((8+1) +                            // output values and script length
                 spk as u64) * 4; // scriptpubkey and witness multiplier
-        assert_eq!(expected_tx_weight, tx_weight);
-        assert_eq!(estimated_feerate, 253);
+        assert_eq!(expected_tx_weight, tx_weight as u64);
+        // CLN was actually missing the pubkey length byte, so the feerate is genuinely too low
+        assert_eq!(estimated_feerate, 252);
     }
 }
