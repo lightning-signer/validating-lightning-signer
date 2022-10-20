@@ -306,8 +306,7 @@ dependencies = [
 [[package]]
 name = "ft6x06"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c5a5c09d0e8bc884bc5abb42241e83ae1d52ed9b9f416a9e2144b0a4401abc5"
+source = "git+https://github.com/ksedgwic/ft6x06.git?branch=2022-10-poll-interrupt#6ed60f859bb09e9d86da8d2b255d002b90c10fe7"
 dependencies = [
  "cortex-m 0.7.4",
  "embedded-hal 0.2.7",
