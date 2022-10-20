@@ -358,11 +358,18 @@ impl Signer for SignServer {
             .map_err(|e| invalid_grpc_argument(e.to_string()))?;
 
         let (node_id, seed) = if hsm_secret.len() == 0 {
-            let (node_id, seed) = self.signer.new_node(node_config)?;
+            let (node_id, seed) = self.signer.new_node(node_config, self.seed_persister.clone())?;
             (node_id, seed.to_vec())
         } else {
             if req.coldstart {
-                (self.signer.new_node_with_seed(node_config, hsm_secret)?, hsm_secret.to_vec())
+                (
+                    self.signer.new_node_with_seed(
+                        node_config,
+                        hsm_secret,
+                        self.seed_persister.clone(),
+                    )?,
+                    hsm_secret.to_vec(),
+                )
             } else {
                 (self.signer.warmstart_with_seed(node_config, hsm_secret)?, hsm_secret.to_vec())
             }

@@ -1,5 +1,6 @@
 use crate::chain::tracker::ChainTracker;
 use bitcoin;
+use bitcoin::hashes::hex::ToHex;
 #[cfg(feature = "std")]
 use bitcoin::secp256k1::rand::{rngs::OsRng, RngCore};
 use bitcoin::secp256k1::PublicKey;
@@ -90,12 +91,16 @@ impl MultiSigner {
 
     /// Create a node with a random seed
     #[cfg(feature = "std")]
-    pub fn new_node(&self, node_config: NodeConfig) -> Result<(PublicKey, [u8; 32]), Status> {
+    pub fn new_node(
+        &self,
+        node_config: NodeConfig,
+        seed_persister: Arc<dyn SeedPersist>,
+    ) -> Result<(PublicKey, [u8; 32]), Status> {
         let mut rng = OsRng;
 
         let mut seed = [0; 32];
         rng.fill_bytes(&mut seed);
-        self.new_node_with_seed(node_config, &seed).map(|id| (id, seed))
+        self.new_node_with_seed(node_config, &seed, seed_persister).map(|id| (id, seed))
     }
 
     /// New node with externally supplied cryptographic seed
@@ -103,9 +108,10 @@ impl MultiSigner {
         &self,
         node_config: NodeConfig,
         seed: &[u8],
+        seed_persister: Arc<dyn SeedPersist>,
     ) -> Result<PublicKey, Status> {
         let tracker = Node::make_tracker(node_config.clone());
-        self.new_node_with_seed_and_tracker(node_config, seed, tracker)
+        self.new_node_with_seed_and_tracker(node_config, seed, seed_persister, tracker)
     }
 
     /// New node with externally supplied cryptographic seed and chain tracker
@@ -113,6 +119,7 @@ impl MultiSigner {
         &self,
         node_config: NodeConfig,
         seed: &[u8],
+        seed_persister: Arc<dyn SeedPersist>,
         tracker: ChainTracker<ChainMonitor>,
     ) -> Result<PublicKey, Status> {
         let node = Node::new_extended(node_config, &seed, vec![], tracker, self.services.clone());
@@ -129,6 +136,7 @@ impl MultiSigner {
             }
         }
         node.add_allowlist(&self.initial_allowlist).expect("valid initialallowlist");
+        seed_persister.put(&node_id.serialize().to_hex(), seed);
         self.persister.new_node(&node_id, &node_config, &*node.get_state());
         self.persister.new_chain_tracker(&node_id, &node.get_tracker());
         nodes.insert(node_id, Arc::new(node));
@@ -242,7 +250,7 @@ impl MultiSigner {
 
 #[cfg(test)]
 mod tests {
-    use crate::persist::DummyPersister;
+    use crate::persist::{DummyPersister, DummySeedPersister};
     use crate::policy::simple_validator::SimpleValidatorFactory;
     use crate::util::clock::StandardClock;
     use crate::util::status::Code;
@@ -265,6 +273,7 @@ mod tests {
         let signer = MultiSigner::new(make_test_services());
         let mut seed = [0; 32];
         seed.copy_from_slice(hex_decode(TEST_SEED[1]).unwrap().as_slice());
+        let seed_persister = Arc::new(DummySeedPersister {});
 
         // First try a warmstart w/ no existing node.
         let result = signer.warmstart_with_seed(TEST_NODE_CONFIG, &seed);
@@ -274,7 +283,7 @@ mod tests {
         assert_eq!(err.message(), "warmstart failed: no such node: 022d223620a359a47ff7f7ac447c85c46c923da53389221a0054c11c1e3ca31d59");
 
         // Then a "coldstart" from seed should succeed.
-        let node_id = signer.new_node_with_seed(TEST_NODE_CONFIG, &seed).unwrap();
+        let node_id = signer.new_node_with_seed(TEST_NODE_CONFIG, &seed, seed_persister).unwrap();
 
         // Now a warmstart will work, should get the same node_id.
         let result = signer.warmstart_with_seed(TEST_NODE_CONFIG, &seed);
