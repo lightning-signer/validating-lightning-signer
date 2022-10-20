@@ -17,14 +17,14 @@ use lightning_signer::bitcoin::Network;
 use vls_protocol_signer::vls_protocol::msgs::{self, Message};
 use vls_protocol_signer::vls_protocol::serde_bolt::WireString;
 
-use embedded::{connect, SerialSignerPort, SignerLoop};
+use serial::{connect, SerialSignerPort, SignerLoop};
 use vls_frontend::Frontend;
 use vls_proxy::client::UnixClient;
 use vls_proxy::portfront::SignerPortFront;
 use vls_proxy::util::{bitcoind_rpc_url, create_runtime, setup_logging, vls_network};
 use vls_proxy::*;
 
-mod embedded;
+mod serial;
 
 fn run_test(serial_port: String) -> anyhow::Result<()> {
     let mut serial = connect(serial_port)?;
