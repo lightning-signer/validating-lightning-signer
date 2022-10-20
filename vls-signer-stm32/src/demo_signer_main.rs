@@ -65,6 +65,10 @@ fn main() -> ! {
 }
 
 fn display_intro(devctx: &mut DeviceContext, network: Network, path: &str) {
+    // we have limited horizontal display room
+    let mut abbrev_path = path.to_string();
+    abbrev_path.truncate(9);
+
     // Display the intro screen
     let mut intro = Vec::new();
     intro.push(format!("{: ^19}", "VLS"));
@@ -74,7 +78,7 @@ fn display_intro(devctx: &mut DeviceContext, network: Network, path: &str) {
     }
     intro.push("".to_string());
     intro.push(format!("{: ^19}", "waiting for node"));
-    intro.push(format!(" {: >7}:{: <9}", network.to_string(), path[..9].to_string()));
+    intro.push(format!(" {: >7}:{: <9}", network.to_string(), abbrev_path));
     devctx.disp.clear_screen();
     devctx.disp.show_texts(&intro);
 }
