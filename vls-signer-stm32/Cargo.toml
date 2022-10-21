@@ -24,8 +24,10 @@ usb-device = "0.2.5"
 usbd-serial = "0.1.0"
 fugit = "0.3"
 vls-protocol-signer = { path = "../vls-protocol-signer", default-features = false, features = ["no-std", "secp-lowmemory"] }
-# ft6x06 = "0.1.1"
-ft6x06 = { git = "https://github.com/ksedgwic/ft6x06.git", branch = "2022-10-poll-interrupt" }
+vls-persist = { path = "../vls-persist", default-features = false, features = ["no-std"] }
+
+# ft6x06 = "0.1.2"
+ft6x06 = { git = "https://github.com/Srg213/ft6x06.git", tag = "v0.1.2" }
 # ft6x06 = { path = "../../../ft6x06" }
 
 [dependencies.fatfs]

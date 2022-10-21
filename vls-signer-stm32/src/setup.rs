@@ -1,8 +1,8 @@
 use alloc::format;
 use alloc::string::{String, ToString};
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
-
 use core::cell::RefCell;
 use core::fmt;
 use core::fmt::Debug;
@@ -29,18 +29,19 @@ use vls_protocol_signer::lightning_signer::{
 };
 
 pub struct CommonContext {
-    pub devctx: DeviceContext,
+    pub devctx: Arc<RefCell<DeviceContext>>,
     pub kdstyle: KeyDerivationStyle,
     pub network: Network,
-    pub setupfs: Option<RefCell<SetupFS>>,
+    pub setupfs: Option<Arc<RefCell<SetupFS>>>,
 }
 
 impl fmt::Debug for CommonContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let runpath = self.setupfs.as_ref().map(|arcref| arcref.borrow().runpath());
         f.debug_struct("CommonContext")
             .field("kdstyle", &self.kdstyle)
             .field("network", &self.network)
-            .field("fs", &self.setupfs)
+            .field("runpath", &runpath)
             .finish()
     }
 }
@@ -163,6 +164,13 @@ impl SetupFS {
     #[allow(unused)]
     pub fn runpath(&self) -> String {
         self.runpath.as_ref().unwrap().clone()
+    }
+
+    #[allow(unused)]
+    pub fn abbrev_path(&self) -> String {
+        let mut abbrev_path = self.runpath();
+        abbrev_path.truncate(9); // for limited horizontal space
+        abbrev_path
     }
 
     fn select_runpath(&mut self, runpath: String) {
@@ -391,14 +399,17 @@ pub fn get_run_context(mut devctx: DeviceContext) -> RunContext {
     run_context(devctx, setupfs)
 }
 
-fn init_setupfs(devctx: &mut DeviceContext) -> Option<RefCell<SetupFS>> {
+fn init_setupfs(devctx: &mut DeviceContext) -> Option<Arc<RefCell<SetupFS>>> {
     // Probe the sdcard
     devctx.disp.clear_screen();
     devctx.disp.show_texts(&[format!("probing sdcard ...")]);
     let mut sdio = devctx.sdio.take().unwrap();
     let setupfs = match sdcard::init_sdio(&mut sdio, &mut devctx.delay) {
         false => None,
-        true => Some(RefCell::new(SetupFS { fs: sdcard::open(sdio).unwrap(), runpath: None })),
+        true => {
+            let fs = sdcard::open(sdio).unwrap();
+            Some(Arc::new(RefCell::new(SetupFS { fs, runpath: None })))
+        }
     };
 
     if setupfs.is_some() {
@@ -409,7 +420,9 @@ fn init_setupfs(devctx: &mut DeviceContext) -> Option<RefCell<SetupFS>> {
     setupfs
 }
 
-fn run_context(devctx: DeviceContext, setupfs: Option<RefCell<SetupFS>>) -> RunContext {
+fn run_context(bare_devctx: DeviceContext, setupfs: Option<Arc<RefCell<SetupFS>>>) -> RunContext {
+    let devctx = Arc::new(RefCell::new(bare_devctx));
+
     // If there is no sdcard we're in testing mode
     if setupfs.is_none() {
         return RunContext::Testing(TestingContext {
