@@ -4,9 +4,11 @@ use crate::util::{make_validator_factory, read_allowlist};
 use http::Uri;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::node::NodeServices;
-use lightning_signer::persist::Persist;
+use lightning_signer::persist::fs::FileSeedPersister;
+use lightning_signer::persist::SeedPersist;
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
+use lightning_signer::util::crypto_utils::generate_seed;
 use lightning_signer::util::status::Status;
 use lightning_signer_server::persist::kv_json::KVJsonPersister;
 use log::{error, info};
@@ -54,8 +56,9 @@ async fn connect(datadir: &str, uri: Uri, network: Network) {
     info!("ping result {}", reply.message);
     let (sender, receiver) = mpsc::channel(1);
     let response_stream = ReceiverStream::new(receiver);
-    let seed = integration_test_seed_or_generate();
-    let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new(&data_path));
+    let persister = Arc::new(KVJsonPersister::new(&data_path));
+    let seed_persister = Arc::new(FileSeedPersister::new(&data_path));
+    let seed = get_or_generate_seed(network, seed_persister);
     let allowlist = read_allowlist();
     let starting_time_factory = ClockStartingTimeFactory::new();
     let validator_factory = make_validator_factory(network);
@@ -105,6 +108,26 @@ async fn connect(datadir: &str, uri: Uri, network: Network) {
                 error!("error on stream: {}", e);
                 break;
             }
+        }
+    }
+}
+
+fn get_or_generate_seed(network: Network, seed_persister: Arc<dyn SeedPersist>) -> [u8; 32] {
+    if let Some(seed) = seed_persister.get("node") {
+        info!("loaded seed");
+        seed.as_slice().try_into().expect("seed length in storage")
+    } else {
+        if network == Network::Bitcoin {
+            info!("generating new seed");
+            // for mainnet, we generate our own seed
+            let seed = generate_seed();
+            seed_persister.put("node", &seed);
+            seed
+        } else {
+            // for testnet, we allow the test framework to optionally supply the seed
+            let seed = integration_test_seed_or_generate();
+            seed_persister.put("node", &seed);
+            seed
         }
     }
 }
