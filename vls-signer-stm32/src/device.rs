@@ -46,7 +46,7 @@ const TEXT_COLOR: Rgb565 = Rgb565::new(255, 255, 255);
 mod device_specific {
     use stm32f4xx_hal::{
         fsmc_lcd::SubBank1,
-        gpio::{Alternate, OpenDrain, Output, Pin},
+        gpio::{Alternate, Input, OpenDrain, Output, Pin},
     };
 
     pub type LcdSubBank = SubBank1;
@@ -60,6 +60,7 @@ mod device_specific {
     pub type Sda = Pin<'B', 7_u8, Alternate<4_u8, OpenDrain>>;
     pub type I2C = I2c<I2C1, (Scl, Sda)>;
 
+    pub type TouchInterruptPin = Pin<'G', 5_u8, Input>;
     pub const CHOICE_BUTTON_POSITIONS: [i32; 4] = [20, 80, 140, 80];
     pub const CHOICE_TEXT_POSITIONS: [i32; 6] = [40, 120, 170, 120, 80, 60];
     pub const CHOICE_TOUCH_POSITIONS: [u16; 6] = [80, 160, 10, 100, 140, 230];
@@ -69,7 +70,7 @@ mod device_specific {
 mod device_specific {
     use stm32f4xx_hal::{
         fsmc_lcd::SubBank3,
-        gpio::{Alternate, OpenDrain, Output, Pin},
+        gpio::{Alternate, Input, OpenDrain, Output, Pin},
     };
 
     pub use ft6x06::long_hard_reset;
@@ -83,6 +84,7 @@ mod device_specific {
     pub type Sda = Pin<'C', 7_u8, Alternate<4_u8, OpenDrain>>;
     pub type I2C = FMPI2c<FMPI2C1, (Scl, Sda)>;
 
+    pub type TouchInterruptPin = Pin<'C', 1_u8, Input>;
     pub const CHOICE_BUTTON_POSITIONS: [i32; 4] = [30, 160, 140, 160];
     pub const CHOICE_TEXT_POSITIONS: [i32; 6] = [60, 200, 170, 200, 80, 140];
     pub const CHOICE_TOUCH_POSITIONS: [u16; 6] = [80, 160, 120, 200, 10, 90];
@@ -246,12 +248,17 @@ impl Display {
         .unwrap();
     }
 
-    pub fn check_choice(&mut self, touch: &mut Ft6X06<I2C>, i2c: &mut I2C) -> Result<&str, &str> {
+    pub fn check_choice(
+        &mut self,
+        touch: &mut Ft6X06<I2C, TouchInterruptPin>,
+        i2c: &mut I2C,
+    ) -> Result<&str, &str> {
         loop {
+            touch.wait_touch_interrupt();
             let t = touch.detect_touch(i2c);
             let mut num: u8 = 0;
             match t {
-                Err(e) => rprintln!("Error {} from fetching number of touches", e),
+                Err(e) => rprintln!("Error {:?} from fetching number of touches", e),
                 Ok(n) => {
                     num = n;
                 }
@@ -281,29 +288,25 @@ impl Display {
         }
     }
 
-    pub fn wait_for_touch(&mut self, touch: &mut Ft6X06<I2C>, i2c: &mut I2C) -> (u16, u16) {
-        loop {
-            match touch.detect_touch(i2c) {
-                Err(err) => rprintln!("wait_for_touch: detect_touch failed: {}", err),
-                Ok(n) =>
-                    if n != 0u8 {
-                        break;
-                    },
-            }
-        }
-        let p = touch.get_touch(i2c, 1).expect("get_touch");
-        // info!("x: {}, y: {}", p.x, p.y);
+    // Return the row and col for layout with 10 rows and 19 cols
+    pub fn wait_for_touch(
+        &mut self,
+        touch: &mut Ft6X06<I2C, TouchInterruptPin>,
+        i2c: &mut I2C,
+    ) -> (u16, u16) {
+        let (x, y) = touch.get_coordinates(i2c).expect("get_coordinates");
+        // info!("x: {}, y: {}", x, y);
 
         #[cfg(feature = "stm32f412")]
         let (row, col) = (
-            NROWS - (p.x as f64 * NROWS as f64 / SCREEN_HEIGHT as f64) as u16 - 1,
-            (p.y as f64 * NCOLS as f64 / SCREEN_WIDTH as f64) as u16,
+            NROWS - (x as f64 * NROWS as f64 / SCREEN_HEIGHT as f64) as u16 - 1,
+            (y as f64 * NCOLS as f64 / SCREEN_WIDTH as f64) as u16,
         );
 
         #[cfg(feature = "stm32f413")]
         let (row, col) = (
-            (p.x as f64 * NROWS as f64 / SCREEN_HEIGHT as f64) as u16,
-            NCOLS - (p.y as f64 * NCOLS as f64 / SCREEN_WIDTH as f64) as u16 - 1,
+            (x as f64 * NROWS as f64 / SCREEN_HEIGHT as f64) as u16,
+            NCOLS - (y as f64 * NCOLS as f64 / SCREEN_WIDTH as f64) as u16 - 1,
         );
 
         (row, col)
@@ -325,8 +328,13 @@ impl FreeTimer {
     }
 }
 
-pub fn make_touchscreen(i2c: &mut I2C, addr: u8, delay: &mut SysDelay) -> Ft6X06<I2C> {
-    let mut touchscreen = ft6x06::Ft6X06::new(i2c, addr).unwrap();
+pub fn make_touchscreen(
+    i2c: &mut I2C,
+    addr: u8,
+    ts_int: TouchInterruptPin,
+    delay: &mut SysDelay,
+) -> Ft6X06<I2C, TouchInterruptPin> {
+    let mut touchscreen = ft6x06::Ft6X06::new(i2c, addr, ts_int).unwrap();
     info!("starting ts_calibration");
     let tsc = touchscreen.ts_calibration(i2c, delay);
     match tsc {
@@ -337,7 +345,7 @@ pub fn make_touchscreen(i2c: &mut I2C, addr: u8, delay: &mut SysDelay) -> Ft6X06
 }
 
 pub struct TouchDriver {
-    pub inner: Ft6X06<I2C>,
+    pub inner: Ft6X06<I2C, TouchInterruptPin>,
 }
 
 pub struct DeviceContext {
@@ -366,7 +374,6 @@ pub fn make_devices<'a>() -> DeviceContext {
     let gpiod = p.GPIOD.split();
     let gpioe = p.GPIOE.split();
     let gpiof = p.GPIOF.split();
-    #[cfg(feature = "stm32f413")]
     let gpiog = p.GPIOG.split();
 
     let lcd_pins = LcdPins {
@@ -480,11 +487,16 @@ pub fn make_devices<'a>() -> DeviceContext {
                 gpioc.pc6.into_alternate().set_open_drain(),
                 gpioc.pc7.into_alternate().set_open_drain(),
             ),
-            10.kHz(),
+            400.kHz(),
         )
     };
 
-    let touchscreen = TouchDriver { inner: make_touchscreen(&mut i2c, 0x38, &mut delay) };
+    #[cfg(feature = "stm32f412")]
+    let ts_int = gpiog.pg5.into_pull_down_input();
+    #[cfg(feature = "stm32f413")]
+    let ts_int = gpioc.pc1.into_pull_down_input();
+
+    let touchscreen = TouchDriver { inner: make_touchscreen(&mut i2c, 0x38, ts_int, &mut delay) };
 
     let button = gpioa.pa0.into_pull_down_input();
 
