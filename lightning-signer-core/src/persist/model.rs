@@ -7,7 +7,6 @@ use crate::prelude::*;
 /// A persistence layer entry for a Node
 #[allow(missing_docs)]
 pub struct NodeEntry {
-    pub seed: Vec<u8>,
     pub key_derivation_style: u8,
     pub network: String,
     pub state: NodeState,

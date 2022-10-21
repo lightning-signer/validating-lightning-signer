@@ -43,7 +43,7 @@ use lightning_signer::util::test_utils;
 use lightning_signer::util::test_utils::{TestChainMonitor, REGTEST_NODE_CONFIG, make_block, make_genesis_starting_time_factory, ChannelBalanceBuilder};
 use lightning_signer::channel::{ChannelId, ChannelBalance};
 use lightning_signer::node::{NodeConfig, NodeMonitor, NodeServices};
-use lightning_signer::persist::DummyPersister;
+use lightning_signer::persist::{DummyPersister, DummySeedPersister};
 use lightning_signer::policy::onchain_validator::OnchainValidatorFactory;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimplePolicy, SimpleValidatorFactory};
 use lightning_signer::{
@@ -91,7 +91,9 @@ fn create_node_cfg<'a>(signer: &Arc<MultiSigner>, chanmon_cfgs: &'a Vec<TestChan
     let chain_tracker: ChainTracker<ChainMonitor> =
         ChainTracker::new(network, 0, tip).unwrap();
 
-    let node_id = signer.new_node_with_seed_and_tracker(config, &seed, chain_tracker).unwrap();
+    let seed_persister = Arc::new(DummySeedPersister {});
+
+    let node_id = signer.new_node_with_seed_and_tracker(config, &seed, seed_persister, chain_tracker).unwrap();
 
     let keys_manager = LoopbackSignerKeysInterface {
         node_id,

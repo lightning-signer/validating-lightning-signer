@@ -56,7 +56,7 @@ pub trait Persist: Sync + Send {
     }
 
     /// Create a new node
-    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &NodeState, seed: &[u8]);
+    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &NodeState);
     /// Update node enforcement state
     fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), ()>;
     /// Delete a node and all of its channels.  Used in test mode.
@@ -104,7 +104,7 @@ pub struct DummyPersister;
 
 #[allow(unused_variables)]
 impl Persist for DummyPersister {
-    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &NodeState, seed: &[u8]) {}
+    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &NodeState) {}
 
     fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), ()> {
         Ok(())
@@ -159,4 +159,120 @@ impl Persist for DummyPersister {
     }
 
     fn clear_database(&self) {}
+}
+
+/// Seed persister
+///
+/// By convention, the `key` is the hex-encoded public key, but this may change
+/// in the future.
+pub trait SeedPersist: Sync + Send {
+    /// Persist the seed
+    fn put(&self, key: &str, seed: &[u8]);
+    /// Get the seed, if exists
+    fn get(&self, key: &str) -> Option<Vec<u8>>;
+    /// List the seeds
+    fn list(&self) -> Vec<String>;
+}
+
+/// A null seed persister for testing
+pub struct DummySeedPersister;
+
+impl SeedPersist for DummySeedPersister {
+    fn put(&self, _key: &str, _seed: &[u8]) {}
+
+    fn get(&self, _key: &str) -> Option<Vec<u8>> {
+        None
+    }
+
+    fn list(&self) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+/// A single in-memory seed persister - for testing
+pub struct MemorySeedPersister {
+    seed: Vec<u8>,
+}
+
+impl MemorySeedPersister {
+    /// Create a new in-memory seed persister
+    pub fn new(seed: Vec<u8>) -> Self {
+        Self { seed }
+    }
+}
+
+impl SeedPersist for MemorySeedPersister {
+    fn put(&self, _key: &str, _seed: &[u8]) {
+        unimplemented!()
+    }
+
+    fn get(&self, _key: &str) -> Option<Vec<u8>> {
+        Some(self.seed.clone())
+    }
+
+    fn list(&self) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+#[cfg(feature = "std")]
+/// File system persisters
+pub mod fs {
+    use crate::persist::SeedPersist;
+    use bitcoin::hashes::hex::{FromHex, ToHex};
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// A file system directory seed persister
+    ///
+    /// Stores seed in a file named `<node_id_hex>.seed` in the directory
+    pub struct FileSeedPersister {
+        path: PathBuf,
+    }
+
+    impl FileSeedPersister {
+        /// Create
+        pub fn new<P: Into<PathBuf>>(path: P) -> Self {
+            Self { path: path.into() }
+        }
+
+        fn seed_path_for_key(&self, node_id: &str) -> PathBuf {
+            let mut path = self.path.clone();
+            path.push(format!("{}.seed", node_id));
+            path
+        }
+    }
+
+    impl SeedPersist for FileSeedPersister {
+        fn put(&self, key: &str, seed: &[u8]) {
+            write_seed(self.seed_path_for_key(key), seed);
+        }
+
+        fn get(&self, key: &str) -> Option<Vec<u8>> {
+            read_seed(self.seed_path_for_key(key))
+        }
+
+        fn list(&self) -> Vec<String> {
+            let mut keys = Vec::new();
+            for entry in fs::read_dir(&self.path).unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                if let Some(fileext) = path.extension() {
+                    if fileext == "seed" {
+                        let key = path.file_stem().unwrap().to_str().unwrap();
+                        keys.push(key.to_string());
+                    }
+                }
+            }
+            keys
+        }
+    }
+
+    fn write_seed(path: PathBuf, seed: &[u8]) {
+        fs::write(path, seed.to_hex()).unwrap();
+    }
+
+    fn read_seed(path: PathBuf) -> Option<Vec<u8>> {
+        fs::read_to_string(path).ok().map(|s| Vec::from_hex(&s).expect("bad hex seed"))
+    }
 }
