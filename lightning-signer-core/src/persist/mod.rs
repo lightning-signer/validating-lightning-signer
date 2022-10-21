@@ -257,9 +257,11 @@ pub mod fs {
             for entry in fs::read_dir(&self.path).unwrap() {
                 let entry = entry.unwrap();
                 let path = entry.path();
-                if path.extension().unwrap() == "seed" {
-                    let key = path.file_stem().unwrap().to_str().unwrap();
-                    keys.push(key.to_string());
+                if let Some(fileext) = path.extension() {
+                    if fileext == "seed" {
+                        let key = path.file_stem().unwrap().to_str().unwrap();
+                        keys.push(key.to_string());
+                    }
                 }
             }
             keys
