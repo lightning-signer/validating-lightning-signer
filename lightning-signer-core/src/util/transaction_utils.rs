@@ -22,6 +22,10 @@ pub(crate) fn expected_commitment_tx_weight(opt_anchors: bool, num_untrimmed_htl
 
 /// The weight of a mutual close transaction.
 pub(crate) fn mutual_close_tx_weight(unsigned_tx: &Transaction) -> usize {
+    // NOTE related to issue 165 - we use 72 here because we might as well assume low-S
+    // for the signature, and some node implementations use that.
+    // However, nodes may use 73 to be consistent with BOLT-3.
+    // That's OK because we will be more lenient on the fee.
     const EXPECTED_MUTUAL_CLOSE_WITNESS_WEIGHT: usize = //
         2 + 1 + 4 + // witness-marker-and-flag witness-element-count 4-element-lengths
         72 + 72 + // <signature_for_pubkey1> <signature_for_pubkey2>
@@ -89,6 +93,9 @@ pub(crate) fn estimate_feerate_per_kw(total_fee: u64, weight: u64) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::hashes::hex::FromHex;
+    use bitcoin::psbt::serialize::Deserialize;
+    use bitcoin::Transaction;
     use lightning::ln::chan_utils::{htlc_success_tx_weight, htlc_timeout_tx_weight};
 
     #[test]
@@ -119,5 +126,28 @@ mod tests {
                 assert_eq!(total_fee, recovered_total_fee);
             }
         }
+    }
+
+    #[test]
+    fn test_issue_165() {
+        let tx = Transaction::deserialize(&Vec::from_hex("0200000001b78e0523c17f8ac709eec54654cc849529c05584bfda6e04c92a3b670476f2a20000000000ffffffff017d4417000000000016001476168b09afc66bd3956efb25cd8b83650bda0c5f00000000").unwrap()).unwrap();
+        let tx_weight = tx.weight();
+        let spk = tx.output[0].script_pubkey.len();
+        let weight = super::mutual_close_tx_weight(&tx);
+        let fee = 1524999 - tx.output[0].value;
+        let estimated_feerate = super::estimate_feerate_per_kw(fee, weight as u64);
+        let expected_tx_weight = (4 +                                           // version
+            1 +                                           // input count
+            36 +                                          // prevout
+            1 +                                           // script length (0)
+            4 +                                           // sequence
+            1 +                                           // output count
+            4                                             // lock time
+        )*4 +                                         // * 4 for non-witness parts
+            ((8+1) +                            // output values and script length
+                spk as u64) * 4; // scriptpubkey and witness multiplier
+        assert_eq!(expected_tx_weight, tx_weight as u64);
+        // CLN was actually missing the pubkey length byte, so the feerate is genuinely too low
+        assert_eq!(estimated_feerate, 252);
     }
 }

@@ -42,6 +42,7 @@ thiserror = "1.0"
 async-trait = "0.1"
 url = { version = "2.2", optional = true }
 as-any = "0.3"
+hex = "0.4"
 
 [dependencies.lightning-signer-server]
 path = "../lightning-signer-server"
@@ -87,3 +88,7 @@ required-features = ["grpc", "main"]
 name = "vlsd2"
 path = "src/vlsd2_main.rs"
 required-features = ["grpc", "main"]
+
+[[bin]]
+name = "decode-vls"
+path = "src/decode-vls.rs"
