@@ -401,14 +401,28 @@ pub trait ValidatorFactory: Send + Sync {
 #[allow(missing_docs)]
 #[derive(Clone, Debug)]
 pub struct EnforcementState {
+    // the next commitment number we expect to see signed by the counterparty
+    // (set by validate_holder_commitment_tx)
     pub next_holder_commit_num: u64,
+    // the next commitment number we expect to sign
+    // (set by sign_counterparty_commitment_tx)
     pub next_counterparty_commit_num: u64,
+    // the next commitment number we expect the counterparty to revoke
+    // (set by validate_counterparty_revocation)
     pub next_counterparty_revoke_num: u64,
+
+    // (set by sign_counterparty_commitment_tx)
     pub current_counterparty_point: Option<PublicKey>, // next_counterparty_commit_num - 1
+    // (set by sign_counterparty_commitment_tx)
     pub previous_counterparty_point: Option<PublicKey>, // next_counterparty_commit_num - 2
+
+    // (set by validate_holder_commitment_tx)
     pub current_holder_commit_info: Option<CommitmentInfo2>,
+    // (set by sign_counterparty_commitment_tx)
     pub current_counterparty_commit_info: Option<CommitmentInfo2>,
+    // (set by sign_counterparty_commitment_tx)
     pub previous_counterparty_commit_info: Option<CommitmentInfo2>,
+
     pub channel_closed: bool,
     pub initial_holder_value: u64,
 }
