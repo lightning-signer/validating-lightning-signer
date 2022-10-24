@@ -34,6 +34,8 @@ pub struct KVJsonPersister<'a> {
     pub chain_tracker_bucket: Bucket<'a, Vec<u8>, Json<ChainTrackerEntry>>,
 }
 
+impl SendSync for KVJsonPersister<'_> {}
+
 impl KVJsonPersister<'_> {
     pub fn new(path: &str) -> Self {
         let cfg = Config::new(path);
