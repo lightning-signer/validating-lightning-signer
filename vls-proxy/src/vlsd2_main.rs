@@ -38,11 +38,20 @@ pub fn main() {
                 .long("network")
                 .possible_values(&NETWORK_NAMES)
                 .default_value(NETWORK_NAMES[0]),
+        )
+        .arg(
+            Arg::new("integration-test")
+                .long("integration-test")
+                .about("use integration test mode, reading/writing hsm_secret from CWD"),
         );
     let matches = app.get_matches();
     let uri_s = matches.value_of("connect").unwrap();
     let uri = uri_s.parse().expect("uri parse");
     let datadir = matches.value_of("datadir").unwrap();
     let network: Network = matches.value_of_t("network").expect("network");
-    start_signer(datadir, uri, network);
+    let integration_test = matches.is_present("integration-test");
+    if network == Network::Bitcoin && integration_test {
+        panic!("integration-test mode not supported on mainnet");
+    }
+    start_signer(datadir, uri, network, integration_test);
 }

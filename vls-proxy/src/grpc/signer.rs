@@ -4,9 +4,11 @@ use crate::util::{make_validator_factory, read_allowlist};
 use http::Uri;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::node::NodeServices;
-use lightning_signer::persist::Persist;
+use lightning_signer::persist::fs::FileSeedPersister;
+use lightning_signer::persist::SeedPersist;
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
+use lightning_signer::util::crypto_utils::generate_seed;
 use lightning_signer::util::status::Status;
 use lightning_signer_server::persist::kv_json::KVJsonPersister;
 use log::{error, info};
@@ -21,7 +23,7 @@ use vls_protocol_signer::handler::{Error, Handler, RootHandler, RootHandlerBuild
 use vls_protocol_signer::vls_protocol::model::PubKey;
 use vls_protocol_signer::vls_protocol::msgs;
 
-/// Signer binary entry point
+/// Signer binary entry point for local integration test
 #[tokio::main(worker_threads = 2)]
 pub async fn start_signer_localhost(port: u16) {
     let loopback = Ipv4Addr::LOCALHOST;
@@ -34,19 +36,20 @@ pub async fn start_signer_localhost(port: u16) {
         .expect("uri"); // infallible by construction
 
     let network = Network::Regtest; // FIXME
-    connect("remote_hsmd.kv", uri, network).await;
+    let integration_test = true;
+    connect("remote_hsmd.kv", uri, network, integration_test).await;
     info!("signer stopping");
 }
 
 /// Signer binary entry point
 #[tokio::main(worker_threads = 2)]
-pub async fn start_signer(datadir: &str, uri: Uri, network: Network) {
+pub async fn start_signer(datadir: &str, uri: Uri, network: Network, integration_test: bool) {
     info!("signer starting on {} connecting to {}", network, uri);
-    connect(datadir, uri, network).await;
+    connect(datadir, uri, network, integration_test).await;
     info!("signer stopping");
 }
 
-async fn connect(datadir: &str, uri: Uri, network: Network) {
+async fn connect(datadir: &str, uri: Uri, network: Network, integration_test: bool) {
     let data_path = format!("{}/{}", datadir, network.to_string());
     let mut client = hsmd::hsmd_client::HsmdClient::connect(uri).await.expect("client connect");
     let result = client.ping(PingRequest { message: "hello".to_string() }).await.expect("ping");
@@ -54,8 +57,9 @@ async fn connect(datadir: &str, uri: Uri, network: Network) {
     info!("ping result {}", reply.message);
     let (sender, receiver) = mpsc::channel(1);
     let response_stream = ReceiverStream::new(receiver);
-    let seed = integration_test_seed_or_generate();
-    let persister: Arc<dyn Persist> = Arc::new(KVJsonPersister::new(&data_path));
+    let persister = Arc::new(KVJsonPersister::new(&data_path));
+    let seed_persister = Arc::new(FileSeedPersister::new(&data_path));
+    let seed = get_or_generate_seed(network, seed_persister, integration_test);
     let allowlist = read_allowlist();
     let starting_time_factory = ClockStartingTimeFactory::new();
     let validator_factory = make_validator_factory(network);
@@ -105,6 +109,30 @@ async fn connect(datadir: &str, uri: Uri, network: Network) {
                 error!("error on stream: {}", e);
                 break;
             }
+        }
+    }
+}
+
+fn get_or_generate_seed(
+    network: Network,
+    seed_persister: Arc<dyn SeedPersist>,
+    integration_test: bool,
+) -> [u8; 32] {
+    if let Some(seed) = seed_persister.get("node") {
+        info!("loaded seed");
+        seed.as_slice().try_into().expect("seed length in storage")
+    } else {
+        if network == Network::Bitcoin || !integration_test {
+            info!("generating new seed");
+            // for mainnet, we generate our own seed
+            let seed = generate_seed();
+            seed_persister.put("node", &seed);
+            seed
+        } else {
+            // for testnet, we allow the test framework to optionally supply the seed
+            let seed = integration_test_seed_or_generate();
+            seed_persister.put("node", &seed);
+            seed
         }
     }
 }
