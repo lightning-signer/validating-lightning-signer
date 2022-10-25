@@ -37,32 +37,38 @@ fn main() -> ! {
 
     device::init_allocator();
 
-    let mut devctx = device::make_devices();
-
-    let runctx = if devctx.button.is_high() { setup_mode(devctx) } else { get_run_context(devctx) };
-    match runctx {
-        RunContext::Testing(testctx) => {
-            info!("RunContext::Testing {:#?}", testctx);
-            devctx = testctx.cmn.devctx;
-        }
-        RunContext::Normal(normctx) => {
-            info!("RunContext::Normal {:#?}", normctx);
-            devctx = normctx.cmn.devctx;
-        }
+    let bare_devctx = device::make_devices();
+    let runctx = if bare_devctx.button.is_high() {
+        setup_mode(bare_devctx)
+    } else {
+        get_run_context(bare_devctx)
     };
 
-    timer::start_tim2_interrupt(devctx.timer2.take().unwrap());
-    let mut rng = devctx.rng.take().unwrap();
+    let arc_devctx = match runctx {
+        RunContext::Testing(testctx) => {
+            info!("RunContext::Testing {:?}", testctx);
+            testctx.cmn.devctx
+        }
+        RunContext::Normal(normctx) => {
+            info!("RunContext::Normal {:?}", normctx);
+            normctx.cmn.devctx
+        }
+    };
+    timer::start_tim2_interrupt(arc_devctx.borrow_mut().timer2.take().unwrap());
+    let mut rng = arc_devctx.borrow_mut().rng.take().unwrap();
 
     let mut counter = 1; // so we don't start with a check
     const TS_CHECK_PERIOD: usize = 50;
     loop {
+        let mut devctx = arc_devctx.borrow_mut();
+
         if counter % TS_CHECK_PERIOD != 0 {
+            let button_is_high = devctx.button.is_high();
             devctx.disp.clear_screen();
             devctx.disp.show_texts(&vec![
                 format!("{}", counter),
                 format!("{}", rng.next_u32()),
-                format!("{}", devctx.button.is_high()),
+                format!("{}", button_is_high),
                 // format!("1234567890123456789"),
                 // format!("4  4567890123456789"),
                 // format!("5  4567890123456789"),
@@ -75,7 +81,7 @@ fn main() -> ! {
             devctx.disp.clear_screen();
             devctx.disp.show_choice();
             loop {
-                let ans = devctx.disp.check_choice(&mut devctx.touchscreen.inner, &mut devctx.i2c);
+                let ans = device::check_choice(&mut devctx);
                 match ans {
                     Err(e) => {
                         info!("Err: {}. Try again.", e);

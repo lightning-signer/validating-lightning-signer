@@ -16,6 +16,7 @@ use lightning_signer::persist::model::{
 };
 use lightning_signer::persist::{Context, Mutations, Persist};
 use lightning_signer::policy::validator::EnforcementState;
+use lightning_signer::prelude::*;
 
 use crate::model::*;
 
@@ -135,6 +136,8 @@ thread_local!(static MEMOS: RefCell<Option<State>>  = RefCell::new(None));
 /// It is the responsibility of the caller to actually persist the returned
 /// entries in some external storage, such as a cloud service.
 pub struct ThreadMemoPersister {}
+
+impl SendSync for ThreadMemoPersister {}
 
 const NODE_ENTRY_PREFIX: &str = "node/entry";
 const NODE_STATE_PREFIX: &str = "node/state";

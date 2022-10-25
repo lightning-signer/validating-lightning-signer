@@ -59,6 +59,34 @@ Wait for the demo_signer to finish loading and start executing, it will display
 make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_pay
 ```
 
+#### Interesting integration tests
+
+4 channels, nice routing:
+```
+make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_plugin.py::test_forward_event_notification VLS_SERIAL_SELECT=2
+```
+
+3 channels, nice routing:
+```
+make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_pay_retry VLS_SERIAL_SELECT=2
+```
+
+3 channels, ok routing:
+```
+make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_forward VLS_SERIAL_SELECT=2
+```
+
+4 channels, nice closing:
+```
+make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_closing.py::test_closing_different_fees
+```
+
+1 channel, nice invoice, receive:
+```
+make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_closing.py::test_closing_different_fees VLS_SERIAL_SELECT=2
+```
+
+
 #### Reference
 
 - [32F412GDISCOVERY User Manual](https://www.st.com/resource/en/user_manual/um2032-discovery-kit-with-stm32f412zg-mcu-stmicroelectronics.pdf)

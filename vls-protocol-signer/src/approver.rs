@@ -3,10 +3,11 @@ use lightning_signer::Arc;
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::lightning_invoice::SignedRawInvoice;
 use lightning_signer::node::{InvoiceState, Node};
+use lightning_signer::prelude::SendSync;
 use lightning_signer::util::status::Status;
 
 /// Approve payments
-pub trait Approver: Sync + Send {
+pub trait Approver: SendSync {
     ///  Approve an invoice for payment
     fn approve_invoice(&self, hash: &PaymentHash, invoice_state: &InvoiceState) -> bool;
 
@@ -35,6 +36,8 @@ pub trait Approver: Sync + Send {
 /// An approver that always approves
 pub struct PositiveApprover();
 
+impl SendSync for PositiveApprover {}
+
 impl Approver for PositiveApprover {
     fn approve_invoice(&self, _hash: &PaymentHash, _invoice_state: &InvoiceState) -> bool {
         true
@@ -43,6 +46,8 @@ impl Approver for PositiveApprover {
 
 /// An approver that always declines
 pub struct NegativeApprover();
+
+impl SendSync for NegativeApprover {}
 
 impl Approver for NegativeApprover {
     fn approve_invoice(&self, _hash: &PaymentHash, _invoice_state: &InvoiceState) -> bool {

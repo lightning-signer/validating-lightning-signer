@@ -41,7 +41,7 @@ impl Context for DummyContext {
 /// This is used in non-embedded environments. This kind of persister should
 /// persist durably before returning, for safety.
 ///
-pub trait Persist: Sync + Send {
+pub trait Persist: SendSync {
     /// Enter a persistence context
     ///
     /// Entering while the thread is already in a context will panic
@@ -101,6 +101,8 @@ pub trait Persist: Sync + Send {
 
 /// A null persister for testing
 pub struct DummyPersister;
+
+impl SendSync for DummyPersister {}
 
 #[allow(unused_variables)]
 impl Persist for DummyPersister {

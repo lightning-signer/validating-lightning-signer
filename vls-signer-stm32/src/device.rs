@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
+use alloc::format;
+use alloc::string::String;
 use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc_cortex_m::CortexMHeap;
@@ -248,46 +250,6 @@ impl Display {
         .unwrap();
     }
 
-    pub fn check_choice(
-        &mut self,
-        touch: &mut Ft6X06<I2C, TouchInterruptPin>,
-        i2c: &mut I2C,
-    ) -> Result<&str, &str> {
-        loop {
-            touch.wait_touch_interrupt();
-            let t = touch.detect_touch(i2c);
-            let mut num: u8 = 0;
-            match t {
-                Err(e) => rprintln!("Error {:?} from fetching number of touches", e),
-                Ok(n) => {
-                    num = n;
-                }
-            }
-
-            if num > 0 {
-                let t = touch.get_touch(i2c, 1);
-
-                match t {
-                    Err(_e) => rprintln!("Error fetching touch data"),
-                    Ok(n) =>
-                        if n.x > CHOICE_TOUCH_POSITIONS[0] && n.x < CHOICE_TOUCH_POSITIONS[1] {
-                            if n.y > CHOICE_TOUCH_POSITIONS[2] && n.y < CHOICE_TOUCH_POSITIONS[3] {
-                                return Ok("You pressed Yes");
-                            } else if n.y > CHOICE_TOUCH_POSITIONS[4]
-                                && n.y < CHOICE_TOUCH_POSITIONS[5]
-                            {
-                                return Ok("You pressed No");
-                            } else {
-                                return Err("Press a key");
-                            }
-                        } else {
-                            return Err("Press a key");
-                        },
-                }
-            }
-        }
-    }
-
     // Return the row and col for layout with 10 rows and 19 cols
     pub fn wait_for_touch(
         &mut self,
@@ -310,6 +272,44 @@ impl Display {
         );
 
         (row, col)
+    }
+}
+
+pub fn check_choice(devctx: &mut DeviceContext) -> Result<String, String> {
+    let touch = &mut devctx.touchscreen.inner;
+    let i2c = &mut devctx.i2c;
+
+    loop {
+        touch.wait_touch_interrupt();
+        let t = touch.detect_touch(i2c);
+        let mut num: u8 = 0;
+        match t {
+            Err(e) => info!("Error {:?} from fetching number of touches", e),
+            Ok(n) => {
+                num = n;
+            }
+        }
+
+        if num > 0 {
+            let t = touch.get_touch(i2c, 1);
+
+            match t {
+                Err(_e) => info!("Error fetching touch data"),
+                Ok(n) =>
+                    if n.x > CHOICE_TOUCH_POSITIONS[0] && n.x < CHOICE_TOUCH_POSITIONS[1] {
+                        if n.y > CHOICE_TOUCH_POSITIONS[2] && n.y < CHOICE_TOUCH_POSITIONS[3] {
+                            return Ok(format!("You pressed Yes"));
+                        } else if n.y > CHOICE_TOUCH_POSITIONS[4] && n.y < CHOICE_TOUCH_POSITIONS[5]
+                        {
+                            return Ok(format!("You pressed No"));
+                        } else {
+                            return Err(format!("Press a key"));
+                        }
+                    } else {
+                        return Err(format!("Press a key"));
+                    },
+            }
+        }
     }
 }
 
