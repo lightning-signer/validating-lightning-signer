@@ -21,6 +21,7 @@ use lightning_signer::signer::StartingTimeFactory;
 use lightning_signer::util::clock::ManualClock;
 use lightning_signer::util::key_utils::make_test_key;
 use lightning_signer::Arc;
+use lightning_signer::SendSync;
 use lightning_signer::{bitcoin, lightning};
 
 use crate::console_log::setup_log;
@@ -294,6 +295,8 @@ fn randomize_buffer(_seed: &mut [u8; 32]) {
 
 /// A starting time factory which uses random entropy
 struct RandomStartingTimeFactory {}
+
+impl SendSync for RandomStartingTimeFactory {}
 
 #[cfg(target_arch = "wasm32")]
 impl StartingTimeFactory for RandomStartingTimeFactory {

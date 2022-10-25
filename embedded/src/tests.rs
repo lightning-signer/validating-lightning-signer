@@ -22,6 +22,7 @@ use lightning_signer::lightning_invoice::{
 use lightning_signer::node::{Node, NodeConfig, NodeServices, SpendType};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
+use lightning_signer::prelude::SendSync;
 use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::signer::StartingTimeFactory;
 use lightning_signer::tx::tx::HTLCInfo2;
@@ -56,6 +57,8 @@ pub struct FixedStartingTimeFactory {
     starting_time_secs: u64,
     starting_time_nanos: u32,
 }
+
+impl SendSync for FixedStartingTimeFactory {}
 
 impl StartingTimeFactory for FixedStartingTimeFactory {
     fn starting_time(&self) -> (u64, u32) {

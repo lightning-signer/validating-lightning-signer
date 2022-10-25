@@ -9,8 +9,10 @@ pub mod derive;
 #[cfg(feature = "std")]
 use alloc::sync::Arc;
 
+use crate::prelude::SendSync;
+
 /// A factory for entropy generation (often using the precise real time)
-pub trait StartingTimeFactory: Send + Sync {
+pub trait StartingTimeFactory: SendSync {
     /// Generate unique entropy
     //
     // LDK: KeysManager: starting_time isn't strictly required to actually be a time, but it must
@@ -21,6 +23,9 @@ pub trait StartingTimeFactory: Send + Sync {
 /// A starting time factory which uses a hi-res tstamp for entropy
 #[cfg(feature = "std")]
 pub struct ClockStartingTimeFactory {}
+
+#[cfg(feature = "std")]
+impl SendSync for ClockStartingTimeFactory {}
 
 #[cfg(feature = "std")]
 impl StartingTimeFactory for ClockStartingTimeFactory {

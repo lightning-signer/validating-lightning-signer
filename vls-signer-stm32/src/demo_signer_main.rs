@@ -13,7 +13,6 @@ use core::cell::RefCell;
 use core::cmp::max;
 use core::time::Duration;
 
-use cortex_m::interrupt::Mutex;
 use cortex_m_rt::entry;
 
 #[allow(unused_imports)]
@@ -110,9 +109,8 @@ fn start_test_mode(mut runctx: TestingContext) -> ! {
 
     // Create the test-mode handler
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
-    let starting_time_factory = RandomStartingTimeFactory::new(Mutex::new(RefCell::new(
-        runctx.cmn.devctx.rng.take().unwrap(),
-    )));
+    let starting_time_factory =
+        RandomStartingTimeFactory::new(RefCell::new(runctx.cmn.devctx.rng.take().unwrap()));
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
     let clock = Arc::new(ManualClock::new(Duration::ZERO));
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };

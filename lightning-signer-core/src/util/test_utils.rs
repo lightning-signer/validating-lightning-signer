@@ -311,6 +311,8 @@ pub struct FixedStartingTimeFactory {
     starting_time_nanos: u32,
 }
 
+impl SendSync for FixedStartingTimeFactory {}
+
 impl StartingTimeFactory for FixedStartingTimeFactory {
     fn starting_time(&self) -> (u64, u32) {
         (self.starting_time_secs, self.starting_time_nanos)
