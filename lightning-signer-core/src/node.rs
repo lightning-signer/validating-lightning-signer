@@ -479,6 +479,15 @@ impl Allowable {
             Ok(Allowable::Script(address.script_pubkey()))
         }
     }
+
+    /// Convert to a scriptpubkey
+    /// Will error if this is a bare pubkey (Lightning payee)
+    pub fn to_script(self) -> Result<Script, ()> {
+        match self {
+            Allowable::Script(script) => Ok(script),
+            Allowable::Payee(_pubkey) => Err(()),
+        }
+    }
 }
 
 /// A signer for one Lightning node.
@@ -1484,6 +1493,11 @@ impl Node {
             .iter()
             .map(|allowable| Ok(allowable.to_string(self.network())))
             .collect::<Result<Vec<String>, Status>>()
+    }
+
+    /// Returns the node's current allowlist.
+    pub fn allowables(&self) -> Vec<Allowable> {
+        self.allowlist.lock().unwrap().iter().cloned().collect()
     }
 
     /// Adds addresses to the node's current allowlist.

@@ -1,4 +1,5 @@
 use crate::io_extras::sink;
+use crate::prelude::*;
 use bitcoin::consensus::Encodable;
 use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::secp256k1::PublicKey;

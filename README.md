@@ -4,6 +4,14 @@ Please see the
 [VLS Project Overview](https://gitlab.com/lightning-signer/docs/-/blob/master/README.md)
 for more information.  Our [web site](https://vls.tech/).
 
+# Limitations
+
+The following remain to be implemented:
+
+* `vlsd2 --recover-close` can only handle a simple force-close by us.  It cannot sweep a force-close or a breach by the peer.  It also cannot sweep HTLC outputs.
+* there is no facility to recover from loss of signer state.
+* on-chain tracking is not fully implemented, so a malicious node can steal funds by failing to remedy a breach (for example)
+
 # Starting the gRPC server
 
 The gRPC server is a reference implementation of a signer which listens for requests from the node and from the admin CLI over gRPC.

@@ -11,8 +11,9 @@ use bitcoin::{EcdsaSighashType, Network, OutPoint, Script, Transaction};
 use lightning::chain;
 use lightning::chain::keysinterface::{BaseSign, InMemorySigner, KeysInterface};
 use lightning::ln::chan_utils::{
-    build_htlc_transaction, derive_private_key, get_htlc_redeemscript, make_funding_redeemscript,
-    ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
+    build_htlc_transaction, derive_private_key, derive_public_revocation_key,
+    get_htlc_redeemscript, make_funding_redeemscript, ChannelPublicKeys,
+    ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
     TxCreationKeys,
 };
@@ -956,9 +957,12 @@ impl Channel {
     }
 
     /// Sign a holder commitment and HTLCs when recovering from node failure
+    /// Also returns the revocable scriptPubKey so we can identify our outputs
+    /// Also returns the unilateral close key material
     pub fn sign_holder_commitment_tx_for_recovery(
         &mut self,
-    ) -> Result<(Transaction, Vec<Transaction>), Status> {
+    ) -> Result<(Transaction, Vec<Transaction>, Script, (SecretKey, Vec<Vec<u8>>), PublicKey), Status>
+    {
         let info2 = self
             .enforcement_state
             .current_holder_commit_info
@@ -1006,20 +1010,40 @@ impl Channel {
         );
 
         // Sign the recomposed commitment.
-        let (sig, htlc_sigs) = self
+        // FIXME handle HTLCs
+        let (sig, _htlc_sigs) = self
             .keys
             .sign_holder_commitment_and_htlcs(&recomposed_holder_tx, &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
 
-        let mut tx = recomposed_holder_tx.trust().built_transaction().transaction.clone();
+        let holder_tx = recomposed_holder_tx.trust();
+        let mut tx = holder_tx.built_transaction().transaction.clone();
         let holder_funding_key = self.keys.pubkeys().funding_pubkey;
         let counterparty_funding_key = self.keys.counterparty_pubkeys().funding_pubkey;
+
+        let tx_keys = holder_tx.keys();
+        let revocable_redeemscript = chan_utils::get_revokeable_redeemscript(
+            &tx_keys.revocation_key,
+            self.setup.counterparty_selected_contest_delay,
+            &tx_keys.broadcaster_delayed_payment_key,
+        );
 
         add_holder_sig(&mut tx, sig, cp_sigs.0, &holder_funding_key, &counterparty_funding_key);
         self.enforcement_state.channel_closed = true;
         trace_enforcement_state!(&self.enforcement_state);
+
+        let revocation_basepoint = self.keys.counterparty_pubkeys().revocation_basepoint;
+        let revocation_pubkey = derive_public_revocation_key(
+            &self.secp_ctx,
+            &per_commitment_point,
+            &revocation_basepoint,
+        )
+        .expect("derive failed");
+        let ck =
+            self.get_unilateral_close_key(&Some(per_commitment_point), &Some(revocation_pubkey))?;
+
         self.persist()?;
-        Ok((tx, Vec::new()))
+        Ok((tx, Vec::new(), revocable_redeemscript.to_v0_p2wsh(), ck, revocation_pubkey))
     }
 
     /// Sign a holder commitment transaction after rebuilding it
