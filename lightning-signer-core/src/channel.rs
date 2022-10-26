@@ -23,7 +23,7 @@ use log::{debug, trace, warn};
 use crate::monitor::ChainMonitor;
 use crate::node::Node;
 use crate::policy::error::policy_error;
-use crate::policy::validator::{ChainState, EnforcementState, Validator};
+use crate::policy::validator::{ChainState, CommitmentSignatures, EnforcementState, Validator};
 use crate::prelude::*;
 use crate::tx::tx::{
     build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
@@ -32,6 +32,7 @@ use crate::tx::tx::{
 use crate::util::crypto_utils::derive_public_key;
 use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugVecVecU8};
 use crate::util::status::{internal_error, invalid_argument, Status};
+use crate::util::transaction_utils::add_holder_sig;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::wallet::Wallet;
 use crate::{Arc, Weak};
@@ -767,12 +768,14 @@ impl Channel {
         validator: Arc<dyn Validator>,
         commitment_number: u64,
         info2: CommitmentInfo2,
+        counterparty_signatures: CommitmentSignatures,
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
         // Advance the local commitment number state.
         validator.set_next_holder_commit_num(
             &mut self.enforcement_state,
             commitment_number + 1,
             info2,
+            counterparty_signatures,
         )?;
 
         // These calls are guaranteed to pass the commitment_number
@@ -874,8 +877,15 @@ impl Channel {
             validator.clone(),
         )?;
 
-        let (next_holder_commitment_point, maybe_old_secret) =
-            self.advance_holder_commitment_state(validator.clone(), commitment_number, info2)?;
+        let counterparty_signatures =
+            CommitmentSignatures(counterparty_commit_sig.clone(), counterparty_htlc_sigs.clone());
+        let (next_holder_commitment_point, maybe_old_secret) = self
+            .advance_holder_commitment_state(
+                validator.clone(),
+                commitment_number,
+                info2,
+                counterparty_signatures,
+            )?;
 
         state.apply_payments(
             &self.id0,
@@ -943,6 +953,73 @@ impl Channel {
         trace_enforcement_state!(&self.enforcement_state);
         self.persist()?;
         Ok((sig, htlc_sigs))
+    }
+
+    /// Sign a holder commitment and HTLCs when recovering from node failure
+    pub fn sign_holder_commitment_tx_for_recovery(
+        &mut self,
+    ) -> Result<(Transaction, Vec<Transaction>), Status> {
+        let info2 = self
+            .enforcement_state
+            .current_holder_commit_info
+            .as_ref()
+            .expect("holder commitment info should be present");
+        let cp_sigs = self
+            .enforcement_state
+            .current_counterparty_signatures
+            .as_ref()
+            .expect("counterparty signatures should be present");
+        let commitment_number = self.enforcement_state.next_holder_commit_num - 1;
+        warn!("force-closing channel for recovery at commitment number {}", commitment_number);
+
+        let htlcs =
+            Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
+        let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
+
+        let build_feerate =
+            if self.setup.option_anchors_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
+        let recomposed_tx = self.make_holder_commitment_tx(
+            commitment_number,
+            &txkeys,
+            build_feerate,
+            info2.to_broadcaster_value_sat,
+            info2.to_countersigner_value_sat,
+            htlcs,
+        )?;
+
+        // We provide a dummy signature for the remote, since we don't require that sig
+        // to be passed in to this call.  It would have been better if HolderCommitmentTransaction
+        // didn't require the remote sig.
+        // TODO consider if we actually want the sig for policy checks
+        let htlcs_len = recomposed_tx.htlcs().len();
+        let mut htlc_dummy_sigs = Vec::with_capacity(htlcs_len);
+        htlc_dummy_sigs.resize(htlcs_len, Self::dummy_sig());
+
+        // Holder commitments need an extra wrapper for the LDK signature routine.
+        let recomposed_holder_tx = HolderCommitmentTransaction::new(
+            recomposed_tx,
+            Self::dummy_sig(),
+            htlc_dummy_sigs,
+            &self.keys.pubkeys().funding_pubkey,
+            &self.keys.counterparty_pubkeys().funding_pubkey,
+        );
+
+        // Sign the recomposed commitment.
+        let (sig, htlc_sigs) = self
+            .keys
+            .sign_holder_commitment_and_htlcs(&recomposed_holder_tx, &self.secp_ctx)
+            .map_err(|_| internal_error("failed to sign"))?;
+
+        let mut tx = recomposed_holder_tx.trust().built_transaction().transaction.clone();
+        let holder_funding_key = self.keys.pubkeys().funding_pubkey;
+        let counterparty_funding_key = self.keys.counterparty_pubkeys().funding_pubkey;
+
+        add_holder_sig(&mut tx, sig, cp_sigs.0, &holder_funding_key, &counterparty_funding_key);
+        self.enforcement_state.channel_closed = true;
+        trace_enforcement_state!(&self.enforcement_state);
+        self.persist()?;
+        Ok((tx, Vec::new()))
     }
 
     /// Sign a holder commitment transaction after rebuilding it
@@ -1833,8 +1910,15 @@ impl Channel {
             validator.clone(),
         )?;
 
-        let (next_holder_commitment_point, maybe_old_secret) =
-            self.advance_holder_commitment_state(validator.clone(), commitment_number, info2)?;
+        let counterparty_signatures =
+            CommitmentSignatures(counterparty_commit_sig.clone(), counterparty_htlc_sigs.clone());
+        let (next_holder_commitment_point, maybe_old_secret) = self
+            .advance_holder_commitment_state(
+                validator.clone(),
+                commitment_number,
+                info2,
+                counterparty_signatures,
+            )?;
 
         state.apply_payments(
             &self.id0,

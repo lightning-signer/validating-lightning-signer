@@ -2,6 +2,7 @@ extern crate scopeguard;
 
 use core::cmp::{max, min};
 
+use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{self, EcdsaSighashType, Network, Script, Sighash, Transaction};
 use lightning::chain::keysinterface::InMemorySigner;
@@ -213,6 +214,7 @@ pub trait Validator {
         estate: &mut EnforcementState,
         num: u64,
         current_commitment_info: CommitmentInfo2,
+        counterparty_signatures: CommitmentSignatures,
     ) -> Result<(), ValidationError> {
         let current = estate.next_holder_commit_num;
         if num != current && num != current + 1 {
@@ -225,7 +227,7 @@ pub trait Validator {
                 num
             );
         }
-        estate.set_next_holder_commit_num(num, current_commitment_info);
+        estate.set_next_holder_commit_num(num, current_commitment_info, counterparty_signatures);
         Ok(())
     }
 
@@ -394,6 +396,10 @@ pub trait ValidatorFactory: Send + Sync {
     fn policy(&self, network: Network) -> Box<dyn Policy>;
 }
 
+/// Signatures for a commitment transaction
+#[derive(Clone, Debug)]
+pub struct CommitmentSignatures(pub Signature, pub Vec<Signature>);
+
 /// Enforcement state for a channel
 ///
 /// This keeps track of commitments on both sides and whether the channel
@@ -418,6 +424,9 @@ pub struct EnforcementState {
 
     // (set by validate_holder_commitment_tx)
     pub current_holder_commit_info: Option<CommitmentInfo2>,
+    /// Counterparty signatures on holder's commitment
+    pub current_counterparty_signatures: Option<CommitmentSignatures>,
+
     // (set by sign_counterparty_commitment_tx)
     pub current_counterparty_commit_info: Option<CommitmentInfo2>,
     // (set by sign_counterparty_commitment_tx)
@@ -440,6 +449,7 @@ impl EnforcementState {
             current_counterparty_point: None,
             previous_counterparty_point: None,
             current_holder_commit_info: None,
+            current_counterparty_signatures: None,
             current_counterparty_commit_info: None,
             previous_counterparty_commit_info: None,
             channel_closed: false,
@@ -501,12 +511,14 @@ impl EnforcementState {
         &mut self,
         num: u64,
         current_commitment_info: CommitmentInfo2,
+        counterparty_signatures: CommitmentSignatures,
     ) {
         let current = self.next_holder_commit_num;
         // TODO - should we enforce policy-v2-commitment-retry-same here?
         debug!("next_holder_commit_num {} -> {}", current, num);
         self.next_holder_commit_num = num;
         self.current_holder_commit_info = Some(current_commitment_info);
+        self.current_counterparty_signatures = Some(counterparty_signatures);
     }
 
     /// Get the current commitment info

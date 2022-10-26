@@ -25,10 +25,11 @@ use serde_with::serde_as;
 use serde_with::{DeserializeAs, SerializeAs};
 
 use lightning_signer::bitcoin;
+use lightning_signer::bitcoin::secp256k1::ecdsa::Signature;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::monitor::State as ChainMonitorState;
 use lightning_signer::node::InvoiceState;
-use lightning_signer::policy::validator::EnforcementState;
+use lightning_signer::policy::validator::{CommitmentSignatures, EnforcementState};
 use lightning_signer::tx::tx::{CommitmentInfo2, HTLCInfo2};
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -98,7 +99,7 @@ struct ChannelPublicKeysHelper(#[serde(with = "ChannelPublicKeysDef")] ChannelPu
 impl SerializeAs<ChannelPublicKeys> for ChannelPublicKeysDef {
     fn serialize_as<S>(value: &ChannelPublicKeys, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         ChannelPublicKeysDef::serialize(value, serializer)
     }
@@ -128,7 +129,7 @@ struct TxidDef;
 impl SerializeAs<Txid> for TxidDef {
     fn serialize_as<S>(value: &Txid, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         serializer.serialize_str(hex::encode(value.to_vec()).as_str())
     }
@@ -160,7 +161,7 @@ struct OutPointHelper(#[serde(with = "OutPointDef")] OutPoint);
 impl SerializeAs<OutPoint> for OutPointDef {
     fn serialize_as<S>(value: &OutPoint, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         OutPointDef::serialize(value, serializer)
     }
@@ -190,7 +191,7 @@ struct CommitmentTypeHelper(#[serde(with = "CommitmentTypeDef")] CommitmentType)
 impl SerializeAs<CommitmentType> for CommitmentTypeDef {
     fn serialize_as<S>(value: &CommitmentType, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         CommitmentTypeDef::serialize(value, serializer)
     }
@@ -221,7 +222,7 @@ struct ScriptHelper(#[serde(with = "ScriptDef")] Script);
 impl SerializeAs<Script> for ScriptDef {
     fn serialize_as<S>(value: &Script, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         ScriptDef::serialize(value, serializer)
     }
@@ -263,7 +264,7 @@ struct ChannelSetupHelper(#[serde(with = "ChannelSetupDef")] ChannelSetup);
 impl SerializeAs<ChannelSetup> for ChannelSetupDef {
     fn serialize_as<S>(value: &ChannelSetup, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         ChannelSetupDef::serialize(value, serializer)
     }
@@ -289,7 +290,7 @@ struct PaymentHashHelper(#[serde(with = "PaymentHashDef")] PaymentHash);
 impl SerializeAs<PaymentHash> for PaymentHashDef {
     fn serialize_as<S>(value: &PaymentHash, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         PaymentHashDef::serialize(value, serializer)
     }
@@ -320,7 +321,7 @@ struct HTLCInfo2Helper(#[serde(with = "HTLCInfo2Def")] HTLCInfo2);
 impl SerializeAs<HTLCInfo2> for HTLCInfo2Def {
     fn serialize_as<S>(value: &HTLCInfo2, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         HTLCInfo2Def::serialize(value, serializer)
     }
@@ -360,7 +361,7 @@ struct CommitmentInfo2Helper(#[serde(with = "CommitmentInfo2Def")] CommitmentInf
 impl SerializeAs<CommitmentInfo2> for CommitmentInfo2Def {
     fn serialize_as<S>(value: &CommitmentInfo2, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         CommitmentInfo2Def::serialize(value, serializer)
     }
@@ -379,6 +380,34 @@ impl<'de> DeserializeAs<'de, CommitmentInfo2> for CommitmentInfo2Def {
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
+#[serde(remote = "CommitmentSignatures")]
+pub struct CommitmentSignaturesDef(pub Signature, pub Vec<Signature>);
+
+#[derive(Deserialize)]
+struct CommitmentSignaturesHelper(#[serde(with = "CommitmentSignaturesDef")] CommitmentSignatures);
+
+impl SerializeAs<CommitmentSignatures> for CommitmentSignaturesDef {
+    fn serialize_as<S>(value: &CommitmentSignatures, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        CommitmentSignaturesDef::serialize(value, serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, CommitmentSignatures> for CommitmentSignaturesDef {
+    fn deserialize_as<D>(
+        deserializer: D,
+    ) -> Result<CommitmentSignatures, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        CommitmentSignaturesHelper::deserialize(deserializer).map(|h| h.0)
+    }
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize)]
 #[serde(remote = "EnforcementState")]
 pub struct EnforcementStateDef {
     pub next_holder_commit_num: u64,
@@ -388,6 +417,8 @@ pub struct EnforcementStateDef {
     pub previous_counterparty_point: Option<PublicKey>,
     #[serde_as(as = "Option<CommitmentInfo2Def>")]
     pub current_holder_commit_info: Option<CommitmentInfo2>,
+    #[serde_as(as = "Option<CommitmentSignaturesDef>")]
+    pub current_counterparty_signatures: Option<CommitmentSignatures>,
     #[serde_as(as = "Option<CommitmentInfo2Def>")]
     pub current_counterparty_commit_info: Option<CommitmentInfo2>,
     #[serde_as(as = "Option<CommitmentInfo2Def>")]
@@ -403,7 +434,7 @@ struct EnforcementStateHelper(#[serde(with = "EnforcementStateDef")] Enforcement
 impl SerializeAs<EnforcementState> for EnforcementStateDef {
     fn serialize_as<S>(value: &EnforcementState, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         EnforcementStateDef::serialize(value, serializer)
     }
@@ -438,7 +469,7 @@ struct ListenSlotHelper(#[serde(with = "ListenSlotDef")] ListenSlot);
 impl SerializeAs<ListenSlot> for ListenSlotDef {
     fn serialize_as<S>(value: &ListenSlot, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         ListenSlotDef::serialize(value, serializer)
     }
@@ -473,7 +504,7 @@ struct ChainMonitorStateHelper(#[serde(with = "ChainMonitorStateDef")] ChainMoni
 impl SerializeAs<ChainMonitorState> for ChainMonitorStateDef {
     fn serialize_as<S>(value: &ChainMonitorState, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         ChainMonitorStateDef::serialize(value, serializer)
     }
@@ -554,7 +585,7 @@ struct InvoiceStateHelper(#[serde(with = "InvoiceStateDef")] InvoiceState);
 impl SerializeAs<InvoiceState> for InvoiceStateDef {
     fn serialize_as<S>(value: &InvoiceState, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         InvoiceStateDef::serialize(value, serializer)
     }
