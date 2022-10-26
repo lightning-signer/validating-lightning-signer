@@ -118,8 +118,9 @@ Before we sign a commitment transaction, the following controls are checked:
   `policy-commitment-outputs-trimmed`
 
 * Revocation - the previous commitment transaction was properly
-  revoked by peer disclosing secret.  Note that this requires
-  unbounded storage. <br>
+  revoked by peer disclosing secret.  This includes both checking
+  that the secret matches the commitment point and that the secrets 
+  are consistent with the compact secret storage scheme in BOLT-3. <br>
   `policy-commitment-previous-revoked`
 
 * No breach - if signing a local commitment transaction, we must not

@@ -672,8 +672,7 @@ impl Validator for SimpleValidator {
         // Is this a retry?
         if commit_num + 1 == estate.next_counterparty_commit_num {
             // The commit_point must be the same as previous
-            let prev_commit_point = estate.get_previous_counterparty_point(commit_num);
-            match prev_commit_point {
+            match estate.current_counterparty_point {
                 None => {
                     policy_err!(
                         self,
