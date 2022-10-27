@@ -173,6 +173,15 @@ impl SetupFS {
         abbrev_path
     }
 
+    #[allow(unused)]
+    pub fn rundir(&self) -> sdcard::DIR {
+        let rootdir = self.fs.root_dir();
+        let runpath = self.runpath();
+        rootdir
+            .open_dir(&runpath)
+            .unwrap_or_else(|err| panic!("open {} failed: {:#?}", runpath, err))
+    }
+
     fn select_runpath(&mut self, runpath: String) {
         let rootdir = self.fs.root_dir();
         self.write_file_string(&rootdir, RUNPATH_PATH, &runpath);

@@ -25,6 +25,8 @@ usbd-serial = "0.1.0"
 fugit = "0.3"
 vls-protocol-signer = { path = "../vls-protocol-signer", default-features = false, features = ["no-std", "secp-lowmemory"] }
 vls-persist = { path = "../vls-persist", default-features = false, features = ["no-std"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+hex = { version = "0.4", default-features = false }
 
 # ft6x06 = "0.1.2"
 ft6x06 = { git = "https://github.com/Srg213/ft6x06.git", tag = "v0.1.2" }

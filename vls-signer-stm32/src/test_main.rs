@@ -15,7 +15,12 @@ use stm32f4xx_hal::prelude::*;
 #[allow(unused_imports)]
 use log::{debug, info, trace};
 
+use lightning_signer::persist::Persist;
+use lightning_signer::Arc;
+use vls_protocol_signer::lightning_signer;
+
 mod device;
+mod fat_json_persist;
 mod logger;
 mod sdcard;
 mod setup;
@@ -25,6 +30,7 @@ mod usbserial;
 use rand_core::RngCore;
 
 use device::DeviceContext;
+use fat_json_persist::FatJsonPersister;
 use setup::{get_run_context, setup_mode, RunContext};
 
 #[entry]
@@ -51,6 +57,8 @@ fn main() -> ! {
         }
         RunContext::Normal(normctx) => {
             info!("RunContext::Normal {:?}", normctx);
+            let _persister: Arc<dyn Persist> =
+                Arc::new(FatJsonPersister::new(Arc::clone(&normctx.cmn.setupfs.as_ref().unwrap())));
             normctx.cmn.devctx
         }
     };
