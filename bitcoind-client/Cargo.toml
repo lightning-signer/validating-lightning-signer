@@ -26,6 +26,7 @@ serde = { version = "1.0.105", features = ["derive"]}
 serde_json = { version = "1.0.48" }
 tokio = { version = "1.6", features = ["macros", "rt-multi-thread"] }
 lightning-signer-core = { path = "../lightning-signer-core" }
+url = "2.2"
 
 jsonrpc-async = "2.0.2"
 async-trait = "0.1"

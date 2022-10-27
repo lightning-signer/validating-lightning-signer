@@ -235,6 +235,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "url",
 ]
 
 [[package]]
@@ -2459,6 +2460,7 @@ dependencies = [
  "as-any",
  "async-stream",
  "async-trait",
+ "bitcoind-client",
  "chrono",
  "clap",
  "clap_derive",
