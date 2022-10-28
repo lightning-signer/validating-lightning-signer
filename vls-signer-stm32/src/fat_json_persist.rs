@@ -72,13 +72,15 @@ impl From<serde_json::Error> for Error {
 
 pub struct FatJsonPersister {
     setupfs: Arc<RefCell<SetupFS>>,
+    node_id: PublicKey,
 }
 
 impl SendSync for FatJsonPersister {}
 
 impl FatJsonPersister {
     pub fn new(setupfs: Arc<RefCell<SetupFS>>) -> Self {
-        let ss = Self { setupfs };
+        let node_id = PublicKey::from_str(&setupfs.borrow().runpath()).expect("node_id string");
+        let ss = Self { setupfs, node_id };
         ss.ensure_path(&Self::state_path());
         ss.ensure_path(&Self::node_bucket_path());
         ss.ensure_path(&Self::nodestate_bucket_path());
@@ -113,6 +115,26 @@ impl FatJsonPersister {
     }
     fn chaintracker_bucket_path() -> String {
         format!("{}/{}", STATE_PATH, CHAINTRACKER_BUCKET_PATH)
+    }
+
+    fn node_key() -> String {
+        "node".to_string()
+    }
+
+    fn nodestate_key() -> String {
+        "nodestate".to_string()
+    }
+
+    fn channel_key(chanid: &[u8]) -> String {
+        hex::encode(chanid)
+    }
+
+    fn allowlist_key() -> String {
+        "allowlist".to_string()
+    }
+
+    fn chaintracker_key() -> String {
+        "chaintracker".to_string()
     }
 
     // Update or create a value in a bucket
@@ -209,28 +231,32 @@ impl FatJsonPersister {
 }
 
 impl Persist for FatJsonPersister {
-    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &CoreNodeState) {
-        let key = node_id.to_string();
+    fn new_node(&self, _node_id: &PublicKey, config: &NodeConfig, state: &CoreNodeState) {
+        {
+            let key = Self::node_key();
+            let entry = NodeEntry {
+                key_derivation_style: config.key_derivation_style as u8,
+                network: config.network.to_string(),
+            };
+            let value = json!(entry).to_string();
+            self.insert_value(&Self::node_bucket_path(), &key, &value)
+                .map_err(|err| panic!("new_node insert failed: {}", err))
+                .unwrap();
+        }
 
-        let entry = NodeEntry {
-            key_derivation_style: config.key_derivation_style as u8,
-            network: config.network.to_string(),
-        };
-        let value = json!(entry).to_string();
-        self.insert_value(&Self::node_bucket_path(), &key, &value)
-            .map_err(|err| panic!("new_node insert failed: {}", err))
-            .unwrap();
-
-        let state_entry: NodeStateEntry = state.into();
-        let state_value = json!(state_entry).to_string();
-        self.upsert_value(&Self::nodestate_bucket_path(), &key, &state_value)
-            .map_err(|err| panic!("new_node upsert state failed: {}", err))
-            .unwrap();
+        {
+            let key = Self::nodestate_key();
+            let state_entry: NodeStateEntry = state.into();
+            let state_value = json!(state_entry).to_string();
+            self.upsert_value(&Self::nodestate_bucket_path(), &key, &state_value)
+                .map_err(|err| panic!("new_node upsert state failed: {}", err))
+                .unwrap();
+        }
     }
 
     #[allow(unused)]
     fn update_node(&self, node_id: &PublicKey, state: &CoreNodeState) -> Result<(), ()> {
-        let key = node_id.to_string();
+        let key = Self::nodestate_key();
         let state_entry: NodeStateEntry = state.into();
         let state_value = json!(state_entry).to_string();
         self.update_value(&Self::nodestate_bucket_path(), &key, &state_value)
@@ -242,8 +268,8 @@ impl Persist for FatJsonPersister {
         unimplemented!();
     }
 
-    fn new_chain_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) {
-        let key = node_id.to_string();
+    fn new_chain_tracker(&self, _node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) {
+        let key = Self::chaintracker_key();
         let entry: ChainTrackerEntry = tracker.into();
         let value = json!(entry).to_string();
         self.upsert_value(&Self::chaintracker_bucket_path(), &key, &value)
@@ -253,28 +279,28 @@ impl Persist for FatJsonPersister {
 
     fn update_tracker(
         &self,
-        node_id: &PublicKey,
+        _node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,
     ) -> Result<(), ()> {
-        let key = node_id.to_string();
+        let key = Self::chaintracker_key();
         let entry: ChainTrackerEntry = tracker.into();
         let value = json!(entry).to_string();
         self.update_value(&Self::chaintracker_bucket_path(), &key, &value)
             .map_err(|err| error!("update_tracker update state failed: {}", err))
     }
 
-    fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, ()> {
-        let key = node_id.to_string();
-        let fallible = || -> Result<ChainTracker<ChainMonitor>, Error> {
+    fn get_tracker(&self, _node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, ()> {
+        let key = Self::chaintracker_key();
+        || -> Result<ChainTracker<ChainMonitor>, Error> {
             let entry: ChainTrackerEntry =
                 serde_json::from_str(&self.read_value(&Self::chaintracker_bucket_path(), &key)?)?;
             Ok(entry.into())
-        };
-        fallible().map_err(|err| error!("get_tracker failed: {}", err))
+        }
+        .map_err(|err| error!("get_tracker failed: {}", err))
     }
 
     fn new_channel(&self, _node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()> {
-        let key = hex::encode(stub.id0.inner().as_slice());
+        let key = Self::channel_key(&stub.id0.inner());
         info!("new_channel: {}", key);
         let channel_value_satoshis = 0; // TODO not known yet
         let entry = ChannelEntry {
@@ -289,7 +315,7 @@ impl Persist for FatJsonPersister {
     }
 
     fn update_channel(&self, _node_id: &PublicKey, channel: &Channel) -> Result<(), ()> {
-        let key = hex::encode(&channel.id0.inner().as_slice());
+        let key = Self::channel_key(&channel.id0.inner());
         info!("update_channel: {}", key);
         let channel_value_satoshis = channel.setup.channel_value_sat;
         let entry = ChannelEntry {
@@ -314,7 +340,7 @@ impl Persist for FatJsonPersister {
 
     fn get_node_channels(&self, _node_id: &PublicKey) -> Vec<(ChannelId, CoreChannelEntry)> {
         info!("get_node_channels");
-        let fallible = || -> Result<Vec<(ChannelId, CoreChannelEntry)>, Error> {
+        || -> Result<Vec<(ChannelId, CoreChannelEntry)>, Error> {
             let mut res = vec![];
             for key in self.list_keys(&Self::channel_bucket_path())? {
                 // skip entries which are not valid hex
@@ -326,59 +352,60 @@ impl Persist for FatJsonPersister {
                 }
             }
             Ok(res)
-        };
-        fallible().unwrap_or_else(|err| panic!("get_node_channels failed: {}", err))
+        }
+        .unwrap_or_else(|err| panic!("get_node_channels failed: {}", err))
     }
 
-    fn update_node_allowlist(&self, node_id: &PublicKey, allowlist: Vec<String>) -> Result<(), ()> {
-        let key = node_id.to_string();
+    fn update_node_allowlist(
+        &self,
+        _node_id: &PublicKey,
+        allowlist: Vec<String>,
+    ) -> Result<(), ()> {
+        let key = Self::allowlist_key();
         let entry = AllowlistItemEntry { allowlist };
         let value = json!(entry).to_string();
         self.upsert_value(&Self::allowlist_bucket_path(), &key, &value)
             .map_err(|err| error!("update_node_allowlist failed: {}", err))
     }
 
-    fn get_node_allowlist(&self, node_id: &PublicKey) -> Vec<String> {
-        let key = node_id.to_string();
-        let fallible = || -> Result<Vec<String>, Error> {
+    fn get_node_allowlist(&self, _node_id: &PublicKey) -> Vec<String> {
+        let key = Self::allowlist_key();
+        || -> Result<Vec<String>, Error> {
             let entry: AllowlistItemEntry =
                 serde_json::from_str(&self.read_value(&Self::allowlist_bucket_path(), &key)?)?;
             Ok(entry.allowlist)
-        };
-        fallible().unwrap_or_else(|err| panic!("get_node_allowlist failed: {}", err))
+        }
+        .unwrap_or_else(|err| panic!("get_node_allowlist failed: {}", err))
     }
 
     fn get_nodes(&self) -> Vec<(PublicKey, CoreNodeEntry)> {
         info!("get_nodes");
-        let fallible = || -> Result<Vec<(PublicKey, CoreNodeEntry)>, Error> {
+        || -> Result<Vec<(PublicKey, CoreNodeEntry)>, Error> {
             let mut res = vec![];
-            for key in self.list_keys(&Self::node_bucket_path())? {
-                // skip entries which are not valid nodeids
-                if let Ok(pubkey) = PublicKey::from_str(key.as_str()) {
-                    let e: NodeEntry =
-                        serde_json::from_str(&self.read_value(&Self::node_bucket_path(), &key)?)?;
-                    let state_e: NodeStateEntry = serde_json::from_str(
-                        &self.read_value(&Self::nodestate_bucket_path(), &key)?,
-                    )?;
-                    let state = CoreNodeState {
-                        invoices: Default::default(),
-                        issued_invoices: Default::default(),
-                        payments: Default::default(),
-                        excess_amount: 0,
-                        log_prefix: "".to_string(),
-                        velocity_control: state_e.velocity_control.into(),
-                    };
-                    let entry = CoreNodeEntry {
-                        key_derivation_style: e.key_derivation_style,
-                        network: e.network,
-                        state,
-                    };
-                    res.push((pubkey, entry));
-                }
+            let key = Self::node_key();
+            if let Ok(nodevalue) = &self.read_value(&Self::node_bucket_path(), &key) {
+                let e: NodeEntry = serde_json::from_str(&nodevalue)?;
+                let skey = Self::nodestate_key();
+                let state_e: NodeStateEntry =
+                    serde_json::from_str(&self.read_value(&Self::nodestate_bucket_path(), &skey)?)?;
+                let state = CoreNodeState {
+                    invoices: Default::default(),
+                    issued_invoices: Default::default(),
+                    payments: Default::default(),
+                    excess_amount: 0,
+                    log_prefix: "".to_string(),
+                    velocity_control: state_e.velocity_control.into(),
+                };
+                let entry = CoreNodeEntry {
+                    key_derivation_style: e.key_derivation_style,
+                    network: e.network,
+                    state,
+                };
+                res.push((self.node_id.clone(), entry));
             }
             Ok(res)
-        };
-        fallible().unwrap_or_else(|err| panic!("get_nodes failed: {}", err))
+        }()
+        .unwrap_or_else(|err| panic!("get_nodes failed: {}", err))
     }
 
     fn clear_database(&self) {
