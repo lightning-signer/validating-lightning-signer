@@ -61,8 +61,14 @@ path = "src/test_main.rs"
 [profile.dev]
 opt-level = "z"
 debug = 2
+lto = true
+
+# helpful: https://github.com/johnthagen/min-sized-rust
+# `lto = true` reduces from 1030 -> 873
+# `codegen-units` reduces from 873 -> 855
 
 [profile.release]
 opt-level = "z"
-#opt-level = 2
 debug = 1
+lto = true
+codegen-units = 1
