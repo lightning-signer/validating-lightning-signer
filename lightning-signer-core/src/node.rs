@@ -85,6 +85,17 @@ pub struct InvoiceState {
     /// Whether the invoice was fulfilled
     /// note: for issued invoices only
     pub is_fulfilled: bool,
+    /// Payment type
+    pub payment_type: PaymentType,
+}
+
+/// Outgoing payment type
+#[derive(Clone, Debug)]
+pub enum PaymentType {
+    /// We are paying an invoice
+    Invoice,
+    /// We are sending via keysend
+    Keysend,
 }
 
 /// Keeps track of incoming and outgoing HTLCs for a routed payment
@@ -1614,6 +1625,47 @@ impl Node {
         Ok(())
     }
 
+    /// Add a keysend payment.
+    ///
+    /// The payee is currently not validated.
+    pub fn add_keysend(
+        &self,
+        payee: PublicKey,
+        payment_hash: PaymentHash,
+        amount_msat: u64,
+    ) -> Result<(), Status> {
+        let (invoice_state, invoice_hash) =
+            Node::invoice_state_from_keysend(payee, payment_hash, amount_msat)?;
+
+        info!(
+            "{} adding payment {} -> {}",
+            self.log_prefix(),
+            payment_hash.0.to_hex(),
+            invoice_state.amount_msat
+        );
+        let mut state = self.get_state();
+        if let Some(invoice_state) = state.invoices.get(&payment_hash) {
+            return if invoice_state.invoice_hash == invoice_hash {
+                Ok(())
+            } else {
+                Err(failed_precondition("already have a different payment for same secret"))
+            };
+        }
+        if !state.velocity_control.insert(self.clock.now().as_secs(), invoice_state.amount_msat) {
+            return Err(failed_precondition(format!(
+                "global velocity would be exceeded - += {} = {} > {}",
+                invoice_state.amount_msat,
+                state.velocity_control.velocity(),
+                state.velocity_control.limit
+            )));
+        }
+        state.invoices.insert(payment_hash, invoice_state);
+        state.payments.insert(payment_hash, RoutedPayment::new());
+        self.persister.update_node(&self.get_id(), &*state).expect("node persistence failure");
+
+        Ok(())
+    }
+
     /// Check to see if an invoice has already been added
     pub fn has_invoice(&self, hash: &PaymentHash, invoice_hash: &[u8; 32]) -> Result<bool, Status> {
         let state = self.get_state();
@@ -1655,8 +1707,33 @@ impl Node {
             duration_since_epoch: invoice.duration_since_epoch(),
             expiry_duration: invoice.expiry_time(),
             is_fulfilled: false,
+            payment_type: PaymentType::Invoice,
         };
         Ok((hash, invoice_state, invoice_hash))
+    }
+
+    /// Create tracking state for an ad-hoc payment (keysend).
+    /// The payee is not validated yet.
+    ///
+    /// Returns the invoice state
+    pub fn invoice_state_from_keysend(
+        payee: PublicKey,
+        payment_hash: PaymentHash,
+        amount_msat: u64,
+    ) -> Result<(InvoiceState, [u8; 32]), Status> {
+        // TODO validate the payee by generating the preimage ourselves and wrapping the inner layer of the onion
+        // TODO once we validate the payee, check if payee public key is in allowlist
+        let invoice_hash = payment_hash.0;
+        let invoice_state = InvoiceState {
+            invoice_hash,
+            amount_msat,
+            payee,
+            duration_since_epoch: Duration::ZERO,
+            expiry_duration: Duration::ZERO,
+            is_fulfilled: false,
+            payment_type: PaymentType::Keysend,
+        };
+        Ok((invoice_state, invoice_hash))
     }
 
     fn make_velocity_control(policy: Box<dyn Policy>) -> VelocityControl {

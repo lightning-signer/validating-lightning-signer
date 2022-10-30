@@ -1,3 +1,4 @@
+use lightning_signer::bitcoin::secp256k1::PublicKey;
 use lightning_signer::Arc;
 
 use lightning_signer::lightning::ln::PaymentHash;
@@ -19,18 +20,44 @@ pub trait Approve: SendSync {
         node: &Arc<Node>,
         signed: SignedRawInvoice,
     ) -> Result<(), Status> {
-        let (hash, invoice_state, invoice_hash) = Node::invoice_state_from_invoice(signed.clone())?;
+        let (payment_hash, invoice_state, invoice_hash) =
+            Node::invoice_state_from_invoice(signed.clone())?;
 
         // shortcut if node already has this invoice
-        if node.has_invoice(&hash, &invoice_hash)? {
+        if node.has_invoice(&payment_hash, &invoice_hash)? {
             return Ok(());
         }
 
         // otherwise ask approver
-        if self.approve_invoice(&hash, &invoice_state) {
+        if self.approve_invoice(&payment_hash, &invoice_state) {
             node.add_invoice(signed)
         } else {
             Err(Status::invalid_argument("invoice declined"))
+        }
+    }
+
+    /// Checks keysend for approval and adds to the node if needed and appropriate.
+    /// The payee is not validated yet.
+    fn handle_proposed_keysend(
+        &self,
+        node: &Arc<Node>,
+        payee: PublicKey,
+        payment_hash: PaymentHash,
+        amount_msat: u64,
+    ) -> Result<(), Status> {
+        let (invoice_state, invoice_hash) =
+            Node::invoice_state_from_keysend(payee, payment_hash, amount_msat)?;
+
+        // shortcut if node already has this invoice
+        if node.has_invoice(&payment_hash, &invoice_hash)? {
+            return Ok(());
+        }
+
+        // otherwise ask approver
+        if self.approve_invoice(&payment_hash, &invoice_state) {
+            node.add_keysend(payee, payment_hash, amount_msat)
+        } else {
+            Err(Status::invalid_argument("keysend declined"))
         }
     }
 }
@@ -123,5 +150,63 @@ impl<A: Approve> Approve for VelocityApprover<A> {
             }
             success
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::approver::{Approve, NegativeApprover, PositiveApprover, VelocityApprover};
+    use lightning_signer::bitcoin::secp256k1::PublicKey;
+    use lightning_signer::lightning::ln::PaymentHash;
+    use lightning_signer::node::{InvoiceState, Node};
+    use lightning_signer::util::clock::ManualClock;
+    use lightning_signer::util::velocity::{
+        VelocityControl, VelocityControlIntervalType::Hourly, VelocityControlSpec,
+    };
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    #[test]
+    fn test_velocity_approver_negative() {
+        let delegate = NegativeApprover();
+        let clock = Arc::new(ManualClock::new(Duration::ZERO));
+        let spec = VelocityControlSpec { limit: 1000, interval_type: Hourly };
+        let control = VelocityControl::new(spec);
+        let approver = VelocityApprover::new(clock.clone(), control, delegate);
+        let (payment_hash, invoice_state) = make_payment(1);
+        let success = approver.approve_invoice(&payment_hash, &invoice_state);
+        assert!(success);
+
+        let (payment_hash, invoice_state) = make_payment(2);
+        let success = approver.approve_invoice(&payment_hash, &invoice_state);
+        assert!(!success);
+        assert_eq!(approver.control.lock().unwrap().velocity(), 600);
+    }
+
+    #[test]
+    fn test_velocity_approver_positive() {
+        let delegate = PositiveApprover();
+        let clock = Arc::new(ManualClock::new(Duration::ZERO));
+        let spec = VelocityControlSpec { limit: 1000, interval_type: Hourly };
+        let control = VelocityControl::new(spec);
+        let approver = VelocityApprover::new(clock.clone(), control, delegate);
+        let (payment_hash, invoice_state) = make_payment(1);
+        let success = approver.approve_invoice(&payment_hash, &invoice_state);
+        assert!(success);
+        assert_eq!(approver.control.lock().unwrap().velocity(), 600);
+
+        let (payment_hash, invoice_state) = make_payment(2);
+        let success = approver.approve_invoice(&payment_hash, &invoice_state);
+        assert!(success);
+        // the approval of the second invoice should have cleared the velocity control
+        assert_eq!(approver.control.lock().unwrap().velocity(), 0);
+    }
+
+    fn make_payment(x: u8) -> (PaymentHash, InvoiceState) {
+        let payee = PublicKey::from_slice(&[2u8; 33]).unwrap();
+        let payment_hash = PaymentHash([x; 32]);
+        let (invoice_state, _invoice_hash) =
+            Node::invoice_state_from_keysend(payee, payment_hash, 600).unwrap();
+        (payment_hash, invoice_state)
     }
 }
