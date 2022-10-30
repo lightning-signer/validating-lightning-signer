@@ -33,7 +33,7 @@ use lightning_signer::policy::simple_validator::{
     make_simple_policy, SimplePolicy, SimpleValidatorFactory,
 };
 
-use vls_protocol_signer::approver::{Approver, PositiveApprover};
+use vls_protocol_signer::approver::{Approve, PositiveApprover};
 
 use lightning_signer::signer::{
     derive::KeyDerivationStyle, multi_signer::MultiSigner, ClockStartingTimeFactory,
@@ -122,7 +122,7 @@ struct SignServer {
     pub signer: Arc<MultiSigner>,
     pub network: Network,
     pub frontend: Frontend,
-    approver: Arc<dyn Approver>,
+    approver: Arc<dyn Approve>,
     seed_persister: Arc<dyn SeedPersist>,
 }
 

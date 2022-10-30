@@ -49,7 +49,7 @@ use vls_protocol::msgs::{DeriveSecretReply, PreapproveInvoiceReply, SerBolt, Sig
 use vls_protocol::serde_bolt::{LargeBytes, WireString};
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 
-use crate::approver::{Approver, PositiveApprover};
+use crate::approver::{Approve, PositiveApprover};
 
 /// Error
 #[derive(Debug)]
@@ -111,7 +111,7 @@ pub trait Handler {
 pub struct RootHandler {
     pub(crate) id: u64,
     pub node: Arc<Node>,
-    approver: Arc<dyn Approver>,
+    approver: Arc<dyn Approve>,
     lss_state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
 }
 
@@ -126,7 +126,7 @@ pub struct RootHandlerBuilder {
     seed: [u8; 32],
     allowlist: Vec<String>,
     services: NodeServices,
-    approver: Arc<dyn Approver>,
+    approver: Arc<dyn Approve>,
     lss_state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
 }
 
@@ -156,7 +156,7 @@ impl RootHandlerBuilder {
     }
 
     /// Set the approver
-    pub fn approver(mut self, approver: Arc<dyn Approver>) -> Self {
+    pub fn approver(mut self, approver: Arc<dyn Approve>) -> Self {
         self.approver = approver;
         self
     }

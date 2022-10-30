@@ -7,7 +7,7 @@ use lightning_signer::prelude::SendSync;
 use lightning_signer::util::status::Status;
 
 /// Approve payments
-pub trait Approver: SendSync {
+pub trait Approve: SendSync {
     ///  Approve an invoice for payment
     fn approve_invoice(&self, hash: &PaymentHash, invoice_state: &InvoiceState) -> bool;
 
@@ -38,7 +38,7 @@ pub struct PositiveApprover();
 
 impl SendSync for PositiveApprover {}
 
-impl Approver for PositiveApprover {
+impl Approve for PositiveApprover {
     fn approve_invoice(&self, _hash: &PaymentHash, _invoice_state: &InvoiceState) -> bool {
         true
     }
@@ -49,7 +49,7 @@ pub struct NegativeApprover();
 
 impl SendSync for NegativeApprover {}
 
-impl Approver for NegativeApprover {
+impl Approve for NegativeApprover {
     fn approve_invoice(&self, _hash: &PaymentHash, _invoice_state: &InvoiceState) -> bool {
         false
     }
