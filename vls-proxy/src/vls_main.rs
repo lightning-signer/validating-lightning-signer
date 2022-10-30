@@ -188,7 +188,7 @@ impl Looper {
     async fn channel_signer_loop(&self, client: UnixClient, handler: ChannelHandler) {
         let id = handler.client_id();
         let pid = std::process::id();
-        info!("chan loop {} {} {}: start", pid, id, handler.dbid);
+        info!("chan loop {} {} {}: start", pid, id, handler.dbid());
         match self.do_channel_signer_loop(client, handler).await {
             Ok(()) => info!("chan loop {} {}: done", pid, id),
             Err(Error::Protocol(ProtocolError::Eof)) => info!("chan loop {} {}: ending", pid, id),
@@ -287,7 +287,7 @@ async fn start() {
     };
 
     let frontend = Frontend::new(
-        Arc::new(SingleFront { node: Arc::clone(&handler.node) }),
+        Arc::new(SingleFront { node: Arc::clone(&handler.node()) }),
         Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
     );
 
