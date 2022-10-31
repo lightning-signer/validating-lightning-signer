@@ -14,7 +14,7 @@ use lightning_signer::node::{NodeConfig, NodeState};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
-use lightning_signer::persist::{Context, Mutations, Persist};
+use lightning_signer::persist::{Context, Error, Mutations, Persist};
 use lightning_signer::policy::validator::EnforcementState;
 use lightning_signer::prelude::*;
 
@@ -198,7 +198,12 @@ impl Persist for ThreadMemoPersister {
         Box::new(StdContext {})
     }
 
-    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &NodeState) {
+    fn new_node(
+        &self,
+        node_id: &PublicKey,
+        config: &NodeConfig,
+        state: &NodeState,
+    ) -> Result<(), Error> {
         self.update_node(node_id, state).unwrap();
         let key = &node_id.serialize();
         let entry = NodeEntry {
@@ -207,9 +212,10 @@ impl Persist for ThreadMemoPersister {
         };
         let value = to_vec(&entry).unwrap();
         self.with_state(|state| state.insert(NODE_ENTRY_PREFIX, key, value));
+        Ok(())
     }
 
-    fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), ()> {
+    fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), Error> {
         let key = &node_id.serialize();
         let state_entry: NodeStateEntry = state.into();
         let state_value = to_vec(&state_entry).unwrap();
@@ -217,15 +223,16 @@ impl Persist for ThreadMemoPersister {
         Ok(())
     }
 
-    fn delete_node(&self, node_id: &PublicKey) {
+    fn delete_node(&self, node_id: &PublicKey) -> Result<(), Error> {
         let key = &node_id.serialize();
         self.with_state(|state| {
             state.remove(NODE_ENTRY_PREFIX, key);
             state.remove(NODE_STATE_PREFIX, key);
         });
+        Ok(())
     }
 
-    fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()> {
+    fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), Error> {
         let channel_value_satoshis = 0; // TODO not known yet
 
         let node_key = &node_id.serialize();
@@ -241,18 +248,11 @@ impl Persist for ThreadMemoPersister {
         Ok(())
     }
 
-    fn new_chain_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) {
-        let key = &node_id.serialize();
-        let model: ChainTrackerEntry = tracker.into();
-        let value = to_vec(&model).unwrap();
-        self.with_state(|state| state.insert(NODE_TRACKER_PREFIX, key, value));
-    }
-
-    fn update_tracker(
+    fn new_chain_tracker(
         &self,
         node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), Error> {
         let key = &node_id.serialize();
         let model: ChainTrackerEntry = tracker.into();
         let value = to_vec(&model).unwrap();
@@ -260,14 +260,26 @@ impl Persist for ThreadMemoPersister {
         Ok(())
     }
 
-    fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, ()> {
+    fn update_tracker(
+        &self,
+        node_id: &PublicKey,
+        tracker: &ChainTracker<ChainMonitor>,
+    ) -> Result<(), Error> {
+        let key = &node_id.serialize();
+        let model: ChainTrackerEntry = tracker.into();
+        let value = to_vec(&model).unwrap();
+        self.with_state(|state| state.insert(NODE_TRACKER_PREFIX, key, value));
+        Ok(())
+    }
+
+    fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, Error> {
         let key = &node_id.serialize();
         let value = self.with_state(|state| state.get(NODE_TRACKER_PREFIX, key)).unwrap();
         let model: ChainTrackerEntry = from_slice(&value).unwrap();
         Ok(model.into())
     }
 
-    fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), ()> {
+    fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), Error> {
         let channel_value_satoshis = channel.setup.channel_value_sat;
         let node_key = &node_id.serialize();
         let channel_key = channel.id0.as_slice();
@@ -286,7 +298,7 @@ impl Persist for ThreadMemoPersister {
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
-    ) -> Result<CoreChannelEntry, ()> {
+    ) -> Result<CoreChannelEntry, Error> {
         let node_id = &node_id.serialize();
         let channel_key = channel_id.as_slice();
         let entry = self.with_state(|state| {
@@ -297,7 +309,10 @@ impl Persist for ThreadMemoPersister {
         Ok(entry.into())
     }
 
-    fn get_node_channels(&self, node_id: &PublicKey) -> Vec<(ChannelId, CoreChannelEntry)> {
+    fn get_node_channels(
+        &self,
+        node_id: &PublicKey,
+    ) -> Result<Vec<(ChannelId, CoreChannelEntry)>, Error> {
         let node_id = &node_id.serialize();
         let mut res = Vec::new();
         self.with_state(|state| {
@@ -307,10 +322,14 @@ impl Persist for ThreadMemoPersister {
                 res.push((channel_id, entry.into()));
             }
         });
-        res
+        Ok(res)
     }
 
-    fn update_node_allowlist(&self, node_id: &PublicKey, allowlist: Vec<String>) -> Result<(), ()> {
+    fn update_node_allowlist(
+        &self,
+        node_id: &PublicKey,
+        allowlist: Vec<String>,
+    ) -> Result<(), Error> {
         let key = &node_id.serialize();
         let entry = AllowlistItemEntry { allowlist };
         let value = to_vec(&entry).unwrap();
@@ -318,17 +337,17 @@ impl Persist for ThreadMemoPersister {
         Ok(())
     }
 
-    fn get_node_allowlist(&self, node_id: &PublicKey) -> Vec<String> {
+    fn get_node_allowlist(&self, node_id: &PublicKey) -> Result<Vec<String>, Error> {
         let key = &node_id.serialize();
         let entry = self.with_state(|state| {
             let value = state.get(ALLOWLIST_PREFIX, key).unwrap();
             let entry: AllowlistItemEntry = from_slice(&value).unwrap();
             entry
         });
-        entry.allowlist
+        Ok(entry.allowlist)
     }
 
-    fn get_nodes(&self) -> Vec<(PublicKey, CoreNodeEntry)> {
+    fn get_nodes(&self) -> Result<Vec<(PublicKey, CoreNodeEntry)>, Error> {
         let mut res = Vec::new();
         self.with_state(|state| {
             state
@@ -356,10 +375,10 @@ impl Persist for ThreadMemoPersister {
                     res.push((node_id, node_entry));
                 });
         });
-        res
+        Ok(res)
     }
 
-    fn clear_database(&self) {
+    fn clear_database(&self) -> Result<(), Error> {
         unimplemented!("clear_database is not implemented")
     }
 }
@@ -384,8 +403,8 @@ mod tests {
 
         let state = Arc::new(Mutex::new(BTreeMap::new()));
         let persist_ctx = persister.enter(state);
-        persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state());
-        let nodes = persister.get_nodes();
+        persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state()).unwrap();
+        let nodes = persister.get_nodes().unwrap();
         assert_eq!(nodes.len(), 1);
         let dirty = persist_ctx.exit();
         assert_eq!(dirty.len(), 2);
@@ -412,7 +431,7 @@ mod tests {
 
         let state = Arc::new(Mutex::new(BTreeMap::new()));
         let persist_ctx = persister.enter(state);
-        persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state());
+        persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state()).unwrap();
         persister.update_node(&node_id, &*node.get_state()).unwrap();
         let dirty = persist_ctx.exit();
         // updating the same record twice in one transaction should not increment the revision
@@ -437,11 +456,11 @@ mod tests {
 
         let state = Arc::new(Mutex::new(BTreeMap::new()));
         let ctx = persister.enter(state);
-        persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state());
-        let nodes = persister.get_nodes();
+        persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state()).unwrap();
+        let nodes = persister.get_nodes().unwrap();
         assert_eq!(nodes.len(), 1);
-        persister.delete_node(&node_id);
-        let nodes = persister.get_nodes();
+        persister.delete_node(&node_id).unwrap();
+        let nodes = persister.get_nodes().unwrap();
         assert_eq!(nodes.len(), 0);
         ctx.exit();
     }
@@ -485,7 +504,7 @@ mod tests {
     #[should_panic]
     fn test_bad_get() {
         let persister = ThreadMemoPersister {};
-        persister.get_nodes();
+        persister.get_nodes().unwrap();
     }
 
     #[test]

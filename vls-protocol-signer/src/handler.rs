@@ -183,15 +183,17 @@ impl RootHandlerBuilder {
             NodeConfig { network: self.network, key_derivation_style: KeyDerivationStyle::Native };
 
         let persister = self.services.persister.clone();
-        let nodes = persister.get_nodes();
+        let nodes = persister.get_nodes().expect("get_nodes");
         let node = if nodes.is_empty() {
             let node = Arc::new(Node::new(config, &self.seed, vec![], self.services));
             info!("New node {}", node.get_id());
             node.add_allowlist(&self.allowlist).expect("allowlist");
             // NOTE: if we persist to LSS, we don't actually persist the seed here,
             // and the caller must provide the seed each time we restore from persistence
-            persister.new_node(&node.get_id(), &config, &*node.get_state());
-            persister.new_chain_tracker(&node.get_id(), &node.get_tracker());
+            persister.new_node(&node.get_id(), &config, &*node.get_state()).expect("new_node");
+            persister
+                .new_chain_tracker(&node.get_id(), &node.get_tracker())
+                .expect("new_chain_tracker");
             node
         } else {
             assert_eq!(nodes.len(), 1);
