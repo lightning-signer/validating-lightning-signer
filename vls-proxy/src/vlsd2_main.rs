@@ -2,7 +2,7 @@ use crate::grpc::signer::recover_close;
 use clap::{App, AppSettings, Arg};
 use grpc::signer::start_signer;
 use lightning_signer::bitcoin::Network;
-use lightning_signer_server::NETWORK_NAMES;
+use lightning_signer_server::{CLAP_NETWORK_URL_MAPPING, NETWORK_NAMES};
 use url::Url;
 use util::setup_logging;
 
@@ -22,10 +22,10 @@ pub fn main() {
             .about("Greenlight lightning-signer")
             .arg(
                 Arg::new("connect")
-                    .about("URI of node")
+                    .about("node RPC endpoint")
                     .long("connect")
                     .short('c')
-                    .takes_value(true)
+                    .value_name("URL")
                     .required_unless_present("recover-close"),
             )
             .arg(
@@ -34,13 +34,14 @@ pub fn main() {
                     .long("datadir")
                     .default_value(DEFAULT_DIR)
                     .about("data directory")
-                    .takes_value(true),
+                    .value_name("DIR"),
             )
             .arg(
                 Arg::new("network")
                     .short('n')
                     .long("network")
-                    .possible_values(&NETWORK_NAMES)
+                    .value_name("NETWORK")
+                    .possible_values(NETWORK_NAMES)
                     .default_value(NETWORK_NAMES[0]),
             )
             .arg(
@@ -50,11 +51,11 @@ pub fn main() {
             )
             .arg(
                 Arg::new("bitcoin")
-                    .about("Bitcoin RPC endpoint - used for broadcasting recovery transactions")
+                    .about("bitcoind RPC endpoint - used for broadcasting recovery transactions")
                     .short('b')
                     .long("bitcoin")
-                    .default_value("http://user:pass@localhost:18443")
-                    .takes_value(true),
+                    .default_value_ifs(CLAP_NETWORK_URL_MAPPING)
+                    .value_name("URL"),
             )
             .arg(Arg::new("recover-close").long("recover-close").about(
                 "send a force-close transaction to recover funds when the node is unavailable",
