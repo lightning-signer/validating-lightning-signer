@@ -1694,7 +1694,7 @@ impl Node {
     pub fn payment_state_from_invoice(
         raw_invoice: SignedRawInvoice,
     ) -> Result<(PaymentHash, PaymentState, [u8; 32], Invoice), Status> {
-        let invoice_hash = raw_invoice.hash().clone();
+        let invoice_hash = raw_invoice.signable_hash().clone();
 
         // This performs all semantic checks and signature check
         let invoice =
