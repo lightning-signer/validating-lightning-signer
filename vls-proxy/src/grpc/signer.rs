@@ -58,9 +58,15 @@ pub async fn start_signer(datadir: &str, uri: Uri, network: Network, integration
 }
 
 #[tokio::main(worker_threads = 2)]
-pub async fn recover_close(datadir: &str, network: Network, bitcoin_rpc: Option<Url>) {
+pub async fn recover_close(
+    datadir: &str,
+    network: Network,
+    bitcoin_rpc: Option<Url>,
+    address: &str,
+) {
     let root_handler = make_handler(datadir, network, false);
     let node = root_handler.node;
+    node.set_allowlist(&[address.to_string()]).expect("add destination to allowlist");
     println!("allowlist {:?}", node.allowlist());
     let channels = node.channels();
     let bitcoind_client = match bitcoin_rpc {
@@ -154,7 +160,7 @@ pub async fn recover_close(datadir: &str, network: Network, bitcoin_rpc: Option<
 
     let wallet_path = vec![];
     let destination = node.allowables()[0].clone();
-    info!("sweeping to first allowlist entry {}", destination.to_string(network));
+    info!("sweeping to {}", destination.to_string(network));
     let output_script = destination.to_script().expect("script");
     for (descriptor, uck) in sweeps {
         let feerate = 1000;

@@ -1516,8 +1516,8 @@ impl Node {
     }
 
     /// Replace the nodes allowlist with the provided allowlist.
-    pub fn set_allowlist(&self, addlist: &Vec<String>) -> Result<(), Status> {
-        let allowables = addlist
+    pub fn set_allowlist(&self, allowlist: &[String]) -> Result<(), Status> {
+        let allowables = allowlist
             .iter()
             .map(|addrstr| Allowable::from_str(addrstr, self.network()))
             .collect::<Result<Vec<Allowable>, String>>()

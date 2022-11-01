@@ -16,58 +16,60 @@ const DEFAULT_DIR: &str = ".lightning-signer";
 
 pub fn main() {
     setup_logging("vlsd2", "info");
-    let app =
-        App::new("signer")
-            .setting(AppSettings::NoAutoVersion)
-            .about("Greenlight lightning-signer")
-            .arg(
-                Arg::new("connect")
-                    .about("node RPC endpoint")
-                    .long("connect")
-                    .short('c')
-                    .value_name("URL")
-                    .required_unless_present("recover-close"),
-            )
-            .arg(
-                Arg::new("datadir")
-                    .short('d')
-                    .long("datadir")
-                    .default_value(DEFAULT_DIR)
-                    .about("data directory")
-                    .value_name("DIR"),
-            )
-            .arg(
-                Arg::new("network")
-                    .short('n')
-                    .long("network")
-                    .value_name("NETWORK")
-                    .possible_values(NETWORK_NAMES)
-                    .default_value(NETWORK_NAMES[0]),
-            )
-            .arg(
-                Arg::new("integration-test")
-                    .long("integration-test")
-                    .about("use integration test mode, reading/writing hsm_secret from CWD"),
-            )
-            .arg(
-                Arg::new("bitcoin")
-                    .about("bitcoind RPC endpoint - used for broadcasting recovery transactions")
-                    .short('b')
-                    .long("bitcoin")
-                    .default_value_ifs(CLAP_NETWORK_URL_MAPPING)
-                    .value_name("URL"),
-            )
-            .arg(Arg::new("recover-close").long("recover-close").about(
+    let app = App::new("signer")
+        .setting(AppSettings::NoAutoVersion)
+        .about("Validating Lightning Signer")
+        .arg(
+            Arg::new("connect")
+                .about("node RPC endpoint")
+                .long("connect")
+                .short('c')
+                .value_name("URL")
+                .required_unless_present("recover-close"),
+        )
+        .arg(
+            Arg::new("datadir")
+                .short('d')
+                .long("datadir")
+                .default_value(DEFAULT_DIR)
+                .about("data directory")
+                .value_name("DIR"),
+        )
+        .arg(
+            Arg::new("network")
+                .short('n')
+                .long("network")
+                .value_name("NETWORK")
+                .possible_values(NETWORK_NAMES)
+                .default_value(NETWORK_NAMES[0]),
+        )
+        .arg(
+            Arg::new("integration-test")
+                .long("integration-test")
+                .about("use integration test mode, reading/writing hsm_secret from CWD"),
+        )
+        .arg(
+            Arg::new("bitcoin")
+                .about("bitcoind RPC endpoint - used for broadcasting recovery transactions")
+                .short('b')
+                .long("bitcoin")
+                .default_value_ifs(CLAP_NETWORK_URL_MAPPING)
+                .value_name("URL"),
+        )
+        .arg(
+            Arg::new("recover-close").long("recover-close").value_name("BITCOIN_ADDRESS").about(
                 "send a force-close transaction to recover funds when the node is unavailable",
-            ));
+            ),
+        );
     let matches = app.get_matches();
     let datadir = matches.value_of("datadir").unwrap();
     let network: Network = matches.value_of_t("network").expect("network");
 
-    let is_recover_close = matches.is_present("recover-close");
     let bitcoin_rpc = matches.value_of("bitcoin").map(|s| Url::parse(s).expect("bitcoin url"));
-    if is_recover_close {
-        recover_close(datadir, network, bitcoin_rpc);
+    let recover_address = matches.value_of("recover-close");
+
+    if let Some(address) = recover_address {
+        recover_close(datadir, network, bitcoin_rpc, address);
         return;
     }
 

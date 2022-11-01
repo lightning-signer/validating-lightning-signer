@@ -241,7 +241,7 @@ impl Looper {
 pub fn main() {
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
-        .about("Greenlight lightning-signer")
+        .about("Validating Lightning Signer")
         .arg(Arg::from("--test run a test emulating lightningd/hsmd"));
     let app = add_hsmd_args(app);
     let matches = app.get_matches();
