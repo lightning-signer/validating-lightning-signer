@@ -363,6 +363,15 @@ impl BaseSign for SignerClient {
         Ok(Signature::from_compact(&result.signature.signature.0).unwrap())
     }
 
+    fn sign_holder_anchor_input(
+        &self,
+        _anchor_tx: &Transaction,
+        _input: usize,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<Signature, ()> {
+        todo!()
+    }
+
     fn sign_channel_announcement(
         &self,
         msg: &UnsignedChannelAnnouncement,

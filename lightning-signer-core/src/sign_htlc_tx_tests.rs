@@ -70,6 +70,7 @@ mod tests {
             to_self_delay,
             &htlc,
             setup.option_anchors(),
+            !setup.option_anchors_zero_fee_htlc(),
             &txkeys.broadcaster_delayed_payment_key,
             &txkeys.revocation_key,
         );
@@ -190,6 +191,7 @@ mod tests {
                     to_self_delay,
                     &htlc,
                     channel_parameters.opt_anchors.is_some(),
+                    !setup.option_anchors_zero_fee_htlc(),
                     &keys.broadcaster_delayed_payment_key,
                     &keys.revocation_key,
                 );
@@ -319,6 +321,7 @@ mod tests {
                     to_self_delay,
                     &htlc,
                     channel_parameters.opt_anchors.is_some(),
+                    !setup.option_anchors_zero_fee_htlc(),
                     &keys.broadcaster_delayed_payment_key,
                     &keys.revocation_key,
                 );

@@ -147,6 +147,9 @@ impl BaseSign for DynSigner {
             ) -> Result<(Signature, Signature), ()>;
 
             fn ready_channel(&mut self, channel_parameters: &ChannelTransactionParameters);
+            fn sign_holder_anchor_input(
+                &self, anchor_tx: &Transaction, input: usize, secp_ctx: &Secp256k1<secp256k1::All>,
+            ) -> Result<Signature, ()>;
         }
     }
 }
@@ -245,9 +248,6 @@ pub trait SpendableKeysInterface: KeysInterface + Send + Sync {
     /// This is implemented by setting the change destination to spend_spendable_outputs to this address.
     fn get_sweep_address(&self) -> Address;
 
-    /// Get the node ID
-    fn get_node_id(&self) -> PublicKey;
-
     /// Sign for the layer-1 wallet
     /// TODO can we use the derivation path in the psbt?
     fn sign_from_wallet(
@@ -270,8 +270,6 @@ impl SpendableKeysInterface for DynKeysInterface {
             ) -> anyhow::Result<Transaction>;
 
             fn get_sweep_address(&self) -> Address;
-
-            fn get_node_id(&self) -> PublicKey;
 
             fn sign_from_wallet(&self, psbt: &PartiallySignedTransaction, derivations: Vec<u32>) -> PartiallySignedTransaction;
         }

@@ -254,6 +254,7 @@ mod tests {
                             chan_ctx.setup.counterparty_selected_contest_delay,
                             &htlc,
                             chan_ctx.setup.option_anchors(),
+                            !chan_ctx.setup.option_anchors_zero_fee_htlc(),
                             &txkeys.broadcaster_delayed_payment_key,
                             &txkeys.revocation_key,
                         )

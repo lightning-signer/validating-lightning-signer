@@ -739,6 +739,7 @@ impl Channel {
                 to_self_delay,
                 htlc,
                 self.setup.option_anchors(),
+                !self.setup.option_anchors_zero_fee_htlc(),
                 &txkeys.broadcaster_delayed_payment_key,
                 &txkeys.revocation_key,
             );
@@ -1135,7 +1136,7 @@ impl Channel {
         let mut htlcs_with_aux = htlcs.iter().map(|h| (h.clone(), ())).collect();
         let channel_parameters = self.make_channel_parameters();
         let parameters = channel_parameters.as_holder_broadcastable();
-        let commitment_tx = CommitmentTransaction::new_with_auxiliary_htlc_data(
+        let mut commitment_tx = CommitmentTransaction::new_with_auxiliary_htlc_data(
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             to_holder_value_sat,
             to_counterparty_value_sat,
@@ -1147,6 +1148,9 @@ impl Channel {
             &mut htlcs_with_aux,
             &parameters,
         );
+        if self.setup.option_anchors() {
+            commitment_tx = commitment_tx.with_non_zero_fee_anchors();
+        }
         commitment_tx
     }
 
@@ -1201,6 +1205,8 @@ impl Channel {
             txid: self.setup.funding_outpoint.txid,
             index: self.setup.funding_outpoint.vout as u16,
         };
+        let opt_non_zero_fee_anchors =
+            if self.setup.option_anchors_zero_fee_htlc() { Some(()) } else { None };
         let channel_parameters = ChannelTransactionParameters {
             holder_pubkeys: self.get_channel_basepoints(),
             holder_selected_contest_delay: self.setup.holder_selected_contest_delay,
@@ -1211,6 +1217,7 @@ impl Channel {
             }),
             funding_outpoint: Some(funding_outpoint),
             opt_anchors: if self.setup.option_anchors() { Some(()) } else { None },
+            opt_non_zero_fee_anchors,
         };
         channel_parameters
     }
