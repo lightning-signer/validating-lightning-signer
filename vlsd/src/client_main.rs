@@ -10,8 +10,8 @@ use std::io;
 use clap::{App, Arg, ArgMatches};
 
 use bip39::Mnemonic;
-use lightning_signer_server::CLIENT_APP_NAME;
 use lightning_signer_server::NETWORK_NAMES;
+use lightning_signer_server::{CLAP_NETWORK_URL_MAPPING, CLIENT_APP_NAME};
 
 fn make_test_subapp() -> App<'static> {
     App::new("test").about("run a test scenario").subcommand(App::new("integration"))
@@ -57,7 +57,7 @@ fn make_node_subapp() -> App<'static> {
                      .about("network name")
                      .long("network")
                      .takes_value(true)
-                     .possible_values(&NETWORK_NAMES)
+                     .possible_values(NETWORK_NAMES)
                      .default_value(NETWORK_NAMES[0]),
                 )
         )
@@ -194,10 +194,10 @@ async fn alst_subcommand(
     Ok(())
 }
 
-fn parse_rpc_url(matches: &ArgMatches) -> String {
-    let raw_rpc_value = matches.value_of("rpc").expect("rpc");
+fn parse_rpc_url(name: &str, matches: &ArgMatches) -> String {
+    let raw_rpc_value = matches.value_of(name).expect(name);
 
-    let rpc_url = match raw_rpc_value.parse::<u16>() {
+    match raw_rpc_value.parse::<u16>() {
         Ok(_) => {
             // Port number suplied.
             let mut base_url = String::from("http://127.0.0.1:");
@@ -206,10 +206,9 @@ fn parse_rpc_url(matches: &ArgMatches) -> String {
         }
         Err(_) => match url::Url::parse(raw_rpc_value) {
             Ok(_) => String::from(raw_rpc_value),
-            _ => panic!("Invalid rpc_value"),
+            _ => panic!("Invalid RPC URL"),
         },
-    };
-    rpc_url
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -228,13 +227,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .validator(|v| hex::decode(v)),
         )
         .arg(
-            Arg::new("rpc")
-            .about("Either port number or uri")
+            Arg::new("bitcoin")
+            .about("Either port number or URL of the Bitcoin RPC server")
                 .short('c')
-                .long("rpc")
+                .long("bitcoin")
                 .takes_value(true)
                 .global(true)
-                .default_value("http://127.0.0.1:50051")
+                .default_value_ifs(CLAP_NETWORK_URL_MAPPING)
                 .validator(|value| {
                     let is_port = value.parse::<u16>().is_ok();
                     let is_url = url::Url::parse(value).is_ok();
@@ -252,7 +251,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .subcommand(App::new("ping"));
     let matches = app.clone().get_matches();
 
-    let rpc_url = parse_rpc_url(&matches);
+    let rpc_url = parse_rpc_url("bitcoin", &matches);
     let rpc = rpc_url.as_str();
     println!("Rpc: {}", rpc_url);
 

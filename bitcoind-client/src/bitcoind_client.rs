@@ -11,6 +11,8 @@ use jsonrpc_async::error::Error::Rpc;
 use jsonrpc_async::simple_http::SimpleHttpTransport;
 use jsonrpc_async::Client;
 use lightning_signer::bitcoin;
+use lightning_signer::bitcoin::psbt::serialize::Serialize;
+use lightning_signer::lightning::chain::transaction::OutPoint;
 use log::{self, error};
 use serde;
 use serde_json::{json, Value};
@@ -79,21 +81,44 @@ impl BitcoindClient {
 
     /// Make a getblockchaininfo RPC call
     pub async fn get_blockchain_info(&self) -> BitcoindClientResult<BlockchainInfo> {
-        Ok(self.call_into("getblockchaininfo", &[]).await?)
+        let result = self.call_into("getblockchaininfo", &[]).await;
+        Ok(result?)
+    }
+
+    /// Broadcast transaction
+    pub async fn broadcast_transaction(
+        &self,
+        tx: &bitcoin::Transaction,
+    ) -> BitcoindClientResult<()> {
+        let tx_hex = tx.serialize().to_hex();
+        let _: Value = self.call("sendrawtransaction", &[json!(tx_hex)]).await?;
+        Ok(())
+    }
+
+    /// Get whether an outpoint is unspent (will return Some(confirmations))
+    pub async fn get_txout(&self, txout: &OutPoint) -> BitcoindClientResult<Option<u64>> {
+        let value: Value =
+            self.call("gettxout", &[json!(txout.txid.to_hex()), json!(txout.index)]).await?;
+        if value.is_null() {
+            Ok(None)
+        } else {
+            let confirmations = value["confirmations"].as_u64().unwrap();
+            Ok(Some(confirmations))
+        }
     }
 
     async fn call<T: for<'a> serde::de::Deserialize<'a>>(
         &self,
         cmd: &str,
-        args: &[serde_json::Value],
+        args: &[Value],
     ) -> Result<T, Error> {
         let rpc = self.rpc.lock().await;
         let v_args: Vec<_> = args
             .iter()
             .map(serde_json::value::to_raw_value)
-            .collect::<std::result::Result<_, serde_json::Error>>()?;
+            .collect::<Result<_, serde_json::Error>>()?;
         let req = rpc.build_request(cmd, &v_args[..]);
-        log::trace!("JSON-RPC request: {} {}", cmd, serde_json::Value::from(args));
+        log::trace!("JSON-RPC request: {} {}", cmd, Value::from(args));
 
         let res = rpc.send_request(req).await;
         let resp = res.map_err(Error::from);
@@ -104,7 +129,7 @@ impl BitcoindClient {
         Ok(resp?.result()?)
     }
 
-    async fn call_into<T>(&self, cmd: &str, args: &[serde_json::Value]) -> Result<T, Error>
+    async fn call_into<T>(&self, cmd: &str, args: &[Value]) -> Result<T, Error>
     where
         JsonResponse: TryInto<T, Error = std::io::Error>,
     {

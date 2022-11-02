@@ -1,6 +1,10 @@
 use crate::io_extras::sink;
+use crate::prelude::*;
 use bitcoin::consensus::Encodable;
-use bitcoin::{Script, Transaction, TxOut, VarInt};
+use bitcoin::secp256k1::ecdsa::Signature;
+use bitcoin::secp256k1::PublicKey;
+use bitcoin::{EcdsaSighashType, Script, Transaction, TxOut, VarInt};
+use lightning::ln::chan_utils::make_funding_redeemscript;
 
 /// The maximum value of an input or output in milli satoshi
 pub const MAX_VALUE_MSAT: u64 = 21_000_000_0000_0000_000;
@@ -89,6 +93,36 @@ pub fn maybe_add_change_output(
 pub(crate) fn estimate_feerate_per_kw(total_fee: u64, weight: u64) -> u32 {
     // we want the highest feerate that can give rise to this total fee
     (((total_fee * 1000) + 999) / weight) as u32
+}
+
+pub(crate) fn add_holder_sig(
+    tx: &mut Transaction,
+    holder_sig: Signature,
+    counterparty_sig: Signature,
+    holder_funding_key: &PublicKey,
+    counterparty_funding_key: &PublicKey,
+) {
+    let funding_redeemscript =
+        make_funding_redeemscript(&holder_funding_key, &counterparty_funding_key);
+
+    tx.input[0].witness.push(Vec::new());
+    let mut ser_holder_sig = holder_sig.serialize_der().to_vec();
+    ser_holder_sig.push(EcdsaSighashType::All as u8);
+    let mut ser_cp_sig = counterparty_sig.serialize_der().to_vec();
+    ser_cp_sig.push(EcdsaSighashType::All as u8);
+
+    let holder_sig_first =
+        holder_funding_key.serialize()[..] < counterparty_funding_key.serialize()[..];
+
+    if holder_sig_first {
+        tx.input[0].witness.push(ser_holder_sig);
+        tx.input[0].witness.push(ser_cp_sig);
+    } else {
+        tx.input[0].witness.push(ser_cp_sig);
+        tx.input[0].witness.push(ser_holder_sig);
+    }
+
+    tx.input[0].witness.push(funding_redeemscript.as_bytes().to_vec());
 }
 
 #[cfg(test)]

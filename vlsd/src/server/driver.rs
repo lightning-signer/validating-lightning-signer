@@ -49,8 +49,8 @@ use lightning_signer_server::fslogger::FilesystemLogger;
 use lightning_signer_server::grpc::remotesigner;
 use lightning_signer_server::nodefront::SignerFront;
 use lightning_signer_server::persist::kv_json::KVJsonPersister;
-use lightning_signer_server::NETWORK_NAMES;
 use lightning_signer_server::SERVER_APP_NAME;
+use lightning_signer_server::{CLAP_NETWORK_URL_MAPPING, NETWORK_NAMES};
 use remotesigner::signer_server::{Signer, SignerServer};
 use remotesigner::version_server::Version;
 use remotesigner::*;
@@ -1490,17 +1490,16 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
             Arg::new("network")
                 .short('n')
                 .long("network")
-                .possible_values(&NETWORK_NAMES)
+                .possible_values(NETWORK_NAMES)
                 .default_value(NETWORK_NAMES[0]),
         )
         .arg(
-            Arg::new("rpc")
+            Arg::new("bitcoin")
                 .about("bitcoind RPC URL, must have http(s) schema")
-                .short('r')
-                .long("rpc")
-                .takes_value(true)
+                .short('b')
+                .long("bitcoin")
                 .value_name("URL")
-                .default_value("http://user:pass@localhost:18332"),
+                .default_value_ifs(CLAP_NETWORK_URL_MAPPING),
         )
         .arg(
             Arg::new("test-mode")
@@ -1530,7 +1529,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .long("datadir")
                 .default_value(DEFAULT_DIR)
                 .about("data directory")
-                .takes_value(true),
+                .value_name("DIR"),
         )
         .arg(
             Arg::new("port")
@@ -1617,8 +1616,8 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         seed_persister.clone(),
     ));
 
-    let rpc_s: String = matches.value_of_t("rpc").expect("rpc url string");
-    let rpc_url = Url::parse(&rpc_s).expect("malformed rpc url");
+    let rpc_s: String = matches.value_of_t("bitcoin").expect("bitcoind RPC URL");
+    let rpc_url = Url::parse(&rpc_s).expect("malformed RPC URL");
 
     let frontend = Frontend::new(Arc::new(SignerFront { signer: Arc::clone(&signer) }), rpc_url);
     frontend.start();
