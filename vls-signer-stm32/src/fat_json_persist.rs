@@ -43,6 +43,7 @@ const CHAINTRACKER_BUCKET_PATH: &str = "CHAINTRACKER";
 
 const BUFSZ: usize = 128;
 
+#[derive(Clone, Debug)]
 struct Error(persist::Error);
 
 impl From<fatfs::Error<()>> for Error {
@@ -135,6 +136,22 @@ impl FatJsonPersister {
         "chaintracker".to_string()
     }
 
+    fn old_file_rel(key: &str) -> String {
+        format!("{}.old", key)
+    }
+
+    fn cur_file_rel(key: &str) -> String {
+        format!("{}.json", key)
+    }
+
+    fn new_file_rel(key: &str) -> String {
+        format!("{}.new", key)
+    }
+
+    fn file_path(bucket: &str, relkey: &str) -> String {
+        format!("{}/{}", bucket, relkey)
+    }
+
     // Update or create a value in a bucket
     fn upsert_value(&self, bucket: &str, key: &str, value: &str) -> Result<(), Error> {
         self.write_new_file(bucket, key, value)?;
@@ -163,8 +180,8 @@ impl FatJsonPersister {
     // Read a value from a bucket
     fn read_value(&self, bucket: &str, key: &str) -> Result<String, Error> {
         let setupfs = self.setupfs.borrow();
-        let file_path = format!("{}/{}", bucket, key);
-        let mut file = setupfs.rundir().open_file(&file_path)?;
+        let mut file =
+            setupfs.rundir().open_file(&Self::file_path(bucket, &Self::cur_file_rel(key)))?;
         let mut value: Vec<u8> = vec![];
         let mut buffer = [0u8; BUFSZ];
         loop {
@@ -177,27 +194,39 @@ impl FatJsonPersister {
         Ok(String::from_utf8_lossy(&value).to_string())
     }
 
-    // List all possible keys in a bucket
+    // List all keys in a bucket
     fn list_keys(&self, bucket: &str) -> Result<Vec<String>, Error> {
         let setupfs = self.setupfs.borrow();
         let bucket_dir = setupfs.rundir().open_dir(bucket)?;
-        Ok(bucket_dir
+        let mut errors = vec![];
+        let keys = bucket_dir
             .iter()
             .filter_map(|de| {
                 let name = de.unwrap().file_name();
-                if name != "." && name != ".." {
-                    Some(name)
+                if name.ends_with(".json") {
+                    Some(name[..name.len() - 5].to_string())
+                } else if name == "." || name == ".." {
+                    None
                 } else {
+                    errors.push(Error(persist::Error::Internal(format!(
+                        "list keys: bad file: {}",
+                        name
+                    ))));
                     None
                 }
             })
-            .collect())
+            .collect();
+        if !errors.is_empty() {
+            Err(errors[0].clone()) // return the first one
+        } else {
+            Ok(keys)
+        }
     }
 
     fn write_new_file(&self, bucket: &str, key: &str, value: &str) -> Result<(), Error> {
         let setupfs = self.setupfs.borrow();
-        let new_file_path = format!("{}/{}.new", bucket, key);
-        let mut new_file = setupfs.rundir().create_file(&new_file_path)?;
+        let mut new_file =
+            setupfs.rundir().create_file(&Self::file_path(bucket, &Self::new_file_rel(key)))?;
         new_file.write(value.as_bytes())?;
         new_file.flush()?;
         Ok(())
@@ -206,24 +235,22 @@ impl FatJsonPersister {
     fn retire_cur_file(&self, bucket: &str, key: &str) -> Result<(), Error> {
         let setupfs = self.setupfs.borrow();
         let bucket_dir = setupfs.rundir().open_dir(bucket)?;
-        let cur_file_path = format!("{}", key);
-        let old_file_path = format!("{}.old", cur_file_path);
-        bucket_dir.rename(&cur_file_path, &bucket_dir, &old_file_path)?;
+        bucket_dir.rename(&Self::cur_file_rel(key), &bucket_dir, &Self::old_file_rel(key))?;
         Ok(())
     }
 
     fn replace_file(&self, bucket: &str, key: &str) -> Result<(), Error> {
         let setupfs = self.setupfs.borrow();
         let bucket_dir = setupfs.rundir().open_dir(bucket)?;
-        let cur_file_path = format!("{}", key);
-        let new_file_path = format!("{}.new", cur_file_path);
-        bucket_dir.rename(&new_file_path, &bucket_dir, &cur_file_path)?;
+        bucket_dir.rename(&Self::new_file_rel(key), &bucket_dir, &Self::cur_file_rel(key))?;
         Ok(())
     }
 
     fn expunge_old_file(&self, bucket: &str, key: &str) -> Result<(), Error> {
-        let old_file_path = format!("{}/{}.old", bucket, key);
-        self.setupfs.borrow().rundir().remove(&old_file_path)?;
+        self.setupfs
+            .borrow()
+            .rundir()
+            .remove(&Self::file_path(bucket, &Self::old_file_rel(key)))?;
         Ok(())
     }
 }
@@ -357,15 +384,19 @@ impl Persist for FatJsonPersister {
         info!("get_node_channels");
         let mut res = vec![];
         for key in self.list_keys(&Self::channel_bucket_path()).map_err(|err| err.into())? {
-            // skip entries which are not valid hex
-            if let Ok(bytes) = hex::decode(&key) {
-                let entry: ChannelEntry = serde_json::from_str(
-                    &self
-                        .read_value(&Self::channel_bucket_path(), &key)
-                        .map_err(|err| err.into())?,
-                )
-                .map_err(|err| persist::Error::Internal(format!("serde_json failed: {:?}", err)))?;
-                res.push((ChannelId::new(&bytes[..]), entry.into()))
+            match hex::decode(&key) {
+                Ok(bytes) => {
+                    let entry: ChannelEntry = serde_json::from_str(
+                        &self
+                            .read_value(&Self::channel_bucket_path(), &key)
+                            .map_err(|err| err.into())?,
+                    )
+                    .map_err(|err| {
+                        persist::Error::Internal(format!("serde_json failed: {:?}", err))
+                    })?;
+                    res.push((ChannelId::new(&bytes[..]), entry.into()))
+                }
+                Err(err) => return Err(persist::Error::Internal(format!("{}", err))),
             }
         }
         Ok(res)
