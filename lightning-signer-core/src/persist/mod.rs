@@ -27,6 +27,19 @@ impl Context for DummyContext {
     }
 }
 
+#[derive(Clone, Debug)]
+/// Error returned by persister
+pub enum Error {
+    /// Persister is temporarily unavailable, might work later
+    Unavailable(String),
+    /// Inconsistent state, needed resource is missing
+    NotFound(String),
+    /// Inconsistent state, resource already present
+    AlreadyExists(String),
+    /// Non-recoverable internal error
+    Internal(String),
+}
+
 /// Persister of nodes and channels
 ///
 /// A Node will call the relevant methods here as needed.
@@ -56,47 +69,73 @@ pub trait Persist: SendSync {
     }
 
     /// Create a new node
-    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &NodeState);
+    fn new_node(
+        &self,
+        node_id: &PublicKey,
+        config: &NodeConfig,
+        state: &NodeState,
+    ) -> Result<(), Error>;
+
     /// Update node enforcement state
-    fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), ()>;
+    fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), Error>;
+
     /// Delete a node and all of its channels.  Used in test mode.
-    fn delete_node(&self, node_id: &PublicKey);
+    fn delete_node(&self, node_id: &PublicKey) -> Result<(), Error>;
 
     /// Will error if exists
-    fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()>;
+    fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), Error>;
 
     /// Create a new tracker
-    fn new_chain_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>);
+    fn new_chain_tracker(
+        &self,
+        node_id: &PublicKey,
+        tracker: &ChainTracker<ChainMonitor>,
+    ) -> Result<(), Error>;
+
     /// Update the tracker
     fn update_tracker(
         &self,
         node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,
-    ) -> Result<(), ()>;
+    ) -> Result<(), Error>;
+
     /// Get the tracker
-    fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, ()>;
+    fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, Error>;
 
     /// Will error if doesn't exist.
     ///
     /// * `id0` original channel ID supplied to [`Persist::new_channel()`]
     /// * `id` an optional additional permanent channel ID
-    fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), ()>;
+    fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), Error>;
+
     /// Get a channel from store
     fn get_channel(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
-    ) -> Result<model::ChannelEntry, ()>;
+    ) -> Result<model::ChannelEntry, Error>;
+
     /// Get all channels for a node from store
-    fn get_node_channels(&self, node_id: &PublicKey) -> Vec<(ChannelId, model::ChannelEntry)>;
+    fn get_node_channels(
+        &self,
+        node_id: &PublicKey,
+    ) -> Result<Vec<(ChannelId, model::ChannelEntry)>, Error>;
+
     /// Persist the allowlist to the store.
-    fn update_node_allowlist(&self, node_id: &PublicKey, allowlist: Vec<String>) -> Result<(), ()>;
+    fn update_node_allowlist(
+        &self,
+        node_id: &PublicKey,
+        allowlist: Vec<String>,
+    ) -> Result<(), Error>;
+
     /// Get the allowlist from the store.
-    fn get_node_allowlist(&self, node_id: &PublicKey) -> Vec<String>;
+    fn get_node_allowlist(&self, node_id: &PublicKey) -> Result<Vec<String>, Error>;
+
     /// Get all nodes from store
-    fn get_nodes(&self) -> Vec<(PublicKey, model::NodeEntry)>;
+    fn get_nodes(&self) -> Result<Vec<(PublicKey, model::NodeEntry)>, Error>;
+
     /// Clears the database.  Not for production use.
-    fn clear_database(&self);
+    fn clear_database(&self) -> Result<(), Error>;
 }
 
 /// A null persister for testing
@@ -106,33 +145,48 @@ impl SendSync for DummyPersister {}
 
 #[allow(unused_variables)]
 impl Persist for DummyPersister {
-    fn new_node(&self, node_id: &PublicKey, config: &NodeConfig, state: &NodeState) {}
-
-    fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), ()> {
+    fn new_node(
+        &self,
+        node_id: &PublicKey,
+        config: &NodeConfig,
+        state: &NodeState,
+    ) -> Result<(), Error> {
         Ok(())
     }
 
-    fn delete_node(&self, node_id: &PublicKey) {}
-
-    fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), ()> {
+    fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), Error> {
         Ok(())
     }
 
-    fn new_chain_tracker(&self, node_id: &PublicKey, tracker: &ChainTracker<ChainMonitor>) {}
+    fn delete_node(&self, node_id: &PublicKey) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn new_chain_tracker(
+        &self,
+        node_id: &PublicKey,
+        tracker: &ChainTracker<ChainMonitor>,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
 
     fn update_tracker(
         &self,
         node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), Error> {
         Ok(())
     }
 
-    fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, ()> {
-        Err(())
+    fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, Error> {
+        Err(Error::Internal(format!("get_tracker unimplemented")))
     }
 
-    fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), ()> {
+    fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), Error> {
         Ok(())
     }
 
@@ -140,27 +194,36 @@ impl Persist for DummyPersister {
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,
-    ) -> Result<model::ChannelEntry, ()> {
-        Err(())
+    ) -> Result<model::ChannelEntry, Error> {
+        Err(Error::Internal(format!("get_channel unimplemented")))
     }
 
-    fn get_node_channels(&self, node_id: &PublicKey) -> Vec<(ChannelId, model::ChannelEntry)> {
-        Vec::new()
+    fn get_node_channels(
+        &self,
+        node_id: &PublicKey,
+    ) -> Result<Vec<(ChannelId, model::ChannelEntry)>, Error> {
+        Ok(Vec::new())
     }
 
-    fn update_node_allowlist(&self, node_id: &PublicKey, allowlist: Vec<String>) -> Result<(), ()> {
+    fn update_node_allowlist(
+        &self,
+        node_id: &PublicKey,
+        allowlist: Vec<String>,
+    ) -> Result<(), Error> {
         Ok(())
     }
 
-    fn get_node_allowlist(&self, node_id: &PublicKey) -> Vec<String> {
-        Vec::new()
+    fn get_node_allowlist(&self, node_id: &PublicKey) -> Result<Vec<String>, Error> {
+        Ok(Vec::new())
     }
 
-    fn get_nodes(&self) -> Vec<(PublicKey, model::NodeEntry)> {
-        Vec::new()
+    fn get_nodes(&self) -> Result<Vec<(PublicKey, model::NodeEntry)>, Error> {
+        Ok(Vec::new())
     }
 
-    fn clear_database(&self) {}
+    fn clear_database(&self) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 /// Seed persister

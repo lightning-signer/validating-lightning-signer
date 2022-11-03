@@ -940,6 +940,7 @@ impl Node {
         let persister = services.persister.clone();
         let allowlist = persister
             .get_node_allowlist(node_id)
+            .expect("node allowlist")
             .iter()
             .map(|e| Allowable::from_str(e, network))
             .collect::<Result<_, _>>()
@@ -955,7 +956,9 @@ impl Node {
             Arc::new(Node::new_from_persistence(config, seed, allowlist, tracker, services, state));
         assert_eq!(&node.get_id(), node_id);
         info!("Restore node {} on {}", node_id, config.network);
-        for (channel_id0, channel_entry) in persister.get_node_channels(node_id) {
+        for (channel_id0, channel_entry) in
+            persister.get_node_channels(node_id).expect("node channels")
+        {
             info!("  Restore channel {}", channel_id0);
             node.restore_channel(
                 channel_id0,
@@ -980,7 +983,7 @@ impl Node {
         let mut nodes = Map::new();
         let persister = services.persister.clone();
         let mut seeds = OrderedSet::from_iter(seed_persister.list().into_iter());
-        for (node_id, node_entry) in persister.get_nodes() {
+        for (node_id, node_entry) in persister.get_nodes().expect("nodes") {
             let seed = seed_persister
                 .get(&node_id.serialize().to_hex())
                 .expect(format!("no seed for node {:?}", node_id).as_str());

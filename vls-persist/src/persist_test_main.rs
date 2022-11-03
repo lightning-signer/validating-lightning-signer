@@ -11,7 +11,7 @@ use vls_persist::model::{ChannelEntry, NodeChannelId, NodeEntry, NodeStateEntry}
 
 pub fn main() {
     let persister = KVJsonPersister::new("/tmp/signer.kv");
-    persister.clear_database();
+    persister.clear_database().unwrap();
     let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
     let channel_id1 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
 
@@ -27,7 +27,7 @@ pub fn main() {
     };
     node.get_state().invoices.insert(PaymentHash([1; 32]), invoice_state);
 
-    persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state());
+    persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state()).unwrap();
 
     persister.new_channel(&node_id, &stub).unwrap();
 
@@ -35,11 +35,11 @@ pub fn main() {
     let setup = test_utils::create_test_channel_setup(dummy_pubkey);
     let channel = node.ready_channel(channel_id, Some(channel_id1), setup, &vec![]).unwrap();
 
-    for (id, entry) in persister.get_node_channels(&node_id) {
+    for (id, entry) in persister.get_node_channels(&node_id).unwrap() {
         println!("{} {:?}", id, entry);
     }
     persister.update_channel(&node_id, &channel).unwrap();
-    for (id, entry) in persister.get_node_channels(&node_id) {
+    for (id, entry) in persister.get_node_channels(&node_id).unwrap() {
         println!("{} {:?}", id, entry);
     }
 

@@ -32,7 +32,7 @@ impl MultiSigner {
         initial_allowlist: Vec<String>,
         services: NodeServices,
     ) -> MultiSigner {
-        if !services.persister.get_nodes().is_empty() {
+        if !services.persister.get_nodes().expect("get_nodes").is_empty() {
             panic!("Cannot create new MultiSigner with existing nodes - use MultiSigner::restore instead");
         }
         MultiSigner {
@@ -65,7 +65,7 @@ impl MultiSigner {
     ///
     /// Will panic if there are nodes already persisted.
     pub fn new(services: NodeServices) -> MultiSigner {
-        if !services.persister.get_nodes().is_empty() {
+        if !services.persister.get_nodes().expect("get_nodes").is_empty() {
             panic!("Cannot create new MultiSigner with existing nodes - use MultiSigner::restore instead");
         }
         MultiSigner {
@@ -127,7 +127,7 @@ impl MultiSigner {
         let mut nodes = self.nodes.lock().unwrap();
         if self.test_mode {
             // In test mode we allow overwriting the node (thereby resetting all of its channels)
-            self.persister.delete_node(&node_id);
+            self.persister.delete_node(&node_id).expect("delete_node");
         } else {
             // In production, the node must not have existed
 
@@ -137,8 +137,8 @@ impl MultiSigner {
         }
         node.add_allowlist(&self.initial_allowlist).expect("valid initialallowlist");
         seed_persister.put(&node_id.serialize().to_hex(), seed);
-        self.persister.new_node(&node_id, &node_config, &*node.get_state());
-        self.persister.new_chain_tracker(&node_id, &node.get_tracker());
+        self.persister.new_node(&node_id, &node_config, &*node.get_state()).expect("new node");
+        self.persister.new_chain_tracker(&node_id, &node.get_tracker()).expect("new_chain_tracker");
         nodes.insert(node_id, Arc::new(node));
         Ok(node_id)
     }
