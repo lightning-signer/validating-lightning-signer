@@ -73,6 +73,23 @@ impl VelocityControl {
         }
     }
 
+    /// Load from persistence
+    pub fn load_from_state(spec: VelocityControlSpec, state: (u64, Vec<u64>)) -> Self {
+        let control = Self::new(spec);
+        control.with_state(state)
+    }
+
+    fn with_state(mut self, state: (u64, Vec<u64>)) -> VelocityControl {
+        self.start_sec = state.0;
+        self.buckets = state.1;
+        self
+    }
+
+    /// Get the state for persistence
+    pub fn get_state(&self) -> (u64, Vec<u64>) {
+        (self.start_sec, self.buckets.clone())
+    }
+
     /// Whether this instance is unlimited (no control)
     pub fn is_unlimited(&self) -> bool {
         self.limit == u64::MAX
@@ -96,6 +113,13 @@ impl VelocityControl {
         } else {
             self.buckets[0] = self.buckets[0].saturating_add(velocity);
             true
+        }
+    }
+
+    /// Clear the control (e.g. when the user manually approves)
+    pub fn clear(&mut self) {
+        for bucket in self.buckets.iter_mut() {
+            *bucket = 0;
         }
     }
 

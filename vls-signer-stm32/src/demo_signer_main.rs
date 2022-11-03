@@ -254,7 +254,7 @@ fn from_wire_string(s: &WireString) -> String {
 // TODO - replace this with a real invoice approver
 // Placeholder approver that can use the display
 
-use vls_protocol_signer::approver::Approver;
+use vls_protocol_signer::approver::Approve;
 use vls_protocol_signer::lightning_signer::{
     lightning::ln::PaymentHash, node::InvoiceState, prelude::SendSync,
 };
@@ -272,7 +272,7 @@ impl PlaceholderApprover {
     }
 }
 
-impl Approver for PlaceholderApprover {
+impl Approve for PlaceholderApprover {
     fn approve_invoice(&self, _hash: &PaymentHash, _invoice_state: &InvoiceState) -> bool {
         true
     }

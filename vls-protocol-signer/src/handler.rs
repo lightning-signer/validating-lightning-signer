@@ -49,12 +49,14 @@ use vls_protocol::msgs::{DeriveSecretReply, PreapproveInvoiceReply, SerBolt, Sig
 use vls_protocol::serde_bolt::{LargeBytes, WireString};
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 
-use crate::approver::{Approver, PositiveApprover};
+use crate::approver::{Approve, PositiveApprover};
 
 /// Error
 #[derive(Debug)]
 pub enum Error {
+    /// Protocol error
     ProtocolError(ProtocolError),
+    /// We failed to sign
     SigningError(Status),
 }
 
@@ -92,17 +94,29 @@ fn to_script(bytes: &Vec<u8>) -> Option<Script> {
 /// Result
 pub type Result<T> = core::result::Result<T, Error>;
 
+/// A protocol handler
+/// The handle function takes an incoming message, handles it and returns a response.
+///
+/// There are two implementations of this trait - [`RootHandler`] for node level
+/// messages and [`ChannelHandler`] for channel level messages.
 pub trait Handler {
+    /// Handle a message
     fn handle(&self, msg: Message) -> Result<(Box<dyn SerBolt>, Mutations)> {
         let context = self.node().get_persister().enter(self.lss_state().clone());
         let reply = self.do_handle(msg)?;
         let muts = context.exit();
         Ok((reply, muts))
     }
+    /// Actual handling
     fn do_handle(&self, msg: Message) -> Result<Box<dyn SerBolt>>;
+    /// Unused
     fn client_id(&self) -> u64;
+    /// Create a channel handler
     fn for_new_client(&self, client_id: u64, peer_id: PubKey, dbid: u64) -> ChannelHandler;
-    fn node(&self) -> &Node;
+    /// Get the associated signing node
+    fn node(&self) -> &Arc<Node>;
+    /// Get the LSS state.
+    /// This will be empty if we are not persisting to the cloud
     fn lss_state(&self) -> Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>;
 }
 
@@ -110,8 +124,8 @@ pub trait Handler {
 #[derive(Clone)]
 pub struct RootHandler {
     pub(crate) id: u64,
-    pub node: Arc<Node>,
-    approver: Arc<dyn Approver>,
+    node: Arc<Node>,
+    approver: Arc<dyn Approve>,
     lss_state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
 }
 
@@ -126,7 +140,7 @@ pub struct RootHandlerBuilder {
     seed: [u8; 32],
     allowlist: Vec<String>,
     services: NodeServices,
-    approver: Arc<dyn Approver>,
+    approver: Arc<dyn Approve>,
     lss_state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
 }
 
@@ -156,7 +170,7 @@ impl RootHandlerBuilder {
     }
 
     /// Set the approver
-    pub fn approver(mut self, approver: Arc<dyn Approver>) -> Self {
+    pub fn approver(mut self, approver: Arc<dyn Approve>) -> Self {
         self.approver = approver;
         self
     }
@@ -215,10 +229,12 @@ impl RootHandler {
         channel_id
     }
 
+    /// Get the channel balances
     pub fn channel_balance(&self) -> ChannelBalance {
         self.node.channel_balance()
     }
 
+    /// Get the current chain height based on the tracker
     pub fn get_chain_height(&self) -> u32 {
         self.node.get_chain_height()
     }
@@ -554,7 +570,7 @@ impl Handler for RootHandler {
         }
     }
 
-    fn node(&self) -> &Node {
+    fn node(&self) -> &Arc<Node> {
         &self.node
     }
 
@@ -581,12 +597,20 @@ fn extract_psbt_output_paths(psbt: &PartiallySignedTransaction) -> Vec<Vec<u32>>
 
 /// Protocol handler
 pub struct ChannelHandler {
-    pub(crate) id: u64,
-    pub node: Arc<Node>,
-    pub peer_id: [u8; 33],
-    pub dbid: u64,
-    pub channel_id: ChannelId,
-    pub lss_state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
+    id: u64,
+    node: Arc<Node>,
+    #[allow(unused)]
+    peer_id: [u8; 33],
+    dbid: u64,
+    channel_id: ChannelId,
+    lss_state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
+}
+
+impl ChannelHandler {
+    /// A unique ID for this channel
+    pub fn dbid(&self) -> u64 {
+        self.dbid
+    }
 }
 
 impl Handler for ChannelHandler {
@@ -1036,7 +1060,7 @@ impl Handler for ChannelHandler {
         unimplemented!("cannot create a sub-handler from a channel handler");
     }
 
-    fn node(&self) -> &Node {
+    fn node(&self) -> &Arc<Node> {
         &self.node
     }
 

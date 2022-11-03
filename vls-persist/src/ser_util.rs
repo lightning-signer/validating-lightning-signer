@@ -28,7 +28,7 @@ use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::secp256k1::ecdsa::Signature;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::monitor::State as ChainMonitorState;
-use lightning_signer::node::InvoiceState;
+use lightning_signer::node::{InvoiceState, PaymentType};
 use lightning_signer::policy::validator::{CommitmentSignatures, EnforcementState};
 use lightning_signer::tx::tx::{CommitmentInfo2, HTLCInfo2};
 
@@ -565,6 +565,34 @@ impl<'de> DeserializeAs<'de, Duration> for DurationHandler {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(remote = "PaymentType")]
+pub enum PaymentTypeDef {
+    Invoice,
+    Keysend,
+}
+
+#[derive(Deserialize)]
+struct PaymentTypeHelper(#[serde(with = "PaymentTypeDef")] PaymentType);
+
+impl SerializeAs<PaymentType> for PaymentTypeDef {
+    fn serialize_as<S>(value: &PaymentType, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        PaymentTypeDef::serialize(value, serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, PaymentType> for PaymentTypeDef {
+    fn deserialize_as<D>(deserializer: D) -> Result<PaymentType, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        PaymentTypeHelper::deserialize(deserializer).map(|h| h.0)
+    }
+}
+
 #[serde_as]
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(remote = "InvoiceState")]
@@ -577,6 +605,8 @@ pub struct InvoiceStateDef {
     #[serde_as(as = "DurationHandler")]
     pub expiry_duration: Duration,
     pub is_fulfilled: bool,
+    #[serde_as(as = "PaymentTypeDef")]
+    pub payment_type: PaymentType,
 }
 
 #[derive(Deserialize)]

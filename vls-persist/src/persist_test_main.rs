@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use lightning_signer::channel::ChannelId;
 use lightning_signer::lightning::ln::PaymentHash;
-use lightning_signer::node::InvoiceState;
+use lightning_signer::node::{InvoiceState, PaymentType};
 use lightning_signer::persist::Persist;
 use lightning_signer::util::test_utils::{self, hex_decode, TEST_CHANNEL_ID, TEST_NODE_CONFIG};
 use vls_persist::kv_json::KVJsonPersister;
@@ -24,6 +24,7 @@ pub fn main() {
         duration_since_epoch: Duration::new(1, 2),
         expiry_duration: Duration::new(2, 3),
         is_fulfilled: false,
+        payment_type: PaymentType::Invoice,
     };
     node.get_state().invoices.insert(PaymentHash([1; 32]), invoice_state);
 

@@ -65,7 +65,7 @@ pub async fn recover_close(
     address: &str,
 ) {
     let root_handler = make_handler(datadir, network, false);
-    let node = root_handler.node;
+    let node = root_handler.node();
     node.set_allowlist(&[address.to_string()]).expect("add destination to allowlist");
     println!("allowlist {:?}", node.allowlist());
     let channels = node.channels();
@@ -200,7 +200,7 @@ fn make_handler(datadir: &str, network: Network, integration_test: bool) -> Root
 // NOTE - For this signer mode it is easier to use the ALLOWLIST file to maintain the
 // allowlist. Replace existing entries w/ the current ALLOWLIST file contents.
 fn reset_allowlist(root_handler: &RootHandler, allowlist: &Vec<String>) {
-    let node = Arc::clone(&root_handler.node);
+    let node = root_handler.node();
     node.set_allowlist(&allowlist).expect("allowlist");
     info!("allowlist={:?}", node.allowlist().expect("allowlist"));
 }
