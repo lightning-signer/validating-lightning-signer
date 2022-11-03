@@ -81,6 +81,9 @@ fn display_intro(devctx: &mut DeviceContext, network: Network, path: &str) {
     intro.push("".to_string());
     intro.push(format!("{: ^19}", "waiting for node"));
     intro.push(format!(" {: >7}:{: <9}", network.to_string(), abbrev_path));
+    intro.push("".to_string());
+    intro.push(format!("{: ^19}", "blue+reset to setup"));
+
     devctx.disp.clear_screen();
     devctx.disp.show_texts(&intro);
 }
