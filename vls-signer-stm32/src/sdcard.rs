@@ -205,7 +205,7 @@ pub fn copy_dir<TP: TimeProvider, OCC: OemCpConverter>(
 }
 
 #[allow(unused)]
-fn rmdir<TP: TimeProvider, OCC: OemCpConverter>(
+pub fn rmdir<TP: TimeProvider, OCC: OemCpConverter>(
     dir: Dir<Card, TP, OCC>,
 ) -> Result<(), fatfs::Error<()>> {
     for f_res in dir.iter() {

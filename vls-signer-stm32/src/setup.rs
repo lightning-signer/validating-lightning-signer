@@ -291,59 +291,67 @@ pub fn setup_mode(mut devctx: DeviceContext) -> RunContext {
 
     if !opt_setupfs.is_some() {
         info!("sdcard needed for setup mode");
+        return run_context(devctx, opt_setupfs);
     } else {
         let mut setupfs = opt_setupfs.as_ref().unwrap().borrow_mut();
 
-        let mut nodes = setupfs.list_nodes();
-        nodes.truncate(3); // limited display height
-
-        // header
-        let mut lines = vec![format!("{: ^19}", "Select Node"), format!("")];
-
-        // a pair of lines for each node
-        for (network, path) in nodes.iter() {
-            let mut abbrev_path = path.clone();
-            abbrev_path.truncate(9); // limited display width
-            lines.push(format!(" {: >7}:{: <9}", network.to_string(), abbrev_path));
-            lines.push(format!(""));
-        }
-
-        // pad
-        lines.resize_with(8, || format!(""));
-
-        // finish w/ new
-        lines.push(format!(""));
-        lines.push(format!("{: ^19}", "New Node"));
-
-        devctx.disp.clear_screen();
-        devctx.disp.show_texts(&lines);
-
         loop {
-            let (row, _col) =
-                devctx.disp.wait_for_touch(&mut devctx.touchscreen.inner, &mut devctx.i2c);
-            info!("row {} touched", row);
-            if row < 2 {
-                continue;
-            };
-            if (row - 2) % 2 == 0 {
-                let ndx = ((row - 2) / 2) as usize;
-                if ndx < nodes.len() {
-                    info!("{} selected", nodes[ndx].1);
-                    setupfs.select_runpath(nodes[ndx].1.clone());
-                    break;
+            let mut nodes = setupfs.list_nodes();
+            nodes.truncate(3); // limited display height
+
+            // header
+            let mut lines = vec![format!("{: ^19}", "Select Node"), format!("")];
+
+            // a pair of lines for each node
+            for (network, path) in nodes.iter() {
+                let mut abbrev_path = path.clone();
+                abbrev_path.truncate(9); // limited display width
+                lines.push(format!(" {: >7}:{: <9}", network.to_string(), abbrev_path));
+                lines.push(format!(""));
+            }
+
+            // pad
+            lines.resize_with(8, || format!(""));
+
+            // finish w/ new
+            lines.push(format!(""));
+            lines.push(format!("{: ^19}", "New Node"));
+
+            devctx.disp.clear_screen();
+            devctx.disp.show_texts(&lines);
+
+            loop {
+                let (row, _col) =
+                    devctx.disp.wait_for_touch(&mut devctx.touchscreen.inner, &mut devctx.i2c);
+                info!("row {} touched", row);
+                if row < 2 {
+                    continue;
+                };
+                if (row - 2) % 2 == 0 {
+                    let ndx = ((row - 2) / 2) as usize;
+                    if ndx < nodes.len() {
+                        let runpath = nodes[ndx].1.clone();
+                        info!("{} selected", &runpath);
+                        if manage_node(&mut devctx, &mut setupfs, nodes[ndx].0, &runpath) {
+                            setupfs.select_runpath(runpath);
+                            drop(setupfs);
+                            return run_context(devctx, opt_setupfs);
+                        } else {
+                            break; // redisplay list w/ possible deletion
+                        }
+                    }
                 }
+                if row == 9 {
+                    info!("new node selected");
+                    let dirpath = create_node(&mut devctx, &mut setupfs);
+                    setupfs.select_runpath(dirpath);
+                    drop(setupfs);
+                    return run_context(devctx, opt_setupfs);
+                }
+                devctx.delay.delay_ms(100u16);
             }
-            if row == 9 {
-                info!("new node selected");
-                let dirpath = create_node(&mut devctx, &mut setupfs);
-                setupfs.select_runpath(dirpath);
-                break;
-            }
-            devctx.delay.delay_ms(100u16);
         }
     }
-
-    run_context(devctx, opt_setupfs)
 }
 
 pub fn create_node(devctx: &mut DeviceContext, setupfs: &mut SetupFS) -> String {
@@ -400,6 +408,68 @@ pub fn create_node(devctx: &mut DeviceContext, setupfs: &mut SetupFS) -> String 
     let dirpath =
         setupfs.create_rundir(&rootdir, &nodeid.to_string(), network, kdstyle, Some(seed));
     dirpath
+}
+
+pub fn manage_node(
+    devctx: &mut DeviceContext,
+    setupfs: &mut SetupFS,
+    network: Network,
+    runpath: &String,
+) -> bool {
+    // Present the user with a choice to launch, delete, or back to setup.
+    // Returns true if should launch, false otherwise ...
+    let mut abbrev_path = runpath.clone();
+    abbrev_path.truncate(9); // limited display width
+
+    let mut lines = vec![];
+    lines.push(format!("{: ^19}", "Manage Node"));
+    lines.push(format!(" {: >7}:{: <9}", network.to_string(), abbrev_path));
+    lines.push(format!(""));
+    lines.push(format!("{: ^19}", "Launch"));
+    lines.push(format!(""));
+    lines.push(format!(""));
+    if runpath != TESTDIR_PATH {
+        lines.push(format!("{: ^19}", "Delete"));
+    } else {
+        lines.push(format!(""));
+    }
+    lines.push(format!(""));
+    lines.push(format!(""));
+    lines.push(format!("{: ^19}", "Back"));
+
+    devctx.disp.clear_screen();
+    devctx.disp.show_texts(&lines);
+
+    loop {
+        let (row, _col) =
+            devctx.disp.wait_for_touch(&mut devctx.touchscreen.inner, &mut devctx.i2c);
+        info!("row {} touched", row);
+        if row == 3 {
+            info!("launch selected");
+            return true;
+        } else if row == 6 && runpath != TESTDIR_PATH {
+            info!("delete {} selected", runpath);
+            {
+                let rootdir = setupfs.fs.root_dir();
+                let rundir = rootdir
+                    .open_dir(&runpath)
+                    .unwrap_or_else(|err| panic!("open {} failed: {:#?}", runpath, err));
+                sdcard::rmdir(rundir)
+                    .unwrap_or_else(|err| panic!("rmdir {} failed: {:#?}", runpath, err));
+                rootdir
+                    .remove(runpath)
+                    .unwrap_or_else(|err| panic!("remove {} failed: {:#?}", runpath, err));
+            }
+            // IMPORTANT - if the user deleted the currently selected node and then
+            // resets w/o selecting a new one we crash ... select test-mode in case
+            setupfs.select_runpath(TESTDIR_PATH.to_string());
+            return false;
+        } else if row == 9 {
+            info!("back selected");
+            return false;
+        }
+        devctx.delay.delay_ms(100u16);
+    }
 }
 
 pub fn get_run_context(mut devctx: DeviceContext) -> RunContext {
