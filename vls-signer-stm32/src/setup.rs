@@ -297,7 +297,7 @@ pub fn setup_mode(mut devctx: DeviceContext) -> RunContext {
 
         loop {
             let mut nodes = setupfs.list_nodes();
-            nodes.truncate(3); // limited display height
+            nodes.truncate(4); // limited display height
 
             // header
             let mut lines = vec![format!("{: ^19}", "Select Node"), format!("")];
@@ -311,11 +311,13 @@ pub fn setup_mode(mut devctx: DeviceContext) -> RunContext {
             }
 
             // pad
-            lines.resize_with(8, || format!(""));
+            lines.resize_with(9, || format!(""));
 
-            // finish w/ new
-            lines.push(format!(""));
-            lines.push(format!("{: ^19}", "New Node"));
+            if nodes.len() < 4 {
+                lines.push(format!("{: ^19}", "New Node"));
+            } else {
+                lines.push(format!(""));
+            }
 
             devctx.disp.clear_screen();
             devctx.disp.show_texts(&lines);
@@ -341,7 +343,7 @@ pub fn setup_mode(mut devctx: DeviceContext) -> RunContext {
                         }
                     }
                 }
-                if row == 9 {
+                if row == 9 && nodes.len() < 4 {
                     info!("new node selected");
                     let dirpath = create_node(&mut devctx, &mut setupfs);
                     setupfs.select_runpath(dirpath);
