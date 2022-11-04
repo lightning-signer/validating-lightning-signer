@@ -256,7 +256,7 @@ fn from_wire_string(s: &WireString) -> String {
 
 use vls_protocol_signer::approver::Approve;
 use vls_protocol_signer::lightning_signer::{
-    lightning::ln::PaymentHash, node::InvoiceState, prelude::SendSync,
+    lightning::ln::PaymentHash, node::PaymentState, prelude::SendSync,
 };
 
 #[allow(dead_code)] // TODO - remove this when used
@@ -273,7 +273,7 @@ impl PlaceholderApprover {
 }
 
 impl Approve for PlaceholderApprover {
-    fn approve_invoice(&self, _hash: &PaymentHash, _invoice_state: &InvoiceState) -> bool {
+    fn approve_invoice(&self, _hash: &PaymentHash, _payment_state: &PaymentState) -> bool {
         true
     }
 }
