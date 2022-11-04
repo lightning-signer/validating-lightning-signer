@@ -1403,7 +1403,7 @@ impl Node {
         let signed_raw_invoice = self.do_sign_invoice(hrp_bytes, invoice_data)?;
 
         let sig = signed_raw_invoice.signature().0;
-        let (hash, payment_state, invoice_hash) =
+        let (hash, payment_state, invoice_hash, _invoice) =
             Self::payment_state_from_invoice(signed_raw_invoice)?;
         info!(
             "{} signing an invoice {} -> {}",
@@ -1597,7 +1597,8 @@ impl Node {
     /// Used by the signer to map HTLCs to destination payees, so that payee
     /// public keys can be allowlisted for policy control.
     pub fn add_invoice(&self, raw_invoice: SignedRawInvoice) -> Result<(), Status> {
-        let (hash, payment_state, invoice_hash) = Self::payment_state_from_invoice(raw_invoice)?;
+        let (hash, payment_state, invoice_hash, _invoice) =
+            Self::payment_state_from_invoice(raw_invoice)?;
 
         info!(
             "{} adding invoice {} -> {}",
@@ -1690,7 +1691,7 @@ impl Node {
     /// Returns the payment hash, invoice state, and the hash of the raw invoice that was signed.
     pub fn payment_state_from_invoice(
         raw_invoice: SignedRawInvoice,
-    ) -> Result<(PaymentHash, PaymentState, [u8; 32]), Status> {
+    ) -> Result<(PaymentHash, PaymentState, [u8; 32], Invoice), Status> {
         let invoice_hash = raw_invoice.hash().clone();
 
         // This performs all semantic checks and signature check
@@ -1712,7 +1713,7 @@ impl Node {
             is_fulfilled: false,
             payment_type: PaymentType::Invoice,
         };
-        Ok((hash, payment_state, invoice_hash))
+        Ok((hash, payment_state, invoice_hash, invoice))
     }
 
     /// Create tracking state for an ad-hoc payment (keysend).
@@ -1724,7 +1725,8 @@ impl Node {
         payment_hash: PaymentHash,
         amount_msat: u64,
     ) -> Result<(PaymentState, [u8; 32]), Status> {
-        // TODO validate the payee by generating the preimage ourselves and wrapping the inner layer of the onion
+        // TODO validate the payee by generating the preimage ourselves and wrapping the inner layer
+        // of the onion
         // TODO once we validate the payee, check if payee public key is in allowlist
         let invoice_hash = payment_hash.0;
         let payment_state = PaymentState {
