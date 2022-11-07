@@ -11,6 +11,7 @@ use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
 use lightning_signer::util::crypto_utils::generate_seed;
 use lightning_signer::Arc;
+use lightning_signer_server::tstamp::tstamp;
 use tokio::runtime::{self, Runtime};
 
 pub fn read_allowlist() -> Vec<String> {
@@ -61,7 +62,7 @@ pub fn setup_logging(who: &str, level_arg: &str) {
         .format(move |out, message, record| {
             out.finish(format_args!(
                 "[{} {}/{} {}] {}",
-                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
+                tstamp(),
                 who,
                 record.target(),
                 colors.color(record.level()),

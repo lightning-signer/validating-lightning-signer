@@ -23,7 +23,6 @@ nix = "0.22"
 serde = "1.0"
 log = "0.4"
 fern = { version = "0.6", features = ["colored"], optional = true }
-chrono = "0.4"
 # .4 doesn't compile with 1.45.2
 clap = { version = "=3.0.0-beta.2", optional = true }
 clap_derive = { version = "=3.0.0-beta.5", optional = true }

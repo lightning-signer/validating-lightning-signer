@@ -2,9 +2,9 @@ use std::fs;
 use std::io::Write;
 use std::sync::Mutex;
 
-use time::OffsetDateTime;
-
 use log::{LevelFilter, Log, Metadata, Record};
+
+use crate::tstamp::tstamp;
 
 /// A filesystem logger
 #[derive(Debug)]
@@ -43,8 +43,7 @@ impl Log for FilesystemLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
-            let tstamp = OffsetDateTime::now_utc().format("%F %H:%M:%S.%N");
-            let tstamp = tstamp.get(0..tstamp.len() - 6).expect("bad timestamp"); // strip to mSec
+            let tstamp = tstamp();
             let raw_log = record.args().to_string();
             let log = format!(
                 "{} {:<5} [{}:{}] {}\n",
