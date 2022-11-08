@@ -56,7 +56,7 @@ pub fn main() {
     // The listener is closed in the child process.
     let listener = unsafe { spawn_signer(listener, addr.port()) };
 
-    setup_logging("hsmd  ", "debug");
+    setup_logging(".", "remote_hsmd_socket_test", "debug");
 
     // Note that this is unsafe if we use the wrong fd
     let conn = UnixConnection::new(parent_fd);
@@ -108,7 +108,7 @@ unsafe fn spawn_signer(listener: TcpListener, port: u16) -> TcpListener {
         Ok(ForkResult::Child) => {
             info!("in child");
             drop(listener);
-            setup_logging("signer", "debug");
+            setup_logging(".", "vlsd_socket_test", "debug");
             start_signer_localhost(port);
             exit(0);
         }

@@ -54,7 +54,7 @@ fn run_test(serial_port: String) -> anyhow::Result<()> {
 pub fn main() -> anyhow::Result<()> {
     let parent_fd = open_parent_fd();
 
-    setup_logging("hsmd  ", "info");
+    setup_logging(".", "remote_hsmd_serial", "debug");
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
         .about("CLN:serial - connects to an embedded VLS over a USB / serial connection")

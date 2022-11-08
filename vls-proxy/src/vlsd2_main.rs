@@ -3,6 +3,7 @@ use clap::{App, AppSettings, Arg};
 use grpc::signer::start_signer;
 use lightning_signer::bitcoin::Network;
 use lightning_signer_server::{CLAP_NETWORK_URL_MAPPING, NETWORK_NAMES};
+use std::fs;
 use url::Url;
 use util::setup_logging;
 
@@ -15,7 +16,6 @@ pub mod util;
 const DEFAULT_DIR: &str = ".lightning-signer";
 
 pub fn main() {
-    setup_logging("vlsd2", "info");
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
         .about("Validating Lightning Signer")
@@ -67,6 +67,10 @@ pub fn main() {
 
     let bitcoin_rpc = matches.value_of("bitcoin").map(|s| Url::parse(s).expect("bitcoin url"));
     let recover_address = matches.value_of("recover-close");
+
+    let datapath = format!("{}/{}", datadir, network.to_string());
+    fs::create_dir_all(&datapath).expect("mkdir datapath");
+    setup_logging(&datapath, "vlsd2", "debug");
 
     if let Some(address) = recover_address {
         recover_close(datadir, network, bitcoin_rpc, address);

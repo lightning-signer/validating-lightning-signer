@@ -258,7 +258,7 @@ pub fn main() {
 // small number of threads to ease debugging
 #[tokio::main(worker_threads = 2)]
 async fn start() {
-    setup_logging("hsmd  ", "info");
+    setup_logging(".", "remote_hsmd_vls", "debug");
     let conn = UnixConnection::new(3);
     let client = UnixClient::new(conn);
     let allowlist = read_allowlist();
