@@ -7,6 +7,7 @@ use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::blockdata::script::Script;
 use bitcoin::hash_types::Txid;
 use bitcoin::hashes::hex::ToHex;
+use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::{hex, hex::FromHex, Hash};
 use bitcoin::network::constants::Network;
 use bitcoin::secp256k1::{
@@ -33,8 +34,9 @@ use lightning::ln::chan_utils::{
     ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters,
     DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
-use lightning::ln::{chan_utils, PaymentHash};
+use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage, PaymentSecret};
 use lightning::util::test_utils;
+use lightning_invoice::{Currency, Invoice, InvoiceBuilder};
 
 use super::key_utils::{
     make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
@@ -303,6 +305,21 @@ pub fn make_test_channel_keys() -> InMemorySigner {
         opt_anchors: None,
     });
     inmemkeys
+}
+
+pub fn make_test_invoice(x: u8, amt: u64) -> Invoice {
+    let payment_preimage = PaymentPreimage([x; 32]);
+    let payment_hash = Sha256Hash::hash(&payment_preimage.0);
+    let private_key = SecretKey::from_slice(&[42; 32]).unwrap();
+    InvoiceBuilder::new(Currency::Regtest)
+        .description("test".into())
+        .payment_hash(payment_hash)
+        .payment_secret(PaymentSecret([x; 32]))
+        .duration_since_epoch(Duration::from_secs(123456789))
+        .min_final_cltv_expiry(144)
+        .amount_milli_satoshis(amt)
+        .build_signed(|hash| Secp256k1::new().sign_ecdsa_recoverable(hash, &private_key))
+        .unwrap()
 }
 
 /// A starting time factory which uses fixed values for testing

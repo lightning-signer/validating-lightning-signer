@@ -69,16 +69,16 @@ pub struct NodeConfig {
     pub key_derivation_style: KeyDerivationStyle,
 }
 
-/// Invoice payment details and payment state
+/// Payment details and payment state
 #[derive(Clone)]
-pub struct InvoiceState {
+pub struct PaymentState {
     /// The hash of the invoice, as a unique ID
     pub invoice_hash: [u8; 32],
     /// Invoiced amount
     pub amount_msat: u64,
-    /// Payee's public key
+    /// Payee's public key, if known
     pub payee: PublicKey,
-    /// Timestamp of invoice, as duration since the UNIX epoch
+    /// Timestamp of the payment, as duration since the UNIX epoch
     pub duration_since_epoch: Duration,
     /// Expiry, as duration since the timestamp
     pub expiry_duration: Duration,
@@ -154,9 +154,9 @@ impl RoutedPayment {
 // TODO move allowlist into this struct
 pub struct NodeState {
     /// Added invoices for outgoing payments indexed by their payment hash
-    pub invoices: Map<PaymentHash, InvoiceState>,
+    pub invoices: Map<PaymentHash, PaymentState>,
     /// Issued invoices for incoming payments indexed by their payment hash
-    pub issued_invoices: Map<PaymentHash, InvoiceState>,
+    pub issued_invoices: Map<PaymentHash, PaymentState>,
     /// Payment states
     pub payments: Map<PaymentHash, RoutedPayment>,
     /// Accumulator of excess payment amount in satoshi, for tracking certain
@@ -1403,18 +1403,18 @@ impl Node {
         let signed_raw_invoice = self.do_sign_invoice(hrp_bytes, invoice_data)?;
 
         let sig = signed_raw_invoice.signature().0;
-        let (hash, invoice_state, invoice_hash) =
-            Self::invoice_state_from_invoice(signed_raw_invoice)?;
+        let (hash, payment_state, invoice_hash, _invoice) =
+            Self::payment_state_from_invoice(signed_raw_invoice)?;
         info!(
             "{} signing an invoice {} -> {}",
             self.log_prefix(),
             hash.0.to_hex(),
-            invoice_state.amount_msat
+            payment_state.amount_msat
         );
 
         let mut state = self.get_state();
-        if let Some(invoice_state) = state.issued_invoices.get(&hash) {
-            return if invoice_state.invoice_hash == invoice_hash {
+        if let Some(payment_state) = state.issued_invoices.get(&hash) {
+            return if payment_state.invoice_hash == invoice_hash {
                 Ok(sig)
             } else {
                 Err(failed_precondition(
@@ -1422,7 +1422,7 @@ impl Node {
                 ))
             };
         }
-        state.issued_invoices.insert(hash, invoice_state);
+        state.issued_invoices.insert(hash, payment_state);
 
         Ok(sig)
     }
@@ -1597,31 +1597,32 @@ impl Node {
     /// Used by the signer to map HTLCs to destination payees, so that payee
     /// public keys can be allowlisted for policy control.
     pub fn add_invoice(&self, raw_invoice: SignedRawInvoice) -> Result<(), Status> {
-        let (hash, invoice_state, invoice_hash) = Self::invoice_state_from_invoice(raw_invoice)?;
+        let (hash, payment_state, invoice_hash, _invoice) =
+            Self::payment_state_from_invoice(raw_invoice)?;
 
         info!(
             "{} adding invoice {} -> {}",
             self.log_prefix(),
             hash.0.to_hex(),
-            invoice_state.amount_msat
+            payment_state.amount_msat
         );
         let mut state = self.get_state();
-        if let Some(invoice_state) = state.invoices.get(&hash) {
-            return if invoice_state.invoice_hash == invoice_hash {
+        if let Some(payment_state) = state.invoices.get(&hash) {
+            return if payment_state.invoice_hash == invoice_hash {
                 Ok(())
             } else {
                 Err(failed_precondition("already have a different invoice for same secret"))
             };
         }
-        if !state.velocity_control.insert(self.clock.now().as_secs(), invoice_state.amount_msat) {
+        if !state.velocity_control.insert(self.clock.now().as_secs(), payment_state.amount_msat) {
             return Err(failed_precondition(format!(
                 "global velocity would be exceeded - += {} = {} > {}",
-                invoice_state.amount_msat,
+                payment_state.amount_msat,
                 state.velocity_control.velocity(),
                 state.velocity_control.limit
             )));
         }
-        state.invoices.insert(hash, invoice_state);
+        state.invoices.insert(hash, payment_state);
         state.payments.insert(hash, RoutedPayment::new());
         self.persister.update_node(&self.get_id(), &*state).expect("node persistence failure");
 
@@ -1637,32 +1638,32 @@ impl Node {
         payment_hash: PaymentHash,
         amount_msat: u64,
     ) -> Result<(), Status> {
-        let (invoice_state, invoice_hash) =
-            Node::invoice_state_from_keysend(payee, payment_hash, amount_msat)?;
+        let (payment_state, invoice_hash) =
+            Node::payment_state_from_keysend(payee, payment_hash, amount_msat)?;
 
         info!(
             "{} adding payment {} -> {}",
             self.log_prefix(),
             payment_hash.0.to_hex(),
-            invoice_state.amount_msat
+            payment_state.amount_msat
         );
         let mut state = self.get_state();
-        if let Some(invoice_state) = state.invoices.get(&payment_hash) {
-            return if invoice_state.invoice_hash == invoice_hash {
+        if let Some(payment_state) = state.invoices.get(&payment_hash) {
+            return if payment_state.invoice_hash == invoice_hash {
                 Ok(())
             } else {
                 Err(failed_precondition("already have a different payment for same secret"))
             };
         }
-        if !state.velocity_control.insert(self.clock.now().as_secs(), invoice_state.amount_msat) {
+        if !state.velocity_control.insert(self.clock.now().as_secs(), payment_state.amount_msat) {
             return Err(failed_precondition(format!(
                 "global velocity would be exceeded - += {} = {} > {}",
-                invoice_state.amount_msat,
+                payment_state.amount_msat,
                 state.velocity_control.velocity(),
                 state.velocity_control.limit
             )));
         }
-        state.invoices.insert(payment_hash, invoice_state);
+        state.invoices.insert(payment_hash, payment_state);
         state.payments.insert(payment_hash, RoutedPayment::new());
         self.persister.update_node(&self.get_id(), &*state).expect("node persistence failure");
 
@@ -1672,8 +1673,8 @@ impl Node {
     /// Check to see if an invoice has already been added
     pub fn has_invoice(&self, hash: &PaymentHash, invoice_hash: &[u8; 32]) -> Result<bool, Status> {
         let state = self.get_state();
-        let retval = if let Some(invoice_state) = state.invoices.get(&hash) {
-            if invoice_state.invoice_hash == *invoice_hash {
+        let retval = if let Some(payment_state) = state.invoices.get(&hash) {
+            if payment_state.invoice_hash == *invoice_hash {
                 Ok(true)
             } else {
                 Err(failed_precondition("already have a different invoice for same secret"))
@@ -1688,9 +1689,9 @@ impl Node {
     /// Validate the invoice and create a tracking state for it.
     ///
     /// Returns the payment hash, invoice state, and the hash of the raw invoice that was signed.
-    pub fn invoice_state_from_invoice(
+    pub fn payment_state_from_invoice(
         raw_invoice: SignedRawInvoice,
-    ) -> Result<(PaymentHash, InvoiceState, [u8; 32]), Status> {
+    ) -> Result<(PaymentHash, PaymentState, [u8; 32], Invoice), Status> {
         let invoice_hash = raw_invoice.hash().clone();
 
         // This performs all semantic checks and signature check
@@ -1703,7 +1704,7 @@ impl Node {
             .payee_pub_key()
             .map(|p| p.clone())
             .unwrap_or_else(|| invoice.recover_payee_pub_key());
-        let invoice_state = InvoiceState {
+        let payment_state = PaymentState {
             invoice_hash,
             amount_msat,
             payee,
@@ -1712,22 +1713,23 @@ impl Node {
             is_fulfilled: false,
             payment_type: PaymentType::Invoice,
         };
-        Ok((hash, invoice_state, invoice_hash))
+        Ok((hash, payment_state, invoice_hash, invoice))
     }
 
     /// Create tracking state for an ad-hoc payment (keysend).
     /// The payee is not validated yet.
     ///
     /// Returns the invoice state
-    pub fn invoice_state_from_keysend(
+    pub fn payment_state_from_keysend(
         payee: PublicKey,
         payment_hash: PaymentHash,
         amount_msat: u64,
-    ) -> Result<(InvoiceState, [u8; 32]), Status> {
-        // TODO validate the payee by generating the preimage ourselves and wrapping the inner layer of the onion
+    ) -> Result<(PaymentState, [u8; 32]), Status> {
+        // TODO validate the payee by generating the preimage ourselves and wrapping the inner layer
+        // of the onion
         // TODO once we validate the payee, check if payee public key is in allowlist
         let invoice_hash = payment_hash.0;
-        let invoice_state = InvoiceState {
+        let payment_state = PaymentState {
             invoice_hash,
             amount_msat,
             payee,
@@ -1736,7 +1738,7 @@ impl Node {
             is_fulfilled: false,
             payment_type: PaymentType::Keysend,
         };
-        Ok((invoice_state, invoice_hash))
+        Ok((payment_state, invoice_hash))
     }
 
     fn make_velocity_control(policy: Box<dyn Policy>) -> VelocityControl {

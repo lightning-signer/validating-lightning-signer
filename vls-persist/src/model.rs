@@ -17,14 +17,14 @@ use lightning_signer::channel::ChannelId;
 use lightning_signer::channel::ChannelSetup;
 use lightning_signer::monitor::ChainMonitor;
 use lightning_signer::monitor::State as ChainMonitorState;
-use lightning_signer::node::{InvoiceState, NodeState};
+use lightning_signer::node::{NodeState, PaymentState};
 use lightning_signer::persist::model::ChannelEntry as CoreChannelEntry;
 use lightning_signer::policy::validator::EnforcementState;
 use lightning_signer::util::velocity::VelocityControl as CoreVelocityControl;
 
 use super::ser_util::{
-    ChainMonitorStateDef, ChannelIdHandler, ChannelSetupDef, EnforcementStateDef, InvoiceStateDef,
-    ListenSlotDef, OutPointDef,
+    ChainMonitorStateDef, ChannelIdHandler, ChannelSetupDef, EnforcementStateDef, ListenSlotDef,
+    OutPointDef, PaymentStateDef,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -60,10 +60,10 @@ impl From<CoreVelocityControl> for VelocityControl {
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub struct NodeStateEntry {
-    #[serde_as(as = "Vec<(Hex, InvoiceStateDef)>")]
-    pub invoices: Vec<(Vec<u8>, InvoiceState)>,
-    #[serde_as(as = "Vec<(Hex, InvoiceStateDef)>")]
-    pub issued_invoices: Vec<(Vec<u8>, InvoiceState)>,
+    #[serde_as(as = "Vec<(Hex, PaymentStateDef)>")]
+    pub invoices: Vec<(Vec<u8>, PaymentState)>,
+    #[serde_as(as = "Vec<(Hex, PaymentStateDef)>")]
+    pub issued_invoices: Vec<(Vec<u8>, PaymentState)>,
     pub velocity_control: VelocityControl,
     // TODO(devrandom): add routing control fields, once they stabilize
 }

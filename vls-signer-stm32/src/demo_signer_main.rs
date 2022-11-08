@@ -20,6 +20,7 @@ use cortex_m_rt::entry;
 use log::{debug, info, trace};
 
 use device::{heap_bytes_used, DeviceContext};
+use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::NodeServices;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
@@ -255,9 +256,7 @@ fn from_wire_string(s: &WireString) -> String {
 // Placeholder approver that can use the display
 
 use vls_protocol_signer::approver::Approve;
-use vls_protocol_signer::lightning_signer::{
-    lightning::ln::PaymentHash, node::InvoiceState, prelude::SendSync,
-};
+use vls_protocol_signer::lightning_signer::{lightning_invoice::Invoice, prelude::SendSync};
 
 #[allow(dead_code)] // TODO - remove this when used
 pub struct PlaceholderApprover {
@@ -273,7 +272,11 @@ impl PlaceholderApprover {
 }
 
 impl Approve for PlaceholderApprover {
-    fn approve_invoice(&self, _hash: &PaymentHash, _invoice_state: &InvoiceState) -> bool {
+    fn approve_invoice(&self, _invoice: &Invoice) -> bool {
+        true
+    }
+
+    fn approve_keysend(&self, _payment_hash: PaymentHash, _amount_msat: u64) -> bool {
         true
     }
 }

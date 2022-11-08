@@ -28,7 +28,7 @@ use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::secp256k1::ecdsa::Signature;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::monitor::State as ChainMonitorState;
-use lightning_signer::node::{InvoiceState, PaymentType};
+use lightning_signer::node::{PaymentState, PaymentType};
 use lightning_signer::policy::validator::{CommitmentSignatures, EnforcementState};
 use lightning_signer::tx::tx::{CommitmentInfo2, HTLCInfo2};
 
@@ -595,8 +595,8 @@ impl<'de> DeserializeAs<'de, PaymentType> for PaymentTypeDef {
 
 #[serde_as]
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(remote = "InvoiceState")]
-pub struct InvoiceStateDef {
+#[serde(remote = "PaymentState")]
+pub struct PaymentStateDef {
     pub invoice_hash: [u8; 32],
     pub amount_msat: u64,
     pub payee: PublicKey,
@@ -610,23 +610,23 @@ pub struct InvoiceStateDef {
 }
 
 #[derive(Deserialize)]
-struct InvoiceStateHelper(#[serde(with = "InvoiceStateDef")] InvoiceState);
+struct PaymentStateHelper(#[serde(with = "PaymentStateDef")] PaymentState);
 
-impl SerializeAs<InvoiceState> for InvoiceStateDef {
-    fn serialize_as<S>(value: &InvoiceState, serializer: S) -> Result<S::Ok, S::Error>
+impl SerializeAs<PaymentState> for PaymentStateDef {
+    fn serialize_as<S>(value: &PaymentState, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        InvoiceStateDef::serialize(value, serializer)
+        PaymentStateDef::serialize(value, serializer)
     }
 }
 
-impl<'de> DeserializeAs<'de, InvoiceState> for InvoiceStateDef {
-    fn deserialize_as<D>(deserializer: D) -> Result<InvoiceState, <D as Deserializer<'de>>::Error>
+impl<'de> DeserializeAs<'de, PaymentState> for PaymentStateDef {
+    fn deserialize_as<D>(deserializer: D) -> Result<PaymentState, <D as Deserializer<'de>>::Error>
     where
         D: Deserializer<'de>,
     {
-        InvoiceStateHelper::deserialize(deserializer).map(|h| h.0)
+        PaymentStateHelper::deserialize(deserializer).map(|h| h.0)
     }
 }
 
