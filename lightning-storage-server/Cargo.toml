@@ -26,7 +26,7 @@ log = "0.4"
 clap = "=3.0.0-beta.2"
 clap_derive = "=3.0.0-beta.5"
 fern = { version = "0.6", features = ["colored"] }
-chrono = "0.4"
+time = { version = "0.3", features = [ "formatting", "macros" ] }
 url = "2.2"
 hex = "0.4"
 dirs = "4"

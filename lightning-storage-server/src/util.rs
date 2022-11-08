@@ -5,6 +5,8 @@ use log::{error, info};
 use secp256k1::{rand, SecretKey};
 use std::path::PathBuf;
 use std::{env, fs};
+use time::macros::format_description;
+use time::OffsetDateTime;
 
 const STATE_DIR: &str = ".lss";
 
@@ -93,6 +95,16 @@ pub fn compute_shared_hmac(secret: &[u8], nonce: &[u8], kvs: &[(String, Value)])
     Hmac::from_engine(hmac_engine).into_inner().to_vec()
 }
 
+// Would prefer to use now_local but https://rustsec.org/advisories/RUSTSEC-2020-0071
+// Also, https://time-rs.github.io/api/time/struct.OffsetDateTime.html#method.now_local
+fn tstamp() -> String {
+    OffsetDateTime::now_utc()
+        .format(format_description!(
+            "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:3]"
+        ))
+        .expect("formatted tstamp")
+}
+
 pub fn setup_logging(who: &str, level_arg: &str) {
     use fern::colors::{Color, ColoredLevelConfig};
     use std::str::FromStr;
@@ -104,7 +116,7 @@ pub fn setup_logging(who: &str, level_arg: &str) {
         .format(move |out, message, record| {
             out.finish(format_args!(
                 "[{} {}/{} {}] {}",
-                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
+                tstamp(),
                 who,
                 record.target(),
                 colors.color(record.level()),

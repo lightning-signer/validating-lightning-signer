@@ -30,7 +30,7 @@ path = "src/lib.rs"
 [dependencies]
 anyhow = "1.0"
 log = { version="0.4.14", features = [ "std" ] }
-time = "0.2"
+time = { version = "0.3", features = [ "formatting", "macros" ] }
 lightning-signer-core = { path = "../lightning-signer-core" }
 vls-persist = { path = "../vls-persist", optional = true }
 vls-frontend = { path = "../vls-frontend", optional = true }

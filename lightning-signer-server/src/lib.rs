@@ -11,6 +11,7 @@ pub mod fslogger;
 pub mod grpc;
 #[cfg(feature = "frontend")]
 pub mod nodefront;
+pub mod tstamp;
 #[cfg(feature = "grpc")]
 mod util;
 
