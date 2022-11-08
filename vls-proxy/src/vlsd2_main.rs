@@ -15,7 +15,7 @@ pub mod util;
 const DEFAULT_DIR: &str = ".lightning-signer";
 
 pub fn main() {
-    setup_logging("vlsd2", "info");
+    setup_logging("vlsd2", "debug");
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
         .about("Validating Lightning Signer")
