@@ -57,6 +57,7 @@ pub fn setup_logging(who: &str, level_arg: &str) {
 
     let colors = ColoredLevelConfig::new().info(Color::Green).error(Color::Red).warn(Color::Yellow);
     let level = env::var("RUST_LOG").unwrap_or(level_arg.to_string());
+    let logfile = format!("{}.log", who.to_string());
     let who = who.to_string();
     fern::Dispatch::new()
         .format(move |out, message, record| {
@@ -73,7 +74,7 @@ pub fn setup_logging(who: &str, level_arg: &str) {
         .level_for("h2", log::LevelFilter::Info)
         .level_for("sled", log::LevelFilter::Info)
         .chain(std::io::stdout())
-        // .chain(fern::log_file("/tmp/output.log")?)
+        .chain(fern::log_file(logfile).expect("log file"))
         .apply()
         .expect("log config");
 }
