@@ -20,7 +20,6 @@ use cortex_m_rt::entry;
 use log::{debug, info, trace};
 
 use device::{heap_bytes_used, DeviceContext};
-use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::NodeServices;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
@@ -35,6 +34,7 @@ use vls_protocol_signer::lightning_signer;
 use vls_protocol_signer::lightning_signer::bitcoin::Network;
 use vls_protocol_signer::vls_protocol;
 
+mod approver;
 mod device;
 mod fat_json_persist;
 mod logger;
@@ -45,6 +45,7 @@ mod timer;
 mod tracks;
 mod usbserial;
 
+use approver::ScreenApprover;
 use fat_json_persist::FatJsonPersister;
 use setup::{get_run_context, setup_mode, NormalContext, RunContext, TestingContext};
 
@@ -115,7 +116,7 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
         let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
         let allowlist = vec![]; // TODO - add to NormalContext
         let seed = runctx.seed;
-        let approver = Arc::new(PlaceholderApprover::new(Arc::clone(&runctx.cmn.devctx)));
+        let approver = Arc::new(ScreenApprover::new(Arc::clone(&runctx.cmn.devctx)));
         let (root_handler, _muts) = RootHandlerBuilder::new(runctx.cmn.network, 0, services, seed)
             .allowlist(allowlist)
             .approver(approver)
@@ -160,7 +161,7 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
         let allowlist = init.dev_allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
         let seed = init.dev_seed.as_ref().map(|s| s.0).expect("no seed");
-        let approver = Arc::new(PlaceholderApprover::new(Arc::clone(&runctx.cmn.devctx)));
+        let approver = Arc::new(ScreenApprover::new(Arc::clone(&runctx.cmn.devctx)));
         let (root_handler, _muts) = RootHandlerBuilder::new(runctx.cmn.network, 0, services, seed)
             .allowlist(allowlist)
             .approver(approver)
@@ -253,33 +254,4 @@ fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHa
 
 fn from_wire_string(s: &WireString) -> String {
     String::from_utf8(s.0.to_vec()).expect("malformed string")
-}
-
-// TODO - replace this with a real invoice approver
-// Placeholder approver that can use the display
-
-use vls_protocol_signer::approver::Approve;
-use vls_protocol_signer::lightning_signer::{lightning_invoice::Invoice, prelude::SendSync};
-
-#[allow(dead_code)] // TODO - remove this when used
-pub struct PlaceholderApprover {
-    devctx: Arc<RefCell<DeviceContext>>,
-}
-
-impl SendSync for PlaceholderApprover {}
-
-impl PlaceholderApprover {
-    pub fn new(devctx: Arc<RefCell<DeviceContext>>) -> Self {
-        Self { devctx }
-    }
-}
-
-impl Approve for PlaceholderApprover {
-    fn approve_invoice(&self, _invoice: &Invoice) -> bool {
-        true
-    }
-
-    fn approve_keysend(&self, _payment_hash: PaymentHash, _amount_msat: u64) -> bool {
-        true
-    }
 }
