@@ -267,8 +267,8 @@ impl Handler for RootHandler {
                 let signed = invstr
                     .parse::<SignedRawInvoice>()
                     .map_err(|e| Status::invalid_argument(e.to_string()))?;
-                self.approver.handle_proposed_invoice(&self.node, signed)?;
-                Ok(Box::new(PreapproveInvoiceReply {}))
+                let result = self.approver.handle_proposed_invoice(&self.node, signed)?;
+                Ok(Box::new(PreapproveInvoiceReply { result }))
             }
             Message::DeriveSecret(m) => {
                 let secret = self.node.derive_secret(&m.info);

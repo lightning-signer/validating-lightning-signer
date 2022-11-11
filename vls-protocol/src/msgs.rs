@@ -201,7 +201,9 @@ pub struct PreapproveInvoice {
 ///
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(138)]
-pub struct PreapproveInvoiceReply {}
+pub struct PreapproveInvoiceReply {
+    pub result: bool,
+}
 
 /// DeriveSecret
 #[derive(SerBolt, Debug, Serialize, Deserialize)]

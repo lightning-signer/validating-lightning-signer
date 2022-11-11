@@ -1595,8 +1595,9 @@ impl Node {
 
     /// Add an invoice.
     /// Used by the signer to map HTLCs to destination payees, so that payee
-    /// public keys can be allowlisted for policy control.
-    pub fn add_invoice(&self, raw_invoice: SignedRawInvoice) -> Result<(), Status> {
+    /// public keys can be allowlisted for policy control. Returns true
+    /// if the invoice was added, false otherwise.
+    pub fn add_invoice(&self, raw_invoice: SignedRawInvoice) -> Result<bool, Status> {
         let (hash, payment_state, invoice_hash, _invoice) =
             Self::payment_state_from_invoice(raw_invoice)?;
 
@@ -1609,24 +1610,25 @@ impl Node {
         let mut state = self.get_state();
         if let Some(payment_state) = state.invoices.get(&hash) {
             return if payment_state.invoice_hash == invoice_hash {
-                Ok(())
+                Ok(true)
             } else {
                 Err(failed_precondition("already have a different invoice for same secret"))
             };
         }
         if !state.velocity_control.insert(self.clock.now().as_secs(), payment_state.amount_msat) {
-            return Err(failed_precondition(format!(
+            warn!(
                 "global velocity would be exceeded - += {} = {} > {}",
                 payment_state.amount_msat,
                 state.velocity_control.velocity(),
                 state.velocity_control.limit
-            )));
+            );
+            return Ok(false);
         }
         state.invoices.insert(hash, payment_state);
         state.payments.insert(hash, RoutedPayment::new());
         self.persister.update_node(&self.get_id(), &*state).expect("node persistence failure");
 
-        Ok(())
+        Ok(true)
     }
 
     /// Add a keysend payment.
@@ -1911,8 +1913,8 @@ mod tests {
         // TODO check currency matches
         let invoice1 = make_test_invoice(&payee_node, "invoice1", hash);
         let invoice2 = make_test_invoice(&payee_node, "invoice2", hash);
-        node.add_invoice(invoice1.clone()).expect("add invoice");
-        node.add_invoice(invoice1.clone()).expect("add invoice");
+        assert_eq!(node.add_invoice(invoice1.clone()).expect("add invoice"), true);
+        assert_eq!(node.add_invoice(invoice1.clone()).expect("add invoice"), true);
         node.add_invoice(invoice2.clone())
             .expect_err("add a different invoice with same payment hash");
 
@@ -2015,7 +2017,7 @@ mod tests {
 
         let invoice = make_test_invoice(&payee_node, "invoice", hash);
 
-        node.add_invoice(invoice).expect("add invoice");
+        assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 
         let mut policy = make_simple_policy(Network::Testnet);
         policy.require_invoices = true;
@@ -2052,7 +2054,7 @@ mod tests {
 
         let invoice = make_test_invoice(&payee_node, "invoice", hash);
 
-        node.add_invoice(invoice).expect("add invoice");
+        assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 
         let mut policy = make_simple_policy(Network::Testnet);
         policy.require_invoices = true;

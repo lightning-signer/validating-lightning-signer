@@ -682,6 +682,7 @@ message PreapproveInvoiceRequest {
 }
 
 message PreapproveInvoiceReply {
+  bool approved = 1;
 }
 
 // Sign an invoice with the node secret key
