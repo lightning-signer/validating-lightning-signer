@@ -1382,9 +1382,9 @@ impl Signer for SignServer {
             .parse::<SignedRawInvoice>()
             .map_err(|e| invalid_grpc_argument(e.to_string()))?;
         let node = self.signer.get_node(&node_id)?;
-        self.approver.handle_proposed_invoice(&node, signed)?;
+        let approved = self.approver.handle_proposed_invoice(&node, signed)?;
 
-        let reply = PreapproveInvoiceReply {};
+        let reply = PreapproveInvoiceReply { approved };
         log_req_reply!(&node_id, &reply);
         Ok(Response::new(reply))
     }

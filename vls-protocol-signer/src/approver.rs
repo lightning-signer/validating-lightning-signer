@@ -22,13 +22,13 @@ pub trait Approve: SendSync {
         &self,
         node: &Arc<Node>,
         signed: SignedRawInvoice,
-    ) -> Result<(), Status> {
+    ) -> Result<bool, Status> {
         let (payment_hash, _payment_state, invoice_hash, invoice) =
             Node::payment_state_from_invoice(signed.clone())?;
 
         // shortcut if node already has this invoice
         if node.has_invoice(&payment_hash, &invoice_hash)? {
-            return Ok(());
+            return Ok(true);
         }
 
         // TODO check if payee public key in allowlist
@@ -37,7 +37,7 @@ pub trait Approve: SendSync {
         if self.approve_invoice(&invoice) {
             node.add_invoice(signed)
         } else {
-            Err(Status::invalid_argument("invoice declined"))
+            Ok(false)
         }
     }
 
