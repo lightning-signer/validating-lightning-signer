@@ -17,6 +17,7 @@ use log::{self, error};
 use serde;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
+use url::Url;
 
 use crate::convert::{BlockchainInfo, JsonResponse};
 
@@ -24,8 +25,7 @@ use crate::convert::{BlockchainInfo, JsonResponse};
 #[derive(Clone, Debug)]
 pub struct BitcoindClient {
     rpc: Arc<Mutex<Client>>,
-    host: String,
-    port: u16,
+    url: Url,
 }
 
 /// BitcoindClient Error
@@ -33,12 +33,10 @@ pub type BitcoindClientResult<T> = Result<T, Error>;
 
 impl BitcoindClient {
     /// Create a new BitcoindClient
-    pub async fn new(host: String, port: u16, rpc_user: String, rpc_password: String) -> Self {
-        let url = format!("http://{}:{}", host, port);
-        let mut builder = SimpleHttpTransport::builder().url(&url).await.unwrap();
-        builder = builder.auth(rpc_user, Some(rpc_password));
+    pub async fn new(url: Url) -> Self {
+        let builder = SimpleHttpTransport::builder().url(&url.to_string()).await.unwrap();
         let rpc = Client::with_transport(builder.build());
-        let client = Self { rpc: Arc::new(Mutex::new(rpc)), host, port };
+        let client = Self { rpc: Arc::new(Mutex::new(rpc)), url };
         client
     }
 
@@ -64,7 +62,7 @@ impl BitcoindClient {
         let res = rpc.send_request(req).await;
         let resp = res.map_err(Error::from);
         if let Err(ref err) = resp {
-            error!("{}: {}:{}: {}", cmd, self.host, self.port, err);
+            error!("{}: {} {}", cmd, self.url, err);
         }
         // log_response(cmd, &resp);
         Ok(resp?.result()?)

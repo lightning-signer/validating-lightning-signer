@@ -59,13 +59,7 @@ macro_rules! abbrev {
 
 impl ChainFollower {
     pub async fn new(tracker: Arc<dyn ChainTrack>, rpc_url: &Url) -> Arc<ChainFollower> {
-        let client = BitcoindClient::new(
-            rpc_url.host_str().expect("rpc host").to_owned(),
-            rpc_url.port().expect("rpc port"),
-            rpc_url.username().to_owned(),
-            rpc_url.password().to_owned().expect("rpc password").to_owned(),
-        )
-        .await;
+        let client = BitcoindClient::new(rpc_url.clone()).await;
         let update_interval = match tracker.network() {
             Network::Regtest => 5000, // poll rapidly, automated testing
             _ => 60 * 1000,

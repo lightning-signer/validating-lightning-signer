@@ -11,6 +11,8 @@
 /// Bitcoind RPC client
 pub mod bitcoind_client;
 mod convert;
+/// Esplora RPC client
+pub mod esplora_client;
 
 pub use self::bitcoind_client::{BitcoindClient, BlockSource};
 use async_trait::async_trait;
@@ -115,15 +117,12 @@ fn bitcoin_rpc_cookie(network: Network) -> (String, String) {
 }
 
 /// Construct a client from an RPC URL and a network
-pub async fn bitcoind_client_from_url(url: Url, network: Network) -> BitcoindClient {
-    let host = url.host_str().expect("host");
-    let port = url.port().expect("port");
-    // Initialize our bitcoind client.
-    let (user, pass) = if url.username().is_empty() {
+pub async fn bitcoind_client_from_url(mut url: Url, network: Network) -> BitcoindClient {
+    if url.username().is_empty() {
         // try to get from cookie file
-        bitcoin_rpc_cookie(network)
-    } else {
-        (url.username().to_string(), url.password().unwrap_or("").to_string())
-    };
-    BitcoindClient::new(host.to_string(), port, user, pass).await
+        let (user, pass) = bitcoin_rpc_cookie(network);
+        url.set_username(&user).expect("set user");
+        url.set_password(Some(&pass)).expect("set pass");
+    }
+    BitcoindClient::new(url).await
 }
