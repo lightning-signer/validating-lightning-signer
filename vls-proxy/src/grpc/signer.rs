@@ -71,7 +71,7 @@ pub async fn recover_close(
     println!("allowlist {:?}", node.allowlist());
     let channels = node.channels();
     let explorer_client = match block_explorer_rpc {
-        Some(url) => explorer_from_url(network, block_explorer_type, url).await,
+        Some(url) => Some(explorer_from_url(network, block_explorer_type, url).await),
         None => None,
     };
 
@@ -88,7 +88,7 @@ pub async fn recover_close(
             info!("closing txid {}", tx.txid());
             if let Some(bitcoind_client) = &explorer_client {
                 let funding_confirms = bitcoind_client
-                    .get_txout(channel.keys.funding_outpoint())
+                    .get_utxo_confirmations(channel.keys.funding_outpoint())
                     .await
                     .expect("get_txout for funding");
                 if funding_confirms.is_some() {
@@ -110,7 +110,7 @@ pub async fn recover_close(
                             info!("our revocable output {} @ {}", out.value, idx);
                             let out_point = OutPoint { txid: tx.txid(), index: idx as u16 };
                             let confirms = bitcoind_client
-                                .get_txout(&out_point)
+                                .get_utxo_confirmations(&out_point)
                                 .await
                                 .expect("get_txout for our output");
                             if let Some(confirms) = confirms {

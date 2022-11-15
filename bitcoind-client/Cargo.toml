@@ -30,3 +30,7 @@ url = "2.2"
 
 jsonrpc-async = "2.0.2"
 async-trait = "0.1"
+reqwest = { version = "0.11", default_features = false, features = ["json", "rustls-tls"] }
+
+[[example]]
+name = "esplora_example"

@@ -15,15 +15,14 @@ mod convert;
 pub mod esplora_client;
 
 pub use self::bitcoind_client::{BitcoindClient, BlockSource};
+use crate::bitcoind_client::bitcoind_client_from_url;
+use crate::esplora_client::EsploraClient;
 use async_trait::async_trait;
 use core::fmt;
 use lightning_signer::bitcoin::{Network, Transaction};
 use lightning_signer::lightning::chain::transaction::OutPoint;
-use log::info;
-use std::env;
 use std::fmt::{Display, Formatter};
-use std::fs::read_to_string;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use url::Url;
 
 /// RPC errors
@@ -35,6 +34,8 @@ pub enum Error {
     Json(serde_json::error::Error),
     /// IO Error
     Io(std::io::Error),
+    /// Esplora Error
+    Esplora(String),
 }
 
 impl Display for Error {
@@ -66,8 +67,9 @@ impl From<std::io::Error> for Error {
 /// A trait for a generic block source
 #[async_trait]
 pub trait Explorer {
-    /// Get whether an outpoint is unspent (will return Some(confirmations))
-    async fn get_txout(&self, txout: &OutPoint) -> Result<Option<u64>, Error>;
+    /// Get number of confirmations when an outpoint is confirmed and unspent
+    /// Returns None if the outpoint is not confirmed or is spent
+    async fn get_utxo_confirmations(&self, txout: &OutPoint) -> Result<Option<u64>, Error>;
     /// Broadcast transaction
     async fn broadcast_transaction(&self, tx: &Transaction) -> Result<(), Error>;
 }
@@ -85,14 +87,10 @@ pub async fn explorer_from_url(
     network: Network,
     block_explorer_type: BlockExplorerType,
     url: Url,
-) -> Option<Box<dyn Explorer>> {
+) -> Box<dyn Explorer> {
     match block_explorer_type {
-        BlockExplorerType::Bitcoind => {
-            let explorer: Box<dyn Explorer> =
-                Box::new(bitcoind_client_from_url(url, network).await);
-            Some(explorer)
-        }
-        BlockExplorerType::Esplora => panic!("Esplora not supported yet"),
+        BlockExplorerType::Bitcoind => Box::new(bitcoind_client_from_url(url, network).await),
+        BlockExplorerType::Esplora => Box::new(EsploraClient::new(url).await),
     }
 }
 
@@ -103,26 +101,4 @@ fn bitcoin_network_path(base_path: PathBuf, network: Network) -> PathBuf {
         Network::Signet => base_path.join("signet"),
         Network::Regtest => base_path.join("regtest"),
     }
-}
-
-fn bitcoin_rpc_cookie(network: Network) -> (String, String) {
-    let home = env::var("HOME").expect("cannot get cookie file if HOME is not set");
-    let bitcoin_path = Path::new(&home).join(".bitcoin");
-    let bitcoin_net_path = bitcoin_network_path(bitcoin_path, network);
-    let cookie_path = bitcoin_net_path.join("cookie");
-    info!("auth to bitcoind via cookie {}", cookie_path.to_string_lossy());
-    let cookie_contents = read_to_string(cookie_path).expect("cookie file read");
-    let mut iter = cookie_contents.splitn(2, ":");
-    (iter.next().expect("cookie user").to_string(), iter.next().expect("cookie pass").to_string())
-}
-
-/// Construct a client from an RPC URL and a network
-pub async fn bitcoind_client_from_url(mut url: Url, network: Network) -> BitcoindClient {
-    if url.username().is_empty() {
-        // try to get from cookie file
-        let (user, pass) = bitcoin_rpc_cookie(network);
-        url.set_username(&user).expect("set user");
-        url.set_password(Some(&pass)).expect("set pass");
-    }
-    BitcoindClient::new(url).await
 }

@@ -1,7 +1,10 @@
 use std::convert::TryInto;
+use std::env;
+use std::fs::read_to_string;
+use std::path::Path;
 use std::sync::Arc;
 
-use crate::{Error, Explorer};
+use crate::{bitcoin_network_path, Error, Explorer};
 
 use async_trait::async_trait;
 use bitcoin::hashes::hex::ToHex;
@@ -12,8 +15,9 @@ use jsonrpc_async::simple_http::SimpleHttpTransport;
 use jsonrpc_async::Client;
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::psbt::serialize::Serialize;
+use lightning_signer::bitcoin::Network;
 use lightning_signer::lightning::chain::transaction::OutPoint;
-use log::{self, error};
+use log::{self, error, info};
 use serde;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
@@ -164,7 +168,7 @@ impl BlockSource for BitcoindClient {
 
 #[async_trait]
 impl Explorer for BitcoindClient {
-    async fn get_txout(&self, txout: &OutPoint) -> BitcoindClientResult<Option<u64>> {
+    async fn get_utxo_confirmations(&self, txout: &OutPoint) -> BitcoindClientResult<Option<u64>> {
         let value: Value =
             self.call("gettxout", &[json!(txout.txid.to_hex()), json!(txout.index)]).await?;
         if value.is_null() {
@@ -180,4 +184,26 @@ impl Explorer for BitcoindClient {
         let _: Value = self.call("sendrawtransaction", &[json!(tx_hex)]).await?;
         Ok(())
     }
+}
+
+fn bitcoin_rpc_cookie(network: Network) -> (String, String) {
+    let home = env::var("HOME").expect("cannot get cookie file if HOME is not set");
+    let bitcoin_path = Path::new(&home).join(".bitcoin");
+    let bitcoin_net_path = bitcoin_network_path(bitcoin_path, network);
+    let cookie_path = bitcoin_net_path.join("cookie");
+    info!("auth to bitcoind via cookie {}", cookie_path.to_string_lossy());
+    let cookie_contents = read_to_string(cookie_path).expect("cookie file read");
+    let mut iter = cookie_contents.splitn(2, ":");
+    (iter.next().expect("cookie user").to_string(), iter.next().expect("cookie pass").to_string())
+}
+
+/// Construct a client from an RPC URL and a network
+pub async fn bitcoind_client_from_url(mut url: Url, network: Network) -> BitcoindClient {
+    if url.username().is_empty() {
+        // try to get from cookie file
+        let (user, pass) = bitcoin_rpc_cookie(network);
+        url.set_username(&user).expect("set user");
+        url.set_password(Some(&pass)).expect("set pass");
+    }
+    BitcoindClient::new(url).await
 }
