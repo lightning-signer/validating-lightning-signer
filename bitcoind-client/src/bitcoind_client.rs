@@ -1,7 +1,7 @@
-use core::fmt;
 use std::convert::TryInto;
-use std::fmt::{Display, Formatter};
 use std::sync::Arc;
+
+use crate::{Error, Explorer};
 
 use async_trait::async_trait;
 use bitcoin::hashes::hex::ToHex;
@@ -28,43 +28,6 @@ pub struct BitcoindClient {
     port: u16,
 }
 
-/// RPC errors
-#[derive(Debug)]
-pub enum Error {
-    /// JSON RPC Error
-    JsonRpc(jsonrpc_async::error::Error),
-    /// JSON Error
-    Json(serde_json::error::Error),
-    /// IO Error
-    Io(std::io::Error),
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(format!("{:?}", self).as_str())
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<jsonrpc_async::error::Error> for Error {
-    fn from(e: jsonrpc_async::error::Error) -> Error {
-        Error::JsonRpc(e)
-    }
-}
-
-impl From<serde_json::error::Error> for Error {
-    fn from(e: serde_json::error::Error) -> Error {
-        Error::Json(e)
-    }
-}
-
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Error {
-        Error::Io(e)
-    }
-}
-
 /// BitcoindClient Error
 pub type BitcoindClientResult<T> = Result<T, Error>;
 
@@ -83,28 +46,6 @@ impl BitcoindClient {
     pub async fn get_blockchain_info(&self) -> BitcoindClientResult<BlockchainInfo> {
         let result = self.call_into("getblockchaininfo", &[]).await;
         Ok(result?)
-    }
-
-    /// Broadcast transaction
-    pub async fn broadcast_transaction(
-        &self,
-        tx: &bitcoin::Transaction,
-    ) -> BitcoindClientResult<()> {
-        let tx_hex = tx.serialize().to_hex();
-        let _: Value = self.call("sendrawtransaction", &[json!(tx_hex)]).await?;
-        Ok(())
-    }
-
-    /// Get whether an outpoint is unspent (will return Some(confirmations))
-    pub async fn get_txout(&self, txout: &OutPoint) -> BitcoindClientResult<Option<u64>> {
-        let value: Value =
-            self.call("gettxout", &[json!(txout.txid.to_hex()), json!(txout.index)]).await?;
-        if value.is_null() {
-            Ok(None)
-        } else {
-            let confirmations = value["confirmations"].as_u64().unwrap();
-            Ok(Some(confirmations))
-        }
     }
 
     async fn call<T: for<'a> serde::de::Deserialize<'a>>(
@@ -220,5 +161,25 @@ impl BlockSource for BitcoindClient {
     async fn get_best_block(&self) -> BlockSourceResult<(BlockHash, u32)> {
         let info = self.get_blockchain_info().await?;
         Ok((info.latest_blockhash, info.latest_height as u32))
+    }
+}
+
+#[async_trait]
+impl Explorer for BitcoindClient {
+    async fn get_txout(&self, txout: &OutPoint) -> BitcoindClientResult<Option<u64>> {
+        let value: Value =
+            self.call("gettxout", &[json!(txout.txid.to_hex()), json!(txout.index)]).await?;
+        if value.is_null() {
+            Ok(None)
+        } else {
+            let confirmations = value["confirmations"].as_u64().unwrap();
+            Ok(Some(confirmations))
+        }
+    }
+
+    async fn broadcast_transaction(&self, tx: &bitcoin::Transaction) -> BitcoindClientResult<()> {
+        let tx_hex = tx.serialize().to_hex();
+        let _: Value = self.call("sendrawtransaction", &[json!(tx_hex)]).await?;
+        Ok(())
     }
 }
