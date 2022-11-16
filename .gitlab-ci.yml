@@ -5,6 +5,8 @@ rust-latest:
   stage: build
   image: rust:latest
   script:
+    - apt-get update
+    - apt-get install -y protobuf-compiler
     - rustup component add rustfmt
     - cargo build # make sure it builds without test_utils
     - cargo build --features test_utils
@@ -17,6 +19,8 @@ rust-1.60.0:
   stage: build
   image: rust:1.60.0
   script:
+    - apt-get update
+    - apt-get install -y protobuf-compiler
     - rustup component add rustfmt
     - cargo build # make sure it builds with test_utils
     - cargo build --features test_utils

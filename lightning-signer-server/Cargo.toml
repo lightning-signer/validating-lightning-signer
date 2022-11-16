@@ -35,11 +35,11 @@ lightning-signer-core = { path = "../lightning-signer-core" }
 vls-persist = { path = "../vls-persist", optional = true }
 vls-frontend = { path = "../vls-frontend", optional = true }
 hex = "0.4"
-tonic = { version = "0.6", optional = true }
-prost = { version = "0.9", optional = true }
+tonic = { version = "0.8", optional = true }
+prost = { version = "0.11", optional = true }
 tokio = { version = "1.17", features = ["macros", "rt-multi-thread"], optional = true }
 serde = { version = "1.0.105", features = ["derive"], optional = true }
 async-trait = "0.1"
 
 [build-dependencies]
-tonic-build = "0.6"
+tonic-build = "0.8"

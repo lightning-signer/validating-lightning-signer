@@ -18,8 +18,8 @@ sled = "0.34"
 serde = { version = "1.0", features = ["derive"] }
 serde_cbor = "0.11"
 tokio = { version = "1.17", features = ["macros", "rt-multi-thread"] }
-tonic = { version = "0.6", features = ["tls"] }
-prost = "0.9"
+tonic = { version = "0.8", features = ["tls"] }
+prost = "0.11"
 triggered = "0.1"
 ctrlc = "3"
 log = "0.4"
@@ -41,7 +41,7 @@ deadpool-postgres = { version = "0.10", optional = true }
 itertools = "0.10"
 
 [build-dependencies]
-tonic-build = "0.6"
+tonic-build = "0.8"
 
 [dev-dependencies]
 tempfile = "3"

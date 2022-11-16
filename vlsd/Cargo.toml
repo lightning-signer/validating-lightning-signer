@@ -29,8 +29,8 @@ backtrace = "0.3"
 bip39 = { version = "1.0.0", features = ["rand"] }
 hex = "0.4"
 kv = { version = "0.23", features = ["json-value"] }
-tonic = { version = "0.6" }
-prost = { version = "0.9" }
+tonic = { version = "0.8" }
+prost = { version = "0.11" }
 tokio = { version = "1.17", features = ["macros", "rt-multi-thread"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
@@ -48,7 +48,7 @@ test-log = "0.2.8"
 env_logger = "0.9.0"
 
 [build-dependencies]
-tonic-build = "0.6"
+tonic-build = "0.8"
 
 [[bin]]
 name = "vls-cli"
