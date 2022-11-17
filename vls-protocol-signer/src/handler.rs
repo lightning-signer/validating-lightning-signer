@@ -43,7 +43,7 @@ use lightning_signer::util::status::Status;
 use vls_protocol::features::*;
 use vls_protocol::model::{
     Basepoints, BitcoinSignature, BlockHash, ExtKey, Htlc, OutPoint as ModelOutPoint, PubKey,
-    PubKey32, RecoverableSignature, Secret, Signature, TxId,
+    RecoverableSignature, Secret, Signature, TxId,
 };
 use vls_protocol::msgs::{DeriveSecretReply, PreapproveInvoiceReply, SerBolt, SignBolt12Reply};
 use vls_protocol::serde_bolt::{LargeBytes, WireString};
@@ -284,19 +284,17 @@ impl Handler for RootHandler {
             Message::HsmdInit(_) => {
                 let bip32 = self.node.get_account_extended_pubkey().encode();
                 let node_id = self.node.get_id().serialize();
-                let bolt12_xonly = self.node.get_bolt12_pubkey().serialize();
-                let onion_reply_secret = self.node.get_onion_reply_secret();
-                Ok(Box::new(msgs::HsmdInitReply {
+                let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
+                Ok(Box::new(msgs::HsmdInitReplyV2 {
                     node_id: PubKey(node_id),
                     bip32: ExtKey(bip32),
-                    bolt12: PubKey32(bolt12_xonly),
-                    onion_reply_secret: Secret(onion_reply_secret),
+                    bolt12: PubKey(bolt12_pubkey),
                 }))
             }
             Message::HsmdInit2(m) => {
                 let bip32 = self.node.get_account_extended_pubkey().encode();
                 let node_secret = self.node.get_node_secret()[..].try_into().unwrap();
-                let bolt12_xonly = self.node.get_bolt12_pubkey().serialize();
+                let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
                 let allowlist = m
                     .dev_allowlist
                     .into_iter()
@@ -307,7 +305,7 @@ impl Handler for RootHandler {
                 Ok(Box::new(msgs::HsmdInit2Reply {
                     node_secret: Secret(node_secret),
                     bip32: ExtKey(bip32),
-                    bolt12: PubKey32(bolt12_xonly),
+                    bolt12: PubKey(bolt12_pubkey),
                 }))
             }
             Message::Ecdh(m) => {

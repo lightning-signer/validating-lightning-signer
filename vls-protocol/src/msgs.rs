@@ -39,16 +39,27 @@ pub struct HsmdInit {
     pub dev_bip32_seed: Option<Secret>,
     pub dev_channel_secrets: Option<Vec<Secret>>,
     pub dev_channel_secrets_shaseed: Option<Sha256>,
+    pub hsm_wire_min_version: u32,
+    pub hsm_wire_max_version: u32,
 }
 
 ///
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(111)]
-pub struct HsmdInitReply {
+pub struct HsmdInitReplyV1 {
     pub node_id: PubKey,
     pub bip32: ExtKey,
     pub bolt12: PubKey32,
     pub onion_reply_secret: Secret,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(113)]
+pub struct HsmdInitReplyV2 {
+    pub node_id: PubKey,
+    pub bip32: ExtKey,
+    pub bolt12: PubKey,
 }
 
 /// Signer Init for LDK
@@ -68,7 +79,7 @@ pub struct HsmdInit2 {
 pub struct HsmdInit2Reply {
     pub node_secret: Secret,
     pub bip32: ExtKey,
-    pub bolt12: PubKey32,
+    pub bolt12: PubKey,
 }
 
 /// Connect a new client
@@ -661,7 +672,8 @@ pub enum Message {
     Ping(Ping),
     Pong(Pong),
     HsmdInit(HsmdInit),
-    HsmdInitReply(HsmdInitReply),
+    HsmdInitReplyV1(HsmdInitReplyV1),
+    HsmdInitReplyV2(HsmdInitReplyV2),
     HsmdInit2(HsmdInit2),
     HsmdInit2Reply(HsmdInit2Reply),
     ClientHsmFd(ClientHsmFd),

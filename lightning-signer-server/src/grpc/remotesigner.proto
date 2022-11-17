@@ -300,7 +300,7 @@ message GetNodeParamReply {
   // XPUB associated with "m/0/0" which won't work for anything else.
   ExtPubKey xpub = 1;
 
-  XOnlyPubKey bolt12_pubkey = 2;
+  PubKey bolt12_pubkey = 2;
   
   // Used by CLN to create blinded paths.
   SecKey onion_reply_secret = 3;
