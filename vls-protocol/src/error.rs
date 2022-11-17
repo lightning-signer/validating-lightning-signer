@@ -8,7 +8,7 @@ pub enum Error {
     BadFraming,
     BoltError(BoltError),
     // Include the message type for trailing bytes
-    TrailingBytes(u16),
+    TrailingBytes(usize, u16),
     ShortRead,
     MessageTooLarge,
     Eof,

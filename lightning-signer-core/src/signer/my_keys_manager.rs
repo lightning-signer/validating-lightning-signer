@@ -32,7 +32,6 @@ use crate::util::transaction_utils::MAX_VALUE_MSAT;
 use crate::util::{byte_utils, transaction_utils};
 use bitcoin::secp256k1::ecdsa::RecoverableSignature;
 use bitcoin::secp256k1::schnorr;
-use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoin::util::sighash;
 use hashbrown::HashSet as UnorderedSet;
 use lightning::util::invoice::construct_invoice_preimage;
@@ -45,7 +44,7 @@ pub struct MyKeysManager {
     network: Network,
     master_key: ExtendedPrivKey,
     node_secret: SecretKey,
-    bolt12_keypair: KeyPair,
+    bolt12_secret: SecretKey,
     inbound_payment_key: KeyMaterial,
     channel_seed_base: [u8; 32],
     account_extended_key: ExtendedPrivKey,
@@ -129,11 +128,11 @@ impl MyKeysManager {
         rand_bytes_unique_start.input(&byte_utils::be32_to_array(starting_time_nanos));
         rand_bytes_unique_start.input(seed);
 
-        let bolt12_child = master_key
+        let bolt12_secret = master_key
             .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(9735).unwrap())
             .expect("Your RNG is busted")
             .private_key;
-        let bolt12_keypair = KeyPair::from_secret_key(&secp_ctx, &bolt12_child);
+
         let mut res = MyKeysManager {
             secp_ctx,
             seed: seed.to_vec(),
@@ -141,7 +140,7 @@ impl MyKeysManager {
             network,
             master_key,
             node_secret,
-            bolt12_keypair,
+            bolt12_secret,
             inbound_payment_key: KeyMaterial(inbound_pmt_key_bytes),
             channel_seed_base,
             account_extended_key,
@@ -168,8 +167,8 @@ impl MyKeysManager {
     }
 
     /// BOLT 12 x-only pubkey
-    pub fn get_bolt12_pubkey(&self) -> XOnlyPublicKey {
-        XOnlyPublicKey::from_keypair(&self.bolt12_keypair).0
+    pub fn get_bolt12_pubkey(&self) -> PublicKey {
+        PublicKey::from_secret_key(&self.secp_ctx, &self.bolt12_secret)
     }
 
     /// BOLT 12 sign
@@ -195,12 +194,14 @@ impl MyKeysManager {
 
         let kp = if let Some(publictweak) = publictweak_opt {
             // Compute the tweaked key
-            let xpub_ser = XOnlyPublicKey::from_keypair(&self.bolt12_keypair).0.serialize();
+            let pubkey_ser =
+                PublicKey::from_secret_key(&self.secp_ctx, &self.bolt12_secret).serialize();
             let mut sha = Sha256::engine();
-            sha.input(&xpub_ser);
+            sha.input(&pubkey_ser);
             sha.input(publictweak);
             let tweak = Scalar::from_be_bytes(Sha256::from_engine(sha).into_inner()).unwrap();
-            self.bolt12_keypair.add_xonly_tweak(&self.secp_ctx, &tweak).map_err(|_| ())?
+            let tweakedsecret = self.bolt12_secret.add_tweak(&tweak).map_err(|_| ())?;
+            KeyPair::from_secret_key(&self.secp_ctx, &tweakedsecret)
         } else {
             KeyPair::from_secret_key(&self.secp_ctx, &self.node_secret)
         };

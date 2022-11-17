@@ -16,7 +16,6 @@ use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
 use bitcoin::secp256k1::{schnorr, All, Message, PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::util::key::XOnlyPublicKey;
 use bitcoin::util::sighash::SighashCache;
 use bitcoin::{secp256k1, Address, PrivateKey, Transaction, TxOut};
 use bitcoin::{EcdsaSighashType, Network, OutPoint, Script};
@@ -707,7 +706,7 @@ impl Node {
     }
 
     /// BOLT 12 x-only pubkey
-    pub fn get_bolt12_pubkey(&self) -> XOnlyPublicKey {
+    pub fn get_bolt12_pubkey(&self) -> PublicKey {
         self.keys_manager.get_bolt12_pubkey()
     }
 
@@ -2588,7 +2587,7 @@ mod tests {
             "tpubDBrTnjDZwRM6jznHEmo1sYqJWU9so1HRsGEWWjMKLRhVLtuCKYKaHPE3NzqFY3ZdTd64t65T8YrXZZ8Ugwkb7oNzQVBtokaAvtC8Km6EM2G");
         assert_eq!(
             node.get_bolt12_pubkey().serialize().to_hex(),
-            "e25c37f1af7cb00984e594eae0f4d1d03537ffe202b7a6b2ebc1e5fcf1dfd9f4"
+            "02e25c37f1af7cb00984e594eae0f4d1d03537ffe202b7a6b2ebc1e5fcf1dfd9f4"
         );
         assert_eq!(
             node.get_onion_reply_secret().to_hex(),

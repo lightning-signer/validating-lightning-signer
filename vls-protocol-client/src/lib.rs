@@ -513,6 +513,7 @@ impl KeysManagerClient {
                 }),
             ),
         };
+        let is_in_coinbase = false; // FIXME - set this for real
         Utxo {
             txid: TxId([0; 32]),
             outnum: 0,
@@ -521,6 +522,7 @@ impl KeysManagerClient {
             is_p2sh: false,
             script: vec![],
             close_info,
+            is_in_coinbase,
         }
     }
 }

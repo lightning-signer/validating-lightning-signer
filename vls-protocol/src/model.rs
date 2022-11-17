@@ -167,4 +167,5 @@ pub struct Utxo {
     pub is_p2sh: bool,
     pub script: Vec<u8>,
     pub close_info: Option<CloseInfo>,
+    pub is_in_coinbase: bool,
 }

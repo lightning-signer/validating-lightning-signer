@@ -401,7 +401,7 @@ impl Signer for SignServer {
         let node_secret = node.get_node_secret();
         let reply = GetNodeParamReply {
             xpub: Some(ExtPubKey { encoded: format!("{}", extpubkey) }),
-            bolt12_pubkey: Some(XOnlyPubKey { data: bolt12_pubkey.serialize().to_vec() }),
+            bolt12_pubkey: Some(PubKey { data: bolt12_pubkey.serialize().to_vec() }),
             onion_reply_secret: Some(SecKey { data: onion_reply_secret[..].to_vec() }),
             node_secret: Some(SecKey { data: node_secret[..].to_vec() }),
         };
