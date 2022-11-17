@@ -752,7 +752,7 @@ where
 {
     let res: T = sb_from_vec(s)?;
     if !s.is_empty() {
-        return Err(Error::TrailingBytes(T::TYPE));
+        return Err(Error::TrailingBytes(s.len(), T::TYPE));
     }
     Ok(res)
 }
