@@ -38,7 +38,7 @@ use log::{LevelFilter, SetLoggerError};
 static LOGGER: SimpleLogger = SimpleLogger { timer: RefCell::new(None) };
 
 pub fn init(progname: &str) -> Result<(), SetLoggerError> {
-    rtt_init_print!(BlockIfFull);
+    rtt_init_print!(NoBlockSkip);
     rprintln!("{} starting", progname);
     log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))?;
     trace!("logger started");
