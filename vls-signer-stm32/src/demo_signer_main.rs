@@ -227,14 +227,26 @@ fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHa
         devctx.disp.clear_screen();
         let balance = root_handler.channel_balance();
         devctx.disp.show_texts(&[
-            format!("#:{:>3} h:{:>6} {:>3}K", sequence, root_handler.get_chain_height(), kb),
-            format!("r:{:>3} {:>+13}", balance.received_htlc_count, balance.received_htlc),
-            format!("c:{:>3} {:>13}", balance.channel_count, balance.claimable),
+            format!(
+                "h: {:<9} {:>4}KB",
+                pretty_thousands(root_handler.get_chain_height() as i64),
+                kb
+            ),
+            format!(
+                "r:{:>3} {:>+13}",
+                balance.received_htlc_count,
+                pretty_thousands(balance.received_htlc as i64)
+            ),
+            format!(
+                "c:{:>3} {:>13}",
+                balance.channel_count,
+                pretty_thousands(balance.claimable as i64)
+            ),
             if balance.offered_htlc > 0 {
                 format!(
                     "o:{:>3} {:>+13}",
                     balance.offered_htlc_count,
-                    0 - balance.offered_htlc as i64
+                    pretty_thousands(0 - balance.offered_htlc as i64),
                 )
             } else {
                 format!("o:{:>3} {:>13}", balance.offered_htlc_count, "-0")
@@ -254,4 +266,17 @@ fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHa
 
 fn from_wire_string(s: &WireString) -> String {
     String::from_utf8(s.0.to_vec()).expect("malformed string")
+}
+
+pub fn pretty_thousands(i: i64) -> String {
+    let mut s = String::new();
+    let i_str = i.to_string();
+    let a = i_str.chars().rev().enumerate();
+    for (idx, val) in a {
+        if idx != 0 && idx % 3 == 0 && val != '-' {
+            s.insert(0, '_');
+        }
+        s.insert(0, val);
+    }
+    s
 }

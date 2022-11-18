@@ -21,6 +21,7 @@ use vls_protocol_signer::lightning_signer::{
 };
 
 use crate::device::DeviceContext;
+use crate::pretty_thousands;
 
 pub struct ScreenApprover {
     devctx: Arc<RefCell<DeviceContext>>,
@@ -89,7 +90,7 @@ impl Approve for ScreenApprover {
 fn format_invoice_amount(amount_msat: u64) -> String {
     // Using msat is too wide for display.  Probably a fancy units mapper
     // would be appropriate, maybe ok to lose precision on large values ...
-    format!("{} sat", pretty_thousands(amount_msat / 1000))
+    format!("{} sat", pretty_thousands(amount_msat as i64 / 1000))
 }
 
 fn format_payee_pubkey(pubkey: &PublicKey) -> String {
@@ -121,17 +122,4 @@ fn format_description(mut descrstr: String) -> Vec<String> {
         rv.push(descrstr.drain(..min(descrstr.len(), 17)).collect());
     }
     rv
-}
-
-fn pretty_thousands(i: u64) -> String {
-    let mut s = String::new();
-    let i_str = i.to_string();
-    let a = i_str.chars().rev().enumerate();
-    for (idx, val) in a {
-        if idx != 0 && idx % 3 == 0 {
-            s.insert(0, '_');
-        }
-        s.insert(0, val);
-    }
-    s
 }
