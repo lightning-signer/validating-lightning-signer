@@ -23,6 +23,7 @@ use device::{heap_bytes_used, DeviceContext};
 use lightning_signer::node::NodeServices;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
+use lightning_signer::prelude::Box;
 use lightning_signer::util::clock::ManualClock;
 use lightning_signer::Arc;
 use random_starting_time::RandomStartingTimeFactory;
@@ -37,6 +38,7 @@ use vls_protocol_signer::vls_protocol;
 mod approver;
 mod device;
 mod fat_json_persist;
+mod fat_logger;
 mod logger;
 mod random_starting_time;
 mod sdcard;
@@ -47,6 +49,7 @@ mod usbserial;
 
 use approver::ScreenApprover;
 use fat_json_persist::FatJsonPersister;
+use fat_logger::FatLogger;
 use setup::{get_run_context, setup_mode, NormalContext, RunContext, TestingContext};
 
 #[entry]
@@ -91,6 +94,13 @@ fn display_intro(devctx: &mut DeviceContext, network: Network, path: &str) {
 
 // Start the signer in normal mode, use the persisted seed
 fn start_normal_mode(runctx: NormalContext) -> ! {
+    if let Some(setupfs) = runctx.cmn.setupfs.as_ref() {
+        logger::add_also(Box::new(FatLogger::new(
+            "demo_signer.log".to_string(),
+            Arc::clone(&setupfs),
+        )));
+    }
+
     info!("start_normal_mode {:?}", runctx);
 
     let root_handler = {

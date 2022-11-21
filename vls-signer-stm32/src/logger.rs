@@ -1,9 +1,13 @@
+use alloc::boxed::Box;
+use alloc::vec;
+use alloc::vec::Vec;
 use core::cell::RefCell;
 use log::{info, trace, Level, Metadata, Record};
 use rtt_target::{rprint, rprintln, rtt_init_print};
 
 struct SimpleLogger {
     timer: RefCell<Option<FreeTimer>>,
+    also: RefCell<Vec<Box<dyn log::Log>>>,
 }
 
 unsafe impl Sync for SimpleLogger {}
@@ -27,6 +31,10 @@ impl log::Log for SimpleLogger {
             }
             rprintln!("{} {} - {}", record.target(), record.level(), record.args());
         }
+
+        for lgr in &*self.also.borrow() {
+            lgr.log(record);
+        }
     }
 
     fn flush(&self) {}
@@ -35,7 +43,8 @@ impl log::Log for SimpleLogger {
 use crate::device::FreeTimer;
 use log::{LevelFilter, SetLoggerError};
 
-static LOGGER: SimpleLogger = SimpleLogger { timer: RefCell::new(None) };
+static LOGGER: SimpleLogger =
+    SimpleLogger { timer: RefCell::new(None), also: RefCell::new(vec![]) };
 
 pub fn init(progname: &str) -> Result<(), SetLoggerError> {
     rtt_init_print!(NoBlockSkip);
@@ -49,4 +58,9 @@ pub fn init(progname: &str) -> Result<(), SetLoggerError> {
 #[allow(dead_code)]
 pub fn set_timer(timer: FreeTimer) {
     *LOGGER.timer.borrow_mut() = Some(timer);
+}
+
+#[allow(dead_code)]
+pub fn add_also(also: Box<dyn log::Log>) {
+    LOGGER.also.borrow_mut().push(also);
 }
