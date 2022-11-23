@@ -2,7 +2,7 @@ use super::hsmd::{self, PingRequest, SignerRequest, SignerResponse};
 use crate::tx_util::spend_delayed_outputs;
 use crate::util::integration_test_seed_or_generate;
 use crate::util::{make_validator_factory, read_allowlist};
-use bitcoind_client::bitcoind_client_from_url;
+use bitcoind_client::{explorer_from_url, BlockExplorerType};
 use http::Uri;
 use lightning_signer::bitcoin::hashes::hex::ToHex;
 use lightning_signer::bitcoin::psbt::serialize::Serialize;
@@ -61,7 +61,8 @@ pub async fn start_signer(datadir: &str, uri: Uri, network: Network, integration
 pub async fn recover_close(
     datadir: &str,
     network: Network,
-    bitcoin_rpc: Option<Url>,
+    block_explorer_type: BlockExplorerType,
+    block_explorer_rpc: Option<Url>,
     address: &str,
 ) {
     let root_handler = make_handler(datadir, network, false);
@@ -69,8 +70,8 @@ pub async fn recover_close(
     node.set_allowlist(&[address.to_string()]).expect("add destination to allowlist");
     println!("allowlist {:?}", node.allowlist());
     let channels = node.channels();
-    let bitcoind_client = match bitcoin_rpc {
-        Some(url) => Some(bitcoind_client_from_url(url, network).await),
+    let explorer_client = match block_explorer_rpc {
+        Some(url) => Some(explorer_from_url(network, block_explorer_type, url).await),
         None => None,
     };
 
@@ -85,9 +86,9 @@ pub async fn recover_close(
                 channel.sign_holder_commitment_tx_for_recovery().expect("sign");
             debug!("closing tx {:?}", &tx);
             info!("closing txid {}", tx.txid());
-            if let Some(bitcoind_client) = &bitcoind_client {
+            if let Some(bitcoind_client) = &explorer_client {
                 let funding_confirms = bitcoind_client
-                    .get_txout(channel.keys.funding_outpoint())
+                    .get_utxo_confirmations(channel.keys.funding_outpoint())
                     .await
                     .expect("get_txout for funding");
                 if funding_confirms.is_some() {
@@ -109,7 +110,7 @@ pub async fn recover_close(
                             info!("our revocable output {} @ {}", out.value, idx);
                             let out_point = OutPoint { txid: tx.txid(), index: idx as u16 };
                             let confirms = bitcoind_client
-                                .get_txout(&out_point)
+                                .get_utxo_confirmations(&out_point)
                                 .await
                                 .expect("get_txout for our output");
                             if let Some(confirms) = confirms {
@@ -174,7 +175,7 @@ pub async fn recover_close(
         );
         debug!("sweep tx {:?}", &sweep_tx);
         info!("sweep txid {}", sweep_tx.txid());
-        if let Some(bitcoind_client) = &bitcoind_client {
+        if let Some(bitcoind_client) = &explorer_client {
             bitcoind_client.broadcast_transaction(&sweep_tx).await.expect("failed to broadcast");
         }
     }

@@ -1,4 +1,5 @@
 use crate::grpc::signer::recover_close;
+use bitcoind_client::BlockExplorerType;
 use clap::{App, AppSettings, Arg};
 use grpc::signer::start_signer;
 use lightning_signer::bitcoin::Network;
@@ -49,12 +50,19 @@ pub fn main() {
                 .about("use integration test mode, reading/writing hsm_secret from CWD"),
         )
         .arg(
-            Arg::new("bitcoin")
-                .about("bitcoind RPC endpoint - used for broadcasting recovery transactions")
-                .short('b')
-                .long("bitcoin")
+            Arg::new("recover-rpc")
+                .about("block explorer/bitcoind RPC endpoint - used for broadcasting recovery transactions")
+                .long("recover-rpc")
                 .default_value_ifs(CLAP_NETWORK_URL_MAPPING)
                 .value_name("URL"),
+        )
+        .arg(
+            Arg::new("recover-type")
+                .about("block explorer type - used for broadcasting recovery transactions")
+                .long("recover-type")
+                .possible_values(&["bitcoind", "esplora"])
+                .default_value("bitcoind")
+                .value_name("TYPE"),
         )
         .arg(
             Arg::new("recover-close").long("recover-close").value_name("BITCOIN_ADDRESS").about(
@@ -65,7 +73,8 @@ pub fn main() {
     let datadir = matches.value_of("datadir").unwrap();
     let network: Network = matches.value_of_t("network").expect("network");
 
-    let bitcoin_rpc = matches.value_of("bitcoin").map(|s| Url::parse(s).expect("bitcoin url"));
+    let recover_rpc =
+        matches.value_of("recover-rpc").map(|s| Url::parse(s).expect("recover RPC URL"));
     let recover_address = matches.value_of("recover-close");
 
     let datapath = format!("{}/{}", datadir, network.to_string());
@@ -73,7 +82,12 @@ pub fn main() {
     setup_logging(&datapath, "vlsd2", "debug");
 
     if let Some(address) = recover_address {
-        recover_close(datadir, network, bitcoin_rpc, address);
+        let recover_type = match matches.value_of("recover-type").unwrap() {
+            "bitcoind" => BlockExplorerType::Bitcoind,
+            "esplora" => BlockExplorerType::Esplora,
+            _ => panic!("unknown recover type"),
+        };
+        recover_close(datadir, network, recover_type, recover_rpc, address);
         return;
     }
 

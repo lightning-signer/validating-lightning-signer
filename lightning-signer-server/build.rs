@@ -1,7 +1,6 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .build_server(true)
-        .format(false)
         .type_attribute(".", "#[derive(serde::Serialize)]")
         // WARNING - we serialize *ALL* fields named "data" presuming they are Vec<u8>
         .field_attribute("data", "#[serde(serialize_with = \"crate::util::as_hex\")]")

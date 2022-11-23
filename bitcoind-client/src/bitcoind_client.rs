@@ -1,7 +1,10 @@
-use core::fmt;
 use std::convert::TryInto;
-use std::fmt::{Display, Formatter};
+use std::env;
+use std::fs::read_to_string;
+use std::path::Path;
 use std::sync::Arc;
+
+use crate::{bitcoin_network_path, Error, Explorer};
 
 use async_trait::async_trait;
 use bitcoin::hashes::hex::ToHex;
@@ -12,11 +15,13 @@ use jsonrpc_async::simple_http::SimpleHttpTransport;
 use jsonrpc_async::Client;
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::psbt::serialize::Serialize;
+use lightning_signer::bitcoin::Network;
 use lightning_signer::lightning::chain::transaction::OutPoint;
-use log::{self, error};
+use log::{self, error, info};
 use serde;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
+use url::Url;
 
 use crate::convert::{BlockchainInfo, JsonResponse};
 
@@ -24,45 +29,7 @@ use crate::convert::{BlockchainInfo, JsonResponse};
 #[derive(Clone, Debug)]
 pub struct BitcoindClient {
     rpc: Arc<Mutex<Client>>,
-    host: String,
-    port: u16,
-}
-
-/// RPC errors
-#[derive(Debug)]
-pub enum Error {
-    /// JSON RPC Error
-    JsonRpc(jsonrpc_async::error::Error),
-    /// JSON Error
-    Json(serde_json::error::Error),
-    /// IO Error
-    Io(std::io::Error),
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(format!("{:?}", self).as_str())
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<jsonrpc_async::error::Error> for Error {
-    fn from(e: jsonrpc_async::error::Error) -> Error {
-        Error::JsonRpc(e)
-    }
-}
-
-impl From<serde_json::error::Error> for Error {
-    fn from(e: serde_json::error::Error) -> Error {
-        Error::Json(e)
-    }
-}
-
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Error {
-        Error::Io(e)
-    }
+    url: Url,
 }
 
 /// BitcoindClient Error
@@ -70,12 +37,10 @@ pub type BitcoindClientResult<T> = Result<T, Error>;
 
 impl BitcoindClient {
     /// Create a new BitcoindClient
-    pub async fn new(host: String, port: u16, rpc_user: String, rpc_password: String) -> Self {
-        let url = format!("http://{}:{}", host, port);
-        let mut builder = SimpleHttpTransport::builder().url(&url).await.unwrap();
-        builder = builder.auth(rpc_user, Some(rpc_password));
+    pub async fn new(url: Url) -> Self {
+        let builder = SimpleHttpTransport::builder().url(&url.to_string()).await.unwrap();
         let rpc = Client::with_transport(builder.build());
-        let client = Self { rpc: Arc::new(Mutex::new(rpc)), host, port };
+        let client = Self { rpc: Arc::new(Mutex::new(rpc)), url };
         client
     }
 
@@ -83,28 +48,6 @@ impl BitcoindClient {
     pub async fn get_blockchain_info(&self) -> BitcoindClientResult<BlockchainInfo> {
         let result = self.call_into("getblockchaininfo", &[]).await;
         Ok(result?)
-    }
-
-    /// Broadcast transaction
-    pub async fn broadcast_transaction(
-        &self,
-        tx: &bitcoin::Transaction,
-    ) -> BitcoindClientResult<()> {
-        let tx_hex = tx.serialize().to_hex();
-        let _: Value = self.call("sendrawtransaction", &[json!(tx_hex)]).await?;
-        Ok(())
-    }
-
-    /// Get whether an outpoint is unspent (will return Some(confirmations))
-    pub async fn get_txout(&self, txout: &OutPoint) -> BitcoindClientResult<Option<u64>> {
-        let value: Value =
-            self.call("gettxout", &[json!(txout.txid.to_hex()), json!(txout.index)]).await?;
-        if value.is_null() {
-            Ok(None)
-        } else {
-            let confirmations = value["confirmations"].as_u64().unwrap();
-            Ok(Some(confirmations))
-        }
     }
 
     async fn call<T: for<'a> serde::de::Deserialize<'a>>(
@@ -123,7 +66,7 @@ impl BitcoindClient {
         let res = rpc.send_request(req).await;
         let resp = res.map_err(Error::from);
         if let Err(ref err) = resp {
-            error!("{}: {}:{}: {}", cmd, self.host, self.port, err);
+            error!("{}: {} {}", cmd, self.url, err);
         }
         // log_response(cmd, &resp);
         Ok(resp?.result()?)
@@ -221,4 +164,46 @@ impl BlockSource for BitcoindClient {
         let info = self.get_blockchain_info().await?;
         Ok((info.latest_blockhash, info.latest_height as u32))
     }
+}
+
+#[async_trait]
+impl Explorer for BitcoindClient {
+    async fn get_utxo_confirmations(&self, txout: &OutPoint) -> BitcoindClientResult<Option<u64>> {
+        let value: Value =
+            self.call("gettxout", &[json!(txout.txid.to_hex()), json!(txout.index)]).await?;
+        if value.is_null() {
+            Ok(None)
+        } else {
+            let confirmations = value["confirmations"].as_u64().unwrap();
+            Ok(Some(confirmations))
+        }
+    }
+
+    async fn broadcast_transaction(&self, tx: &bitcoin::Transaction) -> BitcoindClientResult<()> {
+        let tx_hex = tx.serialize().to_hex();
+        let _: Value = self.call("sendrawtransaction", &[json!(tx_hex)]).await?;
+        Ok(())
+    }
+}
+
+fn bitcoin_rpc_cookie(network: Network) -> (String, String) {
+    let home = env::var("HOME").expect("cannot get cookie file if HOME is not set");
+    let bitcoin_path = Path::new(&home).join(".bitcoin");
+    let bitcoin_net_path = bitcoin_network_path(bitcoin_path, network);
+    let cookie_path = bitcoin_net_path.join("cookie");
+    info!("auth to bitcoind via cookie {}", cookie_path.to_string_lossy());
+    let cookie_contents = read_to_string(cookie_path).expect("cookie file read");
+    let mut iter = cookie_contents.splitn(2, ":");
+    (iter.next().expect("cookie user").to_string(), iter.next().expect("cookie pass").to_string())
+}
+
+/// Construct a client from an RPC URL and a network
+pub async fn bitcoind_client_from_url(mut url: Url, network: Network) -> BitcoindClient {
+    if url.username().is_empty() {
+        // try to get from cookie file
+        let (user, pass) = bitcoin_rpc_cookie(network);
+        url.set_username(&user).expect("set user");
+        url.set_password(Some(&pass)).expect("set pass");
+    }
+    BitcoindClient::new(url).await
 }

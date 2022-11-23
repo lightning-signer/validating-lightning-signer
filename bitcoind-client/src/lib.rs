@@ -11,14 +11,88 @@
 /// Bitcoind RPC client
 pub mod bitcoind_client;
 mod convert;
+/// Esplora RPC client
+pub mod esplora_client;
 
-pub use self::bitcoind_client::{BitcoindClient, BlockSource, Error};
-use lightning_signer::bitcoin::Network;
-use log::info;
-use std::env;
-use std::fs::read_to_string;
-use std::path::{Path, PathBuf};
+pub use self::bitcoind_client::{BitcoindClient, BlockSource};
+use crate::bitcoind_client::bitcoind_client_from_url;
+use crate::esplora_client::EsploraClient;
+use async_trait::async_trait;
+use core::fmt;
+use lightning_signer::bitcoin::{Network, Transaction};
+use lightning_signer::lightning::chain::transaction::OutPoint;
+use std::fmt::{Display, Formatter};
+use std::path::PathBuf;
 use url::Url;
+
+/// RPC errors
+#[derive(Debug)]
+pub enum Error {
+    /// JSON RPC Error
+    JsonRpc(jsonrpc_async::error::Error),
+    /// JSON Error
+    Json(serde_json::error::Error),
+    /// IO Error
+    Io(std::io::Error),
+    /// Esplora Error
+    Esplora(String),
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(format!("{:?}", self).as_str())
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl From<jsonrpc_async::error::Error> for Error {
+    fn from(e: jsonrpc_async::error::Error) -> Error {
+        Error::JsonRpc(e)
+    }
+}
+
+impl From<serde_json::error::Error> for Error {
+    fn from(e: serde_json::error::Error) -> Error {
+        Error::Json(e)
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Error {
+        Error::Io(e)
+    }
+}
+
+/// A trait for a generic block source
+#[async_trait]
+pub trait Explorer {
+    /// Get number of confirmations when an outpoint is confirmed and unspent
+    /// Returns None if the outpoint is not confirmed or is spent
+    async fn get_utxo_confirmations(&self, txout: &OutPoint) -> Result<Option<u64>, Error>;
+    /// Broadcast transaction
+    async fn broadcast_transaction(&self, tx: &Transaction) -> Result<(), Error>;
+}
+
+/// The block explorer type
+pub enum BlockExplorerType {
+    /// A bitcoind RPC client "explorer"
+    Bitcoind,
+    /// The Blockstream Esplora block explorer
+    Esplora,
+}
+
+/// Construct a block explorer client from an RPC URL, a network and a block explorer type
+pub async fn explorer_from_url(
+    network: Network,
+    block_explorer_type: BlockExplorerType,
+    url: Url,
+) -> Box<dyn Explorer> {
+    match block_explorer_type {
+        BlockExplorerType::Bitcoind => Box::new(bitcoind_client_from_url(url, network).await),
+        BlockExplorerType::Esplora => Box::new(EsploraClient::new(url).await),
+    }
+}
 
 fn bitcoin_network_path(base_path: PathBuf, network: Network) -> PathBuf {
     match network {
@@ -27,29 +101,4 @@ fn bitcoin_network_path(base_path: PathBuf, network: Network) -> PathBuf {
         Network::Signet => base_path.join("signet"),
         Network::Regtest => base_path.join("regtest"),
     }
-}
-
-fn bitcoin_rpc_cookie(network: Network) -> (String, String) {
-    let home = env::var("HOME").expect("cannot get cookie file if HOME is not set");
-    let bitcoin_path = Path::new(&home).join(".bitcoin");
-    let bitcoin_net_path = bitcoin_network_path(bitcoin_path, network);
-    let cookie_path = bitcoin_net_path.join("cookie");
-    info!("auth to bitcoind via cookie {}", cookie_path.to_string_lossy());
-    let cookie_contents = read_to_string(cookie_path).expect("cookie file read");
-    let mut iter = cookie_contents.splitn(2, ":");
-    (iter.next().expect("cookie user").to_string(), iter.next().expect("cookie pass").to_string())
-}
-
-/// Construct a client from an RPC URL and a network
-pub async fn bitcoind_client_from_url(url: Url, network: Network) -> BitcoindClient {
-    let host = url.host_str().expect("host");
-    let port = url.port().expect("port");
-    // Initialize our bitcoind client.
-    let (user, pass) = if url.username().is_empty() {
-        // try to get from cookie file
-        bitcoin_rpc_cookie(network)
-    } else {
-        (url.username().to_string(), url.password().unwrap_or("").to_string())
-    };
-    BitcoindClient::new(host.to_string(), port, user, pass).await
 }
