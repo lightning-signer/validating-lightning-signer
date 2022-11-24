@@ -65,17 +65,17 @@ test-log = "0.2.8"
 # TODO point this and lightning-invoice at next release
 [dependencies.lightning]
 git = "https://github.com/lightningdevkit/rust-lightning.git"
-rev = "ea5b62fff69847941434fb51562e302eb4e7ff4b"
+rev = "af7c2920e1e5ae4ba3f522730e5cce99bedacc8c"
 #path = "../../rust-lightning/lightning"
-#version = "0.0.110"
+version = "0.0.112"
 default-features = false
 features = ["grind_signatures"]
 
 [dependencies.lightning-invoice]
 git = "https://github.com/lightningdevkit/rust-lightning.git"
-rev = "ea5b62fff69847941434fb51562e302eb4e7ff4b"
+rev = "af7c2920e1e5ae4ba3f522730e5cce99bedacc8c"
 #path = "../../rust-lightning/lightning-invoice"
-#version = "0.18.0"
+version = "0.20.0"
 default-features = false
 
 [dependencies.bitcoin]
@@ -90,4 +90,4 @@ required-features = ["use_backtrace"]
 [[test]]
 name = "functional_test"
 path = "tests/functional_test.rs"
-required-features = ["test_utils", "use_backtrace"]
+required-features = ["test_utils"]

@@ -119,15 +119,15 @@ macro_rules! assert_policy_err {
 }
 
 pub struct TestPersister {
-    pub update_ret: Mutex<Result<(), chain::ChannelMonitorUpdateErr>>,
+    pub update_ret: Mutex<chain::ChannelMonitorUpdateStatus>,
 }
 
 impl TestPersister {
     pub fn new() -> Self {
-        Self { update_ret: Mutex::new(Ok(())) }
+        Self { update_ret: Mutex::new(chain::ChannelMonitorUpdateStatus::Completed) }
     }
 
-    pub fn set_update_ret(&self, ret: Result<(), chain::ChannelMonitorUpdateErr>) {
+    pub fn set_update_ret(&self, ret: chain::ChannelMonitorUpdateStatus) {
         *self.update_ret.lock().unwrap() = ret;
     }
 }
@@ -138,7 +138,7 @@ impl chainmonitor::Persist<LoopbackChannelSigner> for TestPersister {
         _funding_txo: OutPoint,
         _data: &channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
         _id: MonitorUpdateId,
-    ) -> Result<(), chain::ChannelMonitorUpdateErr> {
+    ) -> chain::ChannelMonitorUpdateStatus {
         self.update_ret.lock().unwrap().clone()
     }
 
@@ -148,7 +148,7 @@ impl chainmonitor::Persist<LoopbackChannelSigner> for TestPersister {
         _update: &Option<channelmonitor::ChannelMonitorUpdate>,
         _data: &channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
         _id: MonitorUpdateId,
-    ) -> Result<(), chain::ChannelMonitorUpdateErr> {
+    ) -> chain::ChannelMonitorUpdateStatus {
         self.update_ret.lock().unwrap().clone()
     }
 }
@@ -164,10 +164,10 @@ pub struct TestChainMonitor<'a> {
         Arc<test_utils::TestLogger>,
         &'a chainmonitor::Persist<LoopbackChannelSigner>,
     >,
-    pub update_ret: Mutex<Option<Result<(), chain::ChannelMonitorUpdateErr>>>,
+    pub update_ret: Mutex<Option<chain::ChannelMonitorUpdateStatus>>,
     // If this is set to Some(), after the next return, we'll always return this until update_ret
     // is changed:
-    pub next_update_ret: Mutex<Option<Result<(), chain::ChannelMonitorUpdateErr>>>,
+    pub next_update_ret: Mutex<Option<chain::ChannelMonitorUpdateStatus>>,
 }
 impl<'a> TestChainMonitor<'a> {
     pub fn new(
@@ -197,7 +197,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
         &self,
         funding_txo: OutPoint,
         monitor: channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
-    ) -> Result<(), chain::ChannelMonitorUpdateErr> {
+    ) -> chain::ChannelMonitorUpdateStatus {
         self.latest_monitor_update_id
             .lock()
             .unwrap()
@@ -210,7 +210,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
             *self.update_ret.lock().unwrap() = Some(next_ret);
         }
         if ret.is_some() {
-            assert!(watch_res.is_ok());
+            assert_eq!(watch_res, chain::ChannelMonitorUpdateStatus::Completed);
             return ret.unwrap();
         }
         watch_res
@@ -220,7 +220,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
         &self,
         funding_txo: OutPoint,
         update: channelmonitor::ChannelMonitorUpdate,
-    ) -> Result<(), chain::ChannelMonitorUpdateErr> {
+    ) -> chain::ChannelMonitorUpdateStatus {
         self.latest_monitor_update_id
             .lock()
             .unwrap()
@@ -233,7 +233,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
             *self.update_ret.lock().unwrap() = Some(next_ret);
         }
         if ret.is_some() {
-            assert!(update_res.is_ok());
+            assert_eq!(update_res, chain::ChannelMonitorUpdateStatus::Completed);
             return ret.unwrap();
         }
         update_res
@@ -303,6 +303,7 @@ pub fn make_test_channel_keys() -> InMemorySigner {
         }),
         funding_outpoint: Some(OutPoint { txid: Txid::all_zeros(), index: 0 }),
         opt_anchors: None,
+        opt_non_zero_fee_anchors: Some(()),
     });
     inmemkeys
 }
@@ -565,6 +566,7 @@ pub fn make_test_counterparty_keys(
                 }),
                 funding_outpoint: Some(OutPoint { txid: Txid::all_zeros(), index: 0 }),
                 opt_anchors: None,
+                opt_non_zero_fee_anchors: Some(()),
             });
             Ok(cpkeys)
         })
@@ -1035,6 +1037,7 @@ pub fn counterparty_sign_holder_commitment(
                     chan_ctx.setup.counterparty_selected_contest_delay,
                     htlc,
                     chan_ctx.setup.option_anchors(),
+                    !chan_ctx.setup.option_anchors_zero_fee_htlc(),
                     &txkeys.broadcaster_delayed_payment_key,
                     &txkeys.revocation_key,
                 );

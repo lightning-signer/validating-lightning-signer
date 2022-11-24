@@ -495,23 +495,22 @@ checksum = "ec647867e2bf0772e28c8bcde4f0d19a9216916e890543b5a03ed8ef27b8f259"
 
 [[package]]
 name = "lightning"
-version = "0.0.110"
-source = "git+https://github.com/lightningdevkit/rust-lightning.git?rev=ea5b62fff69847941434fb51562e302eb4e7ff4b#ea5b62fff69847941434fb51562e302eb4e7ff4b"
+version = "0.0.112"
+source = "git+https://github.com/lightning-signer/rust-lightning.git?rev=e6b9694498248ecbab61304c952b19006f0dd0f3#e6b9694498248ecbab61304c952b19006f0dd0f3"
 dependencies = [
  "bitcoin",
  "core2",
- "hashbrown 0.11.2",
+ "hashbrown 0.8.2",
 ]
 
 [[package]]
 name = "lightning-invoice"
-version = "0.18.0"
-source = "git+https://github.com/lightningdevkit/rust-lightning.git?rev=ea5b62fff69847941434fb51562e302eb4e7ff4b#ea5b62fff69847941434fb51562e302eb4e7ff4b"
+version = "0.20.0"
+source = "git+https://github.com/lightning-signer/rust-lightning.git?rev=e6b9694498248ecbab61304c952b19006f0dd0f3#e6b9694498248ecbab61304c952b19006f0dd0f3"
 dependencies = [
  "bech32",
  "bitcoin_hashes",
- "core2",
- "hashbrown 0.11.2",
+ "hashbrown 0.8.2",
  "lightning",
  "num-traits",
  "secp256k1",

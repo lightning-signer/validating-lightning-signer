@@ -926,6 +926,7 @@ impl Validator for SimpleValidator {
             to_self_delay,
             &htlc,
             setup.option_anchors(),
+            !setup.option_anchors_zero_fee_htlc(),
             &txkeys.broadcaster_delayed_payment_key,
             &txkeys.revocation_key,
         );

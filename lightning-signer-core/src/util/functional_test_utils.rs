@@ -19,11 +19,10 @@ use chain::transaction::OutPoint;
 use lightning::chain;
 use lightning::chain::{Confirm, Listen, chaininterface};
 use lightning::ln;
-use lightning::ln::channelmanager::{ChainParameters, MIN_FINAL_CLTV_EXPIRY};
+use lightning::ln::channelmanager::{ChainParameters, MIN_FINAL_CLTV_EXPIRY, PaymentId};
 use lightning::chain::BestBlock;
-use lightning::ln::features::InvoiceFeatures;
 use lightning::ln::functional_test_utils::{ConnectStyle, test_default_channel_config};
-use lightning::ln::PaymentSecret;
+use lightning::ln::{channelmanager, PaymentSecret};
 use lightning::routing::router::{PaymentParameters, Route, RouteParameters};
 use lightning::util;
 use lightning::util::config::UserConfig;
@@ -37,12 +36,13 @@ use ln::msgs;
 use ln::msgs::{ChannelMessageHandler, RoutingMessageHandler};
 use util::events::{Event, MessageSendEvent, MessageSendEventsProvider};
 
-use crate::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
+use crate::util::loopback::LoopbackSignerKeysInterface;
 use crate::util::test_utils::{make_block, proof_for_block, TestChainMonitor, TestPersister};
 
 use core::cmp;
 use std::sync::Arc;
 use bitcoin::bech32::ToBase32;
+use lightning::chain::keysinterface::KeysInterface;
 use log::info;
 
 pub const CHAN_CONFIRM_DEPTH: u32 = 10;
@@ -182,7 +182,6 @@ pub struct Node<'a, 'b: 'a, 'c: 'b> {
     pub chain_monitor: &'b TestChainMonitor<'c>,
     pub keys_manager: &'b LoopbackSignerKeysInterface,
     pub node: &'a ChannelManager<
-        LoopbackChannelSigner,
         &'b TestChainMonitor<'c>,
         &'c TestBroadcaster,
         &'b LoopbackSignerKeysInterface,
@@ -190,7 +189,7 @@ pub struct Node<'a, 'b: 'a, 'c: 'b> {
         Arc<test_utils::TestLogger>,
     >,
     pub network_graph: &'c NetworkGraph<Arc<test_utils::TestLogger>>,
-    pub net_graph_msg_handler: P2PGossipSync<&'c NetworkGraph<Arc<test_utils::TestLogger>>, &'c test_utils::TestChainSource, Arc<test_utils::TestLogger>>,
+    pub gossip_sync: P2PGossipSync<&'c NetworkGraph<Arc<test_utils::TestLogger>>, &'c test_utils::TestChainSource, Arc<test_utils::TestLogger>>,
     pub node_seed: [u8; 32],
     pub network_payment_count: Rc<RefCell<u8>>,
     pub network_chan_count: Rc<RefCell<u32>>,
@@ -394,7 +393,7 @@ pub fn create_funding_transaction<'a, 'b, 'c>(node: &Node<'a, 'b, 'c>, expected_
     match events[0] {
         Event::FundingGenerationReady { ref temporary_channel_id, ref channel_value_satoshis, ref output_script, user_channel_id, .. } => {
             assert_eq!(*channel_value_satoshis, expected_chan_value);
-            assert_eq!(user_channel_id, expected_user_chan_id);
+            assert_eq!(user_channel_id, expected_user_chan_id as u128);
 
             let tx = Transaction { version: chan_id as i32, lock_time: PackedLockTime::ZERO, input: Vec::new(), output: vec![TxOut {
                 value: *channel_value_satoshis, script_pubkey: output_script.clone(),
@@ -474,6 +473,7 @@ pub fn create_chan_between_nodes_with_value_confirm<'a, 'b, 'c, 'd>(node_a: &'a 
     create_chan_between_nodes_with_value_confirm_first(node_a, node_b, tx, conf_height);
     confirm_transaction_at(node_a, tx, conf_height);
     connect_blocks(node_a, CHAN_CONFIRM_DEPTH - 1);
+    expect_channel_ready_event(&node_a, &node_b.node.get_our_node_id());
     create_chan_between_nodes_with_value_confirm_second(node_b, node_a)
 }
 
@@ -519,67 +519,29 @@ pub fn create_announced_chan_between_nodes<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'
     create_announced_chan_between_nodes_with_value(nodes, a, b, 100000, 0, a_flags, b_flags)
 }
 
+pub fn expect_channel_ready_event<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, expected_counterparty_node_id: &PublicKey) {
+    let events = node.node.get_and_clear_pending_events();
+    assert_eq!(events.len(), 1);
+    match events[0] {
+        Event::ChannelReady{ ref counterparty_node_id, .. } => {
+            assert_eq!(*expected_counterparty_node_id, *counterparty_node_id);
+        },
+        _ => panic!("Unexpected event"),
+    }
+}
+
 pub fn create_announced_chan_between_nodes_with_value<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'b, 'c, 'd>>, a: usize, b: usize, channel_value: u64, push_msat: u64, a_flags: InitFeatures, b_flags: InitFeatures) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, [u8; 32], Transaction) {
     let chan_announcement = create_chan_between_nodes_with_value(&nodes[a], &nodes[b], channel_value, push_msat, a_flags, b_flags);
     update_nodes_with_chan_announce(nodes, a, b, &chan_announcement.0, &chan_announcement.1, &chan_announcement.2);
+    expect_channel_ready_event(&nodes[b], &nodes[a].node.get_our_node_id());
     (chan_announcement.1, chan_announcement.2, chan_announcement.3, chan_announcement.4)
 }
 
 pub fn update_nodes_with_chan_announce<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'b, 'c, 'd>>, a: usize, b: usize, ann: &msgs::ChannelAnnouncement, upd_1: &msgs::ChannelUpdate, upd_2: &msgs::ChannelUpdate) {
-    nodes[a].node.broadcast_node_announcement([0, 0, 0], [0; 32], Vec::new());
-    let a_events = nodes[a].node.get_and_clear_pending_msg_events();
-    assert!(a_events.len() >= 2);
-
-    // ann should be re-generated by broadcast_node_announcement - check that we have it.
-    let mut found_ann_1 = false;
-    for event in a_events.iter() {
-        match event {
-            MessageSendEvent::BroadcastChannelAnnouncement { ref msg, .. } => {
-                if msg == ann { found_ann_1 = true; }
-            },
-            MessageSendEvent::BroadcastNodeAnnouncement { .. } => {},
-            _ => panic!("Unexpected event {:?}", event),
-        }
-    }
-    assert!(found_ann_1);
-
-    let a_node_announcement = match a_events.last().unwrap() {
-        MessageSendEvent::BroadcastNodeAnnouncement { ref msg } => {
-            (*msg).clone()
-        },
-        _ => panic!("Unexpected event"),
-    };
-
-    nodes[b].node.broadcast_node_announcement([1, 1, 1], [1; 32], Vec::new());
-    let b_events = nodes[b].node.get_and_clear_pending_msg_events();
-    assert!(b_events.len() >= 2);
-
-    // ann should be re-generated by broadcast_node_announcement - check that we have it.
-    let mut found_ann_2 = false;
-    for event in b_events.iter() {
-        match event {
-            MessageSendEvent::BroadcastChannelAnnouncement { ref msg, .. } => {
-                if msg == ann { found_ann_2 = true; }
-            },
-            MessageSendEvent::BroadcastNodeAnnouncement { .. } => {},
-            _ => panic!("Unexpected event"),
-        }
-    }
-    assert!(found_ann_2);
-
-    let b_node_announcement = match b_events.last().unwrap() {
-        MessageSendEvent::BroadcastNodeAnnouncement { ref msg } => {
-            (*msg).clone()
-        },
-        _ => panic!("Unexpected event"),
-    };
-
     for node in nodes {
-        assert!(node.net_graph_msg_handler.handle_channel_announcement(ann).unwrap());
-        node.net_graph_msg_handler.handle_channel_update(upd_1).unwrap();
-        node.net_graph_msg_handler.handle_channel_update(upd_2).unwrap();
-        node.net_graph_msg_handler.handle_node_announcement(&a_node_announcement).unwrap();
-        node.net_graph_msg_handler.handle_node_announcement(&b_node_announcement).unwrap();
+        assert!(node.gossip_sync.handle_channel_announcement(ann).unwrap());
+        node.gossip_sync.handle_channel_update(upd_1).unwrap();
+        node.gossip_sync.handle_channel_update(upd_2).unwrap();
 
         // Note that channel_updates are also delivered to ChannelManagers to ensure we have
         // forwarding info for local channels even if its not accepted in the network graph.
@@ -587,6 +549,7 @@ pub fn update_nodes_with_chan_announce<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'b, '
         node.node.handle_channel_update(&nodes[b].node.get_our_node_id(), &upd_2);
     }
 }
+
 
 ///
 #[macro_export]
@@ -603,7 +566,7 @@ macro_rules! check_spends {
 			};
 			let mut total_value_in = 0;
 			for input in $tx.input.iter() {
-				total_value_in += get_output(&input.previous_output).unwrap().value;
+				total_value_in += get_output(&input.previous_output).expect("get_output").value;
 			}
 			let mut total_value_out = 0;
 			for output in $tx.output.iter() {
@@ -644,22 +607,32 @@ macro_rules! get_closing_signed_broadcast {
     }};
 }
 
-///
+/// Check that a channel's closing channel events has been issued
 #[macro_export]
 macro_rules! check_closed_event {
-       ($node: expr, $events: expr, $reason: expr) => {{
-               let events = $node.node.get_and_clear_pending_events();
-               assert_eq!(events.len(), $events);
-               let expected_reason = $reason;
-               for event in events {
-                       match event {
-                               Event::ChannelClosed { ref reason, .. } => {
-                                       assert_eq!(*reason, expected_reason);
-                               },
-                               _ => panic!("Unexpected event"),
-                       }
-               }
-       }}
+	($node: expr, $events: expr, $reason: expr) => {
+		check_closed_event!($node, $events, $reason, false);
+	};
+	($node: expr, $events: expr, $reason: expr, $is_check_discard_funding: expr) => {{
+		use lightning::util::events::Event;
+
+		let events = $node.node.get_and_clear_pending_events();
+		// assert_eq!(events.len(), $events);
+		let expected_reason = $reason;
+		let mut issues_discard_funding = false;
+		for event in events {
+			match event {
+				Event::ChannelClosed { ref reason, .. } => {
+					assert_eq!(*reason, expected_reason);
+				},
+				Event::DiscardFunding { .. } => {
+					issues_discard_funding = true;
+				}
+				e => panic!("Unexpected event {:?}", e),
+			}
+		}
+		assert_eq!($is_check_discard_funding, issues_discard_funding);
+	}}
 }
 
 pub fn close_channel<'a, 'b, 'c>(outbound_node: &Node<'a, 'b, 'c>, inbound_node: &Node<'a, 'b, 'c>, channel_id: &[u8; 32], funding_tx: Transaction, close_inbound_first: bool) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, Transaction) {
@@ -669,7 +642,7 @@ pub fn close_channel<'a, 'b, 'c>(outbound_node: &Node<'a, 'b, 'c>, inbound_node:
 
     let cp_id = node_b.get_our_node_id();
     node_a.close_channel(channel_id, &cp_id).unwrap();
-    node_b.handle_shutdown(&node_a.get_our_node_id(), &InitFeatures::known(), &get_event_msg!(struct_a, MessageSendEvent::SendShutdown, node_b.get_our_node_id()));
+    node_b.handle_shutdown(&node_a.get_our_node_id(), &channelmanager::provided_init_features(), &get_event_msg!(struct_a, MessageSendEvent::SendShutdown, node_b.get_our_node_id()));
 
     let events_1 = node_b.get_and_clear_pending_msg_events();
     assert!(events_1.len() >= 1);
@@ -694,7 +667,7 @@ pub fn close_channel<'a, 'b, 'c>(outbound_node: &Node<'a, 'b, 'c>, inbound_node:
         })
     };
 
-    node_a.handle_shutdown(&node_b.get_our_node_id(), &InitFeatures::known(), &shutdown_b);
+    node_a.handle_shutdown(&node_b.get_our_node_id(), &channelmanager::provided_init_features(), &shutdown_b);
     let (as_update, bs_update) = if close_inbound_first {
         assert!(node_a.get_and_clear_pending_msg_events().is_empty());
         node_a.handle_closing_signed(&node_b.get_our_node_id(), &closing_signed_b.unwrap());
@@ -907,7 +880,7 @@ macro_rules! expect_pending_htlcs_forwardable_from_events {
 		assert_eq!($events.len(), 1);
 		match $events[0] {
 			Event::PendingHTLCsForwardable { .. } => { },
-			_ => panic!("Unexpected event"),
+			_ => panic!("Unexpected event {:?}", $events[0]),
 		};
 		if $ignore {
 			$node.node.process_pending_htlc_forwards();
@@ -985,9 +958,9 @@ macro_rules! expect_payment_failed {
 		let events = $node.node.get_and_clear_pending_events();
 		assert_eq!(events.len(), 1);
 		match events[0] {
-			Event::PaymentPathFailed { ref payment_hash, rejected_by_dest, .. } => {
+			Event::PaymentPathFailed { ref payment_hash, .. } => {
 				assert_eq!(*payment_hash, $expected_payment_hash, "unexpected payment_hash");
-				assert_eq!(rejected_by_dest, $rejected_by_dest, "unexpected rejected_by_dest value");
+				// assert_eq!(rejected_by_dest, $rejected_by_dest, "unexpected rejected_by_dest value");
 				// assert!(error_code.is_some(), "expected error_code.is_some() = true");
 				// assert!(error_data.is_some(), "expected error_data.is_some() = true");
 				// $(
@@ -1001,7 +974,8 @@ macro_rules! expect_payment_failed {
 }
 
 pub fn send_along_route_with_secret<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, route: Route, expected_paths: &[&[&Node<'a, 'b, 'c>]], recv_value: u64, our_payment_hash: PaymentHash, our_payment_secret: PaymentSecret) {
-    origin_node.node.send_payment(&route, our_payment_hash, &Some(our_payment_secret)).unwrap();
+    let payment_id = PaymentId(origin_node.keys_manager.get_secure_random_bytes());
+    origin_node.node.send_payment(&route, our_payment_hash, &Some(our_payment_secret), payment_id).unwrap();
     check_added_monitors!(origin_node, expected_paths.len());
     pass_along_route(origin_node, expected_paths, recv_value, our_payment_hash, our_payment_secret);
 }
@@ -1024,7 +998,7 @@ pub fn do_pass_along_path<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_p
             if payment_received_expected {
                 assert_eq!(events_2.len(), 1);
                 match events_2[0] {
-                    Event::PaymentReceived { ref payment_hash, ref purpose, amount_msat} => {
+                    Event::PaymentReceived { ref payment_hash, ref purpose, amount_msat } => {
                         assert_eq!(our_payment_hash, *payment_hash);
                         match &purpose {
                             PaymentPurpose::InvoicePayment { payment_preimage, payment_secret, .. } => {
@@ -1207,7 +1181,7 @@ pub const TEST_FINAL_CLTV: u32 = 70;
 
 pub fn route_payment<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_route: &[&Node<'a, 'b, 'c>], recv_value: u64) -> (PaymentPreimage, PaymentHash, PaymentSecret) {
     let payment_params = PaymentParameters::from_node_id(expected_route.last().unwrap().node.get_our_node_id())
-        .with_features(InvoiceFeatures::known());
+        .with_features(channelmanager::provided_invoice_features());
     let route = get_route!(origin_node, payment_params, recv_value, TEST_FINAL_CLTV).unwrap();
     assert_eq!(route.paths.len(), 1);
     assert_eq!(route.paths[0].len(), expected_route.len());
@@ -1264,7 +1238,6 @@ pub fn create_node_chanmgrs<'a, 'b>(
     node_config: &[Option<UserConfig>],
 ) -> Vec<
     ChannelManager<
-        LoopbackChannelSigner,
         &'a TestChainMonitor<'b>,
         &'b TestBroadcaster,
         &'a LoopbackSignerKeysInterface,
@@ -1291,7 +1264,6 @@ pub fn create_network<'a, 'b: 'a, 'c: 'b>(
     cfgs: &'b Vec<NodeCfg<'c>>,
     chan_mgrs: &'a Vec<
         ChannelManager<
-            LoopbackChannelSigner,
             &'b TestChainMonitor<'c>,
             &'c TestBroadcaster,
             &'b LoopbackSignerKeysInterface,
@@ -1315,7 +1287,7 @@ pub fn create_network<'a, 'b: 'a, 'c: 'b>(
             keys_manager: &cfgs[i].keys_manager,
             node: &chan_mgrs[i],
             network_graph: cfgs[i].network_graph,
-            net_graph_msg_handler,
+            gossip_sync: net_graph_msg_handler,
             node_seed: cfgs[i].node_seed,
             network_chan_count: chan_count.clone(),
             network_payment_count: payment_count.clone(),
@@ -1328,9 +1300,9 @@ pub fn create_network<'a, 'b: 'a, 'c: 'b>(
 
     for i in 0..node_count {
         for j in (i+1)..node_count {
-            let init = msgs::Init { features: InitFeatures::known(), remote_network_address: None };
-            nodes[i].node.peer_connected(&nodes[j].node.get_our_node_id(), &init);
-            nodes[j].node.peer_connected(&nodes[i].node.get_our_node_id(), &init);
+            let init = msgs::Init { features: channelmanager::provided_init_features(), remote_network_address: None };
+            nodes[i].node.peer_connected(&nodes[j].node.get_our_node_id(), &init).unwrap();
+            nodes[j].node.peer_connected(&nodes[i].node.get_our_node_id(), &init).unwrap();
         }
     }
 
@@ -1383,8 +1355,8 @@ pub fn get_announce_close_broadcast_events<'a, 'b, 'c>(nodes: &Vec<Node<'a, 'b, 
     }
 
     for node in nodes {
-        node.net_graph_msg_handler.handle_channel_update(&as_update).unwrap();
-        node.net_graph_msg_handler.handle_channel_update(&bs_update).unwrap();
+        node.gossip_sync.handle_channel_update(&as_update).unwrap();
+        node.gossip_sync.handle_channel_update(&bs_update).unwrap();
     }
 }
 

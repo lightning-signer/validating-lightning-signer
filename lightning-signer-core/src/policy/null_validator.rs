@@ -20,25 +20,21 @@ use super::error::ValidationError;
 /// A factory for NullValidator
 pub struct NullValidatorFactory {}
 
-fn null_validator() -> NullValidator {
+fn null_validator(network: Network) -> NullValidator {
     let factory = SimpleValidatorFactory::new();
     NullValidator {
-        0: factory.make_validator(
-            Network::Regtest,
-            PublicKey::from_slice(&[2u8; 33]).unwrap(),
-            None,
-        ),
+        0: factory.make_validator(network, PublicKey::from_slice(&[2u8; 33]).unwrap(), None),
     }
 }
 
 impl ValidatorFactory for NullValidatorFactory {
     fn make_validator(
         &self,
-        _network: Network,
+        network: Network,
         _node_id: PublicKey,
         _channel_id: Option<ChannelId>,
     ) -> Arc<dyn Validator> {
-        Arc::new(null_validator())
+        Arc::new(null_validator(network))
     }
 
     fn policy(&self, network: Network) -> Box<dyn Policy> {
