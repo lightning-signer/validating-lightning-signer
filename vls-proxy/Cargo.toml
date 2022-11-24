@@ -10,10 +10,10 @@ build = "build.rs"
 default = ["grpc", "main", "debug"]
 grpc = ["tokio", "tokio-stream", "tonic", "prost", "async-stream", "url"]
 main = ["clap", "clap_derive", "ctrlc", "fern"]
-debug = ["lightning-signer-core/debug"]
+debug = ["vls-core/debug"]
 
 [dependencies]
-lightning-signer-core = { path = "../lightning-signer-core", features = ["use_backtrace"] }
+vls-core = { path = "../vls-core", features = ["use_backtrace"] }
 vls-protocol-signer = { path = "../vls-protocol-signer" }
 vls-protocol-client = { path = "../vls-protocol-client" }
 vls-protocol = { path = "../vls-protocol" }
@@ -44,8 +44,8 @@ as-any = "0.3"
 hex = "0.4"
 bitcoind-client = { path = "../bitcoind-client" }
 
-[dependencies.lightning-signer-server]
-path = "../lightning-signer-server"
+[dependencies.vls-server]
+path = "../vls-server"
 default_features = false
 features = ["frontend", "persist-kv-json", "debug"]
 

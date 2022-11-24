@@ -74,8 +74,8 @@ dependencies = [
  "console_error_panic_hook",
  "js-sys",
  "lazy_static",
- "lightning-signer-core",
  "log",
+ "vls-core",
  "wasm-bindgen",
  "wasm-bindgen-test",
  "web-sys",
@@ -224,7 +224,7 @@ checksum = "3cb00336871be5ed2c8ed44b60ae9959dc5b9f08539422ed43f09e34ecaeba21"
 [[package]]
 name = "lightning"
 version = "0.0.112"
-source = "git+https://github.com/lightning-signer/rust-lightning.git?rev=e6b9694498248ecbab61304c952b19006f0dd0f3#e6b9694498248ecbab61304c952b19006f0dd0f3"
+source = "git+https://github.com/lightningdevkit/rust-lightning.git?rev=af7c2920e1e5ae4ba3f522730e5cce99bedacc8c#af7c2920e1e5ae4ba3f522730e5cce99bedacc8c"
 dependencies = [
  "bitcoin",
  "core2",
@@ -234,7 +234,7 @@ dependencies = [
 [[package]]
 name = "lightning-invoice"
 version = "0.20.0"
-source = "git+https://github.com/lightning-signer/rust-lightning.git?rev=e6b9694498248ecbab61304c952b19006f0dd0f3#e6b9694498248ecbab61304c952b19006f0dd0f3"
+source = "git+https://github.com/lightningdevkit/rust-lightning.git?rev=af7c2920e1e5ae4ba3f522730e5cce99bedacc8c#af7c2920e1e5ae4ba3f522730e5cce99bedacc8c"
 dependencies = [
  "bech32",
  "bitcoin_hashes",
@@ -242,22 +242,6 @@ dependencies = [
  "lightning",
  "num-traits",
  "secp256k1",
-]
-
-[[package]]
-name = "lightning-signer-core"
-version = "0.1.0-5"
-dependencies = [
- "anyhow",
- "backtrace",
- "bitcoin",
- "core2",
- "hashbrown 0.11.2",
- "itertools",
- "lightning",
- "lightning-invoice",
- "log",
- "scopeguard",
 ]
 
 [[package]]
@@ -391,6 +375,22 @@ name = "version_check"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5fecdca9a5291cc2b8dcf7dc02453fee791a280f3743cb0905f8822ae463b3fe"
+
+[[package]]
+name = "vls-core"
+version = "0.1.0-5"
+dependencies = [
+ "anyhow",
+ "backtrace",
+ "bitcoin",
+ "core2",
+ "hashbrown 0.11.2",
+ "itertools",
+ "lightning",
+ "lightning-invoice",
+ "log",
+ "scopeguard",
+]
 
 [[package]]
 name = "wasi"

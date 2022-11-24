@@ -249,7 +249,7 @@ dependencies = [
  "cortex-m 0.6.7",
  "cortex-m-rt",
  "cortex-m-semihosting",
- "lightning-signer-core",
+ "vls-core",
  "vls-persist",
 ]
 
@@ -381,21 +381,6 @@ dependencies = [
  "lightning",
  "num-traits",
  "secp256k1",
-]
-
-[[package]]
-name = "lightning-signer-core"
-version = "0.1.0-5"
-dependencies = [
- "anyhow",
- "bitcoin",
- "core2",
- "hashbrown 0.11.2",
- "itertools",
- "lightning",
- "lightning-invoice",
- "log",
- "scopeguard",
 ]
 
 [[package]]
@@ -701,14 +686,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5fecdca9a5291cc2b8dcf7dc02453fee791a280f3743cb0905f8822ae463b3fe"
 
 [[package]]
+name = "vls-core"
+version = "0.1.0-5"
+dependencies = [
+ "anyhow",
+ "bitcoin",
+ "core2",
+ "hashbrown 0.11.2",
+ "itertools",
+ "lightning",
+ "lightning-invoice",
+ "log",
+ "scopeguard",
+]
+
+[[package]]
 name = "vls-persist"
 version = "0.1.0"
 dependencies = [
  "hex",
- "lightning-signer-core",
  "log",
  "serde",
  "serde_with",
+ "vls-core",
 ]
 
 [[package]]

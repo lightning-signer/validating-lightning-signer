@@ -1,10 +1,10 @@
 [package]
-name = "lightning-signer-server"
+name = "vls-server"
 version = "0.1.0-5"
 authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
 edition = "2018"
 license = "Apache-2.0"
-description = "A library for implementing a Lightning signer server, dependent on the lightning-signer-core crate."
+description = "A library for implementing a Lightning signer server, dependent on the vls-core crate."
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 readme = "../README.md"
@@ -13,14 +13,14 @@ build = "build.rs"
 
 [features]
 default = ["debug"]
-grpc = ["tokio", "tonic", "prost", "serde", "lightning-signer-core/grpc"]
+grpc = ["tokio", "tonic", "prost", "serde", "vls-core/grpc"]
 persist-kv-json = [ "vls-persist/kv-json" ]
 persist = [ "vls-persist" ]
-test_utils = ["lightning-signer-core/test_utils"]
+test_utils = ["vls-core/test_utils"]
 frontend = ["vls-frontend"]
-secp-lowmemory = ["lightning-signer-core/secp-lowmemory"]
-use_backtrace = ["lightning-signer-core/use_backtrace"]
-debug = ["log_pretty_print", "lightning-signer-core/debug"]
+secp-lowmemory = ["vls-core/secp-lowmemory"]
+use_backtrace = ["vls-core/use_backtrace"]
+debug = ["log_pretty_print", "vls-core/debug"]
 log_pretty_print = []
 
 [lib]
@@ -31,7 +31,7 @@ path = "src/lib.rs"
 anyhow = "1.0"
 log = { version="0.4.14", features = [ "std" ] }
 time = { version = "0.3", features = [ "formatting", "macros" ] }
-lightning-signer-core = { path = "../lightning-signer-core" }
+vls-core = { path = "../vls-core" }
 vls-persist = { path = "../vls-persist", optional = true }
 vls-frontend = { path = "../vls-frontend", optional = true }
 hex = "0.4"

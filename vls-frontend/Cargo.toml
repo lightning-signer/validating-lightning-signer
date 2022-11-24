@@ -12,7 +12,7 @@ rust-version = "1.60.0"
 
 [features]
 default = ["debug"]
-test_utils = ["lightning-signer-core/test_utils"]
+test_utils = ["vls-core/test_utils"]
 debug = ["log_pretty_print"]
 log_pretty_print = []
 
@@ -26,7 +26,7 @@ log = { version="0.4.14", features = [ "std" ] }
 tokio = { version = "1.17", features = ["macros", "rt-multi-thread"] }
 url = { version = "2.2" }
 bitcoind-client = { path = "../bitcoind-client" }
-lightning-signer-core = { path = "../lightning-signer-core" }
+vls-core = { path = "../vls-core" }
 
 [dev-dependencies]
 test-log = "0.2.8"

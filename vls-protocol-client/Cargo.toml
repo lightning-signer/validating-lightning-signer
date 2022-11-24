@@ -6,12 +6,12 @@ edition = "2018"
 [features]
 null = ["vls-protocol-signer"]
 grpc = []
-test_utils = ["lightning-signer-core/test_utils"]
+test_utils = ["vls-core/test_utils"]
 
 [dependencies]
 vls-protocol-signer = { path = "../vls-protocol-signer", optional = true }
 vls-protocol = { path = "../vls-protocol" }
-lightning-signer-core = { path = "../lightning-signer-core" }
+vls-core = { path = "../vls-core" }
 bit-vec = "0.6"
 log = "0.4"
 anyhow = "1.0"
