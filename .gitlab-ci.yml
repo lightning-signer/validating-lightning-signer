@@ -9,7 +9,6 @@ rust-latest:
     - apt-get install -y protobuf-compiler
     - rustup component add rustfmt
     - cargo build # make sure it builds without test_utils
-    - cargo build --features test_utils
     - cargo test --features test_utils
     # ensure vls-persist build with no-std
     - cargo build -p vls-persist --no-default-features --features no-std
@@ -22,9 +21,15 @@ rust-1.60.0:
     - apt-get update
     - apt-get install -y protobuf-compiler
     - rustup component add rustfmt
-    - cargo build # make sure it builds with test_utils
-    - cargo build --features test_utils
     - cargo test --features test_utils
+
+rust-1.60.0-lss:
+  stage: build
+  image: rust:1.60.0
+  script:
+    - apt-get update
+    - apt-get install -y protobuf-compiler
+    - rustup component add rustfmt
     - (cd lightning-storage-server && cargo test)
 
 embedded:
