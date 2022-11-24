@@ -38,7 +38,11 @@ pub type BitcoindClientResult<T> = Result<T, Error>;
 impl BitcoindClient {
     /// Create a new BitcoindClient
     pub async fn new(url: Url) -> Self {
-        let builder = SimpleHttpTransport::builder().url(&url.to_string()).await.unwrap();
+        let mut builder = SimpleHttpTransport::builder().url(&url.to_string()).await.unwrap();
+        // sadly, SimpleHttpTransport doesn't grab the auth from the URL
+        if !url.username().is_empty() {
+            builder = builder.auth(url.username(), url.password());
+        }
         let rpc = Client::with_transport(builder.build());
         let client = Self { rpc: Arc::new(Mutex::new(rpc)), url };
         client
