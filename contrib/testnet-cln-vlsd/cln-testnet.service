@@ -1,7 +1,7 @@
 [Unit]
 Description=Testnet Core Lightning Daemon
-Requires=bitcoind.service
-After=bitcoind.service
+Requires=bitcoind-testnet.service
+After=bitcoind-testnet.service
 
 [Service]
 EnvironmentFile=/home/cln/.lightning/testnet-env

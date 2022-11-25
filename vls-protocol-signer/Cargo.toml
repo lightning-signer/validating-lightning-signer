@@ -10,6 +10,7 @@ no-std = ["vls-core/no-std"]
 std = ["vls-protocol/std", "vls-core/std"]
 secp-lowmemory = ["vls-core/secp-lowmemory"]
 use_backtrace = ["vls-core/use_backtrace"]
+tracker_size_workaround = ["vls-core/tracker_size_workaround"]
 
 [dependencies]
 vls-protocol = { path = "../vls-protocol" }

@@ -23,6 +23,7 @@ use device::{heap_bytes_used, DeviceContext};
 use lightning_signer::node::NodeServices;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
+use lightning_signer::prelude::Box;
 use lightning_signer::util::clock::ManualClock;
 use lightning_signer::Arc;
 use random_starting_time::RandomStartingTimeFactory;
@@ -37,6 +38,7 @@ use vls_protocol_signer::vls_protocol;
 mod approver;
 mod device;
 mod fat_json_persist;
+mod fat_logger;
 mod logger;
 mod random_starting_time;
 mod sdcard;
@@ -47,6 +49,7 @@ mod usbserial;
 
 use approver::ScreenApprover;
 use fat_json_persist::FatJsonPersister;
+use fat_logger::FatLogger;
 use setup::{get_run_context, setup_mode, NormalContext, RunContext, TestingContext};
 
 #[entry]
@@ -91,6 +94,13 @@ fn display_intro(devctx: &mut DeviceContext, network: Network, path: &str) {
 
 // Start the signer in normal mode, use the persisted seed
 fn start_normal_mode(runctx: NormalContext) -> ! {
+    if let Some(setupfs) = runctx.cmn.setupfs.as_ref() {
+        logger::add_also(Box::new(FatLogger::new(
+            "demo_signer.log".to_string(),
+            Arc::clone(&setupfs),
+        )));
+    }
+
     info!("start_normal_mode {:?}", runctx);
 
     let root_handler = {
@@ -227,14 +237,26 @@ fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHa
         devctx.disp.clear_screen();
         let balance = root_handler.channel_balance();
         devctx.disp.show_texts(&[
-            format!("#:{:>3} h:{:>6} {:>3}K", sequence, root_handler.get_chain_height(), kb),
-            format!("r:{:>3} {:>+13}", balance.received_htlc_count, balance.received_htlc),
-            format!("c:{:>3} {:>13}", balance.channel_count, balance.claimable),
+            format!(
+                "h: {:<9} {:>4}KB",
+                pretty_thousands(root_handler.get_chain_height() as i64),
+                kb
+            ),
+            format!(
+                "r:{:>3} {:>+13}",
+                balance.received_htlc_count,
+                pretty_thousands(balance.received_htlc as i64)
+            ),
+            format!(
+                "c:{:>3} {:>13}",
+                balance.channel_count,
+                pretty_thousands(balance.claimable as i64)
+            ),
             if balance.offered_htlc > 0 {
                 format!(
                     "o:{:>3} {:>+13}",
                     balance.offered_htlc_count,
-                    0 - balance.offered_htlc as i64
+                    pretty_thousands(0 - balance.offered_htlc as i64),
                 )
             } else {
                 format!("o:{:>3} {:>13}", balance.offered_htlc_count, "-0")
@@ -254,4 +276,17 @@ fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHa
 
 fn from_wire_string(s: &WireString) -> String {
     String::from_utf8(s.0.to_vec()).expect("malformed string")
+}
+
+pub fn pretty_thousands(i: i64) -> String {
+    let mut s = String::new();
+    let i_str = i.to_string();
+    let a = i_str.chars().rev().enumerate();
+    for (idx, val) in a {
+        if idx != 0 && idx % 3 == 0 && val != '-' {
+            s.insert(0, '_');
+        }
+        s.insert(0, val);
+    }
+    s
 }

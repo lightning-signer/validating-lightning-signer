@@ -34,6 +34,9 @@ log_pretty_print = []
 # trace the enforcement_state at debug level
 debug_enforcement_state = []
 
+# issue #187
+tracker_size_workaround = []
+
 [lib]
 name = "lightning_signer"
 path = "src/lib.rs"

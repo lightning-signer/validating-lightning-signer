@@ -1,9 +1,19 @@
 #### Setup
 
 ```
+sudo apt install gcc-arm-none-eabi gdb-multiarch -y
+sudo apt install libudev-dev -y
+sudo apt install screen -y
+
 rustup override set nightly
 rustup target add thumbv7em-none-eabihf
+
+cargo install probe-run
+
+sudo adduser $USER dialout
 ```
+
+Follow [udev rules setup instructions](https://probe.rs/docs/getting-started/probe-setup/)
 
 #### SD Card Setup
 
@@ -56,15 +66,10 @@ Wait for the demo_signer to finish loading and start executing, it will display
 4. In a second terminal shell, change directories to the top-level
    `vls-hsmd` directory and execute the desired test:
 ```
-make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_pay
+make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_plugin.py::test_forward_event_notification VLS_SERIAL_SELECT=2
 ```
 
 #### Interesting integration tests
-
-4 channels, nice routing:
-```
-make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_plugin.py::test_forward_event_notification VLS_SERIAL_SELECT=2
-```
 
 3 channels, nice routing:
 ```

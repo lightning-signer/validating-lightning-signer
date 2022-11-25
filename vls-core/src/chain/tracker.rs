@@ -72,6 +72,10 @@ pub struct ChainTracker<L: ChainListener + Ord> {
 }
 
 impl<L: ChainListener + Ord> ChainTracker<L> {
+    // # issue #187
+    #[cfg(feature = "tracker_size_workaround")]
+    const MAX_REORG_SIZE: usize = 64;
+    #[cfg(not(feature = "tracker_size_workaround"))]
     const MAX_REORG_SIZE: usize = 100;
 
     /// Create a new tracker
