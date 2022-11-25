@@ -260,13 +260,13 @@ version = "0.1.0-5"
 dependencies = [
  "async-trait",
  "jsonrpc-async",
- "lightning-signer-core",
  "log",
  "reqwest",
  "serde",
  "serde_json",
  "tokio",
  "url",
+ "vls-core",
 ]
 
 [[package]]
@@ -995,45 +995,6 @@ dependencies = [
  "lightning",
  "num-traits",
  "secp256k1",
-]
-
-[[package]]
-name = "lightning-signer-core"
-version = "0.1.0-5"
-dependencies = [
- "anyhow",
- "backtrace",
- "bitcoin",
- "core2",
- "env_logger",
- "hashbrown 0.11.2",
- "itertools",
- "lightning",
- "lightning-invoice",
- "log",
- "paste",
- "scopeguard",
- "test-log",
- "tonic",
-]
-
-[[package]]
-name = "lightning-signer-server"
-version = "0.1.0-5"
-dependencies = [
- "anyhow",
- "async-trait",
- "hex",
- "lightning-signer-core",
- "log",
- "prost",
- "serde",
- "time",
- "tokio",
- "tonic",
- "tonic-build",
- "vls-frontend",
- "vls-persist",
 ]
 
 [[package]]
@@ -2392,17 +2353,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
+name = "vls-core"
+version = "0.1.0-5"
+dependencies = [
+ "anyhow",
+ "backtrace",
+ "bitcoin",
+ "core2",
+ "env_logger",
+ "hashbrown 0.11.2",
+ "itertools",
+ "lightning",
+ "lightning-invoice",
+ "log",
+ "paste",
+ "scopeguard",
+ "test-log",
+ "tonic",
+]
+
+[[package]]
 name = "vls-frontend"
 version = "0.1.0-5"
 dependencies = [
  "async-trait",
  "bitcoind-client",
  "env_logger",
- "lightning-signer-core",
  "log",
  "test-log",
  "tokio",
  "url",
+ "vls-core",
 ]
 
 [[package]]
@@ -2412,13 +2393,13 @@ dependencies = [
  "env_logger",
  "hex",
  "kv",
- "lightning-signer-core",
  "log",
  "serde",
  "serde_json",
  "serde_with",
  "tempfile",
  "test-log",
+ "vls-core",
 ]
 
 [[package]]
@@ -2443,8 +2424,8 @@ dependencies = [
  "async-trait",
  "bit-vec",
  "delegate",
- "lightning-signer-core",
  "log",
+ "vls-core",
  "vls-protocol",
  "vls-protocol-signer",
 ]
@@ -2454,9 +2435,9 @@ name = "vls-protocol-signer"
 version = "0.1.0"
 dependencies = [
  "bit-vec",
- "lightning-signer-core",
  "log",
  "serde",
+ "vls-core",
  "vls-protocol",
 ]
 
@@ -2477,8 +2458,6 @@ dependencies = [
  "hex",
  "http",
  "hyper",
- "lightning-signer-core",
- "lightning-signer-server",
  "lightning-storage-server",
  "log",
  "nix 0.22.3",
@@ -2491,10 +2470,31 @@ dependencies = [
  "tonic-build",
  "triggered",
  "url",
+ "vls-core",
  "vls-frontend",
  "vls-protocol",
  "vls-protocol-client",
  "vls-protocol-signer",
+ "vls-server",
+]
+
+[[package]]
+name = "vls-server"
+version = "0.1.0-5"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "hex",
+ "log",
+ "prost",
+ "serde",
+ "time",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "vls-core",
+ "vls-frontend",
+ "vls-persist",
 ]
 
 [[package]]
@@ -2511,8 +2511,6 @@ dependencies = [
  "env_logger",
  "hex",
  "kv",
- "lightning-signer-core",
- "lightning-signer-server",
  "log",
  "prost",
  "serde",
@@ -2525,8 +2523,10 @@ dependencies = [
  "tracing-subscriber",
  "triggered",
  "url",
+ "vls-core",
  "vls-frontend",
  "vls-protocol-signer",
+ "vls-server",
 ]
 
 [[package]]

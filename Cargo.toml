@@ -1,8 +1,8 @@
 [workspace]
 
 members = [
-    "lightning-signer-core",
-    "lightning-signer-server",
+    "vls-core",
+    "vls-server",
     "vls-frontend",
     "bitcoind-client",
 

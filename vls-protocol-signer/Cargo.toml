@@ -6,10 +6,10 @@ edition = "2018"
 
 [features]
 default = ["std"]
-no-std = ["lightning-signer-core/no-std"]
-std = ["vls-protocol/std", "lightning-signer-core/std"]
-secp-lowmemory = ["lightning-signer-core/secp-lowmemory"]
-use_backtrace = ["lightning-signer-core/use_backtrace"]
+no-std = ["vls-core/no-std"]
+std = ["vls-protocol/std", "vls-core/std"]
+secp-lowmemory = ["vls-core/secp-lowmemory"]
+use_backtrace = ["vls-core/use_backtrace"]
 
 [dependencies]
 vls-protocol = { path = "../vls-protocol" }
@@ -17,7 +17,7 @@ log = { version = "0.4", default_features = false }
 serde = { version = "1.0", default_features = false }
 bit-vec = { version = "0.6", default_features = false }
 
-[dependencies.lightning-signer-core]
-path = "../lightning-signer-core"
+[dependencies.vls-core]
+path = "../vls-core"
 default_features = false
 
