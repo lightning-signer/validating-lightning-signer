@@ -4,6 +4,9 @@ cache:
     - bin/bitcoind
     - bin/bitcoin-cli
 
+variables:
+  CARGO_HOME: "$CI_PROJECT_DIR/.cache/cargo"
+
 before_script:
   - ls -al
   - mkdir -p bin
@@ -15,6 +18,10 @@ rust-latest:
   tags: [ saas-linux-large-amd64 ]
   stage: build
   image: rust:latest
+  cache:
+    key: vls-compile-latest
+    paths:
+      - .cache/cargo
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
@@ -42,6 +49,10 @@ rust-1.60.0:
   tags: [ saas-linux-large-amd64 ]
   stage: build
   image: rust:1.60.0
+  cache:
+    key: vls-compile-1_60
+    paths:
+      - .cache/cargo
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
