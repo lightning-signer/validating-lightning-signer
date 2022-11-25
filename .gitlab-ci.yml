@@ -1,3 +1,12 @@
+cache:
+  key: lnrod-global
+  paths:
+    - bin/bitcoind
+
+before_script:
+  - ls -al
+  - mkdir -p bin
+
 stages:
   - build
 
@@ -13,6 +22,18 @@ rust-latest:
     # ensure vls-persist build with no-std
     - cargo build -p vls-persist --no-default-features --features no-std
     - (cd lightning-storage-server && cargo test)
+    # bitcoind-client system test
+    - if [ ! -e bin/bitcoind ]; then
+      wget --no-verbose https://bitcoin.org/bin/bitcoin-core-0.21.0/bitcoin-0.21.0-x86_64-linux-gnu.tar.gz &&
+      echo da7766775e3f9c98d7a9145429f2be8297c2672fe5b118fd3dc2411fb48e0032  bitcoin-0.21.0-x86_64-linux-gnu.tar.gz | sha256sum -c &&
+      tar xzf bitcoin-0.21.0-x86_64-linux-gnu.tar.gz &&
+      mv bitcoin-0.21.0/bin/bitcoind bin/ &&
+      mv bitcoin-0.21.0/bin/bitcoin-cli bin/ &&
+      rm -rf bitcoin-0.21.0 ;
+      fi
+    - ./bin/bitcoind --regtest --daemon --rpcuser=user --rpcpassword=pass && sleep 5
+    - ./bin/bitcoin-cli --regtest --rpcuser=user --rpcpassword=pass getblockchaininfo
+    - cargo test -p bitcoind-client --features system-test
 
 rust-1.60.0:
   stage: build

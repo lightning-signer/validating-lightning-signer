@@ -15,6 +15,7 @@ default = ["debug"]
 test_utils = ["vls-core/test_utils"]
 debug = ["log_pretty_print"]
 log_pretty_print = []
+system-test = []
 
 [lib]
 name = "bitcoind_client"
