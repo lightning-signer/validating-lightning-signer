@@ -1,12 +1,14 @@
-use crate::grpc::signer::recover_close;
 use bitcoind_client::BlockExplorerType;
 use clap::{App, AppSettings, Arg};
+use grpc::signer::make_handler;
 use grpc::signer::start_signer;
 use lightning_signer::bitcoin::Network;
 use lightning_signer_server::{CLAP_NETWORK_URL_MAPPING, NETWORK_NAMES};
 use std::fs;
 use url::Url;
 use util::setup_logging;
+use vls_protocol_signer::handler::Handler;
+use vls_proxy::recovery::recover_close;
 
 pub mod client;
 pub mod connection;
@@ -87,7 +89,10 @@ pub fn main() {
             "esplora" => BlockExplorerType::Esplora,
             _ => panic!("unknown recover type"),
         };
-        recover_close(datadir, network, recover_type, recover_rpc, address);
+        let root_handler = make_handler(datadir, network, false);
+        let node = root_handler.node().clone();
+        node.set_allowlist(&[address.to_string()]).expect("add destination to allowlist");
+        recover_close(network, recover_type, recover_rpc, address, node);
         return;
     }
 
