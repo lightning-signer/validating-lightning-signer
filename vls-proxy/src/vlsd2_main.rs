@@ -8,7 +8,7 @@ use std::fs;
 use url::Url;
 use util::setup_logging;
 use vls_protocol_signer::handler::Handler;
-use vls_proxy::recovery::recover_close;
+use vls_proxy::recovery::{direct::DirectRecoveryKeys, recover_close};
 
 pub mod client;
 pub mod connection;
@@ -92,7 +92,8 @@ pub fn main() {
         let root_handler = make_handler(datadir, network, false);
         let node = root_handler.node().clone();
         node.set_allowlist(&[address.to_string()]).expect("add destination to allowlist");
-        recover_close(network, recover_type, recover_rpc, address, node);
+        let keys = DirectRecoveryKeys { node };
+        recover_close(network, recover_type, recover_rpc, address, keys);
         return;
     }
 
