@@ -1,22 +1,74 @@
+cache:
+  key: vls-global
+  paths:
+    - bin
+
+variables:
+  CARGO_HOME: "$CI_PROJECT_DIR/.cache/cargo"
+
+before_script:
+  - ls -al
+  - mkdir -p bin
+
 stages:
   - build
 
 rust-latest:
+  tags: [ saas-linux-large-amd64 ]
   stage: build
   image: rust:latest
+  cache:
+    key: vls-compile-latest
+    paths:
+      - bin
+      - .cache/cargo
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
     - rustup component add rustfmt
     - cargo build # make sure it builds without test_utils
     - cargo test --features test_utils
-    # ensure vls-persist build with no-std
+    # ensure vls-persist builds with no-std
     - cargo build -p vls-persist --no-default-features --features no-std
+
+rust-latest-extras:
+  tags: [ saas-linux-large-amd64 ]
+  stage: build
+  image: rust:latest
+  cache:
+    key: vls-compile-latest-extras
+    paths:
+      - bin
+      - .cache/cargo
+  script:
+    - apt-get update
+    - apt-get install -y protobuf-compiler
+    - rustup component add rustfmt
+    # bitcoind-client system test
+    - ls -l bin
+    - if [ ! -e bin/bitcoind ]; then
+      wget --no-verbose https://bitcoin.org/bin/bitcoin-core-0.21.0/bitcoin-0.21.0-x86_64-linux-gnu.tar.gz &&
+      echo da7766775e3f9c98d7a9145429f2be8297c2672fe5b118fd3dc2411fb48e0032  bitcoin-0.21.0-x86_64-linux-gnu.tar.gz | sha256sum -c &&
+      tar xzf bitcoin-0.21.0-x86_64-linux-gnu.tar.gz &&
+      mv bitcoin-0.21.0/bin/bitcoin-cli bin/ &&
+      mv bitcoin-0.21.0/bin/bitcoind bin/ &&
+      rm -rf bitcoin-0.21.0 ;
+      fi
+    - ./bin/bitcoind --regtest --daemon --rpcuser=user --rpcpassword=pass && sleep 5
+    - ./bin/bitcoin-cli --regtest --rpcuser=user --rpcpassword=pass getblockchaininfo
+    - cargo test -p bitcoind-client --features system-test
+    # test LSS
     - (cd lightning-storage-server && cargo test)
 
 rust-1.60.0:
+  tags: [ saas-linux-large-amd64 ]
   stage: build
   image: rust:1.60.0
+  cache:
+    key: vls-compile-1_60
+    paths:
+      - bin
+      - .cache/cargo
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
@@ -33,6 +85,7 @@ rust-1.60.0-lss:
     - (cd lightning-storage-server && cargo test)
 
 embedded:
+  tags: [ saas-linux-medium-amd64 ]
   stage: build
   image: devrandom01/rust-qemu:nightly-1-63-2022-05-16
   variables:
@@ -41,23 +94,22 @@ embedded:
   script:
     - cd embedded && cargo run --release --target thumbv7m-none-eabi
 
-wasm:
-  stage: build
-  image: devrandom01/rust-qemu:nightly-1-63-2022-05-16
-  script:
-    - cd wasm
-    - wasm-pack test --firefox --headless
-    - cargo test
-
 demo-signer:
+  tags: [ saas-linux-large-amd64 ]
   stage: build
   image: devrandom01/rust-qemu:nightly-1-63-2022-05-16
   script:
-    - cd vls-signer-stm32 && cargo build --features stm32f412 --release --bin demo_signer
+    - (cd vls-signer-stm32 && cargo build --features stm32f412 --release --bin demo_signer)
+    - (cd wasm && wasm-pack test --firefox --headless && cargo test)
 
 coverage:
+  tags: [ saas-linux-large-amd64 ]
   stage: build
   image: rust:latest
+  cache:
+    key: vls-compile-1_60
+    paths:
+      - .cache/cargo
   before_script:
     - rustup component add rustfmt
     - cargo install cargo-kcov
@@ -71,6 +123,7 @@ coverage:
     - bash <(curl -s https://codecov.io/bash) -t "${CODECOV_TOKEN}"
 
 cargo-audit:
+  tags: [ saas-linux-medium-amd64 ]
   stage: build
   image: rust:latest
   script:
