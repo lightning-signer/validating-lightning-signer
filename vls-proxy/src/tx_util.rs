@@ -1,8 +1,6 @@
 use anyhow::{anyhow, Result};
-use lightning_signer::bitcoin::secp256k1::SecretKey;
 use lightning_signer::bitcoin::{PackedLockTime, Script, Sequence, Transaction, TxIn, Witness};
 use lightning_signer::lightning::chain::keysinterface::DelayedPaymentOutputDescriptor;
-use lightning_signer::node::{Node, SpendType};
 use lightning_signer::util::transaction_utils;
 use lightning_signer::util::transaction_utils::MAX_VALUE_MSAT;
 use std::collections::HashSet;
@@ -43,29 +41,4 @@ pub fn create_spending_transaction(
     )
     .map_err(|()| anyhow!("could not add change"))?;
     Ok(spend_tx)
-}
-
-pub fn spend_delayed_outputs(
-    node: &Node,
-    descriptors: &[DelayedPaymentOutputDescriptor],
-    unilateral_close_key: (SecretKey, Vec<Vec<u8>>),
-    output_script: Script,
-    opath: Vec<u32>,
-    feerate_sat_per_1000_weight: u32,
-) -> Transaction {
-    let mut tx =
-        create_spending_transaction(descriptors, output_script, feerate_sat_per_1000_weight)
-            .expect("create_spending_transaction");
-    let spendtypes = descriptors.iter().map(|_| SpendType::P2wsh).collect();
-    let values_sat = descriptors.iter().map(|d| d.output.value).collect();
-    let ipaths = descriptors.iter().map(|_| vec![]).collect();
-    let uniclosekeys = descriptors.iter().map(|_| Some(unilateral_close_key.clone())).collect();
-    let witnesses = node
-        .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
-        .expect("sign");
-    assert_eq!(witnesses.len(), tx.input.len());
-    for (idx, w) in witnesses.into_iter().enumerate() {
-        tx.input[idx].witness = Witness::from_vec(w);
-    }
-    tx
 }
