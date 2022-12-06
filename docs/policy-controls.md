@@ -14,10 +14,9 @@ Some controls will change with the evolution of the Lightning protocol - e.g.
 # Mandatory Policy Controls
 
 ## Opening a Channel
-
 * Delay - the local and remote imposed to_self_delay must be reasonable <br>
-  `policy-channel-counterparty-contest-delay-range`
-  `policy-channel-holder-contest-delay-range`
+  `policy-channel-contest-delay-range-holder`,
+  `policy-channel-contest-delay-range-counterparty`
 
 * Safe modes - the channel mode must be safe (e.g. not plain anchors, only zero-fee) <br>
   `policy-channel-safe-mode`
@@ -30,16 +29,17 @@ Some controls will change with the evolution of the Lightning protocol - e.g.
   `policy-onchain-output-scriptpubkey`,
   `policy-onchain-output-match-commitment`,
   `policy-onchain-initial-commitment-countersigned`
-  
+
 * Beneficial value - all outputs must be to the layer-one wallet, an allowlisted destination,
   or fund a channel.  Funding an inbound channel does not provide beneficial value to the
-  local node since initially all of the channel funds are claimable by the counterparty. <br>
+  local node since initially all the channel funds are claimable by the counterparty. <br>
   `policy-onchain-no-unknown-outputs`,
   `policy-onchain-no-channel-push`,
   `policy-onchain-no-fund-inbound`,
 
 * Change - the output derivation path for a wallet address must be reasonable <br>
-  `policy-onchain-wallet-path-predictable`
+  `policy-onchain-wallet-path-predictable` <br>
+  ACTION: implement
 
 * Fee - the fee must be reasonable <br>
   `policy-onchain-fee-range`
@@ -47,9 +47,11 @@ Some controls will change with the evolution of the Lightning protocol - e.g.
 * Format - the transaction fields must be standard (e.g. version field) <br>
   `policy-onchain-format-standard`
 
-## Signing a Commitment Transaction
+## Validating a Commitment Transaction
 
-Before we sign a commitment transaction, the following controls are checked:
+Before we sign a counterparty commitment transaction or accept the signature on a holder commitment transaction, the following controls are checked.
+
+Note that several controls may be checked in one comparison, in which case the prefix tag `policy-commitment` is used in the code.
 
 * Input - the single input must spend the funding output <br>
   `policy-commitment-input-single`,
@@ -78,7 +80,9 @@ Before we sign a commitment transaction, the following controls are checked:
   `policy-commitment-first-no-htlcs`
 
 * HTLC in-flight value - the inflight value should not be too large <br>
-  `policy-commitment-htlc-inflight-limit`
+  `policy-commitment-htlc-inflight-limit` <br>
+  ACTION: should this be only applied to received HTLCs?  HTLCs we offer
+  are separately controlled by `policy-commitment-htlc-routing-balance`.
 
 * Fee - must be in range <br>
   `policy-commitment-fee-range`
@@ -89,14 +93,15 @@ Before we sign a commitment transaction, the following controls are checked:
 * HTLC routing - each offered HTLC must be balanced via a received HTLC <br>
   `policy-commitment-htlc-routing-balance`
 
-* HTLC receive channel validity - the funding UTXO of the receive
+* HTLC receive channel validity - the funding UTXO of the receiving
   channel must be active on chain with enough depth <br>
-  `policy-commitment-htlc-received-spends-active-utxo`
+  `policy-commitment-htlc-received-spends-active-utxo` <br>
+  ACTION: implement
 
 * Our revocation pubkey - must be correct <br>
   `policy-commitment-revocation-pubkey`
 
-* The to_self_delay on the to_local output must be as negotiated for channel <br>
+* The `to_self_delay` on the `to_local` output must be as negotiated for channel <br>
   `policy-commitment-to-self-delay-range`
   
 * The delayed payment pubkey in the to_local output must be correct <br>
@@ -113,10 +118,12 @@ Before we sign a commitment transaction, the following controls are checked:
   `policy-commitment-htlc-holder-htlc-pubkey`
 
 * The cltv_expiry on received HTLC outputs must be reasonable <br>
-  `policy-commitment-htlc-cltv-range`
+  `policy-commitment-htlc-cltv-range` <br>
+  ACTION: currently off by default - `policy.use_chain_state`
   
 * Offered payment hash - must be related to received HTLC payment hash <br>
-  `policy-commitment-htlc-offered-hash-matches`
+  `policy-commitment-htlc-offered-hash-matches` <br>
+  ACTION: isn't this redundant with `policy-commitment-htlc-routing-balance`?
 
 * Trimming - outputs are trimmed if under the bitcoin dust limit.  It is
   critical that the holder's commitment does not violate the bitcoin
@@ -127,14 +134,19 @@ Before we sign a commitment transaction, the following controls are checked:
   revoked by peer disclosing secret.  This includes both checking
   that the secret matches the commitment point and that the secrets 
   are consistent with the compact secret storage scheme in BOLT-3. <br>
-  `policy-commitment-previous-revoked`
+  `policy-commitment-previous-revoked` <br>
+  ACTION: implement storage
 
-* No breach - if signing a local commitment transaction, we must not
+* No breach - if signing a local commitment or HTLC transaction, we must not
   have revoked it <br>
-  `policy-commitment-holder-not-revoked`
+  `policy-commitment-holder-not-revoked` <br>
+  ACTION: phase 1 HTLC signing does not check.  This is not a security
+  problem because the antecedent commitment can't get into the blockchain,
+  but should we check anyway?
 
 * Retries - any retries of this operation must have same data <br>
-  `policy-commitment-retry-same`
+  `policy-commitment-retry-same` <br>
+  ACTION: remove. Revocation revokes all commitments with the same revocation key.
 
 * Anchors:
   - If neither `option_anchor_outputs` or `option_anchors_zero_fee_htlc`
@@ -161,13 +173,16 @@ Before we sign a commitment transaction, the following controls are checked:
 These policy controls are also enforced at commitment signing time, but are separated for clarity.
 
 * A settled offered HTLC must have a known preimage.  <br>
-  `policy-commitment-payment-settled-preimage`
+  `policy-commitment-payment-settled-preimage` <br>
+  ACTION: implement
 
 * An outgoing payment must be to a destination allow-list (optional).  <br>
   `policy-commitment-payment-allowlisted`
+  ACTION: implement
 
 * An outgoing payment must be under a certain velocity (optional).  <br>
-  `policy-commitment-payment-velocity`
+  `policy-commitment-payment-velocity` <br>
+  NOTE: this is implemented as a warning in `add_invoice`, and the invoice is not allowed to be paid later on.
 
 * An outgoing payment must be approved out-of-band (optional).  <br>
   `policy-commitment-payment-approved`
@@ -176,7 +191,8 @@ These policy controls are also enforced at commitment signing time, but are sepa
   `policy-commitment-payment-invoiced`
 
 * Do not route payments through our node. Alternatively implement the "Routing Hub" policies below. <br>
-  `policy-no-routing`
+  `policy-no-routing` <br>
+  ACTION: implement
 
 
 ## Validating a Holder Commitment and Revoking Previous Commitment Transaction
@@ -194,6 +210,7 @@ following controls are checked:
 
 * No close - we did not sign a closing transaction <br>
   `policy-revoke-not-closed`
+  ACTION: implement
 
 ## HTLC Transactions
 
@@ -205,20 +222,21 @@ following controls are checked:
   `policy-htlc-locktime`,
   `policy-htlc-sequence`
 
-* The HTLCTimeout locktime (cltv_expiry) must be reasonable <br>
-  `policy-htlc-cltv-range`
+* The HTLCTimeout locktime (`cltv_expiry`) must be reasonable <br>
+  `policy-htlc-cltv-range` <br>
+  ACTION: implement
 
 * Our revocation pubkey - must be correct <br>
   `policy-htlc-revocation-pubkey`
 
-* The to_self_delay on the output of both HTLCSuccess and HTLCTimeout must be as negotiated <br>
+* The `to_self_delay` on the output of both HTLCSuccess and HTLCTimeout must be as negotiated <br>
   `policy-htlc-to-self-delay`
 
 * Our delayed payment pubkey - must be correct <br>
   `policy-htlc-delayed-pubkey`
 
 * Fee - must be in range <br>
-  `policy-htlc-fee-range`
+  `policy-htlc-fee-range` <br>
 
 ## Mutual Closing Transaction
 
@@ -259,7 +277,8 @@ or justice sweep transaction, the following controls are checked:
   `policy-sweep-destination-allowlisted`
 
 * Fee - must be in range <br>
-  `policy-sweep-fee-range`
+  `policy-sweep-fee-range` <br>
+  ACTION: implement
 
 # Optional Policy Controls
 ## Funding Transaction
@@ -268,19 +287,22 @@ or justice sweep transaction, the following controls are checked:
   `policy-funding-max`
 
 * Velocity - the amount funded must be under a certain amount per unit time <br>
-  `policy-velocity-funding`
+  `policy-velocity-funding` <br>
+  ACTION: implement
 
 ## Commitment Transaction
 
 * Velocity - the amount transferred to peer must be under a certain
   amount per unit time <br>
-  `policy-velocity-transferred`
+  `policy-velocity-transferred` <br>
+  ACTION: implement
 
 # Use-case Specific Controls
 ## Merchant
 
 * No sends - balances must only increase until closing or loop-out <br>
-  `policy-merchant-no-sends`
+  `policy-merchant-no-sends` <br>
+  ACTION: implement
 
 ## Routing Hub
 

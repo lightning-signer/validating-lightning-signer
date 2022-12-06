@@ -1829,7 +1829,7 @@ impl Node {
         }
         if !state.velocity_control.insert(self.clock.now().as_secs(), payment_state.amount_msat) {
             warn!(
-                "global velocity would be exceeded - += {} = {} > {}",
+                "policy-commitment-payment-velocity global velocity would be exceeded - += {} = {} > {}",
                 payment_state.amount_msat,
                 state.velocity_control.velocity(),
                 state.velocity_control.limit

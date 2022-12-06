@@ -33,6 +33,7 @@ pub mod chain;
 #[macro_use]
 pub mod util;
 /// Channel
+#[macro_use]
 pub mod channel;
 /// Channel on-chain monitor
 pub mod monitor;
