@@ -49,13 +49,13 @@ pub trait Approve: SendSync {
         payee: PublicKey,
         payment_hash: PaymentHash,
         amount_msat: u64,
-    ) -> Result<(), Status> {
+    ) -> Result<bool, Status> {
         let (_payment_state, invoice_hash) =
             Node::payment_state_from_keysend(payee, payment_hash, amount_msat)?;
 
-        // shortcut if node already has this invoice
+        // shortcut if node already has this payment
         if node.has_invoice(&payment_hash, &invoice_hash)? {
-            return Ok(());
+            return Ok(true);
         }
 
         // TODO when payee validated by by generating the onion ourselves check if payee public key
@@ -65,7 +65,7 @@ pub trait Approve: SendSync {
         if self.approve_keysend(payment_hash, amount_msat) {
             node.add_keysend(payee, payment_hash, amount_msat)
         } else {
-            Err(Status::invalid_argument("keysend declined"))
+            Ok(false)
         }
     }
 }

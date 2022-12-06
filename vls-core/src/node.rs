@@ -1636,13 +1636,15 @@ impl Node {
 
     /// Add a keysend payment.
     ///
+    /// Returns true if the keysend was added, false otherwise.
+    ///
     /// The payee is currently not validated.
     pub fn add_keysend(
         &self,
         payee: PublicKey,
         payment_hash: PaymentHash,
         amount_msat: u64,
-    ) -> Result<(), Status> {
+    ) -> Result<bool, Status> {
         let (payment_state, invoice_hash) =
             Node::payment_state_from_keysend(payee, payment_hash, amount_msat)?;
 
@@ -1655,24 +1657,25 @@ impl Node {
         let mut state = self.get_state();
         if let Some(payment_state) = state.invoices.get(&payment_hash) {
             return if payment_state.invoice_hash == invoice_hash {
-                Ok(())
+                Ok(true)
             } else {
                 Err(failed_precondition("already have a different payment for same secret"))
             };
         }
         if !state.velocity_control.insert(self.clock.now().as_secs(), payment_state.amount_msat) {
-            return Err(failed_precondition(format!(
+            warn!(
                 "global velocity would be exceeded - += {} = {} > {}",
                 payment_state.amount_msat,
                 state.velocity_control.velocity(),
                 state.velocity_control.limit
-            )));
+            );
+            return Ok(false);
         }
         state.invoices.insert(payment_hash, payment_state);
         state.payments.insert(payment_hash, RoutedPayment::new());
         self.persister.update_node(&self.get_id(), &*state).expect("node persistence failure");
 
-        Ok(())
+        Ok(true)
     }
 
     /// Check to see if an invoice has already been added
