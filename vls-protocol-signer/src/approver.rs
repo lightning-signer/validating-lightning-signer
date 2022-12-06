@@ -27,7 +27,7 @@ pub trait Approve: SendSync {
             Node::payment_state_from_invoice(signed.clone())?;
 
         // shortcut if node already has this invoice
-        if node.has_invoice(&payment_hash, &invoice_hash)? {
+        if node.has_payment(&payment_hash, &invoice_hash)? {
             return Ok(true);
         }
 
@@ -54,7 +54,7 @@ pub trait Approve: SendSync {
             Node::payment_state_from_keysend(payee, payment_hash, amount_msat)?;
 
         // shortcut if node already has this payment
-        if node.has_invoice(&payment_hash, &invoice_hash)? {
+        if node.has_payment(&payment_hash, &invoice_hash)? {
             return Ok(true);
         }
 

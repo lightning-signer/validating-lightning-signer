@@ -1678,8 +1678,8 @@ impl Node {
         Ok(true)
     }
 
-    /// Check to see if an invoice has already been added
-    pub fn has_invoice(&self, hash: &PaymentHash, invoice_hash: &[u8; 32]) -> Result<bool, Status> {
+    /// Check to see if a payment has already been added
+    pub fn has_payment(&self, hash: &PaymentHash, invoice_hash: &[u8; 32]) -> Result<bool, Status> {
         let state = self.get_state();
         let retval = if let Some(payment_state) = state.invoices.get(&hash) {
             if payment_state.invoice_hash == *invoice_hash {
@@ -1690,7 +1690,7 @@ impl Node {
         } else {
             Ok(false) // not found
         };
-        debug!("{} has_invoice {} {:?}", self.log_prefix(), hash.0.to_hex(), retval,);
+        debug!("{} has_payment {} {:?}", self.log_prefix(), hash.0.to_hex(), retval,);
         retval
     }
 
