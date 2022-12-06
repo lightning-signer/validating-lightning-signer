@@ -1389,6 +1389,32 @@ impl Signer for SignServer {
         Ok(Response::new(reply))
     }
 
+    async fn preapprove_keysend(
+        &self,
+        request: Request<PreapproveKeysendRequest>,
+    ) -> Result<Response<PreapproveKeysendReply>, Status> {
+        let req = request.into_inner();
+        let node_id = self.node_id(req.node_id.clone())?;
+        log_req_enter!(&node_id, &req);
+
+        let destination = self.node_id(req.destination.clone())?;
+        let payment_hash = req.payment_hash.as_slice().try_into().map_err(|err| {
+            invalid_grpc_argument(format!("could not decode payment hash: {}", err))
+        })?;
+
+        let node = self.signer.get_node(&node_id)?;
+        let approved = self.approver.handle_proposed_keysend(
+            &node,
+            destination,
+            PaymentHash(payment_hash),
+            req.amount_msat,
+        )?;
+
+        let reply = PreapproveKeysendReply { approved };
+        log_req_reply!(&node_id, &reply);
+        Ok(Response::new(reply))
+    }
+
     async fn list_nodes(
         &self,
         _request: Request<ListNodesRequest>,
