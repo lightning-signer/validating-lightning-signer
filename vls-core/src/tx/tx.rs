@@ -8,26 +8,17 @@ use bitcoin::blockdata::opcodes::all::{
     OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_IFDUP, OP_NOTIF, OP_PUSHNUM_1,
     OP_PUSHNUM_16, OP_PUSHNUM_2, OP_SIZE, OP_SWAP,
 };
-use bitcoin::hashes::sha256::Hash as Sha256;
-use bitcoin::hashes::{Hash, HashEngine};
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::address::Payload;
-use bitcoin::{OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Witness};
+use bitcoin::{Script, TxOut};
 use lightning::chain::keysinterface::{ChannelSigner, InMemorySigner};
-use lightning::ln::chan_utils;
-use lightning::ln::chan_utils::{
-    get_anchor_redeemscript, get_revokeable_redeemscript, HTLCOutputInCommitment, TxCreationKeys,
-};
 use lightning::ln::PaymentHash;
 
 use crate::channel::ChannelSetup;
 use crate::policy::error::{
     mismatch_error, script_format_error, transaction_format_error, ValidationError,
 };
-use crate::tx::script::{
-    expect_data, expect_number, expect_op, expect_script_end, get_delayed_redeemscript,
-};
-use crate::util::crypto_utils::payload_for_p2wpkh;
+use crate::tx::script::{expect_data, expect_number, expect_op, expect_script_end};
 use crate::util::debug_utils::{DebugBytes, DebugPayload};
 use crate::util::AddedItemsIter;
 use bitcoin::hashes::hex::ToHex;
@@ -38,158 +29,6 @@ use serde_with::{serde_as, DeserializeAs, SerializeAs};
 const MAX_DELAY: i64 = 2016;
 /// Value for anchor outputs
 pub(crate) const ANCHOR_SAT: u64 = 330;
-
-pub(crate) fn get_commitment_transaction_number_obscure_factor(
-    local_payment_basepoint: &PublicKey,
-    counterparty_payment_basepoint: &PublicKey,
-    outbound: bool,
-) -> u64 {
-    let mut sha = Sha256::engine();
-
-    let their_payment_basepoint = counterparty_payment_basepoint.serialize();
-    if outbound {
-        sha.input(&local_payment_basepoint.serialize());
-        sha.input(&their_payment_basepoint);
-    } else {
-        sha.input(&their_payment_basepoint);
-        sha.input(&local_payment_basepoint.serialize());
-    }
-    let res = Sha256::from_engine(sha).into_inner();
-
-    ((res[26] as u64) << 5 * 8)
-        | ((res[27] as u64) << 4 * 8)
-        | ((res[28] as u64) << 3 * 8)
-        | ((res[29] as u64) << 2 * 8)
-        | ((res[30] as u64) << 1 * 8)
-        | ((res[31] as u64) << 0 * 8)
-}
-
-pub(crate) fn build_commitment_tx(
-    keys: &TxCreationKeys,
-    info: &CommitmentInfo2,
-    obscured_commitment_transaction_number: u64,
-    outpoint: OutPoint,
-    is_anchors: bool,
-    workaround_local_funding_pubkey: &PublicKey,
-    workaround_remote_funding_pubkey: &PublicKey,
-) -> (Transaction, Vec<Script>, Vec<HTLCOutputInCommitment>) {
-    let txins = {
-        let mut ins: Vec<TxIn> = Vec::new();
-        let sequence =
-            ((0x80 as u32) << 8 * 3) | ((obscured_commitment_transaction_number >> 3 * 8) as u32);
-        ins.push(TxIn {
-            previous_output: outpoint,
-            script_sig: Script::new(),
-            sequence: Sequence(sequence),
-            witness: Witness::default(),
-        });
-        ins
-    };
-
-    let mut txouts: Vec<(TxOut, (Script, Option<HTLCOutputInCommitment>))> = Vec::new();
-
-    if info.to_countersigner_value_sat > 0 {
-        if !is_anchors {
-            let script = payload_for_p2wpkh(&info.to_countersigner_pubkey).script_pubkey();
-            txouts.push((
-                TxOut {
-                    script_pubkey: script.clone(),
-                    value: info.to_countersigner_value_sat as u64,
-                },
-                (script, None),
-            ))
-        } else {
-            let delayed_script = get_delayed_redeemscript(&info.to_countersigner_pubkey);
-            txouts.push((
-                TxOut {
-                    script_pubkey: delayed_script.to_v0_p2wsh(),
-                    value: info.to_countersigner_value_sat as u64,
-                },
-                (delayed_script, None),
-            ));
-            let anchor_script = get_anchor_redeemscript(workaround_remote_funding_pubkey);
-            txouts.push((
-                TxOut { script_pubkey: anchor_script.to_v0_p2wsh(), value: ANCHOR_SAT },
-                (anchor_script, None),
-            ));
-        }
-    }
-
-    if info.to_broadcaster_value_sat > 0 {
-        let redeem_script = get_revokeable_redeemscript(
-            &info.revocation_pubkey,
-            info.to_self_delay,
-            &info.to_broadcaster_delayed_pubkey,
-        );
-        txouts.push((
-            TxOut {
-                script_pubkey: redeem_script.to_v0_p2wsh(),
-                value: info.to_broadcaster_value_sat as u64,
-            },
-            (redeem_script, None),
-        ));
-        if is_anchors {
-            let anchor_script = get_anchor_redeemscript(workaround_local_funding_pubkey);
-            txouts.push((
-                TxOut { script_pubkey: anchor_script.to_v0_p2wsh(), value: ANCHOR_SAT },
-                (anchor_script, None),
-            ));
-        }
-    }
-
-    for out in &info.offered_htlcs {
-        let htlc_in_tx = HTLCOutputInCommitment {
-            offered: true,
-            amount_msat: out.value_sat * 1000,
-            cltv_expiry: out.cltv_expiry,
-            payment_hash: out.payment_hash,
-            transaction_output_index: None,
-        };
-        let script = chan_utils::get_htlc_redeemscript(&htlc_in_tx, is_anchors, &keys);
-        let txout = TxOut { script_pubkey: script.to_v0_p2wsh(), value: out.value_sat };
-        txouts.push((txout, (script, Some(htlc_in_tx))));
-    }
-
-    for out in &info.received_htlcs {
-        let htlc_in_tx = HTLCOutputInCommitment {
-            offered: false,
-            amount_msat: out.value_sat * 1000,
-            cltv_expiry: out.cltv_expiry,
-            payment_hash: out.payment_hash,
-            transaction_output_index: None,
-        };
-        let script = chan_utils::get_htlc_redeemscript(&htlc_in_tx, is_anchors, &keys);
-        let txout = TxOut { script_pubkey: script.to_v0_p2wsh(), value: out.value_sat };
-        txouts.push((txout, (script, Some(htlc_in_tx))));
-    }
-    sort_outputs(&mut txouts, |a, b| {
-        if let &(_, Some(ref a_htlcout)) = a {
-            if let &(_, Some(ref b_htlcout)) = b {
-                a_htlcout.cltv_expiry.cmp(&b_htlcout.cltv_expiry)
-            } else {
-                cmp::Ordering::Equal
-            }
-        } else {
-            cmp::Ordering::Equal
-        }
-    });
-    let mut outputs = Vec::with_capacity(txouts.len());
-    let mut scripts = Vec::with_capacity(txouts.len());
-    let mut htlcs = Vec::new();
-    for (idx, mut out) in txouts.drain(..).enumerate() {
-        outputs.push(out.0);
-        scripts.push((out.1).0.clone());
-        if let Some(mut htlc) = (out.1).1.take() {
-            htlc.transaction_output_index = Some(idx as u32);
-            htlcs.push(htlc);
-        }
-    }
-
-    let lock_time = PackedLockTime(
-        ((0x20 as u32) << 8 * 3) | ((obscured_commitment_transaction_number & 0xffffffu64) as u32),
-    );
-    (Transaction { version: 2, lock_time, input: txins, output: outputs }, scripts, htlcs)
-}
 
 pub(crate) fn sort_outputs<T, C: Fn(&T, &T) -> cmp::Ordering>(
     outputs: &mut Vec<(TxOut, T)>,
@@ -905,6 +744,7 @@ mod tests {
     use bitcoin::blockdata::script::Builder;
     use bitcoin::secp256k1::{Secp256k1, SecretKey};
     use bitcoin::{Address, Network};
+    use lightning::ln::chan_utils::get_revokeable_redeemscript;
 
     use crate::channel::CommitmentType;
     use crate::util::key_utils::make_test_pubkey;

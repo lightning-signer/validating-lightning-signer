@@ -30,10 +30,7 @@ use crate::node::Node;
 use crate::policy::error::policy_error;
 use crate::policy::validator::{ChainState, CommitmentSignatures, EnforcementState, Validator};
 use crate::prelude::*;
-use crate::tx::tx::{
-    build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
-    HTLCInfo2,
-};
+use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
 use crate::util::crypto_utils::derive_public_key;
 use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugVecVecU8};
 use crate::util::ser_util::{ChannelPublicKeysDef, OutPointDef, ScriptDef};
@@ -510,50 +507,6 @@ impl Channel {
             .map_err(|err| internal_error(format!("could not derive counterparty_key: {}", err)))?
         };
         Ok(counterparty_key)
-    }
-
-    fn get_commitment_transaction_number_obscure_factor(&self) -> u64 {
-        get_commitment_transaction_number_obscure_factor(
-            &self.keys.pubkeys().payment_point,
-            &self.keys.counterparty_pubkeys().payment_point,
-            self.setup.is_outbound,
-        )
-    }
-
-    // forward counting commitment number
-    #[allow(dead_code)]
-    pub(crate) fn build_commitment_tx(
-        &self,
-        per_commitment_point: &PublicKey,
-        commitment_number: u64,
-        info: &CommitmentInfo2,
-    ) -> Result<(Transaction, Vec<Script>, Vec<HTLCOutputInCommitment>), Status> {
-        let keys = if !info.is_counterparty_broadcaster {
-            self.make_holder_tx_keys(per_commitment_point)?
-        } else {
-            self.make_counterparty_tx_keys(per_commitment_point)?
-        };
-
-        // TODO - consider if we can get LDK to put funding pubkeys in TxCreationKeys
-        let (workaround_local_funding_pubkey, workaround_remote_funding_pubkey) = if !info
-            .is_counterparty_broadcaster
-        {
-            (&self.keys.pubkeys().funding_pubkey, &self.keys.counterparty_pubkeys().funding_pubkey)
-        } else {
-            (&self.keys.counterparty_pubkeys().funding_pubkey, &self.keys.pubkeys().funding_pubkey)
-        };
-
-        let obscured_commitment_transaction_number =
-            self.get_commitment_transaction_number_obscure_factor() ^ commitment_number;
-        Ok(build_commitment_tx(
-            &keys,
-            info,
-            obscured_commitment_transaction_number,
-            self.setup.funding_outpoint,
-            self.setup.is_anchors(),
-            workaround_local_funding_pubkey,
-            workaround_remote_funding_pubkey,
-        ))
     }
 
     /// Sign a counterparty commitment transaction after rebuilding it
