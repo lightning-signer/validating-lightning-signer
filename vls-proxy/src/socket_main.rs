@@ -47,6 +47,7 @@ pub fn main() {
     }
 
     setup_logging(".", "remote_hsmd_socket", "debug");
+    info!("remote_hsmd_socket git_desc={} starting", GIT_DESC);
 
     // Unfortunately, we can't easily be passed arguments, so use env vars to configure
     let port = env::var("VLS_PORT").map(|s| s.parse().expect("VLS_PORT parse")).unwrap_or(7701);

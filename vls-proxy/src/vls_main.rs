@@ -259,6 +259,7 @@ pub fn main() {
 #[tokio::main(worker_threads = 2)]
 async fn start() {
     setup_logging(".", "remote_hsmd_vls", "debug");
+    info!("remote_hsmd_vls git_desc={} starting", GIT_DESC);
     let conn = UnixConnection::new(3);
     let client = UnixClient::new(conn);
     let allowlist = read_allowlist();

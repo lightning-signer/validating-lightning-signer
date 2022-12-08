@@ -57,6 +57,7 @@ pub fn main() {
     let listener = unsafe { spawn_signer(listener, addr.port()) };
 
     setup_logging(".", "remote_hsmd_socket_test", "debug");
+    info!("remote_hsmd_socket_test git_desc={} starting", GIT_DESC);
 
     // Note that this is unsafe if we use the wrong fd
     let conn = UnixConnection::new(parent_fd);
@@ -109,6 +110,7 @@ unsafe fn spawn_signer(listener: TcpListener, port: u16) -> TcpListener {
             info!("in child");
             drop(listener);
             setup_logging(".", "vlsd_socket_test", "debug");
+            info!("vlsd_socket_test git_desc={} starting", GIT_DESC);
             start_signer_localhost(port);
             exit(0);
         }

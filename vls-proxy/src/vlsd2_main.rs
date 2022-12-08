@@ -4,11 +4,13 @@ use grpc::signer::make_handler;
 use grpc::signer::start_signer;
 use lightning_signer::bitcoin::Network;
 use lightning_signer_server::{CLAP_NETWORK_URL_MAPPING, NETWORK_NAMES};
+use log::*;
 use std::fs;
 use url::Url;
 use util::setup_logging;
 use vls_protocol_signer::handler::Handler;
 use vls_proxy::recovery::{direct::DirectRecoveryKeys, recover_close};
+use vls_proxy::GIT_DESC;
 
 pub mod client;
 pub mod connection;
@@ -82,6 +84,7 @@ pub fn main() {
     let datapath = format!("{}/{}", datadir, network.to_string());
     fs::create_dir_all(&datapath).expect("mkdir datapath");
     setup_logging(&datapath, "vlsd2", "debug");
+    info!("vlsd2 git_desc={} starting", GIT_DESC);
 
     if let Some(address) = recover_address {
         let recover_type = match matches.value_of("recover-type").unwrap() {
