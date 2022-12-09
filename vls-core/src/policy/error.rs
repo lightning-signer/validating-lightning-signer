@@ -1,7 +1,5 @@
 #[cfg(feature = "use_backtrace")]
 use backtrace::Backtrace;
-use bitcoin::hashes::hex::ToHex;
-use lightning::ln::PaymentHash;
 
 use ValidationErrorKind::*;
 
@@ -18,8 +16,6 @@ pub enum ValidationErrorKind {
     Mismatch(String),
     /// A policy was violated
     Policy(String),
-    /// A layer-2 transaction causes one or more payments to be unbalanced
-    Unbalanced(String, Vec<PaymentHash>),
     /// A layer-1 transaction outputs to unknown destinations.
     /// Includes the list of tx output indices that are unknown.
     UnknownDestinations(String, Vec<usize>),
@@ -58,7 +54,6 @@ impl ValidationError {
             ScriptFormat(s0) => ScriptFormat(premsg + &s0),
             Mismatch(s0) => Mismatch(premsg + &s0),
             Policy(s0) => Policy(premsg + &s0),
-            Unbalanced(s0, hashes) => Unbalanced(premsg + &s0, hashes.clone()),
             UnknownDestinations(s0, indices) => UnknownDestinations(premsg + &s0, indices.clone()),
         };
         ValidationError {
@@ -96,10 +91,6 @@ impl Into<String> for ValidationError {
             ScriptFormat(s) => "script format: ".to_string() + &s,
             Mismatch(s) => "script template mismatch: ".to_string() + &s,
             Policy(s) => "policy failure: ".to_string() + &s,
-            Unbalanced(s, hashes) => {
-                let hashes: Vec<_> = hashes.iter().map(|h| h.0.to_hex()).collect();
-                format!("unbalanced payments: {} {}", s, hashes.join(", "))
-            }
             UnknownDestinations(s, indices) => {
                 format!("unknown destinations: {} {:?}", s, indices)
             }
@@ -139,14 +130,6 @@ pub(crate) fn policy_error(msg: impl Into<String>) -> ValidationError {
     }
 }
 
-pub(crate) fn unbalanced_error(hashes: Vec<PaymentHash>) -> ValidationError {
-    ValidationError {
-        kind: Unbalanced("".to_string(), hashes),
-        #[cfg(feature = "use_backtrace")]
-        bt: Backtrace::new_unresolved(),
-    }
-}
-
 pub(crate) fn unknown_destinations_error(unknowns: Vec<usize>) -> ValidationError {
     ValidationError {
         kind: UnknownDestinations("".to_string(), unknowns),
@@ -167,6 +150,8 @@ macro_rules! transaction_format_err {
         )
 }
 
+/// Invoke policy_error on the policy object
+#[macro_export]
 #[allow(unused)]
 macro_rules! policy_err {
 	($obj:expr, $tag:tt, $($arg:tt)*) => (

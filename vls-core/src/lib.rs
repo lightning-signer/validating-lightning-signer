@@ -37,6 +37,7 @@ pub mod channel;
 /// Channel on-chain monitor
 pub mod monitor;
 /// Node
+#[macro_use]
 pub mod node;
 /// Persistence
 pub mod persist;

@@ -47,10 +47,11 @@ use crate::channel::{
 use crate::monitor::ChainMonitor;
 use crate::persist::model::NodeEntry;
 use crate::persist::{Persist, SeedPersist};
-use crate::policy::error::{policy_error, unbalanced_error, ValidationError};
+use crate::policy::error::{policy_error, ValidationError};
 use crate::policy::validator::{BalanceDelta, ValidatorFactory};
 use crate::policy::validator::{EnforcementState, Validator};
 use crate::policy::Policy;
+use crate::policy_err;
 use crate::prelude::*;
 use crate::signer::derive::KeyDerivationStyle;
 use crate::signer::my_keys_manager::MyKeysManager;
@@ -306,7 +307,13 @@ impl NodeState {
         }
 
         if !unbalanced.is_empty() {
-            return Err(unbalanced_error(unbalanced));
+            policy_err!(
+                validator,
+                "policy-commitment-htlc-routing-balance",
+                "unbalanced payments on channel {}: {:?}",
+                channel_id,
+                unbalanced.into_iter().map(|h| h.0.to_hex()).collect::<Vec<_>>()
+            );
         }
 
         if validator.enforce_balance() {
@@ -2158,7 +2165,7 @@ mod tests {
             &Default::default(),
             invoice_validator.clone(),
         );
-        assert_eq!(result, Err(unbalanced_error(vec![hash])));
+        assert_eq!(result, Err(policy_error("validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"0202020202020202020202020202020202020202020202020202020202020202\"]")));
 
         let result = state.validate_and_apply_payments(
             &channel_id,
@@ -2281,7 +2288,7 @@ mod tests {
                     &Default::default(),
                     invoice_validator.clone()
                 ),
-                Err(unbalanced_error(vec![hash]))
+                Err(policy_error("validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925\"]"))
             );
         }
     }
