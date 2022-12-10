@@ -24,13 +24,14 @@ pub fn main() {
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
         .about("Validating Lightning Signer")
+        .arg(Arg::from("--git-desc print git desc version and exit"))
         .arg(
             Arg::new("connect")
                 .about("node RPC endpoint")
                 .long("connect")
                 .short('c')
                 .value_name("URL")
-                .required_unless_present("recover-close"),
+                .required_unless_present_any(["recover-close", "git-desc"]),
         )
         .arg(
             Arg::new("datadir")
@@ -74,6 +75,10 @@ pub fn main() {
             ),
         );
     let matches = app.get_matches();
+    if matches.is_present("git-desc") {
+        println!("vlsd2 git_desc={}", GIT_DESC);
+        return;
+    }
     let datadir = matches.value_of("datadir").unwrap();
     let network: Network = matches.value_of_t("network").expect("network");
 

@@ -70,8 +70,13 @@ pub fn main() -> anyhow::Result<()> {
         )
         .arg(Arg::from("--log-io ignored dev flag"))
         .arg(Arg::from("--version show a dummy version"))
+        .arg(Arg::from("--git-desc print git desc version and exit"))
         .arg(Arg::from("--test run a test against the embedded device"));
     let matches = app.get_matches();
+    if matches.is_present("git-desc") {
+        println!("remote_hsmd_serial git_desc={}", GIT_DESC);
+        return Ok(());
+    }
     if matches.is_present("version") {
         // Pretend to be the right version, given to us by an env var
         let version =
