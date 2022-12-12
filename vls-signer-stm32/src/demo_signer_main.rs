@@ -47,6 +47,8 @@ mod timer;
 mod tracks;
 mod usbserial;
 
+include!(concat!(env!("OUT_DIR"), "/version.rs"));
+
 use approver::ScreenApprover;
 use fat_json_persist::FatJsonPersister;
 use fat_logger::FatLogger;
@@ -55,7 +57,7 @@ use setup::{get_run_context, setup_mode, NormalContext, RunContext, TestingConte
 #[entry]
 fn main() -> ! {
     logger::init("demo_signer").expect("logger");
-    info!("{}", env!("GIT_DESC"));
+    info!("{}", GIT_DESC);
 
     device::init_allocator();
     let mut devctx = device::make_devices();
@@ -79,7 +81,7 @@ fn display_intro(devctx: &mut DeviceContext, network: Network, path: &str) {
     let mut intro = Vec::new();
     intro.push(format!("{: ^19}", "VLS"));
     intro.push("".to_string());
-    for verpart in env!("GIT_DESC").split("-g") {
+    for verpart in GIT_DESC.split("-g") {
         intro.push(format!("{: ^19}", verpart));
     }
     intro.push("".to_string());

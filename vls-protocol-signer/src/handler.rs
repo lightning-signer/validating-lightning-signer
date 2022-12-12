@@ -45,7 +45,9 @@ use vls_protocol::model::{
     Basepoints, BitcoinSignature, BlockHash, ExtKey, Htlc, OutPoint as ModelOutPoint, PubKey,
     RecoverableSignature, Secret, Signature, TxId,
 };
-use vls_protocol::msgs::{DeriveSecretReply, PreapproveInvoiceReply, SerBolt, SignBolt12Reply};
+use vls_protocol::msgs::{
+    DeriveSecretReply, PreapproveInvoiceReply, PreapproveKeysendReply, SerBolt, SignBolt12Reply,
+};
 use vls_protocol::serde_bolt::{LargeBytes, WireString};
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 
@@ -269,6 +271,16 @@ impl Handler for RootHandler {
                     .map_err(|e| Status::invalid_argument(e.to_string()))?;
                 let result = self.approver.handle_proposed_invoice(&self.node, signed)?;
                 Ok(Box::new(PreapproveInvoiceReply { result }))
+            }
+            Message::PreapproveKeysend(m) => {
+                let result = self.approver.handle_proposed_keysend(
+                    &self.node,
+                    PublicKey::from_slice(&m.destination.0)
+                        .map_err(|e| Status::invalid_argument(e.to_string()))?,
+                    PaymentHash(m.payment_hash.0),
+                    m.amount_msat,
+                )?;
+                Ok(Box::new(PreapproveKeysendReply { result }))
             }
             Message::DeriveSecret(m) => {
                 let secret = self.node.derive_secret(&m.info);

@@ -27,6 +27,8 @@ mod setup;
 mod timer;
 mod usbserial;
 
+include!(concat!(env!("OUT_DIR"), "/version.rs"));
+
 use rand_core::RngCore;
 
 use device::DeviceContext;
@@ -36,8 +38,8 @@ use setup::{get_run_context, setup_mode, RunContext};
 #[entry]
 fn main() -> ! {
     logger::init("test").expect("logger");
-    info!("{}", env!("GIT_DESC"));
-    for part in env!("GIT_DESC").split("-g") {
+    info!("{}", GIT_DESC);
+    for part in GIT_DESC.split("-g") {
         info!("{}", part);
     }
 

@@ -87,6 +87,7 @@ fn track_char(msg: &Message) -> char {
         Message::SignInvoice(_m) => 'i',
         Message::SignBolt12(_m) => 'i',
         Message::PreapproveInvoice(_m) => 'a',
+        Message::PreapproveKeysend(_m) => 'k',
         Message::DeriveSecret(_m) => 'x',
         Message::SignMessage(_m) => 'm',
         Message::CheckFutureSecret(_m) => '~',

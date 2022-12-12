@@ -96,6 +96,11 @@ Example of invoice approval:
 make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_pay_retry VLS_SERIAL_SELECT=1
 ```
 
+Example of sending keysends:
+```
+make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_keysend VLS_SERIAL_SELECT=1
+```
+
 
 #### Reference
 

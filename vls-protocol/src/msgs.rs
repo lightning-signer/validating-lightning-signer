@@ -216,6 +216,22 @@ pub struct PreapproveInvoiceReply {
     pub result: bool,
 }
 
+/// PreapproveKeysend {
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(39)]
+pub struct PreapproveKeysend {
+    pub destination: PubKey,
+    pub payment_hash: Sha256,
+    pub amount_msat: u64,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(139)]
+pub struct PreapproveKeysendReply {
+    pub result: bool,
+}
+
 /// DeriveSecret
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(27)]
@@ -692,6 +708,8 @@ pub enum Message {
     SignBolt12Reply(SignBolt12Reply),
     PreapproveInvoice(PreapproveInvoice),
     PreapproveInvoiceReply(PreapproveInvoiceReply),
+    PreapproveKeysend(PreapproveKeysend),
+    PreapproveKeysendReply(PreapproveKeysendReply),
     DeriveSecret(DeriveSecret),
     DeriveSecretReply(DeriveSecretReply),
     SignMessage(SignMessage),

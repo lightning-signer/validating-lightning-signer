@@ -55,6 +55,10 @@ pub fn main() -> anyhow::Result<()> {
     let parent_fd = open_parent_fd();
 
     setup_logging(".", "remote_hsmd_serial", "debug");
+
+    // Why does this interfere w/ the serial communication?
+    // info!("remote_hsmd_serial git_desc={} starting", GIT_DESC);
+
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
         .about("CLN:serial - connects to an embedded VLS over a USB / serial connection")
@@ -66,8 +70,13 @@ pub fn main() -> anyhow::Result<()> {
         )
         .arg(Arg::from("--log-io ignored dev flag"))
         .arg(Arg::from("--version show a dummy version"))
+        .arg(Arg::from("--git-desc print git desc version and exit"))
         .arg(Arg::from("--test run a test against the embedded device"));
     let matches = app.get_matches();
+    if matches.is_present("git-desc") {
+        println!("remote_hsmd_serial git_desc={}", GIT_DESC);
+        return Ok(());
+    }
     if matches.is_present("version") {
         // Pretend to be the right version, given to us by an env var
         let version =

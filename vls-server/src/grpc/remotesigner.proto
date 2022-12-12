@@ -215,6 +215,10 @@ service Signer {
   // Submit invoice for approval, allowing subsequent payment
   rpc PreapproveInvoice (PreapproveInvoiceRequest)
     returns (PreapproveInvoiceReply);
+
+  // Submit keysend for approval, allowing subsequent payment
+  rpc PreapproveKeysend (PreapproveKeysendRequest)
+    returns (PreapproveKeysendReply);
 }
 
 service Version {
@@ -682,6 +686,19 @@ message PreapproveInvoiceRequest {
 }
 
 message PreapproveInvoiceReply {
+  bool approved = 1;
+}
+
+// Submit keysend for approval, allowing subsequent payment
+message PreapproveKeysendRequest {
+  NodeId node_id = 1;
+
+  NodeId destination = 2;
+  bytes payment_hash = 3;
+  uint64 amount_msat = 4;
+}
+
+message PreapproveKeysendReply {
   bool approved = 1;
 }
 

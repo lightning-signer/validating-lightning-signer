@@ -12,7 +12,7 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
 use std::process::exit;
 use std::sync::Arc;
 
-use clap::{App, AppSettings};
+use clap::{App, AppSettings, Arg};
 #[allow(unused_imports)]
 use log::{error, info};
 use nix::unistd::{fork, ForkResult};
@@ -43,9 +43,14 @@ pub fn main() {
 
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
-        .about("CLN:socket test - for use with the CLN integration test suite");
+        .about("CLN:socket test - for use with the CLN integration test suite")
+        .arg(Arg::from("--git-desc print git desc version and exit"));
     let app = add_hsmd_args(app);
     let matches = app.get_matches();
+    if matches.is_present("git-desc") {
+        println!("remote_hsmd_socket_test git_desc={}", GIT_DESC);
+        return;
+    }
     if handle_hsmd_version(&matches) {
         return;
     }
@@ -57,6 +62,7 @@ pub fn main() {
     let listener = unsafe { spawn_signer(listener, addr.port()) };
 
     setup_logging(".", "remote_hsmd_socket_test", "debug");
+    info!("remote_hsmd_socket_test git_desc={} starting", GIT_DESC);
 
     // Note that this is unsafe if we use the wrong fd
     let conn = UnixConnection::new(parent_fd);
@@ -109,6 +115,7 @@ unsafe fn spawn_signer(listener: TcpListener, port: u16) -> TcpListener {
             info!("in child");
             drop(listener);
             setup_logging(".", "vlsd_socket_test", "debug");
+            info!("vlsd_socket_test git_desc={} starting", GIT_DESC);
             start_signer_localhost(port);
             exit(0);
         }

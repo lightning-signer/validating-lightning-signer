@@ -8,3 +8,6 @@ pub mod portfront;
 pub mod recovery;
 pub mod tx_util;
 pub mod util;
+
+// Defines GIT_DESC
+include!(concat!(env!("OUT_DIR"), "/version.rs"));

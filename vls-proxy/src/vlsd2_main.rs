@@ -4,11 +4,13 @@ use grpc::signer::make_handler;
 use grpc::signer::start_signer;
 use lightning_signer::bitcoin::Network;
 use lightning_signer_server::{CLAP_NETWORK_URL_MAPPING, NETWORK_NAMES};
+use log::*;
 use std::fs;
 use url::Url;
 use util::setup_logging;
 use vls_protocol_signer::handler::Handler;
 use vls_proxy::recovery::{direct::DirectRecoveryKeys, recover_close};
+use vls_proxy::GIT_DESC;
 
 pub mod client;
 pub mod connection;
@@ -22,13 +24,14 @@ pub fn main() {
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
         .about("Validating Lightning Signer")
+        .arg(Arg::from("--git-desc print git desc version and exit"))
         .arg(
             Arg::new("connect")
                 .about("node RPC endpoint")
                 .long("connect")
                 .short('c')
                 .value_name("URL")
-                .required_unless_present("recover-close"),
+                .required_unless_present_any(["recover-close", "git-desc"]),
         )
         .arg(
             Arg::new("datadir")
@@ -72,6 +75,10 @@ pub fn main() {
             ),
         );
     let matches = app.get_matches();
+    if matches.is_present("git-desc") {
+        println!("vlsd2 git_desc={}", GIT_DESC);
+        return;
+    }
     let datadir = matches.value_of("datadir").unwrap();
     let network: Network = matches.value_of_t("network").expect("network");
 
@@ -82,6 +89,7 @@ pub fn main() {
     let datapath = format!("{}/{}", datadir, network.to_string());
     fs::create_dir_all(&datapath).expect("mkdir datapath");
     setup_logging(&datapath, "vlsd2", "debug");
+    info!("vlsd2 git_desc={} starting", GIT_DESC);
 
     if let Some(address) = recover_address {
         let recover_type = match matches.value_of("recover-type").unwrap() {
