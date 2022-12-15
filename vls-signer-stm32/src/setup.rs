@@ -32,6 +32,7 @@ pub struct CommonContext {
     pub devctx: Arc<RefCell<DeviceContext>>,
     pub kdstyle: KeyDerivationStyle,
     pub network: Network,
+    pub permissive: bool,
     pub setupfs: Option<Arc<RefCell<SetupFS>>>,
 }
 
@@ -41,6 +42,7 @@ impl fmt::Debug for CommonContext {
         f.debug_struct("CommonContext")
             .field("kdstyle", &self.kdstyle)
             .field("network", &self.network)
+            .field("permissive", &self.permissive)
             .field("runpath", &runpath)
             .finish()
     }
@@ -85,6 +87,7 @@ impl fmt::Debug for SetupFS {
 const RUNPATH_PATH: &str = "RUNPATH";
 const TESTDIR_PATH: &str = "test-mode";
 const TESTING_FILE: &str = "TESTING";
+const PERMISSIVE_FILE: &str = "PERMISSIVE";
 const NETWORK_FILE: &str = "NETWORK";
 const KDSTYLE_FILE: &str = "KDSTYLE";
 const HSMSEED_FILE: &str = "hsm_secret";
@@ -110,7 +113,7 @@ impl SetupFS {
     }
 
     // Read the kdstyle, network and optional seed from the FS
-    pub fn context(&self) -> (KeyDerivationStyle, Network, Option<[u8; 32]>) {
+    pub fn context(&self) -> (KeyDerivationStyle, Network, Option<[u8; 32]>, bool) {
         let rootdir = self.fs.root_dir();
         let runpath = self.runpath.as_ref().expect("runpath");
         let rundir = rootdir
@@ -133,6 +136,13 @@ impl SetupFS {
             Ok(_) => true,
         };
 
+        // If the rundir has a PERMISSIVE file we're in permissive mode
+        let is_permissive = match rundir.open_file(PERMISSIVE_FILE) {
+            Err(fatfs::Error::NotFound) => false, // Ok, maybe we're in normal mode ...
+            Err(err) => panic!("open {} failed: {:#?}", PERMISSIVE_FILE, err),
+            Ok(_) => true,
+        };
+
         let opt_seed = if is_testing {
             None
         } else {
@@ -140,7 +150,7 @@ impl SetupFS {
             Some(self.read_seed_file(&rundir, HSMSEED_FILE))
         };
 
-        (kdstyle, network, opt_seed)
+        (kdstyle, network, opt_seed, is_permissive)
     }
 
     pub fn list_nodes(&self) -> Vec<(Network, String)> {
@@ -423,32 +433,56 @@ pub fn manage_node(
     let mut abbrev_path = runpath.clone();
     abbrev_path.truncate(9); // limited display width
 
+    // If the rundir has a PERMISSIVE file we're in permissive mode
+    let is_permissive = {
+        let rootdir = setupfs.fs.root_dir();
+        let rundir = rootdir
+            .open_dir(&runpath)
+            .unwrap_or_else(|err| panic!("open {} failed: {:#?}", runpath, err));
+        match rundir.open_file(PERMISSIVE_FILE) {
+            Err(fatfs::Error::NotFound) => false, // Ok, maybe we're in normal mode ...
+            Err(err) => panic!("open {} failed: {:#?}", PERMISSIVE_FILE, err),
+            Ok(_) => true,
+        }
+    };
+
     let mut lines = vec![];
     lines.push(format!("{: ^19}", "Manage Node"));
     lines.push(format!(" {: >7}:{: <9}", network.to_string(), abbrev_path));
+    lines.push(format!("{: ^19}", if is_permissive { "PERMISSIVE" } else { "ENFORCING" }));
     lines.push(format!(""));
-    lines.push(format!("{: ^19}", "Launch"));
-    lines.push(format!(""));
+    lines
+        .push(format!("{: ^19}", if is_permissive { "Make Enforcing" } else { "Make Permissive" }));
     lines.push(format!(""));
     if runpath != TESTDIR_PATH {
         lines.push(format!("{: ^19}", "Delete"));
     } else {
         lines.push(format!(""));
     }
-    lines.push(format!(""));
-    lines.push(format!(""));
-    lines.push(format!("{: ^19}", "Back"));
+
+    lines.resize_with(9, || format!(""));
+    lines.push(format!("{:^9} {:^9}", "Back", "Launch"));
 
     devctx.disp.clear_screen();
     devctx.disp.show_texts(&lines);
 
     loop {
-        let (row, _col) =
-            devctx.disp.wait_for_touch(&mut devctx.touchscreen.inner, &mut devctx.i2c);
+        let (row, col) = devctx.disp.wait_for_touch(&mut devctx.touchscreen.inner, &mut devctx.i2c);
         info!("row {} touched", row);
-        if row == 3 {
-            info!("launch selected");
-            return true;
+        if row == 4 {
+            info!("toggle permissive");
+            let rootdir = setupfs.fs.root_dir();
+            let rundir = rootdir
+                .open_dir(&runpath)
+                .unwrap_or_else(|err| panic!("open {} failed: {:#?}", runpath, err));
+            if is_permissive {
+                rundir
+                    .remove(PERMISSIVE_FILE)
+                    .unwrap_or_else(|err| panic!("remove {} failed: {:#?}", PERMISSIVE_FILE, err));
+            } else {
+                setupfs.write_file_string(&rundir, PERMISSIVE_FILE, &"".to_string());
+            }
+            return false;
         } else if row == 6 && runpath != TESTDIR_PATH {
             info!("delete {} selected", runpath);
             {
@@ -467,8 +501,13 @@ pub fn manage_node(
             setupfs.select_runpath(TESTDIR_PATH.to_string());
             return false;
         } else if row == 9 {
-            info!("back selected");
-            return false;
+            if col < 8 {
+                info!("back selected");
+                return false;
+            } else if col > 10 {
+                info!("launch selected");
+                return true;
+            }
         }
         devctx.delay.delay_ms(100u16);
     }
@@ -511,18 +550,19 @@ fn run_context(bare_devctx: DeviceContext, setupfs: Option<Arc<RefCell<SetupFS>>
                 devctx,
                 kdstyle: TESTING_KDSTYLE,
                 network: TESTING_NETWORK,
+                permissive: false,
                 setupfs,
             },
         });
     }
 
-    let (kdstyle, network, opt_seed) = setupfs.as_ref().unwrap().borrow().context();
+    let (kdstyle, network, opt_seed, permissive) = setupfs.as_ref().unwrap().borrow().context();
     match opt_seed {
         None => RunContext::Testing(TestingContext {
-            cmn: CommonContext { devctx, kdstyle, network, setupfs },
+            cmn: CommonContext { devctx, kdstyle, network, permissive, setupfs },
         }),
         Some(seed) => RunContext::Normal(NormalContext {
-            cmn: CommonContext { devctx, kdstyle, network, setupfs },
+            cmn: CommonContext { devctx, kdstyle, network, permissive, setupfs },
             seed,
         }),
     }

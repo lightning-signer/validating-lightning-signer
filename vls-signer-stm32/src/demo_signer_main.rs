@@ -22,7 +22,8 @@ use log::{debug, info, trace};
 use device::{heap_bytes_used, DeviceContext};
 use lightning_signer::node::NodeServices;
 use lightning_signer::persist::{DummyPersister, Persist};
-use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
+use lightning_signer::policy::filter::PolicyFilter;
+use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
 use lightning_signer::prelude::Box;
 use lightning_signer::util::clock::ManualClock;
 use lightning_signer::Arc;
@@ -72,7 +73,7 @@ fn main() -> ! {
     }
 }
 
-fn display_intro(devctx: &mut DeviceContext, network: Network, path: &str) {
+fn display_intro(devctx: &mut DeviceContext, network: Network, permissive: bool, path: &str) {
     // we have limited horizontal display room
     let mut abbrev_path = path.to_string();
     abbrev_path.truncate(9);
@@ -80,10 +81,10 @@ fn display_intro(devctx: &mut DeviceContext, network: Network, path: &str) {
     // Display the intro screen
     let mut intro = Vec::new();
     intro.push(format!("{: ^19}", "VLS"));
-    intro.push("".to_string());
     for verpart in GIT_DESC.split("-g") {
         intro.push(format!("{: ^19}", verpart));
     }
+    intro.push(format!("{: ^19}", if permissive { "PERMISSIVE" } else { "ENFORCING" }));
     intro.push("".to_string());
     intro.push(format!("{: ^19}", "waiting for node"));
     intro.push(format!(" {: >7}:{: <9}", network.to_string(), abbrev_path));
@@ -119,7 +120,7 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
         ]);
 
         // The seed and network come from the rundir (via NormalContext)
-        let validator_factory = Arc::new(SimpleValidatorFactory::new());
+        let validator_factory = make_validator_factory(runctx.cmn.network, runctx.cmn.permissive);
         let starting_time_factory =
             RandomStartingTimeFactory::new(RefCell::new(devctx.rng.take().unwrap()));
         let persister: Arc<dyn Persist> =
@@ -138,6 +139,7 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
         display_intro(
             &mut devctx,
             runctx.cmn.network,
+            runctx.cmn.permissive,
             &runctx.cmn.setupfs.unwrap().borrow().runpath().as_str(),
         );
         root_handler
@@ -153,7 +155,7 @@ fn start_test_mode(runctx: TestingContext) -> ! {
     let root_handler = {
         let mut devctx = runctx.cmn.devctx.borrow_mut();
 
-        display_intro(&mut devctx, runctx.cmn.network, "test-mode");
+        display_intro(&mut devctx, runctx.cmn.network, runctx.cmn.permissive, "test-mode");
 
         // Receive the HsmdInit2 message to learn the dev_seed (and allowlist)
         let (sequence, dbid) =
@@ -165,7 +167,7 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         info!("init {:?}", init);
 
         // Create the test-mode handler
-        let validator_factory = Arc::new(SimpleValidatorFactory::new());
+        let validator_factory = make_validator_factory(runctx.cmn.network, runctx.cmn.permissive);
         let starting_time_factory =
             RandomStartingTimeFactory::new(RefCell::new(devctx.rng.take().unwrap()));
         let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
@@ -291,4 +293,15 @@ pub fn pretty_thousands(i: i64) -> String {
         s.insert(0, val);
     }
     s
+}
+
+fn make_validator_factory(network: Network, permissive: bool) -> Arc<SimpleValidatorFactory> {
+    let mut policy = make_simple_policy(network);
+    if permissive {
+        info!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");
+        policy.filter = PolicyFilter::new_permissive();
+    } else {
+        info!("VLS_ENFORCING: ALL POLICY ERRORS ARE ENFORCED");
+    }
+    Arc::new(SimpleValidatorFactory::new_with_policy(policy))
 }
