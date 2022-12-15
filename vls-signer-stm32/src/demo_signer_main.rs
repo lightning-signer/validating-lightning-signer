@@ -31,6 +31,7 @@ use random_starting_time::RandomStartingTimeFactory;
 use vls_protocol::model::PubKey;
 use vls_protocol::msgs::{self, read_serial_request_header, write_serial_response_header, Message};
 use vls_protocol::serde_bolt::WireString;
+use vls_protocol_signer::approver::{Approve, PositiveApprover};
 use vls_protocol_signer::handler::{Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::lightning_signer;
 use vls_protocol_signer::lightning_signer::bitcoin::Network;
@@ -129,7 +130,7 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
         let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
         let allowlist = vec![]; // TODO - add to NormalContext
         let seed = runctx.seed;
-        let approver = Arc::new(ScreenApprover::new(Arc::clone(&runctx.cmn.devctx)));
+        let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive);
         let (root_handler, _muts) = RootHandlerBuilder::new(runctx.cmn.network, 0, services, seed)
             .allowlist(allowlist)
             .approver(approver)
@@ -175,7 +176,7 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
         let allowlist = init.dev_allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
         let seed = init.dev_seed.as_ref().map(|s| s.0).expect("no seed");
-        let approver = Arc::new(ScreenApprover::new(Arc::clone(&runctx.cmn.devctx)));
+        let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive);
         let (root_handler, _muts) = RootHandlerBuilder::new(runctx.cmn.network, 0, services, seed)
             .allowlist(allowlist)
             .approver(approver)
@@ -304,4 +305,14 @@ fn make_validator_factory(network: Network, permissive: bool) -> Arc<SimpleValid
         info!("VLS_ENFORCING: ALL POLICY ERRORS ARE ENFORCED");
     }
     Arc::new(SimpleValidatorFactory::new_with_policy(policy))
+}
+
+fn make_approver(devctx: &Arc<RefCell<DeviceContext>>, permissive: bool) -> Arc<dyn Approve> {
+    if permissive {
+        info!("VLS_PERMISSIVE: ALL INVOICES AND KEYSENDS AUTOMATICALLY APPROVED");
+        Arc::new(PositiveApprover())
+    } else {
+        info!("VLS_ENFORCING: INVOICES AND KEYSENDS REQUIRE APPROVAL");
+        Arc::new(ScreenApprover::new(Arc::clone(devctx)))
+    }
 }
