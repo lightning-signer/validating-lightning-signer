@@ -6,7 +6,7 @@
 //! NAT.
 
 use std::env;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use clap::{App, AppSettings, Arg};
@@ -56,12 +56,15 @@ pub fn main() {
 
     // Unfortunately, we can't easily be passed arguments, so use env vars to configure
     let port = env::var("VLS_PORT").map(|s| s.parse().expect("VLS_PORT parse")).unwrap_or(7701);
-    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    let addr = env::var("VLS_BIND")
+        .map(|s| s.parse().expect("VLS_BIND parse"))
+        .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let sock_addr = SocketAddr::from((addr, port));
 
     // Note that this is unsafe if we use the wrong fd
     let conn = UnixConnection::new(parent_fd);
     let client = UnixClient::new(conn);
-    start_server(addr, client);
+    start_server(sock_addr, client);
 }
 
 // hsmd replacement entry point
@@ -94,7 +97,7 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
     });
 
     // Start the gRPC listener loop - the signer will connect to us
-    info!("starting gRPC service on port {}", addr.port());
+    info!("starting gRPC service on {}", addr);
     server.start(incoming, shutdown_signal).await.expect("error while serving");
     info!("stopping gRPC service");
 }

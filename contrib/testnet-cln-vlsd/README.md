@@ -79,6 +79,9 @@ bitcoind installation):
 VLS_PORT=17701               # (`SOCKET` only)
 VLS_SERIAL_PORT=/dev/ttyACM0 # (`SERIAL` only)
 VLS_NETWORK=testnet
+# If your SOCKET signer is remote, have the proxy listen to all interfaces.
+# Alternatively, set up a secure tunnel to the signer.
+# VLS_BIND=0.0.0.0
 BITCOIND_RPC_URL=http://rpcuser:6ffb57ab46aa726@localhost:18332
 GREENLIGHT_VERSION=v0.11.0.1-62-g92cc76a
 ```
