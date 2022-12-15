@@ -41,7 +41,7 @@ impl Approve for ScreenApprover {
 
         let devctx: &mut DeviceContext = &mut self.devctx.borrow_mut();
 
-        let amount_msec = invoice.amount_milli_satoshis().unwrap_or(0);
+        let amount_msat = invoice.amount_milli_satoshis().unwrap_or(0);
         let payee_pubkey = invoice
             .payee_pub_key()
             .map(|p| p.clone())
@@ -55,7 +55,7 @@ impl Approve for ScreenApprover {
 
         let mut lines = vec![
             format!("{: ^19}", "Approve Invoice?"),
-            format!("{: >19}", format_payment_amount(amount_msec)),
+            format!("{: >19}", format_payment_amount(amount_msat)),
             format!("n {:17}", format_payee_pubkey(&payee_pubkey)),
             format!("x {:17}", format_expiration(expiry_secs)),
             format!("p {:17}", format_payment_hash(&payment_hash)),
