@@ -808,7 +808,8 @@ impl Node {
     pub fn get_channel(&self, channel_id: &ChannelId) -> Result<Arc<Mutex<ChannelSlot>>, Status> {
         let mut guard = self.channels();
         let elem = guard.get_mut(channel_id);
-        let slot_arc = elem.ok_or_else(|| invalid_argument("no such channel"))?;
+        let slot_arc =
+            elem.ok_or_else(|| invalid_argument(format!("no such channel: {}", &channel_id)))?;
         Ok(Arc::clone(slot_arc))
     }
 
