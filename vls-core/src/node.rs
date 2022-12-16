@@ -439,6 +439,8 @@ impl NodeState {
 pub enum Allowable {
     /// A layer-1 destination
     Script(Script),
+    /// A layer-1 xpub destination
+    XPub(ExtendedPubKey),
     /// A layer-2 payee (node_id)
     Payee(PublicKey),
 }
@@ -459,6 +461,9 @@ impl ToStringForNetwork for Allowable {
                     .unwrap_or_else(|_| format!("invalid_script:{}", script.to_hex()))
             }
             Allowable::Payee(pubkey) => format!("payee:{}", pubkey.to_hex()),
+            Allowable::XPub(xpub) => {
+                format!("xpub:{}", xpub.to_string())
+            }
         }
     }
 }
@@ -478,6 +483,12 @@ impl Allowable {
             } else if prefix == "payee" {
                 let pubkey = PublicKey::from_str(body).map_err(|_| s.to_string())?;
                 Ok(Allowable::Payee(pubkey))
+            } else if prefix == "xpub" {
+                let xpub = ExtendedPubKey::from_str(body).map_err(|_| s.to_string())?;
+                if xpub.network != network {
+                    return Err(format!("{}: expected network {}", s, network));
+                }
+                Ok(Allowable::XPub(xpub))
             } else {
                 Err(s.to_string())
             }
@@ -495,7 +506,7 @@ impl Allowable {
     pub fn to_script(self) -> Result<Script, ()> {
         match self {
             Allowable::Script(script) => Ok(script),
-            Allowable::Payee(_pubkey) => Err(()),
+            _ => Err(()),
         }
     }
 }
