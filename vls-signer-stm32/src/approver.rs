@@ -12,7 +12,7 @@ use cortex_m::prelude::_embedded_hal_blocking_delay_DelayMs;
 
 use vls_protocol_signer::approver::Approve;
 use vls_protocol_signer::lightning_signer::{
-    bitcoin::hashes::sha256,
+    bitcoin::hashes::{hex::ToHex, Hash},
     bitcoin::secp256k1::PublicKey,
     lightning::ln::PaymentHash,
     lightning_invoice::{Invoice, InvoiceDescription},
@@ -41,13 +41,13 @@ impl Approve for ScreenApprover {
 
         let devctx: &mut DeviceContext = &mut self.devctx.borrow_mut();
 
-        let amount_msec = invoice.amount_milli_satoshis().unwrap_or(0);
+        let amount_msat = invoice.amount_milli_satoshis().unwrap_or(0);
         let payee_pubkey = invoice
             .payee_pub_key()
             .map(|p| p.clone())
             .unwrap_or_else(|| invoice.recover_payee_pub_key());
         let expiry_secs = invoice.expiry_time().as_secs();
-        let payment_hash = invoice.payment_hash();
+        let payment_hash = PaymentHash(invoice.payment_hash().into_inner());
         let descrstr = match invoice.description() {
             InvoiceDescription::Direct(d) => d.to_string(),
             InvoiceDescription::Hash(h) => format!("hash: {:?}", h),
@@ -55,10 +55,10 @@ impl Approve for ScreenApprover {
 
         let mut lines = vec![
             format!("{: ^19}", "Approve Invoice?"),
-            format!("{: >19}", format_invoice_amount(amount_msec)),
+            format!("{: >19}", format_payment_amount(amount_msat)),
             format!("n {:17}", format_payee_pubkey(&payee_pubkey)),
             format!("x {:17}", format_expiration(expiry_secs)),
-            format!("p {:17}", format_payment_hash(payment_hash)),
+            format!("p {:17}", format_payment_hash(&payment_hash)),
         ];
         lines.extend(format_description("d ".to_string() + &descrstr));
         lines.resize_with(9, || format!(""));
@@ -67,27 +67,45 @@ impl Approve for ScreenApprover {
         devctx.disp.clear_screen();
         devctx.disp.show_texts(&lines);
 
-        loop {
-            let (row, col) =
-                devctx.disp.wait_for_touch(&mut devctx.touchscreen.inner, &mut devctx.i2c);
-            info!("row:{}, col:{} touched", row, col);
-            if row == 9 {
-                if col < 8 {
-                    break true;
-                } else if col > 10 {
-                    break false;
-                }
-            }
-            devctx.delay.delay_ms(100u16);
-        }
+        wait_for_approval(devctx)
     }
 
-    fn approve_keysend(&self, _payment_hash: PaymentHash, _amount_msat: u64) -> bool {
-        true
+    fn approve_keysend(&self, payment_hash: PaymentHash, amount_msat: u64) -> bool {
+        info!("approve_keysend entered");
+
+        let devctx: &mut DeviceContext = &mut self.devctx.borrow_mut();
+
+        let mut lines = vec![
+            format!("{: ^19}", "Approve Keysend?"),
+            format!("{: >19}", format_payment_amount(amount_msat)),
+            format!("p {:17}", format_payment_hash(&payment_hash)),
+        ];
+        lines.resize_with(9, || format!(""));
+        lines.push(format!("{:^9} {:^9}", "Approve", "Decline"));
+
+        devctx.disp.clear_screen();
+        devctx.disp.show_texts(&lines);
+
+        wait_for_approval(devctx)
     }
 }
 
-fn format_invoice_amount(amount_msat: u64) -> String {
+fn wait_for_approval(devctx: &mut DeviceContext) -> bool {
+    loop {
+        let (row, col) = devctx.disp.wait_for_touch(&mut devctx.touchscreen.inner, &mut devctx.i2c);
+        info!("row:{}, col:{} touched", row, col);
+        if row == 9 {
+            if col < 8 {
+                break true;
+            } else if col > 10 {
+                break false;
+            }
+        }
+        devctx.delay.delay_ms(100u16);
+    }
+}
+
+fn format_payment_amount(amount_msat: u64) -> String {
     // Using msat is too wide for display.  Probably a fancy units mapper
     // would be appropriate, maybe ok to lose precision on large values ...
     format!("{} sat", pretty_thousands(amount_msat as i64 / 1000))
@@ -107,9 +125,9 @@ fn format_expiration(expiry: u64) -> String {
     format!("{}s", expiry)
 }
 
-fn format_payment_hash(payment_hash: &sha256::Hash) -> String {
+fn format_payment_hash(payment_hash: &PaymentHash) -> String {
     // Return value should be exactly 17 chars wide
-    let hashstr = payment_hash.to_string();
+    let hashstr = payment_hash.0.to_hex();
     let part0 = &hashstr[0..8];
     let part1 = &hashstr[hashstr.len() - 7..hashstr.len()];
     format!("{}..{}", part0, part1)
