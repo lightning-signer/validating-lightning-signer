@@ -88,6 +88,7 @@ GREENLIGHT_VERSION=v0.11.0.1-62-g92cc76a
 
 Update `~cln/.lightning/testnet-env` to CLN version:
 
+    sudo su cln
     cd ~cln/.lightning/
     grep -v GREENLIGHT_VERSION testnet-env > testnet-env.new &&
       echo "GREENLIGHT_VERSION=`lightningd --version`" >> testnet-env.new &&
