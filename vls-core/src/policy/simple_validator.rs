@@ -313,7 +313,7 @@ impl SimpleValidator {
             if !wallet
                 .can_spend(wallet_path, dest_script)
                 .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
-                && !wallet.allowlist_contains(dest_script)
+                && !wallet.allowlist_contains(dest_script, wallet_path)
             {
                 info!(
                     "dest_script not matched: path={:?}, {}",
@@ -391,7 +391,7 @@ impl Validator for SimpleValidator {
             if !wallet
                 .can_spend(holder_shutdown_key_path, &holder_shutdown_script)
                 .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
-                && !wallet.allowlist_contains(&holder_shutdown_script)
+                && !wallet.allowlist_contains(&holder_shutdown_script, holder_shutdown_key_path)
             {
                 info!(
                     "holder_shutdown_script not matched: path={:?}, {}",
@@ -455,21 +455,30 @@ impl Validator for SimpleValidator {
 
             if opath.len() > 0 {
                 // Possible change output to our wallet
-                let spendable = wallet.can_spend(opath, &output.script_pubkey).map_err(|err| {
-                    policy_error(format!("output[{}]: wallet_can_spend error: {}", outndx, err))
-                })?;
+                let mut spendable =
+                    wallet.can_spend(opath, &output.script_pubkey).map_err(|err| {
+                        policy_error(format!("output[{}]: wallet_can_spend error: {}", outndx, err))
+                    })?;
+                if spendable {
+                    debug!("output {} ({}) is to our wallet", outndx, output.value);
+                }
+                if !spendable {
+                    spendable = wallet.allowlist_contains(&output.script_pubkey, opath);
+                    if spendable {
+                        debug!("output {} ({}) is to allowlisted xpub", outndx, output.value);
+                    }
+                }
                 if !spendable {
                     policy_err!(
                         self,
                         "policy-sweep-destination-allowlisted",
-                        "wallet cannot spend output[{}]",
+                        "output[{}] is not to wallet or allowlist",
                         outndx
                     );
                 }
-                debug!("output {} ({}) is to our wallet", outndx, output.value);
                 beneficial_sum =
                     add_beneficial_output!(beneficial_sum, output.value, "wallet change")?;
-            } else if wallet.allowlist_contains(&output.script_pubkey) {
+            } else if wallet.allowlist_contains(&output.script_pubkey, &[]) {
                 // Change output to allowlisted address
                 debug!("output {} ({}) is allowlisted", outndx, output.value);
                 beneficial_sum =
@@ -1369,7 +1378,7 @@ impl Validator for SimpleValidator {
             if !wallet
                 .can_spend(holder_wallet_path_hint, script)
                 .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
-                && !wallet.allowlist_contains(script)
+                && !wallet.allowlist_contains(script, holder_wallet_path_hint)
             {
                 policy_err!(
                     self,

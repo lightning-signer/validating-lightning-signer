@@ -579,7 +579,7 @@ pub struct NodeServices {
 }
 
 impl Wallet for Node {
-    fn can_spend(&self, child_path: &Vec<u32>, script_pubkey: &Script) -> Result<bool, Status> {
+    fn can_spend(&self, child_path: &[u32], script_pubkey: &Script) -> Result<bool, Status> {
         // If there is no path we can't spend it ...
         if child_path.len() == 0 {
             return Ok(false);
@@ -596,7 +596,7 @@ impl Wallet for Node {
             || *script_pubkey == wrapped_addr.script_pubkey())
     }
 
-    fn get_native_address(&self, child_path: &Vec<u32>) -> Result<Address, Status> {
+    fn get_native_address(&self, child_path: &[u32]) -> Result<Address, Status> {
         if child_path.len() == 0 {
             return Err(invalid_argument("empty child path"));
         }
@@ -606,7 +606,7 @@ impl Wallet for Node {
         Ok(Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed"))
     }
 
-    fn get_wrapped_address(&self, child_path: &Vec<u32>) -> Result<Address, Status> {
+    fn get_wrapped_address(&self, child_path: &[u32]) -> Result<Address, Status> {
         if child_path.len() == 0 {
             return Err(invalid_argument("empty child path"));
         }
@@ -617,8 +617,35 @@ impl Wallet for Node {
     }
 
     /// Returns true if script_pubkey is in the node's allowlist.
-    fn allowlist_contains(&self, script_pubkey: &Script) -> bool {
-        self.allowlist.lock().unwrap().contains(&Allowable::Script(script_pubkey.clone()))
+    fn allowlist_contains(&self, script_pubkey: &Script, path: &[u32]) -> bool {
+        if self.allowlist.lock().unwrap().contains(&Allowable::Script(script_pubkey.clone())) {
+            return true;
+        }
+
+        if path.len() == 0 {
+            return false;
+        }
+
+        let child_path: Vec<_> =
+            path.iter().map(|i| ChildNumber::from_normal_idx(*i).unwrap()).collect();
+        for a in self.allowlist.lock().unwrap().iter() {
+            if let Allowable::XPub(xp) = a {
+                let pubkey = bitcoin::PublicKey::new(
+                    xp.derive_pub(&Secp256k1::new(), &child_path).unwrap().public_key,
+                );
+                // this is infallible because the pubkey is compressed
+                if *script_pubkey
+                    == Address::p2wpkh(&pubkey, self.network()).unwrap().script_pubkey()
+                {
+                    return true;
+                }
+                if *script_pubkey == Address::p2pkh(&pubkey, self.network()).script_pubkey() {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     fn network(&self) -> Network {
@@ -1334,7 +1361,7 @@ impl Node {
     pub(crate) fn get_wallet_privkey(
         &self,
         secp_ctx: &Secp256k1<secp256k1::SignOnly>,
-        child_path: &Vec<u32>,
+        child_path: &[u32],
     ) -> Result<PrivateKey, Status> {
         if child_path.len() != self.node_config.key_derivation_style.get_key_path_len() {
             return Err(invalid_argument(format!(
@@ -1357,7 +1384,7 @@ impl Node {
     pub(crate) fn get_wallet_pubkey(
         &self,
         secp_ctx: &Secp256k1<secp256k1::SignOnly>,
-        child_path: &Vec<u32>,
+        child_path: &[u32],
     ) -> Result<bitcoin::PublicKey, Status> {
         Ok(self.get_wallet_privkey(secp_ctx, child_path)?.public_key(secp_ctx))
     }
@@ -1529,7 +1556,7 @@ impl Node {
     }
 
     /// Adds addresses to the node's current allowlist.
-    pub fn add_allowlist(&self, addlist: &Vec<String>) -> Result<(), Status> {
+    pub fn add_allowlist(&self, addlist: &[String]) -> Result<(), Status> {
         let allowables = addlist
             .iter()
             .map(|addrstr| Allowable::from_str(addrstr, self.network()))
@@ -2519,6 +2546,24 @@ mod tests {
         b.sort();
         let matching = a.iter().zip(b.iter()).filter(|&(a, b)| a == b).count();
         matching == a.len() && matching == b.len()
+    }
+
+    #[test]
+    fn node_allowlist_contains_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        // xpub is "abandon* about" external account 0
+        node.add_allowlist(&[
+            "address:mv4rnyY3Su5gjcDNzbMLKBQkBicCtHUtFB".to_string(),
+            "xpub:tpubDEQBfiy13hMZzGT4NWqNnaSWwVqYQ58kuu2pDYjkrf8F6DLKAprm8c65Pyh7PrzodXHtJuEXFu5yf6JbvYaL8rz7v28zapwbuzZzr7z4UvR".to_string(),
+        ]).unwrap();
+        // check if second child matches the xpub in the allowlist
+        let script2 =
+            Address::from_str("mnTkxhNkgx7TsZrEdRcPti564yQTzynGJp").unwrap().script_pubkey();
+        assert!(node.allowlist_contains(&script2, &[2]));
+        // check if third child matches the xpub in the allowlist with wrong index
+        let script2 =
+            Address::from_str("mpW3iVi2Td1vqDK8Nfie29ddZXf9spmZkX").unwrap().script_pubkey();
+        assert!(!node.allowlist_contains(&script2, &[2]));
     }
 
     #[test]

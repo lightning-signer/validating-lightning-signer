@@ -307,7 +307,7 @@ impl Handler for RootHandler {
                 let bip32 = self.node.get_account_extended_pubkey().encode();
                 let node_secret = self.node.get_node_secret()[..].try_into().unwrap();
                 let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
-                let allowlist = m
+                let allowlist: Vec<_> = m
                     .dev_allowlist
                     .into_iter()
                     .map(|ws| String::from_utf8(ws.0).expect("utf8"))
