@@ -97,7 +97,8 @@ mod tests {
                     &chan.setup.counterparty_points.funding_pubkey,
                 )
                 .expect("scripts");
-                let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+                let output_witscripts: Vec<_> =
+                    redeem_scripts.iter().map(|s| s.serialize()).collect();
 
                 // rebuild to get the scripts
                 let trusted_tx = commitment_tx.trust();
@@ -213,7 +214,8 @@ mod tests {
                 // rebuild to get the scripts
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
-                let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+                let output_witscripts: Vec<_> =
+                    redeem_scripts.iter().map(|s| s.serialize()).collect();
 
                 let sig = chan
                     .sign_counterparty_commitment_tx(

@@ -147,7 +147,7 @@ impl<'a> core::fmt::Debug for DebugBytes<'a> {
 }
 
 /// Debug support for Vec<Vec<u8>>
-pub struct DebugVecVecU8<'a>(pub &'a Vec<Vec<u8>>);
+pub struct DebugVecVecU8<'a>(pub &'a [Vec<u8>]);
 impl<'a> core::fmt::Debug for DebugVecVecU8<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
         f.debug_list().entries(self.0.iter().map(|vv| DebugBytes(&vv[..]))).finish()

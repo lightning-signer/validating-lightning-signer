@@ -51,7 +51,7 @@ impl Validator for NullValidator {
         &self,
         _wallet: &Wallet,
         _setup: &ChannelSetup,
-        _holder_shutdown_key_path: &Vec<u32>,
+        _holder_shutdown_key_path: &[u32],
     ) -> Result<(), ValidationError> {
         Ok(())
     }
@@ -65,8 +65,8 @@ impl Validator for NullValidator {
         _wallet: &Wallet,
         _channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         _tx: &Transaction,
-        _values_sat: &Vec<u64>,
-        _opaths: &Vec<Vec<u32>>,
+        _values_sat: &[u64],
+        _opaths: &[Vec<u32>],
         _weight: usize,
     ) -> Result<(), ValidationError> {
         Ok(())
@@ -78,7 +78,7 @@ impl Validator for NullValidator {
         setup: &ChannelSetup,
         is_counterparty: bool,
         tx: &bitcoin::Transaction,
-        output_witscripts: &Vec<Vec<u8>>,
+        output_witscripts: &[Vec<u8>],
     ) -> Result<CommitmentInfo, ValidationError> {
         // Delegate to SimplePolicy
         self.0.decode_commitment_tx(keys, setup, is_counterparty, tx, output_witscripts)
@@ -158,7 +158,7 @@ impl Validator for NullValidator {
         setup: &ChannelSetup,
         estate: &EnforcementState,
         tx: &Transaction,
-        wallet_paths: &Vec<Vec<u32>>,
+        wallet_paths: &[Vec<u32>],
     ) -> Result<ClosingTransaction, ValidationError> {
         // Delegate to SimplePolicy
         self.0.decode_and_validate_mutual_close_tx(wallet, setup, estate, tx, wallet_paths)
@@ -173,7 +173,7 @@ impl Validator for NullValidator {
         _to_counterparty_value_sat: u64,
         _holder_script: &Option<Script>,
         _counterparty_script: &Option<Script>,
-        _holder_wallet_path_hint: &Vec<u32>,
+        _holder_wallet_path_hint: &[u32],
     ) -> Result<(), ValidationError> {
         Ok(())
     }
@@ -186,7 +186,7 @@ impl Validator for NullValidator {
         _tx: &Transaction,
         _input: usize,
         _amount_sat: u64,
-        _wallet_path: &Vec<u32>,
+        _wallet_path: &[u32],
     ) -> Result<(), ValidationError> {
         Ok(())
     }
@@ -200,7 +200,7 @@ impl Validator for NullValidator {
         _redeemscript: &Script,
         _input: usize,
         _amount_sat: u64,
-        _wallet_path: &Vec<u32>,
+        _wallet_path: &[u32],
     ) -> Result<(), ValidationError> {
         Ok(())
     }
@@ -213,7 +213,7 @@ impl Validator for NullValidator {
         _tx: &Transaction,
         _input: usize,
         _amount_sat: u64,
-        _wallet_path: &Vec<u32>,
+        _wallet_path: &[u32],
     ) -> Result<(), ValidationError> {
         Ok(())
     }

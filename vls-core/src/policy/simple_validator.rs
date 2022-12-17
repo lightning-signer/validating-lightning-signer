@@ -295,7 +295,7 @@ impl SimpleValidator {
         tx: &Transaction,
         _input: usize,
         _amount_sat: u64,
-        wallet_path: &Vec<u32>,
+        wallet_path: &[u32],
     ) -> Result<(), ValidationError> {
         if tx.version != 2 {
             transaction_format_err!(self, "policy-sweep-version", "bad version: {}", tx.version);
@@ -367,7 +367,7 @@ impl Validator for SimpleValidator {
         &self,
         wallet: &Wallet,
         setup: &ChannelSetup,
-        holder_shutdown_key_path: &Vec<u32>,
+        holder_shutdown_key_path: &[u32],
     ) -> Result<(), ValidationError> {
         let mut debug_on_return = scoped_debug_return!(setup, holder_shutdown_key_path);
 
@@ -426,8 +426,8 @@ impl Validator for SimpleValidator {
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         tx: &Transaction,
-        holder_inputs_sat: &Vec<u64>,
-        opaths: &Vec<Vec<u32>>,
+        holder_inputs_sat: &[u64],
+        opaths: &[Vec<u32>],
         weight_lower_bound: usize,
     ) -> Result<(), ValidationError> {
         let mut debug_on_return = scoped_debug_return!(tx, holder_inputs_sat, opaths);
@@ -587,7 +587,7 @@ impl Validator for SimpleValidator {
         setup: &ChannelSetup,
         is_counterparty: bool,
         tx: &bitcoin::Transaction,
-        output_witscripts: &Vec<Vec<u8>>,
+        output_witscripts: &[Vec<u8>],
     ) -> Result<CommitmentInfo, ValidationError> {
         let mut debug_on_return = scoped_debug_return!(
             DebugInMemorySigner(keys),
@@ -1046,7 +1046,7 @@ impl Validator for SimpleValidator {
         setup: &ChannelSetup,
         estate: &EnforcementState,
         tx: &Transaction,
-        wallet_paths: &Vec<Vec<u32>>,
+        wallet_paths: &[Vec<u32>],
     ) -> Result<ClosingTransaction, ValidationError> {
         // Log state and inputs if we don't succeed.
         let should_debug = true;
@@ -1237,7 +1237,7 @@ impl Validator for SimpleValidator {
         to_counterparty_value_sat: u64,
         holder_script: &Option<Script>,
         counterparty_script: &Option<Script>,
-        holder_wallet_path_hint: &Vec<u32>,
+        holder_wallet_path_hint: &[u32],
     ) -> Result<(), ValidationError> {
         let mut debug_on_return = scoped_debug_return!(
             setup,
@@ -1400,7 +1400,7 @@ impl Validator for SimpleValidator {
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
-        wallet_path: &Vec<u32>,
+        wallet_path: &[u32],
     ) -> Result<(), ValidationError> {
         let mut debug_on_return =
             scoped_debug_return!(setup, cstate, tx, input, amount_sat, wallet_path);
@@ -1443,7 +1443,7 @@ impl Validator for SimpleValidator {
         redeemscript: &Script,
         input: usize,
         amount_sat: u64,
-        wallet_path: &Vec<u32>,
+        wallet_path: &[u32],
     ) -> Result<(), ValidationError> {
         let mut debug_on_return =
             scoped_debug_return!(setup, cstate, tx, input, amount_sat, wallet_path);
@@ -1536,7 +1536,7 @@ impl Validator for SimpleValidator {
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
-        wallet_path: &Vec<u32>,
+        wallet_path: &[u32],
     ) -> Result<(), ValidationError> {
         let mut debug_on_return =
             scoped_debug_return!(_setup, cstate, tx, input, amount_sat, wallet_path);

@@ -31,7 +31,7 @@ pub trait Validator {
         &self,
         wallet: &Wallet,
         setup: &ChannelSetup,
-        holder_shutdown_key_path: &Vec<u32>,
+        holder_shutdown_key_path: &[u32],
     ) -> Result<(), ValidationError>;
 
     /// Validate channel value after it is late-filled
@@ -51,8 +51,8 @@ pub trait Validator {
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         tx: &Transaction,
-        values_sat: &Vec<u64>,
-        opaths: &Vec<Vec<u32>>,
+        values_sat: &[u64],
+        opaths: &[Vec<u32>],
         weight_lower_bound: usize,
     ) -> Result<(), ValidationError>;
 
@@ -62,8 +62,8 @@ pub trait Validator {
         keys: &InMemorySigner,
         setup: &ChannelSetup,
         is_counterparty: bool,
-        tx: &bitcoin::Transaction,
-        output_witscripts: &Vec<Vec<u8>>,
+        tx: &Transaction,
+        output_witscripts: &[Vec<u8>],
     ) -> Result<CommitmentInfo, ValidationError>;
 
     /// Validate a counterparty commitment
@@ -127,7 +127,7 @@ pub trait Validator {
         setup: &ChannelSetup,
         state: &EnforcementState,
         tx: &Transaction,
-        opaths: &Vec<Vec<u32>>,
+        opaths: &[Vec<u32>],
     ) -> Result<ClosingTransaction, ValidationError>;
 
     /// Phase 2 Validatation of mutual_close
@@ -140,7 +140,7 @@ pub trait Validator {
         to_counterparty_value_sat: u64,
         holder_shutdown_script: &Option<Script>,
         counterparty_shutdown_script: &Option<Script>,
-        holder_wallet_path_hint: &Vec<u32>,
+        holder_wallet_path_hint: &[u32],
     ) -> Result<(), ValidationError>;
 
     /// Validation of delayed sweep transaction
@@ -152,7 +152,7 @@ pub trait Validator {
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
-        key_path: &Vec<u32>,
+        key_path: &[u32],
     ) -> Result<(), ValidationError>;
 
     /// Validation of counterparty htlc sweep transaction (first level
@@ -166,7 +166,7 @@ pub trait Validator {
         redeemscript: &Script,
         input: usize,
         amount_sat: u64,
-        key_path: &Vec<u32>,
+        key_path: &[u32],
     ) -> Result<(), ValidationError>;
 
     /// Validation of justice sweep transaction
@@ -178,7 +178,7 @@ pub trait Validator {
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
-        key_path: &Vec<u32>,
+        key_path: &[u32],
     ) -> Result<(), ValidationError>;
 
     /// Validation of the payment state for a payment hash.
@@ -693,7 +693,7 @@ impl EnforcementState {
         summary
     }
 
-    fn summarize_payments(htlcs: &Vec<HTLCInfo2>) -> Map<PaymentHash, u64> {
+    fn summarize_payments(htlcs: &[HTLCInfo2]) -> Map<PaymentHash, u64> {
         let mut summary = Map::new();
         for h in htlcs {
             // If there are multiple HTLCs for the same payment, sum them

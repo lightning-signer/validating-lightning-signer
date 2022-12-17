@@ -555,7 +555,7 @@ impl Signer for SignServer {
             return Err(invalid_grpc_argument("tx.output.len() == 0"));
         }
 
-        let opaths = reqtx
+        let opaths: Vec<_> = reqtx
             .output_descs
             .into_iter()
             .map(|od| od.key_loc.unwrap_or_default().key_path.to_vec())
@@ -714,7 +714,7 @@ impl Signer for SignServer {
             }
         }
 
-        let opaths = reqtx
+        let opaths: Vec<_> = reqtx
             .output_descs
             .into_iter()
             .map(|od| od.key_loc.unwrap_or_default().key_path.to_vec())
@@ -746,7 +746,8 @@ impl Signer for SignServer {
         let tx: bitcoin::Transaction = deserialize(reqtx.raw_tx_bytes.as_slice())
             .map_err(|e| invalid_grpc_argument(format!("bad tx: {}", e)))?;
         let remote_per_commitment_point = self.public_key(req.remote_per_commit_point.clone())?;
-        let witscripts = reqtx.output_descs.iter().map(|odsc| odsc.witscript.clone()).collect();
+        let witscripts: Vec<_> =
+            reqtx.output_descs.iter().map(|odsc| odsc.witscript.clone()).collect();
 
         let commit_num = req.commit_num;
         let offered_htlcs = self.convert_htlcs(&req.offered_htlcs)?;
@@ -791,7 +792,8 @@ impl Signer for SignServer {
             return Err(invalid_grpc_argument("tx.output.len() == 0"));
         }
 
-        let witscripts = reqtx.output_descs.iter().map(|odsc| odsc.witscript.clone()).collect();
+        let witscripts: Vec<_> =
+            reqtx.output_descs.iter().map(|odsc| odsc.witscript.clone()).collect();
 
         let offered_htlcs = self.convert_htlcs(&req.offered_htlcs)?;
         let received_htlcs = self.convert_htlcs(&req.received_htlcs)?;

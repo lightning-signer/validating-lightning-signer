@@ -120,7 +120,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
         Ok(header)
     }
 
-    fn notify_listeners_remove(&mut self, txs: &Vec<Transaction>) {
+    fn notify_listeners_remove(&mut self, txs: &[Transaction]) {
         for (listener, slot) in self.listeners.iter_mut() {
             let mut matched = Vec::new();
             for tx in txs.iter().rev() {
@@ -179,7 +179,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
         Ok(())
     }
 
-    fn notify_listeners_add(&mut self, txs: &Vec<Transaction>) {
+    fn notify_listeners_add(&mut self, txs: &[Transaction]) {
         for (listener, slot) in self.listeners.iter_mut() {
             let mut matched = Vec::new();
             for tx in txs {
@@ -247,7 +247,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     fn validate_block(
         &self,
         header: &BlockHeader,
-        txs: &Vec<Transaction>,
+        txs: &[Transaction],
         txs_proof: Option<PartialMerkleTree>,
     ) -> Result<(), Error> {
         // Check hash is correctly chained
@@ -286,7 +286,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
 
     fn validate_spv(
         header: &BlockHeader,
-        txs: &Vec<Transaction>,
+        txs: &[Transaction],
         txs_proof: Option<PartialMerkleTree>,
     ) -> Result<(), Error> {
         // Check SPV proof
