@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec;
@@ -35,6 +36,7 @@ use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
+use lightning_signer::{debug_vals, short_function, vals_str};
 use log::*;
 use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
@@ -434,10 +436,7 @@ impl Handler for RootHandler {
                         psbt_in.final_script_sig = Some(script_sig);
                     }
                 }
-                info!("opaths {:?}", opaths);
-                info!("txid {}", tx.txid());
-                info!("tx {:?}", tx);
-                info!("psbt {:?}", psbt);
+                debug_vals!(opaths, tx.txid(), tx, psbt);
                 let witvec = self.node.sign_onchain_tx(
                     &tx,
                     &ipaths,

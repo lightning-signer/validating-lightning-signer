@@ -827,7 +827,6 @@ impl EnforcementState {
             received_htlc_count,
             offered_htlc_count,
         };
-        debug!("balance: {:?}", balance);
         balance
     }
 }

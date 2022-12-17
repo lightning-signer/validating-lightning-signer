@@ -197,7 +197,6 @@ impl Display {
 
         let mut y = VCENTER_PIX as i32 - texts.len() as i32 * (FONT_HEIGHT as i32 + 2) / 2;
         for text in texts {
-            debug!("show {} {}.", text.to_string(), y);
             Text::new(&text.to_string(), Point::new(10, y), text_style)
                 .draw(&mut self.inner)
                 .unwrap();
