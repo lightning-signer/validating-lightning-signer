@@ -35,8 +35,7 @@ use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
-#[allow(unused_imports)]
-use log::info;
+use log::*;
 use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
 use lightning_signer::util::status::Status;
@@ -105,7 +104,13 @@ pub trait Handler {
     /// Handle a message
     fn handle(&self, msg: Message) -> Result<(Box<dyn SerBolt>, Mutations)> {
         let context = self.node().get_persister().enter(self.lss_state().clone());
-        let reply = self.do_handle(msg)?;
+        log_request(&msg);
+        let result = self.do_handle(msg);
+        if let Err(ref err) = result {
+            log_error(err);
+        }
+        let reply = result?;
+        log_reply(&reply);
         let muts = context.exit();
         Ok((reply, muts))
     }
@@ -120,6 +125,27 @@ pub trait Handler {
     /// Get the LSS state.
     /// This will be empty if we are not persisting to the cloud
     fn lss_state(&self) -> Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>;
+}
+
+fn log_request(msg: &Message) {
+    #[cfg(not(feature = "log_pretty_print"))]
+    debug!("{:?}", msg);
+    #[cfg(feature = "log_pretty_print")]
+    debug!("{:#?}", msg);
+}
+
+fn log_error(err: &Error) {
+    #[cfg(not(feature = "log_pretty_print"))]
+    error!("{:?}", err);
+    #[cfg(feature = "log_pretty_print")]
+    error!("{:#?}", err);
+}
+
+fn log_reply(reply: &Box<dyn SerBolt>) {
+    #[cfg(not(feature = "log_pretty_print"))]
+    debug!("{:?}", reply);
+    #[cfg(feature = "log_pretty_print")]
+    debug!("{:#?}", reply);
 }
 
 /// Protocol handler

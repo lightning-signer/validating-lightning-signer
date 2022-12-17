@@ -11,6 +11,8 @@ std = ["vls-protocol/std", "vls-core/std"]
 secp-lowmemory = ["vls-core/secp-lowmemory"]
 use_backtrace = ["vls-core/use_backtrace"]
 tracker_size_workaround = ["vls-core/tracker_size_workaround"]
+log_pretty_print = []
+debug = ["vls-core/debug", "log_pretty_print"]
 
 [dependencies]
 vls-protocol = { path = "../vls-protocol" }
