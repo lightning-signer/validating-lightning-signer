@@ -426,11 +426,11 @@ impl Validator for SimpleValidator {
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         tx: &Transaction,
-        holder_inputs_sat: &[u64],
+        values_sat: &[u64],
         opaths: &[Vec<u32>],
         weight_lower_bound: usize,
     ) -> Result<(), ValidationError> {
-        let mut debug_on_return = scoped_debug_return!(tx, holder_inputs_sat, opaths);
+        let mut debug_on_return = scoped_debug_return!(tx, values_sat, opaths);
 
         if tx.version != 2 {
             policy_err!(self, "policy-onchain-format-standard", "invalid version: {}", tx.version);
@@ -463,6 +463,7 @@ impl Validator for SimpleValidator {
                     debug!("output {} ({}) is to our wallet", outndx, output.value);
                 }
                 if !spendable {
+                    // Possible output to allowlisted xpub
                     spendable = wallet.allowlist_contains(&output.script_pubkey, opath);
                     if spendable {
                         debug!("output {} ({}) is to allowlisted xpub", outndx, output.value);
@@ -479,7 +480,7 @@ impl Validator for SimpleValidator {
                 beneficial_sum =
                     add_beneficial_output!(beneficial_sum, output.value, "wallet change")?;
             } else if wallet.allowlist_contains(&output.script_pubkey, &[]) {
-                // Change output to allowlisted address
+                // Possible output to allowlisted address
                 debug!("output {} ({}) is allowlisted", outndx, output.value);
                 beneficial_sum =
                     add_beneficial_output!(beneficial_sum, output.value, "allowlisted")?;
@@ -565,11 +566,9 @@ impl Validator for SimpleValidator {
             }
         }
 
-        // NOTE - w/o dual funding everything is checked above, should not fail past here
-
         // policy-onchain-fee-range
         let mut sum_inputs: u64 = 0;
-        for val in holder_inputs_sat {
+        for val in values_sat {
             sum_inputs = sum_inputs
                 .checked_add(*val)
                 .ok_or_else(|| policy_error(format!("funding sum inputs overflow")))?;
