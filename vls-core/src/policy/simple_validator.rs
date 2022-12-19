@@ -461,12 +461,19 @@ impl Validator for SimpleValidator {
                     })?;
                 if spendable {
                     debug!("output {} ({}) is to our wallet", outndx, output.value);
+                    beneficial_sum =
+                        add_beneficial_output!(beneficial_sum, output.value, "to wallet")?;
                 }
                 if !spendable {
                     // Possible output to allowlisted xpub
                     spendable = wallet.allowlist_contains(&output.script_pubkey, opath);
                     if spendable {
                         debug!("output {} ({}) is to allowlisted xpub", outndx, output.value);
+                        beneficial_sum = add_beneficial_output!(
+                            beneficial_sum,
+                            output.value,
+                            "to allowlisted xpub"
+                        )?;
                     }
                 }
                 if !spendable {
@@ -477,8 +484,6 @@ impl Validator for SimpleValidator {
                         outndx
                     );
                 }
-                beneficial_sum =
-                    add_beneficial_output!(beneficial_sum, output.value, "wallet change")?;
             } else if wallet.allowlist_contains(&output.script_pubkey, &[]) {
                 // Possible output to allowlisted address
                 debug!("output {} ({}) is allowlisted", outndx, output.value);

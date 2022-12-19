@@ -48,7 +48,14 @@ mod tests {
         let uniclosekeys = vec![None, None];
 
         let witvec = node
-            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
+            .check_and_sign_onchain_tx(
+                &tx,
+                &ipaths,
+                &values_sat,
+                &spendtypes,
+                uniclosekeys,
+                &vec![opath],
+            )
             .expect("good sigs");
         assert_eq!(witvec.len(), 2);
 
@@ -93,7 +100,14 @@ mod tests {
         let uniclosekeys = vec![None];
 
         let witvec = node
-            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
+            .check_and_sign_onchain_tx(
+                &tx,
+                &ipaths,
+                &values_sat,
+                &spendtypes,
+                uniclosekeys,
+                &vec![opath],
+            )
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
@@ -138,7 +152,7 @@ mod tests {
         let uniclosekeys = vec![None];
 
         assert_failed_precondition_err!(
-            node.sign_onchain_tx(
+            node.check_and_sign_onchain_tx(
                 &tx,
                 &ipaths,
                 &values_sat,
@@ -184,7 +198,14 @@ mod tests {
         let uniclosekeys = vec![Some((uniclosekey, vec![uniclosepubkey.serialize()]))];
 
         let witvec = node
-            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
+            .check_and_sign_onchain_tx(
+                &tx,
+                &ipaths,
+                &values_sat,
+                &spendtypes,
+                uniclosekeys,
+                &vec![opath],
+            )
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
@@ -223,7 +244,14 @@ mod tests {
         let uniclosekeys = vec![None];
 
         let witvec = node
-            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
+            .check_and_sign_onchain_tx(
+                &tx,
+                &ipaths,
+                &values_sat,
+                &spendtypes,
+                uniclosekeys,
+                &vec![opath],
+            )
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
@@ -267,7 +295,14 @@ mod tests {
         let uniclosekeys = vec![None];
 
         let witvec = node
-            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
+            .check_and_sign_onchain_tx(
+                &tx,
+                &ipaths,
+                &values_sat,
+                &spendtypes,
+                uniclosekeys,
+                &vec![opath],
+            )
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
@@ -343,7 +378,14 @@ mod tests {
         let uniclosekeys = vec![None, None, None];
 
         let witvec = node
-            .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
+            .check_and_sign_onchain_tx(
+                &tx,
+                &ipaths,
+                &values_sat,
+                &spendtypes,
+                uniclosekeys,
+                &vec![opath],
+            )
             .expect("good sigs");
         // Should have three witness stack items.
         assert_eq!(witvec.len(), 3);
@@ -484,7 +526,7 @@ mod tests {
                 fms.tx.output[1].value = u64::MAX;
             }),
             "policy failure: beneficial outputs overflow: \
-             sum 90000 + wallet change 18446744073709551615"
+             sum 90000 + to wallet 18446744073709551615"
         );
     }
 

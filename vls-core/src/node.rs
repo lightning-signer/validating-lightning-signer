@@ -1169,11 +1169,32 @@ impl Node {
         Ok(chan)
     }
 
+    // Check and sign an onchain transaction
+    #[cfg(feature = "test_utils")]
+    pub(crate) fn check_and_sign_onchain_tx(
+        &self,
+        tx: &Transaction,
+        ipaths: &[Vec<u32>],
+        values_sat: &[u64],
+        spendtypes: &[SpendType],
+        uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
+        opaths: &[Vec<u32>],
+    ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
+        self.check_onchain_tx(tx, values_sat, spendtypes, &uniclosekeys, opaths)?;
+        self.unchecked_sign_onchain_tx(tx, ipaths, values_sat, spendtypes, uniclosekeys)
+    }
+
     /// Sign an onchain transaction (funding tx or simple sweeps).
     ///
+    /// `check_onchain_tx` must be called first to validate the transaction.
+    /// The two are separate so that the caller can check for approval if
+    /// there is an unknown destination.
+    ///
     /// The transaction may fund multiple channels at once.
+    ///
     /// Returns a witness stack for each input.  Inputs that are marked
     /// as [SpendType::Invalid] are not signed and get an empty witness stack.
+    ///
     /// * `ipaths` - derivation path for the wallet key per input
     /// * `values_sat` - the amount in satoshi per input
     /// * `spendtypes` - spend type per input, or `Invalid` if this input is
@@ -1183,28 +1204,19 @@ impl Node {
     ///   we are sweeping a unilateral close and funding a channel in a single tx.
     ///   The second item in the tuple is the witness stack suffix - zero or more
     ///   script parameters and the redeemscript.
-    /// * `opaths` - derivation path for change, one per output.  Empty for
-    ///   non-change outputs.
-    pub fn sign_onchain_tx(
+    pub fn unchecked_sign_onchain_tx(
         &self,
         tx: &Transaction,
         ipaths: &[Vec<u32>],
         values_sat: &[u64],
         spendtypes: &[SpendType],
         uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
-        opaths: &[Vec<u32>],
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
         let channels_lock = self.channels.lock().unwrap();
         let secp_ctx = Secp256k1::signing_only();
 
         // Funding transactions cannot be associated with just a single channel;
         // a single transaction may fund multiple channels
-
-        let validator = self.validator_factory.lock().unwrap().make_validator(
-            self.network(),
-            self.get_id(),
-            None,
-        );
 
         let txid = tx.txid();
         debug!("{}: txid: {}", short_function!(), txid);
@@ -1215,33 +1227,6 @@ impl Node {
                 find_channel_with_funding_outpoint(&channels_lock, &outpoint)
             })
             .collect();
-
-        // Compute a lower bound for the tx weight for feerate checking.
-        // TODO(dual-funding) - This estimate does not include witnesses for inputs we don't sign.
-        let mut weight_lower_bound = tx.weight();
-        for (idx, uck) in uniclosekeys.iter().enumerate() {
-            if spendtypes[idx] == SpendType::Invalid {
-                weight_lower_bound += 0;
-            } else {
-                let wit_len = match uck {
-                    // length-byte + witness-element
-                    Some((_key, stack)) => stack.iter().map(|v| 1 + v.len()).sum(),
-                    None => 33,
-                };
-                // witness-header + element-count + length + sig + len + redeemscript
-                weight_lower_bound += 2 + 1 + 1 + 72 + 1 + wit_len;
-            }
-        }
-        debug!("weight_lower_bound: {}", weight_lower_bound);
-
-        validator.validate_onchain_tx(
-            self,
-            channels.clone(),
-            tx,
-            values_sat,
-            opaths,
-            weight_lower_bound,
-        )?;
 
         let mut witvec: Vec<Vec<Vec<u8>>> = Vec::new();
         for (idx, uck) in uniclosekeys.into_iter().enumerate() {
@@ -1338,6 +1323,84 @@ impl Node {
 
         // TODO(devrandom) self.persist_channel(node_id, chan);
         Ok(witvec)
+    }
+
+    /// Check an onchain transaction (funding tx or simple sweeps).
+    ///
+    /// This is normally followed by a call to `unchecked_sign_onchain_tx`.
+    ///
+    /// If the result is ValidationError::UncheckedDestinations, the caller
+    /// could still ask for manual approval and then sign the transaction.
+    ///
+    /// The transaction may fund multiple channels at once.
+    ///
+    /// * `values_sat` - the amount in satoshi per input
+    /// * `spendtypes` - spend type per input, or `Invalid` if this input is
+    ///   to be signed by someone else.
+    /// * `uniclosekeys` - an optional unilateral close key to use instead of the
+    ///   wallet key.  Takes precedence over the `ipaths` entry.  This is used when
+    ///   we are sweeping a unilateral close and funding a channel in a single tx.
+    ///   The second item in the tuple is the witness stack suffix - zero or more
+    ///   script parameters and the redeemscript.
+    /// * `opaths` - derivation path per output.  Empty for non-wallet/non-xpub-whitelist
+    ///   outputs.
+    pub fn check_onchain_tx(
+        &self,
+        tx: &Transaction,
+        values_sat: &[u64],
+        spendtypes: &[SpendType],
+        uniclosekeys: &Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
+        opaths: &[Vec<u32>],
+    ) -> Result<(), Status> {
+        let channels_lock = self.channels.lock().unwrap();
+
+        // Funding transactions cannot be associated with just a single channel;
+        // a single transaction may fund multiple channels
+
+        let txid = tx.txid();
+        debug!("{}: txid: {}", short_function!(), txid);
+
+        let channels: Vec<Option<Arc<Mutex<ChannelSlot>>>> = (0..tx.output.len())
+            .map(|ndx| {
+                let outpoint = OutPoint { txid, vout: ndx as u32 };
+                find_channel_with_funding_outpoint(&channels_lock, &outpoint)
+            })
+            .collect();
+
+        let validator = self.validator_factory.lock().unwrap().make_validator(
+            self.network(),
+            self.get_id(),
+            None,
+        );
+
+        // Compute a lower bound for the tx weight for feerate checking.
+        // TODO(dual-funding) - This estimate does not include witnesses for inputs we don't sign.
+        let mut weight_lower_bound = tx.weight();
+        for (idx, uck) in uniclosekeys.iter().enumerate() {
+            if spendtypes[idx] == SpendType::Invalid {
+                weight_lower_bound += 0;
+            } else {
+                let wit_len = match uck {
+                    // length-byte + witness-element
+                    Some((_key, stack)) => stack.iter().map(|v| 1 + v.len()).sum(),
+                    None => 33,
+                };
+                // witness-header + element-count + length + sig + len + redeemscript
+                weight_lower_bound += 2 + 1 + 1 + 72 + 1 + wit_len;
+            }
+        }
+        debug!("weight_lower_bound: {}", weight_lower_bound);
+
+        validator.validate_onchain_tx(
+            self,
+            channels.clone(),
+            tx,
+            values_sat,
+            opaths,
+            weight_lower_bound,
+        )?;
+
+        Ok(())
     }
 
     fn channel_setup_to_channel_transaction_parameters(

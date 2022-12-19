@@ -437,7 +437,7 @@ impl Handler for RootHandler {
                     }
                 }
                 debug_vals!(opaths, tx.txid(), tx, psbt);
-                let witvec = self.node.sign_onchain_tx(
+                let witvec = self.node.check_and_sign_onchain_tx(
                     &tx,
                     &ipaths,
                     &values_sat,
