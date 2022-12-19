@@ -11,6 +11,7 @@ use lightning::ln::PaymentHash;
 use log::*;
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
+use crate::policy::error::unknown_destinations_error;
 use crate::policy::filter::{FilterResult, PolicyFilter};
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
@@ -436,6 +437,8 @@ impl Validator for SimpleValidator {
             policy_err!(self, "policy-onchain-format-standard", "invalid version: {}", tx.version);
         }
 
+        let mut unknowns = Vec::new();
+
         let mut beneficial_sum = 0u64;
         for outndx in 0..tx.output.len() {
             let output = &tx.output[outndx];
@@ -562,13 +565,13 @@ impl Validator for SimpleValidator {
                 };
             } else {
                 debug!("output {} ({}) is unknown", outndx, output.value);
-                policy_err!(
-                    self,
-                    "policy-onchain-no-unknown-outputs",
-                    "output[{}] is an unknown destination",
-                    outndx,
-                );
+                // policy-onchain-no-unknown-outputs
+                unknowns.push(outndx);
             }
+        }
+
+        if unknowns.len() > 0 {
+            return Err(unknown_destinations_error(unknowns));
         }
 
         // policy-onchain-fee-range

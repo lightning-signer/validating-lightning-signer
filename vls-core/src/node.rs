@@ -1349,9 +1349,9 @@ impl Node {
         tx: &Transaction,
         values_sat: &[u64],
         spendtypes: &[SpendType],
-        uniclosekeys: &Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
+        uniclosekeys: &[Option<(SecretKey, Vec<Vec<u8>>)>],
         opaths: &[Vec<u32>],
-    ) -> Result<(), Status> {
+    ) -> Result<(), ValidationError> {
         let channels_lock = self.channels.lock().unwrap();
 
         // Funding transactions cannot be associated with just a single channel;

@@ -863,7 +863,7 @@ mod tests {
         // Because the channel isn't found the output is considered non-beneficial.
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: validate_onchain_tx: output[1] is an unknown destination"
+            "unknown destinations:  [1]"
         );
     }
 
@@ -963,7 +963,7 @@ mod tests {
         // non-beneficial.
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: validate_onchain_tx: output[1] is an unknown destination"
+            "unknown destinations:  [1]"
         );
     }
 
@@ -1031,7 +1031,7 @@ mod tests {
         // non-beneficial.
         assert_failed_precondition_err!(
             funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "policy failure: validate_onchain_tx: output[1] is an unknown destination"
+            "unknown destinations:  [1]"
         );
     }
 

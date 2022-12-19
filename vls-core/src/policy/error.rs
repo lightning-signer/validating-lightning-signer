@@ -18,8 +18,11 @@ pub enum ValidationErrorKind {
     Mismatch(String),
     /// A policy was violated
     Policy(String),
-    /// A payment is not balanced
+    /// A layer-2 transaction causes one or more payments to be unbalanced
     Unbalanced(String, Vec<PaymentHash>),
+    /// A layer-1 transaction outputs to unknown destinations.
+    /// Includes the list of tx output indices that are unknown.
+    UnknownDestinations(String, Vec<usize>),
 }
 
 // Explicit PartialEq which ignores backtrace.
@@ -56,6 +59,7 @@ impl ValidationError {
             Mismatch(s0) => Mismatch(premsg + &s0),
             Policy(s0) => Policy(premsg + &s0),
             Unbalanced(s0, hashes) => Unbalanced(premsg + &s0, hashes.clone()),
+            UnknownDestinations(s0, indices) => UnknownDestinations(premsg + &s0, indices.clone()),
         };
         ValidationError {
             kind: modkind,
@@ -96,6 +100,9 @@ impl Into<String> for ValidationError {
                 let hashes: Vec<_> = hashes.iter().map(|h| h.0.to_hex()).collect();
                 format!("unbalanced payments: {} {}", s, hashes.join(", "))
             }
+            UnknownDestinations(s, indices) => {
+                format!("unknown destinations: {} {:?}", s, indices)
+            }
         }
     }
 }
@@ -135,6 +142,14 @@ pub(crate) fn policy_error(msg: impl Into<String>) -> ValidationError {
 pub(crate) fn unbalanced_error(hashes: Vec<PaymentHash>) -> ValidationError {
     ValidationError {
         kind: Unbalanced("".to_string(), hashes),
+        #[cfg(feature = "use_backtrace")]
+        bt: Backtrace::new_unresolved(),
+    }
+}
+
+pub(crate) fn unknown_destinations_error(unknowns: Vec<usize>) -> ValidationError {
+    ValidationError {
+        kind: UnknownDestinations("".to_string(), unknowns),
         #[cfg(feature = "use_backtrace")]
         bt: Backtrace::new_unresolved(),
     }
