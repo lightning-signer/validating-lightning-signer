@@ -1,30 +1,58 @@
 use alloc::vec::Vec;
-use core::fmt;
-use core::fmt::Debug;
-use core::fmt::Formatter;
+use alloc::{format, vec};
+use core::fmt::{self, Debug, Formatter};
 use core::marker::PhantomData;
+use core::ops::{Deref, DerefMut};
 
 use serde::ser::SerializeTuple;
 use serde::{de, ser, Serializer};
 use serde_derive::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Bip32KeyVersion {
-    pub pubkey_version: u32,
-    pub privkey_version: u32,
+/// Vec<u8> with nicer debug formatting
+#[derive(Serialize, Deserialize, PartialEq)]
+pub struct Octets(pub Vec<u8>);
+
+impl Debug for Octets {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", hex::encode(&self.0))
+    }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BlockId(pub [u8; 32]);
+impl Deref for Octets {
+    type Target = Vec<u8>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Secret(pub [u8; 32]);
+impl DerefMut for Octets {
+    fn deref_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.0
+    }
+}
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PrivKey(pub [u8; 32]);
+impl From<Vec<u8>> for Octets {
+    fn from(v: Vec<u8>) -> Self {
+        Self(v)
+    }
+}
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PubKey32(pub [u8; 32]);
+impl Octets {
+    pub const EMPTY: Self = Octets(vec![]);
+}
+
+macro_rules! unprefixed_array_impl {
+    ($ty:ident, $len:tt) => {
+        #[derive(Clone, Serialize, Deserialize)]
+        pub struct $ty(pub [u8; $len]);
+
+        impl Debug for $ty {
+            fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+                write!(f, "{}", hex::encode(&self.0))
+            }
+        }
+    };
+}
 
 macro_rules! array_impl {
     ($ty:ident, $len:tt) => {
@@ -33,7 +61,7 @@ macro_rules! array_impl {
 
         impl Debug for $ty {
             fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-                self.0.to_vec().fmt(f)
+                write!(f, "{}", hex::encode(&self.0))
             }
         }
 
@@ -94,15 +122,36 @@ macro_rules! array_impl {
     };
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct Bip32KeyVersion {
+    pub pubkey_version: u32,
+    pub privkey_version: u32,
+}
+
+impl Debug for Bip32KeyVersion {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Bip32KeyVersion")
+            .field("pubkey_version", &format!("0x{:x?}", self.pubkey_version))
+            .field("privkey_version", &format!("0x{:x?}", self.privkey_version))
+            .finish()
+    }
+}
+
+unprefixed_array_impl!(BlockId, 32);
+
+unprefixed_array_impl!(Secret, 32);
+
+unprefixed_array_impl!(PrivKey, 32);
+
+unprefixed_array_impl!(PubKey32, 32);
+
 array_impl!(PubKey, 33);
 
 array_impl!(ExtKey, 78);
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Sha256(pub [u8; 32]);
+unprefixed_array_impl!(Sha256, 32);
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BlockHash(pub [u8; 32]);
+unprefixed_array_impl!(BlockHash, 32);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OutPoint {
@@ -165,7 +214,7 @@ pub struct Utxo {
     pub amount: u64,
     pub keyindex: u32,
     pub is_p2sh: bool,
-    pub script: Vec<u8>,
+    pub script: Octets,
     pub close_info: Option<CloseInfo>,
     pub is_in_coinbase: bool,
 }

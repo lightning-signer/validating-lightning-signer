@@ -457,10 +457,11 @@ impl Handler for RootHandler {
                 Ok(Box::new(msgs::SignWithdrawalReply { psbt: LargeBytes(ser_psbt) }))
             }
             Message::SignInvoice(m) => {
-                let hrp = String::from_utf8(m.hrp).expect("hrp");
+                let hrp = String::from_utf8(m.hrp.to_vec()).expect("hrp");
                 let hrp_bytes = hrp.as_bytes();
                 let data: Vec<_> = m
                     .u5bytes
+                    .clone()
                     .into_iter()
                     .map(|b| u5::try_from_u8(b).expect("invoice not base32"))
                     .collect();
@@ -754,7 +755,7 @@ impl Handler for ChannelHandler {
                 assert_eq!(psbt.inputs.len(), 1);
                 assert_eq!(tx.output.len(), 1);
                 assert_eq!(tx.input.len(), 1);
-                let redeemscript = Script::from(m.wscript);
+                let redeemscript = Script::from(m.wscript.0);
                 let htlc_amount_sat = psbt.inputs[0]
                     .witness_utxo
                     .as_ref()
@@ -828,7 +829,7 @@ impl Handler for ChannelHandler {
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
                 let commitment_number = m.commitment_number;
-                let redeemscript = Script::from(m.wscript);
+                let redeemscript = Script::from(m.wscript.0);
                 let input = 0;
                 let htlc_amount_sat = psbt.inputs[input]
                     .witness_utxo
@@ -860,7 +861,7 @@ impl Handler for ChannelHandler {
                 let tx = deserialize(&mut tx_bytes).expect("tx");
                 let remote_per_commitment_point =
                     PublicKey::from_slice(&m.remote_per_commitment_point.0).expect("pubkey");
-                let redeemscript = Script::from(m.wscript);
+                let redeemscript = Script::from(m.wscript.0);
                 let input = 0;
                 let htlc_amount_sat = psbt.inputs[input]
                     .witness_utxo
@@ -891,7 +892,7 @@ impl Handler for ChannelHandler {
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
                 let commitment_number = m.commitment_number;
-                let redeemscript = Script::from(m.wscript);
+                let redeemscript = Script::from(m.wscript.0);
                 let input = 0;
                 let htlc_amount_sat = psbt.inputs[input]
                     .witness_utxo
@@ -1043,7 +1044,7 @@ impl Handler for ChannelHandler {
                 let tx = deserialize(&mut tx_bytes).expect("tx");
                 let revocation_secret =
                     SecretKey::from_slice(&m.revocation_secret.0).expect("secret");
-                let redeemscript = Script::from(m.wscript);
+                let redeemscript = Script::from(m.wscript.0);
                 let input = 0;
                 let htlc_amount_sat = psbt.inputs[input]
                     .witness_utxo

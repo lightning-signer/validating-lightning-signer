@@ -10,10 +10,10 @@ serde_bolt = { version = "0.2", default-features = false }
 bolt-derive = { path = "../bolt-derive" }
 log = "0.4"
 as-any = "0.3"
+hex = { version = "0.4", default-features = false }
 
 [dev-dependencies]
 regex = "1.5"
-hex = "0.4"
 
 [features]
 std = ["serde_bolt/std"]

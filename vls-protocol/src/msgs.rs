@@ -103,8 +103,8 @@ pub struct ClientHsmFdReply {
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(8)]
 pub struct SignInvoice {
-    pub u5bytes: Vec<u8>,
-    pub hrp: Vec<u8>,
+    pub u5bytes: Octets,
+    pub hrp: Octets,
 }
 
 ///
@@ -175,7 +175,7 @@ pub struct CheckFutureSecretReply {
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(23)]
 pub struct SignMessage {
-    pub message: Vec<u8>,
+    pub message: Octets,
 }
 
 ///
@@ -192,7 +192,7 @@ pub struct SignBolt12 {
     pub message_name: WireString,
     pub field_name: WireString,
     pub merkle_root: Sha256,
-    pub public_tweak: Vec<u8>,
+    pub public_tweak: Octets,
 }
 
 ///
@@ -236,7 +236,7 @@ pub struct PreapproveKeysendReply {
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(27)]
 pub struct DeriveSecret {
-    pub info: Vec<u8>,
+    pub info: Octets,
 }
 
 ///
@@ -250,21 +250,21 @@ pub struct DeriveSecretReply {
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(3)]
 pub struct SignChannelUpdate {
-    pub update: Vec<u8>,
+    pub update: Octets,
 }
 
 ///
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(103)]
 pub struct SignChannelUpdateReply {
-    pub update: Vec<u8>,
+    pub update: Octets,
 }
 
 ///
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(2)]
 pub struct SignChannelAnnouncement {
-    pub announcement: Vec<u8>,
+    pub announcement: Octets,
 }
 
 ///
@@ -279,7 +279,7 @@ pub struct SignChannelAnnouncementReply {
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(6)]
 pub struct SignNodeAnnouncement {
-    pub announcement: Vec<u8>,
+    pub announcement: Octets,
 }
 
 ///
@@ -329,13 +329,13 @@ pub struct ReadyChannel {
     pub funding_txid: TxId,
     pub funding_txout: u16,
     pub to_self_delay: u16,
-    pub local_shutdown_script: Vec<u8>,
+    pub local_shutdown_script: Octets,
     pub local_shutdown_wallet_index: Option<u32>,
     pub remote_basepoints: Basepoints,
     pub remote_funding_pubkey: PubKey,
     pub remote_to_self_delay: u16,
-    pub remote_shutdown_script: Vec<u8>,
-    pub channel_type: Vec<u8>,
+    pub remote_shutdown_script: Octets,
+    pub channel_type: Octets,
 }
 
 ///
@@ -475,7 +475,7 @@ pub struct SignDelayedPaymentToUs {
     pub commitment_number: u64,
     pub tx: LargeBytes,
     pub psbt: LargeBytes,
-    pub wscript: Vec<u8>,
+    pub wscript: Octets,
 }
 
 ///
@@ -486,7 +486,7 @@ pub struct SignRemoteHtlcToUs {
     pub remote_per_commitment_point: PubKey,
     pub tx: LargeBytes,
     pub psbt: LargeBytes,
-    pub wscript: Vec<u8>,
+    pub wscript: Octets,
     pub option_anchors: bool,
 }
 
@@ -497,7 +497,7 @@ pub struct SignLocalHtlcTx {
     pub commitment_number: u64,
     pub tx: LargeBytes,
     pub psbt: LargeBytes,
-    pub wscript: Vec<u8>,
+    pub wscript: Octets,
     pub option_anchors: bool,
 }
 
@@ -518,8 +518,8 @@ pub struct SignMutualCloseTx {
 pub struct SignMutualCloseTx2 {
     pub to_local_value_sat: u64,
     pub to_remote_value_sat: u64,
-    pub local_script: Vec<u8>,
-    pub remote_script: Vec<u8>,
+    pub local_script: Octets,
+    pub remote_script: Octets,
     pub local_wallet_path_hint: Vec<u32>,
 }
 
@@ -572,7 +572,7 @@ pub struct GetChannelBasepointsReply {
 pub struct SignRemoteHtlcTx {
     pub tx: LargeBytes,
     pub psbt: LargeBytes,
-    pub wscript: Vec<u8>,
+    pub wscript: Octets,
     pub remote_per_commitment_point: PubKey,
     pub option_anchors: bool,
 }
@@ -584,7 +584,7 @@ pub struct SignPenaltyToUs {
     pub revocation_secret: Secret,
     pub tx: LargeBytes,
     pub psbt: LargeBytes,
-    pub wscript: Vec<u8>,
+    pub wscript: Octets,
 }
 
 ///
@@ -657,10 +657,10 @@ pub struct RemoveBlockReply {}
 #[message_id(2107)]
 pub struct Persist {
     /// Authentication token from client (signer) to storage service
-    pub auth: Vec<u8>,
-    pub kvs: Vec<(Vec<u8>, u64, LargeBytes)>,
+    pub auth: Octets,
+    pub kvs: Vec<(Octets, u64, LargeBytes)>,
     /// HMAC by client to authenticate the message
-    pub hmac: Vec<u8>,
+    pub hmac: Octets,
 }
 
 /// Result of a [`Persist`].
@@ -669,8 +669,8 @@ pub struct Persist {
 pub struct PersistReply {
     pub success: bool,
     /// HMAC by storage service to authenticate the message
-    pub hmac: Vec<u8>,
-    pub conflicts: Vec<(Vec<u8>, u64, LargeBytes)>,
+    pub hmac: Octets,
+    pub conflicts: Vec<(Octets, u64, LargeBytes)>,
 }
 
 /// An unknown message
@@ -958,13 +958,13 @@ mod tests {
     // Test the persist message, since it has more more nesting than others
     #[test]
     fn persist_test() {
-        let key = b"foo".to_vec();
+        let key = Octets(b"foo".to_vec());
         let value = b"bar".to_vec();
         let version = 0x123456789;
         let msg = Persist {
-            auth: vec![0x11, 0x22],
-            kvs: vec![(key.clone(), version, LargeBytes(value.clone()))],
-            hmac: vec![0x33, 0x44],
+            auth: Octets(vec![0x11, 0x22]),
+            kvs: vec![(Octets(key.clone()), version, LargeBytes(value.clone()))],
+            hmac: Octets(vec![0x33, 0x44]),
         };
 
         let ser = msg.as_vec();
