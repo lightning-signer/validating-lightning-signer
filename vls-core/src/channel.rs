@@ -508,7 +508,7 @@ impl Channel {
         per_commitment_point: &PublicKey,
         commitment_number: u64,
         info: &CommitmentInfo2,
-    ) -> Result<(bitcoin::Transaction, Vec<Script>, Vec<HTLCOutputInCommitment>), Status> {
+    ) -> Result<(Transaction, Vec<Script>, Vec<HTLCOutputInCommitment>), Status> {
         let keys = if !info.is_counterparty_broadcaster {
             self.make_holder_tx_keys(per_commitment_point)?
         } else {
@@ -680,7 +680,7 @@ impl Channel {
         txkeys: &TxCreationKeys,
         feerate_per_kw: u32,
         counterparty_commit_sig: &Signature,
-        counterparty_htlc_sigs: &Vec<Signature>,
+        counterparty_htlc_sigs: &[Signature],
         recomposed_tx: CommitmentTransaction,
     ) -> Result<(), Status> {
         let redeemscript = make_funding_redeemscript(
@@ -807,7 +807,7 @@ impl Channel {
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
         counterparty_commit_sig: &Signature,
-        counterparty_htlc_sigs: &Vec<Signature>,
+        counterparty_htlc_sigs: &[Signature],
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
         let per_commitment_point = &self.get_per_commitment_point(commitment_number)?;
         let info2 = self.build_holder_commitment_info(
@@ -880,7 +880,7 @@ impl Channel {
         )?;
 
         let counterparty_signatures =
-            CommitmentSignatures(counterparty_commit_sig.clone(), counterparty_htlc_sigs.clone());
+            CommitmentSignatures(counterparty_commit_sig.clone(), counterparty_htlc_sigs.to_vec());
         let (next_holder_commitment_point, maybe_old_secret) = self
             .advance_holder_commitment_state(
                 validator.clone(),
@@ -1242,7 +1242,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         holder_script: &Option<Script>,
         counterparty_script: &Option<Script>,
-        holder_wallet_path_hint: &Vec<u32>,
+        holder_wallet_path_hint: &[u32],
     ) -> Result<Signature, Status> {
         self.validator().validate_mutual_close_tx(
             &*self.get_node(),
@@ -1276,12 +1276,12 @@ impl Channel {
     /// Sign a delayed output that goes to us while sweeping a transaction we broadcast
     pub fn sign_delayed_sweep(
         &self,
-        tx: &bitcoin::Transaction,
+        tx: &Transaction,
         input: usize,
         commitment_number: u64,
         redeemscript: &Script,
         amount_sat: u64,
-        wallet_path: &Vec<u32>,
+        wallet_path: &[u32],
     ) -> Result<Signature, Status> {
         if input >= tx.input.len() {
             return Err(invalid_argument(format!(
@@ -1325,12 +1325,12 @@ impl Channel {
     /// Sign an offered or received HTLC output from a commitment the counterparty broadcast.
     pub fn sign_counterparty_htlc_sweep(
         &self,
-        tx: &bitcoin::Transaction,
+        tx: &Transaction,
         input: usize,
         remote_per_commitment_point: &PublicKey,
         redeemscript: &Script,
         htlc_amount_sat: u64,
-        wallet_path: &Vec<u32>,
+        wallet_path: &[u32],
     ) -> Result<Signature, Status> {
         if input >= tx.input.len() {
             return Err(invalid_argument(format!(
@@ -1374,12 +1374,12 @@ impl Channel {
     /// Sign a justice transaction on an old state that the counterparty broadcast
     pub fn sign_justice_sweep(
         &self,
-        tx: &bitcoin::Transaction,
+        tx: &Transaction,
         input: usize,
         revocation_secret: &SecretKey,
         redeemscript: &Script,
         amount_sat: u64,
-        wallet_path: &Vec<u32>,
+        wallet_path: &[u32],
     ) -> Result<Signature, Status> {
         if input >= tx.input.len() {
             return Err(invalid_argument(format!(
@@ -1419,7 +1419,7 @@ impl Channel {
     }
 
     /// Sign a channel announcement with both the node key and the funding key
-    pub fn sign_channel_announcement(&self, announcement: &Vec<u8>) -> (Signature, Signature) {
+    pub fn sign_channel_announcement(&self, announcement: &[u8]) -> (Signature, Signature) {
         let ann_hash = Sha256dHash::hash(announcement);
         let encmsg = secp256k1::Message::from_slice(&ann_hash[..]).expect("encmsg failed");
 
@@ -1633,8 +1633,8 @@ impl Channel {
     /// Phase 1
     pub fn sign_counterparty_commitment_tx(
         &mut self,
-        tx: &bitcoin::Transaction,
-        output_witscripts: &Vec<Vec<u8>>,
+        tx: &Transaction,
+        output_witscripts: &[Vec<u8>],
         remote_per_commitment_point: &PublicKey,
         commitment_number: u64,
         feerate_per_kw: u32,
@@ -1774,8 +1774,8 @@ impl Channel {
 
     fn make_validated_recomposed_holder_commitment_tx(
         &self,
-        tx: &bitcoin::Transaction,
-        output_witscripts: &Vec<Vec<u8>>,
+        tx: &Transaction,
+        output_witscripts: &[Vec<u8>],
         commitment_number: u64,
         per_commitment_point: PublicKey,
         txkeys: &TxCreationKeys,
@@ -1891,14 +1891,14 @@ impl Channel {
     /// the signer's state.
     pub fn validate_holder_commitment_tx(
         &mut self,
-        tx: &bitcoin::Transaction,
-        output_witscripts: &Vec<Vec<u8>>,
+        tx: &Transaction,
+        output_witscripts: &[Vec<u8>],
         commitment_number: u64,
         feerate_per_kw: u32,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
         counterparty_commit_sig: &Signature,
-        counterparty_htlc_sigs: &Vec<Signature>,
+        counterparty_htlc_sigs: &[Signature],
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
         let validator = self.validator();
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
@@ -1942,7 +1942,7 @@ impl Channel {
         )?;
 
         let counterparty_signatures =
-            CommitmentSignatures(counterparty_commit_sig.clone(), counterparty_htlc_sigs.clone());
+            CommitmentSignatures(counterparty_commit_sig.clone(), counterparty_htlc_sigs.to_vec());
         let (next_holder_commitment_point, maybe_old_secret) = self
             .advance_holder_commitment_state(
                 validator.clone(),
@@ -1992,8 +1992,8 @@ impl Channel {
     /// Phase 1
     pub fn sign_mutual_close_tx(
         &mut self,
-        tx: &bitcoin::Transaction,
-        opaths: &Vec<Vec<u32>>,
+        tx: &Transaction,
+        opaths: &[Vec<u32>],
     ) -> Result<Signature, Status> {
         debug_vals!(tx.txid(), self.get_node().allowlist().unwrap());
         if opaths.len() != tx.output.len() {
@@ -2026,7 +2026,7 @@ impl Channel {
     /// Phase 1
     pub fn sign_holder_htlc_tx(
         &self,
-        tx: &bitcoin::Transaction,
+        tx: &Transaction,
         commitment_number: u64,
         opt_per_commitment_point: Option<PublicKey>,
         redeemscript: &Script,
@@ -2056,7 +2056,7 @@ impl Channel {
     /// Phase 1
     pub fn sign_counterparty_htlc_tx(
         &self,
-        tx: &bitcoin::Transaction,
+        tx: &Transaction,
         remote_per_commitment_point: &PublicKey,
         redeemscript: &Script,
         htlc_amount_sat: u64,
@@ -2080,7 +2080,7 @@ impl Channel {
     /// Sign a 2nd level HTLC transaction hanging off a commitment transaction
     pub fn sign_htlc_tx(
         &self,
-        tx: &bitcoin::Transaction,
+        tx: &Transaction,
         per_commitment_point: &PublicKey,
         redeemscript: &Script,
         htlc_amount_sat: u64,

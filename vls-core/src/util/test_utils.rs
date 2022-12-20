@@ -824,7 +824,7 @@ pub fn funding_tx_validate_sig(
     node_ctx: &TestNodeContext,
     tx_ctx: &TestFundingTxContext,
     tx: &mut bitcoin::Transaction,
-    witvec: &Vec<Vec<Vec<u8>>>,
+    witvec: &[Vec<Vec<u8>>],
 ) {
     for ndx in 0..tx.input.len() {
         tx.input[ndx].witness = Witness::from_vec(witvec[ndx].clone())
@@ -1072,7 +1072,7 @@ pub fn validate_holder_commitment(
     chan_ctx: &TestChannelContext,
     commit_tx_ctx: &TestCommitmentTxContext,
     commit_sig: &Signature,
-    htlc_sigs: &Vec<Signature>,
+    htlc_sigs: &[Signature],
 ) -> Result<(PublicKey, Option<SecretKey>), Status> {
     let htlcs = Channel::htlcs_info2_to_oic(
         commit_tx_ctx.offered_htlcs.clone(),
@@ -1105,7 +1105,7 @@ pub fn validate_holder_commitment(
             &chan.setup.counterparty_points.funding_pubkey,
         )
         .expect("scripts");
-        let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+        let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
         chan.validate_holder_commitment_tx(
             &commit_tx_ctx.tx.as_ref().unwrap().trust().built_transaction().transaction,
@@ -1222,7 +1222,7 @@ pub fn build_tx_scripts(
     keys: &TxCreationKeys,
     to_broadcaster_value_sat: u64,
     to_countersignatory_value_sat: u64,
-    htlcs: &Vec<HTLCOutputInCommitment>,
+    htlcs: &[HTLCOutputInCommitment],
     channel_parameters: &DirectedChannelTransactionParameters,
     broadcaster_funding_key: &PublicKey,
     countersignatory_funding_key: &PublicKey,
@@ -1537,7 +1537,7 @@ where
             &chan.setup.counterparty_points.funding_pubkey,
         )
         .expect("scripts");
-        let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+        let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
         let tx = commit_tx_ctx.tx.as_ref().unwrap().trust().built_transaction().transaction.clone();
 

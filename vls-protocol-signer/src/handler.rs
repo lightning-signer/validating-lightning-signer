@@ -307,7 +307,7 @@ impl Handler for RootHandler {
                 let bip32 = self.node.get_account_extended_pubkey().encode();
                 let node_secret = self.node.get_node_secret()[..].try_into().unwrap();
                 let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
-                let allowlist = m
+                let allowlist: Vec<_> = m
                     .dev_allowlist
                     .into_iter()
                     .map(|ws| String::from_utf8(ws.0).expect("utf8"))
@@ -351,9 +351,9 @@ impl Handler for RootHandler {
                     PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
                         .expect("psbt");
                 let mut tx = psbt.clone().extract_tx();
-                let ipaths = m.utxos.iter().map(|u| vec![u.keyindex]).collect();
-                let values_sat = m.utxos.iter().map(|u| u.amount).collect();
-                let spendtypes = m
+                let ipaths: Vec<_> = m.utxos.iter().map(|u| vec![u.keyindex]).collect();
+                let values_sat: Vec<_> = m.utxos.iter().map(|u| u.amount).collect();
+                let spendtypes: Vec<_> = m
                     .utxos
                     .iter()
                     .map(|u|
@@ -928,7 +928,7 @@ impl Handler for ChannelHandler {
                 let commit_sig =
                     ecdsa::Signature::from_compact(&m.signature.signature.0).expect("signature");
                 assert_eq!(m.signature.sighash, EcdsaSighashType::All as u8);
-                let htlc_sigs = m
+                let htlc_sigs: Vec<_> = m
                     .htlc_signatures
                     .iter()
                     .map(|s| {
@@ -965,7 +965,7 @@ impl Handler for ChannelHandler {
                 let commit_sig =
                     ecdsa::Signature::from_compact(&m.signature.signature.0).expect("signature");
                 assert_eq!(m.signature.sighash, EcdsaSighashType::All as u8);
-                let htlc_sigs = m
+                let htlc_sigs: Vec<_> = m
                     .htlc_signatures
                     .iter()
                     .map(|s| {

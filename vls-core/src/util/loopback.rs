@@ -167,9 +167,7 @@ impl LoopbackChannelSigner {
         Ok((sig, htlc_sigs))
     }
 
-    fn convert_to_htlc_info2(
-        htlcs: &Vec<HTLCOutputInCommitment>,
-    ) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
+    fn convert_to_htlc_info2(htlcs: &[HTLCOutputInCommitment]) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
         let mut offered_htlcs = Vec::new();
         let mut received_htlcs = Vec::new();
         for htlc in htlcs {

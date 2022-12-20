@@ -64,7 +64,7 @@ mod tests {
                 &chan.setup.counterparty_points.funding_pubkey,
             )
             .expect("scripts");
-            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
                 keys,
@@ -268,7 +268,7 @@ mod tests {
                 &chan.setup.counterparty_points.funding_pubkey,
             )
             .expect("scripts");
-            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
                 keys,
@@ -336,7 +336,7 @@ mod tests {
                 &chan.setup.counterparty_points.funding_pubkey,
             )
             .expect("scripts");
-            let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
                 keys,

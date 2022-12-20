@@ -82,14 +82,14 @@ pub fn signature_to_bitcoin_vec(sig: Signature) -> Vec<u8> {
 
 /// Convert a Bitcoin signature bytes, with the specified EcdsaSighashType, to [Signature]
 pub fn bitcoin_vec_to_signature(
-    sigvec: &Vec<u8>,
+    sigvec: &[u8],
     sighash_type: EcdsaSighashType,
 ) -> Result<Signature, bitcoin::secp256k1::Error> {
     let len = sigvec.len();
     if len == 0 {
         return Err(bitcoin::secp256k1::Error::InvalidSignature);
     }
-    let mut sv = sigvec.clone();
+    let mut sv = sigvec.to_vec();
     let mode = sv.pop().ok_or_else(|| bitcoin::secp256k1::Error::InvalidSignature)?;
     if mode != sighash_type as u8 {
         return Err(bitcoin::secp256k1::Error::InvalidSignature);
