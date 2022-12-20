@@ -516,8 +516,21 @@ impl KeysInterface for MyKeysManager {
         ShutdownScript::new_p2wpkh(&WPubkeyHash::hash(&self.ldk_shutdown_pubkey.serialize()))
     }
 
-    fn get_channel_signer(&self, _inbound: bool, _channel_value_sat: u64) -> InMemorySigner {
-        unimplemented!();
+    fn generate_channel_keys_id(
+        &self,
+        _inbound: bool,
+        _channel_value_satoshis: u64,
+        _user_channel_id: u128,
+    ) -> [u8; 32] {
+        unimplemented!()
+    }
+
+    fn derive_channel_signer(
+        &self,
+        _channel_value_satoshis: u64,
+        _channel_keys_id: [u8; 32],
+    ) -> Self::Signer {
+        unimplemented!()
     }
 
     fn get_secure_random_bytes(&self) -> [u8; 32] {

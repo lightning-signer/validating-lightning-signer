@@ -386,7 +386,6 @@ impl Handler for RootHandler {
                                 let revocation_basepoint =
                                     chan.keys.counterparty_pubkeys().revocation_basepoint;
                                 derive_public_revocation_key(&secp_ctx, p, &revocation_basepoint)
-                                    .expect("TODO")
                             });
                             chan.get_unilateral_close_key(&per_commitment_point, &revocation_pubkey)
                         })?;

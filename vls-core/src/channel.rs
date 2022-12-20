@@ -114,7 +114,7 @@ pub enum CommitmentType {
 }
 
 /// The negotiated parameters for the [Channel]
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct ChannelSetup {
     /// Whether the channel is outbound
     pub is_outbound: bool,
@@ -472,7 +472,6 @@ impl Channel {
             &b_points.revocation_basepoint,
             &b_points.htlc_basepoint,
         )
-        .expect("failed to derive keys")
     }
 
     fn derive_counterparty_payment_pubkey(
@@ -1038,8 +1037,7 @@ impl Channel {
             &self.secp_ctx,
             &per_commitment_point,
             &revocation_basepoint,
-        )
-        .expect("derive failed");
+        );
         let ck =
             self.get_unilateral_close_key(&Some(per_commitment_point), &Some(revocation_pubkey))?;
 
@@ -1313,8 +1311,7 @@ impl Channel {
             &self.secp_ctx,
             &per_commitment_point,
             &self.keys.delayed_payment_base_key,
-        )
-        .map_err(|_| Status::internal("failed to derive key"))?;
+        );
 
         let sig = self.secp_ctx.sign_ecdsa(&sighash, &privkey);
         trace_enforcement_state!(&self.enforcement_state);
@@ -1362,8 +1359,7 @@ impl Channel {
             &self.secp_ctx,
             &remote_per_commitment_point,
             &self.keys.htlc_base_key,
-        )
-        .map_err(|_| Status::internal("failed to derive key"))?;
+        );
 
         let sig = self.secp_ctx.sign_ecdsa(&htlc_sighash, &htlc_privkey);
         trace_enforcement_state!(&self.enforcement_state);
@@ -1409,8 +1405,7 @@ impl Channel {
             &self.secp_ctx,
             revocation_secret,
             &self.keys.revocation_base_key,
-        )
-        .map_err(|_| Status::internal("failed to derive key"))?;
+        );
 
         let sig = self.secp_ctx.sign_ecdsa(&sighash, &privkey);
         trace_enforcement_state!(&self.enforcement_state);
@@ -1557,8 +1552,7 @@ impl Channel {
             secp_ctx,
             &remote_per_commitment_point,
             &holder_points.revocation_basepoint,
-        )
-        .map_err(|err| internal_error(format!("could not derive revocation key: {}", err)))?;
+        );
         let to_holder_pubkey = counterparty_payment_pubkey.clone();
         Ok(CommitmentInfo2::new(
             true,
@@ -1613,8 +1607,7 @@ impl Channel {
             secp_ctx,
             &per_commitment_point,
             &counterparty_points.revocation_basepoint,
-        )
-        .map_err(|err| internal_error(format!("could not derive revocation_pubkey: {}", err)))?;
+        );
         let to_counterparty_pubkey = counterparty_pubkey.clone();
         Ok(CommitmentInfo2::new(
             false,
@@ -2128,8 +2121,7 @@ impl Channel {
             })?;
 
         let htlc_privkey =
-            derive_private_key(&self.secp_ctx, &per_commitment_point, &self.keys.htlc_base_key)
-                .map_err(|_| Status::internal("failed to derive key"))?;
+            derive_private_key(&self.secp_ctx, &per_commitment_point, &self.keys.htlc_base_key);
 
         let htlc_sighash = Message::from_slice(&recomposed_tx_sighash[..])
             .map_err(|_| Status::internal("failed to sighash recomposed"))?;
@@ -2155,9 +2147,7 @@ impl Channel {
                 } else {
                     &self.keys.payment_key
                 };
-                let key = derive_private_key(&self.secp_ctx, &commitment_point, base_key).map_err(
-                    |err| Status::internal(format!("derive_private_key failed: {}", err)),
-                )?;
+                let key = derive_private_key(&self.secp_ctx, &commitment_point, base_key);
                 let pubkey = PublicKey::from_secret_key(&self.secp_ctx, &key);
 
                 let witness_stack_prefix = if let Some(r) = revocation_pubkey {

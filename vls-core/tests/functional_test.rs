@@ -313,7 +313,8 @@ fn _alt_config() -> UserConfig {
         channel_config: Default::default(),
         accept_forwards_to_priv_channels: true,
         accept_inbound_channels: true,
-        manually_accept_inbound_channels: false
+        manually_accept_inbound_channels: false,
+        accept_intercept_htlcs: false,
     };
     cfg1.channel_handshake_limits
         .force_announced_channel_preference = false;

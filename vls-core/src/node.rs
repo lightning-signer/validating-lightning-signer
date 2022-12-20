@@ -942,7 +942,7 @@ impl Node {
             Some(setup) => {
                 let channel_transaction_parameters =
                     Node::channel_setup_to_channel_transaction_parameters(&setup, keys.pubkeys());
-                keys.ready_channel(&channel_transaction_parameters);
+                keys.provide_channel_parameters(&channel_transaction_parameters);
                 let funding_outpoint = setup.funding_outpoint;
                 // FIXME correct persistence
                 let monitor = ChainMonitor::new(funding_outpoint, 0);
@@ -1075,16 +1075,23 @@ impl Node {
                 invalid_argument(format!("channel does not exist: {}", channel_id0))
             })?;
             let slot = arcobj.lock().unwrap();
-            let stub = match &*slot {
-                ChannelSlot::Stub(stub) => Ok(stub),
-                ChannelSlot::Ready(_) =>
-                    Err(invalid_argument(format!("channel already ready: {}", channel_id0))),
-            }?;
+            let stub: &ChannelStub = match &*slot {
+                ChannelSlot::Stub(stub) => stub,
+                ChannelSlot::Ready(c) => {
+                    if c.setup != setup {
+                        return Err(invalid_argument(format!(
+                            "channel already ready with different setup: {}",
+                            channel_id0
+                        )));
+                    }
+                    return Ok(c.clone());
+                }
+            };
             let mut keys = stub.channel_keys_with_channel_value(setup.channel_value_sat);
             let holder_pubkeys = keys.pubkeys();
             let channel_transaction_parameters =
                 Node::channel_setup_to_channel_transaction_parameters(&setup, holder_pubkeys);
-            keys.ready_channel(&channel_transaction_parameters);
+            keys.provide_channel_parameters(&channel_transaction_parameters);
             let funding_outpoint = setup.funding_outpoint;
             let monitor = ChainMonitor::new(funding_outpoint, tracker.height());
             monitor.add_funding_outpoint(&funding_outpoint);
@@ -2427,8 +2434,7 @@ mod tests {
             .unwrap();
 
         let seckey =
-            derive_private_key(&secp_ctx, &commitment_point, &keys.delayed_payment_base_key)
-                .unwrap();
+            derive_private_key(&secp_ctx, &commitment_point, &keys.delayed_payment_base_key);
         let pubkey = PublicKey::from_secret_key(&secp_ctx, &seckey);
 
         let redeem_script = chan_utils::get_revokeable_redeemscript(&revocation_point, 7, &pubkey);
