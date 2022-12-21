@@ -100,15 +100,13 @@ mod tests {
                     &secp_ctx,
                     &per_commitment_point,
                     &revocation_base_point,
-                )
-                .expect("revocation_pubkey");
+                );
 
                 let mut revocation_secret = chan_utils::derive_private_revocation_key(
                     &secp_ctx,
                     &per_commitment_secret,
                     &revocation_base_secret,
-                )
-                .expect("revocation_secret");
+                );
 
                 let (script_pubkey, wallet_path) = make_dest(&node_ctx);
 

@@ -138,6 +138,8 @@ fn do_connect_block<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, block: &Block, s
                 node.chain_monitor.chain_monitor.block_connected(&block, height);
                 node.node.block_connected(&block, height);
             }
+            ConnectStyle::TransactionsDuplicativelyFirstSkippingBlocks => { unimplemented!() }
+            ConnectStyle::HighlyRedundantTransactionsFirstSkippingBlocks => { unimplemented!() }
         }
     }
 
@@ -998,7 +1000,7 @@ pub fn do_pass_along_path<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_p
             if payment_received_expected {
                 assert_eq!(events_2.len(), 1);
                 match events_2[0] {
-                    Event::PaymentReceived { ref payment_hash, ref purpose, amount_msat } => {
+                    Event::PaymentClaimable { ref payment_hash, ref purpose, amount_msat, .. } => {
                         assert_eq!(our_payment_hash, *payment_hash);
                         match &purpose {
                             PaymentPurpose::InvoicePayment { payment_preimage, payment_secret, .. } => {

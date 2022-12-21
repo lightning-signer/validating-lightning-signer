@@ -74,7 +74,6 @@ pub struct LoopbackChannelSigner {
     pub channel_id: ChannelId,
     pub signer: Arc<MultiSigner>,
     pub pubkeys: ChannelPublicKeys,
-    pub is_outbound: bool,
     pub channel_value_sat: u64,
 }
 
@@ -83,7 +82,6 @@ impl LoopbackChannelSigner {
         node_id: &PublicKey,
         channel_id: &ChannelId,
         signer: Arc<MultiSigner>,
-        is_outbound: bool,
         channel_value_sat: u64,
     ) -> LoopbackChannelSigner {
         info!("new channel {:?} {:?}", node_id, channel_id);
@@ -99,7 +97,6 @@ impl LoopbackChannelSigner {
             channel_id: channel_id.clone(),
             signer: signer.clone(),
             pubkeys,
-            is_outbound,
             channel_value_sat,
         }
     }
@@ -125,8 +122,7 @@ impl LoopbackChannelSigner {
             &counterparty_pubkeys.htlc_basepoint,
             &pubkeys.revocation_basepoint,
             &pubkeys.htlc_basepoint,
-        )
-        .expect("failed to derive keys");
+        );
         Ok(keys)
     }
 
@@ -199,7 +195,6 @@ impl LoopbackChannelSigner {
 impl Writeable for LoopbackChannelSigner {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), IOError> {
         self.channel_id.inner().write(writer)?;
-        self.is_outbound.write(writer)?;
         self.channel_value_sat.write(writer)?;
         Ok(())
     }
@@ -509,14 +504,14 @@ impl BaseSign for LoopbackChannelSigner {
         Ok((nsig, bsig))
     }
 
-    fn ready_channel(&mut self, parameters: &ChannelTransactionParameters) {
+    fn provide_channel_parameters(&mut self, parameters: &ChannelTransactionParameters) {
         info!("set_remote_channel_pubkeys {:?} {:?}", self.node_id, self.channel_id);
 
         // TODO cover local vs remote to_self_delay with a test
         let funding_outpoint = parameters.funding_outpoint.unwrap().into_bitcoin_outpoint();
         let counterparty_parameters = parameters.counterparty_parameters.as_ref().unwrap();
         let setup = ChannelSetup {
-            is_outbound: self.is_outbound,
+            is_outbound: parameters.is_outbound_from_holder,
             channel_value_sat: self.channel_value_sat,
             push_value_msat: 0, // TODO
             funding_outpoint,
@@ -573,15 +568,28 @@ impl KeysInterface for LoopbackSignerKeysInterface {
         self.get_node().get_ldk_shutdown_scriptpubkey()
     }
 
-    fn get_channel_signer(&self, is_inbound: bool, channel_value_sat: u64) -> Self::Signer {
+    fn generate_channel_keys_id(
+        &self,
+        _inbound: bool,
+        _channel_value_satoshis: u64,
+        _user_channel_id: u128,
+    ) -> [u8; 32] {
         let node = self.signer.get_node(&self.node_id).unwrap();
         let (channel_id, _) = node.new_channel(None, &node).unwrap();
+        channel_id.as_slice().clone().try_into().expect("channel_id is 32 bytes")
+    }
+
+    fn derive_channel_signer(
+        &self,
+        channel_value_satoshis: u64,
+        channel_keys_id: [u8; 32],
+    ) -> Self::Signer {
+        let channel_id = ChannelId::new(&channel_keys_id);
         LoopbackChannelSigner::new(
             &self.node_id,
             &channel_id,
             Arc::clone(&self.signer),
-            !is_inbound,
-            channel_value_sat,
+            channel_value_satoshis,
         )
     }
 
@@ -591,13 +599,11 @@ impl KeysInterface for LoopbackSignerKeysInterface {
 
     fn read_chan_signer(&self, mut reader: &[u8]) -> Result<Self::Signer, DecodeError> {
         let channel_id = ChannelId::new(&Vec::read(&mut reader)?);
-        let is_outbound = Readable::read(&mut reader)?;
         let channel_value_sat = Readable::read(&mut reader)?;
         Ok(LoopbackChannelSigner::new(
             &self.node_id,
             &channel_id,
             Arc::clone(&self.signer),
-            is_outbound,
             channel_value_sat,
         ))
     }
@@ -630,8 +636,7 @@ fn get_delayed_payment_keys(
         secp_ctx,
         &per_commitment_point,
         &b_pubkeys.revocation_basepoint,
-    )
-    .map_err(|_| ())?;
+    );
     let delayed_payment_key =
         derive_public_key(secp_ctx, &per_commitment_point, &a_pubkeys.delayed_payment_basepoint)
             .map_err(|_| ())?;

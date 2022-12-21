@@ -191,12 +191,17 @@ mod tests {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
 
-        // Trying to ready it again should fail.
-        let result = node.ready_channel(channel_id, None, make_test_channel_setup(), &vec![]);
+        // Trying to ready it again with different values should fail.
+        let mut setup1 = make_test_channel_setup();
+        setup1.channel_value_sat += 1;
+        let result = node.ready_channel(channel_id, None, setup1, &vec![]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
-        assert_eq!(err.message(), format!("channel already ready: {}", TEST_CHANNEL_ID[0]));
+        assert_eq!(
+            err.message(),
+            format!("channel already ready with different setup: {}", TEST_CHANNEL_ID[0])
+        );
     }
 
     #[test]

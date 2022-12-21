@@ -388,7 +388,7 @@ impl BaseSign for SignerClient {
         ))
     }
 
-    fn ready_channel(&mut self, p: &ChannelTransactionParameters) {
+    fn provide_channel_parameters(&mut self, p: &ChannelTransactionParameters) {
         let funding = p.funding_outpoint.expect("funding should exist at this point");
         let cp = p
             .counterparty_parameters
@@ -577,11 +577,27 @@ impl KeysInterface for KeysManagerClient {
         ShutdownScript::try_from(self.get_destination_script()).expect("script")
     }
 
-    fn get_channel_signer(&self, _inbound: bool, channel_value_satoshis: u64) -> Self::Signer {
+    fn generate_channel_keys_id(
+        &self,
+        _inbound: bool,
+        _channel_value_satoshis: u64,
+        _user_channel_id: u128,
+    ) -> [u8; 32] {
         let dbid = self.next_dbid.fetch_add(1, Ordering::AcqRel);
+        let mut id = [0; 32];
+        id[0..8].copy_from_slice(&dbid.to_be_bytes());
+        id
+    }
+
+    fn derive_channel_signer(
+        &self,
+        channel_value_satoshis: u64,
+        channel_keys_id: [u8; 32],
+    ) -> Self::Signer {
         // We don't use the peer_id, because it's not easy to get at this point within the LDK framework.
         // The dbid is unique, so that's enough for our purposes.
         let peer_id = [0u8; 33];
+        let dbid = u64::from_be_bytes(channel_keys_id[0..8].try_into().unwrap());
 
         let message = NewChannel { node_id: PubKey(peer_id.clone()), dbid };
         let _: NewChannelReply = self.call(message).expect("NewChannel");
