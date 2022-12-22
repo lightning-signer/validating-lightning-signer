@@ -2362,6 +2362,7 @@ dependencies = [
  "anyhow",
  "backtrace",
  "bitcoin",
+ "bolt-derive",
  "core2",
  "env_logger",
  "hashbrown 0.11.2",
@@ -2371,6 +2372,9 @@ dependencies = [
  "log",
  "paste",
  "scopeguard",
+ "serde",
+ "serde_bolt",
+ "serde_derive",
  "test-log",
  "tonic",
 ]

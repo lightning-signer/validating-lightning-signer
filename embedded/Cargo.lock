@@ -114,6 +114,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46afbd2983a5d5a7bd740ccb198caf5b82f45c40c09c0eed36052d91cb92e719"
 
 [[package]]
+name = "bolt-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -582,6 +591,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_bolt"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97b24be69c7b012b5f9f89c40631f2c16554e019fea2e37cf83b55ef05782789"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_derive",
+]
+
+[[package]]
 name = "serde_derive"
 version = "1.0.136"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -693,6 +713,7 @@ version = "0.1.0-5"
 dependencies = [
  "anyhow",
  "bitcoin",
+ "bolt-derive",
  "core2",
  "hashbrown 0.11.2",
  "itertools",
@@ -700,6 +721,9 @@ dependencies = [
  "lightning-invoice",
  "log",
  "scopeguard",
+ "serde",
+ "serde_bolt",
+ "serde_derive",
 ]
 
 [[package]]

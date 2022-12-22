@@ -931,6 +931,7 @@ version = "0.1.0-5"
 dependencies = [
  "anyhow",
  "bitcoin",
+ "bolt-derive",
  "core2",
  "hashbrown 0.11.2",
  "itertools",
@@ -938,6 +939,9 @@ dependencies = [
  "lightning-invoice",
  "log",
  "scopeguard",
+ "serde",
+ "serde_bolt",
+ "serde_derive",
 ]
 
 [[package]]
