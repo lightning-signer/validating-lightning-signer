@@ -31,6 +31,9 @@ use crate::util::crypto_utils::payload_for_p2wpkh;
 use crate::util::debug_utils::DebugPayload;
 use crate::util::AddedItemsIter;
 use bitcoin::hashes::hex::ToHex;
+use serde::{Deserialize as _, Deserializer};
+use serde_derive::{Deserialize, Serialize};
+use serde_with::{serde_as, DeserializeAs, SerializeAs};
 
 const MAX_DELAY: i64 = 1000;
 /// Value for anchor outputs
@@ -221,12 +224,40 @@ impl fmt::Debug for HTLCInfo {
     }
 }
 
+/// A helper for serializing PaymentHash
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "PaymentHash")]
+pub struct PaymentHashDef(pub [u8; 32]);
+
+#[derive(Deserialize)]
+struct PaymentHashHelper(#[serde(with = "PaymentHashDef")] PaymentHash);
+
+impl SerializeAs<PaymentHash> for PaymentHashDef {
+    fn serialize_as<S>(value: &PaymentHash, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        PaymentHashDef::serialize(value, serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, PaymentHash> for PaymentHashDef {
+    fn deserialize_as<D>(deserializer: D) -> Result<PaymentHash, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        PaymentHashHelper::deserialize(deserializer).map(|h| h.0)
+    }
+}
+
 /// Phase 2 HTLC info
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HTLCInfo2 {
     /// The value in satoshi
     pub value_sat: u64,
     /// The payment hash
+    #[serde(with = "PaymentHashDef")]
     pub payment_hash: PaymentHash,
     /// This is zero for offered HTLCs in phase 1
     pub cltv_expiry: u32,
@@ -266,7 +297,7 @@ pub trait PreimageMap {
     fn has_preimage(&self, hash: &PaymentHash) -> bool;
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct CommitmentInfo2 {
     pub is_counterparty_broadcaster: bool,

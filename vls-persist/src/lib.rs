@@ -4,7 +4,6 @@ extern crate alloc;
 extern crate core;
 
 pub mod model;
-pub mod ser_util;
 #[cfg(all(feature = "std", feature = "memo"))]
 pub mod thread_memo_persister;
 pub mod util;

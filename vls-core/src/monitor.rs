@@ -1,6 +1,7 @@
 use alloc::collections::BTreeSet as Set;
 
 use bitcoin::{OutPoint, Transaction, Txid};
+use serde_derive::{Deserialize, Serialize};
 
 use crate::bitcoin::hashes::_export::_core::cmp::Ordering;
 use crate::chain::tracker::ChainListener;
@@ -9,7 +10,7 @@ use crate::prelude::*;
 use crate::Arc;
 
 /// State
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct State {
     /// Chain height
     pub height: u32,

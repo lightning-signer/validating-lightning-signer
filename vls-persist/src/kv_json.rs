@@ -297,7 +297,7 @@ mod tests {
     use lightning_signer::util::clock::StandardClock;
     use lightning_signer::util::test_utils::*;
 
-    use crate::ser_util::VecWriter;
+    use lightning_signer::util::ser_util::VecWriter;
 
     use super::*;
 

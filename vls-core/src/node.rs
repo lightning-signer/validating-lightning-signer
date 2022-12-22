@@ -31,6 +31,8 @@ use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning::util::invoice::construct_invoice_preimage;
 use lightning::util::logger::Logger;
 use lightning_invoice::{Invoice, RawDataPart, RawHrp, RawInvoice, SignedRawInvoice};
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 #[allow(unused_imports)]
 use log::{debug, info, trace, warn};
@@ -54,6 +56,7 @@ use crate::sync::{Arc, Weak};
 use crate::tx::tx::PreimageMap;
 use crate::util::clock::Clock;
 use crate::util::crypto_utils::signature_to_bitcoin_vec;
+use crate::util::ser_util::DurationHandler;
 use crate::util::status::{failed_precondition, internal_error, invalid_argument, Status};
 use crate::util::velocity::VelocityControl;
 use crate::wallet::Wallet;
@@ -69,7 +72,8 @@ pub struct NodeConfig {
 }
 
 /// Payment details and payment state
-#[derive(Clone)]
+#[serde_as]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PaymentState {
     /// The hash of the invoice, as a unique ID
     pub invoice_hash: [u8; 32],
@@ -78,8 +82,10 @@ pub struct PaymentState {
     /// Payee's public key, if known
     pub payee: PublicKey,
     /// Timestamp of the payment, as duration since the UNIX epoch
+    #[serde_as(as = "DurationHandler")]
     pub duration_since_epoch: Duration,
     /// Expiry, as duration since the timestamp
+    #[serde_as(as = "DurationHandler")]
     pub expiry_duration: Duration,
     /// Whether the invoice was fulfilled
     /// note: for issued invoices only
@@ -89,7 +95,7 @@ pub struct PaymentState {
 }
 
 /// Outgoing payment type
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PaymentType {
     /// We are paying an invoice
     Invoice,

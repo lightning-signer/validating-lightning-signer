@@ -28,6 +28,9 @@ pub mod test_utils;
 pub mod functional_test_utils;
 /// Key utilities
 pub mod key_utils;
+/// serde for foreign types
+#[allow(missing_docs)]
+pub mod ser_util;
 /// Status error results
 pub mod status;
 /// Transaction utilities

@@ -2366,6 +2366,7 @@ dependencies = [
  "core2",
  "env_logger",
  "hashbrown 0.11.2",
+ "hex",
  "itertools",
  "lightning",
  "lightning-invoice",
@@ -2375,6 +2376,7 @@ dependencies = [
  "serde",
  "serde_bolt",
  "serde_derive",
+ "serde_with",
  "test-log",
  "tonic",
 ]

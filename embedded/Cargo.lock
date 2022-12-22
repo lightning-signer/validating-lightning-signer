@@ -716,6 +716,7 @@ dependencies = [
  "bolt-derive",
  "core2",
  "hashbrown 0.11.2",
+ "hex",
  "itertools",
  "lightning",
  "lightning-invoice",
@@ -724,6 +725,7 @@ dependencies = [
  "serde",
  "serde_bolt",
  "serde_derive",
+ "serde_with",
 ]
 
 [[package]]

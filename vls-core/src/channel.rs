@@ -20,6 +20,8 @@ use lightning::ln::chan_utils::{
 use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage};
 #[allow(unused_imports)]
 use log::{debug, trace, warn};
+use serde_derive::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 use crate::monitor::ChainMonitor;
 use crate::node::Node;
@@ -32,6 +34,7 @@ use crate::tx::tx::{
 };
 use crate::util::crypto_utils::derive_public_key;
 use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugVecVecU8};
+use crate::util::ser_util::{ChannelPublicKeysDef, OutPointDef, ScriptDef};
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::transaction_utils::add_holder_sig;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
@@ -101,7 +104,7 @@ impl TypedSignature {
 }
 
 /// The commitment type, based on the negotiated option
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum CommitmentType {
     /// No longer used - dynamic to-remote key
     Legacy,
@@ -114,7 +117,8 @@ pub enum CommitmentType {
 }
 
 /// The negotiated parameters for the [Channel]
-#[derive(Clone, PartialEq)]
+#[serde_as]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChannelSetup {
     /// Whether the channel is outbound
     pub is_outbound: bool,
@@ -124,17 +128,21 @@ pub struct ChannelSetup {
     /// How much was pushed to the counterparty
     pub push_value_msat: u64,
     /// The funding outpoint
+    #[serde_as(as = "OutPointDef")]
     pub funding_outpoint: OutPoint,
     /// locally imposed requirement on the remote commitment transaction to_self_delay
     pub holder_selected_contest_delay: u16,
     /// The holder's optional upfront shutdown script
+    #[serde_as(as = "Option<ScriptDef>")]
     pub holder_shutdown_script: Option<Script>,
     /// The counterparty's basepoints and pubkeys
+    #[serde(with = "ChannelPublicKeysDef")]
     pub counterparty_points: ChannelPublicKeys,
     // DUP keys.inner.remote_channel_pubkeys
     /// remotely imposed requirement on the local commitment transaction to_self_delay
     pub counterparty_selected_contest_delay: u16,
     /// The counterparty's optional upfront shutdown script
+    #[serde_as(as = "Option<ScriptDef>")]
     pub counterparty_shutdown_script: Option<Script>,
     /// The negotiated commitment type
     pub commitment_type: CommitmentType,

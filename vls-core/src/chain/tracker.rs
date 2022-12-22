@@ -8,9 +8,12 @@ use bitcoin::{BlockHeader, Network, OutPoint, Transaction, Txid};
 
 #[allow(unused_imports)]
 use log::{debug, error};
+use serde_derive::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 use crate::prelude::*;
 use crate::short_function;
+use crate::util::ser_util::{OutPointDef, TxidDef};
 
 /// Error
 #[derive(Debug, PartialEq)]
@@ -47,13 +50,17 @@ macro_rules! error_invalid_spv_proof {
 }
 
 /// A listener entry
-#[derive(Debug, Clone)]
+#[serde_as]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListenSlot {
     /// watched transactions to be confirmed
+    #[serde_as(as = "OrderedSet<TxidDef>")]
     pub txid_watches: OrderedSet<Txid>,
     /// watched outpoints to be spent
+    #[serde_as(as = "OrderedSet<OutPointDef>")]
     pub watches: OrderedSet<OutPoint>,
     /// outpoints we have already seen
+    #[serde_as(as = "OrderedSet<OutPointDef>")]
     pub seen: OrderedSet<OutPoint>,
 }
 
