@@ -26,7 +26,7 @@ use log::{debug, error};
 
 use vls_protocol::features::{OPT_ANCHOR_OUTPUTS, OPT_MAX, OPT_STATIC_REMOTEKEY};
 use vls_protocol::model::{
-    Basepoints, BitcoinSignature, CloseInfo, Htlc, PubKey, Secret, TxId, Utxo,
+    Basepoints, BitcoinSignature, CloseInfo, Htlc, Octets, PubKey, Secret, TxId, Utxo,
 };
 use vls_protocol::msgs::{
     DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint,
@@ -355,8 +355,8 @@ impl BaseSign for SignerClient {
         let message = SignMutualCloseTx2 {
             to_local_value_sat: tx.to_holder_value_sat(),
             to_remote_value_sat: tx.to_counterparty_value_sat(),
-            local_script: tx.to_holder_script().clone().into_bytes(),
-            remote_script: tx.to_counterparty_script().clone().into_bytes(),
+            local_script: tx.to_holder_script().clone().into_bytes().into(),
+            remote_script: tx.to_counterparty_script().clone().into_bytes().into(),
             local_wallet_path_hint: dest_wallet_path(),
         };
         let result: SignTxReply = self.call(message).map_err(|_| ())?;
@@ -380,7 +380,7 @@ impl BaseSign for SignerClient {
         // Prepend a fake prefix to match CLN behavior
         let mut announcement = [0u8; 258].to_vec();
         announcement.extend(msg.encode());
-        let message = SignChannelAnnouncement { announcement };
+        let message = SignChannelAnnouncement { announcement: announcement.into() };
         let result: SignChannelAnnouncementReply = self.call(message).map_err(|_| ())?;
         Ok((
             Signature::from_compact(&result.node_signature.0).unwrap(),
@@ -407,7 +407,7 @@ impl BaseSign for SignerClient {
             funding_txid: TxId(funding.txid.into_inner().as_slice().try_into().unwrap()),
             funding_txout: funding.index,
             to_self_delay: p.holder_selected_contest_delay,
-            local_shutdown_script: vec![], // TODO
+            local_shutdown_script: Octets::EMPTY, // TODO
             local_shutdown_wallet_index: None,
             remote_basepoints: Basepoints {
                 revocation: to_pubkey(cp.pubkeys.revocation_basepoint),
@@ -417,8 +417,8 @@ impl BaseSign for SignerClient {
             },
             remote_funding_pubkey: to_pubkey(cp.pubkeys.funding_pubkey),
             remote_to_self_delay: cp.selected_contest_delay,
-            remote_shutdown_script: vec![], // TODO
-            channel_type: channel_features.to_bytes(),
+            remote_shutdown_script: Octets::EMPTY, // TODO
+            channel_type: channel_features.to_bytes().into(),
         };
 
         let _: ReadyChannelReply = self.call(message).expect("ready channel");
@@ -529,7 +529,7 @@ impl KeysManagerClient {
             amount,
             keyindex,
             is_p2sh: false,
-            script: vec![],
+            script: Octets::EMPTY,
             close_info,
             is_in_coinbase,
         }
@@ -648,8 +648,8 @@ impl KeysInterface for KeysManagerClient {
             }
         }
         let message = SignInvoice {
-            u5bytes: invoice_data.iter().map(|u| u.to_u8()).collect(),
-            hrp: hrp_bytes.to_vec(),
+            u5bytes: Octets(invoice_data.iter().map(|u| u.to_u8()).collect()),
+            hrp: hrp_bytes.to_vec().into(),
         };
         let result: SignInvoiceReply = self.call(message).expect("sign_invoice");
         let rid = RecoveryId::from_i32(result.signature.0[64] as i32).expect("recovery ID");

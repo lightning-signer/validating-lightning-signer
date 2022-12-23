@@ -55,7 +55,7 @@ Device will echo typed characters ...
 
 For example, using the STM32F413:
 ```
-cargo run --features stm32f413 --release --bin demo_signer
+cargo run --features stm32f413,debug --release --bin demo_signer
 ```
 Wait for the demo_signer to finish loading and start executing, it will display
 "init" when it is ready.

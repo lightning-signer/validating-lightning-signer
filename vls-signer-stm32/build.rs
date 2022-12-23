@@ -1,4 +1,5 @@
 use std::env;
+use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -27,8 +28,15 @@ fn update_version() {
     if version_source != old_version_source {
         fs::write(&version_path, version_source).unwrap();
     }
+    println!("cargo:rerun-if-changed=/non_existent"); // always run
 }
 
 fn main() {
-    update_version();
+    // To disable version file update: export VLS_DISABLE_UPDATE_VERSION=1
+    if env::var_os("VLS_DISABLE_UPDATE_VERSION").unwrap_or(OsString::from("")) == "1" {
+        // Resume updates when the env variable is unset
+        println!("cargo:rerun-if-env-changed=VLS_DISABLE_UPDATE_VERSION");
+    } else {
+        update_version();
+    }
 }

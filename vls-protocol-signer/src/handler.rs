@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec;
@@ -35,8 +36,8 @@ use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
-#[allow(unused_imports)]
-use log::info;
+use lightning_signer::{debug_vals, short_function, vals_str};
+use log::*;
 use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
 use lightning_signer::util::status::Status;
@@ -105,7 +106,13 @@ pub trait Handler {
     /// Handle a message
     fn handle(&self, msg: Message) -> Result<(Box<dyn SerBolt>, Mutations)> {
         let context = self.node().get_persister().enter(self.lss_state().clone());
-        let reply = self.do_handle(msg)?;
+        log_request(&msg);
+        let result = self.do_handle(msg);
+        if let Err(ref err) = result {
+            log_error(err);
+        }
+        let reply = result?;
+        log_reply(&reply);
         let muts = context.exit();
         Ok((reply, muts))
     }
@@ -120,6 +127,27 @@ pub trait Handler {
     /// Get the LSS state.
     /// This will be empty if we are not persisting to the cloud
     fn lss_state(&self) -> Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>;
+}
+
+fn log_request(msg: &Message) {
+    #[cfg(not(feature = "log_pretty_print"))]
+    debug!("{:?}", msg);
+    #[cfg(feature = "log_pretty_print")]
+    debug!("{:#?}", msg);
+}
+
+fn log_error(err: &Error) {
+    #[cfg(not(feature = "log_pretty_print"))]
+    error!("{:?}", err);
+    #[cfg(feature = "log_pretty_print")]
+    error!("{:#?}", err);
+}
+
+fn log_reply(reply: &Box<dyn SerBolt>) {
+    #[cfg(not(feature = "log_pretty_print"))]
+    debug!("{:?}", reply);
+    #[cfg(feature = "log_pretty_print")]
+    debug!("{:#?}", reply);
 }
 
 /// Protocol handler
@@ -408,10 +436,7 @@ impl Handler for RootHandler {
                         psbt_in.final_script_sig = Some(script_sig);
                     }
                 }
-                info!("opaths {:?}", opaths);
-                info!("txid {}", tx.txid());
-                info!("tx {:?}", tx);
-                info!("psbt {:?}", psbt);
+                debug_vals!(opaths, tx.txid(), tx, psbt);
                 let witvec = self.node.sign_onchain_tx(
                     &tx,
                     &ipaths,
@@ -432,10 +457,11 @@ impl Handler for RootHandler {
                 Ok(Box::new(msgs::SignWithdrawalReply { psbt: LargeBytes(ser_psbt) }))
             }
             Message::SignInvoice(m) => {
-                let hrp = String::from_utf8(m.hrp).expect("hrp");
+                let hrp = String::from_utf8(m.hrp.to_vec()).expect("hrp");
                 let hrp_bytes = hrp.as_bytes();
                 let data: Vec<_> = m
                     .u5bytes
+                    .clone()
                     .into_iter()
                     .map(|b| u5::try_from_u8(b).expect("invoice not base32"))
                     .collect();
@@ -729,7 +755,7 @@ impl Handler for ChannelHandler {
                 assert_eq!(psbt.inputs.len(), 1);
                 assert_eq!(tx.output.len(), 1);
                 assert_eq!(tx.input.len(), 1);
-                let redeemscript = Script::from(m.wscript);
+                let redeemscript = Script::from(m.wscript.0);
                 let htlc_amount_sat = psbt.inputs[0]
                     .witness_utxo
                     .as_ref()
@@ -803,7 +829,7 @@ impl Handler for ChannelHandler {
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
                 let commitment_number = m.commitment_number;
-                let redeemscript = Script::from(m.wscript);
+                let redeemscript = Script::from(m.wscript.0);
                 let input = 0;
                 let htlc_amount_sat = psbt.inputs[input]
                     .witness_utxo
@@ -835,7 +861,7 @@ impl Handler for ChannelHandler {
                 let tx = deserialize(&mut tx_bytes).expect("tx");
                 let remote_per_commitment_point =
                     PublicKey::from_slice(&m.remote_per_commitment_point.0).expect("pubkey");
-                let redeemscript = Script::from(m.wscript);
+                let redeemscript = Script::from(m.wscript.0);
                 let input = 0;
                 let htlc_amount_sat = psbt.inputs[input]
                     .witness_utxo
@@ -866,7 +892,7 @@ impl Handler for ChannelHandler {
                 let mut tx_bytes = m.tx.0.clone();
                 let tx = deserialize(&mut tx_bytes).expect("tx");
                 let commitment_number = m.commitment_number;
-                let redeemscript = Script::from(m.wscript);
+                let redeemscript = Script::from(m.wscript.0);
                 let input = 0;
                 let htlc_amount_sat = psbt.inputs[input]
                     .witness_utxo
@@ -1018,7 +1044,7 @@ impl Handler for ChannelHandler {
                 let tx = deserialize(&mut tx_bytes).expect("tx");
                 let revocation_secret =
                     SecretKey::from_slice(&m.revocation_secret.0).expect("secret");
-                let redeemscript = Script::from(m.wscript);
+                let redeemscript = Script::from(m.wscript.0);
                 let input = 0;
                 let htlc_amount_sat = psbt.inputs[input]
                     .witness_utxo
