@@ -1,9 +1,13 @@
-use lightning_signer::bitcoin::secp256k1::PublicKey;
+use lightning_signer::bitcoin::secp256k1::{PublicKey, SecretKey};
+use lightning_signer::bitcoin::Transaction;
+use lightning_signer::prelude::*;
 use lightning_signer::Arc;
+use log::info;
 
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::lightning_invoice::{Invoice, SignedRawInvoice};
-use lightning_signer::node::Node;
+use lightning_signer::node::{Node, SpendType};
+use lightning_signer::policy::error::ValidationErrorKind;
 use lightning_signer::prelude::{Mutex, SendSync};
 use lightning_signer::util::clock::Clock;
 use lightning_signer::util::status::Status;
@@ -16,6 +20,17 @@ pub trait Approve: SendSync {
 
     /// Approve a keysend (ad-hoc payment)
     fn approve_keysend(&self, payment_hash: PaymentHash, amount_msat: u64) -> bool;
+
+    /// Approve an onchain payment to an unknown destination
+    /// * `tx` - the transaction to be sent
+    /// * `values_sat` - the values of the inputs in satoshis
+    /// * `unknown_indices` is the list of tx output indices that are unknown.
+    fn approve_onchain(
+        &self,
+        tx: &Transaction,
+        values_sat: &[u64],
+        unknown_indices: &[usize],
+    ) -> bool;
 
     /// Checks invoice for approval and adds to the node if needed and appropriate
     fn handle_proposed_invoice(
@@ -68,6 +83,39 @@ pub trait Approve: SendSync {
             Ok(false)
         }
     }
+
+    /// Checks onchain payment for unknown destinations and checks approval
+    /// for any such outputs.
+    /// Returns Ok(false) if any unknown destinations were not approved.
+    fn handle_proposed_onchain(
+        &self,
+        node: &Arc<Node>,
+        tx: &Transaction,
+        values_sat: &[u64],
+        spendtypes: &[SpendType],
+        uniclosekeys: &[Option<(SecretKey, Vec<Vec<u8>>)>],
+        opaths: &[Vec<u32>],
+    ) -> Result<bool, Status> {
+        let check_result =
+            node.check_onchain_tx(&tx, &values_sat, &spendtypes, &uniclosekeys, &opaths);
+        match check_result {
+            Ok(()) => {}
+            Err(ve) => match ve.kind {
+                ValidationErrorKind::UnknownDestinations(_, ref indices) => {
+                    if self.approve_onchain(&tx, &values_sat, indices) {
+                        info!("approved onchain tx with unknown outputs");
+                    } else {
+                        info!("rejected onchain tx with unknown outputs");
+                        return Ok(false);
+                    }
+                }
+                _ => {
+                    return Err(Status::failed_precondition(ve.to_string()))?;
+                }
+            },
+        }
+        Ok(true)
+    }
 }
 
 /// An approver that always approves
@@ -84,6 +132,15 @@ impl Approve for PositiveApprover {
     fn approve_keysend(&self, _payment_hash: PaymentHash, _amount_msat: u64) -> bool {
         true
     }
+
+    fn approve_onchain(
+        &self,
+        _tx: &Transaction,
+        _values_sat: &[u64],
+        _unknown_indices: &[usize],
+    ) -> bool {
+        true
+    }
 }
 
 /// An approver that always declines
@@ -98,6 +155,15 @@ impl Approve for NegativeApprover {
     }
 
     fn approve_keysend(&self, _payment_hash: PaymentHash, _amount_msat: u64) -> bool {
+        false
+    }
+
+    fn approve_onchain(
+        &self,
+        _tx: &Transaction,
+        _values_sat: &[u64],
+        _unknown_indices: &[usize],
+    ) -> bool {
         false
     }
 }
@@ -183,6 +249,15 @@ impl<A: Approve> Approve for VelocityApprover<A> {
             }
             success
         }
+    }
+
+    fn approve_onchain(
+        &self,
+        _tx: &Transaction,
+        _values_sat: &[u64],
+        _unknown_indices: &[usize],
+    ) -> bool {
+        false
     }
 }
 

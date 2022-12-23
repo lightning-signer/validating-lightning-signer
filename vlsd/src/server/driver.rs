@@ -32,6 +32,7 @@ use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::simple_validator::{
     make_simple_policy, SimplePolicy, SimpleValidatorFactory,
 };
+use lightning_signer::util::status::Status as CoreStatus;
 
 use vls_protocol_signer::approver::{Approve, PositiveApprover};
 
@@ -722,8 +723,10 @@ impl Signer for SignServer {
 
         let node = self.signer.get_node(&node_id)?;
 
+        node.check_onchain_tx(&tx, &values_sat, &spendtypes, &uniclosekeys, &opaths)
+            .map_err(|e| CoreStatus::from(e))?;
         let witvec =
-            node.sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &opaths)?;
+            node.unchecked_sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys)?;
 
         let wits = witvec.into_iter().map(|stack| Witness { stack }).collect();
 

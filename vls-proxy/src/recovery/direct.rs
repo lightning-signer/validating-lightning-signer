@@ -45,7 +45,8 @@ impl RecoveryKeys for DirectRecoveryKeys {
         uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
         opaths: &Vec<Vec<u32>>,
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
-        self.node.sign_onchain_tx(tx, ipaths, values_sat, spendtypes, uniclosekeys, opaths)
+        self.node.check_onchain_tx(tx, values_sat, spendtypes, &uniclosekeys, opaths)?;
+        self.node.unchecked_sign_onchain_tx(tx, ipaths, values_sat, spendtypes, uniclosekeys)
     }
 }
 

@@ -279,8 +279,11 @@ fn sign_funding(node: &Arc<Node>) {
     let spendtypes = vec![SpendType::P2wpkh, SpendType::P2wpkh];
     let uniclosekeys = vec![None, None];
 
+    node.check_onchain_tx(&tx, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
+        .expect("good sigs");
+
     let witvec = node
-        .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
+        .unchecked_sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys)
         .expect("good sigs");
     assert_eq!(witvec.len(), 2);
 }

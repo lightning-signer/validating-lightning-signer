@@ -11,6 +11,7 @@ use lightning::ln::PaymentHash;
 use log::*;
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
+use crate::policy::error::unknown_destinations_error;
 use crate::policy::filter::{FilterResult, PolicyFilter};
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
@@ -426,15 +427,17 @@ impl Validator for SimpleValidator {
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         tx: &Transaction,
-        holder_inputs_sat: &[u64],
+        values_sat: &[u64],
         opaths: &[Vec<u32>],
         weight_lower_bound: usize,
     ) -> Result<(), ValidationError> {
-        let mut debug_on_return = scoped_debug_return!(tx, holder_inputs_sat, opaths);
+        let mut debug_on_return = scoped_debug_return!(tx, values_sat, opaths);
 
         if tx.version != 2 {
             policy_err!(self, "policy-onchain-format-standard", "invalid version: {}", tx.version);
         }
+
+        let mut unknowns = Vec::new();
 
         let mut beneficial_sum = 0u64;
         for outndx in 0..tx.output.len() {
@@ -461,11 +464,19 @@ impl Validator for SimpleValidator {
                     })?;
                 if spendable {
                     debug!("output {} ({}) is to our wallet", outndx, output.value);
+                    beneficial_sum =
+                        add_beneficial_output!(beneficial_sum, output.value, "to wallet")?;
                 }
                 if !spendable {
+                    // Possible output to allowlisted xpub
                     spendable = wallet.allowlist_contains(&output.script_pubkey, opath);
                     if spendable {
                         debug!("output {} ({}) is to allowlisted xpub", outndx, output.value);
+                        beneficial_sum = add_beneficial_output!(
+                            beneficial_sum,
+                            output.value,
+                            "to allowlisted xpub"
+                        )?;
                     }
                 }
                 if !spendable {
@@ -476,10 +487,8 @@ impl Validator for SimpleValidator {
                         outndx
                     );
                 }
-                beneficial_sum =
-                    add_beneficial_output!(beneficial_sum, output.value, "wallet change")?;
             } else if wallet.allowlist_contains(&output.script_pubkey, &[]) {
-                // Change output to allowlisted address
+                // Possible output to allowlisted address
                 debug!("output {} ({}) is allowlisted", outndx, output.value);
                 beneficial_sum =
                     add_beneficial_output!(beneficial_sum, output.value, "allowlisted")?;
@@ -556,20 +565,18 @@ impl Validator for SimpleValidator {
                 };
             } else {
                 debug!("output {} ({}) is unknown", outndx, output.value);
-                policy_err!(
-                    self,
-                    "policy-onchain-no-unknown-outputs",
-                    "output[{}] is an unknown destination",
-                    outndx,
-                );
+                // policy-onchain-no-unknown-outputs
+                unknowns.push(outndx);
             }
         }
 
-        // NOTE - w/o dual funding everything is checked above, should not fail past here
+        if unknowns.len() > 0 {
+            return Err(unknown_destinations_error(unknowns));
+        }
 
         // policy-onchain-fee-range
         let mut sum_inputs: u64 = 0;
-        for val in holder_inputs_sat {
+        for val in values_sat {
             sum_inputs = sum_inputs
                 .checked_add(*val)
                 .ok_or_else(|| policy_error(format!("funding sum inputs overflow")))?;

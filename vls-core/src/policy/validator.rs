@@ -43,8 +43,8 @@ pub trait Validator {
     /// * `channels` the funded channel for each funding output, or
     ///   None for change outputs
     /// * `values_sat` - the amount in satoshi per input
-    /// * `opaths` - derivation path for change, one per output,
-    ///   empty for non-change or allowlisted outputs
+    /// * `opaths` - derivation path per output.  Empty for non-wallet/non-xpub-whitelist
+    ///   outputs.
     /// * `weight_lower_bound` - lower bound of tx size, for feerate checking
     fn validate_onchain_tx(
         &self,

@@ -810,7 +810,7 @@ pub fn funding_tx_sign(
     tx_ctx: &TestFundingTxContext,
     tx: &bitcoin::Transaction,
 ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
-    node_ctx.node.sign_onchain_tx(
+    node_ctx.node.check_and_sign_onchain_tx(
         &tx,
         &tx_ctx.ipaths,
         &tx_ctx.ivals,

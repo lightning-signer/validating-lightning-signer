@@ -12,6 +12,7 @@ use cortex_m::prelude::_embedded_hal_blocking_delay_DelayMs;
 
 use vls_protocol_signer::approver::Approve;
 use vls_protocol_signer::lightning_signer::{
+    self,
     bitcoin::hashes::{hex::ToHex, Hash},
     bitcoin::secp256k1::PublicKey,
     lightning::ln::PaymentHash,
@@ -19,6 +20,7 @@ use vls_protocol_signer::lightning_signer::{
     prelude::SendSync,
     Arc,
 };
+use lightning_signer::bitcoin::Transaction;
 
 use crate::device::DeviceContext;
 use crate::pretty_thousands;
@@ -87,6 +89,10 @@ impl Approve for ScreenApprover {
         devctx.disp.show_texts(&lines);
 
         wait_for_approval(devctx)
+    }
+
+    fn approve_onchain(&self, _tx: &Transaction, _values_sat: &[u64], _unknown_indices: &[usize]) -> bool {
+        false
     }
 }
 

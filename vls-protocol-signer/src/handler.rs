@@ -437,13 +437,25 @@ impl Handler for RootHandler {
                     }
                 }
                 debug_vals!(opaths, tx.txid(), tx, psbt);
-                let witvec = self.node.sign_onchain_tx(
+                let approved = self.approver.handle_proposed_onchain(
+                    &self.node,
+                    &tx,
+                    &values_sat,
+                    &spendtypes,
+                    &uniclosekeys,
+                    &opaths,
+                )?;
+
+                if !approved {
+                    return Err(Status::failed_precondition("unapproved destination"))?;
+                }
+
+                let witvec = self.node.unchecked_sign_onchain_tx(
                     &tx,
                     &ipaths,
                     &values_sat,
                     &spendtypes,
                     uniclosekeys,
-                    &opaths,
                 )?;
 
                 for (i, stack) in witvec.into_iter().enumerate() {
