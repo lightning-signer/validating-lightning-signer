@@ -49,7 +49,7 @@ use vls_protocol::model::{
 use vls_protocol::msgs::{
     DeriveSecretReply, PreapproveInvoiceReply, PreapproveKeysendReply, SerBolt, SignBolt12Reply,
 };
-use vls_protocol::serde_bolt::{LargeBytes, WireString};
+use vls_protocol::serde_bolt::{LargeOctets, WireString};
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 
 use crate::approver::{Approve, PositiveApprover};
@@ -466,7 +466,7 @@ impl Handler for RootHandler {
 
                 let mut ser_psbt = Vec::new();
                 psbt.consensus_encode(&mut ser_psbt).expect("serialize psbt");
-                Ok(Box::new(msgs::SignWithdrawalReply { psbt: LargeBytes(ser_psbt) }))
+                Ok(Box::new(msgs::SignWithdrawalReply { psbt: LargeOctets(ser_psbt) }))
             }
             Message::SignInvoice(m) => {
                 let hrp = String::from_utf8(m.hrp.to_vec()).expect("hrp");

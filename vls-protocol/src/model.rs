@@ -1,45 +1,11 @@
-use alloc::vec::Vec;
-use alloc::{format, vec};
+use alloc::format;
 use core::fmt::{self, Debug, Formatter};
 use core::marker::PhantomData;
-use core::ops::{Deref, DerefMut};
 
 use serde::ser::SerializeTuple;
 use serde::{de, ser, Serializer};
+use serde_bolt::Octets;
 use serde_derive::{Deserialize, Serialize};
-
-/// Vec<u8> with nicer debug formatting
-#[derive(Serialize, Deserialize, PartialEq)]
-pub struct Octets(pub Vec<u8>);
-
-impl Debug for Octets {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", hex::encode(&self.0))
-    }
-}
-
-impl Deref for Octets {
-    type Target = Vec<u8>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for Octets {
-    fn deref_mut(&mut self) -> &mut Vec<u8> {
-        &mut self.0
-    }
-}
-
-impl From<Vec<u8>> for Octets {
-    fn from(v: Vec<u8>) -> Self {
-        Self(v)
-    }
-}
-
-impl Octets {
-    pub const EMPTY: Self = Octets(vec![]);
-}
 
 macro_rules! unprefixed_array_impl {
     ($ty:ident, $len:tt) => {
