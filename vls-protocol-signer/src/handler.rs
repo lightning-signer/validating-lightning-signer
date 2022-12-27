@@ -49,7 +49,7 @@ use vls_protocol::model::{
 use vls_protocol::msgs::{
     DeriveSecretReply, PreapproveInvoiceReply, PreapproveKeysendReply, SerBolt, SignBolt12Reply,
 };
-use vls_protocol::serde_bolt::{LargeOctets, WireString};
+use vls_protocol::serde_bolt::{to_vec, LargeOctets, WireString};
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 
 use crate::approver::{Approve, PositiveApprover};
@@ -577,6 +577,11 @@ impl Handler for RootHandler {
                         panic!("{}: persist tracker failed: {:?}", self.node.log_prefix(), e)
                     });
                 Ok(Box::new(msgs::RemoveBlockReply {}))
+            }
+            Message::GetHeartbeat(_m) => {
+                let heartbeat = self.node.get_heartbeat();
+                let ser_hb = to_vec(&heartbeat).expect("heartbeat");
+                Ok(Box::new(msgs::GetHeartbeatReply { heartbeat: ser_hb.into() }))
             }
             Message::Unknown(u) => {
                 unimplemented!("loop {}: unknown message type {}", self.id, u.message_type)

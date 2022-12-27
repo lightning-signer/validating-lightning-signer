@@ -17,6 +17,7 @@ use vls_protocol::msgs::{self, Message, SerBolt};
 use vls_protocol::serde_bolt::LargeOctets;
 use vls_protocol_client::SignerPort;
 
+use lightning_signer::node::SignedHeartbeat;
 #[allow(unused_imports)]
 use log::debug;
 
@@ -144,6 +145,18 @@ impl ChainTrack for NodePortFront {
             return;
         } else {
             panic!("unexpected RemoveBlockReply");
+        }
+    }
+
+    async fn beat(&self) -> SignedHeartbeat {
+        let req = msgs::GetHeartbeat {};
+        let reply =
+            self.signer_port.handle_message(req.as_vec()).await.expect("GetHeartbeat failed");
+        if let Ok(Message::GetHeartbeatReply(m)) = msgs::from_vec(reply) {
+            let mut ser_hb = m.heartbeat.0;
+            vls_protocol::serde_bolt::from_vec(&mut ser_hb).expect("bad heartbeat")
+        } else {
+            panic!("unexpected GetHeartbeatReply");
         }
     }
 }

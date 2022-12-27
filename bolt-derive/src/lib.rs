@@ -54,7 +54,7 @@ pub fn derive_read_message(input: TokenStream) -> TokenStream {
         for v in variants {
             if v.ident == "Unknown" {
                 continue;
-            };
+            }
             let vident = v.ident.clone();
             let field = extract_single_type(&vident, &v.fields);
             match field {

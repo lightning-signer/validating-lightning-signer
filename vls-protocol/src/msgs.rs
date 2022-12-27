@@ -673,6 +673,18 @@ pub struct PersistReply {
     pub conflicts: Vec<(Octets, u64, LargeOctets)>,
 }
 
+/// Get a serialized signed heartbeat
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2008)]
+pub struct GetHeartbeat {}
+
+/// A serialized signed heartbeat
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2108)]
+pub struct GetHeartbeatReply {
+    pub heartbeat: Octets,
+}
+
 /// An unknown message
 #[derive(Debug, Serialize)]
 pub struct Unknown {
@@ -761,6 +773,8 @@ pub enum Message {
     RemoveBlockReply(RemoveBlockReply),
     Persist(Persist),
     PersistReply(PersistReply),
+    GetHeartbeat(GetHeartbeat),
+    GetHeartbeatReply(GetHeartbeatReply),
     Unknown(Unknown),
 }
 
