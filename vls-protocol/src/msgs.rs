@@ -82,6 +82,21 @@ pub struct HsmdInit2Reply {
     pub bolt12: PubKey,
 }
 
+/// Get node public keys.
+/// Used by the frontend
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1012)]
+pub struct NodeInfo {}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1112)]
+pub struct NodeInfoReply {
+    pub network_name: WireString,
+    pub node_id: PubKey,
+    pub bip32: ExtKey,
+}
+
 /// Connect a new client
 /// CLN only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
@@ -775,6 +790,8 @@ pub enum Message {
     PersistReply(PersistReply),
     GetHeartbeat(GetHeartbeat),
     GetHeartbeatReply(GetHeartbeatReply),
+    NodeInfo(NodeInfo),
+    NodeInfoReply(NodeInfoReply),
     Unknown(Unknown),
 }
 

@@ -4,7 +4,7 @@ use std::iter::FromIterator;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OnceCell};
 use tokio::{task, time};
 use url::Url;
 
@@ -19,11 +19,12 @@ use lightning_signer::{debug_vals, short_function, vals_str};
 #[allow(unused_imports)]
 use log::{debug, error, info, trace};
 
-use crate::ChainTrack;
+use crate::{ChainTrack, HeartbeatMonitor};
 
 /// Follows the longest chain and feeds proofs of watched changes to ChainTracker.
 pub struct ChainFollower {
     tracker: Arc<dyn ChainTrack>,
+    heartbeat_monitor: OnceCell<HeartbeatMonitor>,
     client: BitcoindClient,
     state: Mutex<State>,
     update_interval: u64,
@@ -73,6 +74,7 @@ impl ChainFollower {
         );
         Arc::new(ChainFollower {
             tracker,
+            heartbeat_monitor: OnceCell::new(),
             client,
             state: Mutex::new(State::Scanning),
             update_interval,
@@ -114,7 +116,19 @@ impl ChainFollower {
         }
     }
 
+    async fn heartbeat_monitor(&self) -> &HeartbeatMonitor {
+        self.heartbeat_monitor
+            .get_or_init(|| async {
+                let pubkey = self.tracker.heartbeat_pubkey().await;
+                HeartbeatMonitor::new(self.tracker.network(), pubkey, self.tracker.log_prefix())
+            })
+            .await
+    }
+
     async fn update(&self) -> Result<ScheduleNext, Error> {
+        let heartbeat_monitor = self.heartbeat_monitor().await;
+        heartbeat_monitor.on_tick();
+
         let mut state = self.state.lock().await;
 
         // Fetch the current tip from the tracker
@@ -169,10 +183,14 @@ impl ChainFollower {
         // debug!("node {} at height {} adding {}", self.tracker.log_prefix(), height, hash);
         self.tracker.add_block(block.header, txs, proof).await;
 
-        let heartbeat = self.tracker.beat().await;
-        info!("{} heartbeat: {:?}", self.tracker.log_prefix(), heartbeat);
+        self.do_heartbeat().await;
 
         Ok(ScheduleNext::Immediate)
+    }
+
+    async fn do_heartbeat(&self) {
+        let heartbeat = self.tracker.beat().await;
+        self.heartbeat_monitor().await.on_heartbeat(heartbeat)
     }
 
     async fn remove_block(&self, height0: u32, hash0: BlockHash) -> Result<ScheduleNext, Error> {

@@ -26,7 +26,7 @@ pub struct SignerFront {
 impl ChainTrackDirectory for SignerFront {
     fn tracker(&self, node_id: &PublicKey) -> Arc<dyn ChainTrack> {
         let node = self.signer.get_node(node_id).unwrap();
-        Arc::new(NodeFront { node })
+        Arc::new(NodeFront::new(node))
     }
     async fn trackers(&self) -> Vec<Arc<dyn ChainTrack>> {
         self.signer.get_node_ids().iter().map(|node_id| self.tracker(node_id)).collect()
@@ -45,19 +45,31 @@ impl ChainTrackDirectory for SingleFront {
         unimplemented!();
     }
     async fn trackers(&self) -> Vec<Arc<dyn ChainTrack>> {
-        vec![Arc::new(NodeFront { node: Arc::clone(&self.node) })]
+        vec![Arc::new(NodeFront::new(Arc::clone(&self.node)))]
     }
 }
 
 /// Implements ChainTrack using calls to inplace node
 pub(crate) struct NodeFront {
     node: Arc<Node>,
+    heartbeat_pubkey: PublicKey,
+}
+
+impl NodeFront {
+    pub fn new(node: Arc<Node>) -> Self {
+        let heartbeat_pubkey = node.get_account_extended_pubkey().public_key.clone();
+        Self { node, heartbeat_pubkey }
+    }
 }
 
 #[async_trait]
 impl ChainTrack for NodeFront {
     fn log_prefix(&self) -> String {
         format!("tracker {}", self.node.log_prefix())
+    }
+
+    async fn heartbeat_pubkey(&self) -> PublicKey {
+        self.heartbeat_pubkey.clone()
     }
 
     fn network(&self) -> Network {

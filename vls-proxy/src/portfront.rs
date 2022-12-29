@@ -1,7 +1,7 @@
 //! The SignerPortFront and NodePortFront provide a client RPC interface to the
 //! core MultiSigner and Node objects via a communications link.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 
@@ -34,23 +34,50 @@ impl ChainTrackDirectory for SignerPortFront {
     }
 
     async fn trackers(&self) -> Vec<Arc<dyn ChainTrack>> {
-        vec![Arc::new(NodePortFront {
-            signer_port: self.signer_port.clone(),
-            network: self.network,
-        }) as Arc<dyn ChainTrack>]
+        let front = NodePortFront::new(self.signer_port.clone(), self.network);
+        vec![Arc::new(front) as Arc<dyn ChainTrack>]
     }
 }
 
 /// Implements ChainTrack using RPC to remote node
 pub(crate) struct NodePortFront {
-    pub signer_port: Box<dyn SignerPort>,
-    pub network: Network,
+    signer_port: Box<dyn SignerPort>,
+    network: Network,
+    heartbeat_pubkey: Mutex<Option<PublicKey>>,
+}
+
+impl NodePortFront {
+    fn new(signer_port: Box<dyn SignerPort>, network: Network) -> Self {
+        Self { signer_port, network, heartbeat_pubkey: Mutex::new(None) }
+    }
 }
 
 #[async_trait]
 impl ChainTrack for NodePortFront {
     fn log_prefix(&self) -> String {
         format!("tracker")
+    }
+
+    async fn heartbeat_pubkey(&self) -> PublicKey {
+        {
+            let lock = self.heartbeat_pubkey.lock().unwrap();
+            if let Some(pk) = *lock {
+                return pk;
+            }
+        }
+        let reply = self
+            .signer_port
+            .handle_message(msgs::NodeInfo {}.as_vec())
+            .await
+            .expect("NodeInfo failed");
+        if let Ok(Message::NodeInfoReply(m)) = msgs::from_vec(reply) {
+            let pubkey = PublicKey::from_slice(&m.bip32.0).expect("NodeInfoReply bip32 pubkey");
+            let mut lock = self.heartbeat_pubkey.lock().unwrap();
+            *lock = Some(pubkey.clone());
+            return pubkey;
+        } else {
+            panic!("unexpected NodeInfoReply");
+        }
     }
 
     fn network(&self) -> Network {
