@@ -77,8 +77,9 @@ impl Tracks {
 
 fn track_char(msg: &Message) -> char {
     match msg {
-        Message::HsmdInit(_m) => '0',
-        Message::HsmdInit2(_m) => '0',
+        Message::HsmdInit(_m) => '1',
+        Message::HsmdInit2(_m) => '2',
+        Message::NodeInfo(_m) => '3',
         Message::Ecdh(_m) => 'e',
 
         Message::SignNodeAnnouncement(_m) => 'n',
