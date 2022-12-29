@@ -555,6 +555,13 @@ impl SignedHeartbeat {
     pub fn sighash(&self) -> Message {
         sighash_from_heartbeat(&self.heartbeat.encode())
     }
+
+    /// Verify the heartbeat signature
+    pub fn verify(&self, pubkey: &PublicKey, secp: &Secp256k1<All>) -> bool {
+        let signature = schnorr::Signature::from_slice(&self.signature).unwrap();
+        let xpubkey = bitcoin::XOnlyPublicKey::from(pubkey.clone());
+        secp.verify_schnorr(&signature, &self.sighash(), &xpubkey).is_ok()
+    }
 }
 
 /// A signer for one Lightning node.
@@ -2018,10 +2025,10 @@ mod tests {
     use bitcoin::consensus::deserialize;
     use bitcoin::hashes::sha256d::Hash as Sha256dHash;
     use bitcoin::hashes::Hash;
+    use bitcoin::secp256k1;
     use bitcoin::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::util::sighash::SighashCache;
-    use bitcoin::{secp256k1, XOnlyPublicKey};
     use bitcoin::{Address, EcdsaSighashType, OutPoint};
     use lightning::ln::chan_utils::derive_private_key;
     use lightning::ln::{chan_utils, PaymentSecret};
@@ -2768,11 +2775,8 @@ mod tests {
     fn node_heartbeat_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let heartbeat = node.get_heartbeat();
-        let msg = heartbeat.sighash();
         let secp = Secp256k1::new();
-        let signature = schnorr::Signature::from_slice(&heartbeat.signature).unwrap();
-        let pubkey = XOnlyPublicKey::from(node.get_account_extended_pubkey().public_key);
-        secp.verify_schnorr(&signature, &msg, &pubkey).expect("verify");
+        assert!(heartbeat.verify(&node.get_account_extended_pubkey().public_key, &secp));
     }
 
     #[test]
