@@ -26,7 +26,7 @@ use log::{debug, error};
 
 use vls_protocol::features::{OPT_ANCHOR_OUTPUTS, OPT_MAX, OPT_STATIC_REMOTEKEY};
 use vls_protocol::model::{
-    Basepoints, BitcoinSignature, CloseInfo, Htlc, Octets, PubKey, Secret, TxId, Utxo,
+    Basepoints, BitcoinSignature, CloseInfo, Htlc, PubKey, Secret, TxId, Utxo,
 };
 use vls_protocol::msgs::{
     DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint,
@@ -37,7 +37,7 @@ use vls_protocol::msgs::{
     SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal, SignWithdrawalReply,
     ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply,
 };
-use vls_protocol::serde_bolt::{LargeBytes, WireString};
+use vls_protocol::serde_bolt::{LargeOctets, Octets, WireString};
 use vls_protocol::{model, Error as ProtocolError};
 
 use bitcoin::bech32::u5;
@@ -485,7 +485,7 @@ impl KeysManagerClient {
 
         let psbt = PartiallySignedTransaction::from_unsigned_tx(tx.clone()).expect("create PSBT");
 
-        let message = SignWithdrawal { utxos, psbt: LargeBytes(consensus::serialize(&psbt)) };
+        let message = SignWithdrawal { utxos, psbt: LargeOctets(consensus::serialize(&psbt)) };
         let result: SignWithdrawalReply = self.call(message).expect("sign failed");
         let result_psbt: PartiallySignedTransaction =
             consensus::deserialize(&result.psbt.0).expect("deserialize PSBT");

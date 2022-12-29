@@ -121,6 +121,7 @@ fn track_char(msg: &Message) -> char {
         Message::ReverseWatches(_m) => 'F',
         Message::AddBlock(_m) => 'b',
         Message::RemoveBlock(_m) => 'B',
+        Message::GetHeartbeat(_m) => '^',
 
         Message::Ping(_m) => '.',
         Message::Memleak(_m) => '_',

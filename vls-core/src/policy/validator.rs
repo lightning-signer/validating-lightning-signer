@@ -9,6 +9,7 @@ use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::ln::PaymentHash;
 use log::debug;
+use serde_derive::{Deserialize, Serialize};
 
 use crate::channel::{ChannelBalance, ChannelId, ChannelSetup, ChannelSlot};
 use crate::policy::Policy;
@@ -397,7 +398,7 @@ pub trait ValidatorFactory: Send + Sync {
 }
 
 /// Signatures for a commitment transaction
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommitmentSignatures(pub Signature, pub Vec<Signature>);
 
 /// Enforcement state for a channel
@@ -405,7 +406,7 @@ pub struct CommitmentSignatures(pub Signature, pub Vec<Signature>);
 /// This keeps track of commitments on both sides and whether the channel
 /// was closed.
 #[allow(missing_docs)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EnforcementState {
     // the next commitment number we expect to see signed by the counterparty
     // (set by validate_holder_commitment_tx)

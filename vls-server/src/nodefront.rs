@@ -10,7 +10,7 @@ use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
 
 use lightning_signer::bitcoin;
-use lightning_signer::node::Node;
+use lightning_signer::node::{Node, SignedHeartbeat};
 use lightning_signer::signer::multi_signer::MultiSigner;
 use lightning_signer::wallet::Wallet;
 
@@ -104,5 +104,9 @@ impl ChainTrack for NodeFront {
         self.node.get_persister().update_tracker(&self.node.get_id(), &tracker).unwrap_or_else(
             |e| panic!("{}: persist tracker failed: {:?}", self.node.log_prefix(), e),
         );
+    }
+
+    async fn beat(&self) -> SignedHeartbeat {
+        self.node.get_heartbeat()
     }
 }

@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::util::crypto_utils::hkdf_sha256;
+use crate::util::crypto_utils::{hkdf_sha256, sighash_from_heartbeat};
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use bitcoin::bech32::u5;
@@ -479,6 +479,13 @@ impl MyKeysManager {
             input_idx += 1;
         }
         Ok(spend_tx)
+    }
+
+    /// Sign a heartbeat object
+    pub fn sign_heartbeat(&self, ser_heartbeat: &[u8]) -> schnorr::Signature {
+        let kp = KeyPair::from_secret_key(&self.secp_ctx, &self.account_extended_key.private_key);
+        let msg = sighash_from_heartbeat(ser_heartbeat);
+        self.secp_ctx.sign_schnorr_no_aux_rand(&msg, &kp)
     }
 }
 

@@ -168,6 +168,10 @@ impl ChainFollower {
         let (txs, proof) = build_proof(&block, &txid_watches, &outpoint_watches);
         // debug!("node {} at height {} adding {}", self.tracker.log_prefix(), height, hash);
         self.tracker.add_block(block.header, txs, proof).await;
+
+        let heartbeat = self.tracker.beat().await;
+        info!("{} heartbeat: {:?}", self.tracker.log_prefix(), heartbeat);
+
         Ok(ScheduleNext::Immediate)
     }
 

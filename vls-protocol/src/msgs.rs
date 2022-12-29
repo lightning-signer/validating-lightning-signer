@@ -10,7 +10,7 @@ use crate::model::*;
 use bolt_derive::{ReadMessage, SerBolt};
 use serde::{de, ser};
 use serde_bolt::{from_vec as sb_from_vec, to_vec, WireString};
-use serde_bolt::{LargeBytes, Read, Write};
+use serde_bolt::{LargeOctets, Octets, Read, Write};
 use serde_derive::{Deserialize, Serialize};
 
 use log::error;
@@ -119,14 +119,14 @@ pub struct SignInvoiceReply {
 #[message_id(7)]
 pub struct SignWithdrawal {
     pub utxos: Vec<Utxo>,
-    pub psbt: LargeBytes,
+    pub psbt: LargeOctets,
 }
 
 ///
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(107)]
 pub struct SignWithdrawalReply {
-    pub psbt: LargeBytes,
+    pub psbt: LargeOctets,
 }
 
 ///
@@ -348,8 +348,8 @@ pub struct ReadyChannelReply {}
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(35)]
 pub struct ValidateCommitmentTx {
-    pub tx: LargeBytes,
-    pub psbt: LargeBytes,
+    pub tx: LargeOctets,
+    pub psbt: LargeOctets,
     pub htlcs: Vec<Htlc>,
     pub commitment_number: u64,
     pub feerate: u32,
@@ -399,8 +399,8 @@ pub struct ValidateRevocationReply {}
 pub struct SignCommitmentTx {
     pub peer_id: PubKey,
     pub dbid: u64,
-    pub tx: LargeBytes,
-    pub psbt: LargeBytes,
+    pub tx: LargeOctets,
+    pub psbt: LargeOctets,
     pub remote_funding_key: PubKey,
     pub commitment_number: u64,
 }
@@ -418,8 +418,8 @@ pub struct SignLocalCommitmentTx2 {
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(19)]
 pub struct SignRemoteCommitmentTx {
-    pub tx: LargeBytes,
-    pub psbt: LargeBytes,
+    pub tx: LargeOctets,
+    pub psbt: LargeOctets,
     pub remote_funding_key: PubKey,
     pub remote_per_commitment_point: PubKey,
     pub option_static_remotekey: bool,
@@ -473,8 +473,8 @@ pub struct SignCommitmentTxWithHtlcsReply {
 #[message_id(12)]
 pub struct SignDelayedPaymentToUs {
     pub commitment_number: u64,
-    pub tx: LargeBytes,
-    pub psbt: LargeBytes,
+    pub tx: LargeOctets,
+    pub psbt: LargeOctets,
     pub wscript: Octets,
 }
 
@@ -484,8 +484,8 @@ pub struct SignDelayedPaymentToUs {
 #[message_id(13)]
 pub struct SignRemoteHtlcToUs {
     pub remote_per_commitment_point: PubKey,
-    pub tx: LargeBytes,
-    pub psbt: LargeBytes,
+    pub tx: LargeOctets,
+    pub psbt: LargeOctets,
     pub wscript: Octets,
     pub option_anchors: bool,
 }
@@ -495,8 +495,8 @@ pub struct SignRemoteHtlcToUs {
 #[message_id(16)]
 pub struct SignLocalHtlcTx {
     pub commitment_number: u64,
-    pub tx: LargeBytes,
-    pub psbt: LargeBytes,
+    pub tx: LargeOctets,
+    pub psbt: LargeOctets,
     pub wscript: Octets,
     pub option_anchors: bool,
 }
@@ -506,8 +506,8 @@ pub struct SignLocalHtlcTx {
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(21)]
 pub struct SignMutualCloseTx {
-    pub tx: LargeBytes,
-    pub psbt: LargeBytes,
+    pub tx: LargeOctets,
+    pub psbt: LargeOctets,
     pub remote_funding_key: PubKey,
 }
 
@@ -570,8 +570,8 @@ pub struct GetChannelBasepointsReply {
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(20)]
 pub struct SignRemoteHtlcTx {
-    pub tx: LargeBytes,
-    pub psbt: LargeBytes,
+    pub tx: LargeOctets,
+    pub psbt: LargeOctets,
     pub wscript: Octets,
     pub remote_per_commitment_point: PubKey,
     pub option_anchors: bool,
@@ -582,8 +582,8 @@ pub struct SignRemoteHtlcTx {
 #[message_id(14)]
 pub struct SignPenaltyToUs {
     pub revocation_secret: Secret,
-    pub tx: LargeBytes,
-    pub psbt: LargeBytes,
+    pub tx: LargeOctets,
+    pub psbt: LargeOctets,
     pub wscript: Octets,
 }
 
@@ -628,9 +628,9 @@ pub struct ReverseWatchesReply {
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(2005)]
 pub struct AddBlock {
-    pub header: LargeBytes,
-    pub txs: Vec<LargeBytes>,
-    pub txs_proof: Option<LargeBytes>,
+    pub header: LargeOctets,
+    pub txs: Vec<LargeOctets>,
+    pub txs_proof: Option<LargeOctets>,
 }
 
 ///
@@ -641,8 +641,8 @@ pub struct AddBlockReply {}
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(2006)]
 pub struct RemoveBlock {
-    pub txs: Vec<LargeBytes>,
-    pub txs_proof: Option<LargeBytes>,
+    pub txs: Vec<LargeOctets>,
+    pub txs_proof: Option<LargeOctets>,
 }
 
 ///
@@ -658,7 +658,7 @@ pub struct RemoveBlockReply {}
 pub struct Persist {
     /// Authentication token from client (signer) to storage service
     pub auth: Octets,
-    pub kvs: Vec<(Octets, u64, LargeBytes)>,
+    pub kvs: Vec<(Octets, u64, LargeOctets)>,
     /// HMAC by client to authenticate the message
     pub hmac: Octets,
 }
@@ -670,7 +670,19 @@ pub struct PersistReply {
     pub success: bool,
     /// HMAC by storage service to authenticate the message
     pub hmac: Octets,
-    pub conflicts: Vec<(Octets, u64, LargeBytes)>,
+    pub conflicts: Vec<(Octets, u64, LargeOctets)>,
+}
+
+/// Get a serialized signed heartbeat
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2008)]
+pub struct GetHeartbeat {}
+
+/// A serialized signed heartbeat
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2108)]
+pub struct GetHeartbeatReply {
+    pub heartbeat: Octets,
 }
 
 /// An unknown message
@@ -761,6 +773,8 @@ pub enum Message {
     RemoveBlockReply(RemoveBlockReply),
     Persist(Persist),
     PersistReply(PersistReply),
+    GetHeartbeat(GetHeartbeat),
+    GetHeartbeatReply(GetHeartbeatReply),
     Unknown(Unknown),
 }
 
@@ -963,7 +977,7 @@ mod tests {
         let version = 0x123456789;
         let msg = Persist {
             auth: Octets(vec![0x11, 0x22]),
-            kvs: vec![(Octets(key.clone()), version, LargeBytes(value.clone()))],
+            kvs: vec![(Octets(key.clone()), version, LargeOctets(value.clone()))],
             hmac: Octets(vec![0x33, 0x44]),
         };
 

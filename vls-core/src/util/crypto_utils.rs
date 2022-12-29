@@ -3,7 +3,7 @@ use bitcoin::hashes::hash160::Hash as BitcoinHash160;
 use bitcoin::hashes::sha256::Hash as BitcoinSha256;
 use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
 use bitcoin::secp256k1;
-use bitcoin::secp256k1::{ecdsa::Signature, PublicKey, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::address::{Payload, WitnessVersion};
 use bitcoin::{EcdsaSighashType, Script};
 
@@ -114,6 +114,16 @@ pub fn generate_seed() -> [u8; 32] {
     }
     #[cfg(not(feature = "std"))]
     todo!("no RNG available in no_std environments yet");
+}
+
+/// Hash the serialized heartbeat message for signing
+pub fn sighash_from_heartbeat(ser_heartbeat: &[u8]) -> Message {
+    let mut sha = BitcoinSha256::engine();
+    sha.input("vls".as_bytes());
+    sha.input("heartbeat".as_bytes());
+    sha.input(ser_heartbeat);
+    let hash = BitcoinSha256::from_engine(sha);
+    Message::from_slice(&hash).unwrap()
 }
 
 #[cfg(test)]

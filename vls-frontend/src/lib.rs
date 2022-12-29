@@ -11,6 +11,7 @@ use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Transaction, Txid};
 use lightning_signer::bitcoin;
+use lightning_signer::node::SignedHeartbeat;
 
 mod chain_follower;
 pub mod frontend;
@@ -55,4 +56,7 @@ pub trait ChainTrack: Sync + Send {
 
     /// Remove block at tip due to reorg
     async fn remove_block(&self, txs: Vec<Transaction>, txs_proof: Option<PartialMerkleTree>);
+
+    /// Produce a signed heartbeat for the signer node
+    async fn beat(&self) -> SignedHeartbeat;
 }

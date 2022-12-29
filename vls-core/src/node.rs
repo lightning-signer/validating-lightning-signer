@@ -31,9 +31,12 @@ use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning::util::invoice::construct_invoice_preimage;
 use lightning::util::logger::Logger;
 use lightning_invoice::{Invoice, RawDataPart, RawHrp, RawInvoice, SignedRawInvoice};
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 #[allow(unused_imports)]
 use log::{debug, info, trace, warn};
+use serde_bolt::to_vec;
 
 use crate::chain::tracker::ChainTracker;
 use crate::channel::{
@@ -53,7 +56,8 @@ use crate::signer::StartingTimeFactory;
 use crate::sync::{Arc, Weak};
 use crate::tx::tx::PreimageMap;
 use crate::util::clock::Clock;
-use crate::util::crypto_utils::signature_to_bitcoin_vec;
+use crate::util::crypto_utils::{sighash_from_heartbeat, signature_to_bitcoin_vec};
+use crate::util::ser_util::DurationHandler;
 use crate::util::status::{failed_precondition, internal_error, invalid_argument, Status};
 use crate::util::velocity::VelocityControl;
 use crate::wallet::Wallet;
@@ -69,7 +73,8 @@ pub struct NodeConfig {
 }
 
 /// Payment details and payment state
-#[derive(Clone)]
+#[serde_as]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PaymentState {
     /// The hash of the invoice, as a unique ID
     pub invoice_hash: [u8; 32],
@@ -78,8 +83,10 @@ pub struct PaymentState {
     /// Payee's public key, if known
     pub payee: PublicKey,
     /// Timestamp of the payment, as duration since the UNIX epoch
+    #[serde_as(as = "DurationHandler")]
     pub duration_since_epoch: Duration,
     /// Expiry, as duration since the timestamp
+    #[serde_as(as = "DurationHandler")]
     pub expiry_duration: Duration,
     /// Whether the invoice was fulfilled
     /// note: for issued invoices only
@@ -89,7 +96,7 @@ pub struct PaymentState {
 }
 
 /// Outgoing payment type
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PaymentType {
     /// We are paying an invoice
     Invoice,
@@ -508,6 +515,45 @@ impl Allowable {
             Allowable::Script(script) => Ok(script),
             _ => Err(()),
         }
+    }
+}
+
+/// A signer heartbeat message.
+///
+/// This includes information that determines if we think our
+/// view of the blockchain is stale or not.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Heartbeat {
+    /// the block hash of the blockchain tip
+    pub chain_tip: bitcoin::BlockHash,
+    /// the height of the blockchain tip
+    pub chain_height: u32,
+    /// the block timestamp of the tip of the blockchain
+    pub chain_timestamp: u32,
+    /// the current time
+    pub current_timestamp: u32,
+}
+
+impl Heartbeat {
+    /// Serialize with serde_bolt
+    pub fn encode(&self) -> Vec<u8> {
+        to_vec(&self).expect("serialize Heartbeat")
+    }
+}
+
+/// A signed heartbeat message.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignedHeartbeat {
+    /// the schnorr signature of the heartbeat
+    pub signature: Vec<u8>,
+    /// the heartbeat
+    pub heartbeat: Heartbeat,
+}
+
+impl SignedHeartbeat {
+    /// Get the hash of the heartbeat for signing
+    pub fn sighash(&self) -> Message {
+        sighash_from_heartbeat(&self.heartbeat.encode())
     }
 }
 
@@ -1167,6 +1213,23 @@ impl Node {
             .map_err(|_| internal_error("persist failed"))?;
 
         Ok(chan)
+    }
+
+    /// Get a signed heartbeat message
+    /// The heartbeat is signed with the account master key.
+    pub fn get_heartbeat(&self) -> SignedHeartbeat {
+        let tracker = self.tracker.lock().unwrap();
+        let tip = tracker.tip();
+        let current_timestamp = self.clock.now().as_secs() as u32;
+        let heartbeat = Heartbeat {
+            chain_tip: tip.block_hash(),
+            chain_height: tracker.height(),
+            chain_timestamp: tip.time,
+            current_timestamp,
+        };
+        let ser_heartbeat = heartbeat.encode();
+        let sig = self.keys_manager.sign_heartbeat(&ser_heartbeat);
+        SignedHeartbeat { signature: sig[..].to_vec(), heartbeat }
     }
 
     // Check and sign an onchain transaction
@@ -1955,10 +2018,10 @@ mod tests {
     use bitcoin::consensus::deserialize;
     use bitcoin::hashes::sha256d::Hash as Sha256dHash;
     use bitcoin::hashes::Hash;
-    use bitcoin::secp256k1;
     use bitcoin::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::util::sighash::SighashCache;
+    use bitcoin::{secp256k1, XOnlyPublicKey};
     use bitcoin::{Address, EcdsaSighashType, OutPoint};
     use lightning::ln::chan_utils::derive_private_key;
     use lightning::ln::{chan_utils, PaymentSecret};
@@ -2699,6 +2762,17 @@ mod tests {
             node.remove_allowlist(&vec!["1287uUybCYgf7Tb76qnfPf8E1ohCgSZATp".to_string()]),
             "could not parse 1287uUybCYgf7Tb76qnfPf8E1ohCgSZATp: expected network testnet"
         );
+    }
+
+    #[test]
+    fn node_heartbeat_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let heartbeat = node.get_heartbeat();
+        let msg = heartbeat.sighash();
+        let secp = Secp256k1::new();
+        let signature = schnorr::Signature::from_slice(&heartbeat.signature).unwrap();
+        let pubkey = XOnlyPublicKey::from(node.get_account_extended_pubkey().public_key);
+        secp.verify_schnorr(&signature, &msg, &pubkey).expect("verify");
     }
 
     #[test]

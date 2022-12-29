@@ -22,10 +22,7 @@ use lightning_signer::persist::model::ChannelEntry as CoreChannelEntry;
 use lightning_signer::policy::validator::EnforcementState;
 use lightning_signer::util::velocity::VelocityControl as CoreVelocityControl;
 
-use super::ser_util::{
-    ChainMonitorStateDef, ChannelIdHandler, ChannelSetupDef, EnforcementStateDef, ListenSlotDef,
-    OutPointDef, PaymentStateDef,
-};
+use lightning_signer::util::ser_util::{ChannelIdHandler, OutPointDef};
 
 #[derive(Serialize, Deserialize)]
 pub struct VelocityControl {
@@ -60,9 +57,9 @@ impl From<CoreVelocityControl> for VelocityControl {
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub struct NodeStateEntry {
-    #[serde_as(as = "Vec<(Hex, PaymentStateDef)>")]
+    #[serde_as(as = "Vec<(Hex, _)>")]
     pub invoices: Vec<(Vec<u8>, PaymentState)>,
-    #[serde_as(as = "Vec<(Hex, PaymentStateDef)>")]
+    #[serde_as(as = "Vec<(Hex, _)>")]
     pub issued_invoices: Vec<(Vec<u8>, PaymentState)>,
     pub velocity_control: VelocityControl,
     // TODO(devrandom): add routing control fields, once they stabilize
@@ -90,12 +87,10 @@ pub struct NodeEntry {
 #[derive(Serialize, Deserialize)]
 pub struct ChannelEntry {
     pub channel_value_satoshis: u64,
-    #[serde_as(as = "Option<ChannelSetupDef>")]
     pub channel_setup: Option<ChannelSetup>,
     // Permanent channel ID if different from the initial channel ID
     #[serde_as(as = "Option<ChannelIdHandler>")]
     pub id: Option<ChannelId>,
-    #[serde_as(as = "EnforcementStateDef")]
     pub enforcement_state: EnforcementState,
 }
 
@@ -171,7 +166,7 @@ pub struct ChainTrackerEntry {
     tip: Vec<u8>,
     height: u32,
     network: Network,
-    #[serde_as(as = "Vec<(OutPointDef, (ChainMonitorStateDef, ListenSlotDef))>")]
+    #[serde_as(as = "Vec<(OutPointDef, (_, _))>")]
     listeners: OrderedMap<OutPoint, (ChainMonitorState, ListenSlot)>,
 }
 
@@ -198,5 +193,41 @@ impl Into<ChainTracker<ChainMonitor>> for ChainTrackerEntry {
                 (ChainMonitor::new_from_persistence(outpoint, state), slot)
             }));
         ChainTracker { headers, tip, height: self.height, network: self.network, listeners }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::ChainTrackerEntry;
+    use bitcoin::blockdata::constants::genesis_block;
+    use bitcoin::{Network, TxMerkleNode};
+    use core::iter::FromIterator;
+    use lightning_signer::bitcoin::hashes::Hash;
+    use lightning_signer::chain::tracker::{ChainTracker, Error};
+    use lightning_signer::monitor::ChainMonitor;
+    use lightning_signer::util::test_utils::*;
+
+    #[test]
+    fn test_chain_tracker() -> Result<(), Error> {
+        let tx = make_tx(vec![make_txin(1), make_txin(2)]);
+        let outpoint = OutPoint::new(tx.txid(), 0);
+        let monitor = ChainMonitor::new(outpoint, 0);
+        monitor.add_funding(&tx, 0);
+        let genesis = genesis_block(Network::Regtest);
+        let mut tracker = ChainTracker::new(Network::Regtest, 0, genesis.header)?;
+        tracker.add_listener(monitor.clone(), OrderedSet::new());
+        let header = make_header(tracker.tip(), TxMerkleNode::all_zeros());
+        tracker.add_block(header, vec![], None)?;
+        tracker.add_listener_watches(
+            monitor,
+            OrderedSet::from_iter(vec![make_txin(1).previous_output]),
+        );
+
+        let entry = ChainTrackerEntry::from(&tracker);
+        let json = serde_json::to_string(&entry).expect("json");
+        let entry_de: ChainTrackerEntry = serde_json::from_str(&json).expect("de json");
+        let _tracker_de: ChainTracker<ChainMonitor> = entry_de.into();
+        Ok(())
     }
 }
