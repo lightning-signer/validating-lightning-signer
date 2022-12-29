@@ -56,6 +56,8 @@ use fat_json_persist::FatJsonPersister;
 use fat_logger::FatLogger;
 use setup::{get_run_context, setup_mode, NormalContext, RunContext, TestingContext};
 
+const DEMO_SIGNER_LOG: &str = "demo_signer.log";
+
 #[entry]
 fn main() -> ! {
     logger::init("demo_signer").expect("logger");
@@ -100,7 +102,7 @@ fn display_intro(devctx: &mut DeviceContext, network: Network, permissive: bool,
 fn start_normal_mode(runctx: NormalContext) -> ! {
     if let Some(setupfs) = runctx.cmn.setupfs.as_ref() {
         logger::add_also(Box::new(FatLogger::new(
-            "demo_signer.log".to_string(),
+            DEMO_SIGNER_LOG.to_string(),
             Arc::clone(&setupfs),
         )));
     }
@@ -151,6 +153,18 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
 
 // Start the signer in test mode, use the seed from the initial HsmdInit2 message.
 fn start_test_mode(runctx: TestingContext) -> ! {
+    if let Some(setupfs) = runctx.cmn.setupfs.as_ref() {
+        // remove any pre-existing log
+        let sfs = setupfs.borrow();
+        let rundir = sfs.rundir();
+        sfs.remove_possible_file(&rundir, DEMO_SIGNER_LOG);
+
+        logger::add_also(Box::new(FatLogger::new(
+            DEMO_SIGNER_LOG.to_string(),
+            Arc::clone(&setupfs),
+        )));
+    }
+
     info!("start_test_mode {:?}", runctx);
 
     let root_handler = {
