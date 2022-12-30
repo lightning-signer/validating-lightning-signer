@@ -73,4 +73,4 @@ will also determine whether the bug is fixed in a more recent version. -->
 
 <!-- If you can, link to the line of code that might be responsible for the problem. -->
 
-/label ~"triage"
+/label ~triage
