@@ -15,8 +15,10 @@ use lightning_signer::node::SignedHeartbeat;
 
 mod chain_follower;
 pub mod frontend;
+pub mod heartbeat;
 
 pub use self::frontend::Frontend;
+pub use self::heartbeat::HeartbeatMonitor;
 
 /// Provides ChainTracks for nodes in a signer
 #[async_trait]
@@ -33,6 +35,9 @@ pub trait ChainTrackDirectory: Sync + Send {
 pub trait ChainTrack: Sync + Send {
     /// Identity string for the log
     fn log_prefix(&self) -> String;
+
+    /// The heartbeat public key
+    async fn heartbeat_pubkey(&self) -> PublicKey;
 
     /// Returns the network
     fn network(&self) -> Network;

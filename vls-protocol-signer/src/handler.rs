@@ -41,6 +41,7 @@ use log::*;
 use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
 use lightning_signer::util::status::Status;
+use lightning_signer::wallet::Wallet;
 use vls_protocol::features::*;
 use vls_protocol::model::{
     Basepoints, BitcoinSignature, BlockHash, ExtKey, Htlc, OutPoint as ModelOutPoint, PubKey,
@@ -582,6 +583,16 @@ impl Handler for RootHandler {
                 let heartbeat = self.node.get_heartbeat();
                 let ser_hb = to_vec(&heartbeat).expect("heartbeat");
                 Ok(Box::new(msgs::GetHeartbeatReply { heartbeat: ser_hb.into() }))
+            }
+            Message::NodeInfo(_m) => {
+                let bip32 = self.node.get_account_extended_pubkey().encode();
+                let node_id = self.node.get_id().serialize();
+                let node_info = msgs::NodeInfoReply {
+                    network_name: WireString(self.node.network().to_string().into_bytes()),
+                    node_id: PubKey(node_id),
+                    bip32: ExtKey(bip32),
+                };
+                Ok(Box::new(node_info))
             }
             Message::Unknown(u) => {
                 unimplemented!("loop {}: unknown message type {}", self.id, u.message_type)
