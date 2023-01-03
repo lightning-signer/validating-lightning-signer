@@ -1,7 +1,7 @@
 use crate::client::auth::Auth;
 use crate::client::LightningStorageClient;
 use crate::proto::{self, GetRequest, InfoRequest, PingRequest, PutRequest};
-use crate::util::{append_hmac_to_value, compute_shared_hmac, remove_and_check_hmac};
+use crate::util::{compute_shared_hmac, prepare_value_for_put, process_value_from_get};
 use crate::Value;
 use log::{debug, error};
 use secp256k1::rand::rngs::OsRng;
@@ -100,7 +100,7 @@ impl Client {
         debug!("put request {:?}", kvs);
         kvs.sort_by_key(|(k, _)| k.clone());
         for (key, value) in kvs.iter_mut() {
-            append_hmac_to_value(&mut value.value, &key, value.version, &hmac_secret);
+            prepare_value_for_put(hmac_secret, key, value);
         }
 
         let client_hmac = compute_shared_hmac(&auth.shared_secret, &[0x01], &kvs);
@@ -165,7 +165,7 @@ fn remove_and_check_hmacs(
     kvs: &mut Vec<(String, Value)>,
 ) -> Result<(), ClientError> {
     for (key, value) in kvs.iter_mut() {
-        remove_and_check_hmac(&mut value.value, &key, value.version, &hmac_secret)
+        process_value_from_get(hmac_secret, key, value)
             .map_err(|()| ClientError::InvalidHmac(key.clone(), value.version))?;
     }
     Ok(())

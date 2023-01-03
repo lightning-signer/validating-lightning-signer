@@ -8,10 +8,11 @@ name = "lightning_storage_server"
 path = "src/lib.rs"
 
 [features]
-default = ["postgres"]
+default = ["postgres", "crypt"]
 postgres = ["tokio-postgres", "deadpool-postgres"]
 test-postgres = []
 dangerous-flags = []
+crypt = []
 
 [dependencies]
 sled = "0.34"
