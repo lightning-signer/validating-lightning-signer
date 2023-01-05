@@ -4,7 +4,6 @@ members = [
     "vls-core",
     "vls-server",
     "vls-frontend",
-    "bitcoind-client",
 
     "bolt-derive",
     "vls-persist",

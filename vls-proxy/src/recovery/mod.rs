@@ -76,7 +76,7 @@ pub async fn recover_close<R: RecoveryKeys>(
         info!("closing txid {}", tx.txid());
         if let Some(bitcoind_client) = &explorer_client {
             let funding_confirms = bitcoind_client
-                .get_utxo_confirmations(&signer.funding_outpoint())
+                .get_utxo_confirmations(&signer.funding_outpoint().into_bitcoin_outpoint())
                 .await
                 .expect("get_txout for funding");
             if funding_confirms.is_some() {
@@ -98,7 +98,7 @@ pub async fn recover_close<R: RecoveryKeys>(
                         info!("our revocable output {} @ {}", out.value, idx);
                         let out_point = OutPoint { txid: tx.txid(), index: idx as u16 };
                         let confirms = bitcoind_client
-                            .get_utxo_confirmations(&out_point)
+                            .get_utxo_confirmations(&out_point.into_bitcoin_outpoint())
                             .await
                             .expect("get_txout for our output");
                         if let Some(confirms) = confirms {

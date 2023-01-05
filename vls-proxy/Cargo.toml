@@ -42,7 +42,7 @@ async-trait = "0.1"
 url = { version = "2.2", optional = true }
 as-any = "0.3"
 hex = "0.4"
-bitcoind-client = { path = "../bitcoind-client" }
+txoo-bitcoind-client = { git = "https://gitlab.com/lightning-signer/txoo", rev = "883c6e0bac75546463d92987969ed5e5bbb8ef22"}
 
 [dependencies.vls-server]
 path = "../vls-server"
