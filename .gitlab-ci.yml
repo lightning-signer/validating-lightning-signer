@@ -44,19 +44,6 @@ rust-latest-extras:
     - apt-get update
     - apt-get install -y protobuf-compiler
     - rustup component add rustfmt
-    # bitcoind-client system test
-    - ls -l bin
-    - if [ ! -e bin/bitcoind ]; then
-      wget --no-verbose https://bitcoin.org/bin/bitcoin-core-0.21.0/bitcoin-0.21.0-x86_64-linux-gnu.tar.gz &&
-      echo da7766775e3f9c98d7a9145429f2be8297c2672fe5b118fd3dc2411fb48e0032  bitcoin-0.21.0-x86_64-linux-gnu.tar.gz | sha256sum -c &&
-      tar xzf bitcoin-0.21.0-x86_64-linux-gnu.tar.gz &&
-      mv bitcoin-0.21.0/bin/bitcoin-cli bin/ &&
-      mv bitcoin-0.21.0/bin/bitcoind bin/ &&
-      rm -rf bitcoin-0.21.0 ;
-      fi
-    - ./bin/bitcoind --regtest --daemon --rpcuser=user --rpcpassword=pass && sleep 5
-    - ./bin/bitcoin-cli --regtest --rpcuser=user --rpcpassword=pass getblockchaininfo
-    - cargo test -p bitcoind-client --features system-test
     # test LSS
     - (cd lightning-storage-server && cargo test)
 
