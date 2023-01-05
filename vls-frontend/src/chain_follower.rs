@@ -9,23 +9,24 @@ use tokio::{task, time};
 use url::Url;
 
 use bitcoin::util::merkleblock::PartialMerkleTree;
-use bitcoin::{Block, BlockHash, Network, OutPoint, Transaction, TxOut, Txid};
+use bitcoin::{Block, Network, OutPoint, Transaction, TxOut, Txid};
 use lightning_signer::bitcoin;
 
-use bitcoind_client::{BitcoindClient, BlockSource, Error};
+use bitcoind_client::BitcoindClient;
 
 #[allow(unused_imports)]
 use lightning_signer::{debug_vals, short_function, vals_str};
 #[allow(unused_imports)]
 use log::{debug, error, info, trace};
 
+use crate::follower::{Error, FollowAction, Follower, SourceFollower};
 use crate::{ChainTrack, HeartbeatMonitor};
 
 /// Follows the longest chain and feeds proofs of watched changes to ChainTracker.
 pub struct ChainFollower {
     tracker: Arc<dyn ChainTrack>,
     heartbeat_monitor: OnceCell<HeartbeatMonitor>,
-    client: BitcoindClient,
+    follower: SourceFollower,
     state: Mutex<State>,
     update_interval: u64,
 }
@@ -72,10 +73,11 @@ impl ChainFollower {
             tracker.network(),
             update_interval
         );
+        let follower = SourceFollower::new(Box::new(client));
         Arc::new(ChainFollower {
             tracker,
             heartbeat_monitor: OnceCell::new(),
-            client,
+            follower: follower,
             state: Mutex::new(State::Scanning),
             update_interval,
         })
@@ -108,7 +110,7 @@ impl ChainFollower {
                         // otherwise loop immediately
                     }
                     Err(err) => {
-                        error!("{}: {}", self.tracker.log_prefix(), err);
+                        error!("{}: {:?}", self.tracker.log_prefix(), err);
                         break; // Would a shorter pause be better here?
                     }
                 }
@@ -134,20 +136,8 @@ impl ChainFollower {
         // Fetch the current tip from the tracker
         let (height0, hash0) = self.tracker.tip_info().await;
 
-        // Fetch the next block hash from bitcoind
-        let hash = match self.client.get_block_hash(height0 + 1).await? {
-            None => {
-                // No new block, confirm that the current block still matches
-                match self.client.get_block_hash(height0).await? {
-                    None => {
-                        // Our current block is gone, must be reorg in progress
-                        return self.remove_block(height0, hash0).await;
-                    }
-                    Some(check_hash0) =>
-                        if check_hash0 != hash0 {
-                            return self.remove_block(height0, hash0).await;
-                        },
-                }
+        match self.follower.follow(height0, hash0).await? {
+            FollowAction::None => {
                 // Current top block matches
                 if *state != State::Synced {
                     info!("{} synced at height {}", self.tracker.log_prefix(), height0);
@@ -155,57 +145,40 @@ impl ChainFollower {
                 }
                 return Ok(ScheduleNext::Pause);
             }
-            Some(hash) => {
-                // There is a new block
-                hash
+            FollowAction::BlockAdded(block) => {
+                *state = State::Scanning;
+                let height = height0 + 1;
+                if height % 2016 == 0 {
+                    info!("{} at height {}", self.tracker.log_prefix(), height);
+                }
+
+                let (txid_watches, outpoint_watches) = self.tracker.forward_watches().await;
+                let (txs, proof) = build_proof(&block, &txid_watches, &outpoint_watches);
+                // debug!("node {} at height {} adding {}", self.tracker.log_prefix(), height, hash);
+                self.tracker.add_block(block.header, txs, proof).await;
+
+                self.do_heartbeat().await;
+                Ok(ScheduleNext::Immediate)
             }
-        };
-
-        *state = State::Scanning;
-
-        // Fetch the next block from bitcoind
-        let block = self.client.get_block(&hash).await?;
-
-        // Is the new block on top of our current tip?
-        if block.header.prev_blockhash != hash0 {
-            // Reorg, remove the last block
-            return self.remove_block(height0, hash0).await;
+            FollowAction::BlockReorged(block) => {
+                debug!(
+                    "{} reorg at height {}, removing hash {}",
+                    self.tracker.log_prefix(),
+                    height0,
+                    abbrev!(hash0, 12),
+                );
+                let (txid_watches, outpoint_watches) = self.tracker.reverse_watches().await;
+                let (txs, proof) = build_proof(&block, &txid_watches, &outpoint_watches);
+                // The tracker will reverse the txs in remove_block, so leave normal order here.
+                self.tracker.remove_block(txs, proof).await;
+                Ok(ScheduleNext::Immediate)
+            }
         }
-
-        // Add this block
-        let height = height0 + 1;
-        if height % 2016 == 0 {
-            info!("{} at height {}", self.tracker.log_prefix(), height);
-        }
-
-        let (txid_watches, outpoint_watches) = self.tracker.forward_watches().await;
-        let (txs, proof) = build_proof(&block, &txid_watches, &outpoint_watches);
-        // debug!("node {} at height {} adding {}", self.tracker.log_prefix(), height, hash);
-        self.tracker.add_block(block.header, txs, proof).await;
-
-        self.do_heartbeat().await;
-
-        Ok(ScheduleNext::Immediate)
     }
 
     async fn do_heartbeat(&self) {
         let heartbeat = self.tracker.beat().await;
         self.heartbeat_monitor().await.on_heartbeat(heartbeat)
-    }
-
-    async fn remove_block(&self, height0: u32, hash0: BlockHash) -> Result<ScheduleNext, Error> {
-        debug!(
-            "{} reorg at height {}, removing hash {}",
-            self.tracker.log_prefix(),
-            height0,
-            abbrev!(hash0, 12),
-        );
-        let block = self.client.get_block(&hash0).await?;
-        let (txid_watches, outpoint_watches) = self.tracker.reverse_watches().await;
-        let (txs, proof) = build_proof(&block, &txid_watches, &outpoint_watches);
-        // The tracker will reverse the txs in remove_block, so leave normal order here.
-        self.tracker.remove_block(txs, proof).await;
-        Ok(ScheduleNext::Immediate)
     }
 }
 
@@ -278,8 +251,9 @@ mod tests {
 
     use bitcoin::{Block, BlockHeader, OutPoint, TxIn, TxMerkleNode, TxOut};
 
-    use crate::bitcoin::hashes::Hash;
     use crate::bitcoin::{PackedLockTime, Sequence, Witness};
+    use lightning_signer::bitcoin::hashes::Hash;
+    use lightning_signer::bitcoin::BlockHash;
     use test_log::test;
 
     fn make_tx(previous_outputs: Vec<OutPoint>, outputs: Vec<TxOut>) -> Transaction {
