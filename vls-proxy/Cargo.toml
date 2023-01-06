@@ -39,7 +39,7 @@ async-stream = { version = "0.3", optional = true }
 anyhow = "1.0"
 thiserror = "1.0"
 async-trait = "0.1"
-url = { version = "2.2", optional = true }
+url = { version = "2.3", optional = true }
 as-any = "0.3"
 hex = "0.4"
 txoo-bitcoind-client = { git = "https://gitlab.com/lightning-signer/txoo", rev = "883c6e0bac75546463d92987969ed5e5bbb8ef22"}
