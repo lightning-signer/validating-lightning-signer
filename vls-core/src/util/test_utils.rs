@@ -1642,7 +1642,7 @@ pub fn make_node_and_channel(
     let (node_id, node, seed) = make_node();
 
     let (_, channel) = node.new_channel(Some(channel_id), &Arc::clone(&node)).unwrap();
-    (node_id, node, channel.unwrap(), seed)
+    (node_id, node, channel.unwrap().unwrap_stub().clone(), seed)
 }
 
 pub(crate) fn make_node() -> (PublicKey, Arc<Node>, [u8; 32]) {

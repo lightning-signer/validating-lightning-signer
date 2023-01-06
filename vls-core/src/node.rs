@@ -915,34 +915,22 @@ impl Node {
     ///
     /// If unspecified, a channel ID will be generated.
     ///
-    /// This function will return an invalid_argument [Status] if there is
-    /// an existing channel with this ID and it's not a stub channel.
-    ///
     /// Returns the channel ID and the stub.
+    ///
+    /// If there was already a channel with this ID, it is returned.
     pub fn new_channel(
         &self,
         opt_channel_id: Option<ChannelId>,
         arc_self: &Arc<Node>,
-    ) -> Result<(ChannelId, Option<ChannelStub>), Status> {
+    ) -> Result<(ChannelId, Option<ChannelSlot>), Status> {
         let channel_id = opt_channel_id.unwrap_or_else(|| self.keys_manager.get_channel_id());
         let mut channels = self.channels.lock().unwrap();
 
         // Is there an existing channel slot?
         let maybe_slot = channels.get(&channel_id);
-        if maybe_slot.is_some() {
-            match &*maybe_slot.unwrap().lock().unwrap() {
-                ChannelSlot::Stub(stub) => {
-                    // This stub is "embryonic" (hasn't signed a commitment).  This
-                    // can happen if the initial channel create to this peer failed
-                    // in negotiation.  It's ok to just use this stub.
-                    return Ok((channel_id, Some(stub.clone())));
-                }
-                ChannelSlot::Ready(_) => {
-                    // Calling new_channel on a channel that's already been marked
-                    // ready is not allowed.
-                    return Err(invalid_argument(format!("channel already ready: {}", channel_id)));
-                }
-            };
+        if let Some(slot) = maybe_slot {
+            let slot = slot.lock().unwrap().clone();
+            return Ok((channel_id, Some(slot)));
         }
 
         let channel_value_sat = 0; // Placeholder value, not known yet.
@@ -962,7 +950,7 @@ impl Node {
             // Persist.new_channel should only fail if the channel was previously persisted.
             // So if it did fail, we have an internal error.
             .expect("channel was in storage but not in memory");
-        Ok((channel_id.clone(), Some(stub)))
+        Ok((channel_id.clone(), Some(ChannelSlot::Stub(stub))))
     }
 
     pub(crate) fn restore_channel(
@@ -2531,7 +2519,7 @@ mod tests {
         let uck = node
             .with_ready_channel(&channel_id, |chan| chan.get_unilateral_close_key(&None, &None))
             .unwrap();
-        let keys = &chan.as_ref().unwrap().keys;
+        let keys = &chan.as_ref().unwrap().unwrap_stub().keys;
         let key = keys.pubkeys().payment_point;
 
         assert_eq!(
