@@ -208,7 +208,7 @@ pub trait ChannelBase: Any {
 /// A channel can be in two states - before [Node::ready_channel] it's a
 /// [ChannelStub], afterwards it's a [Channel].  This enum keeps track
 /// of the two different states.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ChannelSlot {
     /// Initial state, not ready
     Stub(ChannelStub),
@@ -230,6 +230,15 @@ impl ChannelSlot {
         match self {
             ChannelSlot::Stub(stub) => stub.get_channel_basepoints(),
             ChannelSlot::Ready(chan) => chan.get_channel_basepoints(),
+        }
+    }
+
+    /// Assume this is a channel stub, and return it.
+    /// Panics if it's not.
+    pub fn unwrap_stub(&self) -> &ChannelStub {
+        match self {
+            ChannelSlot::Stub(stub) => stub,
+            ChannelSlot::Ready(_) => panic!("unwrap_stub called on ChannelSlot::Ready"),
         }
     }
 }
