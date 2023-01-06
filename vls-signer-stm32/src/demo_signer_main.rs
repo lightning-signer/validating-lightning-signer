@@ -173,10 +173,10 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         display_intro(&mut devctx, runctx.cmn.network, runctx.cmn.permissive, "test-mode");
 
         // Receive the HsmdInit2 message to learn the dev_seed (and allowlist)
-        let (sequence, dbid) =
-            read_serial_request_header(&mut devctx.serial).expect("read init header");
-        assert_eq!(dbid, 0);
-        assert_eq!(sequence, 0);
+        let reqhdr = read_serial_request_header(&mut devctx.serial).expect("read init header");
+        assert_eq!(reqhdr.sequence, 0);
+        assert_eq!(reqhdr.peer_id, [0u8; 33]);
+        assert_eq!(reqhdr.dbid, 0);
         let init: msgs::HsmdInit2 =
             msgs::read_message(&mut devctx.serial).expect("failed to read init message");
         info!("init {:?}", init);
@@ -197,7 +197,8 @@ fn start_test_mode(runctx: TestingContext) -> ! {
             .build();
         let (init_reply, _muts) =
             root_handler.handle(Message::HsmdInit2(init)).expect("handle init");
-        write_serial_response_header(&mut devctx.serial, sequence).expect("write init header");
+        write_serial_response_header(&mut devctx.serial, reqhdr.sequence)
+            .expect("write init header");
         msgs::write_vec(&mut devctx.serial, init_reply.as_vec()).expect("write init reply");
 
         info!("used {} bytes", heap_bytes_used());
@@ -208,9 +209,6 @@ fn start_test_mode(runctx: TestingContext) -> ! {
 }
 
 fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHandler) -> ! {
-    // HACK - use a dummy peer_id until it is plumbed
-    let dummy_peer = PubKey([0; 33]);
-
     let mut tracks = tracks::Tracks::new();
     let mut numreq = 0_u64;
     let mut maxkb = heap_bytes_used() / 1024;
@@ -218,29 +216,22 @@ fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHa
         let mut devctx = arc_devctx.borrow_mut();
 
         numreq += 1;
-        let (sequence, dbid) =
-            read_serial_request_header(&mut devctx.serial).expect("read request header");
-        let mut message = msgs::read(&mut devctx.serial).expect("message read failed");
+        let reqhdr = read_serial_request_header(&mut devctx.serial).expect("read request header");
 
-        // Override the peerid when it is passed in certain messages
-        match message {
-            Message::NewChannel(ref mut m) => m.node_id = dummy_peer.clone(),
-            Message::ClientHsmFd(ref mut m) => m.peer_id = dummy_peer.clone(),
-            Message::GetChannelBasepoints(ref mut m) => m.node_id = dummy_peer.clone(),
-            Message::SignCommitmentTx(ref mut m) => m.peer_id = dummy_peer.clone(),
-            _ => {}
-        };
+        let message = msgs::read(&mut devctx.serial).expect("message read failed");
+
+        let peer_id = PubKey(reqhdr.peer_id);
 
         const NUM_TRACKS: usize = 5;
-        let top_tracks = tracks.add_message(dbid, numreq, &message, NUM_TRACKS);
+        let top_tracks = tracks.add_message(reqhdr.dbid, numreq, &message, NUM_TRACKS);
 
         let mut message_d = format!("{:?}", message);
         message_d.truncate(20);
 
         let start = devctx.timer1.now();
         drop(devctx); // Release the DeviceContext during the handler call (Approver needs)
-        let reply = if dbid > 0 {
-            let handler = root_handler.for_new_client(0, dummy_peer.clone(), dbid);
+        let reply = if reqhdr.dbid > 0 {
+            let handler = root_handler.for_new_client(0, peer_id, reqhdr.dbid);
             handler.handle(message).expect("handle").0
         } else {
             root_handler.handle(message).expect("handle").0
@@ -288,7 +279,8 @@ fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHa
             top_tracks[4].clone(),
         ]);
 
-        write_serial_response_header(&mut devctx.serial, sequence).expect("write reply header");
+        write_serial_response_header(&mut devctx.serial, reqhdr.sequence)
+            .expect("write reply header");
         msgs::write_vec(&mut devctx.serial, reply.as_vec()).expect("write reply");
     }
 }

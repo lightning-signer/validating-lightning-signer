@@ -14,7 +14,7 @@ use connection::{open_parent_fd, UnixConnection};
 
 use lightning_signer::bitcoin::Network;
 
-use vls_protocol_signer::vls_protocol::msgs::{self, Message};
+use vls_protocol_signer::vls_protocol::msgs::{self, Message, SerialRequestHeader};
 use vls_protocol_signer::vls_protocol::serde_bolt::WireString;
 
 use serial::{connect, SerialSignerPort, SignerLoop};
@@ -32,7 +32,12 @@ fn run_test(serial_port: String) -> anyhow::Result<()> {
     let mut sequence = 1;
 
     loop {
-        msgs::write_serial_request_header(&mut serial, sequence, 0)?;
+        let peer_id = [0u8; 33];
+        let dbid = 0;
+        msgs::write_serial_request_header(
+            &mut serial,
+            &SerialRequestHeader { sequence, peer_id, dbid },
+        )?;
         let ping = msgs::Ping { id, message: WireString("ping".as_bytes().to_vec()) };
         msgs::write(&mut serial, ping)?;
         msgs::read_serial_response_header(&mut serial, sequence)?;

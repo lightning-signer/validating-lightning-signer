@@ -5,7 +5,7 @@ use as_any::AsAny;
 use core::fmt::Debug;
 
 use crate::error::{Error, Result};
-use crate::io::{read_u16, read_u32, read_u64};
+use crate::io::{read_bytes, read_u16, read_u32, read_u64};
 use crate::model::*;
 use bolt_derive::{ReadMessage, SerBolt};
 use serde::{de, ser};
@@ -911,15 +911,23 @@ pub fn write_vec<W: Write>(writer: &mut W, buf: Vec<u8>) -> Result<()> {
     Ok(())
 }
 
-/// Write a serial request header that includes two magic bytes, two sequence bytes and dbid
+/// A serial request header
+#[derive(Debug)]
+pub struct SerialRequestHeader {
+    pub sequence: u16,
+    pub peer_id: [u8; 33],
+    pub dbid: u64,
+}
+
+/// Write a serial request header prefixed by two magic bytes
 pub fn write_serial_request_header<W: Write>(
     writer: &mut W,
-    sequence: u16,
-    dbid: u64,
+    srh: &SerialRequestHeader,
 ) -> Result<()> {
     writer.write_all(&0xaa55u16.to_be_bytes())?;
-    writer.write_all(&sequence.to_be_bytes())?;
-    writer.write_all(&dbid.to_be_bytes())?;
+    writer.write_all(&srh.sequence.to_be_bytes())?;
+    writer.write_all(&srh.peer_id)?;
+    writer.write_all(&srh.dbid.to_be_bytes())?;
     Ok(())
 }
 
@@ -930,17 +938,18 @@ pub fn write_serial_response_header<W: Write>(writer: &mut W, sequence: u16) -> 
     Ok(())
 }
 
-/// Read the serial request header and return the sequence number and dbid.
+/// Read and return the serial request header
 /// Returns BadFraming if the magic is wrong.
-pub fn read_serial_request_header<R: Read>(reader: &mut R) -> Result<(u16, u64)> {
+pub fn read_serial_request_header<R: Read>(reader: &mut R) -> Result<SerialRequestHeader> {
     let magic = read_u16(reader)?;
     if magic != 0xaa55 {
         error!("bad magic {:02x}", magic);
         return Err(Error::BadFraming);
     }
     let sequence = read_u16(reader)?;
+    let peer_id = read_bytes(reader)?;
     let dbid = read_u64(reader)?;
-    Ok((sequence, dbid))
+    Ok(SerialRequestHeader { sequence, peer_id, dbid })
 }
 
 /// Read the serial response header and match the expected sequence number

@@ -37,3 +37,15 @@ pub(crate) fn read_u16<R: Read>(reader: &mut R) -> Result<u16> {
     }
     Ok(u16::from_be_bytes(buf))
 }
+
+pub(crate) fn read_bytes<R: Read, const SZ: usize>(reader: &mut R) -> Result<[u8; SZ]> {
+    let mut buf = [0u8; SZ];
+    let len = reader.read(&mut buf)?;
+    if len == 0 {
+        return Err(Error::Eof);
+    }
+    if len < buf.len() {
+        return Err(Error::ShortRead);
+    }
+    Ok(buf)
+}
