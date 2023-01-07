@@ -6,12 +6,6 @@
 
 <!-- Describe how one can reproduce the issue - this is very important. Please use an ordered list. -->
 
-### Example Project
-
-<!-- If possible, please create an example project here on GitLab.com that exhibits the problematic 
-behavior, and link to it here in the bug report. If you are using an older version of GitLab, this 
-will also determine whether the bug is fixed in a more recent version. -->
-
 ### What is the current *bug* behavior?
 
 <!-- Describe what actually happens. -->
@@ -25,52 +19,22 @@ will also determine whether the bug is fixed in a more recent version. -->
 <!-- Paste any relevant logs - please use code blocks (```) to format console output, logs, and code
  as it's tough to read otherwise. -->
 
-### Output of checks
+#### VLS Version Info
 
-<!-- If you are reporting a bug on GitLab.com, uncomment below -->
+<!--  Input any the version of VLS you are running. -->
 
-<!-- This bug happens on GitLab.com -->
-<!-- /label ~"reproduced on GitLab.com" -->
-
-#### Results of GitLab environment info
-
-<!--  Input any relevant GitLab environment information if needed. -->
-
-<details>
-<summary>Expand for output related to GitLab environment info</summary>
-
-<pre>
-
-(For installations with omnibus-gitlab package run and paste the output of:
-`sudo gitlab-rake gitlab:env:info`)
-
-(For installations from source run and paste the output of:
-`sudo -u git -H bundle exec rake gitlab:env:info RAILS_ENV=production`)
-
-</pre>
-</details>
-
-#### Results of GitLab application Check
-
-<!--  Input any relevant GitLab application check information if needed. -->
-
-<details>
-<summary>Expand for output related to the GitLab application check</summary>
-<pre>
-
-(For installations with omnibus-gitlab package run and paste the output of:
-`sudo gitlab-rake gitlab:check SANITIZE=true`)
-
-(For installations from source run and paste the output of:
-`sudo -u git -H bundle exec rake gitlab:check RAILS_ENV=production SANITIZE=true`)
-
-(we will only investigate if the tests are passing)
-
-</pre>
-</details>
+In a `vls` tree:
+```
+git describe --tags --long --always --match='v*.*'
+```
+In a `vls-hsmd` tree:
+```
+make list-versions
+```
 
 ### Possible fixes
 
 <!-- If you can, link to the line of code that might be responsible for the problem. -->
 
-/label ~triage
+<!-- Please do not change the below as it helps us to classify new issues. You are welcome to choose additional labels as needed. -->
+/label ~triage ~bug
