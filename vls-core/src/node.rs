@@ -2013,7 +2013,7 @@ mod tests {
     use bitcoin::consensus::deserialize;
     use bitcoin::hashes::sha256d::Hash as Sha256dHash;
     use bitcoin::hashes::Hash;
-    use bitcoin::secp256k1;
+    use bitcoin::{BlockHash, secp256k1};
     use bitcoin::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::util::sighash::SighashCache;
@@ -2792,5 +2792,22 @@ mod tests {
             node.get_onion_reply_secret().to_hex(),
             "cfd1fb341180bf3fa2f624ed7d4a809aedf388e3ba363c589faf341018cb83e1"
         );
+    }
+
+
+    #[test]
+    fn serialize_heartbeat_test() {
+        let hb = SignedHeartbeat {
+            signature: vec![1, 2, 3, 4],
+            heartbeat: Heartbeat {
+                chain_tip: BlockHash::all_zeros(),
+                chain_height: 0,
+                chain_timestamp: 0,
+                current_timestamp: 0,
+            },
+        };
+        let mut ser_hb = to_vec(&hb).expect("heartbeat");
+        let de_hb: SignedHeartbeat = serde_bolt::from_vec(&mut ser_hb).expect("bad heartbeat");
+        assert_eq!(format!("{:?}", hb), format!("{:?}", de_hb));
     }
 }
