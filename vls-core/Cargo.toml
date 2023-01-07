@@ -43,7 +43,7 @@ path = "src/lib.rs"
 [dependencies]
 serde = { version = "1.0", default_features = false, features = ["alloc"] }
 serde_derive = { version = "1.0" }
-serde_bolt = { version = "0.2.2", default-features = false }
+serde_bolt = { version = "0.2.3", default-features = false }
 serde_with = { version = "2.0", default-features = false, features = ["hex", "macros"] }
 bolt-derive = { path = "../bolt-derive" }
 

@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use bitcoin::consensus::serialize;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
+use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
 use lightning_signer::bitcoin;
@@ -71,7 +72,8 @@ impl ChainTrack for NodePortFront {
             .await
             .expect("NodeInfo failed");
         if let Ok(Message::NodeInfoReply(m)) = msgs::from_vec(reply) {
-            let pubkey = PublicKey::from_slice(&m.bip32.0).expect("NodeInfoReply bip32 pubkey");
+            let xpubkey = ExtendedPubKey::decode(&m.bip32.0).expect("NodeInfoReply bip32 xpubkey");
+            let pubkey = xpubkey.public_key;
             let mut lock = self.heartbeat_pubkey.lock().unwrap();
             *lock = Some(pubkey.clone());
             return pubkey;
