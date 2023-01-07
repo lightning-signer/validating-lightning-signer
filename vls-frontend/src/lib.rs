@@ -14,6 +14,7 @@ use lightning_signer::bitcoin;
 use lightning_signer::node::SignedHeartbeat;
 
 mod chain_follower;
+mod follower;
 pub mod frontend;
 pub mod heartbeat;
 
