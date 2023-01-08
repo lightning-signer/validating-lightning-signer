@@ -231,6 +231,12 @@ impl SetupFS {
         dirpath.clone()
     }
 
+    #[allow(unused)]
+    // Removes a file, ok if it doesn't exist
+    pub fn remove_possible_file(&self, rundir: &sdcard::DIR, path: &str) {
+        rundir.remove(path).ok(); // ignore errors
+    }
+
     // Read a string value from a file, stripping an optional trailing newline
     fn read_file_string(&self, rundir: &sdcard::DIR, path: &str) -> Option<String> {
         match rundir.open_file(path) {

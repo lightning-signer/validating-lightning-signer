@@ -15,7 +15,10 @@ use secp256k1::PublicKey;
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::secp256k1;
 use vls_protocol::model::Secret;
-use vls_protocol::{msgs, msgs::Message, serde_bolt, serde_bolt::WireString, Error, Result};
+use vls_protocol::{
+    msgs, msgs::Message, msgs::SerialRequestHeader, serde_bolt, serde_bolt::WireString, Error,
+    Result,
+};
 use vls_protocol_client::SignerPort;
 use vls_protocol_signer::vls_protocol;
 use vls_proxy::client::Client;
@@ -108,7 +111,12 @@ pub fn connect(serial_port: String) -> anyhow::Result<SerialWrap> {
         dev_allowlist: allowlist,
     };
     let sequence = 0;
-    msgs::write_serial_request_header(&mut serial, sequence, 0)?;
+    let peer_id = [0; 33];
+    let dbid = 0;
+    msgs::write_serial_request_header(
+        &mut serial,
+        &SerialRequestHeader { sequence, peer_id, dbid },
+    )?;
     msgs::write(&mut serial, init)?;
     msgs::read_serial_response_header(&mut serial, sequence)?;
     let init_reply: msgs::HsmdInit2Reply = msgs::read_message(&mut serial)?;
@@ -133,8 +141,12 @@ impl SignerPort for SerialSignerPort {
         spawn_blocking(move || {
             let mut serial_guard = serial.lock().unwrap();
             let serial = &mut *serial_guard;
+            let peer_id = [0u8; 33];
             let dbid = 0;
-            msgs::write_serial_request_header(serial, serial.sequence, dbid)?;
+            msgs::write_serial_request_header(
+                serial,
+                &SerialRequestHeader { sequence: serial.sequence, peer_id, dbid },
+            )?;
             msgs::write_vec(serial, message)?;
             msgs::read_serial_response_header(serial, serial.sequence)?;
             serial.sequence = serial.sequence.wrapping_add(1);
@@ -224,8 +236,12 @@ impl<C: 'static + Client> SignerLoop<C> {
     fn handle_message(&mut self, message: Vec<u8>) -> Result<Vec<u8>> {
         let mut serial_guard = self.serial.lock().unwrap();
         let serial = &mut *serial_guard;
+        let peer_id = self.client_id.as_ref().map(|c| c.peer_id.serialize()).unwrap_or([0u8; 33]);
         let dbid = self.client_id.as_ref().map(|c| c.dbid).unwrap_or(0);
-        msgs::write_serial_request_header(serial, serial.sequence, dbid)?;
+        msgs::write_serial_request_header(
+            serial,
+            &SerialRequestHeader { sequence: serial.sequence, peer_id, dbid },
+        )?;
         msgs::write_vec(serial, message)?;
         msgs::read_serial_response_header(serial, serial.sequence)?;
         serial.sequence = serial.sequence.wrapping_add(1);

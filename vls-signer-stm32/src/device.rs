@@ -107,8 +107,8 @@ const NROWS: u16 = 10;
 
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
-// 128K heap, leaving 128K for stack (which is overkill)
-const HEAP_SIZE: usize = 1024 * 128;
+// 192K heap, leaving 64K for stack
+const HEAP_SIZE: usize = 1024 * 192;
 
 pub fn make_timer(clocks: &Clocks, tim2: TIM2) -> Counter<TIM2, 1000000> {
     let mut timer = FTimerUs::<TIM2>::new(tim2, &clocks).counter();
