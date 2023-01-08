@@ -248,7 +248,7 @@ fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHa
         let balance = root_handler.channel_balance();
         devctx.disp.show_texts(&[
             format!(
-                "h: {:<9} {:>4}KB",
+                "h:  {:<9}{:>4}KB",
                 pretty_thousands(root_handler.get_chain_height() as i64),
                 kb
             ),
