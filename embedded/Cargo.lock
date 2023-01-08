@@ -592,9 +592,9 @@ dependencies = [
 
 [[package]]
 name = "serde_bolt"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfc3375c2f83f563b0434878fcefddea9b35a7bae5e267d65ad7044f89aa285e"
+checksum = "fd5fb14792b8d139f641e6d0e1a19eb0e3c47ec8629a2dc4e75fcbd7d77f46a8"
 dependencies = [
  "hex",
  "serde",

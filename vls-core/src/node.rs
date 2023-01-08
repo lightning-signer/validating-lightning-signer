@@ -2013,10 +2013,10 @@ mod tests {
     use bitcoin::consensus::deserialize;
     use bitcoin::hashes::sha256d::Hash as Sha256dHash;
     use bitcoin::hashes::Hash;
-    use bitcoin::{BlockHash, secp256k1};
     use bitcoin::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::util::sighash::SighashCache;
+    use bitcoin::{secp256k1, BlockHash};
     use bitcoin::{Address, EcdsaSighashType, OutPoint};
     use lightning::ln::chan_utils::derive_private_key;
     use lightning::ln::{chan_utils, PaymentSecret};
@@ -2793,7 +2793,6 @@ mod tests {
             "cfd1fb341180bf3fa2f624ed7d4a809aedf388e3ba363c589faf341018cb83e1"
         );
     }
-
 
     #[test]
     fn serialize_heartbeat_test() {
