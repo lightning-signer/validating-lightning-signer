@@ -23,7 +23,7 @@ path = "src/lib.rs"
 [dependencies]
 async-trait = "0.1"
 log = { version="0.4.14", features = [ "std" ] }
-tokio = { version = "1.17", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.24", features = ["macros", "rt-multi-thread"] }
 url = "2.3"
 txoo-bitcoind-client = { git = "https://gitlab.com/lightning-signer/txoo", rev = "883c6e0bac75546463d92987969ed5e5bbb8ef22"}
 vls-core = { path = "../vls-core" }

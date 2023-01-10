@@ -18,7 +18,7 @@ crypt = []
 sled = "0.34"
 serde = { version = "1.0", features = ["derive"] }
 serde_cbor = "0.11"
-tokio = { version = "1.17", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.24", features = ["macros", "rt-multi-thread"] }
 tonic = { version = "0.8", features = ["tls"] }
 prost = "0.11"
 triggered = "0.1"
@@ -60,3 +60,9 @@ name = "test_concurrent_access"
 
 [[example]]
 name = "database_bench"
+
+[profile.dev]
+panic = 'abort'
+
+[profile.release]
+panic = 'abort'
