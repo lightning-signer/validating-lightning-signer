@@ -27,7 +27,7 @@ fern = { version = "0.6", features = ["colored"], optional = true }
 clap = { version = "=3.0.0-beta.2", optional = true }
 clap_derive = { version = "=3.0.0-beta.5", optional = true }
 http = "0.2"
-tokio = { version = "1.17", features = ["macros", "rt-multi-thread"], optional = true }
+tokio = { version = "1.24", features = ["macros", "rt-multi-thread"], optional = true }
 tokio-stream = { version = "0.1", optional = true }
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 hyper = "0.14"
