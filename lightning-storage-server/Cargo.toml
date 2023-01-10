@@ -60,3 +60,9 @@ name = "test_concurrent_access"
 
 [[example]]
 name = "database_bench"
+
+[profile.dev]
+panic = 'abort'
+
+[profile.release]
+panic = 'abort'
