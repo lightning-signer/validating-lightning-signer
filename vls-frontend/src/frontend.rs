@@ -1,6 +1,8 @@
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use tokio::task;
+use tokio::{task, time};
 
 use url::Url;
 
@@ -8,28 +10,53 @@ use log::info;
 
 use crate::{chain_follower::ChainFollower, ChainTrack, ChainTrackDirectory};
 
+#[derive(Clone)]
 pub struct Frontend {
-    pub signer: Arc<dyn ChainTrackDirectory>,
-    pub rpc_url: Url,
+    directory: Arc<dyn ChainTrackDirectory>,
+    rpc_url: Url,
+    tracker_ids: Arc<Mutex<HashSet<Vec<u8>>>>,
 }
 
 impl Frontend {
     /// Create a new Frontend
     pub fn new(signer: Arc<dyn ChainTrackDirectory>, rpc_url: Url) -> Frontend {
-        Frontend { signer, rpc_url }
+        let tracker_ids = Arc::new(Mutex::new(HashSet::new()));
+        Frontend { directory: signer, rpc_url, tracker_ids }
+    }
+
+    pub fn directory(&self) -> Arc<dyn ChainTrackDirectory> {
+        Arc::clone(&self.directory)
     }
 
     /// Start a task which creates a chain follower for each existing tracker
     pub fn start(&self) {
-        let signer = Arc::clone(&self.signer);
-        let rpc_url = self.rpc_url.clone();
+        let s = self.clone();
         task::spawn(async move {
-            for tracker in signer.trackers().await {
-                let cf_arc = ChainFollower::new(tracker, &rpc_url).await;
-                ChainFollower::start(cf_arc).await;
-            }
+            s.start_loop().await;
         });
         info!("frontend started");
+    }
+
+    async fn start_loop(&self) {
+        let mut interval = time::interval(Duration::from_secs(1));
+        loop {
+            interval.tick().await;
+            self.handle_new_trackers().await;
+        }
+    }
+
+    async fn handle_new_trackers(&self) {
+        for tracker in self.directory.trackers().await {
+            let tracker_id = tracker.id().await;
+            {
+                let mut lock = self.tracker_ids.lock().unwrap();
+                if lock.contains(&tracker_id) {
+                    continue;
+                }
+                lock.insert(tracker_id);
+            }
+            self.start_follower(tracker).await;
+        }
     }
 
     /// Start a chain follower for a specific tracker

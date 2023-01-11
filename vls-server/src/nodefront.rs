@@ -68,6 +68,10 @@ impl ChainTrack for NodeFront {
         format!("tracker {}", self.node.log_prefix())
     }
 
+    async fn id(&self) -> Vec<u8> {
+        self.node.get_id().serialize().to_vec()
+    }
+
     async fn heartbeat_pubkey(&self) -> PublicKey {
         self.heartbeat_pubkey.clone()
     }

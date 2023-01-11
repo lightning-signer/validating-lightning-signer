@@ -40,16 +40,41 @@ impl ChainTrackDirectory for SignerPortFront {
     }
 }
 
+#[derive(Clone)]
+struct NodeKeys {
+    node_id: PublicKey,
+    heartbeat_pubkey: PublicKey,
+}
+
 /// Implements ChainTrack using RPC to remote node
 pub(crate) struct NodePortFront {
     signer_port: Box<dyn SignerPort>,
     network: Network,
-    heartbeat_pubkey: Mutex<Option<PublicKey>>,
+    node_keys: Mutex<Option<NodeKeys>>,
 }
 
 impl NodePortFront {
     fn new(signer_port: Box<dyn SignerPort>, network: Network) -> Self {
-        Self { signer_port, network, heartbeat_pubkey: Mutex::new(None) }
+        Self { signer_port, network, node_keys: Mutex::new(None) }
+    }
+
+    async fn populate_keys(&self) -> NodeKeys {
+        let reply = self
+            .signer_port
+            .handle_message(msgs::NodeInfo {}.as_vec())
+            .await
+            .expect("NodeInfo failed");
+        if let Ok(Message::NodeInfoReply(m)) = msgs::from_vec(reply) {
+            let xpubkey = ExtendedPubKey::decode(&m.bip32.0).expect("NodeInfoReply bip32 xpubkey");
+            let heartbeat_pubkey = xpubkey.public_key;
+            let node_id = PublicKey::from_slice(&m.node_id.0).expect("NodeInfoReply node_id");
+            let mut lock = self.node_keys.lock().unwrap();
+            let keys = NodeKeys { node_id, heartbeat_pubkey };
+            *lock = Some(keys.clone());
+            return keys;
+        } else {
+            panic!("unexpected NodeInfoReply");
+        }
     }
 }
 
@@ -59,27 +84,26 @@ impl ChainTrack for NodePortFront {
         format!("tracker")
     }
 
-    async fn heartbeat_pubkey(&self) -> PublicKey {
+    async fn id(&self) -> Vec<u8> {
         {
-            let lock = self.heartbeat_pubkey.lock().unwrap();
-            if let Some(pk) = *lock {
-                return pk;
+            let lock = self.node_keys.lock().unwrap();
+            if let Some(nk) = lock.as_ref() {
+                return nk.node_id.serialize().to_vec();
             }
         }
-        let reply = self
-            .signer_port
-            .handle_message(msgs::NodeInfo {}.as_vec())
-            .await
-            .expect("NodeInfo failed");
-        if let Ok(Message::NodeInfoReply(m)) = msgs::from_vec(reply) {
-            let xpubkey = ExtendedPubKey::decode(&m.bip32.0).expect("NodeInfoReply bip32 xpubkey");
-            let pubkey = xpubkey.public_key;
-            let mut lock = self.heartbeat_pubkey.lock().unwrap();
-            *lock = Some(pubkey.clone());
-            return pubkey;
-        } else {
-            panic!("unexpected NodeInfoReply");
+        let keys = self.populate_keys().await;
+        keys.node_id.serialize().to_vec()
+    }
+
+    async fn heartbeat_pubkey(&self) -> PublicKey {
+        {
+            let lock = self.node_keys.lock().unwrap();
+            if let Some(nk) = lock.as_ref() {
+                return nk.heartbeat_pubkey.clone();
+            }
         }
+        let keys = self.populate_keys().await;
+        keys.heartbeat_pubkey
     }
 
     fn network(&self) -> Network {

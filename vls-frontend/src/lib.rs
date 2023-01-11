@@ -37,6 +37,9 @@ pub trait ChainTrack: Sync + Send {
     /// Identity string for the log
     fn log_prefix(&self) -> String;
 
+    /// Full identity
+    async fn id(&self) -> Vec<u8>;
+
     /// The heartbeat public key
     async fn heartbeat_pubkey(&self) -> PublicKey;
 
