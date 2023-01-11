@@ -141,6 +141,8 @@ impl ChainFollower {
                     info!("{} synced at height {}", self.tracker.log_prefix(), height0);
                     *state = State::Synced;
                 }
+
+                self.do_heartbeat().await;
                 return Ok(ScheduleNext::Pause);
             }
             FollowWithProofAction::BlockAdded(block, (txs, proof)) => {
@@ -153,7 +155,6 @@ impl ChainFollower {
                 // debug!("node {} at height {} adding {}", self.tracker.log_prefix(), height, hash);
                 self.tracker.add_block(block.header, txs, proof).await;
 
-                self.do_heartbeat().await;
                 Ok(ScheduleNext::Immediate)
             }
             FollowWithProofAction::BlockReorged(_block, (txs, proof)) => {

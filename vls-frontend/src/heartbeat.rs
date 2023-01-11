@@ -58,7 +58,7 @@ impl HeartbeatMonitor {
         let ok = heartbeat.verify(&self.pubkey, &self.secp);
         if ok {
             let mut state = self.state.lock().unwrap();
-            info!("{} heartbeat: {:?}", self.log_prefix, heartbeat);
+            info!("{} heartbeat: height {:?}", self.log_prefix, heartbeat.heartbeat.chain_height);
             state.last_heartbeat = Some(heartbeat);
             state.last_timestamp = Self::now();
         } else {
