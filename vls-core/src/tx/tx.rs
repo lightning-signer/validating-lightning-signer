@@ -684,7 +684,7 @@ impl CommitmentInfo {
             return Err(script_format_error("negative delay".to_string()));
         }
         if delay > MAX_DELAY {
-            return Err(script_format_error("delay too large".to_string()));
+            return Err(script_format_error(format!("delay too large: {} > {}", delay, MAX_DELAY)));
         }
 
         // This is safe because we checked for negative
