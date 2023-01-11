@@ -20,7 +20,7 @@ vls-protocol-client = { path = "../vls-protocol-client" }
 vls-protocol = { path = "../vls-protocol" }
 vls-frontend = { path = "../vls-frontend" }
 lightning-storage-server = { path = "../lightning-storage-server", default-features = false }
-nix = "0.22"
+nix = "0.26"
 serde = "1.0"
 log = "0.4"
 fern = { version = "0.6", features = ["colored"], optional = true }
@@ -34,7 +34,8 @@ futures = { version = "0.3", default-features = false, features = ["alloc"] }
 hyper = "0.14"
 tonic = { version = "0.8", optional = true }
 prost = { version = "0.11", optional = true }
-ctrlc = { version = "3.1", features = ["termination"], optional = true }
+# note that 3.2.4 increments nix dep in a non-semver way to 0.26
+ctrlc = { version = "3.2.4", features = ["termination"], optional = true }
 triggered = "0.1"
 async-stream = { version = "0.3", optional = true }
 anyhow = "1.0"
