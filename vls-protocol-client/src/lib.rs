@@ -65,6 +65,8 @@ pub enum Error {
     TransportError,
 }
 
+pub type ClientResult<T> = Result<T, Error>;
+
 impl From<ProtocolError> for Error {
     fn from(e: ProtocolError) -> Self {
         Error::ProtocolError(e)

@@ -7,8 +7,9 @@ use async_trait::async_trait;
 
 use super::adapter::{ChannelReply, ChannelRequest, ClientId};
 use crate::client::Client;
-use vls_protocol::{msgs, msgs::Message, Error, Result};
-use vls_protocol_client::SignerPort;
+use vls_protocol::{msgs, msgs::Message, Error};
+use vls_protocol_client::Error::ProtocolError;
+use vls_protocol_client::{ClientResult as Result, SignerPort};
 use vls_protocol_signer::vls_protocol;
 
 pub struct GrpcSignerPort {
@@ -91,7 +92,7 @@ impl<C: 'static + Client> SignerLoop<C> {
         info!("loop {}: start", self.log_prefix);
         match self.do_loop() {
             Ok(()) => info!("loop {}: done", self.log_prefix),
-            Err(Error::Eof) => info!("loop {}: ending", self.log_prefix),
+            Err(ProtocolError(Error::Eof)) => info!("loop {}: ending", self.log_prefix),
             Err(e) => error!("loop {}: error {:?}", self.log_prefix, e),
         }
         if let Some(trigger) = self.shutdown_trigger.as_ref() {
