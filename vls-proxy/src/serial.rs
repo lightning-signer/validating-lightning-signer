@@ -16,8 +16,9 @@ use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::secp256k1;
 use vls_protocol::model::Secret;
 use vls_protocol::{
-    msgs, msgs::Message, msgs::SerialRequestHeader, serde_bolt, serde_bolt::WireString, Error,
-    Result,
+    msgs::{self, Message, SerialRequestHeader},
+    serde_bolt::{self, WireString},
+    Error, Result,
 };
 use vls_protocol_client::SignerPort;
 use vls_protocol_signer::vls_protocol;
@@ -204,9 +205,8 @@ impl<C: 'static + Client> SignerLoop<C> {
     fn do_loop(&mut self) -> Result<()> {
         loop {
             let raw_msg = self.client.read_raw()?;
-            debug!("loop {}: got raw", self.log_prefix);
             let msg = msgs::from_vec(raw_msg.clone())?;
-            info!("loop {}: got {:x?}", self.log_prefix, msg);
+            log_request(&msg);
             match msg {
                 Message::ClientHsmFd(m) => {
                     self.client.write(msgs::ClientHsmFdReply {}).unwrap();
@@ -223,11 +223,14 @@ impl<C: 'static + Client> SignerLoop<C> {
                     self.client.write(reply)?;
                 }
                 _ => {
-                    let reply = self.handle_message(raw_msg)?;
-
                     // Write the reply to the node
+                    let result = self.handle_message(raw_msg);
+                    if let Err(ref err) = result {
+                        log_error(err);
+                    }
+                    let reply = result?;
+                    log_reply(&reply);
                     self.client.write_vec(reply)?;
-                    info!("replied {}", self.log_prefix);
                 }
             }
         }
@@ -247,5 +250,30 @@ impl<C: 'static + Client> SignerLoop<C> {
         serial.sequence = serial.sequence.wrapping_add(1);
         let reply = msgs::read_raw(serial)?;
         Ok(reply)
+    }
+}
+
+fn log_request(msg: &Message) {
+    #[cfg(not(feature = "log_pretty_print"))]
+    debug!("{:?}", msg);
+    #[cfg(feature = "log_pretty_print")]
+    debug!("{:#?}", msg);
+}
+
+fn log_error(err: &Error) {
+    #[cfg(not(feature = "log_pretty_print"))]
+    error!("{:?}", err);
+    #[cfg(feature = "log_pretty_print")]
+    error!("{:#?}", err);
+}
+
+fn log_reply(reply_bytes: &Vec<u8>) {
+    // Only parse the message if we are actually debugging ...
+    if log::log_enabled!(log::Level::Debug) {
+        let reply = msgs::from_vec(reply_bytes.clone()).expect("parse reply failed");
+        #[cfg(not(feature = "log_pretty_print"))]
+        debug!("{:?}", reply);
+        #[cfg(feature = "log_pretty_print")]
+        debug!("{:#?}", reply);
     }
 }
