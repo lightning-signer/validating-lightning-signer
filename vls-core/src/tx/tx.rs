@@ -35,7 +35,7 @@ use serde::{Deserialize as _, Deserializer};
 use serde_derive::{Deserialize, Serialize};
 use serde_with::{serde_as, DeserializeAs, SerializeAs};
 
-const MAX_DELAY: i64 = 1000;
+const MAX_DELAY: i64 = 2016;
 /// Value for anchor outputs
 pub(crate) const ANCHOR_SAT: u64 = 330;
 
