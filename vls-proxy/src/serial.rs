@@ -146,6 +146,10 @@ pub struct SerialSignerPort {
 #[async_trait]
 impl SignerPort for SerialSignerPort {
     async fn handle_message(&self, message: Vec<u8>) -> Result<Vec<u8>> {
+        if log::log_enabled!(log::Level::Debug) {
+            let msg = msgs::from_vec(message.clone())?;
+            log_request(&None, &msg);
+        }
         let serial = Arc::clone(&self.serial);
         spawn_blocking(move || {
             let mut serial_guard = serial.lock().unwrap();
@@ -159,7 +163,12 @@ impl SignerPort for SerialSignerPort {
             msgs::write_vec(serial, message)?;
             msgs::read_serial_response_header(serial, serial.sequence)?;
             serial.sequence = serial.sequence.wrapping_add(1);
-            let reply = msgs::read_raw(serial)?;
+            let result = msgs::read_raw(serial);
+            if let Err(ref err) = result {
+                log_error(&None, err);
+            }
+            let reply = result?;
+            log_reply(&None, &reply);
             Ok(reply)
         })
         .await
@@ -205,8 +214,9 @@ impl<C: 'static + Client> SignerLoop<C> {
         info!("loop {}: start", self.log_prefix);
         match self.do_loop() {
             Ok(()) => info!("loop {}: done", self.log_prefix),
-            Err(ClientError::ProtocolError(Error::Eof)) =>
-                info!("loop {}: ending", self.log_prefix),
+            Err(ClientError::ProtocolError(Error::Eof)) => {
+                info!("loop {}: ending", self.log_prefix)
+            }
             Err(e) => error!("loop {}: error {:?}", self.log_prefix, e),
         }
     }
@@ -215,7 +225,7 @@ impl<C: 'static + Client> SignerLoop<C> {
         loop {
             let raw_msg = self.client.read_raw()?;
             let msg = msgs::from_vec(raw_msg.clone())?;
-            self.log_request(&msg);
+            log_request(&self.client_id, &msg);
             match msg {
                 Message::ClientHsmFd(m) => {
                     self.client.write(msgs::ClientHsmFdReply {}).unwrap();
@@ -235,10 +245,10 @@ impl<C: 'static + Client> SignerLoop<C> {
                     // Write the reply to the node
                     let result = self.handle_message(raw_msg);
                     if let Err(ref err) = result {
-                        self.log_error(err);
+                        log_error(&self.client_id, err);
                     }
                     let reply = result?;
-                    self.log_reply(&reply);
+                    log_reply(&self.client_id, &reply);
                     self.client.write_vec(reply)?;
                 }
             }
@@ -260,29 +270,29 @@ impl<C: 'static + Client> SignerLoop<C> {
         let reply = msgs::read_raw(serial)?;
         Ok(reply)
     }
+}
 
-    fn log_request(&self, msg: &Message) {
+fn log_request(client_id: &Option<ClientId>, msg: &Message) {
+    #[cfg(not(feature = "log_pretty_print"))]
+    debug!("{:?}: {:?}", client_id, msg);
+    #[cfg(feature = "log_pretty_print")]
+    debug!("{:?}: {:#?}", client_id, msg);
+}
+
+fn log_error<D: core::fmt::Debug>(client_id: &Option<ClientId>, err: &D) {
+    #[cfg(not(feature = "log_pretty_print"))]
+    error!("{:?}: {:?}", client_id, err);
+    #[cfg(feature = "log_pretty_print")]
+    error!("{:?}: {:#?}", client_id, err);
+}
+
+fn log_reply(client_id: &Option<ClientId>, reply_bytes: &Vec<u8>) {
+    // Only parse the message if we are actually debugging ...
+    if log::log_enabled!(log::Level::Debug) {
+        let reply = msgs::from_vec(reply_bytes.clone()).expect("parse reply failed");
         #[cfg(not(feature = "log_pretty_print"))]
-        debug!("{:?}: {:?}", self.client_id, msg);
+        debug!("{:?}: {:?}", client_id, reply);
         #[cfg(feature = "log_pretty_print")]
-        debug!("{:?}: {:#?}", self.client_id, msg);
-    }
-
-    fn log_error(&self, err: &ClientError) {
-        #[cfg(not(feature = "log_pretty_print"))]
-        error!("{:?}: {:?}", self.client_id, err);
-        #[cfg(feature = "log_pretty_print")]
-        error!("{:?}: {:#?}", self.client_id, err);
-    }
-
-    fn log_reply(&self, reply_bytes: &Vec<u8>) {
-        // Only parse the message if we are actually debugging ...
-        if log::log_enabled!(log::Level::Debug) {
-            let reply = msgs::from_vec(reply_bytes.clone()).expect("parse reply failed");
-            #[cfg(not(feature = "log_pretty_print"))]
-            debug!("{:?}: {:?}", self.client_id, reply);
-            #[cfg(feature = "log_pretty_print")]
-            debug!("{:?}: {:#?}", self.client_id, reply);
-        }
+        debug!("{:?}: {:#?}", client_id, reply);
     }
 }

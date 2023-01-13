@@ -2,7 +2,7 @@ use core::fmt::{Debug, Display, Formatter};
 use serde_bolt::Error as BoltError;
 
 /// Error
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Error {
     UnexpectedType(u16),
     BadFraming,
