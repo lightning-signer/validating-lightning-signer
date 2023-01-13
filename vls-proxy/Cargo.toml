@@ -10,7 +10,8 @@ build = "build.rs"
 default = ["grpc", "main", "debug"]
 grpc = ["tokio", "tokio-stream", "tonic", "prost", "async-stream", "url"]
 main = ["clap", "clap_derive", "ctrlc", "fern"]
-debug = ["vls-core/debug"]
+log_pretty_print = []
+debug = ["vls-core/debug", "log_pretty_print"]
 
 [dependencies]
 vls-core = { path = "../vls-core", features = ["use_backtrace"] }

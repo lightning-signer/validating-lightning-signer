@@ -10,18 +10,63 @@ const TRACKLEN: usize = 16;
 pub struct Track {
     latest: u64,
     dspstr: String,
+    last: char,
+    count: usize,
 }
 
 impl Track {
     fn new() -> Track {
-        Track { latest: 0, dspstr: String::new() }
+        Track { latest: 0, dspstr: String::new(), last: '\0', count: 0 }
+    }
+
+    fn update(&mut self, seq: u64, c: char) -> bool {
+        self.latest = seq;
+
+        // Update the last and repeat count
+        let count0 = self.count;
+        if c == self.last {
+            self.count += 1;
+        } else {
+            self.last = c;
+            self.count = 1
+        }
+
+        if self.count < 3 {
+            // Not much repeating, just normal ...
+            self.append(c);
+            true
+        } else {
+            // the new string
+            let str1 = format!("{}*{}", c, self.count); // the new string
+
+            // the old string
+            let str0 =
+                if self.count == 3 { format!("{}{}", c, c) } else { format!("{}*{}", c, count0) };
+
+            // Replace the old group
+            self.dspstr.replace_range(self.dspstr.len() - str0.len().., &str1);
+
+            // Trim to fit from the front
+            while self.dspstr.len() > TRACKLEN {
+                self.dspstr.remove(0);
+            }
+
+            // shift if we added a digit
+            str0.len() < str1.len()
+        }
     }
 
     fn append(&mut self, c: char) {
-        if self.dspstr.len() == TRACKLEN {
+        self.dspstr.push(c);
+        while self.dspstr.len() > TRACKLEN {
             self.dspstr.remove(0);
         }
-        self.dspstr.push(c);
+    }
+
+    fn shift(&mut self) {
+        self.last = '\0';
+        self.count = 0;
+        self.append('-');
     }
 }
 
@@ -44,13 +89,12 @@ impl Tracks {
         // Ensure the track for this dbid exists
         self.tracks.entry(dbid).or_insert(Track::new());
 
-        // Update all of the tracks
-        for (id, track) in self.tracks.iter_mut() {
-            if id == &dbid {
-                track.latest = seq;
-                track.append(track_char(msg));
-            } else {
-                track.append('-');
+        // Update the target track, maybe shift everything
+        if self.tracks.get_mut(&dbid).unwrap().update(seq, track_char(msg)) {
+            for (id, track) in self.tracks.iter_mut() {
+                if id != &dbid {
+                    track.shift();
+                }
             }
         }
 

@@ -35,7 +35,7 @@ use serde::{Deserialize as _, Deserializer};
 use serde_derive::{Deserialize, Serialize};
 use serde_with::{serde_as, DeserializeAs, SerializeAs};
 
-const MAX_DELAY: i64 = 1000;
+const MAX_DELAY: i64 = 2016;
 /// Value for anchor outputs
 pub(crate) const ANCHOR_SAT: u64 = 330;
 
@@ -684,7 +684,7 @@ impl CommitmentInfo {
             return Err(script_format_error("negative delay".to_string()));
         }
         if delay > MAX_DELAY {
-            return Err(script_format_error("delay too large".to_string()));
+            return Err(script_format_error(format!("delay too large: {} > {}", delay, MAX_DELAY)));
         }
 
         // This is safe because we checked for negative
