@@ -14,7 +14,6 @@ use lightning_signer::bitcoin;
 use lightning_signer::node::SignedHeartbeat;
 
 mod chain_follower;
-mod follower;
 pub mod frontend;
 pub mod heartbeat;
 
@@ -36,6 +35,9 @@ pub trait ChainTrackDirectory: Sync + Send {
 pub trait ChainTrack: Sync + Send {
     /// Identity string for the log
     fn log_prefix(&self) -> String;
+
+    /// Full identity
+    async fn id(&self) -> Vec<u8>;
 
     /// The heartbeat public key
     async fn heartbeat_pubkey(&self) -> PublicKey;

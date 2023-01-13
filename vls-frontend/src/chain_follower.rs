@@ -10,6 +10,7 @@ use url::Url;
 use bitcoin::{Block, Network, OutPoint, Transaction, TxOut, Txid};
 use lightning_signer::bitcoin;
 
+use bitcoind_client::follower::{Error, FollowWithProofAction, SourceWithProofFollower, Tracker};
 use bitcoind_client::BitcoindClient;
 
 #[allow(unused_imports)]
@@ -17,7 +18,6 @@ use lightning_signer::{debug_vals, short_function, vals_str};
 #[allow(unused_imports)]
 use log::{debug, error, info, trace};
 
-use crate::follower::{Error, FollowWithProofAction, SourceWithProofFollower, Tracker};
 use crate::{ChainTrack, HeartbeatMonitor};
 
 /// Follows the longest chain and feeds proofs of watched changes to ChainTracker.
@@ -141,9 +141,11 @@ impl ChainFollower {
                     info!("{} synced at height {}", self.tracker.log_prefix(), height0);
                     *state = State::Synced;
                 }
+
+                self.do_heartbeat().await;
                 return Ok(ScheduleNext::Pause);
             }
-            FollowWithProofAction::BlockAdded(block, (txs, proof)) => {
+            FollowWithProofAction::BlockAdded(block, spv_proof) => {
                 *state = State::Scanning;
                 let height = height0 + 1;
                 if height % 2016 == 0 {
@@ -151,12 +153,12 @@ impl ChainFollower {
                 }
 
                 // debug!("node {} at height {} adding {}", self.tracker.log_prefix(), height, hash);
-                self.tracker.add_block(block.header, txs, proof).await;
+                let proof = spv_proof.merkle_proof();
+                self.tracker.add_block(block.header, spv_proof.txs, proof).await;
 
-                self.do_heartbeat().await;
                 Ok(ScheduleNext::Immediate)
             }
-            FollowWithProofAction::BlockReorged(_block, (txs, proof)) => {
+            FollowWithProofAction::BlockReorged(_block, spv_proof) => {
                 debug!(
                     "{} reorg at height {}, removing hash {}",
                     self.tracker.log_prefix(),
@@ -164,7 +166,8 @@ impl ChainFollower {
                     abbrev!(hash0, 12),
                 );
                 // The tracker will reverse the txs in remove_block, so leave normal order here.
-                self.tracker.remove_block(txs, proof).await;
+                let proof = spv_proof.merkle_proof();
+                self.tracker.remove_block(spv_proof.txs, proof).await;
                 Ok(ScheduleNext::Immediate)
             }
         }

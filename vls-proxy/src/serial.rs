@@ -16,11 +16,10 @@ use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::secp256k1;
 use vls_protocol::model::Secret;
 use vls_protocol::{
-    msgs::{self, Message, SerialRequestHeader},
-    serde_bolt::{self, WireString},
-    Error, Result,
+    msgs, msgs::Message, msgs::SerialRequestHeader, serde_bolt, serde_bolt::WireString, Error,
 };
-use vls_protocol_client::SignerPort;
+use vls_protocol_client::Error as ClientError;
+use vls_protocol_client::{ClientResult as Result, SignerPort};
 use vls_protocol_signer::vls_protocol;
 use vls_proxy::client::Client;
 use vls_proxy::util::{read_allowlist, read_integration_test_seed};
@@ -206,7 +205,7 @@ impl<C: 'static + Client> SignerLoop<C> {
         info!("loop {}: start", self.log_prefix);
         match self.do_loop() {
             Ok(()) => info!("loop {}: done", self.log_prefix),
-            Err(Error::Eof) => info!("loop {}: ending", self.log_prefix),
+            Err(ClientError::ProtocolError(Error::Eof)) => info!("loop {}: ending", self.log_prefix),
             Err(e) => error!("loop {}: error {:?}", self.log_prefix, e),
         }
     }
@@ -268,7 +267,7 @@ impl<C: 'static + Client> SignerLoop<C> {
         debug!("{:?}: {:#?}", self.client_id, msg);
     }
 
-    fn log_error(&self, err: &Error) {
+    fn log_error(&self, err: &ClientError) {
         #[cfg(not(feature = "log_pretty_print"))]
         error!("{:?}: {:?}", self.client_id, err);
         #[cfg(feature = "log_pretty_print")]

@@ -1,4 +1,4 @@
-use std::io::{Read as _, Write as _};
+use std::io::{IoSlice, IoSliceMut, Read as _, Write as _};
 use std::os::unix::io::{FromRawFd, IntoRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::{fs, io};
@@ -9,7 +9,6 @@ use nix::sys::socket::{recvmsg, sendmsg, ControlMessage, ControlMessageOwned, Ms
 use serde_bolt::{Error as SError, Read, Result as SResult, Write};
 
 use nix::libc;
-use nix::sys::uio::IoVec;
 use nix::unistd::close;
 use vls_protocol::serde_bolt;
 use vls_protocol_signer::vls_protocol;
@@ -35,22 +34,18 @@ impl UnixConnection {
         info!("sending fd {}", fd);
         let fds = [fd];
         let fd_msg = ControlMessage::ScmRights(&fds);
-        let mut c = [0xff];
-        let x = IoVec::from_slice(&mut c);
-        sendmsg(self.fd, &[x], &[fd_msg], MsgFlags::empty(), None).unwrap();
+        let c = [0xff];
+        let x = IoSlice::new(&c);
+        sendmsg::<()>(self.fd, &[x], &[fd_msg], MsgFlags::empty(), None).unwrap();
         close(fd).unwrap();
     }
 
     pub(crate) fn recv_fd(&self) -> Result<RawFd, ()> {
         let mut cmsgs = cmsg_space!(RawFd);
         let mut c = [0];
-        let x = IoVec::from_mut_slice(&mut c);
-        let result = recvmsg(self.fd, &[x], Some(&mut cmsgs), MsgFlags::empty()).unwrap();
+        let x = IoSliceMut::new(&mut c);
+        let result = recvmsg::<()>(self.fd, &mut [x], Some(&mut cmsgs), MsgFlags::empty()).unwrap();
         let mut iter = result.cmsgs();
-        if c[0] != 0xff {
-            error!("expected a 0xff byte, got {}", c[0]);
-            return Err(());
-        }
         let cmsg = iter.next().ok_or_else(|| {
             error!("expected a control message");
         })?;
@@ -64,6 +59,10 @@ impl UnixConnection {
                     error!("expected exactly one fd");
                     Err(())
                 } else {
+                    if c[0] != 0xff {
+                        error!("expected a 0xff byte ancillary byte, got {}", c[0]);
+                        return Err(());
+                    }
                     Ok(r[0])
                 },
             m => {

@@ -378,7 +378,7 @@ impl Signer for SignServer {
 
         self.seed_persister.put(&node_id.serialize().to_hex(), &seed);
 
-        self.frontend.start_follower(self.frontend.signer.tracker(&node_id)).await;
+        self.frontend.start_follower(self.frontend.directory().tracker(&node_id)).await;
 
         let reply = InitReply { node_id: Some(NodeId { data: node_id.serialize().to_vec() }) };
 

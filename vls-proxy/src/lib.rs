@@ -9,5 +9,11 @@ pub mod recovery;
 pub mod tx_util;
 pub mod util;
 
+pub use lightning_signer;
+pub use lightning_signer_server;
+pub use vls_frontend;
+pub use vls_protocol_client;
+pub use vls_protocol_signer;
+
 // Defines GIT_DESC
 include!(concat!(env!("OUT_DIR"), "/version.rs"));

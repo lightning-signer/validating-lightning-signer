@@ -7,7 +7,7 @@ pub enum Error {
     UnexpectedType(u16),
     BadFraming,
     BoltError(BoltError),
-    // Include the message type for trailing bytes
+    /// Includes the message type for trailing bytes
     TrailingBytes(usize, u16),
     ShortRead,
     MessageTooLarge,

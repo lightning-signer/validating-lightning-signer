@@ -9,17 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8fd72866655d1904d6b0997d0b07ba561047d070fbe29de039031c641b61217"
 
 [[package]]
-name = "ahash"
-version = "0.7.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43bb833f0bf979d8475d38fbf09ed3b8a55e1885fe93ad3f93239fc6a4f17b98"
-dependencies = [
- "getrandom",
- "once_cell",
- "version_check",
-]
-
-[[package]]
 name = "aligned"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -92,7 +81,7 @@ dependencies = [
  "bech32",
  "bitcoin_hashes",
  "core2",
- "hashbrown 0.8.2",
+ "hashbrown",
  "secp256k1",
  "serde",
 ]
@@ -323,17 +312,8 @@ version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e91b62f79061a0bc2e046024cb7ba44b08419ed238ecbd9adbd787434b9e8c25"
 dependencies = [
- "ahash 0.3.8",
+ "ahash",
  "autocfg",
-]
-
-[[package]]
-name = "hashbrown"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab5ef0d4909ef3724cc8cce6ccc8572c5c817592e9285f5464f8e86f8bd3726e"
-dependencies = [
- "ahash 0.7.4",
 ]
 
 [[package]]
@@ -377,7 +357,7 @@ checksum = "087add70f81d2fdc6d4409bc0cef69e11ad366ef1d0068550159bd22b3ac8664"
 dependencies = [
  "bitcoin",
  "core2",
- "hashbrown 0.8.2",
+ "hashbrown",
 ]
 
 [[package]]
@@ -388,7 +368,7 @@ checksum = "e9680857590c3529cf8c7d32b04501f215f2bf1e029fdfa22f4112f66c1741e4"
 dependencies = [
  "bech32",
  "bitcoin_hashes",
- "hashbrown 0.8.2",
+ "hashbrown",
  "lightning",
  "num-traits",
  "secp256k1",
@@ -457,12 +437,6 @@ checksum = "2819ce041d2ee131036f4fc9d6ae7ae125a3a40e97ba64d04fe799ad9dabbb44"
 dependencies = [
  "libc",
 ]
-
-[[package]]
-name = "once_cell"
-version = "1.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "074864da206b4973b84eb91683020dbefd6a8c3f0f38e054d93954e891935e4e"
 
 [[package]]
 name = "ppv-lite86"
@@ -715,7 +689,7 @@ dependencies = [
  "bitcoin",
  "bolt-derive",
  "core2",
- "hashbrown 0.11.2",
+ "hashbrown",
  "hex",
  "itertools",
  "lightning",

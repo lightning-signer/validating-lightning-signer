@@ -24,7 +24,7 @@ vls-core = { path = "../vls-core", features = ["debug", "grpc", "use_backtrace"]
 vls-server = { path = "../vls-server", features = ["persist", "grpc", "persist-kv-json", "frontend"] }
 vls-protocol-signer = { path = "../vls-protocol-signer" }
 vls-frontend = { path = "../vls-frontend", optional = true }
-txoo-bitcoind-client = { git = "https://gitlab.com/lightning-signer/txoo", rev = "883c6e0bac75546463d92987969ed5e5bbb8ef22"}
+txoo-bitcoind-client = "0.1"
 backtrace = "0.3"
 bip39 = { version = "1.0.0", features = ["rand"] }
 hex = "0.4"
