@@ -205,7 +205,8 @@ impl<C: 'static + Client> SignerLoop<C> {
         info!("loop {}: start", self.log_prefix);
         match self.do_loop() {
             Ok(()) => info!("loop {}: done", self.log_prefix),
-            Err(ClientError::ProtocolError(Error::Eof)) => info!("loop {}: ending", self.log_prefix),
+            Err(ClientError::ProtocolError(Error::Eof)) =>
+                info!("loop {}: ending", self.log_prefix),
             Err(e) => error!("loop {}: error {:?}", self.log_prefix, e),
         }
     }
