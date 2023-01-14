@@ -26,6 +26,15 @@ use log::debug;
 pub struct SignerPortFront {
     pub signer_port: Box<dyn SignerPort>,
     pub network: Network,
+    pub trackers: Vec<Arc<dyn ChainTrack>>,
+}
+
+impl SignerPortFront {
+    pub fn new(signer_port: Box<dyn SignerPort>, network: Network) -> Self {
+        let front = NodePortFront::new(signer_port.clone(), network);
+        let trackers = vec![Arc::new(front) as Arc<dyn ChainTrack>];
+        SignerPortFront { signer_port, network, trackers }
+    }
 }
 
 #[async_trait]
@@ -35,8 +44,7 @@ impl ChainTrackDirectory for SignerPortFront {
     }
 
     async fn trackers(&self) -> Vec<Arc<dyn ChainTrack>> {
-        let front = NodePortFront::new(self.signer_port.clone(), self.network);
-        vec![Arc::new(front) as Arc<dyn ChainTrack>]
+        self.trackers.clone()
     }
 }
 
@@ -55,6 +63,7 @@ pub(crate) struct NodePortFront {
 
 impl NodePortFront {
     fn new(signer_port: Box<dyn SignerPort>, network: Network) -> Self {
+        debug!("NodePortFront::new network: {}", network);
         Self { signer_port, network, node_keys: Mutex::new(None) }
     }
 
@@ -92,7 +101,9 @@ impl ChainTrack for NodePortFront {
             }
         }
         let keys = self.populate_keys().await;
-        keys.node_id.serialize().to_vec()
+        let idvec = keys.node_id.serialize().to_vec();
+        debug!("NodePortFront::id {}", hex::encode(&idvec));
+        idvec
     }
 
     async fn heartbeat_pubkey(&self) -> PublicKey {
@@ -103,7 +114,9 @@ impl ChainTrack for NodePortFront {
             }
         }
         let keys = self.populate_keys().await;
-        keys.heartbeat_pubkey
+        let pubkey = keys.heartbeat_pubkey;
+        debug!("NodePortFront::heartbeat_pubkey {}", pubkey);
+        pubkey
     }
 
     fn network(&self) -> Network {
