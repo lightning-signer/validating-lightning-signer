@@ -9,14 +9,14 @@ use bit_vec::BitVec;
 use core::convert::TryInto;
 
 use bitcoin::blockdata::script;
-use bitcoin::consensus::deserialize;
+use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::util::psbt::serialize::Deserialize;
 use bitcoin::{EcdsaSighashType, Network, Script};
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::bech32::u5;
-use lightning_signer::bitcoin::consensus::{Decodable, Encodable};
+use lightning_signer::bitcoin::consensus::Decodable;
 use lightning_signer::bitcoin::secp256k1;
 use lightning_signer::bitcoin::util::bip32::{ChildNumber, KeySource};
 use lightning_signer::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -465,8 +465,7 @@ impl Handler for RootHandler {
                     }
                 }
 
-                let mut ser_psbt = Vec::new();
-                psbt.consensus_encode(&mut ser_psbt).expect("serialize psbt");
+                let ser_psbt = serialize(&psbt);
                 Ok(Box::new(msgs::SignWithdrawalReply { psbt: LargeOctets(ser_psbt) }))
             }
             Message::SignInvoice(m) => {
