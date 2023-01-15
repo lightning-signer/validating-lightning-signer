@@ -4,6 +4,8 @@
 
 Setup bitcoind service
 
+    cd ~/lightning-signer/vls-hsmd/vls/contrib/testnet-cln-vlsd
+
     sudo /usr/sbin/groupadd bitcoin
     sudo /usr/sbin/useradd -g bitcoin -c "bitcoin" -m bitcoin
 
@@ -60,17 +62,27 @@ Make cln user/group
     sudo /usr/sbin/groupadd cln
     sudo /usr/sbin/useradd -g cln -c "Core Lightning" -m cln
     sudo adduser cln dialout # (`SERIAL` only)
+    sudo mkdir -p ~cln/.lightning
+    sudo chown -R cln:cln ~cln
 
 Create a cln config file in `~cln/.lightning/testnet-config`, adjust values
-for your bitcoind installation:
+(at least the `bitcoin-rpcpassword`) for your bitcoind installation:
 ```
 log-level=info
 bitcoin-rpcuser=rpcuser
 bitcoin-rpcpassword=6ffb57ab46aa726
 bitcoin-rpcconnect=127.0.0.1
 bitcoin-rpcport=18332
-subdaemon=hsmd:remote_hsmd_socket # (`SOCKET` only)
-subdaemon=hsmd:remote_hsmd_serial # (`SERIAL` only)
+```
+
+Add the following line only if you are using `SERIAL`:
+```
+subdaemon=hsmd:remote_hsmd_serial
+```
+
+Add the following line instead if you are using `SOCKET`:
+```
+subdaemon=hsmd:remote_hsmd_socket
 ```
 
 Create `~cln/.lightning/testnet-env` with (adjust bitcoind url for your
