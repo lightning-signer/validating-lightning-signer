@@ -7,7 +7,6 @@ use core::time::Duration;
 
 use bitcoin;
 use bitcoin::bech32::{u5, FromBase32};
-use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
@@ -746,33 +745,14 @@ impl Node {
         allowlist: Vec<Allowable>,
         services: NodeServices,
     ) -> Node {
-        let tracker = Self::make_tracker(node_config);
-
-        Self::new_extended(node_config, seed, allowlist, tracker, services)
-    }
-
-    pub(crate) fn make_tracker(node_config: NodeConfig) -> ChainTracker<ChainMonitor> {
-        info!("creating node on {}", node_config.network);
-        let genesis = genesis_block(node_config.network);
-
-        // TODO supply current tip
-        ChainTracker::new(node_config.network, 0, genesis.header).expect("bad  chain tip")
-    }
-
-    /// Create a node
-    ///
-    /// NOTE: you must persist the node yourself if it is new.
-    pub fn new_extended(
-        node_config: NodeConfig,
-        seed: &[u8],
-        allowlist: Vec<Allowable>,
-        tracker: ChainTracker<ChainMonitor>,
-        services: NodeServices,
-    ) -> Node {
         let policy = services.validator_factory.policy(node_config.network);
         let global_velocity_control = Self::make_velocity_control(policy);
         let state = NodeState::new(global_velocity_control);
-        Self::new_from_persistence(node_config, seed, allowlist, tracker, services, state)
+
+        let (keys_manager, node_id) = Self::make_keys_manager(node_config, seed, &services);
+        let tracker = ChainTracker::genesis(node_config.network);
+
+        Self::new_full(node_config, allowlist, services, state, keys_manager, node_id, tracker)
     }
 
     /// Restore a node.
@@ -780,17 +760,24 @@ impl Node {
         node_config: NodeConfig,
         seed: &[u8],
         allowlist: Vec<Allowable>,
-        tracker: ChainTracker<ChainMonitor>,
         services: NodeServices,
         state: NodeState,
     ) -> Node {
-        let keys_manager = MyKeysManager::new(
-            node_config.key_derivation_style,
-            seed,
-            node_config.network,
-            services.starting_time_factory.borrow(),
-        );
-        let node_id = Self::id_from_key(&keys_manager.get_node_secret(Recipient::Node).unwrap());
+        let (keys_manager, node_id) = Self::make_keys_manager(node_config, seed, &services);
+        let tracker = services.persister.get_tracker(&node_id).expect("get tracker from persister");
+
+        Self::new_full(node_config, allowlist, services, state, keys_manager, node_id, tracker)
+    }
+
+    fn new_full(
+        node_config: NodeConfig,
+        allowlist: Vec<Allowable>,
+        services: NodeServices,
+        state: NodeState,
+        keys_manager: MyKeysManager,
+        node_id: PublicKey,
+        tracker: ChainTracker<ChainMonitor>,
+    ) -> Node {
         let log_prefix = &node_id.to_hex()[0..4];
 
         let persister = services.persister;
@@ -814,6 +801,21 @@ impl Node {
             state,
             node_id,
         }
+    }
+
+    fn make_keys_manager(
+        node_config: NodeConfig,
+        seed: &[u8],
+        services: &NodeServices,
+    ) -> (MyKeysManager, PublicKey) {
+        let keys_manager = MyKeysManager::new(
+            node_config.key_derivation_style,
+            seed,
+            node_config.network,
+            services.starting_time_factory.borrow(),
+        );
+        let node_id = Self::id_from_key(&keys_manager.get_node_secret(Recipient::Node).unwrap());
+        (keys_manager, node_id)
     }
 
     /// persister
@@ -1065,15 +1067,13 @@ impl Node {
             .map(|e| Allowable::from_str(e, network))
             .collect::<Result<_, _>>()
             .expect("allowable parse error");
-        let tracker = persister.get_tracker(node_id).expect("tracker");
 
         // FIXME persist node state
         let policy = services.validator_factory.policy(network);
         let global_velocity_control = Self::make_velocity_control(policy);
         let state = NodeState::new(global_velocity_control);
 
-        let node =
-            Arc::new(Node::new_from_persistence(config, seed, allowlist, tracker, services, state));
+        let node = Arc::new(Node::new_from_persistence(config, seed, allowlist, services, state));
         assert_eq!(&node.get_id(), node_id);
         info!("Restore node {} on {}", node_id, config.network);
         for (channel_id0, channel_entry) in

@@ -1,6 +1,6 @@
 use alloc::collections::VecDeque;
 
-use bitcoin::blockdata::constants::DIFFCHANGE_INTERVAL;
+use bitcoin::blockdata::constants::{genesis_block, DIFFCHANGE_INTERVAL};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::util::uint::Uint256;
@@ -92,6 +92,13 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
         let headers = VecDeque::new();
         let listeners = OrderedMap::new();
         Ok(ChainTracker { headers, tip, height, network, listeners })
+    }
+
+    /// Create a tracker at genesis
+    pub fn genesis(network: Network) -> Self {
+        let height = 0;
+        let genesis = genesis_block(network);
+        Self::new(network, height, genesis.header).expect("genesis block is valid")
     }
 
     /// Current chain tip header

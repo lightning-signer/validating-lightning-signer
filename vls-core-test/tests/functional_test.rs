@@ -69,26 +69,21 @@ pub fn create_node_cfgs_with_signer<'a>(
     let mut nodes = Vec::new();
 
     let config = REGTEST_NODE_CONFIG;
-    let network = config.network;
-    let tip = genesis_block(network).header;
 
     for i in 0..node_count {
-        let cfg = create_node_cfg(signer, chanmon_cfgs, config, network, tip, i);
+        let cfg = create_node_cfg(signer, chanmon_cfgs, config, i);
         nodes.push(cfg);
     }
 
     nodes
 }
 
-fn create_node_cfg<'a>(signer: &Arc<MultiSigner>, chanmon_cfgs: &'a Vec<TestChanMonCfg>, config: NodeConfig, network: Network, tip: BlockHeader, idx: usize) -> NodeCfg<'a> {
+fn create_node_cfg<'a>(signer: &Arc<MultiSigner>, chanmon_cfgs: &'a Vec<TestChanMonCfg>, config: NodeConfig, idx: usize) -> NodeCfg<'a> {
     let seed = [idx as u8; 32];
-
-    let chain_tracker: ChainTracker<ChainMonitor> =
-        ChainTracker::new(network, 0, tip).unwrap();
 
     let seed_persister = Arc::new(DummySeedPersister {});
 
-    let node_id = signer.new_node_with_seed_and_tracker(config, &seed, seed_persister, chain_tracker).unwrap();
+    let node_id = signer.new_node_with_seed(config, &seed, seed_persister).unwrap();
 
     let keys_manager = LoopbackSignerKeysInterface {
         node_id,
@@ -188,10 +183,10 @@ fn invoice_test() {
     let chanmon_cfgs = create_chanmon_cfgs(3);
     let mut node_cfgs = Vec::new();
 
-    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, network, genesis_block(network).header, 0));
+    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, 0));
     // routing nodes can't turn on invoice validation yet
-    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, network, genesis_block(network).header, 1));
-    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, network, genesis_block(network).header, 2));
+    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, 1));
+    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, 2));
     let node_chanmgrs = create_node_chanmgrs(3, &node_cfgs, &[None, None, None]);
     let mut nodes = create_network(3, &node_cfgs, &node_chanmgrs);
     nodes[0].use_invoices = true;

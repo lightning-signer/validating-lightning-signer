@@ -1,4 +1,3 @@
-use crate::chain::tracker::ChainTracker;
 use bitcoin;
 use bitcoin::hashes::hex::ToHex;
 #[cfg(feature = "std")]
@@ -7,7 +6,6 @@ use bitcoin::secp256k1::PublicKey;
 use bitcoin::OutPoint;
 
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSlot};
-use crate::monitor::ChainMonitor;
 use crate::node::{Node, NodeConfig, NodeServices};
 use crate::persist::{Persist, SeedPersist};
 use crate::prelude::*;
@@ -110,19 +108,7 @@ impl MultiSigner {
         seed: &[u8],
         seed_persister: Arc<dyn SeedPersist>,
     ) -> Result<PublicKey, Status> {
-        let tracker = Node::make_tracker(node_config.clone());
-        self.new_node_with_seed_and_tracker(node_config, seed, seed_persister, tracker)
-    }
-
-    /// New node with externally supplied cryptographic seed and chain tracker
-    pub fn new_node_with_seed_and_tracker(
-        &self,
-        node_config: NodeConfig,
-        seed: &[u8],
-        seed_persister: Arc<dyn SeedPersist>,
-        tracker: ChainTracker<ChainMonitor>,
-    ) -> Result<PublicKey, Status> {
-        let node = Node::new_extended(node_config, &seed, vec![], tracker, self.services.clone());
+        let node = Node::new(node_config, &seed, vec![], self.services.clone());
         let node_id = node.get_id();
         let mut nodes = self.nodes.lock().unwrap();
         if self.test_mode {
