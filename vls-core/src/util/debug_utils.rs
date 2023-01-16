@@ -1,3 +1,4 @@
+use crate::node::{PaymentState, RoutedPayment};
 use crate::prelude::*;
 use bitcoin::hashes::hex;
 use bitcoin::hashes::hex::ToHex;
@@ -8,6 +9,7 @@ use lightning::ln::chan_utils::{
     BuiltCommitmentTransaction, ChannelPublicKeys, CommitmentTransaction, HTLCOutputInCommitment,
     TxCreationKeys,
 };
+use lightning::ln::PaymentHash;
 
 /// Debug printer for ChannelPublicKeys which doesn't have one.
 pub struct DebugChannelPublicKeys<'a>(pub &'a ChannelPublicKeys);
@@ -170,6 +172,22 @@ pub struct DebugWitVec<'a>(pub &'a Vec<(Vec<u8>, Vec<u8>)>);
 impl<'a> core::fmt::Debug for DebugWitVec<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
         f.debug_list().entries(self.0.iter().map(|ww| DebugWitness(ww))).finish()
+    }
+}
+
+/// Debug support for Map<PaymentHash, PaymentState>
+pub struct DebugMapPaymentState<'a>(pub &'a Map<PaymentHash, PaymentState>);
+impl<'a> core::fmt::Debug for DebugMapPaymentState<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_map().entries(self.0.iter().map(|(k, v)| (DebugBytes(&k.0), v))).finish()
+    }
+}
+
+/// Debug support for Map<PaymentHash, RoutedPayment>
+pub struct DebugMapRoutedPayment<'a>(pub &'a Map<PaymentHash, RoutedPayment>);
+impl<'a> core::fmt::Debug for DebugMapRoutedPayment<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_map().entries(self.0.iter().map(|(k, v)| (DebugBytes(&k.0), v))).finish()
     }
 }
 

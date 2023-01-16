@@ -28,7 +28,7 @@ use crate::tx::script::{
     expect_data, expect_number, expect_op, expect_script_end, get_delayed_redeemscript,
 };
 use crate::util::crypto_utils::payload_for_p2wpkh;
-use crate::util::debug_utils::DebugPayload;
+use crate::util::debug_utils::{DebugBytes, DebugPayload};
 use crate::util::AddedItemsIter;
 use bitcoin::hashes::hex::ToHex;
 use serde::{Deserialize as _, Deserializer};
@@ -218,7 +218,7 @@ impl fmt::Debug for HTLCInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HTLCInfo")
             .field("value_sat", &self.value_sat)
-            .field("payment_hash_hash", &self.payment_hash_hash.to_hex())
+            .field("payment_hash_hash", &DebugBytes(&self.payment_hash_hash))
             .field("cltv_expiry", &self.cltv_expiry)
             .finish()
     }
@@ -285,7 +285,7 @@ impl fmt::Debug for HTLCInfo2 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HTLCInfo2")
             .field("value_sat", &self.value_sat)
-            .field("payment_hash", &self.payment_hash.0.to_hex())
+            .field("payment_hash", &DebugBytes(&self.payment_hash.0))
             .field("cltv_expiry", &self.cltv_expiry)
             .finish()
     }

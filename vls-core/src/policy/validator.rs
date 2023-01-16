@@ -777,11 +777,13 @@ impl EnforcementState {
     }
 
     /// Return channel balances
-    pub fn balance<T: PreimageMap>(
+    pub fn balance<T: PreimageMap + core::fmt::Debug>(
         &self,
         preimage_map: &T,
         channel_setup: &ChannelSetup,
     ) -> ChannelBalance {
+        debug!("{:#?}", preimage_map);
+
         // If either of commitments is missing, return 0.
         if self.current_holder_commit_info.is_none()
             || self.current_counterparty_commit_info.is_none()
