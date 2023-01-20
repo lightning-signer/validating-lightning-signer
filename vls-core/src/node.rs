@@ -57,6 +57,7 @@ use crate::sync::{Arc, Weak};
 use crate::tx::tx::PreimageMap;
 use crate::util::clock::Clock;
 use crate::util::crypto_utils::{sighash_from_heartbeat, signature_to_bitcoin_vec};
+use crate::util::debug_utils::{DebugBytes, DebugMapPaymentState, DebugMapRoutedPayment};
 use crate::util::ser_util::DurationHandler;
 use crate::util::status::{failed_precondition, internal_error, invalid_argument, Status};
 use crate::util::velocity::VelocityControl;
@@ -95,6 +96,20 @@ pub struct PaymentState {
     pub payment_type: PaymentType,
 }
 
+impl Debug for PaymentState {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("PaymentState")
+            .field("invoice_hash", &DebugBytes(&self.invoice_hash))
+            .field("amount_msat", &self.amount_msat)
+            .field("payee", &self.payee)
+            .field("duration_since_epoch", &self.duration_since_epoch)
+            .field("expiry_duration", &self.expiry_duration)
+            .field("is_fulfilled", &self.is_fulfilled)
+            .field("payment_type", &self.payment_type)
+            .finish()
+    }
+}
+
 /// Outgoing payment type
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PaymentType {
@@ -105,7 +120,7 @@ pub enum PaymentType {
 }
 
 /// Keeps track of incoming and outgoing HTLCs for a routed payment
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RoutedPayment {
     /// Incoming payments per channel in satoshi
     pub incoming: OrderedMap<ChannelId, u64>,
@@ -176,6 +191,19 @@ pub struct NodeState {
     pub log_prefix: String,
     /// Per node velocity control
     pub velocity_control: VelocityControl,
+}
+
+impl Debug for NodeState {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("NodeState")
+            .field("invoices", &DebugMapPaymentState(&self.invoices))
+            .field("issued_invoices", &DebugMapPaymentState(&self.issued_invoices))
+            .field("payments", &DebugMapRoutedPayment(&self.payments))
+            .field("excess_amount", &self.excess_amount)
+            .field("log_prefix", &self.log_prefix)
+            .field("velocity_control", &self.velocity_control)
+            .finish()
+    }
 }
 
 impl PreimageMap for NodeState {

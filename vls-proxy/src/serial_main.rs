@@ -102,7 +102,7 @@ pub fn main() -> anyhow::Result<()> {
         let network = vls_network().parse::<Network>().expect("malformed vls network");
         let signer_port = SerialSignerPort::new(serial.clone());
         let frontend = Frontend::new(
-            Arc::new(SignerPortFront { signer_port: Box::new(signer_port), network }),
+            Arc::new(SignerPortFront::new(Box::new(signer_port), network)),
             Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
         );
 

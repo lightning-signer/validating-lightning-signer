@@ -121,9 +121,9 @@ impl Tracks {
 
 fn track_char(msg: &Message) -> char {
     match msg {
-        Message::HsmdInit(_m) => '1',
-        Message::HsmdInit2(_m) => '2',
-        Message::NodeInfo(_m) => '3',
+        Message::HsmdInit(_m) => '@',
+        Message::HsmdInit2(_m) => '%',
+        Message::NodeInfo(_m) => '#',
         Message::Ecdh(_m) => 'e',
 
         Message::SignNodeAnnouncement(_m) => 'n',
@@ -139,7 +139,7 @@ fn track_char(msg: &Message) -> char {
 
         Message::NewChannel(_m) => '+',
         Message::GetChannelBasepoints(_m) => 'b',
-        Message::SignWithdrawal(_m) => 'w',
+        Message::SignWithdrawal(_m) => 'W',
 
         Message::ReadyChannel(_m) => '(',
         Message::GetPerCommitmentPoint(_m) => 'p',

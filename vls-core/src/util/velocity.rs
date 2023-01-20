@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use core::cmp::min;
+use core::fmt::{self, Debug, Formatter};
 
 /// Limit velocity per unit time.
 ///
@@ -15,6 +16,17 @@ pub struct VelocityControl {
     pub buckets: Vec<u64>,
     /// the limit, or MAX if the control is disabled
     pub limit: u64,
+}
+
+impl Debug for VelocityControl {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("VelocityControl")
+            .field("start_sec", &self.start_sec)
+            .field("bucket_interval", &self.bucket_interval)
+            .field("buckets", &format_args!("{:?}", self.buckets))
+            .field("limit", &self.limit)
+            .finish()
+    }
 }
 
 /// The total interval in which to track velocity

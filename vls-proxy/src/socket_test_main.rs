@@ -88,7 +88,7 @@ async fn start_server(listener: TcpListener, addr: SocketAddr, client: UnixClien
     let sender = server.sender();
     let signer_port = GrpcSignerPort::new(sender.clone());
     let frontend = Frontend::new(
-        Arc::new(SignerPortFront { signer_port: Box::new(signer_port), network }),
+        Arc::new(SignerPortFront::new(Box::new(signer_port), network)),
         Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
     );
     frontend.start();
