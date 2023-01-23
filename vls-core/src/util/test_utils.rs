@@ -1678,7 +1678,7 @@ pub fn create_test_channel_setup(dummy_pubkey: PublicKey) -> ChannelSetup {
         },
         counterparty_selected_contest_delay: 11,
         counterparty_shutdown_script: None,
-        commitment_type: CommitmentType::Legacy,
+        commitment_type: CommitmentType::StaticRemoteKey,
     }
 }
 

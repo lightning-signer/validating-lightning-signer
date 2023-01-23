@@ -1040,7 +1040,7 @@ mod tests {
         let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
         let mut setup = make_test_channel_setup();
-        setup.commitment_type = CommitmentType::Anchors;
+        setup.commitment_type = CommitmentType::AnchorsZeroFeeHtlc;
         let pubkey = bitcoin::PublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
         let out = TxOut {
             value: 42,

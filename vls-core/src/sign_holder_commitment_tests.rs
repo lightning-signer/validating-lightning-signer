@@ -24,16 +24,9 @@ mod tests {
     }
 
     #[test]
-    fn success_redundant_legacy() {
-        let mut setup = make_test_channel_setup();
-        setup.commitment_type = CommitmentType::Legacy;
-        test_redundant(&setup);
-    }
-
-    #[test]
     fn success_redundant_anchors() {
         let mut setup = make_test_channel_setup();
-        setup.commitment_type = CommitmentType::Anchors;
+        setup.commitment_type = CommitmentType::AnchorsZeroFeeHtlc;
         test_redundant(&setup);
     }
 
@@ -76,7 +69,7 @@ mod tests {
             .expect("sign");
         assert_eq!(
             tx.txid().to_hex(),
-            if setup.commitment_type == CommitmentType::Anchors {
+            if setup.commitment_type == CommitmentType::AnchorsZeroFeeHtlc {
                 "35d42554e19cc82267c29b813d8a9465b762c730a1958b31f147080d302b6fbd"
             } else {
                 "ae3b1c99071772622e336cf674c6f26bf5ef8860b6487b7cdf82e7d86cf23a42"
@@ -338,15 +331,6 @@ mod tests {
             }
             paste! {
                 #[test]
-                fn [<$name _anchors>]() {
-                    assert_status_ok!(
-                        sign_holder_commitment_tx_with_mutators(
-                            CommitmentType::Anchors, $sms)
-                    );
-                }
-            }
-            paste! {
-                #[test]
                 fn [<$name _zerofee>]() {
                     assert_status_ok!(
                         sign_holder_commitment_tx_with_mutators(
@@ -365,15 +349,6 @@ mod tests {
                     assert_status_ok!(
                         sign_holder_commitment_tx_retry_with_mutators(
                             CommitmentType::StaticRemoteKey, $sms)
-                    );
-                }
-            }
-            paste! {
-                #[test]
-                fn [<$name _retry_anchors>]() {
-                    assert_status_ok!(
-                        sign_holder_commitment_tx_retry_with_mutators(
-                            CommitmentType::Anchors, $sms)
                     );
                 }
             }
@@ -446,10 +421,10 @@ mod tests {
             }
             paste! {
                 #[test]
-                fn [<$name _anchors>]() {
+                fn [<$name _zero_fee>]() {
                     assert_failed_precondition_err!(
-                        sign_holder_commitment_tx_retry_with_mutators(
-                            CommitmentType::Anchors, $sms),
+                        sign_holder_commitment_tx_with_mutators(
+                            CommitmentType::AnchorsZeroFeeHtlc, $sms),
                         ($errcls)(ERR_MSG_CONTEXT_ANCHORS)
                     );
                 }

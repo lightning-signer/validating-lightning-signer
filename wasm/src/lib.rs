@@ -220,7 +220,7 @@ impl JSNode {
             counterparty_points: cp_points,
             counterparty_selected_contest_delay: s.counterparty_selected_contest_delay,
             counterparty_shutdown_script: None,
-            commitment_type: CommitmentType::Legacy,
+            commitment_type: CommitmentType::StaticRemoteKey,
         };
         let _channel =
             self.node.ready_channel(id.0.clone(), None, setup, &vec![]).map_err(from_status)?;

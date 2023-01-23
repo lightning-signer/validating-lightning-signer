@@ -107,10 +107,12 @@ impl TypedSignature {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum CommitmentType {
     /// No longer used - dynamic to-remote key
+    /// DEPRECATED
     Legacy,
     /// Static to-remote key
     StaticRemoteKey,
     /// Anchors
+    /// DEPRECATED
     Anchors,
     /// Anchors, zero fee htlc
     AnchorsZeroFeeHtlc,
@@ -168,7 +170,7 @@ impl fmt::Debug for ChannelSetup {
 
 impl ChannelSetup {
     pub(crate) fn option_static_remotekey(&self) -> bool {
-        self.commitment_type != CommitmentType::Legacy
+        self.commitment_type == CommitmentType::StaticRemoteKey
     }
 
     /// True if this channel uses anchors.

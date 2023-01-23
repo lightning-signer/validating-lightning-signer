@@ -341,7 +341,7 @@ mod tests {
             let mut cstate = make_test_chain_state();
 
             mutate_validation_input(&mut ValidationMutationState {
-                opt_anchors: commitment_type == CommitmentType::Anchors,
+                opt_anchors: commitment_type == CommitmentType::AnchorsZeroFeeHtlc,
                 chan: chan,
                 cstate: &mut cstate,
                 commit_tx_ctx: &mut commit_tx_ctx,
@@ -482,7 +482,7 @@ mod tests {
                 fn [<$name _anchors>]() {
                     assert_status_ok!(
                         validate_holder_commitment_with_mutators(
-                            CommitmentType::Anchors, $tms, $kms, $vms, $vs)
+                            CommitmentType::AnchorsZeroFeeHtlc, $tms, $kms, $vms, $vs)
                     );
                 }
             }
@@ -505,7 +505,7 @@ mod tests {
                 fn [<$name _anchors>]() {
                     assert_status_ok!(
                         validate_holder_commitment_retry_with_mutators(
-                            CommitmentType::Anchors, $tms, $kms, $vms, $vs)
+                            CommitmentType::AnchorsZeroFeeHtlc, $tms, $kms, $vms, $vs)
                     );
                 }
             }
@@ -537,7 +537,7 @@ mod tests {
                 fn [<$name _anchors>]() {
                     assert_failed_precondition_err!(
                         validate_holder_commitment_with_mutators(
-                            CommitmentType::Anchors, $tms, $kms, $vms, $vs),
+                            CommitmentType::AnchorsZeroFeeHtlc, $tms, $kms, $vms, $vs),
                         ($errcls)(ERR_MSG_CONTEXT_ANCHORS)
                     );
                 }
@@ -562,7 +562,7 @@ mod tests {
                 fn [<$name _anchors>]() {
                     assert_failed_precondition_err!(
                         validate_holder_commitment_retry_with_mutators(
-                            CommitmentType::Anchors, $tms, $kms, $vms, $vs),
+                            CommitmentType::AnchorsZeroFeeHtlc, $tms, $kms, $vms, $vs),
                         ($errcls)(ERR_MSG_CONTEXT_ANCHORS)
                     );
                 }

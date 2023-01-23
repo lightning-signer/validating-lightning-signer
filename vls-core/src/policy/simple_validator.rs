@@ -10,7 +10,7 @@ use lightning::ln::chan_utils::{
 use lightning::ln::PaymentHash;
 use log::*;
 
-use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
+use crate::channel::{ChannelId, ChannelSetup, ChannelSlot, CommitmentType};
 use crate::policy::error::unknown_destinations_error;
 use crate::policy::filter::{FilterResult, PolicyFilter};
 use crate::policy::validator::EnforcementState;
@@ -37,6 +37,9 @@ use crate::wallet::Wallet;
 extern crate scopeguard;
 
 use super::error::{policy_error, transaction_format_error, ValidationError};
+
+const SAFE_COMMITMENT_TYPE: &[CommitmentType] =
+    &[CommitmentType::StaticRemoteKey, CommitmentType::AnchorsZeroFeeHtlc];
 
 /// A factory for SimpleValidator
 pub struct SimpleValidatorFactory {
@@ -373,6 +376,16 @@ impl Validator for SimpleValidator {
         let mut debug_on_return = scoped_debug_return!(setup, holder_shutdown_key_path);
 
         // NOTE - setup.channel_value_sat is not valid, set later on.
+
+        // policy-channel-safe-type
+        if !SAFE_COMMITMENT_TYPE.contains(&setup.commitment_type) {
+            policy_err!(
+                self,
+                "policy-channel-safe-type",
+                "unsafe commitment type {:?}",
+                setup.commitment_type
+            );
+        }
 
         // policy-channel-counterparty-contest-delay-range
         // policy-commitment-to-self-delay-range relies on this value
@@ -1973,6 +1986,19 @@ mod tests {
             validator.validate_ready_channel(&*node, &setup, &vec![]),
             "validate_delay: counterparty-contest-delay too small: 4 < 5"
         );
+    }
+
+    // policy-channel-safe-type
+    #[test]
+    fn validate_safe_modes_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let mut setup = make_test_channel_setup();
+        let validator = make_test_validator();
+        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_ok());
+        setup.commitment_type = CommitmentType::Anchors;
+        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_err());
+        setup.commitment_type = CommitmentType::Legacy;
+        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_err());
     }
 
     // policy-channel-holder-contest-delay-range
