@@ -37,4 +37,4 @@ make list-versions
 <!-- If you can, link to the line of code that might be responsible for the problem. -->
 
 <!-- Please do not change the below as it helps us to classify new issues. You are welcome to choose additional labels as needed. -->
-/label ~triage ~bug
+/label ~Triage ~Bug
