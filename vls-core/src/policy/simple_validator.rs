@@ -29,7 +29,7 @@ use crate::util::debug_utils::{
 };
 use crate::util::transaction_utils::{
     estimate_feerate_per_kw, expected_commitment_tx_weight, mutual_close_tx_weight,
-    MIN_DUST_LIMIT_SATOSHIS,
+    MIN_CHAN_DUST_LIMIT_SATOSHIS, MIN_DUST_LIMIT_SATOSHIS,
 };
 use crate::util::velocity::VelocityControlSpec;
 use crate::wallet::Wallet;
@@ -1638,7 +1638,7 @@ impl SimpleValidator {
         let policy = &self.policy;
 
         if info.to_broadcaster_value_sat > 0
-            && info.to_broadcaster_value_sat < MIN_DUST_LIMIT_SATOSHIS
+            && info.to_broadcaster_value_sat < MIN_CHAN_DUST_LIMIT_SATOSHIS
         {
             policy_err!(
                 self,
@@ -1649,14 +1649,14 @@ impl SimpleValidator {
             );
         }
         if info.to_countersigner_value_sat > 0
-            && info.to_countersigner_value_sat < MIN_DUST_LIMIT_SATOSHIS
+            && info.to_countersigner_value_sat < MIN_CHAN_DUST_LIMIT_SATOSHIS
         {
             policy_err!(
                 self,
                 "policy-commitment-outputs-trimmed",
                 "to_countersigner_value_sat {} less than dust limit {}",
                 info.to_countersigner_value_sat,
-                MIN_DUST_LIMIT_SATOSHIS
+                MIN_CHAN_DUST_LIMIT_SATOSHIS
             );
         }
 
@@ -1667,7 +1667,7 @@ impl SimpleValidator {
         let mut htlc_value_sat: u64 = 0;
 
         let offered_htlc_dust_limit = if setup.option_anchors_zero_fee_htlc() {
-            0
+            MIN_CHAN_DUST_LIMIT_SATOSHIS
         } else {
             MIN_DUST_LIMIT_SATOSHIS
                 + (info.feerate_per_kw as u64 * htlc_timeout_tx_weight(setup.option_anchors())
@@ -1696,7 +1696,7 @@ impl SimpleValidator {
         }
 
         let received_htlc_dust_limit = if setup.option_anchors_zero_fee_htlc() {
-            0
+            MIN_CHAN_DUST_LIMIT_SATOSHIS
         } else {
             MIN_DUST_LIMIT_SATOSHIS
                 + (info.feerate_per_kw as u64 * htlc_success_tx_weight(setup.option_anchors())
