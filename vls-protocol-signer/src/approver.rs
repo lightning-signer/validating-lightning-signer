@@ -13,7 +13,25 @@ use lightning_signer::util::clock::Clock;
 use lightning_signer::util::status::Status;
 use lightning_signer::util::velocity::VelocityControl;
 
-/// Approve payments
+/// Control payment approval.
+///
+/// You should implement this to present a user interface to allow the user to
+/// approve or reject payments.
+/// An approval here is meant to override other controls, such as the node allowlist.
+///
+/// This can also be used for automatic approval of micropayments to arbitrary destinations
+/// - see [`VelocityApprover`].
+///
+/// Implement the `approve_invoice`, `approve_keysend` and `approve_onchain` methods to
+/// control which payments are approved.
+///
+/// The flow is as follows:
+/// - TODO the node allowlist is consulted, and the payment is approved if there is a match
+/// - if an L2 payment was previously approved, it is automatically approved again
+/// - the approver is consulted, and the payment is rejected if false was returned
+/// - the global node velocity control is consulted if configured,
+///   and the payment is rejected if the velocity is exceeded
+/// - otherwise, the payment is approved
 pub trait Approve: SendSync {
     /// Approve an invoice for payment
     fn approve_invoice(&self, invoice: &Invoice) -> bool;
@@ -118,7 +136,7 @@ pub trait Approve: SendSync {
     }
 }
 
-/// An approver that always approves
+/// An approver that always approves, for testing and for permissive mode.
 #[derive(Copy, Clone)]
 pub struct PositiveApprover();
 
@@ -143,7 +161,7 @@ impl Approve for PositiveApprover {
     }
 }
 
-/// An approver that always declines
+/// An approver that always declines, in case only the allowlist is used
 #[derive(Copy, Clone)]
 pub struct NegativeApprover();
 
@@ -168,8 +186,16 @@ impl Approve for NegativeApprover {
     }
 }
 
-/// An approver that auto-approves invoices under a certain velocity.
+/// An approver that auto-approves L2 payments under a certain velocity.
 /// If the invoice is over the velocity, it is passed on to a delegate approver.
+/// You can use this to allow micropayments to arbitrary destinations.
+///
+/// You can also pass in a delegate approver, to allow asking the user
+/// for approval for payments over the micropayment maximum velocity.
+///
+/// L1 payments are always passed to the delegate approver (i.e. velocity control
+/// is not used for approval).
+///
 /// ```rust
 /// # use std::sync::Arc;
 /// # use std::time::Duration;
@@ -253,11 +279,11 @@ impl<A: Approve> Approve for VelocityApprover<A> {
 
     fn approve_onchain(
         &self,
-        _tx: &Transaction,
-        _values_sat: &[u64],
-        _unknown_indices: &[usize],
+        tx: &Transaction,
+        values_sat: &[u64],
+        unknown_indices: &[usize],
     ) -> bool {
-        false
+        self.delegate.approve_onchain(tx, values_sat, unknown_indices)
     }
 }
 
