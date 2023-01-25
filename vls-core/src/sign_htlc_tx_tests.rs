@@ -55,20 +55,20 @@ mod tests {
             })
             .expect("point");
 
-        let build_feerate = if setup.option_anchors_zero_fee_htlc() { 0 } else { feerate_per_kw };
+        let build_feerate = if setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
 
         let htlc_tx = build_htlc_transaction(
             &commitment_txid,
             build_feerate,
             to_self_delay,
             &htlc,
-            setup.option_anchors(),
-            !setup.option_anchors_zero_fee_htlc(),
+            setup.is_anchors(),
+            !setup.is_zero_fee_htlc(),
             &txkeys.broadcaster_delayed_payment_key,
             &txkeys.revocation_key,
         );
 
-        let htlc_redeemscript = get_htlc_redeemscript(&htlc, setup.option_anchors(), &txkeys);
+        let htlc_redeemscript = get_htlc_redeemscript(&htlc, setup.is_anchors(), &txkeys);
 
         let output_witscript = get_revokeable_redeemscript(
             &txkeys.revocation_key,
@@ -176,7 +176,7 @@ mod tests {
                 };
 
                 let build_feerate =
-                    if setup.option_anchors_zero_fee_htlc() { 0 } else { feerate_per_kw };
+                    if setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
 
                 let mut htlc_tx = build_htlc_transaction(
                     &commitment_txid,
@@ -184,7 +184,7 @@ mod tests {
                     to_self_delay,
                     &htlc,
                     channel_parameters.opt_anchors.is_some(),
-                    !setup.option_anchors_zero_fee_htlc(),
+                    !setup.is_zero_fee_htlc(),
                     &keys.broadcaster_delayed_payment_key,
                     &keys.revocation_key,
                 );
@@ -243,7 +243,7 @@ mod tests {
             &htlc_pubkey,
             htlc_amount_sat,
             &htlc_redeemscript,
-            setup.option_anchors(),
+            setup.is_anchors(),
         );
 
         Ok(())
@@ -300,7 +300,7 @@ mod tests {
                 };
 
                 let build_feerate =
-                    if setup.option_anchors_zero_fee_htlc() { 0 } else { feerate_per_kw };
+                    if setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
 
                 let mut htlc_tx = build_htlc_transaction(
                     &commitment_txid,
@@ -308,7 +308,7 @@ mod tests {
                     to_self_delay,
                     &htlc,
                     channel_parameters.opt_anchors.is_some(),
-                    !setup.option_anchors_zero_fee_htlc(),
+                    !setup.is_zero_fee_htlc(),
                     &keys.broadcaster_delayed_payment_key,
                     &keys.revocation_key,
                 );

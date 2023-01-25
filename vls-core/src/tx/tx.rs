@@ -843,7 +843,7 @@ impl CommitmentInfo {
     ) -> Result<(), ValidationError> {
         if out.script_pubkey.is_v0_p2wpkh() {
             // FIXME - Does this need it's own policy tag?
-            if setup.option_anchors() {
+            if setup.is_anchors() {
                 return Err(transaction_format_error(
                     "p2wpkh to_countersigner not valid with anchors".to_string(),
                 ));
@@ -872,11 +872,11 @@ impl CommitmentInfo {
             if vals.is_ok() {
                 return self.handle_to_broadcaster_output(out, vals.unwrap());
             }
-            let vals = parse_received_htlc_script(&script, setup.option_anchors());
+            let vals = parse_received_htlc_script(&script, setup.is_anchors());
             if vals.is_ok() {
                 return self.handle_received_htlc_output(out, vals.unwrap());
             }
-            let vals = parse_offered_htlc_script(&script, setup.option_anchors());
+            let vals = parse_offered_htlc_script(&script, setup.is_anchors());
             if vals.is_ok() {
                 return self.handle_offered_htlc_output(out, vals.unwrap());
             }
@@ -884,7 +884,7 @@ impl CommitmentInfo {
             if vals.is_ok() {
                 return self.handle_anchor_output(keys, out, vals.unwrap());
             }
-            if setup.option_anchors() {
+            if setup.is_anchors() {
                 let vals = self.parse_to_countersigner_delayed_script(&script);
                 if vals.is_ok() {
                     return self.handle_to_countersigner_delayed_output(out, vals.unwrap());
