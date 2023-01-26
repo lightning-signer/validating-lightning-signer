@@ -57,7 +57,7 @@ impl From<Signature> for EcdsaSignature {
 
 impl From<SecretKey> for Secret {
     fn from(s: SecretKey) -> Self {
-        Secret { data: s[..].to_vec() }
+        Secret { secret_data: s[..].to_vec() }
     }
 }
 

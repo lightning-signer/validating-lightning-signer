@@ -16,7 +16,7 @@ use secp256k1::PublicKey;
 
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::secp256k1;
-use vls_protocol::model::Secret;
+use vls_protocol::model::DevSecret;
 use vls_protocol::{
     msgs, msgs::Message, msgs::SerialRequestHeader, serde_bolt, serde_bolt::WireString, Error,
 };
@@ -146,7 +146,7 @@ pub fn connect(serial_port: String) -> anyhow::Result<SerialWrap> {
     let allowlist =
         read_allowlist().into_iter().map(|s| WireString(s.as_bytes().to_vec())).collect::<Vec<_>>();
     // FIXME fixed seed
-    let seed = read_integration_test_seed().map(|s| Secret(s)).or(Some(Secret([1; 32])));
+    let seed = read_integration_test_seed().map(|s| DevSecret(s)).or(Some(DevSecret([1; 32])));
     // FIXME remove this
     info!("allowlist {:?} seed {:?}", allowlist, seed);
     let init = msgs::HsmdInit2 {

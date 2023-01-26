@@ -20,6 +20,24 @@ macro_rules! unprefixed_array_impl {
     };
 }
 
+macro_rules! unprefixed_secret_array_impl {
+    ($ty:ident, $len:tt) => {
+        #[derive(Clone, Serialize, Deserialize)]
+        pub struct $ty(pub [u8; $len]);
+
+        impl Debug for $ty {
+            #[cfg(feature = "log-secrets")]
+            fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+                write!(f, "{}", hex::encode(&self.0))
+            }
+            #[cfg(not(feature = "log-secrets"))]
+            fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+                write!(f, "******")
+            }
+        }
+    };
+}
+
 macro_rules! array_impl {
     ($ty:ident, $len:tt) => {
         #[derive(Clone)]
@@ -105,9 +123,18 @@ impl Debug for Bip32KeyVersion {
 
 unprefixed_array_impl!(BlockId, 32);
 
-unprefixed_array_impl!(Secret, 32);
+// A 32-byte secret that is sensitive
+unprefixed_secret_array_impl!(Secret, 32);
 
-unprefixed_array_impl!(PrivKey, 32);
+// A 32-byte secret that is no longer sensitive, because it is known or will
+// soon be known to our counterparty
+unprefixed_array_impl!(DisclosedSecret, 32);
+
+// A 32-byte secret that is not sensitive, because it is used for testing / development
+unprefixed_array_impl!(DevSecret, 32);
+
+// A 32-byte secret that is not sensitive, because it is used for testing / development
+unprefixed_array_impl!(DevPrivKey, 32);
 
 unprefixed_array_impl!(PubKey32, 32);
 
@@ -184,4 +211,14 @@ pub struct Utxo {
     pub script: Octets,
     pub close_info: Option<CloseInfo>,
     pub is_in_coinbase: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn debug_secret_test() {
+        let secret = super::Secret([0; 32]);
+        let debug = format!("{:?}", secret);
+        assert_eq!(debug, "******");
+    }
 }
