@@ -1,4 +1,5 @@
 use std::convert::{TryFrom, TryInto};
+use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::str::FromStr;
@@ -16,7 +17,7 @@ use bitcoin::{EcdsaSighashType, Network, OutPoint, Script};
 use clap::{App, Arg, ArgMatches};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::PaymentHash;
-use log::{debug, error, info};
+use log::*;
 use serde_json::json;
 use tonic::{transport::Server, Request, Response, Status};
 use url::Url;
@@ -34,7 +35,7 @@ use lightning_signer::policy::simple_validator::{
 };
 use lightning_signer::util::status::Status as CoreStatus;
 
-use vls_protocol_signer::approver::{Approve, NegativeApprover};
+use vls_protocol_signer::approver::{Approve, NegativeApprover, PositiveApprover};
 
 use lightning_signer::signer::{
     derive::KeyDerivationStyle, multi_signer::MultiSigner, ClockStartingTimeFactory,
@@ -1652,7 +1653,11 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
 
     let frontend = Frontend::new(Arc::new(SignerFront { signer: Arc::clone(&signer) }), rpc_url);
     frontend.start();
-    let approver = Arc::new(NegativeApprover());
+    let approver: Arc<dyn Approve> = if should_auto_approve() {
+        Arc::new(PositiveApprover())
+    } else {
+        Arc::new(NegativeApprover())
+    };
     let server = SignServer { signer, network, frontend, approver, seed_persister };
 
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
@@ -1690,14 +1695,24 @@ fn policy(matches: &ArgMatches, network: Network) -> SimplePolicy {
     let mut policy = make_simple_policy(network);
     policy.require_invoices = matches.is_present("require_invoices");
     policy.enforce_balance = matches.is_present("enforce_balance");
-    use std::env;
-    let warn_only =
-        env::var("VLS_PERMISSIVE").map(|s| s.parse().expect("VLS_PERMISSIVE parse")).unwrap_or(0);
-    if warn_only == 1 {
-        info!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");
+    if env::var("VLS_PERMISSIVE") == Ok("1".to_string()) {
+        warn!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");
         policy.filter = PolicyFilter::new_permissive();
     } else {
         info!("VLS_ENFORCING: ALL POLICY ERRORS ARE ENFORCED");
     }
     policy
+}
+
+fn should_auto_approve() -> bool {
+    if env::var("VLS_PERMISSIVE") == Ok("1".to_string()) {
+        warn!("VLS_PERMISSIVE: ALL INVOICES, KEYSENDS, AND PAYMENTS AUTOMATICALLY APPROVED");
+        true
+    } else if env::var("VLS_AUTOAPPROVE") == Ok("1".to_string()) {
+        warn!("VLS_AUTOAPPROVE: ALL INVOICES, KEYSENDS, AND PAYMENTS AUTOMATICALLY APPROVED");
+        true
+    } else {
+        info!("VLS_ENFORCING: ALL INVOICES, KEYSENDS, AND PAYMENTS REQUIRE APPROVAL");
+        false
+    }
 }
