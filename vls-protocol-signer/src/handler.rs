@@ -53,7 +53,7 @@ use vls_protocol::msgs::{
 use vls_protocol::serde_bolt::{to_vec, LargeOctets, WireString};
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 
-use crate::approver::{Approve, PositiveApprover};
+use crate::approver::{Approve, NegativeApprover};
 
 /// Error
 #[derive(Debug)]
@@ -189,7 +189,7 @@ impl RootHandlerBuilder {
             seed,
             allowlist: vec![],
             services,
-            approver: Arc::new(PositiveApprover()),
+            approver: Arc::new(NegativeApprover()),
             lss_state: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }

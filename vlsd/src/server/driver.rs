@@ -34,7 +34,7 @@ use lightning_signer::policy::simple_validator::{
 };
 use lightning_signer::util::status::Status as CoreStatus;
 
-use vls_protocol_signer::approver::{Approve, PositiveApprover};
+use vls_protocol_signer::approver::{Approve, NegativeApprover};
 
 use lightning_signer::signer::{
     derive::KeyDerivationStyle, multi_signer::MultiSigner, ClockStartingTimeFactory,
@@ -1652,7 +1652,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
 
     let frontend = Frontend::new(Arc::new(SignerFront { signer: Arc::clone(&signer) }), rpc_url);
     frontend.start();
-    let approver = Arc::new(PositiveApprover());
+    let approver = Arc::new(NegativeApprover());
     let server = SignServer { signer, network, frontend, approver, seed_persister };
 
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
