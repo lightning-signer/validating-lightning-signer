@@ -29,9 +29,10 @@ use lightning_storage_server::Value;
 use thiserror::Error;
 use tokio::sync::{Mutex as AsyncMutex, MutexGuard};
 use tokio::task::block_in_place;
-use util::read_allowlist;
+use util::{read_allowlist, should_auto_approve};
 use vls_frontend::Frontend;
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
+use vls_protocol_signer::approver::PositiveApprover;
 use vls_protocol_signer::handler::{ChannelHandler, Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::vls_protocol;
 
@@ -273,8 +274,11 @@ async fn start() {
     let seed = integration_test_seed_or_generate();
     let persister = make_persister();
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
-    let handler_builder =
+    let mut handler_builder =
         RootHandlerBuilder::new(network, client.id(), services, seed).allowlist(allowlist);
+    if should_auto_approve() {
+        handler_builder = handler_builder.approver(Arc::new(PositiveApprover()));
+    }
 
     let looper = make_looper(&seed).await;
 

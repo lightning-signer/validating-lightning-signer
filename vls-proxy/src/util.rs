@@ -1,6 +1,6 @@
 #[cfg(feature = "main")]
 use clap::{App, Arg, ArgMatches};
-use log::info;
+use log::*;
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -130,14 +130,26 @@ pub fn create_runtime(thread_name: &str) -> Runtime {
 pub fn make_validator_factory(network: Network) -> Arc<SimpleValidatorFactory> {
     let mut policy = make_simple_policy(network);
 
-    let warn_only =
-        env::var("VLS_PERMISSIVE").map(|s| s.parse().expect("VLS_PERMISSIVE parse")).unwrap_or(0);
-    if warn_only == 1 {
-        info!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");
+    if env::var("VLS_PERMISSIVE") == Ok("1".to_string()) {
+        warn!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");
         policy.filter = PolicyFilter::new_permissive();
     } else {
         info!("VLS_ENFORCING: ALL POLICY ERRORS ARE ENFORCED");
     }
 
     Arc::new(SimpleValidatorFactory::new_with_policy(policy))
+}
+
+/// Determine if we should auto approve payments
+pub fn should_auto_approve() -> bool {
+    if env::var("VLS_PERMISSIVE") == Ok("1".to_string()) {
+        warn!("VLS_PERMISSIVE: ALL INVOICES, KEYSENDS, AND PAYMENTS AUTOMATICALLY APPROVED");
+        true
+    } else if env::var("VLS_AUTOAPPROVE") == Ok("1".to_string()) {
+        warn!("VLS_AUTOAPPROVE: ALL INVOICES, KEYSENDS, AND PAYMENTS AUTOMATICALLY APPROVED");
+        true
+    } else {
+        info!("VLS_ENFORCING: ALL INVOICES, KEYSENDS, AND PAYMENTS REQUIRE APPROVAL");
+        false
+    }
 }
