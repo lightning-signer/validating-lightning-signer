@@ -8,6 +8,7 @@ sudo apt install screen -y
 # Had a regression w/ 1.68.0-nightly (61a415be5 2023-01-12) had to revert:
 # rustup override set nightly-2022-08-16-x86_64-unknown-linux-gnu
 
+# IMPORTANT - run this in the vls-signer-stm32 subdirectory, where this README is.
 rustup override set nightly
 rustup target add thumbv7em-none-eabihf
 
