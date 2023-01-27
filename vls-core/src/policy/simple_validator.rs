@@ -379,12 +379,22 @@ impl Validator for SimpleValidator {
 
         // policy-channel-safe-type
         if !SAFE_COMMITMENT_TYPE.contains(&setup.commitment_type) {
-            policy_err!(
-                self,
-                "policy-channel-safe-type",
-                "unsafe commitment type {:?}",
-                setup.commitment_type
-            );
+            if setup.commitment_type == CommitmentType::Anchors {
+                // special case for anchors, so that they can be enabled until all
+                // dependent projects update to zero-fee HTLCs
+                policy_err!(
+                    self,
+                    "policy-channel-safe-type-anchors",
+                    "unsafe commitment type: plain anchors"
+                );
+            } else {
+                policy_err!(
+                    self,
+                    "policy-channel-safe-type",
+                    "unsafe commitment type: {:?}",
+                    setup.commitment_type
+                );
+            }
         }
 
         // policy-channel-counterparty-contest-delay-range
@@ -1670,8 +1680,7 @@ impl SimpleValidator {
             MIN_CHAN_DUST_LIMIT_SATOSHIS
         } else {
             MIN_DUST_LIMIT_SATOSHIS
-                + (info.feerate_per_kw as u64 * htlc_timeout_tx_weight(setup.is_anchors())
-                    / 1000)
+                + (info.feerate_per_kw as u64 * htlc_timeout_tx_weight(setup.is_anchors()) / 1000)
         };
         for htlc in &info.offered_htlcs {
             // TODO - this check should be converted into two checks, one the first time
@@ -1699,8 +1708,7 @@ impl SimpleValidator {
             MIN_CHAN_DUST_LIMIT_SATOSHIS
         } else {
             MIN_DUST_LIMIT_SATOSHIS
-                + (info.feerate_per_kw as u64 * htlc_success_tx_weight(setup.is_anchors())
-                    / 1000)
+                + (info.feerate_per_kw as u64 * htlc_success_tx_weight(setup.is_anchors()) / 1000)
         };
         for htlc in &info.received_htlcs {
             // TODO - this check should be converted into two checks, one the first time

@@ -256,9 +256,7 @@ mod tests {
 
                 let htlc_redeemscripts = htlcs
                     .iter()
-                    .map(|htlc| {
-                        get_htlc_redeemscript(&htlc, chan_ctx.setup.is_anchors(), &txkeys)
-                    })
+                    .map(|htlc| get_htlc_redeemscript(&htlc, chan_ctx.setup.is_anchors(), &txkeys))
                     .collect::<Vec<Script>>();
 
                 assert_eq!(chan.enforcement_state.channel_closed, true);

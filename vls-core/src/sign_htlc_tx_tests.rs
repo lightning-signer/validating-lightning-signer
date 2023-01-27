@@ -175,8 +175,7 @@ mod tests {
                     transaction_output_index: Some(0),
                 };
 
-                let build_feerate =
-                    if setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
+                let build_feerate = if setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
 
                 let mut htlc_tx = build_htlc_transaction(
                     &commitment_txid,
@@ -299,8 +298,7 @@ mod tests {
                     transaction_output_index: Some(0),
                 };
 
-                let build_feerate =
-                    if setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
+                let build_feerate = if setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
 
                 let mut htlc_tx = build_htlc_transaction(
                     &commitment_txid,
