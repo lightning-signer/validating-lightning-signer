@@ -128,12 +128,24 @@ pub fn create_runtime(thread_name: &str) -> Runtime {
 
 /// Make a standard validation factory, allowing VLS_PERMISSIVE env var to override
 pub fn make_validator_factory(network: Network) -> Arc<SimpleValidatorFactory> {
+    make_validator_factory_with_filter(network, None)
+}
+
+/// Make a standard validation factory, with an optional filter specification,
+/// allowing VLS_PERMISSIVE env var to override
+pub fn make_validator_factory_with_filter(
+    network: Network,
+    filter_opt: Option<PolicyFilter>,
+) -> Arc<SimpleValidatorFactory> {
     let mut policy = make_simple_policy(network);
 
     if env::var("VLS_PERMISSIVE") == Ok("1".to_string()) {
         warn!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");
         policy.filter = PolicyFilter::new_permissive();
     } else {
+        if let Some(f) = filter_opt {
+            policy.filter.merge(f);
+        }
         info!("VLS_ENFORCING: ALL POLICY ERRORS ARE ENFORCED");
     }
 

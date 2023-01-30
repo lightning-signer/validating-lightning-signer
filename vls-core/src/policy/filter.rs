@@ -20,6 +20,18 @@ pub struct FilterRule {
     pub action: FilterResult,
 }
 
+impl FilterRule {
+    /// Create a new warning filter rule
+    pub fn new_warn(tag: impl Into<String>) -> FilterRule {
+        FilterRule { tag: tag.into(), is_prefix: false, action: FilterResult::Warn }
+    }
+
+    /// Create a new erroring filter rule
+    pub fn new_error(tag: impl Into<String>) -> FilterRule {
+        FilterRule { tag: tag.into(), is_prefix: false, action: FilterResult::Error }
+    }
+}
+
 /// A policy filter.
 /// The default policy is to handle all policies as errors
 #[derive(Clone)]
@@ -51,6 +63,12 @@ impl PolicyFilter {
                 action: FilterResult::Warn,
             }],
         }
+    }
+
+    /// Merge another filter into this one.
+    /// Rules in this filter takes precedence over rules in the other filter.
+    pub fn merge(&mut self, other: PolicyFilter) {
+        self.rules.extend(other.rules.into_iter());
     }
 }
 

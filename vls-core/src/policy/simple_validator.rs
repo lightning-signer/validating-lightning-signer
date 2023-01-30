@@ -1655,7 +1655,7 @@ impl SimpleValidator {
                 "policy-commitment-outputs-trimmed",
                 "to_broadcaster_value_sat {} less than dust limit {}",
                 info.to_broadcaster_value_sat,
-                MIN_DUST_LIMIT_SATOSHIS
+                MIN_CHAN_DUST_LIMIT_SATOSHIS
             );
         }
         if info.to_countersigner_value_sat > 0

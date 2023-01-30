@@ -1,12 +1,14 @@
 use super::hsmd::{self, PingRequest, SignerRequest, SignerResponse};
 use crate::util::{
-    integration_test_seed_or_generate, make_validator_factory, read_allowlist, should_auto_approve,
+    integration_test_seed_or_generate, make_validator_factory_with_filter, read_allowlist,
+    should_auto_approve
 };
 use http::Uri;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::node::NodeServices;
 use lightning_signer::persist::fs::FileSeedPersister;
 use lightning_signer::persist::SeedPersist;
+use lightning_signer::policy::filter::{FilterRule, PolicyFilter};
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::crypto_utils::generate_seed;
@@ -58,7 +60,13 @@ pub fn make_handler(datadir: &str, network: Network, integration_test: bool) -> 
     let seed = get_or_generate_seed(network, seed_persister, integration_test);
     let allowlist = read_allowlist();
     let starting_time_factory = ClockStartingTimeFactory::new();
-    let validator_factory = make_validator_factory(network);
+    let filter_opt = if integration_test {
+        // TODO(236)
+        Some(PolicyFilter { rules: vec![FilterRule::new_warn("policy-channel-safe-type-anchors")] })
+    } else {
+        None
+    };
+    let validator_factory = make_validator_factory_with_filter(network, filter_opt);
     let clock = Arc::new(StandardClock());
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
     let mut handler_builder =
