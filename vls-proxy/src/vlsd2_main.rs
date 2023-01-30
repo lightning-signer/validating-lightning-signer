@@ -1,5 +1,5 @@
 use bitcoind_client::BlockExplorerType;
-use clap::{App, AppSettings, Arg};
+use clap::{arg, App, AppSettings, Arg};
 use grpc::signer::make_handler;
 use grpc::signer::start_signer;
 use lightning_signer::bitcoin::Network;
@@ -23,11 +23,11 @@ const DEFAULT_DIR: &str = ".lightning-signer";
 pub fn main() {
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
-        .about("Validating Lightning Signer")
-        .arg(Arg::from("--git-desc print git desc version and exit"))
+        .help("Validating Lightning Signer")
+        .arg(arg!("--git-desc print git desc version and exit"))
         .arg(
             Arg::new("connect")
-                .about("node RPC endpoint")
+                .help("node RPC endpoint")
                 .long("connect")
                 .short('c')
                 .value_name("URL")
@@ -38,7 +38,7 @@ pub fn main() {
                 .short('d')
                 .long("datadir")
                 .default_value(DEFAULT_DIR)
-                .about("data directory")
+                .help("data directory")
                 .value_name("DIR"),
         )
         .arg(
@@ -52,25 +52,25 @@ pub fn main() {
         .arg(
             Arg::new("integration-test")
                 .long("integration-test")
-                .about("use integration test mode, reading/writing hsm_secret from CWD"),
+                .help("use integration test mode, reading/writing hsm_secret from CWD"),
         )
         .arg(
             Arg::new("recover-rpc")
-                .about("block explorer/bitcoind RPC endpoint - used for broadcasting recovery transactions")
+                .help("block explorer/bitcoind RPC endpoint - used for broadcasting recovery transactions")
                 .long("recover-rpc")
                 .default_value_ifs(CLAP_NETWORK_URL_MAPPING)
                 .value_name("URL"),
         )
         .arg(
             Arg::new("recover-type")
-                .about("block explorer type - used for broadcasting recovery transactions")
+                .help("block explorer type - used for broadcasting recovery transactions")
                 .long("recover-type")
                 .possible_values(&["bitcoind", "esplora"])
                 .default_value("bitcoind")
                 .value_name("TYPE"),
         )
         .arg(
-            Arg::new("recover-close").long("recover-close").value_name("BITCOIN_ADDRESS").about(
+            Arg::new("recover-close").long("recover-close").value_name("BITCOIN_ADDRESS").help(
                 "send a force-close transaction to recover funds when the node is unavailable",
             ),
         );

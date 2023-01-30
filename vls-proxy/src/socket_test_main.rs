@@ -12,7 +12,7 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
 use std::process::exit;
 use std::sync::Arc;
 
-use clap::{App, AppSettings, Arg};
+use clap::{arg, App, AppSettings};
 #[allow(unused_imports)]
 use log::{error, info};
 use nix::unistd::{fork, ForkResult};
@@ -44,7 +44,7 @@ pub fn main() {
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
         .about("CLN:socket test - for use with the CLN integration test suite")
-        .arg(Arg::from("--git-desc print git desc version and exit"));
+        .arg(arg!("--git-desc print git desc version and exit"));
     let app = add_hsmd_args(app);
     let matches = app.get_matches();
     if matches.is_present("git-desc") {

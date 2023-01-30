@@ -9,7 +9,7 @@ use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use clap::{App, AppSettings, Arg};
+use clap::{arg, App, AppSettings};
 #[allow(unused_imports)]
 use log::{error, info};
 use tokio::task::spawn_blocking;
@@ -40,7 +40,7 @@ pub fn main() {
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
         .about("CLN:socket - listens for a vlsd2 connection on port 7701 (or VLS_PORT if set)")
-        .arg(Arg::from("--git-desc print git desc version and exit"));
+        .arg(arg!("--git-desc print git desc version and exit"));
     let app = add_hsmd_args(app);
     let matches = app.get_matches();
     if matches.is_present("git-desc") {

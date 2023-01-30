@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::env;
 use std::sync::Mutex;
 
-use clap::{App, AppSettings, Arg};
+use clap::{arg, App, AppSettings};
 use log::{error, info};
 use url::Url;
 
@@ -244,8 +244,8 @@ pub fn main() {
     let app = App::new("signer")
         .setting(AppSettings::NoAutoVersion)
         .about("Validating Lightning Signer")
-        .arg(Arg::from("--test run a test emulating lightningd/hsmd"))
-        .arg(Arg::from("--git-desc print git desc version and exit"));
+        .arg(arg!("--test run a test emulating lightningd/hsmd"))
+        .arg(arg!("--git-desc print git desc version and exit"));
     let app = add_hsmd_args(app);
     let matches = app.get_matches();
     if handle_hsmd_version(&matches) {

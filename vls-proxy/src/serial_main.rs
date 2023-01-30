@@ -4,7 +4,7 @@
 use std::env;
 use std::sync::{Arc, Mutex};
 
-use clap::{App, AppSettings, Arg};
+use clap::{arg, App, AppSettings, Arg};
 use url::Url;
 
 #[allow(unused_imports)]
@@ -69,14 +69,14 @@ pub fn main() -> anyhow::Result<()> {
         .about("CLN:serial - connects to an embedded VLS over a USB / serial connection")
         .arg(
             Arg::new("--dev-disconnect")
-                .about("ignored dev flag")
+                .help("ignored dev flag")
                 .long("dev-disconnect")
                 .takes_value(true),
         )
-        .arg(Arg::from("--log-io ignored dev flag"))
-        .arg(Arg::from("--version show a dummy version"))
-        .arg(Arg::from("--git-desc print git desc version and exit"))
-        .arg(Arg::from("--test run a test against the embedded device"));
+        .arg(arg!("--log-io ignored dev flag"))
+        .arg(arg!("--version show a dummy version"))
+        .arg(arg!("--git-desc print git desc version and exit"))
+        .arg(arg!("--test run a test against the embedded device"));
     let matches = app.get_matches();
     if matches.is_present("git-desc") {
         println!("remote_hsmd_serial git_desc={}", GIT_DESC);

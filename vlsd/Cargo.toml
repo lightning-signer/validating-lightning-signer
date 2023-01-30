@@ -34,7 +34,7 @@ prost = { version = "0.11" }
 tokio = { version = "1.24", features = ["macros", "rt-multi-thread"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
-clap = { version = "=3.0.0-beta.2" }
+clap = { version = "3.2" }
 ctrlc = { version = "3.1.9", features = ["termination"] }
 triggered = "0.1.1"
 tracing = { version = "0.1.32" }

@@ -127,24 +127,24 @@ fn parse_rpc_url(matches: &ArgMatches) -> String {
 
 fn make_get_subapp() -> App<'static> {
     App::new("get")
-        .about("get all keys/values at a key prefix")
-        .arg(Arg::new("prefix").takes_value(true).required(true).about("key prefix"))
+        .help("get all keys/values at a key prefix")
+        .arg(Arg::new("prefix").takes_value(true).required(true).help("key prefix"))
 }
 
 fn make_put_subapp() -> App<'static> {
     App::new("put")
-        .about("put a versioned key/value")
+        .help("put a versioned key/value")
         .arg(Arg::new("key").takes_value(true).required(true))
-        .arg(Arg::new("version").takes_value(true).required(true).about("integer version"))
-        .arg(Arg::new("value").takes_value(true).required(true).about("hex value"))
+        .arg(Arg::new("version").takes_value(true).required(true).help("integer version"))
+        .arg(Arg::new("value").takes_value(true).required(true).help("hex value"))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = App::new(CLIENT_APP_NAME)
-        .about("a CLI utility which communicates with a running Validating Lightning Signer server via gRPC")
+        .help("a CLI utility which communicates with a running Validating Lightning Signer server via gRPC")
         .arg(
             Arg::new("rpc")
-            .about("Either port number or uri")
+            .help("Either port number or uri")
                 .short('c')
                 .long("rpc")
                 .takes_value(true)
