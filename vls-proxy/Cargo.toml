@@ -10,7 +10,7 @@ rust-version = "1.60.0"
 
 default = ["grpc", "main", "debug"]
 grpc = ["tokio", "tokio-stream", "tonic", "prost", "async-stream", "url"]
-main = ["clap", "ctrlc", "fern"]
+main = ["clap", "toml", "ctrlc", "fern"]
 log_pretty_print = []
 debug = ["vls-core/debug", "log_pretty_print"]
 
@@ -27,6 +27,8 @@ log = "0.4"
 fern = { version = "0.6", features = ["colored"], optional = true }
 # .4 doesn't compile with 1.45.2
 clap = { version = "3.2", optional = true, features = ["derive"] }
+# match kv dep for now
+toml = { version = "0.5", optional = true }
 http = "0.2"
 tokio = { version = "1.24", features = ["macros", "rt-multi-thread"], optional = true }
 tokio-stream = { version = "0.1", optional = true }
