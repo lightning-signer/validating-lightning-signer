@@ -685,7 +685,7 @@ impl Validator for SimpleValidator {
         if info2.to_self_delay != setup.holder_selected_contest_delay {
             policy_err!(
                 self,
-                "policy-channel-contest-delay-range",
+                "policy-channel-holder-contest-delay-range",
                 "holder_selected_contest_delay mismatch"
             );
         }
@@ -791,7 +791,7 @@ impl Validator for SimpleValidator {
         if info2.to_self_delay != setup.counterparty_selected_contest_delay {
             policy_err!(
                 self,
-                "policy-channel-contest-delay-range",
+                "policy-channel-counterparty-contest-delay-range",
                 "counterparty_selected_contest_delay mismatch"
             );
         }

@@ -16,7 +16,9 @@ Some controls will change with the evolution of the Lightning protocol - e.g.
 ## Opening a Channel
 
 * Delay - the local and remote imposed to_self_delay must be reasonable <br>
-  `policy-channel-contest-delay-range`
+  `policy-channel-counterparty-contest-delay-range`
+  `policy-channel-holder-contest-delay-range`
+
 * Safe modes - the channel mode must be safe (e.g. not plain anchors, only zero-fee) <br>
   `policy-channel-safe-mode`
 
