@@ -74,7 +74,8 @@ Before we sign a commitment transaction, the following controls are checked:
   be active on chain with enough depth <br>
   `policy-commitment-spends-active-utxo`
 
-* Initial - the initial commitment must have no HTLCs <br> `policy-commitment-first-no-htlcs`
+* Initial - the initial commitment must have no HTLCs <br>
+  `policy-commitment-first-no-htlcs`
 
 * HTLC in-flight value - the inflight value should not be too large <br>
   `policy-commitment-htlc-inflight-limit`
