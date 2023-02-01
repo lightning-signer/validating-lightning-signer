@@ -66,7 +66,8 @@ Before we sign a commitment transaction, the following controls are checked:
 
 * Output - the outputs must be at most one to-local, at most one
   to-remote and HTLCs (and anchors, as below). <br>
-  `policy-commitment-singular`,
+  `policy-commitment-singular-to-holder`,
+  `policy-commitment-singular-to-counterparty`,
   `policy-commitment-no-unrecognized-outputs`
 
 * Funded - if this is not the first commitment, the funding UTXO must
