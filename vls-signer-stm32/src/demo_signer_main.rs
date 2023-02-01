@@ -133,10 +133,11 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
         let allowlist = vec![]; // TODO - add to NormalContext
         let seed = runctx.seed;
         let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive);
-        let (root_handler, _muts) = RootHandlerBuilder::new(runctx.cmn.network, 0, services, seed)
-            .allowlist(allowlist)
-            .approver(approver)
-            .build();
+        let (root_handler, _muts) =
+            RootHandlerBuilder::new(runctx.cmn.network, 0, services, seed.0)
+                .allowlist(allowlist)
+                .approver(approver)
+                .build();
         info!("used {} bytes", heap_bytes_used());
 
         display_intro(
