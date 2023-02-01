@@ -18,14 +18,10 @@ pub mod loopback;
 #[allow(missing_docs)]
 pub mod test_logger;
 #[allow(missing_docs)]
-#[cfg(feature = "test_utils")]
+#[cfg(any(test, feature = "test_utils"))]
 #[macro_use]
 pub mod test_utils;
 #[allow(missing_docs)]
-#[cfg(feature = "test_utils")]
-#[rustfmt::skip]
-#[macro_use]
-pub mod functional_test_utils;
 /// Key utilities
 pub mod key_utils;
 /// serde for foreign types

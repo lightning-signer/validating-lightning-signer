@@ -2400,6 +2400,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "vls-core-test"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "itertools",
+ "log",
+ "test-log",
+ "vls-core",
+]
+
+[[package]]
 name = "vls-frontend"
 version = "0.1.0-5"
 dependencies = [

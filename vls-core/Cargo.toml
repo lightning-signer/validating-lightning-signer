@@ -12,7 +12,7 @@ rust-version = "1.45.2"
 
 [features]
 
-default = ["std", "env_logger", "debug"]
+default = ["std", "env_logger", "debug", "use_backtrace"]
 
 no-std = ["lightning/no-std", "lightning-invoice/no-std", "bitcoin/no-std", "core2/alloc"]
 std = ["lightning/std", "lightning-invoice/std", "bitcoin/std", "bitcoin/rand", "serde_bolt/std"]
@@ -21,7 +21,6 @@ secp-lowmemory = ["bitcoin/secp-lowmemory"]
 # if you use tonic, this is convenient for auto-conversion of MySigner Status to tonic::Status
 grpc = ["tonic"]
 
-# Turn this feature on to run `cargo test`, which launches the functional tests
 test_utils = ["use_backtrace", "lightning/_test_utils", "lightning/unsafe_revoked_tx_signing", "bitcoin/bitcoinconsensus"]
 
 debug = ["log_pretty_print", "debug_enforcement_state"]
@@ -72,14 +71,21 @@ paste = "1.0"
 # For logging in unit tests
 test-log = "0.2.8"
 
-# TODO point this and lightning-invoice at next release
 [dependencies.lightning]
 #git = "https://github.com/lightningdevkit/rust-lightning.git"
 #rev = "af7c2920e1e5ae4ba3f522730e5cce99bedacc8c"
 #path = "../../rust-lightning/lightning"
 version = "0.0.113"
 default-features = false
-features = ["grind_signatures"]
+features = ["grind_signatures", "unsafe_revoked_tx_signing"]
+
+[dev-dependencies.lightning]
+#git = "https://github.com/lightningdevkit/rust-lightning.git"
+#rev = "af7c2920e1e5ae4ba3f522730e5cce99bedacc8c"
+#path = "../../rust-lightning/lightning"
+version = "0.0.113"
+default-features = false
+features = ["grind_signatures", "_test_utils", "unsafe_revoked_tx_signing"]
 
 [dependencies.lightning-invoice]
 #git = "https://github.com/lightningdevkit/rust-lightning.git"
@@ -93,12 +99,7 @@ version = "0.29"
 default-features = false
 features = ["serde"]
 
-[[bin]]
-name = "example_main"
-path = "src/example_main.rs"
-required-features = ["use_backtrace"]
-
-[[test]]
-name = "functional_test"
-path = "tests/functional_test.rs"
-required-features = ["test_utils"]
+[dev-dependencies.bitcoin]
+version = "0.29"
+default-features = false
+features = ["serde", "bitcoinconsensus"]

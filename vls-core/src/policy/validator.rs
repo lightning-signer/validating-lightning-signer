@@ -595,7 +595,7 @@ impl EnforcementState {
     }
 
     #[allow(missing_docs)]
-    #[cfg(feature = "test_utils")]
+    #[cfg(any(test, feature = "test_utils"))]
     pub fn set_next_holder_commit_num_for_testing(&mut self, num: u64) {
         debug!(
             "set_next_holder_commit_num_for_testing: {} -> {}",
@@ -605,7 +605,7 @@ impl EnforcementState {
     }
 
     #[allow(missing_docs)]
-    #[cfg(feature = "test_utils")]
+    #[cfg(any(test, feature = "test_utils"))]
     pub fn set_next_counterparty_commit_num_for_testing(
         &mut self,
         num: u64,
@@ -621,7 +621,7 @@ impl EnforcementState {
     }
 
     #[allow(missing_docs)]
-    #[cfg(feature = "test_utils")]
+    #[cfg(any(test, feature = "test_utils"))]
     pub fn set_next_counterparty_revoke_num_for_testing(&mut self, num: u64) {
         debug!(
             "set_next_counterparty_revoke_num_for_testing: {} -> {}",

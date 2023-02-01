@@ -1,0 +1,24 @@
+[package]
+name = "vls-core-test"
+license = "Apache-2.0"
+version = "0.1.0"
+edition = "2018"
+autotests = false
+
+[dependencies]
+vls-core = { path = "../vls-core" }
+itertools = { version = "0.10", default-features = false }
+test-log = "0.2.8"
+env_logger = "0.9.0"
+log = "0.4.14"
+
+[dev-dependencies]
+vls-core = { path = "../vls-core", features = ["test_utils"] }
+
+[[bin]]
+name = "example_main"
+path = "src/example_main.rs"
+
+[[test]]
+name = "functional_test"
+path = "tests/functional_test.rs"

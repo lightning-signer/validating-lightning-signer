@@ -24,3 +24,6 @@ bit-vec = { version = "0.6", default_features = false }
 path = "../vls-core"
 default_features = false
 
+[dev-dependencies.vls-core]
+path = "../vls-core"
+features = ["test_utils"]
