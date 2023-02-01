@@ -358,9 +358,6 @@ impl SimpleValidator {
 
 // TODO - policy-htlc-cltv-range
 
-// TODO - policy-forced-destination-allowlisted
-// TODO - policy-forced-fee-range
-
 // TODO - policy-velocity-funding
 // TODO - policy-velocity-transferred
 // TODO - policy-merchant-no-sends
