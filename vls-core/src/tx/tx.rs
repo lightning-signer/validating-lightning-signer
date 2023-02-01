@@ -69,7 +69,7 @@ pub(crate) fn build_commitment_tx(
     info: &CommitmentInfo2,
     obscured_commitment_transaction_number: u64,
     outpoint: OutPoint,
-    option_anchors: bool,
+    is_anchors: bool,
     workaround_local_funding_pubkey: &PublicKey,
     workaround_remote_funding_pubkey: &PublicKey,
 ) -> (Transaction, Vec<Script>, Vec<HTLCOutputInCommitment>) {
@@ -89,7 +89,7 @@ pub(crate) fn build_commitment_tx(
     let mut txouts: Vec<(TxOut, (Script, Option<HTLCOutputInCommitment>))> = Vec::new();
 
     if info.to_countersigner_value_sat > 0 {
-        if !option_anchors {
+        if !is_anchors {
             let script = payload_for_p2wpkh(&info.to_countersigner_pubkey).script_pubkey();
             txouts.push((
                 TxOut {
@@ -128,7 +128,7 @@ pub(crate) fn build_commitment_tx(
             },
             (redeem_script, None),
         ));
-        if option_anchors {
+        if is_anchors {
             let anchor_script = get_anchor_redeemscript(workaround_local_funding_pubkey);
             txouts.push((
                 TxOut { script_pubkey: anchor_script.to_v0_p2wsh(), value: ANCHOR_SAT },
@@ -145,7 +145,7 @@ pub(crate) fn build_commitment_tx(
             payment_hash: out.payment_hash,
             transaction_output_index: None,
         };
-        let script = chan_utils::get_htlc_redeemscript(&htlc_in_tx, option_anchors, &keys);
+        let script = chan_utils::get_htlc_redeemscript(&htlc_in_tx, is_anchors, &keys);
         let txout = TxOut { script_pubkey: script.to_v0_p2wsh(), value: out.value_sat };
         txouts.push((txout, (script, Some(htlc_in_tx))));
     }
@@ -158,7 +158,7 @@ pub(crate) fn build_commitment_tx(
             payment_hash: out.payment_hash,
             transaction_output_index: None,
         };
-        let script = chan_utils::get_htlc_redeemscript(&htlc_in_tx, option_anchors, &keys);
+        let script = chan_utils::get_htlc_redeemscript(&htlc_in_tx, is_anchors, &keys);
         let txout = TxOut { script_pubkey: script.to_v0_p2wsh(), value: out.value_sat };
         txouts.push((txout, (script, Some(htlc_in_tx))));
     }
@@ -486,7 +486,7 @@ impl fmt::Debug for CommitmentInfo {
 
 pub(crate) fn parse_received_htlc_script(
     script: &Script,
-    option_anchors: bool,
+    is_anchors: bool,
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i64), ValidationError> {
     let iter = &mut script.instructions();
     expect_op(iter, OP_DUP)?;
@@ -520,7 +520,7 @@ pub(crate) fn parse_received_htlc_script(
     expect_op(iter, OP_DROP)?;
     expect_op(iter, OP_CHECKSIG)?;
     expect_op(iter, OP_ENDIF)?;
-    if option_anchors {
+    if is_anchors {
         expect_op(iter, OP_PUSHNUM_1)?;
         expect_op(iter, OP_CSV)?;
         expect_op(iter, OP_DROP)?;
@@ -532,7 +532,7 @@ pub(crate) fn parse_received_htlc_script(
 
 pub(crate) fn parse_offered_htlc_script(
     script: &Script,
-    option_anchors: bool,
+    is_anchors: bool,
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), ValidationError> {
     let iter = &mut script.instructions();
     expect_op(iter, OP_DUP)?;
@@ -563,7 +563,7 @@ pub(crate) fn parse_offered_htlc_script(
     expect_op(iter, OP_EQUALVERIFY)?;
     expect_op(iter, OP_CHECKSIG)?;
     expect_op(iter, OP_ENDIF)?;
-    if option_anchors {
+    if is_anchors {
         expect_op(iter, OP_PUSHNUM_1)?;
         expect_op(iter, OP_CSV)?;
         expect_op(iter, OP_DROP)?;
@@ -575,7 +575,7 @@ pub(crate) fn parse_offered_htlc_script(
 
 pub(crate) fn parse_revokeable_redeemscript(
     script: &Script,
-    _option_anchors: bool,
+    _is_anchors: bool,
 ) -> Result<(Vec<u8>, i64, Vec<u8>), ValidationError> {
     let iter = &mut script.instructions();
     expect_op(iter, OP_IF)?;

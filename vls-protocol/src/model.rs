@@ -169,7 +169,8 @@ pub struct CloseInfo {
     pub channel_id: u64,
     pub peer_id: PubKey,
     pub commitment_point: Option<PubKey>,
-    pub option_anchors: bool,
+    // TODO this is unused
+    pub is_anchors: bool,
     pub csv: u32,
 }
 

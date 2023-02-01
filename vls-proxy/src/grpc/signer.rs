@@ -1,7 +1,7 @@
 use super::hsmd::{self, PingRequest, SignerRequest, SignerResponse};
 use crate::util::{
     integration_test_seed_or_generate, make_validator_factory_with_filter, read_allowlist,
-    should_auto_approve
+    should_auto_approve,
 };
 use http::Uri;
 use lightning_signer::bitcoin::Network;
