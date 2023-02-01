@@ -135,12 +135,13 @@ Before we sign a commitment transaction, the following controls are checked:
   `policy-commitment-retry-same`
 
 * Anchors:
-  - If `option_anchor_outputs` is not in force no anchor outputs shall
-    be present. <br>
+  - If neither `option_anchor_outputs` or `option_anchors_zero_fee_htlc`
+    are in force no anchor outputs shall be present. <br>
     `policy-commitment-anchors-not-when-off`
 
-  - If `option_anchor_outputs` is in force the to-local and to-remote
-    outputs must each have an associated anchor output. <br>
+  - If either `option_anchor_outputs` or `option_anchors_zero_fee_htlc`
+    are in force the to-local and to-remote outputs must each have an
+    associated anchor output. <br>
     `policy-commitment-anchor-to-holder`,
     `policy-commitment-anchor-to-counterparty`
     
