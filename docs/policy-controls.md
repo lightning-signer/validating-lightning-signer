@@ -97,7 +97,7 @@ Before we sign a commitment transaction, the following controls are checked:
   `policy-commitment-revocation-pubkey`
 
 * The to_self_delay on the to_local output must be as negotiated for channel <br>
-  `policy-commitment-to-self-delay`
+  `policy-commitment-to-self-delay-range`
   
 * The delayed payment pubkey in the to_local output must be correct <br>
   `policy-commitment-broadcaster-pubkey`
