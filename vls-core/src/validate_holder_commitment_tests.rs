@@ -341,7 +341,7 @@ mod tests {
             let mut cstate = make_test_chain_state();
 
             mutate_validation_input(&mut ValidationMutationState {
-                opt_anchors: commitment_type == CommitmentType::Anchors,
+                opt_anchors: commitment_type == CommitmentType::AnchorsZeroFeeHtlc,
                 chan: chan,
                 cstate: &mut cstate,
                 commit_tx_ctx: &mut commit_tx_ctx,
@@ -482,7 +482,7 @@ mod tests {
                 fn [<$name _anchors>]() {
                     assert_status_ok!(
                         validate_holder_commitment_with_mutators(
-                            CommitmentType::Anchors, $tms, $kms, $vms, $vs)
+                            CommitmentType::AnchorsZeroFeeHtlc, $tms, $kms, $vms, $vs)
                     );
                 }
             }
@@ -505,7 +505,7 @@ mod tests {
                 fn [<$name _anchors>]() {
                     assert_status_ok!(
                         validate_holder_commitment_retry_with_mutators(
-                            CommitmentType::Anchors, $tms, $kms, $vms, $vs)
+                            CommitmentType::AnchorsZeroFeeHtlc, $tms, $kms, $vms, $vs)
                     );
                 }
             }
@@ -537,7 +537,7 @@ mod tests {
                 fn [<$name _anchors>]() {
                     assert_failed_precondition_err!(
                         validate_holder_commitment_with_mutators(
-                            CommitmentType::Anchors, $tms, $kms, $vms, $vs),
+                            CommitmentType::AnchorsZeroFeeHtlc, $tms, $kms, $vms, $vs),
                         ($errcls)(ERR_MSG_CONTEXT_ANCHORS)
                     );
                 }
@@ -562,7 +562,7 @@ mod tests {
                 fn [<$name _anchors>]() {
                     assert_failed_precondition_err!(
                         validate_holder_commitment_retry_with_mutators(
-                            CommitmentType::Anchors, $tms, $kms, $vms, $vs),
+                            CommitmentType::AnchorsZeroFeeHtlc, $tms, $kms, $vms, $vs),
                         ($errcls)(ERR_MSG_CONTEXT_ANCHORS)
                     );
                 }
@@ -873,7 +873,7 @@ mod tests {
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
         },
         |_| "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
-             to_broadcaster_value_sat 97 less than dust limit 330"
+             to_broadcaster_value_sat 97 less than dust limit 354"
     );
 
     // policy-commitment-outputs-trimmed
@@ -890,7 +890,7 @@ mod tests {
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
         },
         |_| "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
-             to_countersigner_value_sat 100 less than dust limit 330"
+             to_countersigner_value_sat 100 less than dust limit 354"
     );
 
     // policy-commitment-outputs-trimmed
@@ -898,8 +898,8 @@ mod tests {
         dust_offered_htlc,
         |vms| {
             let basendx = if vms.opt_anchors { 2 } else { 0 };
-            vms.commit_tx_ctx.offered_htlcs[0].value_sat = 1000;
-            vms.tx.output[basendx].value = 1000;
+            vms.commit_tx_ctx.offered_htlcs[0].value_sat = 300;
+            vms.tx.output[basendx].value = 300;
         },
         |vs| {
             // Channel state should not advance.
@@ -907,8 +907,8 @@ mod tests {
         },
         |ectx: ErrMsgContext| format!(
             "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
-             offered htlc.value_sat 1000 less than dust limit {}",
-            if ectx.opt_anchors { 1129 } else { 1125 }
+             offered htlc.value_sat 300 less than dust limit {}",
+            if ectx.opt_anchors { 354 } else { 1125 }
         )
     );
 
@@ -917,8 +917,8 @@ mod tests {
         dust_received_htlc,
         |vms| {
             let basendx = if vms.opt_anchors { 2 } else { 0 };
-            vms.commit_tx_ctx.received_htlcs[0].value_sat = 1000;
-            vms.tx.output[basendx + 1].value = 1000;
+            vms.commit_tx_ctx.received_htlcs[0].value_sat = 300;
+            vms.tx.output[basendx + 1].value = 300;
         },
         |vs| {
             // Channel state should not advance.
@@ -926,8 +926,8 @@ mod tests {
         },
         |ectx: ErrMsgContext| format!(
             "policy failure: validate_holder_commitment_tx: validate_commitment_tx: \
-             received htlc.value_sat 1000 less than dust limit {}",
-            if ectx.opt_anchors { 1177 } else { 1173 }
+             received htlc.value_sat 300 less than dust limit {}",
+            if ectx.opt_anchors { 354 } else { 1173 }
         )
     );
 

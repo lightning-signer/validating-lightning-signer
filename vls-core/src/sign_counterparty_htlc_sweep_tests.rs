@@ -122,14 +122,13 @@ mod tests {
                 let (mut tx, mut htlc_redeemscript, mut htlc_amount_sat) = if kind == OfferedHTLC {
                     let outndx = 0;
                     let htlc = &htlcs[0];
-                    let htlc_redeemscript =
-                        get_htlc_redeemscript(htlc, setup.option_anchors(), &keys);
+                    let htlc_redeemscript = get_htlc_redeemscript(htlc, setup.is_anchors(), &keys);
                     let htlc_amount_sat = htlc.amount_msat / 1000;
                     (
                         make_test_counterparty_offered_htlc_sweep_tx(
                             built_commit_txid.clone(),
                             outndx,
-                            chan.setup.option_anchors(),
+                            chan.setup.is_anchors(),
                             script_pubkey,
                             htlc_amount_sat - fee,
                         ),
@@ -139,15 +138,14 @@ mod tests {
                 } else {
                     let outndx = 1;
                     let htlc = &htlcs[1];
-                    let htlc_redeemscript =
-                        get_htlc_redeemscript(htlc, setup.option_anchors(), &keys);
+                    let htlc_redeemscript = get_htlc_redeemscript(htlc, setup.is_anchors(), &keys);
                     let htlc_amount_sat = htlc.amount_msat / 1000;
                     (
                         make_test_counterparty_received_htlc_sweep_tx(
                             htlc.cltv_expiry,
                             built_commit_txid.clone(),
                             outndx,
-                            chan.setup.option_anchors(),
+                            chan.setup.is_anchors(),
                             script_pubkey,
                             htlc_amount_sat - fee,
                         ),

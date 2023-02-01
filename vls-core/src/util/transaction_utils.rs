@@ -9,9 +9,14 @@ use lightning::ln::chan_utils::make_funding_redeemscript;
 /// The maximum value of an input or output in milli satoshi
 pub const MAX_VALUE_MSAT: u64 = 21_000_000_0000_0000_000;
 
-/// The minimum value of the dust limit in satoshis.
+/// The minimum value of the dust limit in satoshis - for p2wsh outputs
+/// (such as anchors)
 // FIXME - this is copied from `lightning::ln::channel, lobby to increase visibility.
 pub const MIN_DUST_LIMIT_SATOSHIS: u64 = 330;
+/// The minimum value of the dust limit in satoshis - for segwit in general
+/// This is also the minimum negotiated dust limit
+// FIXME - this is copied from `lightning::ln::channel, lobby to increase visibility.
+pub const MIN_CHAN_DUST_LIMIT_SATOSHIS: u64 = 354;
 
 /// The expected weight of a commitment transaction
 pub(crate) fn expected_commitment_tx_weight(opt_anchors: bool, num_untrimmed_htlc: usize) -> usize {

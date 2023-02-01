@@ -473,7 +473,7 @@ mod tests {
     #[test]
     fn success_anchors() {
         assert_status_ok!(sign_funding_tx_with_mutator(|fms| {
-            fms.chan_ctx.setup.commitment_type = CommitmentType::Anchors;
+            fms.chan_ctx.setup.commitment_type = CommitmentType::AnchorsZeroFeeHtlc;
         }));
     }
 

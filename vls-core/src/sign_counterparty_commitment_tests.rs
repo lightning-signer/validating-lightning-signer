@@ -47,13 +47,6 @@ mod tests {
         sign_counterparty_commitment_tx_test(&setup);
     }
 
-    #[test]
-    fn sign_counterparty_commitment_tx_legacy_test() {
-        let mut setup = make_test_channel_setup();
-        setup.commitment_type = CommitmentType::Legacy;
-        sign_counterparty_commitment_tx_test(&setup);
-    }
-
     fn sign_counterparty_commitment_tx_test(setup: &ChannelSetup) {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
@@ -141,13 +134,6 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_with_htlc_static_test() {
         let setup = make_test_channel_setup();
-        sign_counterparty_commitment_tx_with_htlc_test(&setup);
-    }
-
-    #[test]
-    fn sign_counterparty_commitment_tx_with_htlc_legacy_test() {
-        let mut setup = make_test_channel_setup();
-        setup.commitment_type = CommitmentType::Legacy;
         sign_counterparty_commitment_tx_with_htlc_test(&setup);
     }
 
@@ -254,13 +240,6 @@ mod tests {
     #[test]
     fn sign_counterparty_commitment_tx_phase2_static_test() {
         let setup = make_test_channel_setup();
-        sign_counterparty_commitment_tx_phase2_test(&setup);
-    }
-
-    #[test]
-    fn sign_counterparty_commitment_tx_phase2_legacy_test() {
-        let mut setup = make_test_channel_setup();
-        setup.commitment_type = CommitmentType::Legacy;
         sign_counterparty_commitment_tx_phase2_test(&setup);
     }
 
@@ -413,7 +392,7 @@ mod tests {
 
             // Mutate the transaction and recalculate the txid.
             txmut(&mut TxMutationState {
-                opt_anchors: commitment_type == CommitmentType::Anchors,
+                opt_anchors: commitment_type == CommitmentType::AnchorsZeroFeeHtlc,
                 cstate: &mut cstate,
                 tx: &mut tx,
                 witscripts: &mut output_witscripts,
@@ -509,7 +488,7 @@ mod tests {
     fn success_phase2_anchors() {
         assert_status_ok!(sign_counterparty_commitment_tx_with_mutators(
             true, // is_phase2
-            CommitmentType::Anchors,
+            CommitmentType::AnchorsZeroFeeHtlc,
             |_state| {
                 // don't mutate the signer, should pass
             },
@@ -529,7 +508,7 @@ mod tests {
     fn success_phase1_anchors() {
         assert_status_ok!(sign_counterparty_commitment_tx_with_mutators(
             false, // is_phase2
-            CommitmentType::Anchors,
+            CommitmentType::AnchorsZeroFeeHtlc,
             |_state| {
                 // don't mutate the signer, should pass
             },
@@ -576,7 +555,7 @@ mod tests {
                 fn [<$name _phase1_anchors>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
-                            false, CommitmentType::Anchors, $sm, $km, $tm, |_| {}),
+                            false, CommitmentType::AnchorsZeroFeeHtlc, $sm, $km, $tm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE1_ANCHORS)
                     );
                 }
@@ -601,7 +580,7 @@ mod tests {
                 fn [<$name _phase2_anchors>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_with_mutators(
-                            true, CommitmentType::Anchors, $sm, $km, $tm, |_| {}),
+                            true, CommitmentType::AnchorsZeroFeeHtlc, $sm, $km, $tm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE2_ANCHORS)
                     );
                 }
@@ -1019,7 +998,7 @@ mod tests {
     fn retry_same_phase1_anchors() {
         assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(
             false, // is_phase2
-            CommitmentType::Anchors,
+            CommitmentType::AnchorsZeroFeeHtlc,
             |_cms| {
                 // If we don't mutate anything it should succeed.
             },
@@ -1032,7 +1011,7 @@ mod tests {
     fn retry_same_phase2_anchors() {
         assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(
             true, // is_phase2
-            CommitmentType::Anchors,
+            CommitmentType::AnchorsZeroFeeHtlc,
             |_cms| {
                 // If we don't mutate anything it should succeed.
             },
@@ -1067,7 +1046,7 @@ mod tests {
                 fn [<$name _phase1_anchors>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_retry_with_mutator(
-                            false, CommitmentType::Anchors, $rm, |_| {}),
+                            false, CommitmentType::AnchorsZeroFeeHtlc, $rm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE1_ANCHORS)
                     );
                 }
@@ -1077,7 +1056,7 @@ mod tests {
                 fn [<$name _phase2_anchors>]() {
                     assert_failed_precondition_err!(
                         sign_counterparty_commitment_tx_retry_with_mutator(
-                            true, CommitmentType::Anchors, $rm, |_| {}),
+                            true, CommitmentType::AnchorsZeroFeeHtlc, $rm, |_| {}),
                         ($errcls)(ERR_MSG_CONTEXT_PHASE2_ANCHORS)
                     );
                 }
@@ -1086,14 +1065,14 @@ mod tests {
                 #[test]
                 fn [<$name _phase2_static_warn>]() {
                     assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(
-                            true, CommitmentType::Anchors, $rm, disable_policies));
+                            true, CommitmentType::AnchorsZeroFeeHtlc, $rm, disable_policies));
                 }
             }
             paste! {
                 #[test]
                 fn [<$name _phase1_static_warn>]() {
                     assert_status_ok!(sign_counterparty_commitment_tx_retry_with_mutator(
-                            false, CommitmentType::Anchors, $rm, disable_policies));
+                            false, CommitmentType::AnchorsZeroFeeHtlc, $rm, disable_policies));
                 }
             }
         };

@@ -1497,8 +1497,7 @@ impl Node {
             txid: setup.funding_outpoint.txid,
             index: setup.funding_outpoint.vout as u16,
         });
-        let opt_non_zero_fee_anchors =
-            if setup.option_anchors_zero_fee_htlc() { Some(()) } else { None };
+        let opt_non_zero_fee_anchors = if setup.is_zero_fee_htlc() { Some(()) } else { None };
 
         let channel_transaction_parameters = ChannelTransactionParameters {
             holder_pubkeys: holder_pubkeys.clone(),
@@ -1509,7 +1508,7 @@ impl Node {
                 selected_contest_delay: setup.counterparty_selected_contest_delay,
             }),
             funding_outpoint,
-            opt_anchors: if setup.option_anchors() { Some(()) } else { None },
+            opt_anchors: if setup.is_anchors() { Some(()) } else { None },
             opt_non_zero_fee_anchors,
         };
         channel_transaction_parameters

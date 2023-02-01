@@ -25,13 +25,6 @@ mod tests {
         sign_local_htlc_tx_test(&setup);
     }
 
-    #[test]
-    fn sign_local_htlc_tx_legacy_test() {
-        let mut setup = make_test_channel_setup();
-        setup.commitment_type = CommitmentType::Legacy;
-        sign_local_htlc_tx_test(&setup);
-    }
-
     fn sign_local_htlc_tx_test(setup: &ChannelSetup) {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
@@ -62,20 +55,20 @@ mod tests {
             })
             .expect("point");
 
-        let build_feerate = if setup.option_anchors_zero_fee_htlc() { 0 } else { feerate_per_kw };
+        let build_feerate = if setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
 
         let htlc_tx = build_htlc_transaction(
             &commitment_txid,
             build_feerate,
             to_self_delay,
             &htlc,
-            setup.option_anchors(),
-            !setup.option_anchors_zero_fee_htlc(),
+            setup.is_anchors(),
+            !setup.is_zero_fee_htlc(),
             &txkeys.broadcaster_delayed_payment_key,
             &txkeys.revocation_key,
         );
 
-        let htlc_redeemscript = get_htlc_redeemscript(&htlc, setup.option_anchors(), &txkeys);
+        let htlc_redeemscript = get_htlc_redeemscript(&htlc, setup.is_anchors(), &txkeys);
 
         let output_witscript = get_revokeable_redeemscript(
             &txkeys.revocation_key,
@@ -182,8 +175,7 @@ mod tests {
                     transaction_output_index: Some(0),
                 };
 
-                let build_feerate =
-                    if setup.option_anchors_zero_fee_htlc() { 0 } else { feerate_per_kw };
+                let build_feerate = if setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
 
                 let mut htlc_tx = build_htlc_transaction(
                     &commitment_txid,
@@ -191,7 +183,7 @@ mod tests {
                     to_self_delay,
                     &htlc,
                     channel_parameters.opt_anchors.is_some(),
-                    !setup.option_anchors_zero_fee_htlc(),
+                    !setup.is_zero_fee_htlc(),
                     &keys.broadcaster_delayed_payment_key,
                     &keys.revocation_key,
                 );
@@ -230,12 +222,6 @@ mod tests {
             } else {
                 "09bf12e4a113411134d9d8ee25e0d8e8ec3733867fe60bb4b8bebf29e393a08c"
             }
-        } else if commitment_type == CommitmentType::Anchors {
-            if is_offered {
-                "cfb49b53f0ff73d3209372a56c9f7f64694ffa3f4a315c1216dbf24b95389ff9"
-            } else {
-                "6362ca6888aa61bb626aa55309af5e009e7c59211942a681bb6fca5625ba60e5"
-            }
         } else if commitment_type == CommitmentType::AnchorsZeroFeeHtlc {
             if is_offered {
                 "e3e293a3e9c447eab17baa88811cc10717bdbb805984eab08d12b8d6a271fd00"
@@ -256,7 +242,7 @@ mod tests {
             &htlc_pubkey,
             htlc_amount_sat,
             &htlc_redeemscript,
-            setup.option_anchors(),
+            setup.is_anchors(),
         );
 
         Ok(())
@@ -312,8 +298,7 @@ mod tests {
                     transaction_output_index: Some(0),
                 };
 
-                let build_feerate =
-                    if setup.option_anchors_zero_fee_htlc() { 0 } else { feerate_per_kw };
+                let build_feerate = if setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
 
                 let mut htlc_tx = build_htlc_transaction(
                     &commitment_txid,
@@ -321,7 +306,7 @@ mod tests {
                     to_self_delay,
                     &htlc,
                     channel_parameters.opt_anchors.is_some(),
-                    !setup.option_anchors_zero_fee_htlc(),
+                    !setup.is_zero_fee_htlc(),
                     &keys.broadcaster_delayed_payment_key,
                     &keys.revocation_key,
                 );
@@ -360,12 +345,6 @@ mod tests {
                 "7358f246581726b4b5f51e361fb53e7ac23b46d05291ec9ed145835124291fe3"
             } else {
                 "fd07a2d0bb62a2d6d64442e4ebb2208c0a64cee4a9727f02f457f26975960892"
-            }
-        } else if commitment_type == CommitmentType::Anchors {
-            if is_offered {
-                "59b9970727ae7a00576c5f0c0b4405882fb90d30a826d45dc713e905e355db47"
-            } else {
-                "a91d7f6fa13193b7aeab704d3585c0e9de54d4982227fe4b13ea94d8ae42542e"
             }
         } else if commitment_type == CommitmentType::AnchorsZeroFeeHtlc {
             if is_offered {
@@ -420,42 +399,6 @@ mod tests {
                     assert_status_ok!(
                         sign_counterparty_htlc_tx_with_mutators(
                             true, CommitmentType::StaticRemoteKey, $pm, $km, $tm)
-                    );
-                }
-            }
-            paste! {
-                #[test]
-                fn [<$name _holder_received_anchors>]() {
-                    assert_status_ok!(
-                        sign_holder_htlc_tx_with_mutators(
-                            false, CommitmentType::Anchors, $pm, $km, $tm)
-                    );
-                }
-            }
-            paste! {
-                #[test]
-                fn [<$name _holder_offered_anchors>]() {
-                    assert_status_ok!(
-                        sign_holder_htlc_tx_with_mutators(
-                            true, CommitmentType::Anchors, $pm, $km, $tm)
-                    );
-                }
-            }
-            paste! {
-                #[test]
-                fn [<$name _counterparty_received_anchors>]() {
-                    assert_status_ok!(
-                        sign_counterparty_htlc_tx_with_mutators(
-                            false, CommitmentType::Anchors, $pm, $km, $tm)
-                    );
-                }
-            }
-            paste! {
-                #[test]
-                fn [<$name _counterparty_offered_anchors>]() {
-                    assert_status_ok!(
-                        sign_counterparty_htlc_tx_with_mutators(
-                            true, CommitmentType::Anchors, $pm, $km, $tm)
                     );
                 }
             }
@@ -532,30 +475,6 @@ mod tests {
         opt_anchors: false,
         opt_zerofee: false,
     };
-    const ERR_MSG_CONTEXT_HOLDER_RECEIVED_ANCHORS: ErrMsgContext = ErrMsgContext {
-        is_counterparty: false,
-        is_offered: false,
-        opt_anchors: true,
-        opt_zerofee: false,
-    };
-    const ERR_MSG_CONTEXT_HOLDER_OFFERED_ANCHORS: ErrMsgContext = ErrMsgContext {
-        is_counterparty: false,
-        is_offered: true,
-        opt_anchors: true,
-        opt_zerofee: false,
-    };
-    const ERR_MSG_CONTEXT_CPARTY_RECEIVED_ANCHORS: ErrMsgContext = ErrMsgContext {
-        is_counterparty: true,
-        is_offered: false,
-        opt_anchors: true,
-        opt_zerofee: false,
-    };
-    const ERR_MSG_CONTEXT_CPARTY_OFFERED_ANCHORS: ErrMsgContext = ErrMsgContext {
-        is_counterparty: true,
-        is_offered: true,
-        opt_anchors: true,
-        opt_zerofee: false,
-    };
     const ERR_MSG_CONTEXT_HOLDER_RECEIVED_ZEROFEE: ErrMsgContext = ErrMsgContext {
         is_counterparty: false,
         is_offered: false,
@@ -620,46 +539,6 @@ mod tests {
                         sign_counterparty_htlc_tx_with_mutators(
                             true, CommitmentType::StaticRemoteKey, $pm, $km, $tm),
                         ($errcls)(ERR_MSG_CONTEXT_CPARTY_OFFERED_STATIC)
-                    );
-                }
-            }
-            paste! {
-                #[test]
-                fn [<$name _holder_received_anchors>]() {
-                    assert_failed_precondition_err!(
-                        sign_holder_htlc_tx_with_mutators(
-                            false, CommitmentType::Anchors, $pm, $km, $tm),
-                        ($errcls)(ERR_MSG_CONTEXT_HOLDER_RECEIVED_ANCHORS)
-                    );
-                }
-            }
-            paste! {
-                #[test]
-                fn [<$name _holder_offered_anchors>]() {
-                    assert_failed_precondition_err!(
-                        sign_holder_htlc_tx_with_mutators(
-                            true, CommitmentType::Anchors, $pm, $km, $tm),
-                        ($errcls)(ERR_MSG_CONTEXT_HOLDER_OFFERED_ANCHORS)
-                    );
-                }
-            }
-            paste! {
-                #[test]
-                fn [<$name _counterparty_received_anchors>]() {
-                    assert_failed_precondition_err!(
-                        sign_counterparty_htlc_tx_with_mutators(
-                            false, CommitmentType::Anchors, $pm, $km, $tm),
-                        ($errcls)(ERR_MSG_CONTEXT_CPARTY_RECEIVED_ANCHORS)
-                    );
-                }
-            }
-            paste! {
-                #[test]
-                fn [<$name _counterparty_offered_anchors>]() {
-                    assert_failed_precondition_err!(
-                        sign_counterparty_htlc_tx_with_mutators(
-                            true, CommitmentType::Anchors, $pm, $km, $tm),
-                        ($errcls)(ERR_MSG_CONTEXT_CPARTY_OFFERED_ANCHORS)
                     );
                 }
             }

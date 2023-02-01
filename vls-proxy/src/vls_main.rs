@@ -16,6 +16,7 @@ use lightning_signer::bitcoin::secp256k1::SecretKey;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::node::NodeServices;
 use lightning_signer::persist::{Mutations, Persist};
+use lightning_signer::policy::filter::{FilterRule, PolicyFilter};
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::crypto_utils::hkdf_sha256;
@@ -39,7 +40,7 @@ use vls_protocol_signer::vls_protocol;
 mod test;
 use vls_proxy::util::{
     add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, integration_test_seed_or_generate,
-    make_validator_factory, setup_logging, vls_network,
+    make_validator_factory_with_filter, setup_logging, vls_network,
 };
 use vls_proxy::*;
 
@@ -269,7 +270,10 @@ async fn start() {
     let allowlist = read_allowlist();
     let network = vls_network().parse::<Network>().expect("malformed vls network");
     let starting_time_factory = ClockStartingTimeFactory::new();
-    let validator_factory = make_validator_factory(network);
+    // TODO(236)
+    let filter =
+        PolicyFilter { rules: vec![FilterRule::new_warn("policy-channel-safe-type-anchors")] };
+    let validator_factory = make_validator_factory_with_filter(network, Some(filter));
     let clock = Arc::new(StandardClock());
     let seed = integration_test_seed_or_generate();
     let persister = make_persister();

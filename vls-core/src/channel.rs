@@ -107,10 +107,12 @@ impl TypedSignature {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum CommitmentType {
     /// No longer used - dynamic to-remote key
+    /// DEPRECATED
     Legacy,
     /// Static to-remote key
     StaticRemoteKey,
     /// Anchors
+    /// DEPRECATED
     Anchors,
     /// Anchors, zero fee htlc
     AnchorsZeroFeeHtlc,
@@ -167,18 +169,19 @@ impl fmt::Debug for ChannelSetup {
 }
 
 impl ChannelSetup {
-    pub(crate) fn option_static_remotekey(&self) -> bool {
+    /// True if this channel uses static to_remote key
+    pub fn is_static_remotekey(&self) -> bool {
         self.commitment_type != CommitmentType::Legacy
     }
 
-    /// True if this channel uses anchors.
-    pub fn option_anchors(&self) -> bool {
+    /// True if this channel uses anchors
+    pub fn is_anchors(&self) -> bool {
         self.commitment_type == CommitmentType::Anchors
             || self.commitment_type == CommitmentType::AnchorsZeroFeeHtlc
     }
 
     /// True if this channel uses zero fee htlc with anchors
-    pub fn option_anchors_zero_fee_htlc(&self) -> bool {
+    pub fn is_zero_fee_htlc(&self) -> bool {
         self.commitment_type == CommitmentType::AnchorsZeroFeeHtlc
     }
 }
@@ -496,7 +499,7 @@ impl Channel {
         remote_per_commitment_point: &PublicKey,
     ) -> Result<PublicKey, Status> {
         let holder_points = self.keys.pubkeys();
-        let counterparty_key = if self.setup.option_static_remotekey() {
+        let counterparty_key = if self.setup.is_static_remotekey() {
             holder_points.payment_point
         } else {
             derive_public_key(
@@ -547,7 +550,7 @@ impl Channel {
             info,
             obscured_commitment_transaction_number,
             self.setup.funding_outpoint,
-            self.setup.option_anchors(),
+            self.setup.is_anchors(),
             workaround_local_funding_pubkey,
             workaround_remote_funding_pubkey,
         ))
@@ -659,7 +662,7 @@ impl Channel {
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             to_counterparty_value_sat,
             to_holder_value_sat,
-            self.setup.option_anchors(),
+            self.setup.is_anchors(),
             self.keys.counterparty_pubkeys().funding_pubkey,
             self.keys.pubkeys().funding_pubkey,
             keys,
@@ -734,28 +737,26 @@ impl Channel {
         )
         .map_err(|err| internal_error(format!("derive_public_key failed: {}", err)))?;
 
-        let sig_hash_type = if self.setup.option_anchors() {
+        let sig_hash_type = if self.setup.is_anchors() {
             EcdsaSighashType::SinglePlusAnyoneCanPay
         } else {
             EcdsaSighashType::All
         };
 
-        let build_feerate =
-            if self.setup.option_anchors_zero_fee_htlc() { 0 } else { feerate_per_kw };
+        let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
 
         for ndx in 0..recomposed_tx.htlcs().len() {
             let htlc = &recomposed_tx.htlcs()[ndx];
 
-            let htlc_redeemscript =
-                get_htlc_redeemscript(htlc, self.setup.option_anchors(), &txkeys);
+            let htlc_redeemscript = get_htlc_redeemscript(htlc, self.setup.is_anchors(), &txkeys);
 
             let recomposed_htlc_tx = build_htlc_transaction(
                 &commitment_txid,
                 build_feerate,
                 to_self_delay,
                 htlc,
-                self.setup.option_anchors(),
-                !self.setup.option_anchors_zero_fee_htlc(),
+                self.setup.is_anchors(),
+                !self.setup.is_zero_fee_htlc(),
                 &txkeys.broadcaster_delayed_payment_key,
                 &txkeys.revocation_key,
             );
@@ -932,8 +933,7 @@ impl Channel {
             Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
-        let build_feerate =
-            if self.setup.option_anchors_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };
+        let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };
         let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
@@ -997,8 +997,7 @@ impl Channel {
             Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
-        let build_feerate =
-            if self.setup.option_anchors_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };
+        let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };
         let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
@@ -1106,8 +1105,7 @@ impl Channel {
         let mut htlc_dummy_sigs = Vec::with_capacity(htlcs.len());
         htlc_dummy_sigs.resize(htlcs.len(), Self::dummy_sig());
 
-        let build_feerate =
-            if self.setup.option_anchors_zero_fee_htlc() { 0 } else { feerate_per_kw };
+        let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
         let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
         let commitment_tx = self.make_holder_commitment_tx(
             commitment_number,
@@ -1155,7 +1153,7 @@ impl Channel {
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             to_holder_value_sat,
             to_counterparty_value_sat,
-            self.setup.option_anchors(),
+            self.setup.is_anchors(),
             self.keys.pubkeys().funding_pubkey,
             self.keys.counterparty_pubkeys().funding_pubkey,
             keys.clone(),
@@ -1163,7 +1161,7 @@ impl Channel {
             &mut htlcs_with_aux,
             &parameters,
         );
-        if self.setup.option_anchors() {
+        if self.setup.is_anchors() {
             commitment_tx = commitment_tx.with_non_zero_fee_anchors();
         }
         commitment_tx
@@ -1220,8 +1218,7 @@ impl Channel {
             txid: self.setup.funding_outpoint.txid,
             index: self.setup.funding_outpoint.vout as u16,
         };
-        let opt_non_zero_fee_anchors =
-            if self.setup.option_anchors_zero_fee_htlc() { Some(()) } else { None };
+        let opt_non_zero_fee_anchors = if self.setup.is_zero_fee_htlc() { Some(()) } else { None };
         let channel_parameters = ChannelTransactionParameters {
             holder_pubkeys: self.get_channel_basepoints(),
             holder_selected_contest_delay: self.setup.holder_selected_contest_delay,
@@ -1231,7 +1228,7 @@ impl Channel {
                 selected_contest_delay: self.setup.counterparty_selected_contest_delay,
             }),
             funding_outpoint: Some(funding_outpoint),
-            opt_anchors: if self.setup.option_anchors() { Some(()) } else { None },
+            opt_anchors: if self.setup.is_anchors() { Some(()) } else { None },
             opt_non_zero_fee_anchors,
         };
         channel_parameters
@@ -1607,7 +1604,7 @@ impl Channel {
             internal_error(format!("could not derive to_holder_delayed_pubkey: {}", err))
         })?;
 
-        let counterparty_pubkey = if self.setup.option_static_remotekey() {
+        let counterparty_pubkey = if self.setup.is_static_remotekey() {
             counterparty_points.payment_point
         } else {
             derive_public_key(

@@ -10,7 +10,7 @@ use lightning::ln::chan_utils::{
 use lightning::ln::PaymentHash;
 use log::*;
 
-use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
+use crate::channel::{ChannelId, ChannelSetup, ChannelSlot, CommitmentType};
 use crate::policy::error::unknown_destinations_error;
 use crate::policy::filter::{FilterResult, PolicyFilter};
 use crate::policy::validator::EnforcementState;
@@ -29,7 +29,7 @@ use crate::util::debug_utils::{
 };
 use crate::util::transaction_utils::{
     estimate_feerate_per_kw, expected_commitment_tx_weight, mutual_close_tx_weight,
-    MIN_DUST_LIMIT_SATOSHIS,
+    MIN_CHAN_DUST_LIMIT_SATOSHIS, MIN_DUST_LIMIT_SATOSHIS,
 };
 use crate::util::velocity::VelocityControlSpec;
 use crate::wallet::Wallet;
@@ -37,6 +37,9 @@ use crate::wallet::Wallet;
 extern crate scopeguard;
 
 use super::error::{policy_error, transaction_format_error, ValidationError};
+
+const SAFE_COMMITMENT_TYPE: &[CommitmentType] =
+    &[CommitmentType::StaticRemoteKey, CommitmentType::AnchorsZeroFeeHtlc];
 
 /// A factory for SimpleValidator
 pub struct SimpleValidatorFactory {
@@ -373,6 +376,26 @@ impl Validator for SimpleValidator {
         let mut debug_on_return = scoped_debug_return!(setup, holder_shutdown_key_path);
 
         // NOTE - setup.channel_value_sat is not valid, set later on.
+
+        // policy-channel-safe-type
+        if !SAFE_COMMITMENT_TYPE.contains(&setup.commitment_type) {
+            if setup.commitment_type == CommitmentType::Anchors {
+                // special case for anchors, so that they can be enabled until all
+                // dependent projects update to zero-fee HTLCs
+                policy_err!(
+                    self,
+                    "policy-channel-safe-type-anchors",
+                    "unsafe commitment type: plain anchors"
+                );
+            } else {
+                policy_err!(
+                    self,
+                    "policy-channel-safe-type",
+                    "unsafe commitment type: {:?}",
+                    setup.commitment_type
+                );
+            }
+        }
 
         // policy-channel-counterparty-contest-delay-range
         // policy-commitment-to-self-delay-range relies on this value
@@ -884,7 +907,7 @@ impl Validator for SimpleValidator {
         } else {
             setup.counterparty_selected_contest_delay // the remote side imposes this value
         };
-        let sighash_type = if is_counterparty && setup.option_anchors() {
+        let sighash_type = if is_counterparty && setup.is_anchors() {
             EcdsaSighashType::SinglePlusAnyoneCanPay
         } else {
             EcdsaSighashType::All
@@ -893,9 +916,9 @@ impl Validator for SimpleValidator {
             .segwit_signature_hash(0, &redeemscript, htlc_amount_sat, sighash_type)
             .unwrap();
 
-        let offered = if parse_offered_htlc_script(redeemscript, setup.option_anchors()).is_ok() {
+        let offered = if parse_offered_htlc_script(redeemscript, setup.is_anchors()).is_ok() {
             true
-        } else if parse_received_htlc_script(redeemscript, setup.option_anchors()).is_ok() {
+        } else if parse_received_htlc_script(redeemscript, setup.is_anchors()).is_ok() {
             false
         } else {
             debug_failed_vals!(
@@ -916,13 +939,13 @@ impl Validator for SimpleValidator {
         let commitment_txid = tx.input[0].previous_output.txid;
         let total_fee = htlc_amount_sat - tx.output[0].value;
 
-        let build_feerate = if setup.option_anchors_zero_fee_htlc() {
+        let build_feerate = if setup.is_zero_fee_htlc() {
             0
         } else {
             let weight = if offered {
-                htlc_timeout_tx_weight(setup.option_anchors())
+                htlc_timeout_tx_weight(setup.is_anchors())
             } else {
-                htlc_success_tx_weight(setup.option_anchors())
+                htlc_success_tx_weight(setup.is_anchors())
             };
             estimate_feerate_per_kw(total_fee, weight)
         };
@@ -941,8 +964,8 @@ impl Validator for SimpleValidator {
             build_feerate,
             to_self_delay,
             &htlc,
-            setup.option_anchors(),
-            !setup.option_anchors_zero_fee_htlc(),
+            setup.is_anchors(),
+            !setup.is_zero_fee_htlc(),
             &txkeys.broadcaster_delayed_payment_key,
             &txkeys.revocation_key,
         );
@@ -962,7 +985,7 @@ impl Validator for SimpleValidator {
                 output_witscript
             );
             let (revocation_key, contest_delay, delayed_pubkey) =
-                parse_revokeable_redeemscript(output_witscript, setup.option_anchors())
+                parse_revokeable_redeemscript(output_witscript, setup.is_anchors())
                     .unwrap_or_else(|_| (vec![], 0, vec![]));
             debug!(
                 "ORIGINAL_TX={:#?}\n\
@@ -1022,7 +1045,7 @@ impl Validator for SimpleValidator {
             policy_err!(self, "policy-htlc-locktime", "offered lock_time must be non-zero");
         }
 
-        if !setup.option_anchors_zero_fee_htlc() {
+        if !setup.is_zero_fee_htlc() {
             if feerate_per_kw < self.policy.min_feerate_per_kw {
                 policy_err!(
                     self,
@@ -1466,7 +1489,7 @@ impl Validator for SimpleValidator {
             _payment_hash_vec,
             _local_htlc_pubkey,
             cltv_expiry,
-        )) = parse_received_htlc_script(redeemscript, setup.option_anchors())
+        )) = parse_received_htlc_script(redeemscript, setup.is_anchors())
         {
             // It's a received htlc (counterparty perspective)
             if cltv_expiry < 0 || cltv_expiry > u32::MAX as i64 {
@@ -1492,7 +1515,7 @@ impl Validator for SimpleValidator {
             _remote_htlc_pubkey,
             _local_htlc_pubkey,
             _payment_hash_vec,
-        )) = parse_offered_htlc_script(redeemscript, setup.option_anchors())
+        )) = parse_offered_htlc_script(redeemscript, setup.is_anchors())
         {
             // It's an offered htlc (counterparty perspective)
 
@@ -1516,7 +1539,7 @@ impl Validator for SimpleValidator {
         };
 
         let seq = tx.input[0].sequence.0;
-        let valid_seqs = if setup.option_anchors() {
+        let valid_seqs = if setup.is_anchors() {
             SimpleValidator::ANCHOR_SEQS.to_vec()
         } else {
             SimpleValidator::NON_ANCHOR_SEQS.to_vec()
@@ -1625,25 +1648,25 @@ impl SimpleValidator {
         let policy = &self.policy;
 
         if info.to_broadcaster_value_sat > 0
-            && info.to_broadcaster_value_sat < MIN_DUST_LIMIT_SATOSHIS
+            && info.to_broadcaster_value_sat < MIN_CHAN_DUST_LIMIT_SATOSHIS
         {
             policy_err!(
                 self,
                 "policy-commitment-outputs-trimmed",
                 "to_broadcaster_value_sat {} less than dust limit {}",
                 info.to_broadcaster_value_sat,
-                MIN_DUST_LIMIT_SATOSHIS
+                MIN_CHAN_DUST_LIMIT_SATOSHIS
             );
         }
         if info.to_countersigner_value_sat > 0
-            && info.to_countersigner_value_sat < MIN_DUST_LIMIT_SATOSHIS
+            && info.to_countersigner_value_sat < MIN_CHAN_DUST_LIMIT_SATOSHIS
         {
             policy_err!(
                 self,
                 "policy-commitment-outputs-trimmed",
                 "to_countersigner_value_sat {} less than dust limit {}",
                 info.to_countersigner_value_sat,
-                MIN_DUST_LIMIT_SATOSHIS
+                MIN_CHAN_DUST_LIMIT_SATOSHIS
             );
         }
 
@@ -1653,12 +1676,11 @@ impl SimpleValidator {
 
         let mut htlc_value_sat: u64 = 0;
 
-        let offered_htlc_dust_limit = if setup.option_anchors_zero_fee_htlc() {
-            0
+        let offered_htlc_dust_limit = if setup.is_zero_fee_htlc() {
+            MIN_CHAN_DUST_LIMIT_SATOSHIS
         } else {
             MIN_DUST_LIMIT_SATOSHIS
-                + (info.feerate_per_kw as u64 * htlc_timeout_tx_weight(setup.option_anchors())
-                    / 1000)
+                + (info.feerate_per_kw as u64 * htlc_timeout_tx_weight(setup.is_anchors()) / 1000)
         };
         for htlc in &info.offered_htlcs {
             // TODO - this check should be converted into two checks, one the first time
@@ -1682,12 +1704,11 @@ impl SimpleValidator {
             }
         }
 
-        let received_htlc_dust_limit = if setup.option_anchors_zero_fee_htlc() {
-            0
+        let received_htlc_dust_limit = if setup.is_zero_fee_htlc() {
+            MIN_CHAN_DUST_LIMIT_SATOSHIS
         } else {
             MIN_DUST_LIMIT_SATOSHIS
-                + (info.feerate_per_kw as u64 * htlc_success_tx_weight(setup.option_anchors())
-                    / 1000)
+                + (info.feerate_per_kw as u64 * htlc_success_tx_weight(setup.is_anchors()) / 1000)
         };
         for htlc in &info.received_htlcs {
             // TODO - this check should be converted into two checks, one the first time
@@ -1721,7 +1742,7 @@ impl SimpleValidator {
         }
 
         let expected_weight = expected_commitment_tx_weight(
-            setup.option_anchors(),
+            setup.is_anchors(),
             info.offered_htlcs.len() + info.received_htlcs.len(),
         );
 
@@ -1973,6 +1994,19 @@ mod tests {
             validator.validate_ready_channel(&*node, &setup, &vec![]),
             "validate_delay: counterparty-contest-delay too small: 4 < 5"
         );
+    }
+
+    // policy-channel-safe-type
+    #[test]
+    fn validate_safe_modes_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let mut setup = make_test_channel_setup();
+        let validator = make_test_validator();
+        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_ok());
+        setup.commitment_type = CommitmentType::Anchors;
+        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_err());
+        setup.commitment_type = CommitmentType::Legacy;
+        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_err());
     }
 
     // policy-channel-holder-contest-delay-range
