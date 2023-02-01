@@ -232,7 +232,7 @@ impl SimpleValidator {
         if feerate_perkw < self.policy.min_feerate_per_kw {
             policy_err!(
                 self,
-                "policy-onchain-fee-range",
+                "policy-onchain-fee-range", // also policy-{commitment,mutual}-fee-range
                 "feerate below minimum: {} < {}",
                 feerate_perkw,
                 self.policy.min_feerate_per_kw
@@ -241,7 +241,7 @@ impl SimpleValidator {
         if feerate_perkw > self.policy.max_feerate_per_kw {
             policy_err!(
                 self,
-                "policy-onchain-fee-range",
+                "policy-onchain-fee-range", // also policy-{commitment,mutual}-fee-range
                 "feerate above maximum: {} > {}",
                 feerate_perkw,
                 self.policy.max_feerate_per_kw
@@ -1742,6 +1742,7 @@ impl SimpleValidator {
             info.offered_htlcs.len() + info.received_htlcs.len(),
         );
 
+        // policy-commitment-fee-range
         let sum_outputs = info
             .to_broadcaster_value_sat
             .checked_add(info.to_countersigner_value_sat)
