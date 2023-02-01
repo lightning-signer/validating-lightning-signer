@@ -1,4 +1,5 @@
 #![allow(missing_docs)]
+#![allow(deprecated)]
 
 use alloc::vec::Vec;
 use as_any::AsAny;
@@ -43,7 +44,9 @@ pub struct HsmdInit {
     pub hsm_wire_max_version: u32,
 }
 
-///
+
+/// deprecated in CLN
+#[deprecated]
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(111)]
 pub struct HsmdInitReplyV1 {
@@ -715,6 +718,7 @@ pub enum Message {
     Ping(Ping),
     Pong(Pong),
     HsmdInit(HsmdInit),
+    #[allow(deprecated)]
     HsmdInitReplyV1(HsmdInitReplyV1),
     HsmdInitReplyV2(HsmdInitReplyV2),
     HsmdInit2(HsmdInit2),
