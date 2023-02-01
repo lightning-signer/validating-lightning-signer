@@ -505,8 +505,8 @@ impl Validator for SimpleValidator {
                 if !spendable {
                     policy_err!(
                         self,
-                        "policy-sweep-destination-allowlisted",
-                        "output[{}] is not to wallet or allowlist",
+                        "policy-onchain-no-unknown-outputs",
+                        "output[{}] is unknown",
                         outndx
                     );
                 }

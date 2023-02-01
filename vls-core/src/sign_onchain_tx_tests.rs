@@ -505,7 +505,7 @@ mod tests {
             sign_funding_tx_with_mutator(|fms| {
                 fms.tx_ctx.opaths[0] = vec![33];
             }),
-            "policy failure: validate_onchain_tx: output[0] is not to wallet or allowlist"
+            "policy failure: validate_onchain_tx: output[0] is unknown"
         );
     }
 
