@@ -579,6 +579,7 @@ mod tests {
         );
     }
 
+    // policy-onchain-no-fund-inbound
     #[test]
     fn dual_funding_not_supported() {
         assert_failed_precondition_err!(
@@ -1070,6 +1071,7 @@ mod tests {
         );
     }
 
+    // policy-onchain-no-channel-push
     #[test]
     fn sign_funding_tx_with_bad_push_val() {
         let is_p2sh = false;

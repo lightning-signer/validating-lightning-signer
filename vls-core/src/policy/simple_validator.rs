@@ -347,7 +347,6 @@ impl SimpleValidator {
 // TODO - policy-commitment-anchors-not-when-off
 // TODO - policy-commitment-anchor-to-holder
 // TODO - policy-commitment-anchor-to-counterparty
-// TODO - policy-commitment-anchor-amount [NO TESTS TAGGED]
 // TODO - policy-commitment-anchor-static-remotekey
 // TODO - policy-commitment-anchor-match-fundingkey [NO TESTS TAGGED]
 
@@ -2122,6 +2121,7 @@ mod tests {
         );
     }
 
+    // policy-commitment-first-no-htlcs
     #[test]
     fn validate_commitment_tx_initial_with_htlcs() {
         let validator = make_test_validator();
