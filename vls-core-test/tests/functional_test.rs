@@ -32,11 +32,11 @@ use lightning::ln::msgs::{ChannelMessageHandler, ChannelUpdate};
 use lightning::util::config::{ChannelHandshakeConfig, UserConfig};
 use lightning::util::events::{Event, EventsProvider, MessageSendEvent, MessageSendEventsProvider, ClosureReason};
 use lightning::util::logger::Logger;
+use lightning_signer::lightning_invoice;
 use lightning_invoice::payment::Payer;
 
 use lightning_signer::policy::null_validator::NullValidatorFactory;
 use lightning_signer::signer::multi_signer::MultiSigner;
-use lightning_signer::util::functional_test_utils::{close_channel, confirm_transaction_at, connect_block, connect_blocks, create_announced_chan_between_nodes, create_chanmon_cfgs, create_network, create_node_chanmgrs, get_announce_close_broadcast_events, mine_transaction, send_payment, Node, NodeCfg, TestChanMonCfg, tip_for_node};
 use lightning_signer::util::loopback::{LoopbackChannelSigner, LoopbackSignerKeysInterface};
 use lightning_signer::util::test_utils;
 use lightning_signer::util::test_utils::{TestChainMonitor, REGTEST_NODE_CONFIG, make_block, make_genesis_starting_time_factory, ChannelBalanceBuilder};
@@ -45,18 +45,14 @@ use lightning_signer::node::{NodeConfig, NodeMonitor, NodeServices};
 use lightning_signer::persist::{DummyPersister, DummySeedPersister};
 use lightning_signer::policy::onchain_validator::OnchainValidatorFactory;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimplePolicy, SimpleValidatorFactory};
-use lightning_signer::{
-    check_closed_event,
-    check_added_monitors, check_closed_broadcast, check_spends, expect_payment_failed,
-    expect_payment_claimed,
-    expect_payment_forwarded,
-    expect_pending_htlcs_forwardable_from_events,
-    expect_pending_htlcs_forwardable_ignore, get_htlc_update_msgs, get_local_commitment_txn,
-};
+use lightning_signer::lightning;
+use lightning_signer::bitcoin;
 
-use self::lightning_signer::util::functional_test_utils::{
-    claim_payment, create_announced_chan_between_nodes_with_value, route_payment,
-};
+#[allow(unused)]
+#[macro_use]
+mod functional_test_utils;
+
+use functional_test_utils::*;
 
 use test_log::test;
 

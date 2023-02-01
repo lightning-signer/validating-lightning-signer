@@ -2,11 +2,13 @@
 //! A bunch of useful utilities for building networks of nodes and exchanging messages between
 //! nodes for functional tests.
 
+use std::rc::Rc;
 use core::cell::RefCell;
-use crate::Rc;
-use crate::sync::Mutex;
 
-use bitcoin;
+use lightning_signer::bitcoin;
+use lightning_signer::lightning;
+use lightning_signer::lightning_invoice;
+
 use bitcoin::{Block, Network, PackedLockTime, Transaction, TxOut};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::constants::genesis_block;
@@ -36,11 +38,11 @@ use ln::msgs;
 use ln::msgs::{ChannelMessageHandler, RoutingMessageHandler};
 use util::events::{Event, MessageSendEvent, MessageSendEventsProvider};
 
-use crate::util::loopback::LoopbackSignerKeysInterface;
-use crate::util::test_utils::{make_block, proof_for_block, TestChainMonitor, TestPersister};
+use lightning_signer::util::loopback::LoopbackSignerKeysInterface;
+use lightning_signer::util::test_utils::{make_block, proof_for_block, TestChainMonitor, TestPersister};
 
 use core::cmp;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use bitcoin::bech32::ToBase32;
 use lightning::chain::keysinterface::KeysInterface;
 use log::info;

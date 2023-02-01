@@ -26,8 +26,7 @@ rust-latest:
     - apt-get update
     - apt-get install -y protobuf-compiler
     - rustup component add rustfmt
-    - cargo build # make sure it builds without test_utils
-    - cargo test --features test_utils
+    - cargo test
     # ensure vls-persist builds with no-std
     - cargo build -p vls-persist --no-default-features --features no-std
 
@@ -60,7 +59,7 @@ rust-1.60.0:
     - apt-get update
     - apt-get install -y protobuf-compiler
     - rustup component add rustfmt
-    - cargo test --features test_utils
+    - cargo test
 
 rust-1.60.0-lss:
   tags: [ saas-linux-large-amd64 ]
@@ -111,7 +110,7 @@ coverage:
     - apt-get install -y libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
     - cargo kcov --print-install-kcov-sh | sh
   script:
-    - cd vls-core && CARGO_TARGET_DIR=target/kcov cargo kcov --verbose --lib --features test_utils -- --verify --exclude-pattern=/home/user/.cargo,/usr/include,/usr/src/debug,src/util/loopback.rs,src/util/functional_test_util.rs
+    - cd vls-core && CARGO_TARGET_DIR=target/kcov cargo kcov --verbose --lib -- --verify --exclude-pattern=/home/user/.cargo,/usr/include,/usr/src/debug,src/util/loopback.rs
   after_script:
     - bash <(curl -s https://codecov.io/bash) -t "${CODECOV_TOKEN}"
 

@@ -330,7 +330,6 @@ impl BaseSign for LoopbackChannelSigner {
         Ok(self.sign_holder_commitment_and_htlcs(hct)?)
     }
 
-    #[cfg(feature = "test_utils")]
     fn unsafe_sign_holder_commitment_and_htlcs(
         &self,
         hct: &HolderCommitmentTransaction,

@@ -9,6 +9,6 @@ cargo build
 
 (cd lightning-storage-server && cargo build)
 
-(cd vls-signer-stm32 && cargo build --features stm32f413,debug --release --bin demo_signer)
+(cd vls-signer-stm32 && cargo +nightly build --features stm32f413,debug --release --bin demo_signer)
 
 (cd embedded && cargo +nightly build --target thumbv7m-none-eabi)

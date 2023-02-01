@@ -602,13 +602,15 @@ impl SignedHeartbeat {
 /// use lightning_signer::persist::{DummyPersister, Persist};
 /// use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 /// use lightning_signer::signer::ClockStartingTimeFactory;
+/// use lightning_signer::signer::derive::KeyDerivationStyle;
 /// use lightning_signer::util::clock::StandardClock;
 /// use lightning_signer::util::test_logger::TestLogger;
-/// use lightning_signer::util::test_utils::TEST_NODE_CONFIG;
+/// use lightning_signer::bitcoin;
+/// use bitcoin::Network;
 ///
 /// let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
 /// let seed = [0; 32];
-/// let config = TEST_NODE_CONFIG;
+/// let config = NodeConfig { network: Network::Testnet, key_derivation_style: KeyDerivationStyle::Native };
 /// let validator_factory = Arc::new(SimpleValidatorFactory::new());
 /// let starting_time_factory = ClockStartingTimeFactory::new();
 /// let clock = Arc::new(StandardClock());
@@ -1256,7 +1258,7 @@ impl Node {
     }
 
     // Check and sign an onchain transaction
-    #[cfg(feature = "test_utils")]
+    #[cfg(any(test, feature = "test_utils"))]
     pub(crate) fn check_and_sign_onchain_tx(
         &self,
         tx: &Transaction,

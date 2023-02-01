@@ -202,7 +202,7 @@ pub trait ChannelBase: Any {
 
     // TODO remove when LDK workaround is removed in LoopbackSigner
     #[allow(missing_docs)]
-    #[cfg(feature = "test_utils")]
+    #[cfg(any(test, feature = "test_utils"))]
     fn set_next_holder_commit_num_for_testing(&mut self, _num: u64) {
         // Do nothing for ChannelStub.  Channel will override.
     }
@@ -362,7 +362,7 @@ impl Debug for Channel {
 
 impl ChannelBase for Channel {
     // TODO move out to impl Channel {} once LDK workaround is removed
-    #[cfg(feature = "test_utils")]
+    #[cfg(any(test, feature = "test_utils"))]
     fn set_next_holder_commit_num_for_testing(&mut self, num: u64) {
         self.enforcement_state.set_next_holder_commit_num_for_testing(num);
     }
@@ -433,7 +433,7 @@ impl Channel {
     }
 
     #[allow(missing_docs)]
-    #[cfg(feature = "test_utils")]
+    #[cfg(any(test, feature = "test_utils"))]
     pub fn set_next_counterparty_commit_num_for_testing(
         &mut self,
         num: u64,
@@ -443,7 +443,7 @@ impl Channel {
     }
 
     #[allow(missing_docs)]
-    #[cfg(feature = "test_utils")]
+    #[cfg(any(test, feature = "test_utils"))]
     pub fn set_next_counterparty_revoke_num_for_testing(&mut self, num: u64) {
         self.enforcement_state.set_next_counterparty_revoke_num_for_testing(num);
     }
