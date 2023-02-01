@@ -343,12 +343,14 @@ impl SimpleValidator {
 // TODO - policy-commitment-htlc-received-spends-active-utxo
 // TODO - policy-commitment-htlc-cltv-range [NEEDS NEW HTLC DETECTION]
 // TODO - policy-commitment-htlc-offered-hash-matches
+// TODO - policy-commitment-htlc-counterparty-htlc-pubkey [NO TESTS TAGGED]
 // TODO - policy-commitment-previous-revoked [still need secret storage]
 // TODO - policy-commitment-anchors-not-when-off
 // TODO - policy-commitment-anchor-to-holder
 // TODO - policy-commitment-anchor-to-counterparty
 // TODO - policy-commitment-anchor-static-remotekey
 // TODO - policy-commitment-anchor-match-fundingkey [NO TESTS TAGGED]
+// TODO - policy-commitment-outputs-trimmed [NEEDS SIGN COUNTERPARTY TEST]
 
 // TODO - policy-commitment-payment-settled-preimage
 // TODO - policy-commitment-payment-allowlisted
@@ -358,9 +360,12 @@ impl SimpleValidator {
 
 // TODO - policy-htlc-cltv-range
 
+// TODO - policy-funding-max [NEEDS TESTS]
 // TODO - policy-velocity-funding
 // TODO - policy-velocity-transferred
 // TODO - policy-merchant-no-sends
+// TODO - policy-routing-balanced [NEEDS TESTS]
+// TODO - policy-no-routing
 
 impl Validator for SimpleValidator {
     fn validate_ready_channel(
