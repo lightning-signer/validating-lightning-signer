@@ -1,5 +1,6 @@
 use clap::{CommandFactory, Parser};
 use lightning_signer::bitcoin::Network;
+use lightning_signer::policy::filter::{FilterResult, FilterRule};
 use lightning_signer::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
 use std::{env, fs};
 use toml::value::{Table, Value};
@@ -66,6 +67,9 @@ pub struct SignerArgs {
 
     #[clap(long, value_parser=parse_velocity_control_spec, help = "global velocity control e.g. hour:10000 (satoshi)")]
     pub velocity_control: Option<VelocityControlSpec>,
+
+    #[clap(long, value_parser=parse_filter_rule, help = "policy filter rule, e.g. 'policy-channel-safe-mode:warn' or 'policy-channel-*:error'")]
+    pub policy_filter: Vec<FilterRule>,
 }
 
 pub fn parse_args_and_config<A: Parser>() -> A {
@@ -129,6 +133,24 @@ fn parse_velocity_control_spec(spec: &str) -> Result<VelocityControlSpec, String
     Ok(VelocityControlSpec { interval_type, limit })
 }
 
+fn parse_filter_rule(spec: &str) -> Result<FilterRule, String> {
+    let mut parts = spec.splitn(2, ':');
+    let mut tag: String = parts.next().ok_or("missing filter")?.to_string();
+    let is_prefix = if tag.ends_with('*') {
+        tag.pop();
+        true
+    } else {
+        false
+    };
+    let action_str = parts.next().ok_or("missing level")?;
+    let action = match action_str {
+        "error" => FilterResult::Error,
+        "warn" => FilterResult::Warn,
+        _ => return Err(format!("unknown filter action {}", action_str)),
+    };
+    Ok(FilterRule { tag, action, is_prefix })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,5 +173,15 @@ mod tests {
         assert!(parse_velocity_control_spec("hour:").is_err());
         assert!(parse_velocity_control_spec("hour:foo").is_err());
         assert!(parse_velocity_control_spec("foo:100").is_err());
+    }
+
+    #[test]
+    fn test_parse_filter_rule() {
+        assert!(parse_filter_rule("policy-channel-safe-mode:warn").is_ok());
+        assert!(parse_filter_rule("policy-channel-safe-mode:foo").is_err());
+        assert!(parse_filter_rule("policy-channel-safe-mode").is_err());
+        assert!(parse_filter_rule("policy-channel-safe-mode:").is_err());
+        assert!(parse_filter_rule("policy-channel-safe-mode:*").is_err());
+        assert!(parse_filter_rule("policy-channel-safe-mode-*:warn").is_ok());
     }
 }

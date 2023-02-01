@@ -10,7 +10,7 @@ pub enum FilterResult {
 }
 
 /// A policy filter rule
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FilterRule {
     /// The tag or tag prefix
     pub tag: String,

@@ -65,12 +65,18 @@ pub(crate) fn make_handler(datadir: &str, args: &SignerArgs) -> RootHandler {
     let seed = get_or_generate_seed(network, seed_persister, args.integration_test);
     let allowlist = read_allowlist();
     let starting_time_factory = ClockStartingTimeFactory::new();
-    let filter_opt = if args.integration_test {
+    let mut filter_opt = if args.integration_test {
         // TODO(236)
         Some(PolicyFilter { rules: vec![FilterRule::new_warn("policy-channel-safe-type-anchors")] })
     } else {
         None
     };
+
+    if !args.policy_filter.is_empty() {
+        let mut filter = filter_opt.unwrap_or(PolicyFilter::default());
+        filter.merge(PolicyFilter { rules: args.policy_filter.clone() });
+        filter_opt = Some(filter);
+    }
 
     let velocity_control_spec = args.velocity_control.unwrap_or(VelocityControlSpec::UNLIMITED);
     let validator_factory =
