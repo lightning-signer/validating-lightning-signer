@@ -25,13 +25,20 @@ run_kcov()
 
 out_dirs=""
 for included in $(./scripts/list-included Cargo.toml); do
-    if [ $included == 'lightning-signer-core' ]; then
-        features="--features test_utils"
-    elif [ $included == 'vls-protocol-client' ]; then
-        features="--features test_utils"
-    else
+    if [ $included == 'vls-core-test' ]; then
         features=""
+    elif [ $included == 'bolt-derive' ]; then
+        features=""
+    elif [ $included == 'vls-protocol' ]; then
+        features=""
+    elif [ $included == 'vls-protocol-signer' ]; then
+        features=""
+    elif [ $included == 'vls-proxy' ]; then
+        features=""
+    else
+        features="--features test_utils"
     fi
+    echo run_kcov $included $features
     run_kcov $included $features
     out_dirs="$out_dirs target/kcov/cov/$included"
 done
