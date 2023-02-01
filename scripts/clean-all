@@ -1,0 +1,12 @@
+#!/bin/bash
+
+set -e
+set -x
+
+cargo clean
+
+(cd lightning-storage-server && cargo clean)
+
+(cd vls-signer-stm32 && cargo clean)
+
+(cd embedded && cargo clean)
