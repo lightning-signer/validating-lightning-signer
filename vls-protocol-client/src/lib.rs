@@ -26,7 +26,7 @@ use log::{debug, error};
 
 use vls_protocol::features::{OPT_ANCHOR_OUTPUTS, OPT_MAX, OPT_STATIC_REMOTEKEY};
 use vls_protocol::model::{
-    Basepoints, BitcoinSignature, CloseInfo, Htlc, PubKey, Secret, TxId, Utxo,
+    Basepoints, BitcoinSignature, CloseInfo, DisclosedSecret, Htlc, PubKey, TxId, Utxo,
 };
 use vls_protocol::msgs::{
     DeBolt, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint,
@@ -274,7 +274,7 @@ impl BaseSign for SignerClient {
     fn validate_counterparty_revocation(&self, idx: u64, secret: &SecretKey) -> Result<(), ()> {
         let message = ValidateRevocation {
             commitment_number: INITIAL_COMMITMENT_NUMBER - idx,
-            commitment_secret: Secret(secret[..].try_into().unwrap()),
+            commitment_secret: DisclosedSecret(secret[..].try_into().unwrap()),
         };
         let _: ValidateRevocationReply = self.call(message).map_err(|_| ())?;
         Ok(())

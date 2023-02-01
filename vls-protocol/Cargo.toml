@@ -17,3 +17,5 @@ regex = "1.5"
 
 [features]
 std = ["serde_bolt/std"]
+# dangerous, only for testing
+log-secrets = []

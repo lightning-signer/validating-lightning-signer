@@ -798,7 +798,8 @@ message SecKey {
 // 256-bit Secret, 32 bytes
 // Can be used for revocation hash pre-image, shared secrets, etc.
 message Secret {
-  bytes data = 1;
+  // this is named `secret_data` so that it doesn't get logged by default
+  bytes secret_data = 1;
 }
 
 // BIP-0032 Seed, must be between 16 and 64 bytes (inclusive) in length.

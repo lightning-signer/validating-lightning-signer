@@ -7,6 +7,7 @@ use core::cell::RefCell;
 use core::fmt;
 use core::fmt::Debug;
 use core::str::FromStr;
+use vls_protocol::model::Secret;
 
 use rand_core::RngCore;
 
@@ -53,18 +54,10 @@ pub struct TestingContext {
     pub cmn: CommonContext,
 }
 
+#[derive(Debug)]
 pub struct NormalContext {
     pub cmn: CommonContext,
-    pub seed: [u8; 32],
-}
-
-impl fmt::Debug for NormalContext {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("NormalContext")
-            .field("cmn", &self.cmn)
-            .field("seed", &self.seed.to_hex())
-            .finish()
-    }
+    pub seed: Secret,
 }
 
 #[derive(Debug)]
@@ -113,7 +106,7 @@ impl SetupFS {
     }
 
     // Read the kdstyle, network and optional seed from the FS
-    pub fn context(&self) -> (KeyDerivationStyle, Network, Option<[u8; 32]>, bool) {
+    pub fn context(&self) -> (KeyDerivationStyle, Network, Option<Secret>, bool) {
         let rootdir = self.fs.root_dir();
         let runpath = self.runpath.as_ref().expect("runpath");
         let rundir = rootdir
@@ -268,7 +261,7 @@ impl SetupFS {
     }
 
     // Read a binary seed value from a file
-    fn read_seed_file(&self, rundir: &sdcard::DIR, path: &str) -> [u8; 32] {
+    fn read_seed_file(&self, rundir: &sdcard::DIR, path: &str) -> Secret {
         match rundir.open_file(path) {
             Err(err) => panic!("open {} failed: {:#?}", path, err),
             Ok(mut file) => {
@@ -283,7 +276,7 @@ impl SetupFS {
                         if file.read(&mut extra).expect("empty read") != 0 {
                             panic!("seed file too big")
                         }
-                        buffer
+                        Secret(buffer)
                     }
                 }
             }

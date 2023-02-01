@@ -44,8 +44,8 @@ use lightning_signer::util::status::Status;
 use lightning_signer::wallet::Wallet;
 use vls_protocol::features::*;
 use vls_protocol::model::{
-    Basepoints, BitcoinSignature, BlockHash, ExtKey, Htlc, OutPoint as ModelOutPoint, PubKey,
-    RecoverableSignature, Secret, Signature, TxId,
+    Basepoints, BitcoinSignature, BlockHash, DisclosedSecret, ExtKey, Htlc,
+    OutPoint as ModelOutPoint, PubKey, RecoverableSignature, Secret, Signature, TxId,
 };
 use vls_protocol::msgs::{
     DeriveSecretReply, PreapproveInvoiceReply, PreapproveKeysendReply, SerBolt, SignBolt12Reply,
@@ -710,7 +710,7 @@ impl Handler for ChannelHandler {
                 let (point, old_secret) = res?;
 
                 let old_secret_reply =
-                    old_secret.clone().map(|s| Secret(s[..].try_into().unwrap()));
+                    old_secret.clone().map(|s| DisclosedSecret(s[..].try_into().unwrap()));
                 Ok(Box::new(msgs::GetPerCommitmentPointReply {
                     point: PubKey(point.serialize()),
                     secret: old_secret_reply,
@@ -1005,7 +1005,8 @@ impl Handler for ChannelHandler {
                             &htlc_sigs,
                         )
                     })?;
-                let old_secret_reply = old_secret.map(|s| Secret(s[..].try_into().unwrap()));
+                let old_secret_reply =
+                    old_secret.map(|s| DisclosedSecret(s[..].try_into().unwrap()));
                 Ok(Box::new(msgs::ValidateCommitmentTxReply {
                     next_per_commitment_point: PubKey(next_per_commitment_point.serialize()),
                     old_commitment_secret: old_secret_reply,
@@ -1042,7 +1043,8 @@ impl Handler for ChannelHandler {
                             &htlc_sigs,
                         )
                     })?;
-                let old_secret_reply = old_secret.map(|s| Secret(s[..].try_into().unwrap()));
+                let old_secret_reply =
+                    old_secret.map(|s| DisclosedSecret(s[..].try_into().unwrap()));
                 Ok(Box::new(msgs::ValidateCommitmentTxReply {
                     next_per_commitment_point: PubKey(next_per_commitment_point.serialize()),
                     old_commitment_secret: old_secret_reply,

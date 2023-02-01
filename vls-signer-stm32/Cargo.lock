@@ -971,6 +971,7 @@ dependencies = [
  "usb-device",
  "usbd-serial",
  "vls-persist",
+ "vls-protocol",
  "vls-protocol-signer",
 ]
 

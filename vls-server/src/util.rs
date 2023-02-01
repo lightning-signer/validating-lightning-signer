@@ -8,6 +8,13 @@ where
     serializer.serialize_str(&hex::encode(&buf))
 }
 
+pub fn as_secret_hex<S>(_buf: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&"******")
+}
+
 // used in build.rs
 #[allow(unused)]
 pub fn as_hex_vec<S>(vec: &Vec<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>

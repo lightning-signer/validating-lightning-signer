@@ -167,7 +167,7 @@ impl SignServer {
 
     fn secret_key(&self, arg: Option<Secret>) -> Result<SecretKey, Status> {
         return SecretKey::from_slice(
-            arg.ok_or_else(|| invalid_grpc_argument("missing secret"))?.data.as_slice(),
+            arg.ok_or_else(|| invalid_grpc_argument("missing secret"))?.secret_data.as_slice(),
         )
         .map_err(|err| invalid_grpc_argument(format!("could not deserialize secret: {}", err)));
     }
@@ -1174,8 +1174,8 @@ impl Signer for SignServer {
         log_req_enter!(&node_id, &other_key, &req);
 
         let node = self.signer.get_node(&node_id)?;
-        let data = node.ecdh(&other_key);
-        let reply = EcdhReply { shared_secret: Some(Secret { data }) };
+        let secret_data = node.ecdh(&other_key);
+        let reply = EcdhReply { shared_secret: Some(Secret { secret_data }) };
         log_req_reply!(&node_id, &other_key, &reply);
         Ok(Response::new(reply))
     }

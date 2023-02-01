@@ -1,4 +1,5 @@
 #![allow(missing_docs)]
+#![allow(deprecated)]
 
 use alloc::vec::Vec;
 use as_any::AsAny;
@@ -34,16 +35,18 @@ pub trait DeBolt: Debug + Sized {
 pub struct HsmdInit {
     pub key_version: Bip32KeyVersion,
     pub chain_params: BlockId,
-    pub encryption_key: Option<Secret>,
-    pub dev_privkey: Option<PrivKey>,
-    pub dev_bip32_seed: Option<Secret>,
-    pub dev_channel_secrets: Option<Vec<Secret>>,
+    pub encryption_key: Option<DevSecret>,
+    pub dev_privkey: Option<DevPrivKey>,
+    pub dev_bip32_seed: Option<DevSecret>,
+    pub dev_channel_secrets: Option<Vec<DevSecret>>,
     pub dev_channel_secrets_shaseed: Option<Sha256>,
     pub hsm_wire_min_version: u32,
     pub hsm_wire_max_version: u32,
 }
 
-///
+
+/// deprecated in CLN
+#[deprecated]
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(111)]
 pub struct HsmdInitReplyV1 {
@@ -69,7 +72,7 @@ pub struct HsmdInitReplyV2 {
 pub struct HsmdInit2 {
     pub derivation_style: u8,
     pub network_name: WireString,
-    pub dev_seed: Option<Secret>,
+    pub dev_seed: Option<DevSecret>,
     pub dev_allowlist: Vec<WireString>,
 }
 
@@ -176,7 +179,7 @@ pub struct MemleakReply {
 #[message_id(22)]
 pub struct CheckFutureSecret {
     pub commitment_number: u64,
-    pub secret: Secret,
+    pub secret: DisclosedSecret,
 }
 
 ///
@@ -324,7 +327,7 @@ pub struct GetPerCommitmentPoint2 {
 #[message_id(118)]
 pub struct GetPerCommitmentPointReply {
     pub point: PubKey,
-    pub secret: Option<Secret>,
+    pub secret: Option<DisclosedSecret>,
 }
 
 ///
@@ -390,7 +393,7 @@ pub struct ValidateCommitmentTx2 {
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(135)]
 pub struct ValidateCommitmentTxReply {
-    pub old_commitment_secret: Option<Secret>,
+    pub old_commitment_secret: Option<DisclosedSecret>,
     pub next_per_commitment_point: PubKey,
 }
 
@@ -399,7 +402,7 @@ pub struct ValidateCommitmentTxReply {
 #[message_id(36)]
 pub struct ValidateRevocation {
     pub commitment_number: u64,
-    pub commitment_secret: Secret,
+    pub commitment_secret: DisclosedSecret,
 }
 
 ///
@@ -596,7 +599,7 @@ pub struct SignRemoteHtlcTx {
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(14)]
 pub struct SignPenaltyToUs {
-    pub revocation_secret: Secret,
+    pub revocation_secret: DisclosedSecret,
     pub tx: LargeOctets,
     pub psbt: LargeOctets,
     pub wscript: Octets,
@@ -715,6 +718,7 @@ pub enum Message {
     Ping(Ping),
     Pong(Pong),
     HsmdInit(HsmdInit),
+    #[allow(deprecated)]
     HsmdInitReplyV1(HsmdInitReplyV1),
     HsmdInitReplyV2(HsmdInitReplyV2),
     HsmdInit2(HsmdInit2),
