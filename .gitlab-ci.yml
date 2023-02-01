@@ -63,8 +63,14 @@ rust-1.60.0:
     - cargo test --features test_utils
 
 rust-1.60.0-lss:
+  tags: [ saas-linux-large-amd64 ]
   stage: build
   image: rust:1.60.0
+  cache:
+    key: vls-compile-lss-1_60
+    paths:
+      - bin
+      - .cache/cargo
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
