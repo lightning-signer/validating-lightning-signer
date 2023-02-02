@@ -1,5 +1,6 @@
 use clap::{CommandFactory, Parser};
 use lightning_signer::bitcoin::Network;
+use lightning_signer::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
 use std::{env, fs};
 use toml::value::{Table, Value};
 use url::Url;
@@ -11,7 +12,7 @@ const DEFAULT_DIR: &str = ".lightning-signer";
 // only used for usage display
 #[derive(Parser, Debug)]
 #[clap(about, long_about = None)]
-pub(crate) struct InitialArgs {
+pub struct InitialArgs {
     #[clap(short = 'f', long, value_parser, help = "configuration file")]
     config: Option<String>,
 }
@@ -19,25 +20,25 @@ pub(crate) struct InitialArgs {
 // note that value_parser gives us clap 4 forward compatibility
 #[derive(Parser, Debug)]
 #[clap(about, long_about = None)]
-pub(crate) struct SignerArgs {
+pub struct SignerArgs {
     #[clap(flatten)]
     initial_args: InitialArgs,
     #[clap(long, help = "print git desc version and exit")]
-    pub(crate) git_desc: bool,
+    pub git_desc: bool,
     #[clap(short, long, value_parser, default_value = DEFAULT_DIR, help = "data directory", value_name = "DIR")]
-    pub(crate) datadir: String,
+    pub datadir: String,
     #[clap(short, long, value_parser,
         value_name = "NETWORK",
         possible_values = NETWORK_NAMES,
         default_value = NETWORK_NAMES[0]
     )]
-    pub(crate) network: Network,
+    pub network: Network,
     #[clap(
         long,
         value_parser,
         help = "use integration test mode, reading/writing hsm_secret from CWD"
     )]
-    pub(crate) integration_test: bool,
+    pub integration_test: bool,
     #[clap(
         long,
         value_parser,
@@ -45,7 +46,7 @@ pub(crate) struct SignerArgs {
         default_value_ifs(CLAP_NETWORK_URL_MAPPING),
         value_name = "URL"
     )]
-    pub(crate) recover_rpc: Option<Url>,
+    pub recover_rpc: Option<Url>,
     #[clap(
         long,
         value_parser,
@@ -54,17 +55,20 @@ pub(crate) struct SignerArgs {
         default_value = "bitcoind",
         possible_values = &["bitcoind", "esplora"]
     )]
-    pub(crate) recover_type: String,
+    pub recover_type: String,
     #[clap(
         long,
         value_parser,
         help = "send a force-close transaction to the given address",
         value_name = "BITCOIN_ADDRESS"
     )]
-    pub(crate) recover_close: Option<String>,
+    pub recover_close: Option<String>,
+
+    #[clap(long, value_parser=parse_velocity_control_spec, help = "global velocity control e.g. hour:10000 (satoshi)")]
+    pub velocity_control: Option<VelocityControlSpec>,
 }
 
-pub(crate) fn parse_args_and_config<A: Parser>() -> A {
+pub fn parse_args_and_config<A: Parser>() -> A {
     // can't type-safe parse the initial args, because we want ignore_errors
     // but not when flattening into the higher level config.
     // further down we do use type-safe parsing for A.
@@ -104,5 +108,48 @@ fn convert_toml_value(key: String, value: Value) -> Vec<(String, String)> {
         Value::Array(a) =>
             a.into_iter().flat_map(|v| convert_toml_value(key.clone(), v)).collect::<Vec<_>>(),
         Value::Table(_) => vec![],
+    }
+}
+
+fn parse_velocity_control_spec(spec: &str) -> Result<VelocityControlSpec, String> {
+    let mut parts = spec.splitn(2, ':');
+    let interval_type_str = parts.next().ok_or("missing duration")?;
+    let interval_type = match interval_type_str {
+        "hour" => VelocityControlIntervalType::Hourly,
+        "day" => VelocityControlIntervalType::Daily,
+        "unlimited" => return Ok(VelocityControlSpec::UNLIMITED),
+        _ => return Err(format!("unknown interval type: {}", interval_type_str)),
+    };
+    let limit: u64 = parts
+        .next()
+        .ok_or("missing limit")?
+        .to_string()
+        .parse()
+        .map_err(|_| "non-integer limit")?;
+    Ok(VelocityControlSpec { interval_type, limit })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_velocity_control_spec() {
+        match parse_velocity_control_spec("hour:100").unwrap().interval_type {
+            VelocityControlIntervalType::Hourly => {}
+            _ => panic!("unexpected interval type"),
+        }
+        match parse_velocity_control_spec("day:100").unwrap().interval_type {
+            VelocityControlIntervalType::Daily => {}
+            _ => panic!("unexpected interval type"),
+        }
+        match parse_velocity_control_spec("unlimited").unwrap().interval_type {
+            VelocityControlIntervalType::Unlimited => {}
+            _ => panic!("unexpected interval type"),
+        }
+        assert!(parse_velocity_control_spec("hour").is_err());
+        assert!(parse_velocity_control_spec("hour:").is_err());
+        assert!(parse_velocity_control_spec("hour:foo").is_err());
+        assert!(parse_velocity_control_spec("foo:100").is_err());
     }
 }

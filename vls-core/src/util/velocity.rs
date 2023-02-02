@@ -30,7 +30,7 @@ impl Debug for VelocityControl {
 }
 
 /// The total interval in which to track velocity
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum VelocityControlIntervalType {
     /// Tracked in 5 minute sub-intervals
     Hourly,
@@ -41,7 +41,7 @@ pub enum VelocityControlIntervalType {
 }
 
 /// A specifier for creating velocity controls
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct VelocityControlSpec {
     /// The limit per interval
     pub limit: u64,

@@ -2,6 +2,7 @@
 //! In particular, a replacement for CLN's hsmd binary.
 
 pub mod client;
+pub mod config;
 pub mod connection;
 pub mod grpc;
 pub mod portfront;

@@ -49,19 +49,19 @@ pub fn main() {
     }
 
     let network = args.network;
-    let datadir = args.datadir;
+    let datadir = args.datadir.clone();
     let datapath = format!("{}/{}", datadir, network.to_string());
     fs::create_dir_all(&datapath).expect("mkdir datapath");
     setup_logging(&datapath, &bin_name, "debug");
     info!("{} git_desc={} starting", bin_name, GIT_DESC);
 
-    if let Some(address) = args.recover_close {
+    if let Some(ref address) = args.recover_close {
         let recover_type = match args.recover_type.as_str() {
             "bitcoind" => BlockExplorerType::Bitcoind,
             "esplora" => BlockExplorerType::Esplora,
             _ => panic!("unknown recover type"),
         };
-        let root_handler = make_handler(&datadir, network, false);
+        let root_handler = make_handler(&datadir, &args);
         let node = root_handler.node().clone();
         node.set_allowlist(&[address.to_string()]).expect("add destination to allowlist");
         let keys = DirectRecoveryKeys { node };
@@ -79,5 +79,5 @@ pub fn main() {
     if network == Network::Bitcoin && args.integration_test {
         panic!("integration-test mode not supported on mainnet");
     }
-    start_signer(&datadir, uri, network, args.integration_test);
+    start_signer(&datadir, uri, &args);
 }
