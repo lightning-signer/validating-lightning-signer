@@ -1,4 +1,4 @@
-use crate::config::{parse_args_and_config, SignerArgs};
+use crate::config::{parse_args_and_config, HasSignerArgs, SignerArgs};
 use bitcoind_client::BlockExplorerType;
 use clap::{CommandFactory, ErrorKind, Parser};
 use grpc::signer::make_handler;
@@ -7,7 +7,6 @@ use http::Uri;
 use lightning_signer::bitcoin::Network;
 use log::*;
 use std::fs;
-use std::process::exit;
 use util::setup_logging;
 use vls_protocol_signer::handler::Handler;
 use vls_proxy::recovery::{direct::DirectRecoveryKeys, recover_close};
@@ -36,17 +35,17 @@ struct Args {
     pub(crate) signer_args: SignerArgs,
 }
 
+impl HasSignerArgs for Args {
+    fn signer_args(&self) -> &SignerArgs {
+        &self.signer_args
+    }
+}
+
 pub fn main() {
     let bin_name = "vlsd2";
-    let our_args: Args = parse_args_and_config();
+    let our_args: Args = parse_args_and_config(bin_name);
 
     let args = our_args.signer_args;
-
-    // short-circuit if we're just printing the git desc
-    if args.git_desc {
-        println!("{} git_desc={}", bin_name, GIT_DESC);
-        exit(0);
-    }
 
     let network = args.network;
     let datadir = args.datadir.clone();

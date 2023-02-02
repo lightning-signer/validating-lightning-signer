@@ -1,4 +1,4 @@
-use clap::arg;
+use clap::{AppSettings, arg};
 #[cfg(feature = "main")]
 use clap::{App, Arg, ArgMatches};
 use log::*;
@@ -83,14 +83,17 @@ pub fn setup_logging(datadir: &str, who: &str, level_arg: &str) {
 
 #[cfg(feature = "main")]
 pub fn add_hsmd_args(app: App) -> App {
-    app.arg(
-        Arg::new("dev-disconnect")
-            .help("ignored dev flag")
-            .long("dev-disconnect")
-            .takes_value(true),
-    )
-    .arg(arg!("--log-io ignored dev flag"))
-    .arg(arg!("--version show a dummy version"))
+    app
+        .setting(AppSettings::NoAutoVersion)
+        .arg(
+            Arg::new("dev-disconnect")
+                .help("ignored dev flag")
+                .long("dev-disconnect")
+                .takes_value(true),
+        )
+        .arg(Arg::new("log-io").long("log-io").help("ignored dev flag"))
+        .arg(arg!(--version "show a dummy version"))
+        .arg(Arg::new("git-desc").long("git-desc").help("print git desc version and exit"))
 }
 
 #[cfg(feature = "main")]

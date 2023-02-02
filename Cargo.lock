@@ -2475,6 +2475,7 @@ dependencies = [
  "nix",
  "prost",
  "serde",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",

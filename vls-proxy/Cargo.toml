@@ -53,6 +53,9 @@ path = "../vls-server"
 default_features = false
 features = ["frontend", "persist-kv-json", "debug"]
 
+[dev-dependencies]
+tempfile = "3"
+
 [build-dependencies]
 tonic-build = "0.8"
 
