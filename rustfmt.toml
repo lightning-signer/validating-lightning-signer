@@ -1,7 +1,8 @@
 unstable_features = true
 ignore = [
-    "vls-core-test/tests/functional_test.rs",
-    "vls-core-test/tests/functional_test_utils.rs",
+    "vls-core-test/tests/*.rs",
+    "vls-server/src/grpc/remotesigner.rs",
+    "vls-proxy/src/grpc/hsmd.rs",
 ]
 use_small_heuristics = "Max"
 match_arm_blocks = false
