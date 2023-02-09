@@ -79,7 +79,7 @@ pub struct SignerArgs {
     #[clap(
         long,
         value_parser,
-        help = "send a force-close transaction to the given address",
+        help = "recover funds by force-closing channels and sweeping funds to the given address",
         value_name = "BITCOIN_ADDRESS"
     )]
     pub recover_close: Option<String>,

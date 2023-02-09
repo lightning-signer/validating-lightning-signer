@@ -32,8 +32,7 @@ use vls_proxy::*;
 
 pub mod grpc;
 
-/// Implement both the hsmd replacement and the signer in a single binary.
-/// The signer is forked off as a separate process.
+/// Implement hsmd replacement that listens to connections from vlsd2.
 pub fn main() {
     let parent_fd = open_parent_fd();
 
