@@ -1,3 +1,4 @@
+use crate::util::abort_on_panic;
 use crate::config::{parse_args_and_config, HasSignerArgs, SignerArgs};
 use bitcoind_client::BlockExplorerType;
 use clap::{CommandFactory, ErrorKind, Parser};
@@ -42,6 +43,7 @@ impl HasSignerArgs for Args {
 }
 
 pub fn main() {
+    abort_on_panic();
     let bin_name = "vlsd2";
     let our_args: Args = parse_args_and_config(bin_name);
 

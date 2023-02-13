@@ -231,3 +231,14 @@ pub fn should_auto_approve() -> bool {
         false
     }
 }
+
+/// Abort on panic.
+/// Use this instead of `panic = abort` in Cargo.toml, which doesn't show
+/// nice backtraces.
+pub fn abort_on_panic() {
+    let old = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        old(info);
+        std::process::abort();
+    }));
+}

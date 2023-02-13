@@ -21,9 +21,3 @@ exclude = [
     "wasm",
     "lightning-storage-server",
 ]
-
-[profile.dev]
-panic = 'abort'
-
-[profile.release]
-panic = 'abort'
