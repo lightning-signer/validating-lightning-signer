@@ -17,15 +17,16 @@ use core::time::Duration;
 use cortex_m_rt::entry;
 
 #[allow(unused_imports)]
-use log::{debug, info, trace};
+use log::*;
 
 use device::{heap_bytes_used, DeviceContext};
 use lightning_signer::node::NodeServices;
 use lightning_signer::persist::{DummyPersister, Persist};
-use lightning_signer::policy::filter::PolicyFilter;
+use lightning_signer::policy::filter::{FilterRule, PolicyFilter};
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
 use lightning_signer::prelude::Box;
 use lightning_signer::util::clock::ManualClock;
+use lightning_signer::util::velocity::VelocityControlSpec;
 use lightning_signer::Arc;
 use random_starting_time::RandomStartingTimeFactory;
 use vls_protocol::model::PubKey;
@@ -304,13 +305,26 @@ pub fn pretty_thousands(i: i64) -> String {
 }
 
 fn make_validator_factory(network: Network, permissive: bool) -> Arc<SimpleValidatorFactory> {
+    let velocity_spec = VelocityControlSpec::UNLIMITED; // TODO - from config
+
     let mut policy = make_simple_policy(network);
+    policy.global_velocity_control = velocity_spec;
+
     if permissive {
-        info!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");
+        warn!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");
         policy.filter = PolicyFilter::new_permissive();
     } else {
+        // TODO - from config
+        let filter_opt = Some(PolicyFilter {
+            rules: vec![FilterRule::new_warn("policy-channel-safe-type-anchors")],
+        }); // TODO(236)
+
+        if let Some(f) = filter_opt {
+            policy.filter.merge(f);
+        }
         info!("VLS_ENFORCING: ALL POLICY ERRORS ARE ENFORCED");
     }
+
     Arc::new(SimpleValidatorFactory::new_with_policy(policy))
 }
 
