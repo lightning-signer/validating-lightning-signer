@@ -1,4 +1,4 @@
-use clap::{AppSettings, arg};
+use clap::{arg, AppSettings};
 #[cfg(feature = "main")]
 use clap::{App, Arg, ArgMatches};
 use log::*;
@@ -15,6 +15,53 @@ use lightning_signer::util::velocity::VelocityControlSpec;
 use lightning_signer::Arc;
 use lightning_signer_server::tstamp::tstamp;
 use tokio::runtime::{self, Runtime};
+
+#[macro_export]
+macro_rules! log_pretty {
+    ($level:ident, $err:expr) => {
+        #[cfg(not(feature = "log_pretty_print"))]
+        $level!("{:?}", $err);
+        #[cfg(feature = "log_pretty_print")]
+        $level!("{:#?}", $err);
+    };
+
+    ($level:ident, $err:expr, $self:expr) => {
+        #[cfg(not(feature = "log_pretty_print"))]
+        $level!("{:?}: {:?}", $self.client_id, $err);
+        #[cfg(feature = "log_pretty_print")]
+        $level!("{:?}: {:#?}", $self.client_id, $err);
+    };
+}
+
+#[macro_export]
+macro_rules! log_error {
+    ($($arg:tt)+) => {
+        log_pretty!(error, $($arg)+);
+    };
+}
+
+#[macro_export]
+macro_rules! log_request {
+    ($($arg:tt)+) => {
+        log_pretty!(debug, $($arg)+);
+    };
+}
+
+#[macro_export]
+macro_rules! log_reply {
+    ($reply_bytes:expr) => {
+        if log::log_enabled!(log::Level::Debug) {
+            let reply = msgs::from_vec($reply_bytes.clone()).expect("parse reply failed");
+            log_pretty!(debug, reply);
+        }
+    };
+    ($reply_bytes:expr, $self:expr) => {
+        if log::log_enabled!(log::Level::Debug) {
+            let reply = msgs::from_vec($reply_bytes.clone()).expect("parse reply failed");
+            log_pretty!(debug, reply, $self);
+        }
+    };
+}
 
 pub fn read_allowlist() -> Vec<String> {
     let allowlist_path_res = env::var("ALLOWLIST");
@@ -83,8 +130,7 @@ pub fn setup_logging(datadir: &str, who: &str, level_arg: &str) {
 
 #[cfg(feature = "main")]
 pub fn add_hsmd_args(app: App) -> App {
-    app
-        .setting(AppSettings::NoAutoVersion)
+    app.setting(AppSettings::NoAutoVersion)
         .arg(
             Arg::new("dev-disconnect")
                 .help("ignored dev flag")

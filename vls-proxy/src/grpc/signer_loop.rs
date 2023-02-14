@@ -7,6 +7,7 @@ use async_trait::async_trait;
 
 use super::adapter::{ChannelReply, ChannelRequest, ClientId};
 use crate::client::Client;
+use crate::{log_error, log_pretty, log_reply, log_request};
 use vls_protocol::{msgs, msgs::Message, Error};
 use vls_protocol_client::Error::ProtocolError;
 use vls_protocol_client::{ClientResult as Result, SignerPort};
@@ -106,7 +107,7 @@ impl<C: 'static + Client> SignerLoop<C> {
             let raw_msg = self.client.read_raw()?;
             debug!("loop {}: got raw", self.log_prefix);
             let msg = msgs::from_vec(raw_msg.clone())?;
-            info!("loop {}: got {:x?}", self.log_prefix, msg);
+            log_request!(msg);
             match msg {
                 Message::ClientHsmFd(m) => {
                     self.client.write(msgs::ClientHsmFdReply {}).unwrap();
@@ -119,7 +120,12 @@ impl<C: 'static + Client> SignerLoop<C> {
                     spawn_blocking(move || new_loop.start());
                 }
                 _ => {
-                    let reply = self.handle_message(raw_msg)?;
+                    let result = self.handle_message(raw_msg);
+                    if let Err(ref err) = result {
+                        log_error!(err);
+                    }
+                    let reply = result?;
+                    log_reply!(reply);
 
                     // Write the reply to the node
                     self.client.write_vec(reply)?;
