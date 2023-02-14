@@ -348,12 +348,13 @@ fn channel_force_close_test() {
     // Check if closing tx correctly spends the funding
     check_spends!(node_txn[0], chan.3);
 
-    let block = make_block(tip_for_node(&nodes[1]),
-                           vec![node_txn[0].clone()]);
+    let headers = tip_for_node(&nodes[1]);
+    let block = make_block(headers.0, vec![node_txn[0].clone()]);
 
     connect_block(
         &nodes[1],
         &block,
+        &headers.1,
     );
     assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 2);
     check_added_monitors!(nodes[1], 1);
@@ -552,9 +553,10 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
             true => alice_txn.clone(),
             false => get_local_commitment_txn!(nodes[1], chan_ab.2)
         };
-        let block = make_block(tip_for_node(&nodes[1]), vec![txn_to_broadcast[0].clone()]);
+        let headers = tip_for_node(&nodes[1]);
+        let block = make_block(headers.0, vec![txn_to_broadcast[0].clone()]);
 
-        connect_block(&nodes[1], &block);
+        connect_block(&nodes[1], &block, &headers.1);
         let bob_txn = nodes[1].tx_broadcaster.txn_broadcasted.lock().unwrap();
         if broadcast_alice {
             check_closed_broadcast!(nodes[1], true);
@@ -699,8 +701,9 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
     let mut txn_to_broadcast = alice_txn.clone();
     if !broadcast_alice { txn_to_broadcast = get_local_commitment_txn!(nodes[1], chan_ab.2); }
     if !go_onchain_before_fulfill {
-        let block = make_block(tip_for_node(&nodes[1]), vec![txn_to_broadcast[0].clone()]);
-        connect_block(&nodes[1], &block);
+        let headers = tip_for_node(&nodes[1]);
+        let block = make_block(headers.0, vec![txn_to_broadcast[0].clone()]);
+        connect_block(&nodes[1], &block, &headers.1);
         // If Bob was the one to force-close, he will have already passed these checks earlier.
         if broadcast_alice {
             check_closed_broadcast!(nodes[1], true);

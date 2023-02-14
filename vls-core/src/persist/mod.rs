@@ -5,6 +5,7 @@ use bitcoin::secp256k1::PublicKey;
 use crate::channel::{Channel, ChannelId, ChannelStub};
 use crate::monitor::ChainMonitor;
 use crate::node::{NodeConfig, NodeState};
+use crate::policy::validator::ValidatorFactory;
 use crate::prelude::*;
 
 /// Models for persistence
@@ -100,7 +101,11 @@ pub trait Persist: SendSync {
     ) -> Result<(), Error>;
 
     /// Get the tracker
-    fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, Error>;
+    fn get_tracker(
+        &self,
+        node_id: PublicKey,
+        validator_factory: Arc<dyn ValidatorFactory>,
+    ) -> Result<ChainTracker<ChainMonitor>, Error>;
 
     /// Will error if doesn't exist.
     ///
@@ -182,7 +187,11 @@ impl Persist for DummyPersister {
         Ok(())
     }
 
-    fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, Error> {
+    fn get_tracker(
+        &self,
+        node_id: PublicKey,
+        validator_factory: Arc<dyn ValidatorFactory>,
+    ) -> Result<ChainTracker<ChainMonitor>, Error> {
         Err(Error::Internal(format!("get_tracker unimplemented")))
     }
 

@@ -750,7 +750,11 @@ impl Node {
         let state = NodeState::new(global_velocity_control);
 
         let (keys_manager, node_id) = Self::make_keys_manager(node_config, seed, &services);
-        let tracker = ChainTracker::genesis(node_config.network);
+        let tracker = ChainTracker::genesis(
+            node_config.network,
+            node_id.clone(),
+            services.validator_factory.clone(),
+        );
 
         Self::new_full(node_config, allowlist, services, state, keys_manager, node_id, tracker)
     }
@@ -764,7 +768,10 @@ impl Node {
         state: NodeState,
     ) -> Node {
         let (keys_manager, node_id) = Self::make_keys_manager(node_config, seed, &services);
-        let tracker = services.persister.get_tracker(&node_id).expect("get tracker from persister");
+        let tracker = services
+            .persister
+            .get_tracker(node_id.clone(), services.validator_factory.clone())
+            .expect("get tracker from persister");
 
         Self::new_full(node_config, allowlist, services, state, keys_manager, node_id, tracker)
     }
@@ -1247,9 +1254,9 @@ impl Node {
         let tip = tracker.tip();
         let current_timestamp = self.clock.now().as_secs() as u32;
         let heartbeat = Heartbeat {
-            chain_tip: tip.block_hash(),
+            chain_tip: tip.0.block_hash(),
             chain_height: tracker.height(),
-            chain_timestamp: tip.time,
+            chain_timestamp: tip.0.time,
             current_timestamp,
         };
         let ser_heartbeat = heartbeat.encode();

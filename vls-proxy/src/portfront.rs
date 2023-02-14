@@ -9,16 +9,16 @@ use bitcoin::consensus::serialize;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::bip32::ExtendedPubKey;
-use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
 use lightning_signer::bitcoin;
 
 use vls_frontend::{ChainTrack, ChainTrackDirectory};
 use vls_protocol::msgs::{self, Message, SerBolt};
-use vls_protocol::serde_bolt::LargeOctets;
+use vls_protocol::serde_bolt::{LargeOctets, Octets};
 use vls_protocol_client::SignerPort;
 
 use lightning_signer::node::SignedHeartbeat;
+use lightning_signer::txoo::proof::UnspentProof;
 #[allow(unused_imports)]
 use log::debug;
 
@@ -177,16 +177,10 @@ impl ChainTrack for NodePortFront {
         }
     }
 
-    async fn add_block(
-        &self,
-        header: BlockHeader,
-        txs: Vec<bitcoin::Transaction>,
-        txs_proof: Option<PartialMerkleTree>,
-    ) {
+    async fn add_block(&self, header: BlockHeader, proof: UnspentProof) {
         let req = msgs::AddBlock {
-            header: LargeOctets(serialize(&header)),
-            txs: txs.iter().map(|tx| LargeOctets(serialize(&tx))).collect(),
-            txs_proof: txs_proof.map(|prf| LargeOctets(serialize(&prf))),
+            header: Octets(serialize(&header)),
+            unspent_proof: Some(LargeOctets(serialize(&proof))),
         };
         let reply = self.signer_port.handle_message(req.as_vec()).await.expect("AddBlock failed");
         if let Ok(Message::AddBlockReply(_)) = msgs::from_vec(reply) {
@@ -196,15 +190,8 @@ impl ChainTrack for NodePortFront {
         }
     }
 
-    async fn remove_block(
-        &self,
-        txs: Vec<bitcoin::Transaction>,
-        txs_proof: Option<PartialMerkleTree>,
-    ) {
-        let req = msgs::RemoveBlock {
-            txs: txs.iter().map(|tx| LargeOctets(serialize(&tx))).collect(),
-            txs_proof: txs_proof.map(|prf| LargeOctets(serialize(&prf))),
-        };
+    async fn remove_block(&self, proof: UnspentProof) {
+        let req = msgs::RemoveBlock { unspent_proof: Some(LargeOctets(serialize(&proof))) };
         let reply =
             self.signer_port.handle_message(req.as_vec()).await.expect("RemoveBlock failed");
         if let Ok(Message::RemoveBlockReply(_)) = msgs::from_vec(reply) {

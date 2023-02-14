@@ -1,15 +1,21 @@
 use alloc::collections::VecDeque;
+use alloc::sync::Arc;
+use core::mem;
 
 use bitcoin::blockdata::constants::{genesis_block, DIFFCHANGE_INTERVAL};
+use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::hashes::hex::ToHex;
-use bitcoin::util::merkleblock::PartialMerkleTree;
+use bitcoin::hashes::Hash;
+use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::uint::Uint256;
-use bitcoin::{BlockHeader, Network, OutPoint, Transaction, Txid};
+use bitcoin::{BlockHeader, FilterHeader, Network, OutPoint, Transaction, Txid};
 
+use crate::policy::validator::ValidatorFactory;
 #[allow(unused_imports)]
 use log::{debug, error};
 use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
+use txoo::proof::{ProofType, UnspentProof};
 
 use crate::prelude::*;
 use crate::short_function;
@@ -24,8 +30,8 @@ pub enum Error {
     InvalidBlock,
     /// Reorg size greater than [`ChainTracker::MAX_REORG_SIZE`]
     ReorgTooDeep,
-    /// The SPV (merkle) proof was incorrect
-    InvalidSpvProof,
+    /// The TXOO proof was incorrect
+    InvalidProof,
 }
 
 macro_rules! error_invalid_chain {
@@ -42,10 +48,10 @@ macro_rules! error_invalid_block {
     }};
 }
 
-macro_rules! error_invalid_spv_proof {
+macro_rules! error_invalid_proof {
     ($($arg:tt)*) => {{
-        error!("InvalidSpvProof: {}", format!($($arg)*));
-        Error::InvalidSpvProof
+        error!("InvalidProof: {}", format!($($arg)*));
+        Error::InvalidProof
     }};
 }
 
@@ -64,18 +70,47 @@ pub struct ListenSlot {
     pub seen: OrderedSet<OutPoint>,
 }
 
+/// Block headers, including the usual bitcoin block header
+/// and the filter header
+#[derive(Clone)]
+pub struct Headers(pub BlockHeader, pub FilterHeader);
+
+impl Encodable for Headers {
+    fn consensus_encode<S: crate::io::Write + ?Sized>(
+        &self,
+        s: &mut S,
+    ) -> Result<usize, crate::io::Error> {
+        let mut len = 0;
+        len += self.0.consensus_encode(s)?;
+        len += self.1.consensus_encode(s)?;
+        Ok(len)
+    }
+}
+
+impl Decodable for Headers {
+    fn consensus_decode<D: crate::io::Read + ?Sized>(
+        d: &mut D,
+    ) -> Result<Self, bitcoin::consensus::encode::Error> {
+        let header = BlockHeader::consensus_decode(d)?;
+        let filter_header = FilterHeader::consensus_decode(d)?;
+        Ok(Headers(header, filter_header))
+    }
+}
+
 /// Track chain, with basic validation
 pub struct ChainTracker<L: ChainListener + Ord> {
     /// headers past the tip
-    pub headers: VecDeque<BlockHeader>,
+    pub headers: VecDeque<Headers>,
     /// tip header
-    pub tip: BlockHeader,
+    pub tip: Headers,
     /// height
     pub height: u32,
     /// The network
     pub network: Network,
     /// listeners
     pub listeners: OrderedMap<L, ListenSlot>,
+    node_id: PublicKey,
+    validator_factory: Arc<dyn ValidatorFactory>,
 }
 
 impl<L: ChainListener + Ord> ChainTracker<L> {
@@ -86,28 +121,54 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     const MAX_REORG_SIZE: usize = 100;
 
     /// Create a new tracker
-    pub fn new(network: Network, height: u32, tip: BlockHeader) -> Result<Self, Error> {
-        tip.validate_pow(&tip.target())
-            .map_err(|e| error_invalid_block!("validate pow {}: {}", tip.target(), e))?;
+    pub fn new(
+        network: Network,
+        height: u32,
+        block_tip: BlockHeader,
+        node_id: PublicKey,
+        validator_factory: Arc<dyn ValidatorFactory>,
+    ) -> Result<Self, Error> {
+        block_tip
+            .validate_pow(&block_tip.target())
+            .map_err(|e| error_invalid_block!("validate pow {}: {}", block_tip.target(), e))?;
         let headers = VecDeque::new();
         let listeners = OrderedMap::new();
-        Ok(ChainTracker { headers, tip, height, network, listeners })
+        let tip = Headers(block_tip, FilterHeader::all_zeros());
+        Ok(ChainTracker { headers, tip, height, network, listeners, node_id, validator_factory })
+    }
+
+    /// Restore a tracker
+    pub fn restore(
+        headers: VecDeque<Headers>,
+        tip: Headers,
+        height: u32,
+        network: Network,
+        listeners: OrderedMap<L, ListenSlot>,
+        node_id: PublicKey,
+        validator_factory: Arc<dyn ValidatorFactory>,
+    ) -> Self {
+        ChainTracker { headers, tip, height, network, listeners, node_id, validator_factory }
     }
 
     /// Create a tracker at genesis
-    pub fn genesis(network: Network) -> Self {
+    pub fn genesis(
+        network: Network,
+        node_id: PublicKey,
+        validator_factory: Arc<dyn ValidatorFactory>,
+    ) -> Self {
         let height = 0;
         let genesis = genesis_block(network);
-        Self::new(network, height, genesis.header).expect("genesis block is valid")
+        Self::new(network, height, genesis.header, node_id, validator_factory)
+            .expect("genesis block is valid")
     }
 
     /// Current chain tip header
-    pub fn tip(&self) -> BlockHeader {
-        self.tip
+    pub fn tip(&self) -> &Headers {
+        &self.tip
     }
 
     /// Headers past the tip
-    pub fn headers(&self) -> &VecDeque<BlockHeader> {
+    pub fn headers(&self) -> &VecDeque<Headers> {
         &self.headers
     }
 
@@ -117,21 +178,23 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     }
 
     /// Remove block at tip due to reorg
-    pub fn remove_block(
-        &mut self,
-        txs: Vec<Transaction>,
-        txs_proof: Option<PartialMerkleTree>,
-    ) -> Result<BlockHeader, Error> {
+    pub fn remove_block(&mut self, proof: UnspentProof) -> Result<BlockHeader, Error> {
         if self.headers.is_empty() {
             return Err(Error::ReorgTooDeep);
         }
-        let header = self.tip;
-        Self::validate_spv(&header, &txs, txs_proof)?;
+        let prev_headers = &self.headers[0];
+
+        self.validate_block(self.height - 1, prev_headers, &self.tip, &proof, true)?;
+        let txs = match proof.proof {
+            ProofType::Filter(_, spv_proof) => spv_proof.txs,
+            ProofType::Block(b) => b.txdata,
+        };
         self.notify_listeners_remove(&txs);
 
-        self.tip = self.headers.pop_front().expect("already checked for empty");
+        let mut headers = self.headers.pop_front().expect("already checked");
+        mem::swap(&mut self.tip, &mut headers);
         self.height -= 1;
-        Ok(header)
+        Ok(headers.0)
     }
 
     fn notify_listeners_remove(&mut self, txs: &[Transaction]) {
@@ -176,19 +239,20 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     }
 
     /// Add a block, which becomes the new tip
-    pub fn add_block(
-        &mut self,
-        header: BlockHeader,
-        txs: Vec<Transaction>,
-        txs_proof: Option<PartialMerkleTree>,
-    ) -> Result<(), Error> {
-        self.validate_block(&header, &txs, txs_proof)?;
+    pub fn add_block(&mut self, header: BlockHeader, proof: UnspentProof) -> Result<(), Error> {
+        let filter_header = proof.filter_header();
+        let headers = Headers(header, filter_header);
+        self.validate_block(self.height, &self.tip, &headers, &proof, false)?;
+        let txs = match proof.proof {
+            ProofType::Filter(_, spv_proof) => spv_proof.txs,
+            ProofType::Block(b) => b.txdata,
+        };
 
         self.notify_listeners_add(&txs);
 
         self.headers.truncate(Self::MAX_REORG_SIZE - 1);
-        self.headers.push_front(self.tip);
-        self.tip = header;
+        self.headers.push_front(self.tip.clone());
+        self.tip = Headers(header, filter_header);
         self.height += 1;
         Ok(())
     }
@@ -241,6 +305,8 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     }
 
     /// Return all Txid and OutPoint watches for removing blocks.
+    /// This is a superset of the forward watches, and also includes
+    /// watches for outpoints which were seen as spent in previous blocks.
     pub fn get_all_reverse_watches(&self) -> (Vec<Txid>, Vec<OutPoint>) {
         self.get_all_watches(true)
     }
@@ -260,74 +326,52 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
 
     fn validate_block(
         &self,
-        header: &BlockHeader,
-        txs: &[Transaction],
-        txs_proof: Option<PartialMerkleTree>,
+        height: u32,
+        prev_headers: &Headers,
+        headers: &Headers,
+        proof: &UnspentProof,
+        is_remove: bool,
     ) -> Result<(), Error> {
+        let header = &headers.0;
+        let prev_header = &prev_headers.0;
         // Check hash is correctly chained
-        if header.prev_blockhash != self.tip.block_hash() {
+        if header.prev_blockhash != prev_header.block_hash() {
             return Err(error_invalid_chain!(
                 "header.prev_blockhash {} != self.tip.block_hash {}",
                 header.prev_blockhash.to_hex(),
-                self.tip.block_hash().to_hex()
+                prev_header.block_hash().to_hex()
             ));
         }
         // Ensure correctly mined (hash is under target)
         header.validate_pow(&header.target()).map_err(|_| Error::InvalidBlock)?;
         if self.network == Network::Testnet
             && header.target() == max_target(self.network)
-            && header.time > self.tip.time + 60 * 20
+            && header.time > prev_header.time + 60 * 20
         {
             // special case for Testnet - 20 minute rule
-        } else if (self.height + 1) % DIFFCHANGE_INTERVAL == 0 {
-            let prev_target = self.tip.target();
+        } else if (height + 1) % DIFFCHANGE_INTERVAL == 0 {
+            let prev_target = prev_header.target();
             let target = header.target();
             let network = self.network;
             validate_retarget(prev_target, target, network)?;
         } else {
-            if header.bits != self.tip.bits && self.network != Network::Testnet {
+            if header.bits != prev_header.bits && self.network != Network::Testnet {
                 return Err(error_invalid_chain!(
                     "header.bits {} != self.tip.bits {}",
                     header.bits,
-                    self.tip.bits
+                    prev_header.bits
                 ));
             }
         }
 
-        Self::validate_spv(header, txs, txs_proof)?;
-        Ok(())
-    }
+        let (_, outpoint_watches) =
+            if is_remove { self.get_all_reverse_watches() } else { self.get_all_forward_watches() };
 
-    fn validate_spv(
-        header: &BlockHeader,
-        txs: &[Transaction],
-        txs_proof: Option<PartialMerkleTree>,
-    ) -> Result<(), Error> {
-        // Check SPV proof
-        if let Some(txs_proof) = txs_proof {
-            let mut matches = Vec::new();
-            let mut indexes = Vec::new();
-
-            let root = txs_proof
-                .extract_matches(&mut matches, &mut indexes)
-                .map_err(|e| error_invalid_spv_proof!("extract matches failed: {:?}", e))?;
-            if root != header.merkle_root {
-                return Err(error_invalid_spv_proof!(
-                    "root {} != header.merkle_root {}",
-                    root,
-                    header.merkle_root
-                ));
-            }
-            for (tx, txid) in txs.iter().zip(matches) {
-                if tx.txid() != txid {
-                    return Err(error_invalid_spv_proof!("tx.txid {} != txid {}", tx.txid(), txid));
-                }
-            }
-        } else {
-            if !txs.is_empty() {
-                return Err(error_invalid_spv_proof!("txs not empty"));
-            }
-        }
+        let validator = self.validator_factory.make_validator(self.network, self.node_id, None);
+        let prev_filter_header = &prev_headers.1;
+        validator
+            .validate_block(proof, height + 1, header, prev_filter_header, &outpoint_watches)
+            .map_err(|e| error_invalid_proof!("{:?}", e))?;
         Ok(())
     }
 }
@@ -378,42 +422,61 @@ pub fn max_target(network: Network) -> Uint256 {
 mod tests {
     use bitcoin::hashes::Hash;
     use bitcoin::{PackedLockTime, Sequence, TxMerkleNode, Witness};
+    use bitcoind_client::dummy::DummyTxooSource;
     use core::iter::FromIterator;
 
     use crate::bitcoin::blockdata::constants::genesis_block;
     use crate::bitcoin::hashes::_export::_core::cmp::Ordering;
     use crate::bitcoin::network::constants::Network;
     use crate::bitcoin::util::hash::bitcoin_merkle_root;
-    use crate::bitcoin::{TxIn, Txid};
+    use crate::bitcoin::{Block, TxIn};
+    use crate::policy::simple_validator::SimpleValidatorFactory;
     use crate::util::test_utils::*;
 
     use super::*;
 
     use test_log::test;
+    use txoo::source::Source;
 
     #[test]
     fn test_add_remove() -> Result<(), Error> {
+        let genesis = genesis_block(Network::Regtest);
+        let source = make_source();
         let mut tracker = make_tracker()?;
+        let header0 = tracker.tip().0.clone();
         assert_eq!(tracker.height(), 0);
-        assert_eq!(tracker.add_block(tracker.tip(), vec![], None).err(), Some(Error::InvalidChain));
-        let header = make_header(tracker.tip(), TxMerkleNode::all_zeros());
-        tracker.add_block(header, vec![], None)?;
+        let header1 = add_block(&mut tracker, &source, &[])?;
         assert_eq!(tracker.height(), 1);
 
-        // Difficulty can't change within the retarget period
-        let bad_bits = header.bits - 1;
-        // println!("{:x} {} {}", header.bits, BlockHeader::u256_from_compact_target(header.bits), BlockHeader::u256_from_compact_target(bad_bits));
+        // difficulty can't change within the retarget period
+        let bad_bits = header1.bits - 1;
         let header_bad_bits =
-            mine_header_with_bits(tracker.tip.block_hash(), TxMerkleNode::all_zeros(), bad_bits);
+            mine_header_with_bits(tracker.tip.0.block_hash(), TxMerkleNode::all_zeros(), bad_bits);
+        let dummy_proof = UnspentProof::prove_unchecked(
+            &genesis,
+            &FilterHeader::all_zeros(),
+            tracker.height() + 1,
+        );
         assert_eq!(
-            tracker.add_block(header_bad_bits, vec![], None).err(),
+            tracker.add_block(header_bad_bits, dummy_proof).err(),
             Some(Error::InvalidChain)
         );
 
-        let header_removed = tracker.remove_block(vec![], None)?;
-        assert_eq!(header, header_removed);
-        assert_eq!(tracker.remove_block(vec![], None).err(), Some(Error::ReorgTooDeep));
+        let header_removed = remove_block(&mut tracker, &source, &[], &header0)?;
+        assert_eq!(header1, header_removed);
+
+        // can't go back before the first block that the tracker saw
+        let (_, filter_header) = source.get(0, &genesis).unwrap();
+        let proof = UnspentProof::prove_unchecked(&genesis, &filter_header, 0);
+
+        assert_eq!(tracker.remove_block(proof).err(), Some(Error::ReorgTooDeep));
         Ok(())
+    }
+
+    fn make_source() -> DummyTxooSource {
+        let source = DummyTxooSource::new();
+        source.on_new_block(0, &genesis_block(Network::Regtest));
+        source
     }
 
     struct MockListener {
@@ -473,10 +536,10 @@ mod tests {
 
     #[test]
     fn test_listeners() -> Result<(), Error> {
+        let source = make_source();
         let mut tracker = make_tracker()?;
 
-        let header = make_header(tracker.tip(), TxMerkleNode::all_zeros());
-        tracker.add_block(header, vec![], None)?;
+        let header1 = add_block(&mut tracker, &source, &[])?;
 
         let tx = make_tx(vec![make_txin(1)]);
         let initial_watch = make_outpoint(1);
@@ -493,7 +556,7 @@ mod tests {
             OrderedSet::from_iter(vec![initial_watch])
         );
 
-        add_block(&mut tracker, tx.clone())?;
+        let header2 = add_block(&mut tracker, &source, &[tx.clone()])?;
 
         assert_eq!(
             tracker.listeners.get(&listener).unwrap().watches,
@@ -507,18 +570,18 @@ mod tests {
             witness: Witness::default(),
         }]);
 
-        add_block(&mut tracker, tx2.clone())?;
+        let _header3 = add_block(&mut tracker, &source, &[tx2.clone()])?;
 
         assert_eq!(tracker.listeners.get(&listener).unwrap().watches, OrderedSet::new());
 
-        remove_block(&mut tracker, tx2.clone())?;
+        remove_block(&mut tracker, &source, &[tx2], &header2)?;
 
         assert_eq!(
             tracker.listeners.get(&listener).unwrap().watches,
             OrderedSet::from_iter(vec![second_watch])
         );
 
-        remove_block(&mut tracker, tx.clone())?;
+        remove_block(&mut tracker, &source, &[tx], &header1)?;
 
         assert_eq!(
             tracker.listeners.get(&listener).unwrap().watches,
@@ -528,102 +591,106 @@ mod tests {
         Ok(())
     }
 
-    fn add_block(tracker: &mut ChainTracker<MockListener>, tx: Transaction) -> Result<(), Error> {
-        let txids = [tx.txid()];
-        let proof = PartialMerkleTree::from_txids(&txids, &[true]);
+    // returns the new block's header
+    fn add_block(
+        tracker: &mut ChainTracker<MockListener>,
+        source: &DummyTxooSource,
+        txs: &[Transaction],
+    ) -> Result<BlockHeader, Error> {
+        let txs = txs_with_coinbase(txs);
 
-        // unwrap is OK, because we have non-empty txids
-        let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).unwrap().into();
+        let block = make_block(tracker.tip().0, txs);
+        let height = tracker.height() + 1;
+        source.on_new_block(height, &block);
+        let (_attestation, filter_header) = source.get(height, &block).unwrap();
+        let proof = UnspentProof::prove_unchecked(&block, &filter_header, height);
 
-        tracker.add_block(make_header(tracker.tip(), merkle_root), vec![tx], Some(proof))
+        tracker.add_block(block.header.clone(), proof)?;
+        Ok(block.header)
     }
 
+    // returns the new block's header
+    fn add_block_with_bits(
+        tracker: &mut ChainTracker<MockListener>,
+        source: &DummyTxooSource,
+        bits: u32,
+        do_add: bool,
+    ) -> Result<BlockHeader, Error> {
+        let txs = txs_with_coinbase(&[]);
+        let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
+
+        let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).unwrap().into();
+        let header = mine_header_with_bits(tracker.tip().0.block_hash(), merkle_root, bits);
+
+        let block = Block { header, txdata: txs };
+        let height = tracker.height() + 1;
+
+        let filter_header = if do_add {
+            source.on_new_block(height, &block);
+            let (_attestation, filter_header) = source.get(height, &block).unwrap();
+            filter_header
+        } else {
+            FilterHeader::all_zeros()
+        };
+        let proof = UnspentProof::prove_unchecked(&block, &filter_header, height);
+
+        tracker.add_block(block.header.clone(), proof)?;
+        Ok(block.header)
+    }
+
+    // returns the removed block's header
     fn remove_block(
         tracker: &mut ChainTracker<MockListener>,
-        tx: Transaction,
-    ) -> Result<(), Error> {
-        let txids = [tx.txid()];
-        let proof = PartialMerkleTree::from_txids(&txids, &[true]);
+        source: &DummyTxooSource,
+        txs: &[Transaction],
+        prev_header: &BlockHeader,
+    ) -> Result<BlockHeader, Error> {
+        let txs = txs_with_coinbase(txs);
+        let block = make_block(*prev_header, txs);
+        let height = tracker.height();
+        let (_attestation, filter_header) = source.get(height, &block).unwrap();
+        let proof = UnspentProof::prove_unchecked(&block, &filter_header, height);
 
-        tracker.remove_block(vec![tx], Some(proof))?;
-        Ok(())
+        let header = tracker.remove_block(proof)?;
+        Ok(header)
     }
 
-    #[test]
-    fn test_spv_proof() -> Result<(), Error> {
-        let mut tracker = make_tracker()?;
-        let txs = [Transaction {
-            version: 0,
-            lock_time: PackedLockTime::ZERO,
-            input: vec![Default::default()],
-            output: vec![Default::default()],
-        }];
-        let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
-        // unwrap is OK, because we have non-empty txids
-        let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).unwrap().into();
-
-        let header = make_header(tracker.tip(), merkle_root);
-        let proof = PartialMerkleTree::from_txids(txids.as_slice(), &[true]);
-
-        // try providing txs without proof
-        assert_eq!(
-            tracker.add_block(header, txs.to_vec(), None).err(),
-            Some(Error::InvalidSpvProof)
+    fn txs_with_coinbase(txs: &[Transaction]) -> Vec<Transaction> {
+        let mut txs = txs.to_vec();
+        txs.insert(
+            0,
+            Transaction { version: 0, lock_time: PackedLockTime(0), input: vec![], output: vec![] },
         );
-
-        // try with a wrong root
-        let bad_header = make_header(tracker.tip(), TxMerkleNode::all_zeros());
-        assert_eq!(
-            tracker.add_block(bad_header, txs.to_vec(), Some(proof.clone())).err(),
-            Some(Error::InvalidSpvProof)
-        );
-
-        // try with a wrong txid
-        let bad_tx = Transaction {
-            version: 1,
-            lock_time: PackedLockTime::ZERO,
-            input: vec![Default::default()],
-            output: vec![Default::default()],
-        };
-
-        assert_eq!(
-            tracker.add_block(header, vec![bad_tx], Some(proof.clone())).err(),
-            Some(Error::InvalidSpvProof)
-        );
-
-        // but this works
-        tracker.add_block(header, txs.to_vec(), Some(proof.clone()))?;
-
-        Ok(())
+        txs
     }
 
     #[test]
     fn test_retarget() -> Result<(), Error> {
+        let source = make_source();
         let mut tracker = make_tracker()?;
         for _ in 1..DIFFCHANGE_INTERVAL {
-            let header = make_header(tracker.tip(), TxMerkleNode::all_zeros());
-            tracker.add_block(header, vec![], None)?;
+            add_block(&mut tracker, &source, &[])?;
         }
         assert_eq!(tracker.height, DIFFCHANGE_INTERVAL - 1);
-        let target = tracker.tip().target();
+        let target = tracker.tip().0.target();
 
         // Decrease difficulty by 2 fails because of chain max
         let bits = BlockHeader::compact_target_from_u256(&(target << 1));
-        let header =
-            mine_header_with_bits(tracker.tip().block_hash(), TxMerkleNode::all_zeros(), bits);
-        assert_eq!(tracker.add_block(header, vec![], None).err(), Some(Error::InvalidBlock));
+        assert_eq!(
+            add_block_with_bits(&mut tracker, &source, bits, false).err(),
+            Some(Error::InvalidBlock)
+        );
 
         // Increase difficulty by 8 fails because of max retarget
         let bits = BlockHeader::compact_target_from_u256(&(target >> 3));
-        let header =
-            mine_header_with_bits(tracker.tip().block_hash(), TxMerkleNode::all_zeros(), bits);
-        assert_eq!(tracker.add_block(header, vec![], None).err(), Some(Error::InvalidChain));
+        assert_eq!(
+            add_block_with_bits(&mut tracker, &source, bits, false).err(),
+            Some(Error::InvalidChain)
+        );
 
         // Increase difficulty by 2
         let bits = BlockHeader::compact_target_from_u256(&(target >> 1));
-        let header =
-            mine_header_with_bits(tracker.tip().block_hash(), TxMerkleNode::all_zeros(), bits);
-        tracker.add_block(header, vec![], None)?;
+        add_block_with_bits(&mut tracker, &source, bits, true)?;
         Ok(())
     }
 
@@ -639,7 +706,15 @@ mod tests {
 
     fn make_tracker() -> Result<ChainTracker<MockListener>, Error> {
         let genesis = genesis_block(Network::Regtest);
-        let tracker = ChainTracker::new(Network::Regtest, 0, genesis.header)?;
+        let validator_factory = Arc::new(SimpleValidatorFactory::new());
+        let (node_id, _, _) = make_node();
+        let tracker = ChainTracker::new(
+            Network::Regtest,
+            0,
+            genesis.header,
+            node_id,
+            validator_factory.clone(),
+        )?;
         Ok(tracker)
     }
 }

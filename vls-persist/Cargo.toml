@@ -28,6 +28,10 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"], 
 path = "../vls-core"
 default-features = false
 
+[dev-dependencies.vls-core]
+path = "../vls-core"
+features = ["test_utils"]
+
 [dev-dependencies]
 tempfile = "3.2"
 test-log = "0.2"

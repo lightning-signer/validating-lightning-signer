@@ -1,4 +1,5 @@
 use kv::{Bucket, Config, Json, Key, Raw, Store, TransactionError};
+use std::sync::Arc;
 
 use bitcoin::secp256k1::PublicKey;
 use lightning_signer::bitcoin;
@@ -11,7 +12,7 @@ use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
 use lightning_signer::persist::{Error, Persist};
-use lightning_signer::policy::validator::EnforcementState;
+use lightning_signer::policy::validator::{EnforcementState, ValidatorFactory};
 use lightning_signer::prelude::*;
 use log::error;
 
@@ -147,14 +148,18 @@ impl<'a> Persist for KVJsonPersister<'a> {
         Ok(())
     }
 
-    fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, Error> {
+    fn get_tracker(
+        &self,
+        node_id: PublicKey,
+        validator_factory: Arc<dyn ValidatorFactory>,
+    ) -> Result<ChainTracker<ChainMonitor>, Error> {
         let key = node_id.serialize().to_vec();
         let value = self
             .chain_tracker_bucket
             .get(&key)
             .map_err(|err| Error::Internal(format!("get_tracker: {}", err)))?
             .ok_or_else(|| Error::NotFound(format!("tracker")))?;
-        Ok(value.0.into())
+        Ok(value.0.into_tracker(node_id, validator_factory))
     }
 
     fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), Error> {

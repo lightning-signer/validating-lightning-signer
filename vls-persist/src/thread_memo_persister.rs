@@ -15,7 +15,7 @@ use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
 use lightning_signer::persist::{Context, Error, Mutations, Persist};
-use lightning_signer::policy::validator::EnforcementState;
+use lightning_signer::policy::validator::{EnforcementState, ValidatorFactory};
 use lightning_signer::prelude::*;
 
 use crate::model::*;
@@ -272,11 +272,15 @@ impl Persist for ThreadMemoPersister {
         Ok(())
     }
 
-    fn get_tracker(&self, node_id: &PublicKey) -> Result<ChainTracker<ChainMonitor>, Error> {
+    fn get_tracker(
+        &self,
+        node_id: PublicKey,
+        validator_factory: Arc<dyn ValidatorFactory>,
+    ) -> Result<ChainTracker<ChainMonitor>, Error> {
         let key = &node_id.serialize();
         let value = self.with_state(|state| state.get(NODE_TRACKER_PREFIX, key)).unwrap();
         let model: ChainTrackerEntry = from_slice(&value).unwrap();
-        Ok(model.into())
+        Ok(model.into_tracker(node_id.clone(), validator_factory))
     }
 
     fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), Error> {

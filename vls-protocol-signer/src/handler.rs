@@ -516,7 +516,7 @@ impl Handler for RootHandler {
                 let tracker = self.node.get_tracker();
                 Ok(Box::new(msgs::TipInfoReply {
                     height: tracker.height(),
-                    block_hash: BlockHash(tracker.tip().block_hash()[..].try_into().unwrap()),
+                    block_hash: BlockHash(tracker.tip().0.block_hash()[..].try_into().unwrap()),
                 }))
             }
             Message::ForwardWatches(_) => {
@@ -547,12 +547,12 @@ impl Handler for RootHandler {
             }
             Message::AddBlock(m) => {
                 let mut tracker = self.node.get_tracker();
+                let proof = m
+                    .unspent_proof
+                    .map(|prf| deserialize(prf.0.as_slice()).expect("deserialize UnspentProof"))
+                    .ok_or(Status::invalid_argument("could not deserialize proof"))?;
                 tracker
-                    .add_block(
-                        deserialize(m.header.0.as_slice()).expect("header"),
-                        m.txs.iter().map(|tx| deserialize(tx.0.as_slice()).expect("tx")).collect(),
-                        m.txs_proof.map(|prf| deserialize(prf.0.as_slice()).expect("txs_proof")),
-                    )
+                    .add_block(deserialize(m.header.0.as_slice()).expect("header"), proof)
                     .expect("add_block");
                 self.node
                     .get_persister()
@@ -564,12 +564,11 @@ impl Handler for RootHandler {
             }
             Message::RemoveBlock(m) => {
                 let mut tracker = self.node.get_tracker();
-                tracker
-                    .remove_block(
-                        m.txs.iter().map(|tx| deserialize(tx.0.as_slice()).expect("tx")).collect(),
-                        m.txs_proof.map(|prf| deserialize(prf.0.as_slice()).expect("txs_proof")),
-                    )
-                    .expect("remove_block");
+                let proof = m
+                    .unspent_proof
+                    .map(|prf| deserialize(prf.0.as_slice()).expect("deserialize UnspentProof"))
+                    .ok_or(Status::invalid_argument("could not deserialize proof"))?;
+                tracker.remove_block(proof).expect("remove_block");
                 self.node
                     .get_persister()
                     .update_tracker(&self.node.get_id(), &tracker)
