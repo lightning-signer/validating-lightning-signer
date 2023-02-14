@@ -1515,9 +1515,7 @@ const DEFAULT_DIR: &str = ".lightning-signer";
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     println!("{} {} starting", SERVER_APP_NAME, process::id());
     let app = App::new(SERVER_APP_NAME)
-        .about(
-            "Validating Lightning Signer with a gRPC interface.  Persists to .lightning-signer .",
-        )
+        .help("Validating Lightning Signer with a gRPC interface.  Persists to .lightning-signer .")
         .arg(
             Arg::new("network")
                 .short('n')
@@ -1527,7 +1525,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         )
         .arg(
             Arg::new("bitcoin")
-                .about("bitcoind RPC URL, must have http(s) schema")
+                .help("bitcoind RPC URL, must have http(s) schema")
                 .short('b')
                 .long("bitcoin")
                 .value_name("URL")
@@ -1535,20 +1533,20 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         )
         .arg(
             Arg::new("test-mode")
-                .about("allow nodes to be recreated, deleting all channels")
+                .help("allow nodes to be recreated, deleting all channels")
                 .short('t')
                 .long("test-mode")
                 .takes_value(false),
         )
         .arg(
             Arg::new("no-persist")
-                .about("disable all persistence")
+                .help("disable all persistence")
                 .long("no-persist")
                 .takes_value(false),
         )
         .arg(
             Arg::new("interface")
-                .about("the interface to listen on (ip v4 or v6)")
+                .help("the interface to listen on (ip v4 or v6)")
                 .short('i')
                 .long("interface")
                 .takes_value(true)
@@ -1560,12 +1558,12 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .short('d')
                 .long("datadir")
                 .default_value(DEFAULT_DIR)
-                .about("data directory")
+                .help("data directory")
                 .value_name("DIR"),
         )
         .arg(
             Arg::new("port")
-                .about("the port to listen")
+                .help("the port to listen")
                 .short('p')
                 .long("port")
                 .takes_value(true)
@@ -1573,7 +1571,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         )
         .arg(
             Arg::new("logleveldisk")
-                .about("logging level to disk")
+                .help("logging level to disk")
                 .short('v')
                 .long("log-level-disk")
                 .possible_values(&LOG_LEVEL_FILTER_NAMES)
@@ -1582,7 +1580,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         )
         .arg(
             Arg::new("loglevelconsole")
-                .about("logging level to console")
+                .help("logging level to console")
                 .short('V')
                 .long("log-level-console")
                 .possible_values(&LOG_LEVEL_FILTER_NAMES)
@@ -1591,7 +1589,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         )
         .arg(
             Arg::new("initial-allowlist-file")
-                .about("specify file containing initial allowlist")
+                .help("specify file containing initial allowlist")
                 .short('A')
                 .long("initial-allowlist-file")
                 .takes_value(true),

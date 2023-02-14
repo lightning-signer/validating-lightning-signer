@@ -9,7 +9,7 @@ use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use clap::{App, AppSettings, Arg};
+use clap::App;
 #[allow(unused_imports)]
 use log::{error, info};
 use tokio::task::spawn_blocking;
@@ -32,16 +32,11 @@ use vls_proxy::*;
 
 pub mod grpc;
 
-/// Implement both the hsmd replacement and the signer in a single binary.
-/// The signer is forked off as a separate process.
+/// Implement hsmd replacement that listens to connections from vlsd2.
 pub fn main() {
     let parent_fd = open_parent_fd();
 
-    let app = App::new("signer")
-        .setting(AppSettings::NoAutoVersion)
-        .about("CLN:socket - listens for a vlsd2 connection on port 7701 (or VLS_PORT if set)")
-        .arg(Arg::from("--git-desc print git desc version and exit"));
-    let app = add_hsmd_args(app);
+    let app = make_clap_app();
     let matches = app.get_matches();
     if matches.is_present("git-desc") {
         println!("remote_hsmd_socket git_desc={}", GIT_DESC);
@@ -65,6 +60,12 @@ pub fn main() {
     let conn = UnixConnection::new(parent_fd);
     let client = UnixClient::new(conn);
     start_server(sock_addr, client);
+}
+
+fn make_clap_app() -> App<'static> {
+    let app = App::new("signer")
+        .about("CLN:socket - listens for a vlsd2 connection on port 7701 (or VLS_PORT if set)");
+    add_hsmd_args(app)
 }
 
 // hsmd replacement entry point
@@ -100,4 +101,14 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
     info!("starting gRPC service on {}", addr);
     server.start(incoming, shutdown_signal).await.expect("error while serving");
     info!("stopping gRPC service");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_make_clap_app() {
+        make_clap_app();
+    }
 }

@@ -1,3 +1,4 @@
+use clap::{arg, AppSettings};
 #[cfg(feature = "main")]
 use clap::{App, Arg, ArgMatches};
 use log::*;
@@ -10,9 +11,57 @@ use lightning_signer::bitcoin::Network;
 use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
 use lightning_signer::util::crypto_utils::generate_seed;
+use lightning_signer::util::velocity::VelocityControlSpec;
 use lightning_signer::Arc;
 use lightning_signer_server::tstamp::tstamp;
 use tokio::runtime::{self, Runtime};
+
+#[macro_export]
+macro_rules! log_pretty {
+    ($level:ident, $err:expr) => {
+        #[cfg(not(feature = "log_pretty_print"))]
+        $level!("{:?}", $err);
+        #[cfg(feature = "log_pretty_print")]
+        $level!("{:#?}", $err);
+    };
+
+    ($level:ident, $err:expr, $self:expr) => {
+        #[cfg(not(feature = "log_pretty_print"))]
+        $level!("{:?}: {:?}", $self.client_id, $err);
+        #[cfg(feature = "log_pretty_print")]
+        $level!("{:?}: {:#?}", $self.client_id, $err);
+    };
+}
+
+#[macro_export]
+macro_rules! log_error {
+    ($($arg:tt)+) => {
+        log_pretty!(error, $($arg)+);
+    };
+}
+
+#[macro_export]
+macro_rules! log_request {
+    ($($arg:tt)+) => {
+        log_pretty!(debug, $($arg)+);
+    };
+}
+
+#[macro_export]
+macro_rules! log_reply {
+    ($reply_bytes:expr) => {
+        if log::log_enabled!(log::Level::Debug) {
+            let reply = msgs::from_vec($reply_bytes.clone()).expect("parse reply failed");
+            log_pretty!(debug, reply);
+        }
+    };
+    ($reply_bytes:expr, $self:expr) => {
+        if log::log_enabled!(log::Level::Debug) {
+            let reply = msgs::from_vec($reply_bytes.clone()).expect("parse reply failed");
+            log_pretty!(debug, reply, $self);
+        }
+    };
+}
 
 pub fn read_allowlist() -> Vec<String> {
     let allowlist_path_res = env::var("ALLOWLIST");
@@ -81,14 +130,16 @@ pub fn setup_logging(datadir: &str, who: &str, level_arg: &str) {
 
 #[cfg(feature = "main")]
 pub fn add_hsmd_args(app: App) -> App {
-    app.arg(
-        Arg::new("dev-disconnect")
-            .about("ignored dev flag")
-            .long("dev-disconnect")
-            .takes_value(true),
-    )
-    .arg(Arg::from("--log-io ignored dev flag"))
-    .arg(Arg::from("--version show a dummy version"))
+    app.setting(AppSettings::NoAutoVersion)
+        .arg(
+            Arg::new("dev-disconnect")
+                .help("ignored dev flag")
+                .long("dev-disconnect")
+                .takes_value(true),
+        )
+        .arg(Arg::new("log-io").long("log-io").help("ignored dev flag"))
+        .arg(arg!(--version "show a dummy version"))
+        .arg(Arg::new("git-desc").long("git-desc").help("print git desc version and exit"))
 }
 
 #[cfg(feature = "main")]
@@ -137,7 +188,22 @@ pub fn make_validator_factory_with_filter(
     network: Network,
     filter_opt: Option<PolicyFilter>,
 ) -> Arc<SimpleValidatorFactory> {
+    make_validator_factory_with_filter_and_velocity(
+        network,
+        filter_opt,
+        VelocityControlSpec::UNLIMITED,
+    )
+}
+
+/// Make a standard validation factory, with an optional filter specification,
+/// allowing VLS_PERMISSIVE env var to override, and a global velocity control
+pub fn make_validator_factory_with_filter_and_velocity(
+    network: Network,
+    filter_opt: Option<PolicyFilter>,
+    velocity_spec: VelocityControlSpec,
+) -> Arc<SimpleValidatorFactory> {
     let mut policy = make_simple_policy(network);
+    policy.global_velocity_control = velocity_spec;
 
     if env::var("VLS_PERMISSIVE") == Ok("1".to_string()) {
         warn!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");

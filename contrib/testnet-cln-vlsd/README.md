@@ -50,7 +50,11 @@ Make vls user/group: (`SOCKET` only)
     sudo touch /home/vls/ALLOWLIST
     sudo chown vls:vls /home/vls/ALLOWLIST
 
+    sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/testnet-cln-vlsd/vlsd2.toml /home/vls/vlsd2.toml
+    sudo chown vls:vls /home/vls/vlsd2.toml
+
     sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/testnet-cln-vlsd/vls-testnet.service /lib/systemd/system/
+
     sudo systemctl daemon-reload
     sudo systemctl enable vls-testnet
     sudo systemctl start vls-testnet
@@ -117,3 +121,13 @@ Watch logs:
 
     sudo journalctl --follow -u cln-testnet
     sudo journalctl --follow -u vls-testnet # (`SOCKET` only)
+
+Quick status check:
+
+```
+for svc in \
+bitcoind-testnet \
+cln-testnet \
+vls-testnet \
+; do SYSTEMD_COLORS=1 systemctl status $svc | head -n 3; done
+```

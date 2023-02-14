@@ -54,10 +54,10 @@ fn configure_tls(
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     println!("{} {} starting", SERVER_APP_NAME, process::id());
     let app = App::new(SERVER_APP_NAME)
-        .about("Lightning Storage Server with a gRPC interface.")
+        .help("Lightning Storage Server with a gRPC interface.")
         .arg(
             Arg::new("interface")
-                .about("the interface to listen on (ip v4 or v6)")
+                .help("the interface to listen on (ip v4 or v6)")
                 .short('i')
                 .long("interface")
                 .takes_value(true)
@@ -66,7 +66,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         )
         .arg(
             Arg::new("port")
-                .about("the port to listen")
+                .help("the port to listen")
                 .short('p')
                 .long("port")
                 .takes_value(true)
@@ -74,7 +74,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         )
         .arg(
             Arg::new("grpc-tls-certificate")
-                .about("Server identity certificate")
+                .help("Server identity certificate")
                 .long("grpc-tls-certificate")
                 .takes_value(true)
                 .requires("grpc-tls-key"),
@@ -82,27 +82,27 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         .arg(
             Arg::new("grpc-tls-key")
                 .long("grpc-tls-key")
-                .about("Server identity key")
+                .help("Server identity key")
                 .takes_value(true)
                 .requires("grpc-tls-certificate"),
         )
         .arg(
             Arg::new("grpc-tls-authority")
                 .long("grpc-tls-authority")
-                .about("Certificate authority to verify client certificates (requires TLS to be configured with --grpc-tls-key and --grpc-tls-certificate)")
+                .help("Certificate authority to verify client certificates (requires TLS to be configured with --grpc-tls-key and --grpc-tls-certificate)")
                 .takes_value(true)
                 .requires_all(&["grpc-tls-certificate", "grpc-tls-key"]),
         )
         .arg(
             Arg::new("cleardb")
-                .about("clear the database on startup")
+                .help("clear the database on startup")
                 .short('c')
                 .long("cleardb")
                 .takes_value(false),
         )
         .arg(
             Arg::new("datadir")
-                .about("data directory")
+                .help("data directory")
                 .long("datadir")
                 .takes_value(true)
                 .default_value(".lss"),
@@ -110,7 +110,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         .arg(
             Arg::new("database")
                 .long("database")
-                .about("specify DB backend")
+                .help("specify DB backend")
                 .takes_value(true)
                 .default_value("sled")
                 .possible_values(&DATABASES),

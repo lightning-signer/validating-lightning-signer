@@ -12,7 +12,7 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
 use std::process::exit;
 use std::sync::Arc;
 
-use clap::{App, AppSettings, Arg};
+use clap::App;
 #[allow(unused_imports)]
 use log::{error, info};
 use nix::unistd::{fork, ForkResult};
@@ -41,11 +41,7 @@ pub mod grpc;
 pub fn main() {
     let parent_fd = open_parent_fd();
 
-    let app = App::new("signer")
-        .setting(AppSettings::NoAutoVersion)
-        .about("CLN:socket test - for use with the CLN integration test suite")
-        .arg(Arg::from("--git-desc print git desc version and exit"));
-    let app = add_hsmd_args(app);
+    let app = make_clap_app();
     let matches = app.get_matches();
     if matches.is_present("git-desc") {
         println!("remote_hsmd_socket_test git_desc={}", GIT_DESC);
@@ -68,6 +64,12 @@ pub fn main() {
     let conn = UnixConnection::new(parent_fd);
     let client = UnixClient::new(conn);
     start_server(listener, addr, client);
+}
+
+fn make_clap_app() -> App<'static> {
+    let app = App::new("signer")
+        .about("CLN:socket test - for use with the CLN integration test suite");
+    add_hsmd_args(app)
 }
 
 // hsmd replacement entry point
@@ -131,4 +133,14 @@ fn allocate_port() -> (TcpListener, SocketAddr) {
     let listener = TcpListener::bind(addr).expect("bind"); // this should be infallible
     let addr = listener.local_addr().expect("local");
     (listener, addr)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_make_clap_app() {
+        make_clap_app();
+    }
 }

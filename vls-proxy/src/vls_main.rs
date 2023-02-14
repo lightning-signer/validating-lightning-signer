@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::env;
 use std::sync::Mutex;
 
-use clap::{App, AppSettings, Arg};
+use clap::{arg, App};
 use log::{error, info};
 use url::Url;
 
@@ -241,12 +241,7 @@ impl Looper {
 
 // Note: this can't be async, or fds > 2 will be allocated
 pub fn main() {
-    let app = App::new("signer")
-        .setting(AppSettings::NoAutoVersion)
-        .about("Validating Lightning Signer")
-        .arg(Arg::from("--test run a test emulating lightningd/hsmd"))
-        .arg(Arg::from("--git-desc print git desc version and exit"));
-    let app = add_hsmd_args(app);
+    let app = make_clap_app();
     let matches = app.get_matches();
     if handle_hsmd_version(&matches) {
         return;
@@ -258,6 +253,13 @@ pub fn main() {
     } else {
         start();
     }
+}
+
+fn make_clap_app() -> App<'static> {
+    let app = App::new("signer")
+        .about("Validating Lightning Signer")
+        .arg(arg!(--test "run a test emulating lightningd/hsmd"));
+    add_hsmd_args(app)
 }
 
 // small number of threads to ease debugging
@@ -336,4 +338,14 @@ async fn make_looper(seed: &[u8; 32]) -> Looper {
         None
     };
     Looper { cloud }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_make_clap_app() {
+        make_clap_app();
+    }
 }

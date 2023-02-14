@@ -4,12 +4,13 @@ version = "0.1.0"
 authors = ["Devrandom <c1.devrandom@niftybox.net>"]
 edition = "2018"
 build = "build.rs"
+rust-version = "1.60.0"
 
 [features]
 
 default = ["grpc", "main", "debug"]
 grpc = ["tokio", "tokio-stream", "tonic", "prost", "async-stream", "url"]
-main = ["clap", "clap_derive", "ctrlc", "fern"]
+main = ["clap", "toml", "ctrlc", "fern"]
 log_pretty_print = []
 debug = ["vls-core/debug", "log_pretty_print"]
 
@@ -25,8 +26,9 @@ serde = "1.0"
 log = "0.4"
 fern = { version = "0.6", features = ["colored"], optional = true }
 # .4 doesn't compile with 1.45.2
-clap = { version = "=3.0.0-beta.2", optional = true }
-clap_derive = { version = "=3.0.0-beta.5", optional = true }
+clap = { version = "3.2", optional = true, features = ["derive"] }
+# match kv dep for now
+toml = { version = "0.5", optional = true }
 http = "0.2"
 tokio = { version = "1.24", features = ["macros", "rt-multi-thread"], optional = true }
 tokio-stream = { version = "0.1", optional = true }
@@ -50,6 +52,9 @@ txoo-bitcoind-client = "0.1"
 path = "../vls-server"
 default_features = false
 features = ["frontend", "persist-kv-json", "debug"]
+
+[dev-dependencies]
+tempfile = "3"
 
 [build-dependencies]
 tonic-build = "0.8"

@@ -4,7 +4,7 @@
 use std::env;
 use std::sync::{Arc, Mutex};
 
-use clap::{App, AppSettings, Arg};
+use clap::{arg, App};
 use url::Url;
 
 #[allow(unused_imports)]
@@ -21,7 +21,7 @@ use serial::{connect, SerialSignerPort, SignerLoop};
 use vls_frontend::Frontend;
 use vls_proxy::client::UnixClient;
 use vls_proxy::portfront::SignerPortFront;
-use vls_proxy::util::{bitcoind_rpc_url, create_runtime, setup_logging, vls_network};
+use vls_proxy::util::{add_hsmd_args, bitcoind_rpc_url, create_runtime, setup_logging, vls_network};
 use vls_proxy::*;
 
 mod serial;
@@ -64,19 +64,7 @@ pub fn main() -> anyhow::Result<()> {
     // Why does this interfere w/ the serial communication?
     // info!("remote_hsmd_serial git_desc={} starting", GIT_DESC);
 
-    let app = App::new("signer")
-        .setting(AppSettings::NoAutoVersion)
-        .about("CLN:serial - connects to an embedded VLS over a USB / serial connection")
-        .arg(
-            Arg::new("--dev-disconnect")
-                .about("ignored dev flag")
-                .long("dev-disconnect")
-                .takes_value(true),
-        )
-        .arg(Arg::from("--log-io ignored dev flag"))
-        .arg(Arg::from("--version show a dummy version"))
-        .arg(Arg::from("--git-desc print git desc version and exit"))
-        .arg(Arg::from("--test run a test against the embedded device"));
+    let app = make_clap_app();
     let matches = app.get_matches();
     if matches.is_present("git-desc") {
         println!("remote_hsmd_serial git_desc={}", GIT_DESC);
@@ -116,4 +104,21 @@ pub fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn make_clap_app() -> App<'static> {
+    let app = App::new("signer")
+        .about("CLN:serial - connects to an embedded VLS over a USB / serial connection")
+        .arg(arg!(--test "run a test against the embedded device"));
+    add_hsmd_args(app)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_make_clap_app() {
+        make_clap_app();
+    }
 }

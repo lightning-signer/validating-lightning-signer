@@ -1,8 +1,10 @@
 use super::hsmd::{self, PingRequest, SignerRequest, SignerResponse};
+use crate::config::SignerArgs;
 use crate::util::{
-    integration_test_seed_or_generate, make_validator_factory_with_filter, read_allowlist,
-    should_auto_approve,
+    integration_test_seed_or_generate, make_validator_factory_with_filter_and_velocity,
+    read_allowlist, should_auto_approve,
 };
+use clap::Parser;
 use http::Uri;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::node::NodeServices;
@@ -13,6 +15,7 @@ use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::crypto_utils::generate_seed;
 use lightning_signer::util::status::Status;
+use lightning_signer::util::velocity::VelocityControlSpec;
 use lightning_signer_server::persist::kv_json::KVJsonPersister;
 use log::*;
 use std::convert::TryInto;
@@ -39,34 +42,45 @@ pub async fn start_signer_localhost(port: u16) {
         .build()
         .expect("uri"); // infallible by construction
 
-    let network = Network::Regtest; // FIXME
-    let integration_test = true;
-    connect("remote_hsmd.kv", uri, network, integration_test).await;
+    let args = SignerArgs::parse_from(&["signer", "--integration-test", "--network", "regtest"]);
+    assert!(args.integration_test);
+    connect("remote_hsmd.kv", uri, &args).await;
     info!("signer stopping");
 }
 
 /// Signer binary entry point
+#[allow(unused)]
 #[tokio::main(worker_threads = 2)]
-pub async fn start_signer(datadir: &str, uri: Uri, network: Network, integration_test: bool) {
-    info!("signer starting on {} connecting to {}", network, uri);
-    connect(datadir, uri, network, integration_test).await;
+pub(crate) async fn start_signer(datadir: &str, uri: Uri, args: &SignerArgs) {
+    info!("signer starting on {} connecting to {}", args.network, uri);
+    connect(datadir, uri, args).await;
     info!("signer stopping");
 }
 
-pub fn make_handler(datadir: &str, network: Network, integration_test: bool) -> RootHandler {
+pub(crate) fn make_handler(datadir: &str, args: &SignerArgs) -> RootHandler {
+    let network = args.network;
     let data_path = format!("{}/{}", datadir, network.to_string());
     let persister = Arc::new(KVJsonPersister::new(&data_path));
     let seed_persister = Arc::new(FileSeedPersister::new(&data_path));
-    let seed = get_or_generate_seed(network, seed_persister, integration_test);
+    let seed = get_or_generate_seed(network, seed_persister, args.integration_test);
     let allowlist = read_allowlist();
     let starting_time_factory = ClockStartingTimeFactory::new();
-    let filter_opt = if integration_test {
+    let mut filter_opt = if args.integration_test {
         // TODO(236)
         Some(PolicyFilter { rules: vec![FilterRule::new_warn("policy-channel-safe-type-anchors")] })
     } else {
         None
     };
-    let validator_factory = make_validator_factory_with_filter(network, filter_opt);
+
+    if !args.policy_filter.is_empty() {
+        let mut filter = filter_opt.unwrap_or(PolicyFilter::default());
+        filter.merge(PolicyFilter { rules: args.policy_filter.clone() });
+        filter_opt = Some(filter);
+    }
+
+    let velocity_control_spec = args.velocity_control.unwrap_or(VelocityControlSpec::UNLIMITED);
+    let validator_factory =
+        make_validator_factory_with_filter_and_velocity(network, filter_opt, velocity_control_spec);
     let clock = Arc::new(StandardClock());
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
     let mut handler_builder =
@@ -87,14 +101,14 @@ fn reset_allowlist(root_handler: &RootHandler, allowlist: &Vec<String>) {
     info!("allowlist={:?}", node.allowlist().expect("allowlist"));
 }
 
-async fn connect(datadir: &str, uri: Uri, network: Network, integration_test: bool) {
+async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
     let mut client = hsmd::hsmd_client::HsmdClient::connect(uri).await.expect("client connect");
     let result = client.ping(PingRequest { message: "hello".to_string() }).await.expect("ping");
     let reply = result.into_inner();
     info!("ping result {}", reply.message);
     let (sender, receiver) = mpsc::channel(1);
     let response_stream = ReceiverStream::new(receiver);
-    let root_handler = make_handler(datadir, network, integration_test);
+    let root_handler = make_handler(datadir, args);
     reset_allowlist(&root_handler, &read_allowlist());
 
     let mut request_stream = client.signer_stream(response_stream).await.unwrap().into_inner();

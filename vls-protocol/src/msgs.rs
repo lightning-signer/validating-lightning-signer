@@ -44,7 +44,6 @@ pub struct HsmdInit {
     pub hsm_wire_max_version: u32,
 }
 
-
 /// deprecated in CLN
 #[deprecated]
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
