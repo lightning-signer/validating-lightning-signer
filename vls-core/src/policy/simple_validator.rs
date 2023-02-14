@@ -1822,8 +1822,8 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_htlcs: 1000,
             max_htlc_value_sat: 16_777_216, // lnd itest: multi-hop_htlc_error_propagation
             use_chain_state: false,
-            min_feerate_per_kw: 253, // testnet/regtest observed
-            max_feerate_per_kw: 100_000,
+            min_feerate_per_kw: 253,     // testnet/regtest observed
+            max_feerate_per_kw: 151_000, // CLN max_feerate 150_000 common
             require_invoices: false,
             enforce_balance: false,
             max_routing_fee_msat: 10000,

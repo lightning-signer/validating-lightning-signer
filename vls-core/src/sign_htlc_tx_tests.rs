@@ -692,7 +692,7 @@ mod tests {
     // policy-htlc-fee-range
     generate_failed_precondition_error_with_mutated_tx!(
         high_feerate,
-        |tms| tms.tx.output[0].value = 920_000, // htlc_amount_sat is 1_000_000
+        |tms| tms.tx.output[0].value = 860_000, // htlc_amount_sat is 1_000_000
         |ectx: ErrMsgContext| {
             if ectx.opt_zerofee {
                 // zero-fee fails sooner, because we don't estimate_feerate_per_kw so the recomposed
@@ -702,14 +702,14 @@ mod tests {
                 if ectx.is_offered {
                     format!(
                         "policy failure: validate_htlc_tx: \
-                     feerate_per_kw of {} is larger than the maximum of 100000",
-                        if ectx.opt_anchors { 120121 } else { 120665 }
+                     feerate_per_kw of {} is larger than the maximum of 151000",
+                        211162
                     )
                 } else {
                     format!(
                         "policy failure: validate_htlc_tx: \
-                     feerate_per_kw of {} is larger than the maximum of 100000",
-                        if ectx.opt_anchors { 113315 } else { 113799 }
+                     feerate_per_kw of {} is larger than the maximum of 151000",
+                        199147
                     )
                 }
             }
