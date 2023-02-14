@@ -21,7 +21,9 @@ use serial::{connect, SerialSignerPort, SignerLoop};
 use vls_frontend::Frontend;
 use vls_proxy::client::UnixClient;
 use vls_proxy::portfront::SignerPortFront;
-use vls_proxy::util::{abort_on_panic, add_hsmd_args, bitcoind_rpc_url, create_runtime, setup_logging, vls_network};
+use vls_proxy::util::{
+    abort_on_panic, add_hsmd_args, bitcoind_rpc_url, create_runtime, setup_logging, vls_network,
+};
 use vls_proxy::*;
 
 mod serial;

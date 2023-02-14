@@ -69,8 +69,8 @@ pub fn main() {
 }
 
 fn make_clap_app() -> App<'static> {
-    let app = App::new("signer")
-        .about("CLN:socket test - for use with the CLN integration test suite");
+    let app =
+        App::new("signer").about("CLN:socket test - for use with the CLN integration test suite");
     add_hsmd_args(app)
 }
 
