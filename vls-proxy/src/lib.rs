@@ -6,6 +6,7 @@ pub mod config;
 pub mod connection;
 pub mod grpc;
 pub mod portfront;
+pub mod nodefront;
 pub mod recovery;
 pub mod tx_util;
 #[macro_use]
@@ -13,7 +14,6 @@ pub mod tx_util;
 pub mod util;
 
 pub use lightning_signer;
-pub use lightning_signer_server;
 pub use vls_frontend;
 pub use vls_protocol_client;
 pub use vls_protocol_signer;

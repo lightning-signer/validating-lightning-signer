@@ -16,7 +16,7 @@ use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::crypto_utils::generate_seed;
 use lightning_signer::util::status::Status;
 use lightning_signer::util::velocity::VelocityControlSpec;
-use lightning_signer_server::persist::kv_json::KVJsonPersister;
+use vls_persist::kv_json::KVJsonPersister;
 use log::*;
 use std::convert::TryInto;
 use std::net::{Ipv4Addr, SocketAddrV4};

@@ -8,7 +8,15 @@ use std::{env, fs};
 use toml::value::{Table, Value};
 use url::Url;
 
-use lightning_signer_server::{CLAP_NETWORK_URL_MAPPING, NETWORK_NAMES};
+const NETWORK_NAMES: &[&str] = &["testnet", "regtest", "signet", "bitcoin"];
+
+/// Useful with clap's `Arg::default_value_ifs`
+const CLAP_NETWORK_URL_MAPPING: &[(&str, Option<&str>, Option<&str>)] = &[
+    ("network", Some("bitcoin"), Some("http://user:pass@127.0.0.1:8332")),
+    ("network", Some("testnet"), Some("http://user:pass@127.0.0.1:18332")),
+    ("network", Some("regtest"), Some("http://user:pass@127.0.0.1:18443")),
+    ("network", Some("signet"), Some("http://user:pass@127.0.0.1:18443")),
+];
 
 const DEFAULT_DIR: &str = ".lightning-signer";
 

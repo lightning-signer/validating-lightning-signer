@@ -6,6 +6,9 @@ use std::convert::TryInto;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::{env, fs};
+use time::macros::format_description;
+use time::OffsetDateTime;
+use tokio::runtime::{self, Runtime};
 
 use lightning_signer::bitcoin::Network;
 use lightning_signer::policy::filter::PolicyFilter;
@@ -13,8 +16,6 @@ use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValid
 use lightning_signer::util::crypto_utils::generate_seed;
 use lightning_signer::util::velocity::VelocityControlSpec;
 use lightning_signer::Arc;
-use lightning_signer_server::tstamp::tstamp;
-use tokio::runtime::{self, Runtime};
 
 #[macro_export]
 macro_rules! log_pretty {
@@ -241,4 +242,14 @@ pub fn abort_on_panic() {
         old(info);
         std::process::abort();
     }));
+}
+
+// Would prefer to use now_local but https://rustsec.org/advisories/RUSTSEC-2020-0071
+// Also, https://time-rs.github.io/api/time/struct.OffsetDateTime.html#method.now_local
+pub fn tstamp() -> String {
+    OffsetDateTime::now_utc()
+        .format(format_description!(
+            "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:3]"
+        ))
+        .expect("formatted tstamp")
 }
