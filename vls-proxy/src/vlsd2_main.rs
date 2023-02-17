@@ -1,5 +1,5 @@
-use crate::util::abort_on_panic;
 use crate::config::{parse_args_and_config, HasSignerArgs, SignerArgs};
+use crate::util::abort_on_panic;
 use bitcoind_client::BlockExplorerType;
 use clap::{CommandFactory, ErrorKind, Parser};
 use grpc::signer::make_handler;

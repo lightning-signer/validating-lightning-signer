@@ -12,7 +12,7 @@ default = ["grpc", "main", "debug"]
 grpc = ["tokio", "tokio-stream", "tonic", "prost", "async-stream", "url"]
 main = ["clap", "toml", "ctrlc", "fern"]
 log_pretty_print = []
-debug = ["vls-core/debug", "log_pretty_print"]
+debug = ["vls-core/debug", "vls-protocol-signer/debug", "log_pretty_print"]
 
 [dependencies]
 vls-core = { path = "../vls-core", features = ["use_backtrace"] }
