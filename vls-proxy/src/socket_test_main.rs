@@ -30,7 +30,8 @@ use grpc::signer_loop::{GrpcSignerPort, SignerLoop};
 use vls_frontend::Frontend;
 use vls_proxy::portfront::SignerPortFront;
 use vls_proxy::util::{
-    add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, setup_logging, vls_network,
+    abort_on_panic, add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, setup_logging,
+    vls_network,
 };
 use vls_proxy::*;
 
@@ -39,6 +40,7 @@ pub mod grpc;
 /// Implement both the hsmd replacement and the signer in a single binary.
 /// The signer is forked off as a separate process.
 pub fn main() {
+    abort_on_panic();
     let parent_fd = open_parent_fd();
 
     let app = make_clap_app();

@@ -39,8 +39,9 @@ use vls_protocol_signer::vls_protocol;
 
 mod test;
 use vls_proxy::util::{
-    add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, integration_test_seed_or_generate,
-    make_validator_factory_with_filter, setup_logging, vls_network,
+    abort_on_panic, add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version,
+    integration_test_seed_or_generate, make_validator_factory_with_filter, setup_logging,
+    vls_network,
 };
 use vls_proxy::*;
 
@@ -241,6 +242,7 @@ impl Looper {
 
 // Note: this can't be async, or fds > 2 will be allocated
 pub fn main() {
+    abort_on_panic();
     let app = make_clap_app();
     let matches = app.get_matches();
     if handle_hsmd_version(&matches) {

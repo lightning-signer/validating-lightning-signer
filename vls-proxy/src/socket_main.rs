@@ -26,7 +26,8 @@ use lightning_signer::bitcoin::Network;
 use vls_frontend::Frontend;
 use vls_proxy::portfront::SignerPortFront;
 use vls_proxy::util::{
-    add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, setup_logging, vls_network,
+    abort_on_panic, add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, setup_logging,
+    vls_network,
 };
 use vls_proxy::*;
 
@@ -34,6 +35,7 @@ pub mod grpc;
 
 /// Implement hsmd replacement that listens to connections from vlsd2.
 pub fn main() {
+    abort_on_panic();
     let parent_fd = open_parent_fd();
 
     let app = make_clap_app();
