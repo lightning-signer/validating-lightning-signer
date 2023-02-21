@@ -1,5 +1,6 @@
 use super::hsmd::{self, PingRequest, SignerRequest, SignerResponse};
 use crate::config::SignerArgs;
+use crate::grpc::hsmd::hsmd_client::HsmdClient;
 use crate::util::{
     integration_test_seed_or_generate, make_validator_factory_with_filter_and_velocity,
     read_allowlist, should_auto_approve,
@@ -22,9 +23,11 @@ use std::convert::TryInto;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::result::Result as StdResult;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
+use tonic::transport::Channel;
 use vls_protocol_signer::approver::PositiveApprover;
 use vls_protocol_signer::handler::{Error, Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::vls_protocol::model::PubKey;
@@ -102,10 +105,7 @@ fn reset_allowlist(root_handler: &RootHandler, allowlist: &Vec<String>) {
 }
 
 async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
-    let mut client = hsmd::hsmd_client::HsmdClient::connect(uri).await.expect("client connect");
-    let result = client.ping(PingRequest { message: "hello".to_string() }).await.expect("ping");
-    let reply = result.into_inner();
-    info!("ping result {}", reply.message);
+    let mut client = do_connect(uri).await;
     let (sender, receiver) = mpsc::channel(1);
     let response_stream = ReceiverStream::new(receiver);
     let root_handler = make_handler(datadir, args);
@@ -144,6 +144,30 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
             Err(e) => {
                 error!("error on stream: {}", e);
                 break;
+            }
+        }
+    }
+}
+
+async fn do_connect(uri: Uri) -> HsmdClient<Channel> {
+    loop {
+        let client = hsmd::hsmd_client::HsmdClient::connect(uri.clone()).await;
+        match client {
+            Ok(mut client) => {
+                let result =
+                    client.ping(PingRequest { message: "hello".to_string() }).await.expect("ping");
+                let reply = result.into_inner();
+                info!("ping result {}", reply.message);
+                return client;
+            }
+            Err(e) => {
+                // unfortunately the error kind is not otherwise exposed
+                if e.to_string() == "transport error" {
+                    warn!("{} connecting to signer, will retry", e);
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                } else {
+                    panic!("{} connecting to signer", e);
+                }
             }
         }
     }
