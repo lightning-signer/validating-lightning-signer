@@ -8,7 +8,7 @@ use lightning_signer::bitcoin::hashes::Hash;
 use lightning_signer::bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey};
 use lightning_signer::bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey};
 use lightning_signer::bitcoin::{Block, BlockHash, BlockHeader, FilterHeader, KeyPair, Network};
-use lightning_signer::chain::tracker::ChainTracker;
+use lightning_signer::chain::tracker::{ChainTracker, Headers};
 use lightning_signer::node::{Heartbeat, SignedHeartbeat};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 use lightning_signer::txoo::filter::BlockSpendFilter;
@@ -62,16 +62,11 @@ impl DummySignerPort {
         let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
         let block_hash = block.block_hash();
         let filter = BlockSpendFilter::from_block(&block);
-        let _filter_header = filter.filter_header(&FilterHeader::all_zeros());
+        let filter_header = filter.filter_header(&FilterHeader::all_zeros());
+        let tip = Headers(block.header.clone(), filter_header);
         let validator_factory = SimpleValidatorFactory::new();
-        let tracker = ChainTracker::new(
-            network,
-            height,
-            block.header.clone(),
-            node_id,
-            Arc::new(validator_factory),
-        )
-        .unwrap();
+        let tracker =
+            ChainTracker::new(network, height, tip, node_id, Arc::new(validator_factory)).unwrap();
 
         let state = State { height, block_hash, tracker };
 

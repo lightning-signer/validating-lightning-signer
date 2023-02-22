@@ -15,6 +15,7 @@ use crate::policy::validator::ValidatorFactory;
 use log::{debug, error};
 use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
+use txoo::filter::BlockSpendFilter;
 use txoo::proof::{ProofType, UnspentProof};
 
 use crate::prelude::*;
@@ -124,16 +125,16 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     pub fn new(
         network: Network,
         height: u32,
-        block_tip: BlockHeader,
+        tip: Headers,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Result<Self, Error> {
-        block_tip
-            .validate_pow(&block_tip.target())
-            .map_err(|e| error_invalid_block!("validate pow {}: {}", block_tip.target(), e))?;
+        let header = tip.0;
+        header
+            .validate_pow(&header.target())
+            .map_err(|e| error_invalid_block!("validate pow {}: {}", header.target(), e))?;
         let headers = VecDeque::new();
         let listeners = OrderedMap::new();
-        let tip = Headers(block_tip, FilterHeader::all_zeros());
         Ok(ChainTracker { headers, tip, height, network, listeners, node_id, validator_factory })
     }
 
@@ -158,8 +159,11 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     ) -> Self {
         let height = 0;
         let genesis = genesis_block(network);
-        Self::new(network, height, genesis.header, node_id, validator_factory)
-            .expect("genesis block is valid")
+        let filter = BlockSpendFilter::from_block(&genesis);
+        let filter_header = filter.filter_header(&FilterHeader::all_zeros());
+        let tip = Headers(genesis.header, filter_header);
+
+        Self::new(network, height, tip, node_id, validator_factory).expect("genesis block is valid")
     }
 
     /// Current chain tip header
@@ -426,7 +430,6 @@ mod tests {
     use core::iter::FromIterator;
 
     use crate::bitcoin::blockdata::constants::genesis_block;
-    use crate::bitcoin::hashes::_export::_core::cmp::Ordering;
     use crate::bitcoin::network::constants::Network;
     use crate::bitcoin::util::hash::bitcoin_merkle_root;
     use crate::bitcoin::{Block, TxIn};
@@ -653,13 +656,9 @@ mod tests {
         let genesis = genesis_block(Network::Regtest);
         let validator_factory = Arc::new(SimpleValidatorFactory::new());
         let (node_id, _, _) = make_node();
-        let tracker = ChainTracker::new(
-            Network::Regtest,
-            0,
-            genesis.header,
-            node_id,
-            validator_factory.clone(),
-        )?;
+        let tip = Headers(genesis.header, FilterHeader::all_zeros());
+        let tracker =
+            ChainTracker::new(Network::Regtest, 0, tip, node_id, validator_factory.clone())?;
         Ok(tracker)
     }
 }

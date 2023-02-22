@@ -216,7 +216,9 @@ mod tests {
     use bitcoin::blockdata::constants::genesis_block;
     use bitcoin::Network;
     use core::iter::FromIterator;
-    use lightning_signer::chain::tracker::{ChainTracker, Error};
+    use lightning_signer::bitcoin::hashes::Hash;
+    use lightning_signer::bitcoin::FilterHeader;
+    use lightning_signer::chain::tracker::{ChainTracker, Error, Headers};
     use lightning_signer::monitor::ChainMonitor;
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
     use lightning_signer::util::test_utils::*;
@@ -231,13 +233,9 @@ mod tests {
         let genesis = genesis_block(Network::Regtest);
         let validator_factory = Arc::new(SimpleValidatorFactory::new());
         let (node_id, _, _) = make_node();
-        let mut tracker = ChainTracker::new(
-            Network::Regtest,
-            0,
-            genesis.header,
-            node_id,
-            validator_factory.clone(),
-        )?;
+        let tip = Headers(genesis.header, FilterHeader::all_zeros());
+        let mut tracker =
+            ChainTracker::new(Network::Regtest, 0, tip, node_id, validator_factory.clone())?;
         tracker.add_listener(monitor.clone(), OrderedSet::new());
         tracker.add_listener_watches(
             monitor,
