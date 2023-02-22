@@ -479,61 +479,6 @@ mod tests {
         source
     }
 
-    struct MockListener {
-        watch: OutPoint,
-        watched: Mutex<bool>,
-    }
-
-    impl SendSync for MockListener {}
-
-    impl PartialEq<Self> for MockListener {
-        fn eq(&self, other: &Self) -> bool {
-            self.watch.eq(&other.watch)
-        }
-    }
-
-    impl PartialOrd for MockListener {
-        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-            self.watch.partial_cmp(&other.watch)
-        }
-    }
-
-    impl Eq for MockListener {}
-
-    impl Ord for MockListener {
-        fn cmp(&self, other: &Self) -> Ordering {
-            self.watch.cmp(&other.watch)
-        }
-    }
-
-    impl Clone for MockListener {
-        fn clone(&self) -> Self {
-            // We just need this to have the right `Ord` semantics
-            // the value of `watched` doesn't matter
-            Self { watch: self.watch, watched: Mutex::new(false) }
-        }
-    }
-
-    impl ChainListener for MockListener {
-        fn on_add_block(&self, _txs: Vec<&Transaction>) -> Vec<OutPoint> {
-            let mut watched = self.watched.lock().unwrap();
-            if *watched {
-                vec![]
-            } else {
-                *watched = true;
-                vec![self.watch]
-            }
-        }
-
-        fn on_remove_block(&self, _txs: Vec<&Transaction>) {}
-    }
-
-    impl MockListener {
-        fn new(watch: OutPoint) -> Self {
-            MockListener { watch, watched: Mutex::new(false) }
-        }
-    }
-
     #[test]
     fn test_listeners() -> Result<(), Error> {
         let source = make_source();

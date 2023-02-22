@@ -7,9 +7,14 @@ use lightning_signer::bitcoin::hashes::hex::FromHex;
 use lightning_signer::bitcoin::hashes::Hash;
 use lightning_signer::bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey};
 use lightning_signer::bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey};
-use lightning_signer::bitcoin::{BlockHash, BlockHeader, KeyPair, Network};
+use lightning_signer::bitcoin::{Block, BlockHash, BlockHeader, FilterHeader, KeyPair, Network};
+use lightning_signer::chain::tracker::ChainTracker;
 use lightning_signer::node::{Heartbeat, SignedHeartbeat};
+use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
+use lightning_signer::txoo::filter::BlockSpendFilter;
+use lightning_signer::txoo::proof::UnspentProof;
 use lightning_signer::util::crypto_utils::sighash_from_heartbeat;
+use lightning_signer::util::test_utils::MockListener;
 use log::{error, info};
 use serde_json::{json, Value};
 use std::env;
@@ -30,10 +35,10 @@ use vls_protocol_client::{ClientResult, SignerPort};
 use vls_proxy::portfront::SignerPortFront;
 use vls_proxy::util::setup_logging;
 
-#[derive(Clone)]
 struct State {
     height: u32,
     block_hash: BlockHash,
+    tracker: ChainTracker<MockListener>,
 }
 
 #[derive(Clone)]
@@ -48,13 +53,27 @@ struct DummySignerPort {
 const NODE_SECRET: [u8; 32] = [3u8; 32];
 
 impl DummySignerPort {
-    fn new(height: u32, block_hash: BlockHash) -> Self {
+    fn new(height: u32, block: Block) -> Self {
         let secp = Secp256k1::new();
         let secret_key = SecretKey::from_slice(&NODE_SECRET).unwrap();
         let node_id = PublicKey::from_secret_key(&secp, &secret_key);
-        let xpriv = ExtendedPrivKey::new_master(Network::Regtest, &[0; 32]).unwrap();
+        let network = Network::Regtest;
+        let xpriv = ExtendedPrivKey::new_master(network, &[0; 32]).unwrap();
         let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
-        let state = State { height, block_hash };
+        let block_hash = block.block_hash();
+        let filter = BlockSpendFilter::from_block(&block);
+        let _filter_header = filter.filter_header(&FilterHeader::all_zeros());
+        let validator_factory = SimpleValidatorFactory::new();
+        let tracker = ChainTracker::new(
+            network,
+            height,
+            block.header.clone(),
+            node_id,
+            Arc::new(validator_factory),
+        )
+        .unwrap();
+
+        let state = State { height, block_hash, tracker };
 
         Self { secp, node_id, xpriv, xpub, state: Arc::new(Mutex::new(state)) }
     }
@@ -99,6 +118,8 @@ impl SignerPort for DummySignerPort {
                 let mut state = self.state.lock().unwrap();
                 state.height += 1;
                 let header: BlockHeader = deserialize(&add.header.0).unwrap();
+                let proof: UnspentProof = deserialize(&add.unspent_proof.unwrap().0).unwrap();
+                state.tracker.add_block(header, proof).expect("add block failed");
                 state.block_hash = header.block_hash();
                 let reply = AddBlockReply {};
                 Ok(reply.as_vec())
@@ -169,8 +190,9 @@ async fn main() -> Result<()> {
     height += 1;
 
     let genesis_hash = client.get_block_hash(0).await?.unwrap();
+    let genesis = client.get_block(&genesis_hash).await.unwrap();
 
-    let signer_port = DummySignerPort::new(0, genesis_hash);
+    let signer_port = DummySignerPort::new(0, genesis);
     let source_factory = Arc::new(SourceFactory::new(tmpdir.path(), network));
     let frontend = Frontend::new(
         Arc::new(SignerPortFront::new(SignerPort::clone(&signer_port), network)),

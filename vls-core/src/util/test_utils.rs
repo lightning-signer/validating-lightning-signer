@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use core::cmp;
+use std::cmp::Ordering;
 
 use bitcoin;
 use bitcoin::blockdata::constants::genesis_block;
@@ -41,7 +42,7 @@ use txoo::proof::UnspentProof;
 use super::key_utils::{
     make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
 };
-use crate::chain::tracker::Headers;
+use crate::chain::tracker::{ChainListener, Headers};
 use crate::channel::{
     Channel, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, ChannelStub, CommitmentType,
     TypedSignature,
@@ -1737,5 +1738,62 @@ impl ChannelBalanceBuilder {
 
     pub fn build(self) -> ChannelBalance {
         self.inner
+    }
+}
+
+/// A mock listener for testing
+pub struct MockListener {
+    watch: BitcoinOutPoint,
+    watched: Mutex<bool>,
+}
+
+impl SendSync for MockListener {}
+
+impl PartialEq<Self> for MockListener {
+    fn eq(&self, other: &Self) -> bool {
+        self.watch.eq(&other.watch)
+    }
+}
+
+impl PartialOrd for MockListener {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.watch.partial_cmp(&other.watch)
+    }
+}
+
+impl Eq for MockListener {}
+
+impl Ord for MockListener {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.watch.cmp(&other.watch)
+    }
+}
+
+impl Clone for MockListener {
+    fn clone(&self) -> Self {
+        // We just need this to have the right `Ord` semantics
+        // the value of `watched` doesn't matter
+        Self { watch: self.watch, watched: Mutex::new(false) }
+    }
+}
+
+impl ChainListener for MockListener {
+    fn on_add_block(&self, _txs: Vec<&Transaction>) -> Vec<BitcoinOutPoint> {
+        let mut watched = self.watched.lock().unwrap();
+        if *watched {
+            vec![]
+        } else {
+            *watched = true;
+            vec![self.watch]
+        }
+    }
+
+    fn on_remove_block(&self, _txs: Vec<&Transaction>) {}
+}
+
+impl MockListener {
+    /// Create a new mock listener
+    pub fn new(watch: BitcoinOutPoint) -> Self {
+        MockListener { watch, watched: Mutex::new(false) }
     }
 }
