@@ -249,7 +249,7 @@ pub fn main() {
         return;
     }
     if matches.is_present("git-desc") {
-        println!("remote_hsmd_vls git_desc={}", GIT_DESC);
+        println!("remote_hsmd_inplace git_desc={}", GIT_DESC);
     } else if matches.is_present("test") {
         test::run_test();
     } else {
@@ -267,8 +267,8 @@ fn make_clap_app() -> App<'static> {
 // small number of threads to ease debugging
 #[tokio::main(worker_threads = 2)]
 async fn start() {
-    setup_logging(".", "remote_hsmd_vls", "debug");
-    info!("remote_hsmd_vls git_desc={} starting", GIT_DESC);
+    setup_logging(".", "remote_hsmd_inplace", "debug");
+    info!("remote_hsmd_inplace git_desc={} starting", GIT_DESC);
     let conn = UnixConnection::new(3);
     let client = UnixClient::new(conn);
     let allowlist = read_allowlist();
@@ -316,7 +316,7 @@ fn make_persister() -> Arc<dyn Persist> {
     if env::var("VLS_LSS").is_ok() {
         Arc::new(ThreadMemoPersister {})
     } else {
-        Arc::new(KVJsonPersister::new("remote_hsmd_vls.kv"))
+        Arc::new(KVJsonPersister::new("remote_hsmd_inplace.kv"))
     }
 }
 
