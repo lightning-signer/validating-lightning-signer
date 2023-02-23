@@ -5,8 +5,8 @@ pub mod client;
 pub mod config;
 pub mod connection;
 pub mod grpc;
-pub mod portfront;
 pub mod nodefront;
+pub mod portfront;
 pub mod recovery;
 pub mod tx_util;
 #[macro_use]
