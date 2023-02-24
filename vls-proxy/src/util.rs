@@ -6,6 +6,7 @@ use std::convert::TryInto;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::{env, fs};
+use std::path::{Path, PathBuf};
 use time::macros::format_description;
 use time::OffsetDateTime;
 use tokio::runtime::{self, Runtime};
@@ -75,8 +76,10 @@ pub fn read_allowlist() -> Vec<String> {
     }
 }
 
-pub fn read_integration_test_seed() -> Option<[u8; 32]> {
-    let result = fs::read("hsm_secret");
+pub fn read_integration_test_seed<P: AsRef<Path>>(datadir: P) -> Option<[u8; 32]> {
+    let path = PathBuf::from(datadir.as_ref()).join("hsm_secret");
+    warn!("reading integration hsm_secret from {:?}", path);
+    let result = fs::read(path);
     if let Ok(data) = result {
         Some(data.as_slice().try_into().expect("hsm_secret wrong length"))
     } else {
@@ -84,16 +87,19 @@ pub fn read_integration_test_seed() -> Option<[u8; 32]> {
     }
 }
 
-fn write_integration_test_seed(seed: &[u8; 32]) {
-    fs::write("hsm_secret", seed).expect("trouble writing hsm_secret");
+fn write_integration_test_seed<P: AsRef<Path>>(datadir: P, seed: &[u8; 32]) {
+    let path = PathBuf::from(datadir.as_ref()).join("hsm_secret");
+    warn!("writing integration hsm_secret to {:?}", path);
+    fs::write(path, seed).expect("writing hsm_secret");
 }
 
 /// Read integration test seed, and generate/persist it if it's missing
-pub fn integration_test_seed_or_generate() -> [u8; 32] {
-    match read_integration_test_seed() {
+pub fn integration_test_seed_or_generate(seeddir: Option<PathBuf>) -> [u8; 32] {
+    let seeddir = seeddir.unwrap_or(PathBuf::from("."));
+    match read_integration_test_seed(&seeddir) {
         None => {
             let seed = generate_seed();
-            write_integration_test_seed(&seed);
+            write_integration_test_seed(&seeddir, &seed);
             seed
         }
         Some(seed) => seed,

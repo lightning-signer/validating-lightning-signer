@@ -279,7 +279,7 @@ async fn start() {
         PolicyFilter { rules: vec![FilterRule::new_warn("policy-channel-safe-type-anchors")] };
     let validator_factory = make_validator_factory_with_filter(network, Some(filter));
     let clock = Arc::new(StandardClock());
-    let seed = integration_test_seed_or_generate();
+    let seed = integration_test_seed_or_generate(None);
     let persister = make_persister();
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
     let mut handler_builder =

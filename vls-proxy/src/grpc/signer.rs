@@ -20,7 +20,9 @@ use lightning_signer::util::velocity::VelocityControlSpec;
 use log::*;
 use std::convert::TryInto;
 use std::net::{Ipv4Addr, SocketAddrV4};
+use std::path::PathBuf;
 use std::result::Result as StdResult;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -65,7 +67,8 @@ pub(crate) fn make_handler(datadir: &str, args: &SignerArgs) -> RootHandler {
     let data_path = format!("{}/{}", datadir, network.to_string());
     let persister = Arc::new(KVJsonPersister::new(&data_path));
     let seed_persister = Arc::new(FileSeedPersister::new(&data_path));
-    let seed = get_or_generate_seed(network, seed_persister, args.integration_test);
+    let seeddir = PathBuf::from_str(datadir).unwrap().join("..").join(network.to_string());
+    let seed = get_or_generate_seed(network, seed_persister, args.integration_test, Some(seeddir));
     let allowlist = read_allowlist();
     let starting_time_factory = ClockStartingTimeFactory::new();
     let mut filter_opt = if args.integration_test {
@@ -177,6 +180,7 @@ fn get_or_generate_seed(
     network: Network,
     seed_persister: Arc<dyn SeedPersist>,
     integration_test: bool,
+    seeddir: Option<PathBuf>,
 ) -> [u8; 32] {
     if let Some(seed) = seed_persister.get("node") {
         info!("loaded seed");
@@ -190,7 +194,7 @@ fn get_or_generate_seed(
             seed
         } else {
             // for testnet, we allow the test framework to optionally supply the seed
-            let seed = integration_test_seed_or_generate();
+            let seed = integration_test_seed_or_generate(seeddir);
             seed_persister.put("node", &seed);
             seed
         }
