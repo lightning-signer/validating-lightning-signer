@@ -6,6 +6,10 @@ use std::convert::TryInto;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::{env, fs};
+use std::path::{Path, PathBuf};
+use time::macros::format_description;
+use time::OffsetDateTime;
+use tokio::runtime::{self, Runtime};
 
 use lightning_signer::bitcoin::Network;
 use lightning_signer::policy::filter::PolicyFilter;
@@ -13,8 +17,6 @@ use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValid
 use lightning_signer::util::crypto_utils::generate_seed;
 use lightning_signer::util::velocity::VelocityControlSpec;
 use lightning_signer::Arc;
-use lightning_signer_server::tstamp::tstamp;
-use tokio::runtime::{self, Runtime};
 
 #[macro_export]
 macro_rules! log_pretty {
@@ -74,8 +76,10 @@ pub fn read_allowlist() -> Vec<String> {
     }
 }
 
-pub fn read_integration_test_seed() -> Option<[u8; 32]> {
-    let result = fs::read("hsm_secret");
+pub fn read_integration_test_seed<P: AsRef<Path>>(datadir: P) -> Option<[u8; 32]> {
+    let path = PathBuf::from(datadir.as_ref()).join("hsm_secret");
+    warn!("reading integration hsm_secret from {:?}", path);
+    let result = fs::read(path);
     if let Ok(data) = result {
         Some(data.as_slice().try_into().expect("hsm_secret wrong length"))
     } else {
@@ -83,16 +87,19 @@ pub fn read_integration_test_seed() -> Option<[u8; 32]> {
     }
 }
 
-fn write_integration_test_seed(seed: &[u8; 32]) {
-    fs::write("hsm_secret", seed).expect("trouble writing hsm_secret");
+fn write_integration_test_seed<P: AsRef<Path>>(datadir: P, seed: &[u8; 32]) {
+    let path = PathBuf::from(datadir.as_ref()).join("hsm_secret");
+    warn!("writing integration hsm_secret to {:?}", path);
+    fs::write(path, seed).expect("writing hsm_secret");
 }
 
 /// Read integration test seed, and generate/persist it if it's missing
-pub fn integration_test_seed_or_generate() -> [u8; 32] {
-    match read_integration_test_seed() {
+pub fn integration_test_seed_or_generate(seeddir: Option<PathBuf>) -> [u8; 32] {
+    let seeddir = seeddir.unwrap_or(PathBuf::from("."));
+    match read_integration_test_seed(&seeddir) {
         None => {
             let seed = generate_seed();
-            write_integration_test_seed(&seed);
+            write_integration_test_seed(&seeddir, &seed);
             seed
         }
         Some(seed) => seed,
@@ -241,4 +248,14 @@ pub fn abort_on_panic() {
         old(info);
         std::process::abort();
     }));
+}
+
+// Would prefer to use now_local but https://rustsec.org/advisories/RUSTSEC-2020-0071
+// Also, https://time-rs.github.io/api/time/struct.OffsetDateTime.html#method.now_local
+pub fn tstamp() -> String {
+    OffsetDateTime::now_utc()
+        .format(format_description!(
+            "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:3]"
+        ))
+        .expect("formatted tstamp")
 }

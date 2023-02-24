@@ -21,17 +21,17 @@ use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::crypto_utils::hkdf_sha256;
 use lightning_signer::Arc;
-use lightning_signer_server::nodefront::SingleFront;
-use lightning_signer_server::persist::kv_json::KVJsonPersister;
-use lightning_signer_server::persist::thread_memo_persister::ThreadMemoPersister;
 use lightning_storage_server::client::auth::Auth;
 use lightning_storage_server::client::driver::Client as LssClient;
 use lightning_storage_server::Value;
+use nodefront::SingleFront;
 use thiserror::Error;
 use tokio::sync::{Mutex as AsyncMutex, MutexGuard};
 use tokio::task::block_in_place;
 use util::{read_allowlist, should_auto_approve};
 use vls_frontend::Frontend;
+use vls_persist::kv_json::KVJsonPersister;
+use vls_persist::thread_memo_persister::ThreadMemoPersister;
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 use vls_protocol_signer::approver::PositiveApprover;
 use vls_protocol_signer::handler::{ChannelHandler, Handler, RootHandler, RootHandlerBuilder};
@@ -249,7 +249,7 @@ pub fn main() {
         return;
     }
     if matches.is_present("git-desc") {
-        println!("remote_hsmd_vls git_desc={}", GIT_DESC);
+        println!("remote_hsmd_inplace git_desc={}", GIT_DESC);
     } else if matches.is_present("test") {
         test::run_test();
     } else {
@@ -267,8 +267,8 @@ fn make_clap_app() -> App<'static> {
 // small number of threads to ease debugging
 #[tokio::main(worker_threads = 2)]
 async fn start() {
-    setup_logging(".", "remote_hsmd_vls", "debug");
-    info!("remote_hsmd_vls git_desc={} starting", GIT_DESC);
+    setup_logging(".", "remote_hsmd_inplace", "debug");
+    info!("remote_hsmd_inplace git_desc={} starting", GIT_DESC);
     let conn = UnixConnection::new(3);
     let client = UnixClient::new(conn);
     let allowlist = read_allowlist();
@@ -279,7 +279,7 @@ async fn start() {
         PolicyFilter { rules: vec![FilterRule::new_warn("policy-channel-safe-type-anchors")] };
     let validator_factory = make_validator_factory_with_filter(network, Some(filter));
     let clock = Arc::new(StandardClock());
-    let seed = integration_test_seed_or_generate();
+    let seed = integration_test_seed_or_generate(None);
     let persister = make_persister();
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
     let mut handler_builder =
@@ -316,7 +316,7 @@ fn make_persister() -> Arc<dyn Persist> {
     if env::var("VLS_LSS").is_ok() {
         Arc::new(ThreadMemoPersister {})
     } else {
-        Arc::new(KVJsonPersister::new("remote_hsmd_vls.kv"))
+        Arc::new(KVJsonPersister::new("remote_hsmd_inplace.kv"))
     }
 }
 

@@ -3,7 +3,6 @@
 members = [
     "vls-core",
     "vls-core-test",
-    "vls-server",
     "vls-frontend",
 
     "bolt-derive",
@@ -12,7 +11,6 @@ members = [
     "vls-protocol-client",
     "vls-protocol-signer",
     "vls-proxy",
-    "vlsd",
 ]
 
 exclude = [

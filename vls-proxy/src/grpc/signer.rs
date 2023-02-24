@@ -1,5 +1,6 @@
 use super::hsmd::{self, PingRequest, SignerRequest, SignerResponse};
 use crate::config::SignerArgs;
+use crate::grpc::hsmd::hsmd_client::HsmdClient;
 use crate::util::{
     integration_test_seed_or_generate, make_validator_factory_with_filter_and_velocity,
     read_allowlist, should_auto_approve,
@@ -16,15 +17,19 @@ use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::crypto_utils::generate_seed;
 use lightning_signer::util::status::Status;
 use lightning_signer::util::velocity::VelocityControlSpec;
-use lightning_signer_server::persist::kv_json::KVJsonPersister;
 use log::*;
 use std::convert::TryInto;
 use std::net::{Ipv4Addr, SocketAddrV4};
+use std::path::PathBuf;
 use std::result::Result as StdResult;
+use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
+use tonic::transport::Channel;
+use vls_persist::kv_json::KVJsonPersister;
 use vls_protocol_signer::approver::PositiveApprover;
 use vls_protocol_signer::handler::{Error, Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::vls_protocol::model::PubKey;
@@ -62,7 +67,8 @@ pub(crate) fn make_handler(datadir: &str, args: &SignerArgs) -> RootHandler {
     let data_path = format!("{}/{}", datadir, network.to_string());
     let persister = Arc::new(KVJsonPersister::new(&data_path));
     let seed_persister = Arc::new(FileSeedPersister::new(&data_path));
-    let seed = get_or_generate_seed(network, seed_persister, args.integration_test);
+    let seeddir = PathBuf::from_str(datadir).unwrap().join("..").join(network.to_string());
+    let seed = get_or_generate_seed(network, seed_persister, args.integration_test, Some(seeddir));
     let allowlist = read_allowlist();
     let starting_time_factory = ClockStartingTimeFactory::new();
     let mut filter_opt = if args.integration_test {
@@ -102,10 +108,7 @@ fn reset_allowlist(root_handler: &RootHandler, allowlist: &Vec<String>) {
 }
 
 async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
-    let mut client = hsmd::hsmd_client::HsmdClient::connect(uri).await.expect("client connect");
-    let result = client.ping(PingRequest { message: "hello".to_string() }).await.expect("ping");
-    let reply = result.into_inner();
-    info!("ping result {}", reply.message);
+    let mut client = do_connect(uri).await;
     let (sender, receiver) = mpsc::channel(1);
     let response_stream = ReceiverStream::new(receiver);
     let root_handler = make_handler(datadir, args);
@@ -149,10 +152,35 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
     }
 }
 
+async fn do_connect(uri: Uri) -> HsmdClient<Channel> {
+    loop {
+        let client = hsmd::hsmd_client::HsmdClient::connect(uri.clone()).await;
+        match client {
+            Ok(mut client) => {
+                let result =
+                    client.ping(PingRequest { message: "hello".to_string() }).await.expect("ping");
+                let reply = result.into_inner();
+                info!("ping result {}", reply.message);
+                return client;
+            }
+            Err(e) => {
+                // unfortunately the error kind is not otherwise exposed
+                if e.to_string() == "transport error" {
+                    warn!("{} connecting to signer, will retry", e);
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                } else {
+                    panic!("{} connecting to signer", e);
+                }
+            }
+        }
+    }
+}
+
 fn get_or_generate_seed(
     network: Network,
     seed_persister: Arc<dyn SeedPersist>,
     integration_test: bool,
+    seeddir: Option<PathBuf>,
 ) -> [u8; 32] {
     if let Some(seed) = seed_persister.get("node") {
         info!("loaded seed");
@@ -166,7 +194,7 @@ fn get_or_generate_seed(
             seed
         } else {
             // for testnet, we allow the test framework to optionally supply the seed
-            let seed = integration_test_seed_or_generate();
+            let seed = integration_test_seed_or_generate(seeddir);
             seed_persister.put("node", &seed);
             seed
         }

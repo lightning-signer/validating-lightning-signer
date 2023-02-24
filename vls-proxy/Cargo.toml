@@ -20,10 +20,12 @@ vls-protocol-signer = { path = "../vls-protocol-signer" }
 vls-protocol-client = { path = "../vls-protocol-client" }
 vls-protocol = { path = "../vls-protocol" }
 vls-frontend = { path = "../vls-frontend" }
+vls-persist = { path = "../vls-persist", features = ["kv-json"] }
 lightning-storage-server = { path = "../lightning-storage-server", default-features = false }
 nix = "0.26"
 serde = "1.0"
 log = "0.4"
+time = "0.3"
 fern = { version = "0.6", features = ["colored"], optional = true }
 # .4 doesn't compile with 1.45.2
 clap = { version = "3.2", optional = true, features = ["derive"] }
@@ -48,11 +50,6 @@ as-any = "0.3"
 hex = "0.4"
 txoo-bitcoind-client = "0.1"
 
-[dependencies.vls-server]
-path = "../vls-server"
-default_features = false
-features = ["frontend", "persist-kv-json", "debug"]
-
 [dev-dependencies]
 tempfile = "3"
 
@@ -66,8 +63,8 @@ path = "src/lib.rs"
 [[bin]]
 # A single-binary drop-in replacement for hsmd with an in-process VLS
 # AKA cln:inplace
-name = "remote_hsmd_vls"
-path = "src/vls_main.rs"
+name = "remote_hsmd_inplace"
+path = "src/inplace_main.rs"
 
 [[bin]]
 # A drop-in replacement for hsmd, communicating to an embedded VLS over a serial port
