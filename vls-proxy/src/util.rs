@@ -66,7 +66,7 @@ macro_rules! log_reply {
 }
 
 pub fn read_allowlist() -> Vec<String> {
-    let allowlist_path_res = env::var("ALLOWLIST");
+    let allowlist_path_res = env::var("REMOTE_SIGNER_ALLOWLIST");
     if let Ok(allowlist_path) = allowlist_path_res {
         let file =
             File::open(&allowlist_path).expect(format!("open {} failed", &allowlist_path).as_str());

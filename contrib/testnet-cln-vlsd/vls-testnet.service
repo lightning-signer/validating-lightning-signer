@@ -3,7 +3,7 @@ Description=Testnet Validating Lightning Signer
 
 [Service]
 WorkingDirectory=/home/vls
-Environment=ALLOWLIST=/home/vls/ALLOWLIST
+Environment=REMOTE_SIGNER_ALLOWLIST=/home/vls/ALLOWLIST
 ExecStart=/usr/local/bin/vlsd2 --config=/home/vls/vlsd2.toml
 User=vls
 Group=vls
