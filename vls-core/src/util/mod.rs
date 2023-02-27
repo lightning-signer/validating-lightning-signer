@@ -24,6 +24,8 @@ pub mod test_utils;
 #[allow(missing_docs)]
 /// Key utilities
 pub mod key_utils;
+#[cfg(test)]
+pub(crate) mod mocks;
 /// serde for foreign types
 #[allow(missing_docs)]
 pub mod ser_util;

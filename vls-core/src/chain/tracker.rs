@@ -433,11 +433,11 @@ mod tests {
     use crate::bitcoin::network::constants::Network;
     use crate::bitcoin::util::hash::bitcoin_merkle_root;
     use crate::bitcoin::{Block, TxIn};
-    use crate::policy::simple_validator::SimpleValidatorFactory;
     use crate::util::test_utils::*;
 
     use super::*;
 
+    use crate::util::mocks::MockValidatorFactory;
     use test_log::test;
     use txoo::source::Source;
 
@@ -445,7 +445,7 @@ mod tests {
     fn test_add_remove() -> Result<(), Error> {
         let genesis = genesis_block(Network::Regtest);
         let source = make_source();
-        let mut tracker = make_tracker()?;
+        let (mut tracker, _) = make_tracker()?;
         let header0 = tracker.tip().0.clone();
         assert_eq!(tracker.height(), 0);
         let header1 = add_block(&mut tracker, &source, &[])?;
@@ -485,7 +485,7 @@ mod tests {
     #[test]
     fn test_listeners() -> Result<(), Error> {
         let source = make_source();
-        let mut tracker = make_tracker()?;
+        let (mut tracker, validator_factory) = make_tracker()?;
 
         let header1 = add_block(&mut tracker, &source, &[])?;
 
@@ -522,6 +522,12 @@ mod tests {
 
         assert_eq!(tracker.listeners.get(&listener).unwrap().watches, OrderedSet::new());
 
+        // validation included forward watches
+        assert_eq!(
+            *validator_factory.validator().last_validated_watches.lock().unwrap(),
+            vec![second_watch]
+        );
+
         remove_block(&mut tracker, &source, &[tx2], &header2)?;
 
         assert_eq!(
@@ -529,11 +535,24 @@ mod tests {
             OrderedSet::from_iter(vec![second_watch])
         );
 
+        // validation should have included reverse watches
+        assert_eq!(
+            *validator_factory.validator().last_validated_watches.lock().unwrap(),
+            vec![initial_watch, second_watch]
+        );
+
         remove_block(&mut tracker, &source, &[tx], &header1)?;
 
         assert_eq!(
             tracker.listeners.get(&listener).unwrap().watches,
             OrderedSet::from_iter(vec![initial_watch])
+        );
+
+        // validation should still include reverse watches, because those are
+        // currently not pruned
+        assert_eq!(
+            *validator_factory.validator().last_validated_watches.lock().unwrap(),
+            vec![initial_watch, second_watch]
         );
 
         Ok(())
@@ -615,7 +634,7 @@ mod tests {
     #[test]
     fn test_retarget() -> Result<(), Error> {
         let source = make_source();
-        let mut tracker = make_tracker()?;
+        let (mut tracker, _) = make_tracker()?;
         for _ in 1..DIFFCHANGE_INTERVAL {
             add_block(&mut tracker, &source, &[])?;
         }
@@ -652,13 +671,13 @@ mod tests {
         Ok(())
     }
 
-    fn make_tracker() -> Result<ChainTracker<MockListener>, Error> {
+    fn make_tracker() -> Result<(ChainTracker<MockListener>, Arc<MockValidatorFactory>), Error> {
         let genesis = genesis_block(Network::Regtest);
-        let validator_factory = Arc::new(SimpleValidatorFactory::new());
+        let validator_factory = Arc::new(MockValidatorFactory::new());
         let (node_id, _, _) = make_node();
         let tip = Headers(genesis.header, FilterHeader::all_zeros());
         let tracker =
             ChainTracker::new(Network::Regtest, 0, tip, node_id, validator_factory.clone())?;
-        Ok(tracker)
+        Ok((tracker, validator_factory))
     }
 }
