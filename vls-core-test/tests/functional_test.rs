@@ -69,26 +69,21 @@ pub fn create_node_cfgs_with_signer<'a>(
     let mut nodes = Vec::new();
 
     let config = REGTEST_NODE_CONFIG;
-    let network = config.network;
-    let tip = genesis_block(network).header;
 
     for i in 0..node_count {
-        let cfg = create_node_cfg(signer, chanmon_cfgs, config, network, tip, i);
+        let cfg = create_node_cfg(signer, chanmon_cfgs, config, i);
         nodes.push(cfg);
     }
 
     nodes
 }
 
-fn create_node_cfg<'a>(signer: &Arc<MultiSigner>, chanmon_cfgs: &'a Vec<TestChanMonCfg>, config: NodeConfig, network: Network, tip: BlockHeader, idx: usize) -> NodeCfg<'a> {
+fn create_node_cfg<'a>(signer: &Arc<MultiSigner>, chanmon_cfgs: &'a Vec<TestChanMonCfg>, config: NodeConfig, idx: usize) -> NodeCfg<'a> {
     let seed = [idx as u8; 32];
-
-    let chain_tracker: ChainTracker<ChainMonitor> =
-        ChainTracker::new(network, 0, tip).unwrap();
 
     let seed_persister = Arc::new(DummySeedPersister {});
 
-    let node_id = signer.new_node_with_seed_and_tracker(config, &seed, seed_persister, chain_tracker).unwrap();
+    let node_id = signer.new_node_with_seed(config, &seed, seed_persister).unwrap();
 
     let keys_manager = LoopbackSignerKeysInterface {
         node_id,
@@ -188,10 +183,10 @@ fn invoice_test() {
     let chanmon_cfgs = create_chanmon_cfgs(3);
     let mut node_cfgs = Vec::new();
 
-    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, network, genesis_block(network).header, 0));
+    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, 0));
     // routing nodes can't turn on invoice validation yet
-    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, network, genesis_block(network).header, 1));
-    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, network, genesis_block(network).header, 2));
+    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, 1));
+    node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, 2));
     let node_chanmgrs = create_node_chanmgrs(3, &node_cfgs, &[None, None, None]);
     let mut nodes = create_network(3, &node_cfgs, &node_chanmgrs);
     nodes[0].use_invoices = true;
@@ -353,12 +348,13 @@ fn channel_force_close_test() {
     // Check if closing tx correctly spends the funding
     check_spends!(node_txn[0], chan.3);
 
-    let block = make_block(tip_for_node(&nodes[1]),
-                           vec![node_txn[0].clone()]);
+    let headers = tip_for_node(&nodes[1]);
+    let block = make_block(headers.0, vec![node_txn[0].clone()]);
 
     connect_block(
         &nodes[1],
         &block,
+        &headers.1,
     );
     assert_eq!(nodes[1].node.get_and_clear_pending_msg_events().len(), 2);
     check_added_monitors!(nodes[1], 1);
@@ -557,9 +553,10 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
             true => alice_txn.clone(),
             false => get_local_commitment_txn!(nodes[1], chan_ab.2)
         };
-        let block = make_block(tip_for_node(&nodes[1]), vec![txn_to_broadcast[0].clone()]);
+        let headers = tip_for_node(&nodes[1]);
+        let block = make_block(headers.0, vec![txn_to_broadcast[0].clone()]);
 
-        connect_block(&nodes[1], &block);
+        connect_block(&nodes[1], &block, &headers.1);
         let bob_txn = nodes[1].tx_broadcaster.txn_broadcasted.lock().unwrap();
         if broadcast_alice {
             check_closed_broadcast!(nodes[1], true);
@@ -704,8 +701,9 @@ fn do_test_onchain_htlc_settlement_after_close(broadcast_alice: bool, go_onchain
     let mut txn_to_broadcast = alice_txn.clone();
     if !broadcast_alice { txn_to_broadcast = get_local_commitment_txn!(nodes[1], chan_ab.2); }
     if !go_onchain_before_fulfill {
-        let block = make_block(tip_for_node(&nodes[1]), vec![txn_to_broadcast[0].clone()]);
-        connect_block(&nodes[1], &block);
+        let headers = tip_for_node(&nodes[1]);
+        let block = make_block(headers.0, vec![txn_to_broadcast[0].clone()]);
+        connect_block(&nodes[1], &block, &headers.1);
         // If Bob was the one to force-close, he will have already passed these checks earlier.
         if broadcast_alice {
             check_closed_broadcast!(nodes[1], true);

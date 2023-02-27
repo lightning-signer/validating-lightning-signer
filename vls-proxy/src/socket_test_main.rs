@@ -27,6 +27,7 @@ use grpc::adapter::HsmdService;
 use grpc::incoming::TcpIncoming;
 use grpc::signer::start_signer_localhost;
 use grpc::signer_loop::{GrpcSignerPort, SignerLoop};
+use vls_frontend::frontend::SourceFactory;
 use vls_frontend::Frontend;
 use vls_proxy::portfront::SignerPortFront;
 use vls_proxy::util::{
@@ -91,8 +92,10 @@ async fn start_server(listener: TcpListener, addr: SocketAddr, client: UnixClien
     let network = vls_network().parse::<Network>().expect("malformed vls network");
     let sender = server.sender();
     let signer_port = GrpcSignerPort::new(sender.clone());
+    let source_factory = Arc::new(SourceFactory::new(".", network));
     let frontend = Frontend::new(
         Arc::new(SignerPortFront::new(Box::new(signer_port), network)),
+        source_factory,
         Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
     );
     frontend.start();

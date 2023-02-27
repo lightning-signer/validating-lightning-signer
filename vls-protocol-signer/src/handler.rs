@@ -9,14 +9,14 @@ use bit_vec::BitVec;
 use core::convert::TryInto;
 
 use bitcoin::blockdata::script;
-use bitcoin::consensus::deserialize;
+use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::util::psbt::serialize::Deserialize;
 use bitcoin::{EcdsaSighashType, Network, Script};
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::bech32::u5;
-use lightning_signer::bitcoin::consensus::{Decodable, Encodable};
+use lightning_signer::bitcoin::consensus::Decodable;
 use lightning_signer::bitcoin::secp256k1;
 use lightning_signer::bitcoin::util::bip32::{ChildNumber, KeySource};
 use lightning_signer::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -465,8 +465,7 @@ impl Handler for RootHandler {
                     }
                 }
 
-                let mut ser_psbt = Vec::new();
-                psbt.consensus_encode(&mut ser_psbt).expect("serialize psbt");
+                let ser_psbt = serialize(&psbt);
                 Ok(Box::new(msgs::SignWithdrawalReply { psbt: LargeOctets(ser_psbt) }))
             }
             Message::SignInvoice(m) => {
@@ -517,7 +516,7 @@ impl Handler for RootHandler {
                 let tracker = self.node.get_tracker();
                 Ok(Box::new(msgs::TipInfoReply {
                     height: tracker.height(),
-                    block_hash: BlockHash(tracker.tip().block_hash()[..].try_into().unwrap()),
+                    block_hash: BlockHash(tracker.tip().0.block_hash()[..].try_into().unwrap()),
                 }))
             }
             Message::ForwardWatches(_) => {
@@ -548,12 +547,12 @@ impl Handler for RootHandler {
             }
             Message::AddBlock(m) => {
                 let mut tracker = self.node.get_tracker();
+                let proof = m
+                    .unspent_proof
+                    .map(|prf| deserialize(prf.0.as_slice()).expect("deserialize UnspentProof"))
+                    .ok_or(Status::invalid_argument("could not deserialize proof"))?;
                 tracker
-                    .add_block(
-                        deserialize(m.header.0.as_slice()).expect("header"),
-                        m.txs.iter().map(|tx| deserialize(tx.0.as_slice()).expect("tx")).collect(),
-                        m.txs_proof.map(|prf| deserialize(prf.0.as_slice()).expect("txs_proof")),
-                    )
+                    .add_block(deserialize(m.header.0.as_slice()).expect("header"), proof)
                     .expect("add_block");
                 self.node
                     .get_persister()
@@ -565,12 +564,11 @@ impl Handler for RootHandler {
             }
             Message::RemoveBlock(m) => {
                 let mut tracker = self.node.get_tracker();
-                tracker
-                    .remove_block(
-                        m.txs.iter().map(|tx| deserialize(tx.0.as_slice()).expect("tx")).collect(),
-                        m.txs_proof.map(|prf| deserialize(prf.0.as_slice()).expect("txs_proof")),
-                    )
-                    .expect("remove_block");
+                let proof = m
+                    .unspent_proof
+                    .map(|prf| deserialize(prf.0.as_slice()).expect("deserialize UnspentProof"))
+                    .ok_or(Status::invalid_argument("could not deserialize proof"))?;
+                tracker.remove_block(proof).expect("remove_block");
                 self.node
                     .get_persister()
                     .update_tracker(&self.node.get_id(), &tracker)

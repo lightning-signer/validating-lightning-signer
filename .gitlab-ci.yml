@@ -13,10 +13,34 @@ before_script:
 stages:
   - build
 
+# Do this in a separate job, so that it gets cached with high probability
+# later jobs can be flaky and cache is not written when a job fails.
+get_bitcoin:
+  stage: build
+  image: python:3.8
+  cache:
+    key: vls-bitcoin
+    paths:
+      - bin
+  script:
+    - ls -l bin
+    - if [ ! -e bin/bitcoind ]; then
+      wget --no-verbose https://bitcoin.org/bin/bitcoin-core-0.21.0/bitcoin-0.21.0-x86_64-linux-gnu.tar.gz &&
+      echo da7766775e3f9c98d7a9145429f2be8297c2672fe5b118fd3dc2411fb48e0032  bitcoin-0.21.0-x86_64-linux-gnu.tar.gz | sha256sum -c &&
+      tar xzf bitcoin-0.21.0-x86_64-linux-gnu.tar.gz &&
+      mv bitcoin-0.21.0/bin/bitcoind bin/ &&
+      rm -rf bitcoin-0.21.0 ;
+      fi
+  artifacts:
+    paths:
+      - bin/bitcoind
+
+
 rust-latest:
   tags: [ saas-linux-large-amd64 ]
   stage: build
   image: rust:latest
+  needs: [ "get_bitcoin" ]
   cache:
     key: vls-compile-latest
     paths:
@@ -29,6 +53,10 @@ rust-latest:
     - cargo test
     # ensure vls-persist builds with no-std
     - cargo build -p vls-persist --no-default-features --features no-std
+    # system test
+    - bin/bitcoind --regtest --daemon --rpcuser=user --rpcpassword=pass
+    - sleep 5
+    - cargo run --bin frontend-system-test --features system-test
 
 rust-latest-extras:
   tags: [ saas-linux-large-amd64 ]

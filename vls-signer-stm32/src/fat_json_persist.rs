@@ -19,7 +19,7 @@ use lightning_signer::{
     channel::{Channel, ChannelId, ChannelStub},
     monitor::ChainMonitor,
     node::{NodeConfig, NodeState as CoreNodeState},
-    policy::validator::EnforcementState,
+    policy::validator::{EnforcementState, ValidatorFactory},
     prelude::*,
 };
 
@@ -326,14 +326,15 @@ impl Persist for FatJsonPersister {
 
     fn get_tracker(
         &self,
-        _node_id: &PublicKey,
+        node_id: PublicKey,
+        validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Result<ChainTracker<ChainMonitor>, persist::Error> {
         let key = Self::chaintracker_key();
         let entry: ChainTrackerEntry = serde_json::from_str(
             &self.read_value(&Self::chaintracker_bucket_path(), &key).map_err(|err| err.into())?,
         )
         .map_err(|err| persist::Error::Internal(format!("serde_json failed: {:?}", err)))?;
-        Ok(entry.into())
+        Ok(entry.into_tracker(node_id, validator_factory))
     }
 
     fn new_channel(&self, _node_id: &PublicKey, stub: &ChannelStub) -> Result<(), persist::Error> {

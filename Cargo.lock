@@ -2047,11 +2047,12 @@ checksum = "59547bce71d9c38b83d9c0e92b6066c4253371f15005def0c30d9657f50c7642"
 
 [[package]]
 name = "txoo"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09f2c67efa97598cff09dae00787883408918fd6d8a1277246feee9e6f997147"
+checksum = "09c71b228077155d24c30be72d7941c90f3a69acdfabf8b5e3166606f1334999"
 dependencies = [
  "bitcoin",
+ "core2",
  "log",
  "serde",
  "serde_yaml",
@@ -2059,9 +2060,9 @@ dependencies = [
 
 [[package]]
 name = "txoo-bitcoind-client"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5366da4caa5af554deb3dc386c52cc5379cc0993ae32f23943627a4189064312"
+checksum = "be487581ff10fc300238a9be763dc5e63f196a3d322f348d23556cf6912f9093"
 dependencies = [
  "async-trait",
  "bitcoin",
@@ -2149,6 +2150,8 @@ dependencies = [
  "serde_with",
  "test-log",
  "tonic",
+ "txoo",
+ "txoo-bitcoind-client",
 ]
 
 [[package]]
@@ -2251,6 +2254,7 @@ dependencies = [
  "nix",
  "prost",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "time",

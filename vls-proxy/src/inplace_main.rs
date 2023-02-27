@@ -29,6 +29,7 @@ use thiserror::Error;
 use tokio::sync::{Mutex as AsyncMutex, MutexGuard};
 use tokio::task::block_in_place;
 use util::{read_allowlist, should_auto_approve};
+use vls_frontend::frontend::SourceFactory;
 use vls_frontend::Frontend;
 use vls_persist::kv_json::KVJsonPersister;
 use vls_persist::thread_memo_persister::ThreadMemoPersister;
@@ -302,8 +303,10 @@ async fn start() {
         handler
     };
 
+    let source_factory = Arc::new(SourceFactory::new(".", network));
     let frontend = Frontend::new(
         Arc::new(SingleFront { node: Arc::clone(&handler.node()) }),
+        source_factory,
         Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
     );
 

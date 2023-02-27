@@ -1,5 +1,6 @@
 use lightning_signer::prelude::*;
 
+use alloc::sync::Arc;
 use core::fmt;
 use core::fmt::{Display, Formatter};
 use core::iter::FromIterator;
@@ -19,10 +20,9 @@ use lightning_signer::monitor::ChainMonitor;
 use lightning_signer::monitor::State as ChainMonitorState;
 use lightning_signer::node::{NodeState, PaymentState};
 use lightning_signer::persist::model::ChannelEntry as CoreChannelEntry;
-use lightning_signer::policy::validator::EnforcementState;
-use lightning_signer::util::velocity::VelocityControl as CoreVelocityControl;
-
+use lightning_signer::policy::validator::{EnforcementState, ValidatorFactory};
 use lightning_signer::util::ser_util::{ChannelIdHandler, OutPointDef};
+use lightning_signer::util::velocity::VelocityControl as CoreVelocityControl;
 
 #[derive(Serialize, Deserialize)]
 pub struct VelocityControl {
@@ -183,8 +183,13 @@ impl From<&ChainTracker<ChainMonitor>> for ChainTrackerEntry {
     }
 }
 
-impl Into<ChainTracker<ChainMonitor>> for ChainTrackerEntry {
-    fn into(self) -> ChainTracker<ChainMonitor> {
+impl ChainTrackerEntry {
+    /// Convert to a ChainTracker, consuming the entry
+    pub fn into_tracker(
+        self,
+        node_id: PublicKey,
+        validator_factory: Arc<dyn ValidatorFactory>,
+    ) -> ChainTracker<ChainMonitor> {
         let tip = deserialize(&self.tip).expect("deserialize tip");
         let headers =
             self.headers.iter().map(|h| deserialize(h).expect("deserialize header")).collect();
@@ -192,7 +197,15 @@ impl Into<ChainTracker<ChainMonitor>> for ChainTrackerEntry {
             OrderedMap::from_iter(self.listeners.into_iter().map(|(outpoint, (state, slot))| {
                 (ChainMonitor::new_from_persistence(outpoint, state), slot)
             }));
-        ChainTracker { headers, tip, height: self.height, network: self.network, listeners }
+        ChainTracker::restore(
+            headers,
+            tip,
+            self.height,
+            self.network,
+            listeners,
+            node_id,
+            validator_factory,
+        )
     }
 }
 
@@ -201,12 +214,15 @@ mod tests {
     use super::*;
     use crate::model::ChainTrackerEntry;
     use bitcoin::blockdata::constants::genesis_block;
-    use bitcoin::{Network, TxMerkleNode};
+    use bitcoin::Network;
     use core::iter::FromIterator;
     use lightning_signer::bitcoin::hashes::Hash;
-    use lightning_signer::chain::tracker::{ChainTracker, Error};
+    use lightning_signer::bitcoin::FilterHeader;
+    use lightning_signer::chain::tracker::{ChainTracker, Error, Headers};
     use lightning_signer::monitor::ChainMonitor;
+    use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
     use lightning_signer::util::test_utils::*;
+    use test_log::test;
 
     #[test]
     fn test_chain_tracker() -> Result<(), Error> {
@@ -215,10 +231,12 @@ mod tests {
         let monitor = ChainMonitor::new(outpoint, 0);
         monitor.add_funding(&tx, 0);
         let genesis = genesis_block(Network::Regtest);
-        let mut tracker = ChainTracker::new(Network::Regtest, 0, genesis.header)?;
+        let validator_factory = Arc::new(SimpleValidatorFactory::new());
+        let (node_id, _, _) = make_node();
+        let tip = Headers(genesis.header, FilterHeader::all_zeros());
+        let mut tracker =
+            ChainTracker::new(Network::Regtest, 0, tip, node_id, validator_factory.clone())?;
         tracker.add_listener(monitor.clone(), OrderedSet::new());
-        let header = make_header(tracker.tip(), TxMerkleNode::all_zeros());
-        tracker.add_block(header, vec![], None)?;
         tracker.add_listener_watches(
             monitor,
             OrderedSet::from_iter(vec![make_txin(1).previous_output]),
@@ -227,7 +245,8 @@ mod tests {
         let entry = ChainTrackerEntry::from(&tracker);
         let json = serde_json::to_string(&entry).expect("json");
         let entry_de: ChainTrackerEntry = serde_json::from_str(&json).expect("de json");
-        let _tracker_de: ChainTracker<ChainMonitor> = entry_de.into();
+        let _tracker_de: ChainTracker<ChainMonitor> =
+            entry_de.into_tracker(node_id, validator_factory);
         Ok(())
     }
 }

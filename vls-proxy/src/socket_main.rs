@@ -23,6 +23,7 @@ use grpc::signer_loop::{GrpcSignerPort, SignerLoop};
 
 use lightning_signer::bitcoin::Network;
 
+use vls_frontend::frontend::SourceFactory;
 use vls_frontend::Frontend;
 use vls_proxy::portfront::SignerPortFront;
 use vls_proxy::util::{
@@ -87,8 +88,10 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
     let network = vls_network().parse::<Network>().expect("malformed vls network");
     let sender = server.sender();
     let signer_port = GrpcSignerPort::new(sender.clone());
+    let source_factory = Arc::new(SourceFactory::new(".", network));
     let frontend = Frontend::new(
         Arc::new(SignerPortFront::new(Box::new(signer_port), network)),
+        source_factory,
         Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
     );
     frontend.start();

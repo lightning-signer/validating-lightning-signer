@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use core::cmp;
+use std::cmp::Ordering;
 
 use bitcoin;
 use bitcoin::blockdata::constants::genesis_block;
@@ -14,7 +15,6 @@ use bitcoin::secp256k1::{
     self, ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey, SignOnly,
 };
 use bitcoin::util::hash::bitcoin_merkle_root;
-use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::util::sighash::SighashCache;
 use bitcoin::{
@@ -37,10 +37,12 @@ use lightning::ln::chan_utils::{
 use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage, PaymentSecret};
 use lightning::util::test_utils;
 use lightning_invoice::{Currency, Invoice, InvoiceBuilder};
+use txoo::proof::UnspentProof;
 
 use super::key_utils::{
     make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
 };
+use crate::chain::tracker::{ChainListener, Headers};
 use crate::channel::{
     Channel, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, ChannelStub, CommitmentType,
     TypedSignature,
@@ -373,12 +375,12 @@ pub fn init_node_and_channel(
     let node = init_node(node_config, seedstr);
     {
         let mut tracker = node.get_tracker();
-        let header = make_testnet_header(tracker.tip(), TxMerkleNode::all_zeros());
-        tracker.add_block(header, vec![], None).unwrap();
-        let header = make_testnet_header(tracker.tip(), TxMerkleNode::all_zeros());
-        tracker.add_block(header, vec![], None).unwrap();
-        let header = make_testnet_header(tracker.tip(), TxMerkleNode::all_zeros());
-        tracker.add_block(header, vec![], None).unwrap();
+        let (header, proof) = make_testnet_header(tracker.tip(), tracker.height());
+        tracker.add_block(header, proof).unwrap();
+        let (header, proof) = make_testnet_header(tracker.tip(), tracker.height());
+        tracker.add_block(header, proof).unwrap();
+        let (header, proof) = make_testnet_header(tracker.tip(), tracker.height());
+        tracker.add_block(header, proof).unwrap();
     }
     let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
     node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
@@ -1589,28 +1591,29 @@ pub fn make_header(tip: BlockHeader, merkle_root: TxMerkleNode) -> BlockHeader {
     mine_header_with_bits(tip.block_hash(), merkle_root, bits)
 }
 
-pub fn make_block(tip: BlockHeader, txs: Vec<Transaction>) -> Block {
+pub fn make_block(prev_header: BlockHeader, txs: Vec<Transaction>) -> Block {
     assert!(!txs.is_empty());
     let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
     let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).unwrap().into();
-    let header = make_header(tip, merkle_root);
+    let header = make_header(prev_header, merkle_root);
     Block { header, txdata: txs }
 }
 
-pub fn proof_for_block(block: &Block) -> Option<PartialMerkleTree> {
-    if block.txdata.is_empty() {
-        return None;
-    }
-    let txids: Vec<Txid> = block.txdata.iter().map(|tx| tx.txid()).collect();
-    let matches: Vec<bool> = txids.iter().map(|_| true).collect();
-    Some(PartialMerkleTree::from_txids(&txids, &matches))
-}
-
-pub fn make_testnet_header(tip: BlockHeader, merkle_root: TxMerkleNode) -> BlockHeader {
-    // use lower bits so it doesn't take forever
+pub fn make_testnet_header(tip: &Headers, tip_height: u32) -> (BlockHeader, UnspentProof) {
+    let txs: Vec<Transaction> = vec![Transaction {
+        version: 0,
+        lock_time: PackedLockTime(tip_height + 1),
+        input: vec![],
+        output: vec![],
+    }];
+    let tx_ids: Vec<_> = txs.iter().map(|tx| tx.txid().as_hash()).collect();
+    let merkle_root = bitcoin_merkle_root(tx_ids.into_iter()).unwrap().into();
     let regtest_genesis = genesis_block(Network::Regtest);
     let bits = regtest_genesis.header.bits;
-    mine_header_with_bits(tip.block_hash(), merkle_root, bits)
+    let header = mine_header_with_bits(tip.0.block_hash(), merkle_root, bits);
+    let block = bitcoin::Block { header, txdata: txs };
+    let proof = UnspentProof::prove_unchecked(&block, &tip.1, tip_height + 1);
+    (header, proof)
 }
 
 pub fn mine_header_with_bits(
@@ -1645,7 +1648,7 @@ pub fn make_node_and_channel(
     (node_id, node, channel.unwrap().unwrap_stub().clone(), seed)
 }
 
-pub(crate) fn make_node() -> (PublicKey, Arc<Node>, [u8; 32]) {
+pub fn make_node() -> (PublicKey, Arc<Node>, [u8; 32]) {
     let mut seed = [0; 32];
     seed.copy_from_slice(hex_decode(TEST_SEED[1]).unwrap().as_slice());
 
@@ -1735,5 +1738,62 @@ impl ChannelBalanceBuilder {
 
     pub fn build(self) -> ChannelBalance {
         self.inner
+    }
+}
+
+/// A mock listener for testing
+pub struct MockListener {
+    watch: BitcoinOutPoint,
+    watched: Mutex<bool>,
+}
+
+impl SendSync for MockListener {}
+
+impl PartialEq<Self> for MockListener {
+    fn eq(&self, other: &Self) -> bool {
+        self.watch.eq(&other.watch)
+    }
+}
+
+impl PartialOrd for MockListener {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.watch.partial_cmp(&other.watch)
+    }
+}
+
+impl Eq for MockListener {}
+
+impl Ord for MockListener {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.watch.cmp(&other.watch)
+    }
+}
+
+impl Clone for MockListener {
+    fn clone(&self) -> Self {
+        // We just need this to have the right `Ord` semantics
+        // the value of `watched` doesn't matter
+        Self { watch: self.watch, watched: Mutex::new(false) }
+    }
+}
+
+impl ChainListener for MockListener {
+    fn on_add_block(&self, _txs: Vec<&Transaction>) -> Vec<BitcoinOutPoint> {
+        let mut watched = self.watched.lock().unwrap();
+        if *watched {
+            vec![]
+        } else {
+            *watched = true;
+            vec![self.watch]
+        }
+    }
+
+    fn on_remove_block(&self, _txs: Vec<&Transaction>) {}
+}
+
+impl MockListener {
+    /// Create a new mock listener
+    pub fn new(watch: BitcoinOutPoint) -> Self {
+        MockListener { watch, watched: Mutex::new(false) }
     }
 }

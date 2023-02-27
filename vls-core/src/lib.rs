@@ -25,6 +25,7 @@ extern crate tonic;
 pub use bitcoin;
 pub use lightning;
 pub use lightning_invoice;
+pub use txoo;
 
 /// Chain tracking and validation
 pub mod chain;
