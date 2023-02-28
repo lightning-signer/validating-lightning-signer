@@ -232,7 +232,7 @@ impl SimpleValidator {
         if feerate_perkw < self.policy.min_feerate_per_kw {
             policy_err!(
                 self,
-                "policy-onchain-fee-range",
+                "policy-onchain-fee-range", // also policy-{commitment,mutual}-fee-range
                 "feerate below minimum: {} < {}",
                 feerate_perkw,
                 self.policy.min_feerate_per_kw
@@ -241,7 +241,7 @@ impl SimpleValidator {
         if feerate_perkw > self.policy.max_feerate_per_kw {
             policy_err!(
                 self,
-                "policy-onchain-fee-range",
+                "policy-onchain-fee-range", // also policy-{commitment,mutual}-fee-range
                 "feerate above maximum: {} > {}",
                 feerate_perkw,
                 self.policy.max_feerate_per_kw
@@ -343,13 +343,14 @@ impl SimpleValidator {
 // TODO - policy-commitment-htlc-received-spends-active-utxo
 // TODO - policy-commitment-htlc-cltv-range [NEEDS NEW HTLC DETECTION]
 // TODO - policy-commitment-htlc-offered-hash-matches
+// TODO - policy-commitment-htlc-counterparty-htlc-pubkey [NO TESTS TAGGED]
 // TODO - policy-commitment-previous-revoked [still need secret storage]
 // TODO - policy-commitment-anchors-not-when-off
 // TODO - policy-commitment-anchor-to-holder
 // TODO - policy-commitment-anchor-to-counterparty
-// TODO - policy-commitment-anchor-amount [NO TESTS TAGGED]
 // TODO - policy-commitment-anchor-static-remotekey
 // TODO - policy-commitment-anchor-match-fundingkey [NO TESTS TAGGED]
+// TODO - policy-commitment-outputs-trimmed [NEEDS SIGN COUNTERPARTY TEST]
 
 // TODO - policy-commitment-payment-settled-preimage
 // TODO - policy-commitment-payment-allowlisted
@@ -359,12 +360,12 @@ impl SimpleValidator {
 
 // TODO - policy-htlc-cltv-range
 
-// TODO - policy-forced-destination-allowlisted
-// TODO - policy-forced-fee-range
-
+// TODO - policy-funding-max [NEEDS TESTS]
 // TODO - policy-velocity-funding
 // TODO - policy-velocity-transferred
 // TODO - policy-merchant-no-sends
+// TODO - policy-routing-balanced [NEEDS TESTS]
+// TODO - policy-no-routing
 
 impl Validator for SimpleValidator {
     fn validate_ready_channel(
@@ -505,8 +506,8 @@ impl Validator for SimpleValidator {
                 if !spendable {
                     policy_err!(
                         self,
-                        "policy-sweep-destination-allowlisted",
-                        "output[{}] is not to wallet or allowlist",
+                        "policy-onchain-no-unknown-outputs",
+                        "output[{}] is unknown",
                         outndx
                     );
                 }
@@ -685,7 +686,7 @@ impl Validator for SimpleValidator {
         if info2.to_self_delay != setup.holder_selected_contest_delay {
             policy_err!(
                 self,
-                "policy-channel-contest-delay-range",
+                "policy-channel-holder-contest-delay-range",
                 "holder_selected_contest_delay mismatch"
             );
         }
@@ -791,7 +792,7 @@ impl Validator for SimpleValidator {
         if info2.to_self_delay != setup.counterparty_selected_contest_delay {
             policy_err!(
                 self,
-                "policy-channel-contest-delay-range",
+                "policy-channel-counterparty-contest-delay-range",
                 "counterparty_selected_contest_delay mismatch"
             );
         }
@@ -1746,6 +1747,7 @@ impl SimpleValidator {
             info.offered_htlcs.len() + info.received_htlcs.len(),
         );
 
+        // policy-commitment-fee-range
         let sum_outputs = info
             .to_broadcaster_value_sat
             .checked_add(info.to_countersigner_value_sat)
@@ -2122,6 +2124,7 @@ mod tests {
         );
     }
 
+    // policy-commitment-first-no-htlcs
     #[test]
     fn validate_commitment_tx_initial_with_htlcs() {
         let validator = make_test_validator();

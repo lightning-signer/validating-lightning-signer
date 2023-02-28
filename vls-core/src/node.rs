@@ -2287,6 +2287,7 @@ mod tests {
         }
     }
 
+    // policy-routing-deltas-only-htlc
     #[test]
     fn shortfall_test() {
         let (node, channel_id) =

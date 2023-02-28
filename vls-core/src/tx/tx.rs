@@ -976,6 +976,7 @@ mod tests {
         );
     }
 
+    // policy-commitment-anchor-amount
     #[test]
     fn handle_anchor_wrong_size_test() {
         let mut info = CommitmentInfo::new_for_holder();
@@ -987,6 +988,7 @@ mod tests {
         assert_eq!(res.unwrap_err(), mismatch_error(format!("anchor wrong size: {}", out.value)));
     }
 
+    // policy-commitment-anchor-match-fundingkey
     #[test]
     fn handle_anchor_not_local_or_remote_test() {
         let mut info = CommitmentInfo::new_for_holder();

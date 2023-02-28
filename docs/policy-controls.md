@@ -16,7 +16,9 @@ Some controls will change with the evolution of the Lightning protocol - e.g.
 ## Opening a Channel
 
 * Delay - the local and remote imposed to_self_delay must be reasonable <br>
-  `policy-channel-contest-delay-range`
+  `policy-channel-counterparty-contest-delay-range`
+  `policy-channel-holder-contest-delay-range`
+
 * Safe modes - the channel mode must be safe (e.g. not plain anchors, only zero-fee) <br>
   `policy-channel-safe-mode`
 
@@ -64,14 +66,16 @@ Before we sign a commitment transaction, the following controls are checked:
 
 * Output - the outputs must be at most one to-local, at most one
   to-remote and HTLCs (and anchors, as below). <br>
-  `policy-commitment-singular`,
+  `policy-commitment-singular-to-holder`,
+  `policy-commitment-singular-to-counterparty`,
   `policy-commitment-no-unrecognized-outputs`
 
 * Funded - if this is not the first commitment, the funding UTXO must
   be active on chain with enough depth <br>
   `policy-commitment-spends-active-utxo`
 
-* Initial - the initial commitment must have no HTLCs <br> `policy-commitment-first-no-htlcs`
+* Initial - the initial commitment must have no HTLCs <br>
+  `policy-commitment-first-no-htlcs`
 
 * HTLC in-flight value - the inflight value should not be too large <br>
   `policy-commitment-htlc-inflight-limit`
@@ -93,7 +97,7 @@ Before we sign a commitment transaction, the following controls are checked:
   `policy-commitment-revocation-pubkey`
 
 * The to_self_delay on the to_local output must be as negotiated for channel <br>
-  `policy-commitment-to-self-delay`
+  `policy-commitment-to-self-delay-range`
   
 * The delayed payment pubkey in the to_local output must be correct <br>
   `policy-commitment-broadcaster-pubkey`
@@ -133,12 +137,13 @@ Before we sign a commitment transaction, the following controls are checked:
   `policy-commitment-retry-same`
 
 * Anchors:
-  - If `option_anchor_outputs` is not in force no anchor outputs shall
-    be present. <br>
+  - If neither `option_anchor_outputs` or `option_anchors_zero_fee_htlc`
+    are in force no anchor outputs shall be present. <br>
     `policy-commitment-anchors-not-when-off`
 
-  - If `option_anchor_outputs` is in force the to-local and to-remote
-    outputs must each have an associated anchor output. <br>
+  - If either `option_anchor_outputs` or `option_anchors_zero_fee_htlc`
+    are in force the to-local and to-remote outputs must each have an
+    associated anchor output. <br>
     `policy-commitment-anchor-to-holder`,
     `policy-commitment-anchor-to-counterparty`
     

@@ -505,7 +505,7 @@ mod tests {
             sign_funding_tx_with_mutator(|fms| {
                 fms.tx_ctx.opaths[0] = vec![33];
             }),
-            "policy failure: validate_onchain_tx: output[0] is not to wallet or allowlist"
+            "policy failure: validate_onchain_tx: output[0] is unknown"
         );
     }
 
@@ -579,6 +579,7 @@ mod tests {
         );
     }
 
+    // policy-onchain-no-fund-inbound
     #[test]
     fn dual_funding_not_supported() {
         assert_failed_precondition_err!(
@@ -1070,6 +1071,7 @@ mod tests {
         );
     }
 
+    // policy-onchain-no-channel-push
     #[test]
     fn sign_funding_tx_with_bad_push_val() {
         let is_p2sh = false;
