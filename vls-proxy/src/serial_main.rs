@@ -10,19 +10,20 @@ use url::Url;
 #[allow(unused_imports)]
 use log::{error, info};
 
-use connection::{open_parent_fd, UnixConnection};
-
 use lightning_signer::bitcoin::Network;
 
-use vls_protocol_signer::vls_protocol::msgs::{self, Message, SerialRequestHeader};
-use vls_protocol_signer::vls_protocol::serde_bolt::WireString;
-
 use serial::{connect, SerialSignerPort, SignerLoop};
+
 use vls_frontend::frontend::SourceFactory;
 use vls_frontend::Frontend;
-use vls_proxy::client::UnixClient;
-use vls_proxy::portfront::SignerPortFront;
-use vls_proxy::util::{
+use vls_protocol::msgs::{self, Message, SerialRequestHeader};
+use vls_protocol::serde_bolt::WireString;
+use vls_protocol_signer::vls_protocol;
+
+use client::UnixClient;
+use connection::{open_parent_fd, UnixConnection};
+use portfront::SignerPortFront;
+use util::{
     abort_on_panic, add_hsmd_args, bitcoind_rpc_url, create_runtime, setup_logging, vls_network,
 };
 use vls_proxy::*;

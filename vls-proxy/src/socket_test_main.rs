@@ -21,22 +21,21 @@ use url::Url;
 
 use lightning_signer::bitcoin::Network;
 
+use vls_frontend::frontend::SourceFactory;
+use vls_frontend::Frontend;
+
 use client::UnixClient;
 use connection::{open_parent_fd, UnixConnection};
 use grpc::adapter::HsmdService;
 use grpc::incoming::TcpIncoming;
 use grpc::signer::start_signer_localhost;
 use grpc::signer_loop::{GrpcSignerPort, SignerLoop};
-use vls_frontend::frontend::SourceFactory;
-use vls_frontend::Frontend;
-use vls_proxy::portfront::SignerPortFront;
-use vls_proxy::util::{
+use portfront::SignerPortFront;
+use util::{
     abort_on_panic, add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, setup_logging,
     vls_network,
 };
 use vls_proxy::*;
-
-pub mod grpc;
 
 /// Implement both the hsmd replacement and the signer in a single binary.
 /// The signer is forked off as a separate process.

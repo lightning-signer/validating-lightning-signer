@@ -8,12 +8,11 @@ use clap::{arg, App};
 use log::{error, info};
 use url::Url;
 
-use client::{Client, UnixClient};
-use connection::UnixConnection;
-use lightning_signer::bitcoin::hashes::sha256::Hash as Sha256Hash;
-use lightning_signer::bitcoin::hashes::Hash;
-use lightning_signer::bitcoin::secp256k1::SecretKey;
-use lightning_signer::bitcoin::Network;
+use bitcoin::hashes::sha256::Hash as Sha256Hash;
+use bitcoin::hashes::Hash;
+use bitcoin::secp256k1::SecretKey;
+use bitcoin::Network;
+use lightning_signer::bitcoin;
 use lightning_signer::node::NodeServices;
 use lightning_signer::persist::{Mutations, Persist};
 use lightning_signer::policy::filter::{FilterRule, PolicyFilter};
@@ -28,7 +27,6 @@ use nodefront::SingleFront;
 use thiserror::Error;
 use tokio::sync::{Mutex as AsyncMutex, MutexGuard};
 use tokio::task::block_in_place;
-use util::{read_allowlist, should_auto_approve};
 use vls_frontend::frontend::SourceFactory;
 use vls_frontend::Frontend;
 use vls_persist::kv_json::KVJsonPersister;
@@ -38,13 +36,16 @@ use vls_protocol_signer::approver::PositiveApprover;
 use vls_protocol_signer::handler::{ChannelHandler, Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::vls_protocol;
 
-mod test;
-use vls_proxy::util::{
+use client::{Client, UnixClient};
+use connection::UnixConnection;
+use util::{
     abort_on_panic, add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version,
-    integration_test_seed_or_generate, make_validator_factory_with_filter, setup_logging,
-    vls_network,
+    integration_test_seed_or_generate, make_validator_factory_with_filter, read_allowlist,
+    setup_logging, should_auto_approve, vls_network,
 };
 use vls_proxy::*;
+
+mod test;
 
 /// WARNING: this does not ensure atomicity if mutated from different threads
 pub struct Cloud {
