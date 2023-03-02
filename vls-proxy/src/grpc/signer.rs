@@ -56,13 +56,14 @@ pub async fn start_signer_localhost(port: u16) {
 /// Signer binary entry point
 #[allow(unused)]
 #[tokio::main(worker_threads = 2)]
-pub(crate) async fn start_signer(datadir: &str, uri: Uri, args: &SignerArgs) {
+pub async fn start_signer(datadir: &str, uri: Uri, args: &SignerArgs) {
     info!("signer starting on {} connecting to {}", args.network, uri);
     connect(datadir, uri, args).await;
     info!("signer stopping");
 }
 
-pub(crate) fn make_handler(datadir: &str, args: &SignerArgs) -> RootHandler {
+/// Create a signer protocol handler
+pub fn make_handler(datadir: &str, args: &SignerArgs) -> RootHandler {
     let network = args.network;
     let data_path = format!("{}/{}", datadir, network.to_string());
     let persister = Arc::new(KVJsonPersister::new(&data_path));
