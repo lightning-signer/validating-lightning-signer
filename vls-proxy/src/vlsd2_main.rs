@@ -1,24 +1,18 @@
-use crate::config::{parse_args_and_config, HasSignerArgs, SignerArgs};
-use crate::util::abort_on_panic;
 use bitcoind_client::BlockExplorerType;
 use clap::{CommandFactory, ErrorKind, Parser};
-use grpc::signer::make_handler;
-use grpc::signer::start_signer;
 use http::Uri;
 use lightning_signer::bitcoin::Network;
 use log::*;
 use std::fs;
-use util::setup_logging;
 use vls_protocol_signer::handler::Handler;
-use vls_proxy::recovery::{direct::DirectRecoveryKeys, recover_close};
-use vls_proxy::GIT_DESC;
 
-pub mod client;
-pub mod config;
-pub mod connection;
-pub mod grpc;
-pub mod tx_util;
-pub mod util;
+use grpc::signer::make_handler;
+use grpc::signer::start_signer;
+use recovery::{direct::DirectRecoveryKeys, recover_close};
+use util::abort_on_panic;
+use util::setup_logging;
+use vls_proxy::config::{parse_args_and_config, HasSignerArgs, SignerArgs};
+use vls_proxy::*;
 
 #[derive(Parser, Debug)]
 #[clap(about, long_about = None)]
