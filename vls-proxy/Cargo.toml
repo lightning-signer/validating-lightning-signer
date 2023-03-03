@@ -82,14 +82,6 @@ path = "src/serial_main.rs"
 required-features = ["main"]
 
 [[bin]]
-# A single-binary two-process (forking) replacement for hsmd, communicating over a gRPC connection
-# For integration testing only
-# AKA cln:socket
-name = "remote_hsmd_socket_test"
-path = "src/socket_test_main.rs"
-required-features = ["grpc", "main"]
-
-[[bin]]
 # A replacement for hsmd, listening to vlsd2 over a gRPC protocol
 # AKA cln:socket
 name = "remote_hsmd_socket"
