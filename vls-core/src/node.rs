@@ -1576,28 +1576,23 @@ impl Node {
 
     /// Sign a node announcement using the node key
     pub fn sign_node_announcement(&self, na: &[u8]) -> Result<Signature, Status> {
-        let secp_ctx = Secp256k1::signing_only();
-        let na_hash = Sha256dHash::hash(na);
-        let encmsg = secp256k1::Message::from_slice(&na_hash[..])
-            .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
-        let sig = secp_ctx.sign_ecdsa(&encmsg, &self.get_node_secret());
-        Ok(sig)
+        self.do_sign_gossip_message(na)
     }
 
     /// Sign a channel update or announcement using the node key
     pub fn sign_channel_update(&self, cu: &[u8]) -> Result<Signature, Status> {
-        let secp_ctx = Secp256k1::signing_only();
-        let cu_hash = Sha256dHash::hash(cu);
-        let encmsg = secp256k1::Message::from_slice(&cu_hash[..])
-            .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
-        let sig = secp_ctx.sign_ecdsa(&encmsg, &self.get_node_secret());
-        Ok(sig)
+        self.do_sign_gossip_message(cu)
     }
 
     /// Sign gossip messages
     pub fn sign_gossip_message(&self, msg: &UnsignedGossipMessage) -> Result<Signature, Status> {
+        let encoded = &msg.encode()[..];
+        self.do_sign_gossip_message(encoded)
+    }
+
+    fn do_sign_gossip_message(&self, encoded: &[u8]) -> Result<Signature, Status> {
         let secp_ctx = Secp256k1::signing_only();
-        let msg_hash = Sha256dHash::hash(&msg.encode()[..]);
+        let msg_hash = Sha256dHash::hash(encoded);
         let encmsg = secp256k1::Message::from_slice(&msg_hash[..])
             .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign_ecdsa(&encmsg, &self.get_node_secret());
