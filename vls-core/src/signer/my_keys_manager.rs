@@ -9,6 +9,7 @@ use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::hash160::Hash as Hash160;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::sha256::HashEngine as Sha256State;
+use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::{Hash, HashEngine};
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::{All, Message, PublicKey, Scalar, Secp256k1, SecretKey, Signing};
@@ -19,24 +20,25 @@ use bitcoin::{
 };
 use bitcoin::{Network, Script};
 use lightning::chain::keysinterface::{
-    DelayedPaymentOutputDescriptor, InMemorySigner, KeyMaterial, KeysInterface, Recipient,
-    SpendableOutputDescriptor, StaticPaymentOutputDescriptor,
+    DelayedPaymentOutputDescriptor, EntropySource, InMemorySigner, KeyMaterial, NodeSigner,
+    Recipient, SignerProvider, SpendableOutputDescriptor, StaticPaymentOutputDescriptor,
 };
-use lightning::ln::msgs::DecodeError;
+use lightning::ln::msgs::{DecodeError, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
+use lightning::util::ser::Writeable;
 
 use super::derive::{self, KeyDerivationStyle};
 use crate::channel::ChannelId;
 use crate::signer::StartingTimeFactory;
 use crate::util::transaction_utils::MAX_VALUE_MSAT;
 use crate::util::{byte_utils, transaction_utils};
-use bitcoin::secp256k1::ecdsa::RecoverableSignature;
+use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
 use bitcoin::secp256k1::schnorr;
 use bitcoin::util::sighash;
 use hashbrown::HashSet as UnorderedSet;
 use lightning::util::invoice::construct_invoice_preimage;
 
-/// An implementation of [`KeysInterface`]
+/// An implementation of [`NodeSigner`]
 pub struct MyKeysManager {
     secp_ctx: Secp256k1<secp256k1::All>,
     seed: Vec<u8>,
@@ -161,6 +163,10 @@ impl MyKeysManager {
         res
     }
 
+    pub(crate) fn get_node_secret(&self) -> SecretKey {
+        self.node_secret
+    }
+
     /// onion reply secret
     pub fn get_onion_reply_secret(&self) -> [u8; 32] {
         return hkdf_sha256(&self.seed, "onion reply secret".as_bytes(), &[]);
@@ -274,7 +280,6 @@ impl MyKeysManager {
 
         InMemorySigner::new(
             &secp_ctx,
-            self.get_node_secret(Recipient::Node).unwrap(),
             funding_key,
             revocation_base_key,
             payment_key,
@@ -489,29 +494,27 @@ impl MyKeysManager {
     }
 }
 
-impl KeysInterface for MyKeysManager {
+impl EntropySource for MyKeysManager {
+    fn get_secure_random_bytes(&self) -> [u8; 32] {
+        let mut sha = self.rand_bytes_unique_start.clone();
+
+        let child_ix = self.rand_bytes_child_index.fetch_add(1, Ordering::AcqRel);
+        let child_privkey = self
+            .rand_bytes_master_key
+            .ckd_priv(
+                &self.secp_ctx,
+                ChildNumber::from_hardened_idx(child_ix as u32).expect("key space exhausted"),
+            )
+            .expect("Your RNG is busted");
+        sha.input(child_privkey.private_key.as_ref());
+
+        sha.input(b"Unique Secure Random Bytes Salt");
+        Sha256::from_engine(sha).into_inner()
+    }
+}
+
+impl SignerProvider for MyKeysManager {
     type Signer = InMemorySigner;
-
-    // TODO secret key leaking
-    fn get_node_secret(&self, recipient: Recipient) -> Result<SecretKey, ()> {
-        match recipient {
-            Recipient::Node => Ok(self.node_secret.clone()),
-            Recipient::PhantomNode => Err(()),
-        }
-    }
-
-    fn ecdh(
-        &self,
-        recipient: Recipient,
-        other_key: &PublicKey,
-        tweak: Option<&Scalar>,
-    ) -> Result<SharedSecret, ()> {
-        let mut node_secret = self.get_node_secret(recipient)?;
-        if let Some(tweak) = tweak {
-            node_secret = node_secret.mul_tweak(tweak).map_err(|_| ())?;
-        }
-        Ok(SharedSecret::new(other_key, &node_secret))
-    }
 
     fn get_destination_script(&self) -> Script {
         // The destination script is chosen by the local node (must be
@@ -540,25 +543,44 @@ impl KeysInterface for MyKeysManager {
         unimplemented!()
     }
 
-    fn get_secure_random_bytes(&self) -> [u8; 32] {
-        let mut sha = self.rand_bytes_unique_start.clone();
-
-        let child_ix = self.rand_bytes_child_index.fetch_add(1, Ordering::AcqRel);
-        let child_privkey = self
-            .rand_bytes_master_key
-            .ckd_priv(
-                &self.secp_ctx,
-                ChildNumber::from_hardened_idx(child_ix as u32).expect("key space exhausted"),
-            )
-            .expect("Your RNG is busted");
-        sha.input(child_privkey.private_key.as_ref());
-
-        sha.input(b"Unique Secure Random Bytes Salt");
-        Sha256::from_engine(sha).into_inner()
-    }
-
     fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::Signer, DecodeError> {
         unimplemented!()
+    }
+}
+
+impl NodeSigner for MyKeysManager {
+    fn get_node_id(&self, recipient: Recipient) -> Result<PublicKey, ()> {
+        match recipient {
+            Recipient::Node => (),
+            Recipient::PhantomNode => return Err(()),
+        };
+        let node_secret = self.get_node_secret();
+        let node_id = PublicKey::from_secret_key(&self.secp_ctx, &node_secret);
+        Ok(node_id)
+    }
+
+    fn sign_gossip_message(&self, msg: UnsignedGossipMessage) -> Result<Signature, ()> {
+        let msg_hash = Sha256dHash::hash(&msg.encode()[..]);
+        let encmsg = secp256k1::Message::from_slice(&msg_hash[..]).map_err(|_| ())?;
+        let sig = self.secp_ctx.sign_ecdsa(&encmsg, &self.get_node_secret());
+        Ok(sig)
+    }
+
+    fn ecdh(
+        &self,
+        recipient: Recipient,
+        other_key: &PublicKey,
+        tweak: Option<&Scalar>,
+    ) -> Result<SharedSecret, ()> {
+        match recipient {
+            Recipient::Node => (),
+            Recipient::PhantomNode => return Err(()),
+        };
+        let mut node_secret = self.get_node_secret();
+        if let Some(tweak) = tweak {
+            node_secret = node_secret.mul_tweak(tweak).map_err(|_| ())?;
+        }
+        Ok(SharedSecret::new(other_key, &node_secret))
     }
 
     fn sign_invoice(
@@ -567,10 +589,14 @@ impl KeysInterface for MyKeysManager {
         invoice_data: &[u5],
         recipient: Recipient,
     ) -> Result<RecoverableSignature, ()> {
+        match recipient {
+            Recipient::Node => (),
+            Recipient::PhantomNode => return Err(()),
+        };
         let invoice_preimage = construct_invoice_preimage(hrp_bytes, invoice_data);
         Ok(self.secp_ctx.sign_ecdsa_recoverable(
             &Message::from_slice(&Sha256::hash(&invoice_preimage)).unwrap(),
-            &self.get_node_secret(recipient)?,
+            &self.get_node_secret(),
         ))
     }
 
@@ -589,7 +615,7 @@ mod tests {
     use crate::util::test_utils::{
         hex_decode, hex_encode, FixedStartingTimeFactory, TEST_CHANNEL_ID,
     };
-    use lightning::chain::keysinterface::{BaseSign, KeysManager};
+    use lightning::chain::keysinterface::{ChannelSigner, KeysManager};
     use test_log::test;
 
     #[test]
@@ -603,8 +629,8 @@ mod tests {
             FixedStartingTimeFactory::new(1, 1).borrow(),
         );
         assert_eq!(
-            ldk.get_node_secret(Recipient::Node).unwrap(),
-            my.get_node_secret(Recipient::Node).unwrap()
+            ldk.get_node_id(Recipient::Node).unwrap(),
+            my.get_node_id(Recipient::Node).unwrap()
         );
         let key_derive = derive::key_derive(KeyDerivationStyle::Ldk, Testnet);
         let channel_id = ChannelId::new(&[33u8; 32]);

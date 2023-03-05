@@ -334,7 +334,7 @@ impl Handler for RootHandler {
             }
             Message::HsmdInit2(m) => {
                 let bip32 = self.node.get_account_extended_pubkey().encode();
-                let node_secret = self.node.get_node_secret()[..].try_into().unwrap();
+                let node_id = self.node.get_id().serialize();
                 let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
                 let allowlist: Vec<_> = m
                     .dev_allowlist
@@ -344,7 +344,7 @@ impl Handler for RootHandler {
                 // FIXME disable in production
                 self.node.add_allowlist(&allowlist)?;
                 Ok(Box::new(msgs::HsmdInit2Reply {
-                    node_secret: Secret(node_secret),
+                    node_id: PubKey(node_id),
                     bip32: ExtKey(bip32),
                     bolt12: PubKey(bolt12_pubkey),
                 }))
@@ -600,7 +600,7 @@ impl Handler for RootHandler {
                 let sig = self.node.sign_node_announcement(&message)?;
 
                 Ok(Box::new(msgs::SignNodeAnnouncementReply {
-                    node_signature: Signature(sig.serialize_compact()),
+                    signature: Signature(sig.serialize_compact()),
                 }))
             }
             Message::SignChannelUpdate(m) => {
@@ -1099,10 +1099,10 @@ impl Handler for ChannelHandler {
             }
             Message::SignChannelAnnouncement(m) => {
                 let message = m.announcement[256 + 2..].to_vec();
-                let (node_sig, bitcoin_sig) =
-                    self.node.with_ready_channel(&self.channel_id, |chan| {
-                        Ok(chan.sign_channel_announcement(&message))
-                    })?;
+                let bitcoin_sig = self.node.with_ready_channel(&self.channel_id, |chan| {
+                    Ok(chan.sign_channel_announcement_with_funding_key(&message))
+                })?;
+                let node_sig = self.node.sign_channel_update(&message)?;
                 Ok(Box::new(msgs::SignChannelAnnouncementReply {
                     node_signature: Signature(node_sig.serialize_compact()),
                     bitcoin_signature: Signature(bitcoin_sig.serialize_compact()),

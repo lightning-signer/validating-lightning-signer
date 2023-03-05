@@ -25,7 +25,7 @@ use chain::chaininterface;
 use lightning::chain;
 use lightning::chain::chainmonitor::MonitorUpdateId;
 use lightning::chain::channelmonitor::MonitorEvent;
-use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
+use lightning::chain::keysinterface::{ChannelSigner, InMemorySigner};
 use lightning::chain::transaction::OutPoint;
 use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{
@@ -146,10 +146,10 @@ impl chainmonitor::Persist<LoopbackChannelSigner> for TestPersister {
 
     fn update_persisted_channel(
         &self,
-        _funding_txo: OutPoint,
-        _update: &Option<channelmonitor::ChannelMonitorUpdate>,
+        _channel_id: OutPoint,
+        _update: Option<&channelmonitor::ChannelMonitorUpdate>,
         _data: &channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
-        _id: MonitorUpdateId,
+        _update_id: MonitorUpdateId,
     ) -> chain::ChannelMonitorUpdateStatus {
         self.update_ret.lock().unwrap().clone()
     }
@@ -221,7 +221,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
     fn update_channel(
         &self,
         funding_txo: OutPoint,
-        update: channelmonitor::ChannelMonitorUpdate,
+        update: &channelmonitor::ChannelMonitorUpdate,
     ) -> chain::ChannelMonitorUpdateStatus {
         self.latest_monitor_update_id
             .lock()
@@ -284,13 +284,12 @@ pub fn make_test_channel_keys() -> InMemorySigner {
     let channel_value_sat = 3_000_000;
     let mut inmemkeys = InMemorySigner::new(
         &secp_ctx,
-        make_test_privkey(254), // node_secret
-        make_test_privkey(1),   // funding_key
-        make_test_privkey(2),   // revocation_base_key
-        make_test_privkey(3),   // payment_key
-        make_test_privkey(4),   // delayed_payment_base_key
-        make_test_privkey(5),   // htlc_base_key
-        [4u8; 32],              // commitment_seed
+        make_test_privkey(1), // funding_key
+        make_test_privkey(2), // revocation_base_key
+        make_test_privkey(3), // payment_key
+        make_test_privkey(4), // delayed_payment_base_key
+        make_test_privkey(5), // htlc_base_key
+        [4u8; 32],            // commitment_seed
         channel_value_sat,
         [0u8; 32],
     );
@@ -319,7 +318,7 @@ pub fn make_test_invoice(x: u8, amt: u64) -> Invoice {
         .payment_hash(payment_hash)
         .payment_secret(PaymentSecret([x; 32]))
         .duration_since_epoch(Duration::from_secs(123456789))
-        .min_final_cltv_expiry(144)
+        .min_final_cltv_expiry_delta(144)
         .amount_milli_satoshis(amt)
         .build_signed(|hash| Secp256k1::new().sign_ecdsa_recoverable(hash, &private_key))
         .unwrap()
@@ -547,7 +546,6 @@ pub fn make_test_counterparty_keys(
             // These need to match make_test_counterparty_points() above ...
             let mut cpkeys = InMemorySigner::new(
                 &node_ctx.secp_ctx,
-                make_test_privkey(254), // node_secret
                 make_test_privkey(104), // funding_key
                 make_test_privkey(100), // revocation_base_key
                 make_test_privkey(101), // payment_key

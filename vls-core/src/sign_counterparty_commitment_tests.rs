@@ -7,7 +7,7 @@ mod tests {
     use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::Network;
     use bitcoin::{PackedLockTime, Sequence};
-    use lightning::chain::keysinterface::BaseSign;
+    use lightning::chain::keysinterface::ChannelSigner;
     use lightning::ln::chan_utils::{
         make_funding_redeemscript, BuiltCommitmentTransaction,
         DirectedChannelTransactionParameters, TxCreationKeys,

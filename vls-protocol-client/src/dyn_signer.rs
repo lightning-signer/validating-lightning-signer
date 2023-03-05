@@ -6,22 +6,24 @@ use delegate::delegate;
 use bitcoin::bech32::u5;
 use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::{secp256k1, Script, Transaction, TxOut};
-use lightning::chain::keysinterface::BaseSign;
+use lightning::chain::keysinterface::ChannelSigner;
+use lightning::chain::keysinterface::EcdsaChannelSigner;
 use lightning::chain::keysinterface::InMemorySigner;
-use lightning::chain::keysinterface::Sign;
-use lightning::chain::keysinterface::{KeyMaterial, KeysInterface, Recipient};
+use lightning::chain::keysinterface::{KeyMaterial, NodeSigner, Recipient};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction,
 };
-use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement};
+use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
 use lightning::ln::PaymentPreimage;
 use lightning::util::ser::Readable;
 use lightning::util::ser::{Writeable, Writer};
 use lightning_signer::bitcoin;
 use lightning_signer::lightning;
-use lightning_signer::lightning::chain::keysinterface::SpendableOutputDescriptor;
+use lightning_signer::lightning::chain::keysinterface::{
+    SignerProvider, SpendableOutputDescriptor, WriteableEcdsaChannelSigner,
+};
 use secp256k1::ecdsa::RecoverableSignature;
 use secp256k1::{ecdh::SharedSecret, ecdsa::Signature, PublicKey, Scalar, Secp256k1, SecretKey};
 
@@ -29,13 +31,13 @@ use crate::bitcoin::Address;
 use lightning_signer::util::loopback::LoopbackChannelSigner;
 
 /// Helper to allow DynSigner to clone itself
-pub trait InnerSign: BaseSign + Send + Sync {
+pub trait InnerSign: EcdsaChannelSigner + Send + Sync {
     fn box_clone(&self) -> Box<dyn InnerSign>;
     fn as_any(&self) -> &dyn Any;
     fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), ::std::io::Error>;
 }
 
-/// A BaseSign derived struct allowing run-time selection of a signer
+/// A ChannelSigner derived struct allowing run-time selection of a signer
 pub struct DynSigner {
     pub inner: Box<dyn InnerSign>,
 }
@@ -46,7 +48,7 @@ impl DynSigner {
     }
 }
 
-impl Sign for DynSigner {}
+impl WriteableEcdsaChannelSigner for DynSigner {}
 
 impl Clone for DynSigner {
     fn clone(&self) -> Self {
@@ -61,27 +63,9 @@ impl Readable for DynSigner {
     }
 }
 
-impl BaseSign for DynSigner {
+impl EcdsaChannelSigner for DynSigner {
     delegate! {
         to self.inner {
-            fn get_per_commitment_point(
-                &self,
-                idx: u64,
-                secp_ctx: &Secp256k1<secp256k1::All>,
-            ) -> PublicKey;
-
-            fn release_commitment_secret(&self, idx: u64) -> [u8; 32];
-
-            fn validate_holder_commitment(
-                &self,
-                holder_tx: &HolderCommitmentTransaction,
-                preimages: Vec<PaymentPreimage>,
-            ) -> Result<(), ()>;
-
-            fn pubkeys(&self) -> &ChannelPublicKeys;
-
-            fn channel_keys_id(&self) -> [u8; 32];
-
             fn sign_counterparty_commitment(
                 &self,
                 commitment_tx: &CommitmentTransaction,
@@ -139,16 +123,41 @@ impl BaseSign for DynSigner {
                 secp_ctx: &Secp256k1<secp256k1::All>,
             ) -> Result<Signature, ()>;
 
-            fn sign_channel_announcement(
+            fn sign_channel_announcement_with_funding_key(
                 &self,
                 msg: &UnsignedChannelAnnouncement,
                 secp_ctx: &Secp256k1<secp256k1::All>,
-            ) -> Result<(Signature, Signature), ()>;
+            ) -> Result<Signature, ()>;
 
-            fn provide_channel_parameters(&mut self, channel_parameters: &ChannelTransactionParameters);
             fn sign_holder_anchor_input(
                 &self, anchor_tx: &Transaction, input: usize, secp_ctx: &Secp256k1<secp256k1::All>,
             ) -> Result<Signature, ()>;
+        }
+    }
+}
+
+impl ChannelSigner for DynSigner {
+    delegate! {
+        to self.inner {
+            fn get_per_commitment_point(
+                &self,
+                idx: u64,
+                secp_ctx: &Secp256k1<secp256k1::All>,
+            ) -> PublicKey;
+
+            fn release_commitment_secret(&self, idx: u64) -> [u8; 32];
+
+            fn validate_holder_commitment(
+                &self,
+                holder_tx: &HolderCommitmentTransaction,
+                preimages: Vec<PaymentPreimage>,
+            ) -> Result<(), ()>;
+
+            fn pubkeys(&self) -> &ChannelPublicKeys;
+
+            fn channel_keys_id(&self) -> [u8; 32];
+
+            fn provide_channel_parameters(&mut self, channel_parameters: &ChannelTransactionParameters);
         }
     }
 }
@@ -200,26 +209,12 @@ impl DynKeysInterface {
     }
 }
 
-impl KeysInterface for DynKeysInterface {
-    type Signer = DynSigner;
-
+impl NodeSigner for DynKeysInterface {
     delegate! {
         to self.inner {
-            fn get_node_secret(&self, recipient: Recipient) -> Result<SecretKey, ()>;
-
+            fn get_node_id(&self, recipient: Recipient) -> Result<PublicKey, ()>;
+            fn sign_gossip_message(&self, msg: UnsignedGossipMessage) -> Result<Signature, ()>;
             fn ecdh(&self, recipient: Recipient, other_key: &PublicKey, tweak: Option<&Scalar>) -> Result<SharedSecret, ()>;
-
-            fn get_destination_script(&self) -> Script;
-
-            fn get_shutdown_scriptpubkey(&self) -> ShutdownScript;
-
-            fn generate_channel_keys_id(&self, _inbound: bool, _channel_value_satoshis: u64, _user_channel_id: u128) -> [u8; 32];
-
-            fn derive_channel_signer(&self, _channel_value_satoshis: u64, _channel_keys_id: [u8; 32]) -> Self::Signer;
-
-            fn get_secure_random_bytes(&self) -> [u8; 32];
-
-            fn read_chan_signer(&self, reader: &[u8]) -> Result<Self::Signer, DecodeError>;
 
             fn sign_invoice(
                 &self,
@@ -233,8 +228,26 @@ impl KeysInterface for DynKeysInterface {
     }
 }
 
+impl SignerProvider for DynKeysInterface {
+    type Signer = DynSigner;
+
+    delegate! {
+        to self.inner {
+            fn get_destination_script(&self) -> Script;
+
+            fn get_shutdown_scriptpubkey(&self) -> ShutdownScript;
+
+            fn generate_channel_keys_id(&self, _inbound: bool, _channel_value_satoshis: u64, _user_channel_id: u128) -> [u8; 32];
+
+            fn derive_channel_signer(&self, _channel_value_satoshis: u64, _channel_keys_id: [u8; 32]) -> Self::Signer;
+
+            fn read_chan_signer(&self, reader: &[u8]) -> Result<Self::Signer, DecodeError>;
+        }
+    }
+}
+
 // TODO(devrandom) why is spend_spendable_outputs not in KeysInterface?
-pub trait SpendableKeysInterface: KeysInterface + Send + Sync {
+pub trait SpendableKeysInterface: NodeSigner + SignerProvider + Send + Sync {
     fn spend_spendable_outputs(
         &self,
         descriptors: &[&SpendableOutputDescriptor],

@@ -1,0 +1,14 @@
+#!/bin/bash
+
+set -e
+set -x
+
+bash -c "$*"
+
+(cd lightning-storage-server && bash -c "$*")
+
+(cd vls-signer-stm32 && bash -c "$*")
+
+(cd embedded && bash -c "$*")
+
+(cd wasm && bash -c "$*")
