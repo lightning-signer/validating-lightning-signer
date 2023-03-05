@@ -1,7 +1,12 @@
 [package]
 name = "vls-protocol-client"
-version = "0.1.0"
+license = "Apache-2.0"
+version = "0.2.0-rc.1"
+authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
 edition = "2018"
+description = "A library for implementing a Lightning signer, which externalizes and secures cryptographic operations."
+homepage = "https://gitlab.com/lightning-signer/docs/"
+repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 
 [features]
 null = ["vls-protocol-signer"]
@@ -9,9 +14,9 @@ grpc = []
 test_utils = ["vls-core/test_utils"]
 
 [dependencies]
-vls-protocol-signer = { path = "../vls-protocol-signer", optional = true }
-vls-protocol = { path = "../vls-protocol" }
-vls-core = { path = "../vls-core" }
+vls-protocol-signer = { path = "../vls-protocol-signer", version = "0.2.0-rc.1", optional = true }
+vls-protocol = { path = "../vls-protocol", version = "0.2.0-rc.1" }
+vls-core = { path = "../vls-core", version = "0.2.0-rc.1" }
 bit-vec = "0.6"
 log = "0.4"
 anyhow = "1.0"

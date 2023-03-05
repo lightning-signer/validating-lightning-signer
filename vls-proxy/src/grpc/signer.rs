@@ -1,6 +1,6 @@
-use super::hsmd::{self, PingRequest, SignerRequest, SignerResponse};
+use super::hsmd::hsmd_client::HsmdClient;
+use super::hsmd::{PingRequest, SignerRequest, SignerResponse};
 use crate::config::SignerArgs;
-use crate::grpc::hsmd::hsmd_client::HsmdClient;
 use crate::util::{
     integration_test_seed_or_generate, make_validator_factory_with_filter_and_velocity,
     read_allowlist, should_auto_approve,
@@ -155,7 +155,7 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
 
 async fn do_connect(uri: Uri) -> HsmdClient<Channel> {
     loop {
-        let client = hsmd::hsmd_client::HsmdClient::connect(uri.clone()).await;
+        let client = HsmdClient::connect(uri.clone()).await;
         match client {
             Ok(mut client) => {
                 let result =

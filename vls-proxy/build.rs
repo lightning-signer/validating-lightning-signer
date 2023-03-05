@@ -39,9 +39,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         update_version();
     }
-    tonic_build::configure()
-        .build_server(true)
-        .out_dir("src/grpc")
-        .compile(&["src/grpc/hsmd.proto"], &["src/grpc"])?;
+    tonic_build::configure().build_server(true).compile(&["src/grpc/hsmd.proto"], &["src/grpc"])?;
     Ok(())
 }

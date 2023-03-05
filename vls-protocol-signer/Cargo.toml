@@ -1,8 +1,12 @@
 [package]
 name = "vls-protocol-signer"
-version = "0.1.0"
-authors = ["Devrandom <c1.devrandom@niftybox.net>"]
+license = "Apache-2.0"
+version = "0.2.0-rc.1"
+authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
 edition = "2018"
+description = "A library for implementing a Lightning signer, which externalizes and secures cryptographic operations."
+homepage = "https://gitlab.com/lightning-signer/docs/"
+repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 
 [features]
 default = ["std"]
@@ -15,15 +19,11 @@ log_pretty_print = []
 debug = ["vls-core/debug", "log_pretty_print"]
 
 [dependencies]
-vls-protocol = { path = "../vls-protocol" }
+vls-core = { path = "../vls-core", version = "0.2.0-rc.1", default-features = false }
+vls-protocol = { path = "../vls-protocol", version = "0.2.0-rc.1" }
 log = { version = "0.4", default_features = false }
 serde = { version = "1.0", default_features = false }
 bit-vec = { version = "0.6", default_features = false }
 
-[dependencies.vls-core]
-path = "../vls-core"
-default_features = false
-
-[dev-dependencies.vls-core]
-path = "../vls-core"
-features = ["test_utils"]
+[dev-dependencies]
+vls-core = { path = "../vls-core", version = "0.2.0-rc.1", features = ["test_utils"] }
