@@ -4,7 +4,7 @@ mod tests {
     use bitcoin::hashes::hex::ToHex;
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::util::psbt::serialize::Serialize;
-    use lightning::chain::keysinterface::BaseSign;
+    use lightning::chain::keysinterface::ChannelSigner;
 
     use test_log::test;
 

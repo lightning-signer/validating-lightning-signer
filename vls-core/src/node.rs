@@ -20,15 +20,18 @@ use bitcoin::{secp256k1, Address, PrivateKey, Transaction, TxOut};
 use bitcoin::{EcdsaSighashType, Network, OutPoint, Script};
 use lightning::chain;
 use lightning::chain::keysinterface::{
-    BaseSign, KeyMaterial, KeysInterface, Recipient, SpendableOutputDescriptor,
+    ChannelSigner, EntropySource, KeyMaterial, NodeSigner, Recipient, SignerProvider,
+    SpendableOutputDescriptor,
 };
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
 };
+use lightning::ln::msgs::UnsignedGossipMessage;
 use lightning::ln::script::ShutdownScript;
 use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning::util::invoice::construct_invoice_preimage;
 use lightning::util::logger::Logger;
+use lightning::util::ser::Writeable;
 use lightning_invoice::{Invoice, RawDataPart, RawHrp, RawInvoice, SignedRawInvoice};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -759,6 +762,10 @@ impl Node {
         Self::new_full(node_config, allowlist, services, state, keys_manager, node_id, tracker)
     }
 
+    pub(crate) fn get_node_secret(&self) -> SecretKey {
+        self.keys_manager.get_node_secret()
+    }
+
     /// Restore a node.
     pub fn new_from_persistence(
         node_config: NodeConfig,
@@ -821,7 +828,7 @@ impl Node {
             node_config.network,
             services.starting_time_factory.borrow(),
         );
-        let node_id = Self::id_from_key(&keys_manager.get_node_secret(Recipient::Node).unwrap());
+        let node_id = keys_manager.get_node_id(Recipient::Node).unwrap();
         (keys_manager, node_id)
     }
 
@@ -867,11 +874,6 @@ impl Node {
     /// Get the node ID, which is the same as the node public key
     pub fn get_id(&self) -> PublicKey {
         self.node_id
-    }
-
-    fn id_from_key(key: &SecretKey) -> PublicKey {
-        let secp_ctx = Secp256k1::signing_only();
-        PublicKey::from_secret_key(&secp_ctx, key)
     }
 
     /// Get suitable node identity string for logging
@@ -1554,14 +1556,6 @@ impl Node {
         Ok(self.get_wallet_privkey(secp_ctx, child_path)?.public_key(secp_ctx))
     }
 
-    /// Get the node secret key
-    /// This function will be eliminated once the node key related items
-    /// are implemented.  This includes onion decoding and p2p handshake.
-    // TODO leaking secret
-    pub fn get_node_secret(&self) -> SecretKey {
-        self.keys_manager.get_node_secret(Recipient::Node).unwrap()
-    }
-
     /// Get shutdown_pubkey to use as PublicKey at channel closure
     // FIXME - this method is deprecated
     pub fn get_ldk_shutdown_scriptpubkey(&self) -> ShutdownScript {
@@ -1590,11 +1584,21 @@ impl Node {
         Ok(sig)
     }
 
-    /// Sign a channel update using the node key
+    /// Sign a channel update or announcement using the node key
     pub fn sign_channel_update(&self, cu: &[u8]) -> Result<Signature, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let cu_hash = Sha256dHash::hash(cu);
         let encmsg = secp256k1::Message::from_slice(&cu_hash[..])
+            .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
+        let sig = secp_ctx.sign_ecdsa(&encmsg, &self.get_node_secret());
+        Ok(sig)
+    }
+
+    /// Sign gossip messages
+    pub fn sign_gossip_message(&self, msg: &UnsignedGossipMessage) -> Result<Signature, Status> {
+        let secp_ctx = Secp256k1::signing_only();
+        let msg_hash = Sha256dHash::hash(&msg.encode()[..]);
+        let encmsg = secp256k1::Message::from_slice(&msg_hash[..])
             .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign_ecdsa(&encmsg, &self.get_node_secret());
         Ok(sig)
@@ -1681,7 +1685,7 @@ impl Node {
     /// Perform an ECDH operation between the node key and a public key
     /// This can be used for onion packet decoding
     pub fn ecdh(&self, other_key: &PublicKey) -> Vec<u8> {
-        let our_key = self.keys_manager.get_node_secret(Recipient::Node).unwrap();
+        let our_key = self.keys_manager.get_node_secret();
         let ss = SharedSecret::new(&other_key, &our_key);
         ss.as_ref().to_vec()
     }
@@ -2451,23 +2455,25 @@ mod tests {
     }
 
     #[test]
-    fn sign_channel_announcement_test() {
+    fn sign_channel_announcement_with_funding_key_test() {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
 
         let ann = hex_decode("0123456789abcdef").unwrap();
-        let (nsig, bsig) = node
-            .with_ready_channel(&channel_id, |chan| Ok(chan.sign_channel_announcement(&ann)))
+        let bsig = node
+            .with_ready_channel(&channel_id, |chan| {
+                Ok(chan.sign_channel_announcement_with_funding_key(&ann))
+            })
             .unwrap();
 
         let ca_hash = Sha256dHash::hash(&ann);
         let encmsg = secp256k1::Message::from_slice(&ca_hash[..]).expect("encmsg");
         let secp_ctx = Secp256k1::new();
-        secp_ctx.verify_ecdsa(&encmsg, &nsig, &node.get_id()).expect("verify nsig");
-        let _res: Result<(), Status> = node.with_ready_channel(&channel_id, |chan| {
+        node.with_ready_channel(&channel_id, |chan| {
             let funding_pubkey = PublicKey::from_secret_key(&secp_ctx, &chan.keys.funding_key);
             Ok(secp_ctx.verify_ecdsa(&encmsg, &bsig, &funding_pubkey).expect("verify bsig"))
-        });
+        })
+        .unwrap();
     }
 
     #[test]

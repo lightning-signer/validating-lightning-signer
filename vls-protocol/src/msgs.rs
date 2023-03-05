@@ -79,7 +79,7 @@ pub struct HsmdInit2 {
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(1111)]
 pub struct HsmdInit2Reply {
-    pub node_secret: Secret,
+    pub node_id: PubKey,
     pub bip32: ExtKey,
     pub bolt12: PubKey,
 }
@@ -303,7 +303,7 @@ pub struct SignNodeAnnouncement {
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(106)]
 pub struct SignNodeAnnouncementReply {
-    pub node_signature: Signature,
+    pub signature: Signature,
 }
 
 /// Get per-commitment point n and optionally revoke a point n-2 by releasing the secret

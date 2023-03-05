@@ -13,7 +13,7 @@ use bitcoin::hashes::{Hash, HashEngine};
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::address::Payload;
 use bitcoin::{OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Witness};
-use lightning::chain::keysinterface::{BaseSign, InMemorySigner};
+use lightning::chain::keysinterface::{ChannelSigner, InMemorySigner};
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     get_anchor_redeemscript, get_revokeable_redeemscript, HTLCOutputInCommitment, TxCreationKeys,

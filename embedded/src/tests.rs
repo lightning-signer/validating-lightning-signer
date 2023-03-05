@@ -250,7 +250,7 @@ pub fn test_lightning_signer(postscript: fn()) {
     node.remove_allowlist(&vec!["helloworld".to_string()]).expect_err("bad address");
     node.sign_node_announcement(&vec![]).unwrap();
     node.sign_channel_update(&vec![]).unwrap();
-    channel.sign_channel_announcement(&vec![]);
+    channel.sign_channel_announcement_with_funding_key(&vec![]);
 
     postscript();
 }
