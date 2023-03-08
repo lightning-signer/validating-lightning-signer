@@ -586,8 +586,7 @@ impl NodeSigner for KeysManagerClient {
         }
         let message = Ecdh { point: PubKey(other_key.serialize()) };
         let result: EcdhReply = self.call(message).expect("ecdh");
-        let secret = SecretKey::from_slice(&result.secret.0).expect("secret");
-        Ok(SharedSecret::new(other_key, &secret))
+        Ok(SharedSecret::from_bytes(result.secret.0))
     }
 
     fn sign_invoice(
