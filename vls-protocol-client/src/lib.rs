@@ -3,7 +3,6 @@ use std::convert::{TryFrom, TryInto};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use bit_vec::BitVec;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{
     ecdh::SharedSecret, ecdsa::Signature, All, PublicKey, Scalar, Secp256k1, SecretKey,
@@ -25,7 +24,6 @@ use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::util::INITIAL_COMMITMENT_NUMBER;
 use log::{debug, error};
 
-use vls_protocol::features::{OPT_ANCHOR_OUTPUTS, OPT_MAX, OPT_STATIC_REMOTEKEY};
 use vls_protocol::model::{
     Basepoints, BitcoinSignature, CloseInfo, DisclosedSecret, Htlc, PubKey, TxId, Utxo,
 };
@@ -42,6 +40,7 @@ use vls_protocol::msgs::{
 };
 use vls_protocol::serde_bolt::{LargeOctets, Octets, WireString};
 use vls_protocol::{model, Error as ProtocolError};
+use vls_protocol_signer::util::commitment_type_to_channel_type;
 
 use bitcoin::bech32::u5;
 use bitcoin::secp256k1::ecdsa::{self, RecoverableSignature, RecoveryId};
@@ -60,6 +59,7 @@ pub mod signer_port;
 
 pub use dyn_signer::{DynKeysInterface, DynSigner, InnerSign, SpendableKeysInterface};
 use lightning::util::ser::Readable;
+use lightning_signer::channel::CommitmentType;
 use lightning_signer::lightning::chain::keysinterface::{EntropySource, SignerProvider};
 use lightning_signer::lightning::ln::msgs::UnsignedGossipMessage;
 pub use signer_port::SignerPort;
@@ -400,11 +400,17 @@ impl ChannelSigner for SignerClient {
             .as_ref()
             .expect("counterparty params should exist at this point");
 
-        let mut channel_features = BitVec::from_elem(OPT_MAX, false);
-        channel_features.set(OPT_STATIC_REMOTEKEY, true);
-        if p.opt_anchors.is_some() {
-            channel_features.set(OPT_ANCHOR_OUTPUTS, true);
-        }
+        let commitment_type = if p.opt_anchors.is_some() {
+            if p.opt_non_zero_fee_anchors.is_some() {
+                CommitmentType::Anchors
+            } else {
+                CommitmentType::AnchorsZeroFeeHtlc
+            }
+        } else {
+            CommitmentType::StaticRemoteKey
+        };
+
+        let ser_channel_type = commitment_type_to_channel_type(commitment_type);
         let message = ReadyChannel {
             is_outbound: p.is_outbound_from_holder,
             channel_value: self.channel_value,
@@ -423,7 +429,7 @@ impl ChannelSigner for SignerClient {
             remote_funding_pubkey: to_pubkey(cp.pubkeys.funding_pubkey),
             remote_to_self_delay: cp.selected_contest_delay,
             remote_shutdown_script: Octets::EMPTY, // TODO
-            channel_type: channel_features.to_bytes().into(),
+            channel_type: ser_channel_type.into(),
         };
 
         let _: ReadyChannelReply = self.call(message).expect("ready channel");

@@ -5,7 +5,6 @@ use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
-use bit_vec::BitVec;
 use core::convert::TryInto;
 
 use bitcoin::blockdata::script;
@@ -22,7 +21,7 @@ use lightning_signer::bitcoin::util::bip32::{ChildNumber, KeySource};
 use lightning_signer::bitcoin::util::psbt::PartiallySignedTransaction;
 use lightning_signer::bitcoin::{OutPoint, Transaction, Witness};
 use lightning_signer::channel::{
-    ChannelBalance, ChannelBase, ChannelId, ChannelSetup, CommitmentType, TypedSignature,
+    ChannelBalance, ChannelBase, ChannelId, ChannelSetup, TypedSignature,
 };
 use lightning_signer::lightning::ln::chan_utils::{
     derive_public_revocation_key, ChannelPublicKeys,
@@ -42,7 +41,6 @@ use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
 use lightning_signer::util::status::Status;
 use lightning_signer::wallet::Wallet;
-use vls_protocol::features::*;
 use vls_protocol::model::{
     Basepoints, BitcoinSignature, BlockHash, DisclosedSecret, ExtKey, Htlc,
     OutPoint as ModelOutPoint, PubKey, RecoverableSignature, Secret, Signature, TxId,
@@ -54,6 +52,7 @@ use vls_protocol::serde_bolt::{to_vec, LargeOctets, WireString};
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 
 use crate::approver::{Approve, NegativeApprover};
+use crate::util::channel_type_to_commitment_type;
 
 /// Error
 #[derive(Debug)]
@@ -759,7 +758,7 @@ impl Handler for ChannelHandler {
                     holder_shutdown_script,
                     counterparty_selected_contest_delay: m.remote_to_self_delay as u16,
                     counterparty_shutdown_script,
-                    commitment_type: extract_commitment_type(&m.channel_type),
+                    commitment_type: channel_type_to_commitment_type(&m.channel_type),
                 };
                 self.node.ready_channel(
                     self.channel_id.clone(),
@@ -1136,24 +1135,6 @@ fn extract_pubkey(key: &PubKey) -> PublicKey {
     PublicKey::from_slice(&key.0).expect("pubkey")
 }
 
-fn extract_commitment_type(channel_type: &Vec<u8>) -> CommitmentType {
-    // The byte/bit order from the wire is wrong in every way ...
-    let features = BitVec::from_bytes(
-        &channel_type.iter().rev().map(|bb| bb.reverse_bits()).collect::<Vec<u8>>(),
-    );
-    if features.get(OPT_ANCHORS_ZERO_FEE_HTLC_TX).unwrap_or_default() {
-        assert_eq!(features.get(OPT_STATIC_REMOTEKEY).unwrap_or_default(), true);
-        CommitmentType::AnchorsZeroFeeHtlc
-    } else if features.get(OPT_ANCHOR_OUTPUTS).unwrap_or_default() {
-        assert_eq!(features.get(OPT_STATIC_REMOTEKEY).unwrap_or_default(), true);
-        CommitmentType::Anchors
-    } else if features.get(OPT_STATIC_REMOTEKEY).unwrap_or_default() {
-        CommitmentType::StaticRemoteKey
-    } else {
-        CommitmentType::Legacy
-    }
-}
-
 fn extract_psbt_witscripts(psbt: &PartiallySignedTransaction) -> Vec<Vec<u8>> {
     psbt.outputs
         .iter()
@@ -1187,6 +1168,7 @@ fn extract_htlcs(htlcs: &Vec<Htlc>) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lightning_signer::channel::CommitmentType;
 
     #[test]
     fn test_der() {
@@ -1200,21 +1182,24 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_commitment_type() {
+    fn test_channel_type_to_commitment_type() {
         assert_eq!(
-            extract_commitment_type(&vec![0x10_u8, 0x10_u8, 0x00_u8]),
+            channel_type_to_commitment_type(&vec![0x10_u8, 0x10_u8, 0x00_u8]),
             CommitmentType::Anchors
         );
         assert_eq!(
-            extract_commitment_type(&vec![0x10_u8, 0x00_u8]),
+            channel_type_to_commitment_type(&vec![0x10_u8, 0x00_u8]),
             CommitmentType::StaticRemoteKey
         );
-        assert_eq!(extract_commitment_type(&vec![0x00_u8, 0x00_u8]), CommitmentType::Legacy);
+        assert_eq!(
+            channel_type_to_commitment_type(&vec![0x00_u8, 0x00_u8]),
+            CommitmentType::Legacy
+        );
     }
 
     #[test]
     #[should_panic]
-    fn test_extract_commitment_type_panic() {
-        extract_commitment_type(&vec![0x10_u8, 0x00_u8, 0x00_u8]);
+    fn test_channel_type_to_commitment_type_panic() {
+        channel_type_to_commitment_type(&vec![0x10_u8, 0x00_u8, 0x00_u8]);
     }
 }

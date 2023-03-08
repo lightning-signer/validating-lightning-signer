@@ -9,12 +9,11 @@ homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 
 [features]
-null = ["vls-protocol-signer"]
 grpc = []
 test_utils = ["vls-core/test_utils"]
 
 [dependencies]
-vls-protocol-signer = { path = "../vls-protocol-signer", version = "0.2.0-rc.1", optional = true }
+vls-protocol-signer = { path = "../vls-protocol-signer", version = "0.2.0-rc.1" }
 vls-protocol = { path = "../vls-protocol", version = "0.2.0-rc.1" }
 vls-core = { path = "../vls-core", version = "0.2.0-rc.1" }
 bit-vec = "0.6"
