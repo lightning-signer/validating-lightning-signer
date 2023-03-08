@@ -32,11 +32,10 @@ use vls_protocol::msgs::{
     GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply,
     GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply,
     ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement,
-    SignChannelAnnouncementReply, SignChannelUpdate, SignChannelUpdateReply,
-    SignCommitmentTxWithHtlcsReply, SignInvoice, SignInvoiceReply, SignLocalCommitmentTx2,
-    SignMutualCloseTx2, SignNodeAnnouncement, SignNodeAnnouncementReply, SignRemoteCommitmentTx2,
-    SignTxReply, SignWithdrawal, SignWithdrawalReply, ValidateCommitmentTx2,
-    ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply,
+    SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply, SignGossipMessage,
+    SignGossipMessageReply, SignInvoice, SignInvoiceReply, SignLocalCommitmentTx2,
+    SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal, SignWithdrawalReply,
+    ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply,
 };
 use vls_protocol::serde_bolt::{LargeOctets, Octets, WireString};
 use vls_protocol::{model, Error as ProtocolError};
@@ -612,27 +611,9 @@ impl NodeSigner for KeysManagerClient {
     }
 
     fn sign_gossip_message(&self, msg: UnsignedGossipMessage) -> Result<Signature, ()> {
-        let result = match msg {
-            UnsignedGossipMessage::ChannelAnnouncement(m) => {
-                let message = SignChannelAnnouncement { announcement: Octets(m.encode()) };
-                let result: SignChannelAnnouncementReply =
-                    self.call(message).expect("sign_channel_announcement");
-                result.node_signature.0.to_vec()
-            }
-            UnsignedGossipMessage::ChannelUpdate(m) => {
-                let message = SignChannelUpdate { update: Octets(m.encode()) };
-                let result: SignChannelUpdateReply =
-                    self.call(message).expect("sign_channel_update");
-                result.update[2..2 + 64].to_vec()
-            }
-            UnsignedGossipMessage::NodeAnnouncement(m) => {
-                let message = SignNodeAnnouncement { announcement: Octets(m.encode()) };
-                let result: SignNodeAnnouncementReply =
-                    self.call(message).expect("sign_node_announcement");
-                result.signature.0.to_vec()
-            }
-        };
-        Ok(Signature::from_compact(&result).expect("signature"))
+        let message = SignGossipMessage { message: Octets(msg.encode()) };
+        let result: SignGossipMessageReply = self.call(message).expect("sign_gossip_message");
+        Ok(Signature::from_compact(&result.signature.0).expect("signature"))
     }
 }
 

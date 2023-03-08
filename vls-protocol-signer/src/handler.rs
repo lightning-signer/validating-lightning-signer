@@ -610,6 +610,12 @@ impl Handler for RootHandler {
                 update[2..2 + 64].copy_from_slice(&sig.serialize_compact());
                 Ok(Box::new(msgs::SignChannelUpdateReply { update }))
             }
+            Message::SignGossipMessage(m) => {
+                let node_sig = self.node.sign_channel_update(&m.message.0)?;
+                Ok(Box::new(msgs::SignGossipMessageReply {
+                    signature: Signature(node_sig.serialize_compact()),
+                }))
+            }
             m => unimplemented!("loop {}: unimplemented message {:?}", self.id, m),
         }
     }
