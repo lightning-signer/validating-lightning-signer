@@ -1,0 +1,23 @@
+#!/bin/bash
+
+set -e
+
+# cargo publish all crates that are versioned together
+
+crates=(
+    vls-core
+    vls-persist
+    vls-protocol
+    vls-protocol-signer
+    vls-protocol-client
+    vls-frontend
+    vls-proxy
+)
+
+for crate in "${crates[@]}"; do
+  echo $crate
+  cargo publish -p $crate
+  # crates.io index takes a bit to update
+  sleep 10
+  cargo update -p $crate
+done

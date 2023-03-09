@@ -1,8 +1,12 @@
 [package]
 name = "vls-persist"
-version = "0.1.0"
-rust-version = "1.60.0"
+license = "Apache-2.0"
+version = "0.2.0-rc.2"
+authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
 edition = "2018"
+description = "A library for implementing a Lightning signer, which externalizes and secures cryptographic operations."
+homepage = "https://gitlab.com/lightning-signer/docs/"
+repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 
 [lib]
 name = "vls_persist"
@@ -17,6 +21,7 @@ kv-json = ["kv"]
 memo = ["serde_json"]
 
 [dependencies]
+vls-core = { path = "../vls-core", version = "0.2.0-rc.2", default-features = false }
 serde = { version = "1.0", features = ["derive", "alloc"], default-features = false }
 serde_with = { version = "2.0", default-features = false, features = ["hex", "macros"] }
 hex = { version = "0.4", default-features = false }
@@ -24,15 +29,8 @@ kv = { version = "0.23", features = ["json-value"], optional = true }
 log = { version = "0.4", default-features = false }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"], optional = true }
 
-[dependencies.vls-core]
-path = "../vls-core"
-default-features = false
-
-[dev-dependencies.vls-core]
-path = "../vls-core"
-features = ["test_utils"]
-
 [dev-dependencies]
+vls-core = { path = "../vls-core", version = "0.2.0-rc.2", features = ["test_utils"] }
 tempfile = "3.2"
 test-log = "0.2"
 env_logger = "0.9"

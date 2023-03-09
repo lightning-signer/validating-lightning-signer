@@ -14,6 +14,8 @@ extern crate alloc;
 pub mod approver;
 /// Protocol handler
 pub mod handler;
+/// Utilities
+pub mod util;
 
 pub use lightning_signer;
 pub use vls_protocol;

@@ -1593,7 +1593,7 @@ impl Node {
     fn do_sign_gossip_message(&self, encoded: &[u8]) -> Result<Signature, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let msg_hash = Sha256dHash::hash(encoded);
-        let encmsg = secp256k1::Message::from_slice(&msg_hash[..])
+        let encmsg = Message::from_slice(&msg_hash[..])
             .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign_ecdsa(&encmsg, &self.get_node_secret());
         Ok(sig)

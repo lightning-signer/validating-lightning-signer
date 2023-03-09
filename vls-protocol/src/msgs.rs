@@ -431,6 +431,20 @@ pub struct SignLocalCommitmentTx2 {
 }
 
 ///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1006)]
+pub struct SignGossipMessage {
+    pub message: Octets,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(1106)]
+pub struct SignGossipMessageReply {
+    pub signature: Signature,
+}
+
+///
 /// CLN only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(19)]
@@ -771,6 +785,7 @@ pub enum Message {
     SignLocalHtlcTx(SignLocalHtlcTx),
     SignCommitmentTx(SignCommitmentTx),
     SignLocalCommitmentTx2(SignLocalCommitmentTx2),
+    SignGossipMessage(SignGossipMessage),
     SignMutualCloseTx(SignMutualCloseTx),
     SignMutualCloseTx2(SignMutualCloseTx2),
     SignTxReply(SignTxReply),
