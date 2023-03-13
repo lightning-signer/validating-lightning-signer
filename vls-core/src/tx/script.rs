@@ -91,17 +91,6 @@ pub fn get_p2wpkh_redeemscript(key: &PublicKey) -> Script {
         .into_script()
 }
 
-/// To-counterparty redeem script when anchors are enabled - one block delay
-// TODO - This should be in chan_utils.
-pub(crate) fn get_delayed_redeemscript(delayed_key: &PublicKey) -> Script {
-    Builder::new()
-        .push_slice(&delayed_key.serialize())
-        .push_opcode(opcodes::all::OP_CHECKSIGVERIFY)
-        .push_opcode(opcodes::all::OP_PUSHNUM_1)
-        .push_opcode(opcodes::all::OP_CSV)
-        .into_script()
-}
-
 #[cfg(test)]
 mod tests {
     use core::{i16, i32, i8, u16, u8};

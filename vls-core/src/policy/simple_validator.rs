@@ -173,12 +173,26 @@ impl SimpleValidator {
         let policy = &self.policy;
 
         if delay < policy.min_delay as u32 {
-            let tag = format!("policy-channel-{}-range", name);
-            policy_err!(self, tag, "{} too small: {} < {}", name, delay, policy.min_delay);
+            let tag = format!("policy-channel-contest-delay-range-{}", name);
+            policy_err!(
+                self,
+                tag,
+                "{} contest-delay too small: {} < {}",
+                name,
+                delay,
+                policy.min_delay
+            );
         }
         if delay > policy.max_delay as u32 {
-            let tag = format!("policy-channel-{}-range", name);
-            policy_err!(self, tag, "{} too large: {} > {}", name, delay, policy.max_delay);
+            let tag = format!("policy-channel-contest-delay-range-{}", name);
+            policy_err!(
+                self,
+                tag,
+                "{} contest-delay too large: {} > {}",
+                name,
+                delay,
+                policy.max_delay
+            );
         }
 
         Ok(())
@@ -220,6 +234,7 @@ impl SimpleValidator {
 
     fn validate_fee(
         &self,
+        tag: &str,
         sum_inputs: u64,
         sum_outputs: u64,
         weight: usize,
@@ -232,7 +247,7 @@ impl SimpleValidator {
         if feerate_perkw < self.policy.min_feerate_per_kw {
             policy_err!(
                 self,
-                "policy-onchain-fee-range", // also policy-{commitment,mutual}-fee-range
+                tag, // also policy-{commitment,mutual}-fee-range
                 "feerate below minimum: {} < {}",
                 feerate_perkw,
                 self.policy.min_feerate_per_kw
@@ -241,7 +256,7 @@ impl SimpleValidator {
         if feerate_perkw > self.policy.max_feerate_per_kw {
             policy_err!(
                 self,
-                "policy-onchain-fee-range", // also policy-{commitment,mutual}-fee-range
+                tag, // also policy-{commitment,mutual}-fee-range
                 "feerate above maximum: {} > {}",
                 feerate_perkw,
                 self.policy.max_feerate_per_kw
@@ -336,37 +351,6 @@ impl SimpleValidator {
     }
 }
 
-// TODO - policy-onchain-wallet-path-predictable
-
-// TODO - policy-commitment-spends-active-utxo
-// TODO - policy-commitment-htlc-routing-balance
-// TODO - policy-commitment-htlc-received-spends-active-utxo
-// TODO - policy-commitment-htlc-cltv-range [NEEDS NEW HTLC DETECTION]
-// TODO - policy-commitment-htlc-offered-hash-matches
-// TODO - policy-commitment-htlc-counterparty-htlc-pubkey [NO TESTS TAGGED]
-// TODO - policy-commitment-previous-revoked [still need secret storage]
-// TODO - policy-commitment-anchors-not-when-off
-// TODO - policy-commitment-anchor-to-holder
-// TODO - policy-commitment-anchor-to-counterparty
-// TODO - policy-commitment-anchor-static-remotekey
-// TODO - policy-commitment-anchor-match-fundingkey [NO TESTS TAGGED]
-// TODO - policy-commitment-outputs-trimmed [NEEDS SIGN COUNTERPARTY TEST]
-
-// TODO - policy-commitment-payment-settled-preimage
-// TODO - policy-commitment-payment-allowlisted
-// TODO - policy-commitment-payment-velocity
-// TODO - policy-commitment-payment-approved
-// TODO - policy-commitment-payment-invoiced
-
-// TODO - policy-htlc-cltv-range
-
-// TODO - policy-funding-max [NEEDS TESTS]
-// TODO - policy-velocity-funding
-// TODO - policy-velocity-transferred
-// TODO - policy-merchant-no-sends
-// TODO - policy-routing-balanced [NEEDS TESTS]
-// TODO - policy-no-routing
-
 impl Validator for SimpleValidator {
     fn validate_ready_channel(
         &self,
@@ -398,19 +382,13 @@ impl Validator for SimpleValidator {
             }
         }
 
-        // policy-channel-counterparty-contest-delay-range
+        // policy-channel-contest-delay-range-counterparty
         // policy-commitment-to-self-delay-range relies on this value
-        self.validate_delay(
-            "holder-contest-delay",
-            setup.counterparty_selected_contest_delay as u32,
-        )?;
+        self.validate_delay("holder", setup.counterparty_selected_contest_delay as u32)?;
 
-        // policy-channel-holder-contest-delay-range
+        // policy-channel-contest-delay-range-holder
         // policy-commitment-to-self-delay-range relies on this value
-        self.validate_delay(
-            "counterparty-contest-delay",
-            setup.holder_selected_contest_delay as u32,
-        )?;
+        self.validate_delay("counterparty", setup.holder_selected_contest_delay as u32)?;
 
         if let Some(holder_shutdown_script) = &setup.holder_shutdown_script {
             if !wallet
@@ -686,7 +664,7 @@ impl Validator for SimpleValidator {
         if info2.to_self_delay != setup.holder_selected_contest_delay {
             policy_err!(
                 self,
-                "policy-channel-holder-contest-delay-range",
+                "policy-channel-contest-delay-range-holder",
                 "holder_selected_contest_delay mismatch"
             );
         }
@@ -710,6 +688,9 @@ impl Validator for SimpleValidator {
         }
 
         // Is this a retry?
+        // FIXME the `+ 1` on next line is wrong
+        // not a security problem, because it's OK to re-sign an old commitment
+        // that the *counterparty* revoked
         if commit_num + 1 == estate.next_counterparty_commit_num {
             // The commit_point must be the same as previous
             match estate.current_counterparty_point {
@@ -792,7 +773,7 @@ impl Validator for SimpleValidator {
         if info2.to_self_delay != setup.counterparty_selected_contest_delay {
             policy_err!(
                 self,
-                "policy-channel-counterparty-contest-delay-range",
+                "policy-channel-contest-delay-range-counterparty",
                 "counterparty_selected_contest_delay mismatch"
             );
         }
@@ -1339,7 +1320,7 @@ impl Validator for SimpleValidator {
         let sum_outputs = to_holder_value_sat
             .checked_add(to_counterparty_value_sat)
             .ok_or_else(|| policy_error("consumed overflow".to_string()))?;
-        self.validate_fee(setup.channel_value_sat, sum_outputs, weight)
+        self.validate_fee("policy-mutual-fee-range", setup.channel_value_sat, sum_outputs, weight)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         // To make this test independent of variable fees we compare the side that
@@ -1613,6 +1594,7 @@ impl Validator for SimpleValidator {
         } else {
             0
         };
+        // this also implicitly implements policy-commitment-payment-invoiced
         if self.policy.require_invoices && incoming + max_to_invoice < outgoing {
             policy_err!(self, "policy-routing-balanced", "incoming < outgoing");
         }
@@ -1754,8 +1736,13 @@ impl SimpleValidator {
             .ok_or_else(|| policy_error("channel value overflow".to_string()))?
             .checked_add(htlc_value_sat)
             .ok_or_else(|| policy_error("channel value overflow on HTLC".to_string()))?;
-        self.validate_fee(setup.channel_value_sat, sum_outputs, expected_weight)
-            .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
+        self.validate_fee(
+            "policy-commitment-fee-range",
+            setup.channel_value_sat,
+            sum_outputs,
+            expected_weight,
+        )
+        .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         let (_holder_value_sat, counterparty_value_sat) = info.value_to_parties();
 
@@ -1982,7 +1969,7 @@ mod tests {
         ));
     }
 
-    // policy-channel-holder-contest-delay-range
+    // policy-channel-contest-delay-range-holder
     // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_holder_min_delay_test() {
@@ -1994,7 +1981,7 @@ mod tests {
         setup.holder_selected_contest_delay = 4;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
-            "validate_delay: counterparty-contest-delay too small: 4 < 5"
+            "validate_delay: counterparty contest-delay too small: 4 < 5"
         );
     }
 
@@ -2011,7 +1998,7 @@ mod tests {
         assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_err());
     }
 
-    // policy-channel-holder-contest-delay-range
+    // policy-channel-contest-delay-range-holder
     // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_holder_max_delay_test() {
@@ -2023,11 +2010,11 @@ mod tests {
         setup.holder_selected_contest_delay = 1441;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
-            "validate_delay: counterparty-contest-delay too large: 1441 > 1440"
+            "validate_delay: counterparty contest-delay too large: 1441 > 1440"
         );
     }
 
-    // policy-channel-counterparty-contest-delay-range
+    // policy-channel-contest-delay-range-counterparty
     // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_counterparty_min_delay_test() {
@@ -2039,11 +2026,11 @@ mod tests {
         setup.counterparty_selected_contest_delay = 4;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
-            "validate_delay: holder-contest-delay too small: 4 < 5"
+            "validate_delay: holder contest-delay too small: 4 < 5"
         );
     }
 
-    // policy-channel-counterparty-contest-delay-range
+    // policy-channel-contest-delay-range-counterparty
     // policy-commitment-to-self-delay-range
     #[test]
     fn validate_to_counterparty_max_delay_test() {
@@ -2055,7 +2042,7 @@ mod tests {
         setup.counterparty_selected_contest_delay = 1441;
         assert_policy_err!(
             validator.validate_ready_channel(&*node, &setup, &vec![]),
-            "validate_delay: holder-contest-delay too large: 1441 > 1440"
+            "validate_delay: holder contest-delay too large: 1441 > 1440"
         );
     }
 

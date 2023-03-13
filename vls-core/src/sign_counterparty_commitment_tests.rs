@@ -676,7 +676,7 @@ mod tests {
         |tms| {
             tms.tx.transaction.lock_time = PackedLockTime(42);
         },
-        |_| "policy failure: recomposed tx mismatch"
+        |_| "policy failure: sign_counterparty_commitment_tx: recomposed tx mismatch"
     );
 
     // policy-commitment-sequence
@@ -685,7 +685,7 @@ mod tests {
         |tms| {
             tms.tx.transaction.input[0].sequence = Sequence(42);
         },
-        |_| "policy failure: recomposed tx mismatch"
+        |_| "policy failure: sign_counterparty_commitment_tx: recomposed tx mismatch"
     );
 
     // policy-commitment-input-single
@@ -696,7 +696,7 @@ mod tests {
             inp2.previous_output.txid = bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
             tms.tx.transaction.input.push(inp2);
         },
-        |_| "policy failure: recomposed tx mismatch"
+        |_| "policy failure: sign_counterparty_commitment_tx: recomposed tx mismatch"
     );
 
     // policy-commitment-input-match-funding
@@ -706,7 +706,7 @@ mod tests {
             tms.tx.transaction.input[0].previous_output.txid =
                 bitcoin::Txid::from_slice(&[3u8; 32]).unwrap();
         },
-        |_| "policy failure: recomposed tx mismatch"
+        |_| "policy failure: sign_counterparty_commitment_tx: recomposed tx mismatch"
     );
 
     // policy-commitment-revocation-pubkey
@@ -716,7 +716,7 @@ mod tests {
         |keys| {
             keys.revocation_key = make_test_pubkey(42);
         },
-        |_| "policy failure: recomposed tx mismatch"
+        |_| "policy failure: sign_counterparty_commitment_tx: recomposed tx mismatch"
     );
 
     // policy-commitment-htlc-holder-htlc-pubkey
@@ -725,7 +725,7 @@ mod tests {
         |keys| {
             keys.countersignatory_htlc_key = make_test_pubkey(42);
         },
-        |_| "policy failure: recomposed tx mismatch"
+        |_| "policy failure: sign_counterparty_commitment_tx: recomposed tx mismatch"
     );
 
     // policy-commitment-broadcaster-pubkey
@@ -734,7 +734,7 @@ mod tests {
         |keys| {
             keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
         },
-        |_| "policy failure: recomposed tx mismatch"
+        |_| "policy failure: sign_counterparty_commitment_tx: recomposed tx mismatch"
     );
 
     // policy-commitment-countersignatory-pubkey
@@ -751,7 +751,7 @@ mod tests {
                     payload_for_p2wpkh(&make_test_pubkey(42)).script_pubkey();
             };
         },
-        |_| "policy failure: recomposed tx mismatch"
+        |_| "policy failure: sign_counterparty_commitment_tx: recomposed tx mismatch"
     );
 
     generate_failed_precondition_error_with_mutated_state!(

@@ -30,10 +30,7 @@ use crate::node::Node;
 use crate::policy::error::policy_error;
 use crate::policy::validator::{ChainState, CommitmentSignatures, EnforcementState, Validator};
 use crate::prelude::*;
-use crate::tx::tx::{
-    build_commitment_tx, get_commitment_transaction_number_obscure_factor, CommitmentInfo2,
-    HTLCInfo2,
-};
+use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
 use crate::util::crypto_utils::derive_public_key;
 use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugVecVecU8};
 use crate::util::ser_util::{ChannelPublicKeysDef, OutPointDef, ScriptDef};
@@ -41,7 +38,7 @@ use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::transaction_utils::add_holder_sig;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::wallet::Wallet;
-use crate::{Arc, Weak};
+use crate::{policy_err, Arc, Weak};
 
 /// Channel identifier
 ///
@@ -391,14 +388,21 @@ impl ChannelBase for Channel {
 
     fn get_per_commitment_secret(&self, commitment_number: u64) -> Result<SecretKey, Status> {
         let next_holder_commit_num = self.enforcement_state.next_holder_commit_num;
-        // policy-revoke-new-commitment-signed
+        // When we try to release commitment number n, we must have a signature
+        // for commitment number `n+1`, so `next_holder_commit_num` must be at least
+        // `n+2`.
+        // Also, given that we previous validated the commitment tx when we
+        // got the counterparty signature for it, then we must have fulfilled
+        // policy-revoke-new-commitment-valid
         if commitment_number + 2 > next_holder_commit_num {
-            return Err(policy_error(format!(
-                "get_per_commitment_secret: \
-                 commitment_number {} invalid when next_holder_commit_num is {}",
-                commitment_number, next_holder_commit_num,
-            ))
-            .into());
+            let validator = self.validator();
+            policy_err!(
+                validator,
+                "policy-revoke-new-commitment-signed",
+                "cannot revoke commitment_number {} when next_holder_commit_num is {}",
+                commitment_number,
+                next_holder_commit_num,
+            )
         }
         let secret =
             self.keys.release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
@@ -512,50 +516,6 @@ impl Channel {
         Ok(counterparty_key)
     }
 
-    fn get_commitment_transaction_number_obscure_factor(&self) -> u64 {
-        get_commitment_transaction_number_obscure_factor(
-            &self.keys.pubkeys().payment_point,
-            &self.keys.counterparty_pubkeys().payment_point,
-            self.setup.is_outbound,
-        )
-    }
-
-    // forward counting commitment number
-    #[allow(dead_code)]
-    pub(crate) fn build_commitment_tx(
-        &self,
-        per_commitment_point: &PublicKey,
-        commitment_number: u64,
-        info: &CommitmentInfo2,
-    ) -> Result<(Transaction, Vec<Script>, Vec<HTLCOutputInCommitment>), Status> {
-        let keys = if !info.is_counterparty_broadcaster {
-            self.make_holder_tx_keys(per_commitment_point)?
-        } else {
-            self.make_counterparty_tx_keys(per_commitment_point)?
-        };
-
-        // TODO - consider if we can get LDK to put funding pubkeys in TxCreationKeys
-        let (workaround_local_funding_pubkey, workaround_remote_funding_pubkey) = if !info
-            .is_counterparty_broadcaster
-        {
-            (&self.keys.pubkeys().funding_pubkey, &self.keys.counterparty_pubkeys().funding_pubkey)
-        } else {
-            (&self.keys.counterparty_pubkeys().funding_pubkey, &self.keys.pubkeys().funding_pubkey)
-        };
-
-        let obscured_commitment_transaction_number =
-            self.get_commitment_transaction_number_obscure_factor() ^ commitment_number;
-        Ok(build_commitment_tx(
-            &keys,
-            info,
-            obscured_commitment_transaction_number,
-            self.setup.funding_outpoint,
-            self.setup.is_anchors(),
-            workaround_local_funding_pubkey,
-            workaround_remote_funding_pubkey,
-        ))
-    }
-
     /// Sign a counterparty commitment transaction after rebuilding it
     /// from the supplied arguments.
     // TODO anchors support once LDK supports it
@@ -601,6 +561,8 @@ impl Channel {
 
         let htlcs = Self::htlcs_info2_to_oic(offered_htlcs, received_htlcs);
 
+        // since we independently re-create the tx, this also performs the
+        // policy-commitment-* controls
         let commitment_tx = self.make_counterparty_commitment_tx(
             remote_per_commitment_point,
             commitment_number,
@@ -750,6 +712,7 @@ impl Channel {
 
             let htlc_redeemscript = get_htlc_redeemscript(htlc, self.setup.is_anchors(), &txkeys);
 
+            // policy-onchain-format-standard
             let recomposed_htlc_tx = build_htlc_transaction(
                 &commitment_txid,
                 build_feerate,
@@ -869,6 +832,7 @@ impl Channel {
             Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
 
         let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
+        // policy-commitment-*
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
             &txkeys,
@@ -925,6 +889,13 @@ impl Channel {
         &mut self,
         commitment_number: u64,
     ) -> Result<(Signature, Vec<Signature>), Status> {
+        // We are just signing the latest commitment info that we previously
+        // stored in the enforcement state, while checking that the commitment
+        // number supplied by the caller matches the one we expect.
+        //
+        // policy-commitment-holder-not-revoked is implicitly checked by
+        // the fact that the current holder commitment info in the enforcement
+        // state cannot have been revoked.
         let validator = self.validator();
         let info2 = validator
             .get_current_holder_commitment_info(&mut self.enforcement_state, commitment_number)?;
@@ -935,6 +906,7 @@ impl Channel {
 
         let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };
         let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
+        // policy-onchain-format-standard
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
             &txkeys,
@@ -999,6 +971,7 @@ impl Channel {
 
         let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };
         let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
+        // policy-onchain-format-standard
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
             &txkeys,
@@ -1716,7 +1689,7 @@ impl Channel {
         if recomposed_tx.trust().built_transaction().transaction != *tx {
             debug!("ORIGINAL_TX={:#?}", &tx);
             debug!("RECOMPOSED_TX={:#?}", &recomposed_tx.trust().built_transaction().transaction);
-            return Err(policy_error("recomposed tx mismatch".to_string()).into());
+            policy_err!(validator, "policy-commitment", "recomposed tx mismatch");
         }
 
         // The comparison in the previous block will fail if any of the
@@ -1732,6 +1705,9 @@ impl Channel {
         // - policy-commitment-htlc-revocation-pubkey
         // - policy-commitment-htlc-counterparty-htlc-pubkey
         // - policy-commitment-htlc-holder-htlc-pubkey
+        // - policy-commitment-singular
+        // - policy-commitment-to-self-delay
+        // - policy-commitment-no-unrecognized-outputs
 
         // Convert from backwards counting.
         let commit_num = INITIAL_COMMITMENT_NUMBER - recomposed_tx.trust().commitment_number();
@@ -1795,12 +1771,14 @@ impl Channel {
             )));
         }
 
+        let validator = self.validator();
+
         // Since we didn't have the value at the real open, validate it now.
-        self.validator().validate_channel_value(&self.setup)?;
+        validator.validate_channel_value(&self.setup)?;
 
         // Derive a CommitmentInfo first, convert to CommitmentInfo2 below ...
         let is_counterparty = false;
-        let info = self.validator().decode_commitment_tx(
+        let info = validator.decode_commitment_tx(
             &self.keys,
             &self.setup,
             is_counterparty,
@@ -1820,7 +1798,7 @@ impl Channel {
         let incoming_payment_summary =
             self.enforcement_state.incoming_payments_summary(Some(&info2), None);
 
-        self.validator()
+        validator
             .validate_holder_commitment_tx(
                 &self.enforcement_state,
                 commitment_number,
@@ -1867,7 +1845,7 @@ impl Channel {
             warn!("RECOMPOSITION FAILED");
             warn!("ORIGINAL_TX={:#?}", &tx);
             warn!("RECOMPOSED_TX={:#?}", &recomposed_tx.trust().built_transaction().transaction);
-            return Err(policy_error("recomposed tx mismatch".to_string()).into());
+            policy_err!(validator, "policy-commitment", "recomposed tx mismatch");
         }
 
         // The comparison in the previous block will fail if any of the
@@ -1910,6 +1888,7 @@ impl Channel {
             .make_holder_tx_keys(&per_commitment_point)
             .map_err(|err| internal_error(format!("make_holder_tx_keys failed: {}", err)))?;
 
+        // policy-onchain-format-standard
         let (recomposed_tx, info2, incoming_payment_summary) = self
             .make_validated_recomposed_holder_commitment_tx(
                 tx,
