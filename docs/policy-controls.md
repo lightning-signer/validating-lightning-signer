@@ -1,4 +1,4 @@
-### [Back to Lightning-Signer Home](README.md)
+### [Back to Lightning-Signer Home](https://gitlab.com/lightning-signer/docs/-/blob/master/README.md)
 
 # Overview
 
@@ -74,7 +74,8 @@ Note that several controls may be checked in one comparison, in which case the p
 
 * Funded - if this is not the first commitment, the funding UTXO must
   be active on chain with enough depth <br>
-  `policy-commitment-spends-active-utxo`
+  `policy-commitment-spends-active-utxo` <br>
+  ACTION: implement via UTXO oracle on open and periodically
 
 * Initial - the initial commitment must have no HTLCs <br>
   `policy-commitment-first-no-htlcs`
@@ -115,20 +116,24 @@ Note that several controls may be checked in one comparison, in which case the p
 
 * The HTLC pubkeys must be correct <br>
   `policy-commitment-htlc-counterparty-htlc-pubkey`
-  `policy-commitment-htlc-holder-htlc-pubkey`
+  `policy-commitment-htlc-holder-htlc-pubkey` <br>
+  ACTION: implement tests
 
 * The cltv_expiry on received HTLC outputs must be reasonable <br>
   `policy-commitment-htlc-cltv-range` <br>
-  ACTION: currently off by default - `policy.use_chain_state`
+  ACTION: currently off by default - `policy.use_chain_state`.  also needs
+  to detect when new HTLCs are added to the commitment transaction.
   
 * Offered payment hash - must be related to received HTLC payment hash <br>
   `policy-commitment-htlc-offered-hash-matches` <br>
   ACTION: isn't this redundant with `policy-commitment-htlc-routing-balance`?
+  or implement.
 
 * Trimming - outputs are trimmed if under the bitcoin dust limit.  It is
   critical that the holder's commitment does not violate the bitcoin
   dust limit so that it is valid and can be transmitted if necessary <br>
-  `policy-commitment-outputs-trimmed`
+  `policy-commitment-outputs-trimmed` <br>
+  ACTION: implement tests for signing counterparty transaction
 
 * Revocation - the previous commitment transaction was properly
   revoked by peer disclosing secret.  This includes both checking
@@ -151,22 +156,26 @@ Note that several controls may be checked in one comparison, in which case the p
 * Anchors:
   - If neither `option_anchor_outputs` or `option_anchors_zero_fee_htlc`
     are in force no anchor outputs shall be present. <br>
-    `policy-commitment-anchors-not-when-off`
+    `policy-commitment-anchors-not-when-off` <br>
+    ACTION: implement
 
   - If either `option_anchor_outputs` or `option_anchors_zero_fee_htlc`
     are in force the to-local and to-remote outputs must each have an
     associated anchor output. <br>
     `policy-commitment-anchor-to-holder`,
-    `policy-commitment-anchor-to-counterparty`
+    `policy-commitment-anchor-to-counterparty` <br>
+    ACTION: implement
     
     * Anchor outputs must be the correct amount. <br>
       `policy-commitment-anchor-amount`
       
     * The `option_static_remotekey` flag must be on. <br>
-      `policy-commitment-anchor-static-remotekey`
+      `policy-commitment-anchor-static-remotekey` <br>
+      ACTION: implement
       
     * Anchor outputs must each be locked by the correct side's funding-key. <br>
-      `policy-commitment-anchor-match-fundingkey`
+      `policy-commitment-anchor-match-fundingkey` <br>
+      ACTION: implement tests
 
 ## Payments
 
@@ -284,7 +293,8 @@ or justice sweep transaction, the following controls are checked:
 ## Funding Transaction
 
 * Maximum - the amount funded in a channel must be under a certain amount <br>
-  `policy-funding-max`
+  `policy-funding-max` <br>
+  ACTION: implement tests
 
 * Velocity - the amount funded must be under a certain amount per unit time <br>
   `policy-velocity-funding` <br>
@@ -307,7 +317,8 @@ or justice sweep transaction, the following controls are checked:
 ## Routing Hub
 
 * Balanced routing - ensure as much is claimed on input as can be claimed on output <br/>
-  `policy-routing-balanced`
+  `policy-routing-balanced` <br>
+  ACTION: implement tests
 
 * No sends - balances must only change via HTLC settlement <br>
   `policy-routing-deltas-only-htlc`
