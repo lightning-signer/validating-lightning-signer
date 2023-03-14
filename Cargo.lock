@@ -2175,7 +2175,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "vls-core"
-version = "0.2.0-rc.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -2203,7 +2203,7 @@ dependencies = [
 
 [[package]]
 name = "vls-core-test"
-version = "0.2.0-rc.2"
+version = "0.2.0"
 dependencies = [
  "env_logger",
  "itertools",
@@ -2214,7 +2214,7 @@ dependencies = [
 
 [[package]]
 name = "vls-frontend"
-version = "0.2.0-rc.2"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "env_logger",
@@ -2228,7 +2228,7 @@ dependencies = [
 
 [[package]]
 name = "vls-persist"
-version = "0.2.0-rc.2"
+version = "0.2.0"
 dependencies = [
  "env_logger",
  "hex",
@@ -2244,7 +2244,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol"
-version = "0.2.0-rc.2"
+version = "0.2.0"
 dependencies = [
  "as-any",
  "bolt-derive",
@@ -2258,7 +2258,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol-client"
-version = "0.2.0-rc.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2272,7 +2272,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol-signer"
-version = "0.2.0-rc.2"
+version = "0.2.0"
 dependencies = [
  "bit-vec",
  "log",
@@ -2283,7 +2283,7 @@ dependencies = [
 
 [[package]]
 name = "vls-proxy"
-version = "0.2.0-rc.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "as-any",
