@@ -2,7 +2,7 @@ use lightning_signer::bitcoin::secp256k1::{PublicKey, SecretKey};
 use lightning_signer::bitcoin::Transaction;
 use lightning_signer::prelude::*;
 use lightning_signer::Arc;
-use log::info;
+use log::*;
 
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::lightning_invoice::{Invoice, SignedRawInvoice};
@@ -300,6 +300,7 @@ mod tests {
     };
     use std::sync::Arc;
     use std::time::Duration;
+    use test_log::test;
 
     #[test]
     fn test_invoice_velocity_approver_negative() {

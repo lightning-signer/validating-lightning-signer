@@ -27,3 +27,6 @@ bit-vec = { version = "0.6", default_features = false }
 
 [dev-dependencies]
 vls-core = { path = "../vls-core", version = "0.2.0", features = ["test_utils"] }
+# For logging in unit tests
+test-log = "0.2"
+env_logger = "0.9"
