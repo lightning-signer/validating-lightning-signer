@@ -47,7 +47,7 @@ pub fn main() {
     let datadir = args.datadir.clone();
     let datapath = format!("{}/{}", datadir, network.to_string());
     fs::create_dir_all(&datapath).expect("mkdir datapath");
-    setup_logging(&datapath, &bin_name, "debug");
+    setup_logging(&datapath, &bin_name, &args.log_level);
     info!("{} git_desc={} starting", bin_name, GIT_DESC);
 
     if let Some(ref address) = args.recover_close {
