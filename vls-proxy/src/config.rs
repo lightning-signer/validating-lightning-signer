@@ -48,6 +48,16 @@ pub struct SignerArgs {
     #[clap(long, help = "print git desc version and exit")]
     pub git_desc: bool,
 
+    #[clap(
+        long,
+        value_parser,
+        help = "set the logging level",
+        value_name = "LEVEL",
+        default_value = "debug",
+        possible_values = &["off", "error", "warn", "info", "debug", "trace"],
+    )]
+    pub log_level: String,
+
     #[clap(short, long, value_parser, default_value = DEFAULT_DIR, help = "data directory", value_name = "DIR")]
     pub datadir: String,
 
