@@ -32,7 +32,7 @@ use vls_frontend::Frontend;
 use vls_persist::kv_json::KVJsonPersister;
 use vls_persist::thread_memo_persister::ThreadMemoPersister;
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
-use vls_protocol_signer::approver::PositiveApprover;
+use vls_protocol_signer::approver::WarningPositiveApprover;
 use vls_protocol_signer::handler::{ChannelHandler, Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::vls_protocol;
 
@@ -287,7 +287,7 @@ async fn start() {
     let mut handler_builder =
         RootHandlerBuilder::new(network, client.id(), services, seed).allowlist(allowlist);
     if should_auto_approve() {
-        handler_builder = handler_builder.approver(Arc::new(PositiveApprover()));
+        handler_builder = handler_builder.approver(Arc::new(WarningPositiveApprover()));
     }
 
     let looper = make_looper(&seed).await;

@@ -32,7 +32,7 @@ use random_starting_time::RandomStartingTimeFactory;
 use vls_protocol::model::PubKey;
 use vls_protocol::msgs::{self, read_serial_request_header, write_serial_response_header, Message};
 use vls_protocol::serde_bolt::WireString;
-use vls_protocol_signer::approver::{Approve, PositiveApprover};
+use vls_protocol_signer::approver::{Approve, WarningPositiveApprover};
 use vls_protocol_signer::handler::{Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::lightning_signer;
 use vls_protocol_signer::lightning_signer::bitcoin::Network;
@@ -331,7 +331,7 @@ fn make_validator_factory(network: Network, permissive: bool) -> Arc<SimpleValid
 fn make_approver(devctx: &Arc<RefCell<DeviceContext>>, permissive: bool) -> Arc<dyn Approve> {
     if permissive {
         info!("VLS_PERMISSIVE: ALL INVOICES AND KEYSENDS AUTOMATICALLY APPROVED");
-        Arc::new(PositiveApprover())
+        Arc::new(WarningPositiveApprover())
     } else {
         info!("VLS_ENFORCING: INVOICES AND KEYSENDS REQUIRE APPROVAL");
         Arc::new(ScreenApprover::new(Arc::clone(devctx)))

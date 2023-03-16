@@ -2,7 +2,7 @@ use lightning_signer::bitcoin::secp256k1::{PublicKey, SecretKey};
 use lightning_signer::bitcoin::Transaction;
 use lightning_signer::prelude::*;
 use lightning_signer::Arc;
-use log::info;
+use log::*;
 
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::lightning_invoice::{Invoice, SignedRawInvoice};
@@ -61,6 +61,10 @@ pub trait Approve: SendSync {
 
         // shortcut if node already has this invoice
         if node.has_payment(&payment_hash, &invoice_hash)? {
+            debug!(
+                "node already approved invoice with payment_hash {:?} invoice_hash {:?}",
+                &payment_hash, &invoice_hash
+            );
             return Ok(true);
         }
 
@@ -88,6 +92,10 @@ pub trait Approve: SendSync {
 
         // shortcut if node already has this payment
         if node.has_payment(&payment_hash, &invoice_hash)? {
+            debug!(
+                "node already approved keysend with payment_hash {:?} invoice_hash {:?}",
+                &payment_hash, &invoice_hash
+            );
             return Ok(true);
         }
 
@@ -137,6 +145,9 @@ pub trait Approve: SendSync {
 }
 
 /// An approver that always approves, for testing and for permissive mode.
+///
+/// NOTE - this version approves quietly, if the approval should be logged
+/// with a warning use [`WarningPositiveApprover`] instead.
 #[derive(Copy, Clone)]
 pub struct PositiveApprover();
 
@@ -157,6 +168,40 @@ impl Approve for PositiveApprover {
         _values_sat: &[u64],
         _unknown_indices: &[usize],
     ) -> bool {
+        true
+    }
+}
+
+/// An approver that always approves, for testing and for permissive mode.
+///
+/// NOTE - this version generates a warning to the log so the user is aware
+/// of the automatic approvals.
+#[derive(Copy, Clone)]
+pub struct WarningPositiveApprover();
+
+impl SendSync for WarningPositiveApprover {}
+
+impl Approve for WarningPositiveApprover {
+    fn approve_invoice(&self, invoice: &Invoice) -> bool {
+        warn!("AUTOAPPROVED INVOICE {:?}", invoice);
+        true
+    }
+
+    fn approve_keysend(&self, payment_hash: PaymentHash, amount_msat: u64) -> bool {
+        warn!("AUTOAPPROVED KEYSEND of {} msat with payment_hash {:?}", amount_msat, payment_hash);
+        true
+    }
+
+    fn approve_onchain(
+        &self,
+        tx: &Transaction,
+        values_sat: &[u64],
+        unknown_indices: &[usize],
+    ) -> bool {
+        warn!(
+            "AUTOAPPROVED ONCHAIN tx {:?} with values_sat {:?} and unknown_indices {:?}",
+            tx, values_sat, unknown_indices
+        );
         true
     }
 }
@@ -289,7 +334,9 @@ impl<A: Approve> Approve for VelocityApprover<A> {
 
 #[cfg(test)]
 mod tests {
-    use crate::approver::{Approve, NegativeApprover, PositiveApprover, VelocityApprover};
+    use crate::approver::{
+        Approve, NegativeApprover, PositiveApprover, VelocityApprover, WarningPositiveApprover,
+    };
     use lightning_signer::bitcoin::secp256k1::PublicKey;
     use lightning_signer::lightning::ln::PaymentHash;
     use lightning_signer::node::{Node, PaymentState};
@@ -300,6 +347,7 @@ mod tests {
     };
     use std::sync::Arc;
     use std::time::Duration;
+    use test_log::test;
 
     #[test]
     fn test_invoice_velocity_approver_negative() {
@@ -381,5 +429,22 @@ mod tests {
         let (payment_state, _invoice_hash) =
             Node::payment_state_from_keysend(payee, payment_hash, 600).unwrap();
         (payment_hash, payment_state)
+    }
+
+    #[test]
+    fn test_invoice_approver_with_warning() {
+        let approver = WarningPositiveApprover();
+        let amt = 600_000_u64;
+        let invoice = make_test_invoice(1, amt);
+        let success = approver.approve_invoice(&invoice);
+        assert!(success);
+    }
+
+    #[test]
+    fn test_keysend_approver_with_warning() {
+        let approver = WarningPositiveApprover();
+        let (payment_hash, payment_state) = make_keysend_payment(1);
+        let success = approver.approve_keysend(payment_hash, payment_state.amount_msat);
+        assert!(success);
     }
 }

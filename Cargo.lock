@@ -2275,8 +2275,10 @@ name = "vls-protocol-signer"
 version = "0.2.0"
 dependencies = [
  "bit-vec",
+ "env_logger",
  "log",
  "serde",
+ "test-log",
  "vls-core",
  "vls-protocol",
 ]

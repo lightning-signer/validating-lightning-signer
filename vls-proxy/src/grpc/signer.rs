@@ -30,7 +30,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use vls_persist::kv_json::KVJsonPersister;
-use vls_protocol_signer::approver::PositiveApprover;
+use vls_protocol_signer::approver::WarningPositiveApprover;
 use vls_protocol_signer::handler::{Error, Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::vls_protocol::model::PubKey;
 use vls_protocol_signer::vls_protocol::msgs;
@@ -93,7 +93,7 @@ pub fn make_handler(datadir: &str, args: &SignerArgs) -> RootHandler {
     let mut handler_builder =
         RootHandlerBuilder::new(network, 0, services, seed).allowlist(allowlist.clone());
     if should_auto_approve() {
-        handler_builder = handler_builder.approver(Arc::new(PositiveApprover()));
+        handler_builder = handler_builder.approver(Arc::new(WarningPositiveApprover()));
     }
     let (root_handler, _muts) = handler_builder.build();
 
