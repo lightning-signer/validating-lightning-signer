@@ -85,8 +85,11 @@ mod io_extras {
 
 pub use io_extras::io;
 
+#[doc(hidden)]
 pub use alloc::collections::BTreeSet as OrderedSet;
+#[doc(hidden)]
 pub use alloc::rc::Rc;
+#[doc(hidden)]
 pub use alloc::sync::{Arc, Weak};
 
 #[cfg(not(feature = "std"))]
@@ -117,6 +120,7 @@ pub mod prelude {
     pub trait SendSync: Send + Sync {}
 }
 
+#[doc(hidden)]
 pub use prelude::SendSync;
 
 #[cfg(feature = "std")]

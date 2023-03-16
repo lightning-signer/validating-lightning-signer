@@ -32,6 +32,7 @@ macro_rules! log_channel_public_keys {
 }
 
 /// log the enforcement state at the trace level
+#[doc(hidden)]
 #[macro_export]
 macro_rules! trace_enforcement_state {
     ($estate: expr) => {
@@ -205,6 +206,7 @@ pub fn script_debug(script: &Script, network: Network) -> String {
 }
 
 /// Logs the arguments at debug level.
+#[doc(hidden)]
 #[macro_export]
 macro_rules! debug_vals {
     ( $($arg:tt)* ) => {
@@ -215,6 +217,7 @@ macro_rules! debug_vals {
 }
 
 /// Logs the arguments at debug level.
+#[doc(hidden)]
 #[macro_export]
 macro_rules! debug_failed_vals {
     ( $($arg:tt)* ) => {
@@ -225,6 +228,7 @@ macro_rules! debug_failed_vals {
 }
 
 /// Return a scopeguard which debugs args on return unless disabled.
+#[doc(hidden)]
 #[macro_export]
 macro_rules! scoped_debug_return {
     ( $($arg:tt)* ) => {{
