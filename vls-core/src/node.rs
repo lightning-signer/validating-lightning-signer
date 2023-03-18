@@ -337,7 +337,7 @@ impl NodeState {
     }
 
     /// Apply outgoing in-flight payment amounts as a result of a new commitment tx.
-    /// Must call [`validate_payments`] first.
+    /// Must call [NodeState::validate_payments] first.
     pub fn apply_payments(
         &mut self,
         channel_id: &ChannelId,

@@ -12,52 +12,11 @@ The following remain to be implemented:
 * there is no facility to recover from loss of signer state.
 * on-chain tracking is not fully implemented, so a malicious node can steal funds by failing to remedy a breach (for example)
 
-# Starting the gRPC server
-
-The gRPC server is a reference implementation of a signer which listens for requests from the node and from the admin CLI over gRPC.
-
-It can be started via:
-```
-alias vlsd="cargo run --bin vlsd"
-alias vls-cli="cargo run --bin vls-cli --"
-vlsd
-```
-
-The server will persist its state to `.lightning-signer` in the current directory.
-
-# Using the admin CLI
-
-Assuming the server is running (see above), the admin CLI can be invoked as follows:
-```shell
-vls-cli [ARGUMENTS]
-```
-For example, to get help, run:
-```
-cargo run --bin vls-cli -- help
-```
-
-Here is an example session:
-
-```shell
-# this outputs the new mnemonic phrase to stderr
-node_id=$(vls-cli node new)
-
-# alternatively, supply the mnemonic phrase on stdin
-# vls-cli node new --mnemonic
-
-# insert an address into the allowlist
-vls-cli -n $node_id allowlist add tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z
-vls-cli -n $node_id allowlist list
-
-channel_id=$(vls-cli channel new -n $node_id)
-vls-cli channel list -n $node_id
-```
-
 ## Additional Crates
 
-- a `no_std` CLN-compatible wire protocol encoder/decoder crate in [./vls-protocol](./vls-protocol)
-- a `no_std` VLS handler for the protocol - in [./vls-protocol-signer](vls-protocol-signer/README.md)
-- a replacement for the UNIX `hsmd` binary, implemented in Rust in [./vls-proxy](./vls-proxy). This binary is suitable for replacing `hsmd` when running C-Lightning integration tests.
+- a `no_std` VLS wire protocol encoder/decoder - in [./vls-protocol](./vls-protocol)
+- a `no_std` protocol handler for VLS - in [./vls-protocol-signer](vls-protocol-signer/README.md)
+- a replacement for the UNIX CLN `hsmd` binary, implemented in Rust in [./vls-proxy](./vls-proxy).
 
 ## Development Information
 
@@ -88,10 +47,6 @@ To enable logging for a failing test (adjust log level to preference):
 
     RUST_LOG=trace cargo test
     
-### Running the gRPC Server
-
-    cargo run --bin vlsd
-
 ### Using [kcov](https://github.com/SimonKagstrom/kcov) for Code Coverage
 
 Dependencies:

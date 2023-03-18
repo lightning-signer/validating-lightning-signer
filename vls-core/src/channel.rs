@@ -1036,7 +1036,7 @@ impl Channel {
 
     /// Sign a holder commitment transaction after rebuilding it
     /// from the supplied arguments.
-    /// Use [`sign_counterparty_commitment_tx_phase2`] instead of this,
+    /// Use [Channel::sign_counterparty_commitment_tx_phase2()] instead of this,
     /// since that one uses the last counter-signed holder tx, which is simpler
     /// and doesn't require re-validation of the holder tx.
     // TODO anchors support once upstream supports it
@@ -1442,7 +1442,7 @@ impl Channel {
 }
 
 /// Balances associated with a channel
-/// See: https://gitlab.com/lightning-signer/docs/-/wikis/Proposed-L1-and-Channel-Balance-Reconciliation
+/// See: <https://gitlab.com/lightning-signer/docs/-/wikis/Proposed-L1-and-Channel-Balance-Reconciliation>
 #[derive(Debug, PartialEq)]
 pub struct ChannelBalance {
     /// Claimable balance on open channel

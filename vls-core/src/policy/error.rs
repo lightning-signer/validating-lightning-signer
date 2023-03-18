@@ -150,12 +150,11 @@ macro_rules! transaction_format_err {
         )
 }
 
-/// Invoke policy_error on the policy object
-#[macro_export]
-#[allow(unused)]
-#[macro_export]
 /// Return a policy error from the current function, by invoking
 /// policy_error on the policy object.
+#[doc(hidden)]
+#[macro_export]
+#[allow(unused)]
 macro_rules! policy_err {
 	($obj:expr, $tag:tt, $($arg:tt)*) => (
         $obj.policy().policy_error($tag.into(), format!(

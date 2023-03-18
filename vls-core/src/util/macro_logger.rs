@@ -1,4 +1,5 @@
 /// Return a long version of the function name.
+#[doc(hidden)]
 #[macro_export]
 macro_rules! function {
     () => {{
@@ -12,6 +13,7 @@ macro_rules! function {
 }
 
 /// Return a shortened version of the function name.
+#[doc(hidden)]
 #[macro_export]
 macro_rules! short_function {
     () => {{
@@ -30,6 +32,7 @@ macro_rules! short_function {
 }
 
 /// Return a shortened version of the function name outside the closure.
+#[doc(hidden)]
 #[macro_export]
 macro_rules! containing_function {
     () => {{
@@ -51,6 +54,7 @@ macro_rules! containing_function {
 }
 
 /// Construct a string suitable for debugging from a list of arguments
+#[doc(hidden)]
 #[macro_export]
 macro_rules! vals_str {
     ( $( $x:expr ),* ) => {{
@@ -78,6 +82,7 @@ macro_rules! vals_str {
 }
 
 /// Log bytes
+#[doc(hidden)]
 #[macro_export]
 macro_rules! log_bytes {
     ($obj: expr) => {
