@@ -730,7 +730,13 @@ impl Validator for SimpleValidator {
             // The CommitmentInfo2 must be the same as previously
             let prev_commit_info = estate.get_previous_counterparty_commit_info(commit_num);
             if Some(info2) != prev_commit_info.as_ref() {
-                debug_vals!(*info2, prev_commit_info);
+                policy_log!(
+                    self,
+                    "policy-commitment-retry-same",
+                    "info2 != prev_commit_info\n{:#?}\n{:#?}",
+                    info2,
+                    prev_commit_info
+                );
                 policy_err!(
                     self,
                     "policy-commitment-retry-same",
