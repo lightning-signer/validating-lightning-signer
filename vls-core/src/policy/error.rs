@@ -165,8 +165,6 @@ macro_rules! policy_err {
     )
 }
 
-/// Invoke policy_error on the policy object
-#[macro_export]
 #[allow(unused)]
 #[macro_export]
 /// Log at the matching policy error level (ERROR or WARN).
