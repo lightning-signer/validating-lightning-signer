@@ -129,6 +129,14 @@ impl Policy for SimplePolicy {
         }
     }
 
+    fn policy_log(&self, tag: String, msg: String) {
+        if self.filter.filter(tag) == FilterResult::Error {
+            error!("{}", msg);
+        } else {
+            warn!("{}", msg);
+        }
+    }
+
     fn global_velocity_control(&self) -> VelocityControlSpec {
         self.global_velocity_control
     }
@@ -704,7 +712,7 @@ impl Validator for SimpleValidator {
                         commitment_point
                     );
                 }
-                Some(prev) =>
+                Some(prev) => {
                     if *commitment_point != prev {
                         policy_err!(
                             self,
@@ -715,13 +723,20 @@ impl Validator for SimpleValidator {
                             prev,
                             commitment_point
                         );
-                    },
+                    }
+                }
             }
 
             // The CommitmentInfo2 must be the same as previously
             let prev_commit_info = estate.get_previous_counterparty_commit_info(commit_num);
             if Some(info2) != prev_commit_info.as_ref() {
-                debug_vals!(*info2, prev_commit_info);
+                policy_log!(
+                    self,
+                    "policy-commitment-retry-same",
+                    "info2 != prev_commit_info\n{:#?}\n{:#?}",
+                    info2,
+                    prev_commit_info
+                );
                 policy_err!(
                     self,
                     "policy-commitment-retry-same",
@@ -855,7 +870,7 @@ impl Validator for SimpleValidator {
                     supplied_commit_point
                 );
             }
-            Some(prev) =>
+            Some(prev) => {
                 if supplied_commit_point != prev {
                     debug_failed_vals!(state, revoke_num, commitment_secret);
                     policy_err!(
@@ -866,7 +881,8 @@ impl Validator for SimpleValidator {
                         supplied_commit_point,
                         prev
                     );
-                },
+                }
+            }
         }
 
         Ok(())

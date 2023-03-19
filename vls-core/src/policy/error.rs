@@ -165,6 +165,19 @@ macro_rules! policy_err {
     )
 }
 
+#[allow(unused)]
+#[macro_export]
+/// Log at the matching policy error level (ERROR or WARN).
+macro_rules! policy_log {
+	($obj:expr, $tag:tt, $($arg:tt)*) => (
+        $obj.policy().policy_log($tag.into(), format!(
+            "{}: {}",
+            short_function!(),
+            format!($($arg)*)
+        ))
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
