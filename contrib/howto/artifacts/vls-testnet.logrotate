@@ -1,0 +1,12 @@
+/home/vls/.lightning-signer/testnet/vlsd2.log {
+    rotate 1000000
+    daily
+    maxsize 1G
+    missingok
+    compress
+    delaycompress
+    notifempty
+    copytruncate
+    dateext
+    create 640 vls vls
+}

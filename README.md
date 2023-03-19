@@ -20,6 +20,8 @@ The following remain to be implemented:
 
 ## Development Information
 
+[Additional HOWTO Documentation](./contrib/howto/README.md)
+
 ### Formatting Code
 
 Enable formatting precommit hooks:
