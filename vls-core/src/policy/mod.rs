@@ -21,6 +21,8 @@ pub trait Policy {
     /// A policy error has occured.
     /// Policy errors can be converted to warnings by returning `Ok(())`
     fn policy_error(&self, _tag: String, msg: String) -> Result<(), error::ValidationError>;
+    /// Log at ERROR or WARN matching the policy error handling
+    fn policy_log(&self, _tag: String, msg: String);
     /// Velocity control to apply to the entire node
     fn global_velocity_control(&self) -> VelocityControlSpec;
 }
