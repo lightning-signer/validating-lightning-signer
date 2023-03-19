@@ -61,6 +61,8 @@ vls-cli channel list -n $node_id
 
 ## Development Information
 
+[Additional HOWTO Documentation](./contrib/howto/README.md)
+
 ### Formatting Code
 
 Enable formatting precommit hooks:

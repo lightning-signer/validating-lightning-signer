@@ -1,0 +1,38 @@
+/home/cln/.lightning/testnet/lightning.log {
+    rotate 1000000
+    daily
+    maxsize 1G
+    missingok
+    compress
+    delaycompress
+    notifempty
+    copytruncate
+    dateext
+    create 640 cln cln
+}
+
+/home/cln/.lightning/testnet/remote_hsmd_socket.log {
+    rotate 1000000
+    daily
+    maxsize 1G
+    missingok
+    compress
+    delaycompress
+    notifempty
+    copytruncate
+    dateext
+    create 640 cln cln
+}
+
+/home/cln/.lightning/testnet/remote_hsmd_serial.log {
+    rotate 1000000
+    daily
+    maxsize 1G
+    missingok
+    compress
+    delaycompress
+    notifempty
+    copytruncate
+    dateext
+    create 640 cln cln
+}
