@@ -7,7 +7,6 @@ license = "Apache-2.0"
 description = "A library for implementing VLS frontend functions."
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
-readme = "../README.md"
 rust-version = "1.60.0"
 
 [features]
