@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+
+# Generate changelog entries from annotations in git commit messages to stdout
+#
+# The annotations should be formatted like:
+#
+# Changelog-Fixed: core: The xyzzy bug was fixed (#6077).
+# Changelog-Added: serial: Adds feature that user might care about.
+# Changelog-Changed: policy: The blork flag is now on by default.
+# Changelog-Deprecated: proxy: Feature blah is now deprectated in the API.
+# Changelog-Removed: core: Unused feature x was removed in this release.
+#
+# Command line arguments to `harvest-changelog` are appended to the `git log` command
+# used to fetch them.
+#
+# A recommended use is to generate entries between two git revs (tags, hash, branches ...):
+#   harvest-changelog v0.2.0..HEAD
+#
+
+import re
+import subprocess
+import sys
+
+pattern = r'Changelog-(\S*): (.*)$'
+
+
+def generate_changelog():
+    section = {}
+
+    # Use git log to grep all the changelog entries
+    git_log_format = "%s%x09%b"
+    git_command = ['git',
+                   'log',
+                   '-E',
+                   f'--grep={pattern}',
+                   f'--pretty=format:{git_log_format}'
+                   ] + sys.argv[1:]
+    output = subprocess.check_output(git_command, text=True).splitlines()
+    for line in output:
+        match = re.search(pattern, line)
+        if match:
+            tag = normalize(match.group(1))
+            msg = match.group(2)
+            section.setdefault(tag, []).append(msg)
+
+    # Format the canonical sections in order
+    for section_name in ['Added', 'Changed', 'Deprecated', 'Removed', 'Fixed']:
+        format_section(section_name, section.get(section_name))
+        if section_name in section:
+            del section[section_name]
+
+    # Format any remaining sections
+    for section_name in section.keys():
+        format_section(section_name, section.get(section_name))
+
+
+def format_section(section_name, items):
+    if items:
+        items.sort()  # puts leading tag prefixes together
+        print(f"### {section_name}")
+        print("")
+        for item in items:
+            print(f" - {item}")
+        print("")
+        print("")
+
+
+def normalize(tag):
+    return tag.lower().capitalize()
+
+
+if __name__ == "__main__":
+    generate_changelog()
