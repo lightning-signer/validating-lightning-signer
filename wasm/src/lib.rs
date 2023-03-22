@@ -16,7 +16,6 @@ use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::node::{Node, NodeConfig, NodeServices};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
-use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::signer::StartingTimeFactory;
 use lightning_signer::util::clock::ManualClock;
 use lightning_signer::util::key_utils::make_test_key;
@@ -256,8 +255,7 @@ fn from_status(s: Status) -> JSValidationError {
 
 #[wasm_bindgen]
 pub fn make_node() -> JSNode {
-    let config =
-        NodeConfig { network: Network::Testnet, key_derivation_style: KeyDerivationStyle::Native };
+    let config = NodeConfig::new(Network::Testnet);
     let mut seed = [0u8; 32];
     randomize_buffer(&mut seed);
 

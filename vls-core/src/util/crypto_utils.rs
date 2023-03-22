@@ -55,6 +55,8 @@ pub(crate) fn derive_public_key<T: secp256k1::Signing>(
     base_point.combine(&hashkey)
 }
 
+// only used in test_utils.rs, so warns when that file is not included
+#[allow(unused)]
 pub(crate) fn payload_for_p2wpkh(key: &PublicKey) -> Payload {
     let mut hash_engine = BitcoinHash160::engine();
     hash_engine.input(&key.serialize());

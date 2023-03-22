@@ -30,17 +30,6 @@ const MAX_DELAY: i64 = 2016;
 /// Value for anchor outputs
 pub(crate) const ANCHOR_SAT: u64 = 330;
 
-pub(crate) fn sort_outputs<T, C: Fn(&T, &T) -> cmp::Ordering>(
-    outputs: &mut Vec<(TxOut, T)>,
-    tie_breaker: C,
-) {
-    outputs.sort_unstable_by(|a, b| {
-        a.0.value.cmp(&b.0.value).then_with(|| {
-            a.0.script_pubkey[..].cmp(&b.0.script_pubkey[..]).then_with(|| tie_breaker(&a.1, &b.1))
-        })
-    });
-}
-
 /// Phase 1 HTLC info
 #[derive(Clone)]
 pub struct HTLCInfo {

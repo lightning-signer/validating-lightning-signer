@@ -16,6 +16,7 @@ use log::{debug, error};
 use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
 use txoo::filter::BlockSpendFilter;
+use txoo::get_latest_checkpoint;
 use txoo::proof::{ProofType, UnspentProof};
 
 use crate::prelude::*;
@@ -154,7 +155,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     }
 
     /// Create a tracker at genesis
-    pub fn genesis(
+    pub fn from_genesis(
         network: Network,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
@@ -163,9 +164,48 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
         let genesis = genesis_block(network);
         let filter = BlockSpendFilter::from_block(&genesis);
         let filter_header = filter.filter_header(&FilterHeader::all_zeros());
-        let tip = Headers(genesis.header, filter_header);
+        Self::from_checkpoint(
+            network,
+            node_id,
+            validator_factory,
+            &genesis.header,
+            &filter_header,
+            height,
+        )
+    }
 
-        Self::new(network, height, tip, node_id, validator_factory).expect("genesis block is valid")
+    fn from_checkpoint(
+        network: Network,
+        node_id: PublicKey,
+        validator_factory: Arc<dyn ValidatorFactory>,
+        header: &BlockHeader,
+        filter_header: &FilterHeader,
+        height: u32,
+    ) -> Self {
+        let tip = Headers(*header, *filter_header);
+
+        Self::new(network, height, tip, node_id, validator_factory)
+            .expect("genesis block / checkpoint is expected to be valid")
+    }
+
+    /// Create a tracker for a network, from a checkpoint if exists or from genesis otherwise
+    pub fn for_network(
+        network: Network,
+        node_id: PublicKey,
+        validator_factory: Arc<dyn ValidatorFactory>,
+    ) -> Self {
+        if let Some((height, _hash, filter_header, header)) = get_latest_checkpoint(network) {
+            Self::from_checkpoint(
+                network,
+                node_id,
+                validator_factory,
+                &header,
+                &filter_header,
+                height,
+            )
+        } else {
+            Self::from_genesis(network, node_id, validator_factory)
+        }
     }
 
     /// Current chain tip header

@@ -31,7 +31,6 @@ use lightning_signer::lightning_invoice::SignedRawInvoice;
 use lightning_signer::node::{Node, NodeConfig, NodeMonitor, NodeServices, SpendType};
 use lightning_signer::persist::Mutations;
 use lightning_signer::prelude::Mutex;
-use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
@@ -223,8 +222,7 @@ impl RootHandlerBuilder {
     }
 
     fn do_build(self) -> RootHandler {
-        let config =
-            NodeConfig { network: self.network, key_derivation_style: KeyDerivationStyle::Native };
+        let config = NodeConfig::new(self.network);
 
         let persister = self.services.persister.clone();
         let nodes = persister.get_nodes().expect("get_nodes");
