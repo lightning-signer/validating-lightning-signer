@@ -85,7 +85,7 @@ default-features = false
 features = ["no-std", "test-utils"]
 
 [dev-dependencies.txoo-bitcoind-client]
-version = "0.2"
+version = "0.2.1"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #branch = "main"
 #path = "../../txoo/bitcoind-client"

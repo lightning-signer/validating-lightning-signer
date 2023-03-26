@@ -2107,9 +2107,9 @@ dependencies = [
 
 [[package]]
 name = "txoo-bitcoind-client"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be487581ff10fc300238a9be763dc5e63f196a3d322f348d23556cf6912f9093"
+checksum = "afb823d1a91645a2ea158ce6c2814cc19ab03b33037ad0b45292e5c89871b73e"
 dependencies = [
  "async-trait",
  "bitcoin",

@@ -1,25 +1,33 @@
+//! System test for the frontend.
+//!
+//! The default regtest version spins up bitcoind and runs an e2e test.
+//!
+//! You can also run it against testnet:
+//!     cargo run --bin frontend-system-test --features system-test -- --network testnet --rpc http://user:pass@127.0.0.1:18332
+
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use bitcoind_client::{BitcoindClient, BlockSource, BlockchainInfo};
+use bitcoind_client::{BitcoindClient, BlockchainInfo};
+use clap::Parser;
 use core::result::Result as CoreResult;
 use lightning_signer::bitcoin::consensus::deserialize;
 use lightning_signer::bitcoin::hashes::hex::FromHex;
 use lightning_signer::bitcoin::hashes::Hash;
 use lightning_signer::bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey};
 use lightning_signer::bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey};
-use lightning_signer::bitcoin::{Block, BlockHash, BlockHeader, FilterHeader, KeyPair, Network};
-use lightning_signer::chain::tracker::{ChainTracker, Headers};
+use lightning_signer::bitcoin::{BlockHash, BlockHeader, KeyPair, Network};
+use lightning_signer::chain::tracker::ChainTracker;
 use lightning_signer::node::{Heartbeat, SignedHeartbeat};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
-use lightning_signer::txoo::filter::BlockSpendFilter;
 use lightning_signer::txoo::proof::UnspentProof;
 use lightning_signer::util::crypto_utils::sighash_from_heartbeat;
 use lightning_signer::util::test_utils::MockListener;
-use log::{error, info};
+use log::*;
 use serde_json::{json, Value};
 use std::env;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tempfile::TempDir;
 use tokio::time::sleep;
 use url::Url;
 use vls_frontend::frontend::SourceFactory;
@@ -32,8 +40,9 @@ use vls_protocol::msgs::{
 };
 use vls_protocol::serde_bolt::{to_vec, Octets, WireString};
 use vls_protocol_client::{ClientResult, SignerPort};
+use vls_proxy::config::{CLAP_NETWORK_URL_MAPPING, NETWORK_NAMES};
 use vls_proxy::portfront::SignerPortFront;
-use vls_proxy::util::setup_logging;
+use vls_proxy::util::{abort_on_panic, setup_logging};
 
 struct State {
     height: u32,
@@ -53,20 +62,16 @@ struct DummySignerPort {
 const NODE_SECRET: [u8; 32] = [3u8; 32];
 
 impl DummySignerPort {
-    fn new(height: u32, block: Block) -> Self {
+    fn new(network: Network) -> Self {
         let secp = Secp256k1::new();
         let secret_key = SecretKey::from_slice(&NODE_SECRET).unwrap();
         let node_id = PublicKey::from_secret_key(&secp, &secret_key);
-        let network = Network::Regtest;
         let xpriv = ExtendedPrivKey::new_master(network, &[0; 32]).unwrap();
         let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
-        let block_hash = block.block_hash();
-        let filter = BlockSpendFilter::from_block(&block);
-        let filter_header = filter.filter_header(&FilterHeader::all_zeros());
-        let tip = Headers(block.header.clone(), filter_header);
         let validator_factory = SimpleValidatorFactory::new();
-        let tracker =
-            ChainTracker::new(network, height, tip, node_id, Arc::new(validator_factory)).unwrap();
+        let tracker = ChainTracker::for_network(network, node_id, Arc::new(validator_factory));
+        let block_hash = tracker.tip().0.block_hash();
+        let height = tracker.height;
 
         let state = State { height, block_hash, tracker };
 
@@ -113,6 +118,7 @@ impl SignerPort for DummySignerPort {
                 let mut state = self.state.lock().unwrap();
                 state.height += 1;
                 let header: BlockHeader = deserialize(&add.header.0).unwrap();
+                trace!("header {:?}", header);
                 let proof: UnspentProof = deserialize(&add.unspent_proof.unwrap().0).unwrap();
                 state.tracker.add_block(header, proof).expect("add block failed");
                 state.block_hash = header.block_hash();
@@ -164,11 +170,64 @@ where
     Ok(())
 }
 
+#[derive(Debug, Parser)]
+#[clap()]
+struct Args {
+    #[clap(short, long, value_parser,
+    value_name = "NETWORK",
+    possible_values = NETWORK_NAMES,
+    default_value = "regtest",
+    )]
+    pub network: Network,
+    #[clap(
+        long,
+        value_parser,
+        help = "block explorer/bitcoind RPC endpoint - used for broadcasting recovery transactions",
+        default_value_ifs(CLAP_NETWORK_URL_MAPPING),
+        value_name = "URL"
+    )]
+    pub rpc: Option<Url>,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    abort_on_panic();
     let tmpdir = tempfile::tempdir()?;
     env::set_var("VLS_CHAINFOLLOWER_ENABLE", "1");
     setup_logging(tmpdir.path().to_str().unwrap(), "system-test", "debug");
+    let args = Args::parse();
+
+    match args.network {
+        Network::Regtest => run_regtest(tmpdir).await?,
+        n => run_with_network(tmpdir, n, args.rpc.unwrap()).await?,
+    }
+    Ok(())
+}
+
+async fn run_with_network(tmpdir: TempDir, network: Network, url: Url) -> Result<()> {
+    println!("running with network {} rpc {}", network, url);
+    let client = BitcoindClient::new(url.clone()).await;
+    let info = get_info(&client).await?;
+    let signer_port = DummySignerPort::new(network);
+    let source_factory = Arc::new(SourceFactory::new(tmpdir.path(), network));
+    let frontend = Frontend::new(
+        Arc::new(SignerPortFront::new(SignerPort::clone(&signer_port), network)),
+        source_factory,
+        url,
+    );
+    frontend.start();
+    loop {
+        sleep(Duration::from_millis(5000)).await;
+        let height = signer_port.state.lock().unwrap().height;
+        println!("at height {}", height);
+        if height >= info.latest_height as u32 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+async fn run_regtest(tmpdir: TempDir) -> Result<()> {
     let network = Network::Regtest;
     let url: Url = "http://user:pass@127.0.0.1:18443".parse()?;
     let client = BitcoindClient::new(url.clone()).await;
@@ -184,10 +243,7 @@ async fn main() -> Result<()> {
     let block_hash = mine(&client, &address, 1).await?;
     height += 1;
 
-    let genesis_hash = client.get_block_hash(0).await?.unwrap();
-    let genesis = client.get_block(&genesis_hash).await.unwrap();
-
-    let signer_port = DummySignerPort::new(0, genesis);
+    let signer_port = DummySignerPort::new(network);
     let source_factory = Arc::new(SourceFactory::new(tmpdir.path(), network));
     let frontend = Frontend::new(
         Arc::new(SignerPortFront::new(SignerPort::clone(&signer_port), network)),
