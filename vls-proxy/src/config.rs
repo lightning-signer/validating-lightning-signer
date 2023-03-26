@@ -8,10 +8,11 @@ use std::{env, fs};
 use toml::value::{Table, Value};
 use url::Url;
 
-const NETWORK_NAMES: &[&str] = &["testnet", "regtest", "signet", "bitcoin"];
+/// Network names
+pub const NETWORK_NAMES: &[&str] = &["testnet", "regtest", "signet", "bitcoin"];
 
 /// Useful with clap's `Arg::default_value_ifs`
-const CLAP_NETWORK_URL_MAPPING: &[(&str, Option<&str>, Option<&str>)] = &[
+pub const CLAP_NETWORK_URL_MAPPING: &[(&str, Option<&str>, Option<&str>)] = &[
     ("network", Some("bitcoin"), Some("http://user:pass@127.0.0.1:8332")),
     ("network", Some("testnet"), Some("http://user:pass@127.0.0.1:18332")),
     ("network", Some("regtest"), Some("http://user:pass@127.0.0.1:18443")),

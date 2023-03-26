@@ -59,7 +59,7 @@ use crate::tx::script::{
     get_p2wpkh_redeemscript, get_to_countersignatory_with_anchors_redeemscript,
     ANCHOR_OUTPUT_VALUE_SATOSHI,
 };
-use crate::tx::tx::{sort_outputs, CommitmentInfo2, HTLCInfo2};
+use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
 use crate::util::clock::StandardClock;
 use crate::util::crypto_utils::{derive_public_key, payload_for_p2wpkh, payload_for_p2wsh};
 use crate::util::loopback::LoopbackChannelSigner;
@@ -1201,11 +1201,17 @@ pub fn make_test_commitment_info() -> CommitmentInfo2 {
     )
 }
 
-pub const TEST_NODE_CONFIG: NodeConfig =
-    NodeConfig { network: Network::Testnet, key_derivation_style: KeyDerivationStyle::Native };
+pub const TEST_NODE_CONFIG: NodeConfig = NodeConfig {
+    network: Network::Testnet,
+    key_derivation_style: KeyDerivationStyle::Native,
+    use_checkpoints: false,
+};
 
-pub const REGTEST_NODE_CONFIG: NodeConfig =
-    NodeConfig { network: Network::Regtest, key_derivation_style: KeyDerivationStyle::Native };
+pub const REGTEST_NODE_CONFIG: NodeConfig = NodeConfig {
+    network: Network::Regtest,
+    key_derivation_style: KeyDerivationStyle::Native,
+    use_checkpoints: false,
+};
 
 pub const TEST_SEED: &[&str] = &[
     "6c696768746e696e672d31000000000000000000000000000000000000000000",
@@ -1216,6 +1222,14 @@ pub const TEST_CHANNEL_ID: &[&str] = &[
     "0100000000000000000000000000000000000000000000000000000000000000",
     "0200000000000000000000000000000000000000000000000000000000000000",
 ];
+
+fn sort_outputs<T, C: Fn(&T, &T) -> cmp::Ordering>(outputs: &mut Vec<(TxOut, T)>, tie_breaker: C) {
+    outputs.sort_unstable_by(|a, b| {
+        a.0.value.cmp(&b.0.value).then_with(|| {
+            a.0.script_pubkey[..].cmp(&b.0.script_pubkey[..]).then_with(|| tie_breaker(&a.1, &b.1))
+        })
+    });
+}
 
 pub fn build_tx_scripts(
     keys: &TxCreationKeys,

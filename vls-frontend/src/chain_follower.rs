@@ -14,6 +14,10 @@ use bitcoind_client::follower::{Error, Tracker};
 use bitcoind_client::txoo_follower::{FollowWithProofAction, SourceWithTxooProofFollower};
 use bitcoind_client::{BitcoindClient, BlockSource};
 
+use lightning_signer::bitcoin::hashes::Hash;
+use lightning_signer::bitcoin::FilterHeader;
+use lightning_signer::txoo::filter::BlockSpendFilter;
+use lightning_signer::txoo::get_latest_checkpoint;
 #[allow(unused_imports)]
 use lightning_signer::{debug_vals, short_function, vals_str};
 #[allow(unused_imports)]
@@ -68,7 +72,24 @@ impl ChainFollower {
         let client = BitcoindClient::new(rpc_url.clone()).await;
         let genesis_hash = client.get_block_hash(0).await.unwrap().unwrap();
         let genesis = client.get_block(&genesis_hash).await.unwrap();
-        let txoo_source = txoo_source_factory.get_source(0, &genesis);
+        let txoo_source = if let Some((ckp_height, ckp_hash, ckp_filter_header, _)) =
+            get_latest_checkpoint(tracker.network())
+        {
+            // current code can't supply tracker with blocks before or at the checkpoint
+            // so the tip must be at the checkpoint or higher
+            assert!(
+                tracker.tip_info().await.0 >= ckp_height,
+                "tracker at height {} is < checkpoint at height {}",
+                tracker.tip_info().await.0,
+                ckp_height
+            );
+            txoo_source_factory.get_source(ckp_height, ckp_hash, ckp_filter_header)
+        } else {
+            let filter = BlockSpendFilter::from_block(&genesis);
+            let filter_header = filter.filter_header(&FilterHeader::all_zeros());
+
+            txoo_source_factory.get_source(0, genesis.block_hash(), filter_header)
+        };
         let update_interval = match tracker.network() {
             Network::Regtest => 1000, // poll rapidly, automated testing
             _ => 60 * 1000,

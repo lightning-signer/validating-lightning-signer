@@ -57,9 +57,9 @@ as-any = "0.3"
 hex = "0.4"
 
 [dependencies.txoo-bitcoind-client]
-version = "0.2"
+version = "0.2.1"
 #git = "https://gitlab.com/lightning-signer/txoo"
-#branch = "2023-02-dummy-source"
+#branch = "main"
 #path = "../../txoo/bitcoind-client"
 
 [dev-dependencies]

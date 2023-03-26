@@ -69,26 +69,26 @@ hashbrown = "0.8" # match hashbrown dependency version via lightning
 itertools = { version = "0.10", default-features = false }
 
 [dependencies.txoo]
-version = "0.2"
+version = "0.2.1"
 #git = "https://gitlab.com/lightning-signer/txoo"
-#branch = "2023-02-dummy-source"
+#branch = "main"
 #path = "../../txoo"
 default-features = false
 features = ["no-std"]
 
 [dev-dependencies.txoo]
-version = "0.2"
+version = "0.2.1"
 #git = "https://gitlab.com/lightning-signer/txoo"
-#branch = "2023-02-dummy-source"
+#branch = "main"
 #path = "../../txoo"
 default-features = false
 features = ["no-std", "test-utils"]
 
 [dev-dependencies.txoo-bitcoind-client]
-version = "0.2"
+version = "0.2.1"
 #git = "https://gitlab.com/lightning-signer/txoo"
-#branch = "2023-02-dummy-source"
-#path = "../../txoo"
+#branch = "main"
+#path = "../../txoo/bitcoind-client"
 default-features = false
 features = ["dummy-source"]
 

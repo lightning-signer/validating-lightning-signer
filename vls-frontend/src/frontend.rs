@@ -7,7 +7,7 @@ use std::time::Duration;
 use tokio::{task, time};
 use url::Url;
 
-use lightning_signer::bitcoin::{Block, Network};
+use lightning_signer::bitcoin::{BlockHash, FilterHeader, Network};
 use log::info;
 
 use crate::{chain_follower::ChainFollower, ChainTrack, ChainTrackDirectory};
@@ -25,12 +25,18 @@ impl SourceFactory {
 
     /// Get a new TXOO source
     // TODO use real TxooSource
-    pub fn get_source(&self, start_block: u32, block: &Block) -> Box<dyn Source> {
-        Box::new(DummyPersistentTxooSource::new(
+    pub fn get_source(
+        &self,
+        start_block: u32,
+        block_hash: BlockHash,
+        filter_header: FilterHeader,
+    ) -> Box<dyn Source> {
+        Box::new(DummyPersistentTxooSource::from_checkpoint(
             self.datadir.clone(),
             self.network,
             start_block,
-            block,
+            block_hash,
+            filter_header.clone(),
         ))
     }
 }
@@ -91,6 +97,7 @@ impl Frontend {
 
     /// Start a chain follower for a specific tracker
     pub async fn start_follower(&self, tracker: Arc<dyn ChainTrack>) {
+        assert_eq!(tracker.network(), self.source_factory.network);
         let cf_arc = ChainFollower::new(tracker, &self.source_factory, &self.rpc_url).await;
         ChainFollower::start(cf_arc).await;
     }
