@@ -14,6 +14,7 @@ use lightning_signer::node::SignedHeartbeat;
 use lightning_signer::txoo::proof::TxoProof;
 
 mod chain_follower;
+pub mod external_persist;
 pub mod frontend;
 pub mod heartbeat;
 
