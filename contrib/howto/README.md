@@ -18,3 +18,4 @@
 - [Flash the STM32 Signer](./stm32-flash.md)
 - [Run CLN Integration Tests](./cln-integration.md)
 - [VLS Environment Variables](./vls-env.md)
+- [Troubleshooting](./troubleshooting.md)
