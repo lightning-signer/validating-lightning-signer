@@ -722,7 +722,7 @@ impl Wallet for Node {
 
         let secp_ctx = Secp256k1::signing_only();
         let pubkey = self.get_wallet_pubkey(&secp_ctx, child_path)?;
-        Ok(Address::p2shwpkh(&pubkey, self.network()).expect("p2wpkh failed"))
+        Ok(Address::p2shwpkh(&pubkey, self.network()).expect("p2shwpkh failed"))
     }
 
     /// Returns true if script_pubkey is in the node's allowlist.
@@ -1026,6 +1026,7 @@ impl Node {
         Ok((channel_id.clone(), Some(ChannelSlot::Stub(stub))))
     }
 
+    // unit test coverage outside crate
     pub(crate) fn restore_channel(
         &self,
         channel_id0: ChannelId,
@@ -1087,6 +1088,7 @@ impl Node {
     /// You can get the [NodeEntry] from [Persist::get_nodes].
     ///
     /// The channels are also restored from the `persister`.
+    // unit test coverage outside crate
     pub fn restore_node(
         node_id: &PublicKey,
         node_entry: NodeEntry,
@@ -1138,6 +1140,7 @@ impl Node {
     /// Restore all nodes from `persister`.
     ///
     /// The channels of each node are also restored.
+    // unit test coverage outside crate
     pub fn restore_nodes(
         services: NodeServices,
         seed_persister: Arc<dyn SeedPersist>,
@@ -2146,6 +2149,21 @@ mod tests {
     }
 
     #[test]
+    fn keysend_test() {
+        let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let payee_node_id = payee_node.node_id.clone();
+        let (node, _channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        let hash = PaymentHash([2; 32]);
+        assert!(node.add_keysend(payee_node_id.clone(), hash, 1234).unwrap());
+        assert!(node.add_keysend(payee_node.node_id.clone(), hash, 1234).unwrap());
+        let (_, invoice_hash) =
+            Node::payment_state_from_keysend(payee_node_id, hash, 1234).unwrap();
+        assert!(node.has_payment(&hash, &invoice_hash).unwrap());
+        assert!(!node.has_payment(&PaymentHash([5; 32]), &invoice_hash).unwrap());
+    }
+
+    #[test]
     fn invoice_test() {
         let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let (node, channel_id) =
@@ -2245,6 +2263,31 @@ mod tests {
         let hrp_bytes = hrp_str.as_bytes().to_vec();
         let invoice_data = raw_invoice.data.to_base32();
         (hrp_bytes, invoice_data)
+    }
+
+    #[test]
+    fn with_channel_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
+        node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
+        assert!(node
+            .with_ready_channel(&channel_id, |_channel| {
+                panic!("should not be called");
+                #[allow(unreachable_code)]
+                Ok(())
+            })
+            .is_err());
+        assert!(node.with_channel_base(&channel_id, |_channel| { Ok(()) }).is_ok());
+    }
+
+    #[test]
+    fn double_new_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
+        node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
+        let (id, slot) = node.new_channel(Some(channel_id.clone()), &node).unwrap();
+        assert_eq!(id, channel_id);
+        assert!(slot.is_some());
     }
 
     #[test]
@@ -2653,6 +2696,12 @@ mod tests {
     }
 
     #[test]
+    fn sign_bolt12_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        node.sign_bolt12("name".as_bytes(), "field".as_bytes(), &[0; 32], None).unwrap();
+    }
+
+    #[test]
     fn sign_message_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let message = String::from("Testing 1 2 3").into_bytes();
@@ -2748,13 +2797,49 @@ mod tests {
     }
 
     #[test]
+    fn allowlist_test() {
+        assert!(Allowable::from_str(
+            "address:mv4rnyY3Su5gjcDNzbMLKBQkBicCtHUtFB",
+            Network::Regtest
+        )
+        .is_err());
+
+        assert!(Allowable::from_str("xpub:tpubDEQBfiy13hMZzGT4NWqNnaSWwVqYQ58kuu2pDYjkrf8F6DLKAprm8c65Pyh7PrzodXHtJuEXFu5yf6JbvYaL8rz7v28zapwbuzZzr7z4UvR", Network::Regtest).is_err());
+        assert!(Allowable::from_str("xxx:mv4rnyY3Su5gjcDNzbMLKBQkBicCtHUtFB", Network::Regtest)
+            .is_err());
+        let a = Allowable::from_str("address:mv4rnyY3Su5gjcDNzbMLKBQkBicCtHUtFB", Network::Testnet)
+            .unwrap();
+        assert_eq!(a.to_script().unwrap().to_string(), "Script(OP_DUP OP_HASH160 OP_PUSHBYTES_20 9f9a7abd600c0caa03983a77c8c3df8e062cb2fa OP_EQUALVERIFY OP_CHECKSIG)");
+        let x = Allowable::from_str("xpub:tpubDEQBfiy13hMZzGT4NWqNnaSWwVqYQ58kuu2pDYjkrf8F6DLKAprm8c65Pyh7PrzodXHtJuEXFu5yf6JbvYaL8rz7v28zapwbuzZzr7z4UvR", Network::Testnet).unwrap();
+        assert!(x.to_script().is_err());
+    }
+
+    #[test]
+    fn node_wallet_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let a = node.get_native_address(&[0]).unwrap();
+        assert_eq!(a.to_string(), "tb1qr8j660jqglj0x2axua26u0qcyuxhanycx4sr49");
+        assert!(node.can_spend(&[0], &a.script_pubkey()).unwrap());
+        assert!(!node.can_spend(&[1], &a.script_pubkey()).unwrap());
+        let a = node.get_wrapped_address(&[0]).unwrap();
+        assert_eq!(a.to_string(), "2NBaG2jeH1ahh6cMcYBF1RAcZRZsTPqLNLZ");
+    }
+
+    #[test]
     fn node_allowlist_contains_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let payee_sec = SecretKey::from_slice(&[42; 32]).unwrap();
+        let payee_pub = PublicKey::from_secret_key(&Secp256k1::new(), &payee_sec);
+        let xpub_str = "tpubDEQBfiy13hMZzGT4NWqNnaSWwVqYQ58kuu2pDYjkrf8F6DLKAprm8c65Pyh7PrzodXHtJuEXFu5yf6JbvYaL8rz7v28zapwbuzZzr7z4UvR";
+        // let xpub = ExtendedPubKey::from_str(xpub_str).unwrap();
+        // println!("XXX {}", Address::p2wpkh(&xpub.derive_pub(&Secp256k1::new(), &[ChildNumber::from_normal_idx(2).unwrap()]).unwrap().to_pub(), Network::Testnet).unwrap());
         // xpub is "abandon* about" external account 0
         node.add_allowlist(&[
             "address:mv4rnyY3Su5gjcDNzbMLKBQkBicCtHUtFB".to_string(),
-            "xpub:tpubDEQBfiy13hMZzGT4NWqNnaSWwVqYQ58kuu2pDYjkrf8F6DLKAprm8c65Pyh7PrzodXHtJuEXFu5yf6JbvYaL8rz7v28zapwbuzZzr7z4UvR".to_string(),
-        ]).unwrap();
+            format!("xpub:{}", xpub_str),
+            format!("payee:{}", payee_pub.to_string()),
+        ])
+        .unwrap();
         // check if second child matches the xpub in the allowlist
         let script2 =
             Address::from_str("mnTkxhNkgx7TsZrEdRcPti564yQTzynGJp").unwrap().script_pubkey();
@@ -2763,6 +2848,10 @@ mod tests {
         let script2 =
             Address::from_str("mpW3iVi2Td1vqDK8Nfie29ddZXf9spmZkX").unwrap().script_pubkey();
         assert!(!node.allowlist_contains(&script2, &[2]));
+        let p2wpkh_script = Address::from_str("tb1qfshzhu5qdyz94r4kylyrnlerq6mnhw3sjz7w8p")
+            .unwrap()
+            .script_pubkey();
+        assert!(node.allowlist_contains(&p2wpkh_script, &[2]));
     }
 
     #[test]
