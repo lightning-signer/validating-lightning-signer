@@ -53,11 +53,15 @@ To enable logging for a failing test (adjust log level to preference):
 
 Dependencies:
 
-    sudo dnf install -y elfutils-devel
-    sudo dnf install -y curl-devel
-    sudo dnf install -y binutils-devel
+    sudo dnf install -y elfutils-devel curl-devel binutils-devel
+
+or
+    
+    sudo apt-get install -y libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
 
 Build v38 of kcov from git@github.com:SimonKagstrom/kcov.git .
+
+Ensure `kcov --verify /tmp/x a.out` does not complain about `libbfd`.
 
 More dependencies:
 

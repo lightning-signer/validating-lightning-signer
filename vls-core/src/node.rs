@@ -112,6 +112,7 @@ pub struct PaymentState {
     pub payment_type: PaymentType,
 }
 
+// kcov-ignore-start
 impl Debug for PaymentState {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("PaymentState")
@@ -125,6 +126,7 @@ impl Debug for PaymentState {
             .finish()
     }
 }
+// kcov-ignore-end
 
 /// Outgoing payment type
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -209,6 +211,7 @@ pub struct NodeState {
     pub velocity_control: VelocityControl,
 }
 
+// kcov-ignore-start
 impl Debug for NodeState {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("NodeState")
@@ -221,6 +224,7 @@ impl Debug for NodeState {
             .finish()
     }
 }
+// kcov-ignore-end
 
 impl PreimageMap for NodeState {
     fn has_preimage(&self, hash: &PaymentHash) -> bool {

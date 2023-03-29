@@ -42,6 +42,7 @@ pub struct HTLCInfo {
 }
 
 // Implement manually so we can have hex encoded payment_hash_hash.
+// kcov-ignore-start
 impl fmt::Debug for HTLCInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HTLCInfo")
@@ -51,6 +52,7 @@ impl fmt::Debug for HTLCInfo {
             .finish()
     }
 }
+// kcov-ignore-end
 
 /// A helper for serializing PaymentHash
 #[serde_as]
@@ -109,6 +111,7 @@ impl PartialOrd for HTLCInfo2 {
 }
 
 // Implement manually so we can have hex encoded payment_hash.
+// kcov-ignore-start
 impl fmt::Debug for HTLCInfo2 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HTLCInfo2")
@@ -118,6 +121,7 @@ impl fmt::Debug for HTLCInfo2 {
             .finish()
     }
 }
+// kcov-ignore-end
 
 /// This trait answers whether a preimage is known
 pub trait PreimageMap {
@@ -289,6 +293,7 @@ pub struct CommitmentInfo {
 }
 
 // Define manually because Payload's fmt::Debug is lame.
+// kcov-ignore-start
 impl fmt::Debug for CommitmentInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CommitmentInfo")
@@ -311,6 +316,7 @@ impl fmt::Debug for CommitmentInfo {
             .finish()
     }
 }
+// kcov-ignore-end
 
 pub(crate) fn parse_received_htlc_script(
     script: &Script,

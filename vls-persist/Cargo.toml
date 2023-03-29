@@ -19,6 +19,8 @@ no-std = ["vls-core/no-std"]
 test_utils = ["vls-core/test_utils"]
 kv-json = ["kv"]
 memo = ["serde_json"]
+# this is a hack to disable a test that causes an illegal instruction under kcov
+kcov = []
 
 [dependencies]
 vls-core = { path = "../vls-core", version = "0.2.0", default-features = false }

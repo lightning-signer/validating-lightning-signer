@@ -18,6 +18,7 @@ pub struct VelocityControl {
     pub limit: u64,
 }
 
+// kcov-ignore-start
 impl Debug for VelocityControl {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("VelocityControl")
@@ -28,6 +29,7 @@ impl Debug for VelocityControl {
             .finish()
     }
 }
+// kcov-ignore-end
 
 /// The total interval in which to track velocity
 #[derive(Clone, Copy, Debug)]
