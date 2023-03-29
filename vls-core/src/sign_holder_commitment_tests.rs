@@ -261,6 +261,11 @@ mod tests {
 
                 assert_eq!(chan.enforcement_state.channel_closed, true);
 
+                let (tx_r, _htlc_txs_r, _revocable_script_r, _uck_r, _revocation_pubkey_r) =
+                    chan.sign_holder_commitment_tx_for_recovery()?;
+                assert_eq!(tx_r.txid(), tx.transaction.txid());
+                // TODO HTLC recovery is not implemented yet
+
                 Ok((
                     sig,
                     htlc_sigs,
