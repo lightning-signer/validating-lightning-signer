@@ -17,7 +17,7 @@ use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
 use txoo::filter::BlockSpendFilter;
 use txoo::get_latest_checkpoint;
-use txoo::proof::{ProofType, UnspentProof};
+use txoo::proof::{ProofType, TxoProof};
 
 use crate::prelude::*;
 use crate::short_function;
@@ -224,7 +224,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     }
 
     /// Remove block at tip due to reorg
-    pub fn remove_block(&mut self, proof: UnspentProof) -> Result<BlockHeader, Error> {
+    pub fn remove_block(&mut self, proof: TxoProof) -> Result<BlockHeader, Error> {
         if self.headers.is_empty() {
             return Err(Error::ReorgTooDeep);
         }
@@ -285,7 +285,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     }
 
     /// Add a block, which becomes the new tip
-    pub fn add_block(&mut self, header: BlockHeader, proof: UnspentProof) -> Result<(), Error> {
+    pub fn add_block(&mut self, header: BlockHeader, proof: TxoProof) -> Result<(), Error> {
         let filter_header = proof.filter_header();
         let headers = Headers(header, filter_header);
         self.validate_block(self.height, &self.tip, &headers, &proof, false)?;
@@ -375,7 +375,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
         height: u32,
         prev_headers: &Headers,
         headers: &Headers,
-        proof: &UnspentProof,
+        proof: &TxoProof,
         is_remove: bool,
     ) -> Result<(), Error> {
         let header = &headers.0;
@@ -497,11 +497,8 @@ mod tests {
         let bad_bits = header1.bits - 1;
         let header_bad_bits =
             mine_header_with_bits(tracker.tip.0.block_hash(), TxMerkleNode::all_zeros(), bad_bits);
-        let dummy_proof = UnspentProof::prove_unchecked(
-            &genesis,
-            &FilterHeader::all_zeros(),
-            tracker.height() + 1,
-        );
+        let dummy_proof =
+            TxoProof::prove_unchecked(&genesis, &FilterHeader::all_zeros(), tracker.height() + 1);
         assert_eq!(
             tracker.add_block(header_bad_bits, dummy_proof).err(),
             Some(Error::InvalidChain)
@@ -512,7 +509,7 @@ mod tests {
 
         // can't go back before the first block that the tracker saw
         let (_, filter_header) = source.get(0, &genesis).unwrap();
-        let proof = UnspentProof::prove_unchecked(&genesis, &filter_header, 0);
+        let proof = TxoProof::prove_unchecked(&genesis, &filter_header, 0);
 
         assert_eq!(tracker.remove_block(proof).err(), Some(Error::ReorgTooDeep));
         Ok(())
@@ -612,7 +609,7 @@ mod tests {
         let height = tracker.height() + 1;
         source.on_new_block(height, &block);
         let (_attestation, filter_header) = source.get(height, &block).unwrap();
-        let proof = UnspentProof::prove_unchecked(&block, &filter_header, height);
+        let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
 
         tracker.add_block(block.header.clone(), proof)?;
         Ok(block.header)
@@ -641,7 +638,7 @@ mod tests {
         } else {
             FilterHeader::all_zeros()
         };
-        let proof = UnspentProof::prove_unchecked(&block, &filter_header, height);
+        let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
 
         tracker.add_block(block.header.clone(), proof)?;
         Ok(block.header)
@@ -658,7 +655,7 @@ mod tests {
         let block = make_block(*prev_header, txs);
         let height = tracker.height();
         let (_attestation, filter_header) = source.get(height, &block).unwrap();
-        let proof = UnspentProof::prove_unchecked(&block, &filter_header, height);
+        let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
 
         let header = tracker.remove_block(proof)?;
         Ok(header)

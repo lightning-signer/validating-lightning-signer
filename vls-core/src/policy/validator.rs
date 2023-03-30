@@ -13,7 +13,7 @@ use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCr
 use lightning::ln::PaymentHash;
 use log::{debug, error};
 use serde_derive::{Deserialize, Serialize};
-use txoo::proof::{UnspentProof, VerifyError};
+use txoo::proof::{TxoProof, VerifyError};
 
 use crate::channel::{ChannelBalance, ChannelId, ChannelSetup, ChannelSlot};
 use crate::policy::Policy;
@@ -376,7 +376,7 @@ pub trait Validator {
     /// Validate a block and a TXOO proof for spent/unspent watched outputs
     fn validate_block(
         &self,
-        proof: &UnspentProof,
+        proof: &TxoProof,
         height: u32,
         header: &BlockHeader,
         prev_filter_header: &FilterHeader,

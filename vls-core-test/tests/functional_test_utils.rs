@@ -41,7 +41,7 @@ use lightning_signer::util::loopback::LoopbackSignerKeysInterface;
 use lightning_signer::util::test_utils::{make_block, TestChainMonitor, TestPersister};
 use lightning_signer::chain::tracker::Headers;
 use lightning_signer::txoo;
-use txoo::proof::UnspentProof;
+use txoo::proof::TxoProof;
 
 use core::cmp;
 use std::sync::{Arc, Mutex};
@@ -122,7 +122,7 @@ pub fn connect_block<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, block: &Block, 
 
 fn do_connect_block<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, block: &Block, prev_filter_header: &FilterHeader, skip_intermediaries: bool) {
     let height = node.best_block_info().1 + 1;
-    let proof = UnspentProof::prove_unchecked(block, prev_filter_header, height);
+    let proof = TxoProof::prove_unchecked(block, prev_filter_header, height);
 
     node.keys_manager.get_node().get_tracker().add_block(block.header, proof).unwrap();
     if !skip_intermediaries {

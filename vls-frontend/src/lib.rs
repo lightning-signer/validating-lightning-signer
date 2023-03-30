@@ -11,7 +11,7 @@ use bitcoin::secp256k1::PublicKey;
 use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
 use lightning_signer::bitcoin;
 use lightning_signer::node::SignedHeartbeat;
-use lightning_signer::txoo::proof::UnspentProof;
+use lightning_signer::txoo::proof::TxoProof;
 
 mod chain_follower;
 pub mod frontend;
@@ -55,10 +55,10 @@ pub trait ChainTrack: Sync + Send {
     async fn reverse_watches(&self) -> (Vec<Txid>, Vec<OutPoint>);
 
     /// Add a block to the tracker
-    async fn add_block(&self, header: BlockHeader, proof: UnspentProof);
+    async fn add_block(&self, header: BlockHeader, proof: TxoProof);
 
     /// Remove block at tip due to reorg
-    async fn remove_block(&self, proof: UnspentProof);
+    async fn remove_block(&self, proof: TxoProof);
 
     /// Produce a signed heartbeat for the signer node
     async fn beat(&self) -> SignedHeartbeat;

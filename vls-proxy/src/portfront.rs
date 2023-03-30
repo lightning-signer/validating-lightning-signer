@@ -18,7 +18,7 @@ use vls_protocol::serde_bolt::{LargeOctets, Octets};
 use vls_protocol_client::SignerPort;
 
 use lightning_signer::node::SignedHeartbeat;
-use lightning_signer::txoo::proof::UnspentProof;
+use lightning_signer::txoo::proof::TxoProof;
 #[allow(unused_imports)]
 use log::debug;
 
@@ -177,7 +177,7 @@ impl ChainTrack for NodePortFront {
         }
     }
 
-    async fn add_block(&self, header: BlockHeader, proof: UnspentProof) {
+    async fn add_block(&self, header: BlockHeader, proof: TxoProof) {
         let req = msgs::AddBlock {
             header: Octets(serialize(&header)),
             unspent_proof: Some(LargeOctets(serialize(&proof))),
@@ -190,7 +190,7 @@ impl ChainTrack for NodePortFront {
         }
     }
 
-    async fn remove_block(&self, proof: UnspentProof) {
+    async fn remove_block(&self, proof: TxoProof) {
         let req = msgs::RemoveBlock { unspent_proof: Some(LargeOctets(serialize(&proof))) };
         let reply =
             self.signer_port.handle_message(req.as_vec()).await.expect("RemoveBlock failed");

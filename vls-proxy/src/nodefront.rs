@@ -11,7 +11,7 @@ use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
 use lightning_signer::bitcoin;
 use lightning_signer::node::{Node, SignedHeartbeat};
 use lightning_signer::signer::multi_signer::MultiSigner;
-use lightning_signer::txoo::proof::UnspentProof;
+use lightning_signer::txoo::proof::TxoProof;
 use lightning_signer::wallet::Wallet;
 
 use vls_frontend::{ChainTrack, ChainTrackDirectory};
@@ -93,7 +93,7 @@ impl ChainTrack for NodeFront {
         self.node.get_tracker().get_all_reverse_watches()
     }
 
-    async fn add_block(&self, header: BlockHeader, proof: UnspentProof) {
+    async fn add_block(&self, header: BlockHeader, proof: TxoProof) {
         let mut tracker = self.node.get_tracker();
         tracker
             .add_block(header, proof)
@@ -103,7 +103,7 @@ impl ChainTrack for NodeFront {
         );
     }
 
-    async fn remove_block(&self, proof: UnspentProof) {
+    async fn remove_block(&self, proof: TxoProof) {
         let mut tracker = self.node.get_tracker();
         tracker
             .remove_block(proof)
