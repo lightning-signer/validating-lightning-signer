@@ -64,7 +64,7 @@ pub fn main() -> anyhow::Result<()> {
     abort_on_panic();
     let parent_fd = open_parent_fd();
 
-    setup_logging(".", "remote_hsmd_serial", "debug");
+    setup_logging(".", "remote_hsmd_serial", "info");
 
     // Why does this interfere w/ the serial communication?
     // info!("remote_hsmd_serial git_desc={} starting", GIT_DESC);

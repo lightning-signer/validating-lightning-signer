@@ -1,3 +1,4 @@
+log-level = "info"
 datadir = "/home/vls/.lightning-signer"
 network = "testnet"
 connect = "http://127.0.0.1:17701"
