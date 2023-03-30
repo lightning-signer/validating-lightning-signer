@@ -53,7 +53,7 @@ pub struct SignerArgs {
         value_parser,
         help = "set the logging level",
         value_name = "LEVEL",
-        default_value = "debug",
+        default_value = "info",
         possible_values = &["off", "error", "warn", "info", "debug", "trace"],
     )]
     pub log_level: String,

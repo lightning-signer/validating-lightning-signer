@@ -269,7 +269,7 @@ fn make_clap_app() -> App<'static> {
 // small number of threads to ease debugging
 #[tokio::main(worker_threads = 2)]
 async fn start() {
-    setup_logging(".", "remote_hsmd_inplace", "debug");
+    setup_logging(".", "remote_hsmd_inplace", "info");
     info!("remote_hsmd_inplace git_desc={} starting", GIT_DESC);
     let conn = UnixConnection::new(3);
     let client = UnixClient::new(conn);

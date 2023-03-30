@@ -47,7 +47,7 @@ pub fn main() {
         return;
     }
 
-    setup_logging(".", "remote_hsmd_socket", "debug");
+    setup_logging(".", "remote_hsmd_socket", "info");
     info!("remote_hsmd_socket git_desc={} starting", GIT_DESC);
 
     // Unfortunately, we can't easily be passed arguments, so use env vars to configure

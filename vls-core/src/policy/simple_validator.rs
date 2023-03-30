@@ -712,7 +712,7 @@ impl Validator for SimpleValidator {
                         commitment_point
                     );
                 }
-                Some(prev) => {
+                Some(prev) =>
                     if *commitment_point != prev {
                         policy_err!(
                             self,
@@ -723,8 +723,7 @@ impl Validator for SimpleValidator {
                             prev,
                             commitment_point
                         );
-                    }
-                }
+                    },
             }
 
             // The CommitmentInfo2 must be the same as previously
@@ -870,7 +869,7 @@ impl Validator for SimpleValidator {
                     supplied_commit_point
                 );
             }
-            Some(prev) => {
+            Some(prev) =>
                 if supplied_commit_point != prev {
                     debug_failed_vals!(state, revoke_num, commitment_secret);
                     policy_err!(
@@ -881,8 +880,7 @@ impl Validator for SimpleValidator {
                         supplied_commit_point,
                         prev
                     );
-                }
-            }
+                },
         }
 
         Ok(())
