@@ -497,8 +497,8 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         // TODO error handling is awkward
         self.signer
             .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-                // FIXME - this needs to be supplied
-                let holder_wallet_path_hint = vec![];
+                // matches ldk_shutdown_pubkey derivation in [`MyKeysManager::new`]
+                let holder_wallet_path_hint = vec![2];
 
                 chan.sign_mutual_close_tx_phase2(
                     closing_tx.to_holder_value_sat(),

@@ -131,7 +131,7 @@ fn fake_network_with_signer_test() {
     let nodes = create_network(4, &node_cfgs, &node_chanmgrs);
 
     // Create some initial channels
-    create_default_chan(&nodes, 0, 1);
+    let chan_1 = create_announced_chan_between_nodes(&nodes, 0, 1);
     create_default_chan(&nodes, 1, 2);
     create_default_chan(&nodes, 2, 3);
 
@@ -142,9 +142,10 @@ fn fake_network_with_signer_test() {
         8000000,
     );
 
-    // FIXME Need to pass valid holder_wallet_path_hint to validate_mutual_close_tx
     // Close channel normally
-    // close_channel(&nodes[0], &nodes[1], &chan_1.2, chan_1.3, true);
+    close_channel(&nodes[0], &nodes[1], &chan_1.2, chan_1.3, true);
+   	check_closed_event!(nodes[0], 1, ClosureReason::CooperativeClosure);
+	check_closed_event!(nodes[1], 1, ClosureReason::CooperativeClosure);
 }
 
 fn new_signer() -> Arc<MultiSigner> {
@@ -729,7 +730,6 @@ macro_rules! check_spendable_outputs {
     }};
 }
 
-#[ignore] // validate_mutual_close_tx: holder output not to wallet or in allowlist
 #[test]
 fn test_static_output_closing_tx() {
     let signer = new_signer();
@@ -749,6 +749,7 @@ fn test_static_output_closing_tx() {
     let closing_tx = close_channel(&nodes[0], &nodes[1], &chan.2, chan.3, true).2;
 
     mine_transaction(&nodes[0], &closing_tx);
+	check_closed_event!(nodes[0], 1, ClosureReason::CooperativeClosure);
     connect_blocks(&nodes[0], ANTI_REORG_DELAY - 1);
 
     let spend_txn = check_spendable_outputs!(nodes[0], 2, node_cfgs[0].keys_manager, 100000);
@@ -756,6 +757,7 @@ fn test_static_output_closing_tx() {
     check_spends!(spend_txn[0], closing_tx);
 
     mine_transaction(&nodes[1], &closing_tx);
+	check_closed_event!(nodes[1], 1, ClosureReason::CooperativeClosure);
     connect_blocks(&nodes[1], ANTI_REORG_DELAY - 1);
 
     let spend_txn = check_spendable_outputs!(nodes[1], 2, node_cfgs[1].keys_manager, 100000);
