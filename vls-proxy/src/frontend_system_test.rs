@@ -19,7 +19,7 @@ use lightning_signer::bitcoin::{BlockHash, BlockHeader, KeyPair, Network};
 use lightning_signer::chain::tracker::ChainTracker;
 use lightning_signer::node::{Heartbeat, SignedHeartbeat};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
-use lightning_signer::txoo::proof::UnspentProof;
+use lightning_signer::txoo::proof::TxoProof;
 use lightning_signer::util::crypto_utils::sighash_from_heartbeat;
 use lightning_signer::util::test_utils::MockListener;
 use log::*;
@@ -119,7 +119,7 @@ impl SignerPort for DummySignerPort {
                 state.height += 1;
                 let header: BlockHeader = deserialize(&add.header.0).unwrap();
                 trace!("header {:?}", header);
-                let proof: UnspentProof = deserialize(&add.unspent_proof.unwrap().0).unwrap();
+                let proof: TxoProof = deserialize(&add.unspent_proof.unwrap().0).unwrap();
                 state.tracker.add_block(header, proof).expect("add block failed");
                 state.block_hash = header.block_hash();
                 let reply = AddBlockReply {};

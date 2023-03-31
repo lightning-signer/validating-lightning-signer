@@ -14,7 +14,7 @@ use bitcoin::{
 use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use std::sync::{Arc, Mutex};
-use txoo::proof::UnspentProof;
+use txoo::proof::TxoProof;
 
 #[derive(Clone)]
 pub(crate) struct MockValidator {
@@ -234,7 +234,7 @@ impl Validator for MockValidator {
 
     fn validate_block(
         &self,
-        proof: &UnspentProof,
+        proof: &TxoProof,
         height: u32,
         header: &BlockHeader,
         prev_filter_header: &FilterHeader,

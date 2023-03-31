@@ -37,7 +37,7 @@ use lightning::ln::chan_utils::{
 use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage, PaymentSecret};
 use lightning::util::test_utils;
 use lightning_invoice::{Currency, Invoice, InvoiceBuilder};
-use txoo::proof::UnspentProof;
+use txoo::proof::TxoProof;
 
 use super::key_utils::{
     make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
@@ -1611,7 +1611,7 @@ pub fn make_block(prev_header: BlockHeader, txs: Vec<Transaction>) -> Block {
     Block { header, txdata: txs }
 }
 
-pub fn make_testnet_header(tip: &Headers, tip_height: u32) -> (BlockHeader, UnspentProof) {
+pub fn make_testnet_header(tip: &Headers, tip_height: u32) -> (BlockHeader, TxoProof) {
     let txs: Vec<Transaction> = vec![Transaction {
         version: 0,
         lock_time: PackedLockTime(tip_height + 1),
@@ -1624,7 +1624,7 @@ pub fn make_testnet_header(tip: &Headers, tip_height: u32) -> (BlockHeader, Unsp
     let bits = regtest_genesis.header.bits;
     let header = mine_header_with_bits(tip.0.block_hash(), merkle_root, bits);
     let block = bitcoin::Block { header, txdata: txs };
-    let proof = UnspentProof::prove_unchecked(&block, &tip.1, tip_height + 1);
+    let proof = TxoProof::prove_unchecked(&block, &tip.1, tip_height + 1);
     (header, proof)
 }
 
