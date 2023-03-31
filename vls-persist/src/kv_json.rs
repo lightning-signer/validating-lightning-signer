@@ -316,6 +316,8 @@ mod tests {
         (persister, dir, path_str.to_string())
     }
 
+    // this test crashes when run under kcov, so disable it
+    #[cfg(not(feature = "kcov"))]
     #[test]
     fn round_trip_signer_test() {
         let channel_id0 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());

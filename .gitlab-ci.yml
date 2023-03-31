@@ -127,19 +127,22 @@ coverage:
   stage: build
   image: rust:latest
   cache:
-    key: vls-compile-1_60
+    key: vls-coverage
     paths:
       - .cache/cargo
-  before_script:
+  script:
     - rustup component add rustfmt
     - cargo install cargo-kcov
     - apt-get update
+    - apt-get install -y protobuf-compiler
     - apt-get install -y cmake g++ pkg-config jq
     - apt-get install -y libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
     - cargo kcov --print-install-kcov-sh | sh
-  script:
-    - cd vls-core && CARGO_TARGET_DIR=target/kcov cargo kcov --verbose --lib -- --verify --exclude-pattern=/home/user/.cargo,/usr/include,/usr/src/debug,src/util/loopback.rs
-  after_script:
+    - CARGO_TARGET_DIR=target/kcov cargo kcov --verbose --all --features test_utils
+      --lib --test functional_test
+      -- --verify
+      --exclude-region="kcov-ignore-start:kcov-ignore-end"
+      --exclude-pattern=/home/user/.cargo,/usr/include,/usr/src/debug,src/util/loopback.rs
     - bash <(curl -s https://codecov.io/bash) -t "${CODECOV_TOKEN}"
 
 cargo-audit:

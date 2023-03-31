@@ -1,46 +1,24 @@
-#!/bin/sh
+#!/bin/bash
+
+set -e
 
 export CARGO_TARGET_DIR=target/kcov
+export VLS_DISABLE_UPDATE_VERSION=0
 
 cargo_kcov_args="$*"
 
-# coverage must be run on each crate individually because of:
-#   https://github.com/kennytm/cargo-kcov/issues/39
-
 run_kcov()
 {
-    path="$1"
-    shift
-    features="$*"
     cargo kcov \
           --verbose \
           $cargo_kcov_args \
-          --output="target/kcov/cov/$path" \
-          --manifest-path="$path/Cargo.toml" \
-          $features \
+          --output="target/kcov/cov" \
+          --all \
+          $* \
           -- \
           --verify \
+          --exclude-region="kcov-ignore-start:kcov-ignore-end" \
           --exclude-pattern=$HOME/.cargo,$HOME/.rustup,/usr/include,/usr/src/debug
 }
 
-out_dirs=""
-for included in $(./scripts/list-included Cargo.toml); do
-    if [ $included == 'vls-core-test' ]; then
-        features=""
-    elif [ $included == 'bolt-derive' ]; then
-        features=""
-    elif [ $included == 'vls-protocol' ]; then
-        features=""
-    elif [ $included == 'vls-protocol-signer' ]; then
-        features=""
-    elif [ $included == 'vls-proxy' ]; then
-        features=""
-    else
-        features="--features test_utils"
-    fi
-    echo run_kcov $included $features
-    run_kcov $included $features
-    out_dirs="$out_dirs target/kcov/cov/$included"
-done
-
-kcov --merge target/kcov/cov $out_dirs
+run_kcov --features test_utils

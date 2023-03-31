@@ -112,6 +112,7 @@ pub struct Bip32KeyVersion {
     pub privkey_version: u32,
 }
 
+// kcov-ignore-start
 impl Debug for Bip32KeyVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Bip32KeyVersion")
@@ -120,6 +121,7 @@ impl Debug for Bip32KeyVersion {
             .finish()
     }
 }
+// kcov-ignore-end
 
 unprefixed_array_impl!(BlockId, 32);
 

@@ -13,6 +13,7 @@ pub struct Value {
     pub value: Vec<u8>,
 }
 
+// kcov-ignore-start
 impl Debug for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Value")
@@ -25,3 +26,4 @@ impl Debug for Value {
             .finish()
     }
 }
+// kcov-ignore-end

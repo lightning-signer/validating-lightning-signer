@@ -150,6 +150,7 @@ pub struct ChannelSetup {
 }
 
 // Need to define manually because ChannelPublicKeys doesn't derive Debug.
+// kcov-ignore-start
 impl fmt::Debug for ChannelSetup {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ChannelSetup")
@@ -166,6 +167,7 @@ impl fmt::Debug for ChannelSetup {
             .finish()
     }
 }
+// kcov-ignore-end
 
 impl ChannelSetup {
     /// True if this channel uses static to_remote key
@@ -259,6 +261,7 @@ pub struct ChannelStub {
 }
 
 // Need to define manually because InMemorySigner doesn't derive Debug.
+// kcov-ignore-start
 impl fmt::Debug for ChannelStub {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ChannelStub")
@@ -267,6 +270,7 @@ impl fmt::Debug for ChannelStub {
             .finish()
     }
 }
+// kcov-ignore-end
 
 impl ChannelBase for ChannelStub {
     fn get_channel_basepoints(&self) -> ChannelPublicKeys {
