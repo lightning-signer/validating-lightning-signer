@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use bitcoin::hashes::hex::ToHex;
-use bitcoin::secp256k1::{ecdsa::Signature as BitcoinSignature, PublicKey};
+use bitcoin::secp256k1::{ecdsa::Signature as BitcoinSignature, PublicKey, Secp256k1, SecretKey};
 use bitcoin::{Network, OutPoint};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use log::LevelFilter;
@@ -18,7 +18,6 @@ use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 use lightning_signer::signer::StartingTimeFactory;
 use lightning_signer::util::clock::ManualClock;
-use lightning_signer::util::key_utils::make_test_key;
 use lightning_signer::Arc;
 use lightning_signer::SendSync;
 use lightning_signer::{bitcoin, lightning};
@@ -334,4 +333,11 @@ pub fn set_log_level(level: String) {
 #[wasm_bindgen]
 pub fn greet() {
     web_sys::console::log_1(&format!("here1").into());
+}
+
+/// Make a secp256k1 test key
+pub fn make_test_key(i: u8) -> (PublicKey, SecretKey) {
+    let secp_ctx = Secp256k1::signing_only();
+    let secret_key = SecretKey::from_slice(&[i; 32]).unwrap();
+    return (PublicKey::from_secret_key(&secp_ctx, &secret_key), secret_key);
 }

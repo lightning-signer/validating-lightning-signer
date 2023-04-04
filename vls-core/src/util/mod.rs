@@ -21,8 +21,9 @@ pub mod test_logger;
 #[cfg(any(test, feature = "test_utils"))]
 #[macro_use]
 pub mod test_utils;
-#[allow(missing_docs)]
 /// Key utilities
+#[allow(missing_docs)]
+#[cfg(any(test, feature = "test_utils"))]
 pub mod key_utils;
 #[cfg(test)]
 pub(crate) mod mocks;
