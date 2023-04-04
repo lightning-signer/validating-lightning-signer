@@ -40,6 +40,8 @@ pub mod monitor;
 /// Node
 #[macro_use]
 pub mod node;
+/// Invoices
+pub mod invoice;
 /// Persistence
 pub mod persist;
 /// Policy enforcement

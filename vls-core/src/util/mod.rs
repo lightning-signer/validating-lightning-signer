@@ -4,6 +4,8 @@ pub mod byte_utils;
 pub mod clock;
 /// Cryptographic utilities
 pub mod crypto_utils;
+/// Invoice utilities
+pub mod invoice_utils;
 /// Logging macros
 #[macro_use]
 #[allow(unused_macros)]

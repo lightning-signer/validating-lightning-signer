@@ -36,7 +36,7 @@ use lightning::ln::chan_utils::{
 };
 use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage, PaymentSecret};
 use lightning::util::test_utils;
-use lightning_invoice::{Currency, Invoice, InvoiceBuilder};
+use lightning_invoice::{Currency, InvoiceBuilder};
 use txoo::proof::TxoProof;
 
 use super::key_utils::{
@@ -47,6 +47,7 @@ use crate::channel::{
     Channel, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, ChannelStub, CommitmentType,
     TypedSignature,
 };
+use crate::invoice::Invoice;
 use crate::node::{Node, NodeConfig};
 use crate::node::{NodeServices, SpendType};
 use crate::persist::{DummyPersister, Persist};
@@ -313,15 +314,17 @@ pub fn make_test_invoice(x: u8, amt: u64) -> Invoice {
     let payment_preimage = PaymentPreimage([x; 32]);
     let payment_hash = Sha256Hash::hash(&payment_preimage.0);
     let private_key = SecretKey::from_slice(&[42; 32]).unwrap();
-    InvoiceBuilder::new(Currency::Regtest)
-        .description("test".into())
-        .payment_hash(payment_hash)
-        .payment_secret(PaymentSecret([x; 32]))
-        .duration_since_epoch(Duration::from_secs(123456789))
-        .min_final_cltv_expiry_delta(144)
-        .amount_milli_satoshis(amt)
-        .build_signed(|hash| Secp256k1::new().sign_ecdsa_recoverable(hash, &private_key))
-        .unwrap()
+    Invoice::Bolt11(
+        InvoiceBuilder::new(Currency::Regtest)
+            .description("test".into())
+            .payment_hash(payment_hash)
+            .payment_secret(PaymentSecret([x; 32]))
+            .duration_since_epoch(Duration::from_secs(123456789))
+            .min_final_cltv_expiry_delta(144)
+            .amount_milli_satoshis(amt)
+            .build_signed(|hash| Secp256k1::new().sign_ecdsa_recoverable(hash, &private_key))
+            .unwrap(),
+    )
 }
 
 /// A starting time factory which uses fixed values for testing

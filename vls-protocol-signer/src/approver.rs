@@ -4,8 +4,8 @@ use lightning_signer::prelude::*;
 use lightning_signer::Arc;
 use log::*;
 
+use lightning_signer::invoice::{Invoice, InvoiceAttributes};
 use lightning_signer::lightning::ln::PaymentHash;
-use lightning_signer::lightning_invoice::{Invoice, SignedRawInvoice};
 use lightning_signer::node::{Node, SpendType};
 use lightning_signer::policy::error::ValidationErrorKind;
 use lightning_signer::prelude::{Mutex, SendSync};
@@ -51,13 +51,9 @@ pub trait Approve: SendSync {
     ) -> bool;
 
     /// Checks invoice for approval and adds to the node if needed and appropriate
-    fn handle_proposed_invoice(
-        &self,
-        node: &Arc<Node>,
-        signed: SignedRawInvoice,
-    ) -> Result<bool, Status> {
-        let (payment_hash, _payment_state, invoice_hash, invoice) =
-            Node::payment_state_from_invoice(signed.clone())?;
+    fn handle_proposed_invoice(&self, node: &Arc<Node>, invoice: Invoice) -> Result<bool, Status> {
+        let (payment_hash, _payment_state, invoice_hash) =
+            Node::payment_state_from_invoice(&invoice)?;
 
         // shortcut if node already has this invoice
         if node.has_payment(&payment_hash, &invoice_hash)? {
@@ -72,7 +68,7 @@ pub trait Approve: SendSync {
 
         // otherwise ask approver
         if self.approve_invoice(&invoice) {
-            node.add_invoice(signed)
+            node.add_invoice(invoice)
         } else {
             Ok(false)
         }
@@ -291,8 +287,7 @@ impl<A: Approve> SendSync for VelocityApprover<A> {}
 impl<A: Approve> Approve for VelocityApprover<A> {
     fn approve_invoice(&self, invoice: &Invoice) -> bool {
         let mut control = self.control.lock().unwrap();
-        let success = control
-            .insert(self.clock.now().as_secs(), invoice.amount_milli_satoshis().unwrap_or(0));
+        let success = control.insert(self.clock.now().as_secs(), invoice.amount_milli_satoshis());
         if success {
             true
         } else {

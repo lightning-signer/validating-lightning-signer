@@ -1,5 +1,6 @@
 use core::borrow::Borrow;
 use core::convert::TryFrom;
+use core::convert::TryInto;
 use core::fmt::{self, Debug, Formatter};
 use core::iter::FromIterator;
 use core::str::FromStr;
@@ -32,7 +33,7 @@ use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning::util::invoice::construct_invoice_preimage;
 use lightning::util::logger::Logger;
 use lightning::util::ser::Writeable;
-use lightning_invoice::{Invoice, RawDataPart, RawHrp, RawInvoice, SignedRawInvoice};
+use lightning_invoice::{RawDataPart, RawHrp, RawInvoice, SignedRawInvoice};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -44,6 +45,7 @@ use crate::chain::tracker::ChainTracker;
 use crate::channel::{
     Channel, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub,
 };
+use crate::invoice::{Invoice, InvoiceAttributes};
 use crate::monitor::ChainMonitor;
 use crate::persist::model::NodeEntry;
 use crate::persist::{Persist, SeedPersist};
@@ -1712,8 +1714,9 @@ impl Node {
         let signed_raw_invoice = self.do_sign_invoice(hrp_bytes, invoice_data)?;
 
         let sig = signed_raw_invoice.signature().0;
-        let (hash, payment_state, invoice_hash, _invoice) =
-            Self::payment_state_from_invoice(signed_raw_invoice)?;
+        let (hash, payment_state, invoice_hash) = Self::payment_state_from_invoice(
+            &signed_raw_invoice.try_into().map_err(|e: Status| invalid_argument(e.to_string()))?,
+        )?;
         info!(
             "{} signing an invoice {} -> {}",
             self.log_prefix(),
@@ -1748,6 +1751,7 @@ impl Node {
         self.validator_factory.lock().unwrap().policy(self.network())
     }
 
+    // Sign a BOLT-11 invoice
     pub(crate) fn do_sign_invoice(
         &self,
         hrp_bytes: &[u8],
@@ -1918,9 +1922,8 @@ impl Node {
     /// Used by the signer to map HTLCs to destination payees, so that payee
     /// public keys can be allowlisted for policy control. Returns true
     /// if the invoice was added, false otherwise.
-    pub fn add_invoice(&self, raw_invoice: SignedRawInvoice) -> Result<bool, Status> {
-        let (hash, payment_state, invoice_hash, _invoice) =
-            Self::payment_state_from_invoice(raw_invoice)?;
+    pub fn add_invoice(&self, invoice: Invoice) -> Result<bool, Status> {
+        let (hash, payment_state, invoice_hash) = Self::payment_state_from_invoice(&invoice)?;
 
         info!(
             "{} adding invoice {} -> {}",
@@ -2031,34 +2034,24 @@ impl Node {
         retval
     }
 
-    /// Validate the invoice and create a tracking state for it.
+    /// Create a tracking state for the invoice
     ///
-    /// Returns the payment hash, invoice state, and the hash of the raw invoice that was signed.
+    /// Returns the payment hash, payment state, and the hash of the raw invoice that was signed.
     pub fn payment_state_from_invoice(
-        raw_invoice: SignedRawInvoice,
-    ) -> Result<(PaymentHash, PaymentState, [u8; 32], Invoice), Status> {
-        let invoice_hash = raw_invoice.signable_hash().clone();
-
-        // This performs all semantic checks and signature check
-        let invoice =
-            Invoice::from_signed(raw_invoice).map_err(|e| invalid_argument(e.to_string()))?;
-        let hash = PaymentHash(invoice.payment_hash().as_inner().clone());
-        let amount_msat = invoice.amount_milli_satoshis().unwrap_or(0);
-        // TODO check if payee public key in allowlist
-        let payee = invoice
-            .payee_pub_key()
-            .map(|p| p.clone())
-            .unwrap_or_else(|| invoice.recover_payee_pub_key());
+        invoice: &Invoice,
+    ) -> Result<(PaymentHash, PaymentState, [u8; 32]), Status> {
+        let payment_hash = invoice.payment_hash();
+        let invoice_hash = invoice.invoice_hash();
         let payment_state = PaymentState {
-            invoice_hash,
-            amount_msat,
-            payee,
+            invoice_hash: invoice_hash.clone(),
+            amount_msat: invoice.amount_milli_satoshis(),
+            payee: invoice.payee_pub_key(),
             duration_since_epoch: invoice.duration_since_epoch(),
-            expiry_duration: invoice.expiry_time(),
+            expiry_duration: invoice.expiry_duration(),
             is_fulfilled: false,
             payment_type: PaymentType::Invoice,
         };
-        Ok((hash, payment_state, invoice_hash, invoice))
+        Ok((payment_hash, payment_state, invoice_hash))
     }
 
     /// Create tracking state for an ad-hoc payment (keysend).
@@ -2349,9 +2342,9 @@ mod tests {
         payee_node: &Arc<Node>,
         description: &str,
         payment_hash: PaymentHash,
-    ) -> SignedRawInvoice {
+    ) -> Invoice {
         let (hrp_bytes, invoice_data) = build_test_invoice(description, &payment_hash);
-        payee_node.do_sign_invoice(&hrp_bytes, &invoice_data).unwrap()
+        payee_node.do_sign_invoice(&hrp_bytes, &invoice_data).unwrap().try_into().unwrap()
     }
 
     fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>, Vec<u5>) {

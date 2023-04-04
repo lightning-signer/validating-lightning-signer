@@ -21,11 +21,11 @@ use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement, UnsignedGoss
 use lightning::ln::script::ShutdownScript;
 use lightning::ln::{chan_utils, PaymentPreimage};
 use lightning::util::ser::{Readable, Writeable, Writer};
-use lightning_invoice::SignedRawInvoice;
 
 use log::{debug, error, info};
 
 use crate::channel::{ChannelBase, ChannelId, ChannelSetup, CommitmentType};
+use crate::invoice::Invoice;
 use crate::io_extras::Error as IOError;
 use crate::node::Node;
 use crate::prelude::*;
@@ -47,8 +47,8 @@ impl LoopbackSignerKeysInterface {
         self.signer.get_node(&self.node_id).expect("our node is missing")
     }
 
-    pub fn add_invoice(&self, raw_invoice: SignedRawInvoice) {
-        self.get_node().add_invoice(raw_invoice).expect("could not add invoice");
+    pub fn add_invoice(&self, invoice: Invoice) {
+        self.get_node().add_invoice(invoice).expect("could not add invoice");
     }
 
     pub fn spend_spendable_outputs(
