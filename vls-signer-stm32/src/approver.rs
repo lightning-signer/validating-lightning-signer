@@ -14,10 +14,10 @@ use lightning_signer::bitcoin::Transaction;
 use vls_protocol_signer::approver::Approve;
 use vls_protocol_signer::lightning_signer::{
     self,
-    bitcoin::hashes::{hex::ToHex, Hash},
+    bitcoin::hashes::hex::ToHex,
     bitcoin::secp256k1::PublicKey,
+    invoice::{Invoice, InvoiceAttributes},
     lightning::ln::PaymentHash,
-    lightning_invoice::{Invoice, InvoiceDescription},
     prelude::SendSync,
     Arc,
 };
@@ -43,17 +43,11 @@ impl Approve for ScreenApprover {
 
         let devctx: &mut DeviceContext = &mut self.devctx.borrow_mut();
 
-        let amount_msat = invoice.amount_milli_satoshis().unwrap_or(0);
-        let payee_pubkey = invoice
-            .payee_pub_key()
-            .map(|p| p.clone())
-            .unwrap_or_else(|| invoice.recover_payee_pub_key());
-        let expiry_secs = invoice.expiry_time().as_secs();
-        let payment_hash = PaymentHash(invoice.payment_hash().into_inner());
-        let descrstr = match invoice.description() {
-            InvoiceDescription::Direct(d) => d.to_string(),
-            InvoiceDescription::Hash(h) => format!("hash: {:?}", h),
-        };
+        let amount_msat = invoice.amount_milli_satoshis();
+        let payee_pubkey = invoice.payee_pub_key();
+        let expiry_secs = invoice.expiry_duration().as_secs();
+        let payment_hash = invoice.payment_hash();
+        let desc = invoice.description();
 
         let mut lines = vec![
             format!("{: ^19}", "Approve Invoice?"),
@@ -62,7 +56,7 @@ impl Approve for ScreenApprover {
             format!("x {:17}", format_expiration(expiry_secs)),
             format!("p {:17}", format_payment_hash(&payment_hash)),
         ];
-        lines.extend(format_description("d ".to_string() + &descrstr));
+        lines.extend(format_description("d ".to_string() + &desc));
         lines.resize_with(9, || format!(""));
         lines.push(format!("{:^9} {:^9}", "Approve", "Decline"));
 
@@ -144,11 +138,11 @@ fn format_payment_hash(payment_hash: &PaymentHash) -> String {
     format!("{}..{}", part0, part1)
 }
 
-fn format_description(mut descrstr: String) -> Vec<String> {
+fn format_description(mut desc: String) -> Vec<String> {
     // Break into 17 char substrs
     let mut rv = vec![];
-    while descrstr.len() > 0 {
-        rv.push(descrstr.drain(..min(descrstr.len(), 17)).collect());
+    while desc.len() > 0 {
+        rv.push(desc.drain(..min(desc.len(), 17)).collect());
     }
     rv
 }
