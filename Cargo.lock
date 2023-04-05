@@ -2218,6 +2218,7 @@ version = "0.2.0"
 dependencies = [
  "async-trait",
  "env_logger",
+ "lightning-storage-server",
  "log",
  "test-log",
  "tokio",

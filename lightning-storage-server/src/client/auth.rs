@@ -12,16 +12,16 @@ pub struct Auth {
 }
 
 impl Auth {
-    pub fn new_for_client(client_key: SecretKey, server_id: PublicKey) -> Self {
+    pub fn new_for_client(client_key: &SecretKey, server_id: &PublicKey) -> Self {
         let secp = secp256k1::Secp256k1::new();
-        let shared_secret = SharedSecret::new(&server_id, &client_key).secret_bytes().to_vec();
-        let client_id = PublicKey::from_secret_key(&secp, &client_key);
+        let shared_secret = SharedSecret::new(server_id, client_key).secret_bytes().to_vec();
+        let client_id = PublicKey::from_secret_key(&secp, client_key);
         Self { client_id, shared_secret }
     }
 
-    pub fn new_for_server(server_key: SecretKey, client_id: PublicKey) -> Self {
-        let shared_secret = SharedSecret::new(&client_id, &server_key).secret_bytes().to_vec();
-        Self { client_id, shared_secret }
+    pub fn new_for_server(server_key: &SecretKey, client_id: &PublicKey) -> Self {
+        let shared_secret = SharedSecret::new(client_id, server_key).secret_bytes().to_vec();
+        Self { client_id: client_id.clone(), shared_secret }
     }
 
     /// SHA256 of shared_secret

@@ -34,14 +34,17 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn init(uri: &str) -> Result<PublicKey, ClientError> {
+    /// Get the server info
+    pub async fn get_info(uri: &str) -> Result<(PublicKey, String), ClientError> {
         debug!("info");
         let mut client = connect(uri).await?;
         let info_request = Request::new(InfoRequest {});
 
         let response = client.info(info_request).await?.into_inner();
         debug!("info result {:?}", response);
-        PublicKey::from_slice(&response.server_id).map_err(|_| ClientError::InvalidResponse)
+        let pubkey = PublicKey::from_slice(&response.server_id).map_err(|_| ClientError::InvalidResponse)?;
+        let version = response.version;
+        Ok((pubkey, version))
     }
 
     pub async fn new(uri: &str, auth: Auth) -> Result<Self, ClientError> {

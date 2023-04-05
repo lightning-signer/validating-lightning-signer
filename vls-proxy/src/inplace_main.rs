@@ -20,8 +20,8 @@ use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::crypto_utils::hkdf_sha256;
 use lightning_signer::Arc;
-use lightning_storage_server::client::auth::Auth;
-use lightning_storage_server::client::driver::Client as LssClient;
+use lightning_storage_server::client::Auth;
+use lightning_storage_server::client::Client as LssClient;
 use lightning_storage_server::Value;
 use nodefront::SingleFront;
 use thiserror::Error;
@@ -72,7 +72,7 @@ pub enum Error {
     #[error("protocol error")]
     Protocol(#[from] ProtocolError),
     #[error("LSS error")]
-    Client(#[from] lightning_storage_server::client::driver::ClientError),
+    Client(#[from] lightning_storage_server::client::ClientError),
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
@@ -330,10 +330,10 @@ async fn make_looper(seed: &[u8; 32]) -> Looper {
         let client_key = SecretKey::from_slice(&private_bytes).unwrap();
         let hmac_secret = Sha256Hash::hash(&client_key[..]).into_inner();
 
-        let server_id = LssClient::init(&uri).await.expect("failed to init LSS");
-        info!("connected to LSS provider {}", server_id);
+        let (server_id, version) = LssClient::get_info(&uri).await.expect("failed to init LSS");
+        info!("connected to LSS provider {} version {}", server_id, version);
 
-        let auth = Auth::new_for_client(client_key, server_id);
+        let auth = Auth::new_for_client(&client_key, &server_id);
         let lss_client = AsyncMutex::new(
             LssClient::new(&uri, auth.clone()).await.expect("failed to connect to LSS"),
         );

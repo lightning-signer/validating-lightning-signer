@@ -1,5 +1,7 @@
 //! see lss.proto in lightning_storage_server for more details
 
+pub mod lss;
+
 use async_trait::async_trait;
 use bitcoin::secp256k1::PublicKey;
 use lightning_signer::bitcoin;
@@ -39,22 +41,12 @@ pub trait ExternalPersist {
     /// Store the mutations.
     /// Returns the server hmacs, proving that each backend server persisted the mutations.
     /// If a server did not respond in time, their HMAC will be empty.
-    async fn put(
-        &self,
-        auth: Vec<Auth>,
-        mutations: Mutations,
-        client_hmac: Vec<u8>,
-    ) -> Result<Vec<Vec<u8>>, Error>;
+    async fn put(&self, mutations: Mutations) -> Result<(), Error>;
 
     /// Get consensus full state from the backend servers and the matching server HMACs.
     ///
     /// If there is no consensus, an error is returned.
-    async fn get(
-        &self,
-        auth: Vec<Auth>,
-        key_prefix: String,
-        nonce: Vec<u8>,
-    ) -> Result<(Mutations, Vec<Vec<u8>>), Error>;
+    async fn get(&self, key_prefix: String) -> Result<Mutations, Error>;
 
     /// Return server information for each backend server.
     async fn info(&self) -> Result<Vec<Info>, Error>;

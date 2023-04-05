@@ -1,6 +1,6 @@
 pub mod driver;
 
-use crate::client::auth::Auth;
+use crate::client::Auth;
 use crate::proto::lightning_storage_server::{LightningStorage, LightningStorageServer};
 use crate::proto::{
     self, GetReply, GetRequest, InfoReply, InfoRequest, PingReply, PingRequest, PutReply,
@@ -57,7 +57,7 @@ impl StorageServer {
     fn check_auth(&self, auth_proto: &proto::Auth) -> Result<Auth, Status> {
         let client_id = PublicKey::from_slice(&auth_proto.client_id)
             .map_err(|_| Status::unauthenticated("invalid client id"))?;
-        let auth = Auth::new_for_server(self.secret_key.clone(), client_id);
+        let auth = Auth::new_for_server(&self.secret_key, &client_id);
         if auth_proto.token != auth.auth_token() {
             return Err(Status::invalid_argument("invalid auth token"));
         }

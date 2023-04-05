@@ -37,7 +37,7 @@ fn server_public_key() -> Result<PublicKey, Box<dyn std::error::Error>> {
 #[tokio::main]
 async fn init_subcommand(rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     init_secret_key("client-key")?;
-    let server_key = driver::Client::init(rpc_url).await?;
+    let (server_key, _version) = driver::Client::get_info(rpc_url).await?;
     let server_pubkey_file = state_file_path("server-pubkey")?;
     fs::write(server_pubkey_file, hex::encode(&server_key.serialize()))?;
     Ok(())
