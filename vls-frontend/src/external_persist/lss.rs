@@ -1,8 +1,6 @@
 use super::{Error, ExternalPersist, Info};
 use async_trait::async_trait;
-use bitcoin::hashes::sha256::Hash as Sha256Hash;
-use bitcoin::hashes::Hash;
-use bitcoin::secp256k1::{PublicKey, SecretKey};
+use bitcoin::secp256k1::PublicKey;
 use lightning_signer::bitcoin;
 use lightning_signer::persist::Mutations;
 use lightning_storage_server::client::{Auth as LssAuth, Client as LssClient, ClientError};
@@ -44,8 +42,6 @@ impl From<ClientError> for Error {
 /// An external persistence implementation using lightning-storage-server.
 pub struct Client {
     client: Mutex<LssClient>,
-    auth: LssAuth,
-    hmac_secret: Vec<u8>,
     server_public_key: PublicKey,
     uri: String,
 }
@@ -53,7 +49,9 @@ pub struct Client {
 impl Client {
     /// Get the server's public key.
     ///
-    /// This will be needed later when calling `new`.
+    /// This will be needed later when calling `new`.  It is also used in the
+    /// signer to create a shared secret with the server.
+    ///
     /// In a production system, this should be verified and cached.
     pub async fn get_server_pubkey(uri: &str) -> Result<PublicKey, Error> {
         Ok(LssClient::get_info(uri).await?.0)
@@ -62,26 +60,24 @@ impl Client {
     /// Create a new client.
     ///
     /// `uri` is the URI of the server.
-    /// `client_key` is the client's private key.
     /// `server_public_key` is the server's public key as previously obtained via `get_server_pubkey`.
+    /// `auth` is the authentication token to use.  It includes the client public key.
     ///
-    /// Note that the client key is used to locate the client's data on the server.
+    /// Note that the client public key is used to locate the client's data on the server.
     pub async fn new(
         uri: &str,
-        client_key: &SecretKey,
+        client_public_key: &PublicKey,
         server_public_key: &PublicKey,
+        shared_secret: &[u8],
     ) -> Result<Self, Error> {
-        let auth = LssAuth::new_for_client(client_key, server_public_key);
-        let hmac_secret = Sha256Hash::hash(&client_key[..]).into_inner().to_vec();
-
+        let auth =
+            LssAuth { client_id: client_public_key.clone(), shared_secret: shared_secret.to_vec() };
         let (pubkey, _version) = LssClient::get_info(uri).await?;
 
         assert_eq!(pubkey, *server_public_key, "server public key mismatch");
-        let client = LssClient::new(uri, auth.clone()).await?;
+        let client = LssClient::new(uri, auth).await?;
         Ok(Self {
             client: Mutex::new(client),
-            auth,
-            hmac_secret,
             server_public_key: server_public_key.clone(),
             uri: uri.to_string(),
         })
@@ -90,20 +86,21 @@ impl Client {
 
 #[async_trait]
 impl ExternalPersist for Client {
-    async fn put(&self, mutations: Mutations) -> Result<(), Error> {
+    async fn put(&self, mutations: Mutations, client_hmac: &[u8]) -> Result<Vec<u8>, Error> {
         let mut client = self.client.lock().await;
         let kvs = mutations
             .into_iter()
             .map(|(k, (version, value))| (k, LssValue { version: version as i64, value }))
             .collect();
-        client.put(self.auth.clone(), &self.hmac_secret, kvs).await?;
-        Ok(())
+        let server_hmac = client.do_put(kvs, client_hmac).await?;
+        Ok(server_hmac)
     }
 
-    async fn get(&self, key_prefix: String) -> Result<Mutations, Error> {
+    async fn get(&self, key_prefix: String, nonce: &[u8]) -> Result<(Mutations, Vec<u8>), Error> {
         let mut client = self.client.lock().await;
-        let kvs = client.get(self.auth.clone(), &self.hmac_secret, key_prefix).await?;
-        Ok(kvs.into_iter().map(|(k, v)| (k, (v.version as u64, v.value))).collect())
+        let (kvs, received_hmac) = client.do_get(key_prefix, nonce).await?;
+        let mutations = kvs.into_iter().map(|(k, v)| (k, (v.version as u64, v.value))).collect();
+        Ok((mutations, received_hmac))
     }
 
     async fn info(&self) -> Result<Vec<Info>, Error> {

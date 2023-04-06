@@ -7,10 +7,11 @@ use bitcoin::secp256k1::PublicKey;
 use lightning_signer::bitcoin;
 use lightning_signer::persist::Mutations;
 
+#[derive(Debug)]
 pub enum Error {
     /// There was a put conflict for one or more keys
     Conflicts(Vec<(String, u64)>),
-    /// The backend servers don't have a quorum of consensus
+    /// There is no consensus among the quorum of backend servers
     NoConsensus,
     /// A quorum could not be reached or returned an error
     NotAvailable,
@@ -41,12 +42,15 @@ pub trait ExternalPersist {
     /// Store the mutations.
     /// Returns the server hmacs, proving that each backend server persisted the mutations.
     /// If a server did not respond in time, their HMAC will be empty.
-    async fn put(&self, mutations: Mutations) -> Result<(), Error>;
+    /// TODO multiple servers
+    async fn put(&self, mutations: Mutations, client_hmac: &[u8]) -> Result<Vec<u8>, Error>;
 
-    /// Get consensus full state from the backend servers and the matching server HMACs.
+    /// Get the full state from a quorum of backend servers and the matching server HMACs.
+    /// Unavailable servers will have an empty HMAC.
     ///
     /// If there is no consensus, an error is returned.
-    async fn get(&self, key_prefix: String) -> Result<Mutations, Error>;
+    /// TODO multiple servers
+    async fn get(&self, key_prefix: String, nonce: &[u8]) -> Result<(Mutations, Vec<u8>), Error>;
 
     /// Return server information for each backend server.
     async fn info(&self) -> Result<Vec<Info>, Error>;
