@@ -6,15 +6,28 @@
 //!    cargo run --example lss_example
 
 use lightning_signer::bitcoin::secp256k1;
-use lightning_signer::bitcoin::secp256k1::rand::RngCore;
 use lightning_signer::persist::Mutations;
 use lightning_storage_server::client::PrivAuth;
 use lightning_storage_server::util::compute_shared_hmac;
 use lightning_storage_server::{client::PrivAuth as LssAuth, Value};
 use log::{info, LevelFilter};
-use secp256k1::{rand, Secp256k1, SecretKey};
+use secp256k1::{rand, rand::RngCore, Secp256k1, SecretKey};
 use vls_frontend::external_persist::lss::Client;
 use vls_frontend::external_persist::ExternalPersist;
+
+// Notes on signer protocol adjustments.
+//
+// on init:
+// - provide to signer: persistence server pubkey(s)
+// - from signer: client pubkey, auth token(s)
+//
+// on get:
+// - from signer: nonce
+// - to signer: key-value pairs, hmac
+//
+// on put:
+// - from signer: mutations, client hmac
+// - to signer: server hmac
 
 #[tokio::main]
 async fn main() {

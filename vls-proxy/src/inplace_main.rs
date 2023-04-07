@@ -51,7 +51,6 @@ mod test;
 pub struct Cloud {
     lss_client: AsyncMutex<LssClient>,
     state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
-    auth: PrivAuth,
     hmac_secret: [u8; 32],
 }
 
@@ -334,10 +333,10 @@ async fn make_looper(seed: &[u8; 32]) -> Looper {
 
         let auth = PrivAuth::new_for_client(&client_key, &server_id);
         let lss_client = AsyncMutex::new(
-            LssClient::new(&uri, auth.clone()).await.expect("failed to connect to LSS"),
+            LssClient::new(&uri, auth).await.expect("failed to connect to LSS"),
         );
         let state = Arc::new(Mutex::new(Default::default()));
-        let cloud = Cloud { lss_client, state, auth, hmac_secret };
+        let cloud = Cloud { lss_client, state, hmac_secret };
         Some(Arc::new(cloud))
     } else {
         None
