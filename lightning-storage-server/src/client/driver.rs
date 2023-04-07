@@ -1,4 +1,4 @@
-use crate::client::auth::Auth;
+use crate::client::auth::{Auth, PrivAuth};
 use crate::client::LightningStorageClient;
 use crate::proto::{self, GetRequest, InfoRequest, PingRequest, PutRequest};
 use crate::util::{compute_shared_hmac, prepare_value_for_put, process_value_from_get};
@@ -64,31 +64,6 @@ impl Client {
 
     pub async fn get(
         &mut self,
-        auth: Auth,
-        hmac_secret: &[u8],
-        key_prefix: String,
-    ) -> Result<Vec<(String, Value)>, ClientError> {
-        let mut nonce = Vec::with_capacity(32);
-        nonce.resize(32, 0);
-        let mut rng = OsRng;
-        rng.fill_bytes(&mut nonce);
-
-        debug!("get request '{}'", key_prefix);
-
-        let (mut kvs, received_hmac) = self.do_get(key_prefix, &nonce).await?;
-        let hmac = compute_shared_hmac(&auth.shared_secret, &nonce, &kvs);
-        if received_hmac != hmac {
-            error!("get hmac mismatch");
-            return Err(ClientError::InvalidServerHmac());
-        }
-
-        remove_and_check_hmacs(&hmac_secret, &mut kvs)?;
-        debug!("get result {:?}", kvs);
-        Ok(kvs)
-    }
-
-    pub async fn do_get(
-        &mut self,
         key_prefix: String,
         nonce: &[u8],
     ) -> Result<(Vec<(String, Value)>, Vec<u8>), ClientError> {
@@ -104,42 +79,7 @@ impl Client {
         Ok((kvs, response.hmac))
     }
 
-    /// values do not include HMAC
-    pub async fn put(
-        &mut self,
-        auth: Auth,
-        hmac_secret: &[u8],
-        mut kvs: Vec<(String, Value)>,
-    ) -> Result<(), ClientError> {
-        debug!("put request {:?}", kvs);
-        kvs.sort_by_key(|(k, _)| k.clone());
-        for (key, value) in kvs.iter_mut() {
-            prepare_value_for_put(hmac_secret, key, value);
-        }
-
-        let client_hmac = compute_shared_hmac(&auth.shared_secret, &[0x01], &kvs);
-
-        let server_hmac = compute_shared_hmac(&auth.shared_secret, &[0x02], &kvs);
-
-        match self.do_put(kvs, &client_hmac).await {
-            Ok(received_server_hmac) => {
-                if received_server_hmac == server_hmac {
-                    return Ok(())
-                } else {
-                    error!("put hmac mismatch");
-                    return Err(ClientError::InvalidServerHmac())
-                }
-            },
-            Err(ClientError::PutConflict(mut conflicts)) => {
-                remove_and_check_hmacs(&hmac_secret, &mut conflicts)?;
-                error!("put conflicts {:?}", conflicts);
-                Err(ClientError::PutConflict(conflicts))
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    pub async fn do_put(&mut self, kvs: Vec<(String, Value)>, client_hmac: &[u8]) -> Result<Vec<u8>, ClientError> {
+    pub async fn put(&mut self, kvs: Vec<(String, Value)>, client_hmac: &[u8]) -> Result<Vec<u8>, ClientError> {
         let kvs_proto = kvs
             .into_iter()
             .map(|(k, v)| proto::KeyValue {
@@ -171,6 +111,85 @@ impl Client {
             client_id: self.auth.client_id.serialize().to_vec(),
             token: self.auth.auth_token(),
         })
+    }
+}
+
+pub struct PrivClient {
+    client: Client,
+    auth: PrivAuth,
+}
+
+impl PrivClient {
+    /// Get the server info
+    pub async fn get_info(uri: &str) -> Result<(PublicKey, String), ClientError> {
+        Client::get_info(uri).await
+    }
+
+    pub async fn new(uri: &str, auth: PrivAuth) -> Result<Self, ClientError> {
+        let client = Client::new(uri, auth.auth()).await?;
+        Ok(Self { client, auth })
+    }
+
+    pub async fn ping(uri: &str, message: &str) -> Result<String, ClientError> {
+        Client::ping(uri, message).await
+    }
+
+    pub async fn get(
+        &mut self,
+        hmac_secret: &[u8],
+        key_prefix: String,
+    ) -> Result<Vec<(String, Value)>, ClientError> {
+        let mut nonce = Vec::with_capacity(32);
+        nonce.resize(32, 0);
+        let mut rng = OsRng;
+        rng.fill_bytes(&mut nonce);
+
+        debug!("get request '{}'", key_prefix);
+
+        let (mut kvs, received_hmac) = self.client.get(key_prefix, &nonce).await?;
+        let hmac = compute_shared_hmac(&self.auth.shared_secret, &nonce, &kvs);
+        if received_hmac != hmac {
+            error!("get hmac mismatch");
+            return Err(ClientError::InvalidServerHmac());
+        }
+
+        remove_and_check_hmacs(&hmac_secret, &mut kvs)?;
+        debug!("get result {:?}", kvs);
+        Ok(kvs)
+    }
+
+    /// values do not include HMAC
+    pub async fn put(
+        &mut self,
+        hmac_secret: &[u8],
+        mut kvs: Vec<(String, Value)>,
+    ) -> Result<(), ClientError> {
+        debug!("put request {:?}", kvs);
+        kvs.sort_by_key(|(k, _)| k.clone());
+        for (key, value) in kvs.iter_mut() {
+            prepare_value_for_put(hmac_secret, key, value);
+        }
+
+        let client_hmac = compute_shared_hmac(&self.auth.shared_secret, &[0x01], &kvs);
+
+        let server_hmac = compute_shared_hmac(&self.auth.shared_secret, &[0x02], &kvs);
+
+        match self.client.put(kvs, &client_hmac).await {
+            Ok(received_server_hmac) => {
+                if received_server_hmac == server_hmac {
+                    return Ok(())
+                } else {
+                    error!("put hmac mismatch");
+                    return Err(ClientError::InvalidServerHmac())
+                }
+            },
+            Err(ClientError::PutConflict(mut conflicts)) => {
+                remove_and_check_hmacs(&hmac_secret, &mut conflicts)?;
+                error!("put conflicts {:?}", conflicts);
+                Err(ClientError::PutConflict(conflicts))
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 

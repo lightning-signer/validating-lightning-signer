@@ -20,8 +20,8 @@ use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::crypto_utils::hkdf_sha256;
 use lightning_signer::Arc;
-use lightning_storage_server::client::Auth;
-use lightning_storage_server::client::Client as LssClient;
+use lightning_storage_server::client::PrivAuth;
+use lightning_storage_server::client::PrivClient as LssClient;
 use lightning_storage_server::Value;
 use nodefront::SingleFront;
 use thiserror::Error;
@@ -51,15 +51,14 @@ mod test;
 pub struct Cloud {
     lss_client: AsyncMutex<LssClient>,
     state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
-    auth: Auth,
+    auth: PrivAuth,
     hmac_secret: [u8; 32],
 }
 
 impl Cloud {
     async fn init_state(&self) {
         let mut lss_client = self.lss_client.lock().await;
-        let state =
-            lss_client.get(self.auth.clone(), &self.hmac_secret, "".to_string()).await.unwrap();
+        let state = lss_client.get(&self.hmac_secret, "".to_string()).await.unwrap();
         let mut local = self.state.lock().unwrap();
         for (key, value) in state.into_iter() {
             local.insert(key, (value.version as u64, value.value));
@@ -101,7 +100,7 @@ impl Looper {
                 .into_iter()
                 .map(|(key, (version, value))| (key, Value { version: version as i64, value }))
                 .collect();
-            client.put(cloud.auth.clone(), &cloud.hmac_secret, kvs).await?;
+            client.put(&cloud.hmac_secret, kvs).await?;
         }
         Ok(())
     }
@@ -333,7 +332,7 @@ async fn make_looper(seed: &[u8; 32]) -> Looper {
         let (server_id, version) = LssClient::get_info(&uri).await.expect("failed to init LSS");
         info!("connected to LSS provider {} version {}", server_id, version);
 
-        let auth = Auth::new_for_client(&client_key, &server_id);
+        let auth = PrivAuth::new_for_client(&client_key, &server_id);
         let lss_client = AsyncMutex::new(
             LssClient::new(&uri, auth.clone()).await.expect("failed to connect to LSS"),
         );

@@ -2,7 +2,7 @@ use bitcoin_hashes::sha256::Hash as Sha256Hash;
 use bitcoin_hashes::Hash;
 use clap::{App, Arg, ArgMatches};
 use client::driver;
-use lightning_storage_server::client::auth::Auth;
+use lightning_storage_server::client::auth::PrivAuth;
 use lightning_storage_server::client::driver::ClientError;
 use lightning_storage_server::util::{
     init_secret_key, read_public_key, read_secret_key, setup_logging, state_file_path,
@@ -15,7 +15,7 @@ const CLIENT_APP_NAME: &str = "lss-cli";
 
 #[tokio::main]
 async fn ping_subcommand(rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let result = driver::Client::ping(rpc_url, "hello").await?;
+    let result = driver::PrivClient::ping(rpc_url, "hello").await?;
     println!("ping result: {}", result);
     Ok(())
 }
@@ -37,7 +37,7 @@ fn server_public_key() -> Result<PublicKey, Box<dyn std::error::Error>> {
 #[tokio::main]
 async fn init_subcommand(rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     init_secret_key("client-key")?;
-    let (server_key, _version) = driver::Client::get_info(rpc_url).await?;
+    let (server_key, _version) = driver::PrivClient::get_info(rpc_url).await?;
     let server_pubkey_file = state_file_path("server-pubkey")?;
     fs::write(server_pubkey_file, hex::encode(&server_key.serialize()))?;
     Ok(())
@@ -56,10 +56,10 @@ fn info_subcommand(_rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // Auth and hmac secret
-fn make_auth() -> Result<(Auth, Vec<u8>), Box<dyn std::error::Error>> {
+fn make_auth() -> Result<(PrivAuth, Vec<u8>), Box<dyn std::error::Error>> {
     let secret_key = secret_key()?;
     let hmac_secret = Sha256Hash::hash(&secret_key[..]).into_inner();
-    let auth = Auth::new_for_client(secret_key, server_public_key()?);
+    let auth = PrivAuth::new_for_client(secret_key, server_public_key()?);
     Ok((auth, hmac_secret.to_vec()))
 }
 
@@ -70,8 +70,8 @@ async fn get_subcommand(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let prefix = matches.value_of_t("prefix")?;
     let (auth, hmac_secret) = make_auth()?;
-    let mut client = driver::Client::new(rpc_url, auth.clone()).await?;
-    let res = client.get(auth, &hmac_secret, prefix).await?;
+    let mut client = driver::PrivClient::new(rpc_url, auth.clone()).await?;
+    let res = client.get(&hmac_secret, prefix).await?;
     for (key, value) in res {
         println!("key: {}, version: {} value: {}", key, value.version, hex::encode(value.value));
     }
@@ -88,9 +88,9 @@ async fn put_subcommand(
     let value_hex: String = matches.value_of_t("value")?;
     let value = hex::decode(value_hex).unwrap();
     let (auth, hmac_secret) = make_auth()?;
-    let mut client = driver::Client::new(rpc_url, auth.clone()).await?;
+    let mut client = driver::PrivClient::new(rpc_url, auth.clone()).await?;
 
-    match client.put(auth, &hmac_secret, vec![(key, Value { version, value })]).await {
+    match client.put(&hmac_secret, vec![(key, Value { version, value })]).await {
         Ok(()) => Ok(()),
         Err(ClientError::PutConflict(conflicts)) => {
             for (key, value) in conflicts {

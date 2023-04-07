@@ -66,12 +66,9 @@ impl Client {
     /// Note that the client public key is used to locate the client's data on the server.
     pub async fn new(
         uri: &str,
-        client_public_key: &PublicKey,
         server_public_key: &PublicKey,
-        shared_secret: &[u8],
+        auth: LssAuth,
     ) -> Result<Self, Error> {
-        let auth =
-            LssAuth { client_id: client_public_key.clone(), shared_secret: shared_secret.to_vec() };
         let (pubkey, _version) = LssClient::get_info(uri).await?;
 
         assert_eq!(pubkey, *server_public_key, "server public key mismatch");
@@ -92,13 +89,13 @@ impl ExternalPersist for Client {
             .into_iter()
             .map(|(k, (version, value))| (k, LssValue { version: version as i64, value }))
             .collect();
-        let server_hmac = client.do_put(kvs, client_hmac).await?;
+        let server_hmac = client.put(kvs, client_hmac).await?;
         Ok(server_hmac)
     }
 
     async fn get(&self, key_prefix: String, nonce: &[u8]) -> Result<(Mutations, Vec<u8>), Error> {
         let mut client = self.client.lock().await;
-        let (kvs, received_hmac) = client.do_get(key_prefix, nonce).await?;
+        let (kvs, received_hmac) = client.get(key_prefix, nonce).await?;
         let mutations = kvs.into_iter().map(|(k, v)| (k, (v.version as u64, v.value))).collect();
         Ok((mutations, received_hmac))
     }
