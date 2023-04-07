@@ -2194,6 +2194,7 @@ mod tests {
     use crate::channel::ChannelBase;
     use crate::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
+    use crate::util::test_utils::invoice::make_test_bolt12_invoice;
     use crate::util::test_utils::*;
 
     use super::*;
@@ -2438,6 +2439,44 @@ mod tests {
         let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
 
         let invoice = make_test_invoice(&payee_node, "invoice", hash);
+
+        assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
+
+        let mut policy = make_simple_policy(Network::Testnet);
+        policy.require_invoices = true;
+        policy.enforce_balance = true;
+        let factory = SimpleValidatorFactory::new_with_policy(policy);
+        let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
+        node.set_validator_factory(Arc::new(factory));
+
+        {
+            let mut state = node.get_state();
+            assert_status_ok!(state.validate_and_apply_payments(
+                &channel_id,
+                &Map::new(),
+                &vec![(hash, 110)].into_iter().collect(),
+                &Default::default(),
+                invoice_validator.clone()
+            ));
+        }
+        node.with_ready_channel(&channel_id, |chan| {
+            chan.htlcs_fulfilled(vec![preimage]);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn fulfill_bolt12_test() {
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        // TODO check currency matches
+        let preimage = PaymentPreimage([0; 32]);
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+
+        let invoice = make_test_bolt12_invoice("This is the invoice description", hash);
+
+        assert_eq!(invoice.description(), "This is the invoice description".to_string());
 
         assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 

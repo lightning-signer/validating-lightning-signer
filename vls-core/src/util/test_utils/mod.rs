@@ -1,3 +1,5 @@
+pub mod invoice;
+
 use std::time::Duration;
 
 use core::cmp;
