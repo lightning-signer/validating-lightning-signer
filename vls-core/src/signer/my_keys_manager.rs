@@ -649,6 +649,23 @@ mod tests {
     use test_log::test;
 
     #[test]
+    fn shared_secret_test() {
+        let server_key = SecretKey::from_slice(&[0x22u8; 32]).unwrap();
+        let server_pubkey = PublicKey::from_secret_key(&Secp256k1::new(), &server_key);
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Ldk,
+            &[0x11u8; 32],
+            Network::Testnet,
+            FixedStartingTimeFactory::new(1, 1).borrow(),
+        );
+        let client_key = manager.persistence_secret;
+        let client_pubkey = manager.get_persistence_pubkey();
+        let shared_secret = SharedSecret::new(&client_pubkey, &server_key);
+        let shared_secret2 = manager.get_persistence_shared_secret(&server_pubkey);
+        assert_eq!(shared_secret.secret_bytes(), shared_secret2);
+    }
+
+    #[test]
     fn compare_ldk_keys_manager_test() -> Result<(), ()> {
         let seed = [0x11u8; 32];
         let ldk = KeysManager::new(&seed, 1, 1);

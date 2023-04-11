@@ -355,6 +355,7 @@ pub mod fs {
 }
 
 /// An external persister helper
+#[derive(Clone)]
 pub struct ExternalPersistHelper {
     shared_secret: [u8; 32],
     last_nonce: [u8; 32],
@@ -393,6 +394,33 @@ impl ExternalPersistHelper {
     }
 }
 
+#[cfg(feature = "std")]
+pub use simple_entropy::SimpleEntropy;
+
+#[cfg(feature = "std")]
+mod simple_entropy {
+    use super::EntropySource;
+    use bitcoin::secp256k1::rand::{self, RngCore};
+    /// A simple entropy source for std environments
+    pub struct SimpleEntropy {}
+
+    impl SimpleEntropy {
+        /// Create a new entropy source
+        pub fn new() -> Self {
+            Self {}
+        }
+    }
+
+    impl EntropySource for SimpleEntropy {
+        fn get_secure_random_bytes(&self) -> [u8; 32] {
+            let mut bytes = [0u8; 32];
+            let mut rng = rand::thread_rng();
+            rng.fill_bytes(&mut bytes);
+            bytes
+        }
+    }
+}
+
 /// Compute a client/server HMAC - which proves the client or server initiated this
 /// call and no replay occurred.
 pub fn compute_shared_hmac(secret: &[u8], nonce: &[u8], kvs: &Mutations) -> [u8; 32] {
@@ -409,4 +437,26 @@ fn add_to_hmac(key: &str, version: u64, value: &[u8], hmac: &mut HmacEngine<Sha2
     hmac.input(key.as_bytes());
     hmac.input(&version.to_be_bytes());
     hmac.input(&value);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hmac_test() {
+        let shared_secret = [0; 32];
+        let mut helper = ExternalPersistHelper::new(shared_secret);
+        let mut kvs = Mutations::new();
+        kvs.push(("foo".to_string(), (0, vec![0x01])));
+        kvs.push(("bar".to_string(), (0, vec![0x02])));
+
+        let nonce = helper.new_nonce(&SimpleEntropy::new());
+        let hmac = compute_shared_hmac(&shared_secret, &nonce, &kvs);
+        assert!(helper.check_hmac(&kvs, hmac.to_vec()));
+
+        // mutating the data should fail the hmac
+        kvs.push(("baz".to_string(), (0, vec![0x03])));
+        assert!(!helper.check_hmac(&kvs, hmac.to_vec()));
+    }
 }

@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use bitcoin::secp256k1::PublicKey;
 use lightning_signer::bitcoin;
 use lightning_signer::persist::Mutations;
+use std::fmt::Display;
 
 #[derive(Debug)]
 pub enum Error {
@@ -18,6 +19,14 @@ pub enum Error {
     /// Client was not authorized (e.g. HMAC was invalid)
     NotAuthorized,
 }
+
+impl Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Debug::fmt(self, f)
+    }
+}
+
+impl std::error::Error for Error {}
 
 pub struct Auth {
     pub client_id: PublicKey,
@@ -38,7 +47,7 @@ pub struct Info {
 /// backends. The backend can be, for example, an LSS implementation (see
 /// lightning-storage-server).
 #[async_trait]
-pub trait ExternalPersist {
+pub trait ExternalPersist: Send + Sync {
     /// Store the mutations.
     /// Returns the server hmacs, proving that each backend server persisted the mutations.
     /// If a server did not respond in time, their HMAC will be empty.

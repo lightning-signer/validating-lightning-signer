@@ -858,7 +858,9 @@ impl Node {
         }
     }
 
-    fn make_keys_manager(
+    /// Create a keys manager - useful for bootstrapping a node from persistence, so the
+    /// persistence key can be derived.
+    pub fn make_keys_manager(
         node_config: NodeConfig,
         seed: &[u8],
         services: &NodeServices,
