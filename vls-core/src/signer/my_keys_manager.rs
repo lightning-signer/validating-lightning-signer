@@ -47,6 +47,7 @@ pub struct MyKeysManager {
     master_key: ExtendedPrivKey,
     node_secret: SecretKey,
     bolt12_secret: SecretKey,
+    persistence_secret: SecretKey,
     inbound_payment_key: KeyMaterial,
     channel_seed_base: [u8; 32],
     account_extended_key: ExtendedPrivKey,
@@ -139,6 +140,11 @@ impl MyKeysManager {
             .expect("Your RNG is busted")
             .private_key;
 
+        let persistence_secret = master_key
+            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(9736).unwrap())
+            .expect("Your RNG is busted")
+            .private_key;
+
         let mut res = MyKeysManager {
             secp_ctx,
             seed: seed.to_vec(),
@@ -147,6 +153,7 @@ impl MyKeysManager {
             master_key,
             node_secret,
             bolt12_secret,
+            persistence_secret,
             inbound_payment_key: KeyMaterial(inbound_pmt_key_bytes),
             channel_seed_base,
             account_extended_key,
@@ -179,6 +186,21 @@ impl MyKeysManager {
     /// BOLT 12 x-only pubkey
     pub fn get_bolt12_pubkey(&self) -> PublicKey {
         PublicKey::from_secret_key(&self.secp_ctx, &self.bolt12_secret)
+    }
+
+    /// Persistence pubkey
+    pub fn get_persistence_pubkey(&self) -> PublicKey {
+        PublicKey::from_secret_key(&self.secp_ctx, &self.persistence_secret)
+    }
+
+    /// Persistence shared secret
+    pub fn get_persistence_shared_secret(&self, server_pubkey: &PublicKey) -> [u8; 32] {
+        SharedSecret::new(server_pubkey, &self.persistence_secret).secret_bytes()
+    }
+
+    /// Persistence auth token
+    pub fn get_persistence_auth_token(&self, server_pubkey: &PublicKey) -> [u8; 32] {
+        Sha256::hash(&self.get_persistence_shared_secret(server_pubkey)).into_inner()
     }
 
     /// BOLT 12 sign

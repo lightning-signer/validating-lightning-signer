@@ -332,9 +332,8 @@ async fn make_looper(seed: &[u8; 32]) -> Looper {
         info!("connected to LSS provider {} version {}", server_id, version);
 
         let auth = PrivAuth::new_for_client(&client_key, &server_id);
-        let lss_client = AsyncMutex::new(
-            LssClient::new(&uri, auth).await.expect("failed to connect to LSS"),
-        );
+        let lss_client =
+            AsyncMutex::new(LssClient::new(&uri, auth).await.expect("failed to connect to LSS"));
         let state = Arc::new(Mutex::new(Default::default()));
         let cloud = Cloud { lss_client, state, hmac_secret };
         Some(Arc::new(cloud))

@@ -802,6 +802,11 @@ impl Node {
         self.keys_manager.get_node_secret()
     }
 
+    /// Get an entropy source
+    pub fn get_entropy_source(&self) -> &dyn EntropySource {
+        &self.keys_manager
+    }
+
     /// Restore a node.
     pub fn new_from_persistence(
         node_config: NodeConfig,
@@ -881,6 +886,21 @@ impl Node {
     /// BOLT 12 x-only pubkey
     pub fn get_bolt12_pubkey(&self) -> PublicKey {
         self.keys_manager.get_bolt12_pubkey()
+    }
+
+    /// persistence pubkey
+    pub fn get_persistence_pubkey(&self) -> PublicKey {
+        self.keys_manager.get_persistence_pubkey()
+    }
+
+    /// persistence shared secret
+    pub fn get_persistence_shared_secret(&self, server_pubkey: &PublicKey) -> [u8; 32] {
+        self.keys_manager.get_persistence_shared_secret(server_pubkey)
+    }
+
+    /// Persistence auth token
+    pub fn get_persistence_auth_token(&self, server_pubkey: &PublicKey) -> [u8; 32] {
+        self.keys_manager.get_persistence_auth_token(server_pubkey)
     }
 
     /// BOLT 12 sign
