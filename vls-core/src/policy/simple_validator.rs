@@ -290,7 +290,7 @@ impl SimpleValidator {
         sum_our_inputs: u64,
         sum_our_outputs: u64,
         weight: usize,
-    ) -> Result<(), ValidationError> {
+    ) -> Result<u64, ValidationError> {
         let non_beneficial = sum_our_inputs.checked_sub(sum_our_outputs).ok_or_else(|| {
             policy_error(format!(
                 "non-beneficial value underflow: sum of our inputs {} < sum of our outputs {}",
@@ -316,7 +316,7 @@ impl SimpleValidator {
                 );
             }
         }
-        Ok(())
+        Ok(non_beneficial)
     }
 
     fn outside_epsilon_range(&self, value0: u64, value1: u64) -> (bool, String) {
@@ -452,7 +452,7 @@ impl Validator for SimpleValidator {
         values_sat: &[u64],
         opaths: &[Vec<u32>],
         weight_lower_bound: usize,
-    ) -> Result<(), ValidationError> {
+    ) -> Result<u64, ValidationError> {
         let mut debug_on_return = scoped_debug_return!(tx, values_sat, opaths);
 
         if tx.version != 2 {
@@ -603,11 +603,11 @@ impl Validator for SimpleValidator {
                 .checked_add(*val)
                 .ok_or_else(|| policy_error(format!("funding sum inputs overflow")))?;
         }
-        self.validate_beneficial_value(sum_inputs, beneficial_sum, weight_lower_bound)
+        let non_beneficial = self.validate_beneficial_value(sum_inputs, beneficial_sum, weight_lower_bound)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         *debug_on_return = false;
-        Ok(())
+        Ok(non_beneficial)
     }
 
     fn decode_commitment_tx(

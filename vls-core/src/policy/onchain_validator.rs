@@ -103,7 +103,7 @@ impl Validator for OnchainValidator {
         values_sat: &[u64],
         opaths: &[Vec<u32>],
         weight: usize,
-    ) -> Result<(), ValidationError> {
+    ) -> Result<u64, ValidationError> {
         self.inner.validate_onchain_tx(wallet, channels, tx, values_sat, opaths, weight)
     }
 

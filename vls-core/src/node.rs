@@ -1559,7 +1559,7 @@ impl Node {
         }
         debug!("weight_lower_bound: {}", weight_lower_bound);
 
-        validator.validate_onchain_tx(
+        let non_beneficial = validator.validate_onchain_tx(
             self,
             channels.clone(),
             tx,
@@ -1567,6 +1567,8 @@ impl Node {
             opaths,
             weight_lower_bound,
         )?;
+
+        // TODO apply velocity control on the non-beneficial value
 
         Ok(())
     }

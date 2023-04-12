@@ -78,7 +78,7 @@ impl Validator for MockValidator {
         values_sat: &[u64],
         opaths: &[Vec<u32>],
         weight_lower_bound: usize,
-    ) -> Result<(), ValidationError> {
+    ) -> Result<u64, ValidationError> {
         todo!()
     }
 

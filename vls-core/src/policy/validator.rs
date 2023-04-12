@@ -51,6 +51,8 @@ pub trait Validator {
     /// * `opaths` - derivation path per output.  Empty for non-wallet/non-xpub-whitelist
     ///   outputs.
     /// * `weight_lower_bound` - lower bound of tx size, for feerate checking
+    ///
+    /// Returns the total "non-beneficial value" (i.e. fees) in satoshi
     fn validate_onchain_tx(
         &self,
         wallet: &Wallet,
@@ -59,7 +61,7 @@ pub trait Validator {
         values_sat: &[u64],
         opaths: &[Vec<u32>],
         weight_lower_bound: usize,
-    ) -> Result<(), ValidationError>;
+    ) -> Result<u64, ValidationError>;
 
     /// Phase 1 CommitmentInfo
     fn decode_commitment_tx(
