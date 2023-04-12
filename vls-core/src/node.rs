@@ -1002,6 +1002,15 @@ impl Node {
     ) -> Result<(ChannelId, Option<ChannelSlot>), Status> {
         let channel_id = opt_channel_id.unwrap_or_else(|| self.keys_manager.get_channel_id());
         let mut channels = self.channels.lock().unwrap();
+        let policy = self.validator_factory.lock().unwrap().policy(self.network());
+        if channels.len() >= policy.max_channels() {
+            // FIXME(#3) we don't garbage collect channels
+            return Err(failed_precondition(format!(
+                "too many channels ({} >= {})",
+                channels.len(),
+                policy.max_channels()
+            )));
+        }
 
         // Is there an existing channel slot?
         let maybe_slot = channels.get(&channel_id);

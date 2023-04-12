@@ -16,6 +16,9 @@ pub mod validator;
 use crate::prelude::*;
 use crate::util::velocity::VelocityControlSpec;
 
+/// Default maximum number of channels
+pub const MAX_CHANNELS: usize = 100;
+
 /// An enforcement policy
 pub trait Policy {
     /// A policy error has occured.
@@ -25,4 +28,8 @@ pub trait Policy {
     fn policy_log(&self, _tag: String, msg: String);
     /// Velocity control to apply to the entire node
     fn global_velocity_control(&self) -> VelocityControlSpec;
+    /// Maximum number of channels
+    fn max_channels(&self) -> usize {
+        MAX_CHANNELS
+    }
 }
