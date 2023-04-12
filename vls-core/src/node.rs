@@ -1002,7 +1002,7 @@ impl Node {
     ) -> Result<(ChannelId, Option<ChannelSlot>), Status> {
         let channel_id = opt_channel_id.unwrap_or_else(|| self.keys_manager.get_channel_id());
         let mut channels = self.channels.lock().unwrap();
-        let policy = self.validator_factory.lock().unwrap().policy(self.network());
+        let policy = self.policy();
         if channels.len() >= policy.max_channels() {
             // FIXME(#3) we don't garbage collect channels
             return Err(failed_precondition(format!(
@@ -1667,6 +1667,14 @@ impl Node {
         );
 
         let mut state = self.get_state();
+        let policy = self.policy();
+        if state.issued_invoices.len() >= policy.max_invoices() {
+            return Err(failed_precondition(format!(
+                "too many invoices {} (max {})",
+                state.issued_invoices.len(),
+                policy.max_invoices()
+            )));
+        }
         if let Some(payment_state) = state.issued_invoices.get(&hash) {
             return if payment_state.invoice_hash == invoice_hash {
                 Ok(sig)
@@ -1679,6 +1687,10 @@ impl Node {
         state.issued_invoices.insert(hash, payment_state);
 
         Ok(sig)
+    }
+
+    fn policy(&self) -> Box<dyn Policy> {
+        self.validator_factory.lock().unwrap().policy(self.network())
     }
 
     pub(crate) fn do_sign_invoice(
@@ -1862,6 +1874,14 @@ impl Node {
             payment_state.amount_msat
         );
         let mut state = self.get_state();
+        let policy = self.policy();
+        if state.invoices.len() >= policy.max_invoices() {
+            return Err(failed_precondition(format!(
+                "too many invoices ({} >= {})",
+                state.invoices.len(),
+                policy.max_invoices()
+            )));
+        }
         if let Some(payment_state) = state.invoices.get(&hash) {
             return if payment_state.invoice_hash == invoice_hash {
                 Ok(true)
@@ -1906,6 +1926,15 @@ impl Node {
             payment_state.amount_msat
         );
         let mut state = self.get_state();
+        let policy = self.policy();
+        if state.invoices.len() >= policy.max_invoices() {
+            return Err(failed_precondition(format!(
+                "too many invoices ({} >= {})",
+                state.invoices.len(),
+                policy.max_invoices()
+            )));
+        }
+
         if let Some(payment_state) = state.invoices.get(&payment_hash) {
             return if payment_state.invoice_hash == invoice_hash {
                 Ok(true)
@@ -2301,6 +2330,47 @@ mod tests {
         let (id, slot) = node.new_channel(Some(channel_id.clone()), &node).unwrap();
         assert_eq!(id, channel_id);
         assert!(slot.is_some());
+    }
+
+    #[test]
+    fn too_many_channels_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        for _ in 0..node.policy().max_channels() {
+            node.new_channel(None, &node).expect("new_channel");
+        }
+        assert!(node.new_channel(None, &node).is_err());
+    }
+
+    #[test]
+    fn too_many_invoices_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+
+        for i in 0..node.policy().max_invoices() {
+            let mut hash = [1u8; 32];
+            hash[0..8].copy_from_slice(&i.to_be_bytes());
+            let invoice =
+                make_test_invoice(&payee_node, &format!("invoice {}", i), PaymentHash(hash));
+            assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
+        }
+
+        let invoice = make_test_invoice(&payee_node, "invoice", PaymentHash([2u8; 32]));
+        node.add_invoice(invoice).expect_err("expected too many invoices");
+    }
+
+    #[test]
+    fn too_many_issued_invoices_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+
+        for i in 0..node.policy().max_invoices() {
+            let mut hash = [1u8; 32];
+            hash[0..8].copy_from_slice(&i.to_be_bytes());
+            let (hrp, data) = build_test_invoice("invoice", &PaymentHash(hash));
+            node.sign_invoice(&hrp, &data).unwrap();
+        }
+
+        let (hrp, data) = build_test_invoice("invoice", &PaymentHash([2u8; 32]));
+        node.sign_invoice(&hrp, &data).expect_err("expected too many issued invoics");
     }
 
     #[test]

@@ -16,8 +16,11 @@ pub mod validator;
 use crate::prelude::*;
 use crate::util::velocity::VelocityControlSpec;
 
-/// Default maximum number of channels
+/// Default maximum number of concurrent channels
 pub const MAX_CHANNELS: usize = 100;
+
+/// Default maximum number of outstanding invoices (issued and approved)
+pub const MAX_INVOICES: usize = 1000;
 
 /// An enforcement policy
 pub trait Policy {
@@ -28,8 +31,12 @@ pub trait Policy {
     fn policy_log(&self, _tag: String, msg: String);
     /// Velocity control to apply to the entire node
     fn global_velocity_control(&self) -> VelocityControlSpec;
-    /// Maximum number of channels
+    /// Maximum number of concurrent channels
     fn max_channels(&self) -> usize {
         MAX_CHANNELS
+    }
+    /// Maximum number of concurrent invoices (issued and approved)
+    fn max_invoices(&self) -> usize {
+        MAX_INVOICES
     }
 }

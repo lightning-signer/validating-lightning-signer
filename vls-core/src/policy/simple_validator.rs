@@ -15,7 +15,7 @@ use crate::policy::error::unknown_destinations_error;
 use crate::policy::filter::{FilterResult, PolicyFilter};
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
-use crate::policy::{Policy, MAX_CHANNELS};
+use crate::policy::{Policy, MAX_CHANNELS, MAX_INVOICES};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
@@ -117,6 +117,8 @@ pub struct SimplePolicy {
     pub global_velocity_control: VelocityControlSpec,
     /// Maximum number of channels
     pub max_channels: usize,
+    /// Maximum number of invoices
+    pub max_invoices: usize,
 }
 
 impl Policy for SimplePolicy {
@@ -145,6 +147,10 @@ impl Policy for SimplePolicy {
 
     fn max_channels(&self) -> usize {
         self.max_channels
+    }
+
+    fn max_invoices(&self) -> usize {
+        self.max_invoices
     }
 }
 
@@ -1821,6 +1827,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             filter: PolicyFilter::default(),
             global_velocity_control: VelocityControlSpec::UNLIMITED,
             max_channels: MAX_CHANNELS,
+            max_invoices: MAX_INVOICES,
         }
     } else {
         SimplePolicy {
@@ -1841,6 +1848,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             filter: PolicyFilter::default(),
             global_velocity_control: VelocityControlSpec::UNLIMITED,
             max_channels: MAX_CHANNELS,
+            max_invoices: MAX_INVOICES,
         }
     }
 }
@@ -1874,6 +1882,7 @@ mod tests {
             filter: PolicyFilter::default(),
             global_velocity_control: VelocityControlSpec::UNLIMITED,
             max_channels: MAX_CHANNELS,
+            max_invoices: MAX_INVOICES,
         };
 
         SimpleValidator {
