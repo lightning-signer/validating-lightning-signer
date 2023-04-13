@@ -68,8 +68,8 @@ impl Validator for NullValidator {
         _values_sat: &[u64],
         _opaths: &[Vec<u32>],
         _weight: usize,
-    ) -> Result<(), ValidationError> {
-        Ok(())
+    ) -> Result<u64, ValidationError> {
+        Ok(0)
     }
 
     fn decode_commitment_tx(

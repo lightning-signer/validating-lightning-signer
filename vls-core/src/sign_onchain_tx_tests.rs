@@ -6,9 +6,7 @@ mod tests {
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use bitcoin::util::psbt::serialize::Serialize;
-    use bitcoin::{
-        self, Address, Network, OutPoint, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
-    };
+    use bitcoin::{self, Address, Network, OutPoint, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness, PackedLockTime};
 
     use test_log::test;
 
@@ -19,6 +17,33 @@ mod tests {
 
     #[allow(unused_imports)]
     use log::debug;
+
+    #[test]
+    fn onchain_velocity_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let tx = Transaction {
+            version: 2,
+            lock_time: PackedLockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: Txid::all_zeros(),
+                    vout: 0,
+                },
+                script_sig: Script::new(),
+                sequence: Sequence::ZERO,
+                witness: Witness::default(),
+            }],
+            output: vec![],
+        };
+
+        for i in 0..25 {
+            println!("i = {}", i);
+            node.check_onchain_tx(&tx, &[40000], &[SpendType::P2wpkh], &[None], &[vec![]])
+                .expect("should have been under fee velocity");
+        }
+        node.check_onchain_tx(&tx, &[40000], &[SpendType::P2wpkh], &[None], &[vec![]])
+            .expect_err("should have been over fee velocity");
+    }
 
     #[test]
     fn sign_funding_tx_p2wpkh_test() -> Result<(), ()> {

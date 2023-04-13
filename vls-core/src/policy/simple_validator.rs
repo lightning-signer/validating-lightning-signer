@@ -15,7 +15,7 @@ use crate::policy::error::unknown_destinations_error;
 use crate::policy::filter::{FilterResult, PolicyFilter};
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
-use crate::policy::{Policy, MAX_CHANNELS, MAX_INVOICES};
+use crate::policy::{Policy, MAX_CHANNELS, MAX_INVOICES, DEFAULT_FEE_VELOCITY_CONTROL};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
@@ -119,6 +119,8 @@ pub struct SimplePolicy {
     pub max_channels: usize,
     /// Maximum number of invoices
     pub max_invoices: usize,
+    /// Fee velocity control specification
+    pub fee_velocity_control: VelocityControlSpec,
 }
 
 impl Policy for SimplePolicy {
@@ -151,6 +153,10 @@ impl Policy for SimplePolicy {
 
     fn max_invoices(&self) -> usize {
         self.max_invoices
+    }
+
+    fn fee_velocity_control(&self) -> VelocityControlSpec {
+        self.fee_velocity_control
     }
 }
 
@@ -603,7 +609,8 @@ impl Validator for SimpleValidator {
                 .checked_add(*val)
                 .ok_or_else(|| policy_error(format!("funding sum inputs overflow")))?;
         }
-        let non_beneficial = self.validate_beneficial_value(sum_inputs, beneficial_sum, weight_lower_bound)
+        let non_beneficial = self
+            .validate_beneficial_value(sum_inputs, beneficial_sum, weight_lower_bound)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         *debug_on_return = false;
@@ -1828,6 +1835,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             global_velocity_control: VelocityControlSpec::UNLIMITED,
             max_channels: MAX_CHANNELS,
             max_invoices: MAX_INVOICES,
+            fee_velocity_control: DEFAULT_FEE_VELOCITY_CONTROL,
         }
     } else {
         SimplePolicy {
@@ -1849,6 +1857,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             global_velocity_control: VelocityControlSpec::UNLIMITED,
             max_channels: MAX_CHANNELS,
             max_invoices: MAX_INVOICES,
+            fee_velocity_control: DEFAULT_FEE_VELOCITY_CONTROL,
         }
     }
 }
@@ -1883,6 +1892,7 @@ mod tests {
             global_velocity_control: VelocityControlSpec::UNLIMITED,
             max_channels: MAX_CHANNELS,
             max_invoices: MAX_INVOICES,
+            fee_velocity_control: DEFAULT_FEE_VELOCITY_CONTROL,
         };
 
         SimpleValidator {
