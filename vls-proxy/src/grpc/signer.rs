@@ -12,6 +12,7 @@ use lightning_signer::node::NodeServices;
 use lightning_signer::persist::fs::FileSeedPersister;
 use lightning_signer::persist::SeedPersist;
 use lightning_signer::policy::filter::{FilterRule, PolicyFilter};
+use lightning_signer::policy::DEFAULT_FEE_VELOCITY_CONTROL;
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::crypto_utils::generate_seed;
@@ -86,8 +87,14 @@ pub fn make_handler(datadir: &str, args: &SignerArgs) -> RootHandler {
     }
 
     let velocity_control_spec = args.velocity_control.unwrap_or(VelocityControlSpec::UNLIMITED);
-    let validator_factory =
-        make_validator_factory_with_filter_and_velocity(network, filter_opt, velocity_control_spec);
+    let fee_velocity_control_spec =
+        args.fee_velocity_control.unwrap_or(DEFAULT_FEE_VELOCITY_CONTROL);
+    let validator_factory = make_validator_factory_with_filter_and_velocity(
+        network,
+        filter_opt,
+        velocity_control_spec,
+        fee_velocity_control_spec,
+    );
     let clock = Arc::new(StandardClock());
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
     let mut handler_builder =

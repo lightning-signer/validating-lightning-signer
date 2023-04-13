@@ -6,7 +6,10 @@ mod tests {
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use bitcoin::util::psbt::serialize::Serialize;
-    use bitcoin::{self, Address, Network, OutPoint, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness, PackedLockTime};
+    use bitcoin::{
+        self, Address, Network, OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn,
+        TxOut, Txid, Witness,
+    };
 
     use test_log::test;
 
@@ -25,10 +28,7 @@ mod tests {
             version: 2,
             lock_time: PackedLockTime::ZERO,
             input: vec![TxIn {
-                previous_output: OutPoint {
-                    txid: Txid::all_zeros(),
-                    vout: 0,
-                },
+                previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 },
                 script_sig: Script::new(),
                 sequence: Sequence::ZERO,
                 witness: Witness::default(),

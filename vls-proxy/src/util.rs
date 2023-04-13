@@ -14,6 +14,7 @@ use tokio::runtime::{self, Runtime};
 use lightning_signer::bitcoin::Network;
 use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
+use lightning_signer::policy::DEFAULT_FEE_VELOCITY_CONTROL;
 use lightning_signer::util::crypto_utils::generate_seed;
 use lightning_signer::util::velocity::VelocityControlSpec;
 use lightning_signer::Arc;
@@ -199,6 +200,7 @@ pub fn make_validator_factory_with_filter(
         network,
         filter_opt,
         VelocityControlSpec::UNLIMITED,
+        DEFAULT_FEE_VELOCITY_CONTROL,
     )
 }
 
@@ -208,9 +210,11 @@ pub fn make_validator_factory_with_filter_and_velocity(
     network: Network,
     filter_opt: Option<PolicyFilter>,
     velocity_spec: VelocityControlSpec,
+    fee_velocity_control_spec: VelocityControlSpec,
 ) -> Arc<SimpleValidatorFactory> {
     let mut policy = make_simple_policy(network);
     policy.global_velocity_control = velocity_spec;
+    policy.fee_velocity_control = fee_velocity_control_spec;
 
     if env::var("VLS_PERMISSIVE") == Ok("1".to_string()) {
         warn!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");

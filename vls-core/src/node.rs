@@ -1601,11 +1601,7 @@ impl Node {
     }
 
     fn validator(&self) -> Arc<dyn Validator> {
-        self.validator_factory.lock().unwrap().make_validator(
-            self.network(),
-            self.get_id(),
-            None,
-        )
+        self.validator_factory.lock().unwrap().make_validator(self.network(), self.get_id(), None)
     }
 
     fn channel_setup_to_channel_transaction_parameters(

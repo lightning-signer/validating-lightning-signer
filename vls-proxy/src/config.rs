@@ -106,6 +106,9 @@ pub struct SignerArgs {
     #[clap(long, value_parser=parse_velocity_control_spec, help = "global velocity control e.g. hour:10000 (satoshi)")]
     pub velocity_control: Option<VelocityControlSpec>,
 
+    #[clap(long, value_parser=parse_velocity_control_spec, help = "fee velocity control e.g. hour:10000 (satoshi)")]
+    pub fee_velocity_control: Option<VelocityControlSpec>,
+
     #[clap(long, value_parser=parse_filter_rule, help = "policy filter rule, e.g. 'policy-channel-safe-mode:warn' or 'policy-channel-*:error'")]
     pub policy_filter: Vec<FilterRule>,
 }
@@ -307,6 +310,7 @@ mod tests {
         let args: SignerArgs = parse_args_and_config_from("", &env_args).unwrap();
         assert!(args.policy_filter.is_empty());
         assert!(args.velocity_control.is_none());
+        assert!(args.fee_velocity_control.is_none());
 
         let env_args: Vec<String> = vec![
             "vlsd2",
