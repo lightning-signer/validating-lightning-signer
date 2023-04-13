@@ -99,26 +99,29 @@ test-log = "0.2.8"
 
 # TODO point this and lightning-invoice at next release
 [dependencies.lightning]
-#git = "https://github.com/lightningdevkit/rust-lightning.git"
+git = "https://github.com/lightningdevkit/rust-lightning.git"
+rev = "a7600dcd584db0c46fdcd99d71d5b271f3052892"
 #branch = "main"
 #path = "../../rust-lightning/lightning"
-version = "0.0.114"
+#version = "0.0.114"
 default-features = false
 features = ["grind_signatures", "unsafe_revoked_tx_signing"]
 
 [dev-dependencies.lightning]
-#git = "https://github.com/lightningdevkit/rust-lightning.git"
+git = "https://github.com/lightningdevkit/rust-lightning.git"
+rev = "a7600dcd584db0c46fdcd99d71d5b271f3052892"
 #branch = "main"
 #path = "../../rust-lightning/lightning"
-version = "0.0.114"
+#version = "0.0.114"
 default-features = false
 features = ["grind_signatures", "_test_utils", "unsafe_revoked_tx_signing"]
 
 [dependencies.lightning-invoice]
-#git = "https://github.com/lightningdevkit/rust-lightning.git"
+git = "https://github.com/lightningdevkit/rust-lightning.git"
+rev = "a7600dcd584db0c46fdcd99d71d5b271f3052892"
 #branch = "main"
 #path = "../../rust-lightning/lightning-invoice"
-version = "0.22.0"
+#version = "0.22.0"
 default-features = false
 
 [dependencies.bitcoin]

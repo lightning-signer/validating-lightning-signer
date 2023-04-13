@@ -21,7 +21,7 @@ use chain::transaction::OutPoint;
 use lightning::chain;
 use lightning::chain::{Confirm, Listen, chaininterface, keysinterface::EntropySource};
 use lightning::ln;
-use lightning::ln::channelmanager::{ChainParameters, MIN_FINAL_CLTV_EXPIRY_DELTA, PaymentId};
+use lightning::ln::channelmanager::{RecipientOnionFields, ChainParameters, MIN_FINAL_CLTV_EXPIRY_DELTA, PaymentId};
 use lightning::chain::BestBlock;
 use lightning::ln::functional_test_utils::{ConnectStyle, test_default_channel_config};
 use lightning::ln::{channelmanager, PaymentSecret};
@@ -29,13 +29,12 @@ use lightning::routing::router::{PaymentParameters, Route, RouteParameters};
 use lightning::util;
 use lightning::util::config::UserConfig;
 use lightning::util::test_utils;
-use lightning::util::events::PaymentPurpose;
+use lightning::events::{ClosureReason, Event, HTLCDestination, MessageSendEvent, MessageSendEventsProvider, PathFailure, PaymentPurpose, PaymentFailureReason};
 use lightning::routing::gossip::{NetworkGraph, P2PGossipSync};
 use ln::{PaymentHash, PaymentPreimage};
 use ln::channelmanager::ChannelManager;
 use ln::msgs;
 use ln::msgs::{ChannelMessageHandler, RoutingMessageHandler};
-use util::events::{Event, MessageSendEvent, MessageSendEventsProvider};
 
 use lightning_signer::util::loopback::LoopbackSignerKeysInterface;
 use lightning_signer::util::test_utils::{make_block, TestChainMonitor, TestPersister};
@@ -357,7 +356,7 @@ macro_rules! get_local_commitment_txn {
 #[macro_export]
 macro_rules! check_closed_broadcast {
 	($node: expr, $with_error_msg: expr) => {{
-        use lightning::util::events::MessageSendEvent;
+        use lightning::events::MessageSendEvent;
         use lightning::ln::msgs::ErrorAction;
 
 		let events = $node.node.get_and_clear_pending_msg_events();
@@ -428,6 +427,7 @@ pub fn create_chan_between_nodes_with_value_init<'a, 'b, 'c>(node_a: &Node<'a, '
         assert_eq!(added_monitors[0].0, funding_output);
         added_monitors.clear();
     }
+    expect_channel_pending_event(&node_b, &node_a.node.get_our_node_id());
 
     node_a.node.handle_funding_signed(&node_b.node.get_our_node_id(), &get_event_msg!(node_b, MessageSendEvent::SendFundingSigned, node_a.node.get_our_node_id()));
     {
@@ -436,6 +436,7 @@ pub fn create_chan_between_nodes_with_value_init<'a, 'b, 'c>(node_a: &Node<'a, '
         assert_eq!(added_monitors[0].0, funding_output);
         added_monitors.clear();
     }
+    expect_channel_pending_event(&node_a, &node_b.node.get_our_node_id());
 
     let events_4 = node_a.node.get_and_clear_pending_events();
     assert_eq!(events_4.len(), 0);
@@ -523,6 +524,17 @@ pub fn create_chan_between_nodes_with_value_b<'a, 'b, 'c>(node_a: &Node<'a, 'b, 
 
 pub fn create_announced_chan_between_nodes<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'b, 'c, 'd>>, a: usize, b: usize) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, [u8; 32], Transaction) {
     create_announced_chan_between_nodes_with_value(nodes, a, b, 100000, 0)
+}
+
+pub fn expect_channel_pending_event<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, expected_counterparty_node_id: &PublicKey) {
+	let events = node.node.get_and_clear_pending_events();
+	assert_eq!(events.len(), 1);
+	match events[0] {
+		Event::ChannelPending { ref counterparty_node_id, .. } => {
+			assert_eq!(*expected_counterparty_node_id, *counterparty_node_id);
+		},
+		_ => panic!("Unexpected event"),
+	}
 }
 
 pub fn expect_channel_ready_event<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, expected_counterparty_node_id: &PublicKey) {
@@ -620,7 +632,7 @@ macro_rules! check_closed_event {
 		check_closed_event!($node, $events, $reason, false);
 	};
 	($node: expr, $events: expr, $reason: expr, $is_check_discard_funding: expr) => {{
-		use lightning::util::events::Event;
+		use lightning::events::Event;
 
 		let events = $node.node.get_and_clear_pending_events();
 		// assert_eq!(events.len(), $events);
@@ -898,7 +910,7 @@ macro_rules! expect_payment_claimed {
 		let events = $node.node.get_and_clear_pending_events();
 		assert_eq!(events.len(), 1);
 		match events[0] {
-			lightning::util::events::Event::PaymentClaimed { ref payment_hash, amount_msat, .. } => {
+			lightning::events::Event::PaymentClaimed { ref payment_hash, amount_msat, .. } => {
 				assert_eq!($expected_payment_hash, *payment_hash);
 				assert_eq!($expected_recv_value, amount_msat);
 			},
@@ -944,7 +956,7 @@ macro_rules! expect_payment_forwarded {
 		let events = $node.node.get_and_clear_pending_events();
 		assert_eq!(events.len(), 1);
 		match events[0] {
-			Event::PaymentForwarded { fee_earned_msat, prev_channel_id, claim_from_onchain_tx, next_channel_id } => {
+		Event::PaymentForwarded { fee_earned_msat, prev_channel_id, claim_from_onchain_tx, next_channel_id, outbound_amount_forwarded_msat: _ } => {
 				assert_eq!(fee_earned_msat, $expected_fee);
 				if fee_earned_msat.is_some() {
 					// Is the event prev_channel_id in one of the channels between the two nodes?
@@ -966,8 +978,8 @@ macro_rules! expect_payment_forwarded {
 #[macro_export]
 macro_rules! expect_payment_failed {
 	($node: expr, $expected_payment_hash: expr, $rejected_by_dest: expr $(, $expected_error_code: expr, $expected_error_data: expr)*) => {
-        use lightning::util::events::Event;
-        use lightning::util::events::EventsProvider;
+        use lightning::events::Event;
+        use lightning::events::EventsProvider;
 		let events = $node.node.get_and_clear_pending_events();
 		assert_eq!(events.len(), 2);
 		match events[0] {
@@ -988,7 +1000,8 @@ macro_rules! expect_payment_failed {
 
 pub fn send_along_route_with_secret<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, route: Route, expected_paths: &[&[&Node<'a, 'b, 'c>]], recv_value: u64, our_payment_hash: PaymentHash, our_payment_secret: PaymentSecret) {
     let payment_id = PaymentId(origin_node.keys_manager.get_secure_random_bytes());
-    origin_node.node.send_payment(&route, our_payment_hash, &Some(our_payment_secret), payment_id).unwrap();
+	origin_node.node.send_payment_with_route(&route, our_payment_hash,
+		RecipientOnionFields::secret_only(our_payment_secret), payment_id).unwrap();
     check_added_monitors!(origin_node, expected_paths.len());
     pass_along_route(origin_node, expected_paths, recv_value, our_payment_hash, our_payment_secret);
 }

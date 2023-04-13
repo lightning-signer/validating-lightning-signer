@@ -30,7 +30,7 @@ use lightning::ln::features::InitFeatures;
 use lightning::ln::functional_test_utils::create_node_cfgs;
 use lightning::ln::msgs::{ChannelMessageHandler, ChannelUpdate};
 use lightning::util::config::{ChannelHandshakeConfig, UserConfig};
-use lightning::util::events::{Event, EventsProvider, MessageSendEvent, MessageSendEventsProvider, ClosureReason};
+use lightning::events::{Event, EventsProvider, MessageSendEvent, MessageSendEventsProvider, ClosureReason};
 use lightning::util::logger::Logger;
 use lightning_signer::lightning_invoice;
 
@@ -46,6 +46,9 @@ use lightning_signer::policy::onchain_validator::OnchainValidatorFactory;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimplePolicy, SimpleValidatorFactory};
 use lightning_signer::lightning;
 use lightning_signer::bitcoin;
+
+use crate::lightning::ln::chan_utils::OFFERED_HTLC_SCRIPT_WEIGHT;
+use crate::lightning::ln::functional_test_utils::ACCEPTED_HTLC_SCRIPT_WEIGHT;
 
 #[allow(unused)]
 #[macro_use]
@@ -296,7 +299,8 @@ fn _alt_config() -> UserConfig {
             negotiate_scid_privacy: false,
             announced_channel: true,
             commit_upfront_shutdown_pubkey: false,
-            their_channel_reserve_proportional_millionths: 0
+            their_channel_reserve_proportional_millionths: 0,
+            our_max_accepted_htlcs: 50,
         },
         channel_handshake_limits: Default::default(),
         channel_config: Default::default(),
@@ -443,39 +447,44 @@ fn claim_htlc_outputs_single_tx() {
         connect_blocks(&nodes[1], ANTI_REORG_DELAY - 1);
         assert!(nodes[1].node.get_and_clear_pending_events().is_empty());
 
-        let node_txn = nodes[1].tx_broadcaster.txn_broadcasted.lock().unwrap().split_off(0);
-        assert_eq!(node_txn.len(), 7);
+        let mut node_txn = nodes[1].tx_broadcaster.txn_broadcasted.lock().unwrap().split_off(0);
 
-        // Check the pair local commitment and HTLC-timeout broadcast due to HTLC expiration
-        assert_eq!(node_txn[0].input.len(), 1);
-        check_spends!(node_txn[0], chan_1.3);
-        assert_eq!(node_txn[1].input.len(), 1);
-        // Spending an offered htlc output
-        check_spends!(node_txn[1], node_txn[0]);
+		// Check the pair local commitment and HTLC-timeout broadcast due to HTLC expiration
+		assert_eq!(node_txn[0].input.len(), 1);
+		check_spends!(node_txn[0], chan_1.3);
+		assert_eq!(node_txn[1].input.len(), 1);
+		let witness_script = node_txn[1].input[0].witness.last().unwrap();
+		assert_eq!(witness_script.len(), OFFERED_HTLC_SCRIPT_WEIGHT); //Spending an offered htlc output
+		check_spends!(node_txn[1], node_txn[0]);
 
-        // Justice transactions are indices 1-2-4
-        assert_eq!(node_txn[2].input.len(), 1);
-        assert_eq!(node_txn[3].input.len(), 1);
-        assert_eq!(node_txn[4].input.len(), 1);
+		// Filter out any non justice transactions.
+		node_txn.retain(|tx| tx.input[0].previous_output.txid == revoked_local_txn[0].txid());
+		assert!(node_txn.len() > 3);
 
-        check_spends!(node_txn[2], revoked_local_txn[0]);
-        check_spends!(node_txn[3], revoked_local_txn[0]);
-        check_spends!(node_txn[4], revoked_local_txn[0]);
+		assert_eq!(node_txn[0].input.len(), 1);
+		assert_eq!(node_txn[1].input.len(), 1);
+		assert_eq!(node_txn[2].input.len(), 1);
 
-        let mut witness_lens = BTreeSet::new();
-        witness_lens.insert(node_txn[2].input[0].witness.last().unwrap().len());
-        witness_lens.insert(node_txn[3].input[0].witness.last().unwrap().len());
-        witness_lens.insert(node_txn[4].input[0].witness.last().unwrap().len());
-        assert_eq!(witness_lens.len(), 3);
-        assert_eq!(*witness_lens.iter().skip(0).next().unwrap(), 77); // revoked to_local
+		check_spends!(node_txn[0], revoked_local_txn[0]);
+		check_spends!(node_txn[1], revoked_local_txn[0]);
+		check_spends!(node_txn[2], revoked_local_txn[0]);
 
-        // Finally, mine the penalty transactions and check that we get an HTLC failure after
-        // ANTI_REORG_DELAY confirmations.
-        mine_transaction(&nodes[1], &node_txn[2]);
-        mine_transaction(&nodes[1], &node_txn[3]);
-        mine_transaction(&nodes[1], &node_txn[4]);
-        connect_blocks(&nodes[1], ANTI_REORG_DELAY - 1);
-        expect_payment_failed!(nodes[1], payment_hash_2, false);
+		let mut witness_lens = BTreeSet::new();
+		witness_lens.insert(node_txn[0].input[0].witness.last().unwrap().len());
+		witness_lens.insert(node_txn[1].input[0].witness.last().unwrap().len());
+		witness_lens.insert(node_txn[2].input[0].witness.last().unwrap().len());
+		assert_eq!(witness_lens.len(), 3);
+		assert_eq!(*witness_lens.iter().skip(0).next().unwrap(), 77); // revoked to_local
+		assert_eq!(*witness_lens.iter().skip(1).next().unwrap(), OFFERED_HTLC_SCRIPT_WEIGHT); // revoked offered HTLC
+		assert_eq!(*witness_lens.iter().skip(2).next().unwrap(), ACCEPTED_HTLC_SCRIPT_WEIGHT); // revoked received HTLC
+
+		// Finally, mine the penalty transactions and check that we get an HTLC failure after
+		// ANTI_REORG_DELAY confirmations.
+		mine_transaction(&nodes[1], &node_txn[0]);
+		mine_transaction(&nodes[1], &node_txn[1]);
+		mine_transaction(&nodes[1], &node_txn[2]);
+		connect_blocks(&nodes[1], ANTI_REORG_DELAY - 1);
+		expect_payment_failed!(nodes[1], payment_hash_2, false);
     }
     get_announce_close_broadcast_events(&nodes, 0, 1);
     assert_eq!(nodes[0].node.list_channels().len(), 0);
