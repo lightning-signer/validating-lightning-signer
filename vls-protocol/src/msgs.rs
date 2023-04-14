@@ -683,29 +683,6 @@ pub struct RemoveBlock {
 #[message_id(2106)]
 pub struct RemoveBlockReply {}
 
-/// Store key-value pairs to persistent storage - potentially in the cloud.
-/// This message may be sent by the *signer* in response to a normal API message,
-/// before the actual API response.  The front end should reply with [`PersistReply`]
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
-#[message_id(2107)]
-pub struct Persist {
-    /// Authentication token from client (signer) to storage service
-    pub auth: Octets,
-    pub kvs: Vec<(Octets, u64, LargeOctets)>,
-    /// HMAC by client to authenticate the message
-    pub hmac: Octets,
-}
-
-/// Result of a [`Persist`].
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
-#[message_id(2007)]
-pub struct PersistReply {
-    pub success: bool,
-    /// HMAC by storage service to authenticate the message
-    pub hmac: Octets,
-    pub conflicts: Vec<(Octets, u64, LargeOctets)>,
-}
-
 /// Get a serialized signed heartbeat
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(2008)]
@@ -806,8 +783,6 @@ pub enum Message {
     AddBlockReply(AddBlockReply),
     RemoveBlock(RemoveBlock),
     RemoveBlockReply(RemoveBlockReply),
-    Persist(Persist),
-    PersistReply(PersistReply),
     GetHeartbeat(GetHeartbeat),
     GetHeartbeatReply(GetHeartbeatReply),
     NodeInfo(NodeInfo),
@@ -898,24 +873,6 @@ fn message_and_type_from_reader<R: Read>(reader: &mut R, len: u32) -> Result<(Ve
     Ok((data, message_type))
 }
 
-#[cfg(test)]
-fn read_message_and_data<R: Read>(reader: &mut R) -> Result<(Message, Vec<u8>)> {
-    let len = read_u32(reader)?;
-    let mut data = Vec::new();
-    if len < 2 {
-        return Err(Error::ShortRead);
-    }
-    let message_type = read_u16(reader)?;
-    data.resize(len as usize - 2, 0);
-    let len = reader.read(&mut data)?;
-    if len < data.len() {
-        return Err(Error::ShortRead);
-    }
-    let saved_data = data.clone();
-
-    Message::read_message(&mut data, message_type).map(|m| (m, saved_data))
-}
-
 pub fn write<W: Write, T: ser::Serialize + DeBolt>(writer: &mut W, value: T) -> Result<()> {
     let message_type = T::TYPE;
     let mut buf = message_type.to_be_bytes().to_vec();
@@ -990,10 +947,6 @@ pub fn read_serial_response_header<R: Read>(reader: &mut R, expected_sequence: u
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
-    use regex::Regex;
-
     use crate::msgs::Message;
 
     use super::*;
@@ -1013,84 +966,5 @@ mod tests {
         } else {
             panic!("bad deser type")
         }
-    }
-
-    // Test the persist message, since it has more more nesting than others
-    #[test]
-    fn persist_test() {
-        let key = Octets(b"foo".to_vec());
-        let value = b"bar".to_vec();
-        let version = 0x123456789;
-        let msg = Persist {
-            auth: Octets(vec![0x11, 0x22]),
-            kvs: vec![(Octets(key.clone()), version, LargeOctets(value.clone()))],
-            hmac: Octets(vec![0x33, 0x44]),
-        };
-
-        let ser = msg.as_vec();
-        let dmsg = from_vec(ser).unwrap();
-        if let Message::Persist(dmsg) = dmsg {
-            assert_eq!(dmsg.auth, msg.auth);
-            for (k, ver, v) in dmsg.kvs.into_iter() {
-                assert_eq!(k, key);
-                assert_eq!(ver, version);
-                assert_eq!(v.0, value);
-            }
-            assert_eq!(dmsg.hmac, msg.hmac);
-        } else {
-            panic!("bad deser type")
-        }
-    }
-
-    // ignore tests for now, the trace capture was not on the lightning-signer branch
-    #[test]
-    #[ignore]
-    fn parse_read_fixtures_test() {
-        assert_eq!(parse_fixture("r_3"), 16);
-        assert_eq!(parse_fixture("r_5"), 1);
-        assert_eq!(parse_fixture("r_6"), 39);
-    }
-
-    // ignore tests for now, the trace capture was not on the lightning-signer branch
-    #[test]
-    #[ignore]
-    fn parse_write_fixtures_test() {
-        // TODO negative message type IDs?
-        // assert_eq!(parse_fixture("w_0"), 16);
-        assert_eq!(parse_fixture("w_3"), 16);
-        assert_eq!(parse_fixture("w_4"), 1);
-        assert_eq!(parse_fixture("w_5"), 1);
-        assert_eq!(parse_fixture("w_6"), 52);
-    }
-
-    fn parse_fixture(fixture: &str) -> u32 {
-        println!("processing {}", fixture);
-        let contents_with_whitespace =
-            fs::read_to_string(format!("fixtures/{}.hex", fixture)).unwrap();
-        let contents_hex = Regex::new(r"\s").unwrap().replace_all(&contents_with_whitespace, "");
-        let mut contents = hex::decode(&*contents_hex).unwrap();
-        let mut num_read = 0;
-        loop {
-            let res = read_message_and_data(&mut contents);
-            match res {
-                Ok((Message::Unknown(u), _)) => {
-                    panic!("unknown {} {}", u.message_type, u.data.len());
-                }
-                Ok((msg, data)) => {
-                    println!("read {:x?}", msg);
-                    let encoded = to_vec(&msg).expect("encoding");
-                    assert_eq!(encoded, data);
-                }
-                Err(Error::Eof) => {
-                    println!("done");
-                    break;
-                }
-                Err(e) => {
-                    panic!("unexpected error {:?}", e);
-                }
-            }
-            num_read += 1;
-        }
-        num_read
     }
 }

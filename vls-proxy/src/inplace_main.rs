@@ -8,27 +8,23 @@ use clap::{arg, App};
 use log::{error, info};
 use url::Url;
 
-use bitcoin::hashes::sha256::Hash as Sha256Hash;
-use bitcoin::hashes::Hash;
-use bitcoin::secp256k1::SecretKey;
 use bitcoin::Network;
 use lightning_signer::bitcoin;
 use lightning_signer::node::NodeServices;
-use lightning_signer::persist::{Mutations, Persist};
+use lightning_signer::persist::{ExternalPersistHelper, Mutations, Persist, SimpleEntropy};
 use lightning_signer::policy::filter::{FilterRule, PolicyFilter};
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
-use lightning_signer::util::crypto_utils::hkdf_sha256;
 use lightning_signer::Arc;
-use lightning_storage_server::client::auth::Auth;
-use lightning_storage_server::client::driver::Client as LssClient;
-use lightning_storage_server::Value;
+use lightning_storage_server::client::Auth;
 use nodefront::SingleFront;
 use thiserror::Error;
-use tokio::sync::{Mutex as AsyncMutex, MutexGuard};
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::block_in_place;
+use vls_frontend::external_persist::lss::Client as LssClient;
+use vls_frontend::external_persist::ExternalPersist;
 use vls_frontend::frontend::SourceFactory;
-use vls_frontend::Frontend;
+use vls_frontend::{external_persist, Frontend};
 use vls_persist::kv_json::KVJsonPersister;
 use vls_persist::thread_memo_persister::ThreadMemoPersister;
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
@@ -49,20 +45,23 @@ mod test;
 
 /// WARNING: this does not ensure atomicity if mutated from different threads
 pub struct Cloud {
-    lss_client: AsyncMutex<LssClient>,
+    lss_client: AsyncMutex<Box<dyn ExternalPersist>>,
     state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
-    auth: Auth,
-    hmac_secret: [u8; 32],
+    helper: ExternalPersistHelper,
 }
 
 impl Cloud {
     async fn init_state(&self) {
-        let mut lss_client = self.lss_client.lock().await;
-        let state =
-            lss_client.get(self.auth.clone(), &self.hmac_secret, "".to_string()).await.unwrap();
+        let lss_client = self.lss_client.lock().await;
+        let entropy = SimpleEntropy::new();
+        let mut helper = self.helper.clone();
+        let nonce = helper.new_nonce(&entropy);
+        let (muts, server_hmac) = lss_client.get("".to_string(), &nonce).await.unwrap();
+        let success = helper.check_hmac(&muts, server_hmac);
+        assert!(success, "server hmac mismatch on get");
         let mut local = self.state.lock().unwrap();
-        for (key, value) in state.into_iter() {
-            local.insert(key, (value.version as u64, value.value));
+        for (key, version_value) in muts.into_iter() {
+            local.insert(key, version_value);
         }
     }
 }
@@ -72,7 +71,7 @@ pub enum Error {
     #[error("protocol error")]
     Protocol(#[from] ProtocolError),
     #[error("LSS error")]
-    Client(#[from] lightning_storage_server::client::driver::ClientError),
+    Client(#[from] external_persist::Error),
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
@@ -86,22 +85,19 @@ impl Looper {
     async fn store(&self, muts: Mutations) -> Result<()> {
         if let Some(cloud) = &self.cloud {
             let lss_client = cloud.lss_client.lock().await;
-            Self::store_with_client(muts, cloud, lss_client).await?;
+            Self::store_with_client(muts, &*lss_client, &cloud.helper).await?;
         }
         Ok(())
     }
 
     async fn store_with_client(
         muts: Mutations,
-        cloud: &Arc<Cloud>,
-        mut client: MutexGuard<'_, LssClient>,
+        client: &Box<dyn ExternalPersist>,
+        helper: &ExternalPersistHelper,
     ) -> Result<()> {
         if !muts.is_empty() {
-            let kvs = muts
-                .into_iter()
-                .map(|(key, (version, value))| (key, Value { version: version as i64, value }))
-                .collect();
-            client.put(cloud.auth.clone(), &cloud.hmac_secret, kvs).await?;
+            let client_hmac = helper.client_hmac(&muts);
+            client.put(muts, &client_hmac).await?;
         }
         Ok(())
     }
@@ -228,7 +224,7 @@ impl Looper {
             // TODO(devrandom) evaluate atomicity
             let lss_client = cloud.lss_client.lock().await;
             let (reply, muts) = handler.handle(msg).expect("handle");
-            Self::store_with_client(muts, cloud, lss_client).await?;
+            Self::store_with_client(muts, &*lss_client, &cloud.helper).await?;
             reply
         } else {
             let (reply, muts) = handler.handle(msg).expect("handle");
@@ -290,7 +286,7 @@ async fn start() {
         handler_builder = handler_builder.approver(Arc::new(WarningPositiveApprover()));
     }
 
-    let looper = make_looper(&seed).await;
+    let looper = make_looper(&handler_builder).await;
 
     let handler = if let Some(cloud) = looper.cloud.as_ref() {
         cloud.init_state().await;
@@ -324,21 +320,23 @@ fn make_persister() -> Arc<dyn Persist> {
     }
 }
 
-async fn make_looper(seed: &[u8; 32]) -> Looper {
+async fn make_looper(builder: &RootHandlerBuilder) -> Looper {
     let cloud = if let Ok(uri) = env::var("VLS_LSS") {
-        let private_bytes = hkdf_sha256(seed, "storage-client-id".as_bytes(), &[]);
-        let client_key = SecretKey::from_slice(&private_bytes).unwrap();
-        let hmac_secret = Sha256Hash::hash(&client_key[..]).into_inner();
+        let (keys_manager, node_id) = builder.build_keys_manager();
+        let client_id = keys_manager.get_persistence_pubkey();
+        let server_pubkey = LssClient::get_server_pubkey(&uri).await.expect("failed to get pubkey");
+        let shared_secret = keys_manager.get_persistence_shared_secret(&server_pubkey);
+        let auth_token = keys_manager.get_persistence_auth_token(&server_pubkey);
+        let helper = ExternalPersistHelper::new(shared_secret);
+        let auth = Auth { client_id, token: auth_token.to_vec() };
 
-        let server_id = LssClient::init(&uri).await.expect("failed to init LSS");
-        info!("connected to LSS provider {}", server_id);
+        let client =
+            LssClient::new(&uri, &server_pubkey, auth).await.expect("failed to connect to LSS");
+        info!("connected to LSS provider {} for node {}", server_pubkey, node_id);
 
-        let auth = Auth::new_for_client(client_key, server_id);
-        let lss_client = AsyncMutex::new(
-            LssClient::new(&uri, auth.clone()).await.expect("failed to connect to LSS"),
-        );
+        let lss_client = AsyncMutex::new(Box::new(client) as Box<dyn ExternalPersist>);
         let state = Arc::new(Mutex::new(Default::default()));
-        let cloud = Cloud { lss_client, state, auth, hmac_secret };
+        let cloud = Cloud { lss_client, state, helper };
         Some(Arc::new(cloud))
     } else {
         None

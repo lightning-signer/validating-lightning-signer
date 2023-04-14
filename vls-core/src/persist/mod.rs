@@ -1,6 +1,9 @@
 use crate::chain::tracker::ChainTracker;
 use alloc::sync::Arc;
+use bitcoin::hashes::sha256::Hash as Sha256Hash;
+use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
 use bitcoin::secp256k1::PublicKey;
+use lightning::chain::keysinterface::EntropySource;
 
 use crate::channel::{Channel, ChannelId, ChannelStub};
 use crate::monitor::ChainMonitor;
@@ -348,5 +351,112 @@ pub mod fs {
 
     fn read_seed(path: PathBuf) -> Option<Vec<u8>> {
         fs::read_to_string(path).ok().map(|s| Vec::from_hex(&s).expect("bad hex seed"))
+    }
+}
+
+/// An external persister helper
+#[derive(Clone)]
+pub struct ExternalPersistHelper {
+    shared_secret: [u8; 32],
+    last_nonce: [u8; 32],
+}
+
+impl ExternalPersistHelper {
+    /// Create a new helper
+    pub fn new(shared_secret: [u8; 32]) -> Self {
+        Self { shared_secret, last_nonce: [0; 32] }
+    }
+
+    /// Generate and store a new nonce
+    pub fn new_nonce(&mut self, entropy_source: &EntropySource) -> [u8; 32] {
+        let nonce = entropy_source.get_secure_random_bytes();
+        self.last_nonce = nonce;
+        nonce
+    }
+
+    /// Generate a client HMAC - this proves the client constructed the data
+    pub fn client_hmac(&self, kvs: &Mutations) -> [u8; 32] {
+        compute_shared_hmac(&self.shared_secret, &[0x01], kvs)
+    }
+
+    /// Generate a server HMAC - this proves the server saw and persisted the data
+    /// for a put request.
+    pub fn server_hmac(&self, kvs: &Mutations) -> [u8; 32] {
+        compute_shared_hmac(&self.shared_secret, &[0x02], kvs)
+    }
+
+    /// Check the HMAC from the server on a get response - this proves that the
+    /// server returned the data as requested with no replay, since it covers
+    /// the nonce we sent to the server.
+    pub fn check_hmac(&self, kvs: &Mutations, received_hmac: Vec<u8>) -> bool {
+        let hmac = compute_shared_hmac(&self.shared_secret, &self.last_nonce, &kvs); // in signer
+        received_hmac == hmac
+    }
+}
+
+#[cfg(feature = "std")]
+pub use simple_entropy::SimpleEntropy;
+
+#[cfg(feature = "std")]
+mod simple_entropy {
+    use super::EntropySource;
+    use bitcoin::secp256k1::rand::{self, RngCore};
+    /// A simple entropy source for std environments
+    pub struct SimpleEntropy {}
+
+    impl SimpleEntropy {
+        /// Create a new entropy source
+        pub fn new() -> Self {
+            Self {}
+        }
+    }
+
+    impl EntropySource for SimpleEntropy {
+        fn get_secure_random_bytes(&self) -> [u8; 32] {
+            let mut bytes = [0u8; 32];
+            let mut rng = rand::thread_rng();
+            rng.fill_bytes(&mut bytes);
+            bytes
+        }
+    }
+}
+
+/// Compute a client/server HMAC - which proves the client or server initiated this
+/// call and no replay occurred.
+pub fn compute_shared_hmac(secret: &[u8], nonce: &[u8], kvs: &Mutations) -> [u8; 32] {
+    let mut hmac_engine = HmacEngine::<Sha256Hash>::new(&secret);
+    hmac_engine.input(secret);
+    hmac_engine.input(nonce);
+    for (key, (version, value)) in kvs {
+        add_to_hmac(&key, *version, &value, &mut hmac_engine);
+    }
+    Hmac::from_engine(hmac_engine).into_inner()
+}
+
+fn add_to_hmac(key: &str, version: u64, value: &[u8], hmac: &mut HmacEngine<Sha256Hash>) {
+    hmac.input(key.as_bytes());
+    hmac.input(&version.to_be_bytes());
+    hmac.input(&value);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hmac_test() {
+        let shared_secret = [0; 32];
+        let mut helper = ExternalPersistHelper::new(shared_secret);
+        let mut kvs = Mutations::new();
+        kvs.push(("foo".to_string(), (0, vec![0x01])));
+        kvs.push(("bar".to_string(), (0, vec![0x02])));
+
+        let nonce = helper.new_nonce(&SimpleEntropy::new());
+        let hmac = compute_shared_hmac(&shared_secret, &nonce, &kvs);
+        assert!(helper.check_hmac(&kvs, hmac.to_vec()));
+
+        // mutating the data should fail the hmac
+        kvs.push(("baz".to_string(), (0, vec![0x03])));
+        assert!(!helper.check_hmac(&kvs, hmac.to_vec()));
     }
 }

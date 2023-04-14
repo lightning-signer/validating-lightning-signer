@@ -31,6 +31,7 @@ use lightning_signer::lightning_invoice::SignedRawInvoice;
 use lightning_signer::node::{Node, NodeConfig, NodeMonitor, NodeServices, SpendType};
 use lightning_signer::persist::Mutations;
 use lightning_signer::prelude::Mutex;
+use lightning_signer::signer::my_keys_manager::MyKeysManager;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
@@ -219,6 +220,13 @@ impl RootHandlerBuilder {
         let handler = self.do_build();
         let muts = context.exit();
         (handler, muts)
+    }
+
+    /// Create a keys manager - useful for bootstrapping a node from persistence, so the
+    /// persistence key can be derived.
+    pub fn build_keys_manager(&self) -> (MyKeysManager, PublicKey) {
+        let config = NodeConfig::new(self.network);
+        Node::make_keys_manager(config, &self.seed, &self.services)
     }
 
     fn do_build(self) -> RootHandler {
