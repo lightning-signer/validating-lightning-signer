@@ -14,7 +14,11 @@ pub mod simple_validator;
 pub mod validator;
 
 use crate::prelude::*;
-use crate::util::velocity::VelocityControlSpec;
+use crate::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
+
+/// The default velocity control for L1 fees
+pub const DEFAULT_FEE_VELOCITY_CONTROL: VelocityControlSpec =
+    VelocityControlSpec { limit: 1000000, interval_type: VelocityControlIntervalType::Daily };
 
 /// Default maximum number of concurrent channels
 pub const MAX_CHANNELS: usize = 100;
@@ -39,4 +43,6 @@ pub trait Policy {
     fn max_invoices(&self) -> usize {
         MAX_INVOICES
     }
+    /// Velocity control to apply to L1 fees paid by the node
+    fn fee_velocity_control(&self) -> VelocityControlSpec;
 }

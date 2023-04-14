@@ -62,6 +62,7 @@ pub struct NodeStateEntry {
     #[serde_as(as = "Vec<(Hex, _)>")]
     pub issued_invoices: Vec<(Vec<u8>, PaymentState)>,
     pub velocity_control: VelocityControl,
+    pub fee_velocity_control: VelocityControl,
     // TODO(devrandom): add routing control fields, once they stabilize
 }
 
@@ -72,7 +73,8 @@ impl From<&NodeState> for NodeStateEntry {
         let issued_invoices =
             state.issued_invoices.iter().map(|(a, b)| (a.0.to_vec(), b.clone())).collect();
         let velocity_control = state.velocity_control.clone().into();
-        NodeStateEntry { invoices, issued_invoices, velocity_control }
+        let fee_velocity_control = state.fee_velocity_control.clone().into();
+        NodeStateEntry { invoices, issued_invoices, velocity_control, fee_velocity_control }
     }
 }
 

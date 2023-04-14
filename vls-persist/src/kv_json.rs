@@ -265,6 +265,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
                 excess_amount: 0,
                 log_prefix: "".to_string(),
                 velocity_control: state_e.velocity_control.into(),
+                fee_velocity_control: state_e.fee_velocity_control.into(),
             };
             let entry = CoreNodeEntry {
                 key_derivation_style: e.key_derivation_style,

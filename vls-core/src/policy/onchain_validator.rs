@@ -8,7 +8,7 @@ use crate::policy::error::policy_error;
 use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
-use crate::policy::Policy;
+use crate::policy::{Policy, DEFAULT_FEE_VELOCITY_CONTROL};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
@@ -75,6 +75,10 @@ impl Policy for OnchainPolicy {
     fn global_velocity_control(&self) -> VelocityControlSpec {
         VelocityControlSpec::UNLIMITED
     }
+
+    fn fee_velocity_control(&self) -> VelocityControlSpec {
+        DEFAULT_FEE_VELOCITY_CONTROL
+    }
 }
 
 fn make_onchain_policy(_network: Network) -> OnchainPolicy {
@@ -103,7 +107,7 @@ impl Validator for OnchainValidator {
         values_sat: &[u64],
         opaths: &[Vec<u32>],
         weight: usize,
-    ) -> Result<(), ValidationError> {
+    ) -> Result<u64, ValidationError> {
         self.inner.validate_onchain_tx(wallet, channels, tx, values_sat, opaths, weight)
     }
 

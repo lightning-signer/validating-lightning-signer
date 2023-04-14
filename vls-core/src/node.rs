@@ -209,6 +209,8 @@ pub struct NodeState {
     pub log_prefix: String,
     /// Per node velocity control
     pub velocity_control: VelocityControl,
+    /// Per node fee velocity control
+    pub fee_velocity_control: VelocityControl,
 }
 
 // kcov-ignore-start
@@ -234,7 +236,7 @@ impl PreimageMap for NodeState {
 
 impl NodeState {
     /// Create a state
-    pub fn new(velocity_control: VelocityControl) -> Self {
+    pub fn new(velocity_control: VelocityControl, fee_velocity_control: VelocityControl) -> Self {
         NodeState {
             invoices: Map::new(),
             issued_invoices: Map::new(),
@@ -242,10 +244,16 @@ impl NodeState {
             excess_amount: 0,
             log_prefix: String::new(),
             velocity_control,
+            fee_velocity_control,
         }
     }
 
-    fn with_log_prefix(self, velocity_control: VelocityControl, log_prefix: String) -> Self {
+    fn with_log_prefix(
+        self,
+        velocity_control: VelocityControl,
+        fee_velocity_control: VelocityControl,
+        log_prefix: String,
+    ) -> Self {
         NodeState {
             invoices: self.invoices,
             issued_invoices: self.issued_invoices,
@@ -253,6 +261,7 @@ impl NodeState {
             excess_amount: self.excess_amount,
             log_prefix,
             velocity_control,
+            fee_velocity_control,
         }
     }
 
@@ -777,8 +786,9 @@ impl Node {
         services: NodeServices,
     ) -> Node {
         let policy = services.validator_factory.policy(node_config.network);
-        let global_velocity_control = Self::make_velocity_control(policy);
-        let state = NodeState::new(global_velocity_control);
+        let global_velocity_control = Self::make_velocity_control(&policy);
+        let fee_velocity_control = Self::make_fee_velocity_control(&policy);
+        let state = NodeState::new(global_velocity_control, fee_velocity_control);
 
         let (keys_manager, node_id) = Self::make_keys_manager(node_config, seed, &services);
         let tracker = if node_config.use_checkpoints {
@@ -839,10 +849,14 @@ impl Node {
         let clock = services.clock;
         let validator_factory = services.validator_factory;
         let policy = validator_factory.policy(node_config.network);
-        let global_velocity_control = Self::make_velocity_control(policy);
+        let global_velocity_control = Self::make_velocity_control(&policy);
+        let fee_velocity_control = Self::make_fee_velocity_control(&policy);
 
-        let state =
-            Mutex::new(state.with_log_prefix(global_velocity_control, log_prefix.to_string()));
+        let state = Mutex::new(state.with_log_prefix(
+            global_velocity_control,
+            fee_velocity_control,
+            log_prefix.to_string(),
+        ));
 
         Node {
             keys_manager,
@@ -1149,8 +1163,10 @@ impl Node {
 
         // FIXME persist node state
         let policy = services.validator_factory.policy(network);
-        let global_velocity_control = Self::make_velocity_control(policy);
-        let state = NodeState::new(global_velocity_control);
+        let global_velocity_control = Self::make_velocity_control(&policy);
+        let fee_velocity_control = Self::make_fee_velocity_control(&policy);
+
+        let state = NodeState::new(global_velocity_control, fee_velocity_control);
 
         let node = Arc::new(Node::new_from_persistence(config, seed, allowlist, services, state));
         assert_eq!(&node.get_id(), node_id);
@@ -1535,11 +1551,7 @@ impl Node {
             })
             .collect();
 
-        let validator = self.validator_factory.lock().unwrap().make_validator(
-            self.network(),
-            self.get_id(),
-            None,
-        );
+        let validator = self.validator();
 
         // Compute a lower bound for the tx weight for feerate checking.
         // TODO(dual-funding) - This estimate does not include witnesses for inputs we don't sign.
@@ -1559,16 +1571,37 @@ impl Node {
         }
         debug!("weight_lower_bound: {}", weight_lower_bound);
 
-        validator.validate_onchain_tx(
+        let non_beneficial = validator.validate_onchain_tx(
             self,
-            channels.clone(),
+            channels,
             tx,
             values_sat,
             opaths,
             weight_lower_bound,
         )?;
 
+        // be conservative about holding multiple locks, so we don't worry about order
+        drop(channels_lock);
+
+        let validator = self.validator();
+        let mut state = self.state.lock().unwrap();
+        let now = self.clock.now().as_secs();
+        if !state.fee_velocity_control.insert(now, non_beneficial) {
+            policy_err!(
+                validator,
+                "policy-onchain-fee-range",
+                "fee velocity would be exceeded - += {} = {} > {}",
+                non_beneficial,
+                state.fee_velocity_control.velocity(),
+                state.fee_velocity_control.limit
+            );
+        }
+
         Ok(())
+    }
+
+    fn validator(&self) -> Arc<dyn Validator> {
+        self.validator_factory.lock().unwrap().make_validator(self.network(), self.get_id(), None)
     }
 
     fn channel_setup_to_channel_transaction_parameters(
@@ -1911,9 +1944,10 @@ impl Node {
                 Err(failed_precondition("already have a different invoice for same secret"))
             };
         }
-        if !state.velocity_control.insert(self.clock.now().as_secs(), payment_state.amount_msat) {
+        let now = self.clock.now().as_secs();
+        if !state.velocity_control.insert(now, payment_state.amount_msat) {
             warn!(
-                "policy-commitment-payment-velocity global velocity would be exceeded - += {} = {} > {}",
+                "policy-commitment-payment-velocity velocity would be exceeded - += {} = {} > {}",
                 payment_state.amount_msat,
                 state.velocity_control.velocity(),
                 state.velocity_control.limit
@@ -1964,9 +1998,10 @@ impl Node {
                 Err(failed_precondition("already have a different payment for same secret"))
             };
         }
-        if !state.velocity_control.insert(self.clock.now().as_secs(), payment_state.amount_msat) {
+        let now = self.clock.now().as_secs();
+        if !state.velocity_control.insert(now, payment_state.amount_msat) {
             warn!(
-                "global velocity would be exceeded - += {} = {} > {}",
+                "policy-commitment-payment-velocity velocity would be exceeded - += {} = {} > {}",
                 payment_state.amount_msat,
                 state.velocity_control.velocity(),
                 state.velocity_control.limit
@@ -2051,9 +2086,14 @@ impl Node {
         Ok((payment_state, invoice_hash))
     }
 
-    fn make_velocity_control(policy: Box<dyn Policy>) -> VelocityControl {
-        let global_velocity_control_spec = policy.global_velocity_control();
-        VelocityControl::new(global_velocity_control_spec)
+    fn make_velocity_control(policy: &Box<dyn Policy>) -> VelocityControl {
+        let velocity_control_spec = policy.global_velocity_control();
+        VelocityControl::new(velocity_control_spec)
+    }
+
+    fn make_fee_velocity_control(policy: &Box<dyn Policy>) -> VelocityControl {
+        let velocity_control_spec = policy.fee_velocity_control();
+        VelocityControl::new(velocity_control_spec)
     }
 }
 
