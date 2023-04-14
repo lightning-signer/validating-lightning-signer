@@ -917,16 +917,14 @@ pub fn channel_commitment(
             let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
             let txkeys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 
-            let tx = chan
-                .make_holder_commitment_tx(
-                    commit_num,
-                    &txkeys,
-                    feerate_per_kw,
-                    to_broadcaster,
-                    to_countersignatory,
-                    htlcs.clone(),
-                )
-                .expect("holder_commitment_tx");
+            let tx = chan.make_holder_commitment_tx(
+                commit_num,
+                &txkeys,
+                feerate_per_kw,
+                to_broadcaster,
+                to_countersignatory,
+                htlcs.clone(),
+            );
             Ok(TestCommitmentTxContext {
                 commit_num,
                 feerate_per_kw,

@@ -844,7 +844,7 @@ impl Channel {
             to_holder_value_sat,
             to_counterparty_value_sat,
             htlcs.clone(),
-        )?;
+        );
 
         self.check_holder_tx_signatures(
             &per_commitment_point,
@@ -918,7 +918,7 @@ impl Channel {
             info2.to_broadcaster_value_sat,
             info2.to_countersigner_value_sat,
             htlcs,
-        )?;
+        );
 
         // We provide a dummy signature for the remote, since we don't require that sig
         // to be passed in to this call.  It would have been better if HolderCommitmentTransaction
@@ -983,7 +983,7 @@ impl Channel {
             info2.to_broadcaster_value_sat,
             info2.to_countersigner_value_sat,
             htlcs,
-        )?;
+        );
 
         // We provide a dummy signature for the remote, since we don't require that sig
         // to be passed in to this call.  It would have been better if HolderCommitmentTransaction
@@ -1091,7 +1091,7 @@ impl Channel {
             to_holder_value_sat,
             to_counterparty_value_sat,
             htlcs,
-        )?;
+        );
         debug!("channel: sign holder txid {}", commitment_tx.trust().built_transaction().txid);
 
         let holder_commitment_tx = HolderCommitmentTransaction::new(
@@ -1113,11 +1113,10 @@ impl Channel {
         Ok((sig, htlc_sigs))
     }
 
-    // This function is needed for testing with mutated keys.
-    pub(crate) fn make_holder_commitment_tx_with_keys(
+    pub(crate) fn make_holder_commitment_tx(
         &self,
-        keys: &TxCreationKeys,
         commitment_number: u64,
+        keys: &TxCreationKeys,
         feerate_per_kw: u32,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
@@ -1142,25 +1141,6 @@ impl Channel {
             commitment_tx = commitment_tx.with_non_zero_fee_anchors();
         }
         commitment_tx
-    }
-
-    pub(crate) fn make_holder_commitment_tx(
-        &self,
-        commitment_number: u64,
-        txkeys: &TxCreationKeys,
-        feerate_per_kw: u32,
-        to_holder_value_sat: u64,
-        to_counterparty_value_sat: u64,
-        htlcs: Vec<HTLCOutputInCommitment>,
-    ) -> Result<CommitmentTransaction, Status> {
-        Ok(self.make_holder_commitment_tx_with_keys(
-            txkeys,
-            commitment_number,
-            feerate_per_kw,
-            to_holder_value_sat,
-            to_counterparty_value_sat,
-            htlcs,
-        ))
     }
 
     pub(crate) fn htlcs_info2_to_oic(
@@ -1833,7 +1813,7 @@ impl Channel {
             info.to_broadcaster_value_sat,
             info.to_countersigner_value_sat,
             htlcs.clone(),
-        )?;
+        );
 
         if recomposed_tx.trust().built_transaction().transaction != *tx {
             debug_vals!(
@@ -2184,8 +2164,15 @@ impl Channel {
 
 #[cfg(test)]
 mod tests {
+    use crate::channel::ChannelBase;
+    use crate::util::test_utils::{
+        init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
+    };
     use bitcoin::hashes::hex::ToHex;
+    use bitcoin::psbt::serialize::Serialize;
     use bitcoin::secp256k1::{self, Secp256k1, SecretKey};
+    use lightning::ln::chan_utils::HTLCOutputInCommitment;
+    use lightning::ln::PaymentHash;
 
     #[test]
     fn test_dummy_sig() {
@@ -2195,5 +2182,30 @@ mod tests {
         );
         let ser = dummy_sig.serialize_compact();
         assert_eq!("eb299947b140c0e902243ee839ca58c71291f4cce49ac0367fb4617c4b6e890f18bc08b9be6726c090af4c6b49b2277e134b34078f710a72a5752e39f0139149", ser.to_hex());
+    }
+
+    #[test]
+    fn tx_size_test() {
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        node.with_ready_channel(&channel_id, |chan| {
+            let n = 1;
+            let commitment_point = chan.get_per_commitment_point(n).unwrap();
+            let txkeys = chan.make_holder_tx_keys(&commitment_point).unwrap();
+            let htlcs = (0..583)
+                .map(|i| HTLCOutputInCommitment {
+                    offered: true,
+                    amount_msat: 1000000,
+                    cltv_expiry: 100,
+                    payment_hash: PaymentHash([0; 32]),
+                    transaction_output_index: Some(i),
+                })
+                .collect();
+            let tx = chan.make_holder_commitment_tx(n, &txkeys, 1, 1, 1, htlcs);
+            let tx_size = tx.trust().built_transaction().transaction.serialize().len();
+            assert_eq!(tx_size, 25196);
+            Ok(())
+        })
+        .unwrap();
     }
 }

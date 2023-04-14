@@ -42,16 +42,14 @@ mod tests {
                 chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
                 let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
                 let txkeys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
-                let commitment_tx = chan
-                    .make_holder_commitment_tx(
-                        commit_num,
-                        &txkeys,
-                        0,
-                        to_holder_value_sat,
-                        to_counterparty_value_sat,
-                        vec![],
-                    )
-                    .expect("holder_commitment_tx");
+                let commitment_tx = chan.make_holder_commitment_tx(
+                    commit_num,
+                    &txkeys,
+                    0,
+                    to_holder_value_sat,
+                    to_counterparty_value_sat,
+                    vec![],
+                );
                 Ok(commitment_tx.trust().built_transaction().transaction.clone())
             })
             .expect("build");
@@ -203,9 +201,9 @@ mod tests {
                     commit_tx_ctx.received_htlcs.clone(),
                 );
 
-                let commitment_tx = chan.make_holder_commitment_tx_with_keys(
-                    &txkeys,
+                let commitment_tx = chan.make_holder_commitment_tx(
                     commit_tx_ctx.commit_num,
+                    &txkeys,
                     commit_tx_ctx.feerate_per_kw,
                     commit_tx_ctx.to_broadcaster,
                     commit_tx_ctx.to_countersignatory,
