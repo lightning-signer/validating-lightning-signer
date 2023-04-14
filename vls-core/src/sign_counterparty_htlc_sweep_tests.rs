@@ -284,7 +284,7 @@ mod tests {
                 },
             ),
             "transaction format: validate_counterparty_htlc_sweep: \
-             bad locktime: 1000000 > 3"
+             bad locktime: 1000000 > 5"
         );
     }
 

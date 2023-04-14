@@ -41,6 +41,8 @@ use super::error::{policy_error, transaction_format_error, ValidationError};
 const SAFE_COMMITMENT_TYPE: &[CommitmentType] =
     &[CommitmentType::StaticRemoteKey, CommitmentType::AnchorsZeroFeeHtlc];
 
+const MAX_CHAIN_LAG: u32 = 2;
+
 /// A factory for SimpleValidator
 pub struct SimpleValidatorFactory {
     policy: Option<SimplePolicy>,
@@ -1454,13 +1456,13 @@ impl Validator for SimpleValidator {
         self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        if tx.lock_time.0 > cstate.current_height {
+        if tx.lock_time.0 > cstate.current_height + MAX_CHAIN_LAG {
             transaction_format_err!(
                 self,
                 "policy-sweep-locktime",
                 "bad locktime: {} > {}",
                 tx.lock_time,
-                cstate.current_height
+                cstate.current_height + MAX_CHAIN_LAG
             );
         }
 
@@ -1534,13 +1536,13 @@ impl Validator for SimpleValidator {
         {
             // It's an offered htlc (counterparty perspective)
 
-            if tx.lock_time.0 > cstate.current_height {
+            if tx.lock_time.0 > cstate.current_height + MAX_CHAIN_LAG {
                 transaction_format_err!(
                     self,
                     "policy-sweep-locktime",
                     "bad locktime: {} > {}",
                     tx.lock_time,
-                    cstate.current_height
+                    cstate.current_height + MAX_CHAIN_LAG
                 );
             }
         } else {
@@ -1590,13 +1592,13 @@ impl Validator for SimpleValidator {
         self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        if tx.lock_time.0 > cstate.current_height {
+        if tx.lock_time.0 > cstate.current_height + MAX_CHAIN_LAG {
             transaction_format_err!(
                 self,
                 "policy-sweep-locktime",
                 "bad locktime: {} > {}",
                 tx.lock_time,
-                cstate.current_height
+                cstate.current_height + MAX_CHAIN_LAG
             );
         }
 

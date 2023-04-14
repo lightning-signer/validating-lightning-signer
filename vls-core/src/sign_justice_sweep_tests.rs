@@ -275,7 +275,7 @@ mod tests {
                     tx.lock_time = PackedLockTime(1_000_000);
                 },
             ),
-            "transaction format: validate_justice_sweep: bad locktime: 1000000 > 3"
+            "transaction format: validate_justice_sweep: bad locktime: 1000000 > 5"
         );
     }
 
