@@ -658,7 +658,6 @@ mod tests {
             Network::Testnet,
             FixedStartingTimeFactory::new(1, 1).borrow(),
         );
-        let client_key = manager.persistence_secret;
         let client_pubkey = manager.get_persistence_pubkey();
         let shared_secret = SharedSecret::new(&client_pubkey, &server_key);
         let shared_secret2 = manager.get_persistence_shared_secret(&server_pubkey);

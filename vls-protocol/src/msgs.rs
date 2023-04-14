@@ -683,27 +683,6 @@ pub struct RemoveBlock {
 #[message_id(2106)]
 pub struct RemoveBlockReply {}
 
-/// Store key-value pairs to persistent storage - potentially in the cloud.
-/// This message may be sent by the *signer* in response to a normal API message,
-/// before the actual API response.  The front end should reply with [`PersistReply`]
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
-#[message_id(2107)]
-pub struct Persist {
-    pub kvs: Vec<(Octets, u64, LargeOctets)>,
-    /// HMAC by client to authenticate the message
-    pub hmac: Octets,
-}
-
-/// Result of a [`Persist`].
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
-#[message_id(2007)]
-pub struct PersistReply {
-    pub success: bool,
-    /// HMAC by storage service to authenticate the message
-    pub hmac: Octets,
-    pub conflicts: Vec<(Octets, u64, LargeOctets)>,
-}
-
 /// Get a serialized signed heartbeat
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(2008)]
@@ -804,8 +783,6 @@ pub enum Message {
     AddBlockReply(AddBlockReply),
     RemoveBlock(RemoveBlock),
     RemoveBlockReply(RemoveBlockReply),
-    Persist(Persist),
-    PersistReply(PersistReply),
     GetHeartbeat(GetHeartbeat),
     GetHeartbeatReply(GetHeartbeatReply),
     NodeInfo(NodeInfo),
@@ -986,31 +963,6 @@ mod tests {
         if let Message::SignChannelAnnouncementReply(dmsg) = dmsg {
             assert_eq!(dmsg.node_signature.0, msg.node_signature.0);
             assert_eq!(dmsg.bitcoin_signature.0, msg.bitcoin_signature.0);
-        } else {
-            panic!("bad deser type")
-        }
-    }
-
-    // Test the persist message, since it has more more nesting than others
-    #[test]
-    fn persist_test() {
-        let key = Octets(b"foo".to_vec());
-        let value = b"bar".to_vec();
-        let version = 0x123456789;
-        let msg = Persist {
-            kvs: vec![(Octets(key.clone()), version, LargeOctets(value.clone()))],
-            hmac: Octets(vec![0x33, 0x44]),
-        };
-
-        let ser = msg.as_vec();
-        let dmsg = from_vec(ser).unwrap();
-        if let Message::Persist(dmsg) = dmsg {
-            for (k, ver, v) in dmsg.kvs.into_iter() {
-                assert_eq!(k, key);
-                assert_eq!(ver, version);
-                assert_eq!(v.0, value);
-            }
-            assert_eq!(dmsg.hmac, msg.hmac);
         } else {
             panic!("bad deser type")
         }
