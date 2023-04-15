@@ -1,6 +1,5 @@
 //! A single-binary hsmd drop-in replacement for CLN, using the VLS library
 
-use std::collections::BTreeMap;
 use std::env;
 use std::sync::Mutex;
 
@@ -11,7 +10,7 @@ use url::Url;
 use bitcoin::Network;
 use lightning_signer::bitcoin;
 use lightning_signer::node::NodeServices;
-use lightning_signer::persist::{ExternalPersistHelper, Mutations, Persist, SimpleEntropy};
+use lightning_signer::persist::{ExternalPersistHelper, Mutations, Persist};
 use lightning_signer::policy::filter::{FilterRule, PolicyFilter};
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
@@ -39,32 +38,10 @@ use util::{
     integration_test_seed_or_generate, make_validator_factory_with_filter, read_allowlist,
     setup_logging, should_auto_approve, vls_network,
 };
+use vls_proxy::persist::ExternalPersistWithHelper;
 use vls_proxy::*;
 
 mod test;
-
-/// WARNING: this does not ensure atomicity if mutated from different threads
-pub struct Cloud {
-    lss_client: AsyncMutex<Box<dyn ExternalPersist>>,
-    state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
-    helper: ExternalPersistHelper,
-}
-
-impl Cloud {
-    async fn init_state(&self) {
-        let lss_client = self.lss_client.lock().await;
-        let entropy = SimpleEntropy::new();
-        let mut helper = self.helper.clone();
-        let nonce = helper.new_nonce(&entropy);
-        let (muts, server_hmac) = lss_client.get("".to_string(), &nonce).await.unwrap();
-        let success = helper.check_hmac(&muts, server_hmac);
-        assert!(success, "server hmac mismatch on get");
-        let mut local = self.state.lock().unwrap();
-        for (key, version_value) in muts.into_iter() {
-            local.insert(key, version_value);
-        }
-    }
-}
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -78,14 +55,14 @@ pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Clone)]
 pub struct Looper {
-    pub cloud: Option<Arc<Cloud>>,
+    pub external_persist: Option<ExternalPersistWithHelper>,
 }
 
 impl Looper {
     async fn store(&self, muts: Mutations) -> Result<()> {
-        if let Some(cloud) = &self.cloud {
-            let lss_client = cloud.lss_client.lock().await;
-            Self::store_with_client(muts, &*lss_client, &cloud.helper).await?;
+        if let Some(external_persist) = &self.external_persist {
+            let client = external_persist.persist_client.lock().await;
+            Self::store_with_client(muts, &*client, &external_persist.helper).await?;
         }
         Ok(())
     }
@@ -213,18 +190,18 @@ impl Looper {
     async fn do_handle<H: Handler>(
         &self,
         handler: &H,
-        client: &mut UnixClient,
+        unix_client: &mut UnixClient,
         msg: Message,
     ) -> Result<()> {
-        let reply = if let Some(cloud) = self.cloud.as_ref() {
+        let reply = if let Some(external_persist) = self.external_persist.as_ref() {
             // Note: we lock early because we actually need a global lock right now,
             // since cloud.state is not atomic.  In particular, if one request
             // advances a version of a key, another request might advance the same
             // version again, but may write to the cloud before the first.
             // TODO(devrandom) evaluate atomicity
-            let lss_client = cloud.lss_client.lock().await;
+            let persist_client = external_persist.persist_client.lock().await;
             let (reply, muts) = handler.handle(msg).expect("handle");
-            Self::store_with_client(muts, &*lss_client, &cloud.helper).await?;
+            Self::store_with_client(muts, &*persist_client, &external_persist.helper).await?;
             reply
         } else {
             let (reply, muts) = handler.handle(msg).expect("handle");
@@ -232,7 +209,7 @@ impl Looper {
             reply
         };
 
-        block_in_place(|| client.write_vec(reply.as_vec()))?;
+        block_in_place(|| unix_client.write_vec(reply.as_vec()))?;
 
         Ok(())
     }
@@ -288,9 +265,9 @@ async fn start() {
 
     let looper = make_looper(&handler_builder).await;
 
-    let handler = if let Some(cloud) = looper.cloud.as_ref() {
-        cloud.init_state().await;
-        let handler_builder = handler_builder.lss_state(cloud.state.clone());
+    let handler = if let Some(external_persist) = looper.external_persist.as_ref() {
+        external_persist.init_state().await;
+        let handler_builder = handler_builder.lss_state(external_persist.state.clone());
         let (handler, muts) = handler_builder.build();
         looper.store(muts).await.expect("store during build");
         handler
@@ -302,7 +279,10 @@ async fn start() {
 
     let source_factory = Arc::new(SourceFactory::new(".", network));
     let frontend = Frontend::new(
-        Arc::new(SingleFront { node: Arc::clone(&handler.node()) }),
+        Arc::new(SingleFront {
+            node: handler.node().clone(),
+            external_persist: looper.external_persist.clone(),
+        }),
         source_factory,
         Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
     );
@@ -321,7 +301,7 @@ fn make_persister() -> Arc<dyn Persist> {
 }
 
 async fn make_looper(builder: &RootHandlerBuilder) -> Looper {
-    let cloud = if let Ok(uri) = env::var("VLS_LSS") {
+    let external_persist = if let Ok(uri) = env::var("VLS_LSS") {
         let (keys_manager, node_id) = builder.build_keys_manager();
         let client_id = keys_manager.get_persistence_pubkey();
         let server_pubkey = LssClient::get_server_pubkey(&uri).await.expect("failed to get pubkey");
@@ -334,14 +314,15 @@ async fn make_looper(builder: &RootHandlerBuilder) -> Looper {
             LssClient::new(&uri, &server_pubkey, auth).await.expect("failed to connect to LSS");
         info!("connected to LSS provider {} for node {}", server_pubkey, node_id);
 
-        let lss_client = AsyncMutex::new(Box::new(client) as Box<dyn ExternalPersist>);
+        let persist_client =
+            Arc::new(AsyncMutex::new(Box::new(client) as Box<dyn ExternalPersist>));
         let state = Arc::new(Mutex::new(Default::default()));
-        let cloud = Cloud { lss_client, state, helper };
-        Some(Arc::new(cloud))
+        let external_persist = ExternalPersistWithHelper { persist_client, state, helper };
+        Some(external_persist)
     } else {
         None
     };
-    Looper { cloud }
+    Looper { external_persist }
 }
 
 #[cfg(test)]
