@@ -28,8 +28,8 @@ use crate::util::debug_utils::{
     DebugVecVecU8,
 };
 use crate::util::transaction_utils::{
-    estimate_feerate_per_kw, expected_commitment_tx_weight, mutual_close_tx_weight,
-    MIN_CHAN_DUST_LIMIT_SATOSHIS, MIN_DUST_LIMIT_SATOSHIS,
+    estimate_feerate_per_kw, expected_commitment_tx_weight, is_tx_non_malleable,
+    mutual_close_tx_weight, MIN_CHAN_DUST_LIMIT_SATOSHIS, MIN_DUST_LIMIT_SATOSHIS,
 };
 use crate::util::velocity::VelocityControlSpec;
 use crate::wallet::Wallet;
@@ -457,6 +457,7 @@ impl Validator for SimpleValidator {
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         tx: &Transaction,
+        input_txs: &Vec<&Transaction>,
         values_sat: &[u64],
         opaths: &[Vec<u32>],
         weight_lower_bound: usize,
@@ -465,6 +466,14 @@ impl Validator for SimpleValidator {
 
         if tx.version != 2 {
             policy_err!(self, "policy-onchain-format-standard", "invalid version: {}", tx.version);
+        }
+
+        if channels.iter().any(|c| c.is_some()) && !is_tx_non_malleable(tx, input_txs) {
+            policy_err!(
+                self,
+                "policy-onchain-funding-non-malleable",
+                "funding tx has non-segwit-native input"
+            );
         }
 
         let mut unknowns = Vec::new();

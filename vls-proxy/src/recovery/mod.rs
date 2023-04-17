@@ -34,6 +34,7 @@ pub trait RecoveryKeys {
     fn sign_onchain_tx(
         &self,
         tx: &Transaction,
+        input_txs: &Vec<&Transaction>,
         ipaths: &Vec<Vec<u32>>,
         values_sat: &Vec<u64>,
         spendtypes: &Vec<SpendType>,
@@ -175,8 +176,17 @@ fn spend_delayed_outputs<R: RecoveryKeys>(
     let values_sat = descriptors.iter().map(|d| d.output.value).collect();
     let ipaths = descriptors.iter().map(|_| vec![]).collect();
     let uniclosekeys = descriptors.iter().map(|_| Some(unilateral_close_key.clone())).collect();
+    let input_txs = vec![]; // only need input txs for funding tx
     let witnesses = keys
-        .sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys, &vec![opath])
+        .sign_onchain_tx(
+            &tx,
+            &input_txs,
+            &ipaths,
+            &values_sat,
+            &spendtypes,
+            uniclosekeys,
+            &vec![opath],
+        )
         .expect("sign");
     assert_eq!(witnesses.len(), tx.input.len());
     for (idx, w) in witnesses.into_iter().enumerate() {

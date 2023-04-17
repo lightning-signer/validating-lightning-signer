@@ -113,13 +113,14 @@ pub trait Approve: SendSync {
         &self,
         node: &Arc<Node>,
         tx: &Transaction,
+        input_txs: &Vec<&Transaction>,
         values_sat: &[u64],
         spendtypes: &[SpendType],
         uniclosekeys: &[Option<(SecretKey, Vec<Vec<u8>>)>],
         opaths: &[Vec<u32>],
     ) -> Result<bool, Status> {
         let check_result =
-            node.check_onchain_tx(&tx, &values_sat, &spendtypes, &uniclosekeys, &opaths);
+            node.check_onchain_tx(&tx, input_txs, &values_sat, &spendtypes, &uniclosekeys, &opaths);
         match check_result {
             Ok(()) => {}
             Err(ve) => match ve.kind {
