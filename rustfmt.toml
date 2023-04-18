@@ -4,3 +4,6 @@ ignore = [
 ]
 use_small_heuristics = "Max"
 match_arm_blocks = false
+
+# see: https://github.com/rust-lang/rustfmt/issues/4454
+edition = "2018"
