@@ -221,6 +221,9 @@ mod tests {
     fn debug_secret_test() {
         let secret = super::Secret([0; 32]);
         let debug = format!("{:?}", secret);
+        #[cfg(feature = "log-secrets")]
+        assert_eq!(debug, "0000000000000000000000000000000000000000000000000000000000000000");
+        #[cfg(not(feature = "log-secrets"))]
         assert_eq!(debug, "******");
     }
 }
