@@ -44,21 +44,36 @@ pub struct HsmdInit {
     pub hsm_wire_max_version: u32,
 }
 
-/// deprecated in CLN
-#[deprecated]
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
-#[message_id(111)]
-pub struct HsmdInitReplyV1 {
-    pub node_id: PubKey,
-    pub bip32: ExtKey,
-    pub bolt12: PubKey32,
-    pub onion_reply_secret: Secret,
-}
+// // Removed in CLN v23.05
+// #[derive(SerBolt, Debug, Serialize, Deserialize)]
+// #[message_id(111)]
+// pub struct HsmdInitReplyV1 {
+//     pub node_id: PubKey,
+//     pub bip32: ExtKey,
+//     pub bolt12: PubKey32,
+//     pub onion_reply_secret: Secret,
+// }
 
-///
+/// deprecated after CLN v23.05
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(113)]
 pub struct HsmdInitReplyV2 {
+    pub node_id: PubKey,
+    pub bip32: ExtKey,
+    pub bolt12: PubKey,
+}
+
+// There doesn't seem to be a HsmdInitReplyV3
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(114)]
+pub struct HsmdInitReplyV4 {
+    /// This gets upgraded when the wire protocol changes in incompatible ways:
+    pub hsm_version: u32,
+    /// Capabilities, by convention are message numbers, indicating that the HSM
+    /// supports you sending this message.
+    pub hsm_capabilities: Vec<u32>,
     pub node_id: PubKey,
     pub bip32: ExtKey,
     pub bolt12: PubKey,
@@ -261,6 +276,21 @@ pub struct DeriveSecret {
 #[message_id(127)]
 pub struct DeriveSecretReply {
     pub secret: Secret,
+}
+
+/// CheckPubKey
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(28)]
+pub struct CheckPubKey {
+    pub index: u32,
+    pub pubkey: PubKey,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(128)]
+pub struct CheckPubKeyReply {
+    pub ok: bool,
 }
 
 /// Sign channel update
@@ -509,6 +539,20 @@ pub struct SignDelayedPaymentToUs {
     pub wscript: Octets,
 }
 
+/// CLN only
+/// Same as [SignDelayedPaymentToUs] but called from lightningd
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(142)]
+pub struct SignAnyDelayedPaymentToUs {
+    pub commitment_number: u64,
+    pub tx: LargeOctets,
+    pub psbt: LargeOctets,
+    pub wscript: Octets,
+    pub input: u32,
+    pub peer_id: PubKey,
+    pub dbid: u64,
+}
+
 ///
 /// CLN only
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
@@ -521,6 +565,21 @@ pub struct SignRemoteHtlcToUs {
     pub option_anchors: bool,
 }
 
+/// CLN only
+/// Same as [SignRemoteHtlcToUs] but called from lightningd
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(143)]
+pub struct SignAnyRemoteHtlcToUs {
+    pub remote_per_commitment_point: PubKey,
+    pub tx: LargeOctets,
+    pub psbt: LargeOctets,
+    pub wscript: Octets,
+    pub option_anchors: bool,
+    pub input: u32,
+    pub peer_id: PubKey,
+    pub dbid: u64,
+}
+
 ///
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(16)]
@@ -530,6 +589,21 @@ pub struct SignLocalHtlcTx {
     pub psbt: LargeOctets,
     pub wscript: Octets,
     pub option_anchors: bool,
+}
+
+/// CLN only
+/// Same as [SignLocalHtlcTx] but called from lightningd
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(146)]
+pub struct SignAnyLocalHtlcTx {
+    pub commitment_number: u64,
+    pub tx: LargeOctets,
+    pub psbt: LargeOctets,
+    pub wscript: Octets,
+    pub option_anchors: bool,
+    pub input: u32,
+    pub peer_id: PubKey,
+    pub dbid: u64,
 }
 
 ///
@@ -616,6 +690,19 @@ pub struct SignPenaltyToUs {
     pub tx: LargeOctets,
     pub psbt: LargeOctets,
     pub wscript: Octets,
+}
+
+/// Same as [SignPenaltyToUs] but called from lightningd
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(144)]
+pub struct SignAnyPenaltyToUs {
+    pub revocation_secret: DisclosedSecret,
+    pub tx: LargeOctets,
+    pub psbt: LargeOctets,
+    pub wscript: Octets,
+    pub input: u32,
+    pub peer_id: PubKey,
+    pub dbid: u64,
 }
 
 ///
@@ -710,9 +797,10 @@ pub enum Message {
     Ping(Ping),
     Pong(Pong),
     HsmdInit(HsmdInit),
+    // HsmdInitReplyV1(HsmdInitReplyV1),
     #[allow(deprecated)]
-    HsmdInitReplyV1(HsmdInitReplyV1),
     HsmdInitReplyV2(HsmdInitReplyV2),
+    HsmdInitReplyV4(HsmdInitReplyV4),
     HsmdInit2(HsmdInit2),
     HsmdInit2Reply(HsmdInit2Reply),
     ClientHsmFd(ClientHsmFd),
@@ -735,6 +823,8 @@ pub enum Message {
     PreapproveKeysendReply(PreapproveKeysendReply),
     DeriveSecret(DeriveSecret),
     DeriveSecretReply(DeriveSecretReply),
+    CheckPubKey(CheckPubKey),
+    CheckPubKeyReply(CheckPubKeyReply),
     SignMessage(SignMessage),
     SignMessageReply(SignMessageReply),
     SignChannelUpdate(SignChannelUpdate),
@@ -758,8 +848,11 @@ pub enum Message {
     SignRemoteCommitmentTx2(SignRemoteCommitmentTx2),
     SignCommitmentTxWithHtlcsReply(SignCommitmentTxWithHtlcsReply),
     SignDelayedPaymentToUs(SignDelayedPaymentToUs),
+    SignAnyDelayedPaymentToUs(SignAnyDelayedPaymentToUs),
     SignRemoteHtlcToUs(SignRemoteHtlcToUs),
+    SignAnyRemoteHtlcToUs(SignAnyRemoteHtlcToUs),
     SignLocalHtlcTx(SignLocalHtlcTx),
+    SignAnyLocalHtlcTx(SignAnyLocalHtlcTx),
     SignCommitmentTx(SignCommitmentTx),
     SignLocalCommitmentTx2(SignLocalCommitmentTx2),
     SignGossipMessage(SignGossipMessage),
@@ -773,6 +866,7 @@ pub enum Message {
     NewChannelReply(NewChannelReply),
     SignRemoteHtlcTx(SignRemoteHtlcTx),
     SignPenaltyToUs(SignPenaltyToUs),
+    SignAnyPenaltyToUs(SignAnyPenaltyToUs),
     TipInfo(TipInfo),
     TipInfoReply(TipInfoReply),
     ForwardWatches(ForwardWatches),

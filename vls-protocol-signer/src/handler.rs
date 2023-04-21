@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::format;
@@ -49,8 +51,8 @@ use vls_protocol::model::{
 use vls_protocol::msgs::{
     DeriveSecretReply, PreapproveInvoiceReply, PreapproveKeysendReply, SerBolt, SignBolt12Reply,
 };
-use vls_protocol::serde_bolt::{to_vec, LargeOctets, WireString};
-use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
+use vls_protocol::serde_bolt::{to_vec, LargeOctets, Octets, WireString};
+use vls_protocol::{msgs, msgs::DeBolt, msgs::Message, Error as ProtocolError};
 
 use crate::approver::{Approve, NegativeApprover};
 use crate::util::channel_type_to_commitment_type;
@@ -327,11 +329,35 @@ impl Handler for RootHandler {
                 let sig_slice = sig.try_into().expect("recoverable signature size");
                 Ok(Box::new(msgs::SignMessageReply { signature: RecoverableSignature(sig_slice) }))
             }
-            Message::HsmdInit(_) => {
-                let bip32 = self.node.get_account_extended_pubkey().encode();
+            Message::HsmdInit(m) => {
                 let node_id = self.node.get_id().serialize();
+                let bip32 = self.node.get_account_extended_pubkey().encode();
                 let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
-                Ok(Box::new(msgs::HsmdInitReplyV2 {
+                if m.hsm_wire_max_version < 4 {
+                    return Ok(Box::new(msgs::HsmdInitReplyV2 {
+                        node_id: PubKey(node_id),
+                        bip32: ExtKey(bip32),
+                        bolt12: PubKey(bolt12_pubkey),
+                    }));
+                }
+                assert!(
+                    m.hsm_wire_min_version <= 4,
+                    "node's minimum hsm wire version too large: {} > {}",
+                    m.hsm_wire_min_version,
+                    4
+                );
+                assert!(
+                    m.hsm_wire_max_version >= 4,
+                    "node's maximum hsm wire version too small: {} < {}",
+                    m.hsm_wire_max_version,
+                    4
+                );
+                Ok(Box::new(msgs::HsmdInitReplyV4 {
+                    hsm_version: 4,
+                    hsm_capabilities: vec![
+                        msgs::CheckPubKey::TYPE as u32,
+                        msgs::SignAnyDelayedPaymentToUs::TYPE as u32,
+                    ],
                     node_id: PubKey(node_id),
                     bip32: ExtKey(bip32),
                     bolt12: PubKey(bolt12_pubkey),
@@ -622,6 +648,51 @@ impl Handler for RootHandler {
                     signature: Signature(node_sig.serialize_compact()),
                 }))
             }
+            Message::CheckPubKey(m) => Ok(Box::new(msgs::CheckPubKeyReply {
+                ok: self.node.check_wallet_pubkey(
+                    &[m.index],
+                    bitcoin::PublicKey::from_slice(&m.pubkey.0)
+                        .map_err(|_| Status::invalid_argument("bad public key"))?,
+                )?,
+            })),
+            Message::SignAnyDelayedPaymentToUs(m) => sign_delayed_payment_to_us(
+                &self.node,
+                &Self::channel_id(&m.peer_id, m.dbid),
+                m.commitment_number,
+                &m.tx,
+                &m.psbt,
+                &m.wscript,
+                m.input,
+            ),
+            Message::SignAnyRemoteHtlcToUs(m) => sign_remote_htlc_to_us(
+                &self.node,
+                &Self::channel_id(&m.peer_id, m.dbid),
+                &m.remote_per_commitment_point,
+                &m.tx,
+                &m.psbt,
+                &m.wscript,
+                m.option_anchors,
+                m.input,
+            ),
+            Message::SignAnyPenaltyToUs(m) => sign_penalty_to_us(
+                &self.node,
+                &Self::channel_id(&m.peer_id, m.dbid),
+                &m.revocation_secret,
+                &m.tx,
+                &m.psbt,
+                &m.wscript,
+                m.input,
+            ),
+            Message::SignAnyLocalHtlcTx(m) => sign_local_htlc_tx(
+                &self.node,
+                &Self::channel_id(&m.peer_id, m.dbid),
+                m.commitment_number,
+                &m.tx,
+                &m.psbt,
+                &m.wscript,
+                m.option_anchors,
+                m.input,
+            ),
             m => unimplemented!("loop {}: unimplemented message {:?}", self.id, m),
         }
     }
@@ -860,101 +931,35 @@ impl Handler for ChannelHandler {
                     htlc_signatures: htlc_sigs.into_iter().map(|s| to_bitcoin_sig(s)).collect(),
                 }))
             }
-            Message::SignDelayedPaymentToUs(m) => {
-                let psbt = PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
-                    .expect("psbt");
-                let mut tx_bytes = m.tx.0.clone();
-                let tx = deserialize(&mut tx_bytes).expect("tx");
-                let commitment_number = m.commitment_number;
-                let redeemscript = Script::from(m.wscript.0);
-                let input = 0;
-                let htlc_amount_sat = psbt.inputs[input]
-                    .witness_utxo
-                    .as_ref()
-                    .expect("will only spend witness UTXOs")
-                    .value;
-                let wallet_paths = extract_psbt_output_paths(&psbt);
-                let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
-                    chan.sign_delayed_sweep(
-                        &tx,
-                        input,
-                        commitment_number,
-                        &redeemscript,
-                        htlc_amount_sat,
-                        &wallet_paths[0],
-                    )
-                })?;
-                Ok(Box::new(msgs::SignTxReply {
-                    signature: BitcoinSignature {
-                        signature: Signature(sig.serialize_compact()),
-                        sighash: EcdsaSighashType::All as u8,
-                    },
-                }))
-            }
-            Message::SignRemoteHtlcToUs(m) => {
-                let psbt = PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
-                    .expect("psbt");
-                let mut tx_bytes = m.tx.0.clone();
-                let tx = deserialize(&mut tx_bytes).expect("tx");
-                let remote_per_commitment_point =
-                    PublicKey::from_slice(&m.remote_per_commitment_point.0).expect("pubkey");
-                let redeemscript = Script::from(m.wscript.0);
-                let input = 0;
-                let htlc_amount_sat = psbt.inputs[input]
-                    .witness_utxo
-                    .as_ref()
-                    .expect("will only spend witness UTXOs")
-                    .value;
-                let wallet_paths = extract_psbt_output_paths(&psbt);
-                let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
-                    chan.sign_counterparty_htlc_sweep(
-                        &tx,
-                        input,
-                        &remote_per_commitment_point,
-                        &redeemscript,
-                        htlc_amount_sat,
-                        &wallet_paths[0],
-                    )
-                })?;
-                Ok(Box::new(msgs::SignTxReply {
-                    signature: BitcoinSignature {
-                        signature: Signature(sig.serialize_compact()),
-                        sighash: EcdsaSighashType::All as u8,
-                    },
-                }))
-            }
-            Message::SignLocalHtlcTx(m) => {
-                let psbt = PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
-                    .expect("psbt");
-                let mut tx_bytes = m.tx.0.clone();
-                let tx = deserialize(&mut tx_bytes).expect("tx");
-                let commitment_number = m.commitment_number;
-                let redeemscript = Script::from(m.wscript.0);
-                let input = 0;
-                let htlc_amount_sat = psbt.inputs[input]
-                    .witness_utxo
-                    .as_ref()
-                    .expect("will only spend witness UTXOs")
-                    .value;
-                let output_witscript =
-                    psbt.outputs[0].witness_script.as_ref().expect("output witscript");
-                let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
-                    chan.sign_holder_htlc_tx(
-                        &tx,
-                        commitment_number,
-                        None,
-                        &redeemscript,
-                        htlc_amount_sat,
-                        output_witscript,
-                    )
-                })?;
-                Ok(Box::new(msgs::SignTxReply {
-                    signature: BitcoinSignature {
-                        signature: Signature(sig.sig.serialize_compact()),
-                        sighash: sig.typ as u8,
-                    },
-                }))
-            }
+            Message::SignDelayedPaymentToUs(m) => sign_delayed_payment_to_us(
+                &self.node,
+                &self.channel_id,
+                m.commitment_number,
+                &m.tx,
+                &m.psbt,
+                &m.wscript,
+                0,
+            ),
+            Message::SignRemoteHtlcToUs(m) => sign_remote_htlc_to_us(
+                &self.node,
+                &self.channel_id,
+                &m.remote_per_commitment_point,
+                &m.tx,
+                &m.psbt,
+                &m.wscript,
+                m.option_anchors,
+                0,
+            ),
+            Message::SignLocalHtlcTx(m) => sign_local_htlc_tx(
+                &self.node,
+                &self.channel_id,
+                m.commitment_number,
+                &m.tx,
+                &m.psbt,
+                &m.wscript,
+                m.option_anchors,
+                0,
+            ),
             Message::SignMutualCloseTx(m) => {
                 let psbt = PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
                     .expect("psbt");
@@ -1076,38 +1081,15 @@ impl Handler for ChannelHandler {
                 })?;
                 Ok(Box::new(msgs::ValidateRevocationReply {}))
             }
-            Message::SignPenaltyToUs(m) => {
-                let psbt = PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
-                    .expect("psbt");
-                let mut tx_bytes = m.tx.0.clone();
-                let tx = deserialize(&mut tx_bytes).expect("tx");
-                let revocation_secret =
-                    SecretKey::from_slice(&m.revocation_secret.0).expect("secret");
-                let redeemscript = Script::from(m.wscript.0);
-                let input = 0;
-                let htlc_amount_sat = psbt.inputs[input]
-                    .witness_utxo
-                    .as_ref()
-                    .expect("will only spend witness UTXOs")
-                    .value;
-                let wallet_paths = extract_psbt_output_paths(&psbt);
-                let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
-                    chan.sign_justice_sweep(
-                        &tx,
-                        input,
-                        &revocation_secret,
-                        &redeemscript,
-                        htlc_amount_sat,
-                        &wallet_paths[0],
-                    )
-                })?;
-                Ok(Box::new(msgs::SignTxReply {
-                    signature: BitcoinSignature {
-                        signature: Signature(sig.serialize_compact()),
-                        sighash: EcdsaSighashType::All as u8,
-                    },
-                }))
-            }
+            Message::SignPenaltyToUs(m) => sign_penalty_to_us(
+                &self.node,
+                &self.channel_id,
+                &m.revocation_secret,
+                &m.tx,
+                &m.psbt,
+                &m.wscript,
+                0,
+            ),
             Message::SignChannelAnnouncement(m) => {
                 let message = m.announcement[256 + 2..].to_vec();
                 let bitcoin_sig = self.node.with_ready_channel(&self.channel_id, |chan| {
@@ -1141,6 +1123,153 @@ impl Handler for ChannelHandler {
     fn lss_state(&self) -> Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>> {
         self.lss_state.clone()
     }
+}
+
+fn sign_delayed_payment_to_us(
+    node: &Node,
+    channel_id: &ChannelId,
+    commitment_number: u64,
+    tx: &LargeOctets,
+    psbt: &LargeOctets,
+    wscript: &Octets,
+    input: u32,
+) -> Result<Box<dyn SerBolt>> {
+    let psbt = PartiallySignedTransaction::consensus_decode(&mut psbt.0.as_slice()).expect("psbt");
+    let mut tx_bytes = tx.0.clone();
+    let tx = deserialize(&mut tx_bytes).expect("tx");
+    let commitment_number = commitment_number;
+    let redeemscript = Script::from(wscript.0.clone());
+    let input = input as usize;
+    let htlc_amount_sat =
+        psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
+    let wallet_paths = extract_psbt_output_paths(&psbt);
+    let sig = node.with_ready_channel(channel_id, |chan| {
+        chan.sign_delayed_sweep(
+            &tx,
+            input,
+            commitment_number,
+            &redeemscript,
+            htlc_amount_sat,
+            &wallet_paths[0],
+        )
+    })?;
+    Ok(Box::new(msgs::SignTxReply {
+        signature: BitcoinSignature {
+            signature: Signature(sig.serialize_compact()),
+            sighash: EcdsaSighashType::All as u8,
+        },
+    }))
+}
+
+fn sign_remote_htlc_to_us(
+    node: &Node,
+    channel_id: &ChannelId,
+    remote_per_commitment_point: &PubKey,
+    tx: &LargeOctets,
+    psbt: &LargeOctets,
+    wscript: &Octets,
+    _option_anchors: bool,
+    input: u32,
+) -> Result<Box<dyn SerBolt>> {
+    let psbt = PartiallySignedTransaction::consensus_decode(&mut psbt.0.as_slice()).expect("psbt");
+    let mut tx_bytes = tx.0.clone();
+    let tx = deserialize(&mut tx_bytes).expect("tx");
+    let remote_per_commitment_point =
+        PublicKey::from_slice(&remote_per_commitment_point.0).expect("pubkey");
+    let redeemscript = Script::from(wscript.0.clone());
+    let input = input as usize;
+    let htlc_amount_sat =
+        psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
+    let wallet_paths = extract_psbt_output_paths(&psbt);
+    let sig = node.with_ready_channel(channel_id, |chan| {
+        chan.sign_counterparty_htlc_sweep(
+            &tx,
+            input,
+            &remote_per_commitment_point,
+            &redeemscript,
+            htlc_amount_sat,
+            &wallet_paths[0],
+        )
+    })?;
+    Ok(Box::new(msgs::SignTxReply {
+        signature: BitcoinSignature {
+            signature: Signature(sig.serialize_compact()),
+            sighash: EcdsaSighashType::All as u8,
+        },
+    }))
+}
+
+fn sign_local_htlc_tx(
+    node: &Node,
+    channel_id: &ChannelId,
+    commitment_number: u64,
+    tx: &LargeOctets,
+    psbt: &LargeOctets,
+    wscript: &Octets,
+    _option_anchors: bool,
+    input: u32,
+) -> Result<Box<dyn SerBolt>> {
+    let psbt = PartiallySignedTransaction::consensus_decode(&mut psbt.0.as_slice()).expect("psbt");
+    let mut tx_bytes = tx.0.clone();
+    let tx = deserialize(&mut tx_bytes).expect("tx");
+    let commitment_number = commitment_number;
+    let redeemscript = Script::from(wscript.0.clone());
+    let input = input as usize;
+    let htlc_amount_sat =
+        psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
+    let output_witscript = psbt.outputs[0].witness_script.as_ref().expect("output witscript");
+    let sig = node.with_ready_channel(channel_id, |chan| {
+        chan.sign_holder_htlc_tx(
+            &tx,
+            commitment_number,
+            None,
+            &redeemscript,
+            htlc_amount_sat,
+            output_witscript,
+        )
+    })?;
+    Ok(Box::new(msgs::SignTxReply {
+        signature: BitcoinSignature {
+            signature: Signature(sig.sig.serialize_compact()),
+            sighash: sig.typ as u8,
+        },
+    }))
+}
+
+fn sign_penalty_to_us(
+    node: &Node,
+    channel_id: &ChannelId,
+    revocation_secret: &DisclosedSecret,
+    tx: &LargeOctets,
+    psbt: &LargeOctets,
+    wscript: &Octets,
+    input: u32,
+) -> Result<Box<dyn SerBolt>> {
+    let psbt = PartiallySignedTransaction::consensus_decode(&mut psbt.0.as_slice()).expect("psbt");
+    let mut tx_bytes = tx.0.clone();
+    let tx = deserialize(&mut tx_bytes).expect("tx");
+    let revocation_secret = SecretKey::from_slice(&revocation_secret.0).expect("secret");
+    let redeemscript = Script::from(wscript.0.clone());
+    let input = input as usize;
+    let htlc_amount_sat =
+        psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
+    let wallet_paths = extract_psbt_output_paths(&psbt);
+    let sig = node.with_ready_channel(&channel_id, |chan| {
+        chan.sign_justice_sweep(
+            &tx,
+            input,
+            &revocation_secret,
+            &redeemscript,
+            htlc_amount_sat,
+            &wallet_paths[0],
+        )
+    })?;
+    Ok(Box::new(msgs::SignTxReply {
+        signature: BitcoinSignature {
+            signature: Signature(sig.serialize_compact()),
+            sighash: EcdsaSighashType::All as u8,
+        },
+    }))
 }
 
 fn extract_pubkey(key: &PubKey) -> PublicKey {
