@@ -19,12 +19,16 @@ Install sample config:
 ```
 sudo mkdir -p /home/bitcoin/.bitcoin
 sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/bitcoin.conf /home/bitcoin/.bitcoin
-sudo chown -R bitcoin:bitcoin  /home/bitcoin/.bitcoin
 ```
 
 Edit the config file, change the `rpcpassword` to something random:
 ```
-sudo vi /home/bitcoin/.bitcoin
+sudo vi /home/bitcoin/.bitcoin/bitcoin.conf
+```
+
+Make sure bitcoin owns everything:
+```
+sudo chown -R bitcoin:bitcoin  /home/bitcoin/.bitcoin
 ```
 
 Install systemd unit file:
