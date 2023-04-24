@@ -1,4 +1,5 @@
 pub mod invoice;
+pub mod key;
 
 use std::time::Duration;
 
@@ -41,9 +42,6 @@ use lightning::util::test_utils;
 use lightning_invoice::{Currency, InvoiceBuilder};
 use txoo::proof::TxoProof;
 
-use super::key_utils::{
-    make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
-};
 use crate::chain::tracker::{ChainListener, Headers};
 use crate::channel::{
     Channel, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, ChannelStub, CommitmentType,
@@ -69,6 +67,9 @@ use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
 use crate::wallet::Wallet;
 use crate::Arc;
+use key::{
+    make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
+};
 
 // Status assertions:
 

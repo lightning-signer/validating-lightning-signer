@@ -13,8 +13,8 @@ mod tests {
 
     use crate::channel::{ChannelBase, ChannelSetup, CommitmentType};
     use crate::policy::validator::ChainState;
-    use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
+    use crate::util::test_utils::key::*;
     use crate::util::test_utils::*;
 
     use paste::paste;

@@ -17,8 +17,8 @@ mod tests {
     use crate::policy::error::policy_error;
     use crate::policy::validator::ChainState;
     use crate::tx::tx::HTLCInfo2;
-    use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
+    use crate::util::test_utils::key::*;
     use crate::util::test_utils::*;
 
     use paste::paste;

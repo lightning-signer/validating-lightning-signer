@@ -9,8 +9,8 @@ mod tests {
     use test_log::test;
 
     use crate::channel::{Channel, CommitmentType};
-    use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
+    use crate::util::test_utils::key::*;
     use crate::util::test_utils::*;
 
     // TODO - policy-v2-commitment-retry-same (tx)
