@@ -1662,6 +1662,16 @@ impl Node {
         Ok(self.get_wallet_privkey(secp_ctx, child_path)?.public_key(secp_ctx))
     }
 
+    /// Check the submitted wallet pubkey
+    pub fn check_wallet_pubkey(
+        &self,
+        child_path: &[u32],
+        pubkey: bitcoin::PublicKey,
+    ) -> Result<bool, Status> {
+        let secp_ctx = Secp256k1::signing_only();
+        Ok(self.get_wallet_pubkey(&secp_ctx, child_path)? == pubkey)
+    }
+
     /// Get shutdown_pubkey to use as PublicKey at channel closure
     // FIXME - this method is deprecated
     pub fn get_ldk_shutdown_scriptpubkey(&self) -> ShutdownScript {
@@ -2870,6 +2880,41 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let xpub = node.get_account_extended_pubkey();
         assert_eq!(format!("{}", xpub), "tpubDAu312RD7nE6R9qyB4xJk9QAMyi3ppq3UJ4MMUGpB9frr6eNDd8FJVPw27zTVvWAfYFVUtJamgfh5ZLwT23EcymYgLx7MHsU8zZxc9L3GKk");
+    }
+
+    #[test]
+    fn check_wallet_pubkey_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        assert_eq!(
+            node.check_wallet_pubkey(
+                &vec![1],
+                bitcoin::PublicKey::from_slice(
+                    hex_decode(
+                        "0330febba06ba074378dec994669cf5ebf6b15e24a04ec190fb93a9482e841a0ca"
+                    )
+                    .unwrap()
+                    .as_slice()
+                )
+                .unwrap()
+            )
+            .unwrap(),
+            false,
+        );
+        assert_eq!(
+            node.check_wallet_pubkey(
+                &vec![1],
+                bitcoin::PublicKey::from_slice(
+                    hex_decode(
+                        "0207ec2b35534712d86ae030dd9bfaec08e2ddea1ec1cecffb9725ed7acb12ab66"
+                    )
+                    .unwrap()
+                    .as_slice()
+                )
+                .unwrap()
+            )
+            .unwrap(),
+            true,
+        );
     }
 
     #[test]

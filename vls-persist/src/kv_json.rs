@@ -288,6 +288,9 @@ impl<'a> Persist for KVJsonPersister<'a> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(dead_code)]
+    #![allow(unused_imports)]
+
     use alloc::sync::Arc;
 
     use lightning::chain::keysinterface::InMemorySigner;
