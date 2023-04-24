@@ -17,8 +17,8 @@ mod tests {
     use crate::node::{Node, NodeMonitor};
     use crate::sync::Arc;
     use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
-    use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
+    use crate::util::test_utils::key::*;
     use crate::util::test_utils::*;
     use crate::util::transaction_utils::mutual_close_tx_weight;
 

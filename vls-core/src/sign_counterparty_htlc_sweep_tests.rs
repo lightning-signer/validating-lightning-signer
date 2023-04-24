@@ -11,8 +11,8 @@ mod tests {
     use crate::node::SpendType::{P2shP2wpkh, P2wpkh};
     use crate::policy::validator::ChainState;
     use crate::sign_counterparty_htlc_sweep_tests::tests::HTLCKind::{OfferedHTLC, ReceivedHTLC};
-    use crate::util::key_utils::make_test_pubkey;
     use crate::util::status::{Code, Status};
+    use crate::util::test_utils::key::make_test_pubkey;
     use crate::util::test_utils::*;
 
     #[derive(PartialEq, Debug)]

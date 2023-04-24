@@ -742,7 +742,7 @@ mod tests {
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
 
     use crate::channel::CommitmentType;
-    use crate::util::key_utils::make_test_pubkey;
+    use crate::util::test_utils::key::make_test_pubkey;
     use crate::util::test_utils::{hex_encode, make_test_channel_keys, make_test_channel_setup};
 
     use super::*;

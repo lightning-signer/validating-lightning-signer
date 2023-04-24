@@ -22,8 +22,8 @@ mod tests {
     use crate::tx::script::get_to_countersignatory_with_anchors_redeemscript;
     use crate::tx::tx::HTLCInfo2;
     use crate::util::crypto_utils::payload_for_p2wpkh;
-    use crate::util::key_utils::*;
     use crate::util::status::{Code, Status};
+    use crate::util::test_utils::key::*;
     use crate::util::test_utils::*;
 
     use crate::node::Node;

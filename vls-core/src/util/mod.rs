@@ -4,6 +4,8 @@ pub mod byte_utils;
 pub mod clock;
 /// Cryptographic utilities
 pub mod crypto_utils;
+/// Invoice utilities
+pub mod invoice_utils;
 /// Logging macros
 #[macro_use]
 #[allow(unused_macros)]
@@ -21,9 +23,6 @@ pub mod test_logger;
 #[cfg(any(test, feature = "test_utils"))]
 #[macro_use]
 pub mod test_utils;
-#[allow(missing_docs)]
-/// Key utilities
-pub mod key_utils;
 #[cfg(test)]
 pub(crate) mod mocks;
 /// serde for foreign types

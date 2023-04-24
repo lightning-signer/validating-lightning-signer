@@ -6,6 +6,7 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::convert::TryInto;
+use core::str::FromStr;
 
 use bitcoin::blockdata::script;
 use bitcoin::consensus::{deserialize, serialize};
@@ -23,11 +24,11 @@ use lightning_signer::bitcoin::{OutPoint, Transaction, Witness};
 use lightning_signer::channel::{
     ChannelBalance, ChannelBase, ChannelId, ChannelSetup, TypedSignature,
 };
+use lightning_signer::invoice::Invoice;
 use lightning_signer::lightning::ln::chan_utils::{
     derive_public_revocation_key, ChannelPublicKeys,
 };
 use lightning_signer::lightning::ln::PaymentHash;
-use lightning_signer::lightning_invoice::SignedRawInvoice;
 use lightning_signer::node::{Node, NodeConfig, NodeMonitor, NodeServices, SpendType};
 use lightning_signer::persist::Mutations;
 use lightning_signer::prelude::Mutex;
@@ -300,10 +301,9 @@ impl Handler for RootHandler {
             Message::PreapproveInvoice(m) => {
                 let invstr = String::from_utf8(m.invstring.0)
                     .map_err(|e| Status::invalid_argument(e.to_string()))?;
-                let signed = invstr
-                    .parse::<SignedRawInvoice>()
+                let invoice = Invoice::from_str(&invstr)
                     .map_err(|e| Status::invalid_argument(e.to_string()))?;
-                let result = self.approver.handle_proposed_invoice(&self.node, signed)?;
+                let result = self.approver.handle_proposed_invoice(&self.node, invoice)?;
                 Ok(Box::new(PreapproveInvoiceReply { result }))
             }
             Message::PreapproveKeysend(m) => {

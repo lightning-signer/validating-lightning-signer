@@ -4,6 +4,7 @@
 
 use std::rc::Rc;
 use core::cell::RefCell;
+use core::convert::TryInto;
 
 use lightning_signer::bitcoin;
 use lightning_signer::lightning;
@@ -1090,7 +1091,7 @@ pub fn send_along_route<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, route: Route
             .sign_invoice(&hrp, &data).expect("sign invoice");
         let signed_invoice = invoice.sign::<_, ()>(|_| Ok(sig)).unwrap();
 
-        origin_node.keys_manager.add_invoice(signed_invoice);
+        origin_node.keys_manager.add_invoice(signed_invoice.try_into().unwrap());
     }
 
     send_along_route_with_secret(origin_node, route, &[expected_route], recv_value, our_payment_hash, our_payment_secret);

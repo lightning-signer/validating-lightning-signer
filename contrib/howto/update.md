@@ -98,16 +98,14 @@ change/erase/revert something this is a good time to do it.
 
 If you do want to alter CLN state on the `CLNHOST`:
 ```
-sudo su cln
-cd /home/cln/.lightning
+sudo -u cln bash -c 'cd ~/.lightning && exec bash'
 # do stuff
 exit
 ```
 
 If you do want to alter VLS signer state on the `VLSHOST`:
 ```
-sudo su vls
-cd /home/vls/.lightning-signer
+sudo -u vls bash -c 'cd ~/.lightning-signer && exec bash'
 # do stuff
 exit
 ```

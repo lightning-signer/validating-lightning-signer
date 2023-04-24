@@ -1,6 +1,7 @@
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
+use core::convert::TryInto;
 use core::time::Duration;
 
 use bitcoin::bech32::{u5, FromBase32, ToBase32};
@@ -15,9 +16,10 @@ use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
 use lightning_signer::bitcoin;
 use lightning_signer::channel::{Channel, ChannelBase, ChannelSetup, CommitmentType};
+use lightning_signer::invoice::Invoice;
 use lightning_signer::lightning;
 use lightning_signer::lightning_invoice::{
-    Currency, InvoiceBuilder, RawDataPart, RawHrp, RawInvoice, SignedRawInvoice,
+    Currency, InvoiceBuilder, RawDataPart, RawHrp, RawInvoice,
 };
 use lightning_signer::node::{Node, NodeConfig, NodeServices, SpendType};
 use lightning_signer::persist::{DummyPersister, Persist};
@@ -124,17 +126,13 @@ pub fn make_test_channel_setup(
     }
 }
 
-fn make_test_invoice(
-    payee: &Arc<Node>,
-    description: &str,
-    payment_hash: PaymentHash,
-) -> SignedRawInvoice {
+fn make_test_invoice(payee: &Arc<Node>, description: &str, payment_hash: PaymentHash) -> Invoice {
     let (hrp_bytes, invoice_data) = build_test_invoice(description, &payment_hash);
     let hrp: RawHrp = String::from_utf8(hrp_bytes.to_vec()).expect("utf8").parse().expect("hrp");
     let data = RawDataPart::from_base32(&invoice_data).expect("base32");
     let raw_invoice = RawInvoice { hrp, data };
     let sig = payee.sign_invoice(&hrp_bytes, &invoice_data).unwrap();
-    raw_invoice.sign::<_, ()>(|_| Ok(sig)).unwrap()
+    raw_invoice.sign::<_, ()>(|_| Ok(sig)).unwrap().try_into().expect("invoice")
 }
 
 fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>, Vec<u5>) {

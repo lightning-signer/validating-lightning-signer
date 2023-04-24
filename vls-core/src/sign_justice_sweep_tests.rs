@@ -12,8 +12,8 @@ mod tests {
     use crate::node::SpendType::{P2shP2wpkh, P2wpkh};
     use crate::policy::validator::ChainState;
     use crate::util::crypto_utils::derive_public_key;
-    use crate::util::key_utils::{make_test_key, make_test_pubkey};
     use crate::util::status::{Code, Status};
+    use crate::util::test_utils::key::{make_test_key, make_test_pubkey};
     use crate::util::test_utils::*;
 
     fn make_test_justice_sweep_tx(

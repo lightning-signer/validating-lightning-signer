@@ -15,7 +15,7 @@ use crate::policy::error::unknown_destinations_error;
 use crate::policy::filter::{FilterResult, PolicyFilter};
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
-use crate::policy::{Policy, MAX_CHANNELS, MAX_INVOICES, DEFAULT_FEE_VELOCITY_CONTROL};
+use crate::policy::{Policy, DEFAULT_FEE_VELOCITY_CONTROL, MAX_CHANNELS, MAX_INVOICES};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
@@ -1870,7 +1870,7 @@ mod tests {
     use test_log::test;
 
     use crate::tx::tx::HTLCInfo2;
-    use crate::util::key_utils::*;
+    use crate::util::test_utils::key::*;
     use crate::util::test_utils::*;
 
     use super::*;
