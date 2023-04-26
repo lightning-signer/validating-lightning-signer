@@ -47,6 +47,7 @@ pub trait Validator {
     ///
     /// * `channels` the funded channel for each funding output, or
     ///   None for change outputs
+    /// * `input_txs` - previous tx for inputs when funding channel
     /// * `values_sat` - the amount in satoshi per input
     /// * `opaths` - derivation path per output.  Empty for non-wallet/non-xpub-whitelist
     ///   outputs.

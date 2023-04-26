@@ -469,16 +469,12 @@ impl Handler for RootHandler {
                     }
                 }
 
+                // Collect input transactions for channel funding validation.  The
+                // input tx are matched by txid, order and gaps are not important.
                 let input_txs: Vec<&Transaction> = psbt
                     .inputs
                     .iter()
-                    .enumerate()
-                    .map(|(ndx, psbt_in)| {
-                        psbt_in
-                            .non_witness_utxo
-                            .as_ref()
-                            .unwrap_or_else(|| panic!("missing input tx for input {}", ndx))
-                    })
+                    .filter_map(|psbt_in| psbt_in.non_witness_utxo.as_ref())
                     .collect();
 
                 debug_vals!(opaths, tx.txid(), tx, psbt, input_txs);
