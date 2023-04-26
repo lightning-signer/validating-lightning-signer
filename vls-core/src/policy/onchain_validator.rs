@@ -104,11 +104,12 @@ impl Validator for OnchainValidator {
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         tx: &Transaction,
+        input_txs: &Vec<&Transaction>,
         values_sat: &[u64],
         opaths: &[Vec<u32>],
         weight: usize,
     ) -> Result<u64, ValidationError> {
-        self.inner.validate_onchain_tx(wallet, channels, tx, values_sat, opaths, weight)
+        self.inner.validate_onchain_tx(wallet, channels, tx, input_txs, values_sat, opaths, weight)
     }
 
     fn decode_commitment_tx(

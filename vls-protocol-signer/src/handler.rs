@@ -468,10 +468,25 @@ impl Handler for RootHandler {
                         psbt_in.final_script_sig = Some(script_sig);
                     }
                 }
-                debug_vals!(opaths, tx.txid(), tx, psbt);
+
+                let input_txs: Vec<&Transaction> = psbt
+                    .inputs
+                    .iter()
+                    .enumerate()
+                    .map(|(ndx, psbt_in)| {
+                        psbt_in
+                            .non_witness_utxo
+                            .as_ref()
+                            .unwrap_or_else(|| panic!("missing input tx for input {}", ndx))
+                    })
+                    .collect();
+
+                debug_vals!(opaths, tx.txid(), tx, psbt, input_txs);
+
                 let approved = self.approver.handle_proposed_onchain(
                     &self.node,
                     &tx,
+                    &input_txs,
                     &values_sat,
                     &spendtypes,
                     &uniclosekeys,

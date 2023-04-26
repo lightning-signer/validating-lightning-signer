@@ -6,6 +6,8 @@ use bitcoin::secp256k1::PublicKey;
 use bitcoin::{EcdsaSighashType, Script, Transaction, TxOut, VarInt};
 use lightning::ln::chan_utils::make_funding_redeemscript;
 
+use log::*;
+
 /// The maximum value of an input or output in milli satoshi
 pub const MAX_VALUE_MSAT: u64 = 21_000_000_0000_0000_000;
 
@@ -128,6 +130,42 @@ pub(crate) fn add_holder_sig(
     }
 
     tx.input[0].witness.push(funding_redeemscript.as_bytes().to_vec());
+}
+
+pub(crate) fn is_tx_non_malleable(tx: &Transaction, input_txs: &Vec<&Transaction>) -> bool {
+    // Index the input_txs by their txid
+    let in_tx_map: OrderedMap<_, _> =
+        input_txs.iter().map(|in_tx| (in_tx.txid(), *in_tx)).collect();
+
+    // Lookup each input's previous output and make sure they are all native-segwit.
+    for inp in &tx.input {
+        match in_tx_map.get(&inp.previous_output.txid) {
+            None => {
+                debug!("in_tx_map: {:#?}, tx: {:#?}", &in_tx_map, &tx);
+                warn!("input tx for {:?} not found", inp.previous_output);
+                return false; // consider broken to be malleable
+            }
+            Some(in_tx) => {
+                match in_tx.output.get(*&inp.previous_output.vout as usize) {
+                    None => {
+                        debug!("in_tx_map: {:#?}, tx: {:#?}", &in_tx_map, &tx);
+                        warn!("output for {:?} not found", inp.previous_output);
+                        return false; // consider broken to be malleable
+                    }
+                    Some(txout) =>
+                        if !txout.script_pubkey.is_witness_program() {
+                            debug!("in_tx_map: {:#?}, tx: {:#?}", &in_tx_map, &tx);
+                            warn!(
+                                "previous_outpoint {:?} is not native-segwit",
+                                inp.previous_output
+                            );
+                            return false;
+                        },
+                }
+            }
+        }
+    }
+    true
 }
 
 #[cfg(test)]

@@ -47,6 +47,10 @@ Some controls will change with the evolution of the Lightning protocol - e.g.
 * Format - the transaction fields must be standard (e.g. version field) <br>
   `policy-onchain-format-standard`
 
+* Non-malleable - an onchain transaction which funds one or more channels must
+  not have any non-segwit inputs. <br>
+  `policy-onchain-funding-non-malleable`
+
 ## Validating a Commitment Transaction
 
 Before we sign a counterparty commitment transaction or accept the signature on a holder commitment transaction, the following controls are checked.
