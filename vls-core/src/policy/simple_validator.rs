@@ -15,7 +15,9 @@ use crate::policy::error::unknown_destinations_error;
 use crate::policy::filter::{FilterResult, PolicyFilter};
 use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
-use crate::policy::{Policy, DEFAULT_FEE_VELOCITY_CONTROL, MAX_CHANNELS, MAX_INVOICES};
+use crate::policy::{
+    Policy, DEFAULT_FEE_VELOCITY_CONTROL, MAX_CHANNELS, MAX_INVOICES, MAX_ONCHAIN_TX_SIZE,
+};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
@@ -466,6 +468,16 @@ impl Validator for SimpleValidator {
 
         if tx.version != 2 {
             policy_err!(self, "policy-onchain-format-standard", "invalid version: {}", tx.version);
+        }
+
+        if tx.size() > MAX_ONCHAIN_TX_SIZE {
+            policy_err!(
+                self,
+                "policy-onchain-max-size",
+                "tx too large: {} > {}",
+                tx.size(),
+                MAX_ONCHAIN_TX_SIZE
+            );
         }
 
         if channels.iter().any(|c| c.is_some()) && !is_tx_non_malleable(tx, input_txs) {
