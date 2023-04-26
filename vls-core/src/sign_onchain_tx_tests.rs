@@ -485,16 +485,15 @@ mod tests {
         let change1 = incoming0 + incoming1 - allowlist - channel_amount - fee - change0;
 
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
-        let mut tx_ctx = test_funding_tx_ctx();
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming0);
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 2, incoming1);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change0);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change1);
-        funding_tx_add_allowlist_output(&node_ctx, &mut tx_ctx, stype, 42, allowlist);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        let mut tx_ctx = TestFundingTxContext::new();
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming0);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 2, incoming1);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change0);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change1);
+        tx_ctx.add_allowlist_output(&node_ctx, stype, 42, allowlist);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let mut tx = funding_tx_from_ctx(&tx_ctx);
+        let mut tx = tx_ctx.to_tx();
 
         mutate_funding_tx(&mut FundingTxMutationState {
             chan_ctx: &mut chan_ctx,
@@ -513,8 +512,8 @@ mod tests {
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
             .expect("valid holder commitment");
 
-        let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx)?;
-        funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+        let witvec = tx_ctx.sign(&node_ctx, &tx)?;
+        tx_ctx.validate_sig(&node_ctx, &mut tx, &witvec);
 
         Ok(())
     }
@@ -656,14 +655,13 @@ mod tests {
         let change = incoming - channel_amount - fee;
 
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let mut tx = funding_tx_from_ctx(&tx_ctx);
+        let mut tx = tx_ctx.to_tx();
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
@@ -676,13 +674,13 @@ mod tests {
         match stype {
             SpendType::P2shP2wpkh => {
                 assert_failed_precondition_err!(
-                    funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+                    tx_ctx.sign(&node_ctx, &tx),
                     "policy failure: validate_onchain_tx: funding tx has non-segwit-native input"
                 );
             }
             SpendType::P2wpkh => {
-                let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
-                funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+                let witvec = tx_ctx.sign(&node_ctx, &tx).expect("witvec");
+                tx_ctx.validate_sig(&node_ctx, &mut tx, &witvec);
 
                 // weight_lower_bound from node debug is: 612 and 608
                 assert_eq!(tx.weight(), 610);
@@ -713,16 +711,15 @@ mod tests {
         let change = incoming0 + incoming1 - channel_amount - fee;
 
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming0);
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 2, incoming1);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming0);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 2, incoming1);
 
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let mut tx = funding_tx_from_ctx(&tx_ctx);
+        let mut tx = tx_ctx.to_tx();
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
@@ -732,8 +729,8 @@ mod tests {
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
             .expect("valid holder commitment");
 
-        let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
-        funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+        let witvec = tx_ctx.sign(&node_ctx, &tx).expect("witvec");
+        tx_ctx.validate_sig(&node_ctx, &mut tx, &witvec);
 
         // weight_lower_bound from node debug is 880
         assert_eq!(tx.weight(), 881);
@@ -751,16 +748,15 @@ mod tests {
         let change = incoming0 + incoming1 - channel_amount - fee;
 
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming0);
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 2, incoming1);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming0);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 2, incoming1);
 
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let tx = funding_tx_from_ctx(&tx_ctx);
+        let tx = tx_ctx.to_tx();
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
@@ -773,7 +769,7 @@ mod tests {
         tx_ctx.input_txs.clear(); // Remove the input_txs
 
         assert_failed_precondition_err!(
-            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            tx_ctx.sign(&node_ctx, &tx),
             "policy failure: validate_onchain_tx: funding tx has non-segwit-native input"
         );
     }
@@ -790,22 +786,20 @@ mod tests {
         let change = incoming0 + incoming1 - channel_amount - fee;
 
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming0);
-        funding_tx_add_wallet_input(
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming0);
+        tx_ctx.add_wallet_input(
             &node_ctx,
-            &mut tx_ctx,
             SpendType::P2pkh, // not segwit!
             2,
             incoming1,
         );
 
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let tx = funding_tx_from_ctx(&tx_ctx);
+        let tx = tx_ctx.to_tx();
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
@@ -816,7 +810,7 @@ mod tests {
             .expect("valid holder commitment");
 
         assert_failed_precondition_err!(
-            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            tx_ctx.sign(&node_ctx, &tx),
             "policy failure: validate_onchain_tx: funding tx has non-segwit-native input"
         );
     }
@@ -833,15 +827,14 @@ mod tests {
         let change1 = incoming - channel_amount - fee - change0;
 
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change0);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change1);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change0);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change1);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let mut tx = funding_tx_from_ctx(&tx_ctx);
+        let mut tx = tx_ctx.to_tx();
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
@@ -851,8 +844,8 @@ mod tests {
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
             .expect("valid holder commitment");
 
-        let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
-        funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+        let witvec = tx_ctx.sign(&node_ctx, &tx).expect("witvec");
+        tx_ctx.validate_sig(&node_ctx, &mut tx, &witvec);
     }
 
     #[test]
@@ -867,15 +860,14 @@ mod tests {
         let change1 = incoming - channel_amount - fee - change0;
 
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change0);
-        funding_tx_add_allowlist_output(&node_ctx, &mut tx_ctx, stype, 42, change1);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change0);
+        tx_ctx.add_allowlist_output(&node_ctx, stype, 42, change1);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let mut tx = funding_tx_from_ctx(&tx_ctx);
+        let mut tx = tx_ctx.to_tx();
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
@@ -885,8 +877,8 @@ mod tests {
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
             .expect("valid holder commitment");
 
-        let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
-        funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+        let witvec = tx_ctx.sign(&node_ctx, &tx).expect("witvec");
+        tx_ctx.validate_sig(&node_ctx, &mut tx, &witvec);
     }
 
     #[test]
@@ -902,18 +894,16 @@ mod tests {
 
         let mut chan_ctx0 = test_chan_ctx(&node_ctx, 1, channel_amount0);
         let mut chan_ctx1 = test_chan_ctx(&node_ctx, 2, channel_amount1);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
 
-        let outpoint_ndx0 =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx0, &mut tx_ctx, channel_amount0);
+        let outpoint_ndx0 = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx0, channel_amount0);
 
-        let outpoint_ndx1 =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx1, &mut tx_ctx, channel_amount1);
+        let outpoint_ndx1 = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx1, channel_amount1);
 
-        let mut tx = funding_tx_from_ctx(&tx_ctx);
+        let mut tx = tx_ctx.to_tx();
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
@@ -930,8 +920,8 @@ mod tests {
         validate_holder_commitment(&node_ctx, &chan_ctx1, &commit_tx_ctx1, &csig1, &hsigs1)
             .expect("valid holder commitment");
 
-        let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
-        funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+        let witvec = tx_ctx.sign(&node_ctx, &tx).expect("witvec");
+        tx_ctx.validate_sig(&node_ctx, &mut tx, &witvec);
     }
 
     // policy-onchain-initial-commitment-countersigned
@@ -948,18 +938,16 @@ mod tests {
 
         let mut chan_ctx0 = test_chan_ctx(&node_ctx, 1, channel_amount0);
         let mut chan_ctx1 = test_chan_ctx(&node_ctx, 2, channel_amount1);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
 
-        let outpoint_ndx0 =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx0, &mut tx_ctx, channel_amount0);
+        let outpoint_ndx0 = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx0, channel_amount0);
 
-        let outpoint_ndx1 =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx1, &mut tx_ctx, channel_amount1);
+        let outpoint_ndx1 = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx1, channel_amount1);
 
-        let tx = funding_tx_from_ctx(&tx_ctx);
+        let tx = tx_ctx.to_tx();
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
@@ -973,7 +961,7 @@ mod tests {
         // Don't validate the second channel's holder commitment.
 
         assert_failed_precondition_err!(
-            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            tx_ctx.sign(&node_ctx, &tx),
             "policy failure: validate_onchain_tx: initial holder commitment not validated"
         );
     }
@@ -992,15 +980,14 @@ mod tests {
         let change = incoming - channel_amount - unknown - fee;
 
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
-        funding_tx_add_unknown_output(&node_ctx, &mut tx_ctx, stype, 42, unknown);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
+        tx_ctx.add_unknown_output(&node_ctx, stype, 42, unknown);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let tx = funding_tx_from_ctx(&tx_ctx);
+        let tx = tx_ctx.to_tx();
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
@@ -1011,10 +998,7 @@ mod tests {
             .expect("valid holder commitment");
 
         // Because the channel isn't found the output is considered non-beneficial.
-        assert_failed_precondition_err!(
-            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "unknown destinations:  [1]"
-        );
+        assert_failed_precondition_err!(tx_ctx.sign(&node_ctx, &tx), "unknown destinations:  [1]");
     }
 
     #[test]
@@ -1028,14 +1012,13 @@ mod tests {
         let change = incoming - channel_amount - fee;
 
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let tx = funding_tx_from_ctx(&tx_ctx);
+        let tx = tx_ctx.to_tx();
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
@@ -1048,7 +1031,7 @@ mod tests {
         tx_ctx.ipaths[0] = vec![42, 42]; // bad input path
 
         assert_invalid_argument_err!(
-            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            tx_ctx.sign(&node_ctx, &tx),
             "get_wallet_key: bad child_path len : 2"
         );
     }
@@ -1064,21 +1047,20 @@ mod tests {
         let change = incoming - channel_amount - fee;
 
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let tx = funding_tx_from_ctx(&tx_ctx);
+        let tx = tx_ctx.to_tx();
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         tx_ctx.opaths[0] = vec![42, 42]; // bad output path
 
         assert_failed_precondition_err!(
-            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            tx_ctx.sign(&node_ctx, &tx),
             "policy failure: output[0]: wallet_can_spend error: \
              status: InvalidArgument, message: \"get_wallet_key: bad child_path len : 2\""
         );
@@ -1095,14 +1077,13 @@ mod tests {
         let change = incoming - channel_amount - fee;
 
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let mut tx = funding_tx_from_ctx(&tx_ctx);
+        let mut tx = tx_ctx.to_tx();
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
@@ -1111,10 +1092,7 @@ mod tests {
 
         // Because the amount is bogus, the channel isn't found and the output is considered
         // non-beneficial.
-        assert_failed_precondition_err!(
-            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "unknown destinations:  [1]"
-        );
+        assert_failed_precondition_err!(tx_ctx.sign(&node_ctx, &tx), "unknown destinations:  [1]");
     }
 
     #[test]
@@ -1128,14 +1106,13 @@ mod tests {
         let change = incoming - channel_amount - fee;
 
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let mut tx = funding_tx_from_ctx(&tx_ctx);
+        let mut tx = tx_ctx.to_tx();
 
         // Modify the output value before funding_tx_ready_channel
         tx.output[1].value = channel_amount + 42; // bad output value
@@ -1143,7 +1120,7 @@ mod tests {
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         assert_failed_precondition_err!(
-            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            tx_ctx.sign(&node_ctx, &tx),
             "policy failure: validate_onchain_tx: \
              funding output amount mismatch w/ channel: 3000042 != 3000000"
         );
@@ -1159,15 +1136,14 @@ mod tests {
         let fee = 1000;
         let change = incoming - channel_amount - fee;
 
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let mut tx = funding_tx_from_ctx(&tx_ctx);
+        let mut tx = tx_ctx.to_tx();
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
@@ -1179,10 +1155,7 @@ mod tests {
 
         // Because the script is bogus, the channel isn't found and the output is considered
         // non-beneficial.
-        assert_failed_precondition_err!(
-            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
-            "unknown destinations:  [1]"
-        );
+        assert_failed_precondition_err!(tx_ctx.sign(&node_ctx, &tx), "unknown destinations:  [1]");
     }
 
     // policy-onchain-output-scriptpubkey
@@ -1197,14 +1170,13 @@ mod tests {
         let change = incoming - channel_amount - fee;
 
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let mut tx = funding_tx_from_ctx(&tx_ctx);
+        let mut tx = tx_ctx.to_tx();
 
         // very bogus script
         tx.output[1].script_pubkey = Builder::new()
@@ -1215,7 +1187,7 @@ mod tests {
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         assert_failed_precondition_err!(
-            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            tx_ctx.sign(&node_ctx, &tx),
             "policy failure: validate_onchain_tx: funding script_pubkey mismatch w/ channel: Script(OP_0 OP_PUSHBYTES_32 1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b) != Script(OP_0 OP_PUSHBYTES_32 738b77057fb1636913da743e18f0510a261dca80dd61e2852852e62e9aa334d9)"
         );
     }
@@ -1233,14 +1205,13 @@ mod tests {
         let push_val_msat = 300_000 * 1000;
 
         let mut chan_ctx = test_chan_ctx_with_push_val(&node_ctx, 1, channel_amount, push_val_msat);
-        let mut tx_ctx = test_funding_tx_ctx();
+        let mut tx_ctx = TestFundingTxContext::new();
 
-        funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming);
-        funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
-        let outpoint_ndx =
-            funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-        let tx = funding_tx_from_ctx(&tx_ctx);
+        let tx = tx_ctx.to_tx();
 
         funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
@@ -1251,7 +1222,7 @@ mod tests {
             .expect("valid holder commitment");
 
         assert_failed_precondition_err!(
-            funding_tx_sign(&node_ctx, &tx_ctx, &tx),
+            tx_ctx.sign(&node_ctx, &tx),
             "policy failure: validate_onchain_tx: \
              channel push not allowed: dual-funding not supported yet"
         );

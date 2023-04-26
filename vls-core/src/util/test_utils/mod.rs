@@ -699,116 +699,156 @@ pub fn set_next_counterparty_revoke_num_for_testing(
         .unwrap();
 }
 
-pub fn test_funding_tx_ctx() -> TestFundingTxContext {
-    TestFundingTxContext {
-        inputs: vec![],
-        ipaths: vec![],
-        ivals: vec![],
-        ispnds: vec![],
-        iuckeys: vec![],
-        outputs: vec![],
-        opaths: vec![],
-        input_txs: vec![],
+impl TestFundingTxContext {
+    pub fn new() -> Self {
+        TestFundingTxContext {
+            inputs: vec![],
+            ipaths: vec![],
+            ivals: vec![],
+            ispnds: vec![],
+            iuckeys: vec![],
+            outputs: vec![],
+            opaths: vec![],
+            input_txs: vec![],
+        }
     }
-}
 
-pub fn funding_tx_add_wallet_input(
-    node_ctx: &TestNodeContext,
-    tx_ctx: &mut TestFundingTxContext,
-    spendtype: SpendType,
-    wallet_ndx: u32,
-    value_sat: u64,
-) {
-    let (input_tx, txin) = make_test_funding_wallet_input(
-        &node_ctx.secp_ctx,
-        &node_ctx.node,
-        spendtype,
-        wallet_ndx,
-        value_sat,
-    );
-    tx_ctx.inputs.push(txin);
-    tx_ctx.ipaths.push(vec![wallet_ndx]);
-    tx_ctx.ivals.push(value_sat);
-    tx_ctx.ispnds.push(spendtype);
-    tx_ctx.iuckeys.push(None);
-    tx_ctx.input_txs.push(input_tx);
-}
+    pub fn add_wallet_input(
+        &mut self,
+        node_ctx: &TestNodeContext,
+        spendtype: SpendType,
+        wallet_ndx: u32,
+        value_sat: u64,
+    ) {
+        let (input_tx, txin) = make_test_funding_wallet_input(
+            &node_ctx.secp_ctx,
+            &node_ctx.node,
+            spendtype,
+            wallet_ndx,
+            value_sat,
+        );
+        self.inputs.push(txin);
+        self.ipaths.push(vec![wallet_ndx]);
+        self.ivals.push(value_sat);
+        self.ispnds.push(spendtype);
+        self.iuckeys.push(None);
+        self.input_txs.push(input_tx);
+    }
 
-pub fn funding_tx_add_wallet_output(
-    node_ctx: &TestNodeContext,
-    tx_ctx: &mut TestFundingTxContext,
-    spendtype: SpendType,
-    wallet_ndx: u32,
-    value_sat: u64,
-) {
-    tx_ctx.outputs.push(make_test_funding_wallet_output(
-        &node_ctx.secp_ctx,
-        &node_ctx.node,
-        wallet_ndx,
-        value_sat,
-        spendtype,
-    ));
-    tx_ctx.opaths.push(vec![wallet_ndx]);
-}
+    pub fn add_wallet_output(
+        &mut self,
+        node_ctx: &TestNodeContext,
+        spendtype: SpendType,
+        wallet_ndx: u32,
+        value_sat: u64,
+    ) {
+        self.outputs.push(make_test_funding_wallet_output(
+            &node_ctx.secp_ctx,
+            &node_ctx.node,
+            wallet_ndx,
+            value_sat,
+            spendtype,
+        ));
+        self.opaths.push(vec![wallet_ndx]);
+    }
 
-pub fn funding_tx_add_channel_outpoint(
-    node_ctx: &TestNodeContext,
-    chan_ctx: &TestChannelContext,
-    tx_ctx: &mut TestFundingTxContext,
-    value_sat: u64,
-) -> u32 {
-    let ndx = tx_ctx.outputs.len();
-    tx_ctx.outputs.push(make_test_funding_channel_outpoint(
-        &node_ctx.node,
-        &chan_ctx.setup,
-        &chan_ctx.channel_id,
-        value_sat,
-    ));
-    tx_ctx.opaths.push(vec![]);
-    ndx as u32
-}
+    pub fn add_channel_outpoint(
+        &mut self,
+        node_ctx: &TestNodeContext,
+        chan_ctx: &TestChannelContext,
+        value_sat: u64,
+    ) -> u32 {
+        let ndx = self.outputs.len();
+        self.outputs.push(make_test_funding_channel_outpoint(
+            &node_ctx.node,
+            &chan_ctx.setup,
+            &chan_ctx.channel_id,
+            value_sat,
+        ));
+        self.opaths.push(vec![]);
+        ndx as u32
+    }
 
-pub fn funding_tx_add_unknown_output(
-    node_ctx: &TestNodeContext,
-    tx_ctx: &mut TestFundingTxContext,
-    spendtype: SpendType,
-    unknown_ndx: u32,
-    value_sat: u64,
-) {
-    tx_ctx.outputs.push(make_test_funding_wallet_output(
-        &node_ctx.secp_ctx,
-        &node_ctx.node,
-        unknown_ndx + 10_000, // lazy, it's really in the wallet
-        value_sat,
-        spendtype,
-    ));
-    tx_ctx.opaths.push(vec![]); // this is what makes it unknown
-}
+    pub fn add_unknown_output(
+        &mut self,
+        node_ctx: &TestNodeContext,
+        spendtype: SpendType,
+        unknown_ndx: u32,
+        value_sat: u64,
+    ) {
+        self.outputs.push(make_test_funding_wallet_output(
+            &node_ctx.secp_ctx,
+            &node_ctx.node,
+            unknown_ndx + 10_000, // lazy, it's really in the wallet
+            value_sat,
+            spendtype,
+        ));
+        self.opaths.push(vec![]); // this is what makes it unknown
+    }
 
-pub fn funding_tx_add_allowlist_output(
-    node_ctx: &TestNodeContext,
-    tx_ctx: &mut TestFundingTxContext,
-    stype: SpendType,
-    unknown_ndx: u32,
-    value_sat: u64,
-) {
-    let wallet_ndx = unknown_ndx + 10_000; // lazy, it's really in the wallet
-    tx_ctx.outputs.push(make_test_funding_wallet_output(
-        &node_ctx.secp_ctx,
-        &node_ctx.node,
-        wallet_ndx,
-        value_sat,
-        stype,
-    ));
-    tx_ctx.opaths.push(vec![]); // don't consider wallet
-    let child_path = vec![wallet_ndx];
-    let pubkey = node_ctx.node.get_wallet_pubkey(&node_ctx.secp_ctx, &child_path).unwrap();
-    let addr = Address::p2wpkh(&pubkey, node_ctx.node.network()).unwrap();
-    node_ctx.node.add_allowlist(&vec![addr.to_string()]).expect("add_allowlist");
-}
+    pub fn add_allowlist_output(
+        &mut self,
+        node_ctx: &TestNodeContext,
+        stype: SpendType,
+        unknown_ndx: u32,
+        value_sat: u64,
+    ) {
+        let wallet_ndx = unknown_ndx + 10_000; // lazy, it's really in the wallet
+        self.outputs.push(make_test_funding_wallet_output(
+            &node_ctx.secp_ctx,
+            &node_ctx.node,
+            wallet_ndx,
+            value_sat,
+            stype,
+        ));
+        self.opaths.push(vec![]); // don't consider wallet
+        let child_path = vec![wallet_ndx];
+        let pubkey = node_ctx.node.get_wallet_pubkey(&node_ctx.secp_ctx, &child_path).unwrap();
+        let addr = Address::p2wpkh(&pubkey, node_ctx.node.network()).unwrap();
+        node_ctx.node.add_allowlist(&vec![addr.to_string()]).expect("add_allowlist");
+    }
 
-pub fn funding_tx_from_ctx(tx_ctx: &TestFundingTxContext) -> bitcoin::Transaction {
-    make_test_funding_tx_with_ins_outs(tx_ctx.inputs.clone(), tx_ctx.outputs.clone())
+    pub fn to_tx(&self) -> bitcoin::Transaction {
+        make_test_funding_tx_with_ins_outs(self.inputs.clone(), self.outputs.clone())
+    }
+
+    pub fn sign(
+        &self,
+        node_ctx: &TestNodeContext,
+        tx: &bitcoin::Transaction,
+    ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
+        node_ctx.node.check_and_sign_onchain_tx(
+            &tx,
+            &self.input_txs.iter().collect(),
+            &self.ipaths,
+            &self.ivals,
+            &self.ispnds,
+            self.iuckeys.clone(),
+            &self.opaths,
+        )
+    }
+
+    pub fn validate_sig(
+        &mut self,
+        _node_ctx: &TestNodeContext,
+        tx: &mut bitcoin::Transaction,
+        witvec: &[Vec<Vec<u8>>],
+    ) {
+        // Index the input_txs by their txid
+        let in_tx_map: OrderedMap<_, _> =
+            self.input_txs.iter().map(|in_tx| (in_tx.txid(), in_tx)).collect();
+
+        for ndx in 0..tx.input.len() {
+            tx.input[ndx].witness = Witness::from_vec(witvec[ndx].clone())
+        }
+
+        let verify_result = tx.verify(|outpoint| {
+            let in_tx = in_tx_map.get(&outpoint.txid).unwrap();
+            let txout = in_tx.output.get(outpoint.vout as usize).unwrap().clone();
+            Some(txout)
+        });
+        assert!(verify_result.is_ok());
+    }
 }
 
 pub fn funding_tx_ready_channel(
@@ -857,44 +897,6 @@ pub fn synthesize_ready_channel(
         .expect("synthesized channel");
 }
 
-pub fn funding_tx_sign(
-    node_ctx: &TestNodeContext,
-    tx_ctx: &TestFundingTxContext,
-    tx: &bitcoin::Transaction,
-) -> Result<Vec<Vec<Vec<u8>>>, Status> {
-    node_ctx.node.check_and_sign_onchain_tx(
-        &tx,
-        &tx_ctx.input_txs.iter().collect(),
-        &tx_ctx.ipaths,
-        &tx_ctx.ivals,
-        &tx_ctx.ispnds,
-        tx_ctx.iuckeys.clone(),
-        &tx_ctx.opaths,
-    )
-}
-
-pub fn funding_tx_validate_sig(
-    _node_ctx: &TestNodeContext,
-    tx_ctx: &TestFundingTxContext,
-    tx: &mut bitcoin::Transaction,
-    witvec: &[Vec<Vec<u8>>],
-) {
-    // Index the input_txs by their txid
-    let in_tx_map: OrderedMap<_, _> =
-        tx_ctx.input_txs.iter().map(|in_tx| (in_tx.txid(), in_tx)).collect();
-
-    for ndx in 0..tx.input.len() {
-        tx.input[ndx].witness = Witness::from_vec(witvec[ndx].clone())
-    }
-
-    let verify_result = tx.verify(|outpoint| {
-        let in_tx = in_tx_map.get(&outpoint.txid).unwrap();
-        let txout = in_tx.output.get(outpoint.vout as usize).unwrap().clone();
-        Some(txout)
-    });
-    assert!(verify_result.is_ok());
-}
-
 pub fn fund_test_channel(node_ctx: &TestNodeContext, channel_amount: u64) -> TestChannelContext {
     let stype = SpendType::P2wpkh;
     let incoming = channel_amount + 2_000_000;
@@ -902,14 +904,13 @@ pub fn fund_test_channel(node_ctx: &TestNodeContext, channel_amount: u64) -> Tes
     let change = incoming - channel_amount - fee;
 
     let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
-    let mut tx_ctx = test_funding_tx_ctx();
+    let mut tx_ctx = TestFundingTxContext::new();
 
-    funding_tx_add_wallet_input(&node_ctx, &mut tx_ctx, stype, 1, incoming);
-    funding_tx_add_wallet_output(&node_ctx, &mut tx_ctx, stype, 1, change);
-    let outpoint_ndx =
-        funding_tx_add_channel_outpoint(&node_ctx, &chan_ctx, &mut tx_ctx, channel_amount);
+    tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+    tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
+    let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
 
-    let mut tx = funding_tx_from_ctx(&tx_ctx);
+    let mut tx = tx_ctx.to_tx();
 
     funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
@@ -919,8 +920,8 @@ pub fn fund_test_channel(node_ctx: &TestNodeContext, channel_amount: u64) -> Tes
     validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
         .expect("valid holder commitment");
 
-    let witvec = funding_tx_sign(&node_ctx, &tx_ctx, &tx).expect("witvec");
-    funding_tx_validate_sig(&node_ctx, &tx_ctx, &mut tx, &witvec);
+    let witvec = tx_ctx.sign(&node_ctx, &tx).expect("witvec");
+    tx_ctx.validate_sig(&node_ctx, &mut tx, &witvec);
 
     chan_ctx
 }
