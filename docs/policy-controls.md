@@ -203,6 +203,9 @@ These policy controls are also enforced at commitment signing time, but are sepa
 * The amount sent must not be greater than the amount in the invoice.  <br>
   `policy-commitment-payment-invoiced`
 
+* The invoice must not have expired.  <br>
+  `policy-invoice-not-expired`
+
 * Do not route payments through our node. Alternatively implement the "Routing Hub" policies below. <br>
   `policy-no-routing` <br>
   ACTION: implement

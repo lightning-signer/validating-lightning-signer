@@ -152,19 +152,19 @@ fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>
 
 pub fn test_lightning_signer(postscript: fn()) {
     let config = NodeConfig {
-        network: bitcoin::Network::Signet,
+        network: Network::Signet,
         key_derivation_style: KeyDerivationStyle::Native,
         use_checkpoints: false,
     };
     let seed = [0u8; 32];
     let seed1 = [1u8; 32];
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
-    let mut policy = make_simple_policy(Network::Testnet);
+    let mut policy = make_simple_policy(Network::Signet);
     policy.require_invoices = true;
     policy.enforce_balance = true;
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
     let starting_time_factory = FixedStartingTimeFactory::new(1, 1);
-    let clock = Arc::new(ManualClock::new(Duration::ZERO));
+    let clock = Arc::new(ManualClock::new(Duration::from_secs(123456789)));
     let services = NodeServices {
         validator_factory: validator_factory.clone(),
         starting_time_factory,

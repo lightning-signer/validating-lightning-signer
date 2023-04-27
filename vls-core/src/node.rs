@@ -68,6 +68,9 @@ use crate::util::status::{failed_precondition, internal_error, invalid_argument,
 use crate::util::velocity::VelocityControl;
 use crate::wallet::Wallet;
 
+/// Prune invoices expired more than this long ago
+const INVOICE_PRUNE_TIME: Duration = Duration::from_secs(60 * 60 * 24);
+
 /// Node configuration parameters.
 
 #[derive(Copy, Clone, Debug)]
@@ -161,6 +164,11 @@ impl RoutedPayment {
         self.preimage.is_some()
     }
 
+    /// Whether there is no outgoing payment
+    pub fn is_no_outgoing(&self) -> bool {
+        self.outgoing.values().into_iter().sum::<u64>() == 0
+    }
+
     /// The total incoming and outgoing, if this channel updates to the specified values
     pub fn updated_incoming_outgoing(
         &self,
@@ -198,7 +206,9 @@ pub struct NodeState {
     pub invoices: Map<PaymentHash, PaymentState>,
     /// Issued invoices for incoming payments indexed by their payment hash
     pub issued_invoices: Map<PaymentHash, PaymentState>,
-    /// Payment states
+    /// Payment states.
+    /// There is one entry for each invoice.  Entries also exist for HTLCs
+    /// we route.
     pub payments: Map<PaymentHash, RoutedPayment>,
     /// Accumulator of excess payment amount in satoshi, for tracking certain
     /// payment corner cases.
@@ -503,6 +513,50 @@ impl NodeState {
                 payment.preimage = Some(preimage);
             }
         }
+    }
+
+    fn prune_issued_invoices(&mut self, now: Duration) {
+        self.issued_invoices.retain(|_, issued| {
+            issued.duration_since_epoch + issued.expiry_duration + INVOICE_PRUNE_TIME > now
+        });
+    }
+
+    fn prune_invoices(&mut self, now: Duration) {
+        let invoices = &mut self.invoices;
+        let payments = &mut self.payments;
+        let prune: UnorderedSet<_> = invoices
+            .iter_mut()
+            .filter_map(|(hash, payment_state)| {
+                let payments = payments.get(hash).expect("missing payments struct for invoice");
+                if Self::is_invoice_prunable(now, hash, payment_state, payments) {
+                    Some(*hash)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        invoices.retain(|hash, _| !prune.contains(hash));
+        payments.retain(|hash, _| !prune.contains(hash));
+    }
+
+    fn is_invoice_prunable(
+        now: Duration,
+        hash: &PaymentHash,
+        state: &PaymentState,
+        payment: &RoutedPayment,
+    ) -> bool {
+        let is_payment_complete = payment.is_fulfilled() || payment.is_no_outgoing();
+        let is_past_prune_time =
+            now > state.duration_since_epoch + state.expiry_duration + INVOICE_PRUNE_TIME;
+        // warn if past prune time but incomplete
+        if is_past_prune_time && !is_payment_complete {
+            warn!(
+                "invoice {:?} is past prune time but there are still pending outgoing payments",
+                hash
+            );
+        }
+        is_past_prune_time && is_payment_complete
     }
 }
 
@@ -1341,6 +1395,14 @@ impl Node {
     /// Get a signed heartbeat message
     /// The heartbeat is signed with the account master key.
     pub fn get_heartbeat(&self) -> SignedHeartbeat {
+        // we get asked for a heartbeat on a regular basis, so use this
+        // opportunity to prune invoices
+        let mut state = self.get_state();
+        let now = self.clock.now();
+        state.prune_invoices(now);
+        state.prune_issued_invoices(now);
+        drop(state); // minimize lock time
+
         let tracker = self.tracker.lock().unwrap();
         let tip = tracker.tip();
         let current_timestamp = self.clock.now().as_secs() as u32;
@@ -1937,6 +1999,11 @@ impl Node {
     /// public keys can be allowlisted for policy control. Returns true
     /// if the invoice was added, false otherwise.
     pub fn add_invoice(&self, invoice: Invoice) -> Result<bool, Status> {
+        let validator = self.validator();
+        let now = self.clock.now();
+
+        validator.validate_invoice(&invoice, now)?;
+
         let (hash, payment_state, invoice_hash) = Self::payment_state_from_invoice(&invoice)?;
 
         info!(
@@ -1961,8 +2028,7 @@ impl Node {
                 Err(failed_precondition("already have a different invoice for same secret"))
             };
         }
-        let now = self.clock.now().as_secs();
-        if !state.velocity_control.insert(now, payment_state.amount_msat) {
+        if !state.velocity_control.insert(now.as_secs(), payment_state.amount_msat) {
             warn!(
                 "policy-commitment-payment-velocity velocity would be exceeded - += {} = {} > {}",
                 payment_state.amount_msat,
@@ -2203,6 +2269,7 @@ mod tests {
     use lightning::ln::chan_utils::derive_private_key;
     use lightning::ln::{chan_utils, PaymentSecret};
     use lightning_invoice::{Currency, InvoiceBuilder};
+    use std::time::{SystemTime, UNIX_EPOCH};
     use test_log::test;
 
     use crate::channel::ChannelBase;
@@ -2354,17 +2421,29 @@ mod tests {
     }
 
     fn make_test_invoice(
-        payee_node: &Arc<Node>,
+        payee_node: &Node,
         description: &str,
         payment_hash: PaymentHash,
     ) -> Invoice {
-        let (hrp_bytes, invoice_data) = build_test_invoice(description, &payment_hash);
-        payee_node.do_sign_invoice(&hrp_bytes, &invoice_data).unwrap().try_into().unwrap()
+        sign_invoice(payee_node, build_test_invoice(description, &payment_hash))
+    }
+
+    fn sign_invoice(payee_node: &Node, data: (Vec<u8>, Vec<u5>)) -> Invoice {
+        payee_node.do_sign_invoice(&data.0, &data.1).unwrap().try_into().unwrap()
     }
 
     fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>, Vec<u5>) {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("time");
+        build_test_invoice_with_time(description, payment_hash, now)
+    }
+
+    fn build_test_invoice_with_time(
+        description: &str,
+        payment_hash: &PaymentHash,
+        now: Duration,
+    ) -> (Vec<u8>, Vec<u5>) {
         let raw_invoice = InvoiceBuilder::new(Currency::Bitcoin)
-            .duration_since_epoch(Duration::from_secs(123456789))
+            .duration_since_epoch(now)
             .amount_milli_satoshis(100_000)
             .payment_hash(Sha256Hash::from_slice(&payment_hash.0).unwrap())
             .payment_secret(PaymentSecret([0; 32]))
@@ -2426,6 +2505,94 @@ mod tests {
 
         let invoice = make_test_invoice(&payee_node, "invoice", PaymentHash([2u8; 32]));
         node.add_invoice(invoice).expect_err("expected too many invoices");
+    }
+
+    #[test]
+    fn prune_invoice_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let invoice = make_test_invoice(&node, "invoice", PaymentHash([0; 32]));
+        node.add_invoice(invoice.clone()).unwrap();
+        let mut state = node.get_state();
+        assert_eq!(state.invoices.len(), 1);
+        assert_eq!(state.payments.len(), 1);
+        println!("now: {:?}", node.clock.now());
+        println!("invoice time: {:?}", invoice.duration_since_epoch());
+        state.prune_invoices(node.clock.now());
+        assert_eq!(state.invoices.len(), 1);
+        assert_eq!(state.payments.len(), 1);
+        state.prune_invoices(node.clock.now() + Duration::from_secs(3600 * 23));
+        assert_eq!(state.invoices.len(), 1);
+        assert_eq!(state.payments.len(), 1);
+        state.prune_invoices(node.clock.now() + Duration::from_secs(3600 * 25));
+        assert_eq!(state.invoices.len(), 0);
+        assert_eq!(state.payments.len(), 0);
+    }
+
+    #[test]
+    fn prune_invoice_incomplete_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let invoice = make_test_invoice(&node, "invoice", PaymentHash([0; 32]));
+        node.add_invoice(invoice.clone()).unwrap();
+        let mut state = node.get_state();
+        assert_eq!(state.invoices.len(), 1);
+        assert_eq!(state.payments.len(), 1);
+        let chan_id = ChannelId::new(&[0; 32]);
+        state.payments.get_mut(&PaymentHash([0; 32])).unwrap().outgoing.insert(chan_id, 100);
+        state.prune_invoices(node.clock.now());
+        assert_eq!(state.invoices.len(), 1);
+        assert_eq!(state.payments.len(), 1);
+        state.prune_invoices(node.clock.now() + Duration::from_secs(3600 * 25));
+        assert_eq!(state.invoices.len(), 1);
+        assert_eq!(state.payments.len(), 1);
+        state.payments.get_mut(&PaymentHash([0; 32])).unwrap().preimage =
+            Some(PaymentPreimage([0; 32]));
+        state.prune_invoices(node.clock.now() + Duration::from_secs(3600 * 25));
+        assert_eq!(state.invoices.len(), 0);
+        assert_eq!(state.payments.len(), 0);
+    }
+
+    #[test]
+    fn prune_issued_invoice_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let (hrp, data) = build_test_invoice("invoice", &PaymentHash([0; 32]));
+        node.sign_invoice(&hrp, &data).unwrap();
+        let mut state = node.get_state();
+        assert_eq!(state.issued_invoices.len(), 1);
+        state.prune_issued_invoices(node.clock.now());
+        assert_eq!(state.issued_invoices.len(), 1);
+        state.prune_issued_invoices(node.clock.now() + Duration::from_secs(3600 * 23));
+        assert_eq!(state.issued_invoices.len(), 1);
+        state.prune_issued_invoices(node.clock.now() + Duration::from_secs(3600 * 25));
+        assert_eq!(state.issued_invoices.len(), 0);
+    }
+
+    #[test]
+    fn add_expired_invoice_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+
+        let future =
+            SystemTime::now().duration_since(UNIX_EPOCH).expect("time") + Duration::from_secs(3600);
+        let invoice = sign_invoice(
+            &*node,
+            build_test_invoice_with_time("invoice", &PaymentHash([0; 32]), future),
+        );
+        assert!(node
+            .add_invoice(invoice)
+            .unwrap_err()
+            .message()
+            .starts_with("policy failure: validate_invoice: invoice is not yet valid"));
+
+        let past =
+            SystemTime::now().duration_since(UNIX_EPOCH).expect("time") - Duration::from_secs(7200);
+        let invoice = sign_invoice(
+            &*node,
+            build_test_invoice_with_time("invoice", &PaymentHash([0; 32]), past),
+        );
+        assert!(node
+            .add_invoice(invoice)
+            .unwrap_err()
+            .message()
+            .starts_with("policy failure: validate_invoice: invoice is expired"));
     }
 
     #[test]
