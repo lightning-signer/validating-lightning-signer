@@ -39,7 +39,7 @@ impl RecoveryKeys for DirectRecoveryKeys {
     fn sign_onchain_tx(
         &self,
         tx: &Transaction,
-        input_txs: &Vec<&Transaction>,
+        input_txs: &[&Transaction],
         ipaths: &Vec<Vec<u32>>,
         values_sat: &Vec<u64>,
         spendtypes: &Vec<SpendType>,

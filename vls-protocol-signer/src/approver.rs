@@ -113,7 +113,7 @@ pub trait Approve: SendSync {
         &self,
         node: &Arc<Node>,
         tx: &Transaction,
-        input_txs: &Vec<&Transaction>,
+        input_txs: &[&Transaction],
         values_sat: &[u64],
         spendtypes: &[SpendType],
         uniclosekeys: &[Option<(SecretKey, Vec<Vec<u8>>)>],

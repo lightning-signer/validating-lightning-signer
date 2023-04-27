@@ -132,7 +132,7 @@ pub(crate) fn add_holder_sig(
     tx.input[0].witness.push(funding_redeemscript.as_bytes().to_vec());
 }
 
-pub(crate) fn is_tx_non_malleable(tx: &Transaction, input_txs: &Vec<&Transaction>) -> bool {
+pub(crate) fn is_tx_non_malleable(tx: &Transaction, input_txs: &[&Transaction]) -> bool {
     // Index the input_txs by their txid
     let in_tx_map: OrderedMap<_, _> =
         input_txs.iter().map(|in_tx| (in_tx.txid(), *in_tx)).collect();

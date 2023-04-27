@@ -819,7 +819,7 @@ impl TestFundingTxContext {
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
         node_ctx.node.check_and_sign_onchain_tx(
             &tx,
-            &self.input_txs.iter().collect(),
+            &self.input_txs.iter().collect::<Vec<_>>(),
             &self.ipaths,
             &self.ivals,
             &self.ispnds,
