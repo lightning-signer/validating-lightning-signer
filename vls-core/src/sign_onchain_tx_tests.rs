@@ -20,11 +20,46 @@ mod tests {
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
 
+    use crate::policy::error::policy_error;
+    use crate::wallet::Wallet;
     #[allow(unused_imports)]
     use log::debug;
 
     #[test]
-    fn onchain_velocity_test() {
+    fn onchain_size_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let destination = node.get_native_address(&[0]).unwrap();
+        let (tx, opaths) = make_large_tx(&destination, 1050);
+        node.check_onchain_tx(&tx, &vec![], &[0], &[SpendType::P2wpkh], &[None], &opaths)
+            .expect("should have been under size limit");
+        let (tx, opaths) = make_large_tx(&destination, 1060);
+        assert_eq!(
+            node.check_onchain_tx(&tx, &vec![], &[0], &[SpendType::P2wpkh], &[None], &opaths),
+            Err(policy_error("validate_onchain_tx: tx too large: 32913 > 32768"))
+        );
+    }
+
+    fn make_large_tx(destination: &Address, nout: u32) -> (Transaction, Vec<Vec<u32>>) {
+        let output: Vec<_> = (0..nout)
+            .map(|_| TxOut { value: 0, script_pubkey: destination.script_pubkey() })
+            .collect();
+        let opaths: Vec<_> = output.iter().map(|_| vec![0]).collect();
+        let tx = Transaction {
+            version: 2,
+            lock_time: PackedLockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 },
+                script_sig: Script::new(),
+                sequence: Sequence::ZERO,
+                witness: Witness::default(),
+            }],
+            output,
+        };
+        (tx, opaths)
+    }
+
+    #[test]
+    fn onchain_fee_velocity_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let tx = Transaction {
             version: 2,
@@ -43,8 +78,12 @@ mod tests {
             node.check_onchain_tx(&tx, &vec![], &[40000], &[SpendType::P2wpkh], &[None], &[vec![]])
                 .expect("should have been under fee velocity");
         }
-        node.check_onchain_tx(&tx, &vec![], &[40000], &[SpendType::P2wpkh], &[None], &[vec![]])
-            .expect_err("should have been over fee velocity");
+        assert_eq!(
+            node.check_onchain_tx(&tx, &vec![], &[40000], &[SpendType::P2wpkh], &[None], &[vec![]]),
+            Err(policy_error(
+                "check_onchain_tx: fee velocity would be exceeded 1000000 + 40000 > 1000000"
+            ))
+        )
     }
 
     #[test]

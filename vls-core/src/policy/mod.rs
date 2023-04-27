@@ -26,6 +26,9 @@ pub const MAX_CHANNELS: usize = 100;
 /// Default maximum number of outstanding invoices (issued and approved)
 pub const MAX_INVOICES: usize = 1000;
 
+/// The maximum L1 transaction size
+pub const MAX_ONCHAIN_TX_SIZE: usize = 32 * 1024;
+
 /// An enforcement policy
 pub trait Policy {
     /// A policy error has occured.

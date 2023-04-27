@@ -1595,9 +1595,9 @@ impl Node {
             policy_err!(
                 validator,
                 "policy-onchain-fee-range",
-                "fee velocity would be exceeded - += {} = {} > {}",
-                non_beneficial,
+                "fee velocity would be exceeded {} + {} > {}",
                 state.fee_velocity_control.velocity(),
+                non_beneficial,
                 state.fee_velocity_control.limit
             );
         }

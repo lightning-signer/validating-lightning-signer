@@ -293,6 +293,11 @@ or justice sweep transaction, the following controls are checked:
   `policy-sweep-fee-range` <br>
   ACTION: implement
 
+# L1 Transactions
+
+* Maximum size - the transaction must be under a certain size <br>
+  `policy-onchain-max-size`
+
 # Optional Policy Controls
 ## Funding Transaction
 
