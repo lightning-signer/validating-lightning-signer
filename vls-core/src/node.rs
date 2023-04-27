@@ -68,6 +68,9 @@ use crate::util::status::{failed_precondition, internal_error, invalid_argument,
 use crate::util::velocity::VelocityControl;
 use crate::wallet::Wallet;
 
+/// Prune invoices expired more than this long ago
+const INVOICE_PRUNE_TIME: Duration = Duration::from_secs(60 * 60 * 24);
+
 /// Node configuration parameters.
 
 #[derive(Copy, Clone, Debug)]
@@ -161,6 +164,11 @@ impl RoutedPayment {
         self.preimage.is_some()
     }
 
+    /// Whether there is no outgoing payment
+    pub fn is_no_outgoing(&self) -> bool {
+        self.outgoing.values().into_iter().sum::<u64>() == 0
+    }
+
     /// The total incoming and outgoing, if this channel updates to the specified values
     pub fn updated_incoming_outgoing(
         &self,
@@ -198,7 +206,9 @@ pub struct NodeState {
     pub invoices: Map<PaymentHash, PaymentState>,
     /// Issued invoices for incoming payments indexed by their payment hash
     pub issued_invoices: Map<PaymentHash, PaymentState>,
-    /// Payment states
+    /// Payment states.
+    /// There is one entry for each invoice.  Entries also exist for HTLCs
+    /// we route.
     pub payments: Map<PaymentHash, RoutedPayment>,
     /// Accumulator of excess payment amount in satoshi, for tracking certain
     /// payment corner cases.
@@ -503,6 +513,44 @@ impl NodeState {
                 payment.preimage = Some(preimage);
             }
         }
+    }
+
+    fn prune_invoices(&mut self, now: Duration) {
+        let invoices = &mut self.invoices;
+        let payments = &mut self.payments;
+        let prune: UnorderedSet<_> = invoices
+            .iter_mut()
+            .filter_map(|(hash, payment_state)| {
+                let payments = payments.get(hash).expect("missing payments struct for invoice");
+                if Self::is_invoice_prunable(now, hash, payment_state, payments) {
+                    Some(*hash)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        invoices.retain(|hash, _| !prune.contains(hash));
+        payments.retain(|hash, _| !prune.contains(hash));
+    }
+
+    fn is_invoice_prunable(
+        now: Duration,
+        hash: &PaymentHash,
+        state: &PaymentState,
+        payment: &RoutedPayment,
+    ) -> bool {
+        let is_payment_complete = payment.is_fulfilled() || payment.is_no_outgoing();
+        let is_past_prune_time =
+            now > state.duration_since_epoch + state.expiry_duration + INVOICE_PRUNE_TIME;
+        // warn if past prune time but incomplete
+        if is_past_prune_time && !is_payment_complete {
+            warn!(
+                "invoice {:?} is past prune time but there are still pending outgoing payments",
+                hash
+            );
+        }
+        is_past_prune_time && is_payment_complete
     }
 }
 
@@ -1341,6 +1389,10 @@ impl Node {
     /// Get a signed heartbeat message
     /// The heartbeat is signed with the account master key.
     pub fn get_heartbeat(&self) -> SignedHeartbeat {
+        // we get asked for a heartbeat on a regular basis, so use this
+        // opportunity to prune invoices
+        self.prune_invoices();
+
         let tracker = self.tracker.lock().unwrap();
         let tip = tracker.tip();
         let current_timestamp = self.clock.now().as_secs() as u32;
@@ -1353,6 +1405,13 @@ impl Node {
         let ser_heartbeat = heartbeat.encode();
         let sig = self.keys_manager.sign_heartbeat(&ser_heartbeat);
         SignedHeartbeat { signature: sig[..].to_vec(), heartbeat }
+    }
+
+    /// Prune invoices
+    pub fn prune_invoices(&self) {
+        let mut state = self.get_state();
+        let now = self.clock.now();
+        state.prune_invoices(now);
     }
 
     // Check and sign an onchain transaction
@@ -2443,6 +2502,50 @@ mod tests {
 
         let invoice = make_test_invoice(&payee_node, "invoice", PaymentHash([2u8; 32]));
         node.add_invoice(invoice).expect_err("expected too many invoices");
+    }
+
+    #[test]
+    fn prune_invoice_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let invoice = make_test_invoice(&node, "invoice", PaymentHash([0; 32]));
+        node.add_invoice(invoice.clone()).unwrap();
+        let mut state = node.get_state();
+        assert_eq!(state.invoices.len(), 1);
+        assert_eq!(state.payments.len(), 1);
+        println!("now: {:?}", node.clock.now());
+        println!("invoice time: {:?}", invoice.duration_since_epoch());
+        state.prune_invoices(node.clock.now());
+        assert_eq!(state.invoices.len(), 1);
+        assert_eq!(state.payments.len(), 1);
+        state.prune_invoices(node.clock.now() + Duration::from_secs(3600 * 23));
+        assert_eq!(state.invoices.len(), 1);
+        assert_eq!(state.payments.len(), 1);
+        state.prune_invoices(node.clock.now() + Duration::from_secs(3600 * 25));
+        assert_eq!(state.invoices.len(), 0);
+        assert_eq!(state.payments.len(), 0);
+    }
+
+    #[test]
+    fn prune_invoice_incomplete_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let invoice = make_test_invoice(&node, "invoice", PaymentHash([0; 32]));
+        node.add_invoice(invoice.clone()).unwrap();
+        let mut state = node.get_state();
+        assert_eq!(state.invoices.len(), 1);
+        assert_eq!(state.payments.len(), 1);
+        let chan_id = ChannelId::new(&[0; 32]);
+        state.payments.get_mut(&PaymentHash([0; 32])).unwrap().outgoing.insert(chan_id, 100);
+        state.prune_invoices(node.clock.now());
+        assert_eq!(state.invoices.len(), 1);
+        assert_eq!(state.payments.len(), 1);
+        state.prune_invoices(node.clock.now() + Duration::from_secs(3600 * 25));
+        assert_eq!(state.invoices.len(), 1);
+        assert_eq!(state.payments.len(), 1);
+        state.payments.get_mut(&PaymentHash([0; 32])).unwrap().preimage =
+            Some(PaymentPreimage([0; 32]));
+        state.prune_invoices(node.clock.now() + Duration::from_secs(3600 * 25));
+        assert_eq!(state.invoices.len(), 0);
+        assert_eq!(state.payments.len(), 0);
     }
 
     #[test]
