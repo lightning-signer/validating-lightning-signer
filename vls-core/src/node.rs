@@ -1937,6 +1937,11 @@ impl Node {
     /// public keys can be allowlisted for policy control. Returns true
     /// if the invoice was added, false otherwise.
     pub fn add_invoice(&self, invoice: Invoice) -> Result<bool, Status> {
+        let validator = self.validator();
+        let now = self.clock.now();
+
+        validator.validate_invoice(&invoice, now)?;
+
         let (hash, payment_state, invoice_hash) = Self::payment_state_from_invoice(&invoice)?;
 
         info!(
@@ -1961,8 +1966,7 @@ impl Node {
                 Err(failed_precondition("already have a different invoice for same secret"))
             };
         }
-        let now = self.clock.now().as_secs();
-        if !state.velocity_control.insert(now, payment_state.amount_msat) {
+        if !state.velocity_control.insert(now.as_secs(), payment_state.amount_msat) {
             warn!(
                 "policy-commitment-payment-velocity velocity would be exceeded - += {} = {} > {}",
                 payment_state.amount_msat,
@@ -2203,6 +2207,7 @@ mod tests {
     use lightning::ln::chan_utils::derive_private_key;
     use lightning::ln::{chan_utils, PaymentSecret};
     use lightning_invoice::{Currency, InvoiceBuilder};
+    use std::time::{SystemTime, UNIX_EPOCH};
     use test_log::test;
 
     use crate::channel::ChannelBase;
@@ -2354,17 +2359,29 @@ mod tests {
     }
 
     fn make_test_invoice(
-        payee_node: &Arc<Node>,
+        payee_node: &Node,
         description: &str,
         payment_hash: PaymentHash,
     ) -> Invoice {
-        let (hrp_bytes, invoice_data) = build_test_invoice(description, &payment_hash);
-        payee_node.do_sign_invoice(&hrp_bytes, &invoice_data).unwrap().try_into().unwrap()
+        sign_invoice(payee_node, build_test_invoice(description, &payment_hash))
+    }
+
+    fn sign_invoice(payee_node: &Node, data: (Vec<u8>, Vec<u5>)) -> Invoice {
+        payee_node.do_sign_invoice(&data.0, &data.1).unwrap().try_into().unwrap()
     }
 
     fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>, Vec<u5>) {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("time");
+        build_test_invoice_with_time(description, payment_hash, now)
+    }
+
+    fn build_test_invoice_with_time(
+        description: &str,
+        payment_hash: &PaymentHash,
+        now: Duration,
+    ) -> (Vec<u8>, Vec<u5>) {
         let raw_invoice = InvoiceBuilder::new(Currency::Bitcoin)
-            .duration_since_epoch(Duration::from_secs(123456789))
+            .duration_since_epoch(now)
             .amount_milli_satoshis(100_000)
             .payment_hash(Sha256Hash::from_slice(&payment_hash.0).unwrap())
             .payment_secret(PaymentSecret([0; 32]))
@@ -2426,6 +2443,35 @@ mod tests {
 
         let invoice = make_test_invoice(&payee_node, "invoice", PaymentHash([2u8; 32]));
         node.add_invoice(invoice).expect_err("expected too many invoices");
+    }
+
+    #[test]
+    fn add_expired_invoice_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+
+        let future =
+            SystemTime::now().duration_since(UNIX_EPOCH).expect("time") + Duration::from_secs(3600);
+        let invoice = sign_invoice(
+            &*node,
+            build_test_invoice_with_time("invoice", &PaymentHash([0; 32]), future),
+        );
+        assert!(node
+            .add_invoice(invoice)
+            .unwrap_err()
+            .message()
+            .starts_with("policy failure: validate_invoice: invoice is not yet valid"));
+
+        let past =
+            SystemTime::now().duration_since(UNIX_EPOCH).expect("time") - Duration::from_secs(7200);
+        let invoice = sign_invoice(
+            &*node,
+            build_test_invoice_with_time("invoice", &PaymentHash([0; 32]), past),
+        );
+        assert!(node
+            .add_invoice(invoice)
+            .unwrap_err()
+            .message()
+            .starts_with("policy failure: validate_invoice: invoice is expired"));
     }
 
     #[test]

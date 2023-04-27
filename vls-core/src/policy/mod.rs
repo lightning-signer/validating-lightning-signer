@@ -15,6 +15,7 @@ pub mod validator;
 
 use crate::prelude::*;
 use crate::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
+use core::time::Duration;
 
 /// The default velocity control for L1 fees
 pub const DEFAULT_FEE_VELOCITY_CONTROL: VelocityControlSpec =
@@ -28,6 +29,12 @@ pub const MAX_INVOICES: usize = 1000;
 
 /// The maximum L1 transaction size
 pub const MAX_ONCHAIN_TX_SIZE: usize = 32 * 1024;
+
+/// A new invoice must not expire sooner than this many seconds from now.
+pub const MIN_INVOICE_EXPIRY: Duration = Duration::from_secs(60);
+
+/// Allowed clock skew (e.g. from invoice issuer to us)
+pub const MAX_CLOCK_SKEW: Duration = Duration::from_secs(60);
 
 /// An enforcement policy
 pub trait Policy {

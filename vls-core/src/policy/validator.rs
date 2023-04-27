@@ -8,6 +8,7 @@ use bitcoin::{
     self, BlockHeader, EcdsaSighashType, FilterHeader, Network, OutPoint, Script, Sighash,
     Transaction,
 };
+use core::time::Duration;
 use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::ln::PaymentHash;
@@ -16,7 +17,8 @@ use serde_derive::{Deserialize, Serialize};
 use txoo::proof::{TxoProof, VerifyError};
 
 use crate::channel::{ChannelBalance, ChannelId, ChannelSetup, ChannelSlot};
-use crate::policy::Policy;
+use crate::invoice::{Invoice, InvoiceAttributes};
+use crate::policy::{Policy, MAX_CLOCK_SKEW, MIN_INVOICE_EXPIRY};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2, HTLCInfo2, PreimageMap};
@@ -408,6 +410,36 @@ pub trait Validator {
         }
         // TODO validate attestation is by configured oracle
         // TODO validate filter header chain
+        Ok(())
+    }
+
+    /// Validate an invoice
+    fn validate_invoice(&self, invoice: &Invoice, now: Duration) -> Result<(), ValidationError> {
+        // invoice must not have been created in the future
+        if now + MAX_CLOCK_SKEW < invoice.duration_since_epoch() {
+            policy_err!(
+                self,
+                "policy-invoice-not-expired",
+                "invoice is not yet valid ({} < {})",
+                now.as_secs(),
+                invoice.duration_since_epoch().as_secs()
+            );
+        }
+
+        // new invoices must not expire too soon
+        if now + MIN_INVOICE_EXPIRY
+            > (invoice.duration_since_epoch() + invoice.expiry_duration()) + MAX_CLOCK_SKEW
+        {
+            policy_err!(
+                self,
+                "policy-invoice-not-expired",
+                "invoice is expired ({} + {} (buffer) > {})",
+                now.as_secs(),
+                MIN_INVOICE_EXPIRY.as_secs(),
+                (invoice.duration_since_epoch() + invoice.expiry_duration()).as_secs()
+            );
+        }
+
         Ok(())
     }
 }
