@@ -475,7 +475,7 @@ mod tests {
         let witvec = node
             .check_and_sign_onchain_tx(
                 &tx,
-                &previous_txs.iter().collect(),
+                &previous_txs.iter().collect::<Vec<_>>(),
                 &ipaths,
                 &values_sat,
                 &spendtypes,

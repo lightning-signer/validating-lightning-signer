@@ -1360,7 +1360,7 @@ impl Node {
     pub(crate) fn check_and_sign_onchain_tx(
         &self,
         tx: &Transaction,
-        input_txs: &Vec<&Transaction>,
+        input_txs: &[&Transaction],
         ipaths: &[Vec<u32>],
         values_sat: &[u64],
         spendtypes: &[SpendType],
@@ -1535,7 +1535,7 @@ impl Node {
     pub fn check_onchain_tx(
         &self,
         tx: &Transaction,
-        input_txs: &Vec<&Transaction>,
+        input_txs: &[&Transaction],
         values_sat: &[u64],
         spendtypes: &[SpendType],
         uniclosekeys: &[Option<(SecretKey, Vec<Vec<u8>>)>],

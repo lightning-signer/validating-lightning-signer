@@ -59,7 +59,7 @@ pub trait Validator {
         wallet: &Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         tx: &Transaction,
-        input_txs: &Vec<&Transaction>,
+        input_txs: &[&Transaction],
         values_sat: &[u64],
         opaths: &[Vec<u32>],
         weight_lower_bound: usize,
