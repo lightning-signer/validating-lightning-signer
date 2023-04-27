@@ -515,6 +515,12 @@ impl NodeState {
         }
     }
 
+    fn prune_issued_invoices(&mut self, now: Duration) {
+        self.issued_invoices.retain(|_, issued| {
+            issued.duration_since_epoch + issued.expiry_duration + INVOICE_PRUNE_TIME > now
+        });
+    }
+
     fn prune_invoices(&mut self, now: Duration) {
         let invoices = &mut self.invoices;
         let payments = &mut self.payments;
@@ -1391,7 +1397,11 @@ impl Node {
     pub fn get_heartbeat(&self) -> SignedHeartbeat {
         // we get asked for a heartbeat on a regular basis, so use this
         // opportunity to prune invoices
-        self.prune_invoices();
+        let mut state = self.get_state();
+        let now = self.clock.now();
+        state.prune_invoices(now);
+        state.prune_issued_invoices(now);
+        drop(state); // minimize lock time
 
         let tracker = self.tracker.lock().unwrap();
         let tip = tracker.tip();
@@ -1405,13 +1415,6 @@ impl Node {
         let ser_heartbeat = heartbeat.encode();
         let sig = self.keys_manager.sign_heartbeat(&ser_heartbeat);
         SignedHeartbeat { signature: sig[..].to_vec(), heartbeat }
-    }
-
-    /// Prune invoices
-    pub fn prune_invoices(&self) {
-        let mut state = self.get_state();
-        let now = self.clock.now();
-        state.prune_invoices(now);
     }
 
     // Check and sign an onchain transaction
@@ -2546,6 +2549,21 @@ mod tests {
         state.prune_invoices(node.clock.now() + Duration::from_secs(3600 * 25));
         assert_eq!(state.invoices.len(), 0);
         assert_eq!(state.payments.len(), 0);
+    }
+
+    #[test]
+    fn prune_issued_invoice_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let (hrp, data) = build_test_invoice("invoice", &PaymentHash([0; 32]));
+        node.sign_invoice(&hrp, &data).unwrap();
+        let mut state = node.get_state();
+        assert_eq!(state.issued_invoices.len(), 1);
+        state.prune_issued_invoices(node.clock.now());
+        assert_eq!(state.issued_invoices.len(), 1);
+        state.prune_issued_invoices(node.clock.now() + Duration::from_secs(3600 * 23));
+        assert_eq!(state.issued_invoices.len(), 1);
+        state.prune_issued_invoices(node.clock.now() + Duration::from_secs(3600 * 25));
+        assert_eq!(state.issued_invoices.len(), 0);
     }
 
     #[test]
