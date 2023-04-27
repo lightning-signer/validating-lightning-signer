@@ -31,7 +31,7 @@ pub const MAX_ONCHAIN_TX_SIZE: usize = 32 * 1024;
 
 /// An enforcement policy
 pub trait Policy {
-    /// A policy error has occured.
+    /// A policy error has occurred.
     /// Policy errors can be converted to warnings by returning `Ok(())`
     fn policy_error(&self, _tag: String, msg: String) -> Result<(), error::ValidationError>;
     /// Log at ERROR or WARN matching the policy error handling

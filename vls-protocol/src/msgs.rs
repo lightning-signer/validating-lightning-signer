@@ -16,7 +16,7 @@ use serde_derive::{Deserialize, Serialize};
 
 use log::error;
 
-const MAX_MESSAGE_SIZE: u32 = 65536;
+const MAX_MESSAGE_SIZE: u32 = 128 * 1024;
 
 /// Serialize a message with a type prefix, in BOLT style
 pub trait SerBolt: Debug + AsAny + Send {
