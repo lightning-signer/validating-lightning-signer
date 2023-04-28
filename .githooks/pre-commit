@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 FMTCMD="${CARGO_FMT_CMD:cargo +nightly fmt -- --check}"
 

@@ -173,18 +173,18 @@ impl RoutedPayment {
     pub fn updated_incoming_outgoing(
         &self,
         channel_id: &ChannelId,
-        incoming_amount: u64,
-        outgoing_amount: u64,
+        incoming_amount_sat: u64,
+        outgoing_amount_sat: u64,
     ) -> (u64, u64) {
         // TODO this can be optimized to eliminate the clone
         let mut incoming = self.incoming.clone();
-        incoming.insert(channel_id.clone(), incoming_amount);
+        incoming.insert(channel_id.clone(), incoming_amount_sat);
         let mut outgoing = self.outgoing.clone();
-        outgoing.insert(channel_id.clone(), outgoing_amount);
+        outgoing.insert(channel_id.clone(), outgoing_amount_sat);
         (incoming.values().into_iter().sum::<u64>(), outgoing.values().into_iter().sum::<u64>())
     }
 
-    /// The total incoming and outgoing
+    /// The total incoming and outgoing, in satoshi
     pub fn incoming_outgoing(&self) -> (u64, u64) {
         (
             self.incoming.values().into_iter().sum::<u64>(),
@@ -193,9 +193,14 @@ impl RoutedPayment {
     }
 
     /// Apply incoming and outgoing payment for a channel, in satoshi
-    pub fn apply(&mut self, channel_id: &ChannelId, incoming_amount: u64, outgoing_amount: u64) {
-        self.incoming.insert(channel_id.clone(), incoming_amount);
-        self.outgoing.insert(channel_id.clone(), outgoing_amount);
+    pub fn apply(
+        &mut self,
+        channel_id: &ChannelId,
+        incoming_amount_sat: u64,
+        outgoing_amount_sat: u64,
+    ) {
+        self.incoming.insert(channel_id.clone(), incoming_amount_sat);
+        self.outgoing.insert(channel_id.clone(), outgoing_amount_sat);
     }
 }
 
@@ -308,6 +313,8 @@ impl NodeState {
     /// - no overpayment for any invoice.
     /// - Sends without invoices (e.g. keysend) are only allowed if
     /// `policy.require_invoices` is false.
+    ///
+    /// The amounts are in satoshi.
     pub fn validate_payments(
         &self,
         channel_id: &ChannelId,
@@ -329,17 +336,26 @@ impl NodeState {
 
         // Preflight check
         for hash_r in hashes.iter() {
-            let incoming_for_chan = incoming_payment_summary.get(hash_r).map(|a| *a).unwrap_or(0);
-            let outgoing_for_chan = outgoing_payment_summary.get(hash_r).map(|a| *a).unwrap_or(0);
+            let incoming_for_chan_sat =
+                incoming_payment_summary.get(hash_r).map(|a| *a).unwrap_or(0);
+            let outgoing_for_chan_sat =
+                outgoing_payment_summary.get(hash_r).map(|a| *a).unwrap_or(0);
             let hash = **hash_r;
             let payment = self.payments.get(&hash);
-            let (incoming, outgoing) = if let Some(p) = payment {
-                p.updated_incoming_outgoing(channel_id, incoming_for_chan, outgoing_for_chan)
+            let (incoming_sat, outgoing_sat) = if let Some(p) = payment {
+                p.updated_incoming_outgoing(
+                    channel_id,
+                    incoming_for_chan_sat,
+                    outgoing_for_chan_sat,
+                )
             } else {
-                (incoming_for_chan, outgoing_for_chan)
+                (incoming_for_chan_sat, outgoing_for_chan_sat)
             };
             let invoiced_amount = self.invoices.get(&hash).map(|i| i.amount_msat);
-            if validator.validate_payment_balance(incoming, outgoing, invoiced_amount).is_err() {
+            if validator
+                .validate_payment_balance(incoming_sat * 1000, outgoing_sat * 1000, invoiced_amount)
+                .is_err()
+            {
                 unbalanced.push(hash);
             }
         }
@@ -398,16 +414,16 @@ impl NodeState {
             let payment = self.payments.entry(hash).or_insert_with(|| RoutedPayment::new());
             if let Some(issued) = self.issued_invoices.get(&hash) {
                 if !payment.is_fulfilled() {
-                    let incoming_for_chan =
+                    let incoming_for_chan_sat =
                         incoming_payment_summary.get(hash_r).map(|a| *a).unwrap_or(0);
-                    let outgoing_for_chan =
+                    let outgoing_for_chan_sat =
                         outgoing_payment_summary.get(hash_r).map(|a| *a).unwrap_or(0);
-                    let (incoming, outgoing) = payment.updated_incoming_outgoing(
+                    let (incoming_sat, outgoing_sat) = payment.updated_incoming_outgoing(
                         channel_id,
-                        incoming_for_chan,
-                        outgoing_for_chan,
+                        incoming_for_chan_sat,
+                        outgoing_for_chan_sat,
                     );
-                    if incoming >= outgoing + issued.amount_msat / 1000 {
+                    if incoming_sat >= outgoing_sat + issued.amount_msat / 1000 {
                         fulfilled_issued_invoices.push(hash);
                     }
                 }
@@ -443,10 +459,10 @@ impl NodeState {
         );
 
         for hash in hashes.iter() {
-            let incoming = incoming_payment_summary.get(hash).map(|a| *a).unwrap_or(0);
-            let outgoing = outgoing_payment_summary.get(hash).map(|a| *a).unwrap_or(0);
+            let incoming_sat = incoming_payment_summary.get(hash).map(|a| *a).unwrap_or(0);
+            let outgoing_sat = outgoing_payment_summary.get(hash).map(|a| *a).unwrap_or(0);
             let payment = self.payments.get_mut(hash).expect("created above");
-            payment.apply(channel_id, incoming, outgoing);
+            payment.apply(channel_id, incoming_sat, outgoing_sat);
         }
     }
 
@@ -1638,7 +1654,7 @@ impl Node {
         }
         debug!("weight_lower_bound: {}", weight_lower_bound);
 
-        let non_beneficial = validator.validate_onchain_tx(
+        let non_beneficial_sat = validator.validate_onchain_tx(
             self,
             channels,
             tx,
@@ -1654,13 +1670,13 @@ impl Node {
         let validator = self.validator();
         let mut state = self.state.lock().unwrap();
         let now = self.clock.now().as_secs();
-        if !state.fee_velocity_control.insert(now, non_beneficial) {
+        if !state.fee_velocity_control.insert(now, non_beneficial_sat * 1000) {
             policy_err!(
                 validator,
                 "policy-onchain-fee-range",
                 "fee velocity would be exceeded {} + {} > {}",
                 state.fee_velocity_control.velocity(),
-                non_beneficial,
+                non_beneficial_sat * 1000,
                 state.fee_velocity_control.limit
             );
         }

@@ -45,16 +45,18 @@ pub enum VelocityControlIntervalType {
 /// A specifier for creating velocity controls
 #[derive(Clone, Copy, Debug)]
 pub struct VelocityControlSpec {
-    /// The limit per interval
-    pub limit: u64,
+    /// The limit per interval in msat
+    pub limit_msat: u64,
     /// The interval type
     pub interval_type: VelocityControlIntervalType,
 }
 
 impl VelocityControlSpec {
     /// A velocity control spec for controls which don't limit velocity
-    pub const UNLIMITED: VelocityControlSpec =
-        VelocityControlSpec { limit: 0, interval_type: VelocityControlIntervalType::Unlimited };
+    pub const UNLIMITED: VelocityControlSpec = VelocityControlSpec {
+        limit_msat: 0,
+        interval_type: VelocityControlIntervalType::Unlimited,
+    };
 }
 
 impl VelocityControl {
@@ -63,11 +65,11 @@ impl VelocityControl {
     /// num_buckets: how many buckets to keep track of
     /// bucket_interval: each bucket represents this number of seconds
     /// limit: the total velocity limit when summing the buckets
-    pub fn new_with_intervals(limit: u64, bucket_interval: u32, num_buckets: usize) -> Self {
+    pub fn new_with_intervals(limit_msat: u64, bucket_interval: u32, num_buckets: usize) -> Self {
         assert!(bucket_interval > 0 && num_buckets > 0);
         let mut buckets = Vec::new();
         buckets.resize(num_buckets, 0);
-        VelocityControl { start_sec: 0, bucket_interval, buckets, limit }
+        VelocityControl { start_sec: 0, bucket_interval, buckets, limit: limit_msat }
     }
 
     /// Create an unlimited velocity control (i.e. no actual control)
@@ -81,8 +83,10 @@ impl VelocityControl {
     /// Create a velocity control with the given interval type
     pub fn new(spec: VelocityControlSpec) -> Self {
         match spec.interval_type {
-            VelocityControlIntervalType::Hourly => Self::new_with_intervals(spec.limit, 300, 12),
-            VelocityControlIntervalType::Daily => Self::new_with_intervals(spec.limit, 3600, 24),
+            VelocityControlIntervalType::Hourly =>
+                Self::new_with_intervals(spec.limit_msat, 300, 12),
+            VelocityControlIntervalType::Daily =>
+                Self::new_with_intervals(spec.limit_msat, 3600, 24),
             VelocityControlIntervalType::Unlimited => Self::new_unlimited(300, 12),
         }
     }
@@ -112,7 +116,7 @@ impl VelocityControl {
     /// Update the velocity given the passage of time given by `current_sec`
     /// and the given velocity.  If the limit would be exceeded, the given velocity
     /// is not inserted and false is returned.
-    pub fn insert(&mut self, current_sec: u64, velocity: u64) -> bool {
+    pub fn insert(&mut self, current_sec: u64, velocity_msat: u64) -> bool {
         let nshift = (current_sec - self.start_sec) / self.bucket_interval as u64;
         let len = self.buckets.len();
         let nshift = min(len, nshift as usize);
@@ -122,10 +126,10 @@ impl VelocityControl {
         }
         self.start_sec = current_sec - (current_sec % self.bucket_interval as u64);
         let current_velocity = self.velocity();
-        if current_velocity.saturating_add(velocity) > self.limit {
+        if current_velocity.saturating_add(velocity_msat) > self.limit {
             false
         } else {
-            self.buckets[0] = self.buckets[0].saturating_add(velocity);
+            self.buckets[0] = self.buckets[0].saturating_add(velocity_msat);
             true
         }
     }
@@ -137,7 +141,7 @@ impl VelocityControl {
         }
     }
 
-    /// The total velocity in the tracked interval.
+    /// The total msat velocity in the tracked interval.
     ///
     /// If this is an unlimited control, zero is always returned.
     pub fn velocity(&self) -> u64 {
