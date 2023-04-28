@@ -2,6 +2,7 @@
 //! core MultiSigner and Node objects via a communications link.
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
 
@@ -19,8 +20,7 @@ use vls_protocol_client::SignerPort;
 
 use lightning_signer::node::SignedHeartbeat;
 use lightning_signer::txoo::proof::TxoProof;
-#[allow(unused_imports)]
-use log::debug;
+use log::*;
 
 /// Implements ChainTrackDirectory using RPC to remote MultiSigner
 pub struct SignerPortFront {
@@ -61,13 +61,27 @@ pub(crate) struct NodePortFront {
     node_keys: Mutex<Option<NodeKeys>>,
 }
 
+const LOG_INTERVAL: u64 = 100;
+
 impl NodePortFront {
     fn new(signer_port: Box<dyn SignerPort>, network: Network) -> Self {
         debug!("NodePortFront::new network: {}", network);
         Self { signer_port, network, node_keys: Mutex::new(None) }
     }
 
+    async fn wait_ready(&self) {
+        let mut attempt: u64 = 0;
+        while !self.signer_port.is_ready() {
+            attempt += 1;
+            if attempt % LOG_INTERVAL == 0 {
+                info!("waiting for signer_port to be ready");
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
     async fn populate_keys(&self) -> NodeKeys {
+        self.wait_ready().await;
         let reply = self
             .signer_port
             .handle_message(msgs::NodeInfo {}.as_vec())
@@ -124,6 +138,7 @@ impl ChainTrack for NodePortFront {
     }
 
     async fn tip_info(&self) -> (u32, BlockHash) {
+        self.wait_ready().await;
         let req = msgs::TipInfo {};
         let reply = self.signer_port.handle_message(req.as_vec()).await.expect("TipInfo failed");
         if let Ok(Message::TipInfoReply(m)) = msgs::from_vec(reply) {
@@ -134,6 +149,7 @@ impl ChainTrack for NodePortFront {
     }
 
     async fn forward_watches(&self) -> (Vec<Txid>, Vec<OutPoint>) {
+        self.wait_ready().await;
         let req = msgs::ForwardWatches {};
         let reply =
             self.signer_port.handle_message(req.as_vec()).await.expect("ForwardWatches failed");
@@ -156,6 +172,7 @@ impl ChainTrack for NodePortFront {
     }
 
     async fn reverse_watches(&self) -> (Vec<Txid>, Vec<OutPoint>) {
+        self.wait_ready().await;
         let req = msgs::ReverseWatches {};
         let reply =
             self.signer_port.handle_message(req.as_vec()).await.expect("ReverseWatches failed");
@@ -178,6 +195,7 @@ impl ChainTrack for NodePortFront {
     }
 
     async fn add_block(&self, header: BlockHeader, proof: TxoProof) {
+        self.wait_ready().await;
         let req = msgs::AddBlock {
             header: Octets(serialize(&header)),
             unspent_proof: Some(LargeOctets(serialize(&proof))),
@@ -191,6 +209,7 @@ impl ChainTrack for NodePortFront {
     }
 
     async fn remove_block(&self, proof: TxoProof) {
+        self.wait_ready().await;
         let req = msgs::RemoveBlock { unspent_proof: Some(LargeOctets(serialize(&proof))) };
         let reply =
             self.signer_port.handle_message(req.as_vec()).await.expect("RemoveBlock failed");
@@ -202,6 +221,7 @@ impl ChainTrack for NodePortFront {
     }
 
     async fn beat(&self) -> SignedHeartbeat {
+        self.wait_ready().await;
         let req = msgs::GetHeartbeat {};
         let reply =
             self.signer_port.handle_message(req.as_vec()).await.expect("GetHeartbeat failed");

@@ -1,4 +1,6 @@
 use log::{debug, error, info};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::spawn_blocking;
 use triggered::Trigger;
@@ -15,6 +17,7 @@ use vls_protocol_signer::vls_protocol;
 
 pub struct GrpcSignerPort {
     sender: mpsc::Sender<ChannelRequest>,
+    is_ready: Arc<AtomicBool>,
 }
 
 #[async_trait]
@@ -25,13 +28,17 @@ impl SignerPort for GrpcSignerPort {
     }
 
     fn clone(&self) -> Box<dyn SignerPort> {
-        Box::new(Self { sender: self.sender.clone() })
+        Box::new(Self { sender: self.sender.clone(), is_ready: self.is_ready.clone() })
+    }
+
+    fn is_ready(&self) -> bool {
+        self.is_ready.load(Ordering::Relaxed)
     }
 }
 
 impl GrpcSignerPort {
     pub fn new(sender: mpsc::Sender<ChannelRequest>) -> Self {
-        GrpcSignerPort { sender }
+        GrpcSignerPort { sender, is_ready: Arc::new(AtomicBool::new(false)) }
     }
 
     async fn send_request(&self, message: Vec<u8>) -> Result<oneshot::Receiver<ChannelReply>> {
@@ -43,6 +50,10 @@ impl GrpcSignerPort {
 
         // This can fail if gRPC adapter shut down
         self.sender.send(request).await.map_err(|_| Error::Eof)?;
+
+        // Once the initial packet is sent, the signer is ready
+        self.is_ready.store(true, Ordering::Relaxed);
+
         Ok(reply_rx)
     }
 

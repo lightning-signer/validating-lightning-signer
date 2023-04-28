@@ -152,6 +152,10 @@ impl SignerPort for DummySignerPort {
     fn clone(&self) -> Box<dyn SignerPort> {
         Box::new(Clone::clone(self))
     }
+
+    fn is_ready(&self) -> bool {
+        true
+    }
 }
 
 async fn await_until<EF>(mut f: impl FnMut() -> bool, err_f: EF) -> Result<()>
