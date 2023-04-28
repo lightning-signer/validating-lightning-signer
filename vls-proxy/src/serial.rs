@@ -181,6 +181,10 @@ impl SignerPort for SerialSignerPort {
     fn clone(&self) -> Box<dyn SignerPort> {
         Box::new(Self { serial: self.serial.clone() })
     }
+
+    fn is_ready(&self) -> bool {
+        true
+    }
 }
 
 impl SerialSignerPort {
