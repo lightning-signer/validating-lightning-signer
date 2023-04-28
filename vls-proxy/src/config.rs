@@ -240,7 +240,7 @@ fn parse_velocity_control_spec(spec: &str) -> Result<VelocityControlSpec, String
         .to_string()
         .parse()
         .map_err(|_| "non-integer limit")?;
-    Ok(VelocityControlSpec { interval_type, limit })
+    Ok(VelocityControlSpec { interval_type, limit_msat: limit })
 }
 
 fn parse_filter_rule(spec: &str) -> Result<FilterRule, String> {

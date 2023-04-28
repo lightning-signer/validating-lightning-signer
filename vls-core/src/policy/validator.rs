@@ -200,8 +200,8 @@ pub trait Validator {
     /// but no larger.
     fn validate_payment_balance(
         &self,
-        incoming: u64,
-        outgoing: u64,
+        incoming_msat: u64,
+        outgoing_msat: u64,
         invoiced_amount_msat: Option<u64>,
     ) -> Result<(), ValidationError>;
 

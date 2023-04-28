@@ -18,8 +18,10 @@ use crate::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
 use core::time::Duration;
 
 /// The default velocity control for L1 fees
-pub const DEFAULT_FEE_VELOCITY_CONTROL: VelocityControlSpec =
-    VelocityControlSpec { limit: 1000000, interval_type: VelocityControlIntervalType::Daily };
+pub const DEFAULT_FEE_VELOCITY_CONTROL: VelocityControlSpec = VelocityControlSpec {
+    limit_msat: 1_000_000_000,
+    interval_type: VelocityControlIntervalType::Daily,
+};
 
 /// Default maximum number of concurrent channels
 pub const MAX_CHANNELS: usize = 100;

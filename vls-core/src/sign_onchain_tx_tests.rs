@@ -81,7 +81,7 @@ mod tests {
         assert_eq!(
             node.check_onchain_tx(&tx, &vec![], &[40000], &[SpendType::P2wpkh], &[None], &[vec![]]),
             Err(policy_error(
-                "check_onchain_tx: fee velocity would be exceeded 1000000 + 40000 > 1000000"
+                "check_onchain_tx: fee velocity would be exceeded 1000000000 + 40000000 > 1000000000"
             ))
         )
     }

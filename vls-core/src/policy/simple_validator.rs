@@ -1641,17 +1641,17 @@ impl Validator for SimpleValidator {
 
     fn validate_payment_balance(
         &self,
-        incoming: u64,
-        outgoing: u64,
+        incoming_msat: u64,
+        outgoing_msat: u64,
         invoiced_amount_msat: Option<u64>,
     ) -> Result<(), ValidationError> {
-        let max_to_invoice = if let Some(a) = invoiced_amount_msat {
-            (a + self.policy.max_routing_fee_msat) / 1000
+        let max_to_invoice_msat = if let Some(a) = invoiced_amount_msat {
+            a + self.policy.max_routing_fee_msat
         } else {
             0
         };
         // this also implicitly implements policy-commitment-payment-invoiced
-        if self.policy.require_invoices && incoming + max_to_invoice < outgoing {
+        if self.policy.require_invoices && incoming_msat + max_to_invoice_msat < outgoing_msat {
             policy_err!(self, "policy-routing-balanced", "incoming < outgoing");
         }
         Ok(())

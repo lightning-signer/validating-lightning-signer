@@ -252,7 +252,7 @@ impl Approve for NegativeApprover {
 /// let delegate = NegativeApprover();
 /// let clock = Arc::new(ManualClock::new(Duration::ZERO));
 /// let spec = VelocityControlSpec {
-///     limit: 1000000,
+///     limit_msat: 1000000,
 ///     interval_type: Hourly
 /// };
 /// let control = VelocityControl::new(spec);
@@ -349,7 +349,7 @@ mod tests {
     fn test_invoice_velocity_approver_negative() {
         let delegate = NegativeApprover();
         let clock = Arc::new(ManualClock::new(Duration::ZERO));
-        let spec = VelocityControlSpec { limit: 1_000_000, interval_type: Hourly };
+        let spec = VelocityControlSpec { limit_msat: 1_000_000, interval_type: Hourly };
         let control = VelocityControl::new(spec);
         let approver = VelocityApprover::new(clock.clone(), control, delegate);
         let amt = 600_000_u64;
@@ -367,7 +367,7 @@ mod tests {
     fn test_invoice_velocity_approver_positive() {
         let delegate = PositiveApprover();
         let clock = Arc::new(ManualClock::new(Duration::ZERO));
-        let spec = VelocityControlSpec { limit: 1_000_000, interval_type: Hourly };
+        let spec = VelocityControlSpec { limit_msat: 1_000_000, interval_type: Hourly };
         let control = VelocityControl::new(spec);
         let approver = VelocityApprover::new(clock.clone(), control, delegate);
         let amt = 600_000_u64;
@@ -387,7 +387,7 @@ mod tests {
     fn test_keysend_velocity_approver_negative() {
         let delegate = NegativeApprover();
         let clock = Arc::new(ManualClock::new(Duration::ZERO));
-        let spec = VelocityControlSpec { limit: 1000, interval_type: Hourly };
+        let spec = VelocityControlSpec { limit_msat: 1000, interval_type: Hourly };
         let control = VelocityControl::new(spec);
         let approver = VelocityApprover::new(clock.clone(), control, delegate);
         let (payment_hash, payment_state) = make_keysend_payment(1);
@@ -404,7 +404,7 @@ mod tests {
     fn test_keysend_velocity_approver_positive() {
         let delegate = PositiveApprover();
         let clock = Arc::new(ManualClock::new(Duration::ZERO));
-        let spec = VelocityControlSpec { limit: 1000, interval_type: Hourly };
+        let spec = VelocityControlSpec { limit_msat: 1000, interval_type: Hourly };
         let control = VelocityControl::new(spec);
         let approver = VelocityApprover::new(clock.clone(), control, delegate);
         let (payment_hash, payment_state) = make_keysend_payment(1);
