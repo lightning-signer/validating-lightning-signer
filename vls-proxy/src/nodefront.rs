@@ -11,7 +11,7 @@ use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
 use crate::persist::ExternalPersistWithHelper;
 use lightning_signer::bitcoin;
 use lightning_signer::node::{Node, SignedHeartbeat};
-use lightning_signer::persist::{Context, Persist};
+use lightning_signer::persist::Persist;
 use lightning_signer::signer::multi_signer::MultiSigner;
 use lightning_signer::txoo::proof::TxoProof;
 use lightning_signer::wallet::Wallet;
@@ -88,15 +88,20 @@ impl NodeFront {
 
     async fn with_persist_context<F>(
         external_persist: &ExternalPersistWithHelper,
-        context: Box<dyn Context>,
+        persister: Arc<dyn Persist>,
         f: F,
     ) where
-        F: FnOnce(),
+        F: FnOnce(Arc<dyn Persist>),
     {
         // lock order: persist client, tracker
         let client = external_persist.persist_client.lock().await;
-        f();
-        let muts = context.exit();
+
+        let muts = {
+            let context = persister.enter(external_persist.state.clone());
+            f(persister);
+            context.exit()
+        };
+
         let helper = &external_persist.helper;
         let client_hmac = helper.client_hmac(&muts);
         let server_hmac = helper.server_hmac(&muts);
@@ -140,8 +145,7 @@ impl ChainTrack for NodeFront {
     async fn add_block(&self, header: BlockHeader, proof: TxoProof) {
         let persister = self.node.get_persister();
         if let Some(external_persist) = &self.external_persist {
-            let context = persister.enter(external_persist.state.clone());
-            Self::with_persist_context(external_persist, context, || {
+            Self::with_persist_context(external_persist, persister, |persister| {
                 self.do_add_block(header, proof, persister);
             })
             .await;
@@ -153,8 +157,7 @@ impl ChainTrack for NodeFront {
     async fn remove_block(&self, proof: TxoProof) {
         let persister = self.node.get_persister();
         if let Some(external_persist) = &self.external_persist {
-            let context = persister.enter(external_persist.state.clone());
-            Self::with_persist_context(external_persist, context, || {
+            Self::with_persist_context(external_persist, persister, |persister| {
                 self.do_remove_block(proof, persister);
             })
             .await;

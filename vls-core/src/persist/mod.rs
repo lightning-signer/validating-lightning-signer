@@ -18,7 +18,7 @@ pub mod model;
 pub type Mutations = Vec<(String, (u64, Vec<u8>))>;
 
 /// Storage context, for memorizing implementations
-pub trait Context: Send {
+pub trait Context {
     /// Exit the context, returning values that were modified
     fn exit(&self) -> Mutations;
 }
