@@ -24,6 +24,12 @@ sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/vls-testnet.serv
 sudo systemctl daemon-reload
 ```
 
+If you would like to allow legacy anchor channels (non-zero-fee anchors) you should
+add the following line to `/home/vls/vlsd2.toml`:
+```
+policy-filter = "policy-channel-safe-type-anchors:warn"
+```
+
 Optionally enable PERMISSIVE mode:
 
 [FIXME - move this to the config file, see:
