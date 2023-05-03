@@ -1,3 +1,4 @@
+use alloc::collections::VecDeque;
 use core::borrow::Borrow;
 use core::convert::TryFrom;
 use core::convert::TryInto;
@@ -42,6 +43,7 @@ use log::{debug, info, trace, warn};
 use serde_bolt::to_vec;
 
 use crate::chain::tracker::ChainTracker;
+use crate::chain::tracker::Headers;
 use crate::channel::{
     Channel, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub,
 };
@@ -60,6 +62,7 @@ use crate::signer::my_keys_manager::MyKeysManager;
 use crate::signer::StartingTimeFactory;
 use crate::sync::{Arc, Weak};
 use crate::tx::tx::PreimageMap;
+use crate::txoo::get_latest_checkpoint;
 use crate::util::clock::Clock;
 use crate::util::crypto_utils::{sighash_from_heartbeat, signature_to_bitcoin_vec};
 use crate::util::debug_utils::{DebugBytes, DebugMapPaymentState, DebugMapRoutedPayment};
@@ -1256,6 +1259,15 @@ impl Node {
                 &node,
             )
             .expect("restore channel");
+        }
+        if let Some((height, _hash, filter_header, header)) = get_latest_checkpoint(network) {
+            let mut tracker = node.get_tracker();
+            if tracker.height() == 0 {
+                // Fast-forward the tracker to the checkpoint
+                tracker.headers = VecDeque::new();
+                tracker.tip = Headers(header, filter_header);
+                tracker.height = height;
+            }
         }
         node
     }
