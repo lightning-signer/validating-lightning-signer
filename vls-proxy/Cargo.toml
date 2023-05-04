@@ -58,6 +58,11 @@ hex = "0.4"
 backoff = { version = "0.4", features = ["tokio"], optional = true }
 lru = "0.11"
 
+[dependencies.heapmon]
+#path = "../../../heapmon"
+git = "https://gitlab.com/lightning-signer/heapmon"
+rev = "a374805e55fa0bd089ff1db18a836e330219bc62"
+
 [dependencies.txoo-bitcoind-client]
 version = "0.6"
 #git = "https://gitlab.com/lightning-signer/txoo"
