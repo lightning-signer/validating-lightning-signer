@@ -363,6 +363,96 @@ impl<A: Approve> Approve for VelocityApprover<A> {
     }
 }
 
+/// An approval that is memorized by `MemoApprover`
+#[derive(Debug)]
+pub enum Approval {
+    /// An invoice was approved
+    Invoice(Invoice),
+    /// A keysend was approved
+    KeySend(PaymentHash, u64),
+    /// An onchain transaction was approved
+    Onchain(Transaction),
+}
+
+/// An approver that memorizes the last approval, and uses it for the next
+/// approval request.
+///
+/// If the request is for a different action, the memoized approval is cleared
+/// and the request is passed on to the delegate approver.
+pub struct MemoApprover<A: Approve> {
+    delegate: A,
+    approvals: Mutex<Vec<Approval>>,
+}
+
+impl<A: Approve> MemoApprover<A> {
+    /// Create a new memo approver with the given delegate approver
+    pub fn new(delegate: A) -> Self {
+        Self { delegate, approvals: Mutex::new(Vec::new()) }
+    }
+
+    /// Set an approval to be memorized.
+    ///
+    /// This approval will be used for the next approval request.
+    /// If there is already a memoized approval, it will be overwritten.
+    pub fn approve(&self, approvals: Vec<Approval>) {
+        *self.approvals.lock().unwrap() = approvals;
+    }
+}
+
+impl<A: Approve> SendSync for MemoApprover<A> {}
+
+impl<A: Approve> Approve for MemoApprover<A> {
+    fn approve_invoice(&self, invoice: &Invoice) -> bool {
+        let mut approvals = self.approvals.lock().unwrap();
+        for approval in approvals.drain(..) {
+            match approval {
+                Approval::Invoice(approved_invoice) => {
+                    if approved_invoice.invoice_hash() == invoice.invoice_hash() {
+                        return true
+                    }
+                }
+                _ => {},
+            }
+        }
+        return self.delegate.approve_invoice(invoice)
+    }
+
+    fn approve_keysend(&self, payment_hash: PaymentHash, amount_msat: u64) -> bool {
+        let mut approvals = self.approvals.lock().unwrap();
+        for approval in approvals.drain(..) {
+            match approval {
+                Approval::KeySend(approved_payment_hash, approved_amount_msat) => {
+                    if approved_payment_hash == payment_hash && approved_amount_msat == amount_msat {
+                        return true
+                    }
+                }
+                _ => {},
+            }
+        }
+        return self.delegate.approve_keysend(payment_hash, amount_msat)
+    }
+
+    fn approve_onchain(
+        &self,
+        tx: &Transaction,
+        values_sat: &[u64],
+        unknown_indices: &[usize],
+    ) -> bool {
+        let mut approvals = self.approvals.lock().unwrap();
+        for approval in approvals.drain(..) {
+            match approval {
+                Approval::Onchain(approved_tx) => {
+                    if approved_tx == *tx {
+                        return true
+                    }
+                }
+                _ => {}
+            }
+        }
+        return self.delegate.approve_onchain(tx, values_sat, unknown_indices)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::approver::{
