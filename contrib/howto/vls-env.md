@@ -32,3 +32,7 @@ replaced with `VLS_FRONTEND_DISABLE` in the near future.
 Unfortunately, `cargo build` always rebuilds the binaries (even when they are up to date) to
 ensure the git version string is current.  Setting `VLS_DISABLE_UPDATE_VERSION=1` disables
 this behavior.  This is useful in development when building repeatedly.
+
+#### `RUST_LOG` - Set the logging level
+
+The `RUST_LOG` environment variable can be set to `trace`, `debug`, `info` ...
