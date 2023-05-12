@@ -296,6 +296,7 @@ pub fn make_test_channel_keys() -> InMemorySigner {
         [4u8; 32],            // commitment_seed
         channel_value_sat,
         [0u8; 32],
+        [0; 32],
     );
     // This needs to match make_test_channel_setup above.
     inmemkeys.provide_channel_parameters(&ChannelTransactionParameters {
@@ -600,6 +601,7 @@ pub fn make_test_counterparty_keys(
                 [3u8; 32],              // commitment_seed
                 value_sat,              // channel_value
                 [0u8; 32],              // Key derivation parameters
+                [0; 32],
             );
             // This needs to match make_test_channel_setup above.
             cpkeys.provide_channel_parameters(&ChannelTransactionParameters {
@@ -1054,7 +1056,7 @@ pub fn counterparty_sign_holder_commitment(
             let trusted_tx = tx.trust();
             let keys = trusted_tx.keys();
             let built_tx = trusted_tx.built_transaction();
-            let commitment_sig = built_tx.sign(
+            let commitment_sig = built_tx.sign_counterparty_commitment(
                 &chan_ctx.counterparty_keys.funding_key,
                 &funding_redeemscript,
                 chan_ctx.setup.channel_value_sat,

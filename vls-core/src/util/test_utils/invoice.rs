@@ -6,13 +6,13 @@ use bitcoin::secp256k1::rand::rngs::OsRng;
 use bitcoin::secp256k1::rand::RngCore;
 use bitcoin::secp256k1::KeyPair;
 use bitcoin::secp256k1::{schnorr, Message, PublicKey, Secp256k1, SecretKey};
+use lightning::blinded_path::BlindedPath;
 
 use lightning::chain::keysinterface::EntropySource;
 use lightning::ln::features::BlindedHopFeatures;
 use lightning::ln::PaymentHash;
 use lightning::offers::invoice::BlindedPayInfo;
 use lightning::offers::offer::OfferBuilder;
-use lightning::onion_message::BlindedPath;
 
 use crate::invoice::Invoice;
 
@@ -70,9 +70,9 @@ fn payment_paths() -> Vec<(BlindedPath, BlindedPayInfo)> {
     let entropy_source = TestEntropySource {};
 
     let paths = vec![
-        BlindedPath::new(&[pubkey(43), pubkey(44)], &entropy_source, &secp_ctx)
+        BlindedPath::new_for_message(&[pubkey(43), pubkey(44)], &entropy_source, &secp_ctx)
             .expect("blinded path"),
-        BlindedPath::new(&[pubkey(45), pubkey(46)], &entropy_source, &secp_ctx)
+        BlindedPath::new_for_message(&[pubkey(45), pubkey(46)], &entropy_source, &secp_ctx)
             .expect("blinded path"),
     ];
 

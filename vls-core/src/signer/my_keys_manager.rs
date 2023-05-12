@@ -314,6 +314,7 @@ impl MyKeysManager {
             commitment_seed,
             channel_value_sat,
             keys_id,
+            self.get_secure_random_bytes(),
         )
     }
 

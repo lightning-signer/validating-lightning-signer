@@ -1210,8 +1210,8 @@ pub fn route_payment<'a, 'b, 'c>(origin_node: &Node<'a, 'b, 'c>, expected_route:
     let payment_params = PaymentParameters::from_node_id(expected_route.last().unwrap().node.get_our_node_id(), TEST_FINAL_CLTV);
     let route = get_route!(origin_node, payment_params, recv_value).unwrap();
     assert_eq!(route.paths.len(), 1);
-    assert_eq!(route.paths[0].len(), expected_route.len());
-    for (node, hop) in expected_route.iter().zip(route.paths[0].iter()) {
+    assert_eq!(route.paths[0].hops.len(), expected_route.len());
+    for (node, hop) in expected_route.iter().zip(route.paths[0].hops.iter()) {
         assert_eq!(hop.pubkey, node.node.get_our_node_id());
     }
 
