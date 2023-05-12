@@ -24,13 +24,13 @@ use log::*;
 
 /// Implements ChainTrackDirectory using RPC to remote MultiSigner
 pub struct SignerPortFront {
-    pub signer_port: Box<dyn SignerPort>,
+    pub signer_port: Arc<dyn SignerPort>,
     pub network: Network,
     pub trackers: Vec<Arc<dyn ChainTrack>>,
 }
 
 impl SignerPortFront {
-    pub fn new(signer_port: Box<dyn SignerPort>, network: Network) -> Self {
+    pub fn new(signer_port: Arc<dyn SignerPort>, network: Network) -> Self {
         let front = NodePortFront::new(signer_port.clone(), network);
         let trackers = vec![Arc::new(front) as Arc<dyn ChainTrack>];
         SignerPortFront { signer_port, network, trackers }
@@ -56,7 +56,7 @@ struct NodeKeys {
 
 /// Implements ChainTrack using RPC to remote node
 pub(crate) struct NodePortFront {
-    signer_port: Box<dyn SignerPort>,
+    signer_port: Arc<dyn SignerPort>,
     network: Network,
     node_keys: Mutex<Option<NodeKeys>>,
 }
@@ -64,7 +64,7 @@ pub(crate) struct NodePortFront {
 const LOG_INTERVAL: u64 = 100;
 
 impl NodePortFront {
-    fn new(signer_port: Box<dyn SignerPort>, network: Network) -> Self {
+    fn new(signer_port: Arc<dyn SignerPort>, network: Network) -> Self {
         debug!("NodePortFront::new network: {}", network);
         Self { signer_port, network, node_keys: Mutex::new(None) }
     }

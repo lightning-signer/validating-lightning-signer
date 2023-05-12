@@ -178,10 +178,6 @@ impl SignerPort for SerialSignerPort {
         .map_err(|_| Error::Eof)?
     }
 
-    fn clone(&self) -> Box<dyn SignerPort> {
-        Box::new(Self { serial: self.serial.clone() })
-    }
-
     fn is_ready(&self) -> bool {
         true
     }
