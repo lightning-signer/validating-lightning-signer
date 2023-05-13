@@ -331,6 +331,11 @@ impl OnchainValidator {
         commit_num: u64,
         cstate: &ChainState,
     ) -> Result<(), ValidationError> {
+        debug!(
+            "ensure_funding_buried_and_unspent commit_num {} depth {} our height {}",
+            commit_num, cstate.funding_depth, cstate.current_height
+        );
+
         // If we are trying to move beyond the initial commitment, ensure funding is on-chain and
         // had enough confirmations.
         if commit_num > 0 {
