@@ -46,7 +46,8 @@ impl ValidatorFactory for OnchainValidatorFactory {
         channel_id: Option<ChannelId>,
     ) -> Arc<dyn Validator> {
         // copy the filter from the inner
-        let filter = self.inner_factory.policy.map(|p| p.filter.clone()).unwrap_or_default();
+        let filter =
+            self.inner_factory.policy.as_ref().map(|p| p.filter.clone()).unwrap_or_default();
         let validator = OnchainValidator {
             inner: self.inner_factory.make_validator(network, node_id, channel_id),
             policy: make_onchain_policy(network, filter),
@@ -337,9 +338,10 @@ impl OnchainValidator {
                 policy_err!(
                     self,
                     "policy-commitment-spends-active-utxo",
-                    "tried commitment {} when funding is not buried at depth {}",
+                    "tried commitment {} when funding is not buried at depth {}, our height {}",
                     commit_num,
-                    cstate.funding_depth
+                    cstate.funding_depth,
+                    cstate.current_height,
                 );
             }
 

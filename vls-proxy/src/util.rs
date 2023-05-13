@@ -13,7 +13,9 @@ use tokio::runtime::{self, Runtime};
 
 use lightning_signer::bitcoin::Network;
 use lightning_signer::policy::filter::PolicyFilter;
+use lightning_signer::policy::onchain_validator::OnchainValidatorFactory;
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
+use lightning_signer::policy::validator::ValidatorFactory;
 use lightning_signer::policy::DEFAULT_FEE_VELOCITY_CONTROL;
 use lightning_signer::util::crypto_utils::generate_seed;
 use lightning_signer::util::velocity::VelocityControlSpec;
@@ -186,7 +188,7 @@ pub fn create_runtime(thread_name: &str) -> Runtime {
 }
 
 /// Make a standard validation factory, allowing VLS_PERMISSIVE env var to override
-pub fn make_validator_factory(network: Network) -> Arc<SimpleValidatorFactory> {
+pub fn make_validator_factory(network: Network) -> Arc<dyn ValidatorFactory> {
     make_validator_factory_with_filter(network, None)
 }
 
@@ -195,7 +197,7 @@ pub fn make_validator_factory(network: Network) -> Arc<SimpleValidatorFactory> {
 pub fn make_validator_factory_with_filter(
     network: Network,
     filter_opt: Option<PolicyFilter>,
-) -> Arc<SimpleValidatorFactory> {
+) -> Arc<dyn ValidatorFactory> {
     make_validator_factory_with_filter_and_velocity(
         network,
         filter_opt,
@@ -211,7 +213,7 @@ pub fn make_validator_factory_with_filter_and_velocity(
     filter_opt: Option<PolicyFilter>,
     velocity_spec: VelocityControlSpec,
     fee_velocity_control_spec: VelocityControlSpec,
-) -> Arc<SimpleValidatorFactory> {
+) -> Arc<dyn ValidatorFactory> {
     let mut policy = make_simple_policy(network);
     policy.global_velocity_control = velocity_spec;
     policy.fee_velocity_control = fee_velocity_control_spec;
@@ -223,10 +225,18 @@ pub fn make_validator_factory_with_filter_and_velocity(
         if let Some(f) = filter_opt {
             policy.filter.merge(f);
         }
-        info!("VLS_ENFORCING: ALL POLICY ERRORS ARE ENFORCED");
+        info!("!VLS_PERMISSIVE: ALL POLICY ERRORS ARE ENFORCED");
     }
 
-    Arc::new(SimpleValidatorFactory::new_with_policy(policy))
+    let simple_factory = SimpleValidatorFactory::new_with_policy(policy);
+
+    if env::var("VLS_ONCHAIN_VALIDATION") == Ok("1".to_string()) {
+        info!("VLS_ONCHAIN_VALIDATION: onchain validation enabled");
+        Arc::new(OnchainValidatorFactory::new_with_simple_factory(simple_factory))
+    } else {
+        warn!("!VLS_ONCHAIN_VALIDATION: onchain validation disabled");
+        Arc::new(simple_factory)
+    }
 }
 
 /// Determine if we should auto approve payments
