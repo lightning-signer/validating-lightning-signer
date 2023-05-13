@@ -82,7 +82,7 @@ impl Policy for OnchainPolicy {
 }
 
 fn make_onchain_policy(_network: Network) -> OnchainPolicy {
-    OnchainPolicy { min_funding_depth: 6 }
+    OnchainPolicy { min_funding_depth: 1 }
 }
 
 impl Validator for OnchainValidator {
