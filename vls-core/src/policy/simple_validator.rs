@@ -10,14 +10,17 @@ use lightning::ln::chan_utils::{
 use lightning::ln::PaymentHash;
 use log::*;
 
-use crate::channel::{ChannelId, ChannelSetup, ChannelSlot, CommitmentType};
-use crate::policy::error::unknown_destinations_error;
-use crate::policy::filter::{FilterResult, PolicyFilter};
-use crate::policy::validator::EnforcementState;
-use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
-use crate::policy::{
-    Policy, DEFAULT_FEE_VELOCITY_CONTROL, MAX_CHANNELS, MAX_INVOICES, MAX_ONCHAIN_TX_SIZE,
+use super::error::{
+    policy_error, transaction_format_error, unknown_destinations_error, ValidationError,
 };
+use super::filter::{FilterResult, PolicyFilter};
+use super::validator::EnforcementState;
+use super::validator::{ChainState, Validator, ValidatorFactory};
+use super::{
+    policy_error_with_filter, Policy, DEFAULT_FEE_VELOCITY_CONTROL, MAX_CHANNELS, MAX_INVOICES,
+    MAX_ONCHAIN_TX_SIZE,
+};
+use crate::channel::{ChannelId, ChannelSetup, ChannelSlot, CommitmentType};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
@@ -38,8 +41,6 @@ use crate::wallet::Wallet;
 
 extern crate scopeguard;
 
-use super::error::{policy_error, transaction_format_error, ValidationError};
-
 const SAFE_COMMITMENT_TYPE: &[CommitmentType] =
     &[CommitmentType::StaticRemoteKey, CommitmentType::AnchorsZeroFeeHtlc];
 
@@ -47,7 +48,7 @@ const MAX_CHAIN_LAG: u32 = 2;
 
 /// A factory for SimpleValidator
 pub struct SimpleValidatorFactory {
-    policy: Option<SimplePolicy>,
+    pub(crate) policy: Option<SimplePolicy>,
 }
 
 impl SimpleValidatorFactory {
@@ -129,14 +130,7 @@ pub struct SimplePolicy {
 
 impl Policy for SimplePolicy {
     fn policy_error(&self, tag: String, msg: String) -> Result<(), ValidationError> {
-        if self.filter.filter(tag.clone()) == FilterResult::Error {
-            Err(policy_error(msg))
-        } else {
-            warn!("policy failed: {} {}", tag, msg);
-            #[cfg(feature = "use_backtrace")]
-            warn!("BACKTRACE:\n{:?}", backtrace::Backtrace::new());
-            Ok(())
-        }
+        policy_error_with_filter(tag, msg, &self.filter)
     }
 
     fn policy_log(&self, tag: String, msg: String) {

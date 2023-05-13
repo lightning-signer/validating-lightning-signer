@@ -16,6 +16,9 @@ pub mod validator;
 use crate::prelude::*;
 use crate::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
 use core::time::Duration;
+use error::{policy_error, ValidationError};
+use filter::{FilterResult, PolicyFilter};
+use log::warn;
 
 /// The default velocity control for L1 fees
 pub const DEFAULT_FEE_VELOCITY_CONTROL: VelocityControlSpec = VelocityControlSpec {
@@ -57,4 +60,19 @@ pub trait Policy {
     }
     /// Velocity control to apply to L1 fees paid by the node
     fn fee_velocity_control(&self) -> VelocityControlSpec;
+}
+
+fn policy_error_with_filter(
+    tag: String,
+    msg: String,
+    filter: &PolicyFilter,
+) -> Result<(), ValidationError> {
+    if filter.filter(tag.clone()) == FilterResult::Error {
+        Err(policy_error(msg))
+    } else {
+        warn!("policy failed: {} {}", tag, msg);
+        #[cfg(feature = "use_backtrace")]
+        warn!("BACKTRACE:\n{:?}", backtrace::Backtrace::new());
+        Ok(())
+    }
 }

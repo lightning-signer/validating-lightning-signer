@@ -3,12 +3,12 @@ use bitcoin::{self, EcdsaSighashType, Network, Script, Sighash, Transaction};
 use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 
+use super::filter::PolicyFilter;
+use super::simple_validator::SimpleValidatorFactory;
+use super::validator::EnforcementState;
+use super::validator::{ChainState, Validator, ValidatorFactory};
+use super::{policy_error_with_filter, Policy, DEFAULT_FEE_VELOCITY_CONTROL};
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
-use crate::policy::error::policy_error;
-use crate::policy::simple_validator::SimpleValidatorFactory;
-use crate::policy::validator::EnforcementState;
-use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
-use crate::policy::{Policy, DEFAULT_FEE_VELOCITY_CONTROL};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
@@ -31,6 +31,11 @@ impl OnchainValidatorFactory {
     pub fn new() -> Self {
         Self { inner_factory: SimpleValidatorFactory::new() }
     }
+
+    /// Create a new onchain validator factory with specific inner simple factory
+    pub fn new_with_simple_factory(inner_factory: SimpleValidatorFactory) -> Self {
+        Self { inner_factory }
+    }
 }
 
 impl ValidatorFactory for OnchainValidatorFactory {
@@ -40,9 +45,11 @@ impl ValidatorFactory for OnchainValidatorFactory {
         node_id: PublicKey,
         channel_id: Option<ChannelId>,
     ) -> Arc<dyn Validator> {
+        // copy the filter from the inner
+        let filter = self.inner_factory.policy.map(|p| p.filter.clone()).unwrap_or_default();
         let validator = OnchainValidator {
             inner: self.inner_factory.make_validator(network, node_id, channel_id),
-            policy: make_onchain_policy(network),
+            policy: make_onchain_policy(network, filter),
         };
         Arc::new(validator)
     }
@@ -60,12 +67,15 @@ pub struct OnchainValidator {
 
 /// Policy to configure the onchain validator
 pub struct OnchainPolicy {
-    min_funding_depth: u16,
+    /// Policy filter
+    pub filter: PolicyFilter,
+    /// Minimum funding confirmations
+    pub min_funding_depth: u16,
 }
 
 impl Policy for OnchainPolicy {
-    fn policy_error(&self, _tag: String, msg: String) -> Result<(), ValidationError> {
-        return Err(policy_error(msg));
+    fn policy_error(&self, tag: String, msg: String) -> Result<(), ValidationError> {
+        policy_error_with_filter(tag, msg, &self.filter)
     }
 
     fn policy_log(&self, _tag: String, msg: String) {
@@ -81,8 +91,8 @@ impl Policy for OnchainPolicy {
     }
 }
 
-fn make_onchain_policy(_network: Network) -> OnchainPolicy {
-    OnchainPolicy { min_funding_depth: 1 }
+fn make_onchain_policy(_network: Network, filter: PolicyFilter) -> OnchainPolicy {
+    OnchainPolicy { filter, min_funding_depth: 1 }
 }
 
 impl Validator for OnchainValidator {
