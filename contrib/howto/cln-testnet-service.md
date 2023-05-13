@@ -91,5 +91,5 @@ sudo journalctl --follow -u cln-testnet
 
 Install log rotation config file (edit to suit preferences):
 ```
-sudo cp ~/lightning-signer/vls-hsmd/vls/howto/artifacts/cln-testnet.logrotate /etc/logrotate.d/cln-testnet
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/cln-testnet.logrotate /etc/logrotate.d/cln-testnet
 ```
