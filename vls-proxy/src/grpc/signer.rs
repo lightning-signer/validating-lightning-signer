@@ -137,12 +137,27 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
                             break;
                         }
                     }
+                    Err(Error::Temporary(error)) => {
+                        error!("received temporary error from handler: {}", error);
+                        let response = SignerResponse {
+                            request_id,
+                            message: vec![],
+                            error: error.message().to_string(),
+                            is_temporary_failure: true,
+                        };
+                        let res = sender.send(response).await;
+                        if res.is_err() {
+                            error!("stream closed");
+                            break;
+                        }
+                    }
                     Err(e) => {
                         error!("received error from handler: {:?}", e);
                         let response = SignerResponse {
                             request_id,
                             message: vec![],
                             error: format!("{:?}", e),
+                            is_temporary_failure: false,
                         };
                         let res = sender.send(response).await;
                         if res.is_err() {
@@ -223,7 +238,7 @@ fn handle(request: SignerRequest, root_handler: &RootHandler) -> StdResult<Signe
                 context
                     .peer_id
                     .try_into()
-                    .map_err(|_| Error::SigningError(Status::invalid_argument("peer id")))?,
+                    .map_err(|_| Error::Signing(Status::invalid_argument("peer id")))?,
             );
             let handler = root_handler.for_new_client(context.dbid, peer, context.dbid);
             handler.handle(msg)?
@@ -240,5 +255,6 @@ fn handle(request: SignerRequest, root_handler: &RootHandler) -> StdResult<Signe
         request_id: request.request_id,
         message: res.as_vec(),
         error: String::new(),
+        is_temporary_failure: false,
     })
 }

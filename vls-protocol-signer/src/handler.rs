@@ -42,7 +42,7 @@ use lightning_signer::{debug_vals, short_function, vals_str};
 use log::*;
 use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
-use lightning_signer::util::status::Status;
+use lightning_signer::util::status::{Code, Status};
 use lightning_signer::wallet::Wallet;
 use vls_protocol::model::{
     Basepoints, BitcoinSignature, BlockHash, DisclosedSecret, ExtKey, Htlc,
@@ -61,20 +61,26 @@ use crate::util::channel_type_to_commitment_type;
 #[derive(Debug)]
 pub enum Error {
     /// Protocol error
-    ProtocolError(ProtocolError),
+    Protocol(ProtocolError),
     /// We failed to sign
-    SigningError(Status),
+    Signing(Status),
+    /// We failed to sign because of a temporary error
+    Temporary(Status),
 }
 
 impl From<ProtocolError> for Error {
     fn from(e: ProtocolError) -> Self {
-        Error::ProtocolError(e)
+        Error::Protocol(e)
     }
 }
 
 impl From<Status> for Error {
     fn from(e: Status) -> Self {
-        Error::SigningError(e)
+        if e.code() == Code::Temporary {
+            Error::Temporary(e)
+        } else {
+            Error::Signing(e)
+        }
     }
 }
 

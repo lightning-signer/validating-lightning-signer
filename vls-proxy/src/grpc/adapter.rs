@@ -5,7 +5,7 @@ use std::result::Result as StdResult;
 use std::sync::Arc;
 
 use futures::{Stream, StreamExt};
-use log::{error, info};
+use log::*;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinHandle;
@@ -118,7 +118,8 @@ impl ProtocolAdapter {
                         match resp_opt {
                             Some(Ok(resp)) => {
                                 info!("got signer response {}", resp.request_id);
-                                if !resp.error.is_empty() {
+                                // temporary failures are not fatal and are handled below
+                                if !resp.error.is_empty() && !resp.is_temporary_failure {
                                     error!("signer error: {}", resp.error);
                                     // all signer errors are fatal
                                     // TODO exit more cleanly
@@ -128,10 +129,15 @@ impl ProtocolAdapter {
                                     // here and exit.
                                     exit(1);
                                 }
+
+                                if resp.is_temporary_failure {
+                                    warn!("signer temporary failure on {}: {}", resp.request_id, resp.error);
+                                }
+
                                 let mut reqs = requests.lock().await;
                                 let channel_req_opt = reqs.requests.remove(&resp.request_id);
                                 if let Some(channel_req) = channel_req_opt {
-                                    let reply = ChannelReply { reply: resp.message };
+                                    let reply = ChannelReply { reply: resp.message, is_temporary_failure: resp.is_temporary_failure };
                                     let send_res = channel_req.reply_tx.send(reply);
                                     if send_res.is_err() {
                                         error!("failed to send response back to internal channel");
@@ -176,6 +182,7 @@ pub struct ChannelRequest {
 // mpsc reply
 pub struct ChannelReply {
     pub reply: Vec<u8>,
+    pub is_temporary_failure: bool,
 }
 
 #[derive(Clone, Debug)]
