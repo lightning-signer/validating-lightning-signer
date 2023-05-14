@@ -13,6 +13,7 @@ pub mod simple_validator;
 /// Policy enforcement interface
 pub mod validator;
 
+use crate::policy::error::temporary_policy_error;
 use crate::prelude::*;
 use crate::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
 use core::time::Duration;
@@ -46,6 +47,13 @@ pub trait Policy {
     /// A policy error has occurred.
     /// Policy errors can be converted to warnings by returning `Ok(())`
     fn policy_error(&self, _tag: String, msg: String) -> Result<(), error::ValidationError>;
+    /// A temporary policy error has occurred.
+    /// Policy errors can be converted to warnings by returning `Ok(())`
+    fn temporary_policy_error(
+        &self,
+        _tag: String,
+        msg: String,
+    ) -> Result<(), error::ValidationError>;
     /// Log at ERROR or WARN matching the policy error handling
     fn policy_log(&self, _tag: String, msg: String);
     /// Velocity control to apply to the entire node
@@ -71,6 +79,21 @@ fn policy_error_with_filter(
         Err(policy_error(msg))
     } else {
         warn!("policy failed: {} {}", tag, msg);
+        #[cfg(feature = "use_backtrace")]
+        warn!("BACKTRACE:\n{:?}", backtrace::Backtrace::new());
+        Ok(())
+    }
+}
+
+fn temporary_policy_error_with_filter(
+    tag: String,
+    msg: String,
+    filter: &PolicyFilter,
+) -> Result<(), ValidationError> {
+    if filter.filter(tag.clone()) == FilterResult::Error {
+        Err(temporary_policy_error(msg))
+    } else {
+        warn!("policy temporarily failed: {} {}", tag, msg);
         #[cfg(feature = "use_backtrace")]
         warn!("BACKTRACE:\n{:?}", backtrace::Backtrace::new());
         Ok(())

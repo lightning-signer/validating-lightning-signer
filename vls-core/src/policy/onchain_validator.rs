@@ -15,6 +15,7 @@ use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
 use crate::util::velocity::VelocityControlSpec;
 use crate::wallet::Wallet;
 
+use crate::policy::temporary_policy_error_with_filter;
 use log::*;
 
 extern crate scopeguard;
@@ -77,6 +78,10 @@ pub struct OnchainPolicy {
 impl Policy for OnchainPolicy {
     fn policy_error(&self, tag: String, msg: String) -> Result<(), ValidationError> {
         policy_error_with_filter(tag, msg, &self.filter)
+    }
+
+    fn temporary_policy_error(&self, tag: String, msg: String) -> Result<(), ValidationError> {
+        temporary_policy_error_with_filter(tag, msg, &self.filter)
     }
 
     fn policy_log(&self, _tag: String, msg: String) {
@@ -340,7 +345,7 @@ impl OnchainValidator {
         // had enough confirmations.
         if commit_num > 0 {
             if cstate.funding_depth < self.policy.min_funding_depth as u32 {
-                policy_err!(
+                temporary_policy_err!(
                     self,
                     "policy-commitment-spends-active-utxo",
                     "tried commitment {} when funding is not buried at depth {}, our height {}",

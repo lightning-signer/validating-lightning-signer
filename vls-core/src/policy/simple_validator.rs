@@ -21,6 +21,7 @@ use super::{
     MAX_ONCHAIN_TX_SIZE,
 };
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot, CommitmentType};
+use crate::policy::temporary_policy_error_with_filter;
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{
@@ -131,6 +132,10 @@ pub struct SimplePolicy {
 impl Policy for SimplePolicy {
     fn policy_error(&self, tag: String, msg: String) -> Result<(), ValidationError> {
         policy_error_with_filter(tag, msg, &self.filter)
+    }
+
+    fn temporary_policy_error(&self, tag: String, msg: String) -> Result<(), ValidationError> {
+        temporary_policy_error_with_filter(tag, msg, &self.filter)
     }
 
     fn policy_log(&self, tag: String, msg: String) {
