@@ -15,7 +15,7 @@ rust-version = "1.45.2"
 default = ["std", "env_logger", "debug", "use_backtrace"]
 
 no-std = ["lightning/no-std", "lightning-invoice/no-std", "bitcoin/no-std", "core2/alloc", "txoo/no-std"]
-std = ["lightning/std", "lightning-invoice/std", "bitcoin/std", "bitcoin/rand", "serde_bolt/std", "txoo/std"]
+std = ["lightning/std", "lightning-invoice/std", "bitcoin/std", "bitcoin/rand", "serde_bolt/std"]
 secp-lowmemory = ["bitcoin/secp-lowmemory"]
 
 # if you use tonic, this is convenient for auto-conversion of MySigner Status to tonic::Status
@@ -69,7 +69,7 @@ hashbrown = "0.8" # match hashbrown dependency version via lightning
 itertools = { version = "0.10", default-features = false }
 
 [dependencies.txoo]
-version = "0.3"
+version = "0.4"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #branch = "main"
 #path = "../../txoo"
@@ -77,7 +77,7 @@ default-features = false
 features = ["no-std"]
 
 [dev-dependencies.txoo]
-version = "0.3"
+version = "0.4"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #branch = "main"
 #path = "../../txoo"
@@ -85,7 +85,7 @@ default-features = false
 features = ["no-std", "test-utils"]
 
 [dev-dependencies.txoo-bitcoind-client]
-version = "0.3"
+version = "0.4"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #branch = "main"
 #path = "../../txoo/bitcoind-client"
@@ -93,6 +93,7 @@ default-features = false
 features = ["dummy-source"]
 
 [dev-dependencies]
+tokio = { version = "1.0", default-features = false, features = ["macros"] }
 paste = "1.0"
 # For logging in unit tests
 test-log = "0.2.8"
