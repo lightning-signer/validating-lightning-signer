@@ -10,7 +10,7 @@ use bitcoin::util::sighash::SighashCache;
 use bitcoin::{EcdsaSighashType, Network, OutPoint, Script, Transaction};
 use lightning::chain;
 use lightning::chain::keysinterface::{
-    ChannelSigner, EcdsaChannelSigner, InMemorySigner, SignerProvider,
+    ChannelSigner, EcdsaChannelSigner, EntropySource, InMemorySigner, SignerProvider,
 };
 use lightning::ln::chan_utils::{
     build_htlc_transaction, derive_private_key, derive_public_revocation_key,
@@ -330,6 +330,7 @@ impl ChannelStub {
             keys.commitment_seed,
             channel_value_sat,
             keys.channel_keys_id(),
+            keys.get_secure_random_bytes(),
         )
     }
 }
