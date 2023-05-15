@@ -149,10 +149,6 @@ impl SignerPort for DummySignerPort {
         }
     }
 
-    fn clone(&self) -> Box<dyn SignerPort> {
-        Box::new(Clone::clone(self))
-    }
-
     fn is_ready(&self) -> bool {
         true
     }
@@ -212,10 +208,10 @@ async fn run_with_network(tmpdir: TempDir, network: Network, url: Url) -> Result
     println!("running with network {} rpc {}", network, url);
     let client = BitcoindClient::new(url.clone()).await;
     let info = get_info(&client).await?;
-    let signer_port = DummySignerPort::new(network);
+    let signer_port = Arc::new(DummySignerPort::new(network));
     let source_factory = Arc::new(SourceFactory::new(tmpdir.path(), network));
     let frontend = Frontend::new(
-        Arc::new(SignerPortFront::new(SignerPort::clone(&signer_port), network)),
+        Arc::new(SignerPortFront::new(signer_port.clone(), network)),
         source_factory,
         url,
     );
@@ -247,10 +243,10 @@ async fn run_regtest(tmpdir: TempDir) -> Result<()> {
     let block_hash = mine(&client, &address, 1).await?;
     height += 1;
 
-    let signer_port = DummySignerPort::new(network);
+    let signer_port = Arc::new(DummySignerPort::new(network));
     let source_factory = Arc::new(SourceFactory::new(tmpdir.path(), network));
     let frontend = Frontend::new(
-        Arc::new(SignerPortFront::new(SignerPort::clone(&signer_port), network)),
+        Arc::new(SignerPortFront::new(signer_port.clone(), network)),
         source_factory,
         url,
     );

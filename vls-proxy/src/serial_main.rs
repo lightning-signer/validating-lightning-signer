@@ -94,7 +94,7 @@ pub fn main() -> anyhow::Result<()> {
 
         let network = vls_network().parse::<Network>().expect("malformed vls network");
         let signer_port = SerialSignerPort::new(serial.clone());
-        let signer_front = Arc::new(SignerPortFront::new(Box::new(signer_port), network));
+        let signer_front = Arc::new(SignerPortFront::new(Arc::new(signer_port), network));
         let source_factory = Arc::new(SourceFactory::new(".", network));
         let frontend = Frontend::new(
             signer_front,

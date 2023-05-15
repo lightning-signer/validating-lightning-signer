@@ -85,10 +85,10 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
 
     let network = vls_network().parse::<Network>().expect("malformed vls network");
     let sender = server.sender();
-    let signer_port = GrpcSignerPort::new(sender.clone());
+    let signer_port = Arc::new(GrpcSignerPort::new(sender.clone()));
     let source_factory = Arc::new(SourceFactory::new(".", network));
     let frontend = Frontend::new(
-        Arc::new(SignerPortFront::new(Box::new(signer_port), network)),
+        Arc::new(SignerPortFront::new(signer_port.clone(), network)),
         source_factory,
         Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
     );
@@ -96,7 +96,7 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
 
     // Start the UNIX fd listener loop
     spawn_blocking(move || {
-        let mut signer_loop = SignerLoop::new(client, sender, shutdown_trigger);
+        let mut signer_loop = SignerLoop::new(client, signer_port, shutdown_trigger);
         signer_loop.start()
     });
 

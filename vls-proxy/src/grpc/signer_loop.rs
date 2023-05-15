@@ -27,10 +27,6 @@ impl SignerPort for GrpcSignerPort {
         self.get_reply(reply_rx).await
     }
 
-    fn clone(&self) -> Box<dyn SignerPort> {
-        Box::new(Self { sender: self.sender.clone(), is_ready: self.is_ready.clone() })
-    }
-
     fn is_ready(&self) -> bool {
         self.is_ready.load(Ordering::Relaxed)
     }
@@ -42,12 +38,9 @@ impl GrpcSignerPort {
     }
 
     async fn send_request(&self, message: Vec<u8>) -> Result<oneshot::Receiver<ChannelReply>> {
-        // Create a one-shot channel to receive the reply
-        let (reply_tx, reply_rx) = oneshot::channel();
+        let (reply_rx, request) = Self::prepare_request(message, None);
 
         // Send a request to the gRPC handler to send to signer
-        let request = ChannelRequest { client_id: None, message, reply_tx };
-
         // This can fail if gRPC adapter shut down
         self.sender.send(request).await.map_err(|_| Error::Eof)?;
 
@@ -55,6 +48,36 @@ impl GrpcSignerPort {
         self.is_ready.store(true, Ordering::Relaxed);
 
         Ok(reply_rx)
+    }
+
+    // Send a blocking request to the signer with an optional client_id
+    // for use in [`SignerLoop`]
+    fn send_request_blocking(
+        &self,
+        message: Vec<u8>,
+        client_id: Option<ClientId>,
+    ) -> Result<oneshot::Receiver<ChannelReply>> {
+        let (reply_rx, request) = Self::prepare_request(message, client_id);
+
+        // Send a request to the gRPC handler to send to signer
+        // This can fail if gRPC adapter shut down
+        self.sender.blocking_send(request).map_err(|_| Error::Eof)?;
+
+        // Once the initial packet is sent, the signer is ready
+        self.is_ready.store(true, Ordering::Relaxed);
+
+        Ok(reply_rx)
+    }
+
+    fn prepare_request(
+        message: Vec<u8>,
+        client_id: Option<ClientId>,
+    ) -> (oneshot::Receiver<ChannelReply>, ChannelRequest) {
+        // Create a one-shot channel to receive the reply
+        let (reply_tx, reply_rx) = oneshot::channel();
+
+        let request = ChannelRequest { client_id, message, reply_tx };
+        (reply_rx, request)
     }
 
     async fn get_reply(&self, reply_rx: oneshot::Receiver<ChannelReply>) -> Result<Vec<u8>> {
@@ -71,32 +94,28 @@ impl GrpcSignerPort {
 pub struct SignerLoop<C: 'static + Client> {
     client: C,
     log_prefix: String,
-    sender: mpsc::Sender<ChannelRequest>,
+    signer_port: Arc<GrpcSignerPort>,
     client_id: Option<ClientId>,
     shutdown_trigger: Option<Trigger>,
 }
 
 impl<C: 'static + Client> SignerLoop<C> {
     /// Create a loop for the root (lightningd) connection, but doesn't start it yet
-    pub fn new(client: C, sender: mpsc::Sender<ChannelRequest>, shutdown_trigger: Trigger) -> Self {
+    pub fn new(client: C, signer_port: Arc<GrpcSignerPort>, shutdown_trigger: Trigger) -> Self {
         let log_prefix = format!("{}/{}", std::process::id(), client.id());
         Self {
             client,
             log_prefix,
-            sender,
+            signer_port,
             client_id: None,
             shutdown_trigger: Some(shutdown_trigger),
         }
     }
 
     // Create a loop for a non-root connection
-    fn new_for_client(
-        client: C,
-        sender: mpsc::Sender<ChannelRequest>,
-        client_id: ClientId,
-    ) -> Self {
+    fn new_for_client(client: C, signer_port: Arc<GrpcSignerPort>, client_id: ClientId) -> Self {
         let log_prefix = format!("{}/{}", std::process::id(), client.id());
-        Self { client, log_prefix, sender, client_id: Some(client_id), shutdown_trigger: None }
+        Self { client, log_prefix, signer_port, client_id: Some(client_id), shutdown_trigger: None }
     }
 
     /// Start the read loop
@@ -127,7 +146,7 @@ impl<C: 'static + Client> SignerLoop<C> {
                     let peer_id = m.peer_id.0;
                     let client_id = ClientId { peer_id, dbid: m.dbid };
                     let mut new_loop =
-                        SignerLoop::new_for_client(new_client, self.sender.clone(), client_id);
+                        SignerLoop::new_for_client(new_client, self.signer_port.clone(), client_id);
                     spawn_blocking(move || new_loop.start());
                 }
                 _ => {
@@ -152,15 +171,7 @@ impl<C: 'static + Client> SignerLoop<C> {
     }
 
     fn send_request(&mut self, message: Vec<u8>) -> Result<oneshot::Receiver<ChannelReply>> {
-        // Create a one-shot channel to receive the reply
-        let (reply_tx, reply_rx) = oneshot::channel();
-
-        // Send a request to the gRPC handler to send to signer
-        let request = ChannelRequest { client_id: self.client_id.clone(), message, reply_tx };
-
-        // This can fail if gRPC adapter shut down
-        self.sender.blocking_send(request).map_err(|_| Error::Eof)?;
-        Ok(reply_rx)
+        self.signer_port.send_request_blocking(message, self.client_id.clone())
     }
 
     fn get_reply(&mut self, reply_rx: oneshot::Receiver<ChannelReply>) -> Result<Vec<u8>> {
