@@ -8,7 +8,7 @@ for more information.  Our [web site](https://vls.tech/).
 
 The following remain to be implemented:
 
-* `vlsd2 --recover-close` can only handle a simple force-close by us.  It cannot sweep a force-close or a breach by the peer.  It also cannot sweep HTLC outputs.
+* `vlsd2 --recover-to` can only handle a simple force-close by us.  It cannot sweep a force-close or a breach by the peer.  It also cannot sweep HTLC outputs.
 * there is no facility to recover from loss of signer state.
 * on-chain tracking is not fully implemented, so a malicious node can steal funds by failing to remedy a breach (for example)
 

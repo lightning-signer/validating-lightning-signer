@@ -2,16 +2,20 @@
 pub mod direct;
 
 use crate::tx_util::create_spending_transaction;
-use bitcoind_client::{explorer_from_url, BlockExplorerType};
-use lightning_signer::bitcoin::hashes::hex::ToHex;
-use lightning_signer::bitcoin::psbt::serialize::Serialize;
-use lightning_signer::bitcoin::secp256k1::{PublicKey, SecretKey};
-use lightning_signer::bitcoin::{Network, Script, Transaction, Witness};
-use lightning_signer::lightning::chain::keysinterface::DelayedPaymentOutputDescriptor;
-use lightning_signer::lightning::chain::transaction::OutPoint;
+use bitcoin::hashes::hex::ToHex;
+use bitcoin::psbt::serialize::Serialize;
+use bitcoin::secp256k1::{PublicKey, SecretKey};
+use bitcoin::{Address, Network, Script, Transaction, Witness};
+use bitcoind_client::esplora_client::EsploraClient;
+use bitcoind_client::{explorer_from_url, BlockExplorerType, Explorer};
+use lightning::chain::keysinterface::DelayedPaymentOutputDescriptor;
+use lightning::chain::transaction::OutPoint;
+use lightning_signer::bitcoin::{PackedLockTime, Sequence, Txid};
 use lightning_signer::node::{Allowable, SpendType, ToStringForNetwork};
 use lightning_signer::util::status::Status;
-use log::{debug, info, warn};
+use lightning_signer::{bitcoin, lightning};
+use log::*;
+use std::collections::BTreeMap;
 use url::Url;
 
 /// Iterator
@@ -25,6 +29,13 @@ impl<T: RecoverySign> Iterator for Iter<T> {
     fn next(&mut self) -> Option<Self::Item> {
         self.signers.pop()
     }
+}
+
+#[derive(serde::Deserialize, Debug, Clone)]
+struct UtxoResponse {
+    txid: Txid,
+    vout: u32,
+    value: u64,
 }
 
 /// Provide enough signer functionality to force-close all channels in a node
@@ -41,6 +52,7 @@ pub trait RecoveryKeys {
         uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
         opaths: &Vec<Vec<u32>>,
     ) -> Result<Vec<Vec<Vec<u8>>>, Status>;
+    fn wallet_address_native(&self, index: u32) -> Result<Address, Status>;
 }
 
 /// Provide enough signer functionality to force-close a channel
@@ -54,11 +66,131 @@ pub trait RecoverySign {
 }
 
 #[tokio::main(worker_threads = 2)]
+pub async fn recover_l1<R: RecoveryKeys>(
+    network: Network,
+    block_explorer_type: BlockExplorerType,
+    block_explorer_rpc: Option<Url>,
+    destination: &str,
+    keys: R,
+    max_index: u32,
+) {
+    match block_explorer_type {
+        BlockExplorerType::Esplora => {}
+        _ => {
+            panic!("only esplora supported for l1 recovery");
+        }
+    };
+
+    let url = block_explorer_rpc.expect("must have block explorer rpc");
+    let esplora = EsploraClient::new(url).await;
+
+    let mut utxos = Vec::new();
+    for index in 0..max_index {
+        let address = keys.wallet_address_native(index).expect("address");
+        utxos.append(
+            &mut get_utxos(&esplora, address)
+                .await
+                .expect("get utxos")
+                .into_iter()
+                .map(|u| (index, u))
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    if destination == "none" {
+        info!("no destination specified, only printing txs");
+    }
+
+    let destination_address: Address =
+        destination.parse().expect("destination address must be valid");
+    assert!(
+        destination_address.is_valid_for_network(network),
+        "destination address must be valid for network"
+    );
+
+    let feerate_per_kw = get_feerate(&esplora).await.expect("get feerate");
+
+    for chunk in utxos.chunks(10) {
+        let tx = match make_l1_sweep(&keys, &destination_address, chunk, feerate_per_kw) {
+            Some(value) => value,
+            None => continue,
+        };
+
+        esplora.broadcast_transaction(&tx).await.expect("broadcast tx");
+    }
+}
+
+// chunk is a list of (derivation-index, utxo)
+fn make_l1_sweep<R: RecoveryKeys>(
+    keys: &R,
+    destination_address: &Address,
+    chunk: &[(u32, UtxoResponse)],
+    feerate_per_kw: u64,
+) -> Option<Transaction> {
+    let value = chunk.iter().map(|(_, u)| u.value).sum::<u64>();
+
+    let mut tx = Transaction {
+        version: 2,
+        lock_time: PackedLockTime::ZERO,
+        input: chunk
+            .iter()
+            .map(|(_, u)| bitcoin::TxIn {
+                previous_output: bitcoin::OutPoint { txid: u.txid, vout: u.vout },
+                sequence: Sequence::ZERO,
+                witness: Witness::default(),
+                script_sig: Script::new(),
+            })
+            .collect(),
+        output: vec![bitcoin::TxOut { value, script_pubkey: destination_address.script_pubkey() }],
+    };
+    let total_fee = feerate_per_kw * tx.weight() as u64 / 1000;
+    if total_fee > value - 1000 {
+        warn!("not enough value to pay fee {:?}", tx);
+        return None;
+    }
+    tx.output[0].value -= total_fee;
+    info!("sending tx {} - {}", tx.txid().to_hex(), tx.serialize().to_hex());
+
+    let ipaths = chunk.iter().map(|(i, _)| vec![*i]).collect::<Vec<_>>();
+    let values = chunk.iter().map(|(_, u)| u.value).collect::<Vec<_>>();
+    let spendtypes = chunk.iter().map(|_| SpendType::P2wpkh).collect::<Vec<_>>();
+    let unicosekeys = chunk.iter().map(|_| None).collect::<Vec<_>>();
+
+    // sign transaction
+    let witnesses = keys
+        .sign_onchain_tx(&tx, &vec![], &ipaths, &values, &spendtypes, unicosekeys, &vec![vec![]])
+        .expect("sign tx");
+
+    for (i, witness) in witnesses.into_iter().enumerate() {
+        tx.input[i].witness = Witness::from_vec(witness);
+    }
+    Some(tx)
+}
+
+// get the utxos for an address
+async fn get_utxos(esplora: &EsploraClient, address: Address) -> Result<Vec<UtxoResponse>, ()> {
+    let utxos: Vec<UtxoResponse> =
+        esplora.get(&format!("address/{}/utxo", address)).await.map_err(|e| {
+            error!("{}", e);
+        })?;
+    Ok(utxos)
+}
+
+// get the 24-block (4 hour) feerate
+async fn get_feerate(esplora: &EsploraClient) -> Result<u64, ()> {
+    let fees: BTreeMap<String, f64> = esplora.get("fee-estimates").await.map_err(|e| {
+        error!("{}", e);
+    })?;
+    let feerate = (fees.get("24").expect("feerate") * 1000f64).ceil() as u64;
+    Ok(feerate)
+}
+
+#[tokio::main(worker_threads = 2)]
 pub async fn recover_close<R: RecoveryKeys>(
     network: Network,
     block_explorer_type: BlockExplorerType,
     block_explorer_rpc: Option<Url>,
-    address: &str,
+    destination: &str,
     keys: R,
 ) {
     let explorer_client = match block_explorer_rpc {
@@ -69,7 +201,7 @@ pub async fn recover_close<R: RecoveryKeys>(
     let mut sweeps = Vec::new();
 
     for signer in keys.iter() {
-        println!("# funding {:?}", signer.funding_outpoint());
+        info!("# funding {:?}", signer.funding_outpoint());
 
         let (tx, htlc_txs, revocable_script, uck, revocation_pubkey) =
             signer.sign_holder_commitment_tx_for_recovery().expect("sign");
@@ -132,17 +264,22 @@ pub async fn recover_close<R: RecoveryKeys>(
                 }
             }
         } else {
-            println!("tx: {}", tx.serialize().to_hex());
+            info!("tx: {}", tx.serialize().to_hex());
             for htlc_tx in htlc_txs {
-                println!("HTLC tx: {}", htlc_tx.txid());
+                info!("HTLC tx: {}", htlc_tx.txid());
             }
         }
     }
 
+    if destination == "none" {
+        info!("no address specified, not sweeping");
+        return;
+    }
+
     let wallet_path = vec![];
-    let destination = Allowable::from_str(address, network).expect("address");
-    info!("sweeping to {}", destination.to_string(network));
-    let output_script = destination.to_script().expect("script");
+    let destination_allowable = Allowable::from_str(destination, network).expect("address");
+    info!("sweeping to {}", destination_allowable.to_string(network));
+    let output_script = destination_allowable.to_script().expect("script");
     for (descriptor, uck) in sweeps {
         let feerate = 1000;
         let sweep_tx = spend_delayed_outputs(
@@ -193,4 +330,68 @@ fn spend_delayed_outputs<R: RecoveryKeys>(
         tx.input[idx].witness = Witness::from_vec(w);
     }
     tx
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::recovery::direct::DirectRecoveryKeys;
+    use lightning_signer::bitcoin::secp256k1::Secp256k1;
+    use lightning_signer::util::test_utils::key::make_test_pubkey;
+    use lightning_signer::util::test_utils::{
+        init_node, make_test_previous_tx, TEST_NODE_CONFIG, TEST_SEED,
+    };
+    use std::collections::BTreeMap;
+
+    #[ignore]
+    #[tokio::test]
+    async fn esplora_utxo_test() {
+        fern::Dispatch::new().level(LevelFilter::Info).chain(std::io::stdout()).apply().unwrap();
+        let address: Address = "19XBuBAa78zccvfFrNWKB6PhnA1mMRASeT".parse().unwrap();
+        let esplora = EsploraClient::new("https://blockstream.info/api".parse().unwrap()).await;
+
+        let fees: BTreeMap<String, f64> =
+            esplora.get("fee-estimates").await.expect("fee_estimates");
+        info!("fees: {:?}", fees);
+
+        let utxos = get_utxos(&esplora, address.clone()).await.expect("get_utxos");
+        info!("address {} has {:?}", address, utxos);
+    }
+
+    #[test]
+    fn l1_sweep_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let pubkey = bitcoin::PublicKey::new(make_test_pubkey(2));
+        let address = Address::p2wpkh(&pubkey, Network::Testnet).unwrap();
+
+        node.add_allowlist(&[address.to_string()]).expect("add_allowlist");
+
+        let secp = Secp256k1::signing_only();
+        let values = vec![(123, 12345u64, SpendType::P2wpkh)];
+        let (input_tx, input_txid) = make_test_previous_tx(&secp, &node, &values);
+        let utxo = UtxoResponse { txid: input_txid, vout: 0, value: 12345 };
+
+        let keys = DirectRecoveryKeys { node };
+        let tx = make_l1_sweep(&keys, &address, &[(123, utxo)], 1000).expect("make_l1_sweep");
+        tx.verify(|txo| {
+            if txo.txid == input_txid && txo.vout == 0 {
+                Some(input_tx.output[0].clone())
+            } else {
+                None
+            }
+        })
+        .expect("verify");
+
+        // won't verify if we change the input amount
+        let utxo = UtxoResponse { txid: input_txid, vout: 0, value: 12346 };
+        let tx = make_l1_sweep(&keys, &address, &[(123, utxo)], 1000).expect("make_l1_sweep");
+        tx.verify(|txo| {
+            if txo.txid == input_txid && txo.vout == 0 {
+                Some(input_tx.output[0].clone())
+            } else {
+                None
+            }
+        })
+        .expect_err("verify");
+    }
 }

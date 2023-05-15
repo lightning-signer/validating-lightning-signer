@@ -1,10 +1,11 @@
 use crate::recovery::{Iter, RecoveryKeys, RecoverySign};
 use lightning_signer::bitcoin::secp256k1::{PublicKey, SecretKey};
-use lightning_signer::bitcoin::{Script, Transaction};
+use lightning_signer::bitcoin::{Address, Script, Transaction};
 use lightning_signer::channel::{Channel, ChannelBase, ChannelSlot};
 use lightning_signer::lightning::chain::transaction::OutPoint;
 use lightning_signer::node::{Node, SpendType};
 use lightning_signer::util::status::Status;
+use lightning_signer::wallet::Wallet;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Recovery keys for an in-process Node
@@ -48,6 +49,10 @@ impl RecoveryKeys for DirectRecoveryKeys {
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
         self.node.check_onchain_tx(tx, input_txs, values_sat, spendtypes, &uniclosekeys, opaths)?;
         self.node.unchecked_sign_onchain_tx(tx, ipaths, values_sat, spendtypes, uniclosekeys)
+    }
+
+    fn wallet_address_native(&self, index: u32) -> Result<Address, Status> {
+        self.node.get_native_address(&[index])
     }
 }
 
