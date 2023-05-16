@@ -21,6 +21,7 @@ use lightning_signer::monitor::State as ChainMonitorState;
 use lightning_signer::node::{NodeState, PaymentState};
 use lightning_signer::persist::model::ChannelEntry as CoreChannelEntry;
 use lightning_signer::policy::validator::{EnforcementState, ValidatorFactory};
+use lightning_signer::policy::DEFAULT_FEE_VELOCITY_CONTROL;
 use lightning_signer::util::ser_util::{ChannelIdHandler, OutPointDef};
 use lightning_signer::util::velocity::VelocityControl as CoreVelocityControl;
 
@@ -62,8 +63,13 @@ pub struct NodeStateEntry {
     #[serde_as(as = "Vec<(Hex, _)>")]
     pub issued_invoices: Vec<(Vec<u8>, PaymentState)>,
     pub velocity_control: VelocityControl,
+    #[serde(default = "default_fee_velocity_control")]
     pub fee_velocity_control: VelocityControl,
     // TODO(devrandom): add routing control fields, once they stabilize
+}
+
+fn default_fee_velocity_control() -> VelocityControl {
+    CoreVelocityControl::new(DEFAULT_FEE_VELOCITY_CONTROL).into()
 }
 
 impl From<&NodeState> for NodeStateEntry {
