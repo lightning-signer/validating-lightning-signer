@@ -13,7 +13,7 @@ name = "vls_persist"
 path = "src/lib.rs"
 
 [features]
-default = ["std", "memo"]
+default = ["std", "memo", "test_utils"]
 std = ["vls-core/std", "log/std"]
 no-std = ["vls-core/no-std"]
 test_utils = ["vls-core/test_utils"]
@@ -32,7 +32,6 @@ log = { version = "0.4", default-features = false }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"], optional = true }
 
 [dev-dependencies]
-vls-core = { path = "../vls-core", version = "0.2.0", features = ["test_utils"] }
 tempfile = "3.2"
 test-log = "0.2"
 env_logger = "0.9"

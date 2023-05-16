@@ -18,7 +18,7 @@ cortex-m-rt = { version = "0.6.10", optional = true }
 cortex-m-semihosting = { version = "0.3.3", optional = true }
 alloc-cortex-m = { version = "0.4.1", optional = true }
 
-vls-core = { path = "../vls-core", default-features = false }
+vls-core = { path = "../vls-core", default-features = false, features = ["no-std"] }
 vls-persist = { path = "../vls-persist", default-features = false, features = ["no-std"] }
 
 [[bin]]
