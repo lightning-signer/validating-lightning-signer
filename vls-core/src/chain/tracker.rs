@@ -466,16 +466,15 @@ pub fn max_target(network: Network) -> Uint256 {
 
 #[cfg(test)]
 mod tests {
+    use crate::util::test_utils::*;
+    use bitcoin::blockdata::constants::genesis_block;
     use bitcoin::hashes::Hash;
+    use bitcoin::network::constants::Network;
+    use bitcoin::util::hash::bitcoin_merkle_root;
+    use bitcoin::{Block, TxIn};
     use bitcoin::{PackedLockTime, Sequence, TxMerkleNode, Witness};
     use bitcoind_client::dummy::DummyTxooSource;
     use core::iter::FromIterator;
-
-    use crate::bitcoin::blockdata::constants::genesis_block;
-    use crate::bitcoin::network::constants::Network;
-    use crate::bitcoin::util::hash::bitcoin_merkle_root;
-    use crate::bitcoin::{Block, TxIn};
-    use crate::util::test_utils::*;
 
     use super::*;
 
@@ -483,14 +482,14 @@ mod tests {
     use test_log::test;
     use txoo::source::Source;
 
-    #[test]
-    fn test_add_remove() -> Result<(), Error> {
+    #[tokio::test]
+    async fn test_add_remove() -> Result<(), Error> {
         let genesis = genesis_block(Network::Regtest);
-        let source = make_source();
+        let source = make_source().await;
         let (mut tracker, _) = make_tracker()?;
         let header0 = tracker.tip().0.clone();
         assert_eq!(tracker.height(), 0);
-        let header1 = add_block(&mut tracker, &source, &[])?;
+        let header1 = add_block(&mut tracker, &source, &[]).await?;
         assert_eq!(tracker.height(), 1);
 
         // difficulty can't change within the retarget period
@@ -504,29 +503,29 @@ mod tests {
             Some(Error::InvalidChain)
         );
 
-        let header_removed = remove_block(&mut tracker, &source, &[], &header0)?;
+        let header_removed = remove_block(&mut tracker, &source, &[], &header0).await?;
         assert_eq!(header1, header_removed);
 
         // can't go back before the first block that the tracker saw
-        let (_, filter_header) = source.get(0, &genesis).unwrap();
+        let (_, filter_header) = source.get(0, &genesis).await.unwrap();
         let proof = TxoProof::prove_unchecked(&genesis, &filter_header, 0);
 
         assert_eq!(tracker.remove_block(proof).err(), Some(Error::ReorgTooDeep));
         Ok(())
     }
 
-    fn make_source() -> DummyTxooSource {
+    async fn make_source() -> DummyTxooSource {
         let source = DummyTxooSource::new();
-        source.on_new_block(0, &genesis_block(Network::Regtest));
+        source.on_new_block(0, &genesis_block(Network::Regtest)).await;
         source
     }
 
-    #[test]
-    fn test_listeners() -> Result<(), Error> {
-        let source = make_source();
+    #[tokio::test]
+    async fn test_listeners() -> Result<(), Error> {
+        let source = make_source().await;
         let (mut tracker, validator_factory) = make_tracker()?;
 
-        let header1 = add_block(&mut tracker, &source, &[])?;
+        let header1 = add_block(&mut tracker, &source, &[]).await?;
 
         let tx = make_tx(vec![make_txin(1)]);
         let initial_watch = make_outpoint(1);
@@ -543,7 +542,7 @@ mod tests {
             OrderedSet::from_iter(vec![initial_watch])
         );
 
-        let header2 = add_block(&mut tracker, &source, &[tx.clone()])?;
+        let header2 = add_block(&mut tracker, &source, &[tx.clone()]).await?;
 
         assert_eq!(
             tracker.listeners.get(&listener).unwrap().watches,
@@ -557,7 +556,7 @@ mod tests {
             witness: Witness::default(),
         }]);
 
-        let _header3 = add_block(&mut tracker, &source, &[tx2.clone()])?;
+        let _header3 = add_block(&mut tracker, &source, &[tx2.clone()]).await?;
 
         assert_eq!(tracker.listeners.get(&listener).unwrap().watches, OrderedSet::new());
 
@@ -567,7 +566,7 @@ mod tests {
             vec![second_watch]
         );
 
-        remove_block(&mut tracker, &source, &[tx2], &header2)?;
+        remove_block(&mut tracker, &source, &[tx2], &header2).await?;
 
         assert_eq!(
             tracker.listeners.get(&listener).unwrap().watches,
@@ -580,7 +579,7 @@ mod tests {
             vec![initial_watch, second_watch]
         );
 
-        remove_block(&mut tracker, &source, &[tx], &header1)?;
+        remove_block(&mut tracker, &source, &[tx], &header1).await?;
 
         assert_eq!(
             tracker.listeners.get(&listener).unwrap().watches,
@@ -598,7 +597,7 @@ mod tests {
     }
 
     // returns the new block's header
-    fn add_block(
+    async fn add_block(
         tracker: &mut ChainTracker<MockListener>,
         source: &DummyTxooSource,
         txs: &[Transaction],
@@ -607,8 +606,8 @@ mod tests {
 
         let block = make_block(tracker.tip().0, txs);
         let height = tracker.height() + 1;
-        source.on_new_block(height, &block);
-        let (_attestation, filter_header) = source.get(height, &block).unwrap();
+        source.on_new_block(height, &block).await;
+        let (_attestation, filter_header) = source.get(height, &block).await.unwrap();
         let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
 
         tracker.add_block(block.header.clone(), proof)?;
@@ -616,7 +615,7 @@ mod tests {
     }
 
     // returns the new block's header
-    fn add_block_with_bits(
+    async fn add_block_with_bits(
         tracker: &mut ChainTracker<MockListener>,
         source: &DummyTxooSource,
         bits: u32,
@@ -632,8 +631,8 @@ mod tests {
         let height = tracker.height() + 1;
 
         let filter_header = if do_add {
-            source.on_new_block(height, &block);
-            let (_attestation, filter_header) = source.get(height, &block).unwrap();
+            source.on_new_block(height, &block).await;
+            let (_attestation, filter_header) = source.get(height, &block).await.unwrap();
             filter_header
         } else {
             FilterHeader::all_zeros()
@@ -645,7 +644,7 @@ mod tests {
     }
 
     // returns the removed block's header
-    fn remove_block(
+    async fn remove_block(
         tracker: &mut ChainTracker<MockListener>,
         source: &DummyTxooSource,
         txs: &[Transaction],
@@ -654,7 +653,7 @@ mod tests {
         let txs = txs_with_coinbase(txs);
         let block = make_block(*prev_header, txs);
         let height = tracker.height();
-        let (_attestation, filter_header) = source.get(height, &block).unwrap();
+        let (_attestation, filter_header) = source.get(height, &block).await.unwrap();
         let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
 
         let header = tracker.remove_block(proof)?;
@@ -670,12 +669,12 @@ mod tests {
         txs
     }
 
-    #[test]
-    fn test_retarget() -> Result<(), Error> {
-        let source = make_source();
+    #[tokio::test]
+    async fn test_retarget() -> Result<(), Error> {
+        let source = make_source().await;
         let (mut tracker, _) = make_tracker()?;
         for _ in 1..DIFFCHANGE_INTERVAL {
-            add_block(&mut tracker, &source, &[])?;
+            add_block(&mut tracker, &source, &[]).await?;
         }
         assert_eq!(tracker.height, DIFFCHANGE_INTERVAL - 1);
         let target = tracker.tip().0.target();
@@ -683,20 +682,20 @@ mod tests {
         // Decrease difficulty by 2 fails because of chain max
         let bits = BlockHeader::compact_target_from_u256(&(target << 1));
         assert_eq!(
-            add_block_with_bits(&mut tracker, &source, bits, false).err(),
+            add_block_with_bits(&mut tracker, &source, bits, false).await.err(),
             Some(Error::InvalidBlock)
         );
 
         // Increase difficulty by 8 fails because of max retarget
         let bits = BlockHeader::compact_target_from_u256(&(target >> 3));
         assert_eq!(
-            add_block_with_bits(&mut tracker, &source, bits, false).err(),
+            add_block_with_bits(&mut tracker, &source, bits, false).await.err(),
             Some(Error::InvalidChain)
         );
 
         // Increase difficulty by 2
         let bits = BlockHeader::compact_target_from_u256(&(target >> 1));
-        add_block_with_bits(&mut tracker, &source, bits, true)?;
+        add_block_with_bits(&mut tracker, &source, bits, true).await?;
         Ok(())
     }
 
