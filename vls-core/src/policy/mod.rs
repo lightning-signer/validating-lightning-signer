@@ -28,7 +28,7 @@ pub const DEFAULT_FEE_VELOCITY_CONTROL: VelocityControlSpec = VelocityControlSpe
 };
 
 /// Default maximum number of concurrent channels
-pub const MAX_CHANNELS: usize = 100;
+pub const MAX_CHANNELS: usize = 1000; // WORKAROUND for #305, #306
 
 /// Default maximum number of outstanding invoices (issued and approved)
 pub const MAX_INVOICES: usize = 1000;
