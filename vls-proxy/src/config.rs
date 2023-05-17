@@ -98,10 +98,18 @@ pub struct SignerArgs {
     #[clap(
         long,
         value_parser,
-        help = "recover funds by force-closing channels and sweeping funds to the given address",
+        help = "recover funds to the given address.  By default, l2 funds are recovered (force-close), but you can also recover l1 funds by specifying --recover-l1-range.  You can also perform a dry-run by specifying --recover-to=none.",
         value_name = "BITCOIN_ADDRESS"
     )]
-    pub recover_close: Option<String>,
+    pub recover_to: Option<String>,
+
+    #[clap(
+        long,
+        value_parser,
+        help = "recover l1 funds by sweeping BIP32 addresses up to the given derivation index",
+        value_name = "RANGE"
+    )]
+    pub recover_l1_range: Option<u32>,
 
     #[clap(long, value_parser=parse_velocity_control_spec, help = "global velocity control e.g. hour:10000 (satoshi)")]
     pub velocity_control: Option<VelocityControlSpec>,
@@ -322,8 +330,10 @@ mod tests {
             "policy-channel-safe-mode:warn",
             "--velocity-control",
             "hour:100",
-            "--recover-close",
+            "--recover-to",
             "abc123",
+            "--recover-l1-range",
+            "100",
         ]
         .into_iter()
         .map(|s| s.to_string())
@@ -336,7 +346,8 @@ mod tests {
         assert!(args.integration_test);
         assert_eq!(args.recover_rpc.unwrap().as_str(), "http://localhost:3000/");
         assert_eq!(args.recover_type, "bitcoind");
-        assert_eq!(args.recover_close.unwrap().as_str(), "abc123");
+        assert_eq!(args.recover_to.unwrap().as_str(), "abc123");
+        assert_eq!(args.recover_l1_range, Some(100));
     }
 
     #[test]
