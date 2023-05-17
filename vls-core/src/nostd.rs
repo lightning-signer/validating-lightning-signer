@@ -5,6 +5,7 @@ use core::ops::{Deref, DerefMut};
 /// Convenience trait for Send + Sync
 pub trait SendSync {}
 
+#[derive(Debug)]
 pub struct MutexGuard<'a, T>(RefMut<'a, T>);
 
 pub struct Mutex<T> {

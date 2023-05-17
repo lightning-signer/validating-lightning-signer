@@ -9,6 +9,8 @@ use crate::policy::validator::ChainState;
 use crate::prelude::*;
 use crate::Arc;
 
+use log::*;
+
 /// State
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct State {
@@ -99,6 +101,13 @@ impl ChainMonitor {
         state.funding_vouts.push(outpoint.vout);
     }
 
+    /// Add a funding input
+    /// For single-funding
+    pub fn add_funding_inputs(&self, tx: &Transaction) {
+        let mut state = self.state.lock().expect("lock");
+        state.funding_inputs.extend(tx.input.iter().map(|i| i.previous_output));
+    }
+
     /// Add a funding transaction to keep track of
     /// For dual-funding
     pub fn add_funding(&self, tx: &Transaction, vout: u32) {
@@ -172,6 +181,7 @@ impl ChainListener for ChainMonitor {
                 // Closed on-chain
                 state.closing_height = Some(state.height);
             } else {
+                error!("unknown tx {}\n{:?}\n{:?}\nfunding outpoint {:?}\n", txid, tx, state, self.funding_outpoint);
                 panic!("unknown tx confirmed")
             }
         }
