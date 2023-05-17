@@ -1,7 +1,7 @@
 pub mod invoice;
 pub mod key;
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use core::cmp;
 use std::cmp::Ordering;
@@ -324,6 +324,23 @@ pub fn make_test_invoice(x: u8, amt: u64) -> Invoice {
             .payment_hash(payment_hash)
             .payment_secret(PaymentSecret([x; 32]))
             .duration_since_epoch(Duration::from_secs(123456789))
+            .min_final_cltv_expiry_delta(144)
+            .amount_milli_satoshis(amt)
+            .build_signed(|hash| Secp256k1::new().sign_ecdsa_recoverable(hash, &private_key))
+            .unwrap(),
+    )
+}
+
+pub fn make_current_test_invoice(x: u8, amt: u64) -> Invoice {
+    let payment_preimage = PaymentPreimage([x; 32]);
+    let payment_hash = Sha256Hash::hash(&payment_preimage.0);
+    let private_key = SecretKey::from_slice(&[42; 32]).unwrap();
+    Invoice::Bolt11(
+        InvoiceBuilder::new(Currency::Regtest)
+            .description("test".into())
+            .payment_hash(payment_hash)
+            .payment_secret(PaymentSecret([x; 32]))
+            .duration_since_epoch(SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap())
             .min_final_cltv_expiry_delta(144)
             .amount_milli_satoshis(amt)
             .build_signed(|hash| Secp256k1::new().sign_ecdsa_recoverable(hash, &private_key))
