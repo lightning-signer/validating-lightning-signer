@@ -12,6 +12,7 @@ use lightning_signer::prelude::{Mutex, SendSync};
 use lightning_signer::util::clock::Clock;
 use lightning_signer::util::status::Status;
 use lightning_signer::util::velocity::VelocityControl;
+use lightning_signer::wallet::Wallet;
 
 /// Control payment approval.
 ///
@@ -64,12 +65,28 @@ pub trait Approve: SendSync {
             return Ok(true);
         }
 
-        // TODO check if payee public key in allowlist
-
         // otherwise ask approver
-        if self.approve_invoice(&invoice) {
+        let payee = invoice.payee_pub_key();
+        if node.allowlist_contains_payee(payee) {
+            debug!(
+                "node allowlist contains payee {:?} for invoice with amount {}",
+                payee,
+                invoice.amount_milli_satoshis()
+            );
+            node.add_invoice(invoice)
+        } else if self.approve_invoice(&invoice) {
+            debug!(
+                "invoice to {:?} approved with amount {}",
+                payee,
+                invoice.amount_milli_satoshis()
+            );
             node.add_invoice(invoice)
         } else {
+            warn!(
+                "invoice to {:?} not approved with amount {}",
+                payee,
+                invoice.amount_milli_satoshis()
+            );
             Ok(false)
         }
     }
@@ -100,8 +117,10 @@ pub trait Approve: SendSync {
 
         // otherwise ask approver
         if self.approve_keysend(payment_hash, amount_msat) {
+            debug!("keysend to {:?} approved with amount {}", payee, amount_msat);
             node.add_keysend(payee, payment_hash, amount_msat)
         } else {
+            warn!("keysend to {:?} not approved with amount {}", payee, amount_msat);
             Ok(false)
         }
     }
@@ -334,10 +353,13 @@ mod tests {
         Approve, NegativeApprover, PositiveApprover, VelocityApprover, WarningPositiveApprover,
     };
     use lightning_signer::bitcoin::secp256k1::PublicKey;
+    use lightning_signer::invoice::InvoiceAttributes;
     use lightning_signer::lightning::ln::PaymentHash;
     use lightning_signer::node::{Node, PaymentState};
     use lightning_signer::util::clock::ManualClock;
-    use lightning_signer::util::test_utils::make_test_invoice;
+    use lightning_signer::util::test_utils::{
+        make_current_test_invoice, make_node, make_test_invoice,
+    };
     use lightning_signer::util::velocity::{
         VelocityControl, VelocityControlIntervalType::Hourly, VelocityControlSpec,
     };
@@ -361,6 +383,19 @@ mod tests {
         let success = approver.approve_invoice(&invoice);
         assert!(!success);
         assert_eq!(approver.control.lock().unwrap().velocity(), amt);
+    }
+
+    #[test]
+    fn test_handle_invoice_allowlist() {
+        // need a node for this test for the allowlist
+        let (_, node, _) = make_node();
+        let approver = NegativeApprover();
+        let invoice = make_current_test_invoice(1, 600_000);
+        assert!(!approver.handle_proposed_invoice(&node, invoice.clone()).unwrap());
+
+        let allowable = format!("payee:{}", invoice.payee_pub_key());
+        node.add_allowlist(&[allowable]).unwrap();
+        assert!(approver.handle_proposed_invoice(&node, invoice).unwrap());
     }
 
     #[test]

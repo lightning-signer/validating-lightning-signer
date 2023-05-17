@@ -813,7 +813,10 @@ impl Wallet for Node {
         Ok(Address::p2shwpkh(&pubkey, self.network()).expect("p2shwpkh failed"))
     }
 
-    /// Returns true if script_pubkey is in the node's allowlist.
+    fn allowlist_contains_payee(&self, payee: PublicKey) -> bool {
+        self.allowlist.lock().unwrap().contains(&Allowable::Payee(payee.clone()))
+    }
+
     fn allowlist_contains(&self, script_pubkey: &Script, path: &[u32]) -> bool {
         if self.allowlist.lock().unwrap().contains(&Allowable::Script(script_pubkey.clone())) {
             return true;
