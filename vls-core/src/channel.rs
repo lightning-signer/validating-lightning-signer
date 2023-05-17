@@ -1407,15 +1407,19 @@ impl Channel {
     }
 
     /// The node has signed our funding transaction
-    pub fn funding_signed(&self, _tx: &Transaction, _vout: u32) {
-        // TODO(devrandom) we can't start monitoring the funding here,
-        // because the fundee in v1 doesn't sign the funding.  But we might
-        // want to track inputs here in the future for dual-funding.
+    pub fn funding_signed(&self, tx: &Transaction, _vout: u32) {
+        // Start tracking funding inputs, in case an input is double-spent.
+        // The tracker was already informed of the inputs by the node.
+
+        // Note that the fundee won't detect double-spends this way, because
+        // they never see the details of the funding transaction.
+        // But the fundee doesn't care about double-spends, because they don't
+        // have any funds in the channel yet.
 
         // the lock order is backwards (monitor -> tracker), but we release
         // the monitor lock, so it's OK
 
-        // self.monitor.add_funding(tx, vout);
+        self.monitor.add_funding_inputs(tx);
     }
 
     /// Return channel balances

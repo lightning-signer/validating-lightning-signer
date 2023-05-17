@@ -310,11 +310,13 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
                 let mut found = false;
                 for inp in tx.input.iter() {
                     if slot.watches.remove(&inp.previous_output) {
+                        debug!("{}: matched input {:?}", short_function!(), &inp.previous_output);
                         found = true;
                         slot.seen.insert(inp.previous_output);
                     }
                 }
                 if slot.txid_watches.contains(&tx.txid()) {
+                    debug!("{}: matched txid {}", short_function!(), &tx.txid());
                     found = true;
                 }
                 if found {
@@ -322,6 +324,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
                 }
             }
             let new_watches = listener.on_add_block(matched);
+            debug!("{}: adding {:?} watches", short_function!(), new_watches);
             slot.watches.extend(new_watches);
         }
     }
@@ -333,6 +336,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
             watches: OrderedSet::new(),
             seen: OrderedSet::new(),
         };
+        debug!("{}: adding listener with txid watches {:?}", short_function!(), slot.txid_watches);
         self.listeners.insert(listener, slot);
     }
 
@@ -342,6 +346,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
             .listeners
             .get_mut(&listener)
             .expect("trying to add watches to non-existent listener");
+        debug!("{}: adding watches {:?}", short_function!(), watches);
         slot.watches.extend(watches);
     }
 
