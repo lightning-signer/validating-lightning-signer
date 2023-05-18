@@ -33,7 +33,7 @@ sudo chown -R bitcoin:bitcoin  /home/bitcoin/.bitcoin
 
 Install systemd unit file:
 ```
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/bitcoind-testnet.service /lib/systemd/system/
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/bitcoind-testnet.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 

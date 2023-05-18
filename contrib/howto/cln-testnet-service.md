@@ -65,7 +65,7 @@ grep -v GREENLIGHT_VERSION testnet-env > testnet-env.new &&
 
 Install systemd unit file:
 ```
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/cln-testnet.service /lib/systemd/system/
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/cln-testnet.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 

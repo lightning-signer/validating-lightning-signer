@@ -20,7 +20,7 @@ sudo chown vls:vls /home/vls/vlsd2.toml
 
 Install systemd unit file:
 ```
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/vls-testnet.service /lib/systemd/system/
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/vls-testnet.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
@@ -37,7 +37,7 @@ https://gitlab.com/lightning-signer/validating-lightning-signer/-/issues/259]
 
 Add `Environment=VLS_PERMISSIVE=1` after the existing `Environment=...` line:
 ```
-sudo vi /lib/systemd/system/vls-testnet.service
+sudo vi /etc/systemd/system/vls-testnet.service
 sudo systemctl daemon-reload
 ```
 
