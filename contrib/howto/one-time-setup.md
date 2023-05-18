@@ -107,7 +107,37 @@ One-time setup stuff:
 ./scripts/enable-githooks
 ```
 
+Initial Build of CLN and VLS:
+```
+cd ~/lightning-signer/vls-hsmd && make build-standard
+cd ~/lightning-signer/vls-hsmd/lightning && poetry run make
+```
+
 Check if an integration test works:
 ```
 make configure-standard test-one TEST=tests/test_pay.py::test_pay
+```
+
+### Install CLN+VLS Service Components
+
+You can skip this if you are only developing ...
+
+Install CLN components on the `CLNHOST`:
+```
+cd ~/lightning-signer/vls-hsmd/lightning
+sudo make install
+/usr/local/bin/lightningd --version
+
+sudo cp ~/lightning-signer/vls-hsmd/vls/target/debug/remote_hsmd_serial \
+    /usr/local/libexec/c-lightning/
+sudo cp ~/lightning-signer/vls-hsmd/vls/target/debug/remote_hsmd_socket \
+    /usr/local/libexec/c-lightning/
+/usr/local/libexec/c-lightning/remote_hsmd_serial --git-desc
+/usr/local/libexec/c-lightning/remote_hsmd_socket --git-desc
+```
+
+Install the VLS signer on the `VLSHOST` if you are running in `SOCKET` mode:
+```
+sudo cp ~/lightning-signer/vls-hsmd/vls/target/debug/vlsd2 /usr/local/bin
+/usr/local/bin/vlsd2 --git-desc
 ```
