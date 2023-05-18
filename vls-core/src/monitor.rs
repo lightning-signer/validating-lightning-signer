@@ -181,7 +181,10 @@ impl ChainListener for ChainMonitor {
                 // Closed on-chain
                 state.closing_height = Some(state.height);
             } else {
-                error!("unknown tx {}\n{:?}\n{:?}\nfunding outpoint {:?}\n", txid, tx, state, self.funding_outpoint);
+                error!(
+                    "unknown tx {}\n{:?}\n{:?}\nfunding outpoint {:?}\n",
+                    txid, tx, state, self.funding_outpoint
+                );
                 panic!("unknown tx confirmed")
             }
         }
