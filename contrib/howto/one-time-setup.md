@@ -100,6 +100,7 @@ Clone tree, select branch, update:
 git clone https://gitlab.com/lightning-signer/vls-hsmd.git && cd vls-hsmd
 git checkout <branch-tag-or-main>
 git submodule update --init --recursive
+git fetch --all --recurse-submodules --tags
 ```
 
 One-time setup stuff:
