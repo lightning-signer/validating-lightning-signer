@@ -1412,7 +1412,7 @@ impl Node {
         );
 
         debug_vals!(&chan.setup);
-        trace_enforcement_state!(&chan.enforcement_state);
+        trace_enforcement_state!(&chan);
         self.persister
             .update_tracker(&self.get_id(), &tracker)
             .map_err(|_| internal_error("tracker persist failed"))?;
