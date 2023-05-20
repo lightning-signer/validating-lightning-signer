@@ -36,3 +36,9 @@ this behavior.  This is useful in development when building repeatedly.
 #### `RUST_LOG` - Set the logging level
 
 The `RUST_LOG` environment variable can be set to `trace`, `debug`, `info` ...
+
+#### `VLS_ONCHAIN_VALIDATION` - Enable onchain validation
+
+Setting `VLS_ONCHAIN_VALIDATION=1` enables policy checking involving onchain events.  For
+example ensuring that the funding transaction is locked before allowing further channel
+operations.
