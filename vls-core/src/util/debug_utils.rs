@@ -149,6 +149,7 @@ impl<'a> core::fmt::Debug for DebugCommitmentTransaction<'a> {
 }
 
 /// Debug support for bytes
+#[derive(Clone)]
 pub struct DebugBytes<'a>(pub &'a [u8]);
 impl<'a> core::fmt::Debug for DebugBytes<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
