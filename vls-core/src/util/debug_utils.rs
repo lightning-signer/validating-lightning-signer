@@ -1,4 +1,5 @@
 use crate::node::{PaymentState, RoutedPayment};
+use crate::persist::Mutations;
 use crate::prelude::*;
 use bitcoin::hashes::hex;
 use bitcoin::hashes::hex::ToHex;
@@ -51,6 +52,16 @@ macro_rules! trace_enforcement_state {
             &$chan.get_chain_state()
         );
     };
+}
+
+/// Debug printer for Mutations which uses hex encoded strings.
+pub struct DebugMutations<'a>(pub &'a Mutations);
+impl<'a> core::fmt::Debug for DebugMutations<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_list()
+            .entries(self.0.iter().map(|(k, v)| (k.clone(), (&v.0, DebugBytes(&v.1[..])))))
+            .finish()
+    }
 }
 
 /// Debug printer for Payload which uses hex encoded strings.

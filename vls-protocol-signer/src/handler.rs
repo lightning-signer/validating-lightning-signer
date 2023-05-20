@@ -36,6 +36,7 @@ use lightning_signer::persist::Mutations;
 use lightning_signer::prelude::Mutex;
 use lightning_signer::signer::my_keys_manager::MyKeysManager;
 use lightning_signer::tx::tx::HTLCInfo2;
+use lightning_signer::util::debug_utils::DebugMutations;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
 use lightning_signer::{debug_vals, short_function, vals_str};
@@ -119,6 +120,14 @@ pub trait Handler {
         let result = self.do_handle(msg);
         if let Err(ref err) = result {
             log_error(err);
+            if let Error::Temporary(_) = err {
+                // There must be no mutated state when a temporary error is returned
+                let dirty = context.exit();
+                if !dirty.is_empty() {
+                    debug!("stranded mutations: {:#?}", &DebugMutations(&dirty));
+                    panic!("temporary error with stranded mutations");
+                }
+            }
         }
         let reply = result?;
         log_reply(&reply);

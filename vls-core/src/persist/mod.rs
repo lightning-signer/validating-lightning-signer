@@ -3,6 +3,7 @@ use alloc::sync::Arc;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
 use bitcoin::secp256k1::PublicKey;
+use core::fmt::Debug;
 use lightning::chain::keysinterface::EntropySource;
 
 use crate::channel::{Channel, ChannelId, ChannelStub};
