@@ -372,6 +372,7 @@ mod tests {
                 let channel = node
                     .ready_channel(channel_id0.clone(), Some(channel_id1.clone()), setup, &vec![])
                     .unwrap();
+                persister.update_tracker(&node_id, &node.get_tracker()).unwrap();
                 persister.update_channel(&node_id, &channel).unwrap();
 
                 let nodes = Node::restore_nodes(services.clone(), seed_persister);
