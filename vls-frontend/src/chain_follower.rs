@@ -33,6 +33,8 @@ pub struct ChainFollower {
     follower: SourceWithTxooProofFollower,
     state: Mutex<State>,
     update_interval: u64,
+    // sleep before performing an update, to test race conditions
+    debug_update_sleep: u32,
 }
 
 #[derive(Debug, PartialEq)]
@@ -102,12 +104,16 @@ impl ChainFollower {
             update_interval
         );
         let follower = SourceWithTxooProofFollower::new(Box::new(client), txoo_source);
+        let debug_update_sleep = std::env::var("VLS_CHAINFOLLOWER_DEBUG_UPDATE_SLEEP")
+            .map(|s| s.parse().expect("VLS_CHAINFOLLOWER_DEBUG_UPDATE_SLEEP parse"))
+            .unwrap_or(0);
         Arc::new(ChainFollower {
             tracker,
             heartbeat_monitor: OnceCell::new(),
             follower,
             state: Mutex::new(State::Scanning),
             update_interval,
+            debug_update_sleep,
         })
     }
 
@@ -166,6 +172,17 @@ impl ChainFollower {
         // Fetch the current tip from the tracker
         let (height0, hash0) = self.tracker.tip_info().await;
 
+        if self.debug_update_sleep > 0 && height0 > 100 {
+            info!(
+                "{} at {} before sleep {}s",
+                self.tracker.log_prefix(),
+                height0,
+                self.debug_update_sleep
+            );
+            time::sleep(Duration::from_secs(self.debug_update_sleep.into())).await;
+            info!("{} after sleep", self.tracker.log_prefix());
+        }
+
         match self.follower.follow_with_proof(height0, hash0, self).await? {
             FollowWithProofAction::None => {
                 // Current top block matches
@@ -184,7 +201,12 @@ impl ChainFollower {
                     info!("{} at height {}", self.tracker.log_prefix(), height);
                 }
 
-                // debug!("node {} at height {} adding {}", self.tracker.log_prefix(), height, hash);
+                trace!(
+                    "node {} at height {} adding {}",
+                    self.tracker.log_prefix(),
+                    height,
+                    abbrev!(block.block_hash(), 12)
+                );
                 self.tracker.add_block(block.header, proof).await;
 
                 Ok(ScheduleNext::Immediate)

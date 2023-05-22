@@ -13,7 +13,7 @@ build = "build.rs"
 [features]
 
 default = ["grpc", "main", "debug"]
-grpc = ["tokio", "tokio-stream", "tonic", "prost", "async-stream", "url"]
+grpc = ["tokio", "tokio-stream", "tonic", "prost", "async-stream", "url", "backoff"]
 main = ["clap", "toml", "ctrlc", "fern"]
 log_pretty_print = []
 debug = ["vls-core/debug", "vls-protocol-signer/debug", "log_pretty_print"]
@@ -55,6 +55,7 @@ async-trait = "0.1"
 url = { version = "2.3", optional = true }
 as-any = "0.3"
 hex = "0.4"
+backoff = { version = "0.4", features = ["tokio"], optional = true }
 
 [dependencies.txoo-bitcoind-client]
 version = "0.4.1"

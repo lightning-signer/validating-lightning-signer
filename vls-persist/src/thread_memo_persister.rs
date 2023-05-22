@@ -2,6 +2,8 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::cell::RefCell;
+use core::fmt::{self, Debug, Formatter};
+use lightning_signer::util::debug_utils::DebugBytes;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{from_slice, to_vec};
@@ -20,10 +22,30 @@ use lightning_signer::prelude::*;
 
 use crate::model::*;
 
+use log::*;
+
 struct State {
     // value is (revision, value)
     store: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
     dirty: BTreeSet<String>,
+}
+
+struct DebugStoreMap<'a>(pub &'a BTreeMap<String, (u64, Vec<u8>)>);
+impl<'a> core::fmt::Debug for DebugStoreMap<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_map()
+            .entries(self.0.iter().map(|(k, v)| (k.clone(), (&v.0, DebugBytes(&v.1[..])))))
+            .finish()
+    }
+}
+
+impl Debug for State {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("State")
+            .field("store", &DebugStoreMap(&self.store.lock().unwrap()))
+            .field("dirty", &self.dirty)
+            .finish()
+    }
 }
 
 impl State {
@@ -176,6 +198,7 @@ impl Drop for StdContext {
         MEMOS.with(|m| {
             let mut m = m.borrow_mut();
             if m.is_some() {
+                error!("stranded mutations: {:#?}", *m);
                 *m = None;
                 if !std::thread::panicking() {
                     // only panic if not already panicking

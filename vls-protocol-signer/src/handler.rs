@@ -36,13 +36,14 @@ use lightning_signer::persist::Mutations;
 use lightning_signer::prelude::Mutex;
 use lightning_signer::signer::my_keys_manager::MyKeysManager;
 use lightning_signer::tx::tx::HTLCInfo2;
+use lightning_signer::util::debug_utils::DebugMutations;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
 use lightning_signer::{debug_vals, short_function, vals_str};
 use log::*;
 use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
-use lightning_signer::util::status::Status;
+use lightning_signer::util::status::{Code, Status};
 use lightning_signer::wallet::Wallet;
 use vls_protocol::model::{
     Basepoints, BitcoinSignature, BlockHash, DisclosedSecret, ExtKey, Htlc,
@@ -61,20 +62,26 @@ use crate::util::channel_type_to_commitment_type;
 #[derive(Debug)]
 pub enum Error {
     /// Protocol error
-    ProtocolError(ProtocolError),
+    Protocol(ProtocolError),
     /// We failed to sign
-    SigningError(Status),
+    Signing(Status),
+    /// We failed to sign because of a temporary error
+    Temporary(Status),
 }
 
 impl From<ProtocolError> for Error {
     fn from(e: ProtocolError) -> Self {
-        Error::ProtocolError(e)
+        Error::Protocol(e)
     }
 }
 
 impl From<Status> for Error {
     fn from(e: Status) -> Self {
-        Error::SigningError(e)
+        if e.code() == Code::Temporary {
+            Error::Temporary(e)
+        } else {
+            Error::Signing(e)
+        }
     }
 }
 
@@ -113,6 +120,14 @@ pub trait Handler {
         let result = self.do_handle(msg);
         if let Err(ref err) = result {
             log_error(err);
+            if let Error::Temporary(_) = err {
+                // There must be no mutated state when a temporary error is returned
+                let dirty = context.exit();
+                if !dirty.is_empty() {
+                    debug!("stranded mutations: {:#?}", &DebugMutations(&dirty));
+                    panic!("temporary error with stranded mutations");
+                }
+            }
         }
         let reply = result?;
         log_reply(&reply);

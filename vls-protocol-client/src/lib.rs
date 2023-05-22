@@ -65,15 +65,15 @@ pub use signer_port::SignerPort;
 
 #[derive(Debug)]
 pub enum Error {
-    ProtocolError(ProtocolError),
-    TransportError,
+    Protocol(ProtocolError),
+    Transport,
 }
 
 pub type ClientResult<T> = Result<T, Error>;
 
 impl From<ProtocolError> for Error {
     fn from(e: ProtocolError) -> Self {
-        Error::ProtocolError(e)
+        Error::Protocol(e)
     }
 }
 

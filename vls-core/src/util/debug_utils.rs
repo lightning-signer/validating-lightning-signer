@@ -1,4 +1,5 @@
 use crate::node::{PaymentState, RoutedPayment};
+use crate::persist::Mutations;
 use crate::prelude::*;
 use bitcoin::hashes::hex;
 use bitcoin::hashes::hex::ToHex;
@@ -35,12 +36,32 @@ macro_rules! log_channel_public_keys {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! trace_enforcement_state {
-    ($estate: expr) => {
+    ($chan: expr) => {
         #[cfg(not(feature = "debug_enforcement_state"))]
-        trace!("{}:\n{:#?}", function!(), $estate);
+        trace!(
+            "{}:\n{:#?}\n{:#?}",
+            function!(),
+            &$chan.enforcement_state,
+            &$chan.get_chain_state()
+        );
         #[cfg(feature = "debug_enforcement_state")]
-        debug!("{}:\n{:#?}", function!(), $estate);
+        debug!(
+            "{}:\n{:#?}\n{:#?}",
+            function!(),
+            &$chan.enforcement_state,
+            &$chan.get_chain_state()
+        );
     };
+}
+
+/// Debug printer for Mutations which uses hex encoded strings.
+pub struct DebugMutations<'a>(pub &'a Mutations);
+impl<'a> core::fmt::Debug for DebugMutations<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_list()
+            .entries(self.0.iter().map(|(k, v)| (k.clone(), (&v.0, DebugBytes(&v.1[..])))))
+            .finish()
+    }
 }
 
 /// Debug printer for Payload which uses hex encoded strings.
@@ -139,6 +160,7 @@ impl<'a> core::fmt::Debug for DebugCommitmentTransaction<'a> {
 }
 
 /// Debug support for bytes
+#[derive(Clone)]
 pub struct DebugBytes<'a>(pub &'a [u8]);
 impl<'a> core::fmt::Debug for DebugBytes<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {

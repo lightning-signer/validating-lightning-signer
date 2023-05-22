@@ -3,9 +3,9 @@ use core::fmt;
 
 #[cfg(feature = "use_backtrace")]
 use backtrace::Backtrace;
-use log::error;
+use log::*;
 
-use crate::policy::error::ValidationError;
+use crate::policy::error::{ValidationError, ValidationErrorKind};
 
 /// gRPC compatible error status
 #[derive(Clone)]
@@ -30,6 +30,9 @@ pub enum Code {
 
     /// Internal error.
     Internal = 13,
+
+    /// Temporary error.
+    Temporary = 14,
 }
 
 impl Status {
@@ -61,6 +64,11 @@ impl Status {
     /// Construct an internal error status
     pub fn internal(message: impl Into<String>) -> Status {
         Self::new(Code::Internal, message)
+    }
+
+    /// Construct a temporary error status
+    pub fn temporary(message: impl Into<String>) -> Status {
+        Self::new(Code::Temporary, message)
     }
 }
 
@@ -128,10 +136,21 @@ pub(crate) fn failed_precondition(msg: impl Into<String>) -> Status {
 
 impl From<ValidationError> for Status {
     fn from(ve: ValidationError) -> Self {
-        let s: String = ve.clone().into();
-        error!("FAILED PRECONDITION: {}", &s);
-        #[cfg(feature = "use_backtrace")]
-        error!("BACKTRACE:\n{:?}", &ve.resolved_backtrace());
-        Status::failed_precondition(s)
+        let res = match ve.kind {
+            ValidationErrorKind::TemporaryPolicy(ref s) => {
+                warn!("TEMPORARY POLICY ERROR: {}", s);
+                #[cfg(feature = "use_backtrace")]
+                warn!("BACKTRACE:\n{:?}", &ve.resolved_backtrace());
+                Status::temporary(s)
+            }
+            _ => {
+                let s: String = ve.clone().into();
+                error!("FAILED PRECONDITION: {}", &s);
+                #[cfg(feature = "use_backtrace")]
+                error!("BACKTRACE:\n{:?}", &ve.resolved_backtrace());
+                Status::failed_precondition(s)
+            }
+        };
+        res
     }
 }

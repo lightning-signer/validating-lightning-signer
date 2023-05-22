@@ -1187,8 +1187,14 @@ impl Node {
                     Node::channel_setup_to_channel_transaction_parameters(&setup, keys.pubkeys());
                 keys.provide_channel_parameters(&channel_transaction_parameters);
                 let funding_outpoint = setup.funding_outpoint;
-                // FIXME correct persistence
-                let monitor = ChainMonitor::new(funding_outpoint, 0);
+                // Clone the matching monitor from the chaintracker's listeners
+                let monitor = arc_self
+                    .get_tracker()
+                    .listeners
+                    .get_key_value(&ChainMonitor::new(funding_outpoint, 0))
+                    .expect("monitor key")
+                    .0
+                    .clone();
                 let channel = Channel {
                     node: Arc::downgrade(arc_self),
                     secp_ctx: Secp256k1::new(),
@@ -1412,7 +1418,7 @@ impl Node {
         );
 
         debug_vals!(&chan.setup);
-        trace_enforcement_state!(&chan.enforcement_state);
+        trace_enforcement_state!(&chan);
         self.persister
             .update_tracker(&self.get_id(), &tracker)
             .map_err(|_| internal_error("tracker persist failed"))?;

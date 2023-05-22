@@ -457,7 +457,7 @@ impl Channel {
         self.enforcement_state.set_next_counterparty_revoke_num_for_testing(num);
     }
 
-    fn get_chain_state(&self) -> ChainState {
+    pub(crate) fn get_chain_state(&self) -> ChainState {
         self.monitor.as_chain_state()
     }
 }
@@ -607,7 +607,7 @@ impl Channel {
             validator,
         );
 
-        trace_enforcement_state!(&self.enforcement_state);
+        trace_enforcement_state!(self);
         self.persist()?;
         Ok((sig, htlc_sigs))
     }
@@ -883,7 +883,7 @@ impl Channel {
             validator,
         );
 
-        trace_enforcement_state!(&self.enforcement_state);
+        trace_enforcement_state!(self);
         self.persist()?;
 
         Ok((next_holder_commitment_point, maybe_old_secret))
@@ -945,7 +945,7 @@ impl Channel {
             .map_err(|_| internal_error("failed to sign"))?;
 
         self.enforcement_state.channel_closed = true;
-        trace_enforcement_state!(&self.enforcement_state);
+        trace_enforcement_state!(self);
         self.persist()?;
         Ok((sig, htlc_sigs))
     }
@@ -1024,7 +1024,7 @@ impl Channel {
 
         add_holder_sig(&mut tx, sig, cp_sigs.0, &holder_funding_key, &counterparty_funding_key);
         self.enforcement_state.channel_closed = true;
-        trace_enforcement_state!(&self.enforcement_state);
+        trace_enforcement_state!(self);
 
         let revocation_basepoint = self.keys.counterparty_pubkeys().revocation_basepoint;
         let revocation_pubkey = derive_public_revocation_key(
@@ -1109,7 +1109,7 @@ impl Channel {
             .map_err(|_| internal_error("failed to sign"))?;
 
         self.enforcement_state.channel_closed = true;
-        trace_enforcement_state!(&self.enforcement_state);
+        trace_enforcement_state!(self);
         self.persist()?;
         Ok((sig, htlc_sigs))
     }
@@ -1238,7 +1238,7 @@ impl Channel {
             .sign_closing_transaction(&tx, &self.secp_ctx)
             .map_err(|_| Status::internal("failed to sign"))?;
         self.enforcement_state.channel_closed = true;
-        trace_enforcement_state!(&self.enforcement_state);
+        trace_enforcement_state!(self);
         self.persist()?;
         Ok(sig)
     }
@@ -1286,7 +1286,7 @@ impl Channel {
         );
 
         let sig = self.secp_ctx.sign_ecdsa(&sighash, &privkey);
-        trace_enforcement_state!(&self.enforcement_state);
+        trace_enforcement_state!(self);
         self.persist()?;
         Ok(sig)
     }
@@ -1334,7 +1334,7 @@ impl Channel {
         );
 
         let sig = self.secp_ctx.sign_ecdsa(&htlc_sighash, &htlc_privkey);
-        trace_enforcement_state!(&self.enforcement_state);
+        trace_enforcement_state!(self);
         self.persist()?;
         Ok(sig)
     }
@@ -1380,7 +1380,7 @@ impl Channel {
         );
 
         let sig = self.secp_ctx.sign_ecdsa(&sighash, &privkey);
-        trace_enforcement_state!(&self.enforcement_state);
+        trace_enforcement_state!(self);
         self.persist()?;
         Ok(sig)
     }
@@ -1734,7 +1734,7 @@ impl Channel {
             validator,
         );
 
-        trace_enforcement_state!(&self.enforcement_state);
+        trace_enforcement_state!(self);
         self.persist()?;
 
         // Discard the htlc signatures for now.
@@ -1931,7 +1931,7 @@ impl Channel {
             validator,
         );
 
-        trace_enforcement_state!(&self.enforcement_state);
+        trace_enforcement_state!(self);
         self.persist()?;
 
         Ok((next_holder_commitment_point, maybe_old_secret))
@@ -1956,7 +1956,7 @@ impl Channel {
         )?;
         validator.set_next_counterparty_revoke_num(&mut self.enforcement_state, revoke_num + 1)?;
 
-        trace_enforcement_state!(&self.enforcement_state);
+        trace_enforcement_state!(self);
         self.persist()?;
         Ok(())
     }
@@ -1990,7 +1990,7 @@ impl Channel {
             .sign_closing_transaction(&recomposed_tx, &self.secp_ctx)
             .map_err(|_| Status::internal("failed to sign"))?;
         self.enforcement_state.channel_closed = true;
-        trace_enforcement_state!(&self.enforcement_state);
+        trace_enforcement_state!(self);
         self.persist()?;
         Ok(sig)
     }

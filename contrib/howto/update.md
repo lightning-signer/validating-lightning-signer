@@ -22,6 +22,7 @@ git fetch --recurse-submodules
 git checkout <your-branch-or-main>
 git pull
 make setup
+git fetch --all --recurse-submodules --tags
 ```
 
 ### Build Software

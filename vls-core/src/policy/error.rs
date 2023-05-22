@@ -16,6 +16,10 @@ pub enum ValidationErrorKind {
     Mismatch(String),
     /// A policy was violated
     Policy(String),
+    /// A policy was temporarily violated, but a retry is possible
+    /// (e.g. the funding is not yet considered confirmed because
+    /// the oracle is behind)
+    TemporaryPolicy(String),
     /// A layer-1 transaction outputs to unknown destinations.
     /// Includes the list of tx output indices that are unknown.
     UnknownDestinations(String, Vec<usize>),
@@ -54,6 +58,7 @@ impl ValidationError {
             ScriptFormat(s0) => ScriptFormat(premsg + &s0),
             Mismatch(s0) => Mismatch(premsg + &s0),
             Policy(s0) => Policy(premsg + &s0),
+            TemporaryPolicy(s0) => TemporaryPolicy(premsg + &s0),
             UnknownDestinations(s0, indices) => UnknownDestinations(premsg + &s0, indices.clone()),
         };
         ValidationError {
@@ -91,6 +96,7 @@ impl Into<String> for ValidationError {
             ScriptFormat(s) => "script format: ".to_string() + &s,
             Mismatch(s) => "script template mismatch: ".to_string() + &s,
             Policy(s) => "policy failure: ".to_string() + &s,
+            TemporaryPolicy(s) => "temporary policy failure: ".to_string() + &s,
             UnknownDestinations(s, indices) => {
                 format!("unknown destinations: {} {:?}", s, indices)
             }
@@ -130,6 +136,14 @@ pub(crate) fn policy_error(msg: impl Into<String>) -> ValidationError {
     }
 }
 
+pub(crate) fn temporary_policy_error(msg: impl Into<String>) -> ValidationError {
+    ValidationError {
+        kind: TemporaryPolicy(msg.into()),
+        #[cfg(feature = "use_backtrace")]
+        bt: Backtrace::new_unresolved(),
+    }
+}
+
 pub(crate) fn unknown_destinations_error(unknowns: Vec<usize>) -> ValidationError {
     ValidationError {
         kind: UnknownDestinations("".to_string(), unknowns),
@@ -158,6 +172,21 @@ macro_rules! transaction_format_err {
 macro_rules! policy_err {
 	($obj:expr, $tag:tt, $($arg:tt)*) => (
         $obj.policy().policy_error($tag.into(), format!(
+            "{}: {}",
+            short_function!(),
+            format!($($arg)*)
+        ))?
+    )
+}
+
+/// Return a policy error from the current function, by invoking
+/// temporary_policy_error on the policy object.
+#[doc(hidden)]
+#[macro_export]
+#[allow(unused)]
+macro_rules! temporary_policy_err {
+	($obj:expr, $tag:tt, $($arg:tt)*) => (
+        $obj.policy().temporary_policy_error($tag.into(), format!(
             "{}: {}",
             short_function!(),
             format!($($arg)*)

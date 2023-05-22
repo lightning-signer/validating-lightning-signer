@@ -104,7 +104,13 @@ impl NodePortFront {
 #[async_trait]
 impl ChainTrack for NodePortFront {
     fn log_prefix(&self) -> String {
-        format!("tracker")
+        let lock = self.node_keys.lock().unwrap();
+        if let Some(nk) = lock.as_ref() {
+            let id = nk.node_id.serialize().to_vec();
+            format!("tracker {}", hex::encode(&id[0..4]))
+        } else {
+            format!("tracker")
+        }
     }
 
     async fn id(&self) -> Vec<u8> {
