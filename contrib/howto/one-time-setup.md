@@ -15,7 +15,8 @@ On Debian:
       python3-mako \
       libprotobuf-c-dev \
       protobuf-compiler protobuf-compiler-grpc libgrpc++-dev pkg-config \
-      curl
+      curl \
+      gawk
 
 On Fedora:
 
@@ -39,13 +40,14 @@ On Fedora:
               libsodium-devel \
               python3-mako \
               protobuf-compiler protobuf-devel grpc-devel grpc-plugins \
-              perl
+              perl \
+              gawk
 
 On Both:
 
     pip3 install --upgrade pip
     pip3 install --user poetry
-    
+
     # These are currently touchy about versions (2022-05-02)
     pip3 install --user mistune==0.8.4
     pip3 install --user mrkd==0.2.0
