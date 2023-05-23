@@ -11,6 +11,7 @@
 
 - [One Time Setup](./one-time-setup.md)
 - [Setup Bitcoind testnet Service](./bitcoind-testnet-service.md)
+- [Setup TXOOD testnet Service](./txood-testnet-service.md)
 - [Setup CLN testnet Service](./cln-testnet-service.md)
 - [Setup VLS testnet Service](./vls-testnet-service.md)
 - [Setup CLBOSS and CLN Plugins](./clboss-plugins-setup.md)

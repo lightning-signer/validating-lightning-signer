@@ -1,0 +1,12 @@
+/home/bitcoin/.txoo/testnet/txood.log {
+    rotate 1000000
+    monthly
+    maxsize 1G
+    missingok
+    compress
+    delaycompress
+    notifempty
+    copytruncate
+    dateext
+    create 640 bitcoin bitcoin
+}
