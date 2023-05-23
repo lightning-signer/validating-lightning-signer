@@ -37,6 +37,11 @@ sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/bitcoind-testnet
 sudo systemctl daemon-reload
 ```
 
+Install log rotation config file (edit to suit preferences):
+```
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/bitcoind-testnet.logrotate /etc/logrotate.d/bitcoind-testnet
+```
+
 Enable the  service for automatic start on system boot:
 ```
 sudo systemctl enable bitcoind-testnet
