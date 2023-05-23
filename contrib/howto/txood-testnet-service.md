@@ -68,14 +68,14 @@ sudo systemctl restart nginx
 
 ```shell
 sudo -u bitcoin mkdir -p ~bitcoin/.txoo/testnet/
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/txood-testnet.service /etc/systemd/system/
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/txood-testnet.service /etc/systemd/system/
 ```
 
 Edit `/etc/systemd/system/txood-testnet.service`, set correct `user:pass`.
 
 Install log rotation config file (edit to suit preferences):
 ```
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/txood-testnet.logrotate /etc/logrotate.d/txood-testnet
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/txood-testnet.logrotate /etc/logrotate.d/txood-testnet
 ```
 
 ```

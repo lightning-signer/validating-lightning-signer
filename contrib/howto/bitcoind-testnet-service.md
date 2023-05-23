@@ -18,7 +18,7 @@ sudo /usr/sbin/useradd -g bitcoin -c "bitcoin" -m bitcoin
 Install sample config:
 ```
 sudo mkdir -p /home/bitcoin/.bitcoin
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/bitcoin.conf /home/bitcoin/.bitcoin
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/bitcoin.conf /home/bitcoin/.bitcoin
 ```
 
 Edit the config file, change the `rpcpassword` to something random:
@@ -33,13 +33,13 @@ sudo chown -R bitcoin:bitcoin  /home/bitcoin/.bitcoin
 
 Install systemd unit file:
 ```
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/bitcoind-testnet.service /etc/systemd/system/
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/bitcoind-testnet.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
 Install log rotation config file (edit to suit preferences):
 ```
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/bitcoind-testnet.logrotate /etc/logrotate.d/bitcoind-testnet
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/bitcoind-testnet.logrotate /etc/logrotate.d/bitcoind-testnet
 ```
 
 Enable the  service for automatic start on system boot:

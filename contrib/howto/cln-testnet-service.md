@@ -69,13 +69,13 @@ sudo -u cln bash -c 'cd ~cln/.lightning/ && \
 
 Install systemd unit file:
 ```
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/cln-testnet.service /etc/systemd/system/
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/cln-testnet.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
 Install log rotation config file (edit to suit preferences):
 ```
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/cln-testnet.logrotate /etc/logrotate.d/cln-testnet
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/cln-testnet.logrotate /etc/logrotate.d/cln-testnet
 ```
 
 Enable the  service for automatic start on system boot:

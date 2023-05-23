@@ -14,19 +14,19 @@ Setup config files:
 ```
 sudo touch /home/vls/ALLOWLIST
 sudo chown vls:vls /home/vls/ALLOWLIST
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/vlsd2.toml /home/vls/vlsd2.toml
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/vlsd2.toml /home/vls/vlsd2.toml
 sudo chown vls:vls /home/vls/vlsd2.toml
 ```
 
 Install systemd unit file:
 ```
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/vls-testnet.service /etc/systemd/system/
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/vls-testnet.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
 Install log rotation config file (edit to suit preferences):
 ```
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/vls-testnet.logrotate /etc/logrotate.d/vls-testnet
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/vls-testnet.logrotate /etc/logrotate.d/vls-testnet
 ```
 
 If you would like to allow legacy anchor channels (non-zero-fee anchors) you should
