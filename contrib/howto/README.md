@@ -18,5 +18,5 @@
 - [Setup Intel NUC8 Demo Unit](./nuc8-setup.md)
 - [Flash the STM32 Signer](./stm32-flash.md)
 - [Run CLN Integration Tests](./cln-integration.md)
-- [VLS Environment Variables](./vls-env.md)
+- [VLS Environment Variables](./env-vars.md)
 - [Troubleshooting](./troubleshooting.md)
