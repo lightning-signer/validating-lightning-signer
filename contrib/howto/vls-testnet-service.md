@@ -24,6 +24,11 @@ sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/vls-testnet.serv
 sudo systemctl daemon-reload
 ```
 
+Install log rotation config file (edit to suit preferences):
+```
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/vls-testnet.logrotate /etc/logrotate.d/vls-testnet
+```
+
 If you would like to allow legacy anchor channels (non-zero-fee anchors) you should
 add the following line to `/home/vls/vlsd2.toml`:
 ```
@@ -59,9 +64,4 @@ sudo systemctl status vls-testnet
 View logs:
 ```
 sudo journalctl --follow -u vls-testnet
-```
-
-Install log rotation config file (edit to suit preferences):
-```
-sudo cp ~/lightning-signer/vls-hsmd/vls/howto/artifacts/vls-testnet.logrotate /etc/logrotate.d/vls-testnet
 ```
