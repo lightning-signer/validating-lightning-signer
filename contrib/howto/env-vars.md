@@ -36,13 +36,14 @@ The `VLS_PERMISSIVE` env variable is interpreted by `vlsd2` and `remote_hsmd_inp
 When `VLS_PERMISSIVE=1` any policy violations will generate a warning to the log and then succeed.
 This is useful for testing and early system integration.
 
-#### `VLS_ONCHAIN_VALIDATION` - Enable onchain validation
+#### `VLS_ONCHAIN_VALIDATION_DISABLE` - Disable onchain validation
 
-The `VLS_ONCHAIN_VALIDATION` env variable is interpreted by `vlsd2` and `remote_hsmd_inplace`.
+The `VLS_ONCHAIN_VALIDATION_DISABLE` env variable is interpreted by
+`vlsd2` and `remote_hsmd_inplace`.
 
-Setting `VLS_ONCHAIN_VALIDATION=1` enables policy checking involving onchain events.  For
-example ensuring that the funding transaction is locked before allowing further channel
-operations.
+Setting `VLS_ONCHAIN_VALIDATION_DISABLE=1` disables policy checking
+involving onchain events.  For example ensuring that the funding
+transaction is locked before allowing further channel operations.
 
 #### `VLS_FRONTEND_DISABLE` - Disable the frontend services (chainfollower, heartbeats)
 
