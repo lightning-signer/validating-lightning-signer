@@ -44,14 +44,10 @@ Setting `VLS_ONCHAIN_VALIDATION=1` enables policy checking involving onchain eve
 example ensuring that the funding transaction is locked before allowing further channel
 operations.
 
-#### `VLS_CHAINFOLLOWER_ENABLE` - Enable the chainfollower
+#### `VLS_FRONTEND_DISABLE` - Disable the frontend services (chainfollower, heartbeats)
 
-The `VLS_CHAINFOLLOWER_ENABLE` env variable is interpreted by
+The `VLS_FRONTEND_DISABLE` env variable is interpreted by
 `remote_hsmd_socket`, `remote_hsmd_serial`, and `remote_hsmd_inplace`.
-
-**DEPRECATED** By default the chainfollower is not enabled.  Setting
-`VLS_CHAINFOLLOWER_ENABLE=1` enables the chainfollower.  This variable will likely be
-replaced with `VLS_FRONTEND_DISABLE` in the near future.
 
 #### `RUST_LOG` - Set the logging level
 

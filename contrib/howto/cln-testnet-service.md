@@ -60,6 +60,11 @@ Make sure cln owns everything:
 sudo chown -R cln:cln  /home/cln/
 ```
 
+Make sure cln owns everything:
+```
+sudo chown -R cln:cln  /home/cln/
+```
+
 Update `~cln/.lightning/testnet-env` to CLN version:
 ```
 sudo -u cln bash -c 'cd ~cln/.lightning/ && \
