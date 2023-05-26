@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{ErrorKind, Parser};
 use lightning_signer::bitcoin::Network;
 use lightning_signer::policy::filter::{FilterResult, FilterRule};
 use lightning_signer::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
@@ -130,7 +130,10 @@ impl HasSignerArgs for SignerArgs {
 
 pub fn parse_args_and_config<A: Parser + HasSignerArgs>(bin_name: &str) -> A {
     let env_args = env::args().collect::<Vec<_>>();
-    parse_args_and_config_from(bin_name, &env_args).unwrap_or_else(|e| e.exit())
+    parse_args_and_config_from(bin_name, &env_args).unwrap_or_else(|e| match e.kind() {
+        clap::ErrorKind::DisplayVersion => exit(0), // exit directly because no Command
+        _ => e.exit(),
+    })
 }
 
 #[derive(Clone)]
@@ -200,7 +203,8 @@ pub fn parse_args_and_config_from<A: Parser + HasSignerArgs>(
     // short-circuit if we're just printing the git desc
     if args.signer_args().git_desc {
         println!("{} git_desc={}", bin_name, crate::GIT_DESC);
-        exit(0);
+        // Don't exit here because this is called by unit tests
+        return Err(clap::Error::raw(ErrorKind::DisplayVersion, ""));
     }
 
     Ok(args)
