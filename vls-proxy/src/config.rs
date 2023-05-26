@@ -1,8 +1,9 @@
-use clap::{ErrorKind, Parser};
+use clap::Parser;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::policy::filter::{FilterResult, FilterRule};
 use lightning_signer::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
 use std::ffi::OsStr;
+use std::process::exit;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{env, fs};
 use toml::value::{Table, Value};
@@ -199,8 +200,7 @@ pub fn parse_args_and_config_from<A: Parser + HasSignerArgs>(
     // short-circuit if we're just printing the git desc
     if args.signer_args().git_desc {
         println!("{} git_desc={}", bin_name, crate::GIT_DESC);
-        // signal caller to exit
-        return Err(clap::Error::raw(ErrorKind::DisplayHelp, ""));
+        exit(0);
     }
 
     Ok(args)
