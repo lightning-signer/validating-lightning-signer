@@ -36,22 +36,19 @@ The `VLS_PERMISSIVE` env variable is interpreted by `vlsd2` and `remote_hsmd_inp
 When `VLS_PERMISSIVE=1` any policy violations will generate a warning to the log and then succeed.
 This is useful for testing and early system integration.
 
-#### `VLS_ONCHAIN_VALIDATION` - Enable onchain validation
+#### `VLS_ONCHAIN_VALIDATION_DISABLE` - Disable onchain validation
 
-The `VLS_ONCHAIN_VALIDATION` env variable is interpreted by `vlsd2` and `remote_hsmd_inplace`.
+The `VLS_ONCHAIN_VALIDATION_DISABLE` env variable is interpreted by
+`vlsd2` and `remote_hsmd_inplace`.
 
-Setting `VLS_ONCHAIN_VALIDATION=1` enables policy checking involving onchain events.  For
-example ensuring that the funding transaction is locked before allowing further channel
-operations.
+Setting `VLS_ONCHAIN_VALIDATION_DISABLE=1` disables policy checking
+involving onchain events.  For example ensuring that the funding
+transaction is locked before allowing further channel operations.
 
-#### `VLS_CHAINFOLLOWER_ENABLE` - Enable the chainfollower
+#### `VLS_FRONTEND_DISABLE` - Disable the frontend services (chainfollower, heartbeats)
 
-The `VLS_CHAINFOLLOWER_ENABLE` env variable is interpreted by
+The `VLS_FRONTEND_DISABLE` env variable is interpreted by
 `remote_hsmd_socket`, `remote_hsmd_serial`, and `remote_hsmd_inplace`.
-
-**DEPRECATED** By default the chainfollower is not enabled.  Setting
-`VLS_CHAINFOLLOWER_ENABLE=1` enables the chainfollower.  This variable will likely be
-replaced with `VLS_FRONTEND_DISABLE` in the near future.
 
 #### `RUST_LOG` - Set the logging level
 

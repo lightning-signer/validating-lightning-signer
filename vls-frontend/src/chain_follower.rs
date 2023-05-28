@@ -119,11 +119,11 @@ impl ChainFollower {
 
     pub async fn start(cf_arc: Arc<ChainFollower>) {
         use std::env;
-        let enable = env::var("VLS_CHAINFOLLOWER_ENABLE")
-            .map(|s| s.parse().expect("VLS_CHAINFOLLOWER_ENABLE parse"))
+        let disable = env::var("VLS_FRONTEND_DISABLE")
+            .map(|s| s.parse().expect("VLS_FRONTEND_DISABLE parse"))
             .unwrap_or(0);
-        if enable != 1 {
-            info!("follower not enabled - VLS_CHAINFOLLOWER_ENABLE");
+        if disable != 0 {
+            info!("follower not enabled - VLS_FRONTEND_DISABLE");
             return;
         }
         info!("follower starting");

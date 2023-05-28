@@ -24,7 +24,6 @@ use lightning_signer::util::crypto_utils::sighash_from_heartbeat;
 use lightning_signer::util::test_utils::MockListener;
 use log::*;
 use serde_json::{json, Value};
-use std::env;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::TempDir;
@@ -193,7 +192,6 @@ struct Args {
 async fn main() -> Result<()> {
     abort_on_panic();
     let tmpdir = tempfile::tempdir()?;
-    env::set_var("VLS_CHAINFOLLOWER_ENABLE", "1");
     setup_logging(tmpdir.path().to_str().unwrap(), "system-test", "debug");
     let args = Args::parse();
 

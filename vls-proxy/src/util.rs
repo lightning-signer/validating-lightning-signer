@@ -230,12 +230,12 @@ pub fn make_validator_factory_with_filter_and_velocity(
 
     let simple_factory = SimpleValidatorFactory::new_with_policy(policy);
 
-    if env::var("VLS_ONCHAIN_VALIDATION") == Ok("1".to_string()) {
+    if env::var("VLS_ONCHAIN_VALIDATION_DISABLE") == Ok("1".to_string()) {
+        warn!("VLS_ONCHAIN_VALIDATION_DISABLE: onchain validation disabled");
+        Arc::new(simple_factory)
+    } else {
         info!("VLS_ONCHAIN_VALIDATION: onchain validation enabled");
         Arc::new(OnchainValidatorFactory::new_with_simple_factory(simple_factory))
-    } else {
-        warn!("!VLS_ONCHAIN_VALIDATION: onchain validation disabled");
-        Arc::new(simple_factory)
     }
 }
 
