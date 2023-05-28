@@ -1,6 +1,6 @@
-/home/vls/.lightning-signer/testnet/vlsd2.log {
+/home/bitcoin/.txoo/testnet/txood.log {
     rotate 1000000
-    daily
+    monthly
     maxsize 1G
     missingok
     compress
@@ -8,5 +8,5 @@
     notifempty
     copytruncate
     dateext
-    create 640 vls vls
+    create 640 bitcoin bitcoin
 }

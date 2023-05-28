@@ -2,6 +2,13 @@
 
 This section may be skipped if you do not wish to run CLBOSS or standard CLN plugins.
 
+### Stop Running Services
+
+If the services are currently running it is best to stop them:
+```
+sudo systemctl stop cln-testnet vls-testnet
+```
+
 ### Install CLBOSS
 ```
 sudo apt update
@@ -41,4 +48,11 @@ summary/summary.py
 Add to `~cln/.lightning/testnet-config`:
 ```
 plugin=/usr/local/src/plugins/summary/summary.py
+```
+
+### Start Services Again
+
+If the services should be running:
+```
+sudo systemctl start cln-testnet vls-testnet
 ```

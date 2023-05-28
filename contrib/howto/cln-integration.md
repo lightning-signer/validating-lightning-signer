@@ -36,4 +36,4 @@ Run a single test with native hsmd:
 
     make test-one TEST=tests/test_pay.py::test_pay VLS_MODE=cln:native
 
-See [VLS Environment Variables](./vls-env.md) for additional settings.
+See [VLS Environment Variables](./env-vars.md) for additional settings.

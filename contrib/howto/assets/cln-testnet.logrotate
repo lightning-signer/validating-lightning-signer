@@ -1,6 +1,6 @@
 /home/cln/.lightning/testnet/lightning.log {
     rotate 1000000
-    daily
+    monthly
     maxsize 1G
     missingok
     compress
@@ -13,7 +13,7 @@
 
 /home/cln/.lightning/testnet/remote_hsmd_socket.log {
     rotate 1000000
-    daily
+    monthly
     maxsize 1G
     missingok
     compress
@@ -26,7 +26,7 @@
 
 /home/cln/.lightning/testnet/remote_hsmd_serial.log {
     rotate 1000000
-    daily
+    monthly
     maxsize 1G
     missingok
     compress

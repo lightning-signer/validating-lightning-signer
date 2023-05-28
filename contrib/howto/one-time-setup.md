@@ -15,7 +15,7 @@ On Debian:
       python3-mako \
       libprotobuf-c-dev \
       protobuf-compiler protobuf-compiler-grpc libgrpc++-dev pkg-config \
-      curl \
+      curl lowdown \
       gawk
 
 On Fedora:
@@ -118,7 +118,8 @@ cd ~/lightning-signer/vls-hsmd/lightning && poetry run make
 
 Check if an integration test works:
 ```
-make configure-standard test-one TEST=tests/test_pay.py::test_pay
+cd ~/lightning-signer/vls-hsmd && \
+  make config-standard test-one TEST=tests/test_pay.py::test_pay
 ```
 
 ### Install CLN+VLS Service Components

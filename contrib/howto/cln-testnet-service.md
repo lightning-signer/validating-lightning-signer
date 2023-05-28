@@ -52,21 +52,31 @@ VLS_NETWORK=testnet
 # VLS_BIND=0.0.0.0
 BITCOIND_RPC_URL=http://rpcuser:6ffb57ab46aa726@localhost:18332
 GREENLIGHT_VERSION=v0.11.0.1-62-g92cc76a
+VLS_CHAINFOLLOWER_ENABLE=1
+```
+
+Make sure cln owns everything:
+```
+sudo chown -R cln:cln  /home/cln/
 ```
 
 Update `~cln/.lightning/testnet-env` to CLN version:
 ```
-sudo su cln
-cd ~cln/.lightning/
-grep -v GREENLIGHT_VERSION testnet-env > testnet-env.new &&
-  echo "GREENLIGHT_VERSION=`lightningd --version`" >> testnet-env.new &&
-  mv testnet-env.new testnet-env
+sudo -u cln bash -c 'cd ~cln/.lightning/ && \
+  grep -v GREENLIGHT_VERSION testnet-env > testnet-env.new && \
+  echo "GREENLIGHT_VERSION=`lightningd --version`" >> testnet-env.new && \
+  mv testnet-env.new testnet-env'
 ```
 
 Install systemd unit file:
 ```
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/cln-testnet.service /etc/systemd/system/
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/cln-testnet.service /etc/systemd/system/
 sudo systemctl daemon-reload
+```
+
+Install log rotation config file (edit to suit preferences):
+```
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/cln-testnet.logrotate /etc/logrotate.d/cln-testnet
 ```
 
 Enable the  service for automatic start on system boot:
@@ -87,9 +97,4 @@ sudo systemctl status cln-testnet
 View logs:
 ```
 sudo journalctl --follow -u cln-testnet
-```
-
-Install log rotation config file (edit to suit preferences):
-```
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/artifacts/cln-testnet.logrotate /etc/logrotate.d/cln-testnet
 ```
