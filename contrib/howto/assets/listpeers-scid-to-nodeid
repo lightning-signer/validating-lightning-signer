@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# This commands filters the output of listpeers and returns the nodeid of the
+# specified short_channel_id
+
+# Ensure short_channel_id argument is passed
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <short_channel_id>"
+    exit 1
+fi
+
+short_channel_id="$1"
+
+# Read from stdin and pass to jq
+jq -r --arg id "$short_channel_id" '.peers[] | select(.channels[]?.short_channel_id==$id) | .id'
