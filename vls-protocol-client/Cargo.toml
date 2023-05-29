@@ -15,7 +15,7 @@ test_utils = ["vls-core/test_utils"]
 [dependencies]
 vls-protocol-signer = { path = "../vls-protocol-signer", version = "0.2.0" }
 vls-protocol = { path = "../vls-protocol", version = "0.2.0" }
-vls-core = { path = "../vls-core", version = "0.2.0" }
+vls-core = { path = "../vls-core", version = "0.9.0-rc.1" }
 bit-vec = "0.6"
 log = "0.4"
 anyhow = "1.0"

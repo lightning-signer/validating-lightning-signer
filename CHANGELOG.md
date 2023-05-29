@@ -12,4 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - once CLN implements zero-fee anchors and disables this channel type, this should be set to error (issue #236)
 - minimum dust threshold is now 346 satoshi instead of 330
 
-## [unreleased]
+## [v0.9.0-rc.1] - 2023-05-29 - "Beta 1"
+
+- first beta release
+- on-chain (L1) policy controls
