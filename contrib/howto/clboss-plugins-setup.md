@@ -27,7 +27,10 @@ make -j `nproc`
 sudo make install
 ```
 
-Add to `~cln/.lightning/testnet-config`:
+Add to cln config:
+```
+sudo -u cln vi ~cln/.lightning/testnet-config
+```
 ```
 important-plugin=/usr/local/bin/clboss
 clboss-auto-close=true

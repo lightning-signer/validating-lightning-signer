@@ -22,14 +22,20 @@ Change to:  `Power` -> `Secondary Power Settings` -> `After power failure: Last 
 
 ### Ubuntu Installation Boot
 
+The Boot Menu key is F10 if you are already running something else.
+
 #### Partition the onboard disk:
 
-Format the onboard SSD, create a single primary partition using all
-available space. Set the type to "explicitly unused" (it will be
+1. Choose "Minimal Installation", no third-party drivers
+1. "Erase disk and install Ubuntu"
+1. "Advanced Partitioning Tool"
+
+Format the onboard SSD ("mmcblk0"), create a single primary partition using all
+available space. Set the `Use as:` to "do not use the partition" (it will be
 modified later when we setup the mirror).  Note the size of this
 created partition, it will be used in the next step.
 
-#### Partition the SSD:
+#### Partition the SSD ("nvme0"):
 
 | Partition| Size |
 | -------- | -------- |
@@ -75,6 +81,25 @@ sudo apt install lm-sensors -y
 sudo apt install gitk -y
 ```
 
+Consider setting up `user`'s `~/.ssh` to allow remot login.
+
+To turn off the wireless network interface and only use the wired network (optional):
+```
+nmcli connection show
+
+sudo nmcli device connect enp2s0
+sudo nmcli connection modify enp2s0 connection.autoconnect yes
+
+sudo nmcli radio wifi off
+sudo nmcli connection modify 'Your ESSID' connection.autoconnect no
+```
+
+Consider disabling X windows (optional0:
+```
+sudo systemctl stop display-manager
+sudo systemctl disable display-manager
+```
+
 Enable sysstat to track system resources:
 ```
 sudo apt install sysstat -y
@@ -87,6 +112,7 @@ sudo systemctl start sysstat
 Setup mirror:
 ```
 sudo apt install mdadm -y
+sudo lsblk # find the matching unused partitions
 sudo mdadm --create --verbose /dev/md0 --level=1 --raid-devices=2 \
     /dev/mmcblk0p1 \
     /dev/nvme0n1p4

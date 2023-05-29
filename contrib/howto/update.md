@@ -13,20 +13,43 @@ use.
 
 ### Update Build Tree
 
-#### Checkout desired branch/tag
+Update git 
 
-Choose a `vls-hsmd`  version or branch, if unsure use `main`
 ```
 cd ~/lightning-signer/vls-hsmd
-git fetch --recurse-submodules
-git checkout <your-branch-or-main>
-git pull
-make setup
 git fetch --all --recurse-submodules --tags
+```
+
+#### Checkout desired branch/tag
+
+A good default choice is main:
+```
+git checkout main
+```
+
+Instead, if you want to be on a specific branch:
+```
+git checkout the-branch
+```
+
+Instead, if you want to update the branch you are on:
+```
+git pull
+```
+
+Instead, if the branch you were on was force pushed:
+```
+git reset --hard origin/the-branch
 ```
 
 ### Build Software
 
+Align the submodules (`vls` and `lightning`):
+```
+make setup
+```
+
+Build:
 ```
 cd ~/lightning-signer/vls-hsmd && make build-standard
 cd ~/lightning-signer/vls-hsmd/lightning && poetry run make
@@ -146,6 +169,7 @@ Quick summary status:
 ```
 for svc in \
 bitcoind-testnet \
+txood-testnet \
 cln-testnet \
 vls-testnet \
 ; do SYSTEMD_COLORS=1 systemctl status $svc | head -n 3; done
