@@ -21,5 +21,6 @@ pub trait Wallet {
     fn get_native_address(&self, child_path: &[u32]) -> Result<Address, Status>;
 
     /// Returns the wrapped segwit address at path
+    #[deprecated(since = "0.9.0", note = "Use native addresses instead")]
     fn get_wrapped_address(&self, child_path: &[u32]) -> Result<Address, Status>;
 }
