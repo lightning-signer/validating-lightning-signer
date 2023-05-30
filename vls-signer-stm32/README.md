@@ -5,11 +5,13 @@ sudo apt install gcc-arm-none-eabi gdb-multiarch -y
 sudo apt install libudev-dev -y
 sudo apt install screen -y
 
-# Had a regression w/ 1.68.0-nightly (61a415be5 2023-01-12) had to revert:
-# rustup override set nightly-2022-08-16-x86_64-unknown-linux-gnu
-
 # IMPORTANT - run this in the vls-signer-stm32 subdirectory, where this README is.
 rustup override set nightly
+
+# This regression still exists in 1.70, need to debug, in the meantime ...
+# Had a regression w/ 1.68.0-nightly (61a415be5 2023-01-12) had to revert:
+rustup override set nightly-2022-08-16-x86_64-unknown-linux-gnu
+
 rustup target add thumbv7em-none-eabihf
 
 cargo install probe-run
@@ -24,6 +26,7 @@ Follow [udev rules setup instructions](https://probe.rs/docs/getting-started/pro
 For now, please format the root device, without any partitions.
 
 ```sh
+sudo parted /dev/sdX --script mklabel gpt
 sudo mkfs.vfat -F32 /dev/sdX
 ```
 
