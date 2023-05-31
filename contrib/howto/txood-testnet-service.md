@@ -71,11 +71,21 @@ sudo -u bitcoin mkdir -p ~bitcoin/.txoo/testnet/
 sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/txood-testnet.service /etc/systemd/system/
 ```
 
-Edit `/etc/systemd/system/txood-testnet.service`, set correct `user:pass`.
+Edit `/etc/systemd/system/txood-testnet.service`, set correct `user:pass`:
+```
+sudo -u bitcoin grep rpcpassword ~bitcoin/.bitcoin/bitcoin.conf
+sudo vi /etc/systemd/system/txood-testnet.service
+```
 
 Install log rotation config file (edit to suit preferences):
 ```
 sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/txood-testnet.logrotate /etc/logrotate.d/txood-testnet
+```
+
+If your `bitcoind-testnet` is caught up you can enable `txood`
+otherwise come back when it finishes syncing:
+```
+sudo -u bitcoin bitcoin-cli --testnet getblockchaininfo
 ```
 
 ```

@@ -6,7 +6,7 @@ Update PATH:
 
     export PATH=$PATH:~/.local/bin
 
-On Debian:
+On Debian (and Ubuntu):
 
     sudo apt-get update
     sudo apt-get install -y \
@@ -16,7 +16,7 @@ On Debian:
       libprotobuf-c-dev \
       protobuf-compiler protobuf-compiler-grpc libgrpc++-dev pkg-config \
       curl lowdown \
-      gawk
+      gawk jq
 
 On Fedora:
 
@@ -41,7 +41,7 @@ On Fedora:
               python3-mako \
               protobuf-compiler protobuf-devel grpc-devel grpc-plugins \
               perl \
-              gawk
+              gawk jq
 
 On Both:
 
@@ -92,6 +92,12 @@ sudo ln -s /var/lib/snapd/snap/bitcoin-core/current/bin/bitcoin{d,-cli} /usr/loc
 
 ### Clone CLN+VLS Integration Repository
 
+Some workarounds:
+```
+export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
+export HAVE_LOWDOWN=1
+```
+
 Choose somewhere to clone tree:
 ```
 mkdir ~/lightning-signer && cd ~/lightning-signer
@@ -101,7 +107,7 @@ Clone tree, select branch, update:
 ```
 git clone https://gitlab.com/lightning-signer/vls-hsmd.git && cd vls-hsmd
 git checkout <branch-tag-or-main>
-git submodule update --init --recursive
+git make setup
 git fetch --all --recurse-submodules --tags
 ```
 
