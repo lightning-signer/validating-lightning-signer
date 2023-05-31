@@ -66,12 +66,17 @@ impl State {
 
     fn do_insert(&mut self, value: Vec<u8>, full_key: String) {
         let mut store = self.store.lock().unwrap();
-        let revision = if self.dirty.contains(&full_key) {
-            // if already dirty, do not increment revision
-            store.get(&full_key).expect("dirty key must exist").0
+        let existing = store.get(&full_key);
+        let revision = if let Some((revision, existing_value)) = existing {
+            if existing_value == &value {
+                // optimize the no-op case
+                return;
+            }
+            let new_revision = *revision + 1;
+            new_revision
         } else {
-            // if not dirty, increment revision
-            store.get(&full_key).map(|(r, _)| r + 1).unwrap_or(0)
+            assert!(!self.dirty.contains(&full_key));
+            0
         };
         store.insert(full_key.clone(), (revision, value));
         self.dirty.insert(full_key);
@@ -468,7 +473,10 @@ mod tests {
         assert_eq!(dirty[1].1 .0, 0);
         let store = Arc::new(Mutex::new(BTreeMap::from_iter(dirty.into_iter())));
         let persist_ctx = persister.enter(store);
-        persister.update_node(&node_id, &*node.get_state()).unwrap();
+        // change something in the state so the persist is not a no-op
+        let mut state = node.get_state();
+        state.velocity_control.insert(0, 1);
+        persister.update_node(&node_id, &*state).unwrap();
         let dirty = persist_ctx.exit();
         assert_eq!(dirty.len(), 1);
         assert_eq!(dirty[0].1 .0, 1);
@@ -546,5 +554,38 @@ mod tests {
         })
         .expect_err("should have panicked");
         ctx.exit();
+    }
+
+    #[test]
+    fn test_insert() {
+        let inner = Arc::new(Mutex::new(BTreeMap::new()));
+
+        let mut state = State::new(inner.clone());
+        let key = &[55u8];
+        let full_key = State::make_key("x", key);
+
+        let value = "bar".as_bytes().to_vec();
+        assert_eq!(inner.lock().unwrap().get(&full_key), None);
+        state.insert("x", key, value.clone());
+        assert_eq!(inner.lock().unwrap().get(&full_key), Some(&(0, value)));
+        assert!(state.dirty.contains(&full_key));
+    }
+
+    #[test]
+    fn test_no_change_insert() {
+        let inner = Arc::new(Mutex::new(BTreeMap::new()));
+        let key = &[55u8];
+        let full_key = State::make_key("x", key);
+        let value = "bar".as_bytes().to_vec();
+
+        inner.lock().unwrap().insert(full_key.clone(), (33, value.clone()));
+
+        let mut state = State::new(inner.clone());
+
+        // insert with no change should not change or mark the state dirty
+        state.insert("x", key, value.clone());
+
+        assert_eq!(inner.lock().unwrap().get(&full_key), Some(&(33, value)));
+        assert!(!state.dirty.contains(&full_key));
     }
 }
