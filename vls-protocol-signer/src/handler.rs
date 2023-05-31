@@ -2,7 +2,6 @@
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
-use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec;
@@ -26,6 +25,7 @@ use lightning_signer::bitcoin::{OutPoint, Transaction, Witness};
 use lightning_signer::channel::{
     ChannelBalance, ChannelBase, ChannelId, ChannelSetup, TypedSignature,
 };
+use lightning_signer::dbgvals;
 use lightning_signer::invoice::Invoice;
 use lightning_signer::lightning::ln::chan_utils::{
     derive_public_revocation_key, ChannelPublicKeys,
@@ -39,7 +39,6 @@ use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::debug_utils::DebugMutations;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
-use lightning_signer::{debug_vals, short_function, vals_str};
 use log::*;
 use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
@@ -492,7 +491,7 @@ impl Handler for RootHandler {
                     .filter_map(|psbt_in| psbt_in.non_witness_utxo.as_ref())
                     .collect();
 
-                debug_vals!(opaths, tx.txid(), tx, psbt, input_txs);
+                dbgvals!(opaths, tx.txid(), tx, psbt, input_txs);
 
                 let approved = self.approver.handle_proposed_onchain(
                     &self.node,

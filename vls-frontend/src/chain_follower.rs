@@ -19,8 +19,6 @@ use lightning_signer::bitcoin::FilterHeader;
 use lightning_signer::txoo::filter::BlockSpendFilter;
 use lightning_signer::txoo::get_latest_checkpoint;
 #[allow(unused_imports)]
-use lightning_signer::{debug_vals, short_function, vals_str};
-#[allow(unused_imports)]
 use log::{debug, error, info, trace};
 
 use crate::frontend::SourceFactory;

@@ -1821,7 +1821,7 @@ impl Channel {
         );
 
         if recomposed_tx.trust().built_transaction().transaction != *tx {
-            debug_vals!(
+            dbgvals!(
                 &self.setup,
                 &self.enforcement_state,
                 tx,
@@ -1967,7 +1967,7 @@ impl Channel {
         tx: &Transaction,
         opaths: &[Vec<u32>],
     ) -> Result<Signature, Status> {
-        debug_vals!(tx.txid(), self.get_node().allowlist().unwrap());
+        dbgvals!(tx.txid(), self.get_node().allowlist().unwrap());
         if opaths.len() != tx.output.len() {
             return Err(invalid_argument(format!(
                 "{}: bad opath len {} with tx.output len {}",

@@ -1417,7 +1417,7 @@ impl Node {
             OrderedSet::from_iter(vec![setup.funding_outpoint.txid]),
         );
 
-        debug_vals!(&chan.setup);
+        dbgvals!(&chan.setup);
         trace_enforcement_state!(&chan);
         self.persister
             .update_tracker(&self.get_id(), &tracker)
