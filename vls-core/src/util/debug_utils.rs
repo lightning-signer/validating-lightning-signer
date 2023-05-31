@@ -236,8 +236,8 @@ macro_rules! scoped_debug_return {
         scopeguard::guard(should_debug, |should_debug| {
             if should_debug {
                 if log::log_enabled!(log::Level::Debug) {
-                    debug!("{} failed: {}", containing_function!(), vals_str!($($arg)*),
-                    );
+                    debug!("{} failed:", containing_function!());
+                    dbgvals!($($arg)*);
                 }
             }
         })

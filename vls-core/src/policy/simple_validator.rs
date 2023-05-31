@@ -1120,11 +1120,8 @@ impl Validator for SimpleValidator {
         let mut debug_on_return = scopeguard::guard(should_debug, |should_debug| {
             if should_debug {
                 if log::log_enabled!(log::Level::Debug) {
-                    debug!(
-                        "{} failed: {}",
-                        containing_function!(),
-                        vals_str!(setup, estate, tx, wallet_paths)
-                    );
+                    debug!("{} failed:", containing_function!());
+                    dbgvals!(setup, estate, tx, wallet_paths);
 
                     // Log the addresses associated with the outputs
                     let mut addrstrs = String::new();
