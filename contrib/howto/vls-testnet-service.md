@@ -12,20 +12,23 @@ sudo /usr/sbin/useradd -g vls -c "Validating Lightning Signer" -m vls
 
 Setup config files:
 ```
-sudo touch /home/vls/ALLOWLIST
-sudo chown vls:vls /home/vls/ALLOWLIST
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/vlsd2.toml /home/vls/vlsd2.toml
-sudo chown vls:vls /home/vls/vlsd2.toml
+sudo touch /home/vls/.lightning-signer/ALLOWLIST
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/vlsd2.toml /home/vls/.lightning-signer/vlsd2.toml
 ```
 
 Create `~vls/.lightning-signer/testnet-env`:
 ```
 sudo -u vls bash << 'EOF'
-cat > ~vls/.lightning-signer/testnet-env << EOL
-REMOTE_SIGNER_ALLOWLIST=/home/vls/ALLOWLIST
+cat > ~vls/.lightning-signer/testnet-env << EOF2
+REMOTE_SIGNER_ALLOWLIST=/home/vls/.lightning-signer/ALLOWLIST
 VLS_PERMISSIVE=1
-EOL
+EOF2
 EOF
+```
+
+Make sure vls owns everything:
+```
+sudo chown -R vls:vls /home/vls/.lightning-signer
 ```
 
 Install systemd unit file:

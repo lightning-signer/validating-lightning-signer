@@ -4,7 +4,7 @@ Description=Testnet Validating Lightning Signer
 [Service]
 WorkingDirectory=/home/vls
 EnvironmentFile=/home/vls/.lightning-signer/testnet-env
-ExecStart=/usr/local/bin/vlsd2 --config=/home/vls/vlsd2.toml
+ExecStart=/usr/local/bin/vlsd2 --config=/home/vls/.lightning-signer/vlsd2.toml
 User=vls
 Group=vls
 Type=simple
