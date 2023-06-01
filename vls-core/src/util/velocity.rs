@@ -82,12 +82,37 @@ impl VelocityControl {
 
     /// Create a velocity control with the given interval type
     pub fn new(spec: VelocityControlSpec) -> Self {
+        let (limit, bucket_interval, num_buckets) = Self::spec_to_triple(&spec);
+        Self::new_with_intervals(limit, bucket_interval, num_buckets)
+    }
+
+    /// Whether the spec matches this control
+    pub fn spec_matches(&self, spec: &VelocityControlSpec) -> bool {
+        let (limit, bucket_interval, num_buckets) = Self::spec_to_triple(spec);
+        self.limit == limit
+            && self.bucket_interval == bucket_interval
+            && self.buckets.len() == num_buckets
+    }
+
+    /// Update this control to match the given spec.  If the spec does not
+    /// match the previous spec, the control is reset.
+    pub fn update_spec(&mut self, spec: &VelocityControlSpec) {
+        if !self.spec_matches(spec) {
+            let (limit, bucket_interval, num_buckets) = Self::spec_to_triple(spec);
+            self.limit = limit;
+            self.bucket_interval = bucket_interval;
+            self.buckets = Vec::new();
+            self.buckets.resize(num_buckets, 0);
+            self.start_sec = 0;
+        }
+    }
+
+    // Convert a spec to a (limit, bucket_interval, num_buckets) triple
+    fn spec_to_triple(spec: &VelocityControlSpec) -> (u64, u32, usize) {
         match spec.interval_type {
-            VelocityControlIntervalType::Hourly =>
-                Self::new_with_intervals(spec.limit_msat, 300, 12),
-            VelocityControlIntervalType::Daily =>
-                Self::new_with_intervals(spec.limit_msat, 3600, 24),
-            VelocityControlIntervalType::Unlimited => Self::new_unlimited(300, 12),
+            VelocityControlIntervalType::Hourly => (spec.limit_msat, 300, 12),
+            VelocityControlIntervalType::Daily => (spec.limit_msat, 3600, 24),
+            VelocityControlIntervalType::Unlimited => (u64::MAX, 300, 12),
         }
     }
 

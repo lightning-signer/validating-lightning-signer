@@ -886,6 +886,15 @@ impl Node {
         Self::new_full(node_config, allowlist, services, state, keys_manager, node_id, tracker)
     }
 
+    /// Update the velocity controls with any spec changes from the policy
+    pub fn update_velocity_controls(&self) {
+        let policy = self.validator_factory.lock().unwrap().policy(self.network());
+        let mut state = self.state.lock().unwrap();
+
+        state.velocity_control.update_spec(&policy.global_velocity_control());
+        state.fee_velocity_control.update_spec(&policy.fee_velocity_control());
+    }
+
     pub(crate) fn get_node_secret(&self) -> SecretKey {
         self.keys_manager.get_node_secret()
     }
@@ -2314,6 +2323,7 @@ mod tests {
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::invoice::make_test_bolt12_invoice;
     use crate::util::test_utils::*;
+    use crate::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
 
     use super::*;
 
@@ -3395,5 +3405,43 @@ mod tests {
         let mut ser_hb = to_vec(&hb).expect("heartbeat");
         let de_hb: SignedHeartbeat = serde_bolt::from_vec(&mut ser_hb).expect("bad heartbeat");
         assert_eq!(format!("{:?}", hb), format!("{:?}", de_hb));
+    }
+
+    #[test]
+    fn update_velocity_spec_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        {
+            let mut state = node.get_state();
+            state.velocity_control.insert(0, 1);
+            assert_eq!(state.velocity_control.velocity(), 1);
+        }
+
+        // this should not change anything, since the specs didn't change
+        node.update_velocity_controls();
+
+        {
+            let state = node.get_state();
+            assert_eq!(state.velocity_control.velocity(), 1);
+            assert!(state.velocity_control.is_unlimited());
+        }
+
+        let mut validator_factory = SimpleValidatorFactory::new();
+        let mut policy = make_simple_policy(Network::Testnet);
+        let spec = VelocityControlSpec {
+            limit_msat: 100,
+            interval_type: VelocityControlIntervalType::Hourly,
+        };
+        policy.global_velocity_control = spec.clone();
+        validator_factory.policy = Some(policy);
+
+        node.set_validator_factory(Arc::new(validator_factory));
+        node.update_velocity_controls();
+
+        {
+            let state = node.get_state();
+            assert_eq!(state.velocity_control.velocity(), 0);
+            assert!(!state.velocity_control.is_unlimited());
+            assert!(state.velocity_control.spec_matches(&spec));
+        }
     }
 }
