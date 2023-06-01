@@ -102,7 +102,7 @@ pub fn make_handler(datadir: &str, args: &SignerArgs) -> RootHandler {
     if should_auto_approve() {
         handler_builder = handler_builder.approver(Arc::new(WarningPositiveApprover()));
     }
-    let (root_handler, _muts) = handler_builder.build();
+    let (root_handler, _muts) = handler_builder.build().expect("handler build");
 
     root_handler
 }

@@ -1730,16 +1730,21 @@ pub fn make_node() -> (PublicKey, Arc<Node>, [u8; 32]) {
     let mut seed = [0; 32];
     seed.copy_from_slice(hex_decode(TEST_SEED[1]).unwrap().as_slice());
 
+    let services = make_services();
+
+    let node = Arc::new(Node::new(TEST_NODE_CONFIG, &seed, vec![], services));
+    let node_id = node.get_id();
+    (node_id, node, seed)
+}
+
+pub fn make_services() -> NodeServices {
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
     let starting_time_factory = make_genesis_starting_time_factory(TEST_NODE_CONFIG.network);
     let clock = Arc::new(StandardClock());
 
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
-
-    let node = Arc::new(Node::new(TEST_NODE_CONFIG, &seed, vec![], services));
-    let node_id = node.get_id();
-    (node_id, node, seed)
+    services
 }
 
 pub fn create_test_channel_setup(dummy_pubkey: PublicKey) -> ChannelSetup {

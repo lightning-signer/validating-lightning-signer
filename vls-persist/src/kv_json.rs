@@ -323,7 +323,7 @@ mod tests {
     // this test crashes when run under kcov, so disable it
     #[cfg(not(feature = "kcov"))]
     #[test]
-    fn round_trip_signer_test() {
+    fn round_trip_signer_test() -> Result<(), lightning_signer::util::status::Status> {
         let channel_id0 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
         let validator_factory = Arc::new(SimpleValidatorFactory::new());
         let starting_time_factory = make_genesis_starting_time_factory(TEST_NODE_CONFIG.network);
@@ -348,7 +348,7 @@ mod tests {
                 clock,
             };
 
-            let nodes = Node::restore_nodes(services.clone(), seed_persister.clone());
+            let nodes = Node::restore_nodes(services.clone(), seed_persister.clone())?;
             let restored_node = nodes.get(&node_id).unwrap();
 
             {
@@ -375,7 +375,7 @@ mod tests {
                 persister.update_tracker(&node_id, &node.get_tracker()).unwrap();
                 persister.update_channel(&node_id, &channel).unwrap();
 
-                let nodes = Node::restore_nodes(services.clone(), seed_persister);
+                let nodes = Node::restore_nodes(services.clone(), seed_persister)?;
                 let restored_node_arc = nodes.get(&node_id).unwrap();
                 let slot = restored_node_arc.get_channel(&stub.id0).unwrap();
                 assert!(node.channels().contains_key(&channel_id0));
@@ -403,6 +403,7 @@ mod tests {
             let nodes = persister1.get_nodes().unwrap();
             assert_eq!(nodes.len(), 0);
         }
+        Ok(())
     }
 
     fn check_signer_roundtrip(existing_signer: &InMemorySigner, signer: &InMemorySigner) {

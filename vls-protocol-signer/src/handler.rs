@@ -231,12 +231,12 @@ impl RootHandlerBuilder {
     /// Build the root handler.
     ///
     /// Returns the handler and any mutations that need to be stored
-    pub fn build(self) -> (RootHandler, Mutations) {
+    pub fn build(self) -> Result<(RootHandler, Mutations)> {
         let persister = self.services.persister.clone();
         let context = persister.enter(self.lss_state.clone());
-        let handler = self.do_build();
+        let handler = self.do_build()?;
         let muts = context.exit();
-        (handler, muts)
+        Ok((handler, muts))
     }
 
     /// Create a keys manager - useful for bootstrapping a node from persistence, so the
@@ -246,7 +246,7 @@ impl RootHandlerBuilder {
         Node::make_keys_manager(config, &self.seed, &self.services)
     }
 
-    fn do_build(self) -> RootHandler {
+    fn do_build(self) -> Result<RootHandler> {
         let config = NodeConfig::new(self.network);
 
         let persister = self.services.persister.clone();
@@ -266,10 +266,10 @@ impl RootHandlerBuilder {
             assert_eq!(nodes.len(), 1);
             let (node_id, entry) = nodes.into_iter().next().unwrap();
             info!("Restore node {}", node_id);
-            Node::restore_node(&node_id, entry, &self.seed, self.services)
+            Node::restore_node(&node_id, entry, &self.seed, self.services)?
         };
 
-        RootHandler { id: self.id, node, approver: self.approver, lss_state: self.lss_state }
+        Ok(RootHandler { id: self.id, node, approver: self.approver, lss_state: self.lss_state })
     }
 }
 

@@ -268,11 +268,11 @@ async fn start() {
     let handler = if let Some(external_persist) = looper.external_persist.as_ref() {
         external_persist.init_state().await;
         let handler_builder = handler_builder.lss_state(external_persist.state.clone());
-        let (handler, muts) = handler_builder.build();
+        let (handler, muts) = handler_builder.build().expect("handler build");
         looper.store(muts).await.expect("store during build");
         handler
     } else {
-        let (handler, muts) = handler_builder.build();
+        let (handler, muts) = handler_builder.build().expect("handler build");
         assert!(muts.is_empty(), "got memorized mutations, but not persisting to cloud");
         handler
     };
