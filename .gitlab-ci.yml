@@ -154,3 +154,16 @@ cargo-audit:
     - cargo install cargo-audit
     - cargo audit
     - (cd lightning-storage-server && cargo audit)
+
+changelog:
+  stage: build
+  before_script:
+    - git fetch origin main:main
+  script:
+    - >
+      if git log 'main..HEAD' --pretty="%s%x09%b" | grep -q -E 'Changelog-(\S*): (.*)$'; then
+        echo "Changelog commit message found.";
+      else
+        echo "Error: No Changelog commit message found.";
+        exit 1;
+      fi

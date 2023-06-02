@@ -6,11 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [0.9.0] - 2023-05-29: "Beta 1"
 
-In the 0.9.0 Beta 1 release, we've improved onchain funding
-transaction validation for better security, integrated BOLT-12
-invoices for enhanced flexibility, and introduced LSS external
-persistence for superior system stability and resilience.
-
 ### Added
 
  - core: Validate funding TXO ([#208], [#220])
@@ -26,7 +21,7 @@ persistence for superior system stability and resilience.
  - core: Add policy limits to prevent DoS ([#233])
  - core: Extend coverage by adding more unit tests ([#256])
  - core: Enforce policy-onchain-funding-non-malleable
- - core, frontend: Add checkpoint support ([#255])
+ - core, frontend: Add chain follower checkpoint support ([#255])
  - proxy: Sweep L1 funds ([#276])
  - proxy: Wait for signer port to be ready (HsmdInit) before sending any frontend messages ([#212])
  - proxy: Persist in inplace / nodefront ([#252])
@@ -38,7 +33,7 @@ persistence for superior system stability and resilience.
 
 ### Fixed
 
- - core: Jump tracker to checkoint ([#297])
+ - core: Jump tracker to checkpoint ([#297])
  - core: Fix upgrade crash with default_fee_velocity_control ([#302])
  - proxy: Fix signer port not becoming ready ([#296])
  - proxy: Fix nodefront thread vs persistence context ([#252])
@@ -49,16 +44,16 @@ persistence for superior system stability and resilience.
 
 ### Changed
 
- - core: Increase default `MAX_CHANNELS` to 1000 ([#305], [#306])
+ - core: Increase default `MAX_CHANNELS` to 1000 as workaround to lack of garbage collection ([#305], [#306])
  - core: Replace VLS_ONCHAIN_VALIDATION with VLS_ONCHAIN_VALIDATION_DISABLE
+ - frontend: Replace VLS_CHAINFOLLOWER_ENABLE with VLS_FRONTEND_DISABLE ([#294])
  - core: Clean up satoshi vs millisatoshi ([#292])
  - core: Update LDK to 0.0.115
  - core: Use `info` log level by default ([#275])
- - frontend: Replace VLS_CHAINFOLLOWER_ENABLE with VLS_FRONTEND_DISABLE ([#294])
  - protocol: increase maximum message size to 128 KiB ([#288])
  - txoo: update txoo to 0.4 ([#260])
  - txoo: update txoo to 0.3 ([#250])
- - stm32: Improved STM32 README documentaion
+ - stm32: Improved STM32 README documentation
  - howto: Install systemd services to /etc/systemd ([#293])
  - howto: Improved setup / operation procedures
 
