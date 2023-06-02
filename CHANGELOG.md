@@ -44,6 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+ - compatibility with CLN 23.05 ([#415])
  - core: Increase default `MAX_CHANNELS` to 1000 as workaround to lack of garbage collection ([#305], [#306])
  - core: Replace VLS_ONCHAIN_VALIDATION with VLS_ONCHAIN_VALIDATION_DISABLE
  - frontend: Replace VLS_CHAINFOLLOWER_ENABLE with VLS_FRONTEND_DISABLE ([#294])
