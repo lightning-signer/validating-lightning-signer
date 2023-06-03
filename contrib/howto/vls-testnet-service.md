@@ -12,10 +12,23 @@ sudo /usr/sbin/useradd -g vls -c "Validating Lightning Signer" -m vls
 
 Setup config files:
 ```
-sudo touch /home/vls/ALLOWLIST
-sudo chown vls:vls /home/vls/ALLOWLIST
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/vlsd2.toml /home/vls/vlsd2.toml
-sudo chown vls:vls /home/vls/vlsd2.toml
+sudo touch /home/vls/.lightning-signer/ALLOWLIST
+sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/vlsd2.toml /home/vls/.lightning-signer/vlsd2.toml
+```
+
+Create `~vls/.lightning-signer/testnet-env`:
+```
+sudo -u vls bash << 'EOF'
+cat > ~vls/.lightning-signer/testnet-env << EOF2
+REMOTE_SIGNER_ALLOWLIST=/home/vls/.lightning-signer/ALLOWLIST
+VLS_PERMISSIVE=1
+EOF2
+EOF
+```
+
+Make sure vls owns everything:
+```
+sudo chown -R vls:vls /home/vls/.lightning-signer
 ```
 
 Install systemd unit file:
@@ -33,17 +46,6 @@ If you would like to allow legacy anchor channels (non-zero-fee anchors) you sho
 add the following line to `/home/vls/vlsd2.toml`:
 ```
 policy-filter = "policy-channel-safe-type-anchors:warn"
-```
-
-Optionally enable PERMISSIVE mode:
-
-[FIXME - move this to the config file, see:
-https://gitlab.com/lightning-signer/validating-lightning-signer/-/issues/259]
-
-Add `Environment=VLS_PERMISSIVE=1` after the existing `Environment=...` line:
-```
-sudo vi /etc/systemd/system/vls-testnet.service
-sudo systemctl daemon-reload
 ```
 
 Enable the  service for automatic start on system boot:
