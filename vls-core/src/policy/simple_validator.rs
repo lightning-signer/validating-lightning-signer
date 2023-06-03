@@ -552,7 +552,7 @@ impl Validator for SimpleValidator {
                             output.value,
                             chan.id()
                         );
-                        debug_vals!(chan.setup, chan.enforcement_state);
+                        dbgvals!(chan.setup, chan.enforcement_state);
 
                         if output.value != chan.setup.channel_value_sat {
                             policy_err!(
@@ -839,7 +839,7 @@ impl Validator for SimpleValidator {
             let holder_commit_info =
                 &estate.current_holder_commit_info.as_ref().expect("current_holder_commit_info");
             if info2 != *holder_commit_info {
-                debug_vals!(*info2, holder_commit_info);
+                dbgvals!(*info2, holder_commit_info);
                 policy_err!(
                     self,
                     "policy-commitment-retry-same",
@@ -852,7 +852,7 @@ impl Validator for SimpleValidator {
         // This test overlaps the check in set_next_holder_commit_num but gives
         // better diagnostic.
         if commit_num + 2 <= estate.next_holder_commit_num {
-            debug_failed_vals!(estate, commit_num);
+            dbgvals!(estate, commit_num);
             policy_err!(
                 self,
                 "policy-commitment-holder-not-revoked",
@@ -866,7 +866,7 @@ impl Validator for SimpleValidator {
         // It's ok to validate the current state when closed, but not ok to validate
         // a new state.
         if commit_num == estate.next_holder_commit_num && estate.channel_closed {
-            debug_failed_vals!(estate);
+            dbgvals!(estate);
             policy_err!(self, "policy-commitment-spends-active-utxo", "channel is closing");
         }
 
@@ -886,7 +886,7 @@ impl Validator for SimpleValidator {
         if revoke_num != state.next_counterparty_revoke_num
             && revoke_num + 1 != state.next_counterparty_revoke_num
         {
-            debug_failed_vals!(state, revoke_num, commitment_secret);
+            dbgvals!(state, revoke_num, commitment_secret);
             policy_err!(
                 self,
                 "policy-commitment-previous-revoked",
@@ -901,7 +901,7 @@ impl Validator for SimpleValidator {
         let prev_commit_point = state.get_previous_counterparty_point(revoke_num);
         match prev_commit_point {
             None => {
-                debug_failed_vals!(state, revoke_num, commitment_secret);
+                dbgvals!(state, revoke_num, commitment_secret);
                 policy_err!(
                     self,
                     "policy-commitment-previous-revoked",
@@ -912,7 +912,7 @@ impl Validator for SimpleValidator {
             }
             Some(prev) =>
                 if supplied_commit_point != prev {
-                    debug_failed_vals!(state, revoke_num, commitment_secret);
+                    dbgvals!(state, revoke_num, commitment_secret);
                     policy_err!(
                         self,
                         "policy-commitment-previous-revoked",
@@ -958,7 +958,7 @@ impl Validator for SimpleValidator {
         } else if parse_received_htlc_script(redeemscript, setup.is_anchors()).is_ok() {
             false
         } else {
-            debug_failed_vals!(
+            dbgvals!(
                 is_counterparty,
                 setup,
                 DebugTxCreationKeys(txkeys),
@@ -1012,7 +1012,7 @@ impl Validator for SimpleValidator {
             .unwrap();
 
         if recomposed_tx_sighash != original_tx_sighash {
-            debug_failed_vals!(
+            dbgvals!(
                 is_counterparty,
                 setup,
                 DebugTxCreationKeys(txkeys),
@@ -1120,11 +1120,8 @@ impl Validator for SimpleValidator {
         let mut debug_on_return = scopeguard::guard(should_debug, |should_debug| {
             if should_debug {
                 if log::log_enabled!(log::Level::Debug) {
-                    debug!(
-                        "{} failed: {}",
-                        containing_function!(),
-                        vals_str!(setup, estate, tx, wallet_paths)
-                    );
+                    debug!("{} failed:", containing_function!());
+                    dbgvals!(setup, estate, tx, wallet_paths);
 
                     // Log the addresses associated with the outputs
                     let mut addrstrs = String::new();

@@ -227,28 +227,6 @@ pub fn script_debug(script: &Script, network: Network) -> String {
     )
 }
 
-/// Logs the arguments at debug level.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! debug_vals {
-    ( $($arg:tt)* ) => {
-        if log::log_enabled!(log::Level::Debug) {
-            debug!("{}: {}", short_function!(), vals_str!($($arg)*));
-        }
-    };
-}
-
-/// Logs the arguments at debug level.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! debug_failed_vals {
-    ( $($arg:tt)* ) => {
-        if log::log_enabled!(log::Level::Debug) {
-            debug!("{} failed: {}", short_function!(), vals_str!($($arg)*));
-        }
-    };
-}
-
 /// Return a scopeguard which debugs args on return unless disabled.
 #[doc(hidden)]
 #[macro_export]
@@ -258,10 +236,28 @@ macro_rules! scoped_debug_return {
         scopeguard::guard(should_debug, |should_debug| {
             if should_debug {
                 if log::log_enabled!(log::Level::Debug) {
-                    debug!("{} failed: {}", containing_function!(), vals_str!($($arg)*),
-                    );
+                    debug!("{} failed:", containing_function!());
+                    dbgvals!($($arg)*);
                 }
             }
         })
     }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+#[cfg(not(feature = "log_pretty_print"))]
+macro_rules! dbgvals {
+    ($($val:expr),* $(,)?) => {
+        $(debug!("{:?}: {:?}", stringify!($val), $val);)*
+    }
+}
+
+#[doc(hidden)]
+#[macro_export]
+#[cfg(feature = "log_pretty_print")]
+macro_rules! dbgvals {
+    ($($val:expr),* $(,)?) => {
+        $(debug!("{:?}: {:#?}", stringify!($val), $val);)*
+    }
 }
