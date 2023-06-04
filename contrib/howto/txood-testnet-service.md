@@ -26,7 +26,7 @@ Connect to `http://localhost:80` and verify you see "Wecome to nginx!"
 cd ~/lightning-signer
 git clone --recurse-submodules https://gitlab.com/lightning-signer/txoo.git && cd txoo
 cargo build --release -p txood
-sudo cp /home/user/lightning-signer/txoo/target/release/txood /usr/local/bin/
+sudo cp ~/lightning-signer/txoo/target/release/txood /usr/local/bin/
 ```
 
 ### Configure web directory
