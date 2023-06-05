@@ -32,7 +32,7 @@ macro_rules! log_channel_public_keys {
     };
 }
 
-/// log the enforcement state at the trace level
+/// log the enforcement state
 #[doc(hidden)]
 #[macro_export]
 macro_rules! trace_enforcement_state {
@@ -51,6 +51,18 @@ macro_rules! trace_enforcement_state {
             &$chan.enforcement_state,
             &$chan.get_chain_state()
         );
+    };
+}
+
+/// log the node state
+#[doc(hidden)]
+#[macro_export]
+macro_rules! trace_node_state {
+    ($node: expr) => {
+        #[cfg(not(feature = "debug_node_state"))]
+        trace!("{}:\n{:#?}", function!(), &$node);
+        #[cfg(feature = "debug_node_state")]
+        debug!("{}:\n{:#?}", function!(), &$node);
     };
 }
 

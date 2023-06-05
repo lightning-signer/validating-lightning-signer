@@ -530,6 +530,8 @@ impl NodeState {
             let payment = self.payments.get_mut(hash).expect("created above");
             payment.apply(channel_id, incoming_sat, outgoing_sat);
         }
+
+        trace_node_state!(self);
     }
 
     /// Fulfills an HTLC.
