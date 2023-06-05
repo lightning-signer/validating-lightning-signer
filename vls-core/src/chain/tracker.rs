@@ -420,9 +420,18 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
 
         let validator = self.validator_factory.make_validator(self.network, self.node_id, None);
         let prev_filter_header = &prev_headers.1;
-        validator
-            .validate_block(proof, height + 1, header, prev_filter_header, &outpoint_watches)
-            .map_err(|e| error_invalid_proof!("{:?}", e))?;
+
+        if prev_filter_header.iter().all(|x| *x == 0) {
+            // This allows us to upgrade old signers that didn't have filter headers.
+            // It is safe, because it's vanishingly unlikely that the filter header is
+            // all zeros, so the only way this can be triggered is if the filter header
+            // was missing on restore.
+            log::warn!("bypassing filter validation because prev_filter_header is all zeroes");
+        } else {
+            validator
+                .validate_block(proof, height + 1, header, prev_filter_header, &outpoint_watches)
+                .map_err(|e| error_invalid_proof!("{:?}", e))?;
+        }
         Ok(())
     }
 }

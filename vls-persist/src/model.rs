@@ -212,8 +212,10 @@ impl ChainTrackerEntry {
     ) -> ChainTracker<ChainMonitor> {
         let tip: Headers = match deserialize::<Headers>(&self.tip) {
             Err(_) => {
-                log::warn!("failed to deserialize tip, falling back on old format");
+                log::warn!("Failed to deserialize tip, falling back on old format.  This is expected if you are upgrading from a version prior to 0.9.0");
                 let tip = deserialize::<BlockHeader>(&self.tip).expect("fallback deserialize tip");
+                // Signal to the [`ChainTracker`] that the filter header was not available.
+                // This is used to upgrade old signers.  This should only happen once.
                 Headers(tip, FilterHeader::all_zeros())
             }
             Ok(t) => t,
