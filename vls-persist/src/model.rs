@@ -8,12 +8,14 @@ use core::iter::FromIterator;
 use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{Network, OutPoint};
-use lightning_signer::chain::tracker::{ChainTracker, ListenSlot};
+use lightning_signer::chain::tracker::{ChainTracker, Headers, ListenSlot};
 use serde::{Deserialize, Serialize};
 use serde_with::hex::Hex;
 use serde_with::serde_as;
 
 use lightning_signer::bitcoin;
+use lightning_signer::bitcoin::hashes::Hash;
+use lightning_signer::bitcoin::{BlockHeader, FilterHeader};
 use lightning_signer::channel::ChannelId;
 use lightning_signer::channel::ChannelSetup;
 use lightning_signer::monitor::ChainMonitor;
@@ -208,7 +210,14 @@ impl ChainTrackerEntry {
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
     ) -> ChainTracker<ChainMonitor> {
-        let tip = deserialize(&self.tip).expect("deserialize tip");
+        let tip: Headers = match deserialize::<Headers>(&self.tip) {
+            Err(_) => {
+                log::warn!("failed to deserialize tip, falling back on old format");
+                let tip = deserialize::<BlockHeader>(&self.tip).expect("fallback deserialize tip");
+                Headers(tip, FilterHeader::all_zeros())
+            }
+            Ok(t) => t,
+        };
         let headers =
             self.headers.iter().map(|h| deserialize(h).expect("deserialize header")).collect();
         let listeners =
