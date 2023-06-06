@@ -65,7 +65,9 @@ use crate::tx::tx::PreimageMap;
 use crate::txoo::get_latest_checkpoint;
 use crate::util::clock::Clock;
 use crate::util::crypto_utils::{sighash_from_heartbeat, signature_to_bitcoin_vec};
-use crate::util::debug_utils::{DebugBytes, DebugMapPaymentState, DebugMapRoutedPayment};
+use crate::util::debug_utils::{
+    DebugBytes, DebugMapPaymentState, DebugMapPaymentSummary, DebugMapRoutedPayment,
+};
 use crate::util::ser_util::DurationHandler;
 use crate::util::status::{failed_precondition, internal_error, invalid_argument, Status};
 use crate::util::velocity::VelocityControl;
@@ -365,7 +367,10 @@ impl NodeState {
     ) -> Result<(), ValidationError> {
         debug!(
             "{} validating payments on channel {} - in {:?} out {:?}",
-            self.log_prefix, channel_id, incoming_payment_summary, outgoing_payment_summary
+            self.log_prefix,
+            channel_id,
+            &DebugMapPaymentSummary(&incoming_payment_summary),
+            &DebugMapPaymentSummary(&outgoing_payment_summary)
         );
 
         let mut hashes: UnorderedSet<&PaymentHash> = UnorderedSet::new();
@@ -392,22 +397,29 @@ impl NodeState {
                 (incoming_for_chan_sat, outgoing_for_chan_sat)
             };
             let invoiced_amount = self.invoices.get(&hash).map(|i| i.amount_msat);
-            if validator
-                .validate_payment_balance(incoming_sat * 1000, outgoing_sat * 1000, invoiced_amount)
-                .is_err()
-            {
+            if let Err(err) = validator.validate_payment_balance(
+                incoming_sat * 1000,
+                outgoing_sat * 1000,
+                invoiced_amount,
+            ) {
                 if payment.is_some() && invoiced_amount.is_none() {
                     // TODO #331 - workaround for an uninvoiced existing payment
                     // is allowed to go out of balance because LDK does not
                     // provide the preimage in time and removes the incoming HTLC first.
                     warn!(
-                        "unbalanced routed payment on channel {} for hash {:?} payment state {:#?}",
-                        channel_id, hash.0, payment
+                        "unbalanced routed payment on channel {} for hash {:?} payment state {:#?}: {:}",
+                        channel_id,
+                        DebugBytes(&hash.0),
+                        payment,
+                        err,
                     );
                 } else {
                     error!(
-                        "unbalanced payment on channel {} for hash {:?} payment state {:#?}",
-                        channel_id, hash.0, payment
+                        "unbalanced payment on channel {} for hash {:?} payment state {:#?}: {:}",
+                        channel_id,
+                        DebugBytes(&hash.0),
+                        payment,
+                        err
                     );
                     unbalanced.push(hash);
                 }
@@ -2548,7 +2560,7 @@ mod tests {
             lenient_validator.clone(),
         );
 
-        assert!(result.is_ok());
+        assert_validation_ok!(result);
 
         let result = state.validate_and_apply_payments(
             &channel_id,

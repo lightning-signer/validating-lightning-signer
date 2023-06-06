@@ -214,6 +214,14 @@ impl<'a> core::fmt::Debug for DebugMapRoutedPayment<'a> {
     }
 }
 
+/// Debug support for Map<PaymentHash, u64>
+pub struct DebugMapPaymentSummary<'a>(pub &'a Map<PaymentHash, u64>);
+impl<'a> core::fmt::Debug for DebugMapPaymentSummary<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_map().entries(self.0.iter().map(|(k, v)| (DebugBytes(&k.0), v))).finish()
+    }
+}
+
 /// Return a debug string for a bitcoin::Script
 pub fn script_debug(script: &Script, network: Network) -> String {
     format!(

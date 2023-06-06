@@ -1648,7 +1648,14 @@ impl Validator for SimpleValidator {
         };
         // this also implicitly implements policy-commitment-payment-invoiced
         if self.policy.require_invoices && incoming_msat + max_to_invoice_msat < outgoing_msat {
-            policy_err!(self, "policy-routing-balanced", "incoming < outgoing");
+            policy_err!(
+                self,
+                "policy-routing-balanced",
+                "incoming_msat + max_to_invoice_msat < outgoing_msat: {} + {} < {}",
+                incoming_msat,
+                max_to_invoice_msat,
+                outgoing_msat
+            );
         }
         Ok(())
     }
