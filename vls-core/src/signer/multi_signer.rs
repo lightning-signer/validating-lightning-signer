@@ -48,15 +48,15 @@ impl MultiSigner {
         initial_allowlist: Vec<String>,
         services: NodeServices,
         seed_persister: Arc<dyn SeedPersist>,
-    ) -> MultiSigner {
-        let nodes = Node::restore_nodes(services.clone(), seed_persister);
-        MultiSigner {
+    ) -> Result<MultiSigner, Status> {
+        let nodes = Node::restore_nodes(services.clone(), seed_persister)?;
+        Ok(MultiSigner {
             nodes: Mutex::new(nodes),
             persister: services.persister.clone(),
             test_mode,
             initial_allowlist,
             services,
-        }
+        })
     }
 
     /// Construct
@@ -76,15 +76,18 @@ impl MultiSigner {
     }
 
     /// Construct and restore nodes from the persister.
-    pub fn restore(services: NodeServices, seed_persister: Arc<dyn SeedPersist>) -> MultiSigner {
-        let nodes = Node::restore_nodes(services.clone(), seed_persister);
-        MultiSigner {
+    pub fn restore(
+        services: NodeServices,
+        seed_persister: Arc<dyn SeedPersist>,
+    ) -> Result<MultiSigner, Status> {
+        let nodes = Node::restore_nodes(services.clone(), seed_persister)?;
+        Ok(MultiSigner {
             nodes: Mutex::new(nodes),
             persister: services.persister.clone(),
             test_mode: false,
             initial_allowlist: vec![],
             services,
-        }
+        })
     }
 
     /// Create a node with a random seed

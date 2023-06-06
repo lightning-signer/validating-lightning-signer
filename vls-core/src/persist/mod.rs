@@ -145,6 +145,14 @@ pub trait Persist: SendSync {
 
     /// Clears the database.  Not for production use.
     fn clear_database(&self) -> Result<(), Error>;
+
+    /// Whether a sync is required on signer startup
+    ///
+    /// A sync is required when using a composite persister, since one of the
+    /// persisters may have fallen behind due to a crash.
+    fn sync_required(&self) -> bool {
+        false
+    }
 }
 
 /// A null persister for testing

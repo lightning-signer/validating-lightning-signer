@@ -1,0 +1,350 @@
+use lightning_signer::bitcoin::secp256k1::PublicKey;
+use lightning_signer::chain::tracker::ChainTracker;
+use lightning_signer::channel::{Channel, ChannelId, ChannelStub};
+use lightning_signer::monitor::ChainMonitor;
+use lightning_signer::node::{NodeConfig, NodeState};
+use lightning_signer::persist::model::{
+    ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
+};
+use lightning_signer::persist::{Context, Error, Persist};
+use lightning_signer::policy::validator::ValidatorFactory;
+use lightning_signer::prelude::*;
+use lightning_signer::SendSync;
+use std::sync::{Arc, Mutex};
+
+/// A composite persister that writes to two underlying persisters.
+///
+/// NOTE: only the backup persister is assumed to (optionally) use context (see `[Persist::enter]`).
+///
+/// The main persister is written to first.
+///
+/// On startup, the node should write the entire node state (including channels)
+/// to this persister, to ensure that the backup is up to date.  This is because
+/// the backup persister is only written to after the main persister, so if the
+/// signer crashes, the backup persister may be missing the latest state.
+pub struct BackupPersister<M: Persist, B: Persist> {
+    main: M,
+    backup: B,
+}
+
+impl<M: Persist, B: Persist> BackupPersister<M, B> {
+    // Create a new backup persister
+    pub fn new(main: M, backup: B) -> Self {
+        Self { main, backup }
+    }
+}
+
+impl<M: Persist, B: Persist> SendSync for BackupPersister<M, B> {}
+
+impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
+    fn enter(&self, state: Arc<Mutex<OrderedMap<String, (u64, Vec<u8>)>>>) -> Box<dyn Context> {
+        self.backup.enter(state)
+    }
+
+    fn new_node(
+        &self,
+        node_id: &PublicKey,
+        config: &NodeConfig,
+        state: &NodeState,
+    ) -> Result<(), Error> {
+        self.main.new_node(node_id, config, state)?;
+        self.backup.new_node(node_id, config, state)
+    }
+
+    fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), Error> {
+        self.main.update_node(node_id, state)?;
+        self.backup.update_node(node_id, state)
+    }
+
+    fn delete_node(&self, node_id: &PublicKey) -> Result<(), Error> {
+        self.main.delete_node(node_id)?;
+        self.backup.delete_node(node_id)
+    }
+
+    fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), Error> {
+        self.main.new_channel(node_id, stub)?;
+        self.backup.new_channel(node_id, stub)
+    }
+
+    fn new_chain_tracker(
+        &self,
+        node_id: &PublicKey,
+        tracker: &ChainTracker<ChainMonitor>,
+    ) -> Result<(), Error> {
+        self.main.new_chain_tracker(node_id, tracker)?;
+        self.backup.new_chain_tracker(node_id, tracker)
+    }
+
+    fn update_tracker(
+        &self,
+        node_id: &PublicKey,
+        tracker: &ChainTracker<ChainMonitor>,
+    ) -> Result<(), Error> {
+        self.main.update_tracker(node_id, tracker)?;
+        self.backup.update_tracker(node_id, tracker)
+    }
+
+    fn get_tracker(
+        &self,
+        node_id: PublicKey,
+        validator_factory: Arc<dyn ValidatorFactory>,
+    ) -> Result<ChainTracker<ChainMonitor>, Error> {
+        self.main.get_tracker(node_id, validator_factory.clone())
+    }
+
+    fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), Error> {
+        self.main.update_channel(node_id, channel)?;
+        self.backup.update_channel(node_id, channel)
+    }
+
+    fn get_channel(
+        &self,
+        node_id: &PublicKey,
+        channel_id: &ChannelId,
+    ) -> Result<CoreChannelEntry, Error> {
+        self.main.get_channel(node_id, channel_id)
+    }
+
+    fn get_node_channels(
+        &self,
+        node_id: &PublicKey,
+    ) -> Result<Vec<(ChannelId, CoreChannelEntry)>, Error> {
+        self.main.get_node_channels(node_id)
+    }
+
+    fn update_node_allowlist(
+        &self,
+        node_id: &PublicKey,
+        allowlist: Vec<String>,
+    ) -> Result<(), Error> {
+        self.main.update_node_allowlist(node_id, allowlist.clone())?;
+        self.backup.update_node_allowlist(node_id, allowlist)
+    }
+
+    fn get_node_allowlist(&self, node_id: &PublicKey) -> Result<Vec<String>, Error> {
+        self.main.get_node_allowlist(node_id)
+    }
+
+    fn get_nodes(&self) -> Result<Vec<(PublicKey, CoreNodeEntry)>, Error> {
+        self.main.get_nodes()
+    }
+
+    fn clear_database(&self) -> Result<(), Error> {
+        self.main.clear_database()?;
+        self.backup.clear_database()
+    }
+
+    fn sync_required(&self) -> bool {
+        // we require a sync on startup
+        true
+    }
+}
+
+#[cfg(test)]
+#[allow(unused_variables)]
+mod tests {
+    use super::*;
+    use crate::model::{ChainTrackerEntry, NodeEntry, NodeStateEntry};
+    use crate::thread_memo_persister::ThreadMemoPersister;
+    use lightning_signer::bitcoin::hashes::hex::ToHex;
+    use lightning_signer::node::Node;
+    use lightning_signer::util::test_utils::{
+        hex_decode, make_services, TEST_CHANNEL_ID, TEST_NODE_CONFIG, TEST_SEED,
+    };
+    use serde_json::{from_slice, to_vec};
+    use std::collections::BTreeMap;
+
+    // A persister that "persists" to a BTreeMap
+    #[derive(Clone)]
+    struct TestPersister {
+        state: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
+    }
+
+    impl TestPersister {
+        fn new() -> Self {
+            Self { state: Arc::new(Mutex::new(BTreeMap::new())) }
+        }
+    }
+
+    impl SendSync for TestPersister {}
+
+    impl Persist for TestPersister {
+        fn new_node(
+            &self,
+            node_id: &PublicKey,
+            config: &NodeConfig,
+            node_state: &NodeState,
+        ) -> Result<(), Error> {
+            self.update_node(node_id, node_state)?;
+            let mut state = self.state.lock().unwrap();
+            let key = format!("node/entry/{}", &node_id.serialize().to_hex());
+            let entry = NodeEntry {
+                key_derivation_style: config.key_derivation_style as u8,
+                network: config.network.to_string(),
+            };
+            let value = to_vec(&entry).unwrap();
+            state.insert(key, value);
+            Ok(())
+        }
+
+        fn update_node(&self, node_id: &PublicKey, node_state: &NodeState) -> Result<(), Error> {
+            let mut state = self.state.lock().unwrap();
+            let key = format!("node/state/{}", &node_id.serialize().to_hex());
+            let state_entry: NodeStateEntry = node_state.into();
+            let state_value = to_vec(&state_entry).unwrap();
+            state.insert(key, state_value);
+            Ok(())
+        }
+
+        fn delete_node(&self, node_id: &PublicKey) -> Result<(), Error> {
+            todo!()
+        }
+
+        fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), Error> {
+            todo!()
+        }
+
+        fn new_chain_tracker(
+            &self,
+            node_id: &PublicKey,
+            tracker: &ChainTracker<ChainMonitor>,
+        ) -> Result<(), Error> {
+            let mut state = self.state.lock().unwrap();
+            let key = format!("node/tracker/{}", &node_id.serialize().to_hex());
+            let model: ChainTrackerEntry = tracker.into();
+            let value = to_vec(&model).unwrap();
+            state.insert(key, value);
+            Ok(())
+        }
+
+        fn update_tracker(
+            &self,
+            node_id: &PublicKey,
+            tracker: &ChainTracker<ChainMonitor>,
+        ) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn get_tracker(
+            &self,
+            node_id: PublicKey,
+            validator_factory: Arc<dyn ValidatorFactory>,
+        ) -> Result<ChainTracker<ChainMonitor>, Error> {
+            let state = self.state.lock().unwrap();
+            let key = format!("node/tracker/{}", &node_id.serialize().to_hex());
+            let value = state.get(&key).unwrap();
+            let model: ChainTrackerEntry = from_slice(&value).unwrap();
+            Ok(model.into_tracker(node_id.clone(), validator_factory))
+        }
+
+        fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), Error> {
+            todo!()
+        }
+
+        fn get_channel(
+            &self,
+            node_id: &PublicKey,
+            channel_id: &ChannelId,
+        ) -> Result<CoreChannelEntry, Error> {
+            todo!()
+        }
+
+        fn get_node_channels(
+            &self,
+            node_id: &PublicKey,
+        ) -> Result<Vec<(ChannelId, CoreChannelEntry)>, Error> {
+            Ok(Vec::new())
+        }
+
+        fn update_node_allowlist(
+            &self,
+            node_id: &PublicKey,
+            allowlist: Vec<String>,
+        ) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn get_node_allowlist(&self, node_id: &PublicKey) -> Result<Vec<String>, Error> {
+            Ok(Vec::new())
+        }
+
+        fn get_nodes(&self) -> Result<Vec<(PublicKey, CoreNodeEntry)>, Error> {
+            let state = self.state.lock().unwrap();
+            let keys: Vec<_> = state
+                .iter()
+                .filter_map(
+                    |(k, _)| {
+                        if k.starts_with("node/entry/") {
+                            Some(k.clone())
+                        } else {
+                            None
+                        }
+                    },
+                )
+                .collect();
+            let mut res = Vec::new();
+            for key in keys {
+                let id = hex::decode(key.replacen("node/entry/", "", 1)).unwrap();
+                let node_id = PublicKey::from_slice(&id).unwrap();
+                let value = state.get(&format!("node/entry/{}", hex::encode(&id))).unwrap();
+                let entry: NodeEntry = from_slice(&value).unwrap();
+                let state_value = state.get(&format!("node/state/{}", hex::encode(&id))).unwrap();
+                let state_entry: NodeStateEntry = from_slice(&state_value).unwrap();
+                let node_state = NodeState {
+                    invoices: Default::default(),
+                    issued_invoices: Default::default(),
+                    payments: Default::default(),
+                    excess_amount: 0,
+                    log_prefix: "".to_string(),
+                    velocity_control: state_entry.velocity_control.into(),
+                    fee_velocity_control: state_entry.fee_velocity_control.into(),
+                };
+                let node_entry = CoreNodeEntry {
+                    key_derivation_style: entry.key_derivation_style as u8,
+                    network: entry.network,
+                    state: node_state,
+                };
+                res.push((node_id, node_entry));
+            }
+            Ok(res)
+        }
+
+        fn clear_database(&self) -> Result<(), Error> {
+            todo!()
+        }
+    }
+
+    #[test]
+    fn backup_persister_test() {
+        let persister = TestPersister::new();
+        let channel_id0 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
+        let seed = hex_decode(TEST_SEED[1]).unwrap();
+        let mut services = make_services();
+        services.persister = Arc::new(persister.clone());
+        let node = Arc::new(Node::new(TEST_NODE_CONFIG, &seed, vec![], services));
+        let node_id = node.get_id();
+
+        persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state()).unwrap();
+        persister.new_chain_tracker(&node_id, &node.get_tracker()).unwrap();
+
+        let nodes1 = persister.get_nodes().unwrap();
+        assert_eq!(nodes1.len(), 1);
+        let (node_id1, node_entry1) = nodes1.into_iter().next().unwrap();
+        assert_eq!(node_id, node_id1);
+
+        let backup = ThreadMemoPersister {};
+        let backup_persister = Arc::new(BackupPersister::new(persister, backup));
+        let nodes2 = backup_persister.get_nodes().unwrap();
+        let (node_id2, node_entry2) = nodes2.into_iter().next().unwrap();
+        assert_eq!(node_id, node_id2);
+
+        let mut services = make_services();
+        services.persister = backup_persister.clone();
+        let state = Arc::new(Mutex::new(OrderedMap::new()));
+        let ctx = backup_persister.enter(state);
+        let node = Node::restore_node(&node_id, node_entry1, &seed, services).unwrap();
+        let muts = ctx.exit();
+        // allowlist, node state, node entry, tracker
+        assert_eq!(muts.len(), 4);
+    }
+}

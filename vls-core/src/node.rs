@@ -1236,7 +1236,7 @@ impl Node {
         node_entry: NodeEntry,
         seed: &[u8],
         services: NodeServices,
-    ) -> Arc<Node> {
+    ) -> Result<Arc<Node>, Status> {
         let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
         let config = NodeConfig {
             network,
@@ -1287,7 +1287,45 @@ impl Node {
                 tracker.height = height;
             }
         }
-        node
+
+        node.maybe_sync_persister()?;
+        Ok(node)
+    }
+
+    fn maybe_sync_persister(&self) -> Result<(), Status> {
+        if self.persister.sync_required() {
+            // write everything to persister, to ensure that any composite
+            // persister has all sub-persisters in sync
+            {
+                let state = self.state.lock().unwrap();
+                // do a new_node here, because update_node doesn't store the entry,
+                // only the state
+                self.persister
+                    .new_node(&self.get_id(), &self.node_config, &*state)
+                    .map_err(|_| internal_error("sync persist failed"))?;
+            }
+            let alset = self.allowlist.lock().unwrap();
+            self.update_allowlist(&alset).map_err(|_| internal_error("sync persist failed"))?;
+            {
+                let tracker = self.tracker.lock().unwrap();
+                self.persister
+                    .update_tracker(&self.get_id(), &tracker)
+                    .map_err(|_| internal_error("tracker persist failed"))?;
+            }
+            let channels = self.channels.lock().unwrap();
+            for (_, slot) in channels.iter() {
+                let channel = slot.lock().unwrap();
+                match &*channel {
+                    ChannelSlot::Stub(_) => {}
+                    ChannelSlot::Ready(c) => {
+                        self.persister
+                            .update_channel(&self.get_id(), c)
+                            .map_err(|_| internal_error("sync persist failed"))?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Restore all nodes from `persister`.
@@ -1297,7 +1335,7 @@ impl Node {
     pub fn restore_nodes(
         services: NodeServices,
         seed_persister: Arc<dyn SeedPersist>,
-    ) -> Map<PublicKey, Arc<Node>> {
+    ) -> Result<Map<PublicKey, Arc<Node>>, Status> {
         let mut nodes = Map::new();
         let persister = services.persister.clone();
         let mut seeds = OrderedSet::from_iter(seed_persister.list().into_iter());
@@ -1305,14 +1343,14 @@ impl Node {
             let seed = seed_persister
                 .get(&node_id.serialize().to_hex())
                 .expect(format!("no seed for node {:?}", node_id).as_str());
-            let node = Node::restore_node(&node_id, node_entry, &seed, services.clone());
+            let node = Node::restore_node(&node_id, node_entry, &seed, services.clone())?;
             nodes.insert(node_id, node);
             seeds.remove(&node_id.serialize().to_hex());
         }
         if !seeds.is_empty() {
             warn!("some seeds had no persisted node state: {:?}", seeds);
         }
-        nodes
+        Ok(nodes)
     }
 
     /// Ready a new channel, making it available for use.
