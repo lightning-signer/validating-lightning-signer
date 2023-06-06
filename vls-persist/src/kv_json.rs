@@ -292,6 +292,9 @@ mod tests {
     #![allow(unused_imports)]
 
     use alloc::sync::Arc;
+    use hex::FromHex;
+    use std::env;
+    use std::path::Path;
 
     use lightning::chain::keysinterface::InMemorySigner;
     use lightning::util::ser::Writeable;
@@ -412,5 +415,37 @@ mod tests {
         let mut w = VecWriter(Vec::new());
         signer.write(&mut w).unwrap();
         assert_eq!(existing_w.0, w.0);
+    }
+
+    #[test]
+    fn restore_0_9_test() {
+        // running inside kcov doesn't set CARGO_MANIFEST_DIR, so we have a fallback
+        let fixture_path = if let Ok(module_path) = env::var("CARGO_MANIFEST_DIR") {
+            println!("module_path: {}", module_path);
+            format!("{}/../data/samples/0_9_persist", module_path)
+        } else if let Ok(fixtures_path) = env::var("FIXTURES_DIR") {
+            println!("fixtures_path: {}", fixtures_path);
+            format!("{}/samples/0_9_persist", fixtures_path)
+        } else {
+            panic!("Missing CARGO_MANIFEST_DIR / FIXTURES_DIR");
+        };
+        if !Path::new(&fixture_path).exists() {
+            panic!("Fixture path does not exist: {}", fixture_path);
+        }
+        let persister = KVJsonPersister::new(&fixture_path);
+        let mut seed = [0; 32];
+        seed.copy_from_slice(Vec::from_hex(TEST_SEED[0]).unwrap().as_slice());
+
+        let seed_persister = Arc::new(MemorySeedPersister::new(seed.to_vec()));
+        let node_services = NodeServices {
+            validator_factory: Arc::new(SimpleValidatorFactory::new()),
+            starting_time_factory: make_genesis_starting_time_factory(TEST_NODE_CONFIG.network),
+            persister: Arc::new(persister),
+            clock: Arc::new(StandardClock()),
+        };
+        let nodes = Node::restore_nodes(node_services, seed_persister).unwrap();
+        assert_eq!(nodes.len(), 1);
+        let node = nodes.values().next().unwrap();
+        assert_eq!(node.channels().len(), 1);
     }
 }
