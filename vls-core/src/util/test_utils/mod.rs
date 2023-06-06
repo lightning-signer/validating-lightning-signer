@@ -109,8 +109,7 @@ macro_rules! assert_failed_precondition_err {
 macro_rules! assert_validation_ok {
     ($res: expr) => {
         if $res.is_err() {
-            // avoid printing the backtrace ...
-            panic!("unexepected ValidationError: {:#?}", $res.unwrap_err().kind);
+            panic!("unexepected ValidationError: {:#?}", $res.unwrap_err());
         }
     };
 }
