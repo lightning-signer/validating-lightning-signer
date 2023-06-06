@@ -396,6 +396,11 @@ pub fn init_node_and_channel(
     setup: ChannelSetup,
 ) -> (Arc<Node>, ChannelId) {
     let node = init_node(node_config, seedstr);
+    let channel_id = init_channel(setup, node.clone());
+    (node, channel_id)
+}
+
+pub fn init_channel(setup: ChannelSetup, node: Arc<Node>) -> ChannelId {
     {
         let mut tracker = node.get_tracker();
         let (header, proof) = make_testnet_header(tracker.tip(), tracker.height());
@@ -410,7 +415,7 @@ pub fn init_node_and_channel(
     let holder_shutdown_key_path = vec![];
     node.ready_channel(channel_id.clone(), None, setup, &holder_shutdown_key_path)
         .expect("ready channel");
-    (node, channel_id)
+    channel_id
 }
 
 pub fn make_test_funding_wallet_addr(
