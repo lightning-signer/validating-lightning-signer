@@ -41,3 +41,13 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 name = "persist_test"
 path = "src/persist_test_main.rs"
 required-features = ["kv-json", "test_utils"]
+
+[[bin]]
+name = "gen_sample_data"
+path = "src/gen_sample_data_main.rs"
+required-features = ["kv-json"]
+
+[[bin]]
+name = "dump_sample_data"
+path = "src/dump_sample_data_main.rs"
+required-features = ["kv-json"]

@@ -138,11 +138,11 @@ coverage:
     - apt-get install -y cmake g++ pkg-config jq
     - apt-get install -y libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
     - cargo kcov --print-install-kcov-sh | sh
-    - CARGO_TARGET_DIR=target/kcov cargo kcov --verbose --all --features test_utils
+    - CARGO_TARGET_DIR=target/kcov FIXTURES_DIR=`pwd`/data cargo kcov --verbose --all --features test_utils,kcov
       --lib --test functional_test
       -- --verify
       --exclude-region="kcov-ignore-start:kcov-ignore-end"
-      --exclude-pattern=/home/user/.cargo,/usr/include,/usr/src/debug,src/util/loopback.rs
+      --exclude-pattern="${CARGO_HOME},/usr/include,/usr/src/debug,src/util/loopback.rs"
     - bash <(curl -s https://codecov.io/bash) -t "${CODECOV_TOKEN}"
 
 cargo-audit:
