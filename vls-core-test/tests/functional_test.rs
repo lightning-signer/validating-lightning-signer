@@ -169,7 +169,6 @@ fn new_signer() -> Arc<MultiSigner> {
 fn invoice_test() {
     let network = Network::Regtest;
     let mut policy = make_simple_policy(network);
-    policy.require_invoices = true;
     // can't do routing enforcement yet because of #331
     // policy.enforce_balance = true;
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));

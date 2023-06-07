@@ -2425,6 +2425,7 @@ mod tests {
     use test_log::test;
 
     use crate::channel::ChannelBase;
+    use crate::policy::filter::{FilterRule, PolicyFilter};
     use crate::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::invoice::make_test_bolt12_invoice;
@@ -2513,16 +2514,19 @@ mod tests {
         let hash1 = PaymentHash([1; 32]);
         let channel_id2 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
 
-        // Create a strict invoice validator and one that does not validate invoices
-        let mut policy = make_simple_policy(Network::Testnet);
-        policy.require_invoices = true;
-        let invoice_validator = SimpleValidatorFactory::new_with_policy(policy).make_validator(
-            Network::Testnet,
-            node.get_id(),
-            None,
-        );
-        let lenient_validator =
-            SimpleValidatorFactory::new().make_validator(Network::Testnet, node.get_id(), None);
+        // Create a strict invoice validator
+        let strict_policy = make_simple_policy(Network::Testnet);
+        let strict_validator = SimpleValidatorFactory::new_with_policy(strict_policy)
+            .make_validator(Network::Testnet, node.get_id(), None);
+
+        // Create a lenient invoice validator
+        let mut lenient_policy = make_simple_policy(Network::Testnet);
+        let lenient_filter = PolicyFilter {
+            rules: vec![FilterRule::new_warn("policy-commitment-htlc-routing-balance")],
+        };
+        lenient_policy.filter.merge(lenient_filter);
+        let lenient_validator = SimpleValidatorFactory::new_with_policy(lenient_policy)
+            .make_validator(Network::Testnet, node.get_id(), None);
 
         state
             .validate_and_apply_payments(
@@ -2530,7 +2534,7 @@ mod tests {
                 &Map::new(),
                 &vec![(hash, 99)].into_iter().collect(),
                 &Default::default(),
-                invoice_validator.clone(),
+                strict_validator.clone(),
             )
             .expect("channel1");
 
@@ -2539,7 +2543,7 @@ mod tests {
             &Map::new(),
             &vec![(hash, 12)].into_iter().collect(),
             &Default::default(),
-            invoice_validator.clone(),
+            strict_validator.clone(),
         );
         assert_eq!(result, Err(policy_error("validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"0202020202020202020202020202020202020202020202020202020202020202\"]")));
 
@@ -2548,10 +2552,21 @@ mod tests {
             &Map::new(),
             &vec![(hash, 11)].into_iter().collect(),
             &Default::default(),
-            invoice_validator.clone(),
+            strict_validator.clone(),
         );
-        assert!(result.is_ok());
+        assert_validation_ok!(result);
 
+        // hash1 has no invoice, fails with strict validator, but only initially
+        let result = state.validate_and_apply_payments(
+            &channel_id,
+            &Map::new(),
+            &vec![(hash1, 5)].into_iter().collect(),
+            &Default::default(),
+            strict_validator.clone(),
+        );
+        assert_policy_err!(result, "validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"0101010101010101010101010101010101010101010101010101010101010101\"]");
+
+        // hash1 has no invoice, ok with lenient validator
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),
@@ -2559,19 +2574,17 @@ mod tests {
             &Default::default(),
             lenient_validator.clone(),
         );
-
         assert_validation_ok!(result);
 
+        // hash1 has no invoice, passes with strict validator once the payment exists (TODO #331)
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),
             &vec![(hash1, 5)].into_iter().collect(),
             &Default::default(),
-            invoice_validator.clone(),
+            strict_validator.clone(),
         );
-
-        // TODO #331
-        // assert!(result.is_err());
+        assert_validation_ok!(result);
     }
 
     fn make_test_invoice(
@@ -2778,7 +2791,6 @@ mod tests {
         assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 
         let mut policy = make_simple_policy(Network::Testnet);
-        policy.require_invoices = true;
         policy.enforce_balance = true;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
@@ -2816,7 +2828,6 @@ mod tests {
         assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 
         let mut policy = make_simple_policy(Network::Testnet);
-        policy.require_invoices = true;
         policy.enforce_balance = true;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
@@ -2853,7 +2864,6 @@ mod tests {
         assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 
         let mut policy = make_simple_policy(Network::Testnet);
-        policy.require_invoices = true;
         policy.enforce_balance = true;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
@@ -2889,8 +2899,7 @@ mod tests {
 
         assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 
-        let mut policy = make_simple_policy(Network::Testnet);
-        policy.require_invoices = true;
+        let policy = make_simple_policy(Network::Testnet);
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
         node.set_validator_factory(Arc::new(factory));
@@ -2936,7 +2945,6 @@ mod tests {
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
 
         let mut policy = make_simple_policy(Network::Testnet);
-        policy.require_invoices = true;
         policy.enforce_balance = true;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
@@ -3001,7 +3009,6 @@ mod tests {
         node.sign_invoice(&hrp, &data).unwrap();
 
         let mut policy = make_simple_policy(Network::Testnet);
-        policy.require_invoices = true;
         policy.enforce_balance = true;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);

@@ -160,7 +160,6 @@ pub fn test_lightning_signer(postscript: fn()) {
     let seed1 = [1u8; 32];
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
     let mut policy = make_simple_policy(Network::Signet);
-    policy.require_invoices = true;
     policy.enforce_balance = true;
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
     let starting_time_factory = FixedStartingTimeFactory::new(1, 1);
