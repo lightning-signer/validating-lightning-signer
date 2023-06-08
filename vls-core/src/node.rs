@@ -7,6 +7,8 @@ use core::iter::FromIterator;
 use core::str::FromStr;
 use core::time::Duration;
 
+use scopeguard::defer;
+
 use bitcoin;
 use bitcoin::bech32::{u5, FromBase32};
 use bitcoin::hashes::hex::ToHex;
@@ -365,6 +367,7 @@ impl NodeState {
         balance_delta: &BalanceDelta,
         validator: Arc<dyn Validator>,
     ) -> Result<(), ValidationError> {
+        let mut debug_on_return = scoped_debug_return!(self);
         debug!(
             "{} validating payments on channel {} - in {:?} out {:?}",
             self.log_prefix,
@@ -453,6 +456,7 @@ impl NodeState {
                     ))
                 })?;
         }
+        *debug_on_return = false;
         Ok(())
     }
 
@@ -541,9 +545,9 @@ impl NodeState {
         channel_id: &ChannelId,
         preimage: PaymentPreimage,
         validator: Arc<dyn Validator>,
-    ) {
+    ) -> bool {
         let payment_hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
-
+        let mut fulfilled = false;
         if let Some(payment) = self.payments.get_mut(&payment_hash) {
             // Getting an HTLC preimage moves HTLC values to the virtual balance of the recipient
             // on both input and output.
@@ -595,17 +599,27 @@ impl NodeState {
                     }
                 }
                 payment.preimage = Some(preimage);
+                fulfilled = true;
             }
         }
+        fulfilled
     }
 
-    fn prune_issued_invoices(&mut self, now: Duration) {
-        self.issued_invoices.retain(|_, issued| {
-            issued.duration_since_epoch + issued.expiry_duration + INVOICE_PRUNE_TIME > now
+    fn prune_issued_invoices(&mut self, now: Duration) -> bool {
+        let mut modified = false;
+        self.issued_invoices.retain(|hash, issued| {
+            let keep =
+                issued.duration_since_epoch + issued.expiry_duration + INVOICE_PRUNE_TIME > now;
+            if !keep {
+                debug!("pruning {:?} from issued_invoices", DebugBytes(&hash.0));
+                modified = true;
+            }
+            keep
         });
+        modified
     }
 
-    fn prune_invoices(&mut self, now: Duration) {
+    fn prune_invoices(&mut self, now: Duration) -> bool {
         let invoices = &mut self.invoices;
         let payments = &mut self.payments;
         let prune: UnorderedSet<_> = invoices
@@ -620,8 +634,24 @@ impl NodeState {
             })
             .collect();
 
-        invoices.retain(|hash, _| !prune.contains(hash));
-        payments.retain(|hash, _| !prune.contains(hash));
+        let mut modified = false;
+        invoices.retain(|hash, _| {
+            let keep = !prune.contains(hash);
+            if !keep {
+                debug!("pruning {:?} from invoices", DebugBytes(&hash.0));
+                modified = true;
+            }
+            keep
+        });
+        payments.retain(|hash, _| {
+            let keep = !prune.contains(hash);
+            if !keep {
+                debug!("pruning {:?} from payments", DebugBytes(&hash.0));
+                modified = true;
+            }
+            keep
+        });
+        modified
     }
 
     fn is_invoice_prunable(
@@ -958,6 +988,7 @@ impl Node {
 
         state.velocity_control.update_spec(&policy.global_velocity_control());
         state.fee_velocity_control.update_spec(&policy.fee_velocity_control());
+        trace_node_state!(state);
     }
 
     pub(crate) fn get_node_secret(&self) -> SecretKey {
@@ -1553,8 +1584,11 @@ impl Node {
         // opportunity to prune invoices
         let mut state = self.get_state();
         let now = self.clock.now();
-        state.prune_invoices(now);
-        state.prune_issued_invoices(now);
+        let pruned1 = state.prune_invoices(now);
+        let pruned2 = state.prune_issued_invoices(now);
+        if pruned1 || pruned2 {
+            trace_node_state!(state);
+        }
         drop(state); // minimize lock time
 
         let tracker = self.tracker.lock().unwrap();
@@ -1806,6 +1840,7 @@ impl Node {
         drop(channels_lock);
 
         let validator = self.validator();
+        defer! { trace_node_state!(self.get_state()); }
         let mut state = self.state.lock().unwrap();
         let now = self.clock.now().as_secs();
         if !state.fee_velocity_control.insert(now, non_beneficial_sat * 1000) {
@@ -1954,6 +1989,7 @@ impl Node {
             payment_state.amount_msat
         );
 
+        defer! { trace_node_state!(self.get_state()); }
         let mut state = self.get_state();
         let policy = self.policy();
         if state.issued_invoices.len() >= policy.max_invoices() {
@@ -2143,8 +2179,13 @@ impl Node {
         validator: Arc<dyn Validator>,
     ) {
         let mut state = self.get_state();
+        let mut fulfilled = false;
         for preimage in preimages.into_iter() {
-            state.htlc_fulfilled(channel_id, preimage, Arc::clone(&validator));
+            fulfilled =
+                state.htlc_fulfilled(channel_id, preimage, Arc::clone(&validator)) || fulfilled;
+        }
+        if fulfilled {
+            trace_node_state!(state);
         }
     }
 
@@ -2166,6 +2207,7 @@ impl Node {
             hash.0.to_hex(),
             payment_state.amount_msat
         );
+        defer! { trace_node_state!(self.get_state()); }
         let mut state = self.get_state();
         let policy = self.policy();
         if state.invoices.len() >= policy.max_invoices() {
@@ -2220,6 +2262,7 @@ impl Node {
             payment_hash.0.to_hex(),
             payment_state.amount_msat
         );
+        defer! { trace_node_state!(self.get_state()); }
         let mut state = self.get_state();
         let policy = self.policy();
         if state.invoices.len() >= policy.max_invoices() {
@@ -2263,6 +2306,7 @@ impl Node {
             if payment_state.invoice_hash == *invoice_hash {
                 Ok(true)
             } else {
+                trace_node_state!(state);
                 Err(failed_precondition(
                     "has_payment: already have a different invoice for same secret",
                 ))
