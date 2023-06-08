@@ -1966,7 +1966,7 @@ impl Node {
                 Ok(sig)
             } else {
                 Err(failed_precondition(
-                    "already have a different invoice for same secret".to_string(),
+                    "sign_invoice: already have a different invoice for same secret".to_string(),
                 ))
             };
         }
@@ -2177,7 +2177,9 @@ impl Node {
             return if payment_state.invoice_hash == invoice_hash {
                 Ok(true)
             } else {
-                Err(failed_precondition("already have a different invoice for same secret"))
+                Err(failed_precondition(
+                    "add_invoice: already have a different invoice for same secret",
+                ))
             };
         }
         if !state.velocity_control.insert(now.as_secs(), payment_state.amount_msat) {
@@ -2230,7 +2232,9 @@ impl Node {
             return if payment_state.invoice_hash == invoice_hash {
                 Ok(true)
             } else {
-                Err(failed_precondition("already have a different payment for same secret"))
+                Err(failed_precondition(
+                    "add_keysend: already have a different payment for same secret",
+                ))
             };
         }
         let now = self.clock.now().as_secs();
@@ -2257,7 +2261,9 @@ impl Node {
             if payment_state.invoice_hash == *invoice_hash {
                 Ok(true)
             } else {
-                Err(failed_precondition("already have a different invoice for same secret"))
+                Err(failed_precondition(
+                    "has_payment: already have a different invoice for same secret",
+                ))
             }
         } else {
             Ok(false) // not found
