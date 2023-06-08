@@ -100,7 +100,7 @@ impl Decodable for Headers {
 }
 
 /// Track chain, with basic validation
-pub struct ChainTracker<L: ChainListener + Ord> {
+pub struct ChainTracker<L: ChainListener> {
     /// headers past the tip
     pub headers: VecDeque<Headers>,
     /// tip header
@@ -110,12 +110,12 @@ pub struct ChainTracker<L: ChainListener + Ord> {
     /// The network
     pub network: Network,
     /// listeners
-    pub listeners: OrderedMap<L, ListenSlot>,
+    pub listeners: OrderedMap<L::Key, (L, ListenSlot)>,
     node_id: PublicKey,
     validator_factory: Arc<dyn ValidatorFactory>,
 }
 
-impl<L: ChainListener + Ord> ChainTracker<L> {
+impl<L: ChainListener> ChainTracker<L> {
     // # issue #187
     #[cfg(feature = "tracker_size_workaround")]
     /// Maximum reorg size that we will accept
@@ -147,7 +147,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
         tip: Headers,
         height: u32,
         network: Network,
-        listeners: OrderedMap<L, ListenSlot>,
+        listeners: OrderedMap<L::Key, (L, ListenSlot)>,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Self {
@@ -244,7 +244,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     }
 
     fn notify_listeners_remove(&mut self, txs: &[Transaction]) {
-        for (listener, slot) in self.listeners.iter_mut() {
+        for (listener, slot) in self.listeners.values_mut() {
             let mut matched = Vec::new();
             for tx in txs.iter().rev() {
                 // Remove any outpoints that were seen as spent when we added this block
@@ -304,7 +304,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     }
 
     fn notify_listeners_add(&mut self, txs: &[Transaction]) {
-        for (listener, slot) in self.listeners.iter_mut() {
+        for (listener, slot) in self.listeners.values_mut() {
             let mut matched = Vec::new();
             for tx in txs {
                 let mut found = false;
@@ -337,15 +337,13 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
             seen: OrderedSet::new(),
         };
         debug!("{}: adding listener with txid watches {:?}", short_function!(), slot.txid_watches);
-        self.listeners.insert(listener, slot);
+        self.listeners.insert(listener.key().clone(), (listener, slot));
     }
 
     /// Add more watches to a listener
-    pub fn add_listener_watches(&mut self, listener: L, watches: OrderedSet<OutPoint>) {
-        let slot = self
-            .listeners
-            .get_mut(&listener)
-            .expect("trying to add watches to non-existent listener");
+    pub fn add_listener_watches(&mut self, key: &L::Key, watches: OrderedSet<OutPoint>) {
+        let (_, slot) =
+            self.listeners.get_mut(key).expect("trying to add watches to non-existent listener");
         debug!("{}: adding watches {:?}", short_function!(), watches);
         slot.watches.extend(watches);
     }
@@ -365,7 +363,7 @@ impl<L: ChainListener + Ord> ChainTracker<L> {
     fn get_all_watches(&self, include_reverse: bool) -> (Vec<Txid>, Vec<OutPoint>) {
         let mut txid_watches = OrderedSet::new();
         let mut outpoint_watches = OrderedSet::new();
-        for slot in self.listeners.values() {
+        for (_, slot) in self.listeners.values() {
             txid_watches.extend(&slot.txid_watches);
             outpoint_watches.extend(&slot.watches);
             if include_reverse {
@@ -462,9 +460,16 @@ fn validate_retarget(prev_target: Uint256, target: Uint256, network: Network) ->
 
 /// Listen to chain events
 pub trait ChainListener: SendSync {
+    /// The key type
+    type Key: Ord + Clone;
+
+    /// The key
+    fn key(&self) -> &Self::Key;
+
     /// A block was added, and zero or more transactions consume watched outpoints.
     /// The listener returns zero or more new outpoints to watch.
     fn on_add_block(&self, txs: Vec<&Transaction>) -> Vec<OutPoint>;
+
     /// A block was deleted.
     /// The tracker will revert any changes to the watched outpoints set.
     fn on_remove_block(&self, txs: Vec<&Transaction>);
@@ -548,18 +553,18 @@ mod tests {
 
         tracker.add_listener(listener.clone(), OrderedSet::new());
 
-        tracker.add_listener_watches(listener.clone(), OrderedSet::from_iter(vec![initial_watch]));
+        tracker.add_listener_watches(&second_watch, OrderedSet::from_iter(vec![initial_watch]));
 
         assert_eq!(tracker.listeners.len(), 1);
         assert_eq!(
-            tracker.listeners.get(&listener).unwrap().watches,
+            tracker.listeners.get(listener.key()).unwrap().1.watches,
             OrderedSet::from_iter(vec![initial_watch])
         );
 
         let header2 = add_block(&mut tracker, &source, &[tx.clone()]).await?;
 
         assert_eq!(
-            tracker.listeners.get(&listener).unwrap().watches,
+            tracker.listeners.get(listener.key()).unwrap().1.watches,
             OrderedSet::from_iter(vec![second_watch])
         );
 
@@ -572,7 +577,7 @@ mod tests {
 
         let _header3 = add_block(&mut tracker, &source, &[tx2.clone()]).await?;
 
-        assert_eq!(tracker.listeners.get(&listener).unwrap().watches, OrderedSet::new());
+        assert_eq!(tracker.listeners.get(listener.key()).unwrap().1.watches, OrderedSet::new());
 
         // validation included forward watches
         assert_eq!(
@@ -583,7 +588,7 @@ mod tests {
         remove_block(&mut tracker, &source, &[tx2], &header2).await?;
 
         assert_eq!(
-            tracker.listeners.get(&listener).unwrap().watches,
+            tracker.listeners.get(listener.key()).unwrap().1.watches,
             OrderedSet::from_iter(vec![second_watch])
         );
 
@@ -596,7 +601,7 @@ mod tests {
         remove_block(&mut tracker, &source, &[tx], &header1).await?;
 
         assert_eq!(
-            tracker.listeners.get(&listener).unwrap().watches,
+            tracker.listeners.get(listener.key()).unwrap().1.watches,
             OrderedSet::from_iter(vec![initial_watch])
         );
 

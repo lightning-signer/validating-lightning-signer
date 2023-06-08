@@ -1042,11 +1042,11 @@ fn min_opt(a_opt: Option<u64>, b_opt: Option<u64>) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
     use crate::util::test_utils::make_dummy_pubkey;
     use bitcoin::secp256k1::PublicKey;
     use lightning::ln::PaymentHash;
-    use super::*;
 
     #[test]
     fn test_per_commitment_storage() {

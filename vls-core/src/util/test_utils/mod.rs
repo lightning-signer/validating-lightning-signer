@@ -4,7 +4,6 @@ pub mod key;
 use std::time::{Duration, SystemTime};
 
 use core::cmp;
-use std::cmp::Ordering;
 
 use bitcoin;
 use bitcoin::blockdata::constants::genesis_block;
@@ -1852,26 +1851,6 @@ pub struct MockListener {
 
 impl SendSync for MockListener {}
 
-impl PartialEq<Self> for MockListener {
-    fn eq(&self, other: &Self) -> bool {
-        self.watch.eq(&other.watch)
-    }
-}
-
-impl PartialOrd for MockListener {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.watch.partial_cmp(&other.watch)
-    }
-}
-
-impl Eq for MockListener {}
-
-impl Ord for MockListener {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.watch.cmp(&other.watch)
-    }
-}
-
 impl Clone for MockListener {
     fn clone(&self) -> Self {
         // We just need this to have the right `Ord` semantics
@@ -1881,6 +1860,12 @@ impl Clone for MockListener {
 }
 
 impl ChainListener for MockListener {
+    type Key = BitcoinOutPoint;
+
+    fn key(&self) -> &Self::Key {
+        &self.watch
+    }
+
     fn on_add_block(&self, _txs: Vec<&Transaction>) -> Vec<BitcoinOutPoint> {
         let mut watched = self.watched.lock().unwrap();
         if *watched {

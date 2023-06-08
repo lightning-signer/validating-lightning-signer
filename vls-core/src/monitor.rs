@@ -3,7 +3,6 @@ use alloc::collections::BTreeSet as Set;
 use bitcoin::{OutPoint, Transaction, Txid};
 use serde_derive::{Deserialize, Serialize};
 
-use crate::bitcoin::hashes::_export::_core::cmp::Ordering;
 use crate::chain::tracker::ChainListener;
 use crate::policy::validator::ChainState;
 use crate::prelude::*;
@@ -41,26 +40,6 @@ pub struct ChainMonitor {
     pub funding_outpoint: OutPoint,
     /// the monitor state
     pub state: Arc<Mutex<State>>,
-}
-
-impl Eq for ChainMonitor {}
-
-impl PartialEq<Self> for ChainMonitor {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(&other) == Ordering::Equal
-    }
-}
-
-impl PartialOrd<Self> for ChainMonitor {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(&other))
-    }
-}
-
-impl Ord for ChainMonitor {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.funding_outpoint.cmp(&other.funding_outpoint)
-    }
 }
 
 impl ChainMonitor {
@@ -149,6 +128,12 @@ impl ChainMonitor {
 }
 
 impl ChainListener for ChainMonitor {
+    type Key = OutPoint;
+
+    fn key(&self) -> &Self::Key {
+        &self.funding_outpoint
+    }
+
     fn on_add_block(&self, txs: Vec<&Transaction>) -> Vec<OutPoint> {
         let mut state = self.state.lock().expect("lock");
         let mut outpoints = vec![];
