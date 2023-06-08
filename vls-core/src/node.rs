@@ -44,13 +44,14 @@ use serde_with::serde_as;
 use log::*;
 use serde_bolt::to_vec;
 
+use crate::chain::tracker::ChainTracker;
 use crate::chain::tracker::Headers;
-use crate::chain::tracker::{ChainListener, ChainTracker};
 use crate::channel::{
-    Channel, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub,
+    Channel, ChannelBalance, ChannelBase, ChannelCommitmentPointProvider, ChannelId, ChannelSetup,
+    ChannelSlot, ChannelStub,
 };
 use crate::invoice::{Invoice, InvoiceAttributes};
-use crate::monitor::ChainMonitor;
+use crate::monitor::{ChainMonitor, ChainMonitorBase};
 use crate::persist::model::NodeEntry;
 use crate::persist::{Persist, SeedPersist};
 use crate::policy::error::{policy_error, ValidationError};
@@ -1434,7 +1435,7 @@ impl Node {
                     .expect("monitor key")
                     .1
                      .0
-                    .clone();
+                    .as_base();
                 let channel = Channel {
                     node: Arc::downgrade(arc_self),
                     secp_ctx: Secp256k1::new(),
@@ -1642,7 +1643,7 @@ impl Node {
                 Node::channel_setup_to_channel_transaction_parameters(&setup, holder_pubkeys);
             keys.provide_channel_parameters(&channel_transaction_parameters);
             let funding_outpoint = setup.funding_outpoint;
-            let monitor = ChainMonitor::new(funding_outpoint, tracker.height());
+            let monitor = ChainMonitorBase::new(funding_outpoint, tracker.height());
             monitor.add_funding_outpoint(&funding_outpoint);
             let to_holder_msat = if setup.is_outbound {
                 // This is also checked in the validator, but we have to check
@@ -1682,6 +1683,8 @@ impl Node {
         // TODO this clone is expensive
         let chan_arc = Arc::new(Mutex::new(ChannelSlot::Ready(chan.clone())));
 
+        let commitment_point_provider = ChannelCommitmentPointProvider::new(chan_arc.clone());
+
         // If a permanent channel_id was provided use it, otherwise
         // continue with the initial channel_id0.
         let chan_id = opt_channel_id.unwrap_or(channel_id0.clone());
@@ -1701,7 +1704,7 @@ impl Node {
         // Note that the functional tests also have no inputs for the funder's tx
         // which might be a problem in the future with more validation.
         tracker.add_listener(
-            chan.monitor.clone(),
+            chan.monitor.as_monitor(Box::new(commitment_point_provider)),
             OrderedSet::from_iter(vec![setup.funding_outpoint.txid]),
         );
 
@@ -1889,7 +1892,7 @@ impl Node {
                     ChannelSlot::Ready(chan) => {
                         let inputs =
                             OrderedSet::from_iter(tx.input.iter().map(|i| i.previous_output));
-                        tracker.add_listener_watches(chan.monitor.key(), inputs);
+                        tracker.add_listener_watches(&chan.monitor.funding_outpoint, inputs);
                         chan.funding_signed(tx, vout as u32)
                     }
                 }
@@ -2663,6 +2666,7 @@ mod tests {
     use crate::util::test_utils::invoice::make_test_bolt12_invoice;
     use crate::util::test_utils::*;
     use crate::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
+    use crate::CommitmentPointProvider;
 
     use super::*;
 
@@ -2703,6 +2707,52 @@ mod tests {
 
         let (channel_id, _) = node.new_channel(None, &node).unwrap();
         assert!(node.get_channel(&channel_id).is_ok());
+    }
+
+    #[test]
+    fn commitment_point_provider_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let node1 = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let (channel_id, _) = node.new_channel(None, &node).unwrap();
+        let (channel_id1, _) = node1.new_channel(None, &node1).unwrap();
+        let points =
+            node.get_channel(&channel_id).unwrap().lock().unwrap().get_channel_basepoints();
+        let points1 =
+            node1.get_channel(&channel_id1).unwrap().lock().unwrap().get_channel_basepoints();
+        let holder_shutdown_key_path = Vec::new();
+
+        // note that these channels are clones of the ones in the node, so the ones in the nodes
+        // will not be updated in this test
+        let mut channel = node
+            .ready_channel(
+                channel_id.clone(),
+                None,
+                make_test_channel_setup_with_points(true, points1),
+                &holder_shutdown_key_path,
+            )
+            .expect("ready_channel");
+        let mut channel1 = node1
+            .ready_channel(
+                channel_id1.clone(),
+                None,
+                make_test_channel_setup_with_points(false, points),
+                &holder_shutdown_key_path,
+            )
+            .expect("ready_channel 1");
+        let commit_num = 0;
+        next_state(&mut channel, &mut channel1, commit_num, 2_999_000, 0, vec![], vec![]);
+
+        let holder_point = channel.get_per_commitment_point(0).unwrap();
+        let cp_point = channel.get_counterparty_commitment_point(0).unwrap();
+
+        let channel_slot = Arc::new(Mutex::new(ChannelSlot::Ready(channel)));
+        let commitment_point_provider = ChannelCommitmentPointProvider::new(channel_slot);
+
+        assert_eq!(commitment_point_provider.get_holder_commitment_point(0), holder_point);
+        assert_eq!(
+            commitment_point_provider.get_counterparty_commitment_point(0).unwrap(),
+            cp_point
+        );
     }
 
     #[test]

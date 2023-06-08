@@ -67,8 +67,17 @@ mod tests {
             chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM - 1);
             chan.enforcement_state.set_next_counterparty_commit_num_for_testing(
                 REV_COMMIT_NUM,
-                make_test_pubkey(0x10),
+                remote_percommit_point,
             );
+
+            // check cp points from 0 to REV_COMMIT_NUM
+            for idx in 0..REV_COMMIT_NUM - 1 {
+                let (expected_point, _) = make_per_commitment(idx);
+                let point = chan.get_counterparty_commitment_point(idx);
+                assert_eq!(point, Some(expected_point), "idx={}", idx);
+            }
+
+            assert!(chan.get_counterparty_commitment_point(REV_COMMIT_NUM).is_none());
 
             // commit 21: revoked
             // commit 22: current  <- next revoke

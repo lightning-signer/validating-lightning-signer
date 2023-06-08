@@ -7,7 +7,7 @@ use serde_derive::{Deserialize, Serialize};
 use crate::chain::tracker::ChainListener;
 use crate::policy::validator::ChainState;
 use crate::prelude::*;
-use crate::Arc;
+use crate::{Arc, CommitmentPointProvider};
 use log::*;
 
 /// State
@@ -298,17 +298,16 @@ impl State {
     }
 }
 
-/// Keep track of channel on-chain events.
-/// Note that this object has refcounted state, so is lightweight to clone.
+/// This is a pre-cursor to [`ChainMonitor`], before the [`CommitmentPointProvider`] is available.
 #[derive(Clone)]
-pub struct ChainMonitor {
+pub struct ChainMonitorBase {
     // the first funding outpoint, used to identify the channel / channel monitor
-    funding_outpoint: OutPoint,
+    pub(crate) funding_outpoint: OutPoint,
     // the monitor state
     state: Arc<Mutex<State>>,
 }
 
-impl ChainMonitor {
+impl ChainMonitorBase {
     /// Create a new chain monitor.
     /// Use add_funding to really start monitoring.
     pub fn new(funding_outpoint: OutPoint, height: u32) -> Self {
@@ -333,9 +332,16 @@ impl ChainMonitor {
         Self { funding_outpoint, state: Arc::new(Mutex::new(state)) }
     }
 
-    /// Get the locked state
-    pub fn get_state(&self) -> MutexGuard<'_, State> {
-        self.state.lock().expect("lock")
+    /// Get the ChainMonitor
+    pub fn as_monitor(
+        &self,
+        commitment_point_provider: Box<dyn CommitmentPointProvider>,
+    ) -> ChainMonitor {
+        ChainMonitor {
+            funding_outpoint: self.funding_outpoint,
+            state: self.state.clone(),
+            commitment_point_provider,
+        }
     }
 
     /// Add a funding transaction to keep track of
@@ -353,6 +359,44 @@ impl ChainMonitor {
     pub fn add_funding_inputs(&self, tx: &Transaction) {
         let mut state = self.state.lock().expect("lock");
         state.funding_inputs.extend(tx.input.iter().map(|i| i.previous_output));
+    }
+
+    /// Convert to a ChainState, to be used for validation
+    pub fn as_chain_state(&self) -> ChainState {
+        let state = self.state.lock().expect("lock");
+        ChainState {
+            current_height: state.height,
+            funding_depth: state.funding_height.map(|h| state.height + 1 - h).unwrap_or(0),
+            funding_double_spent_depth: state
+                .funding_double_spent_height
+                .map(|h| state.height + 1 - h)
+                .unwrap_or(0),
+            closing_depth: state.closing_height.map(|h| state.height + 1 - h).unwrap_or(0),
+        }
+    }
+}
+
+/// Keep track of channel on-chain events.
+/// Note that this object has refcounted state, so is lightweight to clone.
+#[derive(Clone)]
+pub struct ChainMonitor {
+    /// the first funding outpoint, used to identify the channel / channel monitor
+    pub funding_outpoint: OutPoint,
+    /// the monitor state
+    pub state: Arc<Mutex<State>>,
+    /// the commitment point provider, helps with decoding transactions
+    pub commitment_point_provider: Box<dyn CommitmentPointProvider>,
+}
+
+impl ChainMonitor {
+    /// Get the base
+    pub fn as_base(&self) -> ChainMonitorBase {
+        ChainMonitorBase { funding_outpoint: self.funding_outpoint, state: self.state.clone() }
+    }
+
+    /// Get the locked state
+    pub fn get_state(&self) -> MutexGuard<'_, State> {
+        self.state.lock().expect("lock")
     }
 
     /// Add a funding transaction to keep track of
@@ -378,20 +422,6 @@ impl ChainMonitor {
     pub fn funding_double_spent_depth(&self) -> u32 {
         let state = self.state.lock().expect("lock");
         state.funding_double_spent_height.map(|h| state.height + 1 - h).unwrap_or(0)
-    }
-
-    /// Convert to a ChainState, to be used for validation
-    pub fn as_chain_state(&self) -> ChainState {
-        let state = self.state.lock().expect("lock");
-        ChainState {
-            current_height: state.height,
-            funding_depth: state.funding_height.map(|h| state.height + 1 - h).unwrap_or(0),
-            funding_double_spent_depth: state
-                .funding_double_spent_height
-                .map(|h| state.height + 1 - h)
-                .unwrap_or(0),
-            closing_depth: state.closing_height.map(|h| state.height + 1 - h).unwrap_or(0),
-        }
     }
 }
 
@@ -479,15 +509,35 @@ impl SendSync for ChainMonitor {}
 mod tests {
     use crate::util::test_utils::*;
     use bitcoin::hashes::Hash;
+    use bitcoin::secp256k1::PublicKey;
     use test_log::test;
 
     use super::*;
+
+    struct DummyCommitmentPointProvider {}
+
+    impl SendSync for DummyCommitmentPointProvider {}
+
+    impl CommitmentPointProvider for DummyCommitmentPointProvider {
+        fn get_holder_commitment_point(&self, _commitment_number: u64) -> PublicKey {
+            todo!()
+        }
+
+        fn get_counterparty_commitment_point(&self, _commitment_number: u64) -> Option<PublicKey> {
+            todo!()
+        }
+
+        fn clone_box(&self) -> Box<dyn CommitmentPointProvider> {
+            todo!()
+        }
+    }
 
     #[test]
     fn test_funding() {
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);
         let outpoint = OutPoint::new(tx.txid(), 0);
-        let monitor = ChainMonitor::new(outpoint, 0);
+        let cpp = Box::new(DummyCommitmentPointProvider {});
+        let monitor = ChainMonitorBase::new(outpoint, 0).as_monitor(cpp);
         let block_hash = BlockHash::all_zeros();
         monitor.add_funding(&tx, 0);
         monitor.on_add_block(&[], &block_hash);
@@ -509,7 +559,8 @@ mod tests {
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);
         let tx2 = make_tx(vec![make_txin(2)]);
         let outpoint = OutPoint::new(tx.txid(), 0);
-        let monitor = ChainMonitor::new(outpoint, 0);
+        let cpp = Box::new(DummyCommitmentPointProvider {});
+        let monitor = ChainMonitorBase::new(outpoint, 0).as_monitor(cpp);
         let block_hash = BlockHash::all_zeros();
         monitor.add_funding(&tx, 0);
         monitor.on_add_block(&[], &block_hash);

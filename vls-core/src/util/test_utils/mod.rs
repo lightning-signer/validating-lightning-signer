@@ -283,6 +283,94 @@ pub fn make_test_channel_setup() -> ChannelSetup {
     }
 }
 
+pub fn make_test_channel_setup_with_points(
+    is_outbound: bool,
+    counterparty_points: ChannelPublicKeys,
+) -> ChannelSetup {
+    ChannelSetup {
+        is_outbound,
+        channel_value_sat: 3_000_000,
+        push_value_msat: 0,
+        funding_outpoint: bitcoin::OutPoint { txid: Txid::from_slice(&[2u8; 32]).unwrap(), vout: 0 },
+        holder_selected_contest_delay: 6,
+        holder_shutdown_script: None,
+        counterparty_points,
+        counterparty_selected_contest_delay: 6,
+        counterparty_shutdown_script: None,
+        commitment_type: CommitmentType::StaticRemoteKey,
+    }
+}
+
+pub fn next_state(
+    channel: &mut Channel,
+    channel1: &mut Channel,
+    commit_num: u64,
+    to_holder: u64,
+    to_counterparty: u64,
+    offered: Vec<HTLCInfo2>,
+    received: Vec<HTLCInfo2>,
+) {
+    let per_commitment_point = channel.get_per_commitment_point(commit_num).unwrap();
+    let per_commitment_point1 = channel1.get_per_commitment_point(commit_num).unwrap();
+
+    let (sig, htlc_sigs) = channel
+        .sign_counterparty_commitment_tx_phase2(
+            &per_commitment_point1,
+            commit_num,
+            0,
+            to_holder,
+            to_counterparty,
+            received.clone(),
+            offered.clone(),
+        )
+        .unwrap();
+
+    let (sig1, htlc_sigs1) = channel1
+        .sign_counterparty_commitment_tx_phase2(
+            &per_commitment_point,
+            commit_num,
+            0,
+            to_counterparty,
+            to_holder,
+            offered.clone(),
+            received.clone(),
+        )
+        .unwrap();
+
+    channel
+        .validate_holder_commitment_tx_phase2(
+            commit_num,
+            0,
+            to_holder,
+            to_counterparty,
+            offered.clone(),
+            received.clone(),
+            &sig1,
+            &htlc_sigs1,
+        )
+        .unwrap();
+
+    channel1
+        .validate_holder_commitment_tx_phase2(
+            commit_num,
+            0,
+            to_counterparty,
+            to_holder,
+            received.clone(),
+            offered.clone(),
+            &sig,
+            &htlc_sigs,
+        )
+        .unwrap();
+
+    if commit_num > 0 {
+        let revoke = channel.get_per_commitment_secret(commit_num - 1).unwrap();
+        let revoke1 = channel1.get_per_commitment_secret(commit_num - 1).unwrap();
+        channel1.validate_counterparty_revocation(commit_num - 1, &revoke).unwrap();
+        channel.validate_counterparty_revocation(commit_num - 1, &revoke1).unwrap();
+    }
+}
+
 pub fn make_test_channel_keys() -> InMemorySigner {
     let secp_ctx = Secp256k1::signing_only();
     let channel_value_sat = 3_000_000;

@@ -4,6 +4,7 @@ use alloc::sync::Arc;
 use core::fmt;
 use core::fmt::{Display, Formatter};
 use core::iter::FromIterator;
+use std::collections::BTreeMap;
 
 use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::secp256k1::PublicKey;
@@ -18,7 +19,7 @@ use lightning_signer::bitcoin::hashes::Hash;
 use lightning_signer::bitcoin::{BlockHeader, FilterHeader};
 use lightning_signer::channel::ChannelId;
 use lightning_signer::channel::ChannelSetup;
-use lightning_signer::monitor::ChainMonitor;
+use lightning_signer::monitor::{ChainMonitor, ChainMonitorBase};
 use lightning_signer::monitor::State as ChainMonitorState;
 use lightning_signer::node::{NodeState, PaymentState};
 use lightning_signer::persist::model::ChannelEntry as CoreChannelEntry;
@@ -225,16 +226,12 @@ impl ChainTrackerEntry {
         };
         let headers =
             self.headers.iter().map(|h| deserialize(h).expect("deserialize header")).collect();
-        let listeners =
-            OrderedMap::from_iter(self.listeners.into_iter().map(|(outpoint, (state, slot))| {
-                (outpoint, (ChainMonitor::new_from_persistence(outpoint, state), slot))
-            }));
         ChainTracker::restore(
             headers,
             tip,
             self.height,
             self.network,
-            listeners,
+            BTreeMap::new(),
             node_id,
             validator_factory,
         )

@@ -24,7 +24,7 @@ use log::*;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-use crate::monitor::ChainMonitor;
+use crate::monitor::ChainMonitorBase;
 use crate::node::{Node, RoutedPayment};
 use crate::policy::error::policy_error;
 use crate::policy::validator::{ChainState, CommitmentSignatures, EnforcementState, Validator};
@@ -37,7 +37,7 @@ use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::transaction_utils::add_holder_sig;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::wallet::Wallet;
-use crate::{policy_err, Arc, Weak};
+use crate::{policy_err, Arc, CommitmentPointProvider, Weak};
 
 /// Channel identifier
 ///
@@ -353,8 +353,8 @@ pub struct Channel {
     pub id0: ChannelId,
     /// The optional permanent channel ID
     pub id: Option<ChannelId>,
-    /// The chain monitor
-    pub monitor: ChainMonitor,
+    /// The chain monitor base
+    pub monitor: ChainMonitorBase,
 }
 
 impl Debug for Channel {
@@ -386,10 +386,7 @@ impl ChannelBase for Channel {
             ))
             .into());
         }
-        Ok(self.keys.get_per_commitment_point(
-            INITIAL_COMMITMENT_NUMBER - commitment_number,
-            &self.secp_ctx,
-        ))
+        Ok(self.get_per_commitment_point_unchecked(commitment_number))
     }
 
     fn get_per_commitment_secret(&self, commitment_number: u64) -> Result<SecretKey, Status> {
@@ -460,6 +457,49 @@ impl Channel {
 
     pub(crate) fn get_chain_state(&self) -> ChainState {
         self.monitor.as_chain_state()
+    }
+
+    fn get_per_commitment_point_unchecked(&self, commitment_number: u64) -> PublicKey {
+        self.keys
+            .get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - commitment_number, &self.secp_ctx)
+    }
+
+    pub(crate) fn get_counterparty_commitment_point(
+        &self,
+        commitment_number: u64,
+    ) -> Option<PublicKey> {
+        let state = &self.enforcement_state;
+
+        let next_commit_num = state.next_counterparty_commit_num;
+
+        // we can supply the counterparty's commitment point for the following cases:
+        // - the commitment number is the current or previous one the counterparty signed (we received the point)
+        // - the commitment number is older than that (the commitment was revoked and we received the secret)
+
+        if next_commit_num < commitment_number + 1 {
+            // in the future, we don't have it
+            warn!("asked for counterparty commitment point {} but our next counterparty commitment number is {}",
+                commitment_number, next_commit_num);
+            None
+        } else if next_commit_num == commitment_number + 1 {
+            state.current_counterparty_point
+        } else if next_commit_num == commitment_number {
+            state.previous_counterparty_point
+        } else if let Some(secrets) = state.counterparty_secrets.as_ref() {
+            let secret = secrets.get_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+            secret.map(|s| {
+                PublicKey::from_secret_key(
+                    &self.secp_ctx,
+                    &SecretKey::from_slice(&s).expect("secret from storage"),
+                )
+            })
+        } else {
+            warn!(
+                "asked for counterparty commitment point {} but we don't have secrets storage",
+                commitment_number
+            );
+            None
+        }
     }
 }
 
@@ -2294,6 +2334,47 @@ impl Channel {
 
     fn dummy_sig() -> Signature {
         Signature::from_compact(&Vec::from_hex("eb299947b140c0e902243ee839ca58c71291f4cce49ac0367fb4617c4b6e890f18bc08b9be6726c090af4c6b49b2277e134b34078f710a72a5752e39f0139149").unwrap()).unwrap()
+    }
+}
+
+pub(crate) struct ChannelCommitmentPointProvider {
+    chan: Arc<Mutex<ChannelSlot>>,
+}
+
+impl ChannelCommitmentPointProvider {
+    pub(crate) fn new(chan: Arc<Mutex<ChannelSlot>>) -> Self {
+        match &*chan.lock().unwrap() {
+            ChannelSlot::Stub(_) => panic!("unexpected stub"),
+            ChannelSlot::Ready(_) => {}
+        }
+        Self { chan }
+    }
+}
+
+impl SendSync for ChannelCommitmentPointProvider {}
+
+impl CommitmentPointProvider for ChannelCommitmentPointProvider {
+    fn get_holder_commitment_point(&self, commitment_number: u64) -> PublicKey {
+        let slot = self.chan.lock().unwrap();
+        let chan = match &*slot {
+            ChannelSlot::Stub(_) => panic!("unexpected stub"),
+            ChannelSlot::Ready(c) => c,
+        };
+        chan.get_per_commitment_point_unchecked(commitment_number)
+    }
+
+    fn get_counterparty_commitment_point(&self, commitment_number: u64) -> Option<PublicKey> {
+        let slot = self.chan.lock().unwrap();
+        let chan = match &*slot {
+            ChannelSlot::Stub(_) => panic!("unexpected stub"),
+            ChannelSlot::Ready(c) => c,
+        };
+
+        chan.get_counterparty_commitment_point(commitment_number)
+    }
+
+    fn clone_box(&self) -> Box<dyn CommitmentPointProvider> {
+        Box::new(ChannelCommitmentPointProvider { chan: self.chan.clone() })
     }
 }
 
