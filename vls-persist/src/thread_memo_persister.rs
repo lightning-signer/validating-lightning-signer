@@ -1,16 +1,14 @@
+use crate::model::*;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::cell::RefCell;
+use core::convert::TryInto;
 use core::fmt::{self, Debug, Formatter};
-use lightning_signer::util::debug_utils::DebugBytes;
-use std::sync::{Arc, Mutex};
-
-use serde_json::{from_slice, to_vec};
-
 use lightning_signer::bitcoin::secp256k1::PublicKey;
 use lightning_signer::chain::tracker::ChainTracker;
 use lightning_signer::channel::{Channel, ChannelId, ChannelStub};
+use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::monitor::ChainMonitor;
 use lightning_signer::node::{NodeConfig, NodeState};
 use lightning_signer::persist::model::{
@@ -19,10 +17,10 @@ use lightning_signer::persist::model::{
 use lightning_signer::persist::{Context, Error, Mutations, Persist};
 use lightning_signer::policy::validator::{EnforcementState, ValidatorFactory};
 use lightning_signer::prelude::*;
-
-use crate::model::*;
-
+use lightning_signer::util::debug_utils::DebugBytes;
+use lightning_signer::Arc;
 use log::*;
+use serde_json::{from_slice, to_vec};
 
 struct State {
     // value is (revision, value)
@@ -391,9 +389,19 @@ impl Persist for ThreadMemoPersister {
                     let entry: NodeEntry = from_slice(&value).unwrap();
                     let state_value = state.get(NODE_STATE_PREFIX, &key).unwrap();
                     let state_entry: NodeStateEntry = from_slice(&state_value).unwrap();
+                    let invoices = state_entry
+                        .invoices
+                        .into_iter()
+                        .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v))
+                        .collect();
+                    let issued_invoices = state_entry
+                        .issued_invoices
+                        .into_iter()
+                        .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v))
+                        .collect();
                     let node_state = NodeState {
-                        invoices: Default::default(),
-                        issued_invoices: Default::default(),
+                        invoices,
+                        issued_invoices,
                         payments: Default::default(),
                         excess_amount: 0,
                         log_prefix: "".to_string(),

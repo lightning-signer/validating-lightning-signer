@@ -1,4 +1,5 @@
 use kv::{Bucket, Config, Json, Key, Raw, Store, TransactionError};
+use std::convert::TryInto;
 use std::sync::Arc;
 
 use bitcoin::secp256k1::PublicKey;
@@ -6,6 +7,7 @@ use lightning_signer::bitcoin;
 use lightning_signer::chain::tracker::ChainTracker;
 
 use lightning_signer::channel::{Channel, ChannelId, ChannelStub};
+use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::monitor::ChainMonitor;
 use lightning_signer::node::{NodeConfig, NodeState as CoreNodeState};
 use lightning_signer::persist::model::{
@@ -257,10 +259,20 @@ impl<'a> Persist for KVJsonPersister<'a> {
             let state_e_j: Json<NodeStateEntry> =
                 self.node_state_bucket.get(&key).unwrap().unwrap();
             let state_e = state_e_j.0;
+            let invoices = state_e
+                .invoices
+                .into_iter()
+                .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v.into()))
+                .collect();
+            let issued_invoices = state_e
+                .issued_invoices
+                .into_iter()
+                .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v.into()))
+                .collect();
 
             let state = CoreNodeState {
-                invoices: Default::default(),
-                issued_invoices: Default::default(),
+                invoices,
+                issued_invoices,
                 payments: Default::default(),
                 excess_amount: 0,
                 log_prefix: "".to_string(),
@@ -335,6 +347,8 @@ mod tests {
         let (node_id, node_arc, stub, seed) = make_node_and_channel(channel_id0.clone());
 
         let node = &*node_arc;
+        let invoice = make_current_test_invoice(1, 600_000);
+        assert!(node.add_invoice(invoice).unwrap());
         let seed_persister = Arc::new(MemorySeedPersister::new(seed.to_vec()));
 
         let (temp_dir, path) = {
@@ -353,6 +367,8 @@ mod tests {
 
             let nodes = Node::restore_nodes(services.clone(), seed_persister.clone())?;
             let restored_node = nodes.get(&node_id).unwrap();
+
+            assert!(!restored_node.get_state().invoices.is_empty());
 
             {
                 let slot = restored_node.get_channel(&stub.id0).unwrap();
@@ -379,10 +395,10 @@ mod tests {
                 persister.update_channel(&node_id, &channel).unwrap();
 
                 let nodes = Node::restore_nodes(services.clone(), seed_persister)?;
-                let restored_node_arc = nodes.get(&node_id).unwrap();
-                let slot = restored_node_arc.get_channel(&stub.id0).unwrap();
-                assert!(node.channels().contains_key(&channel_id0));
-                assert!(node.channels().contains_key(&channel_id1));
+                let restored_node1 = nodes.get(&node_id).unwrap();
+                let slot = restored_node1.get_channel(&stub.id0).unwrap();
+                assert!(restored_node1.channels().contains_key(&channel_id0));
+                assert!(restored_node1.channels().contains_key(&channel_id1));
                 let guard = slot.lock().unwrap();
                 if let ChannelSlot::Ready(s) = &*guard {
                     check_signer_roundtrip(&channel.keys, &s.keys);

@@ -1254,14 +1254,13 @@ impl Node {
             .collect::<Result<_, _>>()
             .expect("allowable parse error");
 
-        // FIXME persist node state
-        let policy = services.validator_factory.policy(network);
-        let global_velocity_control = Self::make_velocity_control(&policy);
-        let fee_velocity_control = Self::make_fee_velocity_control(&policy);
-
-        let state = NodeState::new(global_velocity_control, fee_velocity_control);
-
-        let node = Arc::new(Node::new_from_persistence(config, seed, allowlist, services, state));
+        let node = Arc::new(Node::new_from_persistence(
+            config,
+            seed,
+            allowlist,
+            services,
+            node_entry.state,
+        ));
         assert_eq!(&node.get_id(), node_id);
         info!("Restore node {} on {}", node_id, config.network);
         for (channel_id0, channel_entry) in
