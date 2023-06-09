@@ -1000,6 +1000,11 @@ impl Node {
         &self.keys_manager
     }
 
+    /// Clock
+    pub fn get_clock(&self) -> Arc<dyn Clock> {
+        Arc::clone(&self.clock)
+    }
+
     /// Restore a node.
     pub fn new_from_persistence(
         node_config: NodeConfig,
@@ -2254,7 +2259,7 @@ impl Node {
         amount_msat: u64,
     ) -> Result<bool, Status> {
         let (payment_state, invoice_hash) =
-            Node::payment_state_from_keysend(payee, payment_hash, amount_msat)?;
+            Node::payment_state_from_keysend(payee, payment_hash, amount_msat, self.clock.now())?;
 
         info!(
             "{} adding payment {} -> {}",
@@ -2346,6 +2351,7 @@ impl Node {
         payee: PublicKey,
         payment_hash: PaymentHash,
         amount_msat: u64,
+        now: Duration,
     ) -> Result<(PaymentState, [u8; 32]), Status> {
         // TODO validate the payee by generating the preimage ourselves and wrapping the inner layer
         // of the onion
@@ -2355,8 +2361,8 @@ impl Node {
             invoice_hash,
             amount_msat,
             payee,
-            duration_since_epoch: Duration::ZERO,
-            expiry_duration: Duration::ZERO,
+            duration_since_epoch: now,                // FIXME #329
+            expiry_duration: Duration::from_secs(60), // FIXME #329
             is_fulfilled: false,
             payment_type: PaymentType::Keysend,
         };
@@ -2543,7 +2549,7 @@ mod tests {
         assert!(node.add_keysend(payee_node_id.clone(), hash, 1234).unwrap());
         assert!(node.add_keysend(payee_node.node_id.clone(), hash, 1234).unwrap());
         let (_, invoice_hash) =
-            Node::payment_state_from_keysend(payee_node_id, hash, 1234).unwrap();
+            Node::payment_state_from_keysend(payee_node_id, hash, 1234, node.clock.now()).unwrap();
         assert!(node.has_payment(&hash, &invoice_hash).unwrap());
         assert!(!node.has_payment(&PaymentHash([5; 32]), &invoice_hash).unwrap());
     }
