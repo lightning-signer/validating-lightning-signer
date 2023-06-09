@@ -10,6 +10,7 @@ use lightning_signer::node::{Node, SpendType};
 use lightning_signer::policy::error::ValidationErrorKind;
 use lightning_signer::prelude::{Mutex, SendSync};
 use lightning_signer::util::clock::Clock;
+use lightning_signer::util::debug_utils::DebugBytes;
 use lightning_signer::util::status::Status;
 use lightning_signer::util::velocity::VelocityControl;
 use lightning_signer::wallet::Wallet;
@@ -60,7 +61,8 @@ pub trait Approve: SendSync {
         if node.has_payment(&payment_hash, &invoice_hash)? {
             debug!(
                 "node already approved invoice with payment_hash {:?} invoice_hash {:?}",
-                &payment_hash, &invoice_hash
+                DebugBytes(&payment_hash.0),
+                DebugBytes(&invoice_hash)
             );
             return Ok(true);
         }
@@ -107,7 +109,8 @@ pub trait Approve: SendSync {
         if node.has_payment(&payment_hash, &invoice_hash)? {
             debug!(
                 "node already approved keysend with payment_hash {:?} invoice_hash {:?}",
-                &payment_hash, &invoice_hash
+                DebugBytes(&payment_hash.0),
+                DebugBytes(&invoice_hash)
             );
             return Ok(true);
         }
@@ -207,7 +210,11 @@ impl Approve for WarningPositiveApprover {
     }
 
     fn approve_keysend(&self, payment_hash: PaymentHash, amount_msat: u64) -> bool {
-        warn!("AUTOAPPROVED KEYSEND of {} msat with payment_hash {:?}", amount_msat, payment_hash);
+        warn!(
+            "AUTOAPPROVED KEYSEND of {} msat with payment_hash {:?}",
+            amount_msat,
+            DebugBytes(&payment_hash.0)
+        );
         true
     }
 

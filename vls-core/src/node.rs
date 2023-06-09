@@ -667,7 +667,7 @@ impl NodeState {
         if is_past_prune_time && !is_payment_complete {
             warn!(
                 "invoice {:?} is past prune time but there are still pending outgoing payments",
-                hash
+                DebugBytes(&hash.0)
             );
         }
         is_past_prune_time && is_payment_complete
