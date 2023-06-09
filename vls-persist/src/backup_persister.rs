@@ -1,3 +1,4 @@
+use core::sync::atomic::{AtomicBool, Ordering};
 use lightning_signer::bitcoin::secp256k1::PublicKey;
 use lightning_signer::chain::tracker::ChainTracker;
 use lightning_signer::channel::{Channel, ChannelId, ChannelStub};
@@ -9,8 +10,7 @@ use lightning_signer::persist::model::{
 use lightning_signer::persist::{Context, Error, Persist};
 use lightning_signer::policy::validator::ValidatorFactory;
 use lightning_signer::prelude::*;
-use lightning_signer::SendSync;
-use std::sync::{Arc, Mutex};
+use lightning_signer::{Arc, SendSync};
 
 /// A composite persister that writes to two underlying persisters.
 ///
@@ -25,12 +25,21 @@ use std::sync::{Arc, Mutex};
 pub struct BackupPersister<M: Persist, B: Persist> {
     main: M,
     backup: B,
+    // this flag prevents reads/writes to the main persister if it requires recovery
+    // until the initial restore from persistence is complete
+    initial_restore_complete: AtomicBool,
 }
 
 impl<M: Persist, B: Persist> BackupPersister<M, B> {
     // Create a new backup persister
     pub fn new(main: M, backup: B) -> Self {
-        Self { main, backup }
+        Self { main, backup, initial_restore_complete: AtomicBool::new(false) }
+    }
+
+    // the main persister is ready if it doesn't require recovery, or if the initial restore
+    // from the backup persister is complete.
+    fn main_is_ready(&self) -> bool {
+        !self.main.recovery_required() || self.initial_restore_complete.load(Ordering::Relaxed)
     }
 }
 
@@ -47,22 +56,30 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
         config: &NodeConfig,
         state: &NodeState,
     ) -> Result<(), Error> {
-        self.main.new_node(node_id, config, state)?;
+        if self.main_is_ready() {
+            self.main.new_node(node_id, config, state)?;
+        }
         self.backup.new_node(node_id, config, state)
     }
 
     fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), Error> {
-        self.main.update_node(node_id, state)?;
+        if self.main_is_ready() {
+            self.main.update_node(node_id, state)?;
+        }
         self.backup.update_node(node_id, state)
     }
 
     fn delete_node(&self, node_id: &PublicKey) -> Result<(), Error> {
-        self.main.delete_node(node_id)?;
+        if self.main_is_ready() {
+            self.main.delete_node(node_id)?;
+        }
         self.backup.delete_node(node_id)
     }
 
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), Error> {
-        self.main.new_channel(node_id, stub)?;
+        if self.main_is_ready() {
+            self.main.new_channel(node_id, stub)?;
+        }
         self.backup.new_channel(node_id, stub)
     }
 
@@ -71,7 +88,9 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
         node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,
     ) -> Result<(), Error> {
-        self.main.new_chain_tracker(node_id, tracker)?;
+        if self.main_is_ready() {
+            self.main.new_chain_tracker(node_id, tracker)?;
+        }
         self.backup.new_chain_tracker(node_id, tracker)
     }
 
@@ -80,7 +99,9 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
         node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,
     ) -> Result<(), Error> {
-        self.main.update_tracker(node_id, tracker)?;
+        if self.main_is_ready() {
+            self.main.update_tracker(node_id, tracker)?;
+        }
         self.backup.update_tracker(node_id, tracker)
     }
 
@@ -89,11 +110,17 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Result<ChainTracker<ChainMonitor>, Error> {
-        self.main.get_tracker(node_id, validator_factory.clone())
+        if self.main_is_ready() {
+            self.main.get_tracker(node_id, validator_factory)
+        } else {
+            self.backup.get_tracker(node_id, validator_factory)
+        }
     }
 
     fn update_channel(&self, node_id: &PublicKey, channel: &Channel) -> Result<(), Error> {
-        self.main.update_channel(node_id, channel)?;
+        if self.main_is_ready() {
+            self.main.update_channel(node_id, channel)?;
+        }
         self.backup.update_channel(node_id, channel)
     }
 
@@ -102,14 +129,22 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
         node_id: &PublicKey,
         channel_id: &ChannelId,
     ) -> Result<CoreChannelEntry, Error> {
-        self.main.get_channel(node_id, channel_id)
+        if self.main_is_ready() {
+            self.main.get_channel(node_id, channel_id)
+        } else {
+            self.backup.get_channel(node_id, channel_id)
+        }
     }
 
     fn get_node_channels(
         &self,
         node_id: &PublicKey,
     ) -> Result<Vec<(ChannelId, CoreChannelEntry)>, Error> {
-        self.main.get_node_channels(node_id)
+        if self.main_is_ready() {
+            self.main.get_node_channels(node_id)
+        } else {
+            self.backup.get_node_channels(node_id)
+        }
     }
 
     fn update_node_allowlist(
@@ -117,16 +152,26 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
         node_id: &PublicKey,
         allowlist: Vec<String>,
     ) -> Result<(), Error> {
-        self.main.update_node_allowlist(node_id, allowlist.clone())?;
+        if self.main_is_ready() {
+            self.main.update_node_allowlist(node_id, allowlist.clone())?;
+        }
         self.backup.update_node_allowlist(node_id, allowlist)
     }
 
     fn get_node_allowlist(&self, node_id: &PublicKey) -> Result<Vec<String>, Error> {
-        self.main.get_node_allowlist(node_id)
+        if self.main_is_ready() {
+            self.main.get_node_allowlist(node_id)
+        } else {
+            self.backup.get_node_allowlist(node_id)
+        }
     }
 
     fn get_nodes(&self) -> Result<Vec<(PublicKey, CoreNodeEntry)>, Error> {
-        self.main.get_nodes()
+        if self.main_is_ready() {
+            self.main.get_nodes()
+        } else {
+            self.backup.get_nodes()
+        }
     }
 
     fn clear_database(&self) -> Result<(), Error> {
@@ -134,8 +179,10 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
         self.backup.clear_database()
     }
 
-    fn sync_required(&self) -> bool {
-        // we require a sync on startup
+    fn on_initial_restore(&self) -> bool {
+        self.initial_restore_complete.store(true, Ordering::Relaxed);
+        // we always want a sync on startup, either main -> backup in normal
+        // operation or backup -> main when recovering from main persister failure
         true
     }
 }
@@ -222,7 +269,7 @@ mod tests {
             node_id: &PublicKey,
             tracker: &ChainTracker<ChainMonitor>,
         ) -> Result<(), Error> {
-            Ok(())
+            self.new_chain_tracker(node_id, tracker)
         }
 
         fn get_tracker(
@@ -312,6 +359,10 @@ mod tests {
         fn clear_database(&self) -> Result<(), Error> {
             todo!()
         }
+
+        fn recovery_required(&self) -> bool {
+            self.state.lock().unwrap().is_empty()
+        }
     }
 
     #[test]
@@ -341,10 +392,34 @@ mod tests {
         let mut services = make_services();
         services.persister = backup_persister.clone();
         let state = Arc::new(Mutex::new(OrderedMap::new()));
-        let ctx = backup_persister.enter(state);
-        let node = Node::restore_node(&node_id, node_entry1, &seed, services).unwrap();
+        let ctx = backup_persister.enter(state.clone());
+        let node = Node::restore_node(&node_id, node_entry1, &seed, services.clone()).unwrap();
         let muts = ctx.exit();
         // allowlist, node state, node entry, tracker
         assert_eq!(muts.len(), 4);
+
+        // test recovery by starting with a wiped main persister
+        let persister = TestPersister::new();
+        let backup = ThreadMemoPersister {};
+        let backup_persister = Arc::new(BackupPersister::new(persister.clone(), backup));
+        let mut services = make_services();
+        services.persister = backup_persister.clone();
+        let ctx = backup_persister.enter(state);
+        let nodes1 = backup_persister.get_nodes().unwrap();
+        assert_eq!(nodes1.len(), 1);
+        let (node_id1, node_entry1) = nodes1.into_iter().next().unwrap();
+        let node = Node::restore_node(&node_id, node_entry1, &seed, services).unwrap();
+        assert_eq!(node.get_id(), node_id);
+        let muts = ctx.exit();
+        assert_eq!(muts.len(), 0);
+
+        // check restoring from main persister after it's been recovered
+        let nodes1 = persister.get_nodes().unwrap();
+        assert_eq!(nodes1.len(), 1);
+        let (node_id1, node_entry1) = nodes1.into_iter().next().unwrap();
+        let mut services = make_services();
+        services.persister = Arc::new(persister.clone());
+        let node = Node::restore_node(&node_id, node_entry1, &seed, services).unwrap();
+        assert_eq!(node.get_id(), node_id);
     }
 }

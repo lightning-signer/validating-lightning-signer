@@ -246,6 +246,18 @@ impl FatJsonPersister {
         Ok(())
     }
 
+    fn bucket_exists(&self, bucket: &str) -> Result<bool, Error> {
+        let setupfs = self.setupfs.borrow();
+        let bucket_dir = setupfs.rundir().open_dir(bucket);
+        match bucket_dir {
+            Ok(_) => Ok(true),
+            Err(e) => match e {
+                fatfs::Error::NotFound => Ok(false),
+                _ => Err(e.into()),
+            },
+        }
+    }
+
     fn expunge_old_file(&self, bucket: &str, key: &str) -> Result<(), Error> {
         self.setupfs
             .borrow()
@@ -458,5 +470,10 @@ impl Persist for FatJsonPersister {
 
     fn clear_database(&self) -> Result<(), persist::Error> {
         unimplemented!();
+    }
+
+    fn recovery_required(&self) -> bool {
+        // map fs errors to true
+        self.bucket_exists(&Self::node_bucket_path()).unwrap_or(true)
     }
 }

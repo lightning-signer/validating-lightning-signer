@@ -146,11 +146,19 @@ pub trait Persist: SendSync {
     /// Clears the database.  Not for production use.
     fn clear_database(&self) -> Result<(), Error>;
 
-    /// Whether a sync is required on signer startup
+    /// Notifies the persister that the initial restore from persistence is done
+    /// and queries whether a sync is required.
     ///
     /// A sync is required when using a composite persister, since one of the
     /// persisters may have fallen behind due to a crash.
-    fn sync_required(&self) -> bool {
+    fn on_initial_restore(&self) -> bool {
+        false
+    }
+
+    /// Whether recovery from backup is required on signer startup.
+    /// Should return true if the persister is in a state where it
+    /// needs to recover from a backup (e.g. empty).
+    fn recovery_required(&self) -> bool {
         false
     }
 }
