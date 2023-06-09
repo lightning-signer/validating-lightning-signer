@@ -1254,28 +1254,34 @@ impl Node {
             .collect::<Result<_, _>>()
             .expect("allowable parse error");
 
-        let node = Arc::new(Node::new_from_persistence(
-            config,
-            seed,
-            allowlist,
-            services,
-            node_entry.state,
-        ));
+        let mut state = node_entry.state;
+
+        // create a payment state for each invoice state
+        for h in state.invoices.keys() {
+            state.payments.insert(*h, RoutedPayment::new());
+        }
+
+        let node = Arc::new(Node::new_from_persistence(config, seed, allowlist, services, state));
         assert_eq!(&node.get_id(), node_id);
         info!("Restore node {} on {}", node_id, config.network);
         for (channel_id0, channel_entry) in
             persister.get_node_channels(node_id).expect("node channels")
         {
             info!("  Restore channel {}", channel_id0);
-            node.restore_channel(
-                channel_id0,
-                channel_entry.id,
-                channel_entry.channel_value_satoshis,
-                channel_entry.channel_setup,
-                channel_entry.enforcement_state,
-                &node,
-            )
-            .expect("restore channel");
+            let slot_arc = node
+                .restore_channel(
+                    channel_id0,
+                    channel_entry.id,
+                    channel_entry.channel_value_satoshis,
+                    channel_entry.channel_setup,
+                    channel_entry.enforcement_state,
+                    &node,
+                )
+                .expect("restore channel");
+            let slot = slot_arc.lock().unwrap();
+            if let ChannelSlot::Ready(channel) = &*slot {
+                channel.restore_payments();
+            }
         }
         if let Some((height, _hash, filter_header, header)) = get_latest_checkpoint(network) {
             let mut tracker = node.get_tracker();

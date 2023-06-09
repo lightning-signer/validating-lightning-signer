@@ -26,7 +26,7 @@ use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 use crate::monitor::ChainMonitor;
-use crate::node::Node;
+use crate::node::{Node, RoutedPayment};
 use crate::policy::error::policy_error;
 use crate::policy::validator::{ChainState, CommitmentSignatures, EnforcementState, Validator};
 use crate::prelude::*;
@@ -610,6 +610,27 @@ impl Channel {
         trace_enforcement_state!(self);
         self.persist()?;
         Ok((sig, htlc_sigs))
+    }
+
+    // restore node state payments from the current commitment transactions
+    pub(crate) fn restore_payments(&self) {
+        let node = self.get_node();
+
+        let incoming_payment_summary = self.enforcement_state.incoming_payments_summary(None, None);
+        let outgoing_payment_summary = self.enforcement_state.payments_summary(None, None);
+
+        let mut hashes: UnorderedSet<&PaymentHash> = UnorderedSet::new();
+        hashes.extend(incoming_payment_summary.keys());
+        hashes.extend(outgoing_payment_summary.keys());
+
+        let mut state = node.get_state();
+
+        for hash in hashes {
+            let payment = state.payments.entry(*hash).or_insert_with(|| RoutedPayment::new());
+            let incoming_sat = incoming_payment_summary.get(hash).map(|a| *a).unwrap_or(0);
+            let outgoing_sat = outgoing_payment_summary.get(hash).map(|a| *a).unwrap_or(0);
+            payment.apply(&self.id0, incoming_sat, outgoing_sat);
+        }
     }
 
     // This function is needed for testing with mutated keys.
@@ -1427,6 +1448,91 @@ impl Channel {
         let node = self.get_node();
         let state = node.get_state();
         self.enforcement_state.balance(&*state, &self.setup)
+    }
+
+    /// advance the holder commitment in an arbitrary way for testing
+    #[cfg(feature = "test_utils")]
+    pub fn advance_holder_commitment(
+        &mut self,
+        counterparty_key: &SecretKey,
+        counterparty_htlc_key: &SecretKey,
+        offered_htlcs: Vec<HTLCInfo2>,
+        value_to_holder: u64,
+        commit_num: u64,
+    ) -> Result<(), Status> {
+        let feerate = 1000;
+        let funding_redeemscript = make_funding_redeemscript(
+            &self.keys.pubkeys().funding_pubkey,
+            &self.keys.counterparty_pubkeys().funding_pubkey,
+        );
+        let per_commitment_point = self.get_per_commitment_point(commit_num)?;
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
+
+        let tx = self.make_holder_commitment_tx(
+            commit_num,
+            &txkeys,
+            feerate,
+            value_to_holder,
+            0,
+            Channel::htlcs_info2_to_oic(offered_htlcs.clone(), vec![]),
+        );
+
+        let trusted_tx = tx.trust();
+        let built_tx = trusted_tx.built_transaction();
+        let counterparty_sig = built_tx.sign_counterparty_commitment(
+            &counterparty_key,
+            &funding_redeemscript,
+            self.setup.channel_value_sat,
+            &self.secp_ctx,
+        );
+
+        let counterparty_htlc_key =
+            derive_private_key(&self.secp_ctx, &per_commitment_point, &counterparty_htlc_key);
+
+        let mut htlc_sigs = Vec::with_capacity(tx.htlcs().len());
+        for htlc in tx.htlcs() {
+            let htlc_tx = build_htlc_transaction(
+                &trusted_tx.txid(),
+                feerate,
+                self.setup.counterparty_selected_contest_delay,
+                htlc,
+                self.setup.is_anchors(),
+                !self.setup.is_zero_fee_htlc(),
+                &txkeys.broadcaster_delayed_payment_key,
+                &txkeys.revocation_key,
+            );
+            let htlc_redeemscript = get_htlc_redeemscript(&htlc, self.setup.is_anchors(), &txkeys);
+            let sig_hash_type = if self.setup.is_anchors() {
+                EcdsaSighashType::SinglePlusAnyoneCanPay
+            } else {
+                EcdsaSighashType::All
+            };
+            let htlc_sighash = Message::from_slice(
+                &SighashCache::new(&htlc_tx)
+                    .segwit_signature_hash(
+                        0,
+                        &htlc_redeemscript,
+                        htlc.amount_msat / 1000,
+                        sig_hash_type,
+                    )
+                    .unwrap()[..],
+            )
+            .unwrap();
+            htlc_sigs.push(self.secp_ctx.sign_ecdsa(&htlc_sighash, &counterparty_htlc_key));
+        }
+
+        // add an HTLC
+        self.validate_holder_commitment_tx_phase2(
+            commit_num,
+            feerate,
+            value_to_holder,
+            0,
+            offered_htlcs,
+            vec![],
+            &counterparty_sig,
+            &htlc_sigs,
+        )?;
+        Ok(())
     }
 }
 

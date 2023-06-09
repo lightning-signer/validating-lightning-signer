@@ -178,7 +178,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
                 };
                 if txn.get(&node_channel_id).unwrap().is_none() {
                     return Err(TransactionError::Abort(kv::Error::Message(
-                        "already exists".to_string(),
+                        "does not exist when updating".to_string(),
                     )));
                 }
                 txn.set(&node_channel_id, &Json(entry)).expect("update channel");
@@ -310,18 +310,25 @@ mod tests {
 
     use lightning::chain::keysinterface::InMemorySigner;
     use lightning::util::ser::Writeable;
+    use lightning_signer::bitcoin::secp256k1::{All, Secp256k1, SecretKey};
     use lightning_signer::lightning;
     use tempfile::TempDir;
     use test_log::test;
 
-    use lightning_signer::channel::ChannelSlot;
+    use lightning_signer::channel::{ChannelBase, ChannelSetup, ChannelSlot};
+    use lightning_signer::lightning::chain::keysinterface::ChannelSigner;
+    use lightning_signer::lightning::ln::chan_utils::{
+        make_funding_redeemscript, BuiltCommitmentTransaction, HTLCOutputInCommitment,
+    };
     use lightning_signer::node::{Node, NodeServices};
     use lightning_signer::persist::MemorySeedPersister;
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
+    use lightning_signer::tx::tx::HTLCInfo2;
     use lightning_signer::util::clock::StandardClock;
     use lightning_signer::util::test_utils::*;
 
     use lightning_signer::util::ser_util::VecWriter;
+    use lightning_signer::util::status::Status;
 
     use super::*;
 
@@ -339,6 +346,7 @@ mod tests {
     #[cfg(not(feature = "kcov"))]
     #[test]
     fn round_trip_signer_test() -> Result<(), lightning_signer::util::status::Status> {
+        let secp_ctx = Secp256k1::new();
         let channel_id0 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
         let validator_factory = Arc::new(SimpleValidatorFactory::new());
         let starting_time_factory = make_genesis_starting_time_factory(TEST_NODE_CONFIG.network);
@@ -349,6 +357,7 @@ mod tests {
         let node = &*node_arc;
         let invoice = make_current_test_invoice(1, 600_000);
         assert!(node.add_invoice(invoice).unwrap());
+
         let seed_persister = Arc::new(MemorySeedPersister::new(seed.to_vec()));
 
         let (temp_dir, path) = {
@@ -369,6 +378,7 @@ mod tests {
             let restored_node = nodes.get(&node_id).unwrap();
 
             assert!(!restored_node.get_state().invoices.is_empty());
+            assert!(!restored_node.get_state().payments.is_empty());
 
             {
                 let slot = restored_node.get_channel(&stub.id0).unwrap();
@@ -383,14 +393,40 @@ mod tests {
 
             // Ready the channel
             {
-                let dummy_pubkey = make_dummy_pubkey(0x12);
-                let setup = create_test_channel_setup(dummy_pubkey);
+                let counterparty_key = SecretKey::from_slice(&[0x12u8; 32]).unwrap();
+                let counterparty_pubkey = PublicKey::from_secret_key(&secp_ctx, &counterparty_key);
+                let setup = create_test_channel_setup(counterparty_pubkey);
 
                 let channel_id1 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
 
-                let channel = node
-                    .ready_channel(channel_id0.clone(), Some(channel_id1.clone()), setup, &vec![])
+                let mut channel = node
+                    .ready_channel(
+                        channel_id0.clone(),
+                        Some(channel_id1.clone()),
+                        setup.clone(),
+                        &vec![],
+                    )
                     .unwrap();
+
+                channel.advance_holder_commitment(
+                    &counterparty_key,
+                    &counterparty_key,
+                    vec![],
+                    123000,
+                    0,
+                )?;
+
+                let payment_hash = PaymentHash([0x34u8; 32]);
+                let htlcs = vec![HTLCInfo2 { value_sat: 1000, payment_hash, cltv_expiry: 100 }];
+
+                channel.advance_holder_commitment(
+                    &counterparty_key,
+                    &counterparty_key,
+                    htlcs,
+                    122000,
+                    1,
+                )?;
+
                 persister.update_tracker(&node_id, &node.get_tracker()).unwrap();
                 persister.update_channel(&node_id, &channel).unwrap();
 
@@ -399,6 +435,10 @@ mod tests {
                 let slot = restored_node1.get_channel(&stub.id0).unwrap();
                 assert!(restored_node1.channels().contains_key(&channel_id0));
                 assert!(restored_node1.channels().contains_key(&channel_id1));
+
+                assert_eq!(restored_node1.get_state().payments.len(), 2);
+                assert!(restored_node1.get_state().payments.contains_key(&payment_hash));
+
                 let guard = slot.lock().unwrap();
                 if let ChannelSlot::Ready(s) = &*guard {
                     check_signer_roundtrip(&channel.keys, &s.keys);
