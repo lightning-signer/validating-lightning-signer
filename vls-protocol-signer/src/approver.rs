@@ -118,7 +118,10 @@ pub trait Approve: SendSync {
         // otherwise ask approver
         if self.approve_keysend(payment_hash, amount_msat) {
             debug!("keysend to {:?} approved with amount {}", payee, amount_msat);
-            node.add_keysend(payee, payment_hash, amount_msat)
+            node.add_keysend(payee, payment_hash, amount_msat).map_err(|err| {
+                warn!("add_keysend failed: {}", err);
+                err
+            })
         } else {
             warn!("keysend to {:?} not approved with amount {}", payee, amount_msat);
             Ok(false)
