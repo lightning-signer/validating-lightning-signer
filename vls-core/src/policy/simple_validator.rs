@@ -1872,7 +1872,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             min_feerate_per_kw: 253,     // testnet/regtest observed
             max_feerate_per_kw: 151_000, // CLN max_feerate 150_000 common
             enforce_balance: false,
-            max_routing_fee_msat: 10000,
+            max_routing_fee_msat: 50_000, // CLN test_large_mpp_presplit
             dev_flags: None,
             filter: PolicyFilter::default(),
             global_velocity_control: VelocityControlSpec::UNLIMITED,
