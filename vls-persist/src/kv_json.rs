@@ -1,5 +1,4 @@
 use kv::{Bucket, Config, Json, Key, Raw, Store, TransactionError};
-use std::convert::TryInto;
 use std::sync::Arc;
 
 use bitcoin::secp256k1::PublicKey;
@@ -7,7 +6,6 @@ use lightning_signer::bitcoin;
 use lightning_signer::chain::tracker::ChainTracker;
 
 use lightning_signer::channel::{Channel, ChannelId, ChannelStub};
-use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::monitor::ChainMonitor;
 use lightning_signer::node::{NodeConfig, NodeState as CoreNodeState};
 use lightning_signer::persist::model::{
@@ -259,26 +257,14 @@ impl<'a> Persist for KVJsonPersister<'a> {
             let state_e_j: Json<NodeStateEntry> =
                 self.node_state_bucket.get(&key).unwrap().unwrap();
             let state_e = state_e_j.0;
-            let invoices = state_e
-                .invoices
-                .into_iter()
-                .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v.into()))
-                .collect();
-            let issued_invoices = state_e
-                .issued_invoices
-                .into_iter()
-                .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v.into()))
-                .collect();
-
-            let state = CoreNodeState {
-                invoices,
-                issued_invoices,
-                payments: Default::default(),
-                excess_amount: 0,
-                log_prefix: "".to_string(),
-                velocity_control: state_e.velocity_control.into(),
-                fee_velocity_control: state_e.fee_velocity_control.into(),
-            };
+            let state = CoreNodeState::restore(
+                state_e.invoices,
+                state_e.issued_invoices,
+                state_e.preimages,
+                0,
+                state_e.velocity_control.into(),
+                state_e.fee_velocity_control.into(),
+            );
             let entry = CoreNodeEntry {
                 key_derivation_style: e.key_derivation_style,
                 network: e.network,
@@ -320,6 +306,7 @@ mod tests {
     use lightning_signer::lightning::ln::chan_utils::{
         make_funding_redeemscript, BuiltCommitmentTransaction, HTLCOutputInCommitment,
     };
+    use lightning_signer::lightning::ln::PaymentHash;
     use lightning_signer::node::{Node, NodeServices};
     use lightning_signer::persist::MemorySeedPersister;
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;

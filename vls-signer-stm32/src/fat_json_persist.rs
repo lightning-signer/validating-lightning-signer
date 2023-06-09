@@ -3,7 +3,6 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
-use core::convert::TryInto;
 use core::str::FromStr;
 
 use serde_json::json;
@@ -13,7 +12,6 @@ use fatfs::{Read, Write};
 use log::*;
 
 use vls_protocol_signer::lightning_signer;
-use lightning_signer::lightning;
 
 use lightning_signer::{
     bitcoin::secp256k1::PublicKey,
@@ -29,7 +27,6 @@ use lightning_signer::persist::{
     model::{ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry},
     Persist,
 };
-use lightning::ln::PaymentHash;
 use vls_persist::model::{
     AllowlistItemEntry, ChainTrackerEntry, ChannelEntry, NodeEntry, NodeStateEntry,
 };
@@ -439,25 +436,14 @@ impl Persist for FatJsonPersister {
                     .map_err(|err| err.into())?,
             )
             .map_err(|err| persist::Error::Internal(format!("serde_json failed: {:?}", err)))?;
-            let invoices = state_e
-                .invoices
-                .into_iter()
-                .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v.into()))
-                .collect();
-            let issued_invoices = state_e
-                .issued_invoices
-                .into_iter()
-                .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v.into()))
-                .collect();
-            let state = CoreNodeState {
-                invoices,
-                issued_invoices,
-                payments: Default::default(),
-                excess_amount: 0,
-                log_prefix: "".to_string(),
-                velocity_control: state_e.velocity_control.into(),
-                fee_velocity_control: state_e.fee_velocity_control.into(),
-            };
+            let state = CoreNodeState::restore(
+                state_e.invoices,
+                state_e.issued_invoices,
+                state_e.preimages,
+                0,
+                state_e.velocity_control.into(),
+                state_e.fee_velocity_control.into()
+            );
             let entry = CoreNodeEntry {
                 key_derivation_style: e.key_derivation_style,
                 network: e.network,

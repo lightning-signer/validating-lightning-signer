@@ -268,6 +268,43 @@ impl NodeState {
         }
     }
 
+    /// Restore a state from persistence
+    pub fn restore(
+        invoices_v: Vec<(Vec<u8>, PaymentState)>,
+        issued_invoices_v: Vec<(Vec<u8>, PaymentState)>,
+        preimages: Vec<[u8; 32]>,
+        excess_amount: u64,
+        velocity_control: VelocityControl,
+        fee_velocity_control: VelocityControl,
+    ) -> Self {
+        let invoices = invoices_v
+            .into_iter()
+            .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v.into()))
+            .collect();
+        let issued_invoices = issued_invoices_v
+            .into_iter()
+            .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v.into()))
+            .collect();
+        let payments = preimages
+            .into_iter()
+            .map(|preimage| {
+                let hash = PaymentHash(Sha256Hash::hash(&preimage).into_inner());
+                let mut payment = RoutedPayment::new();
+                payment.preimage = Some(PaymentPreimage(preimage));
+                (hash, payment)
+            })
+            .collect();
+        NodeState {
+            invoices,
+            issued_invoices,
+            payments,
+            excess_amount,
+            log_prefix: String::new(),
+            velocity_control,
+            fee_velocity_control,
+        }
+    }
+
     fn with_log_prefix(
         self,
         velocity_control: VelocityControl,

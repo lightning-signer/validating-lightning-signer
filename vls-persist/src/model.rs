@@ -65,6 +65,8 @@ pub struct NodeStateEntry {
     pub velocity_control: VelocityControl,
     #[serde(default = "default_fee_velocity_control")]
     pub fee_velocity_control: VelocityControl,
+    #[serde(default)]
+    pub preimages: Vec<[u8; 32]>,
     // TODO(devrandom): add routing control fields, once they stabilize
 }
 
@@ -80,7 +82,15 @@ impl From<&NodeState> for NodeStateEntry {
             state.issued_invoices.iter().map(|(a, b)| (a.0.to_vec(), b.clone())).collect();
         let velocity_control = state.velocity_control.clone().into();
         let fee_velocity_control = state.fee_velocity_control.clone().into();
-        NodeStateEntry { invoices, issued_invoices, velocity_control, fee_velocity_control }
+        // extract preimages from payments
+        let preimages = state.payments.values().filter_map(|p| p.preimage.map(|p| p.0)).collect();
+        NodeStateEntry {
+            invoices,
+            issued_invoices,
+            velocity_control,
+            fee_velocity_control,
+            preimages,
+        }
     }
 }
 

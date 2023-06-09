@@ -3,12 +3,10 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::cell::RefCell;
-use core::convert::TryInto;
 use core::fmt::{self, Debug, Formatter};
 use lightning_signer::bitcoin::secp256k1::PublicKey;
 use lightning_signer::chain::tracker::ChainTracker;
 use lightning_signer::channel::{Channel, ChannelId, ChannelStub};
-use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::monitor::ChainMonitor;
 use lightning_signer::node::{NodeConfig, NodeState};
 use lightning_signer::persist::model::{
@@ -389,29 +387,18 @@ impl Persist for ThreadMemoPersister {
                     let entry: NodeEntry = from_slice(&value).unwrap();
                     let state_value = state.get(NODE_STATE_PREFIX, &key).unwrap();
                     let state_entry: NodeStateEntry = from_slice(&state_value).unwrap();
-                    let invoices = state_entry
-                        .invoices
-                        .into_iter()
-                        .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v))
-                        .collect();
-                    let issued_invoices = state_entry
-                        .issued_invoices
-                        .into_iter()
-                        .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v))
-                        .collect();
-                    let node_state = NodeState {
-                        invoices,
-                        issued_invoices,
-                        payments: Default::default(),
-                        excess_amount: 0,
-                        log_prefix: "".to_string(),
-                        velocity_control: state_entry.velocity_control.into(),
-                        fee_velocity_control: state_entry.fee_velocity_control.into(),
-                    };
+                    let state = NodeState::restore(
+                        state_entry.invoices,
+                        state_entry.issued_invoices,
+                        state_entry.preimages,
+                        0,
+                        state_entry.velocity_control.into(),
+                        state_entry.fee_velocity_control.into(),
+                    );
                     let node_entry = CoreNodeEntry {
                         key_derivation_style: entry.key_derivation_style as u8,
                         network: entry.network,
-                        state: node_state,
+                        state,
                     };
                     res.push((node_id, node_entry));
                 });
