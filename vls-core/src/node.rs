@@ -2599,7 +2599,7 @@ mod tests {
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),
-            &vec![(hash, 12)].into_iter().collect(),
+            &vec![(hash, 52)].into_iter().collect(),
             &Default::default(),
             strict_validator.clone(),
         );
@@ -2608,7 +2608,7 @@ mod tests {
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),
-            &vec![(hash, 11)].into_iter().collect(),
+            &vec![(hash, 51)].into_iter().collect(),
             &Default::default(),
             strict_validator.clone(),
         );
@@ -2933,7 +2933,7 @@ mod tests {
                 state.validate_and_apply_payments(
                     &channel_id,
                     &Map::new(),
-                    &vec![(hash, 111)].into_iter().collect(),
+                    &vec![(hash, 151)].into_iter().collect(),
                     &Default::default(),
                     invoice_validator.clone()
                 ),

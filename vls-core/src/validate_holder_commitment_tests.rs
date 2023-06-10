@@ -351,6 +351,14 @@ mod tests {
                 htlc_sigs: &mut htlc_sigs,
             });
 
+            for offered_htlc in commit_tx_ctx.offered_htlcs.clone() {
+                node_ctx.node.add_keysend(
+                    make_test_pubkey(1),
+                    offered_htlc.payment_hash,
+                    offered_htlc.value_sat * 1000,
+                )?;
+            }
+
             // Validate the holder_commitment, but defer error returns till after we've had
             // a chance to validate the channel state for side-effects
             let deferred_rv = chan.validate_holder_commitment_tx(
