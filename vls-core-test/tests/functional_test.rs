@@ -168,7 +168,7 @@ fn new_signer() -> Arc<MultiSigner> {
 #[test]
 fn invoice_test() {
     let network = Network::Regtest;
-    let mut policy = make_simple_policy(network);
+    let policy = make_simple_policy(network);
     // can't do routing enforcement yet because of #331
     // policy.enforce_balance = true;
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
@@ -191,8 +191,7 @@ fn invoice_test() {
     node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, 1));
     node_cfgs.push(create_node_cfg(&validating_signer, &chanmon_cfgs, REGTEST_NODE_CONFIG, 2));
     let node_chanmgrs = create_node_chanmgrs(3, &node_cfgs, &[None, None, None]);
-    let mut nodes = create_network(3, &node_cfgs, &node_chanmgrs);
-    nodes[0].use_invoices = true;
+    let nodes = create_network(3, &node_cfgs, &node_chanmgrs);
 
     // Create some initial channels
     create_default_chan(&nodes, 0, 1);
