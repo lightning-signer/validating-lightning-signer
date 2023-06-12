@@ -268,6 +268,43 @@ impl NodeState {
         }
     }
 
+    /// Restore a state from persistence
+    pub fn restore(
+        invoices_v: Vec<(Vec<u8>, PaymentState)>,
+        issued_invoices_v: Vec<(Vec<u8>, PaymentState)>,
+        preimages: Vec<[u8; 32]>,
+        excess_amount: u64,
+        velocity_control: VelocityControl,
+        fee_velocity_control: VelocityControl,
+    ) -> Self {
+        let invoices = invoices_v
+            .into_iter()
+            .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v.into()))
+            .collect();
+        let issued_invoices = issued_invoices_v
+            .into_iter()
+            .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v.into()))
+            .collect();
+        let payments = preimages
+            .into_iter()
+            .map(|preimage| {
+                let hash = PaymentHash(Sha256Hash::hash(&preimage).into_inner());
+                let mut payment = RoutedPayment::new();
+                payment.preimage = Some(PaymentPreimage(preimage));
+                (hash, payment)
+            })
+            .collect();
+        NodeState {
+            invoices,
+            issued_invoices,
+            payments,
+            excess_amount,
+            log_prefix: String::new(),
+            velocity_control,
+            fee_velocity_control,
+        }
+    }
+
     fn with_log_prefix(
         self,
         velocity_control: VelocityControl,
@@ -1254,12 +1291,12 @@ impl Node {
             .collect::<Result<_, _>>()
             .expect("allowable parse error");
 
-        // FIXME persist node state
-        let policy = services.validator_factory.policy(network);
-        let global_velocity_control = Self::make_velocity_control(&policy);
-        let fee_velocity_control = Self::make_fee_velocity_control(&policy);
+        let mut state = node_entry.state;
 
-        let state = NodeState::new(global_velocity_control, fee_velocity_control);
+        // create a payment state for each invoice state
+        for h in state.invoices.keys() {
+            state.payments.insert(*h, RoutedPayment::new());
+        }
 
         let node = Arc::new(Node::new_from_persistence(config, seed, allowlist, services, state));
         assert_eq!(&node.get_id(), node_id);
@@ -1268,15 +1305,20 @@ impl Node {
             persister.get_node_channels(node_id).expect("node channels")
         {
             info!("  Restore channel {}", channel_id0);
-            node.restore_channel(
-                channel_id0,
-                channel_entry.id,
-                channel_entry.channel_value_satoshis,
-                channel_entry.channel_setup,
-                channel_entry.enforcement_state,
-                &node,
-            )
-            .expect("restore channel");
+            let slot_arc = node
+                .restore_channel(
+                    channel_id0,
+                    channel_entry.id,
+                    channel_entry.channel_value_satoshis,
+                    channel_entry.channel_setup,
+                    channel_entry.enforcement_state,
+                    &node,
+                )
+                .expect("restore channel");
+            let slot = slot_arc.lock().unwrap();
+            if let ChannelSlot::Ready(channel) = &*slot {
+                channel.restore_payments();
+            }
         }
         if let Some((height, _hash, filter_header, header)) = get_latest_checkpoint(network) {
             let mut tracker = node.get_tracker();

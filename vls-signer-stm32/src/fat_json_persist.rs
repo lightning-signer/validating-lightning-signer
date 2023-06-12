@@ -22,7 +22,6 @@ use lightning_signer::{
     policy::validator::{EnforcementState, ValidatorFactory},
     prelude::*,
 };
-
 use lightning_signer::persist::{
     self,
     model::{ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry},
@@ -449,15 +448,14 @@ impl Persist for FatJsonPersister {
                     .map_err(|err| err.into())?,
             )
             .map_err(|err| persist::Error::Internal(format!("serde_json failed: {:?}", err)))?;
-            let state = CoreNodeState {
-                invoices: Default::default(),
-                issued_invoices: Default::default(),
-                payments: Default::default(),
-                excess_amount: 0,
-                log_prefix: "".to_string(),
-                velocity_control: state_e.velocity_control.into(),
-                fee_velocity_control: state_e.fee_velocity_control.into(),
-            };
+            let state = CoreNodeState::restore(
+                state_e.invoices,
+                state_e.issued_invoices,
+                state_e.preimages,
+                0,
+                state_e.velocity_control.into(),
+                state_e.fee_velocity_control.into()
+            );
             let entry = CoreNodeEntry {
                 key_derivation_style: e.key_derivation_style,
                 network: e.network,
