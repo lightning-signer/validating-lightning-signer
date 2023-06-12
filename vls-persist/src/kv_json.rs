@@ -284,6 +284,10 @@ impl<'a> Persist for KVJsonPersister<'a> {
         self.node_bucket.clear().unwrap();
         Ok(())
     }
+
+    fn recovery_required(&self) -> bool {
+        self.node_bucket.is_empty()
+    }
 }
 
 #[cfg(test)]

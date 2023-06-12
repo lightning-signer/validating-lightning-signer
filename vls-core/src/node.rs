@@ -1293,7 +1293,7 @@ impl Node {
     }
 
     fn maybe_sync_persister(&self) -> Result<(), Status> {
-        if self.persister.sync_required() {
+        if self.persister.on_initial_restore() {
             // write everything to persister, to ensure that any composite
             // persister has all sub-persisters in sync
             {
