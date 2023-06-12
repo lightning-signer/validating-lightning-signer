@@ -2847,6 +2847,61 @@ mod tests {
         }
     }
 
+    #[test]
+    fn htlc_fail_test() {
+        let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        // another channel ID
+        let channel_id2 = ChannelId::new(&[1; 32]);
+
+        let preimage = PaymentPreimage([0; 32]);
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+
+        let invoice = make_test_invoice(&payee_node, "invoice", hash);
+
+        assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
+
+        let mut policy = make_simple_policy(Network::Testnet);
+        policy.require_invoices = true;
+        let factory = SimpleValidatorFactory::new_with_policy(policy);
+        let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
+        node.set_validator_factory(Arc::new(factory));
+
+        let empty = Map::new();
+        {
+            let mut state = node.get_state();
+            state
+                .validate_and_apply_payments(
+                    &channel_id,
+                    &empty,
+                    &vec![(hash, 90)].into_iter().collect(),
+                    &Default::default(),
+                    invoice_validator.clone(),
+                )
+                .unwrap();
+            // payment summarizer now generates a zero for failed HTLCs
+            state
+                .validate_and_apply_payments(
+                    &channel_id,
+                    &empty,
+                    &vec![(hash, 0)].into_iter().collect(),
+                    &Default::default(),
+                    invoice_validator.clone(),
+                )
+                .unwrap();
+            state
+                .validate_and_apply_payments(
+                    &channel_id2,
+                    &empty,
+                    &vec![(hash, 90)].into_iter().collect(),
+                    &Default::default(),
+                    invoice_validator.clone(),
+                )
+                .unwrap();
+        }
+    }
+
     // policy-routing-deltas-only-htlc
     #[test]
     fn shortfall_test() {

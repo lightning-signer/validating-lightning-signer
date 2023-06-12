@@ -731,6 +731,18 @@ impl EnforcementState {
             // Choose higher amount if already there, or insert if not
             summary.entry(k).and_modify(|e| *e = max(*e, v)).or_insert(v);
         }
+
+        if let Some(holder_tx) = self.current_holder_commit_info.as_ref() {
+            for h in holder_tx.offered_htlcs.iter() {
+                summary.entry(h.payment_hash).or_insert(0);
+            }
+        }
+
+        if let Some(counterparty_tx) = self.current_counterparty_commit_info.as_ref() {
+            for h in counterparty_tx.received_htlcs.iter() {
+                summary.entry(h.payment_hash).or_insert(0);
+            }
+        }
         summary
     }
 
@@ -764,6 +776,18 @@ impl EnforcementState {
         for (k, v) in counterparty_summary {
             // Choose lower amount
             summary.entry(k).and_modify(|e| *e = min(*e, v));
+        }
+
+        if let Some(holder_tx) = self.current_holder_commit_info.as_ref() {
+            for h in holder_tx.received_htlcs.iter() {
+                summary.entry(h.payment_hash).or_insert(0);
+            }
+        }
+
+        if let Some(counterparty_tx) = self.current_counterparty_commit_info.as_ref() {
+            for h in counterparty_tx.offered_htlcs.iter() {
+                summary.entry(h.payment_hash).or_insert(0);
+            }
         }
         summary
     }
@@ -837,7 +861,7 @@ impl EnforcementState {
         // We will use our funding amount, or zero if we are not the funder.
         let cur_bal = cur_bal_opt.unwrap_or_else(|| self.initial_holder_value);
 
-        log::debug!(
+        debug!(
             "balance {} -> {} --- cur h {} c {} new h {} c {}",
             cur_bal,
             new_bal,
@@ -927,5 +951,131 @@ fn min_opt(a_opt: Option<u64>, b_opt: Option<u64>) -> Option<u64> {
         }
     } else {
         b_opt
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::policy::validator::EnforcementState;
+    use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
+    use crate::util::test_utils::make_dummy_pubkey;
+    use bitcoin::secp256k1::PublicKey;
+    use lightning::ln::PaymentHash;
+
+    #[test]
+    fn payments_summary_test() {
+        let mut state = EnforcementState::new(1000000);
+        let dummy_pubkey = make_dummy_pubkey(1);
+
+        // COUNTERPARTY
+        let payment_hash = PaymentHash([3; 32]);
+        let htlcs = vec![HTLCInfo2 { value_sat: 1000, payment_hash, cltv_expiry: 100 }];
+
+        let cp_tx = make_tx(true, dummy_pubkey, htlcs);
+
+        // no payments yet
+        assert!(state.payments_summary(None, None).is_empty());
+
+        // pending add of outgoing HTLC
+        let sum = state.payments_summary(None, Some(&cp_tx));
+        assert_eq!(sum.get(&payment_hash), Some(&1000));
+
+        // outgoing HTLC
+        state.current_counterparty_commit_info = Some(cp_tx);
+        let sum = state.payments_summary(None, None);
+        assert_eq!(sum.get(&payment_hash), Some(&1000));
+
+        // pending failed HTLC
+        let cp_tx2 = make_tx(true, dummy_pubkey, vec![]);
+        let sum = state.payments_summary(None, Some(&cp_tx2));
+        assert_eq!(sum.get(&payment_hash), Some(&0));
+
+        state.current_counterparty_commit_info = Some(cp_tx2);
+        let sum = state.payments_summary(None, None);
+        assert_eq!(sum.get(&payment_hash), None);
+
+        // HOLDER
+        let payment_hash = PaymentHash([4; 32]);
+        let htlcs = vec![HTLCInfo2 { value_sat: 1000, payment_hash, cltv_expiry: 100 }];
+        let holder_tx = make_tx(false, dummy_pubkey, htlcs);
+
+        // no payments yet
+        assert!(state.payments_summary(None, None).is_empty());
+
+        // pending add of outgoing HTLC
+        let sum = state.payments_summary(Some(&holder_tx), None);
+        assert_eq!(sum.get(&payment_hash), Some(&1000));
+
+        // outgoing HTLC
+        state.current_holder_commit_info = Some(holder_tx);
+        let sum = state.payments_summary(None, None);
+        assert_eq!(sum.get(&payment_hash), Some(&1000));
+
+        // pending failed HTLC
+        let holder_tx2 = make_tx(false, dummy_pubkey, vec![]);
+        let sum = state.payments_summary(Some(&holder_tx2), None);
+        assert_eq!(sum.get(&payment_hash), Some(&0));
+
+        state.current_holder_commit_info = Some(holder_tx2);
+        let sum = state.payments_summary(None, None);
+        assert_eq!(sum.get(&payment_hash), None);
+    }
+
+    #[test]
+    fn incoming_payments_summary_test() {
+        let mut state = EnforcementState::new(1000000);
+        let dummy_pubkey = make_dummy_pubkey(1);
+
+        let payment_hash = PaymentHash([3; 32]);
+        let htlcs = vec![HTLCInfo2 { value_sat: 1000, payment_hash, cltv_expiry: 100 }];
+
+        let cp_tx = make_tx(false, dummy_pubkey, htlcs.clone());
+        let holder_tx = make_tx(true, dummy_pubkey, htlcs.clone());
+
+        // no payments yet
+        assert!(state.incoming_payments_summary(None, None).is_empty());
+
+        // no payments with just one side
+        assert!(state.incoming_payments_summary(Some(&holder_tx), None).is_empty());
+        assert!(state.incoming_payments_summary(None, Some(&cp_tx)).is_empty());
+
+        // pending add of outgoing HTLC
+        let sum = state.incoming_payments_summary(Some(&holder_tx), Some(&cp_tx));
+        assert_eq!(sum.get(&payment_hash), Some(&1000));
+
+        // outgoing HTLC
+        state.current_counterparty_commit_info = Some(cp_tx);
+        state.current_holder_commit_info = Some(holder_tx);
+        let sum = state.incoming_payments_summary(None, None);
+        assert_eq!(sum.get(&payment_hash), Some(&1000));
+
+        // pending failed HTLC
+        let holder_tx2 = make_tx(true, dummy_pubkey, vec![]);
+        let cp_tx2 = make_tx(false, dummy_pubkey, vec![]);
+
+        let sum = state.incoming_payments_summary(None, Some(&cp_tx2));
+        assert_eq!(sum.get(&payment_hash), Some(&0));
+
+        let sum = state.incoming_payments_summary(Some(&holder_tx2), None);
+        assert_eq!(sum.get(&payment_hash), Some(&0));
+    }
+
+    fn make_tx(
+        is_received: bool,
+        dummy_pubkey: PublicKey,
+        htlcs: Vec<HTLCInfo2>,
+    ) -> CommitmentInfo2 {
+        CommitmentInfo2::new(
+            is_received,
+            dummy_pubkey,
+            9000,
+            dummy_pubkey,
+            dummy_pubkey,
+            10000,
+            6,
+            if is_received { vec![] } else { htlcs.clone() },
+            if is_received { htlcs.clone() } else { vec![] },
+            1000,
+        )
     }
 }
