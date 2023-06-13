@@ -39,7 +39,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 #[allow(unused_imports)]
-use log::{debug, info, trace, warn};
+use log::*;
 use serde_bolt::to_vec;
 
 use crate::chain::tracker::ChainTracker;
@@ -364,8 +364,8 @@ impl NodeState {
         validator: Arc<dyn Validator>,
     ) -> Result<(), ValidationError> {
         debug!(
-            "validating payments on channel {} - in {:?} out {:?}",
-            channel_id, incoming_payment_summary, outgoing_payment_summary
+            "{} validating payments on channel {} - in {:?} out {:?}",
+            self.log_prefix, channel_id, incoming_payment_summary, outgoing_payment_summary
         );
 
         let mut hashes: UnorderedSet<&PaymentHash> = UnorderedSet::new();
@@ -396,7 +396,21 @@ impl NodeState {
                 .validate_payment_balance(incoming_sat * 1000, outgoing_sat * 1000, invoiced_amount)
                 .is_err()
             {
-                unbalanced.push(hash);
+                if payment.is_some() && invoiced_amount.is_none() {
+                    // TODO #331 - workaround for an uninvoiced existing payment
+                    // is allowed to go out of balance because LDK does not
+                    // provide the preimage in time and removes the incoming HTLC first.
+                    warn!(
+                        "unbalanced routed payment on channel {} for hash {:?} payment state {:#?}",
+                        channel_id, hash.0, payment
+                    );
+                } else {
+                    error!(
+                        "unbalanced payment on channel {} for hash {:?} payment state {:#?}",
+                        channel_id, hash.0, payment
+                    );
+                    unbalanced.push(hash);
+                }
             }
         }
 
@@ -2544,7 +2558,8 @@ mod tests {
             invoice_validator.clone(),
         );
 
-        assert!(result.is_err());
+        // TODO #331
+        // assert!(result.is_err());
     }
 
     fn make_test_invoice(
