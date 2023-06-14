@@ -4,8 +4,8 @@ use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
 use bitcoin::secp256k1::PublicKey;
 use core::fmt::Debug;
+use core::ops::Index;
 use lightning::chain::keysinterface::EntropySource;
-use std::ops::Index;
 
 use crate::channel::{Channel, ChannelId, ChannelStub};
 use crate::monitor::ChainMonitor;
@@ -18,6 +18,7 @@ pub mod model;
 
 /// A list of mutations memorized by a memorizing persister
 #[derive(Clone)]
+#[must_use]
 pub struct Mutations(Vec<(String, (u64, Vec<u8>))>);
 
 impl Mutations {
