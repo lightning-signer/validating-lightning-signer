@@ -311,6 +311,11 @@ impl<A: Approve> VelocityApprover<A> {
     pub fn control(&self) -> VelocityControl {
         self.control.lock().unwrap().clone()
     }
+
+    /// Set the velocity control
+    pub fn set_control(&self, control: VelocityControl) {
+        *self.control.lock().unwrap() = control;
+    }
 }
 
 impl<A: Approve> SendSync for VelocityApprover<A> {}
