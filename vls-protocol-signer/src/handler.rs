@@ -36,7 +36,6 @@ use lightning_signer::persist::Mutations;
 use lightning_signer::prelude::Mutex;
 use lightning_signer::signer::my_keys_manager::MyKeysManager;
 use lightning_signer::tx::tx::HTLCInfo2;
-use lightning_signer::util::debug_utils::DebugMutations;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
 use log::*;
@@ -121,9 +120,9 @@ pub trait Handler {
             log_error(err);
             if let Error::Temporary(_) = err {
                 // There must be no mutated state when a temporary error is returned
-                let dirty = context.exit();
-                if !dirty.is_empty() {
-                    debug!("stranded mutations: {:#?}", &DebugMutations(&dirty));
+                let muts = context.exit();
+                if !muts.is_empty() {
+                    debug!("stranded mutations: {:#?}", &muts);
                     panic!("temporary error with stranded mutations");
                 }
             }
@@ -160,7 +159,7 @@ pub trait Handler {
             Err(e) => {
                 let muts = context.exit();
                 if !muts.is_empty() {
-                    debug!("stranded mutations: {:#?}", &DebugMutations(&muts));
+                    debug!("stranded mutations: {:#?}", &muts);
                     panic!("failed operation with stranded mutations");
                 }
                 Err(e)

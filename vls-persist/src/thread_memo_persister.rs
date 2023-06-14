@@ -142,7 +142,7 @@ impl State {
         for key in self.dirty.iter() {
             res.push((key.clone(), store.get(key).cloned().unwrap()));
         }
-        res
+        Mutations::from_vec(res)
     }
 }
 
