@@ -139,11 +139,34 @@ pub trait Handler {
     fn client_id(&self) -> u64;
     /// Create a channel handler
     fn for_new_client(&self, client_id: u64, peer_id: PubKey, dbid: u64) -> ChannelHandler;
-    /// Get the associated signing node
+    /// Get the associated signing node.
+    /// Note that if you want to perform an operation that can result in a mutation
+    /// of the node state requiring a persist, and your persister writes to the cloud,
+    /// you must use [`Handler::with_persist`] instead.
     fn node(&self) -> &Arc<Node>;
     /// Get the LSS state.
     /// This will be empty if we are not persisting to the cloud
     fn lss_state(&self) -> Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>;
+    /// Perform an operation on the Node that requires persistence.
+    /// The operation must not mutate if it fails (returns an error).
+    fn with_persist(&self, f: impl FnOnce(&Node) -> Result<()>) -> Result<Mutations> {
+        let context = self.node().get_persister().enter(self.lss_state().clone());
+        let node = self.node();
+        match f(&*node) {
+            Ok(()) => {
+                let muts = context.exit();
+                Ok(muts)
+            }
+            Err(e) => {
+                let muts = context.exit();
+                if !muts.is_empty() {
+                    debug!("stranded mutations: {:#?}", &DebugMutations(&muts));
+                    panic!("failed operation with stranded mutations");
+                }
+                Err(e)
+            }
+        }
+    }
 }
 
 fn log_request(msg: &Message) {
