@@ -203,6 +203,14 @@ mod tests {
                 let output_witscripts: Vec<_> =
                     redeem_scripts.iter().map(|s| s.serialize()).collect();
 
+                for received_htlc in received_htlcs.clone() {
+                    node.add_keysend(
+                        make_test_pubkey(1),
+                        received_htlc.payment_hash,
+                        received_htlc.value_sat * 1000,
+                    )?;
+                }
+
                 let sig = chan
                     .sign_counterparty_commitment_tx(
                         &tx.transaction,
@@ -398,6 +406,14 @@ mod tests {
                 witscripts: &mut output_witscripts,
             });
             tx.txid = tx.transaction.txid();
+
+            for received_htlc in received_htlcs.clone() {
+                node.add_keysend(
+                    make_test_pubkey(1),
+                    received_htlc.payment_hash,
+                    received_htlc.value_sat * 1000,
+                )?;
+            }
 
             let sig = if !is_phase2 {
                 chan.sign_counterparty_commitment_tx(
@@ -853,6 +869,14 @@ mod tests {
             );
 
             let mut cstate = make_test_chain_state();
+
+            for received_htlc in received_htlcs.clone() {
+                node.add_keysend(
+                    make_test_pubkey(1),
+                    received_htlc.payment_hash,
+                    received_htlc.value_sat * 1000,
+                )?;
+            }
 
             // Sign the commitment the first time.
             let _sig = if !is_phase2 {

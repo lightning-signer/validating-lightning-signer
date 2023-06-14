@@ -7,6 +7,8 @@ use core::iter::FromIterator;
 use core::str::FromStr;
 use core::time::Duration;
 
+use scopeguard::defer;
+
 use bitcoin;
 use bitcoin::bech32::{u5, FromBase32};
 use bitcoin::hashes::hex::ToHex;
@@ -65,7 +67,9 @@ use crate::tx::tx::PreimageMap;
 use crate::txoo::get_latest_checkpoint;
 use crate::util::clock::Clock;
 use crate::util::crypto_utils::{sighash_from_heartbeat, signature_to_bitcoin_vec};
-use crate::util::debug_utils::{DebugBytes, DebugMapPaymentState, DebugMapRoutedPayment};
+use crate::util::debug_utils::{
+    DebugBytes, DebugMapPaymentState, DebugMapPaymentSummary, DebugMapRoutedPayment,
+};
 use crate::util::ser_util::DurationHandler;
 use crate::util::status::{failed_precondition, internal_error, invalid_argument, Status};
 use crate::util::velocity::VelocityControl;
@@ -363,9 +367,13 @@ impl NodeState {
         balance_delta: &BalanceDelta,
         validator: Arc<dyn Validator>,
     ) -> Result<(), ValidationError> {
+        let mut debug_on_return = scoped_debug_return!(self);
         debug!(
             "{} validating payments on channel {} - in {:?} out {:?}",
-            self.log_prefix, channel_id, incoming_payment_summary, outgoing_payment_summary
+            self.log_prefix,
+            channel_id,
+            &DebugMapPaymentSummary(&incoming_payment_summary),
+            &DebugMapPaymentSummary(&outgoing_payment_summary)
         );
 
         let mut hashes: UnorderedSet<&PaymentHash> = UnorderedSet::new();
@@ -392,22 +400,29 @@ impl NodeState {
                 (incoming_for_chan_sat, outgoing_for_chan_sat)
             };
             let invoiced_amount = self.invoices.get(&hash).map(|i| i.amount_msat);
-            if validator
-                .validate_payment_balance(incoming_sat * 1000, outgoing_sat * 1000, invoiced_amount)
-                .is_err()
-            {
+            if let Err(err) = validator.validate_payment_balance(
+                incoming_sat * 1000,
+                outgoing_sat * 1000,
+                invoiced_amount,
+            ) {
                 if payment.is_some() && invoiced_amount.is_none() {
                     // TODO #331 - workaround for an uninvoiced existing payment
                     // is allowed to go out of balance because LDK does not
                     // provide the preimage in time and removes the incoming HTLC first.
                     warn!(
-                        "unbalanced routed payment on channel {} for hash {:?} payment state {:#?}",
-                        channel_id, hash.0, payment
+                        "unbalanced routed payment on channel {} for hash {:?} payment state {:#?}: {:}",
+                        channel_id,
+                        DebugBytes(&hash.0),
+                        payment,
+                        err,
                     );
                 } else {
                     error!(
-                        "unbalanced payment on channel {} for hash {:?} payment state {:#?}",
-                        channel_id, hash.0, payment
+                        "unbalanced payment on channel {} for hash {:?} payment state {:#?}: {:}",
+                        channel_id,
+                        DebugBytes(&hash.0),
+                        payment,
+                        err
                     );
                     unbalanced.push(hash);
                 }
@@ -441,6 +456,7 @@ impl NodeState {
                     ))
                 })?;
         }
+        *debug_on_return = false;
         Ok(())
     }
 
@@ -518,6 +534,8 @@ impl NodeState {
             let payment = self.payments.get_mut(hash).expect("created above");
             payment.apply(channel_id, incoming_sat, outgoing_sat);
         }
+
+        trace_node_state!(self);
     }
 
     /// Fulfills an HTLC.
@@ -527,9 +545,9 @@ impl NodeState {
         channel_id: &ChannelId,
         preimage: PaymentPreimage,
         validator: Arc<dyn Validator>,
-    ) {
+    ) -> bool {
         let payment_hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
-
+        let mut fulfilled = false;
         if let Some(payment) = self.payments.get_mut(&payment_hash) {
             // Getting an HTLC preimage moves HTLC values to the virtual balance of the recipient
             // on both input and output.
@@ -581,17 +599,27 @@ impl NodeState {
                     }
                 }
                 payment.preimage = Some(preimage);
+                fulfilled = true;
             }
         }
+        fulfilled
     }
 
-    fn prune_issued_invoices(&mut self, now: Duration) {
-        self.issued_invoices.retain(|_, issued| {
-            issued.duration_since_epoch + issued.expiry_duration + INVOICE_PRUNE_TIME > now
+    fn prune_issued_invoices(&mut self, now: Duration) -> bool {
+        let mut modified = false;
+        self.issued_invoices.retain(|hash, issued| {
+            let keep =
+                issued.duration_since_epoch + issued.expiry_duration + INVOICE_PRUNE_TIME > now;
+            if !keep {
+                debug!("pruning {:?} from issued_invoices", DebugBytes(&hash.0));
+                modified = true;
+            }
+            keep
         });
+        modified
     }
 
-    fn prune_invoices(&mut self, now: Duration) {
+    fn prune_invoices(&mut self, now: Duration) -> bool {
         let invoices = &mut self.invoices;
         let payments = &mut self.payments;
         let prune: UnorderedSet<_> = invoices
@@ -606,8 +634,24 @@ impl NodeState {
             })
             .collect();
 
-        invoices.retain(|hash, _| !prune.contains(hash));
-        payments.retain(|hash, _| !prune.contains(hash));
+        let mut modified = false;
+        invoices.retain(|hash, _| {
+            let keep = !prune.contains(hash);
+            if !keep {
+                debug!("pruning {:?} from invoices", DebugBytes(&hash.0));
+                modified = true;
+            }
+            keep
+        });
+        payments.retain(|hash, _| {
+            let keep = !prune.contains(hash);
+            if !keep {
+                debug!("pruning {:?} from payments", DebugBytes(&hash.0));
+                modified = true;
+            }
+            keep
+        });
+        modified
     }
 
     fn is_invoice_prunable(
@@ -623,7 +667,7 @@ impl NodeState {
         if is_past_prune_time && !is_payment_complete {
             warn!(
                 "invoice {:?} is past prune time but there are still pending outgoing payments",
-                hash
+                DebugBytes(&hash.0)
             );
         }
         is_past_prune_time && is_payment_complete
@@ -944,6 +988,7 @@ impl Node {
 
         state.velocity_control.update_spec(&policy.global_velocity_control());
         state.fee_velocity_control.update_spec(&policy.fee_velocity_control());
+        trace_node_state!(state);
     }
 
     pub(crate) fn get_node_secret(&self) -> SecretKey {
@@ -953,6 +998,11 @@ impl Node {
     /// Get an entropy source
     pub fn get_entropy_source(&self) -> &dyn EntropySource {
         &self.keys_manager
+    }
+
+    /// Clock
+    pub fn get_clock(&self) -> Arc<dyn Clock> {
+        Arc::clone(&self.clock)
     }
 
     /// Restore a node.
@@ -1539,8 +1589,11 @@ impl Node {
         // opportunity to prune invoices
         let mut state = self.get_state();
         let now = self.clock.now();
-        state.prune_invoices(now);
-        state.prune_issued_invoices(now);
+        let pruned1 = state.prune_invoices(now);
+        let pruned2 = state.prune_issued_invoices(now);
+        if pruned1 || pruned2 {
+            trace_node_state!(state);
+        }
         drop(state); // minimize lock time
 
         let tracker = self.tracker.lock().unwrap();
@@ -1792,6 +1845,7 @@ impl Node {
         drop(channels_lock);
 
         let validator = self.validator();
+        defer! { trace_node_state!(self.get_state()); }
         let mut state = self.state.lock().unwrap();
         let now = self.clock.now().as_secs();
         if !state.fee_velocity_control.insert(now, non_beneficial_sat * 1000) {
@@ -1940,6 +1994,7 @@ impl Node {
             payment_state.amount_msat
         );
 
+        defer! { trace_node_state!(self.get_state()); }
         let mut state = self.get_state();
         let policy = self.policy();
         if state.issued_invoices.len() >= policy.max_invoices() {
@@ -1954,7 +2009,7 @@ impl Node {
                 Ok(sig)
             } else {
                 Err(failed_precondition(
-                    "already have a different invoice for same secret".to_string(),
+                    "sign_invoice: already have a different invoice for same secret".to_string(),
                 ))
             };
         }
@@ -2129,8 +2184,13 @@ impl Node {
         validator: Arc<dyn Validator>,
     ) {
         let mut state = self.get_state();
+        let mut fulfilled = false;
         for preimage in preimages.into_iter() {
-            state.htlc_fulfilled(channel_id, preimage, Arc::clone(&validator));
+            fulfilled =
+                state.htlc_fulfilled(channel_id, preimage, Arc::clone(&validator)) || fulfilled;
+        }
+        if fulfilled {
+            trace_node_state!(state);
         }
     }
 
@@ -2152,6 +2212,7 @@ impl Node {
             hash.0.to_hex(),
             payment_state.amount_msat
         );
+        defer! { trace_node_state!(self.get_state()); }
         let mut state = self.get_state();
         let policy = self.policy();
         if state.invoices.len() >= policy.max_invoices() {
@@ -2165,7 +2226,9 @@ impl Node {
             return if payment_state.invoice_hash == invoice_hash {
                 Ok(true)
             } else {
-                Err(failed_precondition("already have a different invoice for same secret"))
+                Err(failed_precondition(
+                    "add_invoice: already have a different invoice for same secret",
+                ))
             };
         }
         if !state.velocity_control.insert(now.as_secs(), payment_state.amount_msat) {
@@ -2196,7 +2259,7 @@ impl Node {
         amount_msat: u64,
     ) -> Result<bool, Status> {
         let (payment_state, invoice_hash) =
-            Node::payment_state_from_keysend(payee, payment_hash, amount_msat)?;
+            Node::payment_state_from_keysend(payee, payment_hash, amount_msat, self.clock.now())?;
 
         info!(
             "{} adding payment {} -> {}",
@@ -2204,6 +2267,7 @@ impl Node {
             payment_hash.0.to_hex(),
             payment_state.amount_msat
         );
+        defer! { trace_node_state!(self.get_state()); }
         let mut state = self.get_state();
         let policy = self.policy();
         if state.invoices.len() >= policy.max_invoices() {
@@ -2218,7 +2282,9 @@ impl Node {
             return if payment_state.invoice_hash == invoice_hash {
                 Ok(true)
             } else {
-                Err(failed_precondition("already have a different payment for same secret"))
+                Err(failed_precondition(
+                    "add_keysend: already have a different payment for same secret",
+                ))
             };
         }
         let now = self.clock.now().as_secs();
@@ -2245,7 +2311,10 @@ impl Node {
             if payment_state.invoice_hash == *invoice_hash {
                 Ok(true)
             } else {
-                Err(failed_precondition("already have a different invoice for same secret"))
+                trace_node_state!(state);
+                Err(failed_precondition(
+                    "has_payment: already have a different invoice for same secret",
+                ))
             }
         } else {
             Ok(false) // not found
@@ -2282,6 +2351,7 @@ impl Node {
         payee: PublicKey,
         payment_hash: PaymentHash,
         amount_msat: u64,
+        now: Duration,
     ) -> Result<(PaymentState, [u8; 32]), Status> {
         // TODO validate the payee by generating the preimage ourselves and wrapping the inner layer
         // of the onion
@@ -2291,8 +2361,8 @@ impl Node {
             invoice_hash,
             amount_msat,
             payee,
-            duration_since_epoch: Duration::ZERO,
-            expiry_duration: Duration::ZERO,
+            duration_since_epoch: now,                // FIXME #329
+            expiry_duration: Duration::from_secs(60), // FIXME #329
             is_fulfilled: false,
             payment_type: PaymentType::Keysend,
         };
@@ -2413,6 +2483,7 @@ mod tests {
     use test_log::test;
 
     use crate::channel::ChannelBase;
+    use crate::policy::filter::{FilterRule, PolicyFilter};
     use crate::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::invoice::make_test_bolt12_invoice;
@@ -2478,7 +2549,7 @@ mod tests {
         assert!(node.add_keysend(payee_node_id.clone(), hash, 1234).unwrap());
         assert!(node.add_keysend(payee_node.node_id.clone(), hash, 1234).unwrap());
         let (_, invoice_hash) =
-            Node::payment_state_from_keysend(payee_node_id, hash, 1234).unwrap();
+            Node::payment_state_from_keysend(payee_node_id, hash, 1234, node.clock.now()).unwrap();
         assert!(node.has_payment(&hash, &invoice_hash).unwrap());
         assert!(!node.has_payment(&PaymentHash([5; 32]), &invoice_hash).unwrap());
     }
@@ -2501,16 +2572,19 @@ mod tests {
         let hash1 = PaymentHash([1; 32]);
         let channel_id2 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
 
-        // Create a strict invoice validator and one that does not validate invoices
-        let mut policy = make_simple_policy(Network::Testnet);
-        policy.require_invoices = true;
-        let invoice_validator = SimpleValidatorFactory::new_with_policy(policy).make_validator(
-            Network::Testnet,
-            node.get_id(),
-            None,
-        );
-        let lenient_validator =
-            SimpleValidatorFactory::new().make_validator(Network::Testnet, node.get_id(), None);
+        // Create a strict invoice validator
+        let strict_policy = make_simple_policy(Network::Testnet);
+        let strict_validator = SimpleValidatorFactory::new_with_policy(strict_policy)
+            .make_validator(Network::Testnet, node.get_id(), None);
+
+        // Create a lenient invoice validator
+        let mut lenient_policy = make_simple_policy(Network::Testnet);
+        let lenient_filter = PolicyFilter {
+            rules: vec![FilterRule::new_warn("policy-commitment-htlc-routing-balance")],
+        };
+        lenient_policy.filter.merge(lenient_filter);
+        let lenient_validator = SimpleValidatorFactory::new_with_policy(lenient_policy)
+            .make_validator(Network::Testnet, node.get_id(), None);
 
         state
             .validate_and_apply_payments(
@@ -2518,28 +2592,39 @@ mod tests {
                 &Map::new(),
                 &vec![(hash, 99)].into_iter().collect(),
                 &Default::default(),
-                invoice_validator.clone(),
+                strict_validator.clone(),
             )
             .expect("channel1");
 
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),
-            &vec![(hash, 12)].into_iter().collect(),
+            &vec![(hash, 52)].into_iter().collect(),
             &Default::default(),
-            invoice_validator.clone(),
+            strict_validator.clone(),
         );
         assert_eq!(result, Err(policy_error("validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"0202020202020202020202020202020202020202020202020202020202020202\"]")));
 
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),
-            &vec![(hash, 11)].into_iter().collect(),
+            &vec![(hash, 51)].into_iter().collect(),
             &Default::default(),
-            invoice_validator.clone(),
+            strict_validator.clone(),
         );
-        assert!(result.is_ok());
+        assert_validation_ok!(result);
 
+        // hash1 has no invoice, fails with strict validator, but only initially
+        let result = state.validate_and_apply_payments(
+            &channel_id,
+            &Map::new(),
+            &vec![(hash1, 5)].into_iter().collect(),
+            &Default::default(),
+            strict_validator.clone(),
+        );
+        assert_policy_err!(result, "validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"0101010101010101010101010101010101010101010101010101010101010101\"]");
+
+        // hash1 has no invoice, ok with lenient validator
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),
@@ -2547,19 +2632,17 @@ mod tests {
             &Default::default(),
             lenient_validator.clone(),
         );
+        assert_validation_ok!(result);
 
-        assert!(result.is_ok());
-
+        // hash1 has no invoice, passes with strict validator once the payment exists (TODO #331)
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),
             &vec![(hash1, 5)].into_iter().collect(),
             &Default::default(),
-            invoice_validator.clone(),
+            strict_validator.clone(),
         );
-
-        // TODO #331
-        // assert!(result.is_err());
+        assert_validation_ok!(result);
     }
 
     fn make_test_invoice(
@@ -2766,7 +2849,6 @@ mod tests {
         assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 
         let mut policy = make_simple_policy(Network::Testnet);
-        policy.require_invoices = true;
         policy.enforce_balance = true;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
@@ -2804,7 +2886,6 @@ mod tests {
         assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 
         let mut policy = make_simple_policy(Network::Testnet);
-        policy.require_invoices = true;
         policy.enforce_balance = true;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
@@ -2841,7 +2922,6 @@ mod tests {
         assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 
         let mut policy = make_simple_policy(Network::Testnet);
-        policy.require_invoices = true;
         policy.enforce_balance = true;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
@@ -2853,7 +2933,7 @@ mod tests {
                 state.validate_and_apply_payments(
                     &channel_id,
                     &Map::new(),
-                    &vec![(hash, 111)].into_iter().collect(),
+                    &vec![(hash, 151)].into_iter().collect(),
                     &Default::default(),
                     invoice_validator.clone()
                 ),
@@ -2877,8 +2957,7 @@ mod tests {
 
         assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 
-        let mut policy = make_simple_policy(Network::Testnet);
-        policy.require_invoices = true;
+        let policy = make_simple_policy(Network::Testnet);
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
         node.set_validator_factory(Arc::new(factory));
@@ -2924,7 +3003,6 @@ mod tests {
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
 
         let mut policy = make_simple_policy(Network::Testnet);
-        policy.require_invoices = true;
         policy.enforce_balance = true;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
@@ -2989,7 +3067,6 @@ mod tests {
         node.sign_invoice(&hrp, &data).unwrap();
 
         let mut policy = make_simple_policy(Network::Testnet);
-        policy.require_invoices = true;
         policy.enforce_balance = true;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);

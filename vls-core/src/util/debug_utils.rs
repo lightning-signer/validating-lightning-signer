@@ -32,7 +32,7 @@ macro_rules! log_channel_public_keys {
     };
 }
 
-/// log the enforcement state at the trace level
+/// log the enforcement state
 #[doc(hidden)]
 #[macro_export]
 macro_rules! trace_enforcement_state {
@@ -51,6 +51,18 @@ macro_rules! trace_enforcement_state {
             &$chan.enforcement_state,
             &$chan.get_chain_state()
         );
+    };
+}
+
+/// log the node state
+#[doc(hidden)]
+#[macro_export]
+macro_rules! trace_node_state {
+    ($node: expr) => {
+        #[cfg(not(feature = "debug_node_state"))]
+        trace!("{}:\n{:#?}", function!(), &$node);
+        #[cfg(feature = "debug_node_state")]
+        debug!("{}:\n{:#?}", function!(), &$node);
     };
 }
 
@@ -209,6 +221,14 @@ impl<'a> core::fmt::Debug for DebugMapPaymentState<'a> {
 /// Debug support for Map<PaymentHash, RoutedPayment>
 pub struct DebugMapRoutedPayment<'a>(pub &'a Map<PaymentHash, RoutedPayment>);
 impl<'a> core::fmt::Debug for DebugMapRoutedPayment<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_map().entries(self.0.iter().map(|(k, v)| (DebugBytes(&k.0), v))).finish()
+    }
+}
+
+/// Debug support for Map<PaymentHash, u64>
+pub struct DebugMapPaymentSummary<'a>(pub &'a Map<PaymentHash, u64>);
+impl<'a> core::fmt::Debug for DebugMapPaymentSummary<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
         f.debug_map().entries(self.0.iter().map(|(k, v)| (DebugBytes(&k.0), v))).finish()
     }

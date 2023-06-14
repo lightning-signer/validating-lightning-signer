@@ -78,6 +78,14 @@ mod tests {
             let trusted_tx = commitment_tx.trust();
             let tx = trusted_tx.built_transaction().clone();
 
+            for received_htlc in received_htlcs.clone() {
+                node.add_keysend(
+                    make_test_pubkey(1),
+                    received_htlc.payment_hash,
+                    received_htlc.value_sat * 1000,
+                )?;
+            }
+
             let _sig = chan.sign_counterparty_commitment_tx(
                 &tx.transaction,
                 &output_witscripts,
@@ -281,6 +289,14 @@ mod tests {
 
             let trusted_tx = commitment_tx.trust();
             let tx = trusted_tx.built_transaction().clone();
+
+            for received_htlc in received_htlcs.clone() {
+                node.add_keysend(
+                    make_test_pubkey(1),
+                    received_htlc.payment_hash,
+                    received_htlc.value_sat * 1000,
+                )?;
+            }
 
             let _sig = chan.sign_counterparty_commitment_tx(
                 &tx.transaction,

@@ -106,9 +106,6 @@ pub struct SimplePolicy {
     pub min_feerate_per_kw: u32,
     /// Maximum feerate
     pub max_feerate_per_kw: u32,
-    /// Require invoices for payments, and disallow keysend
-    // TODO secure keysend
-    pub require_invoices: bool,
     /// Enforce holder balance
     // TODO incoming payments
     // TODO routing
@@ -1647,8 +1644,15 @@ impl Validator for SimpleValidator {
             0
         };
         // this also implicitly implements policy-commitment-payment-invoiced
-        if self.policy.require_invoices && incoming_msat + max_to_invoice_msat < outgoing_msat {
-            policy_err!(self, "policy-routing-balanced", "incoming < outgoing");
+        if incoming_msat + max_to_invoice_msat < outgoing_msat {
+            policy_err!(
+                self,
+                "policy-routing-balanced",
+                "incoming_msat + max_to_invoice_msat < outgoing_msat: {} + {} < {}",
+                incoming_msat,
+                max_to_invoice_msat,
+                outgoing_msat
+            );
         }
         Ok(())
     }
@@ -1846,7 +1850,6 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             use_chain_state: false,
             min_feerate_per_kw: 253,    // mainnet observed
             max_feerate_per_kw: 25_000, // equiv to 100 sat/vb
-            require_invoices: false,
             enforce_balance: false,
             max_routing_fee_msat: 10000,
             dev_flags: None,
@@ -1868,9 +1871,8 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             use_chain_state: false,
             min_feerate_per_kw: 253,     // testnet/regtest observed
             max_feerate_per_kw: 151_000, // CLN max_feerate 150_000 common
-            require_invoices: false,
             enforce_balance: false,
-            max_routing_fee_msat: 10000,
+            max_routing_fee_msat: 50_000, // CLN test_large_mpp_presplit
             dev_flags: None,
             filter: PolicyFilter::default(),
             global_velocity_control: VelocityControlSpec::UNLIMITED,
@@ -1903,7 +1905,6 @@ mod tests {
             use_chain_state: true,
             min_feerate_per_kw: 1000,
             max_feerate_per_kw: 1000 * 1000,
-            require_invoices: false,
             enforce_balance: false,
             max_routing_fee_msat: 10000,
             dev_flags: None,

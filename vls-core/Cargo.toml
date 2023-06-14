@@ -23,14 +23,15 @@ grpc = ["tonic"]
 
 test_utils = ["use_backtrace", "lightning/_test_utils", "lightning/unsafe_revoked_tx_signing", "bitcoin/bitcoinconsensus", "txoo/test-utils"]
 
-debug = ["log_pretty_print", "debug_enforcement_state"]
+debug = ["log_pretty_print", "debug_enforcement_state", "debug_node_state"]
 
 use_backtrace = ["backtrace"]
 
 log_pretty_print = []
 
-# trace the enforcement_state at debug level
+# trace state at debug level
 debug_enforcement_state = []
+debug_node_state = []
 
 # issue #187
 tracker_size_workaround = []

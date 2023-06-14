@@ -109,8 +109,7 @@ macro_rules! assert_failed_precondition_err {
 macro_rules! assert_validation_ok {
     ($res: expr) => {
         if $res.is_err() {
-            // avoid printing the backtrace ...
-            panic!("unexepected ValidationError: {:#?}", $res.unwrap_err().kind);
+            panic!("unexepected ValidationError: {:#?}", $res.unwrap_err());
         }
     };
 }
@@ -1177,6 +1176,14 @@ pub fn validate_holder_commitment(
         .expect("scripts");
         let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
+        for offered_htlc in commit_tx_ctx.offered_htlcs.clone() {
+            node_ctx.node.add_keysend(
+                make_test_pubkey(1),
+                offered_htlc.payment_hash,
+                offered_htlc.value_sat * 1000,
+            )?;
+        }
+
         chan.validate_holder_commitment_tx(
             &commit_tx_ctx.tx.as_ref().unwrap().trust().built_transaction().transaction,
             &output_witscripts,
@@ -1623,6 +1630,14 @@ where
         let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
 
         let tx = commit_tx_ctx.tx.as_ref().unwrap().trust().built_transaction().transaction.clone();
+
+        for offered_htlc in commit_tx_ctx.offered_htlcs.clone() {
+            node_ctx.node.add_keysend(
+                make_test_pubkey(1),
+                offered_htlc.payment_hash,
+                offered_htlc.value_sat * 1000,
+            )?;
+        }
 
         chan.validate_holder_commitment_tx(
             &tx,

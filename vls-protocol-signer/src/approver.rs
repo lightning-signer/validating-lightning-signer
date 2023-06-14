@@ -10,6 +10,7 @@ use lightning_signer::node::{Node, SpendType};
 use lightning_signer::policy::error::ValidationErrorKind;
 use lightning_signer::prelude::{Mutex, SendSync};
 use lightning_signer::util::clock::Clock;
+use lightning_signer::util::debug_utils::DebugBytes;
 use lightning_signer::util::status::Status;
 use lightning_signer::util::velocity::VelocityControl;
 use lightning_signer::wallet::Wallet;
@@ -60,7 +61,8 @@ pub trait Approve: SendSync {
         if node.has_payment(&payment_hash, &invoice_hash)? {
             debug!(
                 "node already approved invoice with payment_hash {:?} invoice_hash {:?}",
-                &payment_hash, &invoice_hash
+                DebugBytes(&payment_hash.0),
+                DebugBytes(&invoice_hash)
             );
             return Ok(true);
         }
@@ -100,14 +102,16 @@ pub trait Approve: SendSync {
         payment_hash: PaymentHash,
         amount_msat: u64,
     ) -> Result<bool, Status> {
+        let now = node.get_clock().now();
         let (_payment_state, invoice_hash) =
-            Node::payment_state_from_keysend(payee, payment_hash, amount_msat)?;
+            Node::payment_state_from_keysend(payee, payment_hash, amount_msat, now)?;
 
         // shortcut if node already has this payment
         if node.has_payment(&payment_hash, &invoice_hash)? {
             debug!(
                 "node already approved keysend with payment_hash {:?} invoice_hash {:?}",
-                &payment_hash, &invoice_hash
+                DebugBytes(&payment_hash.0),
+                DebugBytes(&invoice_hash)
             );
             return Ok(true);
         }
@@ -118,7 +122,10 @@ pub trait Approve: SendSync {
         // otherwise ask approver
         if self.approve_keysend(payment_hash, amount_msat) {
             debug!("keysend to {:?} approved with amount {}", payee, amount_msat);
-            node.add_keysend(payee, payment_hash, amount_msat)
+            node.add_keysend(payee, payment_hash, amount_msat).map_err(|err| {
+                warn!("add_keysend failed: {}", err);
+                err
+            })
         } else {
             warn!("keysend to {:?} not approved with amount {}", payee, amount_msat);
             Ok(false)
@@ -204,7 +211,11 @@ impl Approve for WarningPositiveApprover {
     }
 
     fn approve_keysend(&self, payment_hash: PaymentHash, amount_msat: u64) -> bool {
-        warn!("AUTOAPPROVED KEYSEND of {} msat with payment_hash {:?}", amount_msat, payment_hash);
+        warn!(
+            "AUTOAPPROVED KEYSEND of {} msat with payment_hash {:?}",
+            amount_msat,
+            DebugBytes(&payment_hash.0)
+        );
         true
     }
 
@@ -356,6 +367,7 @@ mod tests {
     use lightning_signer::invoice::InvoiceAttributes;
     use lightning_signer::lightning::ln::PaymentHash;
     use lightning_signer::node::{Node, PaymentState};
+    use lightning_signer::util::clock::Clock;
     use lightning_signer::util::clock::ManualClock;
     use lightning_signer::util::test_utils::{
         make_current_test_invoice, make_node, make_test_invoice,
@@ -425,11 +437,11 @@ mod tests {
         let spec = VelocityControlSpec { limit_msat: 1000, interval_type: Hourly };
         let control = VelocityControl::new(spec);
         let approver = VelocityApprover::new(clock.clone(), control, delegate);
-        let (payment_hash, payment_state) = make_keysend_payment(1);
+        let (payment_hash, payment_state) = make_keysend_payment(1, clock.now());
         let success = approver.approve_keysend(payment_hash, payment_state.amount_msat);
         assert!(success);
 
-        let (payment_hash, payment_state) = make_keysend_payment(2);
+        let (payment_hash, payment_state) = make_keysend_payment(2, clock.now());
         let success = approver.approve_keysend(payment_hash, payment_state.amount_msat);
         assert!(!success);
         assert_eq!(approver.control.lock().unwrap().velocity(), 600);
@@ -442,23 +454,23 @@ mod tests {
         let spec = VelocityControlSpec { limit_msat: 1000, interval_type: Hourly };
         let control = VelocityControl::new(spec);
         let approver = VelocityApprover::new(clock.clone(), control, delegate);
-        let (payment_hash, payment_state) = make_keysend_payment(1);
+        let (payment_hash, payment_state) = make_keysend_payment(1, clock.now());
         let success = approver.approve_keysend(payment_hash, payment_state.amount_msat);
         assert!(success);
         assert_eq!(approver.control.lock().unwrap().velocity(), 600);
 
-        let (payment_hash, payment_state) = make_keysend_payment(2);
+        let (payment_hash, payment_state) = make_keysend_payment(2, clock.now());
         let success = approver.approve_keysend(payment_hash, payment_state.amount_msat);
         assert!(success);
         // the approval of the second invoice should have cleared the velocity control
         assert_eq!(approver.control.lock().unwrap().velocity(), 0);
     }
 
-    fn make_keysend_payment(x: u8) -> (PaymentHash, PaymentState) {
+    fn make_keysend_payment(x: u8, now: Duration) -> (PaymentHash, PaymentState) {
         let payee = PublicKey::from_slice(&[2u8; 33]).unwrap();
         let payment_hash = PaymentHash([x; 32]);
         let (payment_state, _invoice_hash) =
-            Node::payment_state_from_keysend(payee, payment_hash, 600).unwrap();
+            Node::payment_state_from_keysend(payee, payment_hash, 600, now).unwrap();
         (payment_hash, payment_state)
     }
 
@@ -473,8 +485,9 @@ mod tests {
 
     #[test]
     fn test_keysend_approver_with_warning() {
+        let clock = Arc::new(ManualClock::new(Duration::ZERO));
         let approver = WarningPositiveApprover();
-        let (payment_hash, payment_state) = make_keysend_payment(1);
+        let (payment_hash, payment_state) = make_keysend_payment(1, clock.now());
         let success = approver.approve_keysend(payment_hash, payment_state.amount_msat);
         assert!(success);
     }

@@ -316,6 +316,7 @@ mod tests {
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
     use lightning_signer::tx::tx::HTLCInfo2;
     use lightning_signer::util::clock::StandardClock;
+    use lightning_signer::util::test_utils::key::make_test_pubkey;
     use lightning_signer::util::test_utils::*;
 
     use lightning_signer::util::ser_util::VecWriter;
@@ -409,6 +410,14 @@ mod tests {
 
                 let payment_hash = PaymentHash([0x34u8; 32]);
                 let htlcs = vec![HTLCInfo2 { value_sat: 1000, payment_hash, cltv_expiry: 100 }];
+
+                for offered_htlc in htlcs.clone() {
+                    node.add_keysend(
+                        make_test_pubkey(1),
+                        offered_htlc.payment_hash,
+                        offered_htlc.value_sat * 1000,
+                    )?;
+                }
 
                 channel.advance_holder_commitment(
                     &counterparty_key,

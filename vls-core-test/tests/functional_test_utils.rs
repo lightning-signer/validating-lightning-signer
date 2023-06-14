@@ -1363,7 +1363,7 @@ pub fn create_network<'a, 'b: 'a, 'c: 'b>(
             logger: Arc::clone(&cfgs[i].logger),
             blocks: RefCell::new(vec![(genesis_block(Network::Regtest).header, 0)]),
             connect_style: Rc::clone(&connect_style),
-            use_invoices: false
+            use_invoices: true,
         })
     }
 
