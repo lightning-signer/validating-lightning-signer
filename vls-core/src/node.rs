@@ -39,7 +39,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 #[allow(unused_imports)]
-use log::{debug, info, trace, warn};
+use log::*;
 use serde_bolt::to_vec;
 
 use crate::chain::tracker::ChainTracker;
@@ -364,8 +364,8 @@ impl NodeState {
         validator: Arc<dyn Validator>,
     ) -> Result<(), ValidationError> {
         debug!(
-            "validating payments on channel {} - in {:?} out {:?}",
-            channel_id, incoming_payment_summary, outgoing_payment_summary
+            "{} validating payments on channel {} - in {:?} out {:?}",
+            self.log_prefix, channel_id, incoming_payment_summary, outgoing_payment_summary
         );
 
         let mut hashes: UnorderedSet<&PaymentHash> = UnorderedSet::new();
@@ -396,7 +396,21 @@ impl NodeState {
                 .validate_payment_balance(incoming_sat * 1000, outgoing_sat * 1000, invoiced_amount)
                 .is_err()
             {
-                unbalanced.push(hash);
+                if payment.is_some() && invoiced_amount.is_none() {
+                    // TODO #331 - workaround for an uninvoiced existing payment
+                    // is allowed to go out of balance because LDK does not
+                    // provide the preimage in time and removes the incoming HTLC first.
+                    warn!(
+                        "unbalanced routed payment on channel {} for hash {:?} payment state {:#?}",
+                        channel_id, hash.0, payment
+                    );
+                } else {
+                    error!(
+                        "unbalanced payment on channel {} for hash {:?} payment state {:#?}",
+                        channel_id, hash.0, payment
+                    );
+                    unbalanced.push(hash);
+                }
             }
         }
 
@@ -2544,7 +2558,8 @@ mod tests {
             invoice_validator.clone(),
         );
 
-        assert!(result.is_err());
+        // TODO #331
+        // assert!(result.is_err());
     }
 
     fn make_test_invoice(
@@ -2844,6 +2859,61 @@ mod tests {
                 ),
                 Err(policy_error("validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925\"]"))
             );
+        }
+    }
+
+    #[test]
+    fn htlc_fail_test() {
+        let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        // another channel ID
+        let channel_id2 = ChannelId::new(&[1; 32]);
+
+        let preimage = PaymentPreimage([0; 32]);
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+
+        let invoice = make_test_invoice(&payee_node, "invoice", hash);
+
+        assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
+
+        let mut policy = make_simple_policy(Network::Testnet);
+        policy.require_invoices = true;
+        let factory = SimpleValidatorFactory::new_with_policy(policy);
+        let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
+        node.set_validator_factory(Arc::new(factory));
+
+        let empty = Map::new();
+        {
+            let mut state = node.get_state();
+            state
+                .validate_and_apply_payments(
+                    &channel_id,
+                    &empty,
+                    &vec![(hash, 90)].into_iter().collect(),
+                    &Default::default(),
+                    invoice_validator.clone(),
+                )
+                .unwrap();
+            // payment summarizer now generates a zero for failed HTLCs
+            state
+                .validate_and_apply_payments(
+                    &channel_id,
+                    &empty,
+                    &vec![(hash, 0)].into_iter().collect(),
+                    &Default::default(),
+                    invoice_validator.clone(),
+                )
+                .unwrap();
+            state
+                .validate_and_apply_payments(
+                    &channel_id2,
+                    &empty,
+                    &vec![(hash, 90)].into_iter().collect(),
+                    &Default::default(),
+                    invoice_validator.clone(),
+                )
+                .unwrap();
         }
     }
 
