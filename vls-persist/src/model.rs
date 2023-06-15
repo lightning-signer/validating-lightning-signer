@@ -8,12 +8,14 @@ use core::iter::FromIterator;
 use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{Network, OutPoint};
-use lightning_signer::chain::tracker::{ChainTracker, ListenSlot};
+use lightning_signer::chain::tracker::{ChainTracker, Headers, ListenSlot};
 use serde::{Deserialize, Serialize};
 use serde_with::hex::Hex;
 use serde_with::serde_as;
 
 use lightning_signer::bitcoin;
+use lightning_signer::bitcoin::hashes::Hash;
+use lightning_signer::bitcoin::{BlockHeader, FilterHeader};
 use lightning_signer::channel::ChannelId;
 use lightning_signer::channel::ChannelSetup;
 use lightning_signer::monitor::ChainMonitor;
@@ -208,7 +210,16 @@ impl ChainTrackerEntry {
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
     ) -> ChainTracker<ChainMonitor> {
-        let tip = deserialize(&self.tip).expect("deserialize tip");
+        let tip: Headers = match deserialize::<Headers>(&self.tip) {
+            Err(_) => {
+                log::warn!("Failed to deserialize tip, falling back on old format.  This is expected if you are upgrading from a version prior to 0.9.0");
+                let tip = deserialize::<BlockHeader>(&self.tip).expect("fallback deserialize tip");
+                // Signal to the [`ChainTracker`] that the filter header was not available.
+                // This is used to upgrade old signers.  This should only happen once.
+                Headers(tip, FilterHeader::all_zeros())
+            }
+            Ok(t) => t,
+        };
         let headers =
             self.headers.iter().map(|h| deserialize(h).expect("deserialize header")).collect();
         let listeners =

@@ -3488,6 +3488,7 @@ mod tests {
         assert_eq!(a.to_string(), "tb1qr8j660jqglj0x2axua26u0qcyuxhanycx4sr49");
         assert!(node.can_spend(&[0], &a.script_pubkey()).unwrap());
         assert!(!node.can_spend(&[1], &a.script_pubkey()).unwrap());
+        #[allow(deprecated)]
         let a = node.get_wrapped_address(&[0]).unwrap();
         assert_eq!(a.to_string(), "2NBaG2jeH1ahh6cMcYBF1RAcZRZsTPqLNLZ");
     }
