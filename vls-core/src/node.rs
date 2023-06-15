@@ -2574,6 +2574,7 @@ mod tests {
 
         // Create a strict invoice validator
         let strict_policy = make_simple_policy(Network::Testnet);
+        let max_fee = strict_policy.max_routing_fee_msat / 1000;
         let strict_validator = SimpleValidatorFactory::new_with_policy(strict_policy)
             .make_validator(Network::Testnet, node.get_id(), None);
 
@@ -2599,7 +2600,7 @@ mod tests {
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),
-            &vec![(hash, 52)].into_iter().collect(),
+            &vec![(hash, max_fee + 2)].into_iter().collect(),
             &Default::default(),
             strict_validator.clone(),
         );
@@ -2608,7 +2609,7 @@ mod tests {
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),
-            &vec![(hash, 51)].into_iter().collect(),
+            &vec![(hash, max_fee + 1)].into_iter().collect(),
             &Default::default(),
             strict_validator.clone(),
         );
@@ -2923,6 +2924,7 @@ mod tests {
 
         let mut policy = make_simple_policy(Network::Testnet);
         policy.enforce_balance = true;
+        let max_fee = policy.max_routing_fee_msat / 1000;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
         node.set_validator_factory(Arc::new(factory));
@@ -2933,7 +2935,7 @@ mod tests {
                 state.validate_and_apply_payments(
                     &channel_id,
                     &Map::new(),
-                    &vec![(hash, 151)].into_iter().collect(),
+                    &vec![(hash, 100 + max_fee + 1)].into_iter().collect(),
                     &Default::default(),
                     invoice_validator.clone()
                 ),
