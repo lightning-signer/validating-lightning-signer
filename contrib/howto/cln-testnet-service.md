@@ -25,6 +25,7 @@ bitcoin-rpcuser=rpcuser
 bitcoin-rpcpassword=6ffb57ab46aa726
 bitcoin-rpcconnect=127.0.0.1
 bitcoin-rpcport=18332
+max-locktime-blocks=288
 EOL
 EOF
 ```
@@ -65,7 +66,6 @@ VLS_NETWORK=testnet
 # VLS_BIND=0.0.0.0
 BITCOIND_RPC_URL=http://rpcuser:6ffb57ab46aa726@localhost:18332
 GREENLIGHT_VERSION=v0.11.0.1-62-g92cc76a
-VLS_CHAINFOLLOWER_ENABLE=1
 EOL
 EOF
 ```
