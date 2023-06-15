@@ -4,6 +4,7 @@ use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
 use bitcoin::secp256k1::PublicKey;
 use core::fmt::Debug;
+use core::ops::Index;
 use lightning::chain::keysinterface::EntropySource;
 
 use crate::channel::{Channel, ChannelId, ChannelStub};
@@ -16,7 +17,73 @@ use crate::prelude::*;
 pub mod model;
 
 /// A list of mutations memorized by a memorizing persister
-pub type Mutations = Vec<(String, (u64, Vec<u8>))>;
+#[derive(Clone)]
+#[must_use]
+pub struct Mutations(Vec<(String, (u64, Vec<u8>))>);
+
+impl Mutations {
+    /// Create a new empty list of mutations
+    pub fn new() -> Self {
+        Mutations(vec![])
+    }
+
+    /// Create a new list of mutations from a vector
+    pub fn from_vec(mutations: Vec<(String, (u64, Vec<u8>))>) -> Self {
+        Mutations(mutations)
+    }
+
+    /// Add a new mutation to the list
+    pub fn add(&mut self, key: String, version: u64, value: Vec<u8>) {
+        self.0.push((key, (version, value)));
+    }
+
+    /// Return a reference to the list of mutations
+    pub fn inner(&self) -> &Vec<(String, (u64, Vec<u8>))> {
+        &self.0
+    }
+
+    /// Return the list of mutations
+    pub fn into_inner(self) -> Vec<(String, (u64, Vec<u8>))> {
+        self.0
+    }
+
+    /// Return an iterator
+    pub fn iter(&self) -> impl Iterator<Item = &(String, (u64, Vec<u8>))> {
+        self.0.iter()
+    }
+
+    /// Into iterator
+    pub fn into_iter(self) -> impl Iterator<Item = (String, (u64, Vec<u8>))> {
+        self.0.into_iter()
+    }
+
+    /// Whether the list is empty
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Return the number of mutations
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl Index<usize> for Mutations {
+    type Output = (String, (u64, Vec<u8>));
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+/// Debug printer for Mutations which uses hex encoded strings.
+impl Debug for Mutations {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_list()
+            .entries(self.0.iter().map(|(k, v)| (k.clone(), (&v.0, DebugBytes(&v.1[..])))))
+            .finish()
+    }
+}
 
 /// Storage context, for memorizing implementations
 pub trait Context {
@@ -28,7 +95,7 @@ struct DummyContext;
 
 impl Context for DummyContext {
     fn exit(&self) -> Mutations {
-        vec![]
+        Mutations::new()
     }
 }
 
@@ -411,6 +478,7 @@ impl ExternalPersistHelper {
     }
 }
 
+use crate::util::debug_utils::DebugBytes;
 #[cfg(feature = "std")]
 pub use simple_entropy::SimpleEntropy;
 
@@ -444,8 +512,8 @@ pub fn compute_shared_hmac(secret: &[u8], nonce: &[u8], kvs: &Mutations) -> [u8;
     let mut hmac_engine = HmacEngine::<Sha256Hash>::new(&secret);
     hmac_engine.input(secret);
     hmac_engine.input(nonce);
-    for (key, (version, value)) in kvs {
-        add_to_hmac(&key, *version, &value, &mut hmac_engine);
+    for (key, (version, value)) in kvs.iter() {
+        add_to_hmac(key, *version, value, &mut hmac_engine);
     }
     Hmac::from_engine(hmac_engine).into_inner()
 }
@@ -465,15 +533,15 @@ mod tests {
         let shared_secret = [0; 32];
         let mut helper = ExternalPersistHelper::new(shared_secret);
         let mut kvs = Mutations::new();
-        kvs.push(("foo".to_string(), (0, vec![0x01])));
-        kvs.push(("bar".to_string(), (0, vec![0x02])));
+        kvs.add("foo".to_string(), 0, vec![0x01]);
+        kvs.add("bar".to_string(), 0, vec![0x02]);
 
         let nonce = helper.new_nonce(&SimpleEntropy::new());
         let hmac = compute_shared_hmac(&shared_secret, &nonce, &kvs);
         assert!(helper.check_hmac(&kvs, hmac.to_vec()));
 
         // mutating the data should fail the hmac
-        kvs.push(("baz".to_string(), (0, vec![0x03])));
+        kvs.add("baz".to_string(), 0, vec![0x03]);
         assert!(!helper.check_hmac(&kvs, hmac.to_vec()));
     }
 }

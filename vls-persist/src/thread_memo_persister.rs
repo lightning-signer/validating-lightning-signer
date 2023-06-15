@@ -142,7 +142,7 @@ impl State {
         for key in self.dirty.iter() {
             res.push((key.clone(), store.get(key).cloned().unwrap()));
         }
-        res
+        Mutations::from_vec(res)
     }
 }
 
@@ -446,7 +446,7 @@ mod tests {
         );
         assert_eq!(dirty[0].1 .0, 0);
 
-        persister.enter(Default::default()).exit();
+        let _ = persister.enter(Default::default()).exit();
     }
 
     #[test]
@@ -493,7 +493,7 @@ mod tests {
         persister.delete_node(&node_id).unwrap();
         let nodes = persister.get_nodes().unwrap();
         assert_eq!(nodes.len(), 0);
-        ctx.exit();
+        let _ = ctx.exit();
     }
 
     #[test]
@@ -511,7 +511,7 @@ mod tests {
         assert_eq!(*err, "test");
 
         // entering another context should not panic because context was dropped
-        persister.enter(Default::default()).exit();
+        let _ = persister.enter(Default::default()).exit();
     }
 
     #[test]
@@ -528,7 +528,7 @@ mod tests {
         assert_eq!(*err, "must call exit() and handle the returned entries");
 
         // entering another context should not panic because context was dropped
-        persister.enter(Default::default()).exit();
+        let _ = persister.enter(Default::default()).exit();
     }
 
     #[test]
@@ -548,7 +548,7 @@ mod tests {
             persister.enter(Default::default());
         })
         .expect_err("should have panicked");
-        ctx.exit();
+        let _ = ctx.exit();
     }
 
     #[test]

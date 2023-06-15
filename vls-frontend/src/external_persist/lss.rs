@@ -96,7 +96,9 @@ impl ExternalPersist for Client {
     async fn get(&self, key_prefix: String, nonce: &[u8]) -> Result<(Mutations, Vec<u8>), Error> {
         let mut client = self.client.lock().await;
         let (kvs, received_hmac) = client.get(key_prefix, nonce).await?;
-        let mutations = kvs.into_iter().map(|(k, v)| (k, (v.version as u64, v.value))).collect();
+        let mutations = Mutations::from_vec(
+            kvs.into_iter().map(|(k, v)| (k, (v.version as u64, v.value))).collect(),
+        );
         Ok((mutations, received_hmac))
     }
 

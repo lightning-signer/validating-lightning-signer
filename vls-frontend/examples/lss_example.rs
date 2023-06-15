@@ -6,7 +6,7 @@
 //!    cargo run --example lss_example
 
 use lightning_signer::bitcoin::{secp256k1, Network};
-use lightning_signer::persist::ExternalPersistHelper;
+use lightning_signer::persist::{ExternalPersistHelper, Mutations};
 use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::signer::my_keys_manager::MyKeysManager;
 use lightning_signer::signer::ClockStartingTimeFactory;
@@ -52,10 +52,10 @@ async fn main() {
 
     let client = Client::new(rpc_url, &server_pubkey, auth).await.unwrap();
 
-    let mutations = vec![
+    let mutations = Mutations::from_vec(vec![
         ("x1".to_string(), (0u64, "v1".as_bytes().to_vec())),
         ("x2".to_string(), (0u64, "v2".as_bytes().to_vec())),
-    ];
+    ]);
 
     let client_hmac = helper.client_hmac(&mutations);
     let server_hmac = helper.server_hmac(&mutations);
