@@ -408,28 +408,28 @@ impl<A: Approve> Approve for MemoApprover<A> {
             match approval {
                 Approval::Invoice(approved_invoice) => {
                     if approved_invoice.invoice_hash() == invoice.invoice_hash() {
-                        return true
+                        return true;
                     }
                 }
-                _ => {},
+                _ => {}
             }
         }
-        return self.delegate.approve_invoice(invoice)
+        return self.delegate.approve_invoice(invoice);
     }
 
     fn approve_keysend(&self, payment_hash: PaymentHash, amount_msat: u64) -> bool {
         let mut approvals = self.approvals.lock().unwrap();
         for approval in approvals.drain(..) {
             match approval {
-                Approval::KeySend(approved_payment_hash, approved_amount_msat) => {
-                    if approved_payment_hash == payment_hash && approved_amount_msat == amount_msat {
-                        return true
-                    }
-                }
-                _ => {},
+                Approval::KeySend(approved_payment_hash, approved_amount_msat) =>
+                    if approved_payment_hash == payment_hash && approved_amount_msat == amount_msat
+                    {
+                        return true;
+                    },
+                _ => {}
             }
         }
-        return self.delegate.approve_keysend(payment_hash, amount_msat)
+        return self.delegate.approve_keysend(payment_hash, amount_msat);
     }
 
     fn approve_onchain(
@@ -441,15 +441,14 @@ impl<A: Approve> Approve for MemoApprover<A> {
         let mut approvals = self.approvals.lock().unwrap();
         for approval in approvals.drain(..) {
             match approval {
-                Approval::Onchain(approved_tx) => {
+                Approval::Onchain(approved_tx) =>
                     if approved_tx == *tx {
-                        return true
-                    }
-                }
+                        return true;
+                    },
                 _ => {}
             }
         }
-        return self.delegate.approve_onchain(tx, values_sat, unknown_indices)
+        return self.delegate.approve_onchain(tx, values_sat, unknown_indices);
     }
 }
 
