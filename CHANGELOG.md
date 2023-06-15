@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.9.1-rc.1] - 2023-06-15: "Beta 1.1"
+
+### Added
+
+- Handler::with_persist for modifications to the node requiring persist to cloud
+- MemoApprover
+- Node::update_velocity_controls to sync node with updated control specs (#295)
+- ability to update VelocityApprover control
+- commands to generate and dump sample persist data, and unit test restore of data
+- persister: BackupPersister - write to a main persister and sync to backup persister (#314)
+- debug_node_state logging feature
+
+### Changed
+
+- serialization backwards compatibility with 0.2
+- core: Remove policy.require_invoices flag, always enforce
+- Decrease allowable testnet locktime on us (to_self_delay) to speed sweeps of force-closed  nodes
+- core: Replace debug_vals!() with dbgvals!() which is heap friendly
+- ci: don't require Changelog entries for merge commits
+- core: Increase testnet max_routing_fee_msat to 50_000 to clear CLN integration test
+- howto: Consolidate vlsd2 config files in ~/.lightning-signer/
+- howto: Decrease allowable testnet to_self_delay to allow earlier sweeps of force-closed channels
+
+### Removed
+
+- howto: Remove deprecated VLS_CHAINFOLLOWER_ENABLE=1 ([#294])
+
+### Fixed
+
+- core: Add workaround for keysend expiration ([#329])
+- handing of failed HTLCs in payment accounting
+- restore invoices and issued_invoices
+- restore payments state
+- workaround unbalanced routed payment with LDK - see #331
+
+
 ## [0.9.0] - 2023-05-29: "Beta 1"
 
 ### Added

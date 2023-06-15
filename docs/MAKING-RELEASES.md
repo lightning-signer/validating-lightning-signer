@@ -16,14 +16,13 @@ Here's a checklist for the release process.
 
 ### Preparing for -rc.1
 
+1. Create a new CHANGELOG.md heading `<VERSION>-rc.1`
+1. Use `scripts/harvest-changelog <PREVIOUS>..` to collect the changelog entries from pull
+   request commit messages and merge them into the manually maintained
+   `CHANGELOG.md`.
 1. Check that `CHANGELOG.md` is well formatted, ordered in areas,
    covers all significant changes, and sub-ordered approximately by user impact
    & coolness.
-1. Use `scripts/harvest-changelog` to collect the changelog entries from pull
-   request commit messages and merge them into the manually maintained
-   `CHANGELOG.md`.
-1. Create a new CHANGELOG.md heading to `v<VERSION>-rc.1`, and create a link at
-   the bottom.
 1. Create a PR with the above.
 
 ### Releasing -rc.1

@@ -62,7 +62,6 @@ def format_section(section_name, items):
         for item in items:
             print(f" - {item}")
         print("")
-        print("")
 
 
 def normalize(tag):
