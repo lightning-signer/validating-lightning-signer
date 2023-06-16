@@ -321,7 +321,7 @@ impl Persist for ThreadMemoPersister {
         Ok(())
     }
 
-    fn new_chain_tracker(
+    fn new_tracker(
         &self,
         node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,

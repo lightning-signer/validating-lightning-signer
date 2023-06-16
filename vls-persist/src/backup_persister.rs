@@ -90,15 +90,15 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
         self.backup.delete_channel(node_id, channel_id)
     }
 
-    fn new_chain_tracker(
+    fn new_tracker(
         &self,
         node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,
     ) -> Result<(), Error> {
         if self.main_is_ready() {
-            self.main.new_chain_tracker(node_id, tracker)?;
+            self.main.new_tracker(node_id, tracker)?;
         }
-        self.backup.new_chain_tracker(node_id, tracker)
+        self.backup.new_tracker(node_id, tracker)
     }
 
     fn update_tracker(
@@ -262,7 +262,7 @@ mod tests {
             todo!()
         }
 
-        fn new_chain_tracker(
+        fn new_tracker(
             &self,
             node_id: &PublicKey,
             tracker: &ChainTracker<ChainMonitor>,
@@ -280,7 +280,7 @@ mod tests {
             node_id: &PublicKey,
             tracker: &ChainTracker<ChainMonitor>,
         ) -> Result<(), Error> {
-            self.new_chain_tracker(node_id, tracker)
+            self.new_tracker(node_id, tracker)
         }
 
         fn get_tracker(
@@ -388,7 +388,7 @@ mod tests {
         let node_id = node.get_id();
 
         persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state()).unwrap();
-        persister.new_chain_tracker(&node_id, &node.get_tracker()).unwrap();
+        persister.new_tracker(&node_id, &node.get_tracker()).unwrap();
 
         let nodes1 = persister.get_nodes().unwrap();
         assert_eq!(nodes1.len(), 1);

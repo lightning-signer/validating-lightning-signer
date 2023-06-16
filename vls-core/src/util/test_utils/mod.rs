@@ -64,7 +64,7 @@ use crate::util::crypto_utils::{derive_public_key, payload_for_p2wpkh, payload_f
 use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
 use crate::wallet::Wallet;
-use crate::Arc;
+use crate::{Arc, CommitmentPointProvider};
 use key::{
     make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
 };
@@ -291,7 +291,10 @@ pub fn make_test_channel_setup_with_points(
         is_outbound,
         channel_value_sat: 3_000_000,
         push_value_msat: 0,
-        funding_outpoint: bitcoin::OutPoint { txid: Txid::from_slice(&[2u8; 32]).unwrap(), vout: 0 },
+        funding_outpoint: bitcoin::OutPoint {
+            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
+            vout: 0,
+        },
         holder_selected_contest_delay: 6,
         holder_shutdown_script: None,
         counterparty_points,
@@ -2057,5 +2060,23 @@ impl MockListener {
     /// Create a new mock listener
     pub fn new(watch: bitcoin::OutPoint) -> Self {
         MockListener { watch, watch2: Mutex::new(None), watch_delta: Mutex::new((vec![], vec![])) }
+    }
+}
+
+pub struct DummyCommitmentPointProvider {}
+
+impl SendSync for DummyCommitmentPointProvider {}
+
+impl CommitmentPointProvider for DummyCommitmentPointProvider {
+    fn get_holder_commitment_point(&self, _commitment_number: u64) -> PublicKey {
+        todo!()
+    }
+
+    fn get_counterparty_commitment_point(&self, _commitment_number: u64) -> Option<PublicKey> {
+        todo!()
+    }
+
+    fn clone_box(&self) -> Box<dyn CommitmentPointProvider> {
+        todo!()
     }
 }

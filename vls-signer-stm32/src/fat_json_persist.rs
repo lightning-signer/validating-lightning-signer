@@ -320,7 +320,7 @@ impl Persist for FatJsonPersister {
         unimplemented!();
     }
 
-    fn new_chain_tracker(
+    fn new_tracker(
         &self,
         _node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,

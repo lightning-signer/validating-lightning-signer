@@ -133,7 +133,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
         Ok(())
     }
 
-    fn new_chain_tracker(
+    fn new_tracker(
         &self,
         node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,
@@ -365,7 +365,7 @@ mod tests {
             let (persister, temp_dir, path) = make_temp_persister();
             let persister: Arc<dyn Persist> = Arc::new(persister);
             persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state()).unwrap();
-            persister.new_chain_tracker(&node_id, &node.get_tracker()).unwrap();
+            persister.new_tracker(&node_id, &node.get_tracker()).unwrap();
             persister.new_channel(&node_id, &stub).unwrap();
 
             let services = NodeServices {

@@ -509,28 +509,9 @@ impl SendSync for ChainMonitor {}
 mod tests {
     use crate::util::test_utils::*;
     use bitcoin::hashes::Hash;
-    use bitcoin::secp256k1::PublicKey;
     use test_log::test;
 
     use super::*;
-
-    struct DummyCommitmentPointProvider {}
-
-    impl SendSync for DummyCommitmentPointProvider {}
-
-    impl CommitmentPointProvider for DummyCommitmentPointProvider {
-        fn get_holder_commitment_point(&self, _commitment_number: u64) -> PublicKey {
-            todo!()
-        }
-
-        fn get_counterparty_commitment_point(&self, _commitment_number: u64) -> Option<PublicKey> {
-            todo!()
-        }
-
-        fn clone_box(&self) -> Box<dyn CommitmentPointProvider> {
-            todo!()
-        }
-    }
 
     #[test]
     fn test_funding() {

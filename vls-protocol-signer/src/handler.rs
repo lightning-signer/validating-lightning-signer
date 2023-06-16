@@ -281,9 +281,7 @@ impl RootHandlerBuilder {
             // NOTE: if we persist to LSS, we don't actually persist the seed here,
             // and the caller must provide the seed each time we restore from persistence
             persister.new_node(&node.get_id(), &config, &*node.get_state()).expect("new_node");
-            persister
-                .new_chain_tracker(&node.get_id(), &node.get_tracker())
-                .expect("new_chain_tracker");
+            persister.new_tracker(&node.get_id(), &node.get_tracker()).expect("new_chain_tracker");
             node
         } else {
             assert_eq!(nodes.len(), 1);

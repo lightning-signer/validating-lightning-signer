@@ -3,7 +3,6 @@ use lightning_signer::prelude::*;
 use alloc::sync::Arc;
 use core::fmt;
 use core::fmt::{Display, Formatter};
-use core::iter::FromIterator;
 use std::collections::BTreeMap;
 
 use bitcoin::consensus::{deserialize, serialize};
@@ -19,7 +18,7 @@ use lightning_signer::bitcoin::hashes::Hash;
 use lightning_signer::bitcoin::{BlockHeader, FilterHeader};
 use lightning_signer::channel::ChannelId;
 use lightning_signer::channel::ChannelSetup;
-use lightning_signer::monitor::{ChainMonitor, ChainMonitorBase};
+use lightning_signer::monitor::ChainMonitor;
 use lightning_signer::monitor::State as ChainMonitorState;
 use lightning_signer::node::{NodeState, PaymentState};
 use lightning_signer::persist::model::ChannelEntry as CoreChannelEntry;
@@ -248,7 +247,7 @@ mod tests {
     use lightning_signer::bitcoin::hashes::Hash;
     use lightning_signer::bitcoin::FilterHeader;
     use lightning_signer::chain::tracker::{ChainTracker, Error, Headers};
-    use lightning_signer::monitor::ChainMonitor;
+    use lightning_signer::monitor::{ChainMonitor, ChainMonitorBase};
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
     use lightning_signer::util::test_utils::*;
     use test_log::test;
@@ -257,7 +256,8 @@ mod tests {
     fn test_chain_tracker() -> Result<(), Error> {
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);
         let outpoint = OutPoint::new(tx.txid(), 0);
-        let monitor = ChainMonitor::new(outpoint, 0);
+        let monitor = ChainMonitorBase::new(outpoint, 0)
+            .as_monitor(Box::new(DummyCommitmentPointProvider {}));
         monitor.add_funding(&tx, 0);
         let genesis = genesis_block(Network::Regtest);
         let validator_factory = Arc::new(SimpleValidatorFactory::new());
