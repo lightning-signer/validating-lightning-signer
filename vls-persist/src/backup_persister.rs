@@ -7,7 +7,7 @@ use lightning_signer::node::{NodeConfig, NodeState};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
-use lightning_signer::persist::{Context, Error, Persist};
+use lightning_signer::persist::{ChainTrackerListenerEntry, Context, Error, Persist};
 use lightning_signer::policy::validator::ValidatorFactory;
 use lightning_signer::prelude::*;
 use lightning_signer::{Arc, SendSync};
@@ -116,7 +116,7 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
         &self,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
-    ) -> Result<ChainTracker<ChainMonitor>, Error> {
+    ) -> Result<(ChainTracker<ChainMonitor>, Vec<ChainTrackerListenerEntry>), Error> {
         if self.main_is_ready() {
             self.main.get_tracker(node_id, validator_factory)
         } else {
@@ -287,7 +287,7 @@ mod tests {
             &self,
             node_id: PublicKey,
             validator_factory: Arc<dyn ValidatorFactory>,
-        ) -> Result<ChainTracker<ChainMonitor>, Error> {
+        ) -> Result<(ChainTracker<ChainMonitor>, Vec<ChainTrackerListenerEntry>), Error> {
             let state = self.state.lock().unwrap();
             let key = format!("node/tracker/{}", &node_id.serialize().to_hex());
             let value = state.get(&key).unwrap();

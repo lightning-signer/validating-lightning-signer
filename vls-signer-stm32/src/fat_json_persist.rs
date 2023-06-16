@@ -30,6 +30,7 @@ use lightning_signer::{
 use vls_persist::model::{
     AllowlistItemEntry, ChainTrackerEntry, ChannelEntry, NodeEntry, NodeStateEntry,
 };
+use vls_protocol_signer::lightning_signer::persist::ChainTrackerListenerEntry;
 
 use crate::setup::SetupFS;
 
@@ -346,7 +347,7 @@ impl Persist for FatJsonPersister {
         &self,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
-    ) -> Result<ChainTracker<ChainMonitor>, persist::Error> {
+    ) -> Result<(ChainTracker<ChainMonitor>, Vec<ChainTrackerListenerEntry>), persist::Error> {
         let key = Self::chaintracker_key();
         let entry: ChainTrackerEntry = serde_json::from_str(
             &self.read_value(&Self::chaintracker_bucket_path(), &key).map_err(|err| err.into())?,

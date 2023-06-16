@@ -3,7 +3,6 @@ use lightning_signer::prelude::*;
 use alloc::sync::Arc;
 use core::fmt;
 use core::fmt::{Display, Formatter};
-use std::collections::BTreeMap;
 
 use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::secp256k1::PublicKey;
@@ -22,6 +21,7 @@ use lightning_signer::monitor::ChainMonitor;
 use lightning_signer::monitor::State as ChainMonitorState;
 use lightning_signer::node::{NodeState, PaymentState};
 use lightning_signer::persist::model::ChannelEntry as CoreChannelEntry;
+use lightning_signer::persist::ChainTrackerListenerEntry;
 use lightning_signer::policy::validator::{EnforcementState, ValidatorFactory};
 use lightning_signer::policy::DEFAULT_FEE_VELOCITY_CONTROL;
 use lightning_signer::util::ser_util::{ChannelIdHandler, OutPointDef};
@@ -190,7 +190,7 @@ pub struct ChainTrackerEntry {
     height: u32,
     network: Network,
     #[serde_as(as = "Vec<(OutPointDef, (_, _))>")]
-    listeners: OrderedMap<OutPoint, (ChainMonitorState, ListenSlot)>,
+    listeners: Vec<(OutPoint, (ChainMonitorState, ListenSlot))>,
 }
 
 impl From<&ChainTracker<ChainMonitor>> for ChainTrackerEntry {
@@ -212,7 +212,7 @@ impl ChainTrackerEntry {
         self,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
-    ) -> ChainTracker<ChainMonitor> {
+    ) -> (ChainTracker<ChainMonitor>, Vec<ChainTrackerListenerEntry>) {
         let tip: Headers = match deserialize::<Headers>(&self.tip) {
             Err(_) => {
                 log::warn!("Failed to deserialize tip, falling back on old format.  This is expected if you are upgrading from a version prior to 0.9.0");
@@ -225,14 +225,22 @@ impl ChainTrackerEntry {
         };
         let headers =
             self.headers.iter().map(|h| deserialize(h).expect("deserialize header")).collect();
-        ChainTracker::restore(
-            headers,
-            tip,
-            self.height,
-            self.network,
-            BTreeMap::new(),
-            node_id,
-            validator_factory,
+        let listeners: Vec<_> = self
+            .listeners
+            .into_iter()
+            .map(|(outpoint, (state, slot))| ChainTrackerListenerEntry(outpoint, (state, slot)))
+            .collect();
+        (
+            ChainTracker::restore(
+                headers,
+                tip,
+                self.height,
+                self.network,
+                OrderedMap::new(),
+                node_id,
+                validator_factory,
+            ),
+            listeners,
         )
     }
 }
@@ -247,7 +255,7 @@ mod tests {
     use lightning_signer::bitcoin::hashes::Hash;
     use lightning_signer::bitcoin::FilterHeader;
     use lightning_signer::chain::tracker::{ChainTracker, Error, Headers};
-    use lightning_signer::monitor::{ChainMonitor, ChainMonitorBase};
+    use lightning_signer::monitor::ChainMonitorBase;
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
     use lightning_signer::util::test_utils::*;
     use test_log::test;
@@ -256,8 +264,8 @@ mod tests {
     fn test_chain_tracker() -> Result<(), Error> {
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);
         let outpoint = OutPoint::new(tx.txid(), 0);
-        let monitor = ChainMonitorBase::new(outpoint, 0)
-            .as_monitor(Box::new(DummyCommitmentPointProvider {}));
+        let commitment_point_provider = Box::new(DummyCommitmentPointProvider {});
+        let monitor = ChainMonitorBase::new(outpoint, 0).as_monitor(commitment_point_provider);
         monitor.add_funding(&tx, 0);
         let genesis = genesis_block(Network::Regtest);
         let validator_factory = Arc::new(SimpleValidatorFactory::new());
@@ -274,8 +282,7 @@ mod tests {
         let entry = ChainTrackerEntry::from(&tracker);
         let json = serde_json::to_string(&entry).expect("json");
         let entry_de: ChainTrackerEntry = serde_json::from_str(&json).expect("de json");
-        let _tracker_de: ChainTracker<ChainMonitor> =
-            entry_de.into_tracker(node_id, validator_factory);
+        let _ = entry_de.into_tracker(node_id, validator_factory);
         Ok(())
     }
 }

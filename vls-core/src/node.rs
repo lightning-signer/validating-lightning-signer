@@ -1134,14 +1134,106 @@ impl Node {
         allowlist: Vec<Allowable>,
         services: NodeServices,
         state: NodeState,
-    ) -> Node {
+    ) -> Arc<Node> {
         let (keys_manager, node_id) = Self::make_keys_manager(node_config, seed, &services);
-        let tracker = services
+        let (tracker, listener_entries) = services
             .persister
             .get_tracker(node_id.clone(), services.validator_factory.clone())
             .expect("get tracker from persister");
 
-        Self::new_full(node_config, allowlist, services, state, keys_manager, node_id, tracker)
+        let persister = services.persister.clone();
+
+        let node = Arc::new(Self::new_full(
+            node_config,
+            allowlist,
+            services,
+            state,
+            keys_manager,
+            node_id,
+            tracker,
+        ));
+
+        let blockheight = node.get_tracker().height();
+
+        let mut listeners = OrderedMap::from_iter(listener_entries.into_iter().map(|e| (e.0, e.1)));
+
+        for (channel_id0, channel_entry) in
+            persister.get_node_channels(&node_id).expect("node channels")
+        {
+            let mut channels = node.channels.lock().unwrap();
+            let channel_id = channel_entry.id;
+            let enforcement_state = channel_entry.enforcement_state;
+
+            info!(
+                "  Restore channel {} outpoint {:?}",
+                channel_id0,
+                channel_entry.channel_setup.as_ref().map(|s| s.funding_outpoint)
+            );
+            let mut keys = node.keys_manager.get_channel_keys_with_id(
+                channel_id0.clone(),
+                channel_entry.channel_value_satoshis,
+            );
+            let setup_opt = channel_entry.channel_setup;
+            match setup_opt {
+                None => {
+                    let stub = ChannelStub {
+                        node: Arc::downgrade(&node),
+                        secp_ctx: Secp256k1::new(),
+                        keys,
+                        id0: channel_id0.clone(),
+                        blockheight: channel_entry.blockheight.unwrap_or(blockheight),
+                    };
+                    let slot = Arc::new(Mutex::new(ChannelSlot::Stub(stub)));
+                    channels.insert(channel_id0, Arc::clone(&slot));
+                    channel_id.map(|id| channels.insert(id, Arc::clone(&slot)));
+                }
+                Some(setup) => {
+                    let channel_transaction_parameters =
+                        Node::channel_setup_to_channel_transaction_parameters(
+                            &setup,
+                            keys.pubkeys(),
+                        );
+                    keys.provide_channel_parameters(&channel_transaction_parameters);
+                    let funding_outpoint = setup.funding_outpoint;
+                    // Clone the matching monitor from the chaintracker's listeners
+                    let (tracker_state, tracker_slot) =
+                        listeners.remove(&funding_outpoint).unwrap_or_else(|| {
+                            panic!("No chain tracker listener for {}", setup.funding_outpoint)
+                        });
+                    let monitor_base = ChainMonitorBase::new_from_persistence(
+                        funding_outpoint.clone(),
+                        tracker_state,
+                    );
+                    let channel = Channel {
+                        node: Arc::downgrade(&node),
+                        secp_ctx: Secp256k1::new(),
+                        keys,
+                        enforcement_state,
+                        setup,
+                        id0: channel_id0.clone(),
+                        id: channel_id.clone(),
+                        monitor: monitor_base.clone(),
+                    };
+
+                    channel.restore_payments();
+                    let slot = Arc::new(Mutex::new(ChannelSlot::Ready(channel)));
+                    let provider = Box::new(ChannelCommitmentPointProvider::new(slot.clone()));
+                    let monitor = monitor_base.as_monitor(provider);
+                    node.get_tracker().restore_listener(
+                        funding_outpoint.clone(),
+                        monitor,
+                        tracker_slot,
+                    );
+                    channels.insert(channel_id0, Arc::clone(&slot));
+                    channel_id.map(|id| channels.insert(id, Arc::clone(&slot)));
+                }
+            };
+            node.keys_manager.increment_channel_id_child_index();
+        }
+        if !listeners.is_empty() {
+            panic!("Some chain tracker listeners were not restored: {:?}", listeners);
+        }
+        node
     }
 
     fn new_full(
@@ -1391,72 +1483,6 @@ impl Node {
         Ok((channel_id.clone(), Some(ChannelSlot::Stub(stub))))
     }
 
-    // unit test coverage outside crate
-    pub(crate) fn restore_channel(
-        &self,
-        channel_id0: ChannelId,
-        channel_id: Option<ChannelId>,
-        channel_value_sat: u64,
-        channel_setup: Option<ChannelSetup>,
-        enforcement_state: EnforcementState,
-        blockheight: u32,
-        arc_self: &Arc<Node>,
-    ) -> Result<Arc<Mutex<ChannelSlot>>, ()> {
-        let mut channels = self.channels.lock().unwrap();
-        assert!(!channels.contains_key(&channel_id0));
-        let mut keys =
-            self.keys_manager.get_channel_keys_with_id(channel_id0.clone(), channel_value_sat);
-
-        let slot = match channel_setup {
-            None => {
-                let stub = ChannelStub {
-                    node: Arc::downgrade(arc_self),
-                    secp_ctx: Secp256k1::new(),
-                    keys,
-                    id0: channel_id0.clone(),
-                    blockheight,
-                };
-                // TODO this clone is expensive
-                let slot = Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone())));
-                channels.insert(channel_id0, Arc::clone(&slot));
-                channel_id.map(|id| channels.insert(id, Arc::clone(&slot)));
-                slot
-            }
-            Some(setup) => {
-                let channel_transaction_parameters =
-                    Node::channel_setup_to_channel_transaction_parameters(&setup, keys.pubkeys());
-                keys.provide_channel_parameters(&channel_transaction_parameters);
-                let funding_outpoint = setup.funding_outpoint;
-                // Clone the matching monitor from the chaintracker's listeners
-                let monitor = arc_self
-                    .get_tracker()
-                    .listeners
-                    .get_key_value(&funding_outpoint)
-                    .expect("monitor key")
-                    .1
-                     .0
-                    .as_base();
-                let channel = Channel {
-                    node: Arc::downgrade(arc_self),
-                    secp_ctx: Secp256k1::new(),
-                    keys,
-                    enforcement_state,
-                    setup,
-                    id0: channel_id0.clone(),
-                    id: channel_id.clone(),
-                    monitor,
-                };
-                // TODO this clone is expensive
-                let slot = Arc::new(Mutex::new(ChannelSlot::Ready(channel.clone())));
-                channels.insert(channel_id0, Arc::clone(&slot));
-                channel_id.map(|id| channels.insert(id, Arc::clone(&slot)));
-                slot
-            }
-        };
-        self.keys_manager.increment_channel_id_child_index();
-        Ok(slot)
-    }
-
     /// Restore a node from a persisted [NodeEntry].
     ///
     /// You can get the [NodeEntry] from [Persist::get_nodes].
@@ -1493,10 +1519,9 @@ impl Node {
             state.payments.insert(*h, RoutedPayment::new());
         }
 
-        let node = Arc::new(Node::new_from_persistence(config, seed, allowlist, services, state));
+        let node = Node::new_from_persistence(config, seed, allowlist, services, state);
         assert_eq!(&node.get_id(), node_id);
         info!("Restore node {} on {}", node_id, config.network);
-
         if let Some((height, _hash, filter_header, header)) = get_latest_checkpoint(network) {
             let mut tracker = node.get_tracker();
             if tracker.height() == 0 {
@@ -1504,29 +1529,6 @@ impl Node {
                 tracker.headers = VecDeque::new();
                 tracker.tip = Headers(header, filter_header);
                 tracker.height = height;
-            }
-        }
-        // Use the current blockheight if stub blockheight was not persisted
-        let blockheight = node.get_tracker().height();
-
-        for (channel_id0, channel_entry) in
-            persister.get_node_channels(node_id).expect("node channels")
-        {
-            info!("  Restore channel {}", channel_id0);
-            let slot_arc = node
-                .restore_channel(
-                    channel_id0,
-                    channel_entry.id,
-                    channel_entry.channel_value_satoshis,
-                    channel_entry.channel_setup,
-                    channel_entry.enforcement_state,
-                    channel_entry.blockheight.unwrap_or(blockheight),
-                    &node,
-                )
-                .expect("restore channel");
-            let slot = slot_arc.lock().unwrap();
-            if let ChannelSlot::Ready(channel) = &*slot {
-                channel.restore_payments();
             }
         }
 

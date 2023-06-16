@@ -308,6 +308,11 @@ impl<L: ChainListener> ChainTracker<L> {
         Ok(headers.0)
     }
 
+    /// Restore a listener
+    pub fn restore_listener(&mut self, outpoint: L::Key, listener: L, slot: ListenSlot) {
+        self.listeners.insert(outpoint, (listener, slot));
+    }
+
     // Notify listeners of a block remove.
     // If txs is None, this is a streamed block, and the transactions were already
     // provided as push events.

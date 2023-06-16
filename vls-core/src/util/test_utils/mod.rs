@@ -2077,6 +2077,6 @@ impl CommitmentPointProvider for DummyCommitmentPointProvider {
     }
 
     fn clone_box(&self) -> Box<dyn CommitmentPointProvider> {
-        todo!()
+        Box::new(DummyCommitmentPointProvider {})
     }
 }

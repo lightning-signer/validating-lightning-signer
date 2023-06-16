@@ -11,7 +11,7 @@ use lightning_signer::node::{NodeConfig, NodeState as CoreNodeState};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
-use lightning_signer::persist::{Error, Persist};
+use lightning_signer::persist::{ChainTrackerListenerEntry, Error, Persist};
 use lightning_signer::policy::validator::{EnforcementState, ValidatorFactory};
 use lightning_signer::prelude::*;
 use log::error;
@@ -160,7 +160,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
         &self,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
-    ) -> Result<ChainTracker<ChainMonitor>, Error> {
+    ) -> Result<(ChainTracker<ChainMonitor>, Vec<ChainTrackerListenerEntry>), Error> {
         let key = node_id.serialize().to_vec();
         let value = self
             .chain_tracker_bucket
