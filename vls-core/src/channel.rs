@@ -2373,6 +2373,16 @@ impl CommitmentPointProvider for ChannelCommitmentPointProvider {
         chan.get_counterparty_commitment_point(commitment_number)
     }
 
+    fn get_transaction_parameters(&self) -> ChannelTransactionParameters {
+        let slot = self.chan.lock().unwrap();
+        let chan = match &*slot {
+            ChannelSlot::Stub(_) => panic!("unexpected stub"),
+            ChannelSlot::Ready(c) => c,
+        };
+
+        chan.make_channel_parameters()
+    }
+
     fn clone_box(&self) -> Box<dyn CommitmentPointProvider> {
         Box::new(ChannelCommitmentPointProvider { chan: self.chan.clone() })
     }

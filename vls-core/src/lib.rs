@@ -93,7 +93,9 @@ pub use alloc::collections::BTreeSet as OrderedSet;
 pub use alloc::rc::Rc;
 #[doc(hidden)]
 pub use alloc::sync::{Arc, Weak};
+
 use bitcoin::secp256k1::PublicKey;
+use lightning::ln::chan_utils::ChannelTransactionParameters;
 
 #[cfg(not(feature = "std"))]
 mod nostd;
@@ -142,6 +144,8 @@ pub trait CommitmentPointProvider: SendSync {
     /// It might not be known if we didn't reach that commitment number yet
     /// or it's a revoked commitment transaction and we don't store revocation secrets.
     fn get_counterparty_commitment_point(&self, commitment_number: u64) -> Option<PublicKey>;
+    /// Get channel transaction parameters, for decoding on-chain transactions
+    fn get_transaction_parameters(&self) -> ChannelTransactionParameters;
     /// Clone
     fn clone_box(&self) -> Box<dyn CommitmentPointProvider>;
 }

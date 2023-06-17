@@ -1,14 +1,17 @@
 use alloc::collections::BTreeSet as Set;
+use core::ops::{Deref, DerefMut};
 
+use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{BlockHash, BlockHeader, OutPoint, PackedLockTime, Transaction, TxIn, TxOut, Txid};
-use push_decoder::Listener as PushListener;
+use log::*;
+use push_decoder::{self, Listener as _};
 use serde_derive::{Deserialize, Serialize};
 
 use crate::chain::tracker::ChainListener;
 use crate::policy::validator::ChainState;
 use crate::prelude::*;
+use crate::util::transaction_utils::{decode_commitment_number, parse_closing_tx};
 use crate::{Arc, CommitmentPointProvider};
-use log::*;
 
 /// State
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -38,6 +41,22 @@ pub struct State {
     decode_state: Option<BlockDecodeState>,
 }
 
+struct PushListener<'a>(&'a mut State, &'a CommitmentPointProvider);
+
+impl Deref for PushListener<'_> {
+    type Target = State;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl DerefMut for PushListener<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0
+    }
+}
+
 // A state change detected in a block, to be applied to the monitor state
 #[derive(Clone, Debug, Serialize, Deserialize)]
 enum StateChange {
@@ -45,8 +64,9 @@ enum StateChange {
     FundingConfirmed(OutPoint),
     // A funding transaction was double spent, the double-spent funding input is provided
     FundingDoubleSpent(OutPoint),
-    // A closing transaction was confirmed.  The closing transaction is provided
-    ClosingConfirmed(Txid, Transaction),
+    // A closing transaction was confirmed.
+    // The funding outpoint, our output index and HTLC output indexes are provided
+    ClosingConfirmed(Txid, OutPoint, Option<u32>, Vec<u32>),
 }
 
 // Keep track of the state of a block push-decoder parse state
@@ -68,10 +88,10 @@ struct BlockDecodeState {
 
 const MAX_COMMITMENT_OUTPUTS: u32 = 600;
 
-impl PushListener for State {
+impl<'a> push_decoder::Listener for PushListener<'a> {
     fn on_block_start(&mut self, header: &BlockHeader) {
         let block_hash = header.block_hash();
-        self.on_block_start(block_hash);
+        self.0.on_block_start(block_hash);
     }
 
     fn on_transaction_start(&mut self, version: i32) {
@@ -89,27 +109,28 @@ impl PushListener for State {
         if self.is_not_ready_for_push() {
             return;
         }
-        let state = self.decode_state.as_mut().expect("decode state");
+
         if self.funding_inputs.contains(&input.previous_output) {
             // A funding input was spent
-            // TODO ignore this if this was actually the funding tx we expected
+            let state = self.decode_state.as_mut().expect("decode state");
             state.changes.push(StateChange::FundingDoubleSpent(input.previous_output));
         }
 
         if Some(input.previous_output) == self.funding_outpoint {
-            // closing tx
-            state.closing_tx = Some(Transaction {
+            let state = self.decode_state.as_mut().expect("decode state");
+            let tx = Transaction {
                 version: state.version,
                 lock_time: PackedLockTime::ZERO,
                 input: vec![input.clone()],
                 output: vec![],
-            });
+            };
+            state.closing_tx = Some(tx);
         }
 
+        let state = self.decode_state.as_mut().expect("decode state");
         if state.closing_tx.is_some() {
             assert_eq!(state.input_num, 0, "closing tx must have only one input");
         }
-
         state.input_num += 1;
     }
 
@@ -134,11 +155,11 @@ impl PushListener for State {
         if self.is_not_ready_for_push() {
             return;
         }
-        let state = self.decode_state.as_mut().expect("decode state");
 
         if let Some(ind) = self.funding_txids.iter().position(|i| *i == txid) {
-            // This was a funding transaction, which just confirmed
             let vout = self.funding_vouts[ind];
+            let state = self.decode_state.as_mut().expect("decode state");
+            // This was a funding transaction, which just confirmed
             assert!(
                 vout < state.output_num,
                 "tx {} doesn't have funding output index {}",
@@ -149,9 +170,44 @@ impl PushListener for State {
             state.changes.push(StateChange::FundingConfirmed(outpoint));
         }
 
-        if let Some(mut closing_tx) = state.closing_tx.take() {
-            closing_tx.lock_time = lock_time;
-            state.changes.push(StateChange::ClosingConfirmed(txid.clone(), closing_tx.clone()));
+        let state = self.decode_state.as_mut().expect("decode state");
+        let closing_tx = state.closing_tx.take().map(|mut tx| {
+            tx.lock_time = lock_time;
+            tx
+        });
+
+        // separate block because of borrow checker
+        if let Some(closing_tx) = closing_tx {
+            // closing tx
+            assert_eq!(closing_tx.input.len(), 1);
+            let provider = self.1;
+            let parameters = provider.get_transaction_parameters();
+
+            let commitment_number_opt = decode_commitment_number(&closing_tx, &parameters);
+            if let Some(commitment_number) = commitment_number_opt {
+                let secp_ctx = Secp256k1::new();
+                info!("unilateral close at commitment {} confirmed", commitment_number);
+                let holder_per_commitment = provider.get_holder_commitment_point(commitment_number);
+                let cp_per_commitment =
+                    provider.get_counterparty_commitment_point(commitment_number);
+                let (our_output_index, htlc_indices) = parse_closing_tx(
+                    &closing_tx,
+                    &holder_per_commitment,
+                    &cp_per_commitment,
+                    &parameters,
+                    &secp_ctx,
+                );
+                info!("our_output_index: {:?}, htlc_indices: {:?}", our_output_index, htlc_indices);
+                let state = self.decode_state.as_mut().expect("decode state");
+                state.changes.push(StateChange::ClosingConfirmed(
+                    txid,
+                    closing_tx.input[0].previous_output,
+                    our_output_index,
+                    htlc_indices,
+                ));
+            } else {
+                info!("mutual close {} confirmed", txid);
+            }
         }
     }
 
@@ -206,12 +262,18 @@ impl State {
                     // no matter whether funding, or double-spend, we want to stop watching these outputs
                     removes.push(outpoint);
                 }
-                StateChange::ClosingConfirmed(_txid, closing_tx) => {
-                    assert_eq!(closing_tx.input.len(), 1);
+                StateChange::ClosingConfirmed(
+                    txid,
+                    funding_outpoint,
+                    our_output_index,
+                    htlcs_indices,
+                ) => {
                     self.closing_height = Some(self.height);
-                    removes.push(closing_tx.input[0].previous_output);
-                    // TODO watch the outputs of the closing tx
-                    // adds.extend();
+                    removes.push(funding_outpoint);
+                    our_output_index.map(|i| adds.push(OutPoint { txid: txid.clone(), vout: i }));
+                    for i in htlcs_indices {
+                        adds.push(OutPoint { txid: txid.clone(), vout: i });
+                    }
                 }
             }
         }
@@ -262,19 +324,26 @@ impl State {
                     // no matter whether funding, or double-spend, we want to stop watching these outputs
                     removes.push(outpoint);
                 }
-                StateChange::ClosingConfirmed(_txid, closing_tx) => {
+                StateChange::ClosingConfirmed(
+                    txid,
+                    funding_outpoint,
+                    our_output_index,
+                    htlcs_indices,
+                ) => {
                     // A closing tx was reorged-out
                     assert_eq!(self.closing_height, Some(self.height));
-                    assert_eq!(closing_tx.input.len(), 1);
                     self.closing_height = None;
-                    removes.push(closing_tx.input[0].previous_output);
-                    // TODO watch the outputs of the closing tx
-                    // adds.extend();
+                    our_output_index.map(|i| adds.push(OutPoint { txid: txid.clone(), vout: i }));
+                    for i in htlcs_indices {
+                        adds.push(OutPoint { txid: txid.clone(), vout: i });
+                    }
+                    removes.push(funding_outpoint)
                 }
             }
         }
         self.height -= 1;
 
+        // note that the caller will remove the adds and add the removes
         (adds, removes)
     }
 
@@ -423,6 +492,26 @@ impl ChainMonitor {
         let state = self.state.lock().expect("lock");
         state.funding_double_spent_height.map(|h| state.height + 1 - h).unwrap_or(0)
     }
+
+    fn push_transactions(&self, block_hash: &BlockHash, txs: &[Transaction]) {
+        let mut state = self.state.lock().expect("lock");
+        state.on_block_start(*block_hash);
+
+        let mut listener = PushListener(&mut state, &*self.commitment_point_provider);
+
+        // stream the transactions to the state
+        for tx in txs {
+            listener.on_transaction_start(tx.version);
+            for input in tx.input.iter() {
+                listener.on_transaction_input(input);
+            }
+
+            for output in tx.output.iter() {
+                listener.on_transaction_output(output);
+            }
+            listener.on_transaction_end(tx.lock_time, tx.txid());
+        }
+    }
 }
 
 impl ChainListener for ChainMonitor {
@@ -438,22 +527,9 @@ impl ChainListener for ChainMonitor {
         block_hash: &BlockHash,
     ) -> (Vec<OutPoint>, Vec<OutPoint>) {
         debug!("on_add_block for {}", self.funding_outpoint);
+        self.push_transactions(block_hash, txs);
+
         let mut state = self.state.lock().expect("lock");
-
-        // stream the transactions to the state
-        state.on_block_start(*block_hash);
-        for tx in txs {
-            state.on_transaction_start(tx.version);
-            for input in tx.input.iter() {
-                state.on_transaction_input(input);
-            }
-
-            for output in tx.output.iter() {
-                state.on_transaction_output(output);
-            }
-            state.on_transaction_end(tx.lock_time, tx.txid());
-        }
-
         state.on_add_block_end(block_hash)
     }
 
@@ -467,22 +543,10 @@ impl ChainListener for ChainMonitor {
         txs: &[Transaction],
         block_hash: &BlockHash,
     ) -> (Vec<OutPoint>, Vec<OutPoint>) {
+        debug!("on_remove_block for {}", self.funding_outpoint);
+        self.push_transactions(block_hash, txs);
+
         let mut state = self.state.lock().expect("lock");
-
-        // stream the transactions to the state
-        state.on_block_start(*block_hash);
-        for tx in txs {
-            state.on_transaction_start(tx.version);
-            for input in tx.input.iter() {
-                state.on_transaction_input(input);
-            }
-
-            for output in tx.output.iter() {
-                state.on_transaction_output(output);
-            }
-            state.on_transaction_end(tx.lock_time, tx.txid());
-        }
-
         state.on_remove_block_end(block_hash)
     }
 
@@ -496,10 +560,11 @@ impl ChainListener for ChainMonitor {
 
     fn on_push<F>(&self, f: F)
     where
-        F: FnOnce(&mut dyn PushListener),
+        F: FnOnce(&mut dyn push_decoder::Listener),
     {
         let mut state = self.state.lock().expect("lock");
-        f(&mut *state);
+        let mut listener = PushListener(&mut *state, &*self.commitment_point_provider);
+        f(&mut listener);
     }
 }
 

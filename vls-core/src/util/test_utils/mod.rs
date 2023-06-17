@@ -2076,6 +2076,10 @@ impl CommitmentPointProvider for DummyCommitmentPointProvider {
         todo!()
     }
 
+    fn get_transaction_parameters(&self) -> ChannelTransactionParameters {
+        todo!()
+    }
+
     fn clone_box(&self) -> Box<dyn CommitmentPointProvider> {
         Box::new(DummyCommitmentPointProvider {})
     }
