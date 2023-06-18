@@ -10,13 +10,27 @@ sudo systemctl stop cln-testnet vls-testnet
 ```
 
 ### Install CLBOSS
+
+On Debian (and Ubuntu):
 ```
 sudo apt update
 sudo apt install build-essential pkg-config libev-dev libcurl4-gnutls-dev libsqlite3-dev -y
 sudo apt install dnsutils -y
 sudo apt install git automake autoconf-archive libtool -y
+```
 
-sudo chown -R user:user /usr/local/src
+On Fedora:
+```
+sudo dnf update
+sudo dnf groupinstall "Development Tools" -y
+sudo dnf install pkg-config libev-devel libcurl-devel libsqlite3x-devel -y
+sudo dnf install dnsutils -y
+sudo dnf install git automake autoconf-archive libtool -y
+```
+
+On Both:
+```
+sudo chown -R $USER:$USER /usr/local/src
 cd /usr/local/src
 git clone --recurse-submodules https://github.com/ksedgwic/clboss.git
 cd clboss
