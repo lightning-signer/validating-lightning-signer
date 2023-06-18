@@ -11,9 +11,20 @@ Ensure that `bitcoind-testnet` service is running.
 
 ### Install nginx
 
+On Debian (and Ubuntu):
 ```
 sudo apt-get update
 sudo apt-get install -y nginx
+```
+
+On Fedora:
+```
+sudo dnf update
+sudo dnf install -y nginx
+```
+
+On Both:
+```
 sudo systemctl start nginx
 sudo systemctl enable nginx
 ```
@@ -97,6 +108,11 @@ journalctl -u txood-testnet
 ```
 
 ### Setup web sync
+
+On Fedora:
+```
+sudo dnf install cronie cronie-anacron
+```
 
 ```shell
 sudo cp ~/lightning-signer/txoo/contrib/{sync-txoo-local,render-txoo} /usr/local/bin/
