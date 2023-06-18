@@ -42,6 +42,11 @@ Install log rotation config file (edit to suit preferences):
 sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/bitcoind-testnet.logrotate /etc/logrotate.d/bitcoind-testnet
 ```
 
+On Fedora we have to enable permissive mode for SELinux, change `SELINUX=permissive`
+```
+sudo vi /etc/selinux/config
+```
+
 Enable the  service for automatic start on system boot:
 ```
 sudo systemctl enable bitcoind-testnet
