@@ -2241,7 +2241,7 @@ impl Node {
             return Ok(false);
         }
         state.invoices.insert(hash, payment_state);
-        state.payments.insert(hash, RoutedPayment::new());
+        state.payments.entry(hash).or_insert_with(RoutedPayment::new);
         self.persister.update_node(&self.get_id(), &*state).expect("node persistence failure");
 
         Ok(true)
@@ -2298,7 +2298,7 @@ impl Node {
             return Ok(false);
         }
         state.invoices.insert(payment_hash, payment_state);
-        state.payments.insert(payment_hash, RoutedPayment::new());
+        state.payments.entry(payment_hash).or_insert_with(RoutedPayment::new);
         self.persister.update_node(&self.get_id(), &*state).expect("node persistence failure");
 
         Ok(true)
