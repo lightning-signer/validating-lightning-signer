@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [0.9.1-rc.1] - 2023-06-15: "Beta 1.1"
+## [0.9.1-rc.2] - 2023-06-15: "Beta 1.1"
 
 ### Added
 
@@ -38,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - restore invoices and issued_invoices
 - restore payments state
 - workaround unbalanced routed payment with LDK - see #331
+- core: Don't clear pre-existing payments state on add_{invoice,keysend}
 
 
 ## [0.9.0] - 2023-05-29: "Beta 1"
