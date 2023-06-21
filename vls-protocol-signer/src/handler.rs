@@ -38,6 +38,7 @@ use lightning_signer::signer::my_keys_manager::MyKeysManager;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
+use lightning_signer::{function, trace_node_state};
 use log::*;
 use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
@@ -290,6 +291,7 @@ impl RootHandlerBuilder {
             info!("Restore node {}", node_id);
             Node::restore_node(&node_id, entry, &self.seed, self.services)?
         };
+        trace_node_state!(node.get_state());
 
         Ok(RootHandler { id: self.id, node, approver: self.approver, lss_state: self.lss_state })
     }

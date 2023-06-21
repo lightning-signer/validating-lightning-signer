@@ -16,7 +16,8 @@ secp-lowmemory = ["vls-core/secp-lowmemory"]
 use_backtrace = ["vls-core/use_backtrace"]
 tracker_size_workaround = ["vls-core/tracker_size_workaround"]
 log_pretty_print = []
-debug = ["vls-core/debug", "log_pretty_print"]
+debug_node_state = []
+debug = ["vls-core/debug", "log_pretty_print", "debug_node_state"]
 
 [dependencies]
 vls-core = { path = "../vls-core", version = "0.9.1", default-features = false }
