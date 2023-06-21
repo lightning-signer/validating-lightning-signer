@@ -326,6 +326,18 @@ impl NodeState {
         }
     }
 
+    /// Return a summary for debugging
+    pub fn summary(&self) -> String {
+        format!(
+            "NodeState::summary {}: {} invoices, {} issued_invoices, {} payments, excess_amount {}",
+            self.log_prefix,
+            self.invoices.len(),
+            self.issued_invoices.len(),
+            self.payments.len(),
+            self.excess_amount
+        )
+    }
+
     #[cfg(test)]
     pub(crate) fn validate_and_apply_payments(
         &mut self,

@@ -57,11 +57,14 @@ macro_rules! trace_enforcement_state {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! trace_node_state {
-    ($node: expr) => {
+    ($nodestate: expr) => {
         #[cfg(not(feature = "debug_node_state"))]
-        trace!("{}:\n{:#?}", function!(), &$node);
+        trace!("{}:\n{:#?}", function!(), &$nodestate);
         #[cfg(feature = "debug_node_state")]
-        debug!("{}:\n{:#?}", function!(), &$node);
+        debug!("{}:\n{:#?}", function!(), &$nodestate);
+
+        // always log summary
+        info!("{}: {}", function!(), &$nodestate.summary());
     };
 }
 
