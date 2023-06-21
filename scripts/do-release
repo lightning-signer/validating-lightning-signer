@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -e
+
+cargo publish -p vls-core
+cargo publish -p vls-persist
+cargo publish -p vls-protocol
+cargo publish -p vls-protocol-signer
+cargo publish -p vls-protocol-client
+cargo publish -p vls-frontend
+cargo publish -p vls-proxy
