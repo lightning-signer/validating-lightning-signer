@@ -62,7 +62,7 @@ scopeguard = { version = "1.1.0", default-features = false }
 # Don't use "std" feature
 log = "0.4.14"
 
-env_logger = { version = "0.9.1-rc.2", optional = true }
+env_logger = { version = "0.9", optional = true }
 backtrace = { version = "0.3", optional = true }
 tonic = { version = "0.8", optional = true, default-features = false }
 

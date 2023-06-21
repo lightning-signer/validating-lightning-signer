@@ -35,7 +35,7 @@ version = "0.4"
 
 [dev-dependencies]
 test-log = "0.2.8"
-env_logger = "0.9.1-rc.2"
+env_logger = "0.9"
 
 [[example]]
 name = "lss_example"

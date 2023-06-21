@@ -9,7 +9,7 @@ autotests = false
 vls-core = { path = "../vls-core" }
 itertools = { version = "0.10", default-features = false }
 test-log = "0.2.8"
-env_logger = "0.9.1-rc.2"
+env_logger = "0.9"
 log = "0.4.14"
 
 [dev-dependencies]
