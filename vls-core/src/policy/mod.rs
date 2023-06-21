@@ -75,10 +75,11 @@ fn policy_error_with_filter(
     msg: String,
     filter: &PolicyFilter,
 ) -> Result<(), ValidationError> {
+    warn!("policy failed: {} {}", tag, msg);
+
     if filter.filter(tag.clone()) == FilterResult::Error {
         Err(policy_error(msg))
     } else {
-        warn!("policy failed: {} {}", tag, msg);
         #[cfg(feature = "use_backtrace")]
         warn!("BACKTRACE:\n{:?}", backtrace::Backtrace::new());
         Ok(())
