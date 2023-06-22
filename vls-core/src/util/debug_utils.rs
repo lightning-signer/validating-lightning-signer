@@ -63,8 +63,11 @@ macro_rules! trace_node_state {
         #[cfg(feature = "debug_node_state")]
         debug!("{}:\n{:#?}", function!(), &$nodestate);
 
-        // always log summary
-        info!("{}: {}", function!(), &$nodestate.summary());
+        // log the summary if it changed
+        let (summary, changed) = &$nodestate.summary();
+        if *changed {
+            info!("{}: {}", function!(), summary);
+        }
     };
 }
 

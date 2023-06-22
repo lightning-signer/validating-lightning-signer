@@ -345,6 +345,7 @@ mod tests {
                     log_prefix: "".to_string(),
                     velocity_control: state_entry.velocity_control.into(),
                     fee_velocity_control: state_entry.fee_velocity_control.into(),
+                    last_summary: String::new(),
                 };
                 let node_entry = CoreNodeEntry {
                     key_derivation_style: entry.key_derivation_style as u8,

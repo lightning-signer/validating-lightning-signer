@@ -235,6 +235,8 @@ pub struct NodeState {
     pub velocity_control: VelocityControl,
     /// Per node fee velocity control
     pub fee_velocity_control: VelocityControl,
+    /// Last summary string
+    pub last_summary: String,
 }
 
 // kcov-ignore-start
@@ -247,6 +249,7 @@ impl Debug for NodeState {
             .field("excess_amount", &self.excess_amount)
             .field("log_prefix", &self.log_prefix)
             .field("velocity_control", &self.velocity_control)
+            .field("last_summary", &self.last_summary)
             .finish()
     }
 }
@@ -269,6 +272,7 @@ impl NodeState {
             log_prefix: String::new(),
             velocity_control,
             fee_velocity_control,
+            last_summary: String::new(),
         }
     }
 
@@ -306,6 +310,7 @@ impl NodeState {
             log_prefix: String::new(),
             velocity_control,
             fee_velocity_control,
+            last_summary: String::new(),
         }
     }
 
@@ -323,19 +328,26 @@ impl NodeState {
             log_prefix,
             velocity_control,
             fee_velocity_control,
+            last_summary: String::new(),
         }
     }
 
-    /// Return a summary for debugging
-    pub fn summary(&self) -> String {
-        format!(
+    /// Return a summary for debugging and whether it changed since last call
+    pub fn summary(&mut self) -> (String, bool) {
+        let summary = format!(
             "NodeState::summary {}: {} invoices, {} issued_invoices, {} payments, excess_amount {}",
             self.log_prefix,
             self.invoices.len(),
             self.issued_invoices.len(),
             self.payments.len(),
             self.excess_amount
-        )
+        );
+        if self.last_summary != summary {
+            self.last_summary = summary.clone();
+            (summary, true)
+        } else {
+            (summary, false)
+        }
     }
 
     #[cfg(test)]
@@ -2318,7 +2330,7 @@ impl Node {
 
     /// Check to see if a payment has already been added
     pub fn has_payment(&self, hash: &PaymentHash, invoice_hash: &[u8; 32]) -> Result<bool, Status> {
-        let state = self.get_state();
+        let mut state = self.get_state();
         let retval = if let Some(payment_state) = state.invoices.get(&hash) {
             if payment_state.invoice_hash == *invoice_hash {
                 Ok(true)
@@ -2599,6 +2611,9 @@ mod tests {
         let lenient_validator = SimpleValidatorFactory::new_with_policy(lenient_policy)
             .make_validator(Network::Testnet, node.get_id(), None);
 
+        // Now there's an invoice
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0".to_string(), false));
+
         state
             .validate_and_apply_payments(
                 &channel_id2,
@@ -2609,6 +2624,8 @@ mod tests {
             )
             .expect("channel1");
 
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0".to_string(), false));
+
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),
@@ -2618,6 +2635,8 @@ mod tests {
         );
         assert_eq!(result, Err(policy_error("validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"0202020202020202020202020202020202020202020202020202020202020202\"]")));
 
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0".to_string(), false));
+
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),
@@ -2626,6 +2645,8 @@ mod tests {
             strict_validator.clone(),
         );
         assert_validation_ok!(result);
+
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0".to_string(), false));
 
         // hash1 has no invoice, fails with strict validator, but only initially
         let result = state.validate_and_apply_payments(
@@ -2637,6 +2658,8 @@ mod tests {
         );
         assert_policy_err!(result, "validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"0101010101010101010101010101010101010101010101010101010101010101\"]");
 
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0".to_string(), false));
+
         // hash1 has no invoice, ok with lenient validator
         let result = state.validate_and_apply_payments(
             &channel_id,
@@ -2647,15 +2670,19 @@ mod tests {
         );
         assert_validation_ok!(result);
 
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 2 payments, excess_amount 0".to_string(), false));
+
         // hash1 has no invoice, passes with strict validator once the payment exists (TODO #331)
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),
-            &vec![(hash1, 5)].into_iter().collect(),
+            &vec![(hash1, 6)].into_iter().collect(),
             &Default::default(),
             strict_validator.clone(),
         );
         assert_validation_ok!(result);
+
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 2 payments, excess_amount 0".to_string(), false));
     }
 
     fn make_test_invoice(
