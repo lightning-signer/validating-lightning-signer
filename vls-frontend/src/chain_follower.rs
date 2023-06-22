@@ -12,7 +12,7 @@ use lightning_signer::bitcoin;
 
 use bitcoind_client::follower::{Error, Tracker};
 use bitcoind_client::txoo_follower::{FollowWithProofAction, SourceWithTxooProofFollower};
-use bitcoind_client::{BitcoindClient, BlockSource};
+use bitcoind_client::{bitcoind_client_from_url, BlockSource};
 
 use lightning_signer::bitcoin::hashes::Hash;
 use lightning_signer::bitcoin::FilterHeader;
@@ -69,7 +69,7 @@ impl ChainFollower {
         txoo_source_factory: &SourceFactory,
         rpc_url: &Url,
     ) -> Arc<ChainFollower> {
-        let client = BitcoindClient::new(rpc_url.clone()).await;
+        let client = bitcoind_client_from_url(rpc_url.clone(), tracker.network()).await;
         let genesis_hash = client.get_block_hash(0).await.unwrap().unwrap();
         let genesis = client.get_block(&genesis_hash).await.unwrap();
         let txoo_source = if let Some((ckp_height, ckp_hash, ckp_filter_header, _)) =

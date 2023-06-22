@@ -28,7 +28,7 @@ vls-core = { path = "../vls-core", version = "0.9.1", features = ["txoo-source"]
 lightning-storage-server = { path = "../lightning-storage-server", version = "0.3.0", default-features = false }
 
 [dependencies.txoo-bitcoind-client]
-version = "0.4"
+version = "0.4.4"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #branch = "main"
 #path = "../../txoo/bitcoind-client"
