@@ -635,7 +635,7 @@ impl NodeState {
             let keep =
                 issued.duration_since_epoch + issued.expiry_duration + INVOICE_PRUNE_TIME > now;
             if !keep {
-                debug!("pruning {:?} from issued_invoices", DebugBytes(&hash.0));
+                info!("pruning {:?} from issued_invoices", DebugBytes(&hash.0));
                 modified = true;
             }
             keep
@@ -662,7 +662,7 @@ impl NodeState {
         invoices.retain(|hash, _| {
             let keep = !prune.contains(hash);
             if !keep {
-                debug!("pruning {:?} from invoices", DebugBytes(&hash.0));
+                info!("pruning {:?} from invoices", DebugBytes(&hash.0));
                 modified = true;
             }
             keep
@@ -670,7 +670,7 @@ impl NodeState {
         payments.retain(|hash, _| {
             let keep = !prune.contains(hash);
             if !keep {
-                debug!("pruning {:?} from payments", DebugBytes(&hash.0));
+                info!("pruning {:?} from payments", DebugBytes(&hash.0));
                 modified = true;
             }
             keep
