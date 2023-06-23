@@ -1,10 +1,21 @@
 #### Setup
 
+On Debian (or Ubuntu):
 ```
 sudo apt install gcc-arm-none-eabi gdb-multiarch -y
 sudo apt install libudev-dev -y
 sudo apt install screen -y
+```
 
+On Fedora:
+```
+sudo dnf install arm-none-eabi-gcc-cs gdb -y
+sudo dnf install libusbx-devel systemd-devel -y
+sudo dnf install glibc-devel.i686 glibc-devel -y
+sudo dnf install screen -y
+```
+
+```
 # IMPORTANT - run this in the vls-signer-stm32 subdirectory, where this README is.
 rustup override set nightly
 
@@ -16,7 +27,7 @@ rustup target add thumbv7em-none-eabihf
 
 cargo install probe-run
 
-sudo adduser $USER dialout
+sudo usermod -a -G dialout $USER
 ```
 
 Follow [udev rules setup instructions](https://probe.rs/docs/getting-started/probe-setup/)
@@ -33,6 +44,11 @@ sudo mkfs.vfat -F32 /dev/sdX
 #### Hardware Test
 
 Connect the `ST_LINK` port to host computer using USB cable.
+
+On Fedora run:
+```
+CFLAGS=-I/usr/include cargo run --features stm32f413 --release --bin test
+```
 
 ```
 cargo run --features stm32f412 --release --bin test
