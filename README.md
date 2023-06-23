@@ -4,7 +4,7 @@ Please see the
 [VLS Project Overview](https://gitlab.com/lightning-signer/docs/-/blob/master/README.md)
 for more information.  Our [web site](https://vls.tech/).
 
-# Limitations
+## Limitations
 
 The following remain to be implemented:
 
@@ -77,3 +77,29 @@ Run coverage:
 View Coverage Report:
 
     [target/kcov/cov/index.html](target/kcov/cov/index.html)
+
+## Benchmarks
+
+### Running Benchmarks
+
+    cargo bench -p vls-core --bench secp_bench
+
+Note that you might need to add `--features=test_utils` if you want to run all benches in vls-core.
+
+Without optimizations:
+
+    cargo bench -p vls-core --bench secp_bench --profile=dev
+
+Expect something like:
+
+```
+    test fib1_bench        ... bench:           1 ns/iter (+/- 0)
+    test fib_bench         ... bench:      17,247 ns/iter (+/- 198)
+    test hash_bench        ... bench:         258 ns/iter (+/- 2)
+    test secp_create_bench ... bench:      49,981 ns/iter (+/- 642)
+    test sign_bench        ... bench:      25,692 ns/iter (+/- 391)
+    test verify_bench      ... bench:      31,705 ns/iter (+/- 1,445)
+```
+
+i.e. around 30 microseconds per secp256k1 crypto operation.  We also see
+that creating a secp context is expensive, but not prohibitively so.
