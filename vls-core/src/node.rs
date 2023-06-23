@@ -77,6 +77,8 @@ use crate::wallet::Wallet;
 
 /// Prune invoices expired more than this long ago
 const INVOICE_PRUNE_TIME: Duration = Duration::from_secs(60 * 60 * 24);
+/// Prune keysends expired more than this long ago
+const KEYSEND_PRUNE_TIME: Duration = Duration::from_secs(0);
 
 /// Node configuration parameters.
 
@@ -634,11 +636,19 @@ impl NodeState {
         fulfilled
     }
 
+    fn prune_time(pstate: &PaymentState) -> Duration {
+        match pstate.payment_type {
+            PaymentType::Invoice => INVOICE_PRUNE_TIME,
+            PaymentType::Keysend => KEYSEND_PRUNE_TIME,
+        }
+    }
+
     fn prune_issued_invoices(&mut self, now: Duration) -> bool {
         let mut modified = false;
         self.issued_invoices.retain(|hash, issued| {
             let keep =
-                issued.duration_since_epoch + issued.expiry_duration + INVOICE_PRUNE_TIME > now;
+                issued.duration_since_epoch + issued.expiry_duration + Self::prune_time(issued)
+                    > now;
             if !keep {
                 info!("pruning {:?} from issued_invoices", DebugBytes(&hash.0));
                 modified = true;
