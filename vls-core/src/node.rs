@@ -171,6 +171,11 @@ impl RoutedPayment {
         self.preimage.is_some()
     }
 
+    /// Whether there is any incoming payment
+    pub fn is_no_incoming(&self) -> bool {
+        self.incoming.values().into_iter().sum::<u64>() == 0
+    }
+
     /// Whether there is no outgoing payment
     pub fn is_no_outgoing(&self) -> bool {
         self.outgoing.values().into_iter().sum::<u64>() == 0
@@ -635,7 +640,7 @@ impl NodeState {
             let keep =
                 issued.duration_since_epoch + issued.expiry_duration + INVOICE_PRUNE_TIME > now;
             if !keep {
-                debug!("pruning {:?} from issued_invoices", DebugBytes(&hash.0));
+                info!("pruning {:?} from issued_invoices", DebugBytes(&hash.0));
                 modified = true;
             }
             keep
@@ -662,7 +667,7 @@ impl NodeState {
         invoices.retain(|hash, _| {
             let keep = !prune.contains(hash);
             if !keep {
-                debug!("pruning {:?} from invoices", DebugBytes(&hash.0));
+                info!("pruning {:?} from invoices", DebugBytes(&hash.0));
                 modified = true;
             }
             keep
@@ -670,7 +675,24 @@ impl NodeState {
         payments.retain(|hash, _| {
             let keep = !prune.contains(hash);
             if !keep {
-                debug!("pruning {:?} from payments", DebugBytes(&hash.0));
+                info!("pruning {:?} from payments because invoice pruned", DebugBytes(&hash.0));
+                modified = true;
+            }
+            keep
+        });
+        modified
+    }
+
+    fn prune_forwarded_payments(&mut self) -> bool {
+        let payments = &mut self.payments;
+        let invoices = &self.invoices;
+        let issued_invoices = &self.issued_invoices;
+        let mut modified = false;
+        payments.retain(|hash, payment| {
+            let keep =
+                !Self::is_forwarded_payment_prunable(hash, invoices, issued_invoices, payment);
+            if !keep {
+                info!("pruning {:?} from payments because forward done", DebugBytes(&hash.0));
                 modified = true;
             }
             keep
@@ -695,6 +717,18 @@ impl NodeState {
             );
         }
         is_past_prune_time && is_payment_complete
+    }
+
+    fn is_forwarded_payment_prunable(
+        hash: &PaymentHash,
+        invoices: &Map<PaymentHash, PaymentState>,
+        issued_invoices: &Map<PaymentHash, PaymentState>,
+        payment: &RoutedPayment,
+    ) -> bool {
+        invoices.get(hash).is_none()
+            && issued_invoices.get(hash).is_none()
+            && payment.is_no_incoming()
+            && payment.is_no_outgoing()
     }
 }
 
@@ -1615,7 +1649,8 @@ impl Node {
         let now = self.clock.now();
         let pruned1 = state.prune_invoices(now);
         let pruned2 = state.prune_issued_invoices(now);
-        if pruned1 || pruned2 {
+        let pruned3 = state.prune_forwarded_payments();
+        if pruned1 || pruned2 || pruned3 {
             trace_node_state!(state);
         }
         drop(state); // minimize lock time
@@ -2683,6 +2718,32 @@ mod tests {
         assert_validation_ok!(result);
 
         assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 2 payments, excess_amount 0".to_string(), false));
+
+        // pretend this payment failed and went away
+        let result = state.validate_and_apply_payments(
+            &channel_id,
+            &Map::new(),
+            &vec![(hash1, 0)].into_iter().collect(),
+            &Default::default(),
+            strict_validator.clone(),
+        );
+        assert_validation_ok!(result);
+
+        // payment is still there
+        assert_eq!(state.payments.len(), 2);
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 2 payments, excess_amount 0".to_string(), false));
+
+        // have to drop the state over the heartbeat because deadlock
+        drop(state);
+
+        // heartbeat triggers pruning
+        let _ = node.get_heartbeat();
+
+        let mut state = node.get_state();
+
+        // payment is pruned
+        assert_eq!(state.payments.len(), 1);
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0".to_string(), false));
     }
 
     fn make_test_invoice(
