@@ -119,7 +119,7 @@ impl<L: ChainListener> ChainTracker<L> {
     // # issue #187
     #[cfg(feature = "tracker_size_workaround")]
     /// Maximum reorg size that we will accept
-    pub const MAX_REORG_SIZE: usize = 64;
+    pub const MAX_REORG_SIZE: usize = 16;
     #[cfg(not(feature = "tracker_size_workaround"))]
     /// Maximum reorg size that we will accept
     pub const MAX_REORG_SIZE: usize = 100;
