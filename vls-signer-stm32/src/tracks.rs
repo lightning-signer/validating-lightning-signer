@@ -161,12 +161,12 @@ fn track_char(msg: &Message) -> char {
         Message::SignRemoteHtlcToUs(_m) => 'H',
         Message::SignPenaltyToUs(_m) => 'J',
 
-        Message::TipInfo(_m) => 't',
-        Message::ForwardWatches(_m) => 'f',
-        Message::ReverseWatches(_m) => 'F',
-        Message::AddBlock(_m) => 'b',
-        Message::RemoveBlock(_m) => 'B',
-        Message::GetHeartbeat(_m) => '^',
+        Message::TipInfo(_m) => '<',
+        Message::GetHeartbeat(_m) => 'B',
+        Message::ForwardWatches(_m) => '[',
+        Message::AddBlock(_m) => ']',
+        Message::ReverseWatches(_m) => '{',
+        Message::RemoveBlock(_m) => '}',
 
         Message::Ping(_m) => '.',
         Message::Memleak(_m) => '_',
