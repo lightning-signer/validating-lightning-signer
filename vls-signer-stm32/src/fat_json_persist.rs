@@ -13,6 +13,11 @@ use log::*;
 
 use vls_protocol_signer::lightning_signer;
 
+use lightning_signer::persist::{
+    self,
+    model::{ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry},
+    Persist,
+};
 use lightning_signer::{
     bitcoin::secp256k1::PublicKey,
     chain::tracker::ChainTracker,
@@ -21,11 +26,6 @@ use lightning_signer::{
     node::{NodeConfig, NodeState as CoreNodeState},
     policy::validator::{EnforcementState, ValidatorFactory},
     prelude::*,
-};
-use lightning_signer::persist::{
-    self,
-    model::{ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry},
-    Persist,
 };
 use vls_persist::model::{
     AllowlistItemEntry, ChainTrackerEntry, ChannelEntry, NodeEntry, NodeStateEntry,
@@ -454,7 +454,7 @@ impl Persist for FatJsonPersister {
                 state_e.preimages,
                 0,
                 state_e.velocity_control.into(),
-                state_e.fee_velocity_control.into()
+                state_e.fee_velocity_control.into(),
             );
             let entry = CoreNodeEntry {
                 key_derivation_style: e.key_derivation_style,

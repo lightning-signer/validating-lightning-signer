@@ -138,7 +138,8 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
             RootHandlerBuilder::new(runctx.cmn.network, 0, services, seed.0)
                 .allowlist(allowlist)
                 .approver(approver)
-                .build().expect("handler build");
+                .build()
+                .expect("handler build");
         info!("used {} bytes", heap_bytes_used());
 
         display_intro(
@@ -196,7 +197,8 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         let (root_handler, _muts) = RootHandlerBuilder::new(runctx.cmn.network, 0, services, seed)
             .allowlist(allowlist)
             .approver(approver)
-            .build().expect("handler build");
+            .build()
+            .expect("handler build");
         let (init_reply, _muts) =
             root_handler.handle(Message::HsmdInit2(init)).expect("handle init");
         write_serial_response_header(&mut devctx.serial, reqhdr.sequence)
