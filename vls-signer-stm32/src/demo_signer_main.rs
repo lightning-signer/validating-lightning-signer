@@ -11,7 +11,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use core::cell::RefCell;
-use core::cmp::max;
 use core::time::Duration;
 
 use cortex_m_rt::entry;
@@ -215,7 +214,6 @@ fn start_test_mode(runctx: TestingContext) -> ! {
 fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHandler) -> ! {
     let mut tracks = tracks::Tracks::new();
     let mut numreq = 0_u64;
-    let mut maxkb = heap_bytes_used() / 1024;
     loop {
         let mut devctx = arc_devctx.borrow_mut();
 
@@ -246,7 +244,6 @@ fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHa
         info!("handled {} in {} ms", message_d.clone(), duration);
 
         let kb = heap_bytes_used() / 1024;
-        maxkb = max(kb, maxkb);
 
         devctx.disp.clear_screen();
         let balance = root_handler.channel_balance();
