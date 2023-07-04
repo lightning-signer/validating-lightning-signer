@@ -50,6 +50,10 @@ On Fedora run:
 CFLAGS=-I/usr/include cargo run --features stm32f413 --release --bin test
 ```
 
+NOTE - By default, the `memory.x` config is set up for the `stm32f413`, if you are
+using a `stm32f412` it requires some adjusting.  Also, the heap size set in
+`src/device.rs` should be considered.
+
 ```
 cargo run --features stm32f412 --release --bin test
 cargo run --features stm32f413 --release --bin test

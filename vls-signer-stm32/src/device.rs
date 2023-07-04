@@ -107,7 +107,7 @@ const NROWS: u16 = 10;
 
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
-// 192K heap, leaving 64K for stack
+// 320K (ram size) = 128K (stack) + 192K (heap)
 const HEAP_SIZE: usize = 1024 * 192;
 
 pub fn make_timer(clocks: &Clocks, tim2: TIM2) -> Counter<TIM2, 1000000> {
