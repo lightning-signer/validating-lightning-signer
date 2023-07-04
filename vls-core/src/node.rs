@@ -875,13 +875,24 @@ impl Heartbeat {
 }
 
 /// A signed heartbeat message.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct SignedHeartbeat {
     /// the schnorr signature of the heartbeat
     pub signature: Vec<u8>,
     /// the heartbeat
     pub heartbeat: Heartbeat,
 }
+
+// kcov-ignore-start
+impl Debug for SignedHeartbeat {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("SignedHeartbeat")
+            .field("signature", &DebugBytes(&self.signature))
+            .field("heartbeat", &self.heartbeat)
+            .finish()
+    }
+}
+// kcov-ignore-end
 
 impl SignedHeartbeat {
     /// Get the hash of the heartbeat for signing
