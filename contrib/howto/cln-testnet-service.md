@@ -66,6 +66,7 @@ VLS_NETWORK=testnet
 # VLS_BIND=0.0.0.0
 BITCOIND_RPC_URL=http://rpcuser:6ffb57ab46aa726@localhost:18332
 GREENLIGHT_VERSION=v0.11.0.1-62-g92cc76a
+RUST_LOG=info
 EOL
 EOF
 ```
