@@ -77,6 +77,8 @@ use crate::wallet::Wallet;
 
 /// Prune invoices expired more than this long ago
 const INVOICE_PRUNE_TIME: Duration = Duration::from_secs(60 * 60 * 24);
+/// Prune keysends expired more than this long ago
+const KEYSEND_PRUNE_TIME: Duration = Duration::from_secs(0);
 
 /// Node configuration parameters.
 
@@ -147,6 +149,20 @@ pub enum PaymentType {
     Invoice,
     /// We are sending via keysend
     Keysend,
+}
+
+/// Display as string for PaymentType
+impl fmt::Display for PaymentType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Invoice => "invoice",
+                Self::Keysend => "keysend",
+            }
+        )
+    }
 }
 
 /// Keeps track of incoming and outgoing HTLCs for a routed payment
@@ -634,13 +650,25 @@ impl NodeState {
         fulfilled
     }
 
+    fn prune_time(pstate: &PaymentState) -> Duration {
+        match pstate.payment_type {
+            PaymentType::Invoice => INVOICE_PRUNE_TIME,
+            PaymentType::Keysend => KEYSEND_PRUNE_TIME,
+        }
+    }
+
     fn prune_issued_invoices(&mut self, now: Duration) -> bool {
         let mut modified = false;
         self.issued_invoices.retain(|hash, issued| {
             let keep =
-                issued.duration_since_epoch + issued.expiry_duration + INVOICE_PRUNE_TIME > now;
+                issued.duration_since_epoch + issued.expiry_duration + Self::prune_time(issued)
+                    > now;
             if !keep {
-                info!("pruning {:?} from issued_invoices", DebugBytes(&hash.0));
+                info!(
+                    "pruning {} {:?} from issued_invoices",
+                    issued.payment_type.to_string(),
+                    DebugBytes(&hash.0)
+                );
                 modified = true;
             }
             keep
@@ -654,7 +682,13 @@ impl NodeState {
         let prune: UnorderedSet<_> = invoices
             .iter_mut()
             .filter_map(|(hash, payment_state)| {
-                let payments = payments.get(hash).expect("missing payments struct for invoice");
+                let payments =
+                    payments.get(hash).unwrap_or_else(|| {
+                        panic!(
+                            "missing payments struct for {}",
+                            payment_state.payment_type.to_string(),
+                        )
+                    });
                 if Self::is_invoice_prunable(now, hash, payment_state, payments) {
                     Some(*hash)
                 } else {
@@ -664,10 +698,14 @@ impl NodeState {
             .collect();
 
         let mut modified = false;
-        invoices.retain(|hash, _| {
+        invoices.retain(|hash, state| {
             let keep = !prune.contains(hash);
             if !keep {
-                info!("pruning {:?} from invoices", DebugBytes(&hash.0));
+                info!(
+                    "pruning {} {:?} from invoices",
+                    state.payment_type.to_string(),
+                    DebugBytes(&hash.0)
+                );
                 modified = true;
             }
             keep
@@ -675,7 +713,10 @@ impl NodeState {
         payments.retain(|hash, _| {
             let keep = !prune.contains(hash);
             if !keep {
-                info!("pruning {:?} from payments because invoice pruned", DebugBytes(&hash.0));
+                info!(
+                    "pruning {:?} from payments because invoice/keysend expired",
+                    DebugBytes(&hash.0)
+                );
                 modified = true;
             }
             keep
@@ -692,7 +733,7 @@ impl NodeState {
             let keep =
                 !Self::is_forwarded_payment_prunable(hash, invoices, issued_invoices, payment);
             if !keep {
-                info!("pruning {:?} from payments because forward done", DebugBytes(&hash.0));
+                info!("pruning {:?} from payments because forward has ended", DebugBytes(&hash.0));
                 modified = true;
             }
             keep
@@ -708,11 +749,12 @@ impl NodeState {
     ) -> bool {
         let is_payment_complete = payment.is_fulfilled() || payment.is_no_outgoing();
         let is_past_prune_time =
-            now > state.duration_since_epoch + state.expiry_duration + INVOICE_PRUNE_TIME;
+            now > state.duration_since_epoch + state.expiry_duration + Self::prune_time(state);
         // warn if past prune time but incomplete
         if is_past_prune_time && !is_payment_complete {
             warn!(
-                "invoice {:?} is past prune time but there are still pending outgoing payments",
+                "{} {:?} is past prune time but there are still pending outgoing payments",
+                state.payment_type.to_string(),
                 DebugBytes(&hash.0)
             );
         }
@@ -2286,7 +2328,7 @@ impl Node {
                 Ok(true)
             } else {
                 Err(failed_precondition(
-                    "add_invoice: already have a different invoice for same secret",
+                    "add_invoice: already have a different invoice for same payment_hash",
                 ))
             };
         }
@@ -2321,7 +2363,7 @@ impl Node {
             Node::payment_state_from_keysend(payee, payment_hash, amount_msat, self.clock.now())?;
 
         info!(
-            "{} adding payment {} -> {}",
+            "{} adding keysend {} -> {}",
             self.log_prefix(),
             payment_hash.0.to_hex(),
             payment_state.amount_msat
@@ -2342,7 +2384,7 @@ impl Node {
                 Ok(true)
             } else {
                 Err(failed_precondition(
-                    "add_keysend: already have a different payment for same secret",
+                    "add_keysend: already have a different keysend for same payment_hash",
                 ))
             };
         }
