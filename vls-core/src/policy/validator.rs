@@ -1,6 +1,7 @@
 extern crate scopeguard;
 
 use core::cmp::{max, min};
+use core::fmt::{self, Debug, Formatter};
 
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
@@ -24,6 +25,7 @@ use crate::policy::{Policy, MAX_CLOCK_SKEW, MIN_INVOICE_EXPIRY};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2, HTLCInfo2, PreimageMap};
+use crate::util::debug_utils::DebugBytes;
 use crate::wallet::Wallet;
 
 use super::error::ValidationError;
@@ -478,9 +480,31 @@ pub trait ValidatorFactory: Send + Sync {
 pub struct CommitmentSignatures(pub Signature, pub Vec<Signature>);
 
 /// Copied from LDK because we need to serialize it
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CounterpartyCommitmentSecrets {
     old_secrets: Vec<([u8; 32], u64)>,
+}
+
+impl Debug for CounterpartyCommitmentSecrets {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("CounterpartyCommitmentSecrets")
+            .field("old_secrets", &DebugOldSecrets(&self.old_secrets))
+            .finish()
+    }
+}
+
+struct DebugOldSecrets<'a>(pub &'a Vec<([u8; 32], u64)>);
+impl<'a> core::fmt::Debug for DebugOldSecrets<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_list().entries(self.0.iter().map(|os| DebugOldSecret(os))).finish()
+    }
+}
+
+struct DebugOldSecret<'a>(pub &'a ([u8; 32], u64));
+impl<'a> core::fmt::Debug for DebugOldSecret<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_tuple("OldSecret").field(&DebugBytes(&self.0 .0)).field(&self.0 .1).finish()
+    }
 }
 
 impl CounterpartyCommitmentSecrets {
