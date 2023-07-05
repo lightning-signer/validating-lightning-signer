@@ -197,7 +197,7 @@ impl From<&ChainTracker<ChainMonitor>> for ChainTrackerEntry {
         let listeners = t
             .listeners
             .iter()
-            .map(|(l, s)| (l.funding_outpoint, (l.get_state().clone(), s.clone())))
+            .map(|(k, (l, s))| (k.clone(), (l.get_state().clone(), s.clone())))
             .collect();
         ChainTrackerEntry { headers, tip, height: t.height(), network: t.network, listeners }
     }
@@ -224,7 +224,7 @@ impl ChainTrackerEntry {
             self.headers.iter().map(|h| deserialize(h).expect("deserialize header")).collect();
         let listeners =
             OrderedMap::from_iter(self.listeners.into_iter().map(|(outpoint, (state, slot))| {
-                (ChainMonitor::new_from_persistence(outpoint, state), slot)
+                (outpoint, (ChainMonitor::new_from_persistence(outpoint, state), slot))
             }));
         ChainTracker::restore(
             headers,
@@ -267,7 +267,7 @@ mod tests {
             ChainTracker::new(Network::Regtest, 0, tip, node_id, validator_factory.clone())?;
         tracker.add_listener(monitor.clone(), OrderedSet::new());
         tracker.add_listener_watches(
-            monitor,
+            &outpoint,
             OrderedSet::from_iter(vec![make_txin(1).previous_output]),
         );
 

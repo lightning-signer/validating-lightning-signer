@@ -2,9 +2,10 @@
 mod tests {
     use bitcoin;
     use bitcoin::hashes::hex::ToHex;
-    use bitcoin::secp256k1::SecretKey;
+    use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use bitcoin::util::psbt::serialize::Serialize;
     use lightning::chain::keysinterface::ChannelSigner;
+    use lightning::ln::chan_utils;
 
     use test_log::test;
 
@@ -12,12 +13,26 @@ mod tests {
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::key::*;
     use crate::util::test_utils::*;
+    use crate::util::INITIAL_COMMITMENT_NUMBER;
 
     // TODO - policy-v2-commitment-retry-same (tx)
     // TODO - policy-v2-commitment-retry-same (output_witscripts)
     // TODO - policy-v2-commitment-retry-same (payment_hashmap)
 
     const REV_COMMIT_NUM: u64 = 23;
+
+    fn make_per_commitment(idx: u64) -> (PublicKey, SecretKey) {
+        let commitment_seed = [55u8; 32];
+
+        let secp_ctx = Secp256k1::new();
+        let secret = SecretKey::from_slice(&chan_utils::build_commitment_secret(
+            &commitment_seed,
+            INITIAL_COMMITMENT_NUMBER - idx,
+        ))
+        .unwrap();
+        let point = PublicKey::from_secret_key(&secp_ctx, &secret);
+        (point, secret)
+    }
 
     fn validate_counterparty_revocation_with_mutator<RevocationMutator, ChannelStateValidator>(
         mutate_revocation_input: RevocationMutator,
@@ -33,12 +48,21 @@ mod tests {
         node.with_ready_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
 
-            let remote_percommit_point = make_test_pubkey(10);
-            let mut remote_percommit_secret = make_test_privkey(10);
-
             let feerate_per_kw = 0;
             let to_broadcaster = 1_979_997;
             let to_countersignatory = 1_000_000;
+
+            // provide all secrets so that we don't worry about secret chaining
+            for idx in 0..REV_COMMIT_NUM {
+                let (_, secret) = make_per_commitment(idx);
+                let secrets = chan.enforcement_state.counterparty_secrets.as_mut().unwrap();
+                secrets
+                    .provide_secret(INITIAL_COMMITMENT_NUMBER - idx, secret.secret_bytes())
+                    .unwrap();
+            }
+
+            let (remote_percommit_point, mut remote_percommit_secret) =
+                make_per_commitment(REV_COMMIT_NUM);
 
             chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM - 1);
             chan.enforcement_state.set_next_counterparty_commit_num_for_testing(
@@ -132,7 +156,7 @@ mod tests {
 
             assert_eq!(
                 tx.txid.to_hex(),
-                "08491fe78992b402bbc51771386395fc81bf20d0178b4156bc039b5a84e92aea"
+                "325f6443f45049da5a4d99cb54407ff8eaabfd8324bea18933a0ff40983275a3"
             );
 
             Ok(())
@@ -230,7 +254,7 @@ mod tests {
             "policy failure: validate_counterparty_revocation: \
              revocation commit point mismatch for commit_num 23: \
              supplied 035be5e9478209674a96e60f1f037f6176540fd001fa1d64694770c56a7709c42c, \
-             previous 03f76a39d05686e34a4420897e359371836145dd3973e3982568b60f8433adde6e"
+             previous 0393b4f3cd135b4f71fdb7ded8aad92cf22212a6893e89a2068a71e15a5ba560a3"
         );
     }
 
@@ -241,10 +265,18 @@ mod tests {
 
         // Setup enforcement state
         assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
+            // provide all secrets so that we don't worry about secret chaining
+            for idx in 0..REV_COMMIT_NUM {
+                let (_, secret) = make_per_commitment(idx);
+                let secrets = chan.enforcement_state.counterparty_secrets.as_mut().unwrap();
+                secrets
+                    .provide_secret(INITIAL_COMMITMENT_NUMBER - idx, secret.secret_bytes())
+                    .unwrap();
+            }
             chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM - 1);
             chan.enforcement_state.set_next_counterparty_commit_num_for_testing(
                 REV_COMMIT_NUM,
-                make_test_pubkey((REV_COMMIT_NUM - 1) as u8),
+                make_per_commitment(REV_COMMIT_NUM - 1).0,
             );
             // commit 21: revoked
             // commit 22: current  <- next revoke
@@ -256,7 +288,7 @@ mod tests {
         assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
 
-            let remote_percommit_point = make_test_pubkey(REV_COMMIT_NUM as u8);
+            let (remote_percommit_point, _) = make_per_commitment(REV_COMMIT_NUM);
 
             let feerate_per_kw = 0;
             let to_broadcaster = 1_979_997;
@@ -319,7 +351,7 @@ mod tests {
         assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
             assert_status_ok!(chan.validate_counterparty_revocation(
                 REV_COMMIT_NUM - 1,
-                &make_test_privkey((REV_COMMIT_NUM - 1) as u8)
+                &make_per_commitment(REV_COMMIT_NUM - 1).1,
             ));
 
             // commit 22: revoked
@@ -332,7 +364,7 @@ mod tests {
         assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
 
-            let remote_percommit_point = make_test_pubkey((REV_COMMIT_NUM + 1) as u8);
+            let (remote_percommit_point, _) = make_per_commitment(REV_COMMIT_NUM + 1);
 
             let feerate_per_kw = 0;
             let to_broadcaster = 1_979_097; // -900
@@ -393,7 +425,7 @@ mod tests {
             assert_failed_precondition_err!(
                 chan.validate_counterparty_revocation(
                     REV_COMMIT_NUM - 2,
-                    &make_test_privkey((REV_COMMIT_NUM - 2) as u8)
+                    &make_per_commitment(REV_COMMIT_NUM - 2).1
                 ),
                 "policy failure: validate_counterparty_revocation: \
                  invalid counterparty revoke_num 21 with next_counterparty_revoke_num 23"
@@ -407,7 +439,7 @@ mod tests {
             assert_failed_precondition_err!(
                 chan.validate_counterparty_revocation(
                     REV_COMMIT_NUM + 1,
-                    &make_test_privkey((REV_COMMIT_NUM + 1) as u8)
+                    &make_per_commitment(REV_COMMIT_NUM + 1).1
                 ),
                 "policy failure: validate_counterparty_revocation: \
                  invalid counterparty revoke_num 24 with next_counterparty_revoke_num 23"
@@ -420,7 +452,7 @@ mod tests {
             // can revoke correctly
             assert_status_ok!(chan.validate_counterparty_revocation(
                 REV_COMMIT_NUM,
-                &make_test_privkey(REV_COMMIT_NUM as u8)
+                &make_per_commitment(REV_COMMIT_NUM).1
             ));
 
             // state is modified
@@ -430,7 +462,7 @@ mod tests {
             // Retry is ok
             assert_status_ok!(chan.validate_counterparty_revocation(
                 REV_COMMIT_NUM,
-                &make_test_privkey(REV_COMMIT_NUM as u8)
+                &make_per_commitment(REV_COMMIT_NUM).1
             ));
 
             // state is unchanged
@@ -441,7 +473,7 @@ mod tests {
             assert_failed_precondition_err!(
                 chan.validate_counterparty_revocation(
                     REV_COMMIT_NUM - 1,
-                    &make_test_privkey((REV_COMMIT_NUM - 1) as u8)
+                    &make_per_commitment(REV_COMMIT_NUM - 1).1
                 ),
                 "policy failure: validate_counterparty_revocation: \
                  invalid counterparty revoke_num 22 with next_counterparty_revoke_num 24"
@@ -455,7 +487,7 @@ mod tests {
             assert_failed_precondition_err!(
                 chan.validate_counterparty_revocation(
                     REV_COMMIT_NUM + 2,
-                    &make_test_privkey((REV_COMMIT_NUM + 2) as u8)
+                    &make_per_commitment(REV_COMMIT_NUM + 2).1
                 ),
                 "policy failure: validate_counterparty_revocation: \
                  invalid counterparty revoke_num 25 with next_counterparty_revoke_num 24"

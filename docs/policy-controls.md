@@ -143,8 +143,7 @@ Note that several controls may be checked in one comparison, in which case the p
   revoked by peer disclosing secret.  This includes both checking
   that the secret matches the commitment point and that the secrets 
   are consistent with the compact secret storage scheme in BOLT-3. <br>
-  `policy-commitment-previous-revoked` <br>
-  ACTION: implement storage
+  `policy-commitment-previous-revoked`
 
 * No breach - if signing a local commitment or HTLC transaction, we must not
   have revoked it <br>

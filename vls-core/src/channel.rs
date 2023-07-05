@@ -20,8 +20,7 @@ use lightning::ln::chan_utils::{
     TxCreationKeys,
 };
 use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage};
-#[allow(unused_imports)]
-use log::{debug, trace, warn};
+use log::*;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -2060,6 +2059,25 @@ impl Channel {
             revoke_num,
             old_secret,
         )?;
+
+        if let Some(secrets) = self.enforcement_state.counterparty_secrets.as_mut() {
+            let backwards_num = INITIAL_COMMITMENT_NUMBER - revoke_num;
+            if secrets.provide_secret(backwards_num, old_secret.secret_bytes()).is_err() {
+                error!(
+                    "secret does not chain: {} ({}) {} into {:?}",
+                    revoke_num,
+                    backwards_num,
+                    old_secret.display_secret(),
+                    secrets
+                );
+                policy_err!(
+                    validator,
+                    "policy-commitment-previous-revoked",
+                    "counterparty secret does not chain"
+                )
+            }
+        }
+
         validator.set_next_counterparty_revoke_num(&mut self.enforcement_state, revoke_num + 1)?;
 
         trace_enforcement_state!(self);

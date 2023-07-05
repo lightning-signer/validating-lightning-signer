@@ -44,8 +44,8 @@ use serde_with::serde_as;
 use log::*;
 use serde_bolt::to_vec;
 
-use crate::chain::tracker::ChainTracker;
 use crate::chain::tracker::Headers;
+use crate::chain::tracker::{ChainListener, ChainTracker};
 use crate::channel::{
     Channel, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, ChannelSlot, ChannelStub,
 };
@@ -1401,9 +1401,10 @@ impl Node {
                 let monitor = arc_self
                     .get_tracker()
                     .listeners
-                    .get_key_value(&ChainMonitor::new(funding_outpoint, 0))
+                    .get_key_value(&funding_outpoint)
                     .expect("monitor key")
-                    .0
+                    .1
+                     .0
                     .clone();
                 let channel = Channel {
                     node: Arc::downgrade(arc_self),
@@ -1852,7 +1853,7 @@ impl Node {
                     ChannelSlot::Ready(chan) => {
                         let inputs =
                             OrderedSet::from_iter(tx.input.iter().map(|i| i.previous_output));
-                        tracker.add_listener_watches(chan.monitor.clone(), inputs);
+                        tracker.add_listener_watches(chan.monitor.key(), inputs);
                         chan.funding_signed(tx, vout as u32)
                     }
                 }

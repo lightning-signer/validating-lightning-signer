@@ -1,7 +1,10 @@
 extern crate scopeguard;
 
 use core::cmp::{max, min};
+use core::fmt::{self, Debug, Formatter};
 
+use bitcoin::hashes::sha256::Hash as Sha256;
+use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::{
@@ -22,6 +25,7 @@ use crate::policy::{Policy, MAX_CLOCK_SKEW, MIN_INVOICE_EXPIRY};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2, HTLCInfo2, PreimageMap};
+use crate::util::debug_utils::DebugBytes;
 use crate::wallet::Wallet;
 
 use super::error::ValidationError;
@@ -475,6 +479,107 @@ pub trait ValidatorFactory: Send + Sync {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommitmentSignatures(pub Signature, pub Vec<Signature>);
 
+/// Copied from LDK because we need to serialize it
+#[derive(Clone, Serialize, Deserialize)]
+pub struct CounterpartyCommitmentSecrets {
+    old_secrets: Vec<([u8; 32], u64)>,
+}
+
+impl Debug for CounterpartyCommitmentSecrets {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("CounterpartyCommitmentSecrets")
+            .field("old_secrets", &DebugOldSecrets(&self.old_secrets))
+            .finish()
+    }
+}
+
+struct DebugOldSecrets<'a>(pub &'a Vec<([u8; 32], u64)>);
+impl<'a> core::fmt::Debug for DebugOldSecrets<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_list().entries(self.0.iter().map(|os| DebugOldSecret(os))).finish()
+    }
+}
+
+struct DebugOldSecret<'a>(pub &'a ([u8; 32], u64));
+impl<'a> core::fmt::Debug for DebugOldSecret<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_tuple("OldSecret").field(&DebugBytes(&self.0 .0)).field(&self.0 .1).finish()
+    }
+}
+
+impl CounterpartyCommitmentSecrets {
+    /// Creates a new empty `CounterpartyCommitmentSecrets` structure.
+    pub fn new() -> Self {
+        let old_secrets = (0..49).map(|_| ([0; 32], 1 << 48)).collect::<Vec<_>>();
+        Self { old_secrets }
+    }
+
+    #[inline]
+    fn place_secret(idx: u64) -> u8 {
+        for i in 0..48 {
+            if idx & (1 << i) == (1 << i) {
+                return i;
+            }
+        }
+        48
+    }
+
+    /// Returns the minimum index of all stored secrets. Note that indexes start
+    /// at 1 << 48 and get decremented by one for each new secret.
+    pub fn get_min_seen_secret(&self) -> u64 {
+        //TODO This can be optimized?
+        let mut min = 1 << 48;
+        for &(_, idx) in self.old_secrets.iter() {
+            if idx < min {
+                min = idx;
+            }
+        }
+        min
+    }
+
+    #[inline]
+    fn derive_secret(secret: [u8; 32], bits: u8, idx: u64) -> [u8; 32] {
+        let mut res: [u8; 32] = secret;
+        for i in 0..bits {
+            let bitpos = bits - 1 - i;
+            if idx & (1 << bitpos) == (1 << bitpos) {
+                res[(bitpos / 8) as usize] ^= 1 << (bitpos & 7);
+                res = Sha256::hash(&res).into_inner();
+            }
+        }
+        res
+    }
+
+    /// Inserts the `secret` at `idx`. Returns `Ok(())` if the secret
+    /// was generated in accordance with BOLT 3 and is consistent with previous secrets.
+    pub fn provide_secret(&mut self, idx: u64, secret: [u8; 32]) -> Result<(), ()> {
+        let pos = Self::place_secret(idx);
+        for i in 0..pos {
+            let (old_secret, old_idx) = self.old_secrets[i as usize];
+            if Self::derive_secret(secret, pos, old_idx) != old_secret {
+                return Err(());
+            }
+        }
+        if self.get_min_seen_secret() <= idx {
+            return Ok(());
+        }
+        self.old_secrets[pos as usize] = (secret, idx);
+        Ok(())
+    }
+
+    /// Returns the secret at `idx`.
+    /// Returns `None` if `idx` is < [`CounterpartyCommitmentSecrets::get_min_seen_secret`].
+    pub fn get_secret(&self, idx: u64) -> Option<[u8; 32]> {
+        for i in 0..self.old_secrets.len() {
+            if (idx & (!((1 << i) - 1))) == self.old_secrets[i].1 {
+                return Some(Self::derive_secret(self.old_secrets[i].0, i as u8, idx));
+            }
+        }
+        assert!(idx < self.get_min_seen_secret());
+        None
+    }
+}
+
 /// Enforcement state for a channel
 ///
 /// This keeps track of commitments on both sides and whether the channel
@@ -509,6 +614,10 @@ pub struct EnforcementState {
 
     pub channel_closed: bool,
     pub initial_holder_value: u64,
+
+    /// Counterparty revocation secrets.
+    /// This is an Option for backwards compatibility with old databases.
+    pub counterparty_secrets: Option<CounterpartyCommitmentSecrets>,
 }
 
 impl EnforcementState {
@@ -529,6 +638,7 @@ impl EnforcementState {
             previous_counterparty_commit_info: None,
             channel_closed: false,
             initial_holder_value,
+            counterparty_secrets: Some(CounterpartyCommitmentSecrets::new()),
         }
     }
 
@@ -956,11 +1066,540 @@ fn min_opt(a_opt: Option<u64>, b_opt: Option<u64>) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use crate::policy::validator::EnforcementState;
+    use super::*;
     use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
     use crate::util::test_utils::make_dummy_pubkey;
     use bitcoin::secp256k1::PublicKey;
     use lightning::ln::PaymentHash;
+
+    #[test]
+    fn test_per_commitment_storage() {
+        // Test vectors from BOLT 3:
+        let mut secrets: Vec<[u8; 32]> = Vec::new();
+        let mut monitor;
+
+        macro_rules! test_secrets {
+            () => {
+                let mut idx = 281474976710655;
+                for secret in secrets.iter() {
+                    assert_eq!(monitor.get_secret(idx).unwrap(), *secret);
+                    idx -= 1;
+                }
+                assert_eq!(monitor.get_min_seen_secret(), idx + 1);
+                assert!(monitor.get_secret(idx).is_none());
+            };
+        }
+
+        {
+            // insert_secret correct sequence
+            monitor = CounterpartyCommitmentSecrets::new();
+            secrets.clear();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710655, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710654, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("2273e227a5b7449b6e70f1fb4652864038b1cbf9cd7c043a7d6456b7fc275ad8")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710653, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710652, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("c65716add7aa98ba7acb236352d665cab17345fe45b55fb879ff80e6bd0c41dd")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710651, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("969660042a28f32d9be17344e09374b379962d03db1574df5a8a5a47e19ce3f2")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710650, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("a5a64476122ca0925fb344bdc1854c1c0a59fc614298e50a33e331980a220f32")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710649, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("05cde6323d949933f7f7b78776bcc1ea6d9b31447732e3802e1f7ac44b650e17")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710648, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+        }
+
+        {
+            // insert_secret #1 incorrect
+            monitor = CounterpartyCommitmentSecrets::new();
+            secrets.clear();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710655, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")
+                    .unwrap(),
+            );
+            assert!(monitor
+                .provide_secret(281474976710654, secrets.last().unwrap().clone())
+                .is_err());
+        }
+
+        {
+            // insert_secret #2 incorrect (#1 derived from incorrect)
+            monitor = CounterpartyCommitmentSecrets::new();
+            secrets.clear();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710655, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("dddc3a8d14fddf2b68fa8c7fbad2748274937479dd0f8930d5ebb4ab6bd866a3")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710654, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("2273e227a5b7449b6e70f1fb4652864038b1cbf9cd7c043a7d6456b7fc275ad8")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710653, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116")
+                    .unwrap(),
+            );
+            assert!(monitor
+                .provide_secret(281474976710652, secrets.last().unwrap().clone())
+                .is_err());
+        }
+
+        {
+            // insert_secret #3 incorrect
+            monitor = CounterpartyCommitmentSecrets::new();
+            secrets.clear();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710655, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710654, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("c51a18b13e8527e579ec56365482c62f180b7d5760b46e9477dae59e87ed423a")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710653, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116")
+                    .unwrap(),
+            );
+            assert!(monitor
+                .provide_secret(281474976710652, secrets.last().unwrap().clone())
+                .is_err());
+        }
+
+        {
+            // insert_secret #4 incorrect (1,2,3 derived from incorrect)
+            monitor = CounterpartyCommitmentSecrets::new();
+            secrets.clear();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710655, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("dddc3a8d14fddf2b68fa8c7fbad2748274937479dd0f8930d5ebb4ab6bd866a3")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710654, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("c51a18b13e8527e579ec56365482c62f180b7d5760b46e9477dae59e87ed423a")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710653, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("ba65d7b0ef55a3ba300d4e87af29868f394f8f138d78a7011669c79b37b936f4")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710652, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("c65716add7aa98ba7acb236352d665cab17345fe45b55fb879ff80e6bd0c41dd")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710651, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("969660042a28f32d9be17344e09374b379962d03db1574df5a8a5a47e19ce3f2")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710650, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("a5a64476122ca0925fb344bdc1854c1c0a59fc614298e50a33e331980a220f32")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710649, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("05cde6323d949933f7f7b78776bcc1ea6d9b31447732e3802e1f7ac44b650e17")
+                    .unwrap(),
+            );
+            assert!(monitor
+                .provide_secret(281474976710648, secrets.last().unwrap().clone())
+                .is_err());
+        }
+
+        {
+            // insert_secret #5 incorrect
+            monitor = CounterpartyCommitmentSecrets::new();
+            secrets.clear();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710655, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710654, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("2273e227a5b7449b6e70f1fb4652864038b1cbf9cd7c043a7d6456b7fc275ad8")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710653, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710652, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("631373ad5f9ef654bb3dade742d09504c567edd24320d2fcd68e3cc47e2ff6a6")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710651, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("969660042a28f32d9be17344e09374b379962d03db1574df5a8a5a47e19ce3f2")
+                    .unwrap(),
+            );
+            assert!(monitor
+                .provide_secret(281474976710650, secrets.last().unwrap().clone())
+                .is_err());
+        }
+
+        {
+            // insert_secret #6 incorrect (5 derived from incorrect)
+            monitor = CounterpartyCommitmentSecrets::new();
+            secrets.clear();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710655, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710654, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("2273e227a5b7449b6e70f1fb4652864038b1cbf9cd7c043a7d6456b7fc275ad8")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710653, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710652, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("631373ad5f9ef654bb3dade742d09504c567edd24320d2fcd68e3cc47e2ff6a6")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710651, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("b7e76a83668bde38b373970155c868a653304308f9896692f904a23731224bb1")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710650, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("a5a64476122ca0925fb344bdc1854c1c0a59fc614298e50a33e331980a220f32")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710649, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("05cde6323d949933f7f7b78776bcc1ea6d9b31447732e3802e1f7ac44b650e17")
+                    .unwrap(),
+            );
+            assert!(monitor
+                .provide_secret(281474976710648, secrets.last().unwrap().clone())
+                .is_err());
+        }
+
+        {
+            // insert_secret #7 incorrect
+            monitor = CounterpartyCommitmentSecrets::new();
+            secrets.clear();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710655, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710654, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("2273e227a5b7449b6e70f1fb4652864038b1cbf9cd7c043a7d6456b7fc275ad8")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710653, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710652, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("c65716add7aa98ba7acb236352d665cab17345fe45b55fb879ff80e6bd0c41dd")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710651, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("969660042a28f32d9be17344e09374b379962d03db1574df5a8a5a47e19ce3f2")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710650, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("e7971de736e01da8ed58b94c2fc216cb1dca9e326f3a96e7194fe8ea8af6c0a3")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710649, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("05cde6323d949933f7f7b78776bcc1ea6d9b31447732e3802e1f7ac44b650e17")
+                    .unwrap(),
+            );
+            assert!(monitor
+                .provide_secret(281474976710648, secrets.last().unwrap().clone())
+                .is_err());
+        }
+
+        {
+            // insert_secret #8 incorrect
+            monitor = CounterpartyCommitmentSecrets::new();
+            secrets.clear();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710655, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710654, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("2273e227a5b7449b6e70f1fb4652864038b1cbf9cd7c043a7d6456b7fc275ad8")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710653, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710652, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("c65716add7aa98ba7acb236352d665cab17345fe45b55fb879ff80e6bd0c41dd")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710651, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("969660042a28f32d9be17344e09374b379962d03db1574df5a8a5a47e19ce3f2")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710650, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("a5a64476122ca0925fb344bdc1854c1c0a59fc614298e50a33e331980a220f32")
+                    .unwrap(),
+            );
+            monitor.provide_secret(281474976710649, secrets.last().unwrap().clone()).unwrap();
+            test_secrets!();
+
+            secrets.push([0; 32]);
+            secrets.last_mut().unwrap()[0..32].clone_from_slice(
+                &hex::decode("a7efbc61aac46d34f77778bac22c8a20c6a46ca460addc49009bda875ec88fa4")
+                    .unwrap(),
+            );
+            assert!(monitor
+                .provide_secret(281474976710648, secrets.last().unwrap().clone())
+                .is_err());
+        }
+    }
 
     #[test]
     fn payments_summary_test() {
