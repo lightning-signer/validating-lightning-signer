@@ -651,10 +651,17 @@ impl NodeState {
     }
 
     fn prune_time(pstate: &PaymentState) -> Duration {
-        match pstate.payment_type {
+        let mut prune = Duration::from_secs(0);
+        prune += match pstate.payment_type {
             PaymentType::Invoice => INVOICE_PRUNE_TIME,
             PaymentType::Keysend => KEYSEND_PRUNE_TIME,
+        };
+        #[cfg(feature = "timeless_workaround")]
+        {
+            // When we are using block headers our now() could be 2 hours ahead
+            prune += Duration::from_secs(2 * 60 * 60);
         }
+        prune
     }
 
     fn prune_issued_invoices(&mut self, now: Duration) -> bool {

@@ -419,28 +419,41 @@ pub trait Validator {
 
     /// Validate an invoice
     fn validate_invoice(&self, invoice: &Invoice, now: Duration) -> Result<(), ValidationError> {
+        // When we are using block headers our now() may be 1 hour behind or 2 hours ahead
+        #[cfg(not(feature = "timeless_workaround"))]
+        let (behind_tolerance, ahead_tolerance) = (Duration::from_secs(0), Duration::from_secs(0));
+        #[cfg(feature = "timeless_workaround")]
+        let (behind_tolerance, ahead_tolerance) =
+            (Duration::from_secs(1 * 60 * 60), Duration::from_secs(2 * 60 * 60));
+
         // invoice must not have been created in the future
-        if now + MAX_CLOCK_SKEW < invoice.duration_since_epoch() {
+        if now + MAX_CLOCK_SKEW + behind_tolerance < invoice.duration_since_epoch() {
             policy_err!(
                 self,
                 "policy-invoice-not-expired",
-                "invoice is not yet valid ({} < {})",
+                "invoice is not yet valid ({} + {} (skew) + {} (tolerance) < {})",
                 now.as_secs(),
+                MAX_CLOCK_SKEW.as_secs(),
+                behind_tolerance.as_secs(),
                 invoice.duration_since_epoch().as_secs()
             );
         }
 
         // new invoices must not expire too soon
         if now + MIN_INVOICE_EXPIRY
-            > (invoice.duration_since_epoch() + invoice.expiry_duration()) + MAX_CLOCK_SKEW
+            > (invoice.duration_since_epoch() + invoice.expiry_duration())
+                + MAX_CLOCK_SKEW
+                + ahead_tolerance
         {
             policy_err!(
                 self,
                 "policy-invoice-not-expired",
-                "invoice is expired ({} + {} (buffer) > {})",
+                "invoice is expired ({} + {} (buffer) > {} + {} (skew) + {} (tolerance))",
                 now.as_secs(),
                 MIN_INVOICE_EXPIRY.as_secs(),
-                (invoice.duration_since_epoch() + invoice.expiry_duration()).as_secs()
+                (invoice.duration_since_epoch() + invoice.expiry_duration()).as_secs(),
+                MAX_CLOCK_SKEW.as_secs(),
+                ahead_tolerance.as_secs()
             );
         }
 
