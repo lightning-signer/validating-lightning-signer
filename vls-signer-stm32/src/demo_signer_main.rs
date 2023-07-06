@@ -11,7 +11,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use core::cell::RefCell;
-use core::cmp::max;
 use core::time::Duration;
 
 use cortex_m_rt::entry;
@@ -19,7 +18,7 @@ use cortex_m_rt::entry;
 #[allow(unused_imports)]
 use log::*;
 
-use device::{heap_bytes_used, DeviceContext};
+use device::{heap_bytes_used, DeviceContext, HEAP_SIZE};
 use lightning_signer::node::NodeServices;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::filter::{FilterRule, PolicyFilter};
@@ -138,7 +137,8 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
             RootHandlerBuilder::new(runctx.cmn.network, 0, services, seed.0)
                 .allowlist(allowlist)
                 .approver(approver)
-                .build().expect("handler build");
+                .build()
+                .expect("handler build");
         info!("used {} bytes", heap_bytes_used());
 
         display_intro(
@@ -196,7 +196,8 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         let (root_handler, _muts) = RootHandlerBuilder::new(runctx.cmn.network, 0, services, seed)
             .allowlist(allowlist)
             .approver(approver)
-            .build().expect("handler build");
+            .build()
+            .expect("handler build");
         let (init_reply, _muts) =
             root_handler.handle(Message::HsmdInit2(init)).expect("handle init");
         write_serial_response_header(&mut devctx.serial, reqhdr.sequence)
@@ -213,7 +214,6 @@ fn start_test_mode(runctx: TestingContext) -> ! {
 fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHandler) -> ! {
     let mut tracks = tracks::Tracks::new();
     let mut numreq = 0_u64;
-    let mut maxkb = heap_bytes_used() / 1024;
     loop {
         let mut devctx = arc_devctx.borrow_mut();
 
@@ -241,10 +241,8 @@ fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHa
         devctx = arc_devctx.borrow_mut(); // Reacquire the DeviceContext
         let end = devctx.timer1.now();
         let duration = end.checked_duration_since(start).map(|d| d.to_millis()).unwrap_or(0);
-        info!("handled {} in {} ms", message_d.clone(), duration);
-
-        let kb = heap_bytes_used() / 1024;
-        maxkb = max(kb, maxkb);
+        let heap_free_kb = (HEAP_SIZE - heap_bytes_used()) / 1024;
+        info!("handled {} in {} ms, {}KB heap free", message_d.clone(), duration, heap_free_kb);
 
         devctx.disp.clear_screen();
         let balance = root_handler.channel_balance();
@@ -252,7 +250,7 @@ fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHa
             format!(
                 "h:  {:<9}{:>4}KB",
                 pretty_thousands(root_handler.get_chain_height() as i64),
-                kb
+                heap_free_kb
             ),
             format!(
                 "r:{:>3} {:>+13}",

@@ -107,8 +107,12 @@ const NROWS: u16 = 10;
 
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
-// 192K heap, leaving 64K for stack
-const HEAP_SIZE: usize = 1024 * 192;
+
+/// Total configured ram size from `memory.x`
+const RAM_SIZE: usize = 320 * 1024;
+
+/// Size of the heap in bytes
+pub const HEAP_SIZE: usize = 224 * 1024;
 
 pub fn make_timer(clocks: &Clocks, tim2: TIM2) -> Counter<TIM2, 1000000> {
     let mut timer = FTimerUs::<TIM2>::new(tim2, &clocks).counter();
@@ -119,6 +123,16 @@ pub fn make_timer(clocks: &Clocks, tim2: TIM2) -> Counter<TIM2, 1000000> {
 
 pub fn init_allocator() {
     unsafe { ALLOCATOR.init(cortex_m_rt::heap_start() as usize, HEAP_SIZE) }
+    let origin = 0x20000000;
+    let data_size = cortex_m_rt::heap_start() as usize - origin;
+    let stack_size = RAM_SIZE - data_size - HEAP_SIZE;
+    info!(
+        "heap initialized: {}KB ram, {}KB data, {}KB heap, {}KB stack",
+        RAM_SIZE / 1024,
+        data_size / 1024,
+        HEAP_SIZE / 1024,
+        stack_size / 1024
+    );
 }
 
 pub fn heap_bytes_used() -> usize {

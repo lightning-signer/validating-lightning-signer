@@ -50,6 +50,10 @@ On Fedora run:
 CFLAGS=-I/usr/include cargo run --features stm32f413 --release --bin test
 ```
 
+NOTE - By default, the `memory.x` config is set up for the `stm32f413`, if you are
+using a `stm32f412` it requires some adjusting.  Also, the heap size set in
+`src/device.rs` should be considered.
+
 ```
 cargo run --features stm32f412 --release --bin test
 cargo run --features stm32f413 --release --bin test
@@ -92,6 +96,13 @@ Wait for the demo_signer to finish loading and start executing, it will display
 make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_plugin.py::test_forward_event_notification VLS_SERIAL_SELECT=2
 ```
 
+#### Rerunning the current image
+
+If you want to rerun the signer but do not wish to re-flash the device, perhaps after a crash:
+```
+probe-run --chip STM32F413ZHTx target/thumbv7em-none-eabihf/release/demo_signer --no-flash
+```
+
 #### Interesting integration tests
 
 3 channels, nice routing:
@@ -123,7 +134,6 @@ Example of sending keysends:
 ```
 make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_keysend VLS_SERIAL_SELECT=1
 ```
-
 
 #### Reference
 
