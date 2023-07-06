@@ -135,6 +135,11 @@ Example of sending keysends:
 make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_keysend VLS_SERIAL_SELECT=1
 ```
 
+This generally runs the signer out of memory (100 concurrent channels), useful for tuning:
+```
+make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_connection.py::test_funding_cancel_race VLS_SERIAL_SELECT=1
+```
+
 #### Reference
 
 - [32F412GDISCOVERY User Manual](https://www.st.com/resource/en/user_manual/um2032-discovery-kit-with-stm32f412zg-mcu-stmicroelectronics.pdf)
