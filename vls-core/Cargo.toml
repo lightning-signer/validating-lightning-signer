@@ -36,6 +36,9 @@ debug_node_state = []
 # issue #187
 tracker_size_workaround = []
 
+# issue #206, #339, #235
+timeless_workaround = []
+
 txoo-source = ["txoo/source"]
 
 [lib]
