@@ -112,7 +112,7 @@ static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
 const RAM_SIZE: usize = 320 * 1024;
 
 /// Size of the heap in bytes
-pub const HEAP_SIZE: usize = 224 * 1024;
+pub const HEAP_SIZE: usize = 300 * 1024;
 
 pub fn make_timer(clocks: &Clocks, tim2: TIM2) -> Counter<TIM2, 1000000> {
     let mut timer = FTimerUs::<TIM2>::new(tim2, &clocks).counter();
