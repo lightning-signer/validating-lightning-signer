@@ -1,5 +1,6 @@
 use crate::model::*;
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::cell::RefCell;
@@ -146,7 +147,34 @@ impl State {
     }
 }
 
+#[cfg(not(feature = "std"))]
+mod no_thread {
+    pub(crate) struct Wrapper<T> {
+        inner: T,
+    }
+
+    impl<T> Wrapper<T> {
+        pub(crate) const fn new(inner: T) -> Self {
+            Self { inner }
+        }
+
+        pub(crate) fn with<F, R>(&self, f: F) -> R
+        where
+            F: FnOnce(&T) -> R,
+        {
+            f(&self.inner)
+        }
+    }
+
+    unsafe impl<T> Sync for Wrapper<T> {}
+}
+
+#[cfg(feature = "std")]
 thread_local!(static MEMOS: RefCell<Option<State>>  = RefCell::new(None));
+
+#[cfg(not(feature = "std"))]
+static MEMOS: no_thread::Wrapper<RefCell<Option<State>>> =
+    no_thread::Wrapper::new(RefCell::new(None));
 
 /// A thread-local in-memory persister
 ///
@@ -201,10 +229,13 @@ impl Drop for StdContext {
             if m.is_some() {
                 error!("stranded mutations: {:#?}", *m);
                 *m = None;
+                #[cfg(feature = "std")]
                 if !std::thread::panicking() {
                     // only panic if not already panicking
                     panic!("must call exit() and handle the returned entries");
                 }
+                #[cfg(not(feature = "std"))]
+                panic!("must call exit() and handle the returned entries");
             }
         })
     }
