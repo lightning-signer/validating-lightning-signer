@@ -36,10 +36,11 @@ sudo -u bitcoin grep rpcpassword ~bitcoin/.bitcoin/bitcoin.conf
 sudo -u cln vi ~cln/.lightning/testnet-config
 ```
 
-Add the following line only if you are using `SERIAL`:
+Add the following lines only if you are using `SERIAL`:
 ```
 subdaemon=hsmd:remote_hsmd_serial
-```
+max-concurrent-htlcs=4
+    ```
 
 Add the following line instead if you are using `SOCKET`:
 ```

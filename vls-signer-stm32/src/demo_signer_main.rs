@@ -227,8 +227,11 @@ fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHa
         const NUM_TRACKS: usize = 5;
         let top_tracks = tracks.add_message(reqhdr.dbid, numreq, &message, NUM_TRACKS);
 
-        let mut message_d = format!("{:?}", message);
+        let mut message_d = format!("dbid: {}, {:?}", reqhdr.dbid, message);
         message_d.truncate(20);
+
+        let heap_free_kb = (HEAP_SIZE - heap_bytes_used()) / 1024;
+        info!("starting {}, {}KB heap free", message_d.clone(), heap_free_kb);
 
         let start = devctx.timer1.now();
         drop(devctx); // Release the DeviceContext during the handler call (Approver needs)
@@ -242,7 +245,7 @@ fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHa
         let end = devctx.timer1.now();
         let duration = end.checked_duration_since(start).map(|d| d.to_millis()).unwrap_or(0);
         let heap_free_kb = (HEAP_SIZE - heap_bytes_used()) / 1024;
-        info!("handled {} in {} ms, {}KB heap free", message_d.clone(), duration, heap_free_kb);
+        info!(" handled {}, {}KB heap free, in {} ms, ", message_d.clone(), heap_free_kb, duration);
 
         devctx.disp.clear_screen();
         let balance = root_handler.channel_balance();

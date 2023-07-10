@@ -640,6 +640,21 @@ impl Handler for RootHandler {
                     .unwrap_or_else(|e| {
                         panic!("{}: persist tracker failed: {:?}", self.node.log_prefix(), e)
                     });
+                #[cfg(feature = "timeless_workaround")]
+                {
+                    // WORKAROUND for #206, #339, #235 - If our implementation has no clock use the
+                    // BlockHeader timestamp.
+                    use crate::handler::bitcoin::BlockHeader;
+                    use core::time::Duration;
+                    let header: BlockHeader =
+                        deserialize(m.header.0.as_slice()).expect("header again");
+                    let old_now = self.node.get_clock().now();
+                    let new_now = Duration::from_secs(header.time as u64);
+                    // Don't allow retrograde time updates ...
+                    if new_now > old_now {
+                        self.node.get_clock().set_workaround_time(new_now);
+                    }
+                }
                 Ok(Box::new(msgs::AddBlockReply {}))
             }
             Message::RemoveBlock(m) => {

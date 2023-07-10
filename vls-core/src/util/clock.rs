@@ -7,6 +7,10 @@ use core::time::Duration;
 pub trait Clock: SendSync {
     /// A duration since the UNIX epoch
     fn now(&self) -> Duration;
+
+    #[cfg(feature = "timeless_workaround")]
+    #[allow(missing_docs)]
+    fn set_workaround_time(&self, now: Duration);
 }
 
 #[cfg(feature = "std")]
@@ -43,6 +47,11 @@ mod manual {
     impl super::Clock for ManualClock {
         fn now(&self) -> Duration {
             self.0.lock().unwrap().clone()
+        }
+
+        #[cfg(feature = "timeless_workaround")]
+        fn set_workaround_time(&self, now: Duration) {
+            self.set(now);
         }
     }
 
