@@ -234,6 +234,7 @@ impl<L: ChainListener> ChainTracker<L> {
         let txs = match proof.proof {
             ProofType::Filter(_, spv_proof) => spv_proof.txs,
             ProofType::Block(b) => b.txdata,
+            ProofType::ExternalBlock() => panic!("ExternalBlock"),
         };
         self.notify_listeners_remove(&txs);
 
@@ -282,6 +283,7 @@ impl<L: ChainListener> ChainTracker<L> {
         let txs = match proof.proof {
             ProofType::Filter(_, spv_proof) => spv_proof.txs,
             ProofType::Block(b) => b.txdata,
+            ProofType::ExternalBlock() => panic!("ExternalBlock"),
         };
 
         self.notify_listeners_add(&txs);

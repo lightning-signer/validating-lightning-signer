@@ -73,14 +73,14 @@ hashbrown = "0.8" # match hashbrown dependency version via lightning
 itertools = { version = "0.10", default-features = false }
 
 [dependencies.txoo]
-version = "0.4.4"
+version = "0.4.5"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #branch = "main"
 #path = "../../txoo"
 default-features = false
 
 [dev-dependencies.txoo]
-version = "0.4.4"
+version = "0.4.5"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #branch = "main"
 #path = "../../txoo"

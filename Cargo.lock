@@ -2193,9 +2193,9 @@ checksum = "59547bce71d9c38b83d9c0e92b6066c4253371f15005def0c30d9657f50c7642"
 
 [[package]]
 name = "txoo"
-version = "0.4.4"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b08cb13c2c0c091a0a451ee42d80dae8a880f5d74961ba97eedfa847d800001a"
+checksum = "4cac014d4e4c0b72e99a1ba84b51492c8e10ee72640290b7afab67045215afbc"
 dependencies = [
  "async-trait",
  "bitcoin",
